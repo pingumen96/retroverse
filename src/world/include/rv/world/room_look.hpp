@@ -11,16 +11,16 @@
 //              "minOuterConeDeg": 30, "coneMarginDeg": 3, "innerConeRatio": 0.55},   // cones: spots only
 //      "pendant": {...}, "lamp": {...}, "picture": {...}, "wallWasher": {...}},
 //    "keyShadowStrength": 1.0,
-//    "environment": {"clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#4A4642",
-//                    "ambientIntensity": 0.25, "fillColor": "#FFD8B0", "fillIntensity": 0.05, "exposure": 1.5,
+//    "environment": {"clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#B49C88",
+//                    "ambientIntensity": 0.3, "fillColor": "#FFE0C8", "fillIntensity": 0.22, "exposure": 1.5,
 //                    "bloomStrength": 0.18, "bloomRadius": 0.5, "vignette": 0.05,
 //                    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}},   // the rooms' (and the scene's)
 //    "hall": {                       // the halls' role (I6 step 1, ADR-0014 §4)
-//      "light": {"color": "#FFD2A0", "intensity": 10, "range": 8},      // its ceiling lights (points)
-//      "doorwayFill": {"color": ..., "intensity": ..., "range": ..., "minOuterConeDeg": ..., "coneMarginDeg": ...,
-//                      "innerConeRatio": ...},   // a low spot in the hall before each doorway, aimed into the room
-//      "environment": {"exposure": 1.5, "ambientSky": ..., "ambientGround": ..., "ambientIntensity": ...,
-//                      "fillColor": ..., "fillIntensity": ...}},  // the hall's area's own lit terms
+//      "light": {"color": "#FFD0A0", "intensity": 12, "range": 9},      // its ceiling lights (points)
+//      "doorwayFill": {"color": "#FFD6AE", "intensity": 3.5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
+//                      "innerConeRatio": 0.7},   // a low spot in the hall before each doorway, aimed into the room
+//      "environment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A",
+//                      "ambientIntensity": 0.45, "fillColor": "#FFDCC0", "fillIntensity": 0.15}},  // its area's terms
 //    "accents": [                    // optional: lights of the look alone, anchored on a hero corner's part
 //      {"name": "crt-glow", "anchor": "crt", "type": "spot", "position": [0, 0.35, 0.4], "target": [0, 0, 1.4],
 //       "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},

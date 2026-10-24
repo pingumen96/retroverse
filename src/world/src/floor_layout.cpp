@@ -200,6 +200,7 @@ std::vector<FloorArea> floorAreas(const Hall& hall, std::span<const FloorRoom> r
         for (const FloorDoorway& doorway : hall.doorways) {
             if (doorway.room == room.id) {
                 area.footprints.push_back(doorway.passage);
+                area.passageHeightMm = doorway.heightMm;
             }
         }
         areas.push_back(std::move(area));

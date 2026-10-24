@@ -38,10 +38,10 @@
   // and the hall's own environment.
   "hall": {
     "light": {"color": "#FFD0A0", "intensity": 12, "range": 9},
-    "doorwayFill": {"color": "#FFD6AE", "intensity": 5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
-                    "innerConeRatio": 0.4},
-    "environment": {"exposure": 1.5, "ambientSky": "#B8A898", "ambientGround": "#C89A72", "ambientIntensity": 0.35,
-                    "fillColor": "#FFD2A8", "fillIntensity": 0.25}
+    "doorwayFill": {"color": "#FFD6AE", "intensity": 3.5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
+                    "innerConeRatio": 0.7},
+    "environment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A", "ambientIntensity": 0.45,
+                    "fillColor": "#FFDCC0", "fillIntensity": 0.15}
   },
   // Lights of the look alone, drawn while the room's sixteen lights leave room for them (in this order).
   "accents": [

@@ -54,11 +54,12 @@ constexpr double kSignFrameM = 0.025;
 constexpr double kSignDepthM = 0.04;
 constexpr std::int64_t kSignCentreMm = 2750;
 /// The fill spot before each doorway (I6 step 1): this far into the hall from its edge, this far below the doorway's
-/// head, aimed at a point this far into the room at this height.
+/// head, aimed at a point this far into the room at this height (the cases and the hero wall at eye height rather than
+/// the floor).
 constexpr std::int64_t kDoorwayFillSetbackMm = 900;
 constexpr std::int64_t kDoorwayFillBelowHeadMm = 300;
-constexpr std::int64_t kDoorwayFillReachMm = 3000;
-constexpr std::int64_t kDoorwayFillTargetHeightMm = 800;
+constexpr std::int64_t kDoorwayFillReachMm = 4000;
+constexpr std::int64_t kDoorwayFillTargetHeightMm = 1200;
 
 double meters(std::int64_t millimetres) noexcept {
     return static_cast<double>(millimetres) / 1000.0;
@@ -122,9 +123,11 @@ json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm
 /// An area of the floor; `look` its own lit terms (the hall's), none for an area lit as the scene (a room).
 json areaJson(const FloorArea& area, const AreaLook* look) {
     json boxes = json::array();
-    for (const Footprint& footprint : area.footprints) {
+    for (std::size_t i = 0; i < area.footprints.size(); ++i) {
+        const Footprint& footprint = area.footprints[i];
+        const std::int64_t height = i > 0 && area.passageHeightMm > 0 ? area.passageHeightMm : area.heightMm;
         boxes.push_back(json{{"min", vec3Json(meters(footprint.minXMm), 0.0, meters(footprint.minZMm))},
-                             {"max", vec3Json(meters(footprint.maxXMm), meters(area.heightMm), meters(footprint.maxZMm))}});
+                             {"max", vec3Json(meters(footprint.maxXMm), meters(height), meters(footprint.maxZMm))}});
     }
     json result{{"id", area.id}, {"boxes", std::move(boxes)}};
     if (look != nullptr) {

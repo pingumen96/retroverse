@@ -17,7 +17,7 @@
         {
           "max": [
             8.45,
-            3.2,
+            2.3,
             -1.5
           ],
           "min": [
@@ -45,12 +45,12 @@
         }
       ],
       "environment": {
-        "ambientGround": "#C89A72",
-        "ambientIntensity": 0.35,
-        "ambientSky": "#B8A898",
+        "ambientGround": "#BCA08A",
+        "ambientIntensity": 0.45,
+        "ambientSky": "#8A8078",
         "exposure": 1.5,
-        "fillColor": "#FFD2A8",
-        "fillIntensity": 0.25
+        "fillColor": "#FFDCC0",
+        "fillIntensity": 0.15
       },
       "id": "hall:gen4"
     }
@@ -345,7 +345,7 @@
       "name": "hall:gen4/light-0",
       "position": [
         3.0,
-        2.9,
+        2.6,
         0.0
       ],
       "range": 9.0,
@@ -358,7 +358,7 @@
       "name": "hall:gen4/light-1",
       "position": [
         9.0,
-        2.9,
+        2.6,
         0.0
       ],
       "range": 9.0,
@@ -367,8 +367,8 @@
     {
       "area": "hall:gen4",
       "color": "#FFD6AE",
-      "innerConeDeg": 11.2,
-      "intensity": 5.0,
+      "innerConeDeg": 19.6,
+      "intensity": 3.5,
       "name": "hall:gen4/doorway-fill:room:snes",
       "outerConeDeg": 28.0,
       "position": [
@@ -379,8 +379,8 @@
       "range": 6.0,
       "target": [
         7.65,
-        0.8,
-        -4.5
+        1.2,
+        -5.5
       ],
       "type": "spot"
     }

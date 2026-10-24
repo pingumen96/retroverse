@@ -183,8 +183,8 @@ LightingProfile builtInEvening() {
     p.fillColor = "#FFE0C8";
     p.fillIntensity = 0.22;
     p.hall.light = LightStyle{"#FFD0A0", 12.0, 9.0, 0.0, 0.0, 0.0};
-    p.hall.doorwayFill = LightStyle{"#FFD6AE", 5.0, 6.0, 28.0, 6.0, 0.4};
-    p.hall.environment = AreaLook{1.5, "#B8A898", "#C89A72", 0.35, "#FFD2A8", 0.25};
+    p.hall.doorwayFill = LightStyle{"#FFD6AE", 3.5, 6.0, 28.0, 6.0, 0.7};
+    p.hall.environment = AreaLook{1.5, "#8A8078", "#BCA08A", 0.45, "#FFDCC0", 0.15};
     return p;
 }
 

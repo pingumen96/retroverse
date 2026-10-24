@@ -3,7 +3,8 @@
 // Release, its floors' scenes as golden digests (rewritten only with RV_UPDATE_GOLDEN=1), the halls derived from the
 // rooms (walls where no room stands, lights at a fixed pitch, doorways onto the hall), each room's scene moved onto the
 // floor, the areas, walks from the elevator into a north-row and a south-row (half-turned) room through the floor's
-// collision, and a room's collection in the floor's frame.
+// collision, the light a view packs on a full floor and in the I6 step 1 review's cases (the doorway's threshold, a
+// slight turn), and a room's collection in the floor's frame.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -636,6 +637,168 @@ TEST_CASE("world/floor: the walker walks from the elevator along the hall into a
         CHECK(walk.feet.z > 1.65f + walk.capsuleRadius);
         CHECK(walk.areas == std::vector<std::string>{"hall:handheld", "area:shared:handheld"});
     }
+}
+
+namespace {
+
+/// The unit view direction of a yaw and pitch in degrees (rv::scene::Camera's convention: yaw 0 looks along -z).
+glm::vec3 viewOf(float yawDeg, float pitchDeg) {
+    const float yaw = rv::core::degreesToRadians(yawDeg);
+    const float pitch = rv::core::degreesToRadians(pitchDeg);
+    return {std::sin(yaw) * std::cos(pitch), std::sin(pitch), -std::cos(yaw) * std::cos(pitch)};
+}
+
+/// How many lights of `lighting`'s selection are named under `prefix`.
+std::size_t packedUnder(const rv::scene::AreaLighting& lighting, const rv::scene::SceneDescription& scene,
+                        std::string_view prefix) {
+    return static_cast<std::size_t>(
+        std::count_if(lighting.selection().begin(), lighting.selection().end(),
+                      [&](std::uint32_t index) { return scene.lights[index].name.starts_with(prefix); }));
+}
+
+/// The golden building's gen4 floor filled up (I6 step 1's review): room:snes cloned into every place its rows hold,
+/// each clone with its own id and place, the lights and fixtures of snes's (no items); a hall of as many lights and
+/// doorway fills as its length takes.
+struct FullFloor {
+    WorldPlan plan;
+    rv::scene::SceneDescription scene;
+    Hall hall;
+};
+
+FullFloor fullGen4Floor(const GoldenBuilding& building) {
+    FullFloor full;
+    full.plan = building.plan;
+    rv::world::FloorSceneData data = floorData(full.plan, "gen4", building.tags);
+    const rv::world::Room snes = roomOf(full.plan, "room:snes");
+    for (int i = 0; i < 40; ++i) {
+        rv::world::Room clone = snes;
+        clone.id = *RoomId::forSystem(name("clone" + std::to_string(i)));
+        const auto placement = rv::world::placeEnteringRoom(
+            clone, rv::world::floorRows(full.plan.rooms, "gen4", data.building.layout), data.building.layout);
+        if (!placement) {
+            break;
+        }
+        clone.placement = *placement;
+        full.plan.rooms.push_back(clone);
+        data.rooms.emplace(clone.id, data.rooms.at(snes.id));
+        // Its fixtures and lights, snes's under its id (the plan's lists are the whole building's).
+        const auto moved = [&](const rv::world::FixtureId& id) {
+            return *rv::world::FixtureId::make(clone.id, id.socket(), id.part());
+        };
+        for (std::size_t f = 0, count = full.plan.fixtures.size(); f < count; ++f) {
+            if (full.plan.fixtures[f].id.room() == snes.id) {
+                rv::world::Fixture fixture = full.plan.fixtures[f];
+                fixture.id = moved(fixture.id);
+                full.plan.fixtures.push_back(std::move(fixture));
+            }
+        }
+        for (std::size_t l = 0, count = full.plan.lights.size(); l < count; ++l) {
+            if (full.plan.lights[l].id.room() == snes.id) {
+                rv::world::PlanLight light = full.plan.lights[l];
+                light.id = moved(light.id);
+                full.plan.lights.push_back(std::move(light));
+            }
+        }
+    }
+    auto scene = rv::world::toFloorSceneDescription(full.plan, "gen4", data);
+    INFO((scene ? std::string("built") : scene.error().toString()));
+    REQUIRE(scene.has_value());
+    full.scene = std::move(*scene);
+    full.hall = floorScene(full.plan, "gen4", data).hall;
+    return full;
+}
+
+} // namespace
+
+TEST_CASE("world/floor: a full floor: the hall facing a doorway packs that room's lights, the room the hall's",
+          "[world][floor][areas]") {
+    const FullFloor full = fullGen4Floor(goldenBuilding());
+    const rv::scene::SceneDescription& scene = full.scene;
+    // Twelve rooms a row (the building's rows hold no more), 15 lights each.
+    REQUIRE(full.hall.doorways.size() >= 20);
+    const float hallHalf = static_cast<float>(full.hall.widthMm) / 2000.0f;
+    std::size_t checked = 0;
+    for (const rv::world::FloorDoorway& doorway : full.hall.doorways) {
+        const std::string room = doorway.room.toString();
+        INFO(room);
+        const bool north = doorway.hallEdgeZMm < 0;
+        const float x = static_cast<float>(doorway.minMm + doorway.maxMm) / 2000.0f;
+        // From the hall's far side, facing the doorway, as world_floor_light's view.
+        const glm::vec3 hallEye(x, 1.65f, north ? hallHalf - 0.4f : -hallHalf + 0.4f);
+        rv::scene::AreaLighting lighting(scene.areas, scene.lights, hallEye, 16);
+        (void)lighting.update(scene.areas, scene.lights, hallEye, viewOf(north ? 0.0f : 180.0f, -4.0f));
+        REQUIRE(scene.areas[*lighting.area()].id == "hall:gen4");
+        CHECK(lighting.selection().size() <= 16);
+        CHECK(lighting.ownCount() == 16 - rv::scene::kNeighbourLightReserve);
+        // Most of the neighbours' share is the faced room's, its key light (unshadowed) and its doorway's fill among
+        // the lights packed.
+        CHECK(packedUnder(lighting, scene, room + "/") >= 4);
+        CHECK(packedUnder(lighting, scene, room + "/fx:hero.key-light") == 1);
+        CHECK(packedUnder(lighting, scene, "hall:gen4/doorway-fill:" + room) == 1);
+        CHECK_FALSE(lighting.keyLight().has_value());
+        // From 4.5 m inside facing out: the room's own (its key light), then the hall's near the doorway.
+        const float inside = static_cast<float>(north ? doorway.passage.minZMm : doorway.passage.maxZMm) / 1000.0f;
+        const glm::vec3 roomEye(x, 1.65f, inside + (north ? -4.5f : 4.5f));
+        (void)lighting.update(scene.areas, scene.lights, roomEye, viewOf(north ? 180.0f : 0.0f, -4.0f));
+        REQUIRE(scene.areas[*lighting.area()].id == room);
+        CHECK(lighting.selection().size() <= 16);
+        CHECK(lighting.selection().size() - lighting.ownCount() >= 3);
+        CHECK(packedUnder(lighting, scene, "hall:gen4/doorway-fill:" + room) == 1);
+        REQUIRE(lighting.keyLight().has_value());
+        CHECK(scene.lights[*lighting.keyLight()].name == room + "/fx:hero.key-light");
+        ++checked;
+    }
+    CHECK(checked == full.hall.doorways.size());
+}
+
+TEST_CASE("world/floor: the review's cases: no light comes or goes at the doorway's threshold or at a slight turn",
+          "[world][floor][areas]") {
+    const GoldenBuilding& building = goldenBuilding();
+    const rv::world::FloorSceneData data = floorData(building.plan, "gen4", building.tags);
+    auto description = rv::world::toFloorSceneDescription(building.plan, "gen4", data);
+    REQUIRE(description.has_value());
+    const rv::scene::SceneDescription& scene = *description;
+    constexpr float kEye = 1.65f;
+    // Through the snes room's doorway (feet z -1.45 in the hall, -1.55 in the passage) at 2.5 m/s: the room's lights
+    // fade in, the hall's out, no weight moves by more than a fade's step in a frame.
+    rv::scene::AreaLighting walk(scene.areas, scene.lights, {7.65f, kEye, 1.0f}, 16);
+    std::map<std::uint32_t, float> before;
+    for (std::size_t i = 0; i < walk.selection().size(); ++i) {
+        before[walk.selection()[i]] = walk.weights()[i];
+    }
+    for (float z = 1.0f; z > -6.0f; z -= 2.5f * kFixedDt) {
+        (void)walk.update(scene.areas, scene.lights, {7.65f, kEye, z}, viewOf(0.0f, -4.0f), kFixedDt);
+        std::map<std::uint32_t, float> now;
+        for (std::size_t i = 0; i < walk.selection().size(); ++i) {
+            now[walk.selection()[i]] = walk.weights()[i];
+        }
+        for (std::uint32_t index = 0; index < scene.lights.size(); ++index) {
+            const float was = before.contains(index) ? before.at(index) : 0.0f;
+            const float is = now.contains(index) ? now.at(index) : 0.0f;
+            INFO(scene.lights[index].name << " at z " << z);
+            CHECK(std::abs(is - was) <= 1.5f * kFixedDt / rv::scene::kLightFadeSeconds + 1e-4f);
+        }
+        before = std::move(now);
+    }
+    CHECK(scene.areas[*walk.area()].id == "room:snes");
+
+    // Inside the room by the hero corner (feet 8.2718, -8.5292), pitch -20: turning between 195.5 and 195.9 degrees
+    // and strafing 2 cm, frame after frame, changes nothing.
+    const glm::vec3 eye(8.2718f, kEye, -8.5292f);
+    rv::scene::AreaLighting turning(scene.areas, scene.lights, eye, 16);
+    (void)turning.update(scene.areas, scene.lights, eye, viewOf(195.5f, -20.0f), kFixedDt, true);
+    const std::vector<std::uint32_t> first = turning.chosen();
+    const std::vector<std::uint32_t> selection(turning.selection().begin(), turning.selection().end());
+    for (int frame = 0; frame < 240; ++frame) {
+        const float yaw = frame % 2 == 0 ? 195.9f : 195.5f;
+        const glm::vec3 strafe = frame % 4 < 2 ? glm::vec3(0.0f) : glm::vec3(0.02f, 0.0f, 0.0f);
+        CHECK_FALSE(turning.update(scene.areas, scene.lights, eye + strafe, viewOf(yaw, -20.0f), kFixedDt));
+    }
+    CHECK(turning.chosen() == first);
+    CHECK(std::vector<std::uint32_t>(turning.selection().begin(), turning.selection().end()) == selection);
+    // The room and the hall beyond its doorway both packed.
+    CHECK(packedUnder(turning, scene, "room:snes/") > 0);
+    CHECK(packedUnder(turning, scene, "hall:gen4/") > 0);
 }
 
 TEST_CASE("world/floor: a room's collection in its floor's frame", "[world][floor]") {
