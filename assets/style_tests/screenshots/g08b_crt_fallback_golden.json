@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "4b5b8a2cdb16120de5148f18e6c030cabcb9b635",
+    "gitCommit": "cdad34523d47ca4b1f3893edb31a2333c0127057",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g08b_crt_fallback_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "aa611289b842eaaf60157647fb3481023caa0abafa13b3be33dc3c1ae6e57b53",
+    "sha256": "a32bee80ac79e8e530f39e9c7312fa1c7f8bf02508a540f727786f745068c7f1",
     "width": 1920
   },
   "inputs": {
@@ -40,7 +40,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "111d35846bdfe2e796ab30bbf7146ad8272fec60651f1f5e836024a16db8fe63"
+      "sha256": "1285866579621b5509961cb659615c2ee878d2b1487ce975ce2b351e06fdbfab"
     }
   },
   "renderedOn": "2026-10-24",

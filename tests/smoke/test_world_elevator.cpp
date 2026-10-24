@@ -1017,7 +1017,8 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     REQUIRE(a.pixels.size() == b.pixels.size());
     const double share = 1.0 - static_cast<double>(kFadeFrames) * kFixedDt / kFadeSeconds;
     // Every value against the share of the one before: the brightest (the lights) dimmed as much as the rest. The
-    // anti-aliasing finds a few edges otherwise in the darker view: a few values a little off.
+    // anti-aliasing finds a few edges otherwise in the darker view: a few values a little off (since I6 step 1's lifted
+    // ambient a handful, at the elevator doors' foot, up to about 20).
     double sumA = 0.0;
     double sumB = 0.0;
     double worst = 0.0;
@@ -1042,7 +1043,7 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     CHECK(brightestA >= 200); // the view has bright lights to dim
     CHECK(std::abs(sumB / sumA - share) < 0.01);
     CHECK(static_cast<double>(brightestB) <= share * brightestA + 3.0);
-    CHECK(worst <= 16.0);
+    CHECK(worst <= 24.0);
     CHECK(offShare < 0.002);
 }
 

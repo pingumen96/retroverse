@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "4b5b8a2cdb16120de5148f18e6c030cabcb9b635",
+    "gitCommit": "cdad34523d47ca4b1f3893edb31a2333c0127057",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g02s_snes_stress_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "e416db623b5a64c58de8049564759b94bd81ebc9b383d754aac9c727e4b35415",
+    "sha256": "37920bbd33a342de918bcc6568db2930ff6a144da878afbb43792b6c20e9c81b",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "111d35846bdfe2e796ab30bbf7146ad8272fec60651f1f5e836024a16db8fe63"
+      "sha256": "1285866579621b5509961cb659615c2ee878d2b1487ce975ce2b351e06fdbfab"
     }
   },
   "renderedOn": "2026-10-24",
