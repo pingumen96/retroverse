@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ad5512388df3439d51b194fd100ee14e1cda996d",
+    "gitCommit": "6c85112c92979ffdd36f9bf0bf76136ffe36bdfd",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g08b_crt_fallback_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "6e35f90e24cc68ff1e6796d460fc4fbca719f997c4cff5887a06eee140016bbc",
+    "sha256": "71951eeeea76d745d2e3927f10b4effd627df12bf4f5134441e6c1a871b42abe",
     "width": 1920
   },
   "inputs": {
@@ -33,14 +33,14 @@
       "sha256": "177018f6d64bdec6775717af4a2b559320726c7c99bd4a3696ca8b69b4c4b058"
     },
     "plan": {
-      "digest": "86c803e758dff2a0493383e397833150bf98f9f67e15e749c7c79dffcefc8a0b",
-      "fileSha256": "86c803e758dff2a0493383e397833150bf98f9f67e15e749c7c79dffcefc8a0b",
+      "digest": "13e602d32a0b5a71148f8646a73ade38a8cd918ae16226d75146866ccf1ad85d",
+      "fileSha256": "13e602d32a0b5a71148f8646a73ade38a8cd918ae16226d75146866ccf1ad85d",
       "items": 50,
       "placements": 50
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "bdf81a6007aad2d747afe28b7a0f6084f4d2a3c7b7121ccd4e5b9bc233268ae1"
+      "sha256": "7b9e5f1195824821b19aa3c4f8d193a10b4d6854e0eca04329c1a5842ad6e0d8"
     }
   },
   "renderedOn": "2026-10-24",

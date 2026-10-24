@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ad5512388df3439d51b194fd100ee14e1cda996d",
+    "gitCommit": "6c85112c92979ffdd36f9bf0bf76136ffe36bdfd",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g12_jewel_case_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "44a207db3f840e6ddb02915921780fcbac981930c1afcf2a9fada433932fdc34",
+    "sha256": "7193d98d56265116c932b5faa31216cad6011ff17fcbca8550b9f96897a2be73",
     "width": 1920
   },
   "inputs": {
@@ -29,14 +29,14 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
-      "fileSha256": "7001f32479fd718ce2672d9cfc2875eecf2e7d7fda825733abc1667570208d92",
+      "digest": "67818030350e8ae141c0c2961765857905f8f1ba9d992821c4a164734fb66468",
+      "fileSha256": "67818030350e8ae141c0c2961765857905f8f1ba9d992821c4a164734fb66468",
       "items": 40,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "bdf81a6007aad2d747afe28b7a0f6084f4d2a3c7b7121ccd4e5b9bc233268ae1"
+      "sha256": "7b9e5f1195824821b19aa3c4f8d193a10b4d6854e0eca04329c1a5842ad6e0d8"
     }
   },
   "renderedOn": "2026-10-24",
