@@ -3,7 +3,7 @@
 //   - from the doorway: every collection module's eye-height band (1.1 to 1.5 m) at least a third of the hero wall's
 //     luminance (its modules over their height and the wall behind the hero corner); the upper walls (2.6 to 3.0 m)
 //     darker than the modules' bands; the sign and the CRT the most saturated regions of the view, the collection's
-//     items aside (the 90th percentile of their chroma above every other tile's);
+//     items and the posters' prints aside (pictures; the 90th percentile of their chroma above every other tile's);
 //   - close to a display case (0.9 m in front of its first face-out item): the covers behind the glass keep their darks
 //     (no haze: the glass adds at most a few steps to the darkest pixels of the items behind it) and their contrast.
 // The probes read luminance as linear light (sRGB decoded) and chroma as max - min of the encoded bytes.
@@ -44,6 +44,8 @@ constexpr glm::ivec2 kShotSize{1920, 1080};
 constexpr float kEyeHeight = 1.65f;
 /// The chroma quantile the saturation probe compares (chromaQuantile).
 constexpr double kChromaShare = 0.9;
+/// How much more saturated than the CRT a poster's print may read (its 90th percentile; I6 step 1).
+constexpr double kPosterChromaAllowance = 8.0;
 
 fs::path retroverseCliExe() {
     return retroverseExe().parent_path() / "retroverse-cli.exe";
@@ -394,6 +396,28 @@ void checkDoorway(const ShownRoom& shown, const rv::assets::ImageData& image, st
             excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});
         }
     }
+    // The posters' prints too (I6 step 1): invented covers, pictures as saturated as the collection's, which the
+    // brighter walls since the doorway light (ADR-0014 §4) show nearer their own colour. What the check guards is the
+    // room's light: the sign and the screen stand out from every lit surface that is not a picture; the posters are
+    // held apart, never more saturated than the CRT by more than kPosterChromaAllowance.
+    std::vector<PixelRect> posters;
+    for (const rv::world::Fixture& fixture : plan.fixtures) {
+        if (fixture.role != rv::world::FixtureRole::Decoration || fixture.prefab.kind != "poster_frame") {
+            continue;
+        }
+        const rv::core::Aabb bounds = boundsOf(shown, fixture);
+        const glm::mat4 frame = rv::world::room_frames::fixtureTransform(fixture);
+        std::vector<glm::vec3> corners;
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 local((i & 1) ? bounds.max.x : bounds.min.x, (i & 2) ? bounds.max.y : bounds.min.y,
+                                  (i & 4) ? bounds.max.z : bounds.min.z);
+            corners.emplace_back(frame * glm::vec4(local, 1.0f));
+        }
+        if (const PixelRect rect = rectOf(camera, corners); !rect.empty()) {
+            excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});
+            posters.push_back(PixelRect{glm::max(rect.min, glm::ivec2(0)), glm::min(rect.max, kShotSize)});
+        }
+    }
     REQUIRE_FALSE(signRect.empty());
     REQUIRE_FALSE(crtRect.empty());
     const double signChroma = chromaQuantile(image, signRect, kChromaShare);
@@ -420,9 +444,17 @@ void checkDoorway(const ShownRoom& shown, const rv::assets::ImageData& image, st
                          << " at (" << otherAt.x << ", " << otherAt.y << "), tiles of " << tile << " px");
     CHECK(signChroma > otherChroma);
     CHECK(crtChroma > otherChroma);
+    double posterChroma = 0.0;
+    for (const PixelRect& rect : posters) {
+        if (!rect.empty()) {
+            posterChroma = std::max(posterChroma, chromaQuantile(image, rect, kChromaShare));
+        }
+    }
+    INFO("the most saturated poster " << posterChroma);
+    CHECK(posterChroma <= crtChroma + kPosterChromaAllowance);
     WARN("look probes (" << profile << "): hero wall " << *heroLuminance << ", eye bands " << bandMean << ", upper walls "
                          << *upperLuminance << "; chroma sign " << signChroma << ", CRT " << crtChroma
-                         << ", other tiles at most " << otherChroma);
+                         << ", other tiles at most " << otherChroma << ", posters at most " << posterChroma);
 }
 
 /// Close to a display case: the covers behind its glass keep their darks and their contrast.

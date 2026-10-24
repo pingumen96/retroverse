@@ -72,7 +72,7 @@ void main() {
     float ambientVisibility = materialHas(RV_MATERIAL_ALPHA_BLEND) ? 1.0 : screenAmbientOcclusion();
     vec3 reflected = reflect(-V, N);
     vec3 specularDirection = safeNormalize(mix(reflected, N, surface.alpha), N);
-    radiance += hemisphereAmbient(N) * surface.diffuseColor * (occlusion * ambientVisibility);
+    radiance += diffuseAmbient(N) * surface.diffuseColor * (occlusion * ambientVisibility);
     radiance += hemisphereAmbient(specularDirection) * environmentBrdf(surface.f0, surface.perceptualRoughness, NoV) *
                 (occlusion * specularOcclusion(NoV, ambientVisibility, surface.alpha));
     radiance += emissive;

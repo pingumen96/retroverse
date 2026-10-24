@@ -1175,6 +1175,38 @@ struct SceneAreaChange {
     bool operator==(const SceneAreaChange&) const = default;
 };
 
+/// The most SceneAreasRecord::samples a run records.
+inline constexpr std::size_t kMaxSceneLightingSamples = 2000;
+
+/// A point or spot light of the lights block at the last view of a scene with areas (I6 step 1).
+struct PackedLightRecord {
+    /// The scene light's name ("#<index>" for one without).
+    std::string name;
+    /// Its weight: 0 to 1 while it fades in or out, 1 once in.
+    double weight = 1.0;
+    /// A portal clips it (a neighbour's light, or a room's own).
+    bool clipped = false;
+
+    bool operator==(const PackedLightRecord&) const = default;
+};
+
+/// The light of a frame in a scene with areas (I6 step 1): the environment the view used, as eased so far, and its
+/// lights block.
+struct SceneLightingSample {
+    std::uint64_t frame = 0;
+    std::string area;
+    double exposure = 0.0;
+    double ambientIntensity = 0.0;
+    double fillIntensity = 0.0;
+    /// The point and spot lights packed, and how many of them fade (a weight below 1).
+    std::size_t lights = 0;
+    std::size_t fading = 0;
+    /// The sum of their weights.
+    double weight = 0.0;
+
+    bool operator==(const SceneLightingSample&) const = default;
+};
+
 /// The areas of a scene with areas (I4 step 3, ADR-0013 §9: a floor's rooms and hall): the area that held the eye at
 /// the last view and the lights packed for it, and every change of area during the run. Absent for a scene without
 /// areas.
@@ -1189,6 +1221,12 @@ struct SceneAreasRecord {
     std::string keyLight;
     /// The area at the first view, then each change, in order.
     std::vector<SceneAreaChange> changes;
+    /// The lights block at the last view (I6 step 1): its point and spot lights in its order, with their weights.
+    std::vector<PackedLightRecord> packed;
+    /// The light of the last view, and of the first view and of every frame while the environment eased or a light
+    /// faded (at most kMaxSceneLightingSamples, the first ones).
+    SceneLightingSample last;
+    std::vector<SceneLightingSample> samples;
 
     bool operator==(const SceneAreasRecord&) const = default;
 };

@@ -73,6 +73,9 @@ RunReport fullReport() {
     areas.lights = {"room:snes/fx:hero.key-light", "room:snes/fx:room.pendant"};
     areas.keyLight = "room:snes/fx:hero.key-light";
     areas.changes = {{0, "hall:gen4"}, {170, "room:snes"}};
+    areas.packed = {{"room:snes/fx:hero.key-light", 1.0, true}, {"hall:gen4/light-1", 0.25, true}};
+    areas.last = rv::app::SceneLightingSample{200, "room:snes", 1.5, 0.3, 0.22, 2, 1, 1.25};
+    areas.samples = {{0, "hall:gen4", 1.5, 0.45, 0.15, 16, 0, 16.0}, {171, "room:snes", 1.5, 0.4, 0.17, 16, 4, 14.5}};
     report.sceneAreas = areas;
     return report;
 }

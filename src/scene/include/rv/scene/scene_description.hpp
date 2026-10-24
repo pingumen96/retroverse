@@ -42,6 +42,10 @@ namespace rv::scene {
 ///                                                  tonemapped like an unlit surface)
 ///       "ambientSky": "#FFFFFF", "ambientGround": "#808080",
 ///       "ambientIntensity": 0.2,                   >= 0, scales the hemispheric sky/ground ambient
+///       "fillColor": "#FFFFFF", "fillIntensity": 0,  >= 0: an even fill added to the ambient whatever the normal
+///                                                  (style §4.1's ambient/fill layer: the light an area's lamps
+///                                                  bounce around it, which keeps upper walls and ceilings above
+///                                                  black); occluded like the ambient
 ///       "exposure": 1.0,                           > 0, applied before tonemapping
 ///       "bloomStrength": 0.06,                     [0, 1], glow of screens, lamp shades, neon, highlights (0: none)
 ///       "bloomRadius": 0.7,                        [0, 1], how far the glow spreads (0: a few pixels)
@@ -71,6 +75,12 @@ namespace rv::scene {
 ///                                                  hold their own lights, such as a floor's rooms and its hall
 ///       "id": "room:snes",                         required, non-empty, unique in the file
 ///       "boxes": [{"min": [x, y, z], "max": [x, y, z]}]   required, at least one; min < max on every axis
+///       "environment": {                           optional (I6 step 1, ADR-0014 §4): the area's own lit terms,
+///         "exposure": 1.5, "ambientSky": "#...",   each optional, the scene's "environment" for those it lacks;
+///         "ambientGround": "#...",                 the views ease to the eye's area's over about half a second
+///         "ambientIntensity": 0.3,                 (scene_areas.hpp's EnvironmentEase)
+///         "fillColor": "#...", "fillIntensity": 0.1
+///       }
 ///     }],
 ///     "objects": [{                                optional
 ///       "id": "shelf_main",                        required, non-empty, unique in the file
@@ -90,8 +100,10 @@ namespace rv::scene {
 ///
 /// Areas: the area that holds the viewer's eye (the first whose boxes contain it, else the last one that held it) is the
 /// one whose lights the views use: the renderer packs that area's lights nearest the eye, its key light (its first
-/// light with castsShadows) shadowed, and the other areas' lights are left out (scene_areas.hpp). A scene without areas
-/// packs all its lights in list order, as it always did.
+/// light with castsShadows) shadowed, then a few lights of each neighbouring area (one whose boxes touch the eye's
+/// area's, as a room's doorway passage touches its hall) near the face they share, never shadowed; the other lights
+/// are left out (scene_areas.hpp). The ambient, fill and exposure are the eye's area's (its "environment"). A scene
+/// without areas packs all its lights in list order, as it always did.
 ///
 /// "model" objects are drawn with the materials and textures of their glTF file: their "material", "materials",
 /// "textures" and "inlineMaterial" keys are ignored, with a warning that names them; "params" (builder parameters)
@@ -147,6 +159,9 @@ struct EnvironmentSetup {
     glm::vec3 ambientSky{1.0f};          ///< "#FFFFFF"
     glm::vec3 ambientGround{0.2158605f}; ///< "#808080"
     float ambientIntensity = 0.2f;
+    /// Linear RGB and its scale: an even fill added to the hemispheric ambient whatever the surface's normal (0: none).
+    glm::vec3 fillColor{1.0f};
+    float fillIntensity = 0.0f;
     float exposure = 1.0f;
     /// How much of the light that blooms spreads into a soft glow around it (style §4.3: localized bloom): all the
     /// light emissive surfaces give off (screens, lamp shades, neon) and the highlights of the lights on glossy
@@ -182,10 +197,28 @@ struct TextureSource {
 
 /// One entry of "areas": a part of the scene that holds its own lights (a room extended through its doorway passage, a
 /// floor's hall), as the boxes it spans in world space.
+/// The lit terms of one area that may differ from the scene's environment (each absent one is the scene's): what the
+/// views ease between when the eye changes areas (I6 step 1, ADR-0014 §4).
+struct AreaEnvironment {
+    std::optional<float> exposure;
+    std::optional<glm::vec3> ambientSky;
+    std::optional<glm::vec3> ambientGround;
+    std::optional<float> ambientIntensity;
+    std::optional<glm::vec3> fillColor;
+    std::optional<float> fillIntensity;
+
+    /// `scene` with these terms in place of its own.
+    [[nodiscard]] EnvironmentSetup over(const EnvironmentSetup& scene) const;
+
+    bool operator==(const AreaEnvironment&) const = default;
+};
+
 struct SceneArea {
     std::string id;
     /// World space, meters; each with min < max on every axis.
     std::vector<core::Aabb> boxes;
+    /// Its lit terms where they differ from the scene's.
+    AreaEnvironment environment;
 
     /// True when one of the boxes holds `point` (its faces included).
     [[nodiscard]] bool contains(const glm::vec3& point) const noexcept;

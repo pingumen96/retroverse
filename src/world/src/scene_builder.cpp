@@ -206,6 +206,8 @@ json environmentJson(const LightingProfile& profile) {
                 {"ambientSky", profile.ambientSky},
                 {"ambientGround", profile.ambientGround},
                 {"ambientIntensity", profile.ambientIntensity},
+                {"fillColor", profile.fillColor},
+                {"fillIntensity", profile.fillIntensity},
                 {"exposure", profile.exposure},
                 {"bloomStrength", profile.bloomStrength},
                 {"bloomRadius", profile.bloomRadius},

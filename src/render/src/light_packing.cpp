@@ -87,10 +87,35 @@ glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
 
 namespace {
 
-/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`.
-template <class IndexOf>
+/// The portal `box` as the shaders take it (PunctualLightUniforms::portalAxis): the plane across its thinnest axis
+/// through its middle, its extent over the other two. Nothing for an empty or non-finite box.
+void packPortal(PunctualLightUniforms& entry, const core::Aabb& box) noexcept {
+    entry.portalAxis = -1;
+    entry.portalPlane = 0.0f;
+    entry.portalRect = glm::vec4(0.0f);
+    if (box.isEmpty() || !core::isFinite(box.min) || !core::isFinite(box.max)) {
+        return;
+    }
+    const glm::vec3 size = box.max - box.min;
+    int axis = 0;
+    for (int i = 1; i < 3; ++i) {
+        axis = size[i] < size[axis] ? i : axis;
+    }
+    const int u = axis == 0 ? 1 : 0;
+    const int v = axis == 2 ? 1 : 2;
+    entry.portalAxis = axis;
+    entry.portalPlane = (box.min[axis] + box.max[axis]) * 0.5f;
+    entry.portalRect = glm::vec4(box.min[u], box.min[v], box.max[u], box.max[v]);
+}
+
+/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`, the first `keyCandidates` of
+/// them the only ones that may be the key light (or `key`, the position of the key light, when set), each scaled by
+/// `weightOf(position)` and clipped to `portalOf(position)`.
+template <class IndexOf, class WeightOf, class PortalOf>
 PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count, IndexOf indexOf,
-                         const scene::EnvironmentSetup& environment) {
+                         const scene::EnvironmentSetup& environment, std::size_t keyCandidates,
+                         std::optional<std::size_t> key, float keyShadowWeight, WeightOf weightOf,
+                         PortalOf portalOf) {
     PackedLights packed;
     LightsUniforms& block = packed.uniforms;
     bool directionalUsed = false;
@@ -109,35 +134,39 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
             continue;
         }
         const scene::Light& light = lights[index];
-        // The first light that asks for shadows is the key light, whether or not it can have them.
-        const bool key = light.castsShadows && !keyLightSeen;
-        keyLightSeen = keyLightSeen || light.castsShadows;
-        if (key) {
+        // The first light that asks for shadows is the key light, whether or not it can have them; a neighbouring
+        // area's light (past the candidates) never is. A given key light is the one asking.
+        const bool asksForShadows = key ? position == *key : light.castsShadows && position < keyCandidates;
+        const bool isKey = asksForShadows && !keyLightSeen;
+        keyLightSeen = keyLightSeen || asksForShadows;
+        if (isKey) {
             packed.keyLight = index;
         }
         if (const auto reason = rejection(light)) {
-            drop(light, index, *reason, key);
+            drop(light, index, *reason, isKey);
             continue;
         }
         if (light.type == scene::LightType::Directional) {
             if (directionalUsed) {
-                drop(light, index, "only one directional light is supported", key);
+                drop(light, index, "only one directional light is supported", isKey);
                 continue;
             }
             directionalUsed = true;
             block.directionalDirection = *unitDirection(light.direction);
             block.directionalColor = light.color;
             block.directionalIntensity = light.intensity;
-            if (key) {
+            if (isKey) {
                 packed.shadowLight = keyLightOf(light, kDirectionalShadowLight, block.directionalDirection);
+                packed.shadowLight.strength *=
+                    std::isfinite(keyShadowWeight) ? std::clamp(keyShadowWeight, 0.0f, 1.0f) : 1.0f;
             }
             continue;
         }
         if (block.punctualLightCount >= static_cast<std::int32_t>(kMaxPunctualLights)) {
-            drop(light, index, fmt::format("more than {} point and spot lights", kMaxPunctualLights), key);
+            drop(light, index, fmt::format("more than {} point and spot lights", kMaxPunctualLights), isKey);
             continue;
         }
-        if (key && light.type == scene::LightType::Point) {
+        if (isKey && light.type == scene::LightType::Point) {
             packed.shadowNote = fmt::format(
                 "light '{}' casts shadows but is a point light: point-light shadows are not supported, make the key "
                 "light a spot",
@@ -147,15 +176,22 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
         entry.position = light.position;
         entry.range = std::max(light.range, kMinRange);
         entry.color = light.color;
-        entry.intensity = light.intensity;
+        const float given = weightOf(position);
+        const float weight = std::isfinite(given) ? std::clamp(given, 0.0f, 1.0f) : 1.0f;
+        entry.intensity = light.intensity * weight;
+        const core::Aabb* portal = portalOf(position);
+        packPortal(entry, portal != nullptr ? *portal : core::Aabb{});
+        packed.punctual.push_back({index, weight, entry.portalAxis >= 0});
         if (light.type == scene::LightType::Spot) {
             entry.direction = *unitDirection(light.direction);
             const glm::vec2 cone = spotConeScaleOffset(light.innerConeDeg, light.outerConeDeg);
             entry.spotScale = cone.x;
             entry.spotOffset = cone.y;
-            if (key) {
+            if (isKey) {
                 packed.shadowLight = keyLightOf(light, block.punctualLightCount - 1, entry.direction);
                 packed.shadowLight.range = entry.range;
+                packed.shadowLight.strength *=
+                    std::isfinite(keyShadowWeight) ? std::clamp(keyShadowWeight, 0.0f, 1.0f) : 1.0f;
             }
         } else {
             entry.direction = glm::vec3(0.0f, -1.0f, 0.0f); // unused: no cone
@@ -163,9 +199,7 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
             entry.spotOffset = 1.0f;
         }
     }
-    block.ambientSky = environment.ambientSky;
-    block.ambientGround = environment.ambientGround;
-    block.ambientIntensity = environment.ambientIntensity;
+    packAmbient(block, environment);
     return packed;
 }
 
@@ -173,14 +207,39 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
 
 PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
     return packIndexed(
-        lights, lights.size(), [](std::size_t position) { return position; }, environment);
+        lights, lights.size(), [](std::size_t position) { return position; }, environment, lights.size(),
+        std::nullopt, 1.0f, [](std::size_t) { return 1.0f; }, [](std::size_t) { return static_cast<const core::Aabb*>(nullptr); });
 }
 
 PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
+                        const scene::EnvironmentSetup& environment, std::size_t keyCandidates) {
+    LightSelection chosen;
+    chosen.indices = selection;
+    chosen.keyCandidates = keyCandidates;
+    return packLights(lights, chosen, environment);
+}
+
+PackedLights packLights(std::span<const scene::Light> lights, const LightSelection& selection,
                         const scene::EnvironmentSetup& environment) {
+    const std::span<const std::uint32_t> indices = selection.indices;
+    const std::span<const float> weights = selection.weights;
+    const std::span<const core::Aabb> portals = selection.portals;
     return packIndexed(
-        lights, selection.size(), [selection](std::size_t position) { return static_cast<std::size_t>(selection[position]); },
-        environment);
+        lights, indices.size(), [indices](std::size_t position) { return static_cast<std::size_t>(indices[position]); },
+        environment, selection.keyCandidates, selection.key, selection.keyShadowWeight,
+        [weights](std::size_t position) { return position < weights.size() ? weights[position] : 1.0f; },
+        [portals](std::size_t position) { return position < portals.size() ? &portals[position] : nullptr; });
+}
+
+void packAmbient(LightsUniforms& block, const scene::EnvironmentSetup& environment) noexcept {
+    block.ambientSky = environment.ambientSky;
+    block.ambientGround = environment.ambientGround;
+    block.ambientIntensity = environment.ambientIntensity;
+    block.ambientFill = environment.fillColor * environment.fillIntensity;
+    if (!core::isFinite(block.ambientFill) || block.ambientFill.r < 0.0f || block.ambientFill.g < 0.0f ||
+        block.ambientFill.b < 0.0f) {
+        block.ambientFill = glm::vec3(0.0f);
+    }
 }
 
 void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds) {

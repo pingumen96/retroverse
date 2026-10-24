@@ -19,9 +19,18 @@
   },
   "keyShadowStrength": 0.8,
   "environment": {
-    "clearColor": "#3A3836", "ambientSky": "#DCE4EE", "ambientGround": "#6A5E52", "ambientIntensity": 0.6,
+    "clearColor": "#3A3836", "ambientSky": "#DCE4EE", "ambientGround": "#A08A74", "ambientIntensity": 0.6,
+    "fillColor": "#F4E6D6", "fillIntensity": 0.1,
     "exposure": 1.35, "bloomStrength": 0.1, "bloomRadius": 0.5, "vignette": 0.03,
     "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  // The halls: the daylight reaches them too, their lamps a neutral warm white.
+  "hall": {
+    "light": {"color": "#FFE4C8", "intensity": 9, "range": 9},
+    "doorwayFill": {"color": "#FFEBD6", "intensity": 3, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
+                    "innerConeRatio": 0.4},
+    "environment": {"exposure": 1.35, "ambientSky": "#DCE4EE", "ambientGround": "#A08A74", "ambientIntensity": 0.6,
+                    "fillColor": "#F4E6D6", "fillIntensity": 0.12}
   },
   "accents": [
     {"name": "crt_glow", "anchor": "crt", "type": "spot", "position": [0.0, 0.3, 0.42], "target": [0.0, -0.1, 1.4],

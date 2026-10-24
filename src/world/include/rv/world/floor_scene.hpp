@@ -11,12 +11,14 @@
 //     room's area. A room keeps at most kMaxSceneLights lights (toSceneFile()'s rule).
 //   - The hall (floor_layout.hpp's deriveHall(); the ground floor's lobby): box primitives of the theme's floor, wall
 //     and ceiling materials that collide by their bounds (the walls; the floor and the ceiling collide with nothing),
-//     its lights (point lights of the profile's pendant style, as many as its length takes: the hall has no light
-//     limit), a lamp under each, the elevator stand-in (a frame, two closed doors, a call panel with its button), the
+//     its lights (point lights of the profile's hall role, as many as its length takes: the hall has no light limit),
+//     a lamp under each, a low fill spot before each doorway that opens onto it aimed into the room (the hall role's
+//     doorwayFill, I6 step 1), the elevator stand-in (a frame, two closed doors, a call panel with its button), the
 //     floor's sign above the elevator (building.json's text), and on the ground floor the closed entrance doors at the
 //     lobby's east end. Object ids "hall:<floor>/<part>"; its lights in the hall's area.
 //   - The areas (floorAreas()): each room's interior with its doorway's passage, and the hall's interior, from the
-//     floor up to their heights.
+//     floor up to their heights; the hall's with the hall role's environment (exposure, ambient, fill), the rooms'
+//     lit as the scene (I6 step 1, ADR-0014 §4).
 //   - The profile's environment, and a camera at the arrival point in front of the elevator, at eye height, facing
 //     east down the hall, its far plane sized to the floor.
 // The collection's items are not scene objects: floorCollectionLayout() gives each room's layout in the floor's frame.

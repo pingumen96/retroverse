@@ -45,7 +45,7 @@ namespace rv::world {
 inline constexpr std::int64_t kHallHeightMm = 3200;
 /// The pitch of the hall's lights from its west end, and how far below the ceiling they hang.
 inline constexpr std::int64_t kHallLightPitchMm = 6000;
-inline constexpr std::int64_t kHallLightDropMm = 300;
+inline constexpr std::int64_t kHallLightDropMm = 600;
 /// The shortest hall (the elevator's landing and a little more), so that a floor of few rooms, or none, reads as one.
 inline constexpr std::int64_t kMinHallLengthMm = 6000;
 /// The elevator's doors (two closed leaves), the frame around them and how far it stands proud of the west wall.
@@ -150,12 +150,15 @@ struct Hall {
 [[nodiscard]] Hall deriveHall(std::string_view floor, std::span<const FloorRoom> rooms, const BuildingLayout& layout);
 
 /// An area of a floor (ADR-0013 §9): a room's interior and its doorway's passage, or the hall's interior; footprints in
-/// the floor's frame, from the floor up to `heightMm`.
+/// the floor's frame, from the floor up to `heightMm`, a doorway's passage up to its head (`passageHeightMm`), so that
+/// the portal it shares with the hall is the opening (I6 step 1: the lights through it are clipped to it).
 struct FloorArea {
     /// A room's id ("room:snes"), or hallAreaId().
     std::string id;
     std::vector<Footprint> footprints;
     std::int64_t heightMm = 0;
+    /// The height of the footprints after the first (a room's doorway passage); 0: heightMm.
+    std::int64_t passageHeightMm = 0;
 
     bool operator==(const FloorArea&) const = default;
 };

@@ -230,10 +230,15 @@ std::optional<FloorView> buildFloor(CommandContext& context, const world::WorldP
         spdlog::info("worldplan show: {} slots {} to {} left bare: {}", span.level.toString(), span.firstSlot,
                      span.firstSlot + span.count - 1, span.reason);
     }
+    // The hall's lights: its ceiling lights and (I6 step 1) a fill spot before each doorway.
+    const std::string hallArea = world::hallAreaId(floor);
+    const auto hallLights =
+        std::count_if(view.build.sceneFile["lights"].begin(), view.build.sceneFile["lights"].end(),
+                      [&](const nlohmann::json& light) { return light.value("area", std::string()) == hallArea; });
     view.sceneLine = fmt::format("Scene {} of floor {}: {} objects, {} lights ({} in the hall), {} areas, {} dressed "
                                  "span(s) left bare\n",
                                  pathText(*scenePath), floor, view.build.sceneFile["objects"].size(),
-                                 view.build.sceneFile["lights"].size(), view.build.hall.lights.size(),
+                                 view.build.sceneFile["lights"].size(), hallLights,
                                  view.build.sceneFile["areas"].size(), view.build.undressed.size());
     return view;
 }

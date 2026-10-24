@@ -148,8 +148,13 @@ imported (`tests/fixtures/esde/building`, materialized by the tests; the GPU cas
 from the elevator facing east, room:snes's doorway on its north side, no gap in its walls. The elevator and the floor's
 sign: `--spawn 8,0,0,-90,0`; the north-row room from inside, looking out: `--spawn 7.65,0,-4.5,180,0`; the walk from
 the elevator into it: `--input-script tests/input_scripts/floor_walk_into_room.json --fixed-dt 0.016667 --frames 255`
-(the hall lit by its own lights, the room by its own; seen from one, the other shows its ambient only, ADR-0013's
-accepted cost). gen4 holds one room; the fixture's floor with rooms on both rows is `handheld` (`worldplan show --floor
+(since I6 step 1 each area also packs its neighbours' lights seen through the doorway: from the hall the room reads
+lit through its doorway, its key light, washers and sign spot on its hero wall and the hall's fill spot aimed into it,
+and from the room the hall beyond it; the upper walls and ceilings warm and dark, never black.
+`tests/smoke/test_world_floor.cpp`'s `world_floor_light` case renders every floor of `esde/building` from its
+elevator, and each room from the hall and looking out, with the same views with only the neighbours cut
+(`*_cut.png`) and as I4 lit them (`*_i4.png`), and views tilted up and down beside the doorway for the leak probes,
+in `build/<preset>/smoke/world_floor_light`). gen4 holds one room; the fixture's floor with rooms on both rows is `handheld` (`worldplan show --floor
 handheld --scene build/scenes/handheld.json`): from the elevator, room:gb's doorway on the north side faces, doors
 aligned across the 12.3 m hall, that of the floor's shared room `area:shared:handheld` on the south side (I4 step 4: the
 sections of pocketlab and pokemini, the sign "MORE GAMES", the CRT on its cabinet without a console); the south-row

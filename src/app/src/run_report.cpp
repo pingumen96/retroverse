@@ -2066,11 +2066,32 @@ std::string formatRunReport(const RunReport& report) {
         for (const SceneAreaChange& change : report.sceneAreas->changes) {
             changes.push_back(Json{{"frame", change.frame}, {"area", change.area}});
         }
+        Json packed = Json::array();
+        for (const PackedLightRecord& light : report.sceneAreas->packed) {
+            packed.push_back(Json{{"name", light.name}, {"weight", light.weight}, {"clipped", light.clipped}});
+        }
+        const auto sampleJson = [](const SceneLightingSample& sample) {
+            return Json{{"frame", sample.frame},
+                        {"area", sample.area},
+                        {"exposure", sample.exposure},
+                        {"ambientIntensity", sample.ambientIntensity},
+                        {"fillIntensity", sample.fillIntensity},
+                        {"lights", sample.lights},
+                        {"fading", sample.fading},
+                        {"weight", sample.weight}};
+        };
+        Json samples = Json::array();
+        for (const SceneLightingSample& sample : report.sceneAreas->samples) {
+            samples.push_back(sampleJson(sample));
+        }
         json["sceneAreas"] = Json{{"areas", report.sceneAreas->areas},
                                   {"area", report.sceneAreas->area},
                                   {"lights", report.sceneAreas->lights},
                                   {"keyLight", report.sceneAreas->keyLight},
-                                  {"changes", std::move(changes)}};
+                                  {"changes", std::move(changes)},
+                                  {"packed", std::move(packed)},
+                                  {"last", sampleJson(report.sceneAreas->last)},
+                                  {"samples", std::move(samples)}};
     }
     if (report.catalog) {
         json["catalog"] = catalogToJson(*report.catalog);
@@ -2181,6 +2202,28 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
         record.keyLight = areas->string("keyLight");
         for (FieldReader& change : areas->objectArray("changes")) {
             record.changes.push_back(SceneAreaChange{change.count("frame"), change.string("area")});
+        }
+        for (FieldReader& light : areas->objectArray("packed")) {
+            record.packed.push_back(
+                PackedLightRecord{light.string("name"), light.number("weight"), light.boolean("clipped")});
+        }
+        const auto readSample = [](FieldReader& sample) {
+            SceneLightingSample result;
+            result.frame = sample.count("frame");
+            result.area = sample.string("area");
+            result.exposure = sample.number("exposure");
+            result.ambientIntensity = sample.number("ambientIntensity");
+            result.fillIntensity = sample.number("fillIntensity");
+            result.lights = static_cast<std::size_t>(sample.count("lights", kMaxSize));
+            result.fading = static_cast<std::size_t>(sample.count("fading", kMaxSize));
+            result.weight = sample.number("weight");
+            return result;
+        };
+        if (auto last = areas->object("last")) {
+            record.last = readSample(*last);
+        }
+        for (FieldReader& sample : areas->objectArray("samples")) {
+            record.samples.push_back(readSample(sample));
         }
         report.sceneAreas = std::move(record);
     }

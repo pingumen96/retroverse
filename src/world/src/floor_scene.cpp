@@ -53,6 +53,13 @@ constexpr double kSignHeightM = 0.4;
 constexpr double kSignFrameM = 0.025;
 constexpr double kSignDepthM = 0.04;
 constexpr std::int64_t kSignCentreMm = 2750;
+/// The fill spot before each doorway (I6 step 1): this far into the hall from its edge, this far below the doorway's
+/// head, aimed at a point this far into the room at this height (the cases and the hero wall at eye height rather than
+/// the floor).
+constexpr std::int64_t kDoorwayFillSetbackMm = 900;
+constexpr std::int64_t kDoorwayFillBelowHeadMm = 300;
+constexpr std::int64_t kDoorwayFillReachMm = 4000;
+constexpr std::int64_t kDoorwayFillTargetHeightMm = 1200;
 
 double meters(std::int64_t millimetres) noexcept {
     return static_cast<double>(millimetres) / 1000.0;
@@ -113,13 +120,25 @@ json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm
     return object;
 }
 
-json areaJson(const FloorArea& area) {
+/// An area of the floor; `look` its own lit terms (the hall's), none for an area lit as the scene (a room).
+json areaJson(const FloorArea& area, const AreaLook* look) {
     json boxes = json::array();
-    for (const Footprint& footprint : area.footprints) {
+    for (std::size_t i = 0; i < area.footprints.size(); ++i) {
+        const Footprint& footprint = area.footprints[i];
+        const std::int64_t height = i > 0 && area.passageHeightMm > 0 ? area.passageHeightMm : area.heightMm;
         boxes.push_back(json{{"min", vec3Json(meters(footprint.minXMm), 0.0, meters(footprint.minZMm))},
-                             {"max", vec3Json(meters(footprint.maxXMm), meters(area.heightMm), meters(footprint.maxZMm))}});
+                             {"max", vec3Json(meters(footprint.maxXMm), meters(height), meters(footprint.maxZMm))}});
     }
-    return json{{"id", area.id}, {"boxes", std::move(boxes)}};
+    json result{{"id", area.id}, {"boxes", std::move(boxes)}};
+    if (look != nullptr) {
+        result["environment"] = json{{"exposure", look->exposure},
+                                     {"ambientSky", look->ambientSky},
+                                     {"ambientGround", look->ambientGround},
+                                     {"ambientIntensity", look->ambientIntensity},
+                                     {"fillColor", look->fillColor},
+                                     {"fillIntensity", look->fillIntensity}};
+    }
+    return result;
 }
 
 /// The hall's objects (see the header): its floor, ceiling and walls, its lamps, the elevator, the sign and the lobby's
@@ -199,19 +218,51 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
     }
 }
 
-/// The hall's lights: the profile's pendant style, on its centre line below the ceiling, in the hall's area.
+/// The hall's lights, in the hall's area: the profile's hall light on its centre line below the ceiling, then a fill
+/// spot before each doorway that opens onto it (by room id), low in the hall and aimed through the doorway into the
+/// room, its outer cone the half angle the opening's width subtends at the aim point's distance plus the style's margin
+/// (at least its minimum), so that it lights the room's middle rather than the walls beside the doorway.
 void addHallLights(const Hall& hall, const LightingProfile& lighting, json& lights) {
-    const LightStyle& style = lighting.style(LightRole::Pendant);
+    const LightStyle& style = lighting.hall.light;
+    const std::string area = hallAreaId(hall.floor);
     for (std::size_t i = 0; i < hall.lights.size(); ++i) {
         const FloorPoint& light = hall.lights[i];
-        lights.push_back(json{{"name", hallAreaId(hall.floor) + "/light-" + std::to_string(i)},
+        lights.push_back(json{{"name", area + "/light-" + std::to_string(i)},
                               {"type", "point"},
                               {"position", vec3Json(meters(light.xMm), meters(hall.heightMm - kHallLightDropMm),
                                                     meters(light.zMm))},
                               {"color", style.color},
                               {"intensity", style.intensity},
                               {"range", style.range},
-                              {"area", hallAreaId(hall.floor)}});
+                              {"area", area}});
+    }
+    const LightStyle& fill = lighting.hall.doorwayFill;
+    for (const FloorDoorway& doorway : hall.doorways) {
+        if (!doorway.opensOntoHall()) {
+            continue;
+        }
+        // Into the room: north (-z) for the north row, south for the south row.
+        const std::int64_t inward = doorway.hallEdgeZMm < 0 ? -1 : 1;
+        const std::int64_t x = (doorway.minMm + doorway.maxMm) / 2;
+        const std::int64_t y = std::max<std::int64_t>(kDoorwayFillTargetHeightMm, doorway.heightMm - kDoorwayFillBelowHeadMm);
+        const std::int64_t z = doorway.hallEdgeZMm - inward * kDoorwayFillSetbackMm;
+        // The opening's half width seen from the aim point's distance: the cone covers the room's middle through the
+        // doorway, not the walls beside it inside the room.
+        const double halfOpening = std::atan2(meters(doorway.maxMm - doorway.minMm) / 2.0,
+                                              meters(kDoorwayFillSetbackMm + kDoorwayFillReachMm));
+        const double outer = std::clamp(halfOpening * 180.0 / 3.14159265358979323846 + fill.coneMarginDeg,
+                                        fill.minOuterConeDeg, kMaxOuterConeDeg);
+        lights.push_back(json{{"name", area + "/doorway-fill:" + doorway.room.toString()},
+                              {"type", "spot"},
+                              {"position", vec3Json(meters(x), meters(y), meters(z))},
+                              {"target", vec3Json(meters(x), meters(kDoorwayFillTargetHeightMm),
+                                                  meters(doorway.hallEdgeZMm + inward * kDoorwayFillReachMm))},
+                              {"color", fill.color},
+                              {"intensity", fill.intensity},
+                              {"range", fill.range},
+                              {"innerConeDeg", rounded(outer * fill.innerConeRatio, 1e4)},
+                              {"outerConeDeg", rounded(outer, 1e4)},
+                              {"area", area}});
     }
 }
 
@@ -334,9 +385,11 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     addHallObjects(build.hall, sign, theme, objects);
     addHallLights(build.hall, data.lighting, lights);
 
+    // The rooms' areas are lit as the scene (the profile's environment); the hall by the hall role's own terms.
     json areas = json::array();
+    const std::string hallArea = hallAreaId(floor);
     for (const FloorArea& area : floorAreas(build.hall, floorRooms)) {
-        areas.push_back(areaJson(area));
+        areas.push_back(areaJson(area, area.id == hallArea ? &data.lighting.hall.environment : nullptr));
     }
 
     // The floor's extent: the hall with its walls and every room's footprint.
@@ -359,6 +412,8 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
                            {"ambientSky", profile.ambientSky},
                            {"ambientGround", profile.ambientGround},
                            {"ambientIntensity", profile.ambientIntensity},
+                           {"fillColor", profile.fillColor},
+                           {"fillIntensity", profile.fillIntensity},
                            {"exposure", profile.exposure},
                            {"bloomStrength", profile.bloomStrength},
                            {"bloomRadius", profile.bloomRadius},

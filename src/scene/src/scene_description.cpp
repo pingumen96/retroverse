@@ -357,14 +357,17 @@ Expected<SsaoSetup> parseSsao(const json& value, const Location& at) {
 
 Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
-                  {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "exposure", "bloomStrength",
-                   "bloomRadius", "vignette", "ssao"});
+                  {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
+                   "exposure", "bloomStrength", "bloomRadius", "vignette", "ssao"});
     EnvironmentSetup environment;
     fields.optional("clearColor", environment.clearColor, readColor);
     fields.optional("ambientSky", environment.ambientSky, readColor);
     fields.optional("ambientGround", environment.ambientGround, readColor);
     fields.optional("ambientIntensity", environment.ambientIntensity, readNumber);
     fields.check(environment.ambientIntensity >= 0.0f, "ambientIntensity", "must be >= 0");
+    fields.optional("fillColor", environment.fillColor, readColor);
+    fields.optional("fillIntensity", environment.fillIntensity, readNumber);
+    fields.check(environment.fillIntensity >= 0.0f, "fillIntensity", "must be >= 0");
     fields.optional("exposure", environment.exposure, readNumber);
     fields.check(environment.exposure > 0.0f, "exposure", "must be > 0");
     fields.optional("bloomStrength", environment.bloomStrength, readNumber);
@@ -461,8 +464,27 @@ Expected<core::Aabb> parseAreaBox(const json& value, const Location& at) {
     return core::Aabb::fromMinMax(minimum, maximum);
 }
 
+Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location& at) {
+    Fields fields(value, at,
+                  {"exposure", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity"});
+    AreaEnvironment environment;
+    fields.optional("exposure", environment.exposure, readNumber);
+    fields.check(environment.exposure.value_or(1.0f) > 0.0f, "exposure", "must be > 0");
+    fields.optional("ambientSky", environment.ambientSky, readColor);
+    fields.optional("ambientGround", environment.ambientGround, readColor);
+    fields.optional("ambientIntensity", environment.ambientIntensity, readNumber);
+    fields.check(environment.ambientIntensity.value_or(0.0f) >= 0.0f, "ambientIntensity", "must be >= 0");
+    fields.optional("fillColor", environment.fillColor, readColor);
+    fields.optional("fillIntensity", environment.fillIntensity, readNumber);
+    fields.check(environment.fillIntensity.value_or(0.0f) >= 0.0f, "fillIntensity", "must be >= 0");
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return environment;
+}
+
 Expected<SceneArea> parseArea(const json& value, const Location& at) {
-    Fields fields(value, at, {"id", "boxes"});
+    Fields fields(value, at, {"id", "boxes", "environment"});
     SceneArea area;
     fields.required("id", area.id, readNonEmptyString);
     fields.required("boxes", area.boxes, [](const json& boxes, const Location& boxesAt) -> Expected<std::vector<core::Aabb>> {
@@ -480,6 +502,7 @@ Expected<SceneArea> parseArea(const json& value, const Location& at) {
         }
         return result;
     });
+    fields.optional("environment", area.environment, parseAreaEnvironment);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -793,6 +816,17 @@ std::span<const glm::mat4> SceneObject::instanceTransforms() const noexcept {
 std::string_view SceneObject::materialNameForRole(std::string_view role) const {
     const auto it = materialsByRole.find(std::string(role));
     return it != materialsByRole.end() ? std::string_view(it->second) : std::string_view(material);
+}
+
+EnvironmentSetup AreaEnvironment::over(const EnvironmentSetup& scene) const {
+    EnvironmentSetup result = scene;
+    result.exposure = exposure.value_or(scene.exposure);
+    result.ambientSky = ambientSky.value_or(scene.ambientSky);
+    result.ambientGround = ambientGround.value_or(scene.ambientGround);
+    result.ambientIntensity = ambientIntensity.value_or(scene.ambientIntensity);
+    result.fillColor = fillColor.value_or(scene.fillColor);
+    result.fillIntensity = fillIntensity.value_or(scene.fillIntensity);
+    return result;
 }
 
 bool SceneArea::contains(const glm::vec3& point) const noexcept {

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ee78cbcaf837e64e7a3db8b5eab49de452d79766",
+    "gitCommit": "ad5512388df3439d51b194fd100ee14e1cda996d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g13_shared_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "8006f7d70f993de2d6afcac5b71084a5a22695c55aaf91f38bcd09507dd1053c",
+    "sha256": "718d389551cd6a5ea1eefa8928735f1598baccf6c634016e7c9045b96df406bb",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
+      "sha256": "bdf81a6007aad2d747afe28b7a0f6084f4d2a3c7b7121ccd4e5b9bc233268ae1"
     }
   },
-  "renderedOn": "2026-10-21",
+  "renderedOn": "2026-10-24",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
