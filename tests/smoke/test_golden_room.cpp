@@ -818,8 +818,9 @@ TEST_CASE("golden/G11: the building's lobby from the elevator's arrival point", 
                        "room's open doorway on the north side with its lamp seen through it, the closed entrance doors "
                        "at the east end (since I6 step 1 lit by the hall's own lights and the arcade room's seen "
                        "through its doorway, the hall's own ambient and fill; since I6 step 2 dressed: a panelled "
-                       "wainscot under warm plaster, the arcade room's portal with its lit sign and a beam over it, "
-                       "sconces and prints in turn, a bench, plants and the runner).",
+                       "wainscot under dark warm plaster, beams across a darker ceiling and drum pendants, the arcade "
+                       "room's portal with its lit sign over it and on a blade sign, sconces washing the wall and muted "
+                       "prints in turn, a bench with a plant, the runner, the elevator's brass doors behind).",
                        "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)",
                        std::nullopt},
                       room, run, shot, kFrames);
