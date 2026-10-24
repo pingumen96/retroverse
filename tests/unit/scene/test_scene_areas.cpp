@@ -605,6 +605,20 @@ TEST_CASE("scene/areas: an area's environment over the scene's, eased between ar
     CHECK(hall.ambientIntensity == 0.3f); // the scene's where the area sets nothing
     CHECK(rv::scene::AreaEnvironment{}.over(scene).exposure == 1.5f);
     CHECK_FALSE(rv::scene::sameAreaTerms(scene, hall));
+    // The bloom an area may set (I6 step 3), an area term eased like the others.
+    rv::scene::AreaEnvironment bloomTerms;
+    bloomTerms.bloomStrength = 0.28f;
+    const rv::scene::EnvironmentSetup blooming = bloomTerms.over(scene);
+    CHECK(blooming.bloomStrength == 0.28f);
+    CHECK(blooming.exposure == scene.exposure);
+    CHECK_FALSE(rv::scene::sameAreaTerms(scene, blooming));
+    rv::scene::EnvironmentEase bloomEase(scene);
+    bloomEase.retarget(blooming, false);
+    for (int i = 0; i < 15; ++i) {
+        (void)bloomEase.advance(1.0f / 60.0f);
+    }
+    CHECK(bloomEase.current().bloomStrength > scene.bloomStrength);
+    CHECK(bloomEase.current().bloomStrength < 0.28f);
 
     // From the room's environment to the hall's in half a second, smoothly, the same at every fixed step.
     rv::scene::EnvironmentEase ease(scene);
@@ -692,6 +706,18 @@ TEST_CASE("scene/areas: a scene file's areas and its lights' areas", "[scene][ar
                     nlohmann::json::parse(R"({"schemaVersion": 1, "name": "x", "environment": {"fillIntensity": -1}})"),
                     "x.json")
                     .has_value());
+    // An area's own bloom (I6 step 3: a theme pack's, the arcade's), within [0, 1].
+    const auto bloom = rv::scene::parseSceneDescription(nlohmann::json::parse(R"({"schemaVersion": 1, "name": "x",
+        "areas": [{"id": "a", "boxes": [{"min": [0, 0, 0], "max": [1, 1, 1]}],
+                   "environment": {"bloomStrength": 0.28}}]})"),
+                                                        "x.json");
+    REQUIRE(bloom.has_value());
+    CHECK(bloom->areas[0].environment.bloomStrength == 0.28f);
+    CHECK_FALSE(rv::scene::parseSceneDescription(nlohmann::json::parse(R"({"schemaVersion": 1, "name": "x",
+        "areas": [{"id": "a", "boxes": [{"min": [0, 0, 0], "max": [1, 1, 1]}],
+                   "environment": {"bloomStrength": 2}}]})"),
+                                                 "x.json")
+                     .has_value());
 
     // A scene without areas reads as before: no area, lights without one.
     const auto plain = rv::scene::parseSceneDescription(

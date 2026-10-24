@@ -79,7 +79,8 @@ namespace rv::scene {
 ///         "exposure": 1.5, "ambientSky": "#...",   each optional, the scene's "environment" for those it lacks;
 ///         "ambientGround": "#...",                 the views ease to the eye's area's over about half a second
 ///         "ambientIntensity": 0.3,                 (scene_areas.hpp's EnvironmentEase)
-///         "fillColor": "#...", "fillIntensity": 0.1
+///         "fillColor": "#...", "fillIntensity": 0.1,
+///         "bloomStrength": 0.28                    [0, 1] (I6 step 3: a theme pack's bloom, the arcade's)
 ///       }
 ///     }],
 ///     "objects": [{                                optional
@@ -207,6 +208,7 @@ struct AreaEnvironment {
     std::optional<float> ambientIntensity;
     std::optional<glm::vec3> fillColor;
     std::optional<float> fillIntensity;
+    std::optional<float> bloomStrength;
 
     /// `scene` with these terms in place of its own.
     [[nodiscard]] EnvironmentSetup over(const EnvironmentSetup& scene) const;

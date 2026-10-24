@@ -192,13 +192,14 @@ private:
 };
 
 /// True when `a` and `b` have the same area terms (exposure, ambient sky, ground and intensity, fill colour and
-/// intensity), the terms an area may set (AreaEnvironment).
+/// intensity, bloom strength since I6 step 3), the terms an area may set (AreaEnvironment).
 [[nodiscard]] bool sameAreaTerms(const EnvironmentSetup& a, const EnvironmentSetup& b) noexcept;
 
 /// The environment the views use in a scene with areas: the eye's area's (AreaEnvironment::over() the scene's), eased
 /// over kAreaEnvironmentEaseSeconds when the eye changes areas (smoothstep of the time since the change, from wherever
-/// the previous ease stood), instant under reduceMotion. Only the area terms ease (exposure, ambient, fill); the rest
-/// is the target's at once. Advanced by the caller's frame time, so a run with a fixed step eases alike every time.
+/// the previous ease stood), instant under reduceMotion. Only the area terms ease (exposure, ambient, fill, bloom); the
+/// rest is the target's at once. Advanced by the caller's frame time, so a run with a fixed step eases alike every
+/// time.
 class EnvironmentEase {
 public:
     EnvironmentEase() = default;
