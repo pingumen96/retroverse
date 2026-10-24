@@ -112,8 +112,10 @@ checks the run report and compares within G01's tolerance (`comparison.txt` and 
 step 8, the same file, `gpu.golden/G11` ... `G13`) are made the same way from `esde/building` under the shipped
 threshold (no `world.json`): G11 (`g11_lobby_golden.png`: the ground floor's lobby from the elevator's arrival point,
 no `--start-room`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:psx`, the jewel cases of
-`disc_case_cd` from the doorway) and G13 (`g13_shared_room_golden.png`: `--start-room area:shared:handheld`, the
-handheld floor's shared room of two sections, generic cases, from the doorway). `$env:RV_UPDATE_GOLDEN=1;
+`disc_case_cd_v2` from the doorway, every one face-out) and G13 (`g13_shared_room_golden.png`: `--start-room
+area:shared:handheld`, the handheld floor's shared room of two sections, generic cases of `generic_case_v2`, from the
+doorway); the cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
+`esde/case-shelves` fixture: 160 jewel cases, 120 big boxes, most of them spine-out). `$env:RV_UPDATE_GOLDEN=1;
 build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"` rewrites one (then the case fails: look at it, run it
 again without the variable, update `docs/testing/gate-b.md`'s or `gate-c.md`'s page). The room's own screenshots: a data directory
 with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>

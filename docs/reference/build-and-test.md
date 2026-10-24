@@ -220,7 +220,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   within the acceptable row (10 s cold, 3 s warm) and with the destination's arrays, and `worldplan update`; since I4
   step 8 the building planned a second time from nothing with one plan digest and file SHA-256, and the room that
   holds the walker after each ride within its row (30 s cold, 3 s warm); the figures printed as "Real building:"
-  lines, the runs' reports left for Gate C). `-OutDir <dir>`
+  lines, the runs' reports left for Gate C; since I6 step 4 a second case under `build/<preset>/real-library/migration`
+  plans the library with generator 1.3's `retroverse-cli.exe`, named by `RV_LEGACY_CLI` (`docs/i6/step-4.md`; skipped
+  without it), then starts this build on it: the rooms of succeeded families migrated once, the others unchanged, none
+  over capacity, nothing written by a second start). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

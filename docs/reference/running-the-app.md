@@ -229,9 +229,11 @@ build/rvdata`).
   or updates its rooms as `worldplan update` does (each system's selection to the room that holds its section; a shared
   or arcade room lacking a section's selection held as it is, logged; a new system with a placeable title enters, its
   own room or a section, logged, since I4 step 6b), saves it
-  under `<user data>/worlds/<library id>/` (generator 1.3, schema 2; a stored schema-1 plan of I3 is read lifted and
+  under `<user data>/worlds/<library id>/` (generator 1.4, schema 2; a stored schema-1 plan of I3 is read lifted and
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
-  with the regeneration's notice and its new games unplaced as `room-kept`) and writes, only when they changed, each
+  with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
+  planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run
+  report's `world.migratedRooms` and with the notice `rooms-migrated`) and writes, only when they changed, each
   system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
   system's full name and platform tags, and since I4 step 6b each placed game's CRT data: its clip, screenshot and title
   screen, its last play, its title's priority; a system of a shared room has its own, its section's games with their
@@ -278,7 +280,8 @@ build/rvdata`).
   view and the hovered item's hero texture, and for the whole floor before their last frame (10 s at a time): a stored
   floor at frame 0, the reconciled one from frame 1.
   The item the reticle rests on within 2.5 m is outlined and labelled with its title; after 150 ms it leaves its slot (a
-  face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer). E, a captured left
+  face-out cartridge tips forward, a spine-out one slides out and turns its cover to the viewer; a case or box standing
+  on its side, I6 step 4, slides out like a book and turns its cover to the viewer, upright). E, a captured left
   click or the pad's south button focuses a spine-out cartridge (the walker eased to 0.9 m in front of it) or inspects a
   face-out one; in Focus the arrows and the D-pad step between cartridges (repeating while held). In Inspect the item is
   held upright 0.45 m in front of the eye, left of and below the view's centre (beside the card), the scene dimmed by
