@@ -29,19 +29,24 @@ constexpr double kMinFarM = 100.0;
 constexpr double kMetersPerTile = 2.0;
 constexpr double kWoodMetersPerTile = 1.0;
 constexpr std::int64_t kSlabMm = 20;
-/// The hall's fixed materials (library names): the elevator's graphite frame and brushed doors, a black call panel
-/// with a lit button, the lamps' shades, the lobby's walnut and varnished entrance. The rest is the theme pack's
-/// "hall" kind (room_look.hpp).
+/// The hall's fixed materials (library names): the elevator's graphite frame and brass doors, a black call panel
+/// with a lit button, the lamps' shades, the blade signs' graphite arms, the lobby's walnut and varnished entrance. The
+/// rest is the theme pack's "hall" kind (room_look.hpp).
 constexpr std::string_view kElevatorFrameMaterial = "MAT_Metal_Graphite";
-constexpr std::string_view kElevatorDoorMaterial = "MAT_Metal_Brushed";
+constexpr std::string_view kElevatorDoorMaterial = "MAT_Metal_Brass";
+constexpr std::string_view kBladeArmMaterial = "MAT_Metal_Graphite";
 constexpr std::string_view kPanelMaterial = "MAT_Plastic_Black";
 constexpr std::string_view kButtonMaterial = "MAT_Screen_Emissive";
 constexpr std::string_view kLampMaterial = "MAT_Lamp_Shade";
 constexpr std::string_view kEntranceFrameMaterial = "MAT_Wood_Walnut";
 constexpr std::string_view kEntranceDoorMaterial = "MAT_Wood_Varnished";
-/// The lamps under the hall's lights (flush with the ceiling) and the elevator's call panel and button, millimetres.
-constexpr std::int64_t kLampSideMm = 500;
-constexpr std::int64_t kLampDepthMm = 40;
+/// The lamps of the hall's lights (a drum pendant just above each light, its bulb at the drum's foot, on a stem from
+/// the ceiling: high enough that from down the hall it never hides the floor's sign over the elevator) and the
+/// elevator's call panel and button, millimetres.
+constexpr std::int64_t kLampRadiusMm = 200;
+constexpr std::int64_t kLampHeightMm = 200;
+constexpr std::int64_t kLampAboveLightMm = 120;
+constexpr int kLampSegments = 32;
 constexpr std::int64_t kLampStemMm = 30;
 constexpr std::int64_t kDoorGapMm = 10;
 constexpr std::int64_t kDoorLeafDepthMm = 20;
@@ -94,8 +99,37 @@ constexpr double kPortalSignFrameM = 0.03;
 constexpr double kPortalSignDepthM = 0.04;
 constexpr std::int64_t kBeamWidthMm = 200;
 constexpr std::int64_t kBeamDepthMm = 220;
-/// A sconce: a backplate and a lit shade standing off it, centred this high (above the head: it blocks nothing).
+/// The beams across the ceiling: one every kBeamPitchMm from the west end (x = pitch, 2 pitch, ... while
+/// kBeamEndClearMm short of the east end: a longer hall appends beams), and one over each doorway that no beam of that
+/// grid passes within kBeamMergeMm of (the grid's beam serves it).
+constexpr std::int64_t kBeamPitchMm = 3000;
+constexpr std::int64_t kBeamEndClearMm = 1000;
+constexpr std::int64_t kBeamMergeMm = 750;
+/// A blade sign beside each portal (the room's sign again, readable down the hall): a double-sided panel this wide and
+/// high, centred this high and this far out from the wall, kBladeOffsetMm from the doorway's centre towards the
+/// elevator, hanging from a graphite arm under the ceiling; left out of a hall narrower than kBladeMinHallMm (the
+/// blades of two doorways facing each other must not meet).
+constexpr double kBladeWidthM = 0.8;
+constexpr double kBladeHeightM = 0.24;
+constexpr double kBladeFrameM = 0.025;
+constexpr double kBladeDepthM = 0.02;
+constexpr std::int64_t kBladeCentreMm = 2620;
+constexpr std::int64_t kBladeOutMm = 460;
+constexpr std::int64_t kBladeOffsetMm = 1050;
+constexpr std::int64_t kBladeArmMm = 20;
+constexpr std::int64_t kBladeArmYMm = 2760;
+constexpr std::int64_t kBladeArmLengthMm = 900;
+constexpr std::int64_t kBladeMinHallMm = 2400;
+/// What a portal's sign reads when its room has no sign text (never the room's id).
+constexpr std::string_view kGenericSign = "GAME ROOM";
+/// A sconce: a backplate and a lit shade standing off it, centred this high (above the head: it blocks nothing, and
+/// collides with nothing), and its wash on the wall: a quad this wide and high, centred this far above the shade, this
+/// far off the plaster.
 constexpr std::int64_t kSconceCentreMm = 1950;
+constexpr double kWashWidthM = 1.0;
+constexpr double kWashHeightM = 1.5;
+constexpr std::int64_t kWashAboveMm = 50;
+constexpr double kWashOffM = 0.0015;
 constexpr std::int64_t kSconcePlateWidthMm = 100;
 constexpr std::int64_t kSconcePlateHeightMm = 240;
 constexpr std::int64_t kSconcePlateDepthMm = 18;
@@ -105,7 +139,7 @@ constexpr int kSconceShadeSegments = 24;
 constexpr double kEndPrintWidthM = 0.9;
 constexpr double kEndPrintHeightM = 1.2;
 constexpr std::int64_t kEndPrintCentreMm = 1750;
-/// A print: a framed portrait picture centred this high.
+/// A print: a framed picture (portrait, or landscape: floor_layout.hpp's widths turned) centred this high.
 constexpr std::int64_t kPictureCentreMm = 1620;
 constexpr double kPictureHeightM = 0.76;
 constexpr double kPictureFrameM = 0.04;
@@ -116,21 +150,28 @@ constexpr std::int64_t kBenchSeatMm = 400;
 constexpr std::int64_t kBenchBoardMm = 40;
 constexpr std::int64_t kBenchCushionMm = 60;
 constexpr std::int64_t kBenchCushionInsetMm = 30;
-/// A plant: the plant prefab this tall, its pot this wide and tall, this many leaves.
+/// A plant: the plant prefab this tall, its pot this wide and tall, this many leaves, on a saucer a little wider than
+/// the pot.
 constexpr double kPlantHeightM = 1.15;
 constexpr double kPlantPotRadiusM = 0.17;
 constexpr double kPlantPotHeightM = 0.34;
 constexpr int kPlantLeaves = 16;
+constexpr double kPlantSaucerRadiusM = 0.196;
 /// The runner: rugs (the rug prefab's own size, its picture's) end to end down the hall's middle from past the
 /// elevator's zone, while they end this far before the east end: a longer hall appends rugs and moves none.
 constexpr std::int64_t kRunnerStartMm = 1800;
 constexpr std::int64_t kRunnerLengthMm = 2400;
 constexpr std::int64_t kRunnerWidthMm = 1600;
 constexpr std::int64_t kRunnerEndClearMm = 600;
-/// Invented print titles for the hall's pictures (style §17.2: no real title or brand).
-constexpr std::array<std::string_view, 8> kHallPrintTitles{"SAVE POINT",   "PLAYER ONE",   "HIGH SCORE",
-                                                           "LEVEL SELECT", "INSERT COIN",  "BONUS STAGE",
-                                                           "CONTINUE",     "PRESS START"};
+/// Invented print titles for the hall's pictures (style §17.2: no real title or brand). A print takes the title of
+/// its place along its edge (its slot / 2) plus its edge's and its floor's offsets, so that neighbours never repeat
+/// (the same title comes back every 16 prints of an edge, 48 m) and a longer hall appends titles; each title is drawn
+/// with one seed (its own), so that the prints share a small pool of pictures.
+constexpr std::array<std::string_view, 16> kHallPrintTitles{
+    "SAVE POINT", "PLAYER ONE", "HIGH SCORE", "LEVEL SELECT", "INSERT COIN", "BONUS STAGE", "CONTINUE",  "PRESS START",
+    "EXTRA LIFE", "WORLD MAP",  "TIME ATTACK", "POWER UP",    "BOSS RUSH",   "NEW RECORD",  "TWO PLAYERS", "GAME OVER"};
+/// The south edge's titles start half the list on from the north edge's.
+constexpr std::size_t kSouthTitleOffset = 8;
 
 double meters(std::int64_t millimetres) noexcept {
     return static_cast<double>(millimetres) / 1000.0;
@@ -168,11 +209,12 @@ double floorYaw(double yawDeg, const RoomPlacement& placement) {
     return rounded(turned, 1e4);
 }
 
-/// How a box's faces are textured: in meters every kMetersPerTile (plaster, planks), or along the grain (wood).
-enum class BoxUvMode : std::uint8_t { Meters, Grain };
+/// How a box's faces are textured: in meters every kMetersPerTile (planks), the same anchored at the box's place on the
+/// floor (plaster: boxes side by side tile on without a seam), or along the grain (wood).
+enum class BoxUvMode : std::uint8_t { Meters, PlacedMeters, Grain };
 
-/// A box primitive: `footprint` on the floor from `bottomMm` to `topMm`, of `material`, uvs in meters (or along the
-/// grain).
+/// A box primitive: `footprint` on the floor from `bottomMm` to `topMm`, of `material`, uvs in meters (anchored at its
+/// place, or along the grain).
 json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm, std::int64_t topMm,
                std::string_view material, bool collides, bool castsShadows, BoxUvMode uv = BoxUvMode::Meters) {
     const double centreX = static_cast<double>(footprint.minXMm + footprint.maxXMm) / 2000.0;
@@ -186,6 +228,9 @@ json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm
                                 {"metersPerTile", uv == BoxUvMode::Grain ? kWoodMetersPerTile : kMetersPerTile}}},
                 {"position", vec3Json(centreX, centreY, centreZ)},
                 {"material", std::string(material)}};
+    if (uv == BoxUvMode::PlacedMeters) {
+        object["params"]["uvOrigin"] = vec3Json(centreX, centreY, centreZ);
+    }
     if (!collides) {
         object["collides"] = false;
     }
@@ -216,10 +261,10 @@ json areaJson(const FloorArea& area, const AreaLook* look) {
     return result;
 }
 
-/// The materials of the hall's roles: the theme's "hall" kind, a role it lacks the built-in pack's.
-std::map<std::string, std::string> hallMaterials(const ThemeMaterials& theme) {
-    std::map<std::string, std::string> materials = builtInThemeMaterials().materials("hall");
-    for (const auto& [role, material] : theme.materials("hall")) {
+/// The materials of the roles of `kind` the hall uses: the theme's, a role it lacks the built-in pack's.
+std::map<std::string, std::string> kindMaterials(const ThemeMaterials& theme, std::string_view kind) {
+    std::map<std::string, std::string> materials = builtInThemeMaterials().materials(kind);
+    for (const auto& [role, material] : theme.materials(kind)) {
         materials[role] = material;
     }
     return materials;
@@ -251,15 +296,20 @@ struct WallFace {
     }
 };
 
-/// The parts of [low, high] that none of `cuts` covers, low to high.
+/// The parts of [low, high] that none of `cuts` covers, low to high (cuts clamped to [low, high]).
 std::vector<std::pair<std::int64_t, std::int64_t>> runsBetween(std::int64_t low, std::int64_t high,
                                                                std::vector<std::pair<std::int64_t, std::int64_t>> cuts) {
     std::sort(cuts.begin(), cuts.end());
     std::vector<std::pair<std::int64_t, std::int64_t>> runs;
     std::int64_t cursor = low;
-    for (const auto& [from, to] : cuts) {
+    for (const auto& [cutFrom, cutTo] : cuts) {
+        const std::int64_t from = std::clamp(cutFrom, low, high);
+        const std::int64_t to = std::clamp(cutTo, low, high);
+        if (to <= from) {
+            continue;
+        }
         if (from > cursor) {
-            runs.emplace_back(cursor, std::min(from, high));
+            runs.emplace_back(cursor, from);
         }
         cursor = std::max(cursor, to);
     }
@@ -310,18 +360,20 @@ void addWallRun(const std::string& id, const WallFace& wall, std::int64_t from, 
     }
     add("rail", kRailDepthMm, kWainscotTopMm - kRailHeightMm, kWainscotTopMm, "trim", BoxUvMode::Grain);
     if (skin) {
-        add("plaster", kSkinDepthMm, kWainscotTopMm, heightMm - kCrownHeightMm, "wall", BoxUvMode::Meters);
+        add("plaster", kSkinDepthMm, kWainscotTopMm, heightMm - kCrownHeightMm, "wall", BoxUvMode::PlacedMeters);
     }
 }
 
-/// A sconce on an edge's wall at `x`: a backplate on the plaster and its lit shade, a short cylinder, standing off it.
+/// A sconce on an edge's wall at `x`: a backplate on the plaster and its lit shade, a short cylinder, standing off it,
+/// and the wash of its light on the wall (an unlit quad, the wall wash's picture; every sconce's the same mesh and
+/// material, instanced). Above the head, they collide with nothing.
 void addSconce(const std::string& id, const WallFace& wall, std::int64_t x,
                const std::map<std::string, std::string>& materials, json& objects) {
     const std::int64_t plateBottom = kSconceCentreMm - kSconcePlateHeightMm / 2;
     objects.push_back(boxObject(id + "/backplate",
                                 wall.piece(x - kSconcePlateWidthMm / 2, x + kSconcePlateWidthMm / 2, kSconcePlateDepthMm,
                                            kSkinDepthMm),
-                                plateBottom, plateBottom + kSconcePlateHeightMm, materials.at("trim"), true, false,
+                                plateBottom, plateBottom + kSconcePlateHeightMm, materials.at("trim"), false, false,
                                 BoxUvMode::Grain));
     const std::int64_t radius = kHallSconceWidthMm / 2;
     const std::int64_t axis = wall.faceMm + wall.inward * (kSkinDepthMm + kSconcePlateDepthMm + radius);
@@ -332,7 +384,19 @@ void addSconce(const std::string& id, const WallFace& wall, std::int64_t x,
                                            {"segments", kSconceShadeSegments}}},
                            {"position", vec3Json(meters(x), meters(kSconceCentreMm), meters(axis))},
                            {"material", materials.at("sconce")},
-                           {"castsShadows", false}});
+                           {"castsShadows", false},
+                           {"collides", false}});
+    // The quad faces +Z: the north edge's wall faces +Z, the south edge's -Z.
+    const double wash = meters(wall.faceMm) + static_cast<double>(wall.inward) * (meters(kSkinDepthMm) + kWashOffM);
+    objects.push_back(json{{"id", id + "/wash"},
+                           {"primitive", "quad"},
+                           {"params", json{{"size", json::array({kWashWidthM, kWashHeightM})}}},
+                           {"position",
+                            vec3Json(meters(x), meters(kSconceCentreMm + kWashAboveMm), rounded(wash, 1e6))},
+                           {"rotationDeg", vec3Json(0.0, wall.inward > 0 ? 0.0 : 180.0, 0.0)},
+                           {"material", materials.at("wash")},
+                           {"castsShadows", false},
+                           {"collides", false}});
 }
 
 /// A framed panel on an edge's wall (the poster frame prefab): its back on the hall's plaster at `x`, centred
@@ -379,34 +443,45 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
     const std::int64_t height = hall.heightMm;
     const std::int64_t half = hall.widthMm / 2;
     const std::int64_t east = hall.interior.maxXMm;
-    const std::map<std::string, std::string> materials = hallMaterials(theme);
+    const std::map<std::string, std::string> materials = kindMaterials(theme, "hall");
     objects.push_back(boxObject(prefix + "floor", hall.interior, -kSlabMm, 0, materials.at("floor"), false, false));
     objects.push_back(
         boxObject(prefix + "ceiling", hall.interior, height, height + kSlabMm, materials.at("ceiling"), false, false));
     for (const HallWall& wall : hall.walls) {
-        objects.push_back(
-            boxObject(prefix + "wall-" + wall.id, wall.footprint, 0, height, materials.at("wall"), true, true));
+        objects.push_back(boxObject(prefix + "wall-" + wall.id, wall.footprint, 0, height, materials.at("wall"), true,
+                                    true, BoxUvMode::PlacedMeters));
     }
-    // The beams across the ceiling over the doorways (one where two doorways face each other), by x.
+    // The beams across the ceiling, by x: a fixed grid from the west end, and one over each doorway the grid leaves
+    // without a beam nearby (one where two doorways face each other).
     std::set<std::int64_t> beams;
+    for (std::int64_t x = kBeamPitchMm; x + kBeamEndClearMm <= east; x += kBeamPitchMm) {
+        beams.insert(x);
+    }
+    const std::set<std::int64_t> grid = beams;
     for (const FloorDoorway& doorway : hall.doorways) {
-        if (doorway.opensOntoHall()) {
-            beams.insert((doorway.minMm + doorway.maxMm) / 2);
+        const std::int64_t centre = (doorway.minMm + doorway.maxMm) / 2;
+        const auto near = grid.lower_bound(centre - kBeamMergeMm);
+        if (doorway.opensOntoHall() && (near == grid.end() || *near > centre + kBeamMergeMm)) {
+            beams.insert(centre);
         }
     }
-    // The lamps hang level with the beams' undersides on a short stem, so that a beam over a later doorway passes
-    // above a lamp it crosses and moves none.
+    // The lamps: a drum shade over each light on a stem from the ceiling (through a beam over it).
     for (std::size_t i = 0; i < hall.lights.size(); ++i) {
         const FloorPoint& light = hall.lights[i];
-        const Footprint lamp{light.xMm - kLampSideMm / 2, light.zMm - kLampSideMm / 2, light.xMm + kLampSideMm / 2,
-                             light.zMm + kLampSideMm / 2};
-        const std::int64_t top = height - kBeamDepthMm;
-        objects.push_back(boxObject(prefix + "lamp-" + std::to_string(i), lamp, top - kLampDepthMm, top, kLampMaterial,
-                                    false, false));
+        const std::int64_t centre = height - kHallLightDropMm + kLampAboveLightMm;
+        objects.push_back(json{{"id", prefix + "lamp-" + std::to_string(i)},
+                               {"primitive", "cylinder"},
+                               {"params", json{{"radius", meters(kLampRadiusMm)},
+                                               {"height", meters(kLampHeightMm)},
+                                               {"segments", kLampSegments}}},
+                               {"position", vec3Json(meters(light.xMm), meters(centre), meters(light.zMm))},
+                               {"material", std::string(kLampMaterial)},
+                               {"castsShadows", false},
+                               {"collides", false}});
         const Footprint stem{light.xMm - kLampStemMm / 2, light.zMm - kLampStemMm / 2, light.xMm + kLampStemMm / 2,
                              light.zMm + kLampStemMm / 2};
-        objects.push_back(boxObject(prefix + "lamp-" + std::to_string(i) + "/stem", stem, top, height,
-                                    materials.at("trim"), false, false, BoxUvMode::Grain));
+        objects.push_back(boxObject(prefix + "lamp-" + std::to_string(i) + "/stem", stem, centre + kLampHeightMm / 2,
+                                    height, materials.at("trim"), false, false, BoxUvMode::Grain));
     }
     // The elevator: a frame proud of the west wall around two closed leaves, a call panel south of it.
     const Footprint& frame = hall.elevator;
@@ -536,10 +611,11 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                     lintel, lintel + kLintelHeightMm, materials.at("trim"), false, false,
                                     BoxUvMode::Grain));
         objects.push_back(boxObject(id + "/plaster", wall.piece(from, to, kSkinDepthMm), lintel,
-                                    height - kCrownHeightMm, materials.at("wall"), false, false));
+                                    height - kCrownHeightMm, materials.at("wall"), false, false,
+                                    BoxUvMode::PlacedMeters));
         const auto text = roomSigns.find(doorway.room);
         const std::string title =
-            text != roomSigns.end() && !text->second.empty() ? text->second : doorway.room.toString();
+            text != roomSigns.end() && !text->second.empty() ? text->second : std::string(kGenericSign);
         const std::int64_t signCentre = (lintel + kLintelHeightMm + height - kBeamDepthMm) / 2;
         json signFrame = wallFrame(id + "/sign", wall, (doorway.minMm + doorway.maxMm) / 2, signCentre,
                                    json{{"width", kPortalSignWidthM},
@@ -550,6 +626,35 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                    json{{"pattern", "sign"}, {"title", title}});
         signFrame["collides"] = false;
         objects.push_back(std::move(signFrame));
+        // The blade sign: the same lettering on both faces of a panel standing out from the wall towards the
+        // elevator, read from down the hall either way; a graphite arm under the ceiling holds it.
+        if (hall.widthMm < kBladeMinHallMm) {
+            continue;
+        }
+        const std::int64_t bladeX = (doorway.minMm + doorway.maxMm) / 2 - kBladeOffsetMm;
+        const double bladeZ = meters(wall.faceMm + wall.inward * kBladeOutMm);
+        for (const auto& [side, yaw] : {std::pair{std::string_view("east"), kFacingEastDeg},
+                                        std::pair{std::string_view("west"), -kFacingEastDeg}}) {
+            const double back = meters(bladeX) + (yaw > 0.0 ? 0.001 : -0.001);
+            objects.push_back(json{{"id", id + "/blade-" + std::string(side)},
+                                   {"prefab", "poster_frame"},
+                                   {"params", json{{"width", kBladeWidthM},
+                                                   {"height", kBladeHeightM},
+                                                   {"frameWidth", kBladeFrameM},
+                                                   {"depth", kBladeDepthM}}},
+                                   {"position", vec3Json(rounded(back, 1e6), meters(kBladeCentreMm), bladeZ)},
+                                   {"rotationDeg", vec3Json(0.0, yaw, 0.0)},
+                                   {"materials",
+                                    json{{"frame", materials.at("trim")}, {"picture", materials.at("sign")}}},
+                                   {"textures", json{{"picture", json{{"pattern", "sign"}, {"title", title}}}}},
+                                   {"castsShadows", false},
+                                   {"collides", false}});
+        }
+        objects.push_back(boxObject(id + "/blade-arm",
+                                    wall.piece(bladeX - kBladeArmMm / 2, bladeX + kBladeArmMm / 2, kBladeArmLengthMm,
+                                               kSkinDepthMm),
+                                    kBladeArmYMm - kBladeArmMm / 2, kBladeArmYMm + kBladeArmMm / 2, kBladeArmMaterial,
+                                    false, false));
     }
     for (const std::int64_t beam : beams) {
         objects.push_back(boxObject(prefix + "beam-" + std::to_string(beam),
@@ -558,17 +663,21 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                     BoxUvMode::Grain));
     }
 
-    // The sconces, prints, benches and plants (deriveHall()'s dressing), seeded by the floor and the piece's id.
-    std::map<std::string, std::string> plant = theme.materials("plant");
-    if (plant.empty()) {
-        plant = builtInThemeMaterials().materials("plant");
-    }
+    // The sconces, prints, benches and plants (deriveHall()'s dressing); the plants seeded by the floor and the piece's
+    // id, the prints' titles by their place (kHallPrintTitles), each title's picture by its own seed.
+    std::map<std::string, std::string> plant = kindMaterials(theme, "plant");
     plant["pot"] = materials.at("plant");
-    std::map<std::string, std::string> print = theme.materials("poster_frame");
-    if (print.empty()) {
-        print = builtInThemeMaterials().materials("poster_frame");
-    }
+    plant["saucer"] = materials.at("saucer");
+    std::map<std::string, std::string> print = kindMaterials(theme, "poster_frame");
     print["frame"] = materials.at("picture");
+    const std::size_t titleOffset =
+        static_cast<std::size_t>(core::deriveSeed("hall-prints", hall.floor) % kHallPrintTitles.size());
+    const auto printPicture = [&](std::size_t index) {
+        const std::string_view title = kHallPrintTitles[index % kHallPrintTitles.size()];
+        return json{{"pattern", "print"},
+                    {"title", std::string(title)},
+                    {"seed", core::deriveSeed("hall-print", title) % 1000000}};
+    };
     for (const HallPiece& piece : hall.dressing) {
         const WallFace& wall = piece.north ? northWall : southWall;
         const std::string id = prefix + piece.id;
@@ -578,16 +687,15 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
             addSconce(id, wall, piece.xMm, materials, objects);
             break;
         case HallPieceKind::Picture: {
-            const std::string_view title = kHallPrintTitles[static_cast<std::size_t>(seed % kHallPrintTitles.size())];
+            const std::size_t place = static_cast<std::size_t>(piece.slot / 2) + titleOffset +
+                                      (piece.north ? std::size_t{0} : kSouthTitleOffset);
+            const double width = meters(kHallPictureWidthMm);
             objects.push_back(wallFrame(id, wall, piece.xMm, kPictureCentreMm,
-                                        json{{"width", meters(kHallPictureWidthMm)},
-                                             {"height", kPictureHeightM},
+                                        json{{"width", piece.landscape ? kPictureHeightM : width},
+                                             {"height", piece.landscape ? width : kPictureHeightM},
                                              {"frameWidth", kPictureFrameM},
                                              {"depth", meters(kHallPictureDepthMm - kSkinDepthMm)}},
-                                        materialsJson(print),
-                                        json{{"pattern", "cover"},
-                                             {"title", std::string(title)},
-                                             {"seed", (seed >> 16) % 1000000}}));
+                                        materialsJson(print), printPicture(place)));
             break;
         }
         case HallPieceKind::Bench:
@@ -602,7 +710,8 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                                    {"potHeight", kPlantPotHeightM},
                                                    {"spread", meters(kHallPlantSpreadMm)},
                                                    {"leaves", kPlantLeaves},
-                                                   {"seed", static_cast<std::int64_t>(seed % 2147483647u)}}},
+                                                   {"seed", static_cast<std::int64_t>(seed % 2147483647u)},
+                                                   {"saucerRadius", kPlantSaucerRadiusM}}},
                                    {"position", vec3Json(meters(piece.xMm), 0.0, meters(z))},
                                    {"rotationDeg", vec3Json(0.0, 0.0, 0.0)},
                                    {"materials", materialsJson(plant)}});
@@ -613,8 +722,6 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
     // The east end wall's print (it stands with that wall, which moves east as the hall grows; the lobby's entrance
     // stands there).
     if (!hall.lobby) {
-        const std::uint64_t seed = core::deriveSeed("hall", hall.floor, "east/print");
-        const std::string_view title = kHallPrintTitles[static_cast<std::size_t>(seed % kHallPrintTitles.size())];
         objects.push_back(json{{"id", prefix + "east/print"},
                                {"prefab", "poster_frame"},
                                {"params", json{{"width", kEndPrintWidthM},
@@ -624,9 +731,7 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                {"position", vec3Json(meters(east), meters(kEndPrintCentreMm), 0.0)},
                                {"rotationDeg", vec3Json(0.0, -kFacingEastDeg, 0.0)},
                                {"materials", materialsJson(print)},
-                               {"textures", json{{"picture", json{{"pattern", "cover"},
-                                                                  {"title", std::string(title)},
-                                                                  {"seed", (seed >> 16) % 1000000}}}}},
+                               {"textures", json{{"picture", printPicture(titleOffset + kHallPrintTitles.size() / 4)}}},
                                {"castsShadows", false}});
     }
     // The runner: rugs end to end down the middle, from past the elevator's zone.
@@ -817,11 +922,14 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     addHallObjects(build.hall, sign, theme, roomSigns, objects);
     addHallLights(build.hall, data.lighting, lights);
 
-    // The rooms' areas are lit as the scene (the profile's environment); the hall by the hall role's own terms.
+    // The rooms' areas are lit as the scene (the profile's environment); the hall by the hall role's own terms (the
+    // lobby by its own).
     json areas = json::array();
     const std::string hallArea = hallAreaId(floor);
     for (const FloorArea& area : floorAreas(build.hall, floorRooms)) {
-        areas.push_back(areaJson(area, area.id == hallArea ? &data.lighting.hall.environment : nullptr));
+        const AreaLook& hallLook =
+            build.hall.lobby ? data.lighting.hall.lobbyEnvironment : data.lighting.hall.environment;
+        areas.push_back(areaJson(area, area.id == hallArea ? &hallLook : nullptr));
     }
 
     // The floor's extent: the hall with its walls and every room's footprint.

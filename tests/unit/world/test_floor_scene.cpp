@@ -4,9 +4,11 @@
 // rooms (walls where no room stands, lights at a fixed pitch, doorways onto the hall), each room's scene moved onto the
 // floor, the areas, walks from the elevator into a north-row and a south-row (half-turned) room through the floor's
 // collision, the light a view packs on a full floor and in the I6 step 1 review's cases (the doorway's threshold, a
-// slight turn), a room's collection in the floor's frame, and the halls' dressing (I6 step 2: portals, sconces and
-// prints in turn, benches and plants off the passages and the doorways' approaches, obstacles to the walker, appended
-// and never moved as the hall grows).
+// slight turn), a room's collection in the floor's frame, and the halls' dressing (I6 step 2: portals with their flat
+// and blade signs, beams on a grid and over the doorways, sconces with their wash and prints in turn, the prints'
+// titles and their small pool of pictures, benches with a plant beside them off the passages and the doorways'
+// approaches, obstacles to the walker, none in a hall too narrow, appended and never moved as the hall grows; the
+// pack's hall kind, a role it lacks the built-in pack's).
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -942,6 +944,13 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
         const nlohmann::json& scene = build.sceneFile;
         const std::string prefix = "hall:" + floor.id + "/";
         checkDressingClear(hall);
+        std::set<std::int64_t> beams;
+        for (const nlohmann::json& object : scene["objects"]) {
+            const std::string id = object["id"].get<std::string>();
+            if (id.starts_with(prefix + "beam-")) {
+                beams.insert(std::stoll(id.substr(prefix.size() + 5)));
+            }
+        }
         // A portal at every doorway: its casing, lintel and the room's sign above, a beam over it.
         for (const rv::world::FloorDoorway& doorway : hall.doorways) {
             INFO(doorway.room.toString());
@@ -960,27 +969,86 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
             CHECK(signY - 0.17 > static_cast<double>(doorway.heightMm) / 1000.0 + 0.15);
             CHECK(signY + 0.17 < static_cast<double>(hall.heightMm) / 1000.0 - 0.22);
             CHECK((*sign)["rotationDeg"][1].get<double>() == (doorway.hallEdgeZMm < 0 ? 0.0 : 180.0));
-            CHECK(findObject(scene, prefix + "beam-" + std::to_string((doorway.minMm + doorway.maxMm) / 2)) !=
-                  nullptr);
+            // A beam over it: its own, or the grid's within 0.75 m.
+            const std::int64_t centre = (doorway.minMm + doorway.maxMm) / 2;
+            CHECK(std::any_of(beams.begin(), beams.end(), [&](std::int64_t x) { return std::abs(x - centre) <= 750; }));
             // Its two sconces beside the opening.
             CHECK(findObject(scene, portal + "/sconce-west/shade") != nullptr);
             CHECK(findObject(scene, portal + "/sconce-east/shade") != nullptr);
+            // The blade sign: the room's lettering on both faces, read along the hall, standing out from the wall on
+            // the elevator's side above the head and above the sconces, on its arm; nothing to walk into.
+            const double edge = static_cast<double>(doorway.hallEdgeZMm) / 1000.0;
+            for (const std::string side : {"/blade-east", "/blade-west"}) {
+                INFO(side);
+                const nlohmann::json* blade = findObject(scene, portal + side);
+                REQUIRE(blade != nullptr);
+                CHECK((*blade)["textures"]["picture"]["title"] == (*sign)["textures"]["picture"]["title"]);
+                CHECK((*blade)["materials"]["picture"] == "MAT_Sign_Tungsten");
+                CHECK(std::abs((*blade)["rotationDeg"][1].get<double>()) == 90.0);
+                CHECK((*blade)["position"][0].get<double>() ==
+                      Approx(static_cast<double>(centre - 1050) / 1000.0).margin(0.0011));
+                CHECK(std::abs((*blade)["position"][2].get<double>() - edge) == Approx(0.46));
+                CHECK((*blade)["position"][1].get<double>() - 0.12 >= 2.45);
+                CHECK_FALSE(blade->value("collides", true));
+            }
+            const nlohmann::json* arm = findObject(scene, portal + "/blade-arm");
+            REQUIRE(arm != nullptr);
+            CHECK_FALSE(arm->value("collides", true));
+        }
+        // Beams every 3 m from the west end, while 1 m short of the east end.
+        for (std::int64_t x = 3000; x + 1000 <= hall.interior.maxXMm; x += 3000) {
+            CHECK(beams.contains(x));
         }
         // Sconces and prints in turn along each edge; the floor's pieces are objects that collide.
         std::map<std::string, rv::world::HallPieceKind> slots;
+        // The prints along each edge by x (their titles), and the pictures they draw.
+        std::map<bool, std::map<std::int64_t, std::string>> titles;
+        std::set<std::string> pictures;
+        const nlohmann::json* firstWash = nullptr;
         for (const rv::world::HallPiece& piece : hall.dressing) {
             INFO(piece.id);
             switch (piece.kind) {
-            case rv::world::HallPieceKind::Sconce:
-                CHECK(findObject(scene, prefix + piece.id + "/shade") != nullptr);
+            case rv::world::HallPieceKind::Sconce: {
+                const nlohmann::json* shade = findObject(scene, prefix + piece.id + "/shade");
+                REQUIRE(shade != nullptr);
+                CHECK_FALSE(shade->value("collides", true));
+                CHECK_FALSE(findObject(scene, prefix + piece.id + "/backplate")->value("collides", true));
+                // Its wash on the wall: one quad and one material for every sconce, unlit, centred above the shade
+                // on the plaster.
+                const nlohmann::json* wash = findObject(scene, prefix + piece.id + "/wash");
+                REQUIRE(wash != nullptr);
+                CHECK((*wash)["primitive"] == "quad");
+                CHECK((*wash)["material"] == "MAT_Wall_Wash");
+                CHECK_FALSE(wash->value("collides", true));
+                CHECK((*wash)["position"][1].get<double>() == Approx((*shade)["position"][1].get<double>() + 0.05));
+                const double face = piece.north ? -static_cast<double>(hall.widthMm) / 2000.0
+                                                : static_cast<double>(hall.widthMm) / 2000.0;
+                CHECK(std::abs((*wash)["position"][2].get<double>() - face) == Approx(0.0065).margin(1e-6));
+                CHECK((*wash)["rotationDeg"][1].get<double>() == (piece.north ? 0.0 : 180.0));
+                if (firstWash == nullptr) {
+                    firstWash = wash;
+                }
+                CHECK((*wash)["params"] == (*firstWash)["params"]);
                 break;
+            }
             case rv::world::HallPieceKind::Picture: {
                 const nlohmann::json* print = findObject(scene, prefix + piece.id);
                 REQUIRE(print != nullptr);
-                CHECK((*print)["textures"]["picture"]["pattern"] == "cover");
+                const nlohmann::json& picture = (*print)["textures"]["picture"];
+                CHECK(picture["pattern"] == "print");
+                CHECK((*print)["materials"]["frame"] == "MAT_Wood_Walnut");
+                // Portrait and landscape in turn along the edge.
+                const double width = (*print)["params"]["width"].get<double>();
+                const double height = (*print)["params"]["height"].get<double>();
+                CHECK((width > height) == piece.landscape);
+                CHECK(piece.landscape == ((piece.slot / 2) % 2 == 1));
+                titles[piece.north][piece.xMm] = picture["title"].get<std::string>();
+                pictures.insert(picture.dump() + (piece.landscape ? "/landscape" : "/portrait"));
                 break;
             }
             case rv::world::HallPieceKind::Bench:
+                // A bench with a plant beside it, the edges in turn every 6 m.
+                CHECK(piece.slot % 8 == (piece.north ? 3 : 6));
                 ++benches;
                 for (const std::string part : {"/end-west", "/end-east", "/seat", "/cushion"}) {
                     const nlohmann::json* object = findObject(scene, prefix + piece.id + part);
@@ -989,10 +1057,15 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
                 }
                 break;
             case rv::world::HallPieceKind::Plant: {
+                CHECK(piece.slot % 8 == (piece.north ? 2 : 7));
                 ++plants;
                 const nlohmann::json* object = findObject(scene, prefix + piece.id);
                 REQUIRE(object != nullptr);
                 CHECK(object->value("collides", true));
+                // On a darker saucer a little wider than its pot.
+                CHECK((*object)["params"]["saucerRadius"].get<double>() ==
+                      Approx(1.15 * (*object)["params"]["potRadius"].get<double>()).margin(0.002));
+                CHECK((*object)["materials"]["saucer"] == "MAT_Ceramic_Saucer");
                 break;
             }
             }
@@ -1006,6 +1079,55 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
             const long index = std::stol(slot.substr(slot.find('-') + 1));
             CHECK((kind == rv::world::HallPieceKind::Sconce) == ((index % 2 == 0) == north));
         }
+        // No title twice among five prints in a row along an edge; the prints share a pool of at most one picture a
+        // title (16), the east end wall's apart.
+        for (const auto& [north, byX] : titles) {
+            std::vector<std::string> row;
+            for (const auto& [x, title] : byX) {
+                row.push_back(title);
+            }
+            for (std::size_t i = 0; i < row.size(); ++i) {
+                for (std::size_t j = i + 1; j < std::min(row.size(), i + 5); ++j) {
+                    INFO((north ? "north " : "south ") << i << " " << j);
+                    CHECK(row[i] != row[j]);
+                }
+            }
+        }
+        CHECK(pictures.size() <= 16);
+        // The east end wall's print in a hall, none in the lobby (its entrance stands there).
+        CHECK((findObject(scene, prefix + "east/print") == nullptr) == hall.lobby);
+        // The lamps: a drum over each light, the light at its foot, below the beams.
+        for (std::size_t i = 0; i < hall.lights.size(); ++i) {
+            const nlohmann::json* lamp = findObject(scene, prefix + "lamp-" + std::to_string(i));
+            REQUIRE(lamp != nullptr);
+            CHECK((*lamp)["primitive"] == "cylinder");
+            CHECK((*lamp)["position"][0].get<double>() == Approx(static_cast<double>(hall.lights[i].xMm) / 1000.0));
+            const double light = static_cast<double>(hall.heightMm - rv::world::kHallLightDropMm) / 1000.0;
+            const double foot = (*lamp)["position"][1].get<double>() - (*lamp)["params"]["height"].get<double>() / 2.0;
+            CHECK(foot >= light);
+            CHECK(foot <= light + 0.05);
+            CHECK(foot + (*lamp)["params"]["height"].get<double>() < static_cast<double>(hall.heightMm) / 1000.0 - 0.22);
+        }
+        // The wainscot's battens stand on the floor's 0.6 m grid, by their place (an edge's along x, an end wall's
+        // along z), whatever their run; the plaster's uvs anchored at their place.
+        std::size_t battens = 0;
+        for (const nlohmann::json& object : scene["objects"]) {
+            const std::string id = object["id"].get<std::string>();
+            if (!id.starts_with(prefix + "trim/")) {
+                continue;
+            }
+            INFO(id);
+            const bool endWall = id.starts_with(prefix + "trim/west") || id.starts_with(prefix + "trim/east");
+            if (id.find("/batten") != std::string::npos) {
+                ++battens;
+                const std::int64_t along = mm(object["position"][endWall ? 2 : 0].get<double>());
+                CHECK(along % 600 == 0);
+            }
+            if (id.ends_with("/plaster")) {
+                CHECK(object["params"]["uvOrigin"] == object["position"]);
+            }
+        }
+        CHECK(battens > 10);
         // The runner starts past the elevator's zone; nothing of the dressing is a light.
         const nlohmann::json* runner = findObject(scene, prefix + "runner-0");
         REQUIRE(runner != nullptr);
@@ -1045,6 +1167,109 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
     const FullFloor full = fullGen4Floor(building);
     REQUIRE(full.hall.doorways.size() >= 20);
     checkDressingClear(full.hall);
+}
+
+TEST_CASE("world/floor: the hall's materials: the pack's hall kind, a role or kind it lacks the built-in pack's",
+          "[world][floor][dressing]") {
+    const GoldenBuilding& building = goldenBuilding();
+    const WorldPlan& plan = building.plan;
+    const rv::world::ThemeMaterials& builtIn = rv::world::builtInThemeMaterials();
+    const auto materialOf = [](const nlohmann::json& scene, const std::string& id, const std::string& role) {
+        const nlohmann::json* object = findObject(scene, id);
+        REQUIRE(object != nullptr);
+        return role.empty() ? (*object)["material"].get<std::string>()
+                            : (*object)["materials"][role].get<std::string>();
+    };
+    rv::world::FloorSceneData data = floorData(plan, "gen4", building.tags);
+    const RoomId snes = *RoomId::forSystem(name("snes"));
+    REQUIRE(data.rooms.contains(snes));
+    // The hall takes its first room's pack: every room's changed alike.
+    const auto everyPack = [&](const auto& change) {
+        for (auto& [id, room] : data.rooms) {
+            change(room.theme);
+        }
+    };
+    // A pack without the hall kind: every role the built-in pack's.
+    everyPack([](rv::world::ThemeMaterials& theme) { theme.kinds.erase("hall"); });
+    nlohmann::json scene = floorScene(plan, "gen4", data).sceneFile;
+    const std::map<std::string, std::string> hall = builtIn.materials("hall");
+    CHECK(materialOf(scene, "hall:gen4/wall-west", "") == hall.at("wall"));
+    CHECK(materialOf(scene, "hall:gen4/ceiling", "") == hall.at("ceiling"));
+    CHECK(materialOf(scene, "hall:gen4/runner-0", "fabric") == hall.at("runner"));
+    // A pack with a hall of its own but no runner, no plant and a poster frame without its picture: its own roles
+    // kept, the others the built-in pack's.
+    everyPack([](rv::world::ThemeMaterials& theme) {
+        theme.kinds["hall"] = {{"wall", "MAT_Wall_Painted"}, {"sign", "MAT_Neon_Diffuser"}};
+        theme.kinds.erase("plant");
+        theme.kinds["poster_frame"] = {{"frame", "MAT_Wood_Oak"}};
+    });
+    scene = floorScene(plan, "gen4", data).sceneFile;
+    CHECK(materialOf(scene, "hall:gen4/wall-west", "") == "MAT_Wall_Painted");
+    CHECK(materialOf(scene, "hall:gen4/portal:room:snes/sign", "picture") == "MAT_Neon_Diffuser");
+    CHECK(materialOf(scene, "hall:gen4/runner-0", "fabric") == hall.at("runner"));
+    CHECK(materialOf(scene, "hall:gen4/portal:room:snes/sign", "frame") == hall.at("trim"));
+    std::size_t prints = 0;
+    std::size_t plants = 0;
+    for (const nlohmann::json& object : scene["objects"]) {
+        const std::string id = object["id"].get<std::string>();
+        if (!id.starts_with("hall:gen4/")) {
+            continue;
+        }
+        INFO(id);
+        if (id.ends_with("/picture")) {
+            ++prints;
+            CHECK(object["materials"]["picture"] == builtIn.materials("poster_frame").at("picture"));
+            CHECK(object["materials"]["frame"] == hall.at("picture"));
+        }
+        if (id.ends_with("/plant")) {
+            ++plants;
+            CHECK(object["materials"]["leaves"] == builtIn.materials("plant").at("leaves"));
+            CHECK(object["materials"]["pot"] == hall.at("plant"));
+        }
+    }
+    CHECK(prints > 0);
+    CHECK(plants > 0);
+    // A room without a sign text: its portal reads a generic sign, never its id.
+    data.rooms.at(snes).platform.signText.clear();
+    scene = floorScene(plan, "gen4", data).sceneFile;
+    for (const std::string part : {"/sign", "/blade-east", "/blade-west"}) {
+        const nlohmann::json* sign = findObject(scene, "hall:gen4/portal:room:snes" + part);
+        REQUIRE(sign != nullptr);
+        CHECK((*sign)["textures"]["picture"]["title"] == "GAME ROOM");
+    }
+}
+
+TEST_CASE("world/floor: a narrow hall keeps its passage: floor pieces only where 1.4 m stays clear",
+          "[world][floor][dressing]") {
+    // gen4 filled up for a long hall, its rows' rooms left where they are (their doorways then off a narrower hall's
+    // edge: no doorway margins), the hall narrowed.
+    GrownFloor grown = grownGen4Floor(goldenBuilding(), 40);
+    std::vector<rv::world::FloorRoom> rooms;
+    for (const rv::world::Room* room : rv::world::roomsOnFloor(grown.plan, "gen4")) {
+        rooms.push_back({room, &grown.data.rooms.at(room->id).roomTemplate});
+    }
+    const auto count = [](const Hall& hall, rv::world::HallPieceKind kind) {
+        return std::count_if(hall.dressing.begin(), hall.dressing.end(),
+                             [&](const rv::world::HallPiece& piece) { return piece.kind == kind; });
+    };
+    rv::world::BuildingLayout layout = grown.data.building.layout;
+    for (const std::int64_t width : {3000, 2100, 2000, 1800}) {
+        INFO("width " << width);
+        layout.hallWidthMm = width;
+        const Hall hall = rv::world::deriveHall("gen4", rooms, layout);
+        for (const rv::world::HallPiece& piece : hall.dressing) {
+            if (piece.solid()) {
+                INFO(piece.id);
+                const std::int64_t reach = piece.north ? piece.footprint.maxZMm + width / 2
+                                                       : width / 2 - piece.footprint.minZMm;
+                CHECK(width - reach >= rv::world::kHallMinClearMm);
+            }
+        }
+        // A bench takes 0.45 m, a plant 0.63 m: at 2 m the benches stay and the plants go, at 1.8 m both go.
+        CHECK((count(hall, rv::world::HallPieceKind::Bench) > 0) == (width >= 1850));
+        CHECK((count(hall, rv::world::HallPieceKind::Plant) > 0) == (width >= 2030));
+        CHECK(count(hall, rv::world::HallPieceKind::Picture) > 0);
+    }
 }
 
 TEST_CASE("world/floor: a longer hall appends its dressing and moves none", "[world][floor][dressing]") {

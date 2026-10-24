@@ -505,11 +505,11 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
             floorSigns.push_back((*textures)["picture"].value("title", ""));
         }
     }
-    // The rooms' signs (gb's, the shared room's), each also on its portal in the hall (I6 step 2), and the floor's by
-    // its elevator.
+    // The rooms' signs (gb's, the shared room's), each also on its portal in the hall and on both faces of its blade
+    // sign (I6 step 2), and the floor's by its elevator.
     std::sort(floorSigns.begin(), floorSigns.end());
-    CHECK(floorSigns ==
-          std::vector<std::string>{"HANDHELDS", "MORE GAMES", "MORE GAMES", "POCKET GAMES", "POCKET GAMES"});
+    CHECK(floorSigns == std::vector<std::string>{"HANDHELDS", "MORE GAMES", "MORE GAMES", "MORE GAMES", "MORE GAMES",
+                                                 "POCKET GAMES", "POCKET GAMES", "POCKET GAMES", "POCKET GAMES"});
     // --floor names a floor of the plan, and not with --room.
     CHECK(session.run({"worldplan", "show", "--floor", "gen7"}).code == ExitCode::UsageError);
     const RunResult both = session.run(

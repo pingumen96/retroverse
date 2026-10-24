@@ -30,11 +30,14 @@
 // z = -width / 2 and the south edge's at +width / 2 (a room's doorway wall where one stands, the hall's own elsewhere):
 //   - the slots: x = kHallSlotFirstMm + i * kHallSlotPitchMm from the west end (i from 0), the same on both edges, so
 //     that a longer hall appends pieces and moves none (the lights' rule). A slot's wall piece alternates: on the north
-//     edge a sconce at even i and a framed picture at odd i, on the south edge the reverse (a sconce faces a picture).
-//     Every kHallFloorPeriod slots an edge holds a bench and a plant (north: a bench at i % 8 == 3, a plant at 6;
-//     south: a bench at 2, a plant at 7) against its wall;
+//     edge a sconce at even i and a framed picture at odd i, on the south edge the reverse (a sconce faces a picture);
+//     the pictures of an edge alternate portrait and landscape (landscape where i / 2 is odd).
+//     Every kHallFloorPeriod slots the floor holds a bench with a plant beside it, on each edge in turn every 6 m
+//     (north: a plant at i % 8 == 2 and a bench at 3; south: a bench at 6 and a plant at 7) against its wall;
 //   - a slot's piece is left out where it would not fit: within kHallEndClearMm of the hall's ends (wall pieces) or
-//     before kHallFloorFirstMm and within kHallFloorEndClearMm of the east end (floor pieces); a wall piece within its
+//     before kHallFloorFirstMm and within kHallFloorEndClearMm of the east end (floor pieces), a floor piece that would
+//     leave less than kHallMinClearMm across the hall (beside what the other edge holds there: a hall too narrow holds
+//     none); a wall piece within its
 //     margin of a doorway's opening on its edge (kHallSconceDoorMarginMm for a sconce, kHallPictureDoorMarginMm for a
 //     picture), a floor piece within kHallDoorApproachMm of any doorway's opening along x, on either edge (the doorway's
 //     approach and the place across the hall stay clear). A room that enters later may so take a slot's piece away
@@ -128,8 +131,8 @@ inline constexpr std::int64_t kHallSlotFirstMm = 750;
 /// The period of the benches and plants, in slots, and the slots they stand at on each edge.
 inline constexpr std::int64_t kHallFloorPeriod = 8;
 inline constexpr std::int64_t kHallNorthBenchSlot = 3;
-inline constexpr std::int64_t kHallNorthPlantSlot = 6;
-inline constexpr std::int64_t kHallSouthBenchSlot = 2;
+inline constexpr std::int64_t kHallNorthPlantSlot = 2;
+inline constexpr std::int64_t kHallSouthBenchSlot = 6;
 inline constexpr std::int64_t kHallSouthPlantSlot = 7;
 /// What a wall piece keeps clear of the hall's ends, what a floor piece keeps clear of the elevator's landing (its x
 /// from the west end) and of the east end.
@@ -142,11 +145,12 @@ inline constexpr std::int64_t kHallSconceDoorMarginMm = 1500;
 inline constexpr std::int64_t kHallPictureDoorMarginMm = 800;
 inline constexpr std::int64_t kHallDoorApproachMm = 900;
 inline constexpr std::int64_t kHallFlankSconceMm = 400;
-/// The pieces' sizes: a sconce's width and depth (from the wall), a picture's width and depth, a bench's length and
-/// depth (with its gap to the wall), a plant's pot centre from the wall and its spread.
+/// The pieces' sizes: a sconce's width and depth (from the wall), a picture's width (portrait, landscape) and depth,
+/// a bench's length and depth (with its gap to the wall), a plant's pot centre from the wall and its spread.
 inline constexpr std::int64_t kHallSconceWidthMm = 130;
 inline constexpr std::int64_t kHallSconceDepthMm = 160;
 inline constexpr std::int64_t kHallPictureWidthMm = 560;
+inline constexpr std::int64_t kHallPictureLandscapeWidthMm = 760;
 inline constexpr std::int64_t kHallPictureDepthMm = 35;
 inline constexpr std::int64_t kHallBenchLengthMm = 1200;
 inline constexpr std::int64_t kHallBenchDepthMm = 450;
@@ -171,6 +175,10 @@ struct HallPiece {
     HallPieceKind kind = HallPieceKind::Sconce;
     /// On the north edge (else the south edge).
     bool north = true;
+    /// Its slot (i), -1 for a doorway's sconce.
+    std::int64_t slot = -1;
+    /// A picture hung landscape (else portrait).
+    bool landscape = false;
     /// Its centre along the hall.
     std::int64_t xMm = 0;
     /// What it takes on the floor: from the wall's face into the hall by its depth, its width along x.

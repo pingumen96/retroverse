@@ -46,7 +46,7 @@
       ],
       "environment": {
         "ambientGround": "#BCA08A",
-        "ambientIntensity": 0.45,
+        "ambientIntensity": 0.38,
         "ambientSky": "#8A8078",
         "exposure": 1.5,
         "fillColor": "#FFDCC0",
@@ -1615,7 +1615,7 @@
       "castsShadows": false,
       "collides": false,
       "id": "hall:gen4/ceiling",
-      "material": "MAT_Plaster_Warm",
+      "material": "MAT_Plaster_Ceiling",
       "params": {
         "metersPerTile": 2.0,
         "size": [
@@ -1642,7 +1642,12 @@
           3.2,
           3.3
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          -0.075,
+          1.6,
+          0.0
+        ]
       },
       "position": [
         -0.075,
@@ -1661,7 +1666,12 @@
           3.2,
           3.3
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          12.375,
+          1.6,
+          0.0
+        ]
       },
       "position": [
         12.375,
@@ -1680,7 +1690,12 @@
           3.2,
           0.15
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          1.5,
+          1.6,
+          -1.575
+        ]
       },
       "position": [
         1.5,
@@ -1699,7 +1714,12 @@
           3.2,
           0.15
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          6.15,
+          1.6,
+          1.575
+        ]
       },
       "position": [
         6.15,
@@ -1714,20 +1734,16 @@
       "id": "hall:gen4/lamp-0",
       "material": "MAT_Lamp_Shade",
       "params": {
-        "metersPerTile": 2.0,
-        "size": [
-          0.5,
-          0.04,
-          0.5
-        ],
-        "uv": "meters"
+        "height": 0.2,
+        "radius": 0.2,
+        "segments": 32
       },
       "position": [
         3.0,
-        2.96,
+        2.72,
         0.0
       ],
-      "primitive": "box"
+      "primitive": "cylinder"
     },
     {
       "castsShadows": false,
@@ -1738,14 +1754,14 @@
         "metersPerTile": 1.0,
         "size": [
           0.03,
-          0.22,
+          0.38,
           0.03
         ],
         "uv": "grain"
       },
       "position": [
         3.0,
-        3.09,
+        3.01,
         0.0
       ],
       "primitive": "box"
@@ -1756,20 +1772,16 @@
       "id": "hall:gen4/lamp-1",
       "material": "MAT_Lamp_Shade",
       "params": {
-        "metersPerTile": 2.0,
-        "size": [
-          0.5,
-          0.04,
-          0.5
-        ],
-        "uv": "meters"
+        "height": 0.2,
+        "radius": 0.2,
+        "segments": 32
       },
       "position": [
         9.0,
-        2.96,
+        2.72,
         0.0
       ],
-      "primitive": "box"
+      "primitive": "cylinder"
     },
     {
       "castsShadows": false,
@@ -1780,14 +1792,14 @@
         "metersPerTile": 1.0,
         "size": [
           0.03,
-          0.22,
+          0.38,
           0.03
         ],
         "uv": "grain"
       },
       "position": [
         9.0,
-        3.09,
+        3.01,
         0.0
       ],
       "primitive": "box"
@@ -1851,7 +1863,7 @@
     },
     {
       "id": "hall:gen4/elevator/door-north",
-      "material": "MAT_Metal_Brushed",
+      "material": "MAT_Metal_Brass",
       "params": {
         "metersPerTile": 2.0,
         "size": [
@@ -1870,7 +1882,7 @@
     },
     {
       "id": "hall:gen4/elevator/door-south",
-      "material": "MAT_Metal_Brushed",
+      "material": "MAT_Metal_Brass",
       "params": {
         "metersPerTile": 2.0,
         "size": [
@@ -2265,7 +2277,12 @@
           2.13,
           0.005
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          3.375,
+          2.065,
+          -1.4975
+        ]
       },
       "position": [
         3.375,
@@ -2475,7 +2492,12 @@
           2.13,
           0.005
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          10.425,
+          2.065,
+          -1.4975
+        ]
       },
       "position": [
         10.425,
@@ -3000,7 +3022,12 @@
           2.13,
           0.005
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          6.15,
+          2.065,
+          1.4975
+        ]
       },
       "position": [
         6.15,
@@ -3504,7 +3531,12 @@
           0.73,
           0.005
         ],
-        "uv": "meters"
+        "uv": "meters",
+        "uvOrigin": [
+          7.65,
+          2.765,
+          -1.4975
+        ]
       },
       "position": [
         7.65,
@@ -3546,6 +3578,131 @@
       }
     },
     {
+      "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/portal:room:snes/blade-east",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Sign_Tungsten"
+      },
+      "params": {
+        "depth": 0.02,
+        "frameWidth": 0.025,
+        "height": 0.24,
+        "width": 0.8
+      },
+      "position": [
+        6.601,
+        2.62,
+        -1.04
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "sign",
+          "title": "16-BIT CORNER"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/portal:room:snes/blade-west",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Sign_Tungsten"
+      },
+      "params": {
+        "depth": 0.02,
+        "frameWidth": 0.025,
+        "height": 0.24,
+        "width": 0.8
+      },
+      "position": [
+        6.599,
+        2.62,
+        -1.04
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        -90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "sign",
+          "title": "16-BIT CORNER"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/portal:room:snes/blade-arm",
+      "material": "MAT_Metal_Graphite",
+      "params": {
+        "metersPerTile": 2.0,
+        "size": [
+          0.02,
+          0.02,
+          0.9
+        ],
+        "uv": "meters"
+      },
+      "position": [
+        6.6,
+        2.76,
+        -1.045
+      ],
+      "primitive": "box"
+    },
+    {
+      "collides": false,
+      "id": "hall:gen4/beam-3000",
+      "material": "MAT_Wood_Walnut",
+      "params": {
+        "metersPerTile": 1.0,
+        "size": [
+          0.2,
+          0.22,
+          3.0
+        ],
+        "uv": "grain"
+      },
+      "position": [
+        3.0,
+        3.09,
+        0.0
+      ],
+      "primitive": "box"
+    },
+    {
+      "collides": false,
+      "id": "hall:gen4/beam-6000",
+      "material": "MAT_Wood_Walnut",
+      "params": {
+        "metersPerTile": 1.0,
+        "size": [
+          0.2,
+          0.22,
+          3.0
+        ],
+        "uv": "grain"
+      },
+      "position": [
+        6.0,
+        3.09,
+        0.0
+      ],
+      "primitive": "box"
+    },
+    {
       "collides": false,
       "id": "hall:gen4/beam-7650",
       "material": "MAT_Wood_Walnut",
@@ -3566,7 +3723,28 @@
       "primitive": "box"
     },
     {
+      "collides": false,
+      "id": "hall:gen4/beam-9000",
+      "material": "MAT_Wood_Walnut",
+      "params": {
+        "metersPerTile": 1.0,
+        "size": [
+          0.2,
+          0.22,
+          3.0
+        ],
+        "uv": "grain"
+      },
+      "position": [
+        9.0,
+        3.09,
+        0.0
+      ],
+      "primitive": "box"
+    },
+    {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/north-0/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -3587,6 +3765,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/north-0/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -3603,9 +3782,32 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/north-0/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        0.75,
+        2.0,
+        -1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/north-1/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
@@ -3627,14 +3829,15 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 479339,
-          "title": "CONTINUE"
+          "pattern": "print",
+          "seed": 425721,
+          "title": "WORLD MAP"
         }
       }
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/north-2/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -3655,6 +3858,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/north-2/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -3671,16 +3875,69 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/north-2/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        3.75,
+        2.0,
+        -1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "hall:gen4/north-2/plant",
+      "materials": {
+        "leaves": "MAT_Plant_Leaf",
+        "leaves_alt": "MAT_Plant_Leaf_Light",
+        "pot": "MAT_Ceramic_Glazed",
+        "saucer": "MAT_Ceramic_Saucer",
+        "soil": "MAT_Soil"
+      },
+      "params": {
+        "height": 1.15,
+        "leaves": 16,
+        "potHeight": 0.34,
+        "potRadius": 0.17,
+        "saucerRadius": 0.196,
+        "seed": 311363288,
+        "spread": 0.3
+      },
+      "position": [
+        3.75,
+        0.0,
+        -1.17
+      ],
+      "prefab": "plant",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/north-3/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
         "depth": 0.03,
         "frameWidth": 0.04,
-        "height": 0.76,
-        "width": 0.56
+        "height": 0.56,
+        "width": 0.76
       },
       "position": [
         5.25,
@@ -3695,9 +3952,9 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 247542,
-          "title": "LEVEL SELECT"
+          "pattern": "print",
+          "seed": 997224,
+          "title": "TIME ATTACK"
         }
       }
     },
@@ -3778,45 +4035,17 @@
       "primitive": "box"
     },
     {
-      "id": "hall:gen4/north-6/plant",
-      "materials": {
-        "leaves": "MAT_Plant_Leaf",
-        "leaves_alt": "MAT_Plant_Leaf_Light",
-        "pot": "MAT_Ceramic_Glazed",
-        "soil": "MAT_Soil"
-      },
-      "params": {
-        "height": 1.15,
-        "leaves": 16,
-        "potHeight": 0.34,
-        "potRadius": 0.17,
-        "seed": 1535616904,
-        "spread": 0.3
-      },
-      "position": [
-        9.75,
-        0.0,
-        -1.17
-      ],
-      "prefab": "plant",
-      "rotationDeg": [
-        0.0,
-        0.0,
-        0.0
-      ]
-    },
-    {
       "castsShadows": false,
       "id": "hall:gen4/north-7/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
         "depth": 0.03,
         "frameWidth": 0.04,
-        "height": 0.76,
-        "width": 0.56
+        "height": 0.56,
+        "width": 0.76
       },
       "position": [
         11.25,
@@ -3831,9 +4060,9 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 327133,
-          "title": "HIGH SCORE"
+          "pattern": "print",
+          "seed": 563572,
+          "title": "BOSS RUSH"
         }
       }
     },
@@ -3841,7 +4070,7 @@
       "castsShadows": false,
       "id": "hall:gen4/south-0/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
@@ -3863,14 +4092,15 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 96942,
-          "title": "SAVE POINT"
+          "pattern": "print",
+          "seed": 854760,
+          "title": "PLAYER ONE"
         }
       }
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-1/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -3891,6 +4121,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-1/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -3907,16 +4138,39 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/south-1/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        2.25,
+        2.0,
+        1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        180.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/south-2/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
         "depth": 0.03,
         "frameWidth": 0.04,
-        "height": 0.76,
-        "width": 0.56
+        "height": 0.56,
+        "width": 0.76
       },
       "position": [
         3.75,
@@ -3931,90 +4185,15 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 300643,
-          "title": "PRESS START"
+          "pattern": "print",
+          "seed": 37373,
+          "title": "HIGH SCORE"
         }
       }
     },
     {
-      "id": "hall:gen4/south-2/bench/end-west",
-      "material": "MAT_Wood_Walnut",
-      "params": {
-        "metersPerTile": 1.0,
-        "size": [
-          0.06,
-          0.4,
-          0.42
-        ],
-        "uv": "grain"
-      },
-      "position": [
-        3.18,
-        0.2,
-        1.26
-      ],
-      "primitive": "box"
-    },
-    {
-      "id": "hall:gen4/south-2/bench/end-east",
-      "material": "MAT_Wood_Walnut",
-      "params": {
-        "metersPerTile": 1.0,
-        "size": [
-          0.06,
-          0.4,
-          0.42
-        ],
-        "uv": "grain"
-      },
-      "position": [
-        4.32,
-        0.2,
-        1.26
-      ],
-      "primitive": "box"
-    },
-    {
-      "id": "hall:gen4/south-2/bench/seat",
-      "material": "MAT_Wood_Walnut",
-      "params": {
-        "metersPerTile": 1.0,
-        "size": [
-          1.2,
-          0.04,
-          0.42
-        ],
-        "uv": "grain"
-      },
-      "position": [
-        3.75,
-        0.42,
-        1.26
-      ],
-      "primitive": "box"
-    },
-    {
-      "id": "hall:gen4/south-2/bench/cushion",
-      "material": "MAT_Fabric_Sofa",
-      "params": {
-        "metersPerTile": 2.0,
-        "size": [
-          1.14,
-          0.06,
-          0.36
-        ],
-        "uv": "meters"
-      },
-      "position": [
-        3.75,
-        0.47,
-        1.26
-      ],
-      "primitive": "box"
-    },
-    {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-3/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -4035,6 +4214,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-3/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -4051,9 +4231,32 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/south-3/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        5.25,
+        2.0,
+        1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        180.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/south-4/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
@@ -4075,14 +4278,15 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 231801,
-          "title": "PRESS START"
+          "pattern": "print",
+          "seed": 866944,
+          "title": "LEVEL SELECT"
         }
       }
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-5/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -4103,6 +4307,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-5/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -4119,16 +4324,39 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/south-5/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        8.25,
+        2.0,
+        1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        180.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/south-6/picture",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
         "depth": 0.03,
         "frameWidth": 0.04,
-        "height": 0.76,
-        "width": 0.56
+        "height": 0.56,
+        "width": 0.76
       },
       "position": [
         9.75,
@@ -4143,14 +4371,15 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 848624,
+          "pattern": "print",
+          "seed": 413059,
           "title": "INSERT COIN"
         }
       }
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-7/sconce/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -4171,6 +4400,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/south-7/sconce/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -4186,11 +4416,35 @@
       "primitive": "cylinder"
     },
     {
+      "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/south-7/sconce/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        11.25,
+        2.0,
+        1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        180.0,
+        0.0
+      ]
+    },
+    {
       "id": "hall:gen4/south-7/plant",
       "materials": {
         "leaves": "MAT_Plant_Leaf",
         "leaves_alt": "MAT_Plant_Leaf_Light",
         "pot": "MAT_Ceramic_Glazed",
+        "saucer": "MAT_Ceramic_Saucer",
         "soil": "MAT_Soil"
       },
       "params": {
@@ -4198,6 +4452,7 @@
         "leaves": 16,
         "potHeight": 0.34,
         "potRadius": 0.17,
+        "saucerRadius": 0.196,
         "seed": 517229640,
         "spread": 0.3
       },
@@ -4215,6 +4470,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/portal:room:snes/sconce-west/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -4235,6 +4491,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/portal:room:snes/sconce-west/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -4251,6 +4508,30 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/portal:room:snes/sconce-west/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        6.45,
+        2.0,
+        -1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/portal:room:snes/sconce-east/backplate",
       "material": "MAT_Wood_Walnut",
       "params": {
@@ -4271,6 +4552,7 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/portal:room:snes/sconce-east/shade",
       "material": "MAT_Sconce_Shade",
       "params": {
@@ -4287,9 +4569,32 @@
     },
     {
       "castsShadows": false,
+      "collides": false,
+      "id": "hall:gen4/portal:room:snes/sconce-east/wash",
+      "material": "MAT_Wall_Wash",
+      "params": {
+        "size": [
+          1.0,
+          1.5
+        ]
+      },
+      "position": [
+        8.85,
+        2.0,
+        -1.4935
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
       "id": "hall:gen4/east/print",
       "materials": {
-        "frame": "MAT_Wood_Oak",
+        "frame": "MAT_Wood_Walnut",
         "picture": "MAT_Paper_Print"
       },
       "params": {
@@ -4311,9 +4616,9 @@
       ],
       "textures": {
         "picture": {
-          "pattern": "cover",
-          "seed": 40149,
-          "title": "HIGH SCORE"
+          "pattern": "print",
+          "seed": 940199,
+          "title": "NEW RECORD"
         }
       }
     },
