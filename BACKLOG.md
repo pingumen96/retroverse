@@ -483,9 +483,10 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   textures restarting at each box, lit by the lighting profile's pendant style at a fixed 6 m pitch; it reads dim but
   legible (G11). Trim and baseboards, a hall light role in the profiles, the lobby's 3D displays, stairs
   (`docs/i4/step-3.md`, ADR-0013 "Deferred").
-- **Light seen through doorways (I4 step 3):** the renderer packs the lights of the area that holds the eye only, so a
-  room seen from the hall (and the hall from a room) shows its ambient light alone (ADR-0013 §9's accepted cost). The
-  neighbouring areas' nearest lights could be added through open doorways within the 16.
+- **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
+  with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
+  room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall
+  that goes when the eye enters the room; per-light portals for a hall's lights (the nearest doorway's) would close it.
 - **The media families' faces (I4 step 2):** cases and boxes stand spine-out with their height in the shelf's depth
   until a side-face facing exists; a face-out item shows its spine label on its top face, upside down seen from the
   front (visible on the big boxes' 45 mm tops); the jewel cases' spine labels are 7 mm wide and the handheld

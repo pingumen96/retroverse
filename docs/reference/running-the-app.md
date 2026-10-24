@@ -92,8 +92,9 @@ build/rvdata`).
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
   reported them; I3 step 17b), and in `lastView` the static instance groups (`staticGroups`), `outlinedInstances` and
   `gpuMilliseconds.outline`, only when the view has them; since I4 step 3, for a scene with areas, `sceneAreas`
-  (`areas`, the `area` that held the eye at the last view, the `lights` packed for it by name and its `keyLight`, and
-  `changes`, the area at the first view and each change with its frame). Phases opened by the code: `refresh`,
+  (`areas`, the `area` that held the eye at the last view, the `lights` selected for it by name and its `keyLight`,
+  and `changes`, the area at the first view and each change with its frame; since I6 step 1 `packed`, `last` and
+  `samples`, see `--scene`). Phases opened by the code: `refresh`,
   `coverLoad`, `animation`, `screenBind`, `elevator` (each ride, I4 step 7b: its frames behind the fade are exempt from
   the limits), and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
   phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.
@@ -104,19 +105,29 @@ build/rvdata`).
   each an `id` and `boxes` ({`min`, `max`} in meters), whose lights are their own; every light then names its
   `"area"`. Each frame the app finds the area that holds the walker's eye (the first holding it, else the last one
   held) and the renderer packs that area's lights first: its key light (its first light with `castsShadows`)
-  shadowed, its other point and spot lights nearest the eye; then, while the 16 the block holds leave room, up to 4
-  lights of each neighbouring area (one whose boxes touch the eye's area's over a face: a room's doorway passage and
-  its hall) within 6 m and their own range of the doorway they share, the nearest the eye first, never the key light
-  and never shadowed (I6 step 1, ADR-0014 §4). A point or spot light whose whole range lies behind the eye is left out
-  (it lights nothing in view), which frees its place. The other lights are left out, so light never leaks through a
-  wall without a doorway (`rv/scene/scene_areas.hpp`). An area may carry its own `"environment"` (`exposure`,
+  shadowed, its other point and spot lights nearest the eye; then its neighbours' (areas whose boxes touch the eye's
+  area's over a face: a room's doorway passage and its hall) that may be seen through the doorway they share (within
+  10 m plus their range of it), by importance (intensity over the squared path from the eye through the doorway,
+  less for a doorway beside or behind the eye), never the key light and never shadowed, in a share of the 16 that
+  does not depend on the view: 6, or all the slots the area's own lights leave (I6 step 1, ADR-0014 §4 as amended).
+  The choice has hysteresis (a light chosen stays half a second at least, and while no other is clearly nearer or more
+  important), and each light fades in and out over 0.3 s (at once at the first frame, after a teleport and under
+  `reduceMotion`), the key light's shadow too; the neighbours' lights (and a room's own) are clipped to the doorway in
+  the shaders, so no light shines through the wall beside it. A point or spot light whose whole range lies behind the
+  eye is left out (it lights nothing in view), with a 1 m margin. The other lights are left out, so light never leaks
+  through a wall without a doorway (`rv/scene/scene_areas.hpp`). An area may carry its own `"environment"` (`exposure`,
   `ambientSky`, `ambientGround`, `ambientIntensity`, `fillColor`, `fillIntensity`, each optional, else the scene's):
   the views ease to the eye's area's over 0.5 s when it changes areas, at once under `reduceMotion` and at the first
   frame; `fillColor` and `fillIntensity` (also keys of the scene's `"environment"`, 0 by default) add an even fill to
-  the hemispheric ambient. The log names every area's key light at load, or why it casts no shadow (`Scene '<name>',
-  area '<id>': key light ...`), and each area the eye enters; the run report's `sceneAreas.lights` lists the eye's
-  area's own lights, then its neighbours', and `sceneAreas.keyLight` and the developer overlay's Lights panel name the
-  key light of the area that holds the eye. A scene without areas packs all its lights in list order as before. A
+  the hemispheric ambient's diffuse part. The developer overlay shows and edits the eye's area's environment. The log
+  names every area's key light at load, or why it casts no shadow (`Scene '<name>', area '<id>': key light ...`), and
+  each area the eye enters; the run report's `sceneAreas.lights` lists the lights selected (the eye's area's own, then
+  the others), `sceneAreas.packed` the lights block as packed (each light's `name`, `weight` and whether a portal
+  `clipped` it), `sceneAreas.last` the light of the last view (`exposure`, `ambientIntensity`, `fillIntensity` as
+  eased, how many `lights` are packed and `fading`, the sum of their `weight`s) and `sceneAreas.samples` the same at
+  the first view and at every frame while the environment eases or a light fades (at most 2,000); `sceneAreas.keyLight`
+  and the developer overlay's Lights panel name the key light of the area that holds the eye. A scene without areas
+  packs all its lights in list order as before. A
   floor's scene (`retroverse-cli worldplan show --floor <id> --scene <file>`, `docs/reference/cli.md`) has an area per
   room (its interior and its doorway's passage) and one for the hall (`hall:<floor>`, with the lighting profile's hall
   environment: I6 step 1); the hall's lights are the profile's `hall` role, with a low fill spot before each doorway

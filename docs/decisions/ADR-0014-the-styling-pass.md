@@ -99,6 +99,27 @@ An area's light selection adds, after its own lights and within the 16:
 
 A neighbour's light is never the key light and casts no shadow.
 
+*Amended on 2026-10-24 (I6 step 1's review):* the selection above was unstable (a still eye's slight turn or strafe
+toggled lights, crossing a doorway switched ten lights on in one frame) and starved neighbours (a hall's own lights
+filled the 16, a room's far lights were dropped). It is replaced by:
+- **A view-independent budget.** The neighbours' lights that may be seen through a portal (within about a room's depth,
+  10 m, plus their own range of it) get a share of the 16: 6 slots (at most half), or every slot the area's own lights
+  leave, whichever is more, never more than there are such lights. The area's own lights take the rest, nearest the
+  eye first (one behind the eye's plane counted farther). The share depends on counts, not on the view; only its
+  slots the neighbours cannot use while their lights or their doorway lie behind the eye go to the own lights, until
+  those come into view.
+- **By importance.** Within their share the neighbours' lights are ordered by intensity / (1 + d^2), d the path from the
+  eye through the portal to the light, weighed down for a portal beside or behind the eye.
+- **Hysteresis.** A light wholly behind the eye is left out 1 m past its range and taken back at it; a light chosen
+  stays while no other is nearer by 1 m (own) or twice as important (neighbours'), and for half a second at least.
+- **Fades.** Every point and spot light's contribution is weighted, eased in and out over 0.3 s as it enters or leaves
+  the selection (deterministic under `--fixed-dt`; at once at the first frame, after a teleport and under
+  `reduceMotion`); the key light's shadow fades likewise.
+- **Clipped to the portal.** A neighbour's light, and the light of an area with a single portal (a room), carries its
+  portal's rectangle: the shaders light a fragment beyond the portal's plane only along a line through the opening
+  (with a soft edge), so no light shines through the wall beside a doorway.
+- **The environment's fill** lifts the diffuse ambient only, not the glossy reflections.
+
 The scene adds, for each doorway, a low fill light in the hall aimed into the room. Each area has its own environment
 (exposure, ambient, fill), eased over about 0.5 s when the eye changes area. So upper walls and ceilings no longer fall
 to black, and a dark arcade can sit beside a bright hub.
@@ -134,7 +155,8 @@ to black, and a dark arcade can sit beside a bright hub.
 - **ADR-0013 §3:** the recorded theme pack is no longer authoritative (§1 above). The recorded family stays.
 - **ADR-0013 §4:** families gain successors with a one-time migration (§2 above).
 - **ADR-0013 §6 and §7:** the ground floor's hall is the hub; its rooms are re-placed once (§3 above).
-- **ADR-0013 §9:** neighbour lights through doorways, and an environment per area (§4 above).
+- **ADR-0013 §9:** neighbour lights through doorways, and an environment per area (§4 above, amended on 2026-10-24:
+  a view-independent share, faded, with hysteresis, clipped to the doorway).
 - **Roadmap:** I6 is the styling pass, done before I5 and I4b.
 
 ## Consequences
