@@ -1018,7 +1018,8 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     const double share = 1.0 - static_cast<double>(kFadeFrames) * kFixedDt / kFadeSeconds;
     // Every value against the share of the one before: the brightest (the lights) dimmed as much as the rest. The
     // anti-aliasing finds a few edges otherwise in the darker view: a few values a little off (since I6 step 1's lifted
-    // ambient a handful, at the elevator doors' foot, up to about 20).
+    // ambient a handful, at the elevator doors' foot, up to about 20; since I6 step 2's dressed hall a few dozen more
+    // on the prints' frames and the runner's pattern, up to about 26, 0.18% of the values off by more than 3).
     double sumA = 0.0;
     double sumB = 0.0;
     double worst = 0.0;
@@ -1043,8 +1044,8 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     CHECK(brightestA >= 200); // the view has bright lights to dim
     CHECK(std::abs(sumB / sumA - share) < 0.01);
     CHECK(static_cast<double>(brightestB) <= share * brightestA + 3.0);
-    CHECK(worst <= 24.0);
-    CHECK(offShare < 0.002);
+    CHECK(worst <= 32.0);
+    CHECK(offShare < 0.003);
 }
 
 TEST_CASE("world elevator: a game played before a ride is the start choice of its room's CRT on the destination",
