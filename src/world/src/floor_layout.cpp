@@ -1,6 +1,7 @@
 #include <rv/world/floor_layout.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 
 namespace rv::world {
@@ -37,6 +38,107 @@ Footprint wallPart(Wall wall, std::int64_t a0, std::int64_t a1, std::int64_t inn
         return {a0, low, a1, high};
     }
     return {low, a0, high, a1};
+}
+
+std::string_view pieceName(HallPieceKind kind) noexcept {
+    switch (kind) {
+    case HallPieceKind::Sconce:
+        return "sconce";
+    case HallPieceKind::Picture:
+        return "picture";
+    case HallPieceKind::Bench:
+        return "bench";
+    case HallPieceKind::Plant:
+        return "plant";
+    }
+    return "sconce";
+}
+
+/// A piece against an edge's wall at `x`: `width` along x, `depth` into the hall from the wall's face (from `gap` off
+/// it), on the north edge (z = -half) or the south edge (z = +half).
+Footprint againstWall(bool north, std::int64_t half, std::int64_t x, std::int64_t width, std::int64_t gap,
+                      std::int64_t depth) noexcept {
+    const std::int64_t near = north ? -half + gap : half - gap;
+    const std::int64_t far = north ? -half + gap + depth : half - gap - depth;
+    return {x - width / 2, std::min(near, far), x - width / 2 + width, std::max(near, far)};
+}
+
+/// True when [from, to] comes within `margin` of the opening of a doorway in `doorways` (those that open onto the
+/// hall; on the edge `north` only unless `anyEdge`).
+bool nearDoorway(std::span<const FloorDoorway> doorways, bool north, bool anyEdge, std::int64_t from, std::int64_t to,
+                 std::int64_t margin) noexcept {
+    return std::any_of(doorways.begin(), doorways.end(), [&](const FloorDoorway& doorway) {
+        if (!doorway.opensOntoHall() || (!anyEdge && (doorway.hallEdgeZMm < 0) != north)) {
+            return false;
+        }
+        return from < doorway.maxMm + margin && to > doorway.minMm - margin;
+    });
+}
+
+/// The hall's dressing (see the header's file comment), from its east end and its doorways.
+std::vector<HallPiece> hallDressing(const Hall& hall) {
+    std::vector<HallPiece> pieces;
+    const std::int64_t half = hall.widthMm / 2;
+    const std::int64_t east = hall.interior.maxXMm;
+    for (const bool north : {true, false}) {
+        const std::string edge = north ? "north-" : "south-";
+        for (std::int64_t slot = 0;; ++slot) {
+            const std::int64_t x = kHallSlotFirstMm + slot * kHallSlotPitchMm;
+            if (x + kHallEndClearMm >= east) {
+                break;
+            }
+            const std::string id = edge + std::to_string(slot);
+            // The wall piece: a sconce and a picture in turn, the south edge the reverse of the north.
+            const bool sconce = (slot % 2 == 0) == north;
+            const HallPieceKind wallKind = sconce ? HallPieceKind::Sconce : HallPieceKind::Picture;
+            const std::int64_t width = sconce ? kHallSconceWidthMm : kHallPictureWidthMm;
+            const std::int64_t margin = sconce ? kHallSconceDoorMarginMm : kHallPictureDoorMarginMm;
+            const std::int64_t from = x - width / 2;
+            const std::int64_t to = from + width;
+            if (from >= kHallEndClearMm && to + kHallEndClearMm <= east &&
+                !nearDoorway(hall.doorways, north, false, from, to, margin)) {
+                pieces.push_back(HallPiece{id + "/" + std::string(pieceName(wallKind)), wallKind, north, x,
+                                           againstWall(north, half, x, width, 0,
+                                                       sconce ? kHallSconceDepthMm : kHallPictureDepthMm)});
+            }
+            // The floor piece, every kHallFloorPeriod slots: a bench and a plant on each edge.
+            const std::int64_t phase = slot % kHallFloorPeriod;
+            std::optional<HallPieceKind> floorKind;
+            if (phase == (north ? kHallNorthBenchSlot : kHallSouthBenchSlot)) {
+                floorKind = HallPieceKind::Bench;
+            } else if (phase == (north ? kHallNorthPlantSlot : kHallSouthPlantSlot)) {
+                floorKind = HallPieceKind::Plant;
+            }
+            if (!floorKind) {
+                continue;
+            }
+            const bool bench = *floorKind == HallPieceKind::Bench;
+            const std::int64_t length = bench ? kHallBenchLengthMm : 2 * kHallPlantSpreadMm;
+            const Footprint footprint =
+                bench ? againstWall(north, half, x, length, 0, kHallBenchDepthMm)
+                      : againstWall(north, half, x, length, kHallPlantOffsetMm - kHallPlantSpreadMm,
+                                    2 * kHallPlantSpreadMm);
+            if (footprint.minXMm >= kHallFloorFirstMm && footprint.maxXMm + kHallFloorEndClearMm <= east &&
+                !nearDoorway(hall.doorways, north, true, footprint.minXMm, footprint.maxXMm, kHallDoorApproachMm)) {
+                pieces.push_back(HallPiece{id + "/" + std::string(pieceName(*floorKind)), *floorKind, north, x,
+                                           footprint});
+            }
+        }
+    }
+    // Each doorway's sconces beside its opening (doorways by room id).
+    for (const FloorDoorway& doorway : hall.doorways) {
+        if (!doorway.opensOntoHall()) {
+            continue;
+        }
+        const bool north = doorway.hallEdgeZMm < 0;
+        const std::string prefix = "portal:" + doorway.room.toString() + "/sconce-";
+        for (const auto& [side, x] : {std::pair{std::string_view("west"), doorway.minMm - kHallFlankSconceMm},
+                                      std::pair{std::string_view("east"), doorway.maxMm + kHallFlankSconceMm}}) {
+            pieces.push_back(HallPiece{prefix + std::string(side), HallPieceKind::Sconce, north, x,
+                                       againstWall(north, half, x, kHallSconceWidthMm, 0, kHallSconceDepthMm)});
+        }
+    }
+    return pieces;
 }
 
 } // namespace
@@ -177,6 +279,7 @@ Hall deriveHall(std::string_view floor, std::span<const FloorRoom> rooms, const 
     if (hall.lobby) {
         hall.entrance = {east, -kEntranceWidthMm / 2, east + wall, kEntranceWidthMm / 2};
     }
+    hall.dressing = hallDressing(hall);
     return hall;
 }
 

@@ -4,7 +4,9 @@
 // rooms (walls where no room stands, lights at a fixed pitch, doorways onto the hall), each room's scene moved onto the
 // floor, the areas, walks from the elevator into a north-row and a south-row (half-turned) room through the floor's
 // collision, the light a view packs on a full floor and in the I6 step 1 review's cases (the doorway's threshold, a
-// slight turn), and a room's collection in the floor's frame.
+// slight turn), a room's collection in the floor's frame, and the halls' dressing (I6 step 2: portals, sconces and
+// prints in turn, benches and plants off the passages and the doorways' approaches, obstacles to the walker, appended
+// and never moved as the hall grows).
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -40,6 +42,7 @@
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/floor_scene.hpp>
 #include <rv/world/generation.hpp>
+#include <rv/world/nav_grid.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/validation.hpp>
 
@@ -275,6 +278,7 @@ TEST_CASE("world/floor: golden digests of every floor's scene, two runs alike", 
                                            {"rooms", build.rooms.size()},
                                            {"hallLights", build.hall.lights.size()},
                                            {"hallWalls", build.hall.walls.size()},
+                                           {"hallDressing", build.hall.dressing.size()},
                                            {"undressed", build.undressed.size()}};
         if (floor.id == "gen4") {
             checkGolden(kSceneGoldenDir / (std::string(kGoldenBuilding) + ".gen4.scene.json"), text);
@@ -665,46 +669,61 @@ struct FullFloor {
     Hall hall;
 };
 
-FullFloor fullGen4Floor(const GoldenBuilding& building) {
-    FullFloor full;
-    full.plan = building.plan;
-    rv::world::FloorSceneData data = floorData(full.plan, "gen4", building.tags);
-    const rv::world::Room snes = roomOf(full.plan, "room:snes");
-    for (int i = 0; i < 40; ++i) {
+/// The golden building's gen4 floor with room:snes cloned `clones` times (fewer when its rows are full) into the next
+/// places its rows give, each clone with its own id and place, the lights and fixtures of snes's (no items).
+struct GrownFloor {
+    WorldPlan plan;
+    rv::world::FloorSceneData data;
+};
+
+GrownFloor grownGen4Floor(const GoldenBuilding& building, int clones) {
+    GrownFloor grown;
+    grown.plan = building.plan;
+    grown.data = floorData(grown.plan, "gen4", building.tags);
+    const rv::world::Room snes = roomOf(grown.plan, "room:snes");
+    for (int i = 0; i < clones; ++i) {
         rv::world::Room clone = snes;
         clone.id = *RoomId::forSystem(name("clone" + std::to_string(i)));
         const auto placement = rv::world::placeEnteringRoom(
-            clone, rv::world::floorRows(full.plan.rooms, "gen4", data.building.layout), data.building.layout);
+            clone, rv::world::floorRows(grown.plan.rooms, "gen4", grown.data.building.layout),
+            grown.data.building.layout);
         if (!placement) {
             break;
         }
         clone.placement = *placement;
-        full.plan.rooms.push_back(clone);
-        data.rooms.emplace(clone.id, data.rooms.at(snes.id));
+        grown.plan.rooms.push_back(clone);
+        grown.data.rooms.emplace(clone.id, grown.data.rooms.at(snes.id));
         // Its fixtures and lights, snes's under its id (the plan's lists are the whole building's).
         const auto moved = [&](const rv::world::FixtureId& id) {
             return *rv::world::FixtureId::make(clone.id, id.socket(), id.part());
         };
-        for (std::size_t f = 0, count = full.plan.fixtures.size(); f < count; ++f) {
-            if (full.plan.fixtures[f].id.room() == snes.id) {
-                rv::world::Fixture fixture = full.plan.fixtures[f];
+        for (std::size_t f = 0, count = grown.plan.fixtures.size(); f < count; ++f) {
+            if (grown.plan.fixtures[f].id.room() == snes.id) {
+                rv::world::Fixture fixture = grown.plan.fixtures[f];
                 fixture.id = moved(fixture.id);
-                full.plan.fixtures.push_back(std::move(fixture));
+                grown.plan.fixtures.push_back(std::move(fixture));
             }
         }
-        for (std::size_t l = 0, count = full.plan.lights.size(); l < count; ++l) {
-            if (full.plan.lights[l].id.room() == snes.id) {
-                rv::world::PlanLight light = full.plan.lights[l];
+        for (std::size_t l = 0, count = grown.plan.lights.size(); l < count; ++l) {
+            if (grown.plan.lights[l].id.room() == snes.id) {
+                rv::world::PlanLight light = grown.plan.lights[l];
                 light.id = moved(light.id);
-                full.plan.lights.push_back(std::move(light));
+                grown.plan.lights.push_back(std::move(light));
             }
         }
     }
-    auto scene = rv::world::toFloorSceneDescription(full.plan, "gen4", data);
+    return grown;
+}
+
+FullFloor fullGen4Floor(const GoldenBuilding& building) {
+    GrownFloor grown = grownGen4Floor(building, 40);
+    FullFloor full;
+    full.plan = std::move(grown.plan);
+    auto scene = rv::world::toFloorSceneDescription(full.plan, "gen4", grown.data);
     INFO((scene ? std::string("built") : scene.error().toString()));
     REQUIRE(scene.has_value());
     full.scene = std::move(*scene);
-    full.hall = floorScene(full.plan, "gen4", data).hall;
+    full.hall = floorScene(full.plan, "gen4", grown.data).hall;
     return full;
 }
 
@@ -836,4 +855,264 @@ TEST_CASE("world/floor: a room's collection in its floor's frame", "[world][floo
         }
         CHECK(moved.navigation.size() == layout->navigation.size());
     }
+}
+
+namespace {
+
+/// The hall's dressing objects that must never move: every object of the hall but its floor, ceiling, walls, the
+/// walls' trim and the east end wall's print (they follow the walls, which a longer hall moves or splits).
+bool isFixedDressing(std::string_view id, std::string_view hallPrefix) {
+    if (!id.starts_with(hallPrefix)) {
+        return false;
+    }
+    const std::string_view local = id.substr(hallPrefix.size());
+    return !(local == "floor" || local == "ceiling" || local.starts_with("wall-") || local.starts_with("trim/") ||
+             local.starts_with("east/"));
+}
+
+/// Checks a hall's dressing against its doorways, the elevator and the passage (see floor_layout.hpp): every piece in
+/// the hall, the floor's pieces off the elevator's zone and the doorways' approaches, at least kHallMinClearMm clear
+/// across the hall wherever they stand, and the navigation grid at the main passage's width (1.4 m) reaching the front
+/// of every doorway from the elevator.
+void checkDressingClear(const Hall& hall) {
+    const std::int64_t half = hall.widthMm / 2;
+    std::vector<Footprint> obstacles{hall.elevator};
+    for (const rv::world::HallPiece& piece : hall.dressing) {
+        INFO(piece.id);
+        CHECK(piece.footprint.minXMm >= hall.interior.minXMm);
+        CHECK(piece.footprint.maxXMm <= hall.interior.maxXMm);
+        CHECK(piece.footprint.minZMm >= -half);
+        CHECK(piece.footprint.maxZMm <= half);
+        if (!piece.solid()) {
+            continue;
+        }
+        obstacles.push_back(piece.footprint);
+        CHECK_FALSE(piece.footprint.overlaps(hall.elevatorZone));
+        CHECK(piece.footprint.minXMm >= rv::world::kHallFloorFirstMm);
+        for (const rv::world::FloorDoorway& doorway : hall.doorways) {
+            INFO(doorway.room.toString());
+            CHECK((piece.footprint.maxXMm <= doorway.minMm - rv::world::kHallDoorApproachMm ||
+                   piece.footprint.minXMm >= doorway.maxMm + rv::world::kHallDoorApproachMm));
+        }
+    }
+    // The clear width across the hall at every 10 cm along it.
+    for (std::int64_t x = 50; x < hall.interior.maxXMm; x += 100) {
+        std::int64_t north = -half;
+        std::int64_t south = half;
+        for (const rv::world::HallPiece& piece : hall.dressing) {
+            if (piece.solid() && piece.footprint.minXMm <= x && piece.footprint.maxXMm >= x) {
+                if (piece.north) {
+                    north = std::max(north, piece.footprint.maxZMm);
+                } else {
+                    south = std::min(south, piece.footprint.minZMm);
+                }
+            }
+        }
+        INFO("x " << x);
+        CHECK(south - north >= rv::world::kHallMinClearMm);
+    }
+    // A body 1.4 m wide walks from the elevator to the front of every doorway.
+    const rv::world::NavGrid grid(hall.interior, obstacles, rv::world::kHallMinClearMm / 2);
+    const auto start = grid.cellAt(hall.arrival.xMm, hall.arrival.zMm);
+    REQUIRE(start.has_value());
+    REQUIRE(grid.isFree(*start));
+    const rv::world::NavReach reach(grid, *start);
+    for (const rv::world::FloorDoorway& doorway : hall.doorways) {
+        INFO(doorway.room.toString());
+        CHECK(reach.reachesNear((doorway.minMm + doorway.maxMm) / 2, 0, rv::world::kNavCellMm));
+    }
+}
+
+} // namespace
+
+TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces and prints in turn, the passage clear",
+          "[world][floor][dressing]") {
+    const GoldenBuilding& building = goldenBuilding();
+    const WorldPlan& plan = building.plan;
+    auto materials = rv::assets::MaterialLibrary::loadFromFile(rv::test::world::assetRoot() / "materials" / "base" /
+                                                               "materials.json");
+    REQUIRE(materials.has_value());
+    std::size_t benches = 0;
+    std::size_t plants = 0;
+    for (const rv::world::Floor& floor : plan.floors) {
+        INFO(floor.id);
+        const rv::world::FloorSceneData data = floorData(plan, floor.id, building.tags);
+        const rv::world::FloorSceneBuild build = floorScene(plan, floor.id, data);
+        const Hall& hall = build.hall;
+        const nlohmann::json& scene = build.sceneFile;
+        const std::string prefix = "hall:" + floor.id + "/";
+        checkDressingClear(hall);
+        // A portal at every doorway: its casing, lintel and the room's sign above, a beam over it.
+        for (const rv::world::FloorDoorway& doorway : hall.doorways) {
+            INFO(doorway.room.toString());
+            REQUIRE(doorway.opensOntoHall());
+            const std::string portal = prefix + "portal:" + doorway.room.toString();
+            for (const std::string part : {"/casing-west", "/casing-east", "/casing-head", "/lintel"}) {
+                CHECK(findObject(scene, portal + part) != nullptr);
+            }
+            const nlohmann::json* sign = findObject(scene, portal + "/sign");
+            REQUIRE(sign != nullptr);
+            CHECK((*sign)["textures"]["picture"]["pattern"] == "sign");
+            CHECK((*sign)["textures"]["picture"]["title"] == data.rooms.at(doorway.room).platform.signText);
+            CHECK((*sign)["materials"]["picture"] == "MAT_Sign_Tungsten");
+            // Above the lintel, below the beam, facing into the hall.
+            const double signY = (*sign)["position"][1].get<double>();
+            CHECK(signY - 0.17 > static_cast<double>(doorway.heightMm) / 1000.0 + 0.15);
+            CHECK(signY + 0.17 < static_cast<double>(hall.heightMm) / 1000.0 - 0.22);
+            CHECK((*sign)["rotationDeg"][1].get<double>() == (doorway.hallEdgeZMm < 0 ? 0.0 : 180.0));
+            CHECK(findObject(scene, prefix + "beam-" + std::to_string((doorway.minMm + doorway.maxMm) / 2)) !=
+                  nullptr);
+            // Its two sconces beside the opening.
+            CHECK(findObject(scene, portal + "/sconce-west/shade") != nullptr);
+            CHECK(findObject(scene, portal + "/sconce-east/shade") != nullptr);
+        }
+        // Sconces and prints in turn along each edge; the floor's pieces are objects that collide.
+        std::map<std::string, rv::world::HallPieceKind> slots;
+        for (const rv::world::HallPiece& piece : hall.dressing) {
+            INFO(piece.id);
+            switch (piece.kind) {
+            case rv::world::HallPieceKind::Sconce:
+                CHECK(findObject(scene, prefix + piece.id + "/shade") != nullptr);
+                break;
+            case rv::world::HallPieceKind::Picture: {
+                const nlohmann::json* print = findObject(scene, prefix + piece.id);
+                REQUIRE(print != nullptr);
+                CHECK((*print)["textures"]["picture"]["pattern"] == "cover");
+                break;
+            }
+            case rv::world::HallPieceKind::Bench:
+                ++benches;
+                for (const std::string part : {"/end-west", "/end-east", "/seat", "/cushion"}) {
+                    const nlohmann::json* object = findObject(scene, prefix + piece.id + part);
+                    REQUIRE(object != nullptr);
+                    CHECK(object->value("collides", true));
+                }
+                break;
+            case rv::world::HallPieceKind::Plant: {
+                ++plants;
+                const nlohmann::json* object = findObject(scene, prefix + piece.id);
+                REQUIRE(object != nullptr);
+                CHECK(object->value("collides", true));
+                break;
+            }
+            }
+            if (!piece.id.starts_with("portal:") && !piece.solid()) {
+                slots[piece.id.substr(0, piece.id.find('/'))] = piece.kind;
+            }
+        }
+        for (const auto& [slot, kind] : slots) {
+            INFO(slot);
+            const bool north = slot.starts_with("north-");
+            const long index = std::stol(slot.substr(slot.find('-') + 1));
+            CHECK((kind == rv::world::HallPieceKind::Sconce) == ((index % 2 == 0) == north));
+        }
+        // The runner starts past the elevator's zone; nothing of the dressing is a light.
+        const nlohmann::json* runner = findObject(scene, prefix + "runner-0");
+        REQUIRE(runner != nullptr);
+        CHECK((*runner)["position"][0].get<double>() - 1.2 >= static_cast<double>(hall.elevatorZone.maxXMm) / 1000.0);
+        for (const nlohmann::json& light : scene["lights"]) {
+            const std::string lightName = light["name"].get<std::string>();
+            CHECK((!lightName.starts_with(prefix) || lightName.starts_with(prefix + "light-") ||
+                   lightName.starts_with(prefix + "doorway-fill:")));
+        }
+        // Through the collision world: the walker stands at the arrival point and before every doorway, never in a
+        // bench or a plant.
+        auto description = rv::world::toFloorSceneDescription(plan, floor.id, data);
+        REQUIRE(description.has_value());
+        const rv::scene::CollisionWorld world =
+            rv::scene::buildCollisionWorld(rv::scene::buildSceneGeometry(*description, *materials));
+        const rv::scene::Capsule capsule;
+        CHECK_FALSE(world.overlaps({1.2f, 0.0f, 0.0f}, capsule));
+        for (const rv::world::FloorDoorway& doorway : hall.doorways) {
+            const float x = static_cast<float>(doorway.minMm + doorway.maxMm) / 2000.0f;
+            const float edge = static_cast<float>(doorway.hallEdgeZMm) / 1000.0f;
+            CHECK_FALSE(world.overlaps({x, 0.0f, edge * 0.6f}, capsule));
+        }
+        for (const rv::world::HallPiece& piece : hall.dressing) {
+            if (piece.solid()) {
+                INFO(piece.id);
+                const glm::vec3 centre(static_cast<float>(piece.footprint.minXMm + piece.footprint.maxXMm) / 2000.0f,
+                                       0.0f,
+                                       static_cast<float>(piece.footprint.minZMm + piece.footprint.maxZMm) / 2000.0f);
+                CHECK(world.overlaps(centre, capsule));
+            }
+        }
+    }
+    // The building's halls hold some of each.
+    CHECK(benches >= 3);
+    CHECK(plants >= 3);
+    // A full floor's hall (every place of gen4's rows holding a room): the same rules at every doorway.
+    const FullFloor full = fullGen4Floor(building);
+    REQUIRE(full.hall.doorways.size() >= 20);
+    checkDressingClear(full.hall);
+}
+
+TEST_CASE("world/floor: a longer hall appends its dressing and moves none", "[world][floor][dressing]") {
+    const GoldenBuilding& building = goldenBuilding();
+    // gen4's room:snes, then clones of it in the places its rows give (north and south in turn): each floor's scene
+    // against the one before.
+    std::vector<nlohmann::json> scenes;
+    std::vector<Hall> halls;
+    for (const int clones : {0, 1, 2, 3, 5, 8}) {
+        GrownFloor grown = grownGen4Floor(building, clones);
+        const rv::world::FloorSceneBuild build = floorScene(grown.plan, "gen4", grown.data);
+        scenes.push_back(build.sceneFile);
+        halls.push_back(build.hall);
+    }
+    const std::string prefix = "hall:gen4/";
+    const auto dressing = [&](const nlohmann::json& scene) {
+        std::map<std::string, nlohmann::json> objects;
+        for (const nlohmann::json& object : scene["objects"]) {
+            const std::string id = object["id"].get<std::string>();
+            if (isFixedDressing(id, prefix)) {
+                objects.emplace(id, object);
+            }
+        }
+        return objects;
+    };
+    for (std::size_t i = 1; i < scenes.size(); ++i) {
+        INFO("step " << i);
+        const auto before = dressing(scenes[i - 1]);
+        const auto after = dressing(scenes[i]);
+        CHECK(halls[i].interior.maxXMm >= halls[i - 1].interior.maxXMm);
+        std::size_t kept = 0;
+        for (const auto& [id, object] : before) {
+            INFO(id);
+            const auto found = after.find(id);
+            if (found != after.end()) {
+                CHECK(found->second == object); // the same place, size and look
+                ++kept;
+                continue;
+            }
+            // Gone: a slot's piece where a doorway that entered since stands (its margin).
+            const std::string slot = id.substr(prefix.size(), id.find('/', prefix.size()) - prefix.size());
+            REQUIRE((slot.starts_with("north-") || slot.starts_with("south-")));
+            const auto piece =
+                std::find_if(halls[i - 1].dressing.begin(), halls[i - 1].dressing.end(),
+                             [&](const rv::world::HallPiece& candidate) { return candidate.id.starts_with(slot + "/"); });
+            REQUIRE(piece != halls[i - 1].dressing.end());
+            const bool nearNewDoorway = std::any_of(
+                halls[i].doorways.begin(), halls[i].doorways.end(), [&](const rv::world::FloorDoorway& doorway) {
+                    const bool entered = std::none_of(
+                        halls[i - 1].doorways.begin(), halls[i - 1].doorways.end(),
+                        [&](const rv::world::FloorDoorway& old) { return old.room == doorway.room; });
+                    return entered &&
+                           piece->footprint.maxXMm > doorway.minMm - rv::world::kHallSconceDoorMarginMm &&
+                           piece->footprint.minXMm < doorway.maxMm + rv::world::kHallSconceDoorMarginMm;
+                });
+            CHECK(nearNewDoorway);
+        }
+        CHECK(kept > 0);
+        // The pieces deriveHall() gives alike: a piece kept is the same piece.
+        for (const rv::world::HallPiece& piece : halls[i - 1].dressing) {
+            const auto same = std::find_if(halls[i].dressing.begin(), halls[i].dressing.end(),
+                                           [&](const rv::world::HallPiece& candidate) { return candidate.id == piece.id; });
+            if (same != halls[i].dressing.end()) {
+                CHECK(*same == piece);
+            }
+        }
+    }
+    // The hall grew east: more dressing at the end than at the start.
+    CHECK(dressing(scenes.back()).size() > dressing(scenes.front()).size());
+    CHECK(halls.back().dressing.size() > halls.front().dressing.size());
 }

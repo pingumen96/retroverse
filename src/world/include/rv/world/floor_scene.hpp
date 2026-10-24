@@ -9,13 +9,28 @@
 //     stop left out (geometry::DoorwayParams::stop: the walker passes into the hall), its objects' ids and its lights'
 //     names prefixed with the room's id ("room:snes/fx:hw-w", "room:snes/room" for its shell), each light in the
 //     room's area. A room keeps at most kMaxSceneLights lights (toSceneFile()'s rule).
-//   - The hall (floor_layout.hpp's deriveHall(); the ground floor's lobby): box primitives of the theme's floor, wall
-//     and ceiling materials that collide by their bounds (the walls; the floor and the ceiling collide with nothing),
-//     its lights (point lights of the profile's hall role, as many as its length takes: the hall has no light limit),
-//     a lamp under each, a low fill spot before each doorway that opens onto it aimed into the room (the hall role's
-//     doorwayFill, I6 step 1), the elevator stand-in (a frame, two closed doors, a call panel with its button), the
-//     floor's sign above the elevator (building.json's text), and on the ground floor the closed entrance doors at the
-//     lobby's east end. Object ids "hall:<floor>/<part>"; its lights in the hall's area.
+//   - The hall (floor_layout.hpp's deriveHall(); the ground floor's lobby): box primitives of the theme pack's "hall"
+//     materials (room_look.hpp; the first room's pack, the built-in one for a floor without rooms or a role the pack
+//     lacks) that collide by their bounds (the walls; the floor and the ceiling collide with nothing), its lights
+//     (point lights of the profile's hall role, as many as its length takes: the hall has no light limit), a lamp
+//     above each on a short stem, level with the beams' undersides, a low fill spot before each doorway that opens
+//     onto it aimed into the room (the hall role's doorwayFill, I6 step 1), the elevator stand-in (a frame, two closed
+//     doors, a call panel with its button), the floor's sign above the elevator (building.json's text), and on the
+//     ground floor the closed entrance doors at the lobby's east end. Its dressing (I6 step 2, look.md "Halls"), none
+//     of it a light:
+//       - trim on every wall, like the rooms': a baseboard, a panelled wainscot (battens at a fixed pitch) under a rail,
+//         the plaster above it as a thin skin (over the rooms' doorway walls too), a crown under the ceiling;
+//       - a portal at each doorway that opens onto the hall: a casing and a lintel, the room's sign above (its
+//         platform's sign text on the poster frame's 'sign' pattern, lettering lit on its own), a beam across the
+//         ceiling over it;
+//       - deriveHall()'s dressing: sconces (a backplate and a lit shade), framed prints (invented covers), benches and
+//         plants, seeded by core::deriveSeed("hall", floor, piece id); benches and plants collide;
+//       - a runner of rugs end to end down the middle, from past the elevator's zone, at a fixed pitch from the west
+//         end;
+//       - a large print on the east end wall of a hall (not the lobby's).
+//     The trim, the signs, the beams and the runner collide with nothing. A longer hall appends pieces and moves none:
+//     the trim follows the walls and the end wall's print its wall, as the walls do; a room that enters later may take
+//     a piece away where its doorway's portal stands. Object ids "hall:<floor>/<part>"; its lights in the hall's area.
 //   - The areas (floorAreas()): each room's interior with its doorway's passage, and the hall's interior, from the
 //     floor up to their heights; the hall's with the hall role's environment (exposure, ambient, fill), the rooms'
 //     lit as the scene (I6 step 1, ADR-0014 §4).
