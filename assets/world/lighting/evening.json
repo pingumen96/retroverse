@@ -33,15 +33,18 @@
     "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
   },
   // The halls (I6 step 1, ADR-0014 §4): warmer and more even than the rooms, so that the rooms read as pools of light
-  // seen through their doorways. Ceiling lights on the centre line, a low fill spot before each doorway aimed into
+  // seen through their doorways (since I6 step 2's review a little dimmer, a dark warm gallery with its sconces). Ceiling lights on the centre line, a low fill spot before each doorway aimed into
   // the room (its outer cone at least minOuterConeDeg: it lights the room's middle, not the walls beside the doorway),
   // and the hall's own environment.
   "hall": {
     "light": {"color": "#FFD0A0", "intensity": 12, "range": 9},
     "doorwayFill": {"color": "#FFD6AE", "intensity": 3.5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
                     "innerConeRatio": 0.7},
-    "environment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A", "ambientIntensity": 0.45,
-                    "fillColor": "#FFDCC0", "fillIntensity": 0.15}
+    "environment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A", "ambientIntensity": 0.38,
+                    "fillColor": "#FFDCC0", "fillIntensity": 0.15},
+    // The ground floor's lobby keeps the halls' brighter ambient of I6 step 1 until it becomes the hub (I6 step 5).
+    "lobbyEnvironment": {"exposure": 1.5, "ambientSky": "#8A8078", "ambientGround": "#BCA08A",
+                         "ambientIntensity": 0.45, "fillColor": "#FFDCC0", "fillIntensity": 0.15}
   },
   // Lights of the look alone, drawn while the room's sixteen lights leave room for them (in this order).
   "accents": [

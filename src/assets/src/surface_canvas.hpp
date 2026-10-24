@@ -19,6 +19,8 @@ struct SurfaceSample {
     float roughness = 0.5f;
     float metallic = 0.0f;
     float height = 0.0f;
+    /// The base color's alpha in [0, 1] (1: opaque; only a picture meant for a blended material is not).
+    float coverage = 1.0f;
 };
 
 /// How renderSurface() samples and encodes a surface.
@@ -58,5 +60,6 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 [[nodiscard]] ProceduralSurface makeOrnateRug(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeBrushedMetal(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info);
 
 } // namespace rv::assets::detail

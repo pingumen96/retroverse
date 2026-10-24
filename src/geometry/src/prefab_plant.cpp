@@ -44,6 +44,7 @@ Status validate(const PlantParams& p) {
         checkRange(kKind, "spread", p.spread, p.potRadius + kRimProud, 1.0f),
         checkRange(kKind, "leaves", p.leaves, 3, 64),
         checkRange(kKind, "seed", p.seed, 0, kMaxSeed),
+        p.saucerRadius == 0.0f ? rv::ok() : checkRange(kKind, "saucerRadius", p.saucerRadius, p.potRadius, p.spread),
     });
 }
 
@@ -115,16 +116,19 @@ Status validate(const PlantParams& p) {
 }
 
 ProceduralPrefab assemble(const PlantParams& p) {
-    detail::PrefabAssembler out(kKind, {"pot", "soil", "leaves", "leaves_alt"});
+    detail::PrefabAssembler out(kKind, {"pot", "saucer", "soil", "leaves", "leaves_alt"});
     core::Random random(static_cast<std::uint64_t>(p.seed) * 4u + 3u);
 
-    // The pot on its saucer (as wide as the leaves' reach, so the bounds are exactly the spread): a tapered body, a
-    // rolled rim a little proud of it, the soil filling it to the brim.
+    // The pot on its saucer (by default as wide as the leaves' reach, so the bounds are exactly the spread): a tapered
+    // body, a rolled rim a little proud of it, the soil filling it to the brim.
     const float body = p.potHeight - kRimHeight;
     const float rimRadius = p.potRadius + kRimProud;
+    const bool ownSaucer = p.saucerRadius > 0.0f;
+    const float saucer = ownSaucer ? p.saucerRadius : p.spread;
+    out.part(ownSaucer ? "saucer" : "pot")
+        .frustum(saucer, saucer - kSaucerHeight, kSaucerHeight, kSegments, true, false,
+                 translation(glm::vec3(0.0f, 0.5f * kSaucerHeight, 0.0f)));
     out.part("pot")
-        .frustum(p.spread, p.spread - kSaucerHeight, kSaucerHeight, kSegments, true, false,
-                 translation(glm::vec3(0.0f, 0.5f * kSaucerHeight, 0.0f)))
         .frustum(kPotBottomRatio * p.potRadius, p.potRadius, body - kSaucerHeight, kSegments, true, false,
                  translation(glm::vec3(0.0f, kSaucerHeight + 0.5f * (body - kSaucerHeight), 0.0f)))
         .cylinder(rimRadius, kRimHeight, kSegments, true,

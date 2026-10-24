@@ -184,7 +184,8 @@ LightingProfile builtInEvening() {
     p.fillIntensity = 0.22;
     p.hall.light = LightStyle{"#FFD0A0", 12.0, 9.0, 0.0, 0.0, 0.0};
     p.hall.doorwayFill = LightStyle{"#FFD6AE", 3.5, 6.0, 28.0, 6.0, 0.7};
-    p.hall.environment = AreaLook{1.5, "#8A8078", "#BCA08A", 0.45, "#FFDCC0", 0.15};
+    p.hall.environment = AreaLook{1.5, "#8A8078", "#BCA08A", 0.38, "#FFDCC0", 0.15};
+    p.hall.lobbyEnvironment = AreaLook{1.5, "#8A8078", "#BCA08A", 0.45, "#FFDCC0", 0.15};
     return p;
 }
 
@@ -237,6 +238,23 @@ ThemeMaterials builtInTheme() {
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
         {"cartridge",
          Roles{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Cover"}, {"spine", "MAT_Label_Cover"}}},
+        {"hall",
+         Roles{{"floor", "MAT_Floor_OakPlanks"},
+               {"wall", "MAT_Plaster_Warm"},
+               {"ceiling", "MAT_Plaster_Ceiling"},
+               {"trim", "MAT_Wood_Walnut"},
+               {"baseboard", "MAT_Wood_Walnut"},
+               {"wainscot", "MAT_Wood_Varnished_Dark"},
+               {"runner", "MAT_Carpet_Ornate"},
+               {"beam", "MAT_Wood_Walnut"},
+               {"bench", "MAT_Wood_Walnut"},
+               {"cushion", "MAT_Fabric_Sofa"},
+               {"plant", "MAT_Ceramic_Glazed"},
+               {"saucer", "MAT_Ceramic_Saucer"},
+               {"picture", "MAT_Wood_Walnut"},
+               {"sconce", "MAT_Sconce_Shade"},
+               {"wash", "MAT_Wall_Wash"},
+               {"sign", "MAT_Sign_Tungsten"}}},
     };
     theme.heroParts = {{"sign", Roles{{"frame", "MAT_Wood_Walnut"}, {"picture", "MAT_Neon_Diffuser"}}}};
     return theme;
@@ -309,17 +327,24 @@ Expected<LightingProfile> parseLightingProfile(std::string_view text, std::strin
     profile.ssaoEnabled = ssao.boolean("enabled");
     profile.ssaoRadius = ssao.number("radius", 0.01, 5.0);
     profile.ssaoIntensity = ssao.number("intensity", 0.0, 4.0);
-    const ObjectReader hall = reader.object("hall", {"doorwayFill", "environment", "light"});
+    const ObjectReader hall = reader.object("hall", {"doorwayFill", "environment", "light", "lobbyEnvironment"});
     profile.hall.light = readStyle(hall, "light", false);
     profile.hall.doorwayFill = readStyle(hall, "doorwayFill", true);
-    const ObjectReader hallEnvironment = hall.object(
-        "environment", {"ambientGround", "ambientIntensity", "ambientSky", "exposure", "fillColor", "fillIntensity"});
-    profile.hall.environment.exposure = hallEnvironment.number("exposure", 0.01, 100.0);
-    profile.hall.environment.ambientSky = colour(hallEnvironment, "ambientSky");
-    profile.hall.environment.ambientGround = colour(hallEnvironment, "ambientGround");
-    profile.hall.environment.ambientIntensity = hallEnvironment.number("ambientIntensity", 0.0, 10.0);
-    profile.hall.environment.fillColor = colour(hallEnvironment, "fillColor");
-    profile.hall.environment.fillIntensity = hallEnvironment.number("fillIntensity", 0.0, 10.0);
+    const auto readArea = [&](std::string_view key) {
+        const ObjectReader area = hall.object(
+            key, {"ambientGround", "ambientIntensity", "ambientSky", "exposure", "fillColor", "fillIntensity"});
+        AreaLook look;
+        look.exposure = area.number("exposure", 0.01, 100.0);
+        look.ambientSky = colour(area, "ambientSky");
+        look.ambientGround = colour(area, "ambientGround");
+        look.ambientIntensity = area.number("ambientIntensity", 0.0, 10.0);
+        look.fillColor = colour(area, "fillColor");
+        look.fillIntensity = area.number("fillIntensity", 0.0, 10.0);
+        return look;
+    };
+    profile.hall.environment = readArea("environment");
+    profile.hall.lobbyEnvironment = hall.has("lobbyEnvironment") ? readArea("lobbyEnvironment")
+                                                                  : profile.hall.environment;
     if (reader.has("accents")) {
         const Json& accents = reader.array("accents");
         detail::forEachElement(accents, reader.pointer("accents"), [&](const Json& element, const std::string& at) {

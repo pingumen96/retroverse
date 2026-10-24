@@ -36,7 +36,10 @@ const std::vector<std::string> kSharedNames = {
     // The generated rooms' own (I3 step 16).
     "MAT_Floor_Parquet", "MAT_Wood_Varnished_Dark", "MAT_Screen_CRT_Room", "MAT_Fabric_Display", "MAT_Paper_Magazine",
     "MAT_Book_Cloth", "MAT_Book_Cloth_Alt", "MAT_Ceramic_Glazed", "MAT_Soil", "MAT_Plant_Leaf", "MAT_Plant_Leaf_Light",
-    "MAT_Label_Cover"};
+    "MAT_Label_Cover",
+    // The halls' (I6 step 2).
+    "MAT_Plaster_Warm", "MAT_Sconce_Shade", "MAT_Sign_Tungsten", "MAT_Plaster_Ceiling", "MAT_Metal_Brass",
+    "MAT_Ceramic_Saucer", "MAT_Wall_Wash"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.
@@ -154,6 +157,13 @@ TEST_CASE("assets/materials: unlit presets", "[assets][materials]") {
     checkColor(glm::vec3(screen.baseColorFactor), glm::vec3(1.0f));
     CHECK(screen.emissiveStrength == Approx(2.0f));
     CHECK_FALSE(screen.crt.has_value());
+
+    // A sconce's wash on its wall (I6 step 2): the wall wash's picture blended in the sconce's amber.
+    const MaterialDesc& wash = *library->find("MAT_Wall_Wash");
+    CHECK(wash.shading == ShadingModel::Unlit);
+    CHECK(wash.alphaMode == AlphaMode::Blend);
+    CHECK(wash.baseColorFactor.a == Approx(0.4f));
+    CHECK(wash.baseColorTexture.procedural == "wallwash/baseColor");
 
     // The picture tube: the same brightness, a subtle CRT effect (style 15.2: never hurting legibility).
     const MaterialDesc& crt = *library->find("MAT_Screen_CRT");

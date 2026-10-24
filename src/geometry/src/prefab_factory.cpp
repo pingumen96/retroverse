@@ -380,13 +380,14 @@ Expected<ProceduralPrefab> rugFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> plantFromJson(const Json& params) {
     PlantParams p;
-    ParamReader r("plant", params, {"height", "potRadius", "potHeight", "spread", "leaves", "seed"});
+    ParamReader r("plant", params, {"height", "potRadius", "potHeight", "spread", "leaves", "seed", "saucerRadius"});
     r.read("height", p.height);
     r.read("potRadius", p.potRadius);
     r.read("potHeight", p.potHeight);
     r.read("spread", p.spread);
     r.read("leaves", p.leaves);
     r.read("seed", p.seed);
+    r.read("saucerRadius", p.saucerRadius);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -500,23 +501,36 @@ Expected<MeshData> boxFromJson(const Json& params) {
     glm::vec3 size(1.0f);
     BoxUv uv = BoxUv::PerFace;
     float metersPerTile = 1.0f;
-    ParamReader r("box", params, {"size", "uv", "metersPerTile"});
+    glm::vec3 uvOrigin(0.0f);
+    ParamReader r("box", params, {"size", "uv", "metersPerTile", "uvOrigin"});
     r.read("size", size);
-    r.readEnum("uv", uv, {{"face", BoxUv::PerFace}, {"meters", BoxUv::WorldMeters}});
+    r.readEnum("uv", uv, {{"face", BoxUv::PerFace}, {"meters", BoxUv::WorldMeters}, {"grain", BoxUv::GrainMeters}});
     r.read("metersPerTile", metersPerTile);
+    r.read("uvOrigin", uvOrigin);
     if (!r.ok()) {
         return propagate(r.error());
     }
     if (Status status = firstError({
             checkRange("box", "size", size, glm::vec3(kMinLength), glm::vec3(kMaxLength)),
             checkRange("box", "metersPerTile", metersPerTile, 0.01f, 100.0f),
+            checkRange("box", "uvOrigin", uvOrigin, glm::vec3(-kMaxLength), glm::vec3(kMaxLength)),
         });
         !status) {
         return propagate(status.error());
     }
     MeshBuilder builder;
-    builder.box(size, glm::mat4(1.0f), uv, metersPerTile);
-    return std::move(builder).build("box");
+    if (uvOrigin == glm::vec3(0.0f)) {
+        builder.box(size, glm::mat4(1.0f), uv, metersPerTile);
+        return std::move(builder).build("box");
+    }
+    // The meter layouts measured from `uvOrigin` (the box's place in the scene): boxes side by side tile on.
+    builder.box(size, detail::translation(uvOrigin), uv, metersPerTile);
+    MeshData mesh = std::move(builder).build("box");
+    for (Vertex& vertex : mesh.vertices) {
+        vertex.position -= uvOrigin;
+    }
+    computeBounds(mesh);
+    return mesh;
 }
 
 Expected<MeshData> planeFromJson(const Json& params) {

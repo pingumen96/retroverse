@@ -1,7 +1,8 @@
-// Finishes of the catalog (surface_textures.hpp): painted plaster walls, brushed metal and the micro-variation of aged
-// plastic. Original procedural designs.
+// Finishes of the catalog (surface_textures.hpp): painted plaster walls, brushed metal, the micro-variation of aged
+// plastic and the soft light a wall sconce throws on its wall. Original procedural designs.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include <glm/common.hpp>
@@ -89,6 +90,39 @@ ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info) {
         sample.roughness = 1.0f - 0.12f * handled - 0.04f * speckle;
         sample.metallic = 0.0f;
         sample.height = 0.000008f * peel;
+        return sample;
+    });
+}
+
+ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info) {
+    // The light a wall sconce throws on the plaster around it (I6 step 2), as the coverage of a white picture: a
+    // strong scallop rising from the shade, a weaker one falling below it, a soft core between, fading to nothing well
+    // inside the image's edges. u across, v down; the shade sits a little below the middle (the picture centred 5 cm
+    // above it on a 1.0 x 1.5 m quad).
+    CanvasDesc desc;
+    desc.size = info.size;
+    desc.meters = info.meters;
+    desc.tiles = false;
+    desc.samplesPerAxis = 2;
+    desc.normalMap = false;
+    const auto lobe = [](float u, float v, float width, float centre, float height) {
+        const float a = u / width;
+        const float b = (v - centre) / height;
+        return std::exp(-(a * a) - (b * b));
+    };
+    return renderSurface(desc, [&](float u, float v) {
+        const float x = u - 0.5f;
+        const float y = v - 0.5f;
+        const float up = lobe(x, y, 0.15f, -0.16f, 0.20f);
+        const float down = lobe(x, y, 0.12f, 0.12f, 0.12f);
+        const float core = lobe(x, y, 0.22f, -0.02f, 0.26f);
+        const float window =
+            (1.0f - smoothStep(0.36f, 0.5f, std::abs(x))) * (1.0f - smoothStep(0.38f, 0.5f, std::abs(y)));
+        SurfaceSample sample;
+        sample.albedo = glm::vec3(1.0f);
+        sample.roughness = 1.0f;
+        sample.metallic = 0.0f;
+        sample.coverage = std::min(1.0f, (0.85f * up + 0.5f * down + 0.3f * core) * window);
         return sample;
     });
 }

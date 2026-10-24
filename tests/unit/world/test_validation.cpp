@@ -10,12 +10,14 @@
 #include <algorithm>
 #include <filesystem>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <rv/core/text.hpp>
 #include <rv/world/building.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/validation.hpp>
 
 #include "world_test_plans.hpp"
@@ -870,6 +872,39 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].subject == "room:snes");
         CHECK_THAT(findings[0].message, ContainsSubstring("cannot be walked to from the elevator through 1200 mm"));
+
+        // A bench of the hall's dressing in the way (I6 step 2: the benches and plants are obstacles of the floor's
+        // walk). A body 1.5 m wide walks a hall 2 m wide past the bench (1.55 m left beside it) to the doorway; in a
+        // hall 1.9 m wide the same body passes the hall, the same doorway, but not the bench (1.45 m left).
+        for (const std::int64_t width : {2000, 1900}) {
+            INFO("hall " << width << " mm wide");
+            plan = rv::test::validRoomPlan();
+            plan.rooms.front().placement.zMm += (3000 - width) / 2; // its doorway wall on the narrower hall's edge
+            ValidationContext narrow = context;
+            narrow.building->layout.hallWidthMm = width;
+            narrow.config.minClearWidthMm = 1500;
+            const rv::world::FloorRoom floorRoom{&plan.rooms.front(), &narrow.templates.front()};
+            const rv::world::Hall hall =
+                rv::world::deriveHall("gen4", std::span(&floorRoom, 1), narrow.building->layout);
+            REQUIRE(hall.doorways.size() == 1);
+            REQUIRE(hall.doorways.front().opensOntoHall());
+            const auto bench = std::find_if(hall.dressing.begin(), hall.dressing.end(), [&](const auto& piece) {
+                return piece.kind == rv::world::HallPieceKind::Bench &&
+                       piece.footprint.maxXMm < hall.doorways.front().minMm;
+            });
+            REQUIRE(bench != hall.dressing.end());
+            report = rv::world::validatePlan(plan, narrow);
+            INFO(describe(report));
+            CHECK(findingsOf(report, rule::kDoorwayOffHall).empty());
+            findings = findingsOf(report, rule::kFloorUnreachable);
+            if (width == 2000) {
+                CHECK(findings.empty());
+            } else {
+                REQUIRE(findings.size() == 1);
+                CHECK(findings[0].subject == "room:snes");
+                CHECK_THAT(findings[0].message, ContainsSubstring("through 1500 mm"));
+            }
+        }
 
         // A template whose doorway is in a side wall: the doorway does not open onto the hall.
         plan = rv::test::validRoomPlan();

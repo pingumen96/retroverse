@@ -479,10 +479,13 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 
 ### The look (the styling pass, I6)
 
-- **The halls (I4 step 3):** a floor's hall is plain boxes (walls, floor, ceiling) without baseboards or trim, their
-  textures restarting at each box, lit by the lighting profile's pendant style at a fixed 6 m pitch; it reads dim but
-  legible (G11). Trim and baseboards, a hall light role in the profiles, the lobby's 3D displays, stairs
-  (`docs/i4/step-3.md`, ADR-0013 "Deferred").
+- **The halls (I4 step 3):** dressed in I6 step 1 (the hall light role) and step 2 (`docs/i6/step-2.md`: trim,
+  portals with flat and blade signs, beams, sconces with a baked wash on the wall, muted prints, benches with plants, a
+  runner). Left: the sconces light nothing but their baked wash (no punctual light: step 1's budget; a picture light
+  over a print would be one); the runner's rugs show their borders where they meet: a runner surface of its own (a
+  long border and a repeating field instead of the medallion rug end to end); the prints share one muted palette, not
+  their floor pack's (step 3's packs could carry a print palette); the east end wall's print and trim move with the
+  wall as a hall grows; the lobby's 3D displays and stairs (the hub, step 5; ADR-0013 "Deferred").
 - **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
   with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
   room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall

@@ -1389,6 +1389,27 @@ TEST_CASE("geometry/prefabs: the plant stands within its spread, its tallest lea
     CHECK(rv::geometry::hashMesh(part(buildOk("plant", {{"seed", 1}}), "leaves").mesh) !=
           rv::geometry::hashMesh(part(buildOk("plant", {{"seed", 2}}), "leaves").mesh));
     CHECK_FALSE(rv::geometry::buildPrefab("plant", {{"spread", 0.1}}).has_value()); // narrower than its pot
+    // A saucer of its own (I6 step 2's halls): as wide as asked, in its role, the pot's role the pot alone; the bounds
+    // within the spread. Narrower than the pot or wider than the spread: refused.
+    const json saucered{{"height", 1.15}, {"potRadius", 0.17}, {"potHeight", 0.34},
+                        {"spread", 0.3},  {"leaves", 16},      {"saucerRadius", 0.196}};
+    const ProceduralPrefab plant = buildOk("plant", saucered);
+    checkPrefab(plant);
+    const rv::geometry::MeshData& saucer = part(plant, "saucer").mesh;
+    CHECK(saucer.bounds.max.x == Approx(0.196f));
+    CHECK(saucer.bounds.max.y == Approx(0.018f));
+    CHECK(part(plant, "pot").mesh.bounds.max.x < 0.19f);
+    CHECK(plant.bounds.max.x <= 0.3f + 1e-5f);
+    json defaults = saucered;
+    defaults.erase("saucerRadius");
+    CHECK(rv::geometry::hashMesh(part(buildOk("plant", defaults), "leaves").mesh) ==
+          rv::geometry::hashMesh(part(plant, "leaves").mesh));
+    CHECK(part(buildOk("plant", defaults), "pot").mesh.bounds.max.x == Approx(0.3f));
+    for (const double radius : {0.1, 0.35, -0.2}) {
+        json bad = saucered;
+        bad["saucerRadius"] = radius;
+        CHECK_FALSE(rv::geometry::buildPrefab("plant", bad).has_value());
+    }
 }
 
 TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][primitives]") {
@@ -1424,6 +1445,33 @@ TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][pri
             CHECK(v.uv0.y == Approx(-v.position.y / 0.5f));
         }
     }
+    // "uvOrigin": the meter layout as if the box stood there; the mesh stays centred on the origin.
+    const auto placed = rv::geometry::buildPrimitive(
+        "box", {{"size", {2.0, 3.0, 4.0}}, {"uv", "meters"}, {"metersPerTile", 0.5}, {"uvOrigin", {10.0, 1.5, -2.0}}});
+    REQUIRE(placed.has_value());
+    CHECK(closeTo(placed->bounds.min, glm::vec3(-1.0f, -1.5f, -2.0f)));
+    REQUIRE(placed->vertices.size() == box->vertices.size());
+    for (std::size_t i = 0; i < placed->vertices.size(); ++i) {
+        const rv::geometry::Vertex& v = placed->vertices[i];
+        CHECK(closeTo(v.position, box->vertices[i].position));
+        if (v.normal == glm::vec3(0.0f, 0.0f, 1.0f)) {
+            CHECK(v.uv0.x == Approx((v.position.x + 10.0f) / 0.5f));
+            CHECK(v.uv0.y == Approx(-(v.position.y + 1.5f) / 0.5f));
+        }
+    }
+    // "grain": u along each face's longer side (a batten standing up: the grain runs up its front).
+    const auto batten = rv::geometry::buildPrimitive("box", {{"size", {0.04, 0.8, 0.016}}, {"uv", "grain"}});
+    REQUIRE(batten.has_value());
+    glm::vec2 uvMin(1e9f);
+    glm::vec2 uvMax(-1e9f);
+    for (const rv::geometry::Vertex& v : batten->vertices) {
+        if (v.normal == glm::vec3(0.0f, 0.0f, 1.0f)) {
+            uvMin = glm::min(uvMin, v.uv0);
+            uvMax = glm::max(uvMax, v.uv0);
+        }
+    }
+    CHECK(uvMax.x - uvMin.x == Approx(0.8f));
+    CHECK(uvMax.y - uvMin.y == Approx(0.04f));
     const auto plane = rv::geometry::buildPrimitive("plane", {{"size", {4.0, 2.0}}, {"uvTiling", {4.0, 2.0}}});
     REQUIRE(plane.has_value());
     float maxU = 0.0f;

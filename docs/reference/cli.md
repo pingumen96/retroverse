@@ -167,7 +167,10 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `lobby`, `hall`, `rooms`}); with `--scene` it writes the whole floor instead of a room ("Scene <file> of floor
   <id>: ...", JSON `sceneFloor`): every room moved onto the floor by its placement (its ids prefixed with the room's,
   its doorway's stop left out), the hall's walls, floor, ceiling, lights and lamps, the elevator stand-in with the
-  floor's sign (building.json), the lobby's entrance doors on the ground floor, the areas whose lights the app packs
+  floor's sign (building.json), the lobby's entrance doors on the ground floor, the hall's dressing (I6 step 2,
+  `docs/i6/step-2.md`: the theme pack's `hall` materials, trim on every wall, a portal with the room's flat and blade
+  signs at each doorway, beams every 3 m and over the doorways, sconces washing their wall and prints in turn, benches
+  with a plant beside them, the runner), the areas whose lights the app packs
   (each room's interior with its doorway's passage, the hall), a camera in front of the elevator facing east.
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
   the world's configuration and the building's data (37 rules, `rv/world/validation.hpp`: the ground floor, the rooms'

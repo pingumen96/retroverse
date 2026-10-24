@@ -370,15 +370,17 @@ struct ShelfDressingParams {
 /// tip at `height` within a millimetre). A potted plant of original design: a rosette of upright sword leaves in a
 /// tapered ceramic pot with a rolled rim on a saucer of radius `spread`, filled with soil to the brim; `seed` varies the
 /// leaves' angles, heights, widths, lean and twist deterministically (core::Random). Roles: "pot" (the saucer too),
-/// "soil", "leaves" and "leaves_alt" (every third leaf, a lighter shade). No sockets; its bounds collide, as every
-/// fixture's do.
+/// "soil", "leaves" and "leaves_alt" (every third leaf, a lighter shade). With `saucerRadius` (I6 step 2) the saucer is
+/// that wide, a little wider than the pot rather than the leaves, in a role of its own, "saucer" (the bounds are then
+/// the leaves' and the pot's, within the spread). No sockets; its bounds collide, as every fixture's do.
 struct PlantParams {
-    float height = 1.0f;     ///< [0.3, 2.5]
-    float potRadius = 0.15f; ///< the pot's top radius, [0.05, 0.6]
-    float potHeight = 0.3f;  ///< [0.08, height / 2]
-    float spread = 0.19f;    ///< how far the leaves reach from the axis, [potRadius + 8 mm, 1]
-    int leaves = 14;         ///< [3, 64]
-    int seed = 0;            ///< [0, 2147483647]
+    float height = 1.0f;       ///< [0.3, 2.5]
+    float potRadius = 0.15f;   ///< the pot's top radius, [0.05, 0.6]
+    float potHeight = 0.3f;    ///< [0.08, height / 2]
+    float spread = 0.19f;      ///< how far the leaves reach from the axis, [potRadius + 8 mm, 1]
+    int leaves = 14;           ///< [3, 64]
+    int seed = 0;              ///< [0, 2147483647]
+    float saucerRadius = 0.0f; ///< 0: the saucer as wide as the spread, in the pot's role; else [potRadius, spread]
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -411,7 +413,9 @@ struct PlantParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildPrefab(std::string_view kind, const nlohmann::json& params);
 
 /// Single-material primitive centered on the origin, named after its kind (same error rules as buildPrefab):
-///   "box"      {"size": [1, 1, 1], "uv": "face" | "meters", "metersPerTile": 1.0}
+///   "box"      {"size": [1, 1, 1], "uv": "face" | "meters" | "grain" (BoxUv::GrainMeters), "metersPerTile": 1.0,
+///               "uvOrigin": [0, 0, 0]}: the meter layouts as if the box's centre stood at uvOrigin (its place in the
+///               scene: boxes side by side, each with its own place, tile on without a seam; in [-1000, 1000])
 ///   "plane"    {"size": [1, 1] (x, z), "uvTiling": [1, 1]}, facing +Y
 ///   "quad"     {"size": [1, 1] (x, y)}, facing +Z, uv (0, 0) at the top-left corner
 ///   "sphere"   {"radius": 0.5, "segments": 32, "rings": 16}

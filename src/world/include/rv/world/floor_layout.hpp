@@ -25,6 +25,28 @@
 // wall thickness); it opens onto the hall when it is in the room's south wall (its doorway wall) and that wall's outer
 // face stands on the hall's edge: the room abuts the hall (building.hpp's followDepth()).
 // The areas (ADR-0013 §9): each room's interior extended through its doorway's passage, and the hall's interior.
+//
+// The hall's dressing (I6 step 2, look.md "Halls"): pieces on its two long edges, the north edge's wall at
+// z = -width / 2 and the south edge's at +width / 2 (a room's doorway wall where one stands, the hall's own elsewhere):
+//   - the slots: x = kHallSlotFirstMm + i * kHallSlotPitchMm from the west end (i from 0), the same on both edges, so
+//     that a longer hall appends pieces and moves none (the lights' rule). A slot's wall piece alternates: on the north
+//     edge a sconce at even i and a framed picture at odd i, on the south edge the reverse (a sconce faces a picture);
+//     the pictures of an edge alternate portrait and landscape (landscape where i / 2 is odd).
+//     Every kHallFloorPeriod slots the floor holds a bench with a plant beside it, on each edge in turn every 6 m
+//     (north: a plant at i % 8 == 2 and a bench at 3; south: a bench at 6 and a plant at 7) against its wall;
+//   - a slot's piece is left out where it would not fit: within kHallEndClearMm of the hall's ends (wall pieces) or
+//     before kHallFloorFirstMm and within kHallFloorEndClearMm of the east end (floor pieces), a floor piece that would
+//     leave less than kHallMinClearMm across the hall (beside what the other edge holds there: a hall too narrow holds
+//     none); a wall piece within its
+//     margin of a doorway's opening on its edge (kHallSconceDoorMarginMm for a sconce, kHallPictureDoorMarginMm for a
+//     picture), a floor piece within kHallDoorApproachMm of any doorway's opening along x, on either edge (the doorway's
+//     approach and the place across the hall stay clear). A room that enters later may so take a slot's piece away
+//     (its doorway's margin); it never moves one;
+//   - each doorway that opens onto the hall is flanked by two sconces on its wall, kHallFlankSconceMm from the opening's
+//     sides (they come and go with the room, whose doorway never moves).
+// Benches and plants stand on the floor: they collide and are obstacles of the floor's navigation (validation.hpp's
+// floor-unreachable); they keep the hall's middle clear, at least kHallMinClearMm wide wherever they stand. Sconces and
+// pictures hang on the wall (sconces above the head).
 
 #include <cstdint>
 #include <span>
@@ -103,6 +125,71 @@ struct HallWall {
     bool operator==(const HallWall&) const = default;
 };
 
+/// The hall's dressing (see the file comment): the slots' pitch and the first slot's x from the west end.
+inline constexpr std::int64_t kHallSlotPitchMm = 1500;
+inline constexpr std::int64_t kHallSlotFirstMm = 750;
+/// The period of the benches and plants, in slots, and the slots they stand at on each edge.
+inline constexpr std::int64_t kHallFloorPeriod = 8;
+inline constexpr std::int64_t kHallNorthBenchSlot = 3;
+inline constexpr std::int64_t kHallNorthPlantSlot = 2;
+inline constexpr std::int64_t kHallSouthBenchSlot = 6;
+inline constexpr std::int64_t kHallSouthPlantSlot = 7;
+/// What a wall piece keeps clear of the hall's ends, what a floor piece keeps clear of the elevator's landing (its x
+/// from the west end) and of the east end.
+inline constexpr std::int64_t kHallEndClearMm = 300;
+inline constexpr std::int64_t kHallFloorFirstMm = 2500;
+inline constexpr std::int64_t kHallFloorEndClearMm = 500;
+/// How far from a doorway's opening (along x) a slot's sconce, picture and floor piece keep, and how far beside the
+/// opening the doorway's own sconces hang (their centres).
+inline constexpr std::int64_t kHallSconceDoorMarginMm = 1500;
+inline constexpr std::int64_t kHallPictureDoorMarginMm = 800;
+inline constexpr std::int64_t kHallDoorApproachMm = 900;
+inline constexpr std::int64_t kHallFlankSconceMm = 400;
+/// The pieces' sizes: a sconce's width and depth (from the wall), a picture's width (portrait, landscape) and depth,
+/// a bench's length and depth (with its gap to the wall), a plant's pot centre from the wall and its spread.
+inline constexpr std::int64_t kHallSconceWidthMm = 130;
+inline constexpr std::int64_t kHallSconceDepthMm = 160;
+inline constexpr std::int64_t kHallPictureWidthMm = 560;
+inline constexpr std::int64_t kHallPictureLandscapeWidthMm = 760;
+inline constexpr std::int64_t kHallPictureDepthMm = 35;
+inline constexpr std::int64_t kHallBenchLengthMm = 1200;
+inline constexpr std::int64_t kHallBenchDepthMm = 450;
+inline constexpr std::int64_t kHallPlantOffsetMm = 330;
+inline constexpr std::int64_t kHallPlantSpreadMm = 300;
+/// The clear width the dressing leaves in the hall's middle (style §6.2's main passage).
+inline constexpr std::int64_t kHallMinClearMm = 1400;
+
+/// What a piece of a hall's dressing is.
+enum class HallPieceKind : std::uint8_t {
+    Sconce,  ///< a wall light (an emissive fixture: no light of its own)
+    Picture, ///< a framed print
+    Bench,   ///< a bench against the wall
+    Plant,   ///< a potted plant against the wall
+};
+
+/// A piece of a hall's dressing (see the file comment), in the floor's frame.
+struct HallPiece {
+    /// "<edge>-<slot>/<kind>" for a slot's piece ("north-3/picture", and the bench below it "north-3/bench"),
+    /// "portal:<room id>/sconce-west" and "-east" for a doorway's sconces.
+    std::string id;
+    HallPieceKind kind = HallPieceKind::Sconce;
+    /// On the north edge (else the south edge).
+    bool north = true;
+    /// Its slot (i), -1 for a doorway's sconce.
+    std::int64_t slot = -1;
+    /// A picture hung landscape (else portrait).
+    bool landscape = false;
+    /// Its centre along the hall.
+    std::int64_t xMm = 0;
+    /// What it takes on the floor: from the wall's face into the hall by its depth, its width along x.
+    Footprint footprint;
+
+    /// It stands on the floor: a collision and navigation obstacle.
+    [[nodiscard]] bool solid() const noexcept { return kind == HallPieceKind::Bench || kind == HallPieceKind::Plant; }
+
+    bool operator==(const HallPiece&) const = default;
+};
+
 /// A floor's hall (see the file comment).
 struct Hall {
     std::string floor;
@@ -125,6 +212,9 @@ struct Hall {
     FloorPoint arrival;
     /// The lobby's entrance doors in its east wall (z from minZMm to maxZMm); empty for a hall.
     Footprint entrance;
+    /// The dressing (see the file comment): the north edge's slot pieces west to east, the south edge's, then each
+    /// doorway's sconces by room id.
+    std::vector<HallPiece> dressing;
 
     /// The hall with its walls and the elevator's frame (what a room of the floor must not overlap).
     [[nodiscard]] Footprint footprint() const noexcept;

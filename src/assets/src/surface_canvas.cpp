@@ -78,7 +78,7 @@ ProceduralSurface renderSurface(const CanvasDesc& desc, const SurfaceFunction& s
 
     forEachRow(height, [&](int y) {
         for (int x = 0; x < width; ++x) {
-            SurfaceSample sum{glm::vec3(0.0f), 0.0f, 0.0f, 0.0f};
+            SurfaceSample sum{glm::vec3(0.0f), 0.0f, 0.0f, 0.0f, 0.0f};
             for (int sy = 0; sy < samples; ++sy) {
                 const float v =
                     (static_cast<float>(y) + (static_cast<float>(sy) + 0.5f) / static_cast<float>(samples)) /
@@ -92,6 +92,7 @@ ProceduralSurface renderSurface(const CanvasDesc& desc, const SurfaceFunction& s
                     sum.roughness += s.roughness;
                     sum.metallic += s.metallic;
                     sum.height += s.height;
+                    sum.coverage += s.coverage;
                 }
             }
             const std::size_t index = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
@@ -100,7 +101,7 @@ ProceduralSurface renderSurface(const CanvasDesc& desc, const SurfaceFunction& s
             color[0] = encodeSrgb(sum.albedo.r * sampleWeight, table);
             color[1] = encodeSrgb(sum.albedo.g * sampleWeight, table);
             color[2] = encodeSrgb(sum.albedo.b * sampleWeight, table);
-            color[3] = 255;
+            color[3] = encodeUnit(sum.coverage * sampleWeight);
             std::uint8_t* material = out.metallicRoughness.pixels.data() + index * 4u;
             material[0] = 255;
             material[1] = encodeUnit(sum.roughness * sampleWeight);

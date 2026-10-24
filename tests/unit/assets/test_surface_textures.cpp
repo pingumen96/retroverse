@@ -117,14 +117,16 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
               Approx(info.meters.y / static_cast<float>(info.size.y)));
     }
     CHECK(names == std::vector<std::string_view>{"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster",
-                                                 "ornate_rug", "brushed_metal", "aged_plastic"});
+                                                 "ornate_rug", "brushed_metal", "aged_plastic", "wallwash"});
     CHECK(rv::assets::findProceduralSurface("teak") == nullptr);
     const auto unknown = rv::assets::makeProceduralSurface("teak");
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
-    // The rug is a picture with a border; every other surface tiles.
+    // The rug and the wall wash are pictures; every other surface tiles.
     CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->tiles);
     CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->hasNormalMap);
+    CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->tiles);
+    CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->hasNormalMap);
 }
 
 TEST_CASE("assets/surface_textures: names of single maps", "[assets][surfaces]") {
@@ -170,8 +172,11 @@ TEST_CASE("assets/surface_textures: every surface generates its maps", "[assets]
             CHECK(image.height == info.size.y);
             CHECK(image.channels == 4);
         }
-        // Opaque base color; the metallic-roughness map leaves R and A at 255 (glTF ignores them).
-        CHECK(meanChannel(surface.baseColor, 3) == 1.0);
+        // Opaque base color (but the wall wash's, whose alpha is its picture); the metallic-roughness map leaves R
+        // and A at 255 (glTF ignores them).
+        if (info.name != "wallwash") {
+            CHECK(meanChannel(surface.baseColor, 3) == 1.0);
+        }
         CHECK(meanChannel(surface.metallicRoughness, 0) == 1.0);
         CHECK(meanChannel(surface.metallicRoughness, 3) == 1.0);
     }
@@ -306,3 +311,33 @@ TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[asse
     CHECK(plastic.b > 0.9f);
     CHECK(roughness("aged_plastic") > 0.9);
 }
+
+TEST_CASE("assets/surface_textures: the wall wash: a white picture, its light rising from the shade, none at its edges",
+          "[assets][surfaces]") {
+    const ProceduralSurface& wash = surfaceOf("wallwash");
+    const ImageData& image = wash.baseColor;
+    REQUIRE(image.isValid());
+    const auto alpha = [&](int x, int y) { return static_cast<int>(texel(image, x, y)[3]); };
+    int edge = 0;
+    for (int x = 0; x < image.width; ++x) {
+        edge = std::max({edge, alpha(x, 0), alpha(x, image.height - 1)});
+        CHECK(texel(image, x, image.height / 2)[0] == 255); // white: the material gives the colour
+    }
+    for (int y = 0; y < image.height; ++y) {
+        edge = std::max({edge, alpha(0, y), alpha(image.width - 1, y)});
+    }
+    CHECK(edge == 0);
+    // The shade sits a little below the middle (the quad centred 5 cm above it): opaque around it, the scallop above
+    // stronger and taller than the one below, symmetric across.
+    const int centreX = image.width / 2;
+    const int shade = image.height / 2 + image.height / 30;
+    CHECK(alpha(centreX, shade) >= 200);
+    const int above = image.height / 2 - image.height / 4; // 0.375 m above the middle
+    const int below = image.height / 2 + image.height / 4;
+    CHECK(alpha(centreX, above) > alpha(centreX, below));
+    CHECK(alpha(centreX, above) >= 80);
+    CHECK(alpha(centreX - 20, shade) == alpha(image.width - 1 - (centreX - 20), shade));
+    // Soft across: a quarter metre to the side much fainter than at the centre.
+    CHECK(alpha(centreX + image.width / 4, shade) < alpha(centreX, shade) / 2);
+}
+

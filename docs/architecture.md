@@ -331,7 +331,8 @@ outside the clip volume by `pbr.vert`, so no program on that stage draws them.
   immutable `GL_RGBA8` / `GL_SRGB8_ALPHA8` textures with full mip chains. The first request of a procedural surface
   generates all of its maps (`assets::makeProceduralSurface`, logged with its time) and uploads each in its color space.
   A missing or broken source is logged once and drawn as the checker (style §21). The test room's 125 textures take 105
-  MiB, 80 MiB of it in the 23 maps of its eight procedural surfaces. `clearContent` releases everything but the
+  MiB, 80 MiB of it in the 23 maps of its eight procedural surfaces (since I6 step 2 nine surfaces, 25 maps, 256 KiB
+  more). `clearContent` releases everything but the
   procedural surface maps, which no content changes and which take long to generate (the asset preview's reloads).
 - **Procedural surfaces (M0 step 12, style §3.2-3.3):** `rv/assets/surface_textures.hpp` generates the PBR maps of the
   shared materials at startup, so Retroverse needs no texture download and every design is original: `oak_planks` (14.3
@@ -340,7 +341,9 @@ outside the clip volume by `pbr.vert`, so no program on that stage draws them.
   to edge, each a flat slice through a log: growth rings around a pith at its own depth and offset, straight far from it
   and closing into arches near it, drifting along the board, with pores, streaks and a tone per board; 1 x 1 m per
   repeat, the grain along u), `painted_plaster`, `ornate_rug` (a medallion rug in the style §3 palette, a picture for
-  the rug prefab's 2.4 x 1.6 m, without normal map), `brushed_metal` and `aged_plastic`. Each is a pure function of (u,
+  the rug prefab's 2.4 x 1.6 m, without normal map), `brushed_metal`, `aged_plastic` and `wallwash` (I6 step 2: the
+  light of a hall's sconce on its wall, a white picture whose alpha is the wash, for a blended unlit quad). Each is a
+  pure function of (u,
   v) built from integer-hash value noise on lattices that repeat over the image (`src/assets/src/procedural_noise.*`),
   rendered row by row in parallel (`std::execution::par`) into an sRGB base color, a linear metallic-roughness map (glTF
   channels) and a tangent-space normal map from central differences of its heights (+Y towards decreasing v, ADR-0002).

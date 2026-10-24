@@ -612,6 +612,12 @@ private:
                 obstacles.push_back(wall.footprint);
             }
             obstacles.push_back(hall.elevator);
+            // The hall's dressing that stands on the floor (I6 step 2: benches and plants).
+            for (const HallPiece& piece : hall.dressing) {
+                if (piece.solid()) {
+                    obstacles.push_back(piece.footprint);
+                }
+            }
             for (const FloorRoom& entry : rooms) {
                 const Room& room = *entry.room;
                 const Footprint footprint = floorFootprint(room, layout);
