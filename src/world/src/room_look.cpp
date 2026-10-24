@@ -176,6 +176,15 @@ LightingProfile builtInEvening() {
     // The shelf spots (9 to 11 at 2.2 m, cones 18 / 32 degrees): the whole module's height in the cone.
     p.wallWasher = LightStyle{"#FFE0C0", 10.0, 5.0, 32.0, 8.0, 0.56};
     p.keyShadowStrength = 1.0;
+    // The environment and the halls as evening.json has them (I6 step 1; unit-tested equal).
+    p.ambientSky = "#E6E2DC";
+    p.ambientGround = "#C89A72";
+    p.ambientIntensity = 0.3;
+    p.fillColor = "#FFD2A8";
+    p.fillIntensity = 0.22;
+    p.hall.light = LightStyle{"#FFD0A0", 12.0, 9.0, 0.0, 0.0, 0.0};
+    p.hall.doorwayFill = LightStyle{"#FFD6AE", 5.0, 6.0, 35.0, 6.0, 0.4};
+    p.hall.environment = AreaLook{1.5, "#B8A898", "#C89A72", 0.35, "#FFD2A8", 0.25};
     return p;
 }
 
@@ -235,6 +244,10 @@ ThemeMaterials builtInTheme() {
 
 } // namespace
 
+AreaLook LightingProfile::roomLook() const {
+    return AreaLook{exposure, ambientSky, ambientGround, ambientIntensity, fillColor, fillIntensity};
+}
+
 const LightStyle& LightingProfile::style(LightRole role) const noexcept {
     switch (role) {
     case LightRole::Key:
@@ -263,7 +276,8 @@ Expected<LightingProfile> parseLightingProfile(std::string_view text, std::strin
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"accents", "environment", "id", "keyShadowStrength", "name", "roles", "schemaVersion"});
+                              {"accents", "environment", "hall", "id", "keyShadowStrength", "name", "roles",
+                               "schemaVersion"});
     LightingProfile profile;
     (void)reader.integer("schemaVersion", 1, 1);
     profile.name = reader.dataId("id");
@@ -279,11 +293,14 @@ Expected<LightingProfile> parseLightingProfile(std::string_view text, std::strin
     profile.keyShadowStrength = reader.number("keyShadowStrength", 0.0, 1.0);
     const ObjectReader environment =
         reader.object("environment", {"ambientGround", "ambientIntensity", "ambientSky", "bloomRadius",
-                                      "bloomStrength", "clearColor", "exposure", "ssao", "vignette"});
+                                      "bloomStrength", "clearColor", "exposure", "fillColor", "fillIntensity", "ssao",
+                                      "vignette"});
     profile.clearColor = colour(environment, "clearColor");
     profile.ambientSky = colour(environment, "ambientSky");
     profile.ambientGround = colour(environment, "ambientGround");
     profile.ambientIntensity = environment.number("ambientIntensity", 0.0, 10.0);
+    profile.fillColor = colour(environment, "fillColor");
+    profile.fillIntensity = environment.number("fillIntensity", 0.0, 10.0);
     profile.exposure = environment.number("exposure", 0.01, 100.0);
     profile.bloomStrength = environment.number("bloomStrength", 0.0, 1.0);
     profile.bloomRadius = environment.number("bloomRadius", 0.0, 1.0);
@@ -292,6 +309,17 @@ Expected<LightingProfile> parseLightingProfile(std::string_view text, std::strin
     profile.ssaoEnabled = ssao.boolean("enabled");
     profile.ssaoRadius = ssao.number("radius", 0.01, 5.0);
     profile.ssaoIntensity = ssao.number("intensity", 0.0, 4.0);
+    const ObjectReader hall = reader.object("hall", {"doorwayFill", "environment", "light"});
+    profile.hall.light = readStyle(hall, "light", false);
+    profile.hall.doorwayFill = readStyle(hall, "doorwayFill", true);
+    const ObjectReader hallEnvironment = hall.object(
+        "environment", {"ambientGround", "ambientIntensity", "ambientSky", "exposure", "fillColor", "fillIntensity"});
+    profile.hall.environment.exposure = hallEnvironment.number("exposure", 0.01, 100.0);
+    profile.hall.environment.ambientSky = colour(hallEnvironment, "ambientSky");
+    profile.hall.environment.ambientGround = colour(hallEnvironment, "ambientGround");
+    profile.hall.environment.ambientIntensity = hallEnvironment.number("ambientIntensity", 0.0, 10.0);
+    profile.hall.environment.fillColor = colour(hallEnvironment, "fillColor");
+    profile.hall.environment.fillIntensity = hallEnvironment.number("fillIntensity", 0.0, 10.0);
     if (reader.has("accents")) {
         const Json& accents = reader.array("accents");
         detail::forEachElement(accents, reader.pointer("accents"), [&](const Json& element, const std::string& at) {

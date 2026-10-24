@@ -448,20 +448,69 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
         CHECK(lights <= rv::world::kMaxSceneLights);
     }
     CHECK(rows == std::set<std::string>{"north", "south"});
-    // The hall's lights in the hall's area, as many as its length takes; one key light per room.
+    // The hall's lights in the hall's area, as many as its length takes, in the profile's hall role (I6 step 1); a
+    // low fill spot before each doorway aimed into its room; one key light per room, none in the hall.
+    const rv::world::LightingProfile& profile = data.lighting;
     std::size_t hallLights = 0;
+    std::map<std::string, const nlohmann::json*> fills;
     std::map<std::string, std::size_t> keys;
     for (const nlohmann::json& light : scene["lights"]) {
-        hallLights += light["area"] == "hall:handheld" ? 1 : 0;
+        const std::string name = light["name"].get<std::string>();
+        if (name.rfind("hall:handheld/light-", 0) == 0) {
+            ++hallLights;
+            CHECK(light["area"] == "hall:handheld");
+            CHECK(light["type"] == "point");
+            CHECK(light["color"] == profile.hall.light.color);
+            CHECK(light["intensity"] == profile.hall.light.intensity);
+            CHECK(light["range"] == profile.hall.light.range);
+        } else if (name.rfind("hall:handheld/doorway-fill:", 0) == 0) {
+            fills[name.substr(std::string("hall:handheld/doorway-fill:").size())] = &light;
+        }
         if (light.value("castsShadows", false)) {
             ++keys[light["area"].get<std::string>()];
         }
     }
     CHECK(hallLights == build.hall.lights.size());
     CHECK(keys.size() == build.rooms.size());
+    CHECK_FALSE(keys.contains("hall:handheld"));
     for (const auto& [area, count] : keys) {
         CHECK(count == 1);
     }
+    REQUIRE(fills.size() == build.hall.doorways.size());
+    for (const rv::world::FloorDoorway& doorway : build.hall.doorways) {
+        INFO(doorway.room.toString());
+        REQUIRE(doorway.opensOntoHall());
+        REQUIRE(fills.contains(doorway.room.toString()));
+        const nlohmann::json& fill = *fills.at(doorway.room.toString());
+        CHECK(fill["area"] == "hall:handheld");
+        CHECK(fill["type"] == "spot");
+        CHECK(fill["color"] == profile.hall.doorwayFill.color);
+        CHECK(fill["intensity"] == profile.hall.doorwayFill.intensity);
+        CHECK_FALSE(fill.value("castsShadows", false));
+        // In the hall before the doorway's middle, below its head, aimed through it into the room.
+        const double x = fill["position"][0].get<double>();
+        const double y = fill["position"][1].get<double>();
+        const double z = fill["position"][2].get<double>();
+        const double edge = static_cast<double>(doorway.hallEdgeZMm) / 1000.0;
+        CHECK(x * 1000.0 == Catch::Approx(static_cast<double>(doorway.minMm + doorway.maxMm) / 2.0));
+        CHECK(y < static_cast<double>(doorway.heightMm) / 1000.0);
+        CHECK(std::abs(z) < std::abs(edge));
+        const double targetZ = fill["target"][2].get<double>();
+        CHECK((edge < 0.0 ? targetZ < edge : targetZ > edge));
+        CHECK(fill["outerConeDeg"].get<double>() >= profile.hall.doorwayFill.minOuterConeDeg);
+        CHECK(fill["outerConeDeg"].get<double>() <= rv::world::kMaxOuterConeDeg);
+    }
+    // The hall's area has the hall role's environment; the rooms' are lit as the scene.
+    for (const nlohmann::json& area : scene["areas"]) {
+        if (area["id"] == "hall:handheld") {
+            CHECK(area["environment"]["exposure"] == profile.hall.environment.exposure);
+            CHECK(area["environment"]["ambientGround"] == profile.hall.environment.ambientGround);
+            CHECK(area["environment"]["fillIntensity"] == profile.hall.environment.fillIntensity);
+        } else {
+            CHECK_FALSE(area.contains("environment"));
+        }
+    }
+    CHECK(scene["environment"]["fillIntensity"] == profile.fillIntensity);
     // The camera stands in front of the elevator facing east, its far plane beyond the floor.
     CHECK(scene["camera"]["position"] == nlohmann::json::array({1.2, 1.65, 0.0}));
     CHECK(scene["camera"]["yawDeg"] == 90.0);
@@ -483,6 +532,20 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
         CHECK(description->areas[*area].id == doorway.room.toString());
     }
     CHECK(description->areas[*rv::scene::areaAt(description->areas, {1.2f, 1.65f, 0.0f})].id == "hall:handheld");
+    // Each room the hall's neighbour through its doorway alone, the rooms never each other's (ADR-0014 §4).
+    const auto neighbours = rv::scene::areaNeighbours(description->areas);
+    const std::size_t hallIndex = *description->findArea("hall:handheld");
+    CHECK(neighbours[hallIndex].size() == build.rooms.size());
+    for (std::size_t i = 0; i < description->areas.size(); ++i) {
+        if (i == hallIndex) {
+            continue;
+        }
+        INFO(description->areas[i].id);
+        REQUIRE(neighbours[i].size() == 1);
+        CHECK(neighbours[i][0].area == hallIndex);
+        REQUIRE(neighbours[i][0].portals.size() == 1);
+        CHECK(neighbours[i][0].portals[0].size().x == Catch::Approx(1.6f));
+    }
 
     // The ground floor's lobby has its entrance doors at its east end.
     const rv::world::FloorSceneData ground = floorData(plan, "ground", building.tags);

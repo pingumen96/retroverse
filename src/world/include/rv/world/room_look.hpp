@@ -12,8 +12,15 @@
 //      "pendant": {...}, "lamp": {...}, "picture": {...}, "wallWasher": {...}},
 //    "keyShadowStrength": 1.0,
 //    "environment": {"clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#4A4642",
-//                    "ambientIntensity": 0.25, "exposure": 1.5, "bloomStrength": 0.18, "bloomRadius": 0.5,
-//                    "vignette": 0.05, "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}},
+//                    "ambientIntensity": 0.25, "fillColor": "#FFD8B0", "fillIntensity": 0.05, "exposure": 1.5,
+//                    "bloomStrength": 0.18, "bloomRadius": 0.5, "vignette": 0.05,
+//                    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}},   // the rooms' (and the scene's)
+//    "hall": {                       // the halls' role (I6 step 1, ADR-0014 §4)
+//      "light": {"color": "#FFD2A0", "intensity": 10, "range": 8},      // its ceiling lights (points)
+//      "doorwayFill": {"color": ..., "intensity": ..., "range": ..., "minOuterConeDeg": ..., "coneMarginDeg": ...,
+//                      "innerConeRatio": ...},   // a low spot in the hall before each doorway, aimed into the room
+//      "environment": {"exposure": 1.5, "ambientSky": ..., "ambientGround": ..., "ambientIntensity": ...,
+//                      "fillColor": ..., "fillIntensity": ...}},  // the hall's area's own lit terms
 //    "accents": [                    // optional: lights of the look alone, anchored on a hero corner's part
 //      {"name": "crt-glow", "anchor": "crt", "type": "spot", "position": [0, 0.35, 0.4], "target": [0, 0, 1.4],
 //       "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
@@ -91,6 +98,28 @@ struct AccentLight {
     bool operator==(const AccentLight&) const = default;
 };
 
+/// The lit terms of an area (scene_description.hpp's AreaEnvironment), colours as sRGB "#RRGGBB".
+struct AreaLook {
+    double exposure = 1.5;
+    std::string ambientSky = "#E6E2DC";
+    std::string ambientGround = "#4A4642";
+    double ambientIntensity = 0.25;
+    std::string fillColor = "#FFD8B0";
+    double fillIntensity = 0.0;
+
+    bool operator==(const AreaLook&) const = default;
+};
+
+/// How a floor's hall is lit (the profile's "hall" role, I6 step 1): its ceiling lights, the fill spot before each
+/// doorway, its area's environment.
+struct HallLook {
+    LightStyle light;
+    LightStyle doorwayFill;
+    AreaLook environment;
+
+    bool operator==(const HallLook&) const = default;
+};
+
 struct LightingProfile {
     std::string name;
     LightStyle key;
@@ -105,6 +134,8 @@ struct LightingProfile {
     std::string ambientSky = "#E6E2DC";
     std::string ambientGround = "#4A4642";
     double ambientIntensity = 0.25;
+    std::string fillColor = "#FFD8B0";
+    double fillIntensity = 0.0;
     double exposure = 1.5;
     double bloomStrength = 0.18;
     double bloomRadius = 0.5;
@@ -113,8 +144,12 @@ struct LightingProfile {
     double ssaoRadius = 0.4;
     double ssaoIntensity = 1.0;
     std::vector<AccentLight> accents;
+    /// The halls' lights and environment.
+    HallLook hall;
 
     [[nodiscard]] const LightStyle& style(LightRole role) const noexcept;
+    /// The rooms' lit terms (the environment's exposure, ambient and fill).
+    [[nodiscard]] AreaLook roomLook() const;
 
     bool operator==(const LightingProfile&) const = default;
 };

@@ -12,13 +12,15 @@
     "yawDeg": 0.0
   },
   "environment": {
-    "ambientGround": "#4A4642",
-    "ambientIntensity": 0.25,
+    "ambientGround": "#C89A72",
+    "ambientIntensity": 0.3,
     "ambientSky": "#E6E2DC",
     "bloomRadius": 0.5,
     "bloomStrength": 0.18,
     "clearColor": "#221E1A",
     "exposure": 1.5,
+    "fillColor": "#FFD2A8",
+    "fillIntensity": 0.22,
     "ssao": {
       "enabled": true,
       "intensity": 1.0,

@@ -44,6 +44,14 @@
           ]
         }
       ],
+      "environment": {
+        "ambientGround": "#C89A72",
+        "ambientIntensity": 0.35,
+        "ambientSky": "#B8A898",
+        "exposure": 1.5,
+        "fillColor": "#FFD2A8",
+        "fillIntensity": 0.25
+      },
       "id": "hall:gen4"
     }
   ],
@@ -60,13 +68,15 @@
     "yawDeg": 90.0
   },
   "environment": {
-    "ambientGround": "#4A4642",
-    "ambientIntensity": 0.25,
+    "ambientGround": "#C89A72",
+    "ambientIntensity": 0.3,
     "ambientSky": "#E6E2DC",
     "bloomRadius": 0.5,
     "bloomStrength": 0.18,
     "clearColor": "#221E1A",
     "exposure": 1.5,
+    "fillColor": "#FFD2A8",
+    "fillIntensity": 0.22,
     "ssao": {
       "enabled": true,
       "intensity": 1.0,
@@ -330,29 +340,49 @@
     },
     {
       "area": "hall:gen4",
-      "color": "#FFD7B0",
-      "intensity": 16.0,
+      "color": "#FFD0A0",
+      "intensity": 12.0,
       "name": "hall:gen4/light-0",
       "position": [
         3.0,
         2.9,
         0.0
       ],
-      "range": 10.0,
+      "range": 9.0,
       "type": "point"
     },
     {
       "area": "hall:gen4",
-      "color": "#FFD7B0",
-      "intensity": 16.0,
+      "color": "#FFD0A0",
+      "intensity": 12.0,
       "name": "hall:gen4/light-1",
       "position": [
         9.0,
         2.9,
         0.0
       ],
-      "range": 10.0,
+      "range": 9.0,
       "type": "point"
+    },
+    {
+      "area": "hall:gen4",
+      "color": "#FFD6AE",
+      "innerConeDeg": 19.0534,
+      "intensity": 5.0,
+      "name": "hall:gen4/doorway-fill:room:snes",
+      "outerConeDeg": 47.6335,
+      "position": [
+        7.65,
+        2.0,
+        -0.6
+      ],
+      "range": 6.0,
+      "target": [
+        7.65,
+        0.8,
+        -4.5
+      ],
+      "type": "spot"
     }
   ],
   "name": "floor:gen4",

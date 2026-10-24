@@ -77,6 +77,49 @@ TEST_CASE("world/room_look: the shipped lighting profiles read, two of them, the
     CHECK(afternoon->bloomStrength < evening->bloomStrength);
 }
 
+TEST_CASE("world/room_look: the profiles' hall role and environments light halls warmer and evener, never black",
+          "[world][room_look]") {
+    // I6 step 1 (ADR-0014 §4): the hall's lights, its doorway fill, its own environment, and the rooms' fill.
+    for (const std::string id : {"evening", "afternoon"}) {
+        INFO(id);
+        const auto profile = rv::world::loadLightingProfile(assets(), id);
+        REQUIRE(profile.has_value());
+        const rv::world::HallLook& hall = profile->hall;
+        // Warm light: never colder than neutral.
+        for (const rv::world::LightStyle* style : {&hall.light, &hall.doorwayFill}) {
+            const auto rgb = *rv::core::hexToLinearRgb(style->color);
+            CHECK(rgb.r >= rgb.b);
+            CHECK(style->intensity > 0.0);
+        }
+        // A low fill: dimmer than the hall's own lights, short enough to stay near its doorway.
+        CHECK(hall.doorwayFill.intensity < hall.light.intensity);
+        CHECK(hall.doorwayFill.range <= 8.0);
+        // Upper walls and ceilings above black: some ambient from below (the floor's bounce) and an even fill.
+        for (const rv::world::AreaLook& look : {profile->roomLook(), hall.environment}) {
+            const auto ground = *rv::core::hexToLinearRgb(look.ambientGround);
+            CHECK(ground.r * look.ambientIntensity + look.fillIntensity > 0.05);
+            CHECK(ground.r >= ground.b); // warm
+            CHECK(look.exposure > 0.0);
+        }
+    }
+    // The built-in profile lights rooms and halls as evening.json does (its roles are I3's test room's).
+    const auto evening = rv::world::loadLightingProfile(assets(), "evening");
+    REQUIRE(evening.has_value());
+    const rv::world::LightingProfile& builtIn = rv::world::eveningLightingProfile();
+    CHECK(builtIn.hall == evening->hall);
+    CHECK(builtIn.roomLook() == evening->roomLook());
+    CHECK(builtIn.clearColor == evening->clearColor);
+
+    // The hall role is required.
+    auto text = rv::core::readTextFile(assets() / "world" / "lighting" / "evening.json");
+    REQUIRE(text.has_value());
+    std::string withoutHall = *text;
+    const auto at = withoutHall.find("\"hall\": {");
+    REQUIRE(at != std::string::npos);
+    withoutHall.replace(at, 7, "\"halls\":"); // an unknown key, and the hall role missing
+    CHECK_FALSE(rv::world::parseLightingProfile(withoutHall, "evening.json").has_value());
+}
+
 TEST_CASE("world/room_look: a broken profile is refused with its line, a missing one falls back", "[world][room_look]") {
     auto text = rv::core::readTextFile(assets() / "world" / "lighting" / "evening.json");
     REQUIRE(text.has_value());
