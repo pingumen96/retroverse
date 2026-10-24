@@ -386,10 +386,15 @@ private:
         return modules;
     }
 
-    /// The spine-out section's levels in fill order with what stands on them.
+    /// The spine-out section's levels in fill order (allocation.hpp's spineFillRounds(): a family standing on its side
+    /// takes the hero-wall modules' levels in turns) with what stands on them.
     void buildFillOrder() {
         m_fill.clear();
         m_levelIndex.clear();
+        std::vector<const Fixture*> modules;
+        std::vector<const PrefabInfo*> infos;
+        std::vector<std::vector<std::size_t>> bandLevels;
+        std::vector<bool> heroWall;
         for (const Fixture* module : modulesInOrder()) {
             const PrefabInfo* info = m_data.prefabs.find(module->prefab);
             if (info == nullptr) {
@@ -399,8 +404,15 @@ private:
             for (const SlotLevelInfo& level : info->levels) {
                 facings.push_back(level.facing(m_data.mediaFamily));
             }
-            for (const std::size_t index : detail::bandOrder(info->levels, facings, m_template.eyeHeightMm)) {
-                const SlotLevelInfo& level = info->levels[index];
+            modules.push_back(module);
+            infos.push_back(info);
+            bandLevels.push_back(detail::bandOrder(info->levels, facings, m_template.eyeHeightMm));
+            heroWall.push_back(module->role == FixtureRole::HeroModule);
+        }
+        for (const auto& round : detail::spineFillRounds(bandLevels, heroWall, m_data.mediaFamily.spineFacing)) {
+            for (const detail::ModuleLevel& at : round) {
+                const Fixture* module = modules[at.module];
+                const SlotLevelInfo& level = infos[at.module]->levels[at.level];
                 SpineLevel spine;
                 spine.fixture = module->id;
                 spine.level = level.level;
@@ -1074,7 +1086,12 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                 }
             }
             newItems = true;
-            migratedRooms.push_back({room.id, room.mediaFamily, record.mediaFamily});
+            // The titles its successor's room holds no slot for, even grown to its largest (unplaced for capacity).
+            const auto overCapacity = static_cast<std::uint64_t>(
+                std::count_if(content->unplaced.begin(), content->unplaced.end(), [&](const UnplacedGame& game) {
+                    return game.room == room.id && game.reason == UnplacedReason::Capacity;
+                }));
+            migratedRooms.push_back({room.id, room.mediaFamily, record.mediaFamily, overCapacity});
             replaceRoom(plan, room.id, std::move(*content));
             continue;
         }

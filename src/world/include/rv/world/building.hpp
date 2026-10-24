@@ -24,7 +24,7 @@
 //    "defaults": {"home": {"themePack": "classic_16bit_warm", "console": <prefab> or null,
 //                          "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}},
 //                 "handheld": {...}, "arcade": {..., "sign": "ARCADE"}, "computer": {...}, "other": {...}},
-//    "fallback": {"family": "generic_case", "order": 9999, "sign": "MORE GAMES"},
+//    "fallback": {"family": "generic_case_v2", "order": 9999, "sign": "MORE GAMES"},
 //    "systems": [{"system": "snes", "kind": "home", "generation": 4, "family": "cartridge_home_16bit",
 //                 "order": 400, "sign": "16-BIT CORNER", "platforms": ["snes"]}, ...,
 //                {"system": "desktop", "kind": "excluded", "platforms": ["pcwindows"]}]}

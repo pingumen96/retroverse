@@ -143,6 +143,9 @@ struct CollectionGroup {
     /// The family's item prefab and its size (meters: width, height, depth, the front facing +Z).
     PrefabRef item;
     glm::vec3 itemSize{0.0f};
+    /// The material of the items' shells (MediaFamily::shellMaterial, I6 step 4's review); empty: the theme's
+    /// "cartridge" role.
+    std::string shellMaterial;
     std::uint32_t firstCluster = 0;
     std::uint32_t clusterCount = 0;
     std::uint32_t firstItem = 0;

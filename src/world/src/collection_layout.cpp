@@ -460,6 +460,7 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
         group.mediaFamily = family.id;
         group.item = family.item;
         group.itemSize = itemSize;
+        group.shellMaterial = family.shellMaterial;
         group.clusterCount = static_cast<std::uint32_t>(layout.clusters.size());
         group.itemCount = static_cast<std::uint32_t>(layout.items.size());
         layout.groups.push_back(std::move(group));

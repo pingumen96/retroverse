@@ -71,15 +71,18 @@
 //     was of: an entry of a game that left the system stands until a regeneration).
 // Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
 // placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
-// The one exception, made once (I6 step 4, ADR-0014 §2): a stored room whose recorded media family has a successor
-// (media_family.hpp's "succeeds"), given a selection of every section and kept by none of the rules above, is MIGRATED:
-// regenerated as a fresh building generates it, with the data of its family's last successor (its data's
-// WorldData::successor: loadRoomData() reads it), its id, kind, floor, x, yaw, sections and seed kept, its face-out
-// titles chosen again by the same priority, its z following its new depth (away from the hall only as a growth moves
-// it), its record naming the successor and this generator's version; the report lists it (migratedRooms, {room, from,
-// to}) and its games not placed before among the added. A room a pin names (a game pinned to one of its slots, one of
-// its fixtures pinned) is not migrated: it is updated as it stands and the refusal is in needsConfirmation. A
-// migrated room's family has no successor, so the next update of an unchanged catalog writes nothing.
+// The one exception (I6 step 4, ADR-0014 §2): a stored room whose recorded media family has a successor in rooms of
+// its kind (media_family.hpp's "succeeds" and "succeedsIn"), given a selection of every section and kept by none of
+// the rules above, is MIGRATED: regenerated as a fresh building generates it, with the data of its family's last
+// successor there (its data's WorldData::successor: loadRoomData() reads it), its id, kind, floor, x, yaw, sections
+// and seed kept, its face-out titles chosen again by the same priority, its z following its new depth either way (the
+// room deeper or shallower than before, its doorway wall still on the hall), its record naming the successor and this
+// generator's version; the report lists it (migratedRooms, {room, from, to, the titles its new room holds no slot for:
+// unplaced for capacity}) and its games not placed before among the added. A room a pin names (a game pinned to one of
+// its slots, one of its fixtures pinned) is not migrated: it is updated as it stands and the refusal is in
+// needsConfirmation. Each room migrates at most once per succession: its new family has no successor in rooms of its
+// kind, so the next update of an unchanged catalog writes nothing (the arcade room keeps generic_case, which I6 step
+// 6's arcade_cabinet succeeds there: its own migration, once).
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
 // of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
 // that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an

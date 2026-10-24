@@ -161,11 +161,11 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
         data.platform = sharedRoomPlatform(request.kind, floor, request.system, data.systems, data.building);
     }
     // A stored room's family and theme pack are authoritative (ADR-0013 §3). A new room takes the last successor of
-    // the family its platform names (I6 step 4, ADR-0014 §2: a platform file naming a family that has one plans the
-    // successor's room, never one the next update would migrate).
+    // the family its platform names in rooms of its kind (I6 step 4, ADR-0014 §2: a platform file naming a family that
+    // has one plans the successor's room, never one the next update would migrate).
     if (!request.mediaFamily.empty()) {
         data.platform.mediaFamily = request.mediaFamily;
-    } else if (const MediaFamily* latest = inputs.families.latestSuccessor(data.platform.mediaFamily)) {
+    } else if (const MediaFamily* latest = inputs.families.latestSuccessor(data.platform.mediaFamily, request.kind)) {
         data.platform.mediaFamily = latest->id;
     }
     if (!request.themePack.empty()) {
@@ -664,7 +664,7 @@ PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor, const
     const KindDefaults& defaults = systems.defaultsOf(defaultsKind);
     PlatformManifest platform;
     platform.system = firstSection;
-    platform.mediaFamily = std::string(kSharedRoomFamily);
+    platform.mediaFamily = std::string(kind == RoomKind::Arcade ? kArcadeRoomFamily : kSharedRoomFamily);
     platform.themePack = defaults.themePack;
     platform.cartridgePlastic = defaults.cartridgePlastic;
     platform.consolePlastic = defaults.consolePlastic;
@@ -700,10 +700,11 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
         }
         data->sharedRoom = std::make_shared<const WorldData>(std::move(*sharedData));
     }
-    // A stored room of a family that has a successor (I6 step 4, ADR-0014 §2): the data of its migration comes with
-    // its own, the same room with the last successor of its family (its theme pack and template kept).
-    if (!request.mediaFamily.empty() && inputs->families.successorOf(request.mediaFamily) != nullptr) {
-        const MediaFamily* latest = inputs->families.latestSuccessor(request.mediaFamily);
+    // A stored room of a family that has a successor in rooms of its kind (I6 step 4, ADR-0014 §2): the data of its
+    // migration comes with its own, the same room with the last successor of its family (its theme pack and template
+    // kept).
+    if (!request.mediaFamily.empty() && inputs->families.successorOf(request.mediaFamily, request.kind) != nullptr) {
+        const MediaFamily* latest = inputs->families.latestSuccessor(request.mediaFamily, request.kind);
         RoomDataRequest migrated = request;
         migrated.mediaFamily = latest->id;
         auto successor = roomData(assetRoot, migrated, *inputs, &data->prefabs);

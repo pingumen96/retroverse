@@ -95,11 +95,13 @@ struct KeptRoom {
 };
 
 /// A room an update migrated to its family's successor (I6 step 4, ADR-0014 §2): regenerated once with the family
-/// `to` that succeeds its recorded `from`.
+/// `to` that succeeds its recorded `from`; `unplacedForCapacity` of its titles found no slot in its new room, even
+/// grown to its largest (they are unplaced for capacity, naming the room).
 struct MigratedRoom {
     RoomId room;
     std::string from;
     std::string to;
+    std::uint64_t unplacedForCapacity = 0;
 
     auto operator<=>(const MigratedRoom&) const = default;
 };
@@ -236,8 +238,9 @@ struct GenerationResult {
 /// version). A change that places any game of a stored plan differently is a new major version; one that only adds
 /// rules keeping every placement a new minor one. I4 step 4's shared and arcade rooms are 1.3's too (ADR-0013 §5: fresh
 /// generation changes for the systems under the shared threshold, every update keeps every placement). 1.4 (I6 step 4,
-/// ADR-0014 §2) stands cases and boxes on their side (the *_v2 families) and migrates, once, each stored room whose
-/// recorded family has a successor: the one exception to "nothing that stands moves", announced and reported
+/// ADR-0014 §2) stands cases and boxes on their side (the *_v2 families), fills the hero-wall modules of such a family
+/// in turns (allocation.hpp; the cartridges as before) and migrates, once, each stored room whose recorded family has a
+/// successor in rooms of its kind: the one exception to "nothing that stands moves", announced and reported
 /// (ChangeReport::migratedRooms), made for this pass only. It is a minor version all the same: a major one would hold
 /// every room of every stored plan as it stands until an explicit regeneration (ADR-0010 §10), while the migration is
 /// scoped to the rooms of a succeeded family, room by room, and every other room, the cartridges' among them, keeps
@@ -247,9 +250,13 @@ inline constexpr GeneratorVersion kGeneratorVersion{1, 4};
 /// The one room template of I3 (ADR-0010 §4).
 inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";
 
-/// The media family of every shared room and of the arcade room (ADR-0013 §6): since I6 step 4 the generic case
-/// standing on its side (ADR-0014 §2), which succeeds I4's generic_case.
+/// The media family of every shared room (ADR-0013 §6): since I6 step 4 the generic case standing on its side
+/// (ADR-0014 §2), which succeeds I4's generic_case in console and shared rooms.
 inline constexpr std::string_view kSharedRoomFamily = "generic_case_v2";
+/// The media family of the arcade room (ADR-0013 §6): I4's generic case, which the arcade room keeps until I6 step 6's
+/// arcade_cabinet succeeds it there (ADR-0014 §2, amended on 2026-10-24: the arcade room migrates once, to its
+/// cabinets).
+inline constexpr std::string_view kArcadeRoomFamily = "generic_case";
 
 /// What a generation reads from the asset root for one room: the template, the platform (a system's manifest, or what
 /// systems.json gives it; a shared or arcade room's, sharedRoomPlatform()), its media family and every prefab they
@@ -270,15 +277,15 @@ struct WorldData {
     /// data (loadWorldData() of a system without a recorded family), so that a fresh building (generateBuilding())
     /// needs no other input; null for the data of a stored room.
     std::shared_ptr<const WorldData> sharedRoom;
-    /// The data of a stored room whose recorded family has a successor (I6 step 4, ADR-0014 §2): the same room with its
-    /// family's last successor (MediaFamilyRegistry::latestSuccessor()), the room's theme pack and template kept, which
-    /// the update migrates it with; null otherwise.
+    /// The data of a stored room whose recorded family has a successor in rooms of its kind (I6 step 4, ADR-0014 §2):
+    /// the same room with its family's last successor there (MediaFamilyRegistry::latestSuccessor()), the room's theme
+    /// pack and template kept, which the update migrates it with; null otherwise.
     std::shared_ptr<const WorldData> successor;
 };
 
 /// The platform of a shared room of `floor` or of the arcade room (`kind` Shared or Arcade; ADR-0013 §6) whose first
 /// section is `firstSection`: no console (the hero corner's console part is left out by kind), the family
-/// kSharedRoomFamily, and the theme pack, plastics and sign of the defaults of the floor's first kind (building.json;
+/// kSharedRoomFamily (the arcade room's kArcadeRoomFamily), and the theme pack, plastics and sign of the defaults of the floor's first kind (building.json;
 /// the arcade room's: arcade's), the fallback's sign when those defaults name none.
 [[nodiscard]] PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor,
                                                   const catalog::SystemName& firstSection, const SystemsData& systems,
@@ -300,7 +307,7 @@ struct RoomDataRequest {
     /// The system's ES-DE platform tags (classify()'s fallback for a system systems.json does not name).
     std::vector<std::string> platformTags;
     /// The kind of room (I4 step 4): a shared or arcade room's platform is sharedRoomPlatform()'s on `floor` (empty:
-    /// the system's floor; the arcade room's is the ground floor), its family kSharedRoomFamily.
+    /// the system's floor; the arcade room's is the ground floor), its family kSharedRoomFamily (kArcadeRoomFamily).
     RoomKind kind = RoomKind::Console;
     std::string floor;
     /// A stored room's recorded media family and theme pack, which are authoritative (ADR-0013 §3: a data change never
@@ -317,8 +324,8 @@ struct RoomDataRequest {
 /// they name (a missing or broken manifest falls back to its family's prefab, logged once). A console room's request
 /// without a recorded family or theme pack (a system entering the building) also reads the data of the shared or arcade
 /// room its system would take a section of (WorldData::sharedRoom). A request without a recorded family takes the last
-/// successor of the platform's family (I6 step 4); one with a recorded family that has a successor also reads the data
-/// of the room's migration (WorldData::successor). Errors: those of the readers, those of
+/// successor of the platform's family in rooms of its kind (I6 step 4); one with a recorded family that has a successor
+/// in rooms of its kind also reads the data of the room's migration (WorldData::successor). Errors: those of the readers, those of
 /// resolvePlatform() (an excluded system or one on no floor: InvalidArgument, for a shared or arcade room without a
 /// floor too: a request with one, a stored room's, is read whatever its first section's classification is now),
 /// NotFound for a media family the registry lacks, ValidationFailed for an item that disagrees with its manifest.
@@ -372,7 +379,7 @@ struct BuildingInput {
 ///    modules, growth and capacity, decoration, dressing, lights) from `rooms`' data for its system;
 ///  - a system with fewer takes the next section of its floor's shared room, area:shared:<floor>;
 ///  - a shared or arcade room is created on its floor when its first section enters, from that system's
-///    WorldData::sharedRoom (kSharedRoomFamily, no console), and generated by the same rules over its sections'
+///    WorldData::sharedRoom (kSharedRoomFamily or kArcadeRoomFamily, no console), and generated by the same rules over its sections'
 ///    titles: the face-out titles the first D + B of all its sections' titles by priority, its collection ordered by
 ///    (section, catalog sort key, title key, GameId), every game unplaced as its section's selection says;
 ///  - each room is placed by placeEnteringRoom() when it enters (its z following its depth once generated); a console

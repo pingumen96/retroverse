@@ -64,6 +64,20 @@ spine face, the item's -X face, looks out, carrying an upright spine label. Thei
   - `generic_case_v2`.
 - **New arcade family.** The arcade room's collection becomes the family `arcade_cabinet`, whose fixtures are rows of
   cabinets with one face-out slot each. It succeeds `generic_case` in the arcade room only.
+- **Successions by kind of room** (amended on 2026-10-24, I6 step 4's review). A succession names the kinds of room it
+  applies in (`succeedsIn`; every kind when it names none), so that the arcade room migrates once:
+  - `generic_case_v2` succeeds `generic_case` in console and shared rooms only;
+  - the arcade room keeps `generic_case` (the arcade systems' rows and the arcade room's family) until step 6's
+    `arcade_cabinet` succeeds it there;
+  - a family has one successor at most in each kind of room, and the successions of a kind form no cycle.
+- **The hero-wall modules in turns** (amended on 2026-10-24, amending ADR-0010 §5's filling for the families standing
+  on their side): their spine-out titles fill the hero-wall modules' levels in turns, a round being the next level in
+  band order of each hero-wall module, the titles a round cannot all fill shared among its levels one at a time; the
+  side-wall modules follow one after the other as before. A room of a few dozen cases thus shows its spines on both
+  modules at eye height rather than on one module beside a module of dressing. The cartridges fill as before.
+- **Printed spines and dark shells** (amended on 2026-10-24): the spine label covers the side face's flat part top to
+  bottom, the title drawn on a canvas of that shape and resampled into the unchanged spine layer; the cases' and boxes'
+  shells are their family's dark material (`shellMaterial`), so that a shelf reads as a rack of coloured spines.
 - **The migration.** A room whose recorded family has a successor is regenerated once, room by room, at the first
   update by this generator:
   - it keeps its id, floor, x, sections and seed;
@@ -153,7 +167,10 @@ to black, and a dark arcade can sit beside a bright hub.
 ## Amendments
 
 - **ADR-0013 §3:** the recorded theme pack is no longer authoritative (§1 above). The recorded family stays.
-- **ADR-0013 §4:** families gain successors with a one-time migration (§2 above).
+- **ADR-0013 §4:** families gain successors with a one-time migration (§2 above; amended on 2026-10-24: successions
+  scoped by kind of room, the arcade room migrating once, to its cabinets).
+- **ADR-0010 §5:** a family standing on its side fills its hero-wall modules in turns (§2 above, amended on
+  2026-10-24).
 - **ADR-0013 §6 and §7:** the ground floor's hall is the hub; its rooms are re-placed once (§3 above).
 - **ADR-0013 §9:** neighbour lights through doorways, and an environment per area (§4 above, amended on 2026-10-24:
   a view-independent share, faded, with hysteresis, clipped to the doorway).

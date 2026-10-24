@@ -269,7 +269,9 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
     const WorldData& gb = building.rooms.front();
     for (const Room* room : {&arcade, &shared, &roomOf(plan, "area:shared:computer")}) {
         INFO(room->id.toString());
-        CHECK(room->mediaFamily == rv::world::kSharedRoomFamily);
+        // The arcade room keeps I4's generic case until I6 step 6 (ADR-0014 §2, amended on 2026-10-24).
+        CHECK(room->mediaFamily ==
+              (room->kind == RoomKind::Arcade ? rv::world::kArcadeRoomFamily : rv::world::kSharedRoomFamily));
         CHECK(room->themePack == gb.systems.defaultsOf(room->kind == RoomKind::Arcade
                                                            ? rv::world::SystemKind::Arcade
                                                            : gb.building.floor(room->floor)->kinds.front())

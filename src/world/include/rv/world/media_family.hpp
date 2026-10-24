@@ -34,9 +34,19 @@
 //   "spineFacing": "end" (the default: the item on its end, its top face outward, a spine-out slot of (d, w, h)) or
 //                  "side" (the item on its side, upright, its -X face outward: geometry::SlotFacing::SideOut, a
 //                  spine-out slot of (d, h, w), its manifest's spine label on that face);
-//   "succeeds": the id of the family it replaces (another family of the file, succeeded by no other): a stored room
-//               of that family is regenerated once with this one (incremental.hpp's migration), and a new room asked
-//               for that family takes this one (successorOf(), latestSuccessor()).
+//   "succeeds": the id of the family it replaces (another family of the file): a stored room of that family is
+//               regenerated once with this one (incremental.hpp's migration), and a new room asked for that family
+//               takes this one (successorOf(), latestSuccessor());
+//   "succeedsIn": the kinds of room ("console", "shared", "arcade") in which it succeeds that family (optional: every
+//                 kind). A family has one successor at most in each kind of room, and the successions of a kind form
+//                 no cycle (amended on 2026-10-24: generic_case_v2 succeeds generic_case in console and shared rooms
+//                 only, so the arcade room keeps generic_case until arcade_cabinet succeeds it there, ADR-0014 §2);
+//   "spineLabelWidthMm", "spineLabelHeightMm" (numbers, to a tenth of a millimetre, both or neither): the item's spine
+//                 label quad (its manifest's "Spine" socket, across by along), whose shape a spine picture is drawn on
+//                 before its one resample into the 40 x 256 spine layer (spineAspect(), as covers are fitted to the
+//                 label quad); without them, the layer's own shape (I3's spines, the cartridges');
+//   "shellMaterial": the material of the item's shell (a material of assets/materials; optional: the theme's
+//                 "cartridge" role, plastic_shell), e.g. a jewel case's smoky dark plastic or a big box's cardboard.
 
 #include <cstdint>
 #include <filesystem>
@@ -50,6 +60,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/room_template.hpp>
+#include <rv/world/world_plan.hpp>
 
 namespace rv::world {
 
@@ -137,9 +148,20 @@ struct MediaFamily {
     SpineFacing spineFacing = SpineFacing::End;
     /// The family it succeeds (I6 step 4, ADR-0014 §2); empty for none.
     std::string succeeds;
+    /// The kinds of room it succeeds that family in, in the file's order; empty: every kind.
+    std::vector<RoomKind> succeedsIn;
+    /// Its spine label quad in tenths of a millimetre (across, along: the "Spine" socket's size); 0 x 0: none given.
+    assets::LabelAspect spineLabel;
+    /// The material of its items' shells; empty: the theme's "cartridge" role.
+    std::string shellMaterial;
 
     /// The shape its front pictures are made for (cover_fit.hpp): its label quad, the layer's own for CoverFit::Layer.
     [[nodiscard]] assets::LabelAspect coverAspect() const noexcept;
+    /// The shape its spine pictures are made for: its spine label quad, the spine layer's own (I3's 40 x 256) when the
+    /// family names none (I6 step 4).
+    [[nodiscard]] assets::LabelAspect spineAspect() const noexcept { return spineLabel; }
+    /// Whether it succeeds its predecessor in rooms of `kind`.
+    [[nodiscard]] bool succeedsInKind(RoomKind kind) const noexcept;
 
     bool operator==(const MediaFamily&) const = default;
 };
@@ -150,17 +172,19 @@ struct MediaFamilyRegistry {
 
     /// The family of `id`, or nullptr.
     [[nodiscard]] const MediaFamily* find(std::string_view id) const noexcept;
-    /// The family that succeeds `id` (its "succeeds" names `id`), or nullptr.
-    [[nodiscard]] const MediaFamily* successorOf(std::string_view id) const noexcept;
-    /// The last of `id`'s successors (following them one by one), `id`'s own family when it has none, or nullptr for an
-    /// unknown id.
-    [[nodiscard]] const MediaFamily* latestSuccessor(std::string_view id) const noexcept;
+    /// The family that succeeds `id` in rooms of `kind` (its "succeeds" names `id`, its "succeedsIn" `kind`), or
+    /// nullptr.
+    [[nodiscard]] const MediaFamily* successorOf(std::string_view id, RoomKind kind) const noexcept;
+    /// The last of `id`'s successors in rooms of `kind` (following them one by one), `id`'s own family when it has
+    /// none, or nullptr for an unknown id.
+    [[nodiscard]] const MediaFamily* latestSuccessor(std::string_view id, RoomKind kind) const noexcept;
 };
 
 /// Reads the registry. Errors (context and line): ParseError, ValidationFailed (a key missing, unknown, of another type
 /// or out of range, an id twice, a slot that is not the item in its orientation (its spine-out one by its spineFacing),
 /// a face-out and a spine-out slot alike, a label larger than the item's front, a fixture of another kind than its
-/// key's, a "succeeds" that names itself, no family of the file, or a family another one succeeds already).
+/// key's, a "succeeds" that names itself or no family of the file, a family another one succeeds already in a kind of
+/// room, successions that form a cycle, a spine label given by half or not to a tenth of a millimetre).
 [[nodiscard]] Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::string_view context);
 /// Reads <assetRoot>/world/media_families.json. Errors: those of parseMediaFamilies() and of reading the file.
 [[nodiscard]] Expected<MediaFamilyRegistry> loadMediaFamilies(const std::filesystem::path& assetRoot);
@@ -168,7 +192,8 @@ struct MediaFamilyRegistry {
 /// The family's item agrees with its manifest: the manifest's id, its runtime.generator equal to the item's kind, its
 /// runtime.scaleMeters rounded to whole millimetres equal to the item's size; and the prefab a procedural manifest
 /// builds (geometry::buildPrefab with its parameters) as large as the item, its "Label" socket the family's label and,
-/// when it has a "Spine" socket, that socket facing out of the face its spineFacing shows (+Y for End, -X for Side).
+/// when it has a "Spine" socket, that socket facing out of the face its spineFacing shows (+Y for End, -X for Side)
+/// and, when the family names its spine label, as large as that label (to a tenth of a millimetre).
 /// Errors: ValidationFailed naming the field (or the build's error).
 [[nodiscard]] Status checkItemManifest(const MediaFamily& family, const assets::PrefabManifest& manifest);
 

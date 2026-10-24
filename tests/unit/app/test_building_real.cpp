@@ -577,7 +577,7 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
     REQUIRE(families.has_value());
     std::vector<rv::world::MigratedRoom> expected;
     for (const rv::world::Room& room : legacy->plan.rooms) {
-        if (const rv::world::MediaFamily* successor = families->successorOf(room.mediaFamily)) {
+        if (const rv::world::MediaFamily* successor = families->successorOf(room.mediaFamily, room.kind)) {
             expected.push_back({room.id, room.mediaFamily, successor->id});
         }
     }
