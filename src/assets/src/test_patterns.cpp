@@ -34,6 +34,23 @@ constexpr Rgba kUiText = fromHex(0xF4EFE6);
 constexpr std::array<Rgba, 5> kCoverBackgrounds = {kWalnut, kOak, kWall, kGraphite, kFabric};
 constexpr std::array<Rgba, 4> kCoverAccents = {kTungsten, kColdAccent, kArcadeAccent, kSignage};
 
+/// The colors of a cover-like picture: its backgrounds, its accents, the border and title lettering, the title band.
+struct CoverPalette {
+    std::array<Rgba, 5> backgrounds;
+    std::array<Rgba, 4> accents;
+    Rgba border;
+    Rgba band;
+};
+
+constexpr CoverPalette kCoverPalette{kCoverBackgrounds, kCoverAccents, kUiNeutral, kUiText};
+/// The halls' prints (I6 step 2): the same palette muted, a framed print in a museum's warm gallery rather than a
+/// shop's box art: the walnut, oak, wall and graphite grounds, bordeaux, the signage green and cold blue at about 60%
+/// of their saturation and a softer tungsten, on an aged paper band.
+constexpr CoverPalette kPrintPalette{{kWalnut, kOak, kWall, kGraphite, fromHex(0x5A3A2C)},
+                                     {fromHex(0xD9B482), kFabric, fromHex(0x7AA291), fromHex(0x658AB0)},
+                                     fromHex(0x1E1B19),
+                                     fromHex(0xE3D7C1)};
+
 ImageData blankImage(int width, int height) {
     if (width < 1 || height < 1 || width > kMaxImageDimension || height > kMaxImageDimension) {
         return {};
@@ -448,6 +465,45 @@ void drawCoverPattern(ImageData& image, Rng& rng, Rgba background, Rgba accent, 
     }
 }
 
+ImageData coverWithPalette(int width, int height, std::string_view title, std::uint32_t seed,
+                           const CoverPalette& palette) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed);
+    const Rgba background = palette.backgrounds[static_cast<std::size_t>(rng.below(5))];
+    const int first = rng.below(4);
+    const int second = (first + 1 + rng.below(3)) % 4; // always different from the first accent
+    drawCoverPattern(image, rng, background, palette.accents[static_cast<std::size_t>(first)],
+                     palette.accents[static_cast<std::size_t>(second)]);
+
+    const int border = std::max(1, std::min(width, height) / 24);
+    fillRect(image, 0, 0, width, border, palette.border);
+    fillRect(image, 0, height - border, width, height, palette.border);
+    fillRect(image, 0, 0, border, height, palette.border);
+    fillRect(image, width - border, 0, width, height, palette.border);
+
+    const int innerWidth = width - 2 * border;
+    const int innerHeight = height - 2 * border;
+    if (innerWidth < 1 || innerHeight < 1) {
+        return image;
+    }
+    // Title band from 58% to 88% of the inner height on portrait and square covers. Wide covers such as cartridge
+    // labels, whose short height would leave a two-line title tiny, get a taller band, down to the same line: about the
+    // height two lines of a dozen glyphs take across the band (11/40 of its width with the padding), at most 45%.
+    const int baseTop = border + innerHeight * 58 / 100;
+    const int bandBottom = std::max(baseTop + 1, border + innerHeight * 88 / 100);
+    const int wideHeight = std::min(innerWidth * 11 / 40, innerHeight * 45 / 100);
+    const int bandTop = std::min(baseTop, bandBottom - wideHeight);
+    fillRect(image, border, bandTop, width - border, bandBottom, palette.band);
+    const int paddingX = std::max(1, innerWidth / 24);
+    const int paddingY = std::max(1, (bandBottom - bandTop) / 8);
+    drawTitle(image, title, border + paddingX, bandTop + paddingY, width - border - paddingX, bandBottom - paddingY,
+              palette.border, kMaxCoverTitleLines);
+    return image;
+}
+
 } // namespace
 
 ImageData makeColorBars(int width, int height) {
@@ -502,41 +558,11 @@ ImageData makeCheckerboard(int width, int height, int cells, glm::u8vec4 a, glm:
 }
 
 ImageData makeCoverPlaceholder(int width, int height, std::string_view title, std::uint32_t seed) {
-    ImageData image = blankImage(width, height);
-    if (!image.isValid()) {
-        return image;
-    }
-    Rng rng(seed);
-    const Rgba background = kCoverBackgrounds[static_cast<std::size_t>(rng.below(5))];
-    const int first = rng.below(4);
-    const int second = (first + 1 + rng.below(3)) % 4; // always different from the first accent
-    drawCoverPattern(image, rng, background, kCoverAccents[static_cast<std::size_t>(first)],
-                     kCoverAccents[static_cast<std::size_t>(second)]);
+    return coverWithPalette(width, height, title, seed, kCoverPalette);
+}
 
-    const int border = std::max(1, std::min(width, height) / 24);
-    fillRect(image, 0, 0, width, border, kUiNeutral);
-    fillRect(image, 0, height - border, width, height, kUiNeutral);
-    fillRect(image, 0, 0, border, height, kUiNeutral);
-    fillRect(image, width - border, 0, width, height, kUiNeutral);
-
-    const int innerWidth = width - 2 * border;
-    const int innerHeight = height - 2 * border;
-    if (innerWidth < 1 || innerHeight < 1) {
-        return image;
-    }
-    // Title band from 58% to 88% of the inner height on portrait and square covers. Wide covers such as cartridge
-    // labels, whose short height would leave a two-line title tiny, get a taller band, down to the same line: about the
-    // height two lines of a dozen glyphs take across the band (11/40 of its width with the padding), at most 45%.
-    const int baseTop = border + innerHeight * 58 / 100;
-    const int bandBottom = std::max(baseTop + 1, border + innerHeight * 88 / 100);
-    const int wideHeight = std::min(innerWidth * 11 / 40, innerHeight * 45 / 100);
-    const int bandTop = std::min(baseTop, bandBottom - wideHeight);
-    fillRect(image, border, bandTop, width - border, bandBottom, kUiText);
-    const int paddingX = std::max(1, innerWidth / 24);
-    const int paddingY = std::max(1, (bandBottom - bandTop) / 8);
-    drawTitle(image, title, border + paddingX, bandTop + paddingY, width - border - paddingX, bandBottom - paddingY,
-              kUiNeutral, kMaxCoverTitleLines);
-    return image;
+ImageData makePrintPlaceholder(int width, int height, std::string_view title, std::uint32_t seed) {
+    return coverWithPalette(width, height, title, seed, kPrintPalette);
 }
 
 ImageData makeSignLettering(int width, int height, std::string_view text) {
@@ -558,8 +584,8 @@ ImageData makeSolid(int width, int height, glm::u8vec4 color) {
 }
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 4> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
-                                                               kPatternSign};
+    static constexpr std::array<std::string_view, 5> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
+                                                               kPatternSign, kPatternPrint};
     return kNames;
 }
 
@@ -583,7 +609,10 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternSign) {
         return makeSignLettering(width, height, title);
     }
-    return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker, cover or sign)",
+    if (name == kPatternPrint) {
+        return makePrintPlaceholder(width, height, title, seed);
+    }
+    return makeError(ErrorCode::NotFound, "unknown test pattern (expected color_bars, checker, cover, sign or print)",
                      std::string(name));
 }
 

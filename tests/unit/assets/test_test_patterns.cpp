@@ -297,7 +297,7 @@ TEST_CASE("assets/test_patterns: cartridge labels keep long titles legible", "[a
 TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     const auto names = rv::assets::patternNames();
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
-          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign"});
+          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -316,10 +316,40 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     REQUIRE(sign.has_value());
     CHECK(sign->pixels == rv::assets::makeSignLettering(256, 48, "16-BIT CORNER").pixels);
 
+    const auto print = rv::assets::makeNamedPattern("print", 96, 128, "SAVE POINT", 9);
+    REQUIRE(print.has_value());
+    CHECK(print->pixels == rv::assets::makePrintPlaceholder(96, 128, "SAVE POINT", 9).pixels);
+
     const auto unknown = rv::assets::makeNamedPattern("plasma", 16, 16);
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
     CHECK(rv::assets::makeNamedPattern("checker", 0, 16).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("assets/test_patterns: a hall's print is a cover in a muted palette", "[assets][patterns]") {
+    // The same design and layout (the title band where the cover has it), its colours less saturated: the mean
+    // chroma (max - min channel) of the picture lower than the cover's over a run of seeds, and never a pure accent.
+    double coverChroma = 0.0;
+    double printChroma = 0.0;
+    std::size_t translucent = 0;
+    for (std::uint32_t seed = 0; seed < 24; ++seed) {
+        const ImageData cover = rv::assets::makeCoverPlaceholder(96, 128, "SAVE POINT", seed);
+        const ImageData print = rv::assets::makePrintPlaceholder(96, 128, "SAVE POINT", seed);
+        REQUIRE(isRgba(print, 96, 128));
+        CHECK(print.pixels != cover.pixels);
+        CHECK(rv::assets::makePrintPlaceholder(96, 128, "SAVE POINT", seed).pixels == print.pixels);
+        for (std::size_t i = 0; i < print.pixels.size(); i += 4) {
+            const auto chroma = [&](const ImageData& image) {
+                const std::uint8_t* p = image.pixels.data() + i;
+                return static_cast<double>(std::max({p[0], p[1], p[2]}) - std::min({p[0], p[1], p[2]}));
+            };
+            coverChroma += chroma(cover);
+            printChroma += chroma(print);
+            translucent += print.pixels[i + 3] != 255 ? 1 : 0;
+        }
+    }
+    CHECK(translucent == 0);
+    CHECK(printChroma < 0.8 * coverChroma);
 }
 
 TEST_CASE("assets/test_patterns: sign lettering is white text on black inside a margin", "[assets][patterns]") {

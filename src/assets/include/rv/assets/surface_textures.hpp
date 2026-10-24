@@ -17,8 +17,9 @@ namespace rv::assets {
 // Procedural surface textures (style §3.2 material library, §3.3 moderate ageing): the PBR maps of the shared
 // materials, generated at startup by pure, deterministic functions, so that Retroverse needs no texture download.
 // Every design is original (wood figure, plaster, an ornamental rug in the style §3 palette, brushed metal, plastic
-// micro-variation). A surface's maps are generated together and share their layout (the planks of a floor, the
-// grain of a board), and every surface except the rug tiles seamlessly.
+// micro-variation, a sconce's wash of light on its wall). A surface's maps are generated together and share their
+// layout (the planks of a floor, the grain of a board), and every surface except the rug and the wall wash (pictures)
+// tiles seamlessly. Every base color is opaque but the wall wash's, whose alpha is the picture.
 //
 // Maps follow glTF 2.0: the base color is sRGB; the metallic-roughness map is linear with roughness in G and
 // metallic in B (R and A are 255 and ignored); the normal map is linear, tangent space, +X along +u and +Y towards
@@ -31,7 +32,7 @@ namespace rv::assets {
 
 /// The maps of a procedural surface.
 enum class SurfaceMap : std::uint8_t {
-    BaseColor,         ///< sRGB albedo, alpha 255
+    BaseColor,         ///< sRGB albedo, alpha 255 (the wall wash's alpha its picture)
     MetallicRoughness, ///< linear: G roughness, B metallic
     Normal,            ///< linear tangent-space normal, encoded as n * 0.5 + 0.5
 };
@@ -50,7 +51,7 @@ struct ProceduralSurfaceInfo {
     /// Meters covered by the whole image along u and v: one repeat of a tiling surface, or the object a picture is
     /// designed for (the rug).
     glm::vec2 meters{0.0f};
-    /// Whether the image repeats seamlessly (every surface but the rug, a picture with a border).
+    /// Whether the image repeats seamlessly (every surface but the rug and the wall wash, pictures).
     bool tiles = true;
     bool hasNormalMap = true;
     /// What the surface is for, how its uvs are expected (meters per uv unit) and how its maps combine with the
@@ -59,7 +60,7 @@ struct ProceduralSurfaceInfo {
 };
 
 /// The catalog, in a fixed order: oak_planks, walnut, varnished_wood, oak, painted_plaster, ornate_rug,
-/// brushed_metal, aged_plastic.
+/// brushed_metal, aged_plastic, wallwash.
 [[nodiscard]] std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept;
 /// The surface called `name`, or nullptr.
 [[nodiscard]] const ProceduralSurfaceInfo* findProceduralSurface(std::string_view name) noexcept;

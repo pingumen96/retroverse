@@ -36,6 +36,11 @@ namespace rv::assets {
 /// that does not fit even at scale 1 is truncated with "...". The same arguments always produce the same pixels.
 [[nodiscard]] ImageData makeCoverPlaceholder(int width, int height, std::string_view title, std::uint32_t seed);
 
+/// A framed print of the halls (I6 step 2): makeCoverPlaceholder()'s design (the same layouts by `seed`, the title
+/// band) in a muted palette: the walnut, oak, wall and graphite grounds, bordeaux, the signage green and the cold blue
+/// at about 60% of their saturation and a softer tungsten, a dark border and lettering on an aged paper band.
+[[nodiscard]] ImageData makePrintPlaceholder(int width, int height, std::string_view title, std::uint32_t seed);
+
 /// Uniform color.
 [[nodiscard]] ImageData makeSolid(int width, int height, glm::u8vec4 color);
 
@@ -50,12 +55,14 @@ inline constexpr std::string_view kPatternColorBars = "color_bars";
 inline constexpr std::string_view kPatternChecker = "checker";
 inline constexpr std::string_view kPatternCover = "cover";
 inline constexpr std::string_view kPatternSign = "sign";
+inline constexpr std::string_view kPatternPrint = "print";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
 
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
-/// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering). Errors: NotFound for an unknown name,
+/// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
+/// `title` and `seed`). Errors: NotFound for an unknown name,
 /// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
