@@ -68,6 +68,14 @@
       "normalTexture": "procedural:painted_plaster/normal"
     },
     "MAT_Plaster_Used": { "baseColor": "#9A9081", "metallic": 0.0, "roughness": 0.95 },
+    // The halls' plaster above their wainscot (I6 step 2): a warm, lighter limewash than the rooms' smoky #383735, so
+    // that a hall reads as the museum's connecting gallery between darker rooms; the troweled plaster's relief and
+    // sheen without its colour.
+    "MAT_Plaster_Warm": {
+      "baseColor": "#776657", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
 
     // Painted or powder-coated structural steel (railings, uprights, cabinets): the coat is a dielectric, so the
     // art-directed graphite stays visible. A bare metal this dark would reflect less than any dielectric.
@@ -145,6 +153,9 @@
     "MAT_Plant_Leaf_Light": { "baseColor": "#69783F", "metallic": 0.0, "roughness": 0.55 },
 
     "MAT_Neon_Diffuser": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 1.5 },
+    // The halls' portal signs (I6 step 2): backlit lettering in tungsten amber (style §3), readable from the hall without
+    // a light of its own; the room's neon stays the room's accent.
+    "MAT_Sign_Tungsten": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.2 },
     // In-world screens: multiplied by the video or test pattern texture.
     "MAT_Screen_Emissive": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0 },
     // The picture tube of a CRT television (style 15.2, CRT_Subtle of style 25): a 240-line picture with a light
@@ -171,6 +182,16 @@
       "roughness": 0.85,
       "emissive": "#FFC88A",
       "emissiveStrength": 1.0,
+      "doubleSided": true
+    },
+    // The halls' wall sconces (I6 step 2): a parchment shade glowing amber from the bulb inside, warmer and dimmer than
+    // the lamps' (a practical light of style §4, not a source: the hall's lamps light the hall).
+    "MAT_Sconce_Shade": {
+      "baseColor": "#C9A27C",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "emissive": "#FFB46E",
+      "emissiveStrength": 0.8,
       "doubleSided": true
     },
     // Printed label, meant to be multiplied by a cover texture.

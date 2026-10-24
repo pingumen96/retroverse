@@ -36,7 +36,12 @@
 //    "kinds": {"<prefab kind>": {"<material role>": "<library material>", ...}, ...},
 //    "heroParts": {"<hero corner part role>": {"<material role>": "<library material>", ...}}}
 //   A hero corner part listed under heroParts takes those materials instead of its kind's (the sign's diffuser).
-//   "cartridge" is the collection's item (plastic_shell, label, spine).
+//   "cartridge" is the collection's item (plastic_shell, label, spine). "hall" (I6 step 2) is the floor's hall
+//   (floor_scene.hpp), a kind of the pack's own whose roles name what the hall is built of: floor, wall (the plaster
+//   above the wainscot), ceiling, trim (casings, lintels, the wainscot's rail and battens, the sconces' backplates, the
+//   portal signs' frames), baseboard, wainscot (its panels), runner (the rug down its middle), beam, bench (the frame),
+//   cushion, plant (the pot; the rest the "plant" kind's), picture (the prints' frames), sconce (the lit shade) and
+//   sign (the portal signs' lettering). A role the pack lacks is the built-in pack's.
 
 #include <cstdint>
 #include <filesystem>

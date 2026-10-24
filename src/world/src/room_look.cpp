@@ -237,6 +237,21 @@ ThemeMaterials builtInTheme() {
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
         {"cartridge",
          Roles{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Cover"}, {"spine", "MAT_Label_Cover"}}},
+        {"hall",
+         Roles{{"floor", "MAT_Floor_OakPlanks"},
+               {"wall", "MAT_Plaster_Warm"},
+               {"ceiling", "MAT_Plaster_Warm"},
+               {"trim", "MAT_Wood_Walnut"},
+               {"baseboard", "MAT_Wood_Walnut"},
+               {"wainscot", "MAT_Wood_Varnished_Dark"},
+               {"runner", "MAT_Carpet_Ornate"},
+               {"beam", "MAT_Wood_Walnut"},
+               {"bench", "MAT_Wood_Walnut"},
+               {"cushion", "MAT_Fabric_Sofa"},
+               {"plant", "MAT_Ceramic_Glazed"},
+               {"picture", "MAT_Wood_Oak"},
+               {"sconce", "MAT_Sconce_Shade"},
+               {"sign", "MAT_Sign_Tungsten"}}},
     };
     theme.heroParts = {{"sign", Roles{{"frame", "MAT_Wood_Walnut"}, {"picture", "MAT_Neon_Diffuser"}}}};
     return theme;
