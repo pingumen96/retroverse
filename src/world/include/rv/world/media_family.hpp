@@ -29,6 +29,14 @@
 // family stands them in the template's sockets instead of the template's own prefabs (withFamilyFixtures()), and a
 // fixture the family does not name is the template's. Family ids are permanent (ADR-0013 §4): a family is never
 // removed or redefined, a new definition takes a new id.
+//
+// Since I6 step 4 (ADR-0014 §2) a family may also say (both optional):
+//   "spineFacing": "end" (the default: the item on its end, its top face outward, a spine-out slot of (d, w, h)) or
+//                  "side" (the item on its side, upright, its -X face outward: geometry::SlotFacing::SideOut, a
+//                  spine-out slot of (d, h, w), its manifest's spine label on that face);
+//   "succeeds": the id of the family it replaces (another family of the file, succeeded by no other): a stored room
+//               of that family is regenerated once with this one (incremental.hpp's migration), and a new room asked
+//               for that family takes this one (successorOf(), latestSuccessor()).
 
 #include <cstdint>
 #include <filesystem>
@@ -90,6 +98,26 @@ struct FamilyFixtures {
     bool operator==(const FamilyFixtures&) const = default;
 };
 
+/// How a family's items stand spine-out (ADR-0014 §2).
+enum class SpineFacing : std::uint8_t {
+    End,  ///< on the item's end, its top face out (geometry::SlotFacing::SpineOut): I3's cartridges
+    Side, ///< on its side, upright, its -X face out (geometry::SlotFacing::SideOut): I6's cases and boxes
+};
+
+/// "end", "side".
+[[nodiscard]] constexpr std::string_view toString(SpineFacing facing) noexcept {
+    switch (facing) {
+    case SpineFacing::End:
+        return "end";
+    case SpineFacing::Side:
+        return "side";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<SpineFacing> parseSpineFacing(std::string_view text) noexcept {
+    return detail::enumFromString(text, SpineFacing::Side);
+}
+
 struct MediaFamily {
     /// A data id ("cartridge_home_16bit").
     std::string id;
@@ -105,6 +133,10 @@ struct MediaFamily {
     SlotSpec spineOut;
     SlotSpec faceOut;
     FamilyFixtures fixtures;
+    /// How its items stand spine-out (I6 step 4).
+    SpineFacing spineFacing = SpineFacing::End;
+    /// The family it succeeds (I6 step 4, ADR-0014 §2); empty for none.
+    std::string succeeds;
 
     /// The shape its front pictures are made for (cover_fit.hpp): its label quad, the layer's own for CoverFit::Layer.
     [[nodiscard]] assets::LabelAspect coverAspect() const noexcept;
@@ -118,18 +150,25 @@ struct MediaFamilyRegistry {
 
     /// The family of `id`, or nullptr.
     [[nodiscard]] const MediaFamily* find(std::string_view id) const noexcept;
+    /// The family that succeeds `id` (its "succeeds" names `id`), or nullptr.
+    [[nodiscard]] const MediaFamily* successorOf(std::string_view id) const noexcept;
+    /// The last of `id`'s successors (following them one by one), `id`'s own family when it has none, or nullptr for an
+    /// unknown id.
+    [[nodiscard]] const MediaFamily* latestSuccessor(std::string_view id) const noexcept;
 };
 
 /// Reads the registry. Errors (context and line): ParseError, ValidationFailed (a key missing, unknown, of another type
-/// or out of range, an id twice, a slot that is not the item in its orientation, a label larger than the item's front,
-/// a fixture of another kind than its key's).
+/// or out of range, an id twice, a slot that is not the item in its orientation (its spine-out one by its spineFacing),
+/// a face-out and a spine-out slot alike, a label larger than the item's front, a fixture of another kind than its
+/// key's, a "succeeds" that names itself, no family of the file, or a family another one succeeds already).
 [[nodiscard]] Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::string_view context);
 /// Reads <assetRoot>/world/media_families.json. Errors: those of parseMediaFamilies() and of reading the file.
 [[nodiscard]] Expected<MediaFamilyRegistry> loadMediaFamilies(const std::filesystem::path& assetRoot);
 
 /// The family's item agrees with its manifest: the manifest's id, its runtime.generator equal to the item's kind, its
 /// runtime.scaleMeters rounded to whole millimetres equal to the item's size; and the prefab a procedural manifest
-/// builds (geometry::buildPrefab with its parameters) as large as the item, its "Label" socket the family's label.
+/// builds (geometry::buildPrefab with its parameters) as large as the item, its "Label" socket the family's label and,
+/// when it has a "Spine" socket, that socket facing out of the face its spineFacing shows (+Y for End, -X for Side).
 /// Errors: ValidationFailed naming the field (or the build's error).
 [[nodiscard]] Status checkItemManifest(const MediaFamily& family, const assets::PrefabManifest& manifest);
 

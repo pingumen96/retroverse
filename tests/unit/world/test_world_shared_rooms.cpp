@@ -633,8 +633,8 @@ TEST_CASE("world/shared rooms: a shared room's data comes with its system's", "[
     const WorldData& shared = *pokemini.sharedRoom;
     CHECK(shared.kind == RoomKind::Shared);
     CHECK(shared.sharedRoom == nullptr);
-    CHECK(shared.mediaFamily.id == "generic_case");
-    CHECK(shared.platform.mediaFamily == "generic_case");
+    CHECK(shared.mediaFamily.id == "generic_case_v2");
+    CHECK(shared.platform.mediaFamily == "generic_case_v2");
     CHECK_FALSE(shared.platform.console.has_value());
     CHECK(shared.platform.system == name("pokemini"));
     CHECK(shared.platform.signText == "MORE GAMES");

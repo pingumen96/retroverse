@@ -67,6 +67,42 @@ inline const rv::world::WorldData& enteringData(const std::filesystem::path& roo
     return *found->second;
 }
 
+/// The data of `system` entering a building as generator 1.3 (I4) planned it, before I6 step 4's successors
+/// (ADR-0014 §2): its room of the family its family succeeds (the one systems.json gave it then), and the shared or
+/// arcade room its section would stand in of the generic case it succeeds. A building generated from such data is a
+/// stored building of the old families, which an update migrates.
+inline rv::world::WorldData legacyEnteringData(const std::filesystem::path& root, std::string_view system,
+                                               const std::vector<std::string>& tags = {}) {
+    const rv::world::WorldData& now = enteringData(root, system, tags);
+    const auto predecessor = [](const rv::world::MediaFamily& family) {
+        return family.succeeds.empty() ? family.id : family.succeeds;
+    };
+    rv::world::RoomDataRequest request;
+    request.system = systemName(system);
+    request.platformTags = tags;
+    request.mediaFamily = predecessor(now.mediaFamily);
+    auto data = rv::world::loadWorldData(root, request);
+    INFO(system << ": " << (data ? std::string("loaded") : data.error().toString()));
+    REQUIRE(data.has_value());
+    data->successor.reset();
+    if (now.sharedRoom != nullptr) {
+        const rv::world::Classification classification =
+            rv::world::classify(request.system, tags, now.systems, now.building);
+        rv::world::RoomDataRequest shared;
+        shared.system = request.system;
+        shared.platformTags = tags;
+        shared.kind = now.sharedRoom->kind;
+        shared.floor =
+            shared.kind == rv::world::RoomKind::Arcade ? std::string(rv::world::kGroundFloor) : classification.floor;
+        shared.mediaFamily = predecessor(now.sharedRoom->mediaFamily);
+        auto sharedData = rv::world::loadWorldData(root, shared);
+        REQUIRE(sharedData.has_value());
+        sharedData->successor.reset();
+        data->sharedRoom = std::make_shared<const rv::world::WorldData>(std::move(*sharedData));
+    }
+    return std::move(*data);
+}
+
 /// The data of a stored room of the asset root `root` (loadRoomData() with its first section's platform tags), read
 /// once per run.
 inline const rv::world::WorldData& storedData(const std::filesystem::path& root, const rv::world::Room& room,

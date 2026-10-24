@@ -146,7 +146,7 @@ TEST_CASE("world/building: building.json and systems.json as shipped", "[world][
     CHECK_FALSE(systems().defaultsOf(SystemKind::Arcade).console.has_value());
     CHECK_FALSE(systems().defaultsOf(SystemKind::Computer).console.has_value());
     CHECK_FALSE(systems().defaultsOf(SystemKind::Other).console.has_value());
-    CHECK(systems().fallback.family == "generic_case");
+    CHECK(systems().fallback.family == "generic_case_v2");
     for (const std::string_view excluded : {"desktop", "emulators", "kodi"}) {
         REQUIRE(systems().find(systemName(excluded)) != nullptr);
         CHECK(systems().find(systemName(excluded))->kind == SystemKind::Excluded);
@@ -250,25 +250,51 @@ TEST_CASE("world/building: classify() by the table, the platform tags, the fallb
         {"nes", {}, SystemKind::Home, "gen3", ClassificationSource::Table, "cartridge_home_8bit", ""},
         {"n64", {}, SystemKind::Home, "gen5", ClassificationSource::Table, "cartridge_home_64bit", ""},
         {"gb", {}, SystemKind::Handheld, "handheld", ClassificationSource::Table, "cartridge_handheld", ""},
-        {"nds", {}, SystemKind::Handheld, "handheld", ClassificationSource::Table, "case_handheld", ""},
-        {"mame", {}, SystemKind::Arcade, "ground", ClassificationSource::Table, "generic_case", ""},
-        {"amiga", {}, SystemKind::Computer, "computer", ClassificationSource::Table, "big_box", ""},
-        {"pico8", {}, SystemKind::Other, "computer", ClassificationSource::Table, "generic_case", ""},
+        {"nds", {}, SystemKind::Handheld, "handheld", ClassificationSource::Table, "case_handheld_v2", ""},
+        {"mame", {}, SystemKind::Arcade, "ground", ClassificationSource::Table, "generic_case_v2", ""},
+        {"amiga", {}, SystemKind::Computer, "computer", ClassificationSource::Table, "big_box_v2", ""},
+        {"pico8", {}, SystemKind::Other, "computer", ClassificationSource::Table, "generic_case_v2", ""},
         {"desktop", {}, SystemKind::Excluded, "", ClassificationSource::Table, "", ""},
         // A custom system sharing a platform tag takes the first such system's row, in the table's order.
-        {"snes-hacks", {"snes"}, SystemKind::Home, "gen4", ClassificationSource::PlatformTag, "cartridge_home_16bit",
+        {"snes-hacks",
+         {"snes"},
+         SystemKind::Home,
+         "gen4",
+         ClassificationSource::PlatformTag,
+         "cartridge_home_16bit",
          "snes"},
-        {"my arcade", {"arcade"}, SystemKind::Arcade, "ground", ClassificationSource::PlatformTag, "generic_case",
+        {"my arcade",
+         {"arcade"},
+         SystemKind::Arcade,
+         "ground",
+         ClassificationSource::PlatformTag,
+         "generic_case_v2",
          "arcade"},
         // The table's rows stand in the floors' order: the first "pcwindows" row is the first computer's.
-        {"pc-tools", {"pcwindows"}, SystemKind::Computer, "computer", ClassificationSource::PlatformTag, "big_box",
+        {"pc-tools",
+         {"pcwindows"},
+         SystemKind::Computer,
+         "computer",
+         ClassificationSource::PlatformTag,
+         "big_box_v2",
          "windows9x"},
-        {"daphne-copy", {"daphne"}, SystemKind::Arcade, "ground", ClassificationSource::PlatformTag, "generic_case",
+        {"daphne-copy",
+         {"daphne"},
+         SystemKind::Arcade,
+         "ground",
+         ClassificationSource::PlatformTag,
+         "generic_case_v2",
          "daphne"},
-        {"oldpc", {"zzz", "pc"}, SystemKind::Computer, "computer", ClassificationSource::PlatformTag, "big_box", "pc"},
+        {"oldpc",
+         {"zzz", "pc"},
+         SystemKind::Computer,
+         "computer",
+         ClassificationSource::PlatformTag,
+         "big_box_v2",
+         "pc"},
         // No row, no shared tag: "other" with the fallback's family.
-        {"mystery", {"zzz"}, SystemKind::Other, "computer", ClassificationSource::Fallback, "generic_case", ""},
-        {"Unknown Système", {}, SystemKind::Other, "computer", ClassificationSource::Fallback, "generic_case", ""},
+        {"mystery", {"zzz"}, SystemKind::Other, "computer", ClassificationSource::Fallback, "generic_case_v2", ""},
+        {"Unknown Système", {}, SystemKind::Other, "computer", ClassificationSource::Fallback, "generic_case_v2", ""},
     };
     for (const Case& test : cases) {
         INFO(test.system);

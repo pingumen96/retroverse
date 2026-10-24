@@ -261,7 +261,9 @@ Expected<PickId> slotPickId(const RoomTemplate& roomTemplate, const SlotId& slot
 }
 
 scene::InstanceAttributes CollectionItem::attributes() const noexcept {
-    return scene::InstanceAttributes{0, 0, flags, pickId};
+    // A face-out item shows no spine label (I6 step 4, ADR-0014 §2): the shell's top or side lies beneath it.
+    const std::uint32_t stanceFlags = stance == ItemStance::FaceOut ? scene::instance_flags::kNoSpineLabel : 0u;
+    return scene::InstanceAttributes{0, 0, flags | stanceFlags, pickId};
 }
 
 scene::InstanceData CollectionItem::instance() const noexcept {
@@ -419,10 +421,12 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
                                  room_frames::yawRotation(placement.yawCdeg);
         item.slotFrame = room_frames::fixtureTransform(fixture) * socket->transform * offset;
         item.slotBox = socket->bounds;
+        // Spine-out on its end (I3's cartridges) or on its side, upright (I6 step 4's cases and boxes).
+        const geometry::SlotFacing spineFacing =
+            family.spineFacing == SpineFacing::Side ? geometry::SlotFacing::SideOut : geometry::SlotFacing::SpineOut;
         item.transform =
-            item.slotFrame * geometry::slotItemTransform(stance == ItemStance::FaceOut ? geometry::SlotFacing::FaceOut
-                                                                                         : geometry::SlotFacing::SpineOut,
-                                                         itemSize);
+            item.slotFrame * geometry::slotItemTransform(
+                                 stance == ItemStance::FaceOut ? geometry::SlotFacing::FaceOut : spineFacing, itemSize);
         const CollectionTitle* title = titleOf(placement.game);
         if (title == nullptr || !title->available) {
             item.flags |= scene::instance_flags::kUnavailable;

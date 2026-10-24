@@ -869,6 +869,30 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
     }
 
+    // The rooms migrated to their families' successors (I6 step 4, ADR-0014 §2): a room of a succeeded family, given
+    // every section's selection and kept by no rule, is regenerated with its successor's data (WorldData::successor),
+    // unless a pin names it (the regeneration would move what is pinned: refused, and said so).
+    std::map<RoomId, const WorldData*> migrating;
+    std::vector<std::string> migrationRefused;
+    for (const Room& room : previous.rooms) {
+        const WorldData* data = dataOf.at(room.id);
+        if (data->successor == nullptr || !selectionsOf.contains(room.id) ||
+            !roomKeepReason(previous, room, *data).empty()) {
+            continue;
+        }
+        const bool pinned = std::any_of(input.overrides.gamePins.begin(), input.overrides.gamePins.end(),
+                                        [&](const GamePin& pin) { return pin.slot.fixture().room() == room.id; }) ||
+                            std::any_of(input.overrides.fixturePins.begin(), input.overrides.fixturePins.end(),
+                                        [&](const FixturePin& pin) { return pin.fixture.room() == room.id; });
+        if (pinned) {
+            migrationRefused.push_back("migrate " + room.id.toString() + " from " + room.mediaFamily + " to " +
+                                       data->successor->mediaFamily.id + ": a pin names the room");
+            continue;
+        }
+        migrating.emplace(room.id, data->successor.get());
+        dataOf[room.id] = data->successor.get();
+    }
+
     // The systems entering the building, each with its own data (loadWorldData()'s, with the data of the shared or
     // arcade room it would take a section of).
     std::vector<detail::EnteringSystem> entering;
@@ -995,9 +1019,14 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::vector<GameId> handedOver;
     std::vector<LevelId> dressingRemoved;
     std::vector<SlotId> slotsFreed;
-    std::vector<std::string> refused;
+    std::vector<std::string> refused = std::move(migrationRefused);
+    std::vector<MigratedRoom> migratedRooms;
     bool grew = false;
     bool newItems = false;
+    std::set<GameId> placedBefore;
+    for (const Placement& placement : previous.placements) {
+        placedBefore.insert(placement.game);
+    }
     for (const Room& room : previous.rooms) {
         const WorldData& data = *dataOf.at(room.id);
         const auto selections = selectionsOf.find(room.id);
@@ -1022,6 +1051,32 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                 merged = detail::sectionsSelection(room.id, roomSections, selections->second, sections);
                 selection = &*merged;
             }
+        }
+        if (const auto migration = migrating.find(room.id); migration != migrating.end() && selection != nullptr) {
+            // Regenerated as a fresh building generates it, with its successor's data; its place on its floor kept, its
+            // z following its new depth.
+            auto content = detail::generateRoomContent(*selection, input.config, worldSeed(input.config, input.library),
+                                                       data, room.kind == RoomKind::Console ? nullptr : &sections);
+            if (!content) {
+                return propagate(content.error());
+            }
+            Room& record = content->rooms.front();
+            record.kind = room.kind;
+            record.floor = room.floor;
+            record.sections = roomSections;
+            record.generatorVersion = kGeneratorVersion;
+            record.expands = room.expands;
+            record.placement = room.placement;
+            record.placement = followDepth(record, building.layout);
+            for (const Placement& placement : content->placements) {
+                if (!placedBefore.contains(placement.game)) {
+                    added.push_back(placement.game);
+                }
+            }
+            newItems = true;
+            migratedRooms.push_back({room.id, room.mediaFamily, record.mediaFamily});
+            replaceRoom(plan, room.id, std::move(*content));
+            continue;
         }
         if (std::string reason = roomKeepReason(previous, room, data); !reason.empty()) {
             keptRooms.push_back({room.id, std::move(reason)});
@@ -1197,12 +1252,15 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.roomsAdded = sortedUnique(std::move(roomsAdded));
     changes.systemsEntered = sortedUnique(std::move(systemsEntered));
     changes.systemsWaiting = sortedUnique(std::move(systemsWaiting));
+    changes.migratedRooms = sortedUnique(std::move(migratedRooms));
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||
                           !changes.fixturesRemoved.empty() || !changes.fixturesMoved.empty() ||
                           plan.lights != previous.lights;
     changes.rebuild =
-        grew ? RebuildLevel::RoomExpansion : (geometry ? RebuildLevel::LocalReflow : RebuildLevel::NoRebuild);
+        !changes.migratedRooms.empty()
+            ? RebuildLevel::Full
+            : (grew ? RebuildLevel::RoomExpansion : (geometry ? RebuildLevel::LocalReflow : RebuildLevel::NoRebuild));
 
     std::vector<RoomTemplate> templates;
     std::vector<const WorldData*> datas;

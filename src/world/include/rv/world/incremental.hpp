@@ -14,8 +14,9 @@
 //     collection fixtures' levels are no longer their prefabs', or its generator major is another: its placements and
 //     unplaced entries stand as they were (a duplicate keeps its representative), the games of its selection that it
 //     neither places nor lists are unplaced with reason room-kept (entries that follow the selection: an update with
-//     the same selection changes nothing), and the report lists it with the reason (ChangeReport::keptRooms). The room's recorded media family and theme pack are authoritative: its data is read
-//     with them (loadRoomData()), so a data change never freezes a room;
+//     the same selection changes nothing), and the report lists it with the reason (ChangeReport::keptRooms). The
+//     room's recorded media family and theme pack are authoritative: its data is read with them (loadRoomData()), so a
+//     data change never freezes a room;
 //   - in any other room every placement is kept as it is, also a game's that is now unavailable, no longer eligible
 //     (its cover gone: it keeps its slot with a generated label), hidden, or gone from the catalog's snapshot: its slot
 //     is never given to another game (free slots are never compacted);
@@ -70,17 +71,26 @@
 //     was of: an entry of a game that left the system stands until a regeneration).
 // Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
 // placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
+// The one exception, made once (I6 step 4, ADR-0014 §2): a stored room whose recorded media family has a successor
+// (media_family.hpp's "succeeds"), given a selection of every section and kept by none of the rules above, is MIGRATED:
+// regenerated as a fresh building generates it, with the data of its family's last successor (its data's
+// WorldData::successor: loadRoomData() reads it), its id, kind, floor, x, yaw, sections and seed kept, its face-out
+// titles chosen again by the same priority, its z following its new depth (away from the hall only as a growth moves
+// it), its record naming the successor and this generator's version; the report lists it (migratedRooms, {room, from,
+// to}) and its games not placed before among the added. A room a pin names (a game pinned to one of its slots, one of
+// its fixtures pinned) is not migrated: it is updated as it stands and the refusal is in needsConfirmation. A
+// migrated room's family has no successor, so the next update of an unchanged catalog writes nothing.
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
 // of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
 // that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an
-// update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an update
-// of the building of no room equals the fresh building of its selections. The change report lists the games added, the
-// placements kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed, the slots
-// freed, the pins, the rooms kept and held, the rooms added, the systems that entered and those that wait, the rebuild
-// level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's identity is a
-// texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the validation is
-// validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the rooms kept judged
-// as kept.
+// update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an
+// update of the building of no room equals the fresh building of its selections. The change report lists the games
+// added, the placements kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed,
+// the slots freed, the pins, the rooms kept and held, the rooms added, the systems that entered and those that wait,
+// the rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's
+// identity is a texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the
+// validation is validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the
+// rooms kept judged as kept.
 
 #include <map>
 #include <span>
@@ -140,7 +150,8 @@ struct BuildingUpdateInput {
 [[nodiscard]] std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldData& data);
 
 /// The previous building updated by the rules of the file's header; `rooms` holds the data of every room of the
-/// previous plan (loadRoomData(): its recorded family, theme pack and template), by its system, and of every system
+/// previous plan (loadRoomData(): its recorded family, theme pack and template, with the data of its migration when
+/// that family has a successor: WorldData::successor), by its system, and of every system
 /// entering the building (loadWorldData() of the system with its platform tags: its console room's with the room its
 /// section would stand in). Errors: InvalidArgument for a previous plan of another library, a selection that is not of
 /// a system's room, two selections of one system, a room without data in `rooms` or with data of another family than

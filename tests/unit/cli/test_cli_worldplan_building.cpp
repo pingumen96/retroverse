@@ -121,8 +121,8 @@ TEST_CASE("cli/worldplan: a building of selection files, its floors, where-is wi
     REQUIRE(generated.code == ExitCode::Ok);
     CHECK(contains(generated.out, "Generated the plan of room:megadrive, room:snes: "));
     CHECK(contains(generated.out, "Floors:          ground (order 0, 0 rooms), gen4 (order 3, 2 rooms)"));
-    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.3"));
-    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.3"));
+    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.4"));
+    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.4"));
 
     const RunResult shown = session.run({"worldplan", "show", "--library", "esde", "--json"});
     REQUIRE(shown.code == ExitCode::Ok);
@@ -394,12 +394,12 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         std::size_t placed;
     };
     const Expected expected[] = {
-        {"area:arcade", "ground", "generic_case", 15},           // mame: 25 sets, 15 with a cover
-        {"area:shared:computer", "computer", "generic_case", 20}, // amiga: no media at all, generated labels
-        {"area:shared:handheld", "handheld", "generic_case", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
-        {"room:gb", "handheld", "cartridge_handheld", 30},       // 32 games, 2 second releases
-        {"room:psx", "gen5", "disc_case_cd", 40},                // two of them multi-disc
-        {"room:snes", "gen4", "cartridge_home_16bit", 40},       // 42 games, 2 second releases
+        {"area:arcade", "ground", "generic_case_v2", 15},            // mame: 25 sets, 15 with a cover
+        {"area:shared:computer", "computer", "generic_case_v2", 20}, // amiga: no media at all, generated labels
+        {"area:shared:handheld", "handheld", "generic_case_v2", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
+        {"room:gb", "handheld", "cartridge_handheld", 30},           // 32 games, 2 second releases
+        {"room:psx", "gen5", "disc_case_cd_v2", 40},                 // two of them multi-disc
+        {"room:snes", "gen4", "cartridge_home_16bit", 40},           // 42 games, 2 second releases
     };
     REQUIRE(plan->rooms.size() == std::size(expected));
     std::vector<std::string> floors;

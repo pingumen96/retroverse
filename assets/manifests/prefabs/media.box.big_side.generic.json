@@ -1,0 +1,40 @@
+// The big box standing on its side (media family big_box_v2, ADR-0014 §2; I6 step 4), 19 x 24 x 4.5 cm: the 'cartridge'
+// prefab at the family's size, its front label (the cover, a 180 x 230 mm cover) and its spine label upright on its -X
+// face (spineFace "side"), shown when it stands spine-out on its side in a 4.5 x 24 x 19 cm slot, as a book stands on a
+// shelf. big_box's item with the spine moved; functional, of no real model.
+{
+  "schemaVersion": 1,
+  "id": "media.box.big_side.generic",
+  "assetType": "physical_media",
+  "category": "box",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-24",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.19, 0.24, 0.045], "chamfer": 0.0015, "labelMargin": [0.005, 0.005], "labelInset": 0.0008,
+      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.037, 0.2368], "spineFace": "side"
+    },
+    "scaleMeters": [0.19, 0.24, 0.045],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label",
+      "spine": "Spine"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "box", "big_box", "side_spine", "procedural"],
+  "fallbackPrefab": "media.box.big.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
