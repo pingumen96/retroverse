@@ -1016,36 +1016,60 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     const rv::assets::ImageData b = requireScreenshot(run, fading, kShotSize);
     REQUIRE(a.pixels.size() == b.pixels.size());
     const double share = 1.0 - static_cast<double>(kFadeFrames) * kFixedDt / kFadeSeconds;
-    // Every value against the share of the one before: the brightest (the lights) dimmed as much as the rest. The
-    // anti-aliasing finds a few edges otherwise in the darker view: a few values a little off (since I6 step 1's lifted
-    // ambient a handful, at the elevator doors' foot, up to about 20; since I6 step 2's dressed hall a few dozen more
-    // on the prints' frames and the runner's pattern, up to about 26, 0.18% of the values off by more than 3).
+    // The whole view and its brightest value (the lights) dimmed by the share. Then every 4 x 4 block's mean of each
+    // colour channel against the share of the one before: the fade dims each block alike wherever it stands, whatever
+    // the view holds; a block's mean is blind to the anti-aliasing of the edges inside it (a thin frame or a rug's
+    // pattern finds its edges a pixel apart in the darker view, which moved single values by up to about 26).
     double sumA = 0.0;
     double sumB = 0.0;
-    double worst = 0.0;
-    std::size_t off = 0;
     std::uint8_t brightestA = 0;
     std::uint8_t brightestB = 0;
     for (std::size_t index = 0; index < a.pixels.size(); ++index) {
-        const double expected = share * a.pixels[index];
-        const double excess = static_cast<double>(b.pixels[index]) - expected;
-        worst = std::max(worst, excess);
-        off += std::abs(excess) > 3.0 ? 1 : 0;
         sumA += a.pixels[index];
         sumB += b.pixels[index];
         brightestA = std::max(brightestA, a.pixels[index]);
         brightestB = std::max(brightestB, b.pixels[index]);
     }
-    const double offShare = static_cast<double>(off) / static_cast<double>(a.pixels.size());
+    constexpr int kBlock = 4;
+    const int colours = std::min(a.channels, 3);
+    double worst = 0.0;
+    std::size_t off = 0;
+    std::size_t blocks = 0;
+    for (int by = 0; by + kBlock <= a.height; by += kBlock) {
+        for (int bx = 0; bx + kBlock <= a.width; bx += kBlock) {
+            for (int channel = 0; channel < colours; ++channel) {
+                double meanA = 0.0;
+                double meanB = 0.0;
+                for (int y = by; y < by + kBlock; ++y) {
+                    for (int x = bx; x < bx + kBlock; ++x) {
+                        const std::size_t index =
+                            (static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width) +
+                             static_cast<std::size_t>(x)) * static_cast<std::size_t>(a.channels) +
+                            static_cast<std::size_t>(channel);
+                        meanA += a.pixels[index];
+                        meanB += b.pixels[index];
+                    }
+                }
+                meanA /= kBlock * kBlock;
+                meanB /= kBlock * kBlock;
+                const double excess = std::abs(meanB - share * meanA);
+                worst = std::max(worst, excess);
+                off += excess > 2.0 ? 1 : 0;
+                ++blocks;
+            }
+        }
+    }
+    const double offShare = static_cast<double>(off) / static_cast<double>(blocks);
     INFO("share " << share << ": means " << sumA / static_cast<double>(a.pixels.size()) << " and "
                   << sumB / static_cast<double>(b.pixels.size()) << ", brightest " << int(brightestA) << " and "
-                  << int(brightestB) << ", worst excess " << worst << ", " << offShare * 100.0
-                  << "% of the values off by more than 3");
+                  << int(brightestB) << ", worst block excess " << worst << ", " << offShare * 100.0
+                  << "% of the blocks' values off by more than 2");
     CHECK(brightestA >= 200); // the view has bright lights to dim
     CHECK(std::abs(sumB / sumA - share) < 0.01);
     CHECK(static_cast<double>(brightestB) <= share * brightestA + 3.0);
-    CHECK(worst <= 32.0);
-    CHECK(offShare < 0.003);
+    // Measured in I6 step 2's dressed lobby: a worst block 4.4 off, 0.012% of the blocks' values off by more than 2.
+    CHECK(worst <= 8.0);
+    CHECK(offShare < 0.0005);
 }
 
 TEST_CASE("world elevator: a game played before a ride is the start choice of its room's CRT on the destination",
