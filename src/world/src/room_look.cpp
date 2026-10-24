@@ -178,12 +178,12 @@ LightingProfile builtInEvening() {
     p.keyShadowStrength = 1.0;
     // The environment and the halls as evening.json has them (I6 step 1; unit-tested equal).
     p.ambientSky = "#E6E2DC";
-    p.ambientGround = "#C89A72";
+    p.ambientGround = "#B49C88";
     p.ambientIntensity = 0.3;
-    p.fillColor = "#FFD2A8";
+    p.fillColor = "#FFE0C8";
     p.fillIntensity = 0.22;
     p.hall.light = LightStyle{"#FFD0A0", 12.0, 9.0, 0.0, 0.0, 0.0};
-    p.hall.doorwayFill = LightStyle{"#FFD6AE", 5.0, 6.0, 35.0, 6.0, 0.4};
+    p.hall.doorwayFill = LightStyle{"#FFD6AE", 5.0, 6.0, 28.0, 6.0, 0.4};
     p.hall.environment = AreaLook{1.5, "#B8A898", "#C89A72", 0.35, "#FFD2A8", 0.25};
     return p;
 }

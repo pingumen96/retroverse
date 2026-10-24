@@ -68,14 +68,14 @@
     "yawDeg": 90.0
   },
   "environment": {
-    "ambientGround": "#C89A72",
+    "ambientGround": "#B49C88",
     "ambientIntensity": 0.3,
     "ambientSky": "#E6E2DC",
     "bloomRadius": 0.5,
     "bloomStrength": 0.18,
     "clearColor": "#221E1A",
     "exposure": 1.5,
-    "fillColor": "#FFD2A8",
+    "fillColor": "#FFE0C8",
     "fillIntensity": 0.22,
     "ssao": {
       "enabled": true,
@@ -367,10 +367,10 @@
     {
       "area": "hall:gen4",
       "color": "#FFD6AE",
-      "innerConeDeg": 19.0534,
+      "innerConeDeg": 11.2,
       "intensity": 5.0,
       "name": "hall:gen4/doorway-fill:room:snes",
-      "outerConeDeg": 47.6335,
+      "outerConeDeg": 28.0,
       "position": [
         7.65,
         2.0,

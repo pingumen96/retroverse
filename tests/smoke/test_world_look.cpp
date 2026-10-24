@@ -3,7 +3,7 @@
 //   - from the doorway: every collection module's eye-height band (1.1 to 1.5 m) at least a third of the hero wall's
 //     luminance (its modules over their height and the wall behind the hero corner); the upper walls (2.6 to 3.0 m)
 //     darker than the modules' bands; the sign and the CRT the most saturated regions of the view, the collection's
-//     items aside (the 90th percentile of their chroma above every other tile's);
+//     items and the posters' prints aside (pictures; the 90th percentile of their chroma above every other tile's);
 //   - close to a display case (0.9 m in front of its first face-out item): the covers behind the glass keep their darks
 //     (no haze: the glass adds at most a few steps to the darkest pixels of the items behind it) and their contrast.
 // The probes read luminance as linear light (sRGB decoded) and chroma as max - min of the encoded bytes.
@@ -389,6 +389,26 @@ void checkDoorway(const ShownRoom& shown, const rv::assets::ImageData& image, st
                                   (i & 2) ? item.slotBox.max.y : item.slotBox.min.y,
                                   (i & 4) ? item.slotBox.max.z : item.slotBox.min.z);
             corners.emplace_back(item.slotFrame * glm::vec4(local, 1.0f));
+        }
+        if (const PixelRect rect = rectOf(camera, corners); !rect.empty()) {
+            excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});
+        }
+    }
+    // The posters' prints too (I6 step 1): invented covers, pictures as saturated as the collection's, which the
+    // brighter walls since the doorway light (ADR-0014 §4) show at their own colour (an evening poster's 90th
+    // percentile rose from 98 to 119 against the CRT's 110). What the check guards is the room's light: the sign and
+    // the screen stand out from every lit surface that is not a picture.
+    for (const rv::world::Fixture& fixture : plan.fixtures) {
+        if (fixture.role != rv::world::FixtureRole::Decoration || fixture.prefab.kind != "poster_frame") {
+            continue;
+        }
+        const rv::core::Aabb bounds = boundsOf(shown, fixture);
+        const glm::mat4 frame = rv::world::room_frames::fixtureTransform(fixture);
+        std::vector<glm::vec3> corners;
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 local((i & 1) ? bounds.max.x : bounds.min.x, (i & 2) ? bounds.max.y : bounds.min.y,
+                                  (i & 4) ? bounds.max.z : bounds.min.z);
+            corners.emplace_back(frame * glm::vec4(local, 1.0f));
         }
         if (const PixelRect rect = rectOf(camera, corners); !rect.empty()) {
             excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});

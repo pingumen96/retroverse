@@ -27,17 +27,18 @@
   // the ceiling and the upper walls, and the even fill the light the lamps scatter around the room (style §4.1's
   // ambient/fill layer), so that the upper walls and the ceiling never fall to black.
   "environment": {
-    "clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#C89A72", "ambientIntensity": 0.3,
-    "fillColor": "#FFD2A8", "fillIntensity": 0.22,
+    "clearColor": "#221E1A", "ambientSky": "#E6E2DC", "ambientGround": "#B49C88", "ambientIntensity": 0.3,
+    "fillColor": "#FFE0C8", "fillIntensity": 0.22,
     "exposure": 1.5, "bloomStrength": 0.18, "bloomRadius": 0.5, "vignette": 0.05,
     "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
   },
   // The halls (I6 step 1, ADR-0014 §4): warmer and more even than the rooms, so that the rooms read as pools of light
   // seen through their doorways. Ceiling lights on the centre line, a low fill spot before each doorway aimed into
-  // the room (its outer cone the opening's half angle plus the margin), and the hall's own environment.
+  // the room (its outer cone at least minOuterConeDeg: it lights the room's middle, not the walls beside the doorway),
+  // and the hall's own environment.
   "hall": {
     "light": {"color": "#FFD0A0", "intensity": 12, "range": 9},
-    "doorwayFill": {"color": "#FFD6AE", "intensity": 5, "range": 6, "minOuterConeDeg": 35, "coneMarginDeg": 6,
+    "doorwayFill": {"color": "#FFD6AE", "intensity": 5, "range": 6, "minOuterConeDeg": 28, "coneMarginDeg": 6,
                     "innerConeRatio": 0.4},
     "environment": {"exposure": 1.5, "ambientSky": "#B8A898", "ambientGround": "#C89A72", "ambientIntensity": 0.35,
                     "fillColor": "#FFD2A8", "fillIntensity": 0.25}

@@ -217,7 +217,8 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
 
 /// The hall's lights, in the hall's area: the profile's hall light on its centre line below the ceiling, then a fill
 /// spot before each doorway that opens onto it (by room id), low in the hall and aimed through the doorway into the
-/// room, its outer cone the half angle the opening subtends at it plus the style's margin (at least its minimum).
+/// room, its outer cone the half angle the opening's width subtends at the aim point's distance plus the style's margin
+/// (at least its minimum), so that it lights the room's middle rather than the walls beside the doorway.
 void addHallLights(const Hall& hall, const LightingProfile& lighting, json& lights) {
     const LightStyle& style = lighting.hall.light;
     const std::string area = hallAreaId(hall.floor);
@@ -242,7 +243,10 @@ void addHallLights(const Hall& hall, const LightingProfile& lighting, json& ligh
         const std::int64_t x = (doorway.minMm + doorway.maxMm) / 2;
         const std::int64_t y = std::max<std::int64_t>(kDoorwayFillTargetHeightMm, doorway.heightMm - kDoorwayFillBelowHeadMm);
         const std::int64_t z = doorway.hallEdgeZMm - inward * kDoorwayFillSetbackMm;
-        const double halfOpening = std::atan2(meters(doorway.maxMm - doorway.minMm) / 2.0, meters(kDoorwayFillSetbackMm));
+        // The opening's half width seen from the aim point's distance: the cone covers the room's middle through the
+        // doorway, not the walls beside it inside the room.
+        const double halfOpening = std::atan2(meters(doorway.maxMm - doorway.minMm) / 2.0,
+                                              meters(kDoorwayFillSetbackMm + kDoorwayFillReachMm));
         const double outer = std::clamp(halfOpening * 180.0 / 3.14159265358979323846 + fill.coneMarginDeg,
                                         fill.minOuterConeDeg, kMaxOuterConeDeg);
         lights.push_back(json{{"name", area + "/doorway-fill:" + doorway.room.toString()},
