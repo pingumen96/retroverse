@@ -26,9 +26,20 @@ struct DroppedLight {
     std::string reason;
 };
 
+/// A point or spot light in the lights block: which scene light it is, at what weight, whether a portal clips it.
+struct PackedLightSource {
+    std::size_t index = 0;
+    float weight = 1.0f;
+    bool clipped = false;
+
+    bool operator==(const PackedLightSource&) const = default;
+};
+
 /// LightsUniforms of a scene, the lights that are not in it, and the light that casts its shadows.
 struct PackedLights {
     LightsUniforms uniforms;
+    /// The scene light of each point and spot light of the block, in the block's order.
+    std::vector<PackedLightSource> punctual;
     std::vector<DroppedLight> dropped;
     /// The key light: the first scene light with castsShadows, when it is in the block and is a spot or the
     /// directional light; casts() is false otherwise.
@@ -64,6 +75,29 @@ struct PackedLights {
 [[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
                                       const scene::EnvironmentSetup& environment,
                                       std::size_t keyCandidates = static_cast<std::size_t>(-1));
+
+/// The lights a view packs in a scene with areas (scene::AreaLighting), as packLights() of a selection takes them, with
+/// what the selection adds (I6 step 1, ADR-0014 §4).
+struct LightSelection {
+    /// Indices into the scene's lights, in the order to pack them.
+    std::span<const std::uint32_t> indices;
+    /// The weight of each (0 to 1, clamped): its intensity is scaled by it. Empty: all 1.
+    std::span<const float> weights;
+    /// The portal of each (an axis-aligned box, its thinnest axis the plane's: PunctualLightUniforms::portalAxis), an
+    /// empty box for none. Empty: none.
+    std::span<const core::Aabb> portals;
+    /// Only the first light with castsShadows among the first keyCandidates may be the key light...
+    std::size_t keyCandidates = static_cast<std::size_t>(-1);
+    /// ... unless `key` names the position in `indices` of the key light (whatever its castsShadows and the
+    /// candidates: the light whose shadow the views keep while it fades out).
+    std::optional<std::size_t> key;
+    /// Scales the key light's shadow strength (0 to 1): its shadow fades in and out with the area's key light.
+    float keyShadowWeight = 1.0f;
+};
+
+/// packLights() of a selection with weights, portals and a given key light.
+[[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, const LightSelection& selection,
+                                      const scene::EnvironmentSetup& environment);
 
 /// The ambient terms of `environment` into `block` (its sky, ground, intensity and fill), as packLights() writes them:
 /// what changes while the views ease between two areas' environments.

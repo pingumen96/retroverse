@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <rv/core/aabb.hpp>
 #include <rv/core/math.hpp>
 #include <rv/render/light_packing.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -438,4 +439,70 @@ TEST_CASE("render/light_packing: the environment's fill is packed beside the hem
     dimmer.fillIntensity = std::numeric_limits<float>::quiet_NaN();
     rv::gl::packAmbient(block, dimmer);
     CHECK(block.ambientFill == glm::vec3(0.0f));
+}
+
+TEST_CASE("render/light_packing: a selection's weights scale its lights, its portals clip them, a given key casts",
+          "[render][lights][shadow][areas]") {
+    // I6 step 1: scene::AreaLighting fades each light in and out (its weight), clips a neighbour's light to the portal
+    // it shines through, and names the light whose shadow fades with the eye's area's key light.
+    Light key = pointLight("key", glm::vec3(0.0f, 2.9f, -3.0f));
+    key.type = LightType::Spot;
+    key.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    key.castsShadows = true;
+    key.shadowStrength = 0.8f;
+    const std::vector<Light> lights{key, pointLight("hall", glm::vec3(0.0f, 2.6f, 2.0f)),
+                                    pointLight("lamp", glm::vec3(2.0f, 1.5f, -2.0f))};
+    const std::vector<std::uint32_t> indices{0, 2, 1};
+    const std::vector<float> weights{1.0f, 0.25f, std::numeric_limits<float>::quiet_NaN()};
+    // The doorway: x in [-0.8, 0.8], y in [0, 2.3] on the plane z = -1.5; the lamp unclipped (an empty box).
+    const std::vector<rv::core::Aabb> portals{
+        rv::core::Aabb::fromMinMax({-0.8f, 0.0f, -1.5f}, {0.8f, 2.3f, -1.5f}), rv::core::Aabb{},
+        rv::core::Aabb::fromMinMax({-0.8f, 0.0f, -1.5f}, {0.8f, 2.3f, -1.5f})};
+    rv::gl::LightSelection selection;
+    selection.indices = indices;
+    selection.weights = weights;
+    selection.portals = portals;
+    selection.keyCandidates = 2;
+    const PackedLights packed = rv::gl::packLights(lights, selection, rv::scene::EnvironmentSetup{});
+    REQUIRE(packed.uniforms.punctualLightCount == 3);
+    const auto& block = packed.uniforms.punctualLights;
+    CHECK(block[0].intensity == 4.0f);
+    CHECK(block[1].intensity == 1.0f); // a quarter of the lamp's 4
+    CHECK(block[2].intensity == 4.0f); // a weight that is no number counts as whole
+    // The portal: its thinnest axis (z) the plane's, its extent over x and y.
+    CHECK(block[0].portalAxis == 2);
+    CHECK(block[0].portalPlane == -1.5f);
+    CHECK(block[0].portalRect == glm::vec4(-0.8f, 0.0f, 0.8f, 2.3f));
+    CHECK(block[1].portalAxis == -1);
+    CHECK(block[2].portalAxis == 2);
+    REQUIRE(packed.punctual.size() == 3);
+    CHECK(packed.punctual[0] == rv::gl::PackedLightSource{0, 1.0f, true});
+    CHECK(packed.punctual[1] == rv::gl::PackedLightSource{2, 0.25f, false});
+    CHECK(packed.punctual[2] == rv::gl::PackedLightSource{1, 1.0f, true});
+    // The key light among the candidates casts at its strength.
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.shadowLight.strength == Approx(0.8f));
+
+    // A given key light casts whatever the candidates (the key light the eye left, its shadow fading out): its
+    // strength scaled by the shadow's weight.
+    selection.keyCandidates = 0;
+    selection.key = 0;
+    selection.keyShadowWeight = 0.5f;
+    const PackedLights fading = rv::gl::packLights(lights, selection, rv::scene::EnvironmentSetup{});
+    REQUIRE(fading.shadowLight.casts());
+    CHECK(fading.keyLight == std::optional<std::size_t>(0));
+    CHECK(fading.shadowLight.strength == Approx(0.4f));
+    // None given and no candidates: no key light.
+    selection.key.reset();
+    CHECK_FALSE(rv::gl::packLights(lights, selection, rv::scene::EnvironmentSetup{}).shadowLight.casts());
+    // A portal across x reads its rectangle over y and z.
+    const std::vector<rv::core::Aabb> side{rv::core::Aabb::fromMinMax({4.0f, 0.0f, -1.0f}, {4.0f, 2.0f, 1.0f})};
+    const std::vector<std::uint32_t> one{1};
+    rv::gl::LightSelection across;
+    across.indices = one;
+    across.portals = side;
+    const PackedLights x = rv::gl::packLights(lights, across, rv::scene::EnvironmentSetup{});
+    CHECK(x.uniforms.punctualLights[0].portalAxis == 0);
+    CHECK(x.uniforms.punctualLights[0].portalPlane == 4.0f);
+    CHECK(x.uniforms.punctualLights[0].portalRect == glm::vec4(0.0f, -1.0f, 2.0f, 1.0f));
 }

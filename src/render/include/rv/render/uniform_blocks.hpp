@@ -78,7 +78,14 @@ struct PunctualLightUniforms {
     glm::vec3 direction{0.0f, -1.0f, 0.0f}; ///< unit vector the light travels along (spot axis)
     float spotScale = 0.0f;
     float spotOffset = 1.0f;
-    float padding[3] = {0.0f, 0.0f, 0.0f};
+    /// The portal the light is clipped to (I6 step 1): an axis-aligned rectangle in the plane where coordinate
+    /// `portalAxis` (0 x, 1 y, 2 z; -1 none) is `portalPlane`, spanning `portalRect` (min u, min v, max u, max v) over
+    /// the other two axes in order (y, z; x, z; x, y). A fragment on the far side of the plane from the light is lit
+    /// only along a segment that crosses the rectangle, with a soft edge (portalVisibility in common/lights.glsl).
+    std::int32_t portalAxis = -1;
+    float portalPlane = 0.0f;
+    float padding = 0.0f;
+    glm::vec4 portalRect{0.0f};
 };
 
 static_assert(offsetof(PunctualLightUniforms, position) == 0);
@@ -88,7 +95,10 @@ static_assert(offsetof(PunctualLightUniforms, intensity) == 28);
 static_assert(offsetof(PunctualLightUniforms, direction) == 32);
 static_assert(offsetof(PunctualLightUniforms, spotScale) == 44);
 static_assert(offsetof(PunctualLightUniforms, spotOffset) == 48);
-static_assert(sizeof(PunctualLightUniforms) == 64, "std140 struct sizes are multiples of 16 bytes");
+static_assert(offsetof(PunctualLightUniforms, portalAxis) == 52);
+static_assert(offsetof(PunctualLightUniforms, portalPlane) == 56);
+static_assert(offsetof(PunctualLightUniforms, portalRect) == 64);
+static_assert(sizeof(PunctualLightUniforms) == 80, "std140 struct sizes are multiples of 16 bytes");
 
 /// Scene lights and ambient at UniformBinding::Lights: block `LightsUniforms` of common/lights.glsl. Built by
 /// rv::gl::packLights (light_packing.hpp).
@@ -111,16 +121,16 @@ struct LightsUniforms {
 };
 
 static_assert(offsetof(LightsUniforms, punctualLights) == 0);
-static_assert(offsetof(LightsUniforms, directionalDirection) == 1024);
-static_assert(offsetof(LightsUniforms, directionalIntensity) == 1036);
-static_assert(offsetof(LightsUniforms, directionalColor) == 1040);
-static_assert(offsetof(LightsUniforms, punctualLightCount) == 1052);
-static_assert(offsetof(LightsUniforms, ambientSky) == 1056);
-static_assert(offsetof(LightsUniforms, ambientIntensity) == 1068);
-static_assert(offsetof(LightsUniforms, ambientGround) == 1072);
-static_assert(offsetof(LightsUniforms, padding) == 1084);
-static_assert(offsetof(LightsUniforms, ambientFill) == 1088);
-static_assert(sizeof(LightsUniforms) == 1104, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(LightsUniforms, directionalDirection) == 1280);
+static_assert(offsetof(LightsUniforms, directionalIntensity) == 1292);
+static_assert(offsetof(LightsUniforms, directionalColor) == 1296);
+static_assert(offsetof(LightsUniforms, punctualLightCount) == 1308);
+static_assert(offsetof(LightsUniforms, ambientSky) == 1312);
+static_assert(offsetof(LightsUniforms, ambientIntensity) == 1324);
+static_assert(offsetof(LightsUniforms, ambientGround) == 1328);
+static_assert(offsetof(LightsUniforms, padding) == 1340);
+static_assert(offsetof(LightsUniforms, ambientFill) == 1344);
+static_assert(sizeof(LightsUniforms) == 1360, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of a material: `layout(binding = N) uniform sampler2D` in common/material.glsl. Units from
 /// kMaterialTextureSlotCount on belong to other passes (PostTextureUnit).

@@ -455,6 +455,9 @@ TEST_CASE("integration/shaders: the GLSL LightsUniforms block matches rv::gl::Li
                     {"vec3", "direction", offsetof(PunctualLightUniforms, direction)},
                     {"float", "spotScale", offsetof(PunctualLightUniforms, spotScale)},
                     {"float", "spotOffset", offsetof(PunctualLightUniforms, spotOffset)},
+                    {"int", "portalAxis", offsetof(PunctualLightUniforms, portalAxis)},
+                    {"float", "portalPlane", offsetof(PunctualLightUniforms, portalPlane)},
+                    {"vec4", "portalRect", offsetof(PunctualLightUniforms, portalRect)},
                 },
                 sizeof(PunctualLightUniforms));
     // Array elements of the struct are exactly one C++ struct apart.
@@ -977,8 +980,12 @@ TEST_CASE("integration/shaders: the lit shader shadows the key light and occlude
     // The ambient occlusion is read once and reaches the two ambient terms, never a light's.
     CHECK(std::regex_search(main, std::regex(R"(ambientVisibility\s*=[^;]*screenAmbientOcclusion\s*\(\s*\))")));
     CHECK(statementsWith(main, "ambientVisibility").size() == 3); // read, then the diffuse and specular ambient
-    const std::vector<std::string> ambient = statementsWith(main, "hemisphereAmbient");
-    CHECK(ambient.size() == 2);
+    // The diffuse ambient (with the fill) and the specular one (the hemisphere alone, I6 step 1).
+    std::vector<std::string> ambient = statementsWith(main, "diffuseAmbient");
+    CHECK(ambient.size() == 1);
+    const std::vector<std::string> specular = statementsWith(main, "hemisphereAmbient");
+    CHECK(specular.size() == 1);
+    ambient.insert(ambient.end(), specular.begin(), specular.end());
     for (const std::string& statement : ambient) {
         INFO(statement);
         CHECK(statement.find("ambientVisibility") != std::string::npos);
