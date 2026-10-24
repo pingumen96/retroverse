@@ -104,6 +104,10 @@ struct LightsUniforms {
     glm::vec3 ambientGround{0.0f}; ///< linear RGB of the hemisphere below
     /// std140 pads the block to 16 bytes after ambientGround; the GLSL block declares nothing here.
     float padding = 0.0f;
+    /// Linear RGB of the even fill added to the ambient whatever the normal (EnvironmentSetup's fill, I6 step 1).
+    glm::vec3 ambientFill{0.0f};
+    /// std140 pads the block to 16 bytes after ambientFill; the GLSL block declares nothing here.
+    float paddingFill = 0.0f;
 };
 
 static_assert(offsetof(LightsUniforms, punctualLights) == 0);
@@ -115,7 +119,8 @@ static_assert(offsetof(LightsUniforms, ambientSky) == 1056);
 static_assert(offsetof(LightsUniforms, ambientIntensity) == 1068);
 static_assert(offsetof(LightsUniforms, ambientGround) == 1072);
 static_assert(offsetof(LightsUniforms, padding) == 1084);
-static_assert(sizeof(LightsUniforms) == 1088, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(LightsUniforms, ambientFill) == 1088);
+static_assert(sizeof(LightsUniforms) == 1104, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of a material: `layout(binding = N) uniform sampler2D` in common/material.glsl. Units from
 /// kMaterialTextureSlotCount on belong to other passes (PostTextureUnit).

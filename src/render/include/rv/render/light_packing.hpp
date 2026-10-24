@@ -45,8 +45,8 @@ struct PackedLights {
 /// Builds the lights block of a scene (contract of rv::scene::Light, layout of LightsUniforms):
 ///  - point and spot lights in list order, up to kMaxPunctualLights; later ones are dropped;
 ///  - the first directional light; later ones are dropped (a scene without one gets directionalIntensity 0);
-///  - the environment's ambient sky, ground and intensity (its exposure belongs to the post-processing:
-///    postSettingsFor() in post_settings.hpp);
+///  - the environment's ambient sky, ground and intensity, and its fill (fillColor * fillIntensity; its exposure
+///    belongs to the post-processing: postSettingsFor() in post_settings.hpp);
 ///  - the key light, the first light with castsShadows (PackedLights::shadowLight): its index in the block, position,
 ///    direction, outer cone, range and shadow strength (clamped to [0, 1], non-finite values counting as 1). A point
 ///    key light casts no shadow (point-light shadows are not supported: key lights are spots), and neither does a
@@ -57,10 +57,17 @@ struct PackedLights {
 [[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment);
 
 /// packLights() of the lights `selection` names (indices into `lights`, in the order to pack them; an index past the
-/// list is ignored): the lights of the area that holds the eye (scene::AreaLighting, I4 step 3), the first light with
-/// castsShadows among them the key light. The dropped lights are named by their index in `lights`.
+/// list is ignored): the lights of the area that holds the eye and of its neighbours (scene::AreaLighting, I4 step 3,
+/// I6 step 1), the first light with castsShadows among the first `keyCandidates` the key light: the lights after them
+/// (a neighbouring area's) never are, whatever their castsShadows, and cast no shadow. The dropped lights are named by
+/// their index in `lights`.
 [[nodiscard]] PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
-                                      const scene::EnvironmentSetup& environment);
+                                      const scene::EnvironmentSetup& environment,
+                                      std::size_t keyCandidates = static_cast<std::size_t>(-1));
+
+/// The ambient terms of `environment` into `block` (its sky, ground, intensity and fill), as packLights() writes them:
+/// what changes while the views ease between two areas' environments.
+void packAmbient(LightsUniforms& block, const scene::EnvironmentSetup& environment) noexcept;
 
 /// The name of `light`, the light at `index` of the scene's lights, as the logs, reports and the developer overlay
 /// show it: Light::name, or "#<index>" when the light has none (as DroppedLight::name).

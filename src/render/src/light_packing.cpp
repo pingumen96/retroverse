@@ -87,10 +87,11 @@ glm::vec2 spotConeScaleOffset(float innerConeDeg, float outerConeDeg) noexcept {
 
 namespace {
 
-/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`.
+/// packLights() over the lights at `indexOf(0)`, ..., `indexOf(count - 1)` of `lights`, the first `keyCandidates` of
+/// them the only ones that may be the key light.
 template <class IndexOf>
 PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count, IndexOf indexOf,
-                         const scene::EnvironmentSetup& environment) {
+                         const scene::EnvironmentSetup& environment, std::size_t keyCandidates) {
     PackedLights packed;
     LightsUniforms& block = packed.uniforms;
     bool directionalUsed = false;
@@ -109,9 +110,11 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
             continue;
         }
         const scene::Light& light = lights[index];
-        // The first light that asks for shadows is the key light, whether or not it can have them.
-        const bool key = light.castsShadows && !keyLightSeen;
-        keyLightSeen = keyLightSeen || light.castsShadows;
+        // The first light that asks for shadows is the key light, whether or not it can have them; a neighbouring
+        // area's light (past the candidates) never is.
+        const bool asksForShadows = light.castsShadows && position < keyCandidates;
+        const bool key = asksForShadows && !keyLightSeen;
+        keyLightSeen = keyLightSeen || asksForShadows;
         if (key) {
             packed.keyLight = index;
         }
@@ -163,9 +166,7 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
             entry.spotOffset = 1.0f;
         }
     }
-    block.ambientSky = environment.ambientSky;
-    block.ambientGround = environment.ambientGround;
-    block.ambientIntensity = environment.ambientIntensity;
+    packAmbient(block, environment);
     return packed;
 }
 
@@ -173,14 +174,25 @@ PackedLights packIndexed(std::span<const scene::Light> lights, std::size_t count
 
 PackedLights packLights(std::span<const scene::Light> lights, const scene::EnvironmentSetup& environment) {
     return packIndexed(
-        lights, lights.size(), [](std::size_t position) { return position; }, environment);
+        lights, lights.size(), [](std::size_t position) { return position; }, environment, lights.size());
 }
 
 PackedLights packLights(std::span<const scene::Light> lights, std::span<const std::uint32_t> selection,
-                        const scene::EnvironmentSetup& environment) {
+                        const scene::EnvironmentSetup& environment, std::size_t keyCandidates) {
     return packIndexed(
         lights, selection.size(), [selection](std::size_t position) { return static_cast<std::size_t>(selection[position]); },
-        environment);
+        environment, keyCandidates);
+}
+
+void packAmbient(LightsUniforms& block, const scene::EnvironmentSetup& environment) noexcept {
+    block.ambientSky = environment.ambientSky;
+    block.ambientGround = environment.ambientGround;
+    block.ambientIntensity = environment.ambientIntensity;
+    block.ambientFill = environment.fillColor * environment.fillIntensity;
+    if (!core::isFinite(block.ambientFill) || block.ambientFill.r < 0.0f || block.ambientFill.g < 0.0f ||
+        block.ambientFill.b < 0.0f) {
+        block.ambientFill = glm::vec3(0.0f);
+    }
 }
 
 void requireShadowCasters(PackedLights& packed, std::span<const scene::Light> lights, const core::Aabb& casterBounds) {

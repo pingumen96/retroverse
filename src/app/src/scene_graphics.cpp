@@ -168,7 +168,8 @@ std::size_t inspectionIndex(gl::SurfaceView view) noexcept {
 } // namespace
 
 gl::RenderView makeRenderView(const SceneInstance& scene, const scene::Camera& camera) {
-    const scene::EnvironmentSetup& environment = scene.environment();
+    // The eye's area's exposure in a scene with areas, as eased so far (I6 step 1).
+    const scene::EnvironmentSetup environment = scene.viewEnvironment();
     gl::RenderView view;
     view.camera = camera;
     view.items = scene.renderItems();

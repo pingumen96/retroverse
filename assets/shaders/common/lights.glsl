@@ -23,6 +23,7 @@ layout(std140, binding = 1) uniform LightsUniforms {
     vec3 uAmbientSky;            // linear RGB of the upper hemisphere (+Y)
     float uAmbientIntensity;
     vec3 uAmbientGround;         // linear RGB of the lower hemisphere
+    vec3 uAmbientFill;           // linear RGB of the even fill, whatever the normal (I6 step 1)
 };
 
 // Inverse-square falloff times a window that reaches exactly 0 at the range:
@@ -55,7 +56,8 @@ vec3 punctualLightRadiance(int index, vec3 position, out vec3 L) {
     return light.color * (light.intensity * attenuation);
 }
 
-// Hemispherical ambient radiance arriving along the unit direction `n`: ground color below, sky color above.
+// Ambient radiance arriving along the unit direction `n`: the hemisphere's ground color below, sky color above, plus
+// the even fill.
 vec3 hemisphereAmbient(vec3 n) {
-    return mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5) * uAmbientIntensity;
+    return mix(uAmbientGround, uAmbientSky, n.y * 0.5 + 0.5) * uAmbientIntensity + uAmbientFill;
 }

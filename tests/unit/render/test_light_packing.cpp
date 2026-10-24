@@ -373,3 +373,69 @@ TEST_CASE("render/light_packing: a selection packs the lights it names, its firs
     CHECK(sunlit.shadowNote.find("'east sun'") != std::string::npos);
     CHECK(sunlit.shadowNote.find("'west sun'") == std::string::npos);
 }
+
+TEST_CASE("render/light_packing: a neighbouring area's lights are packed but never the key light",
+          "[render][lights][shadow][areas]") {
+    // I6 step 1: the selection holds the eye's area's own lights, then its neighbours' (scene::AreaLighting's
+    // ownCount()); only the first keyCandidates may be the key light.
+    Light neighbourKey = pointLight("neighbour key", glm::vec3(0.0f, 2.9f, -3.0f));
+    neighbourKey.type = LightType::Spot;
+    neighbourKey.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    neighbourKey.castsShadows = true;
+    Light ownKey = neighbourKey;
+    ownKey.name = "own key";
+    ownKey.position = glm::vec3(0.0f, 2.9f, 3.0f);
+    const std::vector<Light> lights{neighbourKey, pointLight("own", glm::vec3(1.0f, 2.0f, 2.0f)), ownKey};
+
+    // The own lights (1, 2) then the neighbour's (0): the own key light casts, the neighbour's is packed unshadowed.
+    const std::vector<std::uint32_t> selection{1, 2, 0};
+    const PackedLights packed = rv::gl::packLights(lights, selection, rv::scene::EnvironmentSetup{}, 2);
+    REQUIRE(packed.uniforms.punctualLightCount == 3);
+    CHECK(packed.uniforms.punctualLights[2].position == neighbourKey.position);
+    REQUIRE(packed.shadowLight.casts());
+    CHECK(packed.keyLight == std::optional<std::size_t>(2));
+    CHECK(packed.shadowLight.index == 1);
+
+    // An area without a key light of its own (a hall): its neighbour's key light is not the key light either.
+    const std::vector<std::uint32_t> hall{1, 0};
+    const PackedLights unshadowed = rv::gl::packLights(lights, hall, rv::scene::EnvironmentSetup{}, 1);
+    CHECK(unshadowed.uniforms.punctualLightCount == 2);
+    CHECK_FALSE(unshadowed.shadowLight.casts());
+    CHECK_FALSE(unshadowed.keyLight.has_value());
+    CHECK(unshadowed.shadowNote.empty());
+    // Without the limit, the first caster of the selection is the key light, as before.
+    CHECK(rv::gl::packLights(lights, hall, rv::scene::EnvironmentSetup{}).keyLight == std::optional<std::size_t>(0));
+}
+
+TEST_CASE("render/light_packing: the environment's fill is packed beside the hemisphere's ambient",
+          "[render][lights]") {
+    rv::scene::EnvironmentSetup environment;
+    environment.ambientSky = glm::vec3(0.5f);
+    environment.ambientGround = glm::vec3(0.25f);
+    environment.ambientIntensity = 0.3f;
+    environment.fillColor = glm::vec3(1.0f, 0.5f, 0.25f);
+    environment.fillIntensity = 0.2f;
+    const PackedLights packed = rv::gl::packLights(std::vector<Light>{}, environment);
+    CHECK(packed.uniforms.ambientIntensity == 0.3f);
+    CHECK(packed.uniforms.ambientFill.r == Approx(0.2f));
+    CHECK(packed.uniforms.ambientFill.g == Approx(0.1f));
+    CHECK(packed.uniforms.ambientFill.b == Approx(0.05f));
+    // The default environment has none, so scenes that set none look as before.
+    CHECK(rv::gl::packLights(std::vector<Light>{}, rv::scene::EnvironmentSetup{}).uniforms.ambientFill ==
+          glm::vec3(0.0f));
+
+    // packAmbient() rewrites the ambient terms alone (the ease between two areas' environments).
+    LightsUniforms block = packed.uniforms;
+    block.punctualLightCount = 3;
+    rv::scene::EnvironmentSetup dimmer = environment;
+    dimmer.ambientIntensity = 0.1f;
+    dimmer.fillIntensity = 0.0f;
+    rv::gl::packAmbient(block, dimmer);
+    CHECK(block.ambientIntensity == 0.1f);
+    CHECK(block.ambientFill == glm::vec3(0.0f));
+    CHECK(block.punctualLightCount == 3);
+    // A bad fill never reaches the shaders.
+    dimmer.fillIntensity = std::numeric_limits<float>::quiet_NaN();
+    rv::gl::packAmbient(block, dimmer);
+    CHECK(block.ambientFill == glm::vec3(0.0f));
+}

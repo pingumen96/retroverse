@@ -475,6 +475,7 @@ TEST_CASE("integration/shaders: the GLSL LightsUniforms block matches rv::gl::Li
                     {"vec3", "uAmbientSky", offsetof(LightsUniforms, ambientSky)},
                     {"float", "uAmbientIntensity", offsetof(LightsUniforms, ambientIntensity)},
                     {"vec3", "uAmbientGround", offsetof(LightsUniforms, ambientGround)},
+                    {"vec3", "uAmbientFill", offsetof(LightsUniforms, ambientFill)},
                 },
                 sizeof(LightsUniforms));
 }

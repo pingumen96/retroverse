@@ -241,6 +241,8 @@ public:
     [[nodiscard]] bool riding() const noexcept { return m_ride != nullptr; }
     /// How dark the ride's fade makes the view: 0 not at all, 1 black.
     [[nodiscard]] float fade() const noexcept;
+    /// The world's reduceMotion (world.json): every transition instant, the change of an area's environment too.
+    [[nodiscard]] bool reduceMotion() const noexcept { return m_reduceMotion; }
     /// The walker stands in the elevator's proximity zone of the floor shown, facing its doors (facesElevator()).
     [[nodiscard]] bool atElevator() const;
     /// atElevator() in free roam with nothing hovered and no ride: the prompt shows, interact opens the directory (the

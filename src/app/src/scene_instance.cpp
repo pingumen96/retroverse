@@ -192,13 +192,14 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         instance.m_eye = description.camera.position;
         instance.m_areaLighting = scene::AreaLighting(instance.m_areas, instance.m_sceneLights, instance.m_eye,
                                                       gl::kMaxPunctualLights);
+        instance.m_environmentEase.snap(instance.areaEnvironment());
         spdlog::info("Scene '{}': {} area(s); the views pack the lights of the area that holds the eye, '{}' at the "
                      "start",
                      description.name, instance.m_areas.size(), instance.areaId());
     }
     instance.applyLighting();
     logLights(description.name, instance.areaId(), instance.m_lights, instance.m_droppedLights,
-              instance.m_environment);
+              instance.viewEnvironment());
     if (instance.m_areas.empty()) {
         gl::PackedLights packed;
         packed.shadowLight = instance.m_shadowLight;
@@ -236,15 +237,57 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 
 void SceneInstance::applyLighting() {
     if (!m_areaLighting.empty()) {
-        (void)m_areaLighting.reselect(m_sceneLights, m_eye);
+        (void)m_areaLighting.reselect(m_sceneLights, m_eye, m_forward);
+        m_environmentEase.snap(areaEnvironment());
     }
     packLighting();
+}
+
+scene::EnvironmentSetup SceneInstance::areaEnvironment() const {
+    const auto area = m_areaLighting.area();
+    return area && *area < m_areas.size() ? m_areas[*area].environment.over(m_environment) : m_environment;
+}
+
+scene::EnvironmentSetup SceneInstance::viewEnvironment() const {
+    scene::EnvironmentSetup view = m_environment;
+    if (m_areaLighting.empty()) {
+        return view;
+    }
+    const scene::EnvironmentSetup& eased = m_environmentEase.current();
+    view.exposure = eased.exposure;
+    view.ambientSky = eased.ambientSky;
+    view.ambientGround = eased.ambientGround;
+    view.ambientIntensity = eased.ambientIntensity;
+    view.fillColor = eased.fillColor;
+    view.fillIntensity = eased.fillIntensity;
+    return view;
+}
+
+bool SceneInstance::advanceEnvironment(float seconds) {
+    if (m_areaLighting.empty()) {
+        return false;
+    }
+    bool changed = false;
+    if (!m_environmentEase.easing()) {
+        // An edit of the scene's environment (the developer overlay) that the eye's area does not override.
+        const scene::EnvironmentSetup target = areaEnvironment();
+        if (!scene::sameAreaTerms(target, m_environmentEase.target())) {
+            m_environmentEase.snap(target);
+            changed = true;
+        }
+    }
+    changed = m_environmentEase.advance(seconds) || changed;
+    if (changed) {
+        gl::packAmbient(m_lights, viewEnvironment());
+    }
+    return changed;
 }
 
 void SceneInstance::packLighting() {
     gl::PackedLights packed = m_areaLighting.empty()
                                   ? gl::packLights(m_sceneLights, m_environment)
-                                  : gl::packLights(m_sceneLights, m_areaLighting.selection(), m_environment);
+                                  : gl::packLights(m_sceneLights, m_areaLighting.selection(), viewEnvironment(),
+                                                   m_areaLighting.ownCount());
     gl::requireShadowCasters(packed, m_sceneLights, m_shadowCasterBounds);
     m_lights = packed.uniforms;
     m_droppedLights = std::move(packed.dropped);
@@ -258,17 +301,26 @@ std::string_view SceneInstance::areaId() const noexcept {
     return area && *area < m_areas.size() ? std::string_view(m_areas[*area].id) : std::string_view();
 }
 
-bool SceneInstance::followEye(const glm::vec3& eye) {
+bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward) {
     if (m_areaLighting.empty()) {
         return false;
     }
     m_eye = eye;
+    m_forward = forward;
+    // The first eye followed is where the views begin: its area's environment at once, never eased from the scene
+    // camera's area.
+    const bool first = !m_eyeFollowed;
+    m_eyeFollowed = true;
     const auto before = m_areaLighting.area();
-    if (!m_areaLighting.update(m_areas, m_sceneLights, eye)) {
+    if (!m_areaLighting.update(m_areas, m_sceneLights, eye, forward)) {
         return false;
     }
-    packLighting();
     const bool areaChanged = before != m_areaLighting.area();
+    if (areaChanged) {
+        // The views ease to the new area's environment (advanceEnvironment()).
+        m_environmentEase.retarget(areaEnvironment(), m_reduceMotion || first);
+    }
+    packLighting();
     if (areaChanged) {
         // What each area's key light casts was logged at load (logAreaKeyLights).
         spdlog::debug("Scene '{}': the eye entered the area '{}': {} light(s) packed, {}", m_name, areaId(),

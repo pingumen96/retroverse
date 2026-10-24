@@ -441,6 +441,8 @@ struct RetroverseApp::State {
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
+    /// The last update step: what the area's environment eases by at the next render (I6 step 1).
+    double stepSeconds = 0.0;
     /// The phases the --input-script holds open (its steps' "phase"), sorted.
     std::vector<std::string> scriptPhases;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
@@ -500,13 +502,15 @@ struct RetroverseApp::State {
         }
     }
 
-    /// In a scene with areas (a floor), the lights of the area that holds this frame's eye (I4 step 3); each change of
-    /// area is recorded for the run report.
+    /// In a scene with areas (a floor), the lights of the area that holds this frame's eye (I4 step 3) and its
+    /// environment, eased by the last update step (I6 step 1); each change of area is recorded for the run report.
     void followSceneAreas(std::uint64_t frame) {
         if (!scene || scene->areas().empty()) {
             return;
         }
-        (void)scene->followEye(camera.position());
+        scene->setReduceMotion(world && world->reduceMotion());
+        (void)scene->followEye(camera.position(), camera.forward());
+        (void)scene->advanceEnvironment(static_cast<float>(stepSeconds));
         if (areaChanges.empty() || areaChanges.back().area != scene->areaId()) {
             areaChanges.push_back(SceneAreaChange{frame, std::string(scene->areaId())});
             spdlog::info("Frame {}: the eye is in the area '{}' ({} light(s) packed)", frame, scene->areaId(),
@@ -1274,6 +1278,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     State& state = *m_state;
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
+    state.stepSeconds = deltaSeconds;
     const input::ActionState actions = state.input->update(frame);
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
