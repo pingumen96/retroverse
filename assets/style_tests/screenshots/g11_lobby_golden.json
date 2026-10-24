@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ad5512388df3439d51b194fd100ee14e1cda996d",
+    "gitCommit": "5f5b66d9cbb7ac3cb2a5d4a473a2b76df2254bb3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as every start without --start-room stands, at the elevator's arrival point facing east down the 6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game room's open doorway on the north side with its lamp seen through it, the closed entrance doors at the east end (I4's functional look: plain boxes; since I6 step 1 lit by the hall's own lights and the arcade room's seen through its doorway, the hall's own ambient and fill).",
+  "description": "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as every start without --start-room stands, at the elevator's arrival point facing east down the 6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game room's open doorway on the north side with its lamp seen through it, the closed entrance doors at the east end (since I6 step 1 lit by the hall's own lights and the arcade room's seen through its doorway, the hall's own ambient and fill; since I6 step 2 dressed: a panelled wainscot under warm plaster, the arcade room's portal with its lit sign and a beam over it, sconces and prints in turn, a bench, plants and the runner).",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 617.42",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g11_lobby_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "40fd7e9b8cb95efa9f4d077b537430b1fc9cb310b935e4305976eaf7a7e3cdbe",
+    "sha256": "1f6fa0a8455e11298c80455c4a517532b75e086f7e0ce43543f05fd5b3558ec5",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "bdf81a6007aad2d747afe28b7a0f6084f4d2a3c7b7121ccd4e5b9bc233268ae1"
+      "sha256": "360c6bd6b32bd0cbb958aa24526e8e2fafc644eb1ac54d81dad3149f204e89f9"
     }
   },
   "renderedOn": "2026-10-24",
