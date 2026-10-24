@@ -103,16 +103,26 @@ build/rvdata`).
   A scene file may hold `"areas"` (I4 step 3, ADR-0013 §9; `rv/scene/scene_description.hpp`): parts of the scene,
   each an `id` and `boxes` ({`min`, `max`} in meters), whose lights are their own; every light then names its
   `"area"`. Each frame the app finds the area that holds the walker's eye (the first holding it, else the last one
-  held) and the renderer packs only that area's lights: its key light (its first light with `castsShadows`) shadowed,
-  its other point and spot lights nearest the eye up to the 16 the block holds; the other areas get the ambient only
-  (`rv/scene/scene_areas.hpp`). The log names every area's key light at load, or why it casts no shadow (`Scene
-  '<name>', area '<id>': key light ...`), and each area the eye enters; the run report's `sceneAreas.keyLight` and the
-  developer overlay's Lights panel name the key light of the area that holds the eye. A scene without areas packs all
-  its lights in list order as before. A floor's scene
-  (`retroverse-cli worldplan show --floor <id> --scene <file>`, `docs/reference/cli.md`) has an area per room (its
-  interior and its doorway's passage) and one for the hall (`hall:<floor>`); its camera stands in front of the
-  elevator facing east, and the rooms' doorways are open onto the hall (their stops left out), so the walker can walk
-  from the elevator into any room.
+  held) and the renderer packs that area's lights first: its key light (its first light with `castsShadows`)
+  shadowed, its other point and spot lights nearest the eye; then, while the 16 the block holds leave room, up to 4
+  lights of each neighbouring area (one whose boxes touch the eye's area's over a face: a room's doorway passage and
+  its hall) within 6 m and their own range of the doorway they share, the nearest the eye first, never the key light
+  and never shadowed (I6 step 1, ADR-0014 §4). A point or spot light whose whole range lies behind the eye is left out
+  (it lights nothing in view), which frees its place. The other lights are left out, so light never leaks through a
+  wall without a doorway (`rv/scene/scene_areas.hpp`). An area may carry its own `"environment"` (`exposure`,
+  `ambientSky`, `ambientGround`, `ambientIntensity`, `fillColor`, `fillIntensity`, each optional, else the scene's):
+  the views ease to the eye's area's over 0.5 s when it changes areas, at once under `reduceMotion` and at the first
+  frame; `fillColor` and `fillIntensity` (also keys of the scene's `"environment"`, 0 by default) add an even fill to
+  the hemispheric ambient. The log names every area's key light at load, or why it casts no shadow (`Scene '<name>',
+  area '<id>': key light ...`), and each area the eye enters; the run report's `sceneAreas.lights` lists the eye's
+  area's own lights, then its neighbours', and `sceneAreas.keyLight` and the developer overlay's Lights panel name the
+  key light of the area that holds the eye. A scene without areas packs all its lights in list order as before. A
+  floor's scene (`retroverse-cli worldplan show --floor <id> --scene <file>`, `docs/reference/cli.md`) has an area per
+  room (its interior and its doorway's passage) and one for the hall (`hall:<floor>`, with the lighting profile's hall
+  environment: I6 step 1); the hall's lights are the profile's `hall` role, with a low fill spot before each doorway
+  aimed into its room (`hall:<floor>/doorway-fill:<room id>`); its camera stands in front of the elevator facing east,
+  and the rooms' doorways are open onto the hall (their stops left out), so the walker can walk from the elevator into
+  any room.
 - `--model <file.gltf|.glb>` (not with `--scene`): model viewer, the model at the origin with a three-point light rig
   and a camera framing its bounds from the front right and above, on a dark mid-grey background (about sRGB 61, so
   dark and light models both stand out), without bloom or vignette; a file that cannot be loaded is shown as the

@@ -76,7 +76,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
   `collection_labels`, `rvtex`, `derived_texture_cache`); `rv_scene` the 80-byte `InstanceData` (0c), the eased
   `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8), and since
-  I4 step 3 the scene's areas (`scene_areas.hpp`: the area that holds the eye, the lights a view packs there);
+  I4 step 3 the scene's areas (`scene_areas.hpp`: the area that holds the eye, the lights a view packs there, since
+  I6 step 1 with its neighbours' near the doorways, and the environment eased between areas);
   `rv_catalog`
   `RoomEntry`, `RoomSnapshot` and `ICatalogQuery::roomEntries` (1a), which `SqliteCatalogQuery` answers in one read with
   the media left unknown (2); `rv_esde` `checkRoomMedia` and `roomMediaPaths` (`media_resolver.hpp`, 2); `rv_render`
