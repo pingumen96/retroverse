@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "57578bdc4dea09f131b230518740fef13a720fc3",
+    "gitCommit": "6d6d7df200655b3c93ca6a2b214512f5ffd077d3",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g07_inspect_card_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "59998985475ee0cd8319119a4d7c198f096eff958a6642feff2e509a11be3582",
+    "sha256": "8c98371e7a674cd59489f2b2a2e8db7a439e40d777630a611720719f62edccfa",
     "width": 1920
   },
   "inputs": {
@@ -40,10 +40,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "16216a3b5791a37a657607dc253667173bfebca4f8915f4985a384a9af87e6c8"
+      "sha256": "111d35846bdfe2e796ab30bbf7146ad8272fec60651f1f5e836024a16db8fe63"
     }
   },
-  "renderedOn": "2026-10-21",
+  "renderedOn": "2026-10-24",
   "run": {
     "capturedFrame": 89,
     "frames": 90,
