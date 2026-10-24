@@ -12,7 +12,7 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I4 | M3 part 1, the building (ADR-0013): every system of the library in a room, one room per console, floors by console generation joined by an elevator, a lobby and the arcade room on the ground floor, a handheld floor and a computer floor, small systems sharing a room per floor, functional media families, one floor resident, the directory (floors, rooms, favourites and recent games) and teleport | Gate C: the whole library in one building, walkable floor by floor, functional look |
 | I4b | M3 part 2, customization: the editor and pins written to `overrides.json`, "Rigenera stanza / piano / mondo" with an impact preview, backup and undo, expansion rooms if I4 did not need them | M3 Done |
 | I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, fallbacks for missing videos | Every room has working TVs within the decoder budget |
-| I6 | Faithful media families (side-face spines, boxes, handheld cases), arcade cabinets, the styling pass of the building's floors and rooms | Gate D |
+| I6 | The styling pass of the building (ADR-0014), done before I5 and I4b: light through doorways and per area, dressed halls, theme packs per floor, side-face spines for cases and boxes, the hub, arcade cabinets and handheld showcases | Gate D: the building reads like the concept, era by era |
 | I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
@@ -25,7 +25,8 @@ decoding, Linux, an OpenGL 3.3 fallback.
 
 Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. I4, the
 building ([ADR-0013](decisions/ADR-0013-the-building.md)): Gate C passed on October 22, 2026
-([testing/gate-c.md](testing/gate-c.md)); the user walks the building and declares I4 done.
+([testing/gate-c.md](testing/gate-c.md)); the user walks the building and declares I4 done. In progress: I6, the
+styling pass ([ADR-0014](decisions/ADR-0014-the-styling-pass.md)), before I5 and I4b.
 
 ## Acceptable performance
 
@@ -202,6 +203,30 @@ FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 a
 SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the tests and gate figures that prove it,
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
+
+## I6: the styling pass of the building (in progress)
+
+[ADR-0014](decisions/ADR-0014-the-styling-pass.md), decided with the user on October 24, 2026: the whole pass:
+- the hub;
+- halls and light;
+- theme packs per floor;
+- arcade and handhelds;
+- side-face spines for cases and boxes.
+
+The direction, floor by floor, is in [i6/look.md](i6/look.md). Every step shows its screenshots next to `example.png`
+and is reviewed through three lenses: correctness, stability and the ADR, and the look against the concept. Goldens
+are regenerated on purpose only.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0014, the look direction, this plan; baseline screenshots of every floor under `build/i6/baseline` | | The files exist | done |
+| 1 | Light: neighbour lights through doorways (never the key, range-limited), a fill light per doorway, a `hall` light role, an environment per area eased between areas | 0 | Luminance probes into a room from its hall and into the hall from a room; G02-G13 regenerated on purpose | |
+| 2 | Dressed halls: the pack's `hall` materials, baseboards, casings, beams, a runner, a signed portal over each doorway, sconces and pictures alternating, benches and plants keeping 1.4 m clear; navigation obstacles | 1 | Floor scene digests and G11 rewritten, plan goldens unchanged; screenshots of every floor from its elevator | |
+| 3 | Theme packs per floor: five new packs as data (materials, plastics, label palette, neon accent, light accents, decoration weights), the pack resolved at scene build (ADR-0014 §1), a neon sign per room, lit shelf interiors | 2 (beside 4) | A screenshot per pack next to its concept panel | |
+| 4 | Side-face spines: `SlotFacing::SideOut`, the `*_v2` families and their fixtures, the one-time migration, no spine label on face-out items | 2 (beside 3) | A case room migrated while every other room stays byte-identical; G12, G13 regenerated; capacity table updated; the real library's migration through `real-library.ps1` | |
+| 5 | The hub: 18 x 14 x 5 m, the landmark, portals, the directory's totem, information screens, the favourites showcase (runtime proxies), the ground floor's rooms re-placed once | 3, 4 | The hub's golden; the totem opens the directory, a proxy opens a card; the real library's hub | |
+| 6 | Arcade and handhelds: the `arcade_cabinet` prefab and family, the hero cabinet with the video, stools and runner; handheld counter showcases and stations | 5 | The arcade and handheld goldens next to concept panels 5 and 6 | |
+| 7 | Gate D: `scripts/gate.ps1 -Gate D` (and `-RealLibrary`), the new goldens, the style §26.2 checklist per golden against `example.png`, `docs/testing/gate-d.md` | 6 | The gate passes; the user walks the building | |
 
 ## I4: M3 part 1, the building (Gate C passed; the user walks the building)
 
