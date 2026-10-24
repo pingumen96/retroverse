@@ -816,7 +816,8 @@ TEST_CASE("golden/G11: the building's lobby from the elevator's arrival point", 
                        "every start without --start-room stands, at the elevator's arrival point facing east down the "
                        "6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game "
                        "room's open doorway on the north side with its lamp seen through it, the closed entrance doors "
-                       "at the east end (I4's functional look: plain boxes, lit by the hall's own lights).",
+                       "at the east end (I4's functional look: plain boxes; since I6 step 1 lit by the hall's own "
+                       "lights and the arcade room's seen through its doorway, the hall's own ambient and fill).",
                        "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)",
                        std::nullopt},
                       room, run, shot, kFrames);
