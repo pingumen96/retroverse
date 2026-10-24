@@ -408,6 +408,9 @@ struct RetroverseApp::State {
     std::optional<SceneInstance> scene;
     /// The area that held the eye at the first view of a scene with areas, then each change (I4 step 3).
     std::vector<SceneAreaChange> areaChanges;
+    /// The light of the first view and of every frame while it eased, and of the last view (I6 step 1).
+    std::vector<SceneLightingSample> lightingSamples;
+    SceneLightingSample lastLighting;
     /// The hero CRT's screen service (I3 step 11): its one video decoder and the pictures of its fallback chain on the
     /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
     /// shows its pictures.
@@ -509,13 +512,38 @@ struct RetroverseApp::State {
             return;
         }
         scene->setReduceMotion(world && world->reduceMotion());
-        (void)scene->followEye(camera.position(), camera.forward());
-        (void)scene->advanceEnvironment(static_cast<float>(stepSeconds));
+        (void)scene->followEye(camera.position(), camera.forward(), static_cast<float>(stepSeconds));
+        const bool eased = scene->advanceEnvironment(static_cast<float>(stepSeconds));
         if (areaChanges.empty() || areaChanges.back().area != scene->areaId()) {
             areaChanges.push_back(SceneAreaChange{frame, std::string(scene->areaId())});
             spdlog::info("Frame {}: the eye is in the area '{}' ({} light(s) packed)", frame, scene->areaId(),
                          scene->lights().punctualLightCount);
         }
+        // The light of the first view and of every frame while it eases, its last step included (I6 step 1).
+        const SceneLightingSample sample = lightingSample(frame);
+        if ((lightingSamples.empty() || eased || scene->environmentEasing() || sample.fading > 0 ||
+             scene->lightsFading()) &&
+            lightingSamples.size() < kMaxSceneLightingSamples) {
+            lightingSamples.push_back(sample);
+        }
+        lastLighting = sample;
+    }
+
+    /// The light of this frame's view in a scene with areas.
+    [[nodiscard]] SceneLightingSample lightingSample(std::uint64_t frame) const {
+        SceneLightingSample sample;
+        sample.frame = frame;
+        sample.area = std::string(scene->areaId());
+        const scene::EnvironmentSetup environment = scene->viewEnvironment();
+        sample.exposure = environment.exposure;
+        sample.ambientIntensity = environment.ambientIntensity;
+        sample.fillIntensity = environment.fillIntensity;
+        for (const gl::PackedLightSource& light : scene->packedLights()) {
+            ++sample.lights;
+            sample.fading += light.weight < 1.0f ? 1 : 0;
+            sample.weight += light.weight;
+        }
+        return sample;
     }
 
     /// The scene's areas for the run report: the area that held the eye at the last view and its lights.
@@ -536,6 +564,14 @@ struct RetroverseApp::State {
             record.keyLight = gl::lightName(lights[*key], *key);
         }
         record.changes = areaChanges;
+        for (const gl::PackedLightSource& light : scene->packedLights()) {
+            record.packed.push_back(PackedLightRecord{light.index < lights.size()
+                                                          ? gl::lightName(lights[light.index], light.index)
+                                                          : std::string("?"),
+                                                      light.weight, light.clipped});
+        }
+        record.last = lastLighting;
+        record.samples = lightingSamples;
         return record;
     }
 
@@ -665,6 +701,10 @@ struct RetroverseApp::State {
         host.teleport = [this](const scene::CameraSetup& at) {
             freeRoam->teleportToCamera(at);
             freeRoam->update(input::ActionState{}, 0.0f, camera);
+            // A cut: the light of the place reached at once, never eased from the place left (I6 step 1).
+            if (scene) {
+                scene->snapLighting();
+            }
         };
         host.walker = [this]() -> scene::WalkerPose {
             const scene::FirstPersonController& walker = freeRoam->controller();
@@ -1060,6 +1100,7 @@ struct RetroverseApp::State {
     /// The overlay's "reset to scene camera": the walker and the lens as the scene starts them.
     void resetToSceneCamera() {
         freeRoam->teleportToCamera(description.camera);
+        scene->snapLighting();
         camera.setLens(description.camera.lens);
         spdlog::info("Camera reset to the scene camera: {}", freeRoam->describePose());
     }
@@ -1081,6 +1122,7 @@ struct RetroverseApp::State {
             scene::frontViewpoint(bounds, scene::frontDirection(object.transform), walker.feetPosition().y,
                                   walker.settings().eyeHeight, camera.lens(), aspect, area);
         walker.teleport(pose.feet, pose.yaw, pose.pitch);
+        scene->snapLighting();
         spdlog::info("Go to '{}': {}", object.id, freeRoam->describePose());
     }
 #endif

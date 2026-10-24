@@ -1,5 +1,7 @@
 #include <rv/app/scene_instance.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -192,7 +194,9 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         instance.m_eye = description.camera.position;
         instance.m_areaLighting = scene::AreaLighting(instance.m_areas, instance.m_sceneLights, instance.m_eye,
                                                       gl::kMaxPunctualLights);
-        instance.m_environmentEase.snap(instance.areaEnvironment());
+        for (const scene::SceneArea& area : instance.m_areas) {
+            instance.m_areaEnvironments.push_back(area.environment.over(description.environment));
+        }
         spdlog::info("Scene '{}': {} area(s); the views pack the lights of the area that holds the eye, '{}' at the "
                      "start",
                      description.name, instance.m_areas.size(), instance.areaId());
@@ -235,17 +239,59 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
     return instance;
 }
 
+namespace {
+
+/// `from`'s area terms (exposure, ambient, fill: what an area may set) into `to`.
+void copyAreaTerms(const scene::EnvironmentSetup& from, scene::EnvironmentSetup& to) noexcept {
+    to.exposure = from.exposure;
+    to.ambientSky = from.ambientSky;
+    to.ambientGround = from.ambientGround;
+    to.ambientIntensity = from.ambientIntensity;
+    to.fillColor = from.fillColor;
+    to.fillIntensity = from.fillIntensity;
+}
+
+} // namespace
+
 void SceneInstance::applyLighting() {
     if (!m_areaLighting.empty()) {
+        (void)takeEnvironmentEdit();
         (void)m_areaLighting.reselect(m_sceneLights, m_eye, m_forward);
         m_environmentEase.snap(areaEnvironment());
+        (void)advanceShadow(0.0f, true);
     }
     packLighting();
 }
 
 scene::EnvironmentSetup SceneInstance::areaEnvironment() const {
+    scene::EnvironmentSetup result = m_environment;
     const auto area = m_areaLighting.area();
-    return area && *area < m_areas.size() ? m_areas[*area].environment.over(m_environment) : m_environment;
+    if (area && *area < m_areaEnvironments.size()) {
+        copyAreaTerms(m_areaEnvironments[*area], result);
+    }
+    return result;
+}
+
+bool SceneInstance::takeEnvironmentEdit() {
+    const auto area = m_areaLighting.area();
+    if (!area || *area >= m_areaEnvironments.size()) {
+        return false;
+    }
+    bool edited = false;
+    if (m_shownArea && *m_shownArea < m_areaEnvironments.size() && !scene::sameAreaTerms(m_environment, m_shown)) {
+        // The overlay edited the area terms it shows: those of the area it showed them for.
+        copyAreaTerms(m_environment, m_areaEnvironments[*m_shownArea]);
+        edited = *m_shownArea == *area;
+    }
+    if (m_shownArea != area) {
+        copyAreaTerms(m_areaEnvironments[*area], m_environment);
+        m_shownArea = area;
+    }
+    m_shown = m_environment;
+    if (edited) {
+        m_environmentEase.snap(areaEnvironment());
+    }
+    return edited;
 }
 
 scene::EnvironmentSetup SceneInstance::viewEnvironment() const {
@@ -253,13 +299,7 @@ scene::EnvironmentSetup SceneInstance::viewEnvironment() const {
     if (m_areaLighting.empty()) {
         return view;
     }
-    const scene::EnvironmentSetup& eased = m_environmentEase.current();
-    view.exposure = eased.exposure;
-    view.ambientSky = eased.ambientSky;
-    view.ambientGround = eased.ambientGround;
-    view.ambientIntensity = eased.ambientIntensity;
-    view.fillColor = eased.fillColor;
-    view.fillIntensity = eased.fillIntensity;
+    copyAreaTerms(m_environmentEase.current(), view);
     return view;
 }
 
@@ -267,9 +307,9 @@ bool SceneInstance::advanceEnvironment(float seconds) {
     if (m_areaLighting.empty()) {
         return false;
     }
-    bool changed = false;
+    bool changed = takeEnvironmentEdit();
     if (!m_environmentEase.easing()) {
-        // An edit of the scene's environment (the developer overlay) that the eye's area does not override.
+        // An edit of a term no area sets (the developer overlay).
         const scene::EnvironmentSetup target = areaEnvironment();
         if (!scene::sameAreaTerms(target, m_environmentEase.target())) {
             m_environmentEase.snap(target);
@@ -283,13 +323,57 @@ bool SceneInstance::advanceEnvironment(float seconds) {
     return changed;
 }
 
+bool SceneInstance::advanceShadow(float seconds, bool instant) {
+    const std::optional<std::uint32_t> wanted = m_areaLighting.keyLight();
+    const std::optional<std::uint32_t> source = m_shadowSource;
+    const float progress = m_shadowProgress;
+    const float step = std::isfinite(seconds) && seconds > 0.0f ? seconds / scene::kLightFadeSeconds : 0.0f;
+    const std::span<const std::uint32_t> selection = m_areaLighting.selection();
+    const bool sourcePacked =
+        m_shadowSource && std::find(selection.begin(), selection.end(), *m_shadowSource) != selection.end();
+    if (instant) {
+        m_shadowSource = wanted;
+        m_shadowProgress = wanted ? 1.0f : 0.0f;
+    } else if (m_shadowSource == wanted) {
+        m_shadowProgress = std::min(1.0f, m_shadowProgress + step);
+    } else if (sourcePacked && m_shadowProgress > 0.0f) {
+        // The shadow of the key light the eye left fades out before the next one's fades in.
+        m_shadowProgress = std::max(0.0f, m_shadowProgress - step);
+        if (m_shadowProgress <= 0.0f) {
+            m_shadowSource = wanted;
+        }
+    } else {
+        m_shadowSource = wanted;
+        m_shadowProgress = 0.0f;
+    }
+    return m_shadowSource != source || m_shadowProgress != progress;
+}
+
 void SceneInstance::packLighting() {
-    gl::PackedLights packed = m_areaLighting.empty()
-                                  ? gl::packLights(m_sceneLights, m_environment)
-                                  : gl::packLights(m_sceneLights, m_areaLighting.selection(), viewEnvironment(),
-                                                   m_areaLighting.ownCount());
+    gl::PackedLights packed;
+    if (m_areaLighting.empty()) {
+        packed = gl::packLights(m_sceneLights, m_environment);
+    } else {
+        gl::LightSelection selection;
+        selection.indices = m_areaLighting.selection();
+        selection.weights = m_areaLighting.weights();
+        selection.portals = m_areaLighting.portals();
+        // The light whose shadow the views draw (advanceShadow()): the eye's area's key light, or the one it left
+        // while its shadow fades out.
+        selection.keyCandidates = 0;
+        if (m_shadowSource) {
+            const auto found = std::find(selection.indices.begin(), selection.indices.end(), *m_shadowSource);
+            if (found != selection.indices.end()) {
+                selection.key = static_cast<std::size_t>(found - selection.indices.begin());
+            }
+        }
+        const float t = m_shadowProgress;
+        selection.keyShadowWeight = t * t * (3.0f - 2.0f * t);
+        packed = gl::packLights(m_sceneLights, selection, viewEnvironment());
+    }
     gl::requireShadowCasters(packed, m_sceneLights, m_shadowCasterBounds);
     m_lights = packed.uniforms;
+    m_packedLights = std::move(packed.punctual);
     m_droppedLights = std::move(packed.dropped);
     m_shadowLight = packed.shadowLight;
     m_keyLight = packed.keyLight;
@@ -301,34 +385,34 @@ std::string_view SceneInstance::areaId() const noexcept {
     return area && *area < m_areas.size() ? std::string_view(m_areas[*area].id) : std::string_view();
 }
 
-bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward) {
+bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward, float seconds) {
     if (m_areaLighting.empty()) {
         return false;
     }
     m_eye = eye;
     m_forward = forward;
-    // The first eye followed is where the views begin: its area's environment at once, never eased from the scene
-    // camera's area.
-    const bool first = !m_eyeFollowed;
+    // The first eye followed is where the views begin, and a teleport cuts to another place: its area's environment
+    // and lights at once, never eased from the scene camera's area or the place left.
+    const bool instant = !m_eyeFollowed || m_reduceMotion || m_snapNext;
     m_eyeFollowed = true;
+    m_snapNext = false;
     const auto before = m_areaLighting.area();
-    if (!m_areaLighting.update(m_areas, m_sceneLights, eye, forward)) {
-        return false;
-    }
+    bool changed = m_areaLighting.update(m_areas, m_sceneLights, eye, forward, seconds, instant);
     const bool areaChanged = before != m_areaLighting.area();
-    if (areaChanged) {
+    if (instant) {
+        m_environmentEase.snap(areaEnvironment());
+    } else if (areaChanged) {
         // The views ease to the new area's environment (advanceEnvironment()).
-        m_environmentEase.retarget(areaEnvironment(), m_reduceMotion || first);
+        m_environmentEase.retarget(areaEnvironment(), false);
     }
-    packLighting();
+    changed = advanceShadow(seconds, instant) || changed;
+    if (changed) {
+        packLighting();
+    }
     if (areaChanged) {
         // What each area's key light casts was logged at load (logAreaKeyLights).
-        spdlog::debug("Scene '{}': the eye entered the area '{}': {} light(s) packed, {}", m_name, areaId(),
-                      m_lights.punctualLightCount,
-                      m_shadowLight.casts() && m_keyLight && *m_keyLight < m_sceneLights.size()
-                          ? fmt::format("the key light '{}' casts the shadows",
-                                        gl::lightName(m_sceneLights[*m_keyLight], *m_keyLight))
-                          : std::string("no shadow"));
+        spdlog::debug("Scene '{}': the eye entered the area '{}': {} light(s) packed", m_name, areaId(),
+                      m_lights.punctualLightCount);
     }
     return areaChanged;
 }

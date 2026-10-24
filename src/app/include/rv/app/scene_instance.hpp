@@ -56,14 +56,17 @@ struct SceneResources {
 ///    vignette), which the renderer reads per view (gl::postSettingsFor). The developer overlay edits the lights and
 ///    the environment in place (sceneLights(), environment()) and repacks the lights with applyLighting().
 ///  - Areas (I4 step 3, ADR-0013 §9; I6 step 1, ADR-0014 §4): in a scene with areas (a floor: its rooms and its
-///    hall), the lights block holds the lights of the area that holds the eye (scene::AreaLighting: the first area
-///    holding it, else the last one held), its key light shadowed and its point and spot lights nearest the eye up to
-///    the block's capacity, then a few of each neighbouring area's near the doorway they share, never the key light;
-///    its ambient, fill and exposure are the eye's area's (scene::AreaEnvironment over the scene's environment),
-///    eased over about half a second when the eye changes areas (scene::EnvironmentEase; instant under reduceMotion).
-///    The application calls followEye() every frame with the camera's eye, then advanceEnvironment() with the frame's
-///    time. The log names every area's key light at load (or why it casts none), and the area the eye enters. A scene
-///    without areas packs its lights once, in list order, as before.
+///    hall), the lights block holds the lights scene::AreaLighting selects for the area that holds the eye (the first
+///    area holding it, else the last one held): its key light shadowed, its point and spot lights nearest the eye and
+///    a reserve of its neighbours' seen through the doorways they share, never the key light, each faded in and out
+///    over kLightFadeSeconds and clipped to its portal. The key light's shadow fades likewise: the shadow of the key
+///    light the eye left fades out, then the next one's fades in. The area's ambient, fill and exposure are its own
+///    (scene::AreaEnvironment over the scene's environment), eased over about half a second when the eye changes
+///    areas (scene::EnvironmentEase). The application calls followEye() every frame with the camera's eye and the
+///    frame's time, then advanceEnvironment(); everything is at once at the first frame, under reduceMotion and after
+///    snapLighting() (a teleport). The developer overlay shows and edits the eye's area's terms in environment(). The
+///    log names every area's key light at load (or why it casts none), and the area the eye enters. A scene without
+///    areas packs its lights once, in list order, as before.
 ///  - Collision: scene::buildCollisionWorld of the content, for first-person navigation.
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
@@ -95,7 +98,8 @@ public:
     [[nodiscard]] std::span<scene::Light> sceneLights() noexcept { return m_sceneLights; }
     [[nodiscard]] std::span<const scene::Light> sceneLights() const noexcept { return m_sceneLights; }
     /// The scene's environment: the source of the ambient of lights(), the background radiance and the
-    /// post-processing of every view, edited in place by the developer overlay.
+    /// post-processing of every view, edited in place by the developer overlay. In a scene with areas its area terms
+    /// (exposure, ambient, fill) are those of the area that holds the eye, and an edit of them is that area's.
     [[nodiscard]] scene::EnvironmentSetup& environment() noexcept { return m_environment; }
     [[nodiscard]] const scene::EnvironmentSetup& environment() const noexcept { return m_environment; }
     /// The environment the views use: environment(), its area terms (exposure, ambient, fill) in a scene with areas
@@ -116,11 +120,24 @@ public:
     [[nodiscard]] std::span<const std::uint32_t> areaSelection() const noexcept { return m_areaLighting.selection(); }
     /// How many of areaSelection()'s first lights are the eye's area's own.
     [[nodiscard]] std::size_t areaOwnLights() const noexcept { return m_areaLighting.ownCount(); }
-    /// Follows the eye (the camera's position, world space) in a scene with areas: the area that holds it, and the
-    /// lights packed for it when they change (cheap: a pass over the area's lights and its neighbours'), `forward` the
-    /// view's unit direction (the lights wholly behind the eye are left out; zero: none are). Returns true when the
-    /// area that holds the eye changed; nothing happens in a scene without areas.
-    bool followEye(const glm::vec3& eye, const glm::vec3& forward = glm::vec3(0.0f));
+    /// The weight of each light of areaSelection() (0 to 1).
+    [[nodiscard]] std::span<const float> areaWeights() const noexcept { return m_areaLighting.weights(); }
+    /// The point and spot lights of lights(), in its order: which scene light each is, its weight, whether a portal
+    /// clips it.
+    [[nodiscard]] std::span<const gl::PackedLightSource> packedLights() const noexcept { return m_packedLights; }
+    /// True while a light or the key light's shadow fades in or out.
+    [[nodiscard]] bool lightsFading() const noexcept {
+        return m_areaLighting.fading() || (m_shadowSource.has_value() && m_shadowProgress < 1.0f);
+    }
+    /// Follows the eye (the camera's position, world space) in a scene with areas: the area that holds it, the lights
+    /// chosen for it and their fades moved on by `seconds` (the frame's time), repacked when they change (cheap: a pass
+    /// over the area's lights and its neighbours'), `forward` the view's unit direction (the lights wholly behind the
+    /// eye are left out; zero: none are). Returns true when the area that holds the eye changed; nothing happens in a
+    /// scene without areas.
+    bool followEye(const glm::vec3& eye, const glm::vec3& forward = glm::vec3(0.0f), float seconds = 0.0f);
+    /// The next followEye() cuts to its eye: the environment, the lights and the shadow at once (a teleport, the
+    /// overlay's "go to").
+    void snapLighting() noexcept { m_snapNext = true; }
     /// Moves the ease between two areas' environments on by `seconds` (the frame's time); also takes up an edit of
     /// environment() that the eye's area does not override. True when the views' environment changed; nothing happens
     /// in a scene without areas.
@@ -150,6 +167,11 @@ private:
     void packLighting();
     /// The environment of the area that holds the eye: its terms over environment().
     [[nodiscard]] scene::EnvironmentSetup areaEnvironment() const;
+    /// Takes an edit of environment()'s area terms (the developer overlay's) into the area it showed them for, then
+    /// shows the eye's area's there; true when the eye's area's terms changed.
+    bool takeEnvironmentEdit();
+    /// Moves the key light's shadow on by `seconds` (at once with `instant`); true when it changed.
+    bool advanceShadow(float seconds, bool instant);
 
     std::string m_name;
     std::vector<scene::RenderItem> m_items;
@@ -163,7 +185,18 @@ private:
     core::Aabb m_shadowCasterBounds;
     std::vector<scene::SceneArea> m_areas;
     scene::AreaLighting m_areaLighting;
+    /// Each area's environment (its terms over the scene's), edited by the overlay through environment().
+    std::vector<scene::EnvironmentSetup> m_areaEnvironments;
+    /// The area whose terms environment() shows, and what it showed (takeEnvironmentEdit()).
+    std::optional<std::size_t> m_shownArea;
+    scene::EnvironmentSetup m_shown;
     scene::EnvironmentEase m_environmentEase;
+    /// The light whose shadow the views draw (the eye's area's key light, or the one it left while its shadow fades),
+    /// and the progress of its fade (advanceShadow()).
+    std::optional<std::uint32_t> m_shadowSource;
+    float m_shadowProgress = 0.0f;
+    std::vector<gl::PackedLightSource> m_packedLights;
+    bool m_snapNext = false;
     bool m_reduceMotion = false;
     /// followEye() was called: the first call switches the environment at once.
     bool m_eyeFollowed = false;
