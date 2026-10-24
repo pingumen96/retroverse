@@ -155,8 +155,8 @@ and from the room the hall beyond it; the upper walls and ceilings warm and dark
 elevator, and each room from the hall and looking out, with the same views with only the neighbours cut
 (`*_cut.png`) and as I4 lit them (`*_i4.png`), and views tilted up and down beside the doorway for the leak probes,
 in `build/<preset>/smoke/world_floor_light`). Since I6 step 2 the hall is dressed (`docs/i6/step-2.md`): from the
-elevator the runner, the benches and plants, the sconces and prints in turn, the beam and the portal of room:snes with
-its sign "16-BIT CORNER" above the lintel; the portal from across the hall: `--spawn 7.65,0,1.1,0,4` (gen4) and
+elevator the runner, the benches and plants, the sconces and prints in turn, the beams and the portal of room:snes with
+its sign "16-BIT CORNER" above the lintel and on its blade sign; the portal from across the hall: `--spawn 7.65,0,1.1,0,4` (gen4) and
 `--spawn 7.65,0,-1.1,180,4` (handheld's south-row room); half way down the hall `--spawn 5,0,0.3,90,-4`, back towards
 the elevator `--spawn 11.5,0,0,270,-4`; the step's views of every floor are in `build/i6/step2`. gen4 holds one room; the fixture's floor with rooms on both rows is `handheld` (`worldplan show --floor
 handheld --scene build/scenes/handheld.json`): from the elevator, room:gb's doorway on the north side faces, doors
