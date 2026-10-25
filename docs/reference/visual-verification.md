@@ -115,7 +115,9 @@ no `--start-room`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:ps
 `disc_case_cd_v2` from the doorway, every one face-out) and G13 (`g13_shared_room_golden.png`: `--start-room
 area:shared:handheld`, the handheld floor's shared room of two sections, generic cases of `generic_case_v2`, from the
 doorway); the cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
-`esde/case-shelves` fixture: 160 jewel cases, 120 big boxes, most of them spine-out). `$env:RV_UPDATE_GOLDEN=1;
+`esde/case-shelves` fixture: 160 jewel cases, 100 keep cases, 120 big boxes, most of them spine-out, their dark shells
+and full-height printed spines since the step's review) and `gpu.world families: a stored building of generator 1.3 is
+migrated once` (`tests/fixtures/world/legacy/`). `$env:RV_UPDATE_GOLDEN=1;
 build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G02:*"` rewrites one (then the case fails: look at it, run it
 again without the variable, update `docs/testing/gate-b.md`'s or `gate-c.md`'s page). The room's own screenshots: a data directory
 with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>

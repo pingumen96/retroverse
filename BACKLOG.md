@@ -492,13 +492,19 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   that goes when the eye enters the room; per-light portals for a hall's lights (the nearest doorway's) would close it.
 - **The media families' faces (I4 step 2):** cases and boxes stand spine-out with their height in the shelf's depth
   until a side-face facing exists; a face-out item shows its spine label on its top face, upside down seen from the
-  front (visible on the big boxes' 45 mm tops); the jewel cases' spine labels are 7 mm wide and the handheld
-  cartridges' 4.8 mm, too small to read beyond arm's length. Side-face spines, face-out items without a top label and
-  the faithful families are I6's (`docs/i4/step-2.md`). Done in I6 step 4 (`docs/i6/step-4.md`): the `*_v2` families
-  stand on their side with an upright spine, face-out items draw no spine label, stored rooms migrated once. Left: the
-  side spine keeps the 40 x 256 aspect, so a jewel case's label is 7 x 45 mm on a 125 mm spine (a taller spine layer,
-  or the text along the whole spine, would read better); a room kept by another rule (an older template) is not
-  migrated until a regeneration; the faithful per-console families.
+  front (visible on the big boxes' 45 mm tops); the jewel cases' spine labels are 7 mm wide and the handheld cartridges'
+  4.8 mm, too small to read beyond arm's length. Side-face spines, face-out items without a top label and the faithful
+  families are I6's (`docs/i4/step-2.md`). Done in I6 step 4 (`docs/i6/step-4.md`): the `*_v2` families stand on their
+  side with an upright spine, face-out items draw no spine label, stored rooms migrated once; since its review the spine
+  label covers the side face top to bottom (a printed spine drawn at that shape into the unchanged 40 x 256 layer, a
+  darker band at its top) and the cases' shells are dark. Left: a printed spine's text is squeezed 2.7 times along the
+  jewel case's length in the layer (a taller spine layer would keep its glyphs sharper up close); a room kept by another
+  rule (an older template) is not migrated until a regeneration; face-out items still get a spine layer made and
+  uploaded that they never draw (the residency counts two layers per item: leaving them out needs the counts and the
+  ride's wait per class); a missing `*_side` item manifest falls back at run time to its prefab family's generic
+  (`media.case.plain.generic`, its spine on the top face; a manifest's `fallbackPrefab` must name its family's generic,
+  so the side generic would need a prefab family of its own); a big box's shell tinted from its spine's colour (the
+  spine array's background row sampled by the shell's material); the faithful per-console families.
 - **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, the arcade cabinet in place of the
   arcade room's CRT, theme packs per floor, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
   "Deferred"). In a shared room of few titles the display cases' riser cards (an invented cover across the empty

@@ -233,7 +233,9 @@ build/rvdata`).
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
   with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
   planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run
-  report's `world.migratedRooms` and with the notice `rooms-migrated`) and writes, only when they changed, each
+  report's `world.migratedRooms` {`room`, `from`, `to`, `unplacedForCapacity`} and with the notice `rooms-migrated`;
+  what the update left undone for a pin, a pinned room not migrated among it, is logged and in
+  `world.needsConfirmation`) and writes, only when they changed, each
   system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
   system's full name and platform tags, and since I4 step 6b each placed game's CRT data: its clip, screenshot and title
   screen, its last play, its title's priority; a system of a shared room has its own, its section's games with their

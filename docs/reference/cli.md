@@ -148,10 +148,13 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   them), so it never waits; from selection files without them it waits ("Waiting:", JSON `changes.systemsWaiting`), the
   room held. The report says "Entered: <system> in <room> (a new room | a new section)" (JSON `changes.systemsEntered`,
   `changes.roomsAdded`). Since I6 step 4 (`docs/i6/step-4.md`, ADR-0014 §2) a room of a family that has a successor
-  (I4's jewel cases, keep cases, handheld cases, big boxes and generic cases, standing on their end) is migrated once,
+  in rooms of its kind (I4's jewel cases, keep cases, handheld cases, big boxes, and the generic cases of console and
+  shared rooms, standing on their end; the arcade room keeps its generic case until I6 step 6) is migrated once,
   given every section's selection and named by no pin: regenerated with the successor (standing on its side), its id,
-  floor, x, sections and seed kept, its face-out titles chosen again ("Room migrated: <room>: <from> -> <to>", JSON
-  `changes.migratedRooms` {`room`, `from`, `to`}, rebuild `full`); a pinned room's refusal is among the confirmations. It prints the change report. Both exit 0 written or up to date; 1 nothing written (a plan
+  floor, x, sections and seed kept, its face-out titles chosen again ("Room migrated: <room>: <from> -> <to>", with ",
+  <n> unplaced for capacity" when its new room holds fewer; JSON `changes.migratedRooms` {`room`, `from`, `to`,
+  `unplacedForCapacity`}, rebuild `full`); a pinned room's refusal is among the confirmations. It prints the change
+  report. Both exit 0 written or up to date; 1 nothing written (a plan
   exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate --replace`:
   another seed, preset or generator major version; the media unknown; no such system in the catalog); 2 usage; 3 the
   data, catalog, selections or overrides unreadable (a system named that gets no room, an excluded one, included), a
