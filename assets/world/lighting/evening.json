@@ -15,8 +15,9 @@
     "pendant": {"color": "#FFD7B0", "intensity": 16, "range": 10},
     // The amber lamps (the hero corner's and those standing as decoration).
     "lamp": {"color": "#FFC88A", "intensity": 4, "range": 4},
-    // The picture light on the sign, tinted towards the neon: the magenta accent of style §4.2's 16-bit room.
-    "picture": {"color": "#F0B8E8", "intensity": 8, "range": 4, "minOuterConeDeg": 25, "coneMarginDeg": 10,
+    // The picture light on the sign: a warm white the room's theme pack tints with its neon (themedLighting(), I6 step
+    // 3's review), so that the 16-bit room keeps style §4.2's magenta accent and every other pack its own.
+    "picture": {"color": "#FFF0E8", "intensity": 8, "range": 4, "minOuterConeDeg": 25, "coneMarginDeg": 10,
                 "innerConeRatio": 0.6},
     // The wall-washers over the side-wall modules: the whole module's height in the cone.
     "wallWasher": {"color": "#FFE6CC", "intensity": 12, "range": 5, "minOuterConeDeg": 32, "coneMarginDeg": 8,
@@ -51,7 +52,8 @@
     // The tube's cool spill on the rug and the cabinet in front of it (style §4.3: a fictitious light near the TV).
     {"name": "crt_glow", "anchor": "crt", "type": "spot", "position": [0.0, 0.3, 0.42], "target": [0.0, -0.1, 1.4],
      "color": "#D2D8E4", "intensity": 2.5, "range": 3.5, "innerConeDeg": 45, "outerConeDeg": 80},
-    // The neon's glow on the wall around the sign.
+    // The neon's glow on the wall around the sign (the room's pack gives its colour, and its intensity and range: its
+    // "neonGlow", I6 step 3).
     {"name": "sign_glow", "anchor": "sign", "type": "point", "position": [0.0, 0.0, 0.3], "color": "#B34DCE",
      "intensity": 1.5, "range": 2.5},
     // A museum spot over each display case (style §4.1's accent lights on the cases): from above the aisle onto its

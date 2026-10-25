@@ -193,7 +193,7 @@ TEST_CASE("world/room_look: the theme pack classic_16bit_warm names library mate
     // The built-in copy is the file (the app's collection instance and the empty room's shell read it).
     CHECK(*theme == rv::world::builtInThemeMaterials());
     CHECK(theme->materials("cartridge") == rv::world::themeMaterials("cartridge"));
-    CHECK(theme->materials("poster_frame", "sign").at("picture") == "MAT_Neon_Diffuser");
+    CHECK(theme->materials("poster_frame", "sign").at("picture") == "MAT_Neon_Magenta");
     CHECK(theme->materials("poster_frame").at("picture") == "MAT_Paper_Print");
     CHECK_FALSE(rv::world::parseThemeMaterials(
                     "{\"schemaVersion\": 1, \"id\": \"t\", \"name\": \"T\", \"kinds\": {\"rug\": {\"fabric\": "

@@ -160,9 +160,12 @@ Expected<BuildingData> parseBuildingData(std::string_view text, std::string_view
     (void)reader.integer("schemaVersion", 1, 1);
     const Json& floors = reader.array("floors");
     detail::forEachElement(floors, "/floors", [&](const Json& element, const std::string& pointer) {
-        const ObjectReader floor(document, element, pointer, {"generations", "id", "kinds", "sign"});
+        const ObjectReader floor(document, element, pointer, {"generations", "id", "kinds", "sign", "themePack"});
         FloorSpec spec;
         spec.id = floor.dataId("id");
+        if (!document.failed() && floor.has("themePack")) {
+            spec.themePack = floor.dataId("themePack");
+        }
         if (!document.failed() && floor.has("sign")) {
             spec.sign = floor.checkedString("sign", isSignText,
                                             "1 to 32 printable ASCII characters without a space at either end");
@@ -285,6 +288,28 @@ nlohmann::json buildingDataToJson(const BuildingData& building) {
                                 {"rowStartXMm", layout.rowStartXMm},
                                 {"wallAllowanceMm", layout.wallAllowanceMm},
                                 {"maxRoomsPerRow", layout.maxRoomsPerRow}}}};
+}
+
+// --- The look of a room ---------------------------------------------------------------------------------------------
+
+std::string themePackOf(RoomKind kind, std::string_view floor, SystemKind defaultsKind, const SystemsData& systems,
+                        const BuildingData& building) {
+    if (kind == RoomKind::Arcade) {
+        return systems.arcade.themePack;
+    }
+    if (const FloorSpec* spec = building.floor(floor); spec != nullptr && !spec->themePack.empty()) {
+        return spec->themePack;
+    }
+    return systems.defaultsOf(defaultsKind).themePack;
+}
+
+std::string floorThemePack(std::string_view floor, const SystemsData& systems, const BuildingData& building) {
+    const FloorSpec* spec = building.floor(floor);
+    if (spec != nullptr && !spec->themePack.empty()) {
+        return spec->themePack;
+    }
+    return systems.defaultsOf(spec != nullptr && !spec->kinds.empty() ? spec->kinds.front() : SystemKind::Other)
+        .themePack;
 }
 
 // --- systems.json ---------------------------------------------------------------------------------------------------

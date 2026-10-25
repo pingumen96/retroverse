@@ -106,8 +106,10 @@ struct SceneData {
 /// platform of its first system (resolvePlatform() with `platformTags`, the system's ES-DE platform tags: a system
 /// systems.json does not name takes the sign and plastics of the row its tags match, as when its room was generated;
 /// none, the fallback's), the room's media family, the families and every prefab scenePrefabRefs() names; the
-/// platform's theme pack (builtInThemeMaterials(), logged, when it does not load); `lighting`, else the default
-/// lighting profile (kDefaultLightingProfile; the built-in one, logged, when it does not load). Errors: NotFound for a
+/// platform's theme pack, resolved on the room's floor (building.hpp's themePackOf(), never the plan's record:
+/// ADR-0014 §1; builtInThemeMaterials(), logged, when it does not load); `lighting`, else the default lighting profile
+/// (kDefaultLightingProfile; the built-in one, logged, when it does not load), as the pack lights it
+/// (themedLighting()). Errors: NotFound for a
 /// room the plan lacks; those of the readers; a template whose version is not the room's (ValidationFailed); a media
 /// family the registry lacks (NotFound).
 [[nodiscard]] Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan,

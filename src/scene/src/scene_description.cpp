@@ -466,7 +466,8 @@ Expected<core::Aabb> parseAreaBox(const json& value, const Location& at) {
 
 Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
-                  {"exposure", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity"});
+                  {"exposure", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
+                   "bloomStrength"});
     AreaEnvironment environment;
     fields.optional("exposure", environment.exposure, readNumber);
     fields.check(environment.exposure.value_or(1.0f) > 0.0f, "exposure", "must be > 0");
@@ -477,6 +478,9 @@ Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location
     fields.optional("fillColor", environment.fillColor, readColor);
     fields.optional("fillIntensity", environment.fillIntensity, readNumber);
     fields.check(environment.fillIntensity.value_or(0.0f) >= 0.0f, "fillIntensity", "must be >= 0");
+    fields.optional("bloomStrength", environment.bloomStrength, readNumber);
+    fields.check(!environment.bloomStrength || isUnitInterval(*environment.bloomStrength), "bloomStrength",
+                 "must be within [0, 1]");
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -548,7 +552,7 @@ Expected<TextureSource> parseTexture(const json& value, const Location& at) {
                            kTexturePatternNames.end();
         fields.check(known, "pattern",
                      "unknown texture pattern \"" + texture.pattern +
-                         "\" (expected color_bars, checker, cover or sign)");
+                         "\" (expected color_bars, checker, cover, sign, print or neon)");
     }
     fields.optional("title", texture.title, readString);
     fields.optional("seed", texture.seed, readSeed);
@@ -826,6 +830,7 @@ EnvironmentSetup AreaEnvironment::over(const EnvironmentSetup& scene) const {
     result.ambientIntensity = ambientIntensity.value_or(scene.ambientIntensity);
     result.fillColor = fillColor.value_or(scene.fillColor);
     result.fillIntensity = fillIntensity.value_or(scene.fillIntensity);
+    result.bloomStrength = bloomStrength.value_or(scene.bloomStrength);
     return result;
 }
 

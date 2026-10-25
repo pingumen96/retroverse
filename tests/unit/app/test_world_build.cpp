@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -47,6 +48,7 @@
 #include <rv/core/canonical_json.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/log.hpp>
+#include <rv/core/math.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/esde/media_resolver.hpp>
@@ -1786,6 +1788,26 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     CHECK_FALSE(room.sceneData.platform.console.has_value());
     REQUIRE(room.layout.items.size() == 14);
     REQUIRE(room.covers.size() == 14);
+    // Every cover carries its room's pack's label palette (I6 step 3: the handheld floor's handheld_archive), one
+    // palette for the room; the arcade room's its own pack's.
+    const auto paletteOf = [](const rv::world::ThemeMaterials& theme) {
+        std::vector<rv::assets::Rgb8> colours;
+        for (const std::string& hex : theme.labelPalette) {
+            const auto colour = rv::core::parseHexColor(hex);
+            REQUIRE(colour.has_value());
+            const auto byte = [](float value) { return static_cast<std::uint8_t>(std::lround(value * 255.0f)); };
+            colours.push_back({byte(colour->r), byte(colour->g), byte(colour->b)});
+        }
+        return colours;
+    };
+    CHECK(room.sceneData.theme.id == "handheld_archive");
+    const std::vector<rv::assets::Rgb8> handheld = paletteOf(room.sceneData.theme);
+    REQUIRE(handheld.size() == 8);
+    for (const rv::app::CoverItem& cover : room.covers) {
+        REQUIRE(cover.palette.colours != nullptr);
+        CHECK(cover.palette.colours == room.covers.front().palette.colours);
+        CHECK(std::ranges::equal(cover.palette.view(), handheld));
+    }
     std::map<std::string, std::size_t> bySection;
     for (const rv::app::CoverItem& cover : room.covers) {
         INFO(cover.game.toString() << " " << cover.systemName << " " << cover.coverPath);
@@ -1854,9 +1876,13 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     CHECK(arcadeRoom.sceneData.platform.signText == "ARCADE");
     CHECK_FALSE(arcadeRoom.sceneData.platform.console.has_value());
     REQUIRE(arcadeRoom.covers.size() == 15);
+    CHECK(arcadeRoom.sceneData.theme.id == "arcade_after_dark");
+    const std::vector<rv::assets::Rgb8> arcadePalette = paletteOf(arcadeRoom.sceneData.theme);
+    CHECK_FALSE(std::ranges::equal(arcadePalette, handheld));
     for (const rv::app::CoverItem& cover : arcadeRoom.covers) {
         CHECK(cover.systemName == "Arcade Board Library");
         CHECK(cover.coverPath.starts_with("mame/covers/"));
+        CHECK(std::ranges::equal(cover.palette.view(), arcadePalette));
     }
     CHECK(arcadeBuild.screenGames.size() == 15);
 

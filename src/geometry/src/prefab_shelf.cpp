@@ -28,6 +28,12 @@ constexpr BoxUv kGrain = BoxUv::GrainMeters;
 constexpr float kWoodTile = detail::kWoodMetersPerTile;
 /// Horizontal boards bevel the edges of their top face only (MeshBuilder::chamferedBox).
 constexpr FaceMask kBoardBevels = FaceMask::PosY;
+/// The lit interior (ShelfParams::boardLight): the strip under a board and the glow's gap to the back panel.
+constexpr float kStripThickness = 0.003f;
+constexpr float kStripDepth = 0.012f;
+constexpr float kStripBehindFront = 0.020f;
+constexpr float kStripSideMargin = 0.010f;
+constexpr float kGlowOffset = 0.0015f;
 
 /// The slots of one kind of level: the regular levels' or the display levels'.
 struct SlotRow {
@@ -209,6 +215,30 @@ ProceduralPrefab assemble(const ShelfParams& p) {
             .box(glm::vec3(l.innerWidth, top, kBackThickness),
                  translation(glm::vec3(0.0f, 0.5f * top, -halfDepth + 0.5f * kBackThickness)), kGrain, kWoodTile,
                  FaceMask::All & ~FaceMask::NegY);
+    }
+
+    // The lit interior: a strip under each board that has a compartment below it, and a glow over the back panel of
+    // each compartment, its top at the board above.
+    if (p.boardLight) {
+        MeshBuilder& strips = out.part("board_light");
+        const glm::vec3 strip(l.innerWidth - 2.0f * kStripSideMargin, kStripThickness, kStripDepth);
+        const float stripZ = l.boardFront - kStripBehindFront - 0.5f * kStripDepth;
+        for (int level = 1; level <= p.levels; ++level) {
+            // The board above compartment level - 1: a level's board, or the top board for the topmost.
+            const float underside =
+                level < p.levels ? p.plinthHeight + static_cast<float>(level) * l.pitch : p.height - board;
+            strips.box(strip, translation(glm::vec3(0.0f, underside - 0.5f * kStripThickness, stripZ)),
+                       BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
+        }
+        if (p.back) {
+            MeshBuilder& glow = out.part("board_glow");
+            const float glowZ = -halfDepth + kBackThickness + kGlowOffset;
+            for (int level = 0; level < p.levels; ++level) {
+                const float floorY = p.plinthHeight + static_cast<float>(level) * l.pitch + board;
+                glow.quad(glm::vec2(l.innerWidth, l.clearHeight),
+                          translation(glm::vec3(0.0f, floorY + 0.5f * l.clearHeight, glowZ)));
+            }
+        }
     }
 
     // Per level its Level socket (the compartment's free volume on the board), then its slots: left-aligned, each item

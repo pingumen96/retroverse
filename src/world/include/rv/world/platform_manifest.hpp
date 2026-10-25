@@ -5,13 +5,16 @@
 // §1, §17.2): the media family its games stand as, the theme pack its decoration comes from, the plastics' colours,
 // the console prefab of the hero corner and the sign's text.
 //
-// The file (JSON with comments; every key required):
-//   {"schemaVersion": 1, "system": "snes", "mediaFamily": "cartridge_home_16bit", "themePack": "classic_16bit_warm",
+// The file (JSON with comments; every key required but "themePack"):
+//   {"schemaVersion": 1, "system": "snes", "mediaFamily": "cartridge_home_16bit",
+//    "themePack": "classic_16bit_warm" (optional),
 //    "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"},
 //    "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"} (or null: none),
 //    "sign": {"text": "16-BIT CORNER"}}
 // The manifest is optional since I4 (ADR-0013 §2): a system without one takes what systems.json gives it
-// (generation.hpp's resolvePlatform()); one with a manifest takes the manifest whole.
+// (generation.hpp's resolvePlatform()); one with a manifest takes the manifest whole, but for its theme pack: a
+// manifest naming none keeps the pack of its room's floor (building.hpp's themePackOf()), one naming a pack overrides
+// the floor's (I6 step 3, ADR-0014 §1 as amended).
 // Colours are sRGB hex codes "#RRGGBB" (style §3), uppercase; the room converts them to linear when it draws.
 
 #include <filesystem>
@@ -32,6 +35,8 @@ struct PlatformManifest {
     catalog::SystemName system;
     /// A family of the registry (media_family.hpp), checked where both are read.
     std::string mediaFamily;
+    /// The theme pack it overrides its room's floor's with; empty in a manifest naming none (resolvePlatform() then
+    /// gives the floor's).
     std::string themePack;
     /// The cartridges' shell (and their generated labels' ground), the console's body and its accent.
     std::string cartridgePlastic;

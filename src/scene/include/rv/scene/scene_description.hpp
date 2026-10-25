@@ -79,7 +79,8 @@ namespace rv::scene {
 ///         "exposure": 1.5, "ambientSky": "#...",   each optional, the scene's "environment" for those it lacks;
 ///         "ambientGround": "#...",                 the views ease to the eye's area's over about half a second
 ///         "ambientIntensity": 0.3,                 (scene_areas.hpp's EnvironmentEase)
-///         "fillColor": "#...", "fillIntensity": 0.1
+///         "fillColor": "#...", "fillIntensity": 0.1,
+///         "bloomStrength": 0.28                    [0, 1] (I6 step 3: a theme pack's bloom, the arcade's)
 ///       }
 ///     }],
 ///     "objects": [{                                optional
@@ -125,8 +126,8 @@ inline constexpr std::size_t kMaxSceneInstances = 100000;
 inline constexpr float kMaxSsaoRadius = 5.0f;
 inline constexpr float kMaxSsaoIntensity = 4.0f;
 /// Procedural texture patterns understood by the asset layer (assets::test patterns).
-inline constexpr std::array<std::string_view, 5> kTexturePatternNames{"color_bars", "checker", "cover", "sign",
-                                                                      "print"};
+inline constexpr std::array<std::string_view, 6> kTexturePatternNames{"color_bars", "checker", "cover", "sign",
+                                                                      "print",      "neon"};
 
 /// Initial camera of the scene (Camera conventions, angles in degrees).
 struct CameraSetup {
@@ -207,6 +208,7 @@ struct AreaEnvironment {
     std::optional<float> ambientIntensity;
     std::optional<glm::vec3> fillColor;
     std::optional<float> fillIntensity;
+    std::optional<float> bloomStrength;
 
     /// `scene` with these terms in place of its own.
     [[nodiscard]] EnvironmentSetup over(const EnvironmentSetup& scene) const;

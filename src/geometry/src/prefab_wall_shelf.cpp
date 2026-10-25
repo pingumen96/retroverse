@@ -137,6 +137,21 @@ ProceduralPrefab assemble(const WallShelfParams& p) {
              translation(glm::vec3(0.0f, l.bottom + 0.5f * backHeight, -halfDepth + 0.5f * kBackBoard)), kGrain,
              kWoodTile);
 
+    // The lit interior: a strip under the cap and under every ledge but the lowest, near the front.
+    if (p.boardLight) {
+        constexpr float kStripThickness = 0.003f;
+        constexpr float kStripDepth = 0.010f;
+        constexpr float kStripBehindFront = 0.012f;
+        MeshBuilder& strips = out.part("board_light");
+        const glm::vec3 strip(l.innerWidth - 0.02f, kStripThickness, kStripDepth);
+        const float stripZ = halfDepth - kStripBehindFront - 0.5f * kStripDepth;
+        for (int ledge = 1; ledge <= p.ledges; ++ledge) {
+            const float underside = ledge < p.ledges ? l.bottom + static_cast<float>(ledge) * l.pitch : l.top - kCap;
+            strips.box(strip, translation(glm::vec3(0.0f, underside - 0.5f * kStripThickness, stripZ)),
+                       BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
+        }
+    }
+
     // Ledges from the back board to the front, each with its lip along the front edge; the lowest is the unit's bottom.
     const float ledgeDepth = halfDepth - l.backFace;
     const glm::vec3 item = p.slotSize;

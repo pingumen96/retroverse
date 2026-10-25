@@ -451,7 +451,7 @@ float mixed(float from, float to, float t) noexcept {
 bool sameAreaTerms(const EnvironmentSetup& a, const EnvironmentSetup& b) noexcept {
     return a.exposure == b.exposure && a.ambientSky == b.ambientSky && a.ambientGround == b.ambientGround &&
            a.ambientIntensity == b.ambientIntensity && a.fillColor == b.fillColor &&
-           a.fillIntensity == b.fillIntensity;
+           a.fillIntensity == b.fillIntensity && a.bloomStrength == b.bloomStrength;
 }
 
 void EnvironmentEase::retarget(const EnvironmentSetup& target, bool instant) {
@@ -488,6 +488,7 @@ bool EnvironmentEase::advance(float seconds) {
     m_current.ambientIntensity = mixed(m_from.ambientIntensity, m_to.ambientIntensity, t);
     m_current.fillColor = mixed(m_from.fillColor, m_to.fillColor, t);
     m_current.fillIntensity = mixed(m_from.fillIntensity, m_to.fillIntensity, t);
+    m_current.bloomStrength = mixed(m_from.bloomStrength, m_to.bloomStrength, t);
     return true;
 }
 

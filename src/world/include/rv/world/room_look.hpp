@@ -32,11 +32,36 @@
 //   it); it is drawn only while the room's lights leave room for it under the scene's limit (16), in the order listed,
 //   and never casts shadows. Colours are sRGB "#RRGGBB" (uppercase hexadecimal).
 //
-// A theme pack, assets/world/themes/<id>.json (the platform manifest's themePack):
+// A theme pack, assets/world/themes/<id>.json (the look of a room, resolved when its scene is built: building.hpp's
+// themePackOf(), ADR-0014 §1, §5):
 //   {"schemaVersion": 1, "id": "classic_16bit_warm", "name": "Classic16BitWarm",
 //    "kinds": {"<prefab kind>": {"<material role>": "<library material>", ...}, ...},
-//    "heroParts": {"<hero corner part role>": {"<material role>": "<library material>", ...}}}
-//   A hero corner part listed under heroParts takes those materials instead of its kind's (the sign's diffuser).
+//    "heroParts": {"<hero corner part role>": {"<material role>": "<library material>", ...}},
+//    "labelPalette": ["#683D42", ...],      // optional: the generated spines' and labels' grounds, 2 to 16 colours
+//    "neon": "#B34DCE",                     // optional: the room's neon accent
+//    "neonGlow": {"intensity": 4, "range": 3.5},  // optional: the neon's glow on the wall
+//    "bloomStrength": 0.28,                 // optional: the room's bloom
+//    "lightTints": {"key": "#E6EEFF"},      // optional: the profile's roles tinted
+//    "decorationWeights": {"plant": 1.0}}   // optional, reserved: the pack's decoration weights
+//   (all of them I6 step 3; a pack leaving one out takes classic_16bit_warm's: its palette, its magenta, the profile's
+//   glow and bloom, no tints, no weights). A hero corner part listed under heroParts takes those materials instead of
+//   its kind's (the sign: its neon lettering's material, "picture", glows in the pack's "neon" colour, unit-tested).
+//   The label palette replaces assets::kDefaultLabelPalette for the room's generated spines and labels
+//   (classic_16bit_warm's is that palette). "neon" colours the light on the sign (themedLighting()): the profile's
+//   accent light anchored on it ("sign_glow"), and its picture light, whose colour is the profile's times the neon
+//   brought to full brightness and mixed with white (kSignLightNeonShare), so no pack tints it by hand. "neonGlow" sets
+//   that accent's intensity and range (the profile's when left out), "bloomStrength" the bloom of the pack's rooms (the
+//   profile's when left out; the room's area's in a floor's scene, eased like its other terms). "lightTints" multiply,
+//   in linear light, the colours of the profile's roles in the pack's rooms ("key", "pendant", "lamp", "picture",
+//   "wallWasher") and halls ("hall", the ceiling lights, and "doorwayFill"): an evening's tungsten cooler in the
+//   optical era, magenta and cyan in the arcade; a role not listed keeps the profile's colour. "decorationWeights" are
+//   reserved for the furniture variants per pack within the same footprints (I6 step 3b) and the layout candidates
+//   ADR-0014 defers: nothing reads them yet (a pack never moves a placement), the reader checks them (kinds as data
+//   ids, weights from 0 to 1).
+//   A shelf kind with the roles "board_light" and "board_glow" (both or neither; the reader refuses one alone), or a
+//   wall shelf kind with "board_light" (a wall shelf has no glow), is drawn with its lit interior (I6 step 3,
+//   geometry::ShelfParams::boardLight): a strip under each board and, on a shelf with a back, a glow on the back panel
+//   of each compartment, emissive, no light of their own.
 //   "cartridge" is the collection's item (plastic_shell, label, spine). "hall" (I6 step 2) is the floor's hall
 //   (floor_scene.hpp), a kind of the pack's own whose roles name what the hall is built of: floor, wall (the plaster
 //   above the wainscot), ceiling, trim (casings, lintels, the wainscot's rail and battens, the sconces' backplates, the
@@ -49,6 +74,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -183,11 +209,37 @@ struct LightingProfile {
 [[nodiscard]] LightingProfile roomLightingProfile(const std::filesystem::path& assetRoot,
                                                   const std::filesystem::path& userConfigDir);
 
-/// A theme pack's materials per material role of a prefab kind, and of the hero corner's parts that differ.
+/// The neon's glow on the wall (a theme pack's "neonGlow"): the sign_glow accent's intensity and range.
+struct NeonGlow {
+    double intensity = 1.5;
+    double range = 2.5;
+
+    bool operator==(const NeonGlow&) const = default;
+};
+
+/// The share of the pack's neon in its sign's picture light (themedLighting()).
+inline constexpr double kSignLightNeonShare = 0.45;
+
+/// A theme pack: its materials per material role of a prefab kind, and of the hero corner's parts that differ, its
+/// label palette, neon accent and glow, bloom, light tints and decoration weights (I6 step 3).
 struct ThemeMaterials {
     std::string id;
     std::map<std::string, std::map<std::string, std::string>, std::less<>> kinds;
     std::map<std::string, std::map<std::string, std::string>, std::less<>> heroParts;
+    /// The generated spines' and labels' palette, sRGB "#RRGGBB" (empty: assets::kDefaultLabelPalette).
+    std::vector<std::string> labelPalette;
+    /// The neon accent, sRGB "#RRGGBB": the colour of the profile's accent light on the sign and of its picture light.
+    std::string neon = "#B34DCE";
+    /// The neon's glow on the wall; none: the profile's.
+    std::optional<NeonGlow> neonGlow;
+    /// The bloom of its rooms, [0, 1]; none: the profile's.
+    std::optional<double> bloomStrength;
+    /// By role ("key", "pendant", "lamp", "picture", "wallWasher", "hall", "doorwayFill"): sRGB tints multiplied, in
+    /// linear light, into the profile's colours.
+    std::map<std::string, std::string, std::less<>> lightTints;
+    /// By prefab kind, from 0 to 1: reserved for I6 step 3b's furniture variants per pack (same footprints) and the
+    /// layout candidates ADR-0014 defers; read by nothing yet.
+    std::map<std::string, double, std::less<>> decorationWeights;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
     /// empty for a kind the theme does not dress.
@@ -209,5 +261,23 @@ struct ThemeMaterials {
 
 /// builtInThemeMaterials().materials(kind): the collection's item ("cartridge") for the app's collection instance.
 [[nodiscard]] std::map<std::string, std::string> themeMaterials(std::string_view kind);
+
+/// The theme pack ids under <assetRoot>/world/themes, sorted.
+[[nodiscard]] std::vector<std::string> themePackIds(const std::filesystem::path& assetRoot);
+
+/// `colour` (sRGB "#RRGGBB") multiplied in linear light by `tint` (sRGB "#RRGGBB"), back in sRGB "#RRGGBB" (uppercase,
+/// rounded); `colour` itself when either is not such a colour.
+[[nodiscard]] std::string tintedColour(std::string_view colour, std::string_view tint);
+
+/// `profile` as a room of `theme` is lit (I6 step 3): its roles' colours (the rooms' and the halls') tinted by the
+/// pack's lightTints; its sign's picture light the profile's times signLightTint() of the pack's neon (then its
+/// "picture" tint, if any); its accent lights anchored on the hero corner's sign in the pack's neon colour, with its
+/// neonGlow's intensity and range; its bloom the pack's bloomStrength. Other intensities, ranges, cones and the
+/// environment unchanged.
+[[nodiscard]] LightingProfile themedLighting(const LightingProfile& profile, const ThemeMaterials& theme);
+
+/// The tint of a sign's picture light from its neon (sRGB "#RRGGBB"): the neon scaled to its brightest channel, mixed
+/// with white by kSignLightNeonShare, in sRGB; white for a colour that is not such a colour or black.
+[[nodiscard]] std::string signLightTint(std::string_view neon);
 
 } // namespace rv::world

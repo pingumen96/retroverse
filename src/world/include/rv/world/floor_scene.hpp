@@ -10,7 +10,7 @@
 //     names prefixed with the room's id ("room:snes/fx:hw-w", "room:snes/room" for its shell), each light in the
 //     room's area. A room keeps at most kMaxSceneLights lights (toSceneFile()'s rule).
 //   - The hall (floor_layout.hpp's deriveHall(); the ground floor's lobby): box primitives of the theme pack's "hall"
-//     materials (room_look.hpp; the first room's pack, the built-in one for a floor without rooms or a role the pack
+//     materials (room_look.hpp; the floor's pack, FloorSceneData::hallTheme, the built-in one for a role the pack
 //     lacks, the "plant" and "poster_frame" kinds' roles too) that collide by their bounds (the walls; the floor and
 //     the ceiling collide with nothing; the plaster's uvs anchored at each box's place, so that side by side they tile
 //     on), its lights (point lights of the profile's hall role, as many as its length takes: the hall has no light
@@ -78,6 +78,8 @@ struct FloorSceneData {
     BuildingData building;
     std::map<RoomId, SceneData> rooms;
     LightingProfile lighting = eveningLightingProfile();
+    /// The floor's theme pack (building.hpp's floorThemePack(), I6 step 3): the hall's materials and light tints.
+    ThemeMaterials hallTheme = builtInThemeMaterials();
 };
 
 /// The ES-DE platform tags of the systems (classify()'s fallback for a system systems.json does not name), by system.
@@ -86,9 +88,10 @@ using PlatformTagsBySystem = std::map<catalog::SystemName, std::vector<std::stri
 /// The rooms of `floor` in `plan`, by id.
 [[nodiscard]] std::vector<const Room*> roomsOnFloor(const WorldPlan& plan, std::string_view floor);
 
-/// Reads what drawing `floor` of `plan` reads: building.json, and loadSceneData() of each of its rooms with `lighting`
-/// (else the default profile) and the platform tags of the room's first system in `platformTags`. Errors: NotFound
-/// for a floor the plan does not list; those of the building's reader and of loadSceneData().
+/// Reads what drawing `floor` of `plan` reads: building.json, the floor's theme pack (systems.json's defaults when the
+/// floor names none; the built-in pack, logged, when it does not load), and loadSceneData() of each of its rooms with
+/// `lighting` (else the default profile) and the platform tags of the room's first system in `platformTags`. Errors:
+/// NotFound for a floor the plan does not list; those of the building's and systems' readers and of loadSceneData().
 [[nodiscard]] Expected<FloorSceneData> loadFloorSceneData(const std::filesystem::path& assetRoot,
                                                           const WorldPlan& plan, std::string_view floor,
                                                           const std::optional<LightingProfile>& lighting = std::nullopt,

@@ -58,6 +58,13 @@
       "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
       "normalTexture": "procedural:oak_planks/normal"
     },
+    // A dark stained parquet (I6 step 3): the optical era's lounge and the arcade's dark base.
+    "MAT_Floor_Parquet_Dark": {
+      "baseColor": "#8A7C76", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:oak_planks/baseColor",
+      "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
+      "normalTexture": "procedural:oak_planks/normal"
+    },
 
     "MAT_Concrete_Warm": { "baseColor": "#857B70", "metallic": 0.0, "roughness": 0.92 },
     // Smoky grey-brown paint #383735 over troweled plaster, matte.
@@ -80,6 +87,49 @@
     // and the rooms' doorways; the same plaster.
     "MAT_Plaster_Ceiling": {
       "baseColor": "#3B3029", "metallic": 0.0, "roughness": 0.95,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    // The rooms' walls per theme pack (I6 step 3, docs/i6/look.md): the troweled plaster's relief and sheen in each
+    // era's tone. Classic16BitWarm's is warmer than the smoky #383735 (the look review: the rooms read cold beside the
+    // halls); the 90s collector's a warm mauve-taupe (a caramel until the step's review: with the oak it made the
+    // room 93% orange); the optical era's a dark blue-grey; the handheld archive's a lighter
+    // warm taupe (an exhibition); the computer studio's an olive study; the arcade's a dark plum (lighter since the
+    // step's review: from the hub its doorway read as a black hole).
+    "MAT_Wall_Warm": {
+      "baseColor": "#3D3430", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Wall_Mauve": {
+      "baseColor": "#45393A", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Wall_Slate": {
+      "baseColor": "#29303F", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Wall_Cream": {
+      "baseColor": "#4B4238", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Wall_Study": {
+      "baseColor": "#3A3A2E", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Wall_Night": {
+      "baseColor": "#40324A", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    // The optical era's halls: the halls' plaster towards its rooms' blue-grey, still warm enough to read as the
+    // museum's gallery.
+    "MAT_Plaster_Slate": {
+      "baseColor": "#4A4646", "metallic": 0.0, "roughness": 1.0,
       "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
       "normalTexture": "procedural:painted_plaster/normal"
     },
@@ -141,6 +191,12 @@
     "MAT_Glass_CRT": { "baseColor": "#2A302E", "metallic": 0.0, "roughness": 0.3 },
 
     "MAT_Fabric_Sofa": { "baseColor": "#683D42", "metallic": 0.0, "roughness": 0.9 },
+    // The optical era's and the arcade's seats (I6 step 3): a dark leather, a little glossier than the fabric.
+    "MAT_Fabric_Leather": { "baseColor": "#2C2522", "metallic": 0.0, "roughness": 0.55 },
+    // The 90s collector's seats: a muted teal of the decade's palette.
+    "MAT_Fabric_Teal": { "baseColor": "#2F5654", "metallic": 0.0, "roughness": 0.9 },
+    // The handheld archive's seats (the step's review): a slate-blue wool, the exhibition's cool note beside its oak.
+    "MAT_Fabric_Slate": { "baseColor": "#3A4656", "metallic": 0.0, "roughness": 0.9 },
     // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over
     // the rug's top face (uv 0..1), designed for the rug prefab's default 2.4 x 1.6 m.
     "MAT_Carpet_Ornate": {
@@ -151,6 +207,10 @@
     // The display cases' lining (I3 step 16; lighter since step 17a's review, so that a lit case reads from the
     // doorway): a bordeaux velvet of the armchair's family, dark enough that the face-out covers stand out from it.
     "MAT_Fabric_Display": { "baseColor": "#6E3842", "metallic": 0.0, "roughness": 0.95 },
+    // The display linings of the other packs (I6 step 3): a navy for the optical era and the arcade, a green baize for
+    // the handheld archive and the computer studio.
+    "MAT_Fabric_Display_Navy": { "baseColor": "#283450", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Fabric_Display_Green": { "baseColor": "#34503F", "metallic": 0.0, "roughness": 0.95 },
     // Storage boxes: kraft cardboard a shade darker than raw board, so the boxes stay behind the collection.
     "MAT_Cardboard_Box": { "baseColor": "#8E7151", "metallic": 0.0, "roughness": 0.85 },
     "MAT_Paper_Print": { "baseColor": "#EFEBE2", "metallic": 0.0, "roughness": 0.8 },
@@ -169,7 +229,29 @@
     "MAT_Plant_Leaf": { "baseColor": "#3D5634", "metallic": 0.0, "roughness": 0.55 },
     "MAT_Plant_Leaf_Light": { "baseColor": "#69783F", "metallic": 0.0, "roughness": 0.55 },
 
+    // The rooms' neon signs (I6 step 3): the 'neon' lettering (tubes with their halo on a dark panel) times the pack's
+    // accent, brighter than the test room's to bloom, not so bright that the tonemap washes it out: with the CRT the
+    // room's most saturated light (the world look case's check). The magenta of the 16-bit rooms (style §3's arcade
+    // accent), the 90s collector's soft red, the optical era's cold blue, the handheld archive's cyan, the computer
+    // studio's signage green, the arcade's hot pink and the hub's amber.
+    // MAT_Neon_Diffuser is the test room's sign (G01), as it was.
     "MAT_Neon_Diffuser": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 1.5 },
+    "MAT_Neon_Magenta": { "shading": "unlit", "baseColor": "#B34DCE", "emissiveStrength": 2.0 },
+    "MAT_Neon_Red": { "shading": "unlit", "baseColor": "#D8584A", "emissiveStrength": 2.2 },
+    "MAT_Neon_Blue": { "shading": "unlit", "baseColor": "#4C8BC9", "emissiveStrength": 2.6 },
+    "MAT_Neon_Cyan": { "shading": "unlit", "baseColor": "#5AB4D6", "emissiveStrength": 2.2 },
+    "MAT_Neon_Green": { "shading": "unlit", "baseColor": "#6EAF93", "emissiveStrength": 2.2 },
+    "MAT_Neon_Pink": { "shading": "unlit", "baseColor": "#F0509E", "emissiveStrength": 2.6 },
+    "MAT_Neon_Amber": { "shading": "unlit", "baseColor": "#FFB45A", "emissiveStrength": 2.0 },
+    // The lit shelves (I6 step 3, look.md: lit inside): the strip under each board, a tungsten LED line (style §3's
+    // #FFC88A; since the step's review warmer and dimmer, a glow rather than a white line), and its light on the
+    // compartment's back panel, the shelf glow's picture blended over it (like the halls' wall wash; no light of their
+    // own).
+    "MAT_Shelf_Light": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.6 },
+    "MAT_Shelf_Glow": {
+      "shading": "unlit", "baseColor": "#FFB878", "emissiveStrength": 1.0, "alpha": 0.45, "alphaMode": "blend",
+      "baseColorTexture": "procedural:shelfglow/baseColor"
+    },
     // The halls' portal and blade signs (I6 step 2): backlit lettering in tungsten amber (style §3), readable down the
     // hall without a light of its own, with a faint glow; the room's neon stays the room's accent.
     "MAT_Sign_Tungsten": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 2.0 },
@@ -207,6 +289,16 @@
       "emissiveStrength": 1.0,
       "doubleSided": true
     },
+    // The generated rooms' lamps (the step's review): the test room's shade a little deeper, a parchment that reads warm
+    // under its own bulb rather than white (MAT_Lamp_Shade stays the test room's, G01).
+    "MAT_Lamp_Shade_Warm": {
+      "baseColor": "#E0C49A",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "emissive": "#FFC88A",
+      "emissiveStrength": 1.0,
+      "doubleSided": true
+    },
     // The halls' wall sconces (I6 step 2): a parchment shade glowing amber from the bulb inside (a practical light of
     // style §4, not a source: its wash on the wall is MAT_Wall_Wash's quad, the hall's lamps light the hall).
     "MAT_Sconce_Shade": {
@@ -215,6 +307,16 @@
       "roughness": 0.85,
       "emissive": "#FFB46E",
       "emissiveStrength": 2.5,
+      "doubleSided": true
+    },
+    // The computer studio's lamps (I6 step 3, look.md: green-shaded lamps): a banker's green glass shade, the bulb's
+    // warm light through it.
+    "MAT_Lamp_Shade_Green": {
+      "baseColor": "#2E5A3E",
+      "metallic": 0.0,
+      "roughness": 0.35,
+      "emissive": "#B8D89A",
+      "emissiveStrength": 0.8,
       "doubleSided": true
     },
     // Printed label, meant to be multiplied by a cover texture.

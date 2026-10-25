@@ -51,7 +51,10 @@ Expected<PlatformManifest> parsePlatformManifest(std::string_view text, std::str
     (void)reader.integer("schemaVersion", 1, 1);
     manifest.system = reader.parsed<catalog::SystemName>("system", catalog::SystemName::parse, "an ES-DE system name");
     manifest.mediaFamily = reader.dataId("mediaFamily");
-    manifest.themePack = reader.dataId("themePack");
+    // Optional since I6 step 3 (ADR-0014 §1, amended): a manifest without one keeps its room's floor's pack.
+    if (!document.failed() && reader.has("themePack")) {
+        manifest.themePack = reader.dataId("themePack");
+    }
     const ObjectReader plastic = reader.object("plastic", {"accent", "cartridge", "console"});
     manifest.cartridgePlastic = plastic.checkedString("cartridge", isSrgbHexColor, kColourForm);
     manifest.consolePlastic = plastic.checkedString("console", isSrgbHexColor, kColourForm);

@@ -50,19 +50,31 @@ namespace rv::assets {
 /// makeCoverPlaceholder). Multiplied by an unlit material's color, the letters glow in that color on a dark panel.
 [[nodiscard]] ImageData makeSignLettering(int width, int height, std::string_view text);
 
+/// A room's neon sign (I6 step 3, look.md: a neon panel per room; tube-like since its review): makeSignLettering()'s
+/// lettering as bent glass tubes: the strokes rounded at their corners and ends, each tube kNeonTubeEdge grey at its
+/// rim rising to a white core over its inner third or so, a soft halo around it (the tubes blurred over about a
+/// stroke's width, so it reaches about twice the stroke's width, at most kNeonHalo grey), on a panel of kNeonBacking
+/// grey. Multiplied by an unlit material's colour, the tubes glow in that colour (their core, the brightest, whitens
+/// under the tonemap), their halo blooming on a panel tinted by the neon rather than black.
+inline constexpr float kNeonTubeEdge = 0.62f;
+inline constexpr float kNeonHalo = 0.40f;
+inline constexpr float kNeonBacking = 0.05f;
+[[nodiscard]] ImageData makeNeonLettering(int width, int height, std::string_view text);
+
 /// Pattern names shared with the scene description files (textures.<role>.pattern).
 inline constexpr std::string_view kPatternColorBars = "color_bars";
 inline constexpr std::string_view kPatternChecker = "checker";
 inline constexpr std::string_view kPatternCover = "cover";
 inline constexpr std::string_view kPatternSign = "sign";
 inline constexpr std::string_view kPatternPrint = "print";
+inline constexpr std::string_view kPatternNeon = "neon";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
 
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
-/// `title` and `seed`). Errors: NotFound for an unknown name,
+/// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`). Errors: NotFound for an unknown name,
 /// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
