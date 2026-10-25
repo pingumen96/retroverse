@@ -56,6 +56,14 @@ the kind's default; a platform manifest's `themePack` is optional and, when give
 manifest without one (`snes.json` since this review) keeps its floor's pack, so a manifest no longer freezes its
 system's look when its floor changes pack.
 
+*Amended on 2026-10-25 (I6 step 3's look review, step 3b):* rooms that differ only by colour are what style §1.2
+forbids, so a pack may also choose **furniture variants**: the prefab and its parameters that fill a hero-corner part
+or a decoration socket (an armchair, a sofa, a beanbag or a desk with a monitor; a floor lamp or a banker's lamp; the
+rug's pattern; the posters' palette and size). A variant stands **within the footprint of the part or socket it
+fills**, never in the collection's slots, so no placement, no slot and no navigation clearance changes; the plan
+records the socket's decoration as before and the pack chooses how it is drawn. Collision follows the variant's own
+bounds inside that footprint.
+
 ### 2. Side-face spines: successor families, migrated once
 
 Cases and boxes stand spine-out on their side (`SlotFacing::SideOut`): the item is turned a quarter about +Y, so its
