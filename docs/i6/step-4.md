@@ -161,6 +161,45 @@ than the concept: from the doorway the modules are small in the frame and their 
 2.7 times along a jewel case's length in the 40 x 256 layer); no spine carries a logo or a strip of colour of its
 own beyond the band.
 
+## Merged with step 3 (2026-10-25)
+
+`main`'s I6 step 3 (theme packs per floor, [step-3.md](step-3.md)) merged into this branch; both sides kept:
+
+- **The arcade room** keeps this step's `generic_case` (`kArcadeRoomFamily`) and takes step 3's resolved pack
+  (`arcade_after_dark`, `sharedRoomPlatform()` through `themePackOf()`). A migrated room's successor data
+  (`WorldData::successor`) resolve the pack on the room's floor like any stored room's, so every update records the
+  floor's pack whether it migrates a room or not.
+- **Labels**: `CoverItem` and `SpineRequest` carry both the printed spine's shape (`spine`) and the room's label
+  palette (`palette`); the spine's cache key follows both (the palette through its base colour, the shape through
+  `spine=<shape>;style=1`).
+- **Lit shelves**: the `*_v2` side and hero modules are `shelf` prefabs, so the scene builder lights them inside
+  (`boardLight`, the `board_light` strip and `board_glow` back) with the room's pack's materials like every other shelf
+  (`world/theme packs: the cases and boxes on their side stand in shelves lit inside, under each room's pack`: psx,
+  ps2, nds, amiga and the handheld shared room). The dark shells (`shellMaterial`) are the family's under any pack; the
+  pack's light tints light them.
+- **Tests and goldens**: the legacy generator-1.3 fixture is untouched; its migration case now expects every room's
+  pack rewritten to its floor's (step 3's rule: psx `console_90s_collector`, gb and the handheld shared room
+  `handheld_archive`, the computer shared room `computer_studio`, the arcade room `arcade_after_dark`, snes classic)
+  and compares everything else as before. The building plan goldens (`building-esde-seed-102938.json`,
+  `building-update-esde-seed-102938.json`) and the floors' scene digests were rewritten on purpose with
+  `RV_UPDATE_GOLDEN=1`: against this step's only each room's `themePack` and the `inputDigest` that hashes it changed,
+  against `main`'s only this step's generator 1.4, families and their rooms' contents; the SNES plan goldens and the v1
+  oracles unchanged. G02-G13 regenerated once on purpose from `msvc-x64-debug`, then 0 pixels apart in Debug and
+  Release (G12 3.1% of the pixels from `main`'s, G13 1.7%, G02 0.03%; G06's and G11's pictures `main`'s byte for byte,
+  only their metadata rewritten); G01 untouched.
+- **Suites**: Debug and Release builds without warnings; 1,905 unit tests in Debug and in Release; the 108 GPU cases
+  in Release (the overlay's picking case skipped, a developer build's), every golden matching; the benchmark path
+  (Release, `--no-vsync`, 1,230 frames) p50 3.31 ms, p95 3.59 ms, p99 3.87 ms, GPU memory peak 261.0 MiB, within the
+  acceptable 16.7 and 33.3 ms.
+- **Screenshots** (`build/i6/step4-merged`, `shots.sh` in `build/i6/step4-merged-work`: the Release GPU suite's
+  `case-shelves` and G13 data directories copied, 780 frames): `psx_doorway.png` and `psx_module_1m5.png` (the 90s
+  collector: mauve walls, oak, a red neon; 160 jewel cases, their printed spines upright in a module lit inside against
+  its navy back, the face-out cases framed black), `ps2_doorway.png` and `ps2_module_1m5.png` (the optical lounge: navy
+  walls, walnut, a blue neon; keep cases in black shells, their spines lit by the warm strip, which reads as a lit
+  cabinet in a cool room), `handheld_shared_doorway.png` and `handheld_shared_module_1m5.png` (the handheld archive:
+  taupe walls, green linings, a cyan neon; its 14 titles all face-out, its `plain_case_side` modules dressing only,
+  lit inside). The two steps read as one look: the packs set the room, the cases on their side fill its shelves.
+
 ## Deviations and follow-ups
 
 - **The display fixtures are shared** with the predecessors (face-out nothing changed): ten manifests, not twenty.
