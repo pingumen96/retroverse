@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6c85112c92979ffdd36f9bf0bf76136ffe36bdfd",
+    "gitCommit": "02a68d22762161cfb3684a934d4920a4aabfe95d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g13_shared_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "5ac8a5e798b3572d2b4376dd65b351b6e283d776e24925f426188cf9cf7406c1",
+    "sha256": "ae2f93f84573fa8c886597da505f401042aef90d0f835bc1e6884fe07909ce82",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "67818030350e8ae141c0c2961765857905f8f1ba9d992821c4a164734fb66468",
-      "fileSha256": "67818030350e8ae141c0c2961765857905f8f1ba9d992821c4a164734fb66468",
+      "digest": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
+      "fileSha256": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
       "items": 44,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "7b9e5f1195824821b19aa3c4f8d193a10b4d6854e0eca04329c1a5842ad6e0d8"
+      "sha256": "057764de31fec8b5859139578d271e606e96d8f50f77259f9a9326067eb22ef2"
     }
   },
-  "renderedOn": "2026-10-24",
+  "renderedOn": "2026-10-25",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

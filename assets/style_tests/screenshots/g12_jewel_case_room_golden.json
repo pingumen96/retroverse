@@ -1,8 +1,8 @@
 {
   "build": {
-    "buildType": "Release",
-    "gitCommit": "597ccd0f21fe44858ab8f6df35f1a0a0a6422229",
-    "preset": "msvc-x64-release",
+    "buildType": "Debug",
+    "gitCommit": "02a68d22762161cfb3684a934d4920a4aabfe95d",
+    "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
@@ -18,7 +18,7 @@
     "file": "g12_jewel_case_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "addb444a04f572f81f5af90f68d3bdd37aa944b1e1f0db9e8b5d1b7497c5c619",
+    "sha256": "588d879c8d11cf8bf235402361d7c3e6804eb6ac72d8deafc56f26eda122f628",
     "width": 1920
   },
   "inputs": {
@@ -29,27 +29,27 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "4de827c28efef19bf2c5894f88db90ad0f1317ba2a925bbb4c1882b0840a3273",
-      "fileSha256": "4de827c28efef19bf2c5894f88db90ad0f1317ba2a925bbb4c1882b0840a3273",
+      "digest": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
+      "fileSha256": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
       "items": 40,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "27787ede9bcf319c2fd01d1568d3ee8909b0b7fee3e60a681430a9359d9906a3"
+      "sha256": "057764de31fec8b5859139578d271e606e96d8f50f77259f9a9326067eb22ef2"
     }
   },
-  "renderedOn": "2026-10-24",
+  "renderedOn": "2026-10-25",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
-    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-release/bin/rv_smoke_tests.exe \"golden/G12:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G12:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
     "steps": [
       "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
-      "build/msvc-x64-release/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
-      "build/msvc-x64-release/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
-      "build/msvc-x64-release/bin/retroverse.exe --start-room room:psx --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g12.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:psx --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g12.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]
   },
   "schemaVersion": 1,
