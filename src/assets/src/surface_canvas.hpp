@@ -61,5 +61,6 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 [[nodiscard]] ProceduralSurface makeBrushedMetal(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeShelfGlow(const ProceduralSurfaceInfo& info);
 
 } // namespace rv::assets::detail

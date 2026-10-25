@@ -1,13 +1,12 @@
 // The platform visual manifest of the snes system (ADR-0010 §2; read by rv/world/platform_manifest.hpp, which documents
 // the format): how its room looks. All of it is original and brand-free (style §1, §17.2): a generic 16-bit home
-// cartridge, the warm theme pack of 8- and 16-bit rooms (style §14.1), the base materials' plastics as sRGB hex codes
-// (the aged grey of the cartridges, the aged ivory of the console's body and its muted violet accent), the generic
-// cartridge console and the sign the test room already shows.
+// cartridge, the base materials' plastics as sRGB hex codes (the aged grey of the cartridges, the aged ivory of the
+// console's body and its muted violet accent), the generic cartridge console and the sign the test room already shows.
+// It names no theme pack (I6 step 3): its room takes its floor's, gen4's classic_16bit_warm (building.json).
 {
   "schemaVersion": 1,
   "system": "snes",
   "mediaFamily": "cartridge_home_16bit",
-  "themePack": "classic_16bit_warm",
   "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"},
   "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
   "sign": {"text": "16-BIT CORNER"}

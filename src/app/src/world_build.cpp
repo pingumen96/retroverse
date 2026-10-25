@@ -22,6 +22,7 @@
 #include <rv/core/canonical_json.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
+#include <rv/core/math.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
@@ -46,6 +47,19 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 using Json = nlohmann::json;
+
+/// A theme pack's label palette (sRGB "#RRGGBB", checked by its reader) as the label requests take it, one for its
+/// room's items; a colour that does not parse is left out (an empty palette is the default one).
+[[nodiscard]] RoomPalette labelPaletteOf(const world::ThemeMaterials& theme) {
+    auto palette = std::make_shared<std::vector<assets::Rgb8>>();
+    for (const std::string& hex : theme.labelPalette) {
+        if (auto colour = core::parseHexColor(hex)) {
+            const auto byte = [](float value) { return static_cast<std::uint8_t>(std::lround(value * 255.0f)); };
+            palette->push_back(assets::Rgb8{byte(colour->r), byte(colour->g), byte(colour->b)});
+        }
+    }
+    return RoomPalette{std::move(palette)};
+}
 
 [[nodiscard]] double millisecondsSince(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -1325,6 +1339,8 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             collection.doorwayCamera =
                 doorwayCameraIn(*room, roomData->second.roomTemplate, collection.scenePlacement);
             const std::vector<catalog::SystemName> held = systemsOf(*room);
+            // The room's pack's label palette (I6 step 3) for its generated spines and labels.
+            const RoomPalette palette = labelPaletteOf(roomData->second.theme);
             collection.covers.reserve(collection.layout.items.size());
             for (const world::CollectionItem& item : collection.layout.items) {
                 // A shared or arcade room's game: its own section's text (each section's items hold the others' games
@@ -1337,6 +1353,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 cover.game = item.game;
                 cover.title = item.title;
                 cover.seed = world::placementSeed(room->seed, item.game, room->mediaFamily);
+                cover.palette = palette;
                 cover.frontKey = item.frontLayerKey;
                 cover.spineKey = item.spineLayerKey;
                 // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.

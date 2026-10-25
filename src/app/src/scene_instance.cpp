@@ -241,7 +241,7 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 
 namespace {
 
-/// `from`'s area terms (exposure, ambient, fill: what an area may set) into `to`.
+/// `from`'s area terms (exposure, ambient, fill, bloom: what an area may set) into `to`.
 void copyAreaTerms(const scene::EnvironmentSetup& from, scene::EnvironmentSetup& to) noexcept {
     to.exposure = from.exposure;
     to.ambientSky = from.ambientSky;
@@ -249,6 +249,7 @@ void copyAreaTerms(const scene::EnvironmentSetup& from, scene::EnvironmentSetup&
     to.ambientIntensity = from.ambientIntensity;
     to.fillColor = from.fillColor;
     to.fillIntensity = from.fillIntensity;
+    to.bloomStrength = from.bloomStrength;
 }
 
 } // namespace

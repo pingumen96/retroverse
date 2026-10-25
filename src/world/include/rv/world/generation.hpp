@@ -278,27 +278,39 @@ struct WorldData {
     /// needs no other input; null for the data of a stored room.
     std::shared_ptr<const WorldData> sharedRoom;
     /// The data of a stored room whose recorded family has a successor in rooms of its kind (I6 step 4, ADR-0014 §2):
-    /// the same room with its family's last successor there (MediaFamilyRegistry::latestSuccessor()), the room's theme
-    /// pack and template kept, which the update migrates it with; null otherwise.
+    /// the same room with its family's last successor there (MediaFamilyRegistry::latestSuccessor()), the room's
+    /// template kept and its theme pack resolved as its own, which the update migrates it with; null otherwise.
     std::shared_ptr<const WorldData> successor;
 };
 
 /// The platform of a shared room of `floor` or of the arcade room (`kind` Shared or Arcade; ADR-0013 §6) whose first
 /// section is `firstSection`: no console (the hero corner's console part is left out by kind), the family
-/// kSharedRoomFamily (the arcade room's kArcadeRoomFamily), and the theme pack, plastics and sign of the defaults of the floor's first kind (building.json;
-/// the arcade room's: arcade's), the fallback's sign when those defaults name none.
+/// kSharedRoomFamily (the arcade room's kArcadeRoomFamily), the plastics and sign of the defaults of the floor's first
+/// kind (building.json; the arcade room's: arcade's), the fallback's sign when those defaults name none, and the theme
+/// pack themePackOf() resolves (building.hpp: the floor's, the arcade room's by its kind; I6 step 3).
 [[nodiscard]] PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor,
                                                   const catalog::SystemName& firstSection, const SystemsData& systems,
                                                   const BuildingData& building);
 
-/// The platform of `system` (ADR-0013 §2): assets/world/platforms/<system>.json when it exists (an override), else what
-/// its classification gives: the row's media family and sign, the kind's theme pack, console prefab (none for arcade,
-/// computer and other) and plastics. Errors: InvalidArgument for an excluded system or one on no floor; those of the
-/// platform manifest's reader (other than NotFound).
+/// The platform of `system` (ADR-0013 §2): assets/world/platforms/<system>.json when it exists (an override; its theme
+/// pack only when it names one), else what its classification gives: the row's media family and sign, the kind's
+/// console prefab (none for arcade, computer and other) and plastics; the theme pack, unless the manifest names one, is
+/// the one themePackOf() resolves on `floor` (the floor its room stands on, a stored room's recorded one; empty: its
+/// classification's; I6 step 3, ADR-0014 §1 as amended). Errors: InvalidArgument for an excluded system or one on no
+/// floor; those of the platform manifest's reader (other than NotFound).
 [[nodiscard]] Expected<PlatformManifest> resolvePlatform(const std::filesystem::path& assetRoot,
                                                          const catalog::SystemName& system,
                                                          std::span<const std::string> platformTags,
-                                                         const SystemsData& systems, const BuildingData& building);
+                                                         const SystemsData& systems, const BuildingData& building,
+                                                         std::string_view floor = {});
+
+/// The theme pack `room` is drawn with now (ADR-0014 §1, I6 step 3): its platform's, resolved on its recorded floor as
+/// loadSceneData() resolves it (a console room's resolvePlatform() with `platformTags`, its manifest's pack when it
+/// names one; a shared or arcade room's sharedRoomPlatform()), what the next update records in Room::themePack.
+/// Errors: those of resolvePlatform().
+[[nodiscard]] Expected<std::string> roomThemePack(const std::filesystem::path& assetRoot, const Room& room,
+                                                  std::span<const std::string> platformTags,
+                                                  const SystemsData& systems, const BuildingData& building);
 
 /// Which room's data to read.
 struct RoomDataRequest {
@@ -310,32 +322,33 @@ struct RoomDataRequest {
     /// the system's floor; the arcade room's is the ground floor), its family kSharedRoomFamily (kArcadeRoomFamily).
     RoomKind kind = RoomKind::Console;
     std::string floor;
-    /// A stored room's recorded media family and theme pack, which are authoritative (ADR-0013 §3: a data change never
-    /// moves or freezes a room); empty: the system's.
+    /// A stored room's recorded media family, which is authoritative (ADR-0013 §3: a data change never moves or freezes
+    /// a room); empty: the system's. The theme pack is never the request's: it is resolved (ADR-0014 §1).
     std::string mediaFamily;
-    std::string themePack;
     std::string templateId = std::string(kDefaultRoomTemplate);
 };
 
 /// Reads the world's data for a room: <assetRoot>/world/templates/<templateId>.json, building.json, systems.json, the
-/// platform (a console room's system's, resolvePlatform(); a shared or arcade room's, sharedRoomPlatform(); its family
-/// and theme pack replaced by the request's when given), media_families.json (the family, its item checked against its
-/// manifest with checkItemManifest()) and, through the prefab families (assets/manifests/families.json), every prefab
-/// they name (a missing or broken manifest falls back to its family's prefab, logged once). A console room's request
-/// without a recorded family or theme pack (a system entering the building) also reads the data of the shared or arcade
-/// room its system would take a section of (WorldData::sharedRoom). A request without a recorded family takes the last
-/// successor of the platform's family in rooms of its kind (I6 step 4); one with a recorded family that has a successor
-/// in rooms of its kind also reads the data of the room's migration (WorldData::successor). Errors: those of the readers, those of
+/// platform (a console room's system's, resolvePlatform() on the request's floor; a shared or arcade room's,
+/// sharedRoomPlatform(); its family replaced by the request's when given, its theme pack resolved),
+/// media_families.json (the family, its item checked against its manifest with checkItemManifest()) and, through the
+/// prefab families (assets/manifests/families.json), every prefab they name (a missing or broken manifest falls back to
+/// its family's prefab, logged once). A console room's request without a recorded family (a system entering the
+/// building) also reads the data of the shared or arcade room its system would take a section of
+/// (WorldData::sharedRoom). A request without a recorded family takes the last successor of the platform's family in
+/// rooms of its kind (I6 step 4); one with a recorded family that has a successor in rooms of its kind also reads the
+/// data of the room's migration (WorldData::successor). Errors: those of the readers, those of
 /// resolvePlatform() (an excluded system or one on no floor: InvalidArgument, for a shared or arcade room without a
 /// floor too: a request with one, a stored room's, is read whatever its first section's classification is now),
 /// NotFound for a media family the registry lacks, ValidationFailed for an item that disagrees with its manifest.
 [[nodiscard]] Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const RoomDataRequest& request);
-/// loadWorldData() of `system`'s room, with the system's own family and theme pack.
+/// loadWorldData() of `system`'s room, with the system's own family.
 [[nodiscard]] Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot,
                                                 const catalog::SystemName& system,
                                                 std::string_view templateId = kDefaultRoomTemplate);
-/// loadWorldData() of a stored room: its kind and floor, its first section's system, its recorded family, theme pack
-/// and template (a shared or arcade room's data needs no classification of its systems: ADR-0013 §3, sticky).
+/// loadWorldData() of a stored room: its kind and floor, its first section's system, its recorded family and template
+/// (a shared or arcade room's data needs no classification of its systems: ADR-0013 §3, sticky); its theme pack is
+/// resolved anew on its recorded floor, never its recorded one (ADR-0014 §1).
 [[nodiscard]] Expected<WorldData> loadRoomData(const std::filesystem::path& assetRoot, const Room& room,
                                                std::span<const std::string> platformTags = {});
 
@@ -363,8 +376,10 @@ struct BuildingInput {
 /// document of the configuration as it shapes the rooms (reduceMotion and the lighting profile only show them), the
 /// generator's version, the library, the world seed, building.json, the plan's systems as classify() places them (the
 /// row each takes and why: its own, or the one its ES-DE platform tags matched, or the fallback, with those tags, so
-/// that tags decide the digest only when they decide the place), and per room its selection, its template by id and version, what the plan takes from its platform and media
-/// family, and every prefab as measured. The overrides are not part of it (they are protected, never applied). The
+/// that tags decide the digest only when they decide the place), and per room its selection, its template by id and
+/// version, what the plan takes from its platform (its system, media family and console, and the theme pack it
+/// resolves, which Room::themePack records: building.json's floor packs enter only so) and media family, and every
+/// prefab as measured. The overrides are not part of it (they are protected, never applied). The
 /// incremental update (incremental.hpp) records the digest of the inputs it read the same way (over the rooms it
 /// updated), so a plan's inputDigest names the inputs of its last generation or update. Errors: InvalidArgument for a
 /// configuration or selection their writers refuse.

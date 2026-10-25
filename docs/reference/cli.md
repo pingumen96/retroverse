@@ -161,7 +161,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   hard rule broken, the world locked by another program, a failed write.
   `worldplan show [<plan>] [--library <id>] [--placements] [--floor <id>] [--scene <file> [--room <id>]] [--json]`
   summarizes a plan: its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor
-  and generator (JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
+  and generator, and the theme pack it is drawn with (resolved on its floor, I6 step 3: "<pack> (recorded <old> until
+  the next update)" when the plan records another; JSON `floors`, `rooms[].kind`, `floor`, `sections`, `placement`, `generatorVersion`,
   `fileSchemaVersion`, `lifted`); exit 1 no plan, 2 usage (`--scene` on a plan of several rooms without `--room` or
   `--floor`, a `--room` or `--floor` the plan lacks, `--room` with `--floor`), 3 a plan refused or a scene not
   written; `--scene` also writes the static part of one room (shell, fixtures, dressing, lights; no collection items)
@@ -175,8 +176,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   <id>: ...", JSON `sceneFloor`): every room moved onto the floor by its placement (its ids prefixed with the room's,
   its doorway's stop left out), the hall's walls, floor, ceiling, lights and lamps, the elevator stand-in with the
   floor's sign (building.json), the lobby's entrance doors on the ground floor, the hall's dressing (I6 step 2,
-  `docs/i6/step-2.md`: the theme pack's `hall` materials, trim on every wall, a portal with the room's flat and blade
-  signs at each doorway, beams every 3 m and over the doorways, sconces washing their wall and prints in turn, benches
+  `docs/i6/step-2.md`: the floor's theme pack's `hall` materials (I6 step 3), trim on every wall, a portal with the
+  room's flat and blade signs at each doorway, beams every 3 m and over the doorways, sconces washing their wall and prints in turn, benches
   with a plant beside them, the runner), the areas whose lights the app packs
   (each room's interior with its doorway's passage, the hall), a camera in front of the elevator facing east.
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,

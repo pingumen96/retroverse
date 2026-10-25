@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -240,8 +241,9 @@ json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm
     return object;
 }
 
-/// An area of the floor; `look` its own lit terms (the hall's), none for an area lit as the scene (a room).
-json areaJson(const FloorArea& area, const AreaLook* look) {
+/// An area of the floor; `look` its own lit terms (the hall's), none for an area lit as the scene (a room); `bloom` its
+/// own bloom (a room whose theme pack's differs from the scene's, I6 step 3).
+json areaJson(const FloorArea& area, const AreaLook* look, std::optional<double> bloom = std::nullopt) {
     json boxes = json::array();
     for (std::size_t i = 0; i < area.footprints.size(); ++i) {
         const Footprint& footprint = area.footprints[i];
@@ -257,6 +259,9 @@ json areaJson(const FloorArea& area, const AreaLook* look) {
                                      {"ambientIntensity", look->ambientIntensity},
                                      {"fillColor", look->fillColor},
                                      {"fillIntensity", look->fillIntensity}};
+    }
+    if (bloom) {
+        result["environment"]["bloomStrength"] = *bloom;
     }
     return result;
 }
@@ -828,6 +833,19 @@ Expected<FloorSceneData> loadFloorSceneData(const std::filesystem::path& assetRo
         return propagate(building.error());
     }
     data.building = std::move(*building);
+    auto systems = loadSystemsData(assetRoot);
+    if (!systems) {
+        return propagate(systems.error());
+    }
+    const std::string pack = floorThemePack(floor, *systems, data.building);
+    if (auto theme = loadThemeMaterials(assetRoot, pack)) {
+        data.hallTheme = std::move(*theme);
+    } else {
+        spdlog::warn("World: the theme pack \"{}\" of the floor {} does not load ({}); its hall takes the built-in "
+                     "materials",
+                     pack, floor, theme.error().toString());
+        data.hallTheme = builtInThemeMaterials();
+    }
     if (lighting) {
         data.lighting = *lighting;
     } else if (auto profile = loadLightingProfile(assetRoot, kDefaultLightingProfile)) {
@@ -912,15 +930,14 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
 
     const FloorSpec* spec = data.building.floor(floor);
     const std::string sign = spec != nullptr && !spec->sign.empty() ? spec->sign : std::string(floor);
-    // The rooms' theme dresses the sign; a floor without rooms takes the built-in one.
-    const ThemeMaterials& theme = floorRooms.empty() ? builtInThemeMaterials()
-                                                     : data.rooms.at(floorRooms.front().room->id).theme;
+    // The floor's pack dresses and tints the hall (I6 step 3, ADR-0014 §5).
     std::map<RoomId, std::string> roomSigns;
     for (const FloorRoom& entry : floorRooms) {
         roomSigns.emplace(entry.room->id, data.rooms.at(entry.room->id).platform.signText);
     }
-    addHallObjects(build.hall, sign, theme, roomSigns, objects);
-    addHallLights(build.hall, data.lighting, lights);
+    const LightingProfile hallLighting = themedLighting(data.lighting, data.hallTheme);
+    addHallObjects(build.hall, sign, data.hallTheme, roomSigns, objects);
+    addHallLights(build.hall, hallLighting, lights);
 
     // The rooms' areas are lit as the scene (the profile's environment); the hall by the hall role's own terms (the
     // lobby by its own).
@@ -929,7 +946,15 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     for (const FloorArea& area : floorAreas(build.hall, floorRooms)) {
         const AreaLook& hallLook =
             build.hall.lobby ? data.lighting.hall.lobbyEnvironment : data.lighting.hall.environment;
-        areas.push_back(areaJson(area, area.id == hallArea ? &hallLook : nullptr));
+        // A room whose pack blooms otherwise than the scene (the hall's pack's) has its own bloom (I6 step 3).
+        std::optional<double> bloom;
+        for (const FloorRoom& entry : floorRooms) {
+            const double roomBloom = data.rooms.at(entry.room->id).lighting.bloomStrength;
+            if (entry.room->id.toString() == area.id && roomBloom != hallLighting.bloomStrength) {
+                bloom = roomBloom;
+            }
+        }
+        areas.push_back(areaJson(area, area.id == hallArea ? &hallLook : nullptr, bloom));
     }
 
     // The floor's extent: the hall with its walls and every room's footprint.
@@ -962,6 +987,8 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
                                          {"radius", profile.ssaoRadius},
                                          {"intensity", profile.ssaoIntensity}}}};
     }
+    // The scene's bloom is the hall's pack's, not its first room's (a room of another bloom has its area's).
+    environment["bloomStrength"] = hallLighting.bloomStrength;
 
     build.sceneFile = json{{"schemaVersion", scene::kSceneSchemaVersion},
                            {"name", "floor:" + std::string(floor)},

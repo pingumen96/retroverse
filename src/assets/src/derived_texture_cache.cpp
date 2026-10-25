@@ -124,7 +124,8 @@ CacheKey frontLabelCacheKey(const FrontLabelRequest& request, TextureFormat form
     const std::string_view parts[] = {fonts.title != nullptr ? std::string_view(fonts.title->sha256()) : "",
                                       detail != nullptr ? std::string_view(detail->sha256()) : "", shape};
     // The shape is one more element after the fonts, only for a shape other than the layer's (I3's keys unchanged).
-    return generatedCacheKey(TextureClass::Front, format, texts, paletteColour(request.seed),
+    return generatedCacheKey(TextureClass::Front, format, texts,
+                             paletteColour(request.seed, labelPaletteOr(request.palette)),
                              std::span<const std::string_view>(parts, shape.empty() ? 2 : 3));
 }
 

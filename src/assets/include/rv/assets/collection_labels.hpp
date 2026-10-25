@@ -54,8 +54,9 @@ inline constexpr double kLabelContrastTarget = 4.8;
 inline constexpr Rgb8 kLabelTextLight{0xF4, 0xEF, 0xE6};
 inline constexpr Rgb8 kLabelTextDark{0x17, 0x1B, 0x22};
 
-/// The theme's label palette: style §3's roles (bordeaux, electric blue, sign green, arcade magenta, oak, graphite,
-/// tungsten amber, ivory).
+/// The default label palette: style §3's roles (bordeaux, electric blue, sign green, arcade magenta, oak, graphite,
+/// tungsten amber, ivory). Since I6 step 3 a room's theme pack gives its own (rv/world/room_look.hpp's labelPalette;
+/// classic_16bit_warm's is this one), carried by the requests below; this one stands for a request without any.
 inline constexpr std::array<Rgb8, 8> kDefaultLabelPalette = {{
     {0x68, 0x3D, 0x42},
     {0x4C, 0x8B, 0xC9},
@@ -83,6 +84,9 @@ struct LabelColours {
 
 /// The palette's colour for a placement's seed (core::Random(seed).below(size)); the first for an empty palette.
 [[nodiscard]] Rgb8 paletteColour(std::uint64_t seed, std::span<const Rgb8> palette = kDefaultLabelPalette) noexcept;
+
+/// `palette`, or kDefaultLabelPalette when it is empty (a request without a pack's palette).
+[[nodiscard]] std::span<const Rgb8> labelPaletteOr(std::span<const Rgb8> palette) noexcept;
 
 /// The fonts of the generated layers: the title's and the details' (both may be the same face).
 struct LabelFonts {
@@ -146,6 +150,9 @@ struct SpineRequest {
     /// top 12%, then resampled once into the layer, which the quad stretches back; the layer's own shape by default
     /// (I3's spine, the cartridges').
     LabelAspect spine;
+    /// The room's theme pack's label palette (I6 step 3), not owned (the caller's, alive while the request is served);
+    /// empty: kDefaultLabelPalette.
+    std::span<const Rgb8> palette;
 };
 
 struct FrontLabelRequest {
@@ -154,13 +161,15 @@ struct FrontLabelRequest {
     std::string systemName; ///< the system's full name (catalog data; an invented one in committed fixtures)
     std::string year;       ///< "1994", or empty
     std::uint64_t seed = 0;
+    /// The room's theme pack's label palette (I6 step 3), not owned; empty: kDefaultLabelPalette.
+    std::span<const Rgb8> palette;
     /// The label quad's shape (ADR-0013 §4): the label is laid out on a canvas of that shape (labelCanvas(): the
     /// frame, the stripes and the title at the layer's scale, the title's band taller or the lines wider), then
     /// resampled once into the layer; the layer's own shape by default (I3's label).
     LabelAspect label;
 };
 
-/// The colour a spine starts from: the cover's dominant colour, else the palette's colour for the seed.
+/// The colour a spine starts from: the cover's dominant colour, else the request's palette's colour for the seed.
 [[nodiscard]] Rgb8 spineBaseColour(const SpineRequest& request) noexcept;
 
 /// A generated layer's picture (level 0, before encoding) and what was decided.

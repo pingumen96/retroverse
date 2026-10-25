@@ -94,6 +94,7 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
             request.systemName = item.systemName;
             request.year = item.year;
             request.seed = item.seed;
+            request.palette = item.palette.view();
             request.label = item.label;
             if (auto label = assets::serveFrontLabel(cache, fonts, request, textureFormat)) {
                 layers.front = toLayerImage(label->texture);
@@ -109,6 +110,7 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
         spine.coverColour = coverColour;
         spine.seed = item.seed;
         spine.spine = item.spine;
+        spine.palette = item.palette.view();
         if (auto served = assets::serveSpine(cache, fonts, spine, textureFormat)) {
             layers.spine = toLayerImage(served->texture);
             layers.spineOutcome = served->outcome;

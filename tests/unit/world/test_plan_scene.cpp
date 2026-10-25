@@ -161,7 +161,13 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
             REQUIRE(prefab != nullptr);
             REQUIRE(object.source == rv::scene::SceneObject::Source::Prefab);
             CHECK(object.kind == fixture.prefab.kind);
-            CHECK(object.params == prefab->params);
+            // The prefab's parameters, a shelf's lit by the pack (I6 step 3, boardLight) without changing its size.
+            nlohmann::json params = prefab->params;
+            if ((object.kind == "shelf" || object.kind == "wall_shelf") &&
+                entry.data.theme.materials(object.kind).contains("board_light")) {
+                params["boardLight"] = true;
+            }
+            CHECK(object.params == params);
             auto built = rv::geometry::buildPrefab(object.kind, object.params);
             REQUIRE(built.has_value());
             // The prefab the plan measured: its bounds in whole millimetres.
@@ -312,10 +318,12 @@ TEST_CASE("world/plan_scene: the dressing stands in its levels' free volumes; di
 
 TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and intensities",
           "[world][plan_scene]") {
-    // The shipped default profile (assets/world/lighting/evening.json), which the scene data reads.
+    // The shipped default profile (assets/world/lighting/evening.json), which the scene data reads, as the SNES room's
+    // pack lights it (I6 step 3: the sign's light in its neon; classic_16bit_warm, the built-in pack).
     const auto loaded = rv::world::loadLightingProfile(rv::test::world::sourceAssetRoot(), "evening");
     REQUIRE(loaded.has_value());
-    const rv::world::LightingProfile& profile = *loaded;
+    const rv::world::LightingProfile profile =
+        rv::world::themedLighting(*loaded, rv::world::builtInThemeMaterials());
     REQUIRE_FALSE(profile.accents.empty());
     for (const std::string& name : {"plan-0-seed-102938", "plan-890-seed-102938", "plan-8000-seed-102938"}) {
         INFO(name);
@@ -406,9 +414,9 @@ TEST_CASE("world/plan_scene: the scene file reads back as the scene description,
         CHECK(loaded->objects[i].transform == scene.objects[i].transform);
     }
     CHECK(loaded->lights.size() == scene.lights.size());
-    // The sign shows the platform's text; the CRT its idle colour bars.
+    // The sign shows the platform's text as neon tubes (I6 step 3); the CRT its idle colour bars.
     const rv::scene::SceneObject& sign = *loaded->findObject("fx:hero.sign");
-    CHECK(sign.texturesByRole.at("picture").pattern == "sign");
+    CHECK(sign.texturesByRole.at("picture").pattern == "neon");
     CHECK(sign.texturesByRole.at("picture").title == entry.data.platform.signText);
     CHECK(loaded->findObject("fx:hero.crt")->texturesByRole.at("screen").pattern == "color_bars");
     CHECK(loaded->findObject("fx:hero.crt")->materialNameForRole("screen") == "MAT_Screen_CRT_Room");

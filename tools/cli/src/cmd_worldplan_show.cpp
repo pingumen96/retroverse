@@ -31,6 +31,7 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/floor_scene.hpp>
+#include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_plan.hpp>
@@ -190,6 +191,28 @@ world::PlatformTagsBySystem catalogPlatformTagsOf(const core::Paths& paths, cons
         }
     }
     return tags;
+}
+
+/// The theme pack each room of `plan` is drawn with now (world::roomThemePack(), ADR-0014 §1), for the summary; a room
+/// whose pack cannot be resolved (logged at debug level) shows its recorded one.
+std::map<world::RoomId, std::string> resolvedThemePacks(CommandContext& context, const world::WorldPlan& plan) {
+    std::map<world::RoomId, std::string> packs;
+    auto building = world::loadBuildingData(context.paths.assetRoot());
+    auto systems = world::loadSystemsData(context.paths.assetRoot());
+    if (!building || !systems) {
+        spdlog::debug("worldplan show: the rooms' theme packs as recorded: {}",
+                      (!building ? building.error() : systems.error()).toString());
+        return packs;
+    }
+    for (const world::Room& room : plan.rooms) {
+        if (auto pack = world::roomThemePack(context.paths.assetRoot(), room, {}, *systems, *building)) {
+            packs.emplace(room.id, std::move(*pack));
+        } else {
+            spdlog::debug("worldplan show: {}'s theme pack as recorded: {}", room.id.toString(),
+                          pack.error().toString());
+        }
+    }
+    return packs;
 }
 
 /// A floor of the plan as `--floor` shows it: its hall and rooms, and its scene when --scene asks for it.
@@ -446,7 +469,8 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
     } else {
         results = planSummaryText(*plan, digest,
                                   fmt::format("Plan {}{}", pathText(planPath),
-                                              read->lifted() ? " (schema 1, lifted into the building)" : ""));
+                                              read->lifted() ? " (schema 1, lifted into the building)" : ""),
+                                  resolvedThemePacks(context, *plan));
         if (args->has("placements")) {
             results += listingText(*plan);
         }

@@ -272,7 +272,7 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
     ParamReader r("shelf", params,
                   {"width", "height", "depth", "levels", "boardThickness", "back", "plinthHeight", "slotSize",
                    "slotGap", "slotMargin", "slotFrontInset", "displayLevels", "displaySlotSize", "displaySlotGap",
-                   "displaySlotMargin"});
+                   "displaySlotMargin", "boardLight"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -288,6 +288,7 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
     r.read("displaySlotSize", p.displaySlotSize);
     r.read("displaySlotGap", p.displaySlotGap);
     r.read("displaySlotMargin", p.displaySlotMargin);
+    r.read("boardLight", p.boardLight);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -449,7 +450,8 @@ Expected<ProceduralPrefab> wallShelfFromJson(const Json& params) {
     WallShelfParams p;
     ParamReader r(
         "wall_shelf", params,
-        {"width", "height", "depth", "mountHeight", "ledges", "tiltDeg", "slotSize", "slotGap", "slotMargin"});
+        {"width", "height", "depth", "mountHeight", "ledges", "tiltDeg", "slotSize", "slotGap", "slotMargin",
+         "boardLight"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -459,6 +461,7 @@ Expected<ProceduralPrefab> wallShelfFromJson(const Json& params) {
     r.read("slotSize", p.slotSize);
     r.read("slotGap", p.slotGap);
     r.read("slotMargin", p.slotMargin);
+    r.read("boardLight", p.boardLight);
     if (!r.ok()) {
         return propagate(r.error());
     }

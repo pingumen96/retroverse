@@ -51,6 +51,11 @@ chooses geometry, slots or placements.
 - **What this replaces.** ADR-0013 §3's "the recorded theme pack is authoritative" is withdrawn for the theme pack
   only. The family stays recorded (§2 below).
 
+*Amended on 2026-10-24 (I6 step 3's review):* the precedence is the floor's pack (the arcade room's by its kind), else
+the kind's default; a platform manifest's `themePack` is optional and, when given, overrides both on any floor. A
+manifest without one (`snes.json` since this review) keeps its floor's pack, so a manifest no longer freezes its
+system's look when its floor changes pack.
+
 ### 2. Side-face spines: successor families, migrated once
 
 Cases and boxes stand spine-out on their side (`SlotFacing::SideOut`): the item is turned a quarter about +Y, so its

@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -383,8 +384,21 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     CHECK(migrated.changes.needsConfirmation.empty());
     CHECK(migrated.plan.generatorVersion == rv::world::kGeneratorVersion);
 
-    // Every other room byte for byte, and the whole plan outside the migrated rooms but for the generator's stamps and
-    // the inputs' digest: the floors, the hall's lights, every element of gb, snes and the arcade room.
+    // Every room records the pack its floor resolves now (I6 step 3, ADR-0014 §1: a look, written by every update),
+    // whether migrated or not; the legacy plan recorded the kinds' defaults of generator 1.3's time.
+    const std::map<std::string, std::string> packs = {
+        {"area:arcade", "arcade_after_dark"},        {"area:shared:computer", "computer_studio"},
+        {"area:shared:handheld", "handheld_archive"}, {"room:gb", "handheld_archive"},
+        {"room:psx", "console_90s_collector"},       {"room:snes", "classic_16bit_warm"}};
+    REQUIRE(migrated.plan.rooms.size() == packs.size());
+    for (const Room& room : migrated.plan.rooms) {
+        INFO(room.id.toString());
+        CHECK(room.themePack == packs.at(room.id.toString()));
+    }
+
+    // Every other room byte for byte, and the whole plan outside the migrated rooms but for the generator's stamps,
+    // the inputs' digest and the rewritten packs: the floors, the hall's lights, every element of gb, snes and the
+    // arcade room.
     const auto withoutMigrated = [&](WorldPlan plan) {
         for (const MigratedRoom& entry : expected) {
             std::erase_if(plan.rooms, [&](const Room& room) { return room.id == entry.room; });
@@ -400,6 +414,7 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
         plan.inputDigest = legacy->inputDigest;
         for (Room& room : plan.rooms) {
             room.generatorVersion = rv::world::GeneratorVersion{1, 3};
+            room.themePack = findRoom(*legacy, room.id.toString())->themePack;
         }
         auto written = rv::world::writePlan(plan);
         REQUIRE(written.has_value());

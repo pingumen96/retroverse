@@ -1,0 +1,53 @@
+// The theme pack HandheldArchive (I6 step 3, style §14.5, docs/i6/look.md: the handhelds' floor, concept panel 6;
+// read by rv/world/room_look.hpp, which documents the format): an archive of small objects in exhibition light.
+// Parquet under a warm taupe plaster, dark walnut shelving lit inside over a dark wainscot, oak-framed glass cases lined
+// in green baize, an ivory CRT, oak frames, a slate-blue armchair (the 90s collector's teal until the step's review);
+// the neon a soft cyan, the spots a neutral exhibition white.
+{
+  "schemaVersion": 1,
+  "id": "handheld_archive",
+  "name": "HandheldArchive",
+  "kinds": {
+    "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Cream", "ceiling": "MAT_Wall_Cream",
+                   "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
+    "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+              "board_light": "MAT_Shelf_Light", "board_glow": "MAT_Shelf_Glow"},
+    "wall_shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                   "board_light": "MAT_Shelf_Light"},
+    "crt": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+            "screen": "MAT_Screen_CRT_Room", "plastic_dark": "MAT_Plastic_Black"},
+    "tv_cabinet": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                   "metal_trim": "MAT_Metal_Brushed"},
+    "console_cartridge": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                          "plastic_accent": "MAT_Plastic_Accent"},
+    "poster_frame": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
+    "rug": {"fabric": "MAT_Carpet_Ornate"},
+    "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
+    "armchair": {"fabric": "MAT_Fabric_Slate", "wood": "MAT_Wood_Oak"},
+    "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                     "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Green",
+                     "glass": "MAT_Glass_Display"},
+    "storage_box": {"cardboard": "MAT_Cardboard_Box", "label": "MAT_Paper_Print"},
+    "magazine_stack": {"paper": "MAT_Paper_Magazine", "cover": "MAT_Label_Print"},
+    "bookends": {"metal": "MAT_Metal_Graphite", "book": "MAT_Book_Cloth", "book_alt": "MAT_Book_Cloth_Alt"},
+    "plant": {"pot": "MAT_Ceramic_Glazed", "soil": "MAT_Soil", "leaves": "MAT_Plant_Leaf",
+              "leaves_alt": "MAT_Plant_Leaf_Light"},
+    "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
+    "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
+    "hall": {"floor": "MAT_Floor_OakPlanks", "wall": "MAT_Plaster_Warm", "ceiling": "MAT_Plaster_Ceiling",
+             "trim": "MAT_Wood_Oak", "baseboard": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark",
+             "runner": "MAT_Carpet_Ornate", "beam": "MAT_Wood_Walnut", "bench": "MAT_Wood_Walnut",
+             "cushion": "MAT_Fabric_Teal", "plant": "MAT_Ceramic_Glazed", "saucer": "MAT_Ceramic_Saucer",
+             "picture": "MAT_Wood_Walnut", "sconce": "MAT_Sconce_Shade", "wash": "MAT_Wall_Wash",
+             "sign": "MAT_Sign_Tungsten"}
+  },
+  "heroParts": {
+    "sign": {"frame": "MAT_Wood_Oak", "picture": "MAT_Neon_Cyan"}
+  },
+  "labelPalette": ["#6EAF93", "#4C8BC9", "#9DB8A0", "#76513A", "#C9C4B6", "#5E7F9E", "#8E8E8A", "#F4EFE6"],
+  "neon": "#5AB4D6",
+  "neonGlow": {"intensity": 3.6, "range": 3.5},
+  "lightTints": {"key": "#FFF8F2", "wallWasher": "#FFF8F2"},
+  "decorationWeights": {"bookends": 0.4, "floor_lamp": 0.6, "magazine_stack": 0.8, "plant": 0.6, "poster_frame": 0.8,
+                        "storage_box": 1.0, "tv_cabinet": 0.5}
+}

@@ -736,6 +736,74 @@ TEST_CASE("geometry/prefabs: horizontal boards bevel their top edges only", "[ge
     CHECK(upwardBevels(part(cabinet, "wood_primary"), 0.55f - 0.03f - 1e-4f) > 0);
 }
 
+TEST_CASE("geometry/prefabs: a shelf lit inside: a strip under each board, a glow on each compartment's back",
+          "[geometry][prefabs][shelf]") {
+    // I6 step 3 (look.md: lit shelf interiors): ShelfParams::boardLight adds two parts after the contract roles and
+    // changes nothing else; by default the shelf is as before.
+    const ProceduralPrefab plain = buildOk("shelf");
+    CHECK(rv::geometry::findPart(plain, "board_light") == nullptr);
+    CHECK(rv::geometry::findPart(plain, "board_glow") == nullptr);
+    const ProceduralPrefab lit = buildOk("shelf", {{"boardLight", true}});
+    REQUIRE(lit.parts.size() == 4);
+    CHECK(lit.parts[2].materialRole == "board_light");
+    CHECK(lit.parts[3].materialRole == "board_glow");
+    CHECK(lit.bounds.min == plain.bounds.min);
+    CHECK(lit.bounds.max == plain.bounds.max);
+    REQUIRE(lit.sockets.size() == plain.sockets.size());
+    for (std::size_t i = 0; i < plain.sockets.size(); ++i) {
+        CHECK(lit.sockets[i].id == plain.sockets[i].id);
+        CHECK(lit.sockets[i].transform == plain.sockets[i].transform);
+    }
+    CHECK(part(lit, "wood_primary").mesh.vertices.size() == part(plain, "wood_primary").mesh.vertices.size());
+    // The default shelf: 5 levels of 2 m, 2.5 cm boards over an 8 cm plinth, 35 cm deep with an 8 mm back.
+    const rv::geometry::ShelfParams p;
+    const float pitch = (p.height - p.boardThickness - p.plinthHeight) / static_cast<float>(p.levels);
+    // One strip (its underside and front, 8 vertices) under each of the five boards above a compartment, facing down
+    // and out, just under the board, 2 cm behind the front edge.
+    const PrefabPart& strips = part(lit, "board_light");
+    REQUIRE(strips.mesh.vertices.size() == static_cast<std::size_t>(p.levels) * 8u);
+    std::set<int> undersides;
+    for (const rv::geometry::Vertex& v : strips.mesh.vertices) {
+        CHECK((v.normal.y < -0.99f || v.normal.z > 0.99f));
+        CHECK(v.position.z <= 0.5f * p.depth - 0.02f + 1e-5f);
+        CHECK(v.position.z >= 0.5f * p.depth - 0.032f - 1e-5f);
+        if (v.normal.y < -0.99f) {
+            undersides.insert(static_cast<int>(std::lround((v.position.y + 0.003f) * 10000.0f)));
+        }
+    }
+    std::set<int> boards;
+    for (int level = 1; level <= p.levels; ++level) {
+        const float underside =
+            level < p.levels ? p.plinthHeight + static_cast<float>(level) * pitch : p.height - p.boardThickness;
+        boards.insert(static_cast<int>(std::lround(underside * 10000.0f)));
+    }
+    CHECK(undersides == boards);
+    // A glow quad over the back panel of each compartment, facing +Z 1.5 mm in front of it, its picture upright.
+    const PrefabPart& glow = part(lit, "board_glow");
+    REQUIRE(glow.mesh.vertices.size() == static_cast<std::size_t>(p.levels) * 4u);
+    for (const rv::geometry::Vertex& v : glow.mesh.vertices) {
+        CHECK(v.normal.z == Approx(1.0f));
+        CHECK(v.position.z == Approx(-0.5f * p.depth + 0.008f + 0.0015f));
+    }
+    float topV = 1.0f;
+    float topY = -1.0f;
+    for (const rv::geometry::Vertex& v : glow.mesh.vertices) {
+        if (v.position.y > topY) {
+            topY = v.position.y;
+            topV = v.uv0.y;
+        }
+    }
+    CHECK(topY == Approx(p.height - p.boardThickness));
+    CHECK(topV == Approx(0.0f)); // uv (0, 0) at the top-left: the glow's strongest edge under the strip
+    // Without a back panel, no glow; the wall shelf gets strips under its cap and its upper ledges.
+    CHECK(rv::geometry::findPart(buildOk("shelf", {{"boardLight", true}, {"back", false}}), "board_glow") == nullptr);
+    const ProceduralPrefab wall = buildOk("wall_shelf", {{"boardLight", true}});
+    const rv::geometry::WallShelfParams w;
+    CHECK(part(wall, "board_light").mesh.vertices.size() == static_cast<std::size_t>(w.ledges) * 8u);
+    CHECK(rv::geometry::findPart(buildOk("wall_shelf"), "board_light") == nullptr);
+    CHECK(buildError("shelf", {{"boardLight", 1}}).toString().find("boardLight") != std::string::npos);
+}
+
 TEST_CASE("geometry/prefabs: the wainscot lines the walls and stops at the doorway", "[geometry][prefabs][wainscot]") {
     const ProceduralPrefab room = buildOk("room_shell", {{"wainscotHeight", 1.0}});
     const PrefabPart& wainscot = part(room, "wainscot");

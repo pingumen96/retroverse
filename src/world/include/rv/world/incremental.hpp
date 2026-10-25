@@ -15,8 +15,10 @@
 //     unplaced entries stand as they were (a duplicate keeps its representative), the games of its selection that it
 //     neither places nor lists are unplaced with reason room-kept (entries that follow the selection: an update with
 //     the same selection changes nothing), and the report lists it with the reason (ChangeReport::keptRooms). The
-//     room's recorded media family and theme pack are authoritative: its data is read with them (loadRoomData()), so a
-//     data change never freezes a room;
+//     room's recorded media family is authoritative: its data is read with it (loadRoomData()), so a data change never
+//     freezes a room; its theme pack is a look, resolved on its floor and written into the plan by every update, for
+//     every stored room (kept, held, updated or given no selection), never a reason to keep or regenerate it and no
+//     change of the inputs for the provenance (ADR-0014 §1);
 //   - in any other room every placement is kept as it is, also a game's that is now unavailable, no longer eligible
 //     (its cover gone: it keeps its slot with a generated label), hidden, or gone from the catalog's snapshot: its slot
 //     is never given to another game (free slots are never compacted);
@@ -153,8 +155,8 @@ struct BuildingUpdateInput {
 [[nodiscard]] std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldData& data);
 
 /// The previous building updated by the rules of the file's header; `rooms` holds the data of every room of the
-/// previous plan (loadRoomData(): its recorded family, theme pack and template, with the data of its migration when
-/// that family has a successor: WorldData::successor), by its system, and of every system
+/// previous plan (loadRoomData(): its recorded family and template, with the data of its migration when that family
+/// has a successor: WorldData::successor), by its system, and of every system
 /// entering the building (loadWorldData() of the system with its platform tags: its console room's with the room its
 /// section would stand in). Errors: InvalidArgument for a previous plan of another library, a selection that is not of
 /// a system's room, two selections of one system, a room without data in `rooms` or with data of another family than

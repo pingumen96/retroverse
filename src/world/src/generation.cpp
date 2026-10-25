@@ -137,7 +137,8 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
     data.roomTemplate = inputs.roomTemplate;
     data.kind = request.kind;
     if (request.kind == RoomKind::Console) {
-        auto platform = resolvePlatform(assetRoot, request.system, request.platformTags, data.systems, data.building);
+        auto platform = resolvePlatform(assetRoot, request.system, request.platformTags, data.systems, data.building,
+                                        request.floor);
         if (!platform) {
             return propagate(platform.error());
         }
@@ -160,16 +161,13 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
         }
         data.platform = sharedRoomPlatform(request.kind, floor, request.system, data.systems, data.building);
     }
-    // A stored room's family and theme pack are authoritative (ADR-0013 §3). A new room takes the last successor of
-    // the family its platform names in rooms of its kind (I6 step 4, ADR-0014 §2: a platform file naming a family that
-    // has one plans the successor's room, never one the next update would migrate).
+    // A stored room's family is authoritative (ADR-0013 §3); its theme pack is a look, resolved (ADR-0014 §1). A new
+    // room takes the last successor of the family its platform names in rooms of its kind (I6 step 4, ADR-0014 §2: a
+    // platform file naming a family that has one plans the successor's room, never one the next update would migrate).
     if (!request.mediaFamily.empty()) {
         data.platform.mediaFamily = request.mediaFamily;
     } else if (const MediaFamily* latest = inputs.families.latestSuccessor(data.platform.mediaFamily, request.kind)) {
         data.platform.mediaFamily = latest->id;
-    }
-    if (!request.themePack.empty()) {
-        data.platform.themePack = request.themePack;
     }
     const MediaFamily* family = inputs.families.find(data.platform.mediaFamily);
     if (family == nullptr) {
@@ -629,7 +627,7 @@ GeneratorVersion highestGeneratorVersion(const WorldPlan& plan) {
 
 Expected<PlatformManifest> resolvePlatform(const std::filesystem::path& assetRoot, const catalog::SystemName& system,
                                            std::span<const std::string> platformTags, const SystemsData& systems,
-                                           const BuildingData& building) {
+                                           const BuildingData& building, std::string_view floor) {
     const Classification classification = classify(system, platformTags, systems, building);
     if (!classification.hasRoom()) {
         return makeError(ErrorCode::InvalidArgument,
@@ -637,21 +635,46 @@ Expected<PlatformManifest> resolvePlatform(const std::filesystem::path& assetRoo
                              std::string(toString(classification.kind())) + ")",
                          "world/systems.json");
     }
+    // The pack of the floor its room stands on (a stored room's recorded one; else its classification's), unless its
+    // manifest names one (ADR-0014 §1 as amended).
+    const std::string floorPack =
+        themePackOf(RoomKind::Console, floor.empty() ? std::string_view(classification.floor) : floor,
+                    classification.kind(), systems, building);
     auto manifest = loadPlatformManifest(assetRoot, system);
-    if (manifest || manifest.error().code != ErrorCode::NotFound) {
+    if (manifest) {
+        if (manifest->themePack.empty()) {
+            manifest->themePack = floorPack;
+        }
+        return manifest;
+    }
+    if (manifest.error().code != ErrorCode::NotFound) {
         return manifest;
     }
     const KindDefaults& defaults = systems.defaultsOf(classification.kind());
     PlatformManifest platform;
     platform.system = system;
     platform.mediaFamily = classification.entry.family;
-    platform.themePack = defaults.themePack;
+    platform.themePack = floorPack;
     platform.cartridgePlastic = defaults.cartridgePlastic;
     platform.consolePlastic = defaults.consolePlastic;
     platform.accentPlastic = defaults.accentPlastic;
     platform.console = defaults.console;
     platform.signText = classification.entry.sign;
     return platform;
+}
+
+Expected<std::string> roomThemePack(const std::filesystem::path& assetRoot, const Room& room,
+                                    std::span<const std::string> platformTags, const SystemsData& systems,
+                                    const BuildingData& building) {
+    const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
+    if (room.kind != RoomKind::Console) {
+        return sharedRoomPlatform(room.kind, room.floor, system, systems, building).themePack;
+    }
+    auto platform = resolvePlatform(assetRoot, system, platformTags, systems, building, room.floor);
+    if (!platform) {
+        return propagate(platform.error());
+    }
+    return std::move(platform->themePack);
 }
 
 PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor, const catalog::SystemName& firstSection,
@@ -665,7 +688,7 @@ PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor, const
     PlatformManifest platform;
     platform.system = firstSection;
     platform.mediaFamily = std::string(kind == RoomKind::Arcade ? kArcadeRoomFamily : kSharedRoomFamily);
-    platform.themePack = defaults.themePack;
+    platform.themePack = themePackOf(kind, floor, defaultsKind, systems, building);
     platform.cartridgePlastic = defaults.cartridgePlastic;
     platform.consolePlastic = defaults.consolePlastic;
     platform.accentPlastic = defaults.accentPlastic;
@@ -686,7 +709,7 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
     }
     // A system entering the building may take a section rather than a room of its own (ADR-0013 §3): the data of that
     // room comes with its own, the prefabs both name measured once.
-    if (request.kind == RoomKind::Console && request.mediaFamily.empty() && request.themePack.empty()) {
+    if (request.kind == RoomKind::Console && request.mediaFamily.empty()) {
         const Classification classification =
             classify(request.system, request.platformTags, inputs->systems, inputs->building);
         RoomDataRequest shared = request;
@@ -701,8 +724,8 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
         data->sharedRoom = std::make_shared<const WorldData>(std::move(*sharedData));
     }
     // A stored room of a family that has a successor in rooms of its kind (I6 step 4, ADR-0014 §2): the data of its
-    // migration comes with its own, the same room with the last successor of its family (its theme pack and template
-    // kept).
+    // migration comes with its own, the same room with the last successor of its family (its template kept, its theme
+    // pack resolved on its floor as its own).
     if (!request.mediaFamily.empty() && inputs->families.successorOf(request.mediaFamily, request.kind) != nullptr) {
         const MediaFamily* latest = inputs->families.latestSuccessor(request.mediaFamily, request.kind);
         RoomDataRequest migrated = request;
@@ -737,7 +760,6 @@ Expected<WorldData> loadRoomData(const std::filesystem::path& assetRoot, const R
     request.kind = room.kind;
     request.floor = room.floor;
     request.mediaFamily = room.mediaFamily;
-    request.themePack = room.themePack;
     request.templateId = room.templateId;
     return loadWorldData(assetRoot, request);
 }

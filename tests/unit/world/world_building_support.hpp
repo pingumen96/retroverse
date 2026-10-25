@@ -188,8 +188,8 @@ enum class StoredRoomData {
     /// loadRoomData() of each stored room, as the CLI and the app read it.
     Recorded,
     /// The data of each stored room's first section entering the building (loadWorldData(), which carries the shared
-    /// or arcade room it would take a section of): updateBuilding() takes a stored room's from it when its family and
-    /// theme pack are the room's (the same data, read once per system).
+    /// or arcade room it would take a section of): updateBuilding() takes a stored room's from it when its family is
+    /// the room's (the same data, read once per system; the theme pack is resolved, never a reason, I6 step 3).
     OfItsFirstSection,
 };
 

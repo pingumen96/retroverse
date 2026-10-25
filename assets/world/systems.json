@@ -25,9 +25,10 @@
 // with their predecessors is migrated once by the update. The arcade systems keep generic_case (amended on 2026-10-24):
 // the arcade room migrates once, to I6 step 6's arcade cabinets.
 //
-// The defaults per kind give a room's theme pack, its console prefab (none for arcade, computer and other: the hero
-// corner stands without one) and its plastics (sRGB hex codes); assets/world/platforms/<system>.json, when it exists,
-// overrides them for its system (snes.json). A floor's shared room and the arcade room (ADR-0013 §6) take the defaults
+// The defaults per kind give a room's theme pack (when its floor names none, building.json; the arcade room's always,
+// ADR-0014 §5), its console prefab (none for arcade, computer and other: the hero corner stands without one) and its
+// plastics (sRGB hex codes); assets/world/platforms/<system>.json, when it exists, overrides them for its system
+// (snes.json). A floor's shared room and the arcade room (ADR-0013 §6) take the defaults
 // of their floor's first kind without a console, and that kind's "sign" (the arcade room's "ARCADE"), else the
 // fallback's.
 {
@@ -39,23 +40,23 @@
       "plastic": {"cartridge": "#9A9A96", "console": "#D6CBAE", "accent": "#7D6E9E"}
     },
     "handheld": {
-      "themePack": "classic_16bit_warm",
+      "themePack": "handheld_archive",
       "console": {"manifest": "hardware.console.cartridge.generic", "kind": "console_cartridge"},
       "plastic": {"cartridge": "#8E8E8A", "console": "#C9C4B6", "accent": "#6E7F9E"}
     },
     "arcade": {
-      "themePack": "classic_16bit_warm",
+      "themePack": "arcade_after_dark",
       "console": null,
       "plastic": {"cartridge": "#3A3A3E", "console": "#2E2E33", "accent": "#B0503C"},
       "sign": "ARCADE"
     },
     "computer": {
-      "themePack": "classic_16bit_warm",
+      "themePack": "computer_studio",
       "console": null,
       "plastic": {"cartridge": "#B8B2A2", "console": "#D8D2C0", "accent": "#5E6E86"}
     },
     "other": {
-      "themePack": "classic_16bit_warm",
+      "themePack": "computer_studio",
       "console": null,
       "plastic": {"cartridge": "#7E8A8E", "console": "#C8CCCC", "accent": "#5E8E7A"}
     }

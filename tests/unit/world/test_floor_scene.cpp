@@ -1183,12 +1183,9 @@ TEST_CASE("world/floor: the hall's materials: the pack's hall kind, a role or ki
     rv::world::FloorSceneData data = floorData(plan, "gen4", building.tags);
     const RoomId snes = *RoomId::forSystem(name("snes"));
     REQUIRE(data.rooms.contains(snes));
-    // The hall takes its first room's pack: every room's changed alike.
-    const auto everyPack = [&](const auto& change) {
-        for (auto& [id, room] : data.rooms) {
-            change(room.theme);
-        }
-    };
+    // The hall takes its floor's pack (I6 step 3), gen4's classic_16bit_warm.
+    CHECK(data.hallTheme.id == "classic_16bit_warm");
+    const auto everyPack = [&](const auto& change) { change(data.hallTheme); };
     // A pack without the hall kind: every role the built-in pack's.
     everyPack([](rv::world::ThemeMaterials& theme) { theme.kinds.erase("hall"); });
     nlohmann::json scene = floorScene(plan, "gen4", data).sceneFile;

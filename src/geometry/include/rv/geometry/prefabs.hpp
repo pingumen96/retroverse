@@ -153,6 +153,12 @@ struct ShelfParams {
     glm::vec3 displaySlotSize{0.125f, 0.085f, 0.020f}; ///< each [0.005, 2]
     float displaySlotGap = 0.006f;                     ///< [0, 0.5]
     float displaySlotMargin = 0.025f;                  ///< [0, 1]
+    /// A lit interior (I6 step 3, the concept's lit bookcases): under the top board and under every level's board but
+    /// the lowest, a strip (role "board_light", 3 mm thick and 12 mm deep, 20 mm behind the boards' front edge, its
+    /// underside and front showing) and, with a back panel, over the back panel of each compartment a quad facing +Z
+    /// 1.5 mm in front of it (role "board_glow", innerWidth x the compartment's free height, uv (0, 0) at its top-left):
+    /// for emissive materials, no light of their own. False (the default) builds neither: the shelf as before.
+    bool boardLight = false;
 };
 
 /// "cartridge", pivot center, label on the front (+Z); bounds = size centered on the origin. A chamfered shell
@@ -366,6 +372,10 @@ struct WallShelfParams {
     glm::vec3 slotSize{0.125f, 0.085f, 0.020f}; ///< the face-out item (w, h, d), each [0.005, 0.5]
     float slotGap = 0.012f;                     ///< [0, 0.5]
     float slotMargin = 0.02f;                   ///< [0, 1]
+    /// A lit interior (I6 step 3): a strip under the cap and under every ledge but the lowest (role "board_light", 3 mm
+    /// thick and 10 mm deep, 12 mm behind the front, its underside and front showing), for an emissive material. False
+    /// (the default) builds none.
+    bool boardLight = false;
 };
 
 /// Shelf dressing (ADR-0010 §5: the levels no title needs), three kinds sharing these parameters, each pivot floor and

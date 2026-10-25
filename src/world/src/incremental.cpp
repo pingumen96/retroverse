@@ -724,13 +724,14 @@ std::vector<T> sortedUnique(std::vector<T> list) {
 }
 
 /// The data of `room` among `rooms` (by the system of its first section): a shared or arcade room's when that system's
-/// data is a console room's that carries it with the room's recorded family and theme pack (WorldData::sharedRoom).
+/// data is a console room's that carries it with the room's recorded family (WorldData::sharedRoom; the theme pack is a
+/// look, resolved, never a reason to choose: ADR-0014 §1).
 const WorldData* roomDataOf(std::span<const WorldData> rooms, const Room& room) noexcept {
     const catalog::SystemName& system = room.sections.empty() ? room.id.system() : room.sections.front();
     const WorldData* data = detail::dataOf(rooms, system);
     const WorldData* shared = data != nullptr ? data->sharedRoom.get() : nullptr;
     if (data != nullptr && data->kind != room.kind && shared != nullptr && shared->kind == room.kind &&
-        shared->mediaFamily.id == room.mediaFamily && shared->platform.themePack == room.themePack) {
+        shared->mediaFamily.id == room.mediaFamily) {
         return shared;
     }
     return data;
@@ -1180,6 +1181,17 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         detail::appendRoom(plan, std::move(*content));
     }
     plan.unplaced.insert(plan.unplaced.end(), entry->capacity.begin(), entry->capacity.end());
+    // Every stored room records the theme pack its data resolves now (ADR-0014 §1, I6 step 3), kept, held or updated,
+    // given a selection or not: a look, never a reason to keep or regenerate a room, and no placement moves for it. A
+    // stored room's data are read for its recorded floor (loadRoomData(): resolvePlatform() or sharedRoomPlatform() on
+    // room.floor, as loadSceneData() draws it), so the pack written is room.floor's (the arcade room's by its kind, its
+    // platform manifest's when that names one: roomThemePack()); a room appended here took its data's on the floor its
+    // system's classification gives, the floor it stands on.
+    for (Room& room : plan.rooms) {
+        if (const auto data = dataOf.find(room.id); data != dataOf.end()) {
+            room.themePack = data->second->platform.themePack;
+        }
+    }
 
     GenerationResult result;
     plan.schemaVersion = kPlanSchemaVersion;
@@ -1195,7 +1207,18 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // whichever rooms it was given (plan still holds the previous inputDigest here).
     const bool partial = std::any_of(previous.rooms.begin(), previous.rooms.end(),
                                      [&](const Room& room) { return !selectionsOf.contains(room.id); });
-    const bool keepProvenance = digestRooms.empty() || (partial && plan == previous);
+    // A pack rewritten (a look, ADR-0014 §1) is no change of the inputs either.
+    const auto sameButPacks = [&] {
+        if (plan.rooms.size() != previous.rooms.size()) {
+            return false;
+        }
+        WorldPlan repacked = previous;
+        for (std::size_t i = 0; i < repacked.rooms.size(); ++i) {
+            repacked.rooms[i].themePack = plan.rooms[i].themePack;
+        }
+        return plan == repacked;
+    };
+    const bool keepProvenance = digestRooms.empty() || (partial && sameButPacks());
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;

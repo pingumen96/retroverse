@@ -272,10 +272,12 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
         // The arcade room keeps I4's generic case until I6 step 6 (ADR-0014 §2, amended on 2026-10-24).
         CHECK(room->mediaFamily ==
               (room->kind == RoomKind::Arcade ? rv::world::kArcadeRoomFamily : rv::world::kSharedRoomFamily));
-        CHECK(room->themePack == gb.systems.defaultsOf(room->kind == RoomKind::Arcade
-                                                           ? rv::world::SystemKind::Arcade
-                                                           : gb.building.floor(room->floor)->kinds.front())
-                                    .themePack);
+        // The pack its floor gives it, the arcade room's its kind's (I6 step 3, ADR-0014 §5).
+        CHECK(room->themePack == rv::world::themePackOf(room->kind, room->floor,
+                                                        room->kind == RoomKind::Arcade
+                                                            ? rv::world::SystemKind::Arcade
+                                                            : gb.building.floor(room->floor)->kinds.front(),
+                                                        gb.systems, gb.building));
         // The hero corner without its console part (a code rule by kind), with its CRT.
         bool crt = false;
         for (const rv::world::Fixture& fixture : plan.fixtures) {
@@ -349,7 +351,7 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
             crt = crt || objectId == "fx:hero.crt";
             const auto textures = object.find("textures");
             if (textures != object.end() && textures->contains("picture") &&
-                (*textures)["picture"].value("pattern", "") == "sign") {
+                (*textures)["picture"].value("pattern", "") == "neon") { // the neon sign (I6 step 3)
                 signs.push_back((*textures)["picture"].value("title", ""));
             }
         }

@@ -486,6 +486,13 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   long border and a repeating field instead of the medallion rug end to end); the prints share one muted palette, not
   their floor pack's (step 3's packs could carry a print palette); the east end wall's print and trim move with the
   wall as a hall grows; the lobby's 3D displays and stairs (the hub, step 5; ADR-0013 "Deferred").
+- **Theme packs (I6 step 3, `docs/i6/step-3.md`):** done per floor. Left: the packs' `decorationWeights` are read
+  and checked but used by nothing, reserved for step 3b's furniture variants per pack within the same footprints
+  (decorations are plan facts: the layout candidates would weigh them); the neon sign is the pixel font's lettering
+  as rounded tubes with a halo, not a neon typeface or a shaped neon (the concept's console outline); the portal signs
+  of the halls stay tungsten (a dim version of their room's neon was left out); the era's colour beyond materials and
+  light (the 90s collector still reads mostly warm wood: its posters, rug and dressing are the classic ones); the
+  hub's own materials (step 5); a print palette per pack; per-pack rugs (a blue one for the optical era).
 - **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
   with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
   room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall

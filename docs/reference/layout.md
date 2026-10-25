@@ -68,8 +68,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `incremental.hpp` (`update`), `overrides.hpp`
   (pins: protected, never applied) and `where_is.hpp` (`PlanIndex`; 9); `scene_builder.hpp` (`toSceneFile`,
   `toSceneDescription`, `loadSceneData`) and `collection_layout.hpp` (items with transforms, pick ids, layer keys and
-  flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme pack as
-  data, `assets/world/lighting`, `assets/world/themes`; 16). I3's other modules: `rv_geometry` the collection's
+  flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
+  data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light
+  tints and `themedLighting()`, and `building.hpp`'s `themePackOf()`/`floorThemePack()` resolving a room's pack). I3's other modules: `rv_geometry` the collection's
   prefabs (`display_case`, `wall_shelf`, `storage_box`, `magazine_stack`, `bookends`, `plant` (16), the cartridge's
   `spineLabel`, `shelf`'s display levels and front inset; `Slot_<level>_<index>` and `Level_<n>` sockets, `SlotFacing`,
   `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's

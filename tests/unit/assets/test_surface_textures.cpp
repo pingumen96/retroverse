@@ -117,16 +117,19 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
               Approx(info.meters.y / static_cast<float>(info.size.y)));
     }
     CHECK(names == std::vector<std::string_view>{"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster",
-                                                 "ornate_rug", "brushed_metal", "aged_plastic", "wallwash"});
+                                                 "ornate_rug", "brushed_metal", "aged_plastic", "wallwash",
+                                                 "shelfglow"});
     CHECK(rv::assets::findProceduralSurface("teak") == nullptr);
     const auto unknown = rv::assets::makeProceduralSurface("teak");
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
-    // The rug and the wall wash are pictures; every other surface tiles.
+    // The rug, the wall wash and the shelf glow are pictures; every other surface tiles.
     CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->tiles);
     CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->hasNormalMap);
     CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->tiles);
     CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->hasNormalMap);
+    CHECK_FALSE(rv::assets::findProceduralSurface("shelfglow")->tiles);
+    CHECK_FALSE(rv::assets::findProceduralSurface("shelfglow")->hasNormalMap);
 }
 
 TEST_CASE("assets/surface_textures: names of single maps", "[assets][surfaces]") {
@@ -172,9 +175,9 @@ TEST_CASE("assets/surface_textures: every surface generates its maps", "[assets]
             CHECK(image.height == info.size.y);
             CHECK(image.channels == 4);
         }
-        // Opaque base color (but the wall wash's, whose alpha is its picture); the metallic-roughness map leaves R
-        // and A at 255 (glTF ignores them).
-        if (info.name != "wallwash") {
+        // Opaque base color (but the wall wash's and the shelf glow's, whose alpha is their picture); the
+        // metallic-roughness map leaves R and A at 255 (glTF ignores them).
+        if (info.name != "wallwash" && info.name != "shelfglow") {
             CHECK(meanChannel(surface.baseColor, 3) == 1.0);
         }
         CHECK(meanChannel(surface.metallicRoughness, 0) == 1.0);
@@ -310,6 +313,29 @@ TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[asse
     CHECK(plastic.r > 0.95f);
     CHECK(plastic.b > 0.9f);
     CHECK(roughness("aged_plastic") > 0.9);
+}
+
+TEST_CASE("assets/surface_textures: the shelf glow: a white picture, strongest under the strip, faint at the sides",
+          "[assets][surfaces]") {
+    const ProceduralSurface& glow = surfaceOf("shelfglow");
+    const ImageData& image = glow.baseColor;
+    REQUIRE(image.isValid());
+    const auto alpha = [&](int x, int y) { return static_cast<int>(texel(image, x, y)[3]); };
+    const int centre = image.width / 2;
+    CHECK(texel(image, centre, image.height / 2)[0] == 255); // white: the material gives the colour
+    // Falling from the top (under the strip) to the board below, never quite to nothing.
+    int previous = 256;
+    for (int y = 0; y < image.height; ++y) {
+        CHECK(alpha(centre, y) <= previous);
+        previous = alpha(centre, y);
+    }
+    CHECK(alpha(centre, 0) >= 220);
+    CHECK(alpha(centre, image.height - 1) >= 20);
+    CHECK(alpha(centre, image.height - 1) <= 60);
+    // Fading at the sides, symmetric.
+    CHECK(alpha(0, 0) <= 10);
+    CHECK(alpha(image.width - 1, 0) <= 10);
+    CHECK(alpha(10, 4) == alpha(image.width - 11, 4));
 }
 
 TEST_CASE("assets/surface_textures: the wall wash: a white picture, its light rising from the shade, none at its edges",

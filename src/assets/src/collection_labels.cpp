@@ -601,8 +601,12 @@ TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title, std::
                               static_cast<float>(canvas.width) - 2.0F * kFrontTextLeft * k);
 }
 
+std::span<const Rgb8> labelPaletteOr(std::span<const Rgb8> palette) noexcept {
+    return palette.empty() ? std::span<const Rgb8>(kDefaultLabelPalette) : palette;
+}
+
 Rgb8 spineBaseColour(const SpineRequest& request) noexcept {
-    return request.coverColour ? *request.coverColour : paletteColour(request.seed);
+    return request.coverColour ? *request.coverColour : paletteColour(request.seed, labelPaletteOr(request.palette));
 }
 
 Expected<GeneratedPicture> drawSpine(const LabelFonts& fonts, const SpineRequest& request, TextureFormat format) {
@@ -690,7 +694,7 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
     const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
     const float k = frontScale(format);
     GeneratedPicture result;
-    result.colours = labelColours(paletteColour(request.seed));
+    result.colours = labelColours(paletteColour(request.seed, labelPaletteOr(request.palette)));
     result.layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
                              : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
     result.picture = filledImage(size.width, size.height, result.colours.background);
