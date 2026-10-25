@@ -22,6 +22,7 @@ const float RV_PI = 3.14159265358979;
 const uint RV_INSTANCE_HIGHLIGHTED = 1u; // focused or hovered
 const uint RV_INSTANCE_HIDDEN = 2u;      // pulled out or inspected: drawn by the dynamic path instead
 const uint RV_INSTANCE_UNAVAILABLE = 4u; // the game is unavailable: drawn dimmed
+const uint RV_INSTANCE_NO_SPINE_LABEL = 8u; // face-out: a spine-layer material's fragments are discarded
 
 // Per-view constants. Mirrors rv::gl::FrameUniforms member for member (std140): change both together.
 layout(std140, binding = 0) uniform FrameUniforms {

@@ -31,6 +31,7 @@ void main() {
     vec4 baseColor = materialInstanceBaseColor(vUv, vInstance);
     vec3 N = shadingNormal();
     materialAlphaTest(baseColor.a);
+    materialInstanceTest(vInstance);
 #if defined(RV_INSPECT_NORMALS)
     vec3 color = srgbToLinear(N * 0.5 + 0.5);
 #elif defined(RV_INSPECT_UV)

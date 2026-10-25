@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -396,6 +397,66 @@ TEST_CASE("world/theme packs: a room's scene data take the pack its floor resolv
         }
     }
     CHECK(arcadeArea);
+}
+
+TEST_CASE("world/theme packs: the cases and boxes on their side stand in shelves lit inside, under each room's pack",
+          "[world][theme_packs]") {
+    // I6 step 4's *_v2 families bring their own modules (furniture.shelf.*_module.*_side): the pack lights them like
+    // every other shelf (step 3's board_light), the room's own pack's materials on them.
+    rv::test::world::BuildingWorld world = rv::test::world::shippedWorld(102938);
+    const std::vector<rv::world::RoomSelection> selections = {
+        rv::test::world::systemSelection("psx", 40, 21), rv::test::world::systemSelection("ps2", 40, 22),
+        rv::test::world::systemSelection("nds", 40, 23), rv::test::world::systemSelection("amiga", 40, 24),
+        rv::test::world::systemSelection("pokemini", 10, 25)};
+    const rv::world::GenerationResult generated = rv::test::world::generateBuildingOf(world, selections);
+    const std::map<std::string, std::pair<std::string, std::string>> expected = {
+        {"room:psx", {"disc_case_cd_v2", "console_90s_collector"}},
+        {"room:ps2", {"disc_case_dvd_v2", "optical_era_lounge"}},
+        {"room:nds", {"case_handheld_v2", "handheld_archive"}},
+        {"room:amiga", {"big_box_v2", "computer_studio"}},
+        {"area:shared:handheld", {"generic_case_v2", "handheld_archive"}}};
+    for (const auto& [id, look] : expected) {
+        INFO(id);
+        const rv::world::Room* room = rv::test::world::findRoom(generated.plan, id);
+        REQUIRE(room != nullptr);
+        CHECK(room->mediaFamily == look.first);
+        auto data = rv::world::loadSceneData(assets(), generated.plan, room->id);
+        REQUIRE(data.has_value());
+        CHECK(data->theme.id == look.second);
+        auto build = rv::world::toSceneFile(generated.plan, room->id, *data);
+        REQUIRE(build.has_value());
+        std::map<std::string, const nlohmann::json*> objects;
+        for (const nlohmann::json& object : build->sceneFile["objects"]) {
+            objects[object["id"].get<std::string>()] = &object;
+        }
+        std::size_t sideModules = 0;
+        for (const rv::world::Fixture& fixture : generated.plan.fixtures) {
+            if (fixture.id.room() != room->id) {
+                continue;
+            }
+            const rv::world::ScenePrefab* prefab = data->prefabs.find(fixture.prefab);
+            REQUIRE(prefab != nullptr);
+            if (prefab->generator != "shelf" && prefab->generator != "wall_shelf") {
+                continue;
+            }
+            INFO(fixture.id.toString() << " " << fixture.prefab.manifest);
+            const auto object = objects.find(fixture.id.localText());
+            REQUIRE(object != objects.end());
+            const nlohmann::json& params = (*object->second)["params"];
+            CHECK(params.value("boardLight", false));
+            const nlohmann::json& materials = (*object->second)["materials"];
+            CHECK(materials["board_light"] == "MAT_Shelf_Light");
+            CHECK(materials == nlohmann::json(data->theme.materials(prefab->generator)));
+            if (fixture.prefab.manifest.find("_side.") != std::string::npos) {
+                ++sideModules;
+                CHECK(prefab->generator == "shelf");
+                CHECK(params.value("back", false));
+                CHECK(materials["board_glow"] == "MAT_Shelf_Glow");
+            }
+        }
+        // Both hero-wall modules and the side walls' modules of the family on its side.
+        CHECK(sideModules >= 2);
+    }
 }
 
 TEST_CASE("world/theme packs: the update writes the resolved pack and moves nothing", "[world][theme_packs]") {

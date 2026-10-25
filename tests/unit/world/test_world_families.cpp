@@ -4,17 +4,13 @@
 // spine-out, the hero-wall modules spine-out but for one face-out band, the display fixtures face-out), a room of each
 // family's system generates and validates at a few sizes with the family's fixtures, the 16-bit cartridges keep the
 // template's own fixtures and I3's cover fit, and each family's capacity in the 9 x 10 m room and grown to 16 m (the
-// figures docs/i4/step-2.md compares with the reference library).
+// figures docs/i4/step-2.md compares with the reference library). Since I6 step 4 (ADR-0014 §2) the cases and boxes
+// have successors standing on their side (the *_v2 families: an upright spine on the item's -X face), which
+// systems.json and the shared rooms name; their predecessors stay readable for the rooms that record them.
 
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_string.hpp>
+#include "world_generation_support.hpp"
 
-#include <cstdint>
-#include <set>
-#include <string>
-#include <string_view>
-#include <vector>
-
+#include <rv/assets/material_library.hpp>
 #include <rv/assets/prefab_manifest.hpp>
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -25,7 +21,18 @@
 #include <rv/world/media_family.hpp>
 #include <rv/world/validation.hpp>
 
-#include "world_generation_support.hpp"
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+#include <cmath>
+#include <cstdint>
+#include <map>
+#include <set>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 using Catch::Matchers::ContainsSubstring;
 using rv::world::LevelFacing;
@@ -52,9 +59,27 @@ struct FamilyCase {
     std::string_view system;
 };
 constexpr FamilyCase kFamilies[] = {
-    {"cartridge_home_16bit", "snes"}, {"cartridge_home_8bit", "nes"},  {"cartridge_home_64bit", "n64"},
-    {"cartridge_handheld", "gb"},     {"case_handheld", "nds"},        {"disc_case_cd", "psx"},
-    {"disc_case_dvd", "ps2"},         {"big_box", "amiga"},           {"generic_case", "c64"},
+    {"cartridge_home_16bit", "snes"},
+    {"cartridge_home_8bit", "nes"},
+    {"cartridge_home_64bit", "n64"},
+    {"cartridge_handheld", "gb"},
+    {"case_handheld_v2", "nds"},
+    {"disc_case_cd_v2", "psx"},
+    {"disc_case_dvd_v2", "ps2"},
+    {"big_box_v2", "amiga"},
+    {"generic_case_v2", "c64"},
+    // The predecessors, as a stored room records them (ADR-0013 §3: the recorded family is authoritative).
+    {"case_handheld", "nds"},
+    {"disc_case_cd", "psx"},
+    {"disc_case_dvd", "ps2"},
+    {"big_box", "amiga"},
+    {"generic_case", "c64"},
+};
+
+/// The families I6 step 4 succeeds, each with its successor.
+constexpr std::pair<std::string_view, std::string_view> kSuccessions[] = {
+    {"disc_case_cd", "disc_case_cd_v2"}, {"disc_case_dvd", "disc_case_dvd_v2"}, {"case_handheld", "case_handheld_v2"},
+    {"big_box", "big_box_v2"},           {"generic_case", "generic_case_v2"},
 };
 
 rv::catalog::SystemName systemName(std::string_view name) {
@@ -63,10 +88,19 @@ rv::catalog::SystemName systemName(std::string_view name) {
     return *parsed;
 }
 
-WorldData dataOf(std::string_view system) {
-    auto data = rv::world::loadWorldData(assetRoot(), systemName(system));
+/// The data of `system`'s room, of its own family or, as a stored room's, of the recorded `family`.
+WorldData dataOf(std::string_view system, std::string_view family = {}) {
+    rv::world::RoomDataRequest request;
+    request.system = systemName(system);
+    request.mediaFamily = std::string(family);
+    auto data = rv::world::loadWorldData(assetRoot(), request);
     REQUIRE(data.has_value());
     return std::move(*data);
+}
+
+/// A recorded family, unless it is the system's own (systems.json's).
+std::string_view recordedFamily(const FamilyCase& entry) {
+    return entry.family.ends_with("_v2") || entry.family.starts_with("cartridge") ? std::string_view() : entry.family;
 }
 
 /// makeSelection()'s selection for `system`'s room.
@@ -97,7 +131,8 @@ TEST_CASE("world/families: the registry holds ADR-0013's families, the 16-bit on
     }
     CHECK(ids == std::vector<std::string>{"cartridge_home_16bit", "cartridge_home_8bit", "cartridge_home_64bit",
                                           "cartridge_handheld", "case_handheld", "disc_case_cd", "disc_case_dvd",
-                                          "big_box", "generic_case"});
+                                          "big_box", "generic_case", "disc_case_cd_v2", "disc_case_dvd_v2",
+                                          "case_handheld_v2", "big_box_v2", "generic_case_v2"});
     const MediaFamily* sixteen = registry().find("cartridge_home_16bit");
     REQUIRE(sixteen != nullptr);
     // I3's fit and the template's own fixtures (ADR-0013 §4's stated exception).
@@ -133,10 +168,241 @@ TEST_CASE("world/families: the registry holds ADR-0013's families, the 16-bit on
         }
     }
     CHECK(registry().find(systems->fallback.family) != nullptr);
+    // systems.json names no family that has a successor in the rooms its systems stand in (I6 step 4: new rooms take
+    // the successors): the arcade systems' generic_case has none in the arcade room (ADR-0014 §2, amended on
+    // 2026-10-24: the arcade room migrates once, to I6 step 6's cabinets).
+    for (const rv::world::SystemEntry& entry : systems->systems) {
+        INFO(entry.system.str());
+        if (entry.kind == rv::world::SystemKind::Arcade) {
+            CHECK(entry.family == "generic_case");
+            CHECK(registry().successorOf(entry.family, rv::world::RoomKind::Arcade) == nullptr);
+        } else if (entry.kind != rv::world::SystemKind::Excluded) {
+            CHECK(registry().successorOf(entry.family, rv::world::RoomKind::Console) == nullptr);
+            CHECK(registry().successorOf(entry.family, rv::world::RoomKind::Shared) == nullptr);
+        }
+    }
+    CHECK(registry().successorOf(systems->fallback.family, rv::world::RoomKind::Console) == nullptr);
+    CHECK(rv::world::kSharedRoomFamily == "generic_case_v2");
+    CHECK(rv::world::kArcadeRoomFamily == "generic_case");
+    CHECK(registry().successorOf(rv::world::kSharedRoomFamily, rv::world::RoomKind::Shared) == nullptr);
+    CHECK(registry().successorOf(rv::world::kArcadeRoomFamily, rv::world::RoomKind::Arcade) == nullptr);
+    // Every shell material a family names is a material of the library (I6 step 4's review: the cases' dark shells).
+    auto materials = rv::assets::MaterialLibrary::loadFromFile(assetRoot() / "materials" / "base" / "materials.json");
+    REQUIRE(materials.has_value());
+    for (const MediaFamily& family : registry().families) {
+        INFO(family.id);
+        if (!family.shellMaterial.empty()) {
+            CHECK(materials->find(family.shellMaterial) != nullptr);
+        }
+        // The cases and boxes on their side have dark shells; every other family the theme's plastic.
+        CHECK(family.shellMaterial.empty() == (family.spineFacing == rv::world::SpineFacing::End));
+    }
     // The shapes the covers are fitted to: a square jewel-case insert, portrait keep cases and boxes.
     CHECK(registry().find("disc_case_cd")->coverAspect().key() == "1x1");
     CHECK(registry().find("disc_case_dvd")->coverAspect().key() == "123x178");
     CHECK(registry().find("big_box")->coverAspect().key() == "18x23");
+}
+
+TEST_CASE("world/families: cases and boxes have successors standing on their side, cartridges none",
+          "[world][families]") {
+    for (const auto& [from, to] : kSuccessions) {
+        INFO(from);
+        const MediaFamily* old = registry().find(from);
+        const MediaFamily* successor = registry().find(to);
+        REQUIRE(old != nullptr);
+        REQUIRE(successor != nullptr);
+        // Console and shared rooms migrate to the successor; the arcade room only for the cases other than the generic
+        // one (none stands there).
+        for (const rv::world::RoomKind kind : {rv::world::RoomKind::Console, rv::world::RoomKind::Shared}) {
+            CHECK(registry().successorOf(from, kind) == successor);
+            CHECK(registry().latestSuccessor(from, kind) == successor);
+            CHECK(registry().latestSuccessor(to, kind) == successor);
+        }
+        if (from == "generic_case") {
+            CHECK(registry().successorOf(from, rv::world::RoomKind::Arcade) == nullptr);
+            CHECK(registry().latestSuccessor(from, rv::world::RoomKind::Arcade) == old);
+            CHECK(successor->succeedsIn ==
+                  std::vector<rv::world::RoomKind>{rv::world::RoomKind::Console, rv::world::RoomKind::Shared});
+        } else {
+            CHECK(successor->succeedsIn.empty());
+        }
+        CHECK(successor->succeeds == from);
+        // Its spine label is the flat part of its -X face, top to bottom, the shape its printed spines are drawn at.
+        CHECK_FALSE(successor->spineAspect().isLayer());
+        CHECK(old->spineAspect().isLayer());
+        CHECK_FALSE(successor->shellMaterial.empty());
+        CHECK(old->spineFacing == rv::world::SpineFacing::End);
+        CHECK(successor->spineFacing == rv::world::SpineFacing::Side);
+        // The same item and cover; spine-out on its side its slot is the item's depth wide, its height tall.
+        CHECK(successor->itemWidthMm == old->itemWidthMm);
+        CHECK(successor->itemHeightMm == old->itemHeightMm);
+        CHECK(successor->itemDepthMm == old->itemDepthMm);
+        CHECK(successor->labelWidthMm == old->labelWidthMm);
+        CHECK(successor->labelHeightMm == old->labelHeightMm);
+        CHECK(successor->faceOut == old->faceOut);
+        CHECK(successor->spineOut.widthMm == old->itemDepthMm);
+        CHECK(successor->spineOut.heightMm == old->itemHeightMm);
+        CHECK(successor->spineOut.depthMm == old->itemWidthMm);
+        // Face-out, a successor's items stand in its predecessor's display fixtures.
+        CHECK(successor->fixtures.display == old->fixtures.display);
+        CHECK(successor->fixtures.wallShelf == old->fixtures.wallShelf);
+        CHECK(successor->fixtures.heroModule != old->fixtures.heroModule);
+        CHECK(successor->fixtures.sideModule != old->fixtures.sideModule);
+    }
+    for (const std::string_view cartridge :
+         {"cartridge_home_16bit", "cartridge_home_8bit", "cartridge_home_64bit", "cartridge_handheld"}) {
+        INFO(cartridge);
+        for (const rv::world::RoomKind kind :
+             {rv::world::RoomKind::Console, rv::world::RoomKind::Shared, rv::world::RoomKind::Arcade}) {
+            CHECK(registry().successorOf(cartridge, kind) == nullptr);
+        }
+        CHECK(registry().find(cartridge)->spineAspect().isLayer());
+        CHECK(registry().find(cartridge)->spineFacing == rv::world::SpineFacing::End);
+        CHECK(registry().find(cartridge)->succeeds.empty());
+    }
+    CHECK(registry().latestSuccessor("no_such_family", rv::world::RoomKind::Console) == nullptr);
+
+    // The reader keeps the successions sound: a family succeeding itself, an unknown one, or one succeeded twice.
+    const auto parse = [](std::string_view extra) {
+        const std::string text = std::string(R"({"schemaVersion": 1, "families": [)") +
+                                 R"({"id": "a", "item": {"manifest": "media.case.plain.generic", "kind": "cartridge"},
+                                  "itemWidthMm": 130, "itemHeightMm": 180, "itemDepthMm": 15, "labelWidthMm": 118,
+                                  "labelHeightMm": 168, "coverFit": "label",
+                                  "spineOut": {"widthMm": 15, "heightMm": 130, "depthMm": 180, "gapMm": 4,
+                                               "marginMm": 30, "headroomMm": 20},
+                                  "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4,
+                                              "marginMm": 30, "headroomMm": 20}})" +
+                                 std::string(extra) + "]}";
+        return rv::world::parseMediaFamilies(text, "test");
+    };
+    const auto side = [](std::string_view id, std::string_view succeeds, std::string_view slot,
+                         std::string_view more = {}) {
+        return std::string(R"(, {"id": ")") + std::string(id) + R"(", "succeeds": ")" + std::string(succeeds) +
+               R"(", )" + std::string(more) + R"( "spineFacing": "side",
+                  "item": {"manifest": "media.case.plain_side.generic", "kind": "cartridge"},
+                  "itemWidthMm": 130, "itemHeightMm": 180, "itemDepthMm": 15, "labelWidthMm": 118,
+                  "labelHeightMm": 168, "coverFit": "label", "spineOut": )" +
+               std::string(slot) + R"(, "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4,
+                                                "marginMm": 30, "headroomMm": 20}})";
+    };
+    constexpr std::string_view kSideSlot =
+        R"({"widthMm": 15, "heightMm": 180, "depthMm": 130, "gapMm": 4, "marginMm": 30, "headroomMm": 20})";
+    constexpr std::string_view kEndSlot =
+        R"({"widthMm": 15, "heightMm": 130, "depthMm": 180, "gapMm": 4, "marginMm": 30, "headroomMm": 20})";
+    auto good = parse(side("b", "a", kSideSlot));
+    REQUIRE(good.has_value());
+    CHECK(good->latestSuccessor("a", rv::world::RoomKind::Console)->id == "b");
+    CHECK(good->latestSuccessor("a", rv::world::RoomKind::Arcade)->id == "b");
+    auto endSlot = parse(side("b", "a", kEndSlot));
+    REQUIRE_FALSE(endSlot.has_value());
+    CHECK_THAT(endSlot.error().message, ContainsSubstring("on its side"));
+    auto self = parse(side("b", "b", kSideSlot));
+    REQUIRE_FALSE(self.has_value());
+    CHECK_THAT(self.error().message, ContainsSubstring("cannot succeed itself"));
+    auto unknown = parse(side("b", "z", kSideSlot));
+    REQUIRE_FALSE(unknown.has_value());
+    CHECK_THAT(unknown.error().message, ContainsSubstring("no family z"));
+    auto twice = parse(side("b", "a", kSideSlot) + side("c", "a", kSideSlot));
+    REQUIRE_FALSE(twice.has_value());
+    CHECK_THAT(twice.error().message, ContainsSubstring("has a successor already"));
+    // Successions scoped by kind of room: two successors of one family in different kinds are sound, in one kind not.
+    auto byKind = parse(side("b", "a", kSideSlot, R"("succeedsIn": ["console", "shared"],)") +
+                        side("c", "a", kSideSlot, R"("succeedsIn": ["arcade"],)"));
+    REQUIRE(byKind.has_value());
+    CHECK(byKind->successorOf("a", rv::world::RoomKind::Console)->id == "b");
+    CHECK(byKind->successorOf("a", rv::world::RoomKind::Shared)->id == "b");
+    CHECK(byKind->successorOf("a", rv::world::RoomKind::Arcade)->id == "c");
+    auto overlap = parse(side("b", "a", kSideSlot, R"("succeedsIn": ["console", "shared"],)") +
+                         side("c", "a", kSideSlot, R"("succeedsIn": ["shared"],)"));
+    REQUIRE_FALSE(overlap.has_value());
+    CHECK_THAT(overlap.error().message, ContainsSubstring("has a successor already in shared rooms"));
+    auto badKind = parse(side("b", "a", kSideSlot, R"("succeedsIn": ["lobby"],)"));
+    REQUIRE_FALSE(badKind.has_value());
+    CHECK_THAT(badKind.error().message, ContainsSubstring("console, shared, arcade"));
+    auto noKind = parse(side("b", "a", kSideSlot, R"("succeedsIn": [],)"));
+    REQUIRE_FALSE(noKind.has_value());
+    CHECK_THAT(noKind.error().message, ContainsSubstring("names no kind"));
+    // A cycle: a succeeds c, b succeeds a, c succeeds b (each succeeded once, none by itself) is refused.
+    {
+        std::string cycle = side("b", "a", kSideSlot) + side("c", "b", kSideSlot);
+        auto chain = parse(cycle);
+        REQUIRE(chain.has_value());
+        CHECK(chain->latestSuccessor("a", rv::world::RoomKind::Console)->id == "c");
+        const std::string text = std::string(R"({"schemaVersion": 1, "families": [)") +
+                                 R"({"id": "a", "succeeds": "c", "spineFacing": "side",
+                                  "item": {"manifest": "media.case.plain_side.generic", "kind": "cartridge"},
+                                  "itemWidthMm": 130, "itemHeightMm": 180, "itemDepthMm": 15, "labelWidthMm": 118,
+                                  "labelHeightMm": 168, "coverFit": "label", "spineOut": )" +
+                                 std::string(kSideSlot) +
+                                 R"(, "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4,
+                                                "marginMm": 30, "headroomMm": 20}})" +
+                                 cycle + "]}";
+        auto cyclic = rv::world::parseMediaFamilies(text, "test");
+        REQUIRE_FALSE(cyclic.has_value());
+        CHECK_THAT(cyclic.error().message, ContainsSubstring("come back to it"));
+        // In another kind than the cycle's other links, no cycle.
+        const std::string arcadeOnly = std::string(R"({"schemaVersion": 1, "families": [)") +
+                                       R"({"id": "a", "succeeds": "c", "succeedsIn": ["arcade"], "spineFacing": "side",
+                                        "item": {"manifest": "media.case.plain_side.generic", "kind": "cartridge"},
+                                        "itemWidthMm": 130, "itemHeightMm": 180, "itemDepthMm": 15,
+                                        "labelWidthMm": 118, "labelHeightMm": 168, "coverFit": "label",
+                                        "spineOut": )" +
+                                       std::string(kSideSlot) +
+                                       R"(, "faceOut": {"widthMm": 130, "heightMm": 180, "depthMm": 15, "gapMm": 4,
+                                                      "marginMm": 30, "headroomMm": 20}})" +
+                                       side("b", "a", kSideSlot, R"("succeedsIn": ["console"],)") +
+                                       side("c", "b", kSideSlot, R"("succeedsIn": ["console"],)") + "]}";
+        CHECK(rv::world::parseMediaFamilies(arcadeOnly, "test").has_value());
+    }
+    // A spine label to a tenth of a millimetre, both sides or neither; a shell material names one.
+    CHECK(parse(side("b", "a", kSideSlot, R"("spineLabelWidthMm": 10.7, "spineLabelHeightMm": 177,)"))
+              ->find("b")
+              ->spineAspect() == rv::assets::LabelAspect{107, 1770});
+    auto half = parse(side("b", "a", kSideSlot, R"("spineLabelWidthMm": 10.7,)"));
+    REQUIRE_FALSE(half.has_value());
+    CHECK_THAT(half.error().message, ContainsSubstring("both its width and its height"));
+    auto fine = parse(side("b", "a", kSideSlot, R"("spineLabelWidthMm": 10.75, "spineLabelHeightMm": 177,)"));
+    REQUIRE_FALSE(fine.has_value());
+    CHECK_THAT(fine.error().message, ContainsSubstring("tenth of a millimetre"));
+    auto noShell = parse(side("b", "a", kSideSlot, R"("shellMaterial": "",)"));
+    REQUIRE_FALSE(noShell.has_value());
+
+    // A new room asked for a succeeded family takes its successor; a stored room keeps its own and carries the data
+    // of its migration.
+    const WorldData stored = dataOf("psx", "disc_case_cd");
+    CHECK(stored.mediaFamily.id == "disc_case_cd");
+    REQUIRE(stored.successor != nullptr);
+    CHECK(stored.successor->mediaFamily.id == "disc_case_cd_v2");
+    CHECK(stored.successor->platform.themePack == stored.platform.themePack);
+    CHECK(stored.successor->roomTemplate.sideModule == *registry().find("disc_case_cd_v2")->fixtures.sideModule);
+    CHECK(stored.successor->successor == nullptr);
+    const WorldData fresh = dataOf("psx");
+    CHECK(fresh.mediaFamily.id == "disc_case_cd_v2");
+    CHECK(fresh.successor == nullptr);
+    CHECK(dataOf("snes", "cartridge_home_16bit").successor == nullptr);
+    // The arcade room's generic case has no successor there (until I6 step 6): a stored arcade room carries none, a
+    // new one takes generic_case; a stored shared room of generic_case carries generic_case_v2's.
+    rv::world::RoomDataRequest arcade;
+    arcade.system = systemName("mame");
+    arcade.kind = rv::world::RoomKind::Arcade;
+    arcade.floor = std::string(rv::world::kGroundFloor);
+    auto newArcade = rv::world::loadWorldData(assetRoot(), arcade);
+    REQUIRE(newArcade.has_value());
+    CHECK(newArcade->mediaFamily.id == "generic_case");
+    CHECK(newArcade->successor == nullptr);
+    arcade.mediaFamily = "generic_case";
+    auto storedArcade = rv::world::loadWorldData(assetRoot(), arcade);
+    REQUIRE(storedArcade.has_value());
+    CHECK(storedArcade->successor == nullptr);
+    rv::world::RoomDataRequest shared;
+    shared.system = systemName("ps2");
+    shared.kind = rv::world::RoomKind::Shared;
+    shared.floor = "gen6";
+    shared.mediaFamily = "generic_case";
+    auto storedShared = rv::world::loadWorldData(assetRoot(), shared);
+    REQUIRE(storedShared.has_value());
+    REQUIRE(storedShared->successor != nullptr);
+    CHECK(storedShared->successor->mediaFamily.id == "generic_case_v2");
 }
 
 TEST_CASE("world/families: every family's item builds from its manifest at the family's size", "[world][families]") {
@@ -158,12 +424,32 @@ TEST_CASE("world/families: every family's item builds from its manifest at the f
         CHECK(rv::geometry::findPart(*prefab, "spine") != nullptr);
         const rv::geometry::Socket* spine = rv::geometry::findSocket(prefab->sockets, "Spine");
         REQUIRE(spine != nullptr);
-        // The spine label keeps the spine texture's 40 x 256 aspect within 1%, and lies on the item's top face.
+        // The spine label lies on the item's top face, keeping the spine texture's 40 x 256 aspect within 1%; on its
+        // -X face, upright, for a family standing on its side, covering that face's flat part top to bottom (I6 step
+        // 4's review: a printed spine, drawn at the label's shape, the family's spineAspect()).
         const glm::vec3 spineSize = spine->bounds.max - spine->bounds.min;
-        CHECK(spineSize.x / spineSize.y > 0.99f * 40.0f / 256.0f);
-        CHECK(spineSize.x / spineSize.y < 1.01f * 40.0f / 256.0f);
+        const bool side = family.spineFacing == rv::world::SpineFacing::Side;
+        if (side) {
+            const auto chamfer = manifest->runtime.params.value("chamfer", 0.0F);
+            const auto inset = manifest->runtime.params.value("labelInset", 0.0F);
+            const float flatAcross = static_cast<float>(family.itemDepthMm) / 1000.0f - inset - 0.0005f - 2.0f * chamfer;
+            const float flatAlong = static_cast<float>(family.itemHeightMm) / 1000.0f - 2.0f * chamfer;
+            // The whole flat part, a tenth of a millimetre short where the float limit would refuse it exactly.
+            CHECK(spineSize.x == Catch::Approx(flatAcross).margin(1e-5));
+            CHECK(spineSize.y <= flatAlong + 1e-6f);
+            CHECK(spineSize.y >= flatAlong - 1.1e-4f);
+            CHECK(family.spineAspect() ==
+                  rv::assets::LabelAspect{static_cast<std::uint32_t>(std::lround(spineSize.x * 10000.0f)),
+                                          static_cast<std::uint32_t>(std::lround(spineSize.y * 10000.0f))});
+        } else {
+            CHECK(spineSize.x / spineSize.y > 0.99f * 40.0f / 256.0f);
+            CHECK(spineSize.x / spineSize.y < 1.01f * 40.0f / 256.0f);
+            CHECK(family.spineAspect().isLayer());
+        }
         CHECK(spineSize.x * 1000.0f <= static_cast<float>(family.itemDepthMm));
-        CHECK(spineSize.y * 1000.0f <= static_cast<float>(family.itemWidthMm));
+        CHECK(spineSize.y * 1000.0f <= static_cast<float>(side ? family.itemHeightMm : family.itemWidthMm));
+        const glm::vec3 out(spine->transform[2]);
+        CHECK(glm::dot(out, side ? glm::vec3(-1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f)) > 0.999f);
     }
     // A label that is not the manifest's is refused.
     MediaFamily wrong = *registry().find("disc_case_cd");
@@ -173,6 +459,21 @@ TEST_CASE("world/families: every family's item builds from its manifest at the f
     auto refused = rv::world::checkItemManifest(wrong, *manifest);
     REQUIRE_FALSE(refused.has_value());
     CHECK_THAT(refused.error().message, ContainsSubstring("label is 120 x 120 mm"));
+    // A family standing on its side whose manifest's spine lies on the top face is refused.
+    MediaFamily sideways = *registry().find("disc_case_cd");
+    sideways.spineFacing = rv::world::SpineFacing::Side;
+    auto topSpine = rv::world::checkItemManifest(sideways, *manifest);
+    REQUIRE_FALSE(topSpine.has_value());
+    CHECK_THAT(topSpine.error().message, ContainsSubstring("-X face"));
+    // A spine label that is not the manifest's is refused.
+    MediaFamily shorter = *registry().find("disc_case_cd_v2");
+    shorter.spineLabel.height = 1200;
+    auto sideManifest =
+        rv::assets::loadPrefabManifest(rv::assets::prefabManifestPath(assetRoot(), shorter.item.manifest));
+    REQUIRE(sideManifest.has_value());
+    auto wrongSpine = rv::world::checkItemManifest(shorter, *sideManifest);
+    REQUIRE_FALSE(wrongSpine.has_value());
+    CHECK_THAT(wrongSpine.error().message, ContainsSubstring("spine label is 71 x 1234"));
 }
 
 TEST_CASE("world/families: every family's fixtures build and their levels face the family exactly",
@@ -236,8 +537,8 @@ TEST_CASE("world/families: every family's fixtures build and their levels face t
 
 TEST_CASE("world/families: a room of each family generates and validates at a few sizes", "[world][families]") {
     for (const FamilyCase& entry : kFamilies) {
-        INFO(entry.system);
-        const WorldData data = dataOf(entry.system);
+        INFO(entry.system << " " << entry.family);
+        const WorldData data = dataOf(entry.system, recordedFamily(entry));
         REQUIRE(data.mediaFamily.id == entry.family);
         const MediaFamily& family = data.mediaFamily;
         for (const std::size_t titles : {std::size_t{1}, std::size_t{40}, std::size_t{700}, std::size_t{2600}}) {
@@ -283,9 +584,98 @@ TEST_CASE("world/families: a room of each family generates and validates at a fe
     }
 }
 
+TEST_CASE("world/families: cases on their side fill the hero-wall modules in turns, cartridges one after the other",
+          "[world][families]") {
+    // Generator 1.4's rule for a family standing on its side (allocation.hpp, I6 step 4's review): the hero-wall
+    // modules take their levels in turns, the titles a round cannot fill shared among its levels, so that a small room
+    // shows its spines on both modules at the eye; a family on its end (the cartridges) fills module after module.
+    struct Case {
+        std::string_view system;
+        std::string_view family;
+        bool turns;
+    };
+    for (const Case& test : {Case{"psx", "disc_case_cd_v2", true}, Case{"amiga", "big_box_v2", true},
+                             Case{"ps2", "disc_case_dvd_v2", true}, Case{"snes", "cartridge_home_16bit", false}}) {
+        INFO(test.system);
+        const WorldData data = dataOf(test.system);
+        REQUIRE(data.mediaFamily.id == test.family);
+        for (const std::size_t spineTitles : {std::size_t{1}, std::size_t{9}, std::size_t{40}}) {
+            INFO(spineTitles);
+            // The face-out set first (D + B), then the spine-out titles.
+            auto capacity = rv::world::collectionCapacity(data.roomTemplate, data.prefabs, data.mediaFamily);
+            REQUIRE(capacity.has_value());
+            const std::size_t faceOut = capacity->displaySlots + capacity->bandSlots;
+            rv::world::GenerationInput input;
+            input.library = rv::test::world::library();
+            input.config = rv::test::world::roomConfig(102938);
+            input.selection = selectionOf(test.system, faceOut + spineTitles, 4100 + spineTitles);
+            auto result = rv::world::generate(input, data);
+            REQUIRE(result.has_value());
+            CHECK(result->validation.passed());
+            const rv::world::WorldPlan& plan = result->plan;
+            // The spine-out titles of each hero-wall module, by its levels.
+            std::map<rv::world::FixtureId, std::map<std::uint32_t, std::size_t>> spineByModule;
+            std::map<rv::world::FixtureId, const rv::world::Fixture*> heroModules;
+            for (const rv::world::Fixture& fixture : plan.fixtures) {
+                if (fixture.role == rv::world::FixtureRole::HeroModule) {
+                    heroModules.emplace(fixture.id, &fixture);
+                    spineByModule[fixture.id];
+                }
+            }
+            REQUIRE(heroModules.size() == 2);
+            std::size_t spinePlaced = 0;
+            for (const rv::world::Placement& placement : plan.placements) {
+                const auto module = heroModules.find(placement.slot.fixture());
+                if (module == heroModules.end()) {
+                    continue;
+                }
+                for (const rv::world::FixtureLevel& level : module->second->levels) {
+                    if (level.level == placement.slot.level() && level.section == rv::world::Section::Spine) {
+                        ++spineByModule[module->first][level.level];
+                        ++spinePlaced;
+                    }
+                }
+            }
+            CHECK(spinePlaced == spineTitles);
+            std::vector<std::size_t> perModule;
+            std::vector<std::size_t> levelsUsed;
+            for (const auto& [module, levels] : spineByModule) {
+                std::size_t total = 0;
+                for (const auto& [level, count] : levels) {
+                    total += count;
+                }
+                perModule.push_back(total);
+                levelsUsed.push_back(levels.size());
+            }
+            // In the modules' map order (by id), not their fill order: the larger share first.
+            if (perModule[0] < perModule[1]) {
+                std::swap(perModule[0], perModule[1]);
+                std::swap(levelsUsed[0], levelsUsed[1]);
+            }
+            if (test.turns) {
+                // Shared between the two modules (the hero-wall modules' levels identical, each round's split evenly),
+                // one more on the first for an odd count; a round holding them all, one level each.
+                CHECK(perModule[0] + perModule[1] == spineTitles);
+                CHECK(perModule[0] - perModule[1] <= 1);
+                if (spineTitles <= 9) {
+                    CHECK(levelsUsed[0] == 1);
+                    CHECK(levelsUsed[1] == (spineTitles > 1 ? 1u : 0u));
+                } else {
+                    CHECK(levelsUsed[0] - levelsUsed[1] <= 1);
+                }
+            } else {
+                // The first module first: the second holds none while the first has room.
+                CHECK(perModule[0] == spineTitles);
+                CHECK(perModule[1] == 0);
+            }
+        }
+    }
+}
+
 TEST_CASE("world/families: each family's capacity in the 9 x 10 m room and grown to 16 m", "[world][families]") {
     struct Row {
         std::string_view system;
+        std::string_view family;   ///< a recorded family (a predecessor); empty: the system's own
         std::uint64_t display = 0; ///< D
         std::uint64_t band = 0;    ///< B
         std::uint64_t heroSpine = 0; ///< 2 Sh
@@ -293,21 +683,26 @@ TEST_CASE("world/families: each family's capacity in the 9 x 10 m room and grown
         std::uint64_t base = 0;    ///< the titles the 9 x 10 m room holds with the reserve
         std::uint64_t grown = 0;   ///< at the template's limit, 16 m
     };
-    // The figures of docs/i4/step-2.md's table.
+    // The figures of docs/i4/step-2.md's table, and of docs/i6/step-4.md's for the successors.
     const Row rows[] = {
-        {"snes", 44, 12, 396, 231, 3205, 5615},    // cartridge_home_16bit, I3's
-        {"nes", 44, 12, 396, 264, 3606, 6361},     // cartridge_home_8bit
-        {"n64", 44, 12, 504, 288, 3993, 6998},     // cartridge_home_64bit
-        {"gb", 88, 24, 1452, 792, 11001, 19266},   // cartridge_handheld
-        {"nds", 44, 12, 528, 352, 4793, 8466},     // case_handheld
-        {"psx", 38, 10, 672, 392, 5398, 9488},     // disc_case_cd
-        {"ps2", 38, 10, 352, 308, 4097, 7311},     // disc_case_dvd
-        {"amiga", 28, 8, 96, 80, 1088, 1923},      // big_box
-        {"c64", 38, 10, 410, 328, 4391, 7813},     // generic_case
+        {"snes", {}, 44, 12, 396, 231, 3205, 5615},             // cartridge_home_16bit, I3's
+        {"nes", {}, 44, 12, 396, 264, 3606, 6361},              // cartridge_home_8bit
+        {"n64", {}, 44, 12, 504, 288, 3993, 6998},              // cartridge_home_64bit
+        {"gb", {}, 88, 24, 1452, 792, 11001, 19266},            // cartridge_handheld
+        {"nds", "case_handheld", 44, 12, 528, 352, 4793, 8466}, // case_handheld
+        {"psx", "disc_case_cd", 38, 10, 672, 392, 5398, 9488},  // disc_case_cd
+        {"ps2", "disc_case_dvd", 38, 10, 352, 308, 4097, 7311}, // disc_case_dvd
+        {"amiga", "big_box", 28, 8, 96, 80, 1088, 1923},        // big_box
+        {"c64", "generic_case", 38, 10, 410, 328, 4391, 7813},  // generic_case
+        {"nds", {}, 44, 12, 528, 308, 4257, 7471},              // case_handheld_v2
+        {"psx", {}, 38, 10, 784, 448, 6177, 10852},             // disc_case_cd_v2
+        {"ps2", {}, 38, 10, 352, 220, 3026, 5321},              // disc_case_dvd_v2
+        {"amiga", {}, 28, 8, 96, 64, 893, 1561},                // big_box_v2
+        {"c64", {}, 38, 10, 410, 246, 3393, 5960},              // generic_case_v2
     };
     for (const Row& row : rows) {
-        INFO(row.system);
-        const WorldData data = dataOf(row.system);
+        INFO(row.system << " " << row.family);
+        const WorldData data = dataOf(row.system, row.family);
         auto capacity = rv::world::collectionCapacity(data.roomTemplate, data.prefabs, data.mediaFamily);
         REQUIRE(capacity.has_value());
         rv::world::CollectionCapacity unGrown = *capacity;

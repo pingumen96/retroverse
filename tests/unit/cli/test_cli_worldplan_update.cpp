@@ -212,9 +212,9 @@ TEST_CASE("cli/worldplan update: plans it refuses and where it reads and writes"
     CHECK(contains(handEdited.err, "the plan is refused"));
     std::string newerText = before;
     // Every generator version of it (the plan's is the highest of its rooms').
-    for (std::size_t at = newerText.find("\"generatorVersion\":\"1.3\""); at != std::string::npos;
-         at = newerText.find("\"generatorVersion\":\"1.3\"", at)) {
-        newerText.replace(at, 24, "\"generatorVersion\":\"1.9\"");
+    const std::string current = "\"generatorVersion\":\"" + rv::world::kGeneratorVersion.toString() + "\"";
+    for (std::size_t at = newerText.find(current); at != std::string::npos; at = newerText.find(current, at)) {
+        newerText.replace(at, current.size(), "\"generatorVersion\":\"1.9\"");
     }
     const std::filesystem::path newer = session.dir.file("newer.json");
     REQUIRE(rv::core::writeTextFileAtomic(newer, newerText).has_value());

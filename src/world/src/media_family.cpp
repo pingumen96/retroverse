@@ -1,7 +1,10 @@
 #include <rv/world/media_family.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <set>
+#include <utility>
 
 #include <rv/core/utf8.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -71,11 +74,83 @@ MediaFamily readFamily(const ObjectReader& reader) {
         readSlot(reader.object("spineOut", {"depthMm", "gapMm", "headroomMm", "heightMm", "marginMm", "widthMm"}));
     family.faceOut =
         readSlot(reader.object("faceOut", {"depthMm", "gapMm", "headroomMm", "heightMm", "marginMm", "widthMm"}));
-    // Stood on its end with its top face outward, the spine is the item's depth wide and its width tall.
-    requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemDepthMm, family.itemWidthMm,
-                family.itemHeightMm, "spine-out");
+    if (reader.has("spineFacing")) {
+        family.spineFacing = reader.enumeration<SpineFacing>("spineFacing", parseSpineFacing, "one of end, side");
+    }
+    if (reader.has("succeeds")) {
+        family.succeeds = reader.dataId("succeeds");
+    }
+    if (reader.has("succeedsIn")) {
+        const std::string pointer = reader.pointer("succeedsIn");
+        if (family.succeeds.empty() && !reader.document().failed()) {
+            reader.document().fail(pointer, "names kinds of room without a family it succeeds");
+        }
+        detail::forEachElement(reader.array("succeedsIn"), pointer, [&](const Json& element, const std::string& at) {
+            const std::string text = detail::readString(reader.document(), element, at);
+            if (reader.document().failed()) {
+                return;
+            }
+            const std::optional<RoomKind> kind = parseRoomKind(text);
+            if (!kind) {
+                reader.document().fail(at, "expected one of console, shared, arcade, found \"" + text + "\"");
+                return;
+            }
+            if (std::find(family.succeedsIn.begin(), family.succeedsIn.end(), *kind) != family.succeedsIn.end()) {
+                reader.document().fail(at, "appears twice");
+                return;
+            }
+            family.succeedsIn.push_back(*kind);
+        });
+        if (!reader.document().failed() && family.succeedsIn.empty()) {
+            reader.document().fail(pointer, "names no kind of room");
+        }
+    }
+    // The spine label quad (I6 step 4), to a tenth of a millimetre: both sides or neither.
+    if (reader.has("spineLabelWidthMm") != reader.has("spineLabelHeightMm")) {
+        if (!reader.document().failed()) {
+            reader.document().fail(reader.pointer(reader.has("spineLabelWidthMm") ? "spineLabelHeightMm"
+                                                                                  : "spineLabelWidthMm"),
+                                   "a spine label needs both its width and its height");
+        }
+    } else if (reader.has("spineLabelWidthMm")) {
+        const auto tenths = [&](std::string_view key) -> std::uint32_t {
+            const double millimetres = reader.number(key, 1.0, static_cast<double>(kMaxItemMm));
+            if (reader.document().failed()) {
+                return 0;
+            }
+            const double scaled = millimetres * 10.0;
+            const double rounded = std::round(scaled);
+            if (std::abs(scaled - rounded) > 1e-6) {
+                reader.document().fail(reader.pointer(key), "must be given to a tenth of a millimetre");
+                return 0;
+            }
+            return static_cast<std::uint32_t>(rounded);
+        };
+        family.spineLabel.width = tenths("spineLabelWidthMm");
+        family.spineLabel.height = tenths("spineLabelHeightMm");
+    }
+    if (reader.has("shellMaterial")) {
+        family.shellMaterial = reader.string("shellMaterial");
+        if (!reader.document().failed() && family.shellMaterial.empty()) {
+            reader.document().fail(reader.pointer("shellMaterial"), "names no material");
+        }
+    }
+    // Stood on its end with its top face outward, the spine is the item's depth wide and its width tall; stood on its
+    // side, upright, the item's depth wide and its height tall (I6 step 4).
+    if (family.spineFacing == SpineFacing::Side) {
+        requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemDepthMm,
+                    family.itemHeightMm, family.itemWidthMm, "spine-out (on its side)");
+    } else {
+        requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemDepthMm,
+                    family.itemWidthMm, family.itemHeightMm, "spine-out");
+    }
     requireSize(reader.document(), reader.pointer("faceOut"), family.faceOut, family.itemWidthMm, family.itemHeightMm,
                 family.itemDepthMm, "face-out");
+    // A level's facing is told by its slot: the two must differ.
+    if (!reader.document().failed() && family.spineOut.widthMm == family.faceOut.widthMm &&
+        family.spineOut.heightMm == family.faceOut.heightMm && family.spineOut.depthMm == family.faceOut.depthMm) {
+        reader.document().fail(reader.pointer("spineOut"), "the spine-out slot is the face-out one");
+    }
     if (reader.has("fixtures")) {
         const ObjectReader fixtures = reader.object("fixtures", {"display", "heroModule", "sideModule", "wallShelf"});
         family.fixtures.heroModule = readFixture(fixtures, "heroModule", "shelf");
@@ -108,6 +183,34 @@ const MediaFamily* MediaFamilyRegistry::find(std::string_view id) const noexcept
     return nullptr;
 }
 
+bool MediaFamily::succeedsInKind(RoomKind kind) const noexcept {
+    return !succeeds.empty() &&
+           (succeedsIn.empty() || std::find(succeedsIn.begin(), succeedsIn.end(), kind) != succeedsIn.end());
+}
+
+const MediaFamily* MediaFamilyRegistry::successorOf(std::string_view id, RoomKind kind) const noexcept {
+    for (const MediaFamily& family : families) {
+        if (family.succeeds == id && family.succeedsInKind(kind)) {
+            return &family;
+        }
+    }
+    return nullptr;
+}
+
+const MediaFamily* MediaFamilyRegistry::latestSuccessor(std::string_view id, RoomKind kind) const noexcept {
+    const MediaFamily* family = find(id);
+    // The reader keeps the chains free of cycles: each family succeeded by one at most in a kind of room, no chain
+    // coming back to where it started; the count bounds the walk all the same.
+    for (std::size_t step = 0; family != nullptr && step < families.size(); ++step) {
+        const MediaFamily* next = successorOf(family->id, kind);
+        if (next == nullptr) {
+            break;
+        }
+        family = next;
+    }
+    return family;
+}
+
 Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::string_view context) {
     auto value = detail::parseDataJson(text, context);
     if (!value) {
@@ -119,10 +222,11 @@ Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::str
     MediaFamilyRegistry registry;
     std::set<std::string> ids;
     detail::forEachElement(reader.array("families"), "/families", [&](const Json& element, const std::string& pointer) {
-        MediaFamily family = readFamily(ObjectReader(document, element, pointer,
-                                                     {"coverFit", "faceOut", "fixtures", "id", "item", "itemDepthMm",
-                                                      "itemHeightMm", "itemWidthMm", "labelHeightMm", "labelWidthMm",
-                                                      "spineOut"}));
+        MediaFamily family = readFamily(
+            ObjectReader(document, element, pointer,
+                         {"coverFit", "faceOut", "fixtures", "id", "item", "itemDepthMm", "itemHeightMm", "itemWidthMm",
+                          "labelHeightMm", "labelWidthMm", "shellMaterial", "spineFacing", "spineLabelHeightMm",
+                          "spineLabelWidthMm", "spineOut", "succeeds", "succeedsIn"}));
         if (!document.failed() && !ids.insert(family.id).second) {
             document.fail(detail::pointerChild(pointer, "id"), "the family appears twice");
         }
@@ -130,6 +234,50 @@ Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::str
     });
     if (!document.failed() && registry.families.empty()) {
         document.fail("/families", "must name at least one family");
+    }
+    // Successors (I6 step 4): each names another family of the file, a family has one successor at most in each kind
+    // of room, and no chain of a kind comes back to where it started, so that every chain ends.
+    constexpr std::array<RoomKind, 3> kKinds{RoomKind::Console, RoomKind::Shared, RoomKind::Arcade};
+    std::set<std::pair<std::string, RoomKind>> succeeded;
+    for (std::size_t index = 0; !document.failed() && index < registry.families.size(); ++index) {
+        const MediaFamily& family = registry.families[index];
+        if (family.succeeds.empty()) {
+            continue;
+        }
+        const std::string pointer = "/families/" + std::to_string(index) + "/succeeds";
+        if (family.succeeds == family.id) {
+            document.fail(pointer, "a family cannot succeed itself");
+            break;
+        }
+        if (registry.find(family.succeeds) == nullptr) {
+            document.fail(pointer, "no family " + family.succeeds + " to succeed");
+            break;
+        }
+        for (const RoomKind kind : kKinds) {
+            if (family.succeedsInKind(kind) && !succeeded.insert({family.succeeds, kind}).second) {
+                document.fail(pointer, "the family " + family.succeeds + " has a successor already in " +
+                                           std::string(toString(kind)) + " rooms");
+                break;
+            }
+        }
+    }
+    for (std::size_t index = 0; !document.failed() && index < registry.families.size(); ++index) {
+        const MediaFamily& start = registry.families[index];
+        for (const RoomKind kind : kKinds) {
+            const MediaFamily* family = registry.successorOf(start.id, kind);
+            for (std::size_t step = 0; family != nullptr && step <= registry.families.size(); ++step) {
+                if (family->id == start.id) {
+                    document.fail("/families/" + std::to_string(index) + "/id",
+                                  "the successions of " + std::string(toString(kind)) + " rooms from " + start.id +
+                                      " come back to it");
+                    break;
+                }
+                family = registry.successorOf(family->id, kind);
+            }
+            if (document.failed()) {
+                break;
+            }
+        }
     }
     if (document.failed()) {
         return propagate(document.error());
@@ -204,6 +352,38 @@ Status checkItemManifest(const MediaFamily& family, const assets::PrefabManifest
                              std::to_string(millimetres(labelSize.y)) + " mm, the family's " +
                              std::to_string(family.labelWidthMm) + " x " + std::to_string(family.labelHeightMm) +
                              " mm",
+                         context);
+    }
+    // The spine label lies on the face the family's items show spine-out (I6 step 4): out of the top face standing on
+    // their end, out of the -X face standing on their side.
+    if (const geometry::Socket* spine = geometry::findSocket(prefab->sockets, "Spine")) {
+        const glm::vec3 out(spine->transform[2]);
+        const glm::vec3 expected =
+            family.spineFacing == SpineFacing::Side ? glm::vec3(-1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        if (glm::dot(out, expected) < 0.999f) {
+            return makeError(ErrorCode::ValidationFailed,
+                             "the manifest's spine label does not face out of the " +
+                                 std::string(family.spineFacing == SpineFacing::Side ? "-X face" : "top face") +
+                                 " (the family's spineFacing " + std::string(toString(family.spineFacing)) + ")",
+                             context);
+        }
+        // The spine label the family names is the quad its spine pictures are drawn for.
+        if (!family.spineLabel.isLayer()) {
+            const glm::vec3 spineSize = spine->bounds.max - spine->bounds.min;
+            const auto tenths = [](float metres) {
+                return static_cast<std::int64_t>(std::lround(static_cast<double>(metres) * 10'000.0));
+            };
+            if (tenths(spineSize.x) != family.spineLabel.width || tenths(spineSize.y) != family.spineLabel.height) {
+                return makeError(ErrorCode::ValidationFailed,
+                                 "the manifest's spine label is " + std::to_string(tenths(spineSize.x)) + " x " +
+                                     std::to_string(tenths(spineSize.y)) + " tenths of a millimetre, the family's " +
+                                     std::to_string(family.spineLabel.width) + " x " +
+                                     std::to_string(family.spineLabel.height),
+                                 context);
+            }
+        }
+    } else if (!family.spineLabel.isLayer()) {
+        return makeError(ErrorCode::ValidationFailed, "the family names a spine label, its manifest's prefab has none",
                          context);
     }
     return ok();

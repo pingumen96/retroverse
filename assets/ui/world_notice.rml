@@ -9,7 +9,8 @@
 		(src/app/src/world_notice_panel.cpp), which also names the ids below: keep them in step
 		(src/app/include/rv/app/world_notice_ui.hpp, tests/unit/app/test_world_notice_document.cpp).
 		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed,
-		room-unreachable (I4 step 7b: the quick catalog's "Mostra nella stanza" could not go to the game's room now).
+		room-unreachable (I4 step 7b: the quick catalog's "Mostra nella stanza" could not go to the game's room now),
+		rooms-migrated (I6 step 4: the rooms of cases and boxes were rearranged once, their spines now out).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
 		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
@@ -79,6 +80,12 @@
 		<div data-if="notice == 'room-unreachable'">
 			<h1>Ora non si può andare nella stanza del gioco</h1>
 			<p>Riprova tra poco: "Mostra nella stanza" del catalogo rapido (Tab) ti porterà davanti al gioco.</p>
+		</div>
+
+		<div data-if="notice == 'rooms-migrated'">
+			<h1>Alcune stanze sono state riordinate</h1>
+			<p>Custodie e scatole ora stanno in piedi sugli scaffali e mostrano la costa. I giochi in vetrina sono stati
+				scelti di nuovo; il catalogo rapido (Tab) li trova tutti come prima.</p>
 		</div>
 	</div>
 </body>

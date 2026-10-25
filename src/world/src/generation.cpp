@@ -60,6 +60,10 @@ Expected<Json> roomInputJson(const RoomSelection& selection, const WorldData& da
                     {"itemDepthMm", family.itemDepthMm},
                     {"spineOut", slotSpecJson(family.spineOut)},
                     {"faceOut", slotSpecJson(family.faceOut)}};
+    // How its items stand spine-out shapes its rooms (I6 step 4); a family on its end hashes as before it.
+    if (family.spineFacing != SpineFacing::End) {
+        familyJson["spineFacing"] = std::string(toString(family.spineFacing));
+    }
     // The fixtures a family names shape its rooms (ADR-0013 §4); a family without any (the 16-bit cartridges') hashes
     // as before them. The label and the cover fit only draw the room.
     if (!family.fixtures.empty()) {
@@ -157,9 +161,13 @@ Expected<WorldData> roomData(const std::filesystem::path& assetRoot, const RoomD
         }
         data.platform = sharedRoomPlatform(request.kind, floor, request.system, data.systems, data.building);
     }
-    // A stored room's family is authoritative (ADR-0013 §3); its theme pack is a look, resolved (ADR-0014 §1).
+    // A stored room's family is authoritative (ADR-0013 §3); its theme pack is a look, resolved (ADR-0014 §1). A new
+    // room takes the last successor of the family its platform names in rooms of its kind (I6 step 4, ADR-0014 §2: a
+    // platform file naming a family that has one plans the successor's room, never one the next update would migrate).
     if (!request.mediaFamily.empty()) {
         data.platform.mediaFamily = request.mediaFamily;
+    } else if (const MediaFamily* latest = inputs.families.latestSuccessor(data.platform.mediaFamily, request.kind)) {
+        data.platform.mediaFamily = latest->id;
     }
     const MediaFamily* family = inputs.families.find(data.platform.mediaFamily);
     if (family == nullptr) {
@@ -679,7 +687,7 @@ PlatformManifest sharedRoomPlatform(RoomKind kind, std::string_view floor, const
     const KindDefaults& defaults = systems.defaultsOf(defaultsKind);
     PlatformManifest platform;
     platform.system = firstSection;
-    platform.mediaFamily = std::string(kSharedRoomFamily);
+    platform.mediaFamily = std::string(kind == RoomKind::Arcade ? kArcadeRoomFamily : kSharedRoomFamily);
     platform.themePack = themePackOf(kind, floor, defaultsKind, systems, building);
     platform.cartridgePlastic = defaults.cartridgePlastic;
     platform.consolePlastic = defaults.consolePlastic;
@@ -714,6 +722,21 @@ Expected<WorldData> loadWorldData(const std::filesystem::path& assetRoot, const 
             return propagate(std::move(error));
         }
         data->sharedRoom = std::make_shared<const WorldData>(std::move(*sharedData));
+    }
+    // A stored room of a family that has a successor in rooms of its kind (I6 step 4, ADR-0014 §2): the data of its
+    // migration comes with its own, the same room with the last successor of its family (its template kept, its theme
+    // pack resolved on its floor as its own).
+    if (!request.mediaFamily.empty() && inputs->families.successorOf(request.mediaFamily, request.kind) != nullptr) {
+        const MediaFamily* latest = inputs->families.latestSuccessor(request.mediaFamily, request.kind);
+        RoomDataRequest migrated = request;
+        migrated.mediaFamily = latest->id;
+        auto successor = roomData(assetRoot, migrated, *inputs, &data->prefabs);
+        if (!successor) {
+            Error error = successor.error();
+            error.message = "the data of its migration to " + latest->id + ": " + error.message;
+            return propagate(std::move(error));
+        }
+        data->successor = std::make_shared<const WorldData>(std::move(*successor));
     }
     return data;
 }

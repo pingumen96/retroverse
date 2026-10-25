@@ -212,6 +212,14 @@ public:
         return readers;
     }
 
+    /// An array of strings; none when the key is absent.
+    [[nodiscard]] std::vector<std::string> optionalStringArray(std::string_view key) {
+        if (find(key) == nullptr) {
+            return {};
+        }
+        return stringArray(key);
+    }
+
     /// An array of strings.
     [[nodiscard]] std::vector<std::string> stringArray(std::string_view key) {
         std::vector<std::string> strings;
@@ -992,6 +1000,15 @@ Json worldToJson(const WorldRecord& world) {
                             {"roomKept", world.roomKept}};
     json["added"] = world.added;
     json["kept"] = world.kept;
+    Json migrated = Json::array();
+    for (const MigratedRoomRecord& room : world.migratedRooms) {
+        migrated.push_back(Json{{"room", room.room},
+                                {"from", room.from},
+                                {"to", room.to},
+                                {"unplacedForCapacity", room.unplacedForCapacity}});
+    }
+    json["migratedRooms"] = std::move(migrated);
+    json["needsConfirmation"] = world.needsConfirmation;
     json["hardFindings"] = world.hardFindings;
     json["softFindings"] = world.softFindings;
     json["objects"] = world.objects;
@@ -1200,6 +1217,15 @@ WorldRecord readWorld(FieldReader& fields) {
     }
     world.added = fields.count("added");
     world.kept = fields.count("kept");
+    for (FieldReader& room : fields.optionalObjectArray("migratedRooms")) {
+        MigratedRoomRecord record;
+        record.room = room.string("room");
+        record.from = room.string("from");
+        record.to = room.string("to");
+        record.unplacedForCapacity = room.optionalCount("unplacedForCapacity").value_or(0);
+        world.migratedRooms.push_back(std::move(record));
+    }
+    world.needsConfirmation = fields.optionalStringArray("needsConfirmation");
     world.hardFindings = fields.count("hardFindings");
     world.softFindings = fields.count("softFindings");
     world.objects = fields.count("objects");

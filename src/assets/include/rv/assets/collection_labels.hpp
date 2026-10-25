@@ -12,6 +12,10 @@
 // when it still does not fit at the minimum size. All sizes are shares of the spine's thickness T (the layer's width):
 // one line from 0.62 T down to 0.45 T, two lines from 0.45 T down to 0.34 T (the minimum), stb_truetype's pixel height
 // (ascent minus descent). At 1 m a 2.0 cm spine covers about 25 px at 1920 x 1080, so the minimum size is about 8.5 px.
+// A printed spine (I6 step 4's review: SpineRequest::spine, the full-height spine of a case or box standing on its
+// side) is laid out the same way on a canvas of its quad's shape (labelCanvas(): a jewel case's 7.1 x 123.4 mm spine
+// on 40 x 696 at BC1), T the canvas's width and the line's room its length less a darker band of the spine's colour
+// across its top 12%, then resampled once into the layer, which the quad stretches back to the spine's shape.
 //
 // Generated front label (256 x 188 in BC1, 128 x 94 in RGBA8): a frame inset from the edge and two stripes across the
 // top in tints of the text colour, the title centred in the space between them, the system's name at the bottom left
@@ -120,6 +124,11 @@ struct TitleLayout {
 /// The spine's title layout in `format` (the rules in the file comment).
 [[nodiscard]] TitleLayout layoutSpineTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
                                            TextureFormat format);
+/// The same on the canvas of `spine`'s shape (labelCanvas() of the spine layer: the sizes shares of the canvas's
+/// thickness, the line as long as its length allows less the printed spine's band); layoutSpineTitle() above for the
+/// layer's shape.
+[[nodiscard]] TitleLayout layoutSpineTitle(const FontFace& font, std::string_view title, std::string_view fallbackTitle,
+                                           TextureFormat format, const LabelAspect& spine);
 
 /// The generated front label's title layout in `format`.
 [[nodiscard]] TitleLayout layoutFrontTitle(const FontFace& font, std::string_view title,
@@ -136,6 +145,11 @@ struct SpineRequest {
     /// The cover's dominant colour (its layer's RvTexture::dominant); none without a cover.
     std::optional<Rgb8> coverColour;
     std::uint64_t seed = 0; ///< the placement's seed: the palette colour without a cover
+    /// The spine label quad's shape (I6 step 4's review, MediaFamily::spineAspect(): across by along): a printed spine,
+    /// laid out on a canvas of that shape (labelCanvas() of the 40 x 256 layer), a darker band of its colour across its
+    /// top 12%, then resampled once into the layer, which the quad stretches back; the layer's own shape by default
+    /// (I3's spine, the cartridges').
+    LabelAspect spine;
     /// The room's theme pack's label palette (I6 step 3), not owned (the caller's, alive while the request is served);
     /// empty: kDefaultLabelPalette.
     std::span<const Rgb8> palette;

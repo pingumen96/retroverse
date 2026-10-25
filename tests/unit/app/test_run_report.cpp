@@ -352,6 +352,10 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.roomKept = 1;
     world.added = 1;
     world.kept = 50;
+    // I6 step 4: the rooms the update migrated once, and what it left undone for a pin.
+    world.migratedRooms = {{"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
+                           {"room:amiga", "big_box", "big_box_v2", 139}};
+    world.needsConfirmation = {"migrate room:saturn from disc_case_cd to disc_case_cd_v2: a pin names the room"};
     world.hardFindings = 0;
     world.softFindings = 2;
     world.objects = 42;
@@ -455,6 +459,21 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     CHECK(sparse->residency == residency);
     const nlohmann::json json = nlohmann::json::parse(rv::app::formatRunReport(report));
     CHECK_FALSE(json.at("world").contains("firstFrame"));
+    CHECK(json.at("world").at("migratedRooms").at(1) == nlohmann::json{{"room", "room:amiga"},
+                                                                       {"from", "big_box"},
+                                                                       {"to", "big_box_v2"},
+                                                                       {"unplacedForCapacity", 139}});
+    CHECK(json.at("world").at("needsConfirmation").size() == 1);
+    // A report of a run before I6 step 4 (no migratedRooms, no needsConfirmation) reads as one that migrated nothing.
+    const auto older = rv::app::parseRunReport(editedReport(report,
+                                                            [](nlohmann::json& edited) {
+                                                                edited["world"].erase("migratedRooms");
+                                                                edited["world"].erase("needsConfirmation");
+                                                            }),
+                                               "r.json");
+    REQUIRE(older.has_value());
+    CHECK(older->world.migratedRooms.empty());
+    CHECK(older->world.needsConfirmation.empty());
     CHECK(json.at("world").at("placements").at("featured") == 44);
     const auto missing = rv::app::parseRunReport(
         editedReport(report, [](nlohmann::json& edited) { edited["world"]["unplaced"].erase("capacity"); }), "r.json");

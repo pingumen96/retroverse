@@ -21,8 +21,9 @@ fs::path buildAssets() {
 
 } // namespace
 
-PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms)
-    : fixture(test::Fixture::materialize("esde/building").value()), dir(freshCaseDir(caseName)), data(dir / "data") {
+PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms, std::string_view fixtureName)
+    : fixture(test::Fixture::materialize(std::string(fixtureName)).value()), dir(freshCaseDir(caseName)),
+      data(dir / "data") {
     cli("library", {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
     cli("import", {"import"});
     if (consoleRooms) {

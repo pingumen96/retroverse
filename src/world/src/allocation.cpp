@@ -160,11 +160,27 @@ private:
     }
 
     void fillSpine(std::span<const RoomTitle> titles) {
-        // The levels in fill order: module after module, each in band order.
-        std::vector<LevelRef> fill;
+        // The levels in fill order, in rounds (spineFillRounds()): module after module, each in band order; a family
+        // standing on its side takes the hero-wall modules' levels in turns.
+        std::vector<std::vector<std::size_t>> bandLevels;
+        std::vector<bool> heroWall;
         for (const std::size_t module : m_input.layout.modules) {
-            const std::vector<LevelRef> band = bandOrder(module);
-            fill.insert(fill.end(), band.begin(), band.end());
+            std::vector<std::size_t> levels;
+            for (const LevelRef& ref : bandOrder(module)) {
+                levels.push_back(ref.level);
+            }
+            bandLevels.push_back(std::move(levels));
+            heroWall.push_back(m_input.layout.fixtures[module].fixture.role == FixtureRole::HeroModule);
+        }
+        const std::vector<std::vector<ModuleLevel>> rounds =
+            spineFillRounds(bandLevels, heroWall, m_input.family.spineFacing);
+        std::vector<LevelRef> fill;
+        std::vector<std::size_t> roundOf;
+        for (std::size_t round = 0; round < rounds.size(); ++round) {
+            for (const ModuleLevel& level : rounds[round]) {
+                fill.push_back({m_input.layout.modules[level.module], level.level});
+                roundOf.push_back(round);
+            }
         }
         const auto permille = static_cast<std::uint64_t>(std::max<std::int64_t>(0, m_input.reservePermille));
         std::vector<std::uint64_t> quotas;
@@ -184,12 +200,30 @@ private:
         while (rise < largest && capacity(rise) < titles.size()) {
             ++rise;
         }
-        // How many titles each level takes, in fill order.
+        // How many titles each level takes, in fill order: a round's levels to their quotas while the titles last, the
+        // titles a round cannot all fill shared out among its levels one at a time.
         std::vector<std::uint64_t> taken(fill.size(), 0);
         std::uint64_t remaining = titles.size();
-        for (std::size_t i = 0; i < fill.size() && remaining > 0; ++i) {
-            taken[i] = std::min({remaining, quotas[i] + rise, std::uint64_t{levelOf(fill[i]).slots}});
-            remaining -= taken[i];
+        for (std::size_t first = 0; first < fill.size() && remaining > 0;) {
+            std::size_t end = first;
+            while (end < fill.size() && roundOf[end] == roundOf[first]) {
+                ++end;
+            }
+            const auto cap = [&](std::size_t i) {
+                return std::min(quotas[i] + rise, std::uint64_t{levelOf(fill[i]).slots});
+            };
+            bool more = true;
+            while (remaining > 0 && more) {
+                more = false;
+                for (std::size_t i = first; i < end && remaining > 0; ++i) {
+                    if (taken[i] < cap(i)) {
+                        ++taken[i];
+                        --remaining;
+                        more = true;
+                    }
+                }
+            }
+            first = end;
         }
         // The titles in the alphabet's order, as one reads: module after module, its used levels top first.
         const std::vector<const RoomTitle*> sorted = sortedSection(titles, m_input.sections);
@@ -228,6 +262,40 @@ std::uint32_t sectionOf(const SectionIndex* sections, const catalog::GameId& gam
     }
     const auto found = sections->find(game);
     return found != sections->end() ? found->second : 0;
+}
+
+std::vector<std::vector<ModuleLevel>> spineFillRounds(std::span<const std::vector<std::size_t>> bandLevels,
+                                                     const std::vector<bool>& heroWall, SpineFacing facing) {
+    std::vector<std::vector<ModuleLevel>> rounds;
+    const auto isHero = [&](std::size_t module) {
+        return facing == SpineFacing::Side && module < heroWall.size() && heroWall[module];
+    };
+    // A family on its side: the hero-wall modules' levels in turns, the next level of each per round.
+    std::size_t deepest = 0;
+    for (std::size_t module = 0; module < bandLevels.size(); ++module) {
+        if (isHero(module)) {
+            deepest = std::max(deepest, bandLevels[module].size());
+        }
+    }
+    for (std::size_t turn = 0; turn < deepest; ++turn) {
+        std::vector<ModuleLevel> round;
+        for (std::size_t module = 0; module < bandLevels.size(); ++module) {
+            if (isHero(module) && turn < bandLevels[module].size()) {
+                round.push_back({module, bandLevels[module][turn]});
+            }
+        }
+        rounds.push_back(std::move(round));
+    }
+    // Every other module after one another, each level a round of its own.
+    for (std::size_t module = 0; module < bandLevels.size(); ++module) {
+        if (isHero(module)) {
+            continue;
+        }
+        for (const std::size_t level : bandLevels[module]) {
+            rounds.push_back({{module, level}});
+        }
+    }
+    return rounds;
 }
 
 std::vector<std::size_t> bandOrder(std::span<const SlotLevelInfo> levels, std::span<const LevelFacing> facings,

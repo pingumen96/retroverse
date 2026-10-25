@@ -24,6 +24,7 @@
 #include <rv/core/random.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
+#include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/room_selection.hpp>
 #include <rv/world/world_store.hpp>
@@ -121,8 +122,8 @@ TEST_CASE("cli/worldplan: a building of selection files, its floors, where-is wi
     REQUIRE(generated.code == ExitCode::Ok);
     CHECK(contains(generated.out, "Generated the plan of room:megadrive, room:snes: "));
     CHECK(contains(generated.out, "Floors:          ground (order 0, 0 rooms), gen4 (order 3, 2 rooms)"));
-    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.3"));
-    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.3"));
+    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.4"));
+    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.4"));
 
     const RunResult shown = session.run({"worldplan", "show", "--library", "esde", "--json"});
     REQUIRE(shown.code == ExitCode::Ok);
@@ -442,12 +443,12 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         std::size_t placed;
     };
     const Expected expected[] = {
-        {"area:arcade", "ground", "generic_case", 15},           // mame: 25 sets, 15 with a cover
-        {"area:shared:computer", "computer", "generic_case", 20}, // amiga: no media at all, generated labels
-        {"area:shared:handheld", "handheld", "generic_case", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
-        {"room:gb", "handheld", "cartridge_handheld", 30},       // 32 games, 2 second releases
-        {"room:psx", "gen5", "disc_case_cd", 40},                // two of them multi-disc
-        {"room:snes", "gen4", "cartridge_home_16bit", 40},       // 42 games, 2 second releases
+        {"area:arcade", "ground", "generic_case", 15},               // mame: 25 sets, 15 with a cover
+        {"area:shared:computer", "computer", "generic_case_v2", 20}, // amiga: no media at all, generated labels
+        {"area:shared:handheld", "handheld", "generic_case_v2", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
+        {"room:gb", "handheld", "cartridge_handheld", 30},           // 32 games, 2 second releases
+        {"room:psx", "gen5", "disc_case_cd_v2", 40},                 // two of them multi-disc
+        {"room:snes", "gen4", "cartridge_home_16bit", 40},           // 42 games, 2 second releases
     };
     REQUIRE(plan->rooms.size() == std::size(expected));
     std::vector<std::string> floors;
@@ -694,4 +695,79 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
     CHECK(megadrive.code == ExitCode::Ok);
     CHECK(contains(megadrive.out, "is up to date"));
     CHECK(readText(session.files.plan) == wholeText);
+}
+
+TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the text and the JSON", "[cli][worldplan]") {
+    // I6 step 4 (ADR-0014 §2): main's golden building as generator 1.3 wrote it (tests/fixtures/world/legacy/), updated
+    // with the selections that made it: psx's jewel cases and the shared rooms' generic cases migrated to their
+    // successors, said once ("Room migrated", changes.migratedRooms); the arcade room keeps its generic case.
+    const Session session;
+    const LoggingReset loggingReset;
+    const std::filesystem::path legacyFile = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" /
+                                             "world" / "legacy" / "building-esde-seed-102938-generator-1.3.json";
+    const std::string legacy = readText(legacyFile);
+    struct Entry {
+        std::string_view system;
+        std::size_t titles;
+        std::size_t distinct;
+    };
+    const Entry systems[] = {{"amiga", 20, 0}, {"gb", 30, 0},       {"mame", 15, 25}, {"pocketlab", 6, 0},
+                             {"pokemini", 8, 0}, {"psx", 40, 0}, {"snes", 40, 0}};
+    std::vector<std::string> arguments{"worldplan", "update"};
+    std::uint64_t seed = 4000;
+    for (const Entry& entry : systems) {
+        rv::world::RoomSelection selection = selectionOf(entry.system, entry.titles, seed++);
+        if (entry.distinct != 0) {
+            selection.distinctTitles = entry.distinct;
+        }
+        arguments.push_back("--selection");
+        arguments.push_back(session.write(std::string(entry.system) + ".json", selection));
+    }
+    arguments.insert(arguments.end(), {"--library", "esde", "--seed", "102938"});
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, legacy).has_value());
+
+    const RunResult updated = session.run(arguments);
+    INFO(updated.out << updated.err);
+    REQUIRE(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "area:shared:computer: generic_case -> generic_case_v2"));
+    CHECK(contains(updated.out, "area:shared:handheld: generic_case -> generic_case_v2"));
+    CHECK(contains(updated.out, "room:psx: disc_case_cd -> disc_case_cd_v2"));
+    CHECK_FALSE(contains(updated.out, "area:arcade: generic_case"));
+    std::size_t lines = 0;
+    for (std::size_t at = updated.out.find("Room migrated"); at != std::string::npos;
+         at = updated.out.find("Room migrated", at + 1)) {
+        ++lines;
+    }
+    CHECK(lines == 3);
+    auto plan = rv::world::readPlan(readText(session.files.plan), "migrated");
+    REQUIRE(plan.has_value());
+    CHECK(plan->generatorVersion == rv::world::kGeneratorVersion);
+
+    // Once: the next update is up to date and names no migration.
+    const RunResult again = session.run(arguments);
+    CHECK(again.code == ExitCode::Ok);
+    CHECK(contains(again.out, "is up to date"));
+    CHECK_FALSE(contains(again.out, "Room migrated"));
+
+    // The same update of the stored 1.3 building as JSON: changes.migratedRooms.
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, legacy).has_value());
+    std::vector<std::string> json = arguments;
+    json.push_back("--json");
+    const RunResult reported = session.run(json);
+    INFO(reported.err);
+    REQUIRE(reported.code == ExitCode::Ok);
+    const nlohmann::json document = nlohmann::json::parse(reported.out);
+    const nlohmann::json& migrated = document["changes"]["migratedRooms"];
+    REQUIRE(migrated.is_array());
+    REQUIRE(migrated.size() == 3);
+    CHECK(migrated[0] == nlohmann::json{{"room", "area:shared:computer"},
+                                        {"from", "generic_case"},
+                                        {"to", "generic_case_v2"},
+                                        {"unplacedForCapacity", 0}});
+    CHECK(migrated[1]["room"] == "area:shared:handheld");
+    CHECK(migrated[2] == nlohmann::json{{"room", "room:psx"},
+                                        {"from", "disc_case_cd"},
+                                        {"to", "disc_case_cd_v2"},
+                                        {"unplacedForCapacity", 0}});
+    CHECK(document["changes"]["rebuild"] == "full");
 }

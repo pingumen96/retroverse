@@ -10,6 +10,13 @@
 //     at a time alternately above and below, above first, one side's levels in order once the other's are taken),
 //     each to its quota of floor(slots / (1 + reserve)) titles, its last slots kept free; when the quotas cannot hold
 //     the section's titles, every quota rises by one until they do (never past a level's slots);
+//   - generator 1.4, for a family whose items stand on their side (I6 step 4's review, cases and boxes): the
+//     hero-wall modules take their levels in turns rather than one module after the other, a round being the next
+//     level in band order of each hero-wall module (the first of each, then the second of each, ...), and the titles
+//     a round cannot all fill are shared out among its levels one at a time in the modules' order (so a room of a few
+//     dozen cases shows them on both hero-wall modules at the eye, neither module left to dressing); the side-wall
+//     modules follow, one after the other as before. A family on its end (the cartridges) fills as before, each level
+//     a round of its own (spineFillRounds());
 //   - within each section the titles stand in the order (catalog sort key, title key, GameId), as one reads a page: a
 //     fixture's top used level first, left to right (slot 0 first), then the level below, fixture after fixture; a
 //     shared or arcade room's in the order (its system's section, catalog sort key, title key, GameId) (ADR-0013 §6,
@@ -74,6 +81,23 @@ struct Allocation {
 /// below, above first, one side's levels in order once the other's are taken.
 [[nodiscard]] std::vector<std::size_t> bandOrder(std::span<const SlotLevelInfo> levels,
                                                  std::span<const LevelFacing> facings, std::int64_t eyeHeightMm);
+/// A level of the collection's modules: the index of its module (into the list given) and of the level.
+struct ModuleLevel {
+    std::size_t module = 0;
+    std::size_t level = 0;
+
+    bool operator==(const ModuleLevel&) const = default;
+};
+
+/// The collection's spine-out levels in fill order, in rounds (the rules in the file comment): `bandLevels` are the
+/// spine-out levels of each module in band order (bandOrder()), the modules in the collection's order, `heroWall`
+/// whether each stands on the hero wall. Each level is a round of its own, module after module; for a family standing
+/// on its side (`facing` Side) the hero-wall modules' levels come first in turns, a round holding the next level of
+/// each of them.
+[[nodiscard]] std::vector<std::vector<ModuleLevel>> spineFillRounds(std::span<const std::vector<std::size_t>> bandLevels,
+                                                                    const std::vector<bool>& heroWall,
+                                                                    SpineFacing facing);
+
 /// The dressing prop of a level: one of `shelfDressing` drawn from the level's prop seed (none when the list is empty).
 [[nodiscard]] PrefabRef dressingProp(std::uint64_t roomSeed, const LevelId& level,
                                      std::span<const PrefabRef> shelfDressing);

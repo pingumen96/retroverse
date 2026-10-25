@@ -832,7 +832,7 @@ TEST_CASE("golden/G12: the building's jewel-case room from its doorway", "[gpu][
     const rv::world::WorldPlan plan = planOf(room, first);
     const rv::world::Room& psx = roomHolding(plan, "psx");
     CHECK(psx.id.toString() == "room:psx");
-    CHECK(psx.mediaFamily == "disc_case_cd");
+    CHECK(psx.mediaFamily == "disc_case_cd_v2");
     const fs::path shot = room.dir / "g12.png";
     constexpr std::uint32_t kFrames = 30;
     const AppRun run =
@@ -867,7 +867,7 @@ TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu
     const rv::world::Room& shared = roomHolding(plan, "pokemini");
     CHECK(shared.id.toString() == "area:shared:handheld");
     CHECK(roomHolding(plan, "pocketlab").id.toString() == shared.id.toString());
-    CHECK(shared.mediaFamily == "generic_case");
+    CHECK(shared.mediaFamily == "generic_case_v2");
     CHECK(shared.sections.size() == 2);
     const fs::path shot = room.dir / "g13.png";
     constexpr std::uint32_t kFrames = 30;

@@ -28,7 +28,7 @@ enum class Part : std::uint8_t { Shell, Front, Spine };
 constexpr std::array<std::string_view, 3> kPartRoles{"plastic_shell", "label", "spine"};
 
 /// The pending picture of both classes: a neutral label in the family's plastic colour (ADR-0011 §6), from the shell
-/// material's base colour.
+/// material's base colour (a dark case's dark, I6 step 4's review).
 [[nodiscard]] gl::Rgb8 pendingColorOf(const assets::MaterialDesc& shell) {
     const assets::Rgb8 srgb =
         assets::toSrgb8(assets::LinearRgb{shell.baseColorFactor.r, shell.baseColorFactor.g, shell.baseColorFactor.b});
@@ -80,7 +80,8 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
                          family.item.manifest);
     }
 
-    // The materials: the theme's shell, and one layered material per array and class.
+    // The materials: the family's shell (I6 step 4's review: a case's or box's own, MediaFamily::shellMaterial), else the
+    // theme's, and one layered material per array and class.
     const std::map<std::string, std::string> roles = world::themeMaterials("cartridge");
     const auto roleMaterial = [&](std::string_view role) {
         const auto found = roles.find(std::string(role));
@@ -88,7 +89,8 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     };
     const assets::MaterialLibrary& library = graphics.materialLibrary();
     gl::MaterialRegistry& materials = graphics.materials();
-    const assets::MaterialDesc& shellDesc = library.getOrFallback(roleMaterial("plastic_shell"));
+    const assets::MaterialDesc& shellDesc = library.getOrFallback(
+        family.shellMaterial.empty() ? roleMaterial("plastic_shell") : family.shellMaterial);
     instance->m_shellMaterial =
         materials.add(fmt::format("{}/shell", instance->m_keyPrefix), "collection shell", shellDesc,
                       gl::resolveMaterialTextures(shellDesc, graphics.textures()));

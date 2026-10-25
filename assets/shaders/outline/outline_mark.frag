@@ -7,7 +7,7 @@
 // instances marks nothing.
 //
 // RV_ALPHA_TEST (injected define): alpha-masked batches discard below their cutoff like the lit pass, so cut-outs stay
-// out of the mark.
+// out of the mark, and so does a face-out item's spine label (materialInstanceTest).
 #include "common/common.glsl"
 #include "common/material.glsl"
 
@@ -23,5 +23,6 @@ void main() {
     }
 #if defined(RV_ALPHA_TEST)
     materialAlphaTest(alpha);
+    materialInstanceTest(vInstance);
 #endif
 }

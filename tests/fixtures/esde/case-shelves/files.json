@@ -1,0 +1,24 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, the fake emulator's copy, and a generated
+// collection per system (tests/support/fixture_collection.hpp): ROM payloads, gamelist and covers. Enough titles that
+// most stand spine-out (I6 step 4: cases and boxes on their side, the spine upright).
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"}
+    ],
+    "directories": ["ES-DE/custom_systems"],
+    "collections": [
+        {"seed": 4300, "titles": 160, "duplicates": 0, "videos": 0, "coverSizes": [[600, 600], [600, 600], [476, 680]],
+         "romFolder": "roms/psx", "romExtension": ".chd", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/psx/gamelist.xml", "mediaFolder": "media/psx"},
+        {"seed": 4600, "titles": 120, "duplicates": 0, "videos": 0, "coverSizes": [[600, 760]],
+         "romFolder": "roms/amiga", "romExtension": ".adf", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/amiga/gamelist.xml", "mediaFolder": "media/amiga"},
+        {"seed": 4700, "titles": 100, "duplicates": 0, "videos": 0, "coverSizes": [[512, 728]],
+         "romFolder": "roms/ps2", "romExtension": ".iso", "romSize": 2048,
+         "gamelist": "ES-DE/gamelists/ps2/gamelist.xml", "mediaFolder": "media/ps2"},
+        {"seed": 4400, "titles": 40, "duplicates": 0, "videos": 0, "coverSizes": [[600, 610]],
+         "romFolder": "roms/gb", "romExtension": ".gb", "romSize": 1024,
+         "gamelist": "ES-DE/gamelists/gb/gamelist.xml", "mediaFolder": "media/gb"}
+    ]
+}

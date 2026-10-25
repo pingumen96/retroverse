@@ -1,0 +1,42 @@
+// The DVD keep case standing on its side (media family disc_case_dvd_v2, ADR-0014 §2; I6 step 4), 13.5 x 19 x 1.4 cm:
+// the 'cartridge' prefab at the family's size, its front label (the cover, a 123 x 178 mm cover) and its spine label
+// upright on its -X face (spineFace "side"), shown when it stands spine-out on its side in a 1.4 x 19 x 13.5 cm slot,
+// as a book stands on a shelf. disc_case_dvd's item with the spine moved; functional, of no real model.
+// Its spine label covers the flat part of that face top to bottom (I6 step 4's review: a printed spine, the title on
+// the cover's colour drawn at the label's shape, the family's spineLabelWidthMm x spineLabelHeightMm).
+{
+  "schemaVersion": 1,
+  "id": "media.case.dvd_keep_side.generic",
+  "assetType": "physical_media",
+  "category": "case",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-24",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.135, 0.19, 0.014], "chamfer": 0.0015, "labelMargin": [0.006, 0.006], "labelInset": 0.0008,
+      "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.0097, 0.1869], "spineFace": "side"
+    },
+    "scaleMeters": [0.135, 0.19, 0.014],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label",
+      "spine": "Spine"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "case", "dvd", "keep_case", "side_spine", "procedural"],
+  "fallbackPrefab": "media.case.plain.generic",
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

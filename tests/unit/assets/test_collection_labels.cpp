@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -13,6 +14,7 @@
 
 #include <rv/assets/bc1.hpp>
 #include <rv/assets/collection_labels.hpp>
+#include <rv/assets/derived_texture_cache.hpp>
 #include <rv/assets/image_io.hpp>
 
 #include "cover_test_support.hpp"
@@ -383,4 +385,89 @@ TEST_CASE("assets/collection_labels: a front label laid out at its label's shape
     CHECK(onWide.lines.size() <= onLayer.lines.size());
     const TitleLayout onSquare = layoutFrontTitle(titleFont(), title, "", TextureFormat::Bc1Srgb, LabelAspect{1, 1});
     CHECK(onSquare.lines == onLayer.lines); // as wide as the layer
+}
+
+TEST_CASE("assets/collection_labels: a printed spine drawn at its quad's shape (I6 step 4's review)",
+          "[assets][collection_labels]") {
+    // A case or box standing on its side shows a spine label as tall as its face: drawn on a canvas of that shape (the
+    // title along its length, a darker band of its colour across its top 12%), then resampled once into the 40 x 256
+    // layer, which the quad stretches back. The layer's shape is I3's spine to the pixel, and keeps its cache key.
+    const SpineRequest i3{"Harbor Lights : Return of the Night Ferry", "", Rgb8{0x4C, 0x8B, 0xC9}, 0};
+    SpineRequest layer = i3;
+    layer.spine = {};
+    for (const TextureFormat format : {TextureFormat::Bc1Srgb, TextureFormat::Rgba8Srgb}) {
+        auto drawnI3 = drawSpine(fonts(), i3, format);
+        auto drawnLayer = drawSpine(fonts(), layer, format);
+        REQUIRE(drawnI3.has_value());
+        REQUIRE(drawnLayer.has_value());
+        CHECK(drawnI3->picture.pixels == drawnLayer->picture.pixels);
+        CHECK(spineCacheKey(i3, format, fonts()).hex() == spineCacheKey(layer, format, fonts()).hex());
+    }
+    // The jewel case's, the keep case's, the handheld case's, the generic case's and the big box's spines (tenths of a
+    // millimetre, media_families.json).
+    const LabelAspect shapes[] = {{71, 1234}, {97, 1870}, {97, 1370}, {107, 1770}, {407, 2370}};
+    const std::vector<SpineRequest> requests{
+        i3,
+        {"Comet Courier", "", Rgb8{0xFF, 0xC8, 0x8A}, 0},
+        {"Starlight Brigade - The Clockwork Armada", "", std::nullopt, 7},
+        {"MMMM", "", Rgb8{0x25, 0x2A, 0x2E}, 0},
+    };
+    for (const LabelAspect& shape : shapes) {
+        INFO(shape.key());
+        for (const TextureFormat format : {TextureFormat::Bc1Srgb, TextureFormat::Rgba8Srgb}) {
+            INFO(toString(format));
+            const LayerSize size = layerSize(TextureClass::Spine, format);
+            const CanvasSize canvas = labelCanvas(shape, size.width, size.height);
+            for (SpineRequest request : requests) {
+                INFO(request.title);
+                request.spine = shape;
+                auto drawn = drawSpine(fonts(), request, format);
+                REQUIRE(drawn.has_value());
+                const ImageData& image = drawn->picture;
+                CHECK(image.width == size.width);
+                CHECK(image.height == size.height);
+                // Another picture and another cache entry than the layer's spine.
+                SpineRequest plain = request;
+                plain.spine = {};
+                CHECK(image.pixels != drawSpine(fonts(), plain, format)->picture.pixels);
+                CHECK(spineCacheKey(request, format, fonts()).hex() != spineCacheKey(plain, format, fonts()).hex());
+                // The line fits the canvas's length less the band and the end margins.
+                const float band = std::round(static_cast<float>(canvas.height) * 0.12F);
+                for (const std::string& line : drawn->layout.lines) {
+                    CHECK(titleFont().layout(decodeUtf8(line), drawn->layout.pixelHeight).width <=
+                          static_cast<float>(canvas.height) - band + 1e-3F);
+                }
+                // The band: the top rows darker than the background, no text in them.
+                const Rgb8 background = drawn->colours.background;
+                const auto luminance = [](const std::uint8_t* pixel) {
+                    return 0.2126 * pixel[0] + 0.7152 * pixel[1] + 0.0722 * pixel[2];
+                };
+                const int bandRows = static_cast<int>(0.10F * static_cast<float>(size.height));
+                double bandMean = 0.0;
+                for (int y = 1; y < bandRows; ++y) {
+                    for (int x = 0; x < size.width; ++x) {
+                        bandMean += luminance(image.pixels.data() + (static_cast<std::size_t>(y) * size.width + x) * 4);
+                    }
+                }
+                bandMean /= static_cast<double>((bandRows - 1) * size.width);
+                const std::uint8_t backgroundPixel[] = {background.r, background.g, background.b};
+                CHECK(bandMean < luminance(backgroundPixel));
+                // Readable after BC1: the text keeps its contrast with the background.
+                if (format == TextureFormat::Bc1Srgb) {
+                    auto encoded = buildSpineLayer(fonts(), request, format);
+                    REQUIRE(encoded.has_value());
+                    const ImageData decoded = decodeLevel(encoded->texture, 0);
+                    CHECK(textContrast(decoded, mostCommon(decoded)) >= kMinTextContrast);
+                    CHECK(encoded->texture.dominant == encoded->colours.background);
+                }
+            }
+        }
+    }
+    // On a slender printed spine a long title gets a longer line than on the layer: one line, never smaller.
+    const TitleLayout onLayer = layoutSpineTitle(titleFont(), i3.title, "", TextureFormat::Bc1Srgb);
+    const TitleLayout onJewel =
+        layoutSpineTitle(titleFont(), i3.title, "", TextureFormat::Bc1Srgb, LabelAspect{71, 1234});
+    CHECK(onJewel.lines.size() <= onLayer.lines.size());
+    CHECK(onJewel.pixelHeight >= onLayer.pixelHeight);
+    CHECK_FALSE(onJewel.ellipsized);
 }

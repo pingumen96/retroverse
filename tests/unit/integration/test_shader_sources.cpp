@@ -396,6 +396,7 @@ TEST_CASE("integration/shaders: mesh and debug line stages read the vertex layou
         {"RV_INSTANCE_HIGHLIGHTED", flags::kHighlighted},
         {"RV_INSTANCE_HIDDEN", flags::kHidden},
         {"RV_INSTANCE_UNAVAILABLE", flags::kUnavailable},
+        {"RV_INSTANCE_NO_SPINE_LABEL", flags::kNoSpineLabel},
     };
     const std::string common = glslWithoutComments("common/common.glsl");
     std::map<std::string, std::uint32_t> glslFlags;
@@ -966,6 +967,8 @@ TEST_CASE("integration/shaders: the mesh programs share an invariant vertex stag
     REQUIRE(std::regex_search(bodies.at("main"), alphaTest,
                               std::regex(R"(#if\s+defined\s*\(\s*RV_ALPHA_TEST\s*\)([\s\S]*?)#endif)")));
     CHECK(std::regex_search(alphaTest[1].str(), std::regex(R"(materialAlphaTest\s*\()")));
+    // ... and leaves out a face-out item's spine label (I6 step 4: spine-layer materials are alpha-masked).
+    CHECK(std::regex_search(alphaTest[1].str(), std::regex(R"(materialInstanceTest\s*\(\s*vInstance\s*\))")));
     CHECK_FALSE(std::regex_search(alphaTest.prefix().str() + alphaTest.suffix().str(), std::regex(R"(\w+\s*\()")));
 }
 

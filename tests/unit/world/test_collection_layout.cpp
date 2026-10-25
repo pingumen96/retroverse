@@ -117,7 +117,11 @@ TEST_CASE("world/collection_layout: every placement of a golden plan becomes exa
             const auto expected = rv::world::slotPickId(entry.data.roomTemplate, item.slot);
             REQUIRE(expected.has_value());
             CHECK(item.pickId == *expected);
-            CHECK(item.attributes() == rv::scene::InstanceAttributes{0, 0, item.flags, item.pickId});
+            // A face-out item's record shows no spine label (I6 step 4): kNoSpineLabel, the item's flags besides.
+            const std::uint32_t stanceFlags =
+                item.stance == ItemStance::FaceOut ? rv::scene::instance_flags::kNoSpineLabel : 0u;
+            CHECK(item.attributes() == rv::scene::InstanceAttributes{0, 0, item.flags | stanceFlags, item.pickId});
+            CHECK((item.flags & rv::scene::instance_flags::kNoSpineLabel) == 0u);
             CHECK(item.instance().model == item.transform);
             CHECK(item.instance().attributes.pickId == item.pickId);
             CHECK(item.pickTarget().id == item.pickId);

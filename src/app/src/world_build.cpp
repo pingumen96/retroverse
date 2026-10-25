@@ -530,6 +530,24 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     for (const world::KeptRoom& held : result->changes.heldRooms) {
         spdlog::warn("World: {} is held as it is: {}", held.room.toString(), held.reason);
     }
+    // The rooms of cases and boxes migrated once to their families' successors (I6 step 4, ADR-0014 §2): said in the
+    // log and by a notice over the floor (the next update migrates nothing, so it shows once).
+    for (const world::MigratedRoom& migrated : result->changes.migratedRooms) {
+        spdlog::info("World: {} is rearranged once, from the media family {} to {} (its cases or boxes now stand on "
+                     "their side, the spine out)",
+                     migrated.room.toString(), migrated.from, migrated.to);
+        if (migrated.unplacedForCapacity > 0) {
+            spdlog::warn("World: {} holds no slot for {} of its titles after its rearrangement (unplaced for capacity)",
+                         migrated.room.toString(), migrated.unplacedForCapacity);
+        }
+    }
+    // What the update left undone because it would have moved something pinned (a pinned room is not rearranged).
+    for (const std::string& refused : result->changes.needsConfirmation) {
+        spdlog::warn("World: left as it stands, it needs confirmation: {}", refused);
+    }
+    if (!result->changes.migratedRooms.empty() && build.notice.empty()) {
+        build.notice = std::string(world_notice::kRoomsMigrated);
+    }
     // The systems that entered the building (I4 step 6a: a room of their own, or a section of a shared or arcade room),
     // and those that wait for a held room (they enter with the update that has every section's selection).
     for (const world::SystemRoom& entered : result->changes.systemsEntered) {
@@ -1340,6 +1358,8 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                 cover.spineKey = item.spineLayerKey;
                 // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.
                 cover.label = roomData->second.mediaFamily.coverAspect();
+                // Its family's spine label shape (I6 step 4's review): the printed spine of a case or box on its side.
+                cover.spine = roomData->second.mediaFamily.spineAspect();
                 cover.systemName = source->systemName;
                 cover.fallbackTitle = text->fallbackTitle;
                 cover.year = text->year;

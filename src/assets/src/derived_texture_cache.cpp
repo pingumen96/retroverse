@@ -107,8 +107,14 @@ CacheKey generatedCacheKey(TextureClass textureClass, TextureFormat format, std:
 
 CacheKey spineCacheKey(const SpineRequest& request, TextureFormat format, const LabelFonts& fonts) {
     const std::string_view texts[] = {request.title, request.fallbackTitle};
-    const std::string_view shas[] = {fonts.title != nullptr ? std::string_view(fonts.title->sha256()) : ""};
-    return generatedCacheKey(TextureClass::Spine, format, texts, spineBaseColour(request), shas);
+    // A printed spine's shape and style (I6 step 4's review) are one more element after the font, only for a shape
+    // other than the layer's (the cartridges' keys unchanged).
+    const std::string shape = request.spine.isLayer() ? std::string()
+                                                      : "spine=" + request.spine.key() + ";style=" +
+                                                            std::to_string(kPrintedSpineStyleVersion);
+    const std::string_view parts[] = {fonts.title != nullptr ? std::string_view(fonts.title->sha256()) : "", shape};
+    return generatedCacheKey(TextureClass::Spine, format, texts, spineBaseColour(request),
+                             std::span<const std::string_view>(parts, shape.empty() ? 1 : 2));
 }
 
 CacheKey frontLabelCacheKey(const FrontLabelRequest& request, TextureFormat format, const LabelFonts& fonts) {

@@ -73,6 +73,16 @@ vec4 materialInstanceBaseColor(vec2 uv, uvec4 instance) {
     return color;
 }
 
+// An instance flagged RV_INSTANCE_NO_SPINE_LABEL (a face-out item, I6 step 4) draws no spine label: the fragments of a
+// spine-layer material are discarded (the shell lies beneath). Spine-layer materials are alpha-masked
+// (rv::gl::MaterialRegistry::addLayered), so that the depth passes and the hover outline bind them and call this too.
+// Call it after the last texture fetch, like materialAlphaTest.
+void materialInstanceTest(uvec4 instance) {
+    if (materialHas(RV_MATERIAL_SPINE_LAYER) && (instance.z & RV_INSTANCE_NO_SPINE_LABEL) != 0u) {
+        discard;
+    }
+}
+
 // Alpha mode: mask discards the fragments below the cutoff; only blend keeps the alpha in the output. Call it after
 // the last texture fetch: implicit derivatives are undefined after a non-uniform discard (GLSL 4.50 §6.4).
 void materialAlphaTest(float alpha) {

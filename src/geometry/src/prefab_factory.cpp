@@ -297,8 +297,9 @@ Expected<ProceduralPrefab> shelfFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> cartridgeFromJson(const Json& params) {
     CartridgeParams p;
-    ParamReader r("cartridge", params,
-                  {"size", "chamfer", "labelMargin", "labelInset", "gripRidges", "spineLabel", "spineLabelSize"});
+    ParamReader r(
+        "cartridge", params,
+        {"size", "chamfer", "labelMargin", "labelInset", "gripRidges", "spineLabel", "spineLabelSize", "spineFace"});
     r.read("size", p.size);
     r.read("chamfer", p.chamfer);
     r.read("labelMargin", p.labelMargin);
@@ -306,6 +307,7 @@ Expected<ProceduralPrefab> cartridgeFromJson(const Json& params) {
     r.read("gripRidges", p.gripRidges);
     r.read("spineLabel", p.spineLabel);
     r.read("spineLabelSize", p.spineLabelSize);
+    r.readEnum("spineFace", p.spineFace, {{"top", SpineFace::Top}, {"side", SpineFace::Side}});
     if (!r.ok()) {
         return propagate(r.error());
     }

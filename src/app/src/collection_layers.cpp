@@ -109,6 +109,7 @@ ItemLayers serveItemLayers(assets::DerivedTextureCache& cache, const assets::Lab
         spine.fallbackTitle = item.fallbackTitle;
         spine.coverColour = coverColour;
         spine.seed = item.seed;
+        spine.spine = item.spine;
         spine.palette = item.palette.view();
         if (auto served = assets::serveSpine(cache, fonts, spine, textureFormat)) {
             layers.spine = toLayerImage(served->texture);

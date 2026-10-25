@@ -9,12 +9,13 @@
 //   spine-out one (the item on its end) spine-out; the plan's section must agree (featured and band face-out, spine
 //   spine-out). The slot comes from the fixture's prefab ("Slot_<level>_<index>").
 // - Transform (I3 step 1b's note): fixture * slot socket * the placement's offset * geometry::slotItemTransform(stance,
-//   item size), from the item prefab's space (the cartridge, pivot centre) to the room's frame (meters). The offset
-//   (ADR-0010 §6, stored in the plan): spine-out, pushed in along the slot's -Z by insetMm; face-out, turned by yawCdeg
-//   about the slot's +Y (through the item's centre: the slot's origin is the middle of its bottom).
+//   item size), from the item prefab's space (the cartridge, pivot centre) to the room's frame (meters); a spine-out
+//   item of a family whose spineFacing is "side" stands on its side (geometry::SlotFacing::SideOut, I6 step 4). The
+//   offset (ADR-0010 §6, stored in the plan): spine-out, pushed in along the slot's -Z by insetMm; face-out, turned by
+//   yawCdeg about the slot's +Y (through the item's centre: the slot's origin is the middle of its bottom).
 // - Pick id (ADR-0012 §2, step 7's PickId): the slot's, stable for as long as the template's version: (index of the
-//   fixture's socket in the template's sockets + 1) << 24 | level << 14 | slot index; never 0. An item keeps its pick id
-//   while its placement stands (step 9 adds placements, never moves them), whatever else the plan gains.
+//   fixture's socket in the template's sockets + 1) << 24 | level << 14 | slot index; never 0. An item keeps its pick
+//   id while its placement stands (step 9 adds placements, never moves them), whatever else the plan gains.
 // - Pick target: the item's slot frame with its offset and the slot volume with its visible face inflated
 //   (faceTargetBox); its cluster the item's.
 // - Clusters (ADR-0011 §3): a level of a module (a shelf), the whole of any other fixture (a display case, the wall
@@ -23,7 +24,8 @@
 // - Groups: the items drawn with one media family's meshes (one in I3), their clusters and items contiguous: items in
 //   (group, cluster, slot) order.
 // - Instance record (step 0c): layers 0 (the pending picture: step 12 assigns the layers, keyed by frontLayerKey and
-//   spineLayerKey), the flags (kUnavailable for a game the snapshot lacks or whose file is not available), the pick id.
+//   spineLayerKey), the flags (kUnavailable for a game the snapshot lacks or whose file is not available; the record's
+//   also kNoSpineLabel for a face-out item, I6 step 4), the pick id.
 // - Occluders (step 7: what hides an item behind it; not the walking colliders, not glass): the room's walls (the
 //   shell's colliders), the solid pieces of every fixture with slots (a shelf's or the wall shelf's sides, back, base,
 //   top and the boards between its levels: its prefab's bounds outside the levels' free volumes, the front left open;
@@ -113,7 +115,8 @@ struct CollectionItem {
     std::string frontLayerKey;
     std::string spineLayerKey;
 
-    /// The instance record's attributes: layers 0 (pending), the flags, the pick id.
+    /// The instance record's attributes: layers 0 (pending), the flags (with scene::instance_flags::kNoSpineLabel for a
+    /// face-out item: its spine label is not drawn), the pick id.
     [[nodiscard]] scene::InstanceAttributes attributes() const noexcept;
     [[nodiscard]] scene::InstanceData instance() const noexcept;
     /// Its pick target (faceTargetBox of the slot box in the slot frame).
@@ -140,6 +143,9 @@ struct CollectionGroup {
     /// The family's item prefab and its size (meters: width, height, depth, the front facing +Z).
     PrefabRef item;
     glm::vec3 itemSize{0.0f};
+    /// The material of the items' shells (MediaFamily::shellMaterial, I6 step 4's review); empty: the theme's
+    /// "cartridge" role.
+    std::string shellMaterial;
     std::uint32_t firstCluster = 0;
     std::uint32_t clusterCount = 0;
     std::uint32_t firstItem = 0;

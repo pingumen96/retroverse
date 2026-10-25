@@ -73,17 +73,29 @@
 //     was of: an entry of a game that left the system stands until a regeneration).
 // Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
 // placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
+// The one exception (I6 step 4, ADR-0014 §2): a stored room whose recorded media family has a successor in rooms of
+// its kind (media_family.hpp's "succeeds" and "succeedsIn"), given a selection of every section and kept by none of
+// the rules above, is MIGRATED: regenerated as a fresh building generates it, with the data of its family's last
+// successor there (its data's WorldData::successor: loadRoomData() reads it), its id, kind, floor, x, yaw, sections
+// and seed kept, its face-out titles chosen again by the same priority, its z following its new depth either way (the
+// room deeper or shallower than before, its doorway wall still on the hall), its record naming the successor and this
+// generator's version; the report lists it (migratedRooms, {room, from, to, the titles its new room holds no slot for:
+// unplaced for capacity}) and its games not placed before among the added. A room a pin names (a game pinned to one of
+// its slots, one of its fixtures pinned) is not migrated: it is updated as it stands and the refusal is in
+// needsConfirmation. Each room migrates at most once per succession: its new family has no successor in rooms of its
+// kind, so the next update of an unchanged catalog writes nothing (the arcade room keeps generic_case, which I6 step
+// 6's arcade_cabinet succeeds there: its own migration, once).
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
 // of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
 // that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an
-// update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an update
-// of the building of no room equals the fresh building of its selections. The change report lists the games added, the
-// placements kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed, the slots
-// freed, the pins, the rooms kept and held, the rooms added, the systems that entered and those that wait, the rebuild
-// level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's identity is a
-// texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the validation is
-// validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the rooms kept judged
-// as kept.
+// update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an
+// update of the building of no room equals the fresh building of its selections. The change report lists the games
+// added, the placements kept, the games newly unplaced, the fixtures added, removed and moved, the dressing removed,
+// the slots freed, the pins, the rooms kept and held, the rooms added, the systems that entered and those that wait,
+// the rebuild level (NoRebuild when no placement, fixture, light or dressing changed; a slot handed to an alias's
+// identity is a texture swap) and the digests before (the stored file's SHA-256: previousDigest) and after; the
+// validation is validatePlan()'s as for a fresh plan, the pins it judges being the honoured and orphaned ones, the
+// rooms kept judged as kept.
 
 #include <map>
 #include <span>
@@ -143,7 +155,8 @@ struct BuildingUpdateInput {
 [[nodiscard]] std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldData& data);
 
 /// The previous building updated by the rules of the file's header; `rooms` holds the data of every room of the
-/// previous plan (loadRoomData(): its recorded family and template), by its system, and of every system
+/// previous plan (loadRoomData(): its recorded family and template, with the data of its migration when that family
+/// has a successor: WorldData::successor), by its system, and of every system
 /// entering the building (loadWorldData() of the system with its platform tags: its console room's with the room its
 /// section would stand in). Errors: InvalidArgument for a previous plan of another library, a selection that is not of
 /// a system's room, two selections of one system, a room without data in `rooms` or with data of another family than

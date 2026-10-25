@@ -110,7 +110,15 @@ scene::MaterialHandle MaterialRegistry::addLayered(std::string_view key, std::st
         spdlog::error("Layered material '{}' has no texture array: drawn without its layers", label);
         return add(key, std::move(label), desc, textures);
     }
-    const scene::MaterialHandle handle = add(key, std::move(label), desc, textures);
+    // A spine is alpha-masked with a cutoff of 0 (I6 step 4): never cut by its alpha, but drawn by the masked depth and
+    // outline programs, which bind it, so that every pass leaves out a face-out item's spine label
+    // (scene::instance_flags::kNoSpineLabel, common/material.glsl's materialInstanceTest).
+    assets::MaterialDesc layeredDesc = desc;
+    if (layered.spineLayer && layeredDesc.alphaMode == assets::AlphaMode::Opaque) {
+        layeredDesc.alphaMode = assets::AlphaMode::Mask;
+        layeredDesc.alphaCutoff = 0.0f;
+    }
+    const scene::MaterialHandle handle = add(key, std::move(label), layeredDesc, textures);
     GpuMaterial& material = m_materials[handle.value];
     material.layeredBaseColor = layered.array;
     material.uniforms.flags |= material_flags::kLayeredBaseColor;
