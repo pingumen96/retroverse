@@ -43,15 +43,23 @@ void requireSize(DocumentReader& document, const std::string& pointer, const Slo
     }
 }
 
-/// A fixture of the family: a prefab of `kind`, or nothing when the key is not there.
-std::optional<PrefabRef> readFixture(const ObjectReader& reader, std::string_view key, std::string_view kind) {
+/// A row of arcade cabinets (I6 step 6) stands as any fixture of a family facing front.
+constexpr std::string_view kCabinetKind = "arcade_cabinet";
+
+/// A fixture of the family: a prefab of `kind` (or a row of cabinets for a family facing front), or nothing when the
+/// key is not there.
+std::optional<PrefabRef> readFixture(const ObjectReader& reader, std::string_view key, std::string_view kind,
+                                     SpineFacing facing) {
     if (!reader.has(key)) {
         return std::nullopt;
     }
     PrefabRef ref = reader.prefab(key);
-    if (!reader.document().failed() && ref.kind != kind) {
+    const bool front = facing == SpineFacing::Front;
+    if (!reader.document().failed() && ref.kind != kind && !(front && ref.kind == kCabinetKind)) {
         reader.document().fail(reader.pointer(key),
-                               "the fixture must be a '" + std::string(kind) + "', not a '" + ref.kind + "'");
+                               "the fixture must be a '" + std::string(kind) + "'" +
+                                   (front ? " or an '" + std::string(kCabinetKind) + "'" : std::string()) +
+                                   ", not a '" + ref.kind + "'");
     }
     return ref;
 }
@@ -75,7 +83,8 @@ MediaFamily readFamily(const ObjectReader& reader) {
     family.faceOut =
         readSlot(reader.object("faceOut", {"depthMm", "gapMm", "headroomMm", "heightMm", "marginMm", "widthMm"}));
     if (reader.has("spineFacing")) {
-        family.spineFacing = reader.enumeration<SpineFacing>("spineFacing", parseSpineFacing, "one of end, side");
+        family.spineFacing =
+            reader.enumeration<SpineFacing>("spineFacing", parseSpineFacing, "one of end, side, front");
     }
     if (reader.has("succeeds")) {
         family.succeeds = reader.dataId("succeeds");
@@ -135,28 +144,43 @@ MediaFamily readFamily(const ObjectReader& reader) {
             reader.document().fail(reader.pointer("shellMaterial"), "names no material");
         }
     }
+    if (reader.has("labelMaterial")) {
+        family.labelMaterial = reader.string("labelMaterial");
+        if (!reader.document().failed() && family.labelMaterial.empty()) {
+            reader.document().fail(reader.pointer("labelMaterial"), "names no material");
+        }
+    }
     // Stood on its end with its top face outward, the spine is the item's depth wide and its width tall; stood on its
-    // side, upright, the item's depth wide and its height tall (I6 step 4).
+    // side, upright, the item's depth wide and its height tall (I6 step 4); never spine-out, the item as it is (I6
+    // step 6's cabinets).
     if (family.spineFacing == SpineFacing::Side) {
         requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemDepthMm,
                     family.itemHeightMm, family.itemWidthMm, "spine-out (on its side)");
+    } else if (family.spineFacing == SpineFacing::Front) {
+        requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemWidthMm,
+                    family.itemHeightMm, family.itemDepthMm, "spine-out (facing front)");
     } else {
         requireSize(reader.document(), reader.pointer("spineOut"), family.spineOut, family.itemDepthMm,
                     family.itemWidthMm, family.itemHeightMm, "spine-out");
     }
     requireSize(reader.document(), reader.pointer("faceOut"), family.faceOut, family.itemWidthMm, family.itemHeightMm,
                 family.itemDepthMm, "face-out");
-    // A level's facing is told by its slot: the two must differ.
-    if (!reader.document().failed() && family.spineOut.widthMm == family.faceOut.widthMm &&
-        family.spineOut.heightMm == family.faceOut.heightMm && family.spineOut.depthMm == family.faceOut.depthMm) {
+    // A level's facing is told by its slot: the two must differ, but for a family facing front, whose modules' levels
+    // are told by their fixture's role.
+    if (!reader.document().failed() && family.spineFacing != SpineFacing::Front &&
+        family.spineOut.widthMm == family.faceOut.widthMm && family.spineOut.heightMm == family.faceOut.heightMm &&
+        family.spineOut.depthMm == family.faceOut.depthMm) {
         reader.document().fail(reader.pointer("spineOut"), "the spine-out slot is the face-out one");
+    }
+    if (!reader.document().failed() && family.spineFacing == SpineFacing::Front && !family.spineLabel.isLayer()) {
+        reader.document().fail(reader.pointer("spineLabelWidthMm"), "a family facing front shows no spine label");
     }
     if (reader.has("fixtures")) {
         const ObjectReader fixtures = reader.object("fixtures", {"display", "heroModule", "sideModule", "wallShelf"});
-        family.fixtures.heroModule = readFixture(fixtures, "heroModule", "shelf");
-        family.fixtures.sideModule = readFixture(fixtures, "sideModule", "shelf");
-        family.fixtures.display = readFixture(fixtures, "display", "display_case");
-        family.fixtures.wallShelf = readFixture(fixtures, "wallShelf", "wall_shelf");
+        family.fixtures.heroModule = readFixture(fixtures, "heroModule", "shelf", family.spineFacing);
+        family.fixtures.sideModule = readFixture(fixtures, "sideModule", "shelf", family.spineFacing);
+        family.fixtures.display = readFixture(fixtures, "display", "display_case", family.spineFacing);
+        family.fixtures.wallShelf = readFixture(fixtures, "wallShelf", "wall_shelf", family.spineFacing);
     }
     return family;
 }
@@ -225,8 +249,8 @@ Expected<MediaFamilyRegistry> parseMediaFamilies(std::string_view text, std::str
         MediaFamily family = readFamily(
             ObjectReader(document, element, pointer,
                          {"coverFit", "faceOut", "fixtures", "id", "item", "itemDepthMm", "itemHeightMm", "itemWidthMm",
-                          "labelHeightMm", "labelWidthMm", "shellMaterial", "spineFacing", "spineLabelHeightMm",
-                          "spineLabelWidthMm", "spineOut", "succeeds", "succeedsIn"}));
+                          "labelHeightMm", "labelMaterial", "labelWidthMm", "shellMaterial", "spineFacing",
+                          "spineLabelHeightMm", "spineLabelWidthMm", "spineOut", "succeeds", "succeedsIn"}));
         if (!document.failed() && !ids.insert(family.id).second) {
             document.fail(detail::pointerChild(pointer, "id"), "the family appears twice");
         }
@@ -355,8 +379,13 @@ Status checkItemManifest(const MediaFamily& family, const assets::PrefabManifest
                          context);
     }
     // The spine label lies on the face the family's items show spine-out (I6 step 4): out of the top face standing on
-    // their end, out of the -X face standing on their side.
-    if (const geometry::Socket* spine = geometry::findSocket(prefab->sockets, "Spine")) {
+    // their end, out of the -X face standing on their side; a family facing front has none (I6 step 6).
+    const geometry::Socket* spineSocket = geometry::findSocket(prefab->sockets, "Spine");
+    if (spineSocket != nullptr && family.spineFacing == SpineFacing::Front) {
+        return makeError(ErrorCode::ValidationFailed,
+                         "the manifest's prefab has a spine label; a family facing front shows none", context);
+    }
+    if (const geometry::Socket* spine = spineSocket) {
         const glm::vec3 out(spine->transform[2]);
         const glm::vec3 expected =
             family.spineFacing == SpineFacing::Side ? glm::vec3(-1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
@@ -391,6 +420,9 @@ Status checkItemManifest(const MediaFamily& family, const assets::PrefabManifest
 
 RoomTemplate withFamilyFixtures(RoomTemplate roomTemplate, const MediaFamily& family) {
     const FamilyFixtures& fixtures = family.fixtures;
+    if (family.spineFacing == SpineFacing::Front) {
+        roomTemplate.shelfDressing.clear(); // an empty cabinet's screen stays dark (I6 step 6)
+    }
     if (fixtures.heroModule) {
         roomTemplate.heroModule = *fixtures.heroModule;
     }

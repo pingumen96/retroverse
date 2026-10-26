@@ -94,7 +94,9 @@ TEST_CASE("world/theme packs: the seven shipped packs, each complete and coheren
                 INFO(role);
                 CHECK(theme->kinds.at(kind).contains(role));
             }
-            CHECK(theme->kinds.at(kind).size() == roles.size());
+            // Beyond them only the handheld archive's lit display cases (I6 step 6: "board_light").
+            const bool litCases = id == "handheld_archive" && kind == "display_case";
+            CHECK(theme->kinds.at(kind).size() == roles.size() + (litCases ? 1u : 0u));
         }
         CHECK(theme->kinds.size() == builtIn.kinds.size());
         // Every material is the library's.

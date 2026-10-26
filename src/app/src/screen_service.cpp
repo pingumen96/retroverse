@@ -96,8 +96,10 @@ std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& descript
     }
     for (std::size_t index = 0; index < description.objects.size(); ++index) {
         const scene::SceneObject& object = description.objects[index];
-        if (object.source != scene::SceneObject::Source::Prefab || object.kind != "crt" ||
-            !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
+        // The CRT, or the arcade's hero cabinet that stands for it (I6 step 6), with its screen's picture.
+        if (object.source != scene::SceneObject::Source::Prefab ||
+            (object.kind != "crt" && object.kind != "arcade_cabinet") || !object.texturesByRole.contains("screen") ||
+            index >= instance.objectBounds().size()) {
             continue;
         }
         if (idPrefix && !object.id.starts_with(*idPrefix)) {

@@ -83,10 +83,29 @@ LevelFacing SlotLevelInfo::facing(const MediaFamily& family) const noexcept {
     return LevelFacing::Other;
 }
 
+LevelFacing SlotLevelInfo::facing(const MediaFamily& family, FixtureRole role) const noexcept {
+    const LevelFacing byVolume = facing(family);
+    if (family.spineFacing == SpineFacing::Front && byVolume == LevelFacing::FaceOut &&
+        (role == FixtureRole::HeroModule || role == FixtureRole::SideModule)) {
+        return LevelFacing::SpineOut;
+    }
+    return byVolume;
+}
+
 std::uint64_t PrefabInfo::slots(const MediaFamily& family, LevelFacing facing) const noexcept {
     std::uint64_t total = 0;
     for (const SlotLevelInfo& level : levels) {
         if (level.facing(family) == facing) {
+            total += level.slots;
+        }
+    }
+    return total;
+}
+
+std::uint64_t PrefabInfo::slots(const MediaFamily& family, LevelFacing facing, FixtureRole role) const noexcept {
+    std::uint64_t total = 0;
+    for (const SlotLevelInfo& level : levels) {
+        if (level.facing(family, role) == facing) {
             total += level.slots;
         }
     }
@@ -262,15 +281,16 @@ Expected<CollectionCapacity> collectionCapacity(const RoomTemplate& roomTemplate
         if (!display) {
             return propagate(display.error());
         }
-        capacity.displaySlots += (*display)->slots(family, LevelFacing::FaceOut);
+        capacity.displaySlots += (*display)->slots(family, LevelFacing::FaceOut, FixtureRole::Display);
     }
-    capacity.bandSlots = roomTemplate.heroBand.size() * (*hero)->slots(family, LevelFacing::FaceOut);
+    capacity.bandSlots =
+        roomTemplate.heroBand.size() * (*hero)->slots(family, LevelFacing::FaceOut, FixtureRole::HeroModule);
     for (const TemplateSocket& socket : roomTemplate.sockets) {
         if (socket.kind == SocketKind::HeroModule) {
-            capacity.heroSpineSlots += (*hero)->slots(family, LevelFacing::SpineOut);
+            capacity.heroSpineSlots += (*hero)->slots(family, LevelFacing::SpineOut, FixtureRole::HeroModule);
         }
     }
-    capacity.sideModuleSlots = (*side)->slots(family, LevelFacing::SpineOut);
+    capacity.sideModuleSlots = (*side)->slots(family, LevelFacing::SpineOut, FixtureRole::SideModule);
     for (std::uint32_t step = 0; step <= roomTemplate.maxGrowthSteps(); ++step) {
         const auto sockets = std::count_if(
             roomTemplate.sockets.begin(), roomTemplate.sockets.end(),

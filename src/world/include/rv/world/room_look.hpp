@@ -60,14 +60,22 @@
 //   as they are (the scene builder, scene_builder.hpp, places the pieces):
 //     "furniture": {
 //       "heroParts": {"armchair": [<piece>, ...], "lamp": [<piece>], "rug": [<piece>]},  // by the part's role
-//                                                    // (never "crt", "sign" or "console": the reader refuses them)
+//                                                    // (never "sign" or "console": the reader refuses them; "crt"
+//                                                    // only as arcade cabinets, I6 step 6, below)
 //       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
 //   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
 //   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
 //   (a scene pattern, scene::kTexturePatternNames, drawn with an invented title and the piece's seed), and for a hero
 //   part's piece "xMm", "zMm", "yawCdeg" (in the hero corner socket's frame, as the template's parts; the part's own
-//   when left out)}. A hero part's list replaces the part by its pieces (one or more: a desk and its chair, two
-//   stools); a decoration kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
+//   when left out) and "yMm" (I6 step 6: its height above the room's floor; the part's when left out)}. A hero part's
+//   list replaces the part by its pieces (one or more: a desk and its chair, two stools), or, empty (I6 step 6), leaves
+//   the part undrawn: another part's piece stands in its place (the arcade's hero cabinet on the floor where the TV's
+//   cabinet stood). The "crt" (the room's video) is listed only as arcade cabinets ("arcade_cabinet" pieces, the first
+//   carrying a ScreenSurface: the room's video plays on it; one that does not is left out, the CRT drawn as planned):
+//   the hero cabinet of ADR-0014 §6, a part substitution by the arcade room's pack, whose kind it is. Both the "crt"'s
+//   pieces and a part left out apply in the arcade room only (its hero corner holds no console): another room drawn
+//   with the pack keeps its CRT, TV cabinet and console as planned; a decoration
+//   kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
 //   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
 //   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
 //   read: the weights are the variants' (ThemeFurniture). A piece that leaves its footprint where it is drawn is not
@@ -249,6 +257,8 @@ struct FurniturePiece {
     std::optional<std::int64_t> xMm;
     std::optional<std::int64_t> zMm;
     std::optional<std::int32_t> yawCdeg;
+    /// A hero part's piece: its height above the room's floor (I6 step 6); the part's when left out.
+    std::optional<std::int64_t> yMm;
 
     bool operator==(const FurniturePiece&) const = default;
 };
@@ -261,8 +271,8 @@ struct FurnitureVariant {
     bool operator==(const FurnitureVariant&) const = default;
 };
 
-/// A pack's furniture variants: the pieces that replace a hero corner's part (by its role), and the weighted variants
-/// of a decoration (by its prefab kind).
+/// A pack's furniture variants: the pieces that replace a hero corner's part (by its role; none: the part is not drawn,
+/// I6 step 6), and the weighted variants of a decoration (by its prefab kind).
 struct ThemeFurniture {
     std::map<std::string, std::vector<FurniturePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<FurnitureVariant>, std::less<>> decoration;

@@ -404,7 +404,7 @@ private:
             }
             std::vector<LevelFacing> facings;
             for (const SlotLevelInfo& level : info->levels) {
-                facings.push_back(level.facing(m_data.mediaFamily));
+                facings.push_back(level.facing(m_data.mediaFamily, module->role));
             }
             modules.push_back(module);
             infos.push_back(info);
@@ -761,8 +761,9 @@ std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldD
         bool same = info != nullptr && info->levels.size() == fixture.levels.size();
         for (std::size_t i = 0; same && i < info->levels.size(); ++i) {
             const SlotLevelInfo& level = info->levels[i];
-            same = fixture.levels[i] == FixtureLevel{level.level, level.slots,
-                                                     detail::sectionOf(fixture.role, level.facing(data.mediaFamily))};
+            same = fixture.levels[i] ==
+                   FixtureLevel{level.level, level.slots,
+                                detail::sectionOf(fixture.role, level.facing(data.mediaFamily, fixture.role))};
         }
         if (!same) {
             return "the levels of " + fixture.id.toString() + " are no longer its prefab " + fixture.prefab.manifest +

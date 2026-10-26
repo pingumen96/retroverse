@@ -22,6 +22,7 @@
 #include <rv/core/seed.hpp>
 #include <rv/geometry/socket.hpp>
 #include <rv/world/seeds.hpp>
+#include <rv/world/validation.hpp>
 
 #include "room_parts.hpp"
 
@@ -87,12 +88,24 @@ json patternTexture(std::string_view pattern, std::uint64_t seed) {
     return json{{"pattern", std::string(pattern)}, {"title", std::string(title)}, {"seed", random.below(1000000)}};
 }
 
+/// The cabinets' marquees (I6 step 6): generic arcade words in neon, never a title (the game on a cabinet's screen
+/// changes; its marquee stays) or a trade name.
+constexpr std::array<std::string_view, 10> kMarqueeWords{"PLAY",      "1 UP",     "2 UP",    "HI SCORE",   "BONUS",
+                                                         "PLAYER 1", "GAME ON", "TOP SCORE", "EXTRA LIFE", "LEVEL UP"};
+
+json marqueeTexture(std::uint64_t seed) {
+    core::Random random(seed);
+    const auto word = kMarqueeWords[static_cast<std::size_t>(random.below(kMarqueeWords.size()))];
+    return json{{"pattern", "neon"}, {"title", std::string(word)}, {"seed", random.below(1000000)}};
+}
+
 json coverTexture(std::uint64_t seed) {
     return patternTexture("cover", seed);
 }
 
 /// The textures of a prefab kind's roles: the CRT's idle colour bars, a poster's or a magazine's invented cover, the
-/// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour).
+/// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour), an arcade cabinet's
+/// marquees and idle screens (I6 step 6: generic words in neon).
 json themeTextures(std::string_view kind, bool sign, const PlatformManifest& platform, std::uint64_t seed) {
     if (kind == "crt") {
         return json{{"screen", json{{"pattern", "color_bars"}}}};
@@ -106,6 +119,13 @@ json themeTextures(std::string_view kind, bool sign, const PlatformManifest& pla
     }
     if (kind == "desk") {
         return json{{"screen", patternTexture("terminal", seed)}}; // I6 step 3b: the study's computer, on
+    }
+    if (kind == "arcade_cabinet") {
+        // I6 step 6: each cabinet's marquee lit with a generic word in neon (the odd cabinets' another), and an empty
+        // cabinet's screen asking for a coin, dimly.
+        return json{{"marquee", marqueeTexture(seed)},
+                    {"marquee_alt", marqueeTexture(core::deriveSeed(seed, "marquee_alt"))},
+                    {"screen_back", json{{"pattern", "neon"}, {"title", "INSERT COIN"}}}};
     }
     return json::object();
 }
@@ -128,9 +148,9 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
 }
 
 /// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside, and so its
-/// showcases (I6 step 3b's review).
+/// showcases (I6 step 3b's review) and display cases (I6 step 6: the handheld archive's lit counters).
 void lightInside(json& object, std::string_view generator, const std::map<std::string, std::string>& materials) {
-    if ((generator == "shelf" || generator == "wall_shelf" || generator == "showcase") &&
+    if ((generator == "shelf" || generator == "wall_shelf" || generator == "showcase" || generator == "display_case") &&
         materials.contains("board_light") && object["params"].is_object()) {
         object["params"]["boardLight"] = true;
     }
@@ -148,7 +168,15 @@ json prefabObject(std::string id, const ScenePrefab& prefab, const json* params,
     }
     object["prefab"] = prefab.generator;
     object["params"] = params != nullptr ? *params : prefab.params;
-    const std::map<std::string, std::string> materials = data.theme.materials(prefab.generator, heroPart);
+    std::map<std::string, std::string> materials = data.theme.materials(prefab.generator, heroPart);
+    // A counter showcase's handhelds (I6 step 6) take the pack's showcase plastics, those of its handheld.
+    if (prefab.generator == "display_case" && object["params"].value("counter", false)) {
+        for (const auto& [role, material] : data.theme.materials("showcase")) {
+            if (role.starts_with("plastic_")) {
+                materials.emplace(role, material);
+            }
+        }
+    }
     lightInside(object, prefab.generator, materials);
     object["materials"] = materialsJson(materials);
     if (json textures = themeTextures(prefab.generator, sign, data.platform, seed); !textures.empty()) {
@@ -237,19 +265,29 @@ struct DrawnPiece {
     std::uint64_t seed = 0;
 };
 
-/// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard.
-std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard; nothing: the plan's
+/// prefab draws it; none: it is not drawn (a hero part the pack leaves out, I6 step 6).
+std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
     std::vector<DrawnPiece> pieces;
     const std::uint64_t seed = fixtureSeed(room.seed, fixture.id);
     if (fixture.role == FixtureRole::HeroCorner) {
         const auto found = data.furniture.heroParts.find(fixture.id.part());
         const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
         if (found == data.furniture.heroParts.end() || socket == nullptr) {
-            return pieces;
+            return std::nullopt;
         }
         const auto part = std::find_if(socket->parts.begin(), socket->parts.end(),
                                        [&](const HeroPart& candidate) { return candidate.role == fixture.id.part(); });
         if (part == socket->parts.end()) {
+            return std::nullopt;
+        }
+        // The CRT's substitution and the parts a pack leaves out are the arcade room's (I6 step 6, ADR-0014 §6: a part
+        // substitution by room kind, in a hero corner without a console); any other room drawn with the pack keeps them
+        // as planned.
+        if ((fixture.id.part() == kHeroTvPart || found->second.empty()) && room.kind != RoomKind::Arcade) {
+            return std::nullopt;
+        }
+        if (found->second.empty()) {
             return pieces;
         }
         for (std::size_t i = 0; i < found->second.size(); ++i) {
@@ -261,7 +299,7 @@ std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, c
             drawn.piece = &piece;
             drawn.id = fixture.id.localText() + (i == 0 ? std::string() : "." + std::to_string(i + 1));
             drawn.xMm = fixture.xMm + roomX;
-            drawn.yMm = fixture.yMm;
+            drawn.yMm = piece.piece.yMm.value_or(fixture.yMm);
             drawn.zMm = fixture.zMm + roomZ;
             drawn.yawCdeg = ((socket->yawCdeg + piece.piece.yawCdeg.value_or(part->yawCdeg)) % 36000 + 36000) % 36000;
             drawn.seed = i == 0 ? seed : core::deriveSeed(seed, "piece", static_cast<std::uint64_t>(i));
@@ -270,19 +308,19 @@ std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, c
         return pieces;
     }
     if (fixture.role != FixtureRole::Decoration) {
-        return pieces;
+        return std::nullopt;
     }
     const auto found = data.furniture.decoration.find(fixture.prefab.kind);
     const ScenePrefab* own = data.prefabs.find(fixture.prefab);
     if (found == data.furniture.decoration.end() || own == nullptr || !own->prefab) {
-        return pieces;
+        return std::nullopt;
     }
     std::uint64_t total = 0;
     for (const auto& [weight, piece] : found->second) {
         total += weight;
     }
     if (total == 0) {
-        return pieces;
+        return std::nullopt;
     }
     // The variant by weight, from the room's seed and the fixture's id.
     core::Random random(core::deriveSeed(room.seed, "furniture", fixture.id.localText()));
@@ -314,16 +352,18 @@ std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, c
     return pieces;
 }
 
-/// The pieces that draw `fixture` (scene_builder.hpp's file comment); none: the plan's prefab draws it. The guard of
-/// ADR-0014 §1 (amended): a decoration's variant that leaves its socket's footprint (turned with the socket), or a hero
-/// part's piece that leaves the hero corner (and the planned part's own floor, where the part reaches out of the corner:
-/// the lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once.
-std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
-    std::vector<DrawnPiece> pieces = placedPieces(room, fixture, data);
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment); nothing: the plan's prefab draws it; none: it is
+/// not drawn (I6 step 6). The guard of ADR-0014 §1 (amended): a decoration's variant that leaves its socket's
+/// footprint (turned with the socket), or a hero part's piece that leaves the hero corner (and the planned part's own
+/// floor, where the part reaches out of the corner: the lamp beside the TV), is not drawn; the plan's prefab is, with a
+/// warning logged once.
+std::optional<std::vector<DrawnPiece>> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+    std::optional<std::vector<DrawnPiece>> placed = placedPieces(room, fixture, data);
     const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
-    if (pieces.empty() || socket == nullptr) {
-        return pieces;
+    if (!placed || placed->empty() || socket == nullptr) {
+        return placed;
     }
+    const std::vector<DrawnPiece>& pieces = *placed;
     Footprint allowed = socketFootprint(data.roomTemplate, *socket, room.growthSteps);
     if (fixture.role == FixtureRole::HeroCorner) {
         if (const ScenePrefab* own = data.prefabs.find(fixture.prefab); own != nullptr && own->prefab) {
@@ -349,10 +389,10 @@ std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, co
                                  data.theme.id, drawn.piece->piece.prefab.manifest, fixture.id.toString(),
                                  floor.minXMm, floor.maxXMm, floor.minZMm, floor.maxZMm, allowed.minXMm,
                                  allowed.maxXMm, allowed.minZMm, allowed.maxZMm, fixture.prefab.manifest));
-            return {};
+            return std::nullopt;
         }
     }
-    return pieces;
+    return placed;
 }
 
 /// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
@@ -612,11 +652,23 @@ SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot, con
     };
     SceneFurniture result;
     for (const auto& [part, pieces] : furniture.heroParts) {
+        if (pieces.empty()) {
+            result.heroParts.emplace(part, std::vector<ScenePiece>()); // left out (I6 step 6)
+            continue;
+        }
         std::vector<ScenePiece> resolved;
         for (const FurniturePiece& piece : pieces) {
             if (auto scenePiece = resolve(piece)) {
                 resolved.push_back(std::move(*scenePiece));
             }
+        }
+        // The CRT's pieces carry the room's video (I6 step 6's hero cabinet): the first holds a ScreenSurface.
+        if (part == kHeroTvPart && !resolved.empty() &&
+            geometry::findSocket(resolved.front().prefab.prefab->sockets, "ScreenSurface") == nullptr) {
+            spdlog::warn("World: the furniture piece {} for the hero corner's crt has no screen surface; the CRT is "
+                         "drawn as planned",
+                         resolved.front().piece.prefab.manifest);
+            resolved.clear();
         }
         if (!resolved.empty()) {
             result.heroParts.emplace(part, std::move(resolved));
@@ -748,9 +800,10 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                              fixture.id.toString());
         }
         const std::string heroPart = fixture.role == FixtureRole::HeroCorner ? fixture.id.part() : std::string();
-        // The pack's furniture in place of the part or the decoration (I6 step 3b).
-        if (const std::vector<DrawnPiece> pieces = drawnPieces(*room, fixture, data); !pieces.empty()) {
-            for (const DrawnPiece& drawn : pieces) {
+        // The pack's furniture in place of the part or the decoration (I6 step 3b); a part it leaves out is not drawn
+        // (I6 step 6).
+        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(*room, fixture, data)) {
+            for (const DrawnPiece& drawn : *pieces) {
                 objects.push_back(pieceObject(drawn, fixture, heroPart, data));
             }
             continue;
@@ -856,11 +909,15 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
         if (fixture.id.room() != roomId) {
             continue;
         }
-        const std::vector<DrawnPiece> pieces = drawnPieces(*room, fixture, data);
-        if (pieces.empty()) {
+        const std::optional<std::vector<DrawnPiece>> placed = drawnPieces(*room, fixture, data);
+        if (!placed) {
             fixtures.push_back(fixture);
             continue;
         }
+        if (placed->empty()) {
+            continue; // a part the pack leaves out (I6 step 6) covers nothing
+        }
+        const std::vector<DrawnPiece>& pieces = *placed;
         glm::vec3 low(std::numeric_limits<float>::max());
         glm::vec3 high(std::numeric_limits<float>::lowest());
         for (const DrawnPiece& drawn : pieces) {

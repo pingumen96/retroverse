@@ -6,7 +6,9 @@
 // template's own fixtures and I3's cover fit, and each family's capacity in the 9 x 10 m room and grown to 16 m (the
 // figures docs/i4/step-2.md compares with the reference library). Since I6 step 4 (ADR-0014 §2) the cases and boxes
 // have successors standing on their side (the *_v2 families: an upright spine on the item's -X face), which
-// systems.json and the shared rooms name; their predecessors stay readable for the rooms that record them.
+// systems.json and the shared rooms name; their predecessors stay readable for the rooms that record them. Since I6
+// step 6 (ADR-0014 §2, §6) the arcade room's family, arcade_cabinet, succeeds generic_case there: rows of cabinets
+// whose screens face out in every fixture, the modules' levels the spine section's by their role.
 
 #include "world_generation_support.hpp"
 
@@ -68,6 +70,7 @@ constexpr FamilyCase kFamilies[] = {
     {"disc_case_dvd_v2", "ps2"},
     {"big_box_v2", "amiga"},
     {"generic_case_v2", "c64"},
+    {"arcade_cabinet", "mame"}, // I6 step 6: the arcade systems' family, its rows of cabinets
     // The predecessors, as a stored room records them (ADR-0013 §3: the recorded family is authoritative).
     {"case_handheld", "nds"},
     {"disc_case_cd", "psx"},
@@ -100,7 +103,9 @@ WorldData dataOf(std::string_view system, std::string_view family = {}) {
 
 /// A recorded family, unless it is the system's own (systems.json's).
 std::string_view recordedFamily(const FamilyCase& entry) {
-    return entry.family.ends_with("_v2") || entry.family.starts_with("cartridge") ? std::string_view() : entry.family;
+    return entry.family.ends_with("_v2") || entry.family.starts_with("cartridge") || entry.family == "arcade_cabinet"
+               ? std::string_view()
+               : entry.family;
 }
 
 /// makeSelection()'s selection for `system`'s room.
@@ -113,11 +118,12 @@ rv::world::RoomSelection selectionOf(std::string_view system, std::size_t titles
     return selection;
 }
 
-/// The facings of a fixture's levels, measured from its manifest as the generator reads it.
-std::vector<LevelFacing> facingsOf(const rv::world::PrefabInfo& info, const MediaFamily& family) {
+/// The facings of a fixture's levels in a fixture of `role`, measured from its manifest as the generator reads it.
+std::vector<LevelFacing> facingsOf(const rv::world::PrefabInfo& info, const MediaFamily& family,
+                                   rv::world::FixtureRole role) {
     std::vector<LevelFacing> facings;
     for (const rv::world::SlotLevelInfo& level : info.levels) {
-        facings.push_back(level.facing(family));
+        facings.push_back(level.facing(family, role));
     }
     return facings;
 }
@@ -132,7 +138,7 @@ TEST_CASE("world/families: the registry holds ADR-0013's families, the 16-bit on
     CHECK(ids == std::vector<std::string>{"cartridge_home_16bit", "cartridge_home_8bit", "cartridge_home_64bit",
                                           "cartridge_handheld", "case_handheld", "disc_case_cd", "disc_case_dvd",
                                           "big_box", "generic_case", "disc_case_cd_v2", "disc_case_dvd_v2",
-                                          "case_handheld_v2", "big_box_v2", "generic_case_v2"});
+                                          "case_handheld_v2", "big_box_v2", "generic_case_v2", "arcade_cabinet"});
     const MediaFamily* sixteen = registry().find("cartridge_home_16bit");
     REQUIRE(sixteen != nullptr);
     // I3's fit and the template's own fixtures (ADR-0013 §4's stated exception).
@@ -169,12 +175,11 @@ TEST_CASE("world/families: the registry holds ADR-0013's families, the 16-bit on
     }
     CHECK(registry().find(systems->fallback.family) != nullptr);
     // systems.json names no family that has a successor in the rooms its systems stand in (I6 step 4: new rooms take
-    // the successors): the arcade systems' generic_case has none in the arcade room (ADR-0014 §2, amended on
-    // 2026-10-24: the arcade room migrates once, to I6 step 6's cabinets).
+    // the successors): the arcade systems' are the cabinets (I6 step 6), which succeed generic_case in the arcade room.
     for (const rv::world::SystemEntry& entry : systems->systems) {
         INFO(entry.system.str());
         if (entry.kind == rv::world::SystemKind::Arcade) {
-            CHECK(entry.family == "generic_case");
+            CHECK(entry.family == "arcade_cabinet");
             CHECK(registry().successorOf(entry.family, rv::world::RoomKind::Arcade) == nullptr);
         } else if (entry.kind != rv::world::SystemKind::Excluded) {
             CHECK(registry().successorOf(entry.family, rv::world::RoomKind::Console) == nullptr);
@@ -183,7 +188,7 @@ TEST_CASE("world/families: the registry holds ADR-0013's families, the 16-bit on
     }
     CHECK(registry().successorOf(systems->fallback.family, rv::world::RoomKind::Console) == nullptr);
     CHECK(rv::world::kSharedRoomFamily == "generic_case_v2");
-    CHECK(rv::world::kArcadeRoomFamily == "generic_case");
+    CHECK(rv::world::kArcadeRoomFamily == "arcade_cabinet");
     CHECK(registry().successorOf(rv::world::kSharedRoomFamily, rv::world::RoomKind::Shared) == nullptr);
     CHECK(registry().successorOf(rv::world::kArcadeRoomFamily, rv::world::RoomKind::Arcade) == nullptr);
     // Every shell material a family names is a material of the library (I6 step 4's review: the cases' dark shells).
@@ -219,8 +224,9 @@ TEST_CASE("world/families: cases and boxes have successors standing on their sid
             CHECK(registry().latestSuccessor(to, kind) == successor);
         }
         if (from == "generic_case") {
-            CHECK(registry().successorOf(from, rv::world::RoomKind::Arcade) == nullptr);
-            CHECK(registry().latestSuccessor(from, rv::world::RoomKind::Arcade) == old);
+            // The arcade room's generic cases are succeeded by its cabinets (I6 step 6).
+            CHECK(registry().successorOf(from, rv::world::RoomKind::Arcade) == registry().find("arcade_cabinet"));
+            CHECK(registry().latestSuccessor(from, rv::world::RoomKind::Arcade) == registry().find("arcade_cabinet"));
             CHECK(successor->succeedsIn ==
                   std::vector<rv::world::RoomKind>{rv::world::RoomKind::Console, rv::world::RoomKind::Shared});
         } else {
@@ -380,20 +386,22 @@ TEST_CASE("world/families: cases and boxes have successors standing on their sid
     CHECK(fresh.mediaFamily.id == "disc_case_cd_v2");
     CHECK(fresh.successor == nullptr);
     CHECK(dataOf("snes", "cartridge_home_16bit").successor == nullptr);
-    // The arcade room's generic case has no successor there (until I6 step 6): a stored arcade room carries none, a
-    // new one takes generic_case; a stored shared room of generic_case carries generic_case_v2's.
+    // The arcade room's generic case is succeeded there by its cabinets (I6 step 6): a stored arcade room carries
+    // arcade_cabinet's data, a new one takes arcade_cabinet; a stored shared room of generic_case carries
+    // generic_case_v2's.
     rv::world::RoomDataRequest arcade;
     arcade.system = systemName("mame");
     arcade.kind = rv::world::RoomKind::Arcade;
     arcade.floor = std::string(rv::world::kGroundFloor);
     auto newArcade = rv::world::loadWorldData(assetRoot(), arcade);
     REQUIRE(newArcade.has_value());
-    CHECK(newArcade->mediaFamily.id == "generic_case");
+    CHECK(newArcade->mediaFamily.id == "arcade_cabinet");
     CHECK(newArcade->successor == nullptr);
     arcade.mediaFamily = "generic_case";
     auto storedArcade = rv::world::loadWorldData(assetRoot(), arcade);
     REQUIRE(storedArcade.has_value());
-    CHECK(storedArcade->successor == nullptr);
+    REQUIRE(storedArcade->successor != nullptr);
+    CHECK(storedArcade->successor->mediaFamily.id == "arcade_cabinet");
     rv::world::RoomDataRequest shared;
     shared.system = systemName("ps2");
     shared.kind = rv::world::RoomKind::Shared;
@@ -421,6 +429,13 @@ TEST_CASE("world/families: every family's item builds from its manifest at the f
         REQUIRE(prefab.has_value());
         CHECK(rv::geometry::findPart(*prefab, "plastic_shell") != nullptr);
         CHECK(rv::geometry::findPart(*prefab, "label") != nullptr);
+        if (family.spineFacing == rv::world::SpineFacing::Front) {
+            // A cabinet's screen (I6 step 6) never stands spine-out: no spine label.
+            CHECK(rv::geometry::findPart(*prefab, "spine") == nullptr);
+            CHECK(rv::geometry::findSocket(prefab->sockets, "Spine") == nullptr);
+            CHECK(family.spineAspect().isLayer());
+            continue;
+        }
         CHECK(rv::geometry::findPart(*prefab, "spine") != nullptr);
         const rv::geometry::Socket* spine = rv::geometry::findSocket(prefab->sockets, "Spine");
         REQUIRE(spine != nullptr);
@@ -491,21 +506,22 @@ TEST_CASE("world/families: every family's fixtures build and their levels face t
             CHECK(info->resolvedManifest == ref.manifest); // its own manifest, no fallback
             return *info;
         };
-        // The side-wall module: every level spine-out.
+        const bool front = family.spineFacing == rv::world::SpineFacing::Front;
+        // The side-wall module: every level spine-out (a cabinet's screen as the spine section's, I6 step 6).
         const rv::world::PrefabInfo side = measure(roomTemplate.sideModule);
         REQUIRE_FALSE(side.levels.empty());
-        for (const LevelFacing facing : facingsOf(side, family)) {
+        for (const LevelFacing facing : facingsOf(side, family, rv::world::FixtureRole::SideModule)) {
             CHECK(facing == LevelFacing::SpineOut);
         }
-        // The hero-wall module: one face-out band, the other levels spine-out.
+        // The hero-wall module: one face-out band, the other levels spine-out (the cabinets: no band).
         const rv::world::PrefabInfo hero = measure(roomTemplate.heroModule);
         std::size_t band = 0;
-        for (const LevelFacing facing : facingsOf(hero, family)) {
+        for (const LevelFacing facing : facingsOf(hero, family, rv::world::FixtureRole::HeroModule)) {
             CHECK(facing != LevelFacing::Other);
             band += facing == LevelFacing::FaceOut ? 1 : 0;
         }
-        CHECK(band == 1);
-        CHECK(hero.slots(family, LevelFacing::SpineOut) > 0);
+        CHECK(band == (front ? 0u : 1u));
+        CHECK(hero.slots(family, LevelFacing::SpineOut, rv::world::FixtureRole::HeroModule) > 0);
         // The display fixtures: every level face-out.
         std::set<std::string> kinds;
         for (const std::string& socketId : roomTemplate.displayOrder) {
@@ -515,14 +531,15 @@ TEST_CASE("world/families: every family's fixtures build and their levels face t
             kinds.insert(socket->prefab->kind);
             const rv::world::PrefabInfo display = measure(*socket->prefab);
             REQUIRE_FALSE(display.levels.empty());
-            for (const LevelFacing facing : facingsOf(display, family)) {
+            for (const LevelFacing facing : facingsOf(display, family, rv::world::FixtureRole::Display)) {
                 CHECK(facing == LevelFacing::FaceOut);
             }
             // Within its socket.
             CHECK(display.widthMm() <= socket->widthMm);
             CHECK(display.depthMm() <= socket->depthMm);
         }
-        CHECK(kinds == std::set<std::string>{"display_case", "wall_shelf"});
+        CHECK(kinds == (front ? std::set<std::string>{"arcade_cabinet"}
+                              : std::set<std::string>{"display_case", "wall_shelf"}));
         // The modules fit the template's 0.9 x 0.4 m sockets.
         CHECK(side.widthMm() <= 900);
         CHECK(side.depthMm() <= 400);
@@ -699,6 +716,7 @@ TEST_CASE("world/families: each family's capacity in the 9 x 10 m room and grown
         {"ps2", {}, 38, 10, 352, 220, 3026, 5321},              // disc_case_dvd_v2
         {"amiga", {}, 28, 8, 96, 64, 893, 1561},                // big_box_v2
         {"c64", {}, 38, 10, 410, 246, 3393, 5960},              // generic_case_v2
+        {"mame", {}, 6, 0, 4, 2, 33, 53},                       // arcade_cabinet (I6 step 6): a cabinet per slot
     };
     for (const Row& row : rows) {
         INFO(row.system << " " << row.family);
@@ -720,4 +738,93 @@ TEST_CASE("world/families: each family's capacity in the 9 x 10 m room and grown
         CHECK(base == row.base);
         CHECK(grown == row.grown);
     }
+}
+
+TEST_CASE("world/families: the arcade room's cabinets face out in every fixture (I6 step 6)", "[world][families][arcade]") {
+    const MediaFamily* cabinets = registry().find("arcade_cabinet");
+    REQUIRE(cabinets != nullptr);
+    CHECK(cabinets->spineFacing == rv::world::SpineFacing::Front);
+    CHECK(cabinets->spineOut.widthMm == cabinets->faceOut.widthMm);
+    CHECK(cabinets->spineOut.heightMm == cabinets->faceOut.heightMm);
+    CHECK(cabinets->spineOut.depthMm == cabinets->faceOut.depthMm);
+    CHECK(cabinets->succeeds == "generic_case");
+    CHECK(cabinets->succeedsIn == std::vector<rv::world::RoomKind>{rv::world::RoomKind::Arcade});
+    CHECK(cabinets->labelMaterial == "MAT_Screen_Arcade");
+    CHECK(cabinets->fixtures.heroModule->kind == "arcade_cabinet");
+    CHECK(cabinets->fixtures.display == cabinets->fixtures.sideModule);
+    CHECK(rv::world::kArcadeRoomFamily == "arcade_cabinet");
+    // Its materials exist in the library.
+    auto library = rv::assets::MaterialLibrary::loadFromFile(assetRoot() / "materials" / "base" / "materials.json");
+    REQUIRE(library.has_value());
+    CHECK(library->find(cabinets->labelMaterial) != nullptr);
+    CHECK(library->find(cabinets->shellMaterial) != nullptr);
+
+    // The template as a room of cabinets stands it: no shelf dressing, the cabinets in every collection socket.
+    const rv::world::RoomTemplate stood = rv::world::withFamilyFixtures(rv::test::world::snesData().roomTemplate,
+                                                                         *cabinets);
+    CHECK(stood.shelfDressing.empty());
+    CHECK(stood.sideModule.kind == "arcade_cabinet");
+
+    // A level's facing by its fixture's role: the modules' the spine section's, the display fixtures' face-out; the
+    // volume alone says face-out.
+    rv::world::SlotLevelInfo screen;
+    screen.level = 0;
+    screen.slots = 2;
+    screen.slotWidthMm = 300;
+    screen.slotHeightMm = 400;
+    screen.slotDepthMm = 6;
+    CHECK(screen.facing(*cabinets) == LevelFacing::FaceOut);
+    CHECK(screen.facing(*cabinets, rv::world::FixtureRole::SideModule) == LevelFacing::SpineOut);
+    CHECK(screen.facing(*cabinets, rv::world::FixtureRole::HeroModule) == LevelFacing::SpineOut);
+    CHECK(screen.facing(*cabinets, rv::world::FixtureRole::Display) == LevelFacing::FaceOut);
+    // Another family's face-out level stays face-out in a module (its hero band).
+    const MediaFamily* sixteen = registry().find("cartridge_home_16bit");
+    rv::world::SlotLevelInfo band;
+    band.slotWidthMm = 125;
+    band.slotHeightMm = 85;
+    band.slotDepthMm = 20;
+    CHECK(band.facing(*sixteen, rv::world::FixtureRole::HeroModule) == LevelFacing::FaceOut);
+
+    // The arcade room of the real library's size (38 titles): every title in a cabinet, the featured six in the
+    // display pairs, the rest in the fill order, the room grown a step; no dressing.
+    const WorldData data = dataOf("mame");
+    REQUIRE(data.mediaFamily.id == "arcade_cabinet");
+    rv::world::GenerationInput input;
+    input.library = rv::test::world::library();
+    input.selection = selectionOf("mame", 38, 4600);
+    input.config = rv::test::world::roomConfig(102938);
+    auto result = rv::world::generate(input, data);
+    REQUIRE(result.has_value());
+    CHECK(result->validation.passed());
+    const rv::world::WorldPlan& plan = result->plan;
+    CHECK(plan.placements.size() == 38);
+    CHECK(plan.dressing.empty());
+    CHECK(plan.rooms.front().growthSteps == 1);
+    std::size_t featured = 0;
+    for (const rv::world::Fixture& fixture : plan.fixtures) {
+        if (fixture.role == rv::world::FixtureRole::HeroModule || fixture.role == rv::world::FixtureRole::SideModule ||
+            fixture.role == rv::world::FixtureRole::Display) {
+            CHECK(fixture.prefab.kind == "arcade_cabinet");
+            for (const rv::world::FixtureLevel& level : fixture.levels) {
+                CHECK(level.section == (fixture.role == rv::world::FixtureRole::Display ? rv::world::Section::Featured
+                                                                                         : rv::world::Section::Spine));
+                featured += level.section == rv::world::Section::Featured ? level.slots : 0;
+            }
+        }
+    }
+    CHECK(featured == 6);
+    // The featured are the first six by priority.
+    std::set<rv::catalog::GameId> first;
+    for (std::size_t i = 0; i < 6; ++i) {
+        first.insert(input.selection.titles[i].game);
+    }
+    std::set<rv::catalog::GameId> shown;
+    for (const rv::world::Placement& placement : plan.placements) {
+        for (const rv::world::Fixture& fixture : plan.fixtures) {
+            if (fixture.id == placement.slot.fixture() && fixture.role == rv::world::FixtureRole::Display) {
+                shown.insert(placement.game);
+            }
+        }
+    }
+    CHECK(shown == first);
 }

@@ -185,7 +185,8 @@ void fixtureOccluders(std::vector<core::Aabb>& occluders, const Fixture& fixture
         return;
     }
     const geometry::ProceduralPrefab& built = *prefab.prefab;
-    if (prefab.generator == "shelf" || prefab.generator == "wall_shelf") {
+    if (prefab.generator == "shelf" || prefab.generator == "wall_shelf" || prefab.generator == "arcade_cabinet") {
+        // A row of cabinets (I6 step 6): solid around the box its screens span (its level's anchor).
         stackedOccluders(occluders, built, frame);
     } else if (prefab.generator == "display_case") {
         vitrineOccluders(occluders, built, frame);
@@ -394,7 +395,8 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
                              size.depth));
             continue;
         }
-        if (isFaceOut(level->section) != (stance == ItemStance::FaceOut)) {
+        // A family facing front (I6 step 6's cabinets) shows its items' fronts in every section.
+        if (isFaceOut(level->section) != (stance == ItemStance::FaceOut) && family.spineFacing != SpineFacing::Front) {
             skip(fmt::format("a {} slot in the {} section", toString(stance), toString(level->section)));
             continue;
         }
@@ -461,6 +463,7 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
         group.item = family.item;
         group.itemSize = itemSize;
         group.shellMaterial = family.shellMaterial;
+        group.labelMaterial = family.labelMaterial;
         group.clusterCount = static_cast<std::uint32_t>(layout.clusters.size());
         group.itemCount = static_cast<std::uint32_t>(layout.items.size());
         layout.groups.push_back(std::move(group));

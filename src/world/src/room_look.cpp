@@ -198,6 +198,10 @@ constexpr std::string_view kTintRoles[] = {"doorwayFill", "hall", "key", "lamp",
 constexpr std::size_t kMaxLabelPalette = 16;
 /// How far a hero part's piece may stand from its socket's anchor (millimetres).
 constexpr std::int64_t kMaxPieceOffsetMm = 20000;
+/// A hero part's piece stands at most this high above the floor (I6 step 6's "yMm").
+constexpr std::int64_t kMaxPieceHeightMm = 5000;
+/// The kind of the only pieces that may stand for the hero corner's CRT (I6 step 6: the hero cabinet).
+constexpr std::string_view kHeroCabinetKind = "arcade_cabinet";
 
 /// The label palette, the neon, its glow, the light tints and the bloom of a pack (I6 step 3);
 /// each optional, a pack without one takes classic_16bit_warm's (ThemeMaterials' defaults).
@@ -256,8 +260,8 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
 FurniturePiece readPiece(DocumentReader& document, const Json& value, const std::string& at, bool placed,
                          bool weighted, std::uint32_t* weightPermille) {
     FurniturePiece piece;
-    std::initializer_list<std::string_view> heroKeys = {"materials", "params", "prefab", "textures", "xMm", "yawCdeg",
-                                                         "zMm"};
+    std::initializer_list<std::string_view> heroKeys = {"materials", "params", "prefab", "textures", "xMm",
+                                                         "yMm",       "yawCdeg", "zMm"};
     std::initializer_list<std::string_view> decorationKeys = {"materials", "params", "prefab", "textures", "weight"};
     const ObjectReader reader(document, value, at, placed ? heroKeys : decorationKeys);
     if (document.failed()) {
@@ -312,6 +316,7 @@ FurniturePiece readPiece(DocumentReader& document, const Json& value, const std:
     if (!document.failed() && placed) {
         piece.xMm = reader.optionalInteger("xMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
         piece.zMm = reader.optionalInteger("zMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
+        piece.yMm = reader.optionalInteger("yMm", 0, kMaxPieceHeightMm);
         if (const auto yaw = reader.optionalInteger("yawCdeg", 0, 35999)) {
             piece.yawCdeg = static_cast<std::int32_t>(*yaw);
         }
@@ -345,21 +350,31 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
                 document.fail(at, hero ? "expected a hero corner part's role" : "expected a prefab kind");
                 return;
             }
-            // The CRT (the room's video), the sign (its neon and light) and the console (the system's own) are what the
-            // room is about, never furniture.
-            if (hero && (name == "crt" || name == "sign" || name == "console")) {
-                document.fail(at, "the hero corner's crt, sign and console are not furniture: expected another part");
+            // The sign (its neon and light) and the console (the system's own) are what the room is about, never
+            // furniture; the CRT (the room's video) only as arcade cabinets, one of which carries it (I6 step 6).
+            if (hero && (name == "sign" || name == "console")) {
+                document.fail(at, "the hero corner's sign and console are not furniture: expected another part");
                 return;
             }
-            if (!list.is_array() || list.empty()) {
+            // A hero part's empty list leaves the part undrawn (I6 step 6), never the CRT's.
+            if (!list.is_array() || (list.empty() && (!hero || name == "crt"))) {
                 document.fail(at, "expected a non-empty array of pieces");
                 return;
+            }
+            if (hero && list.empty()) {
+                theme.furniture.heroParts[name];
+                continue;
             }
             std::uint32_t total = 0;
             for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
                 const std::string elementAt = at + "/" + std::to_string(i);
                 std::uint32_t weight = 1000;
                 FurniturePiece piece = readPiece(document, list[i], elementAt, hero, !hero, &weight);
+                if (hero && name == "crt" && !document.failed() && piece.prefab.kind != kHeroCabinetKind) {
+                    document.fail(elementAt + "/prefab",
+                                  "the hero corner's crt is the room's video: only an arcade cabinet stands for it");
+                    return;
+                }
                 if (hero) {
                     theme.furniture.heroParts[name].push_back(std::move(piece));
                 } else {
@@ -481,6 +496,20 @@ ThemeMaterials builtInTheme() {
                {"leaves", "MAT_Plant_Leaf"},
                {"leaves_alt", "MAT_Plant_Leaf_Light"}}},
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
+        // I6 step 6's arcade cabinets.
+        {"arcade_cabinet",
+         Roles{{"body", "MAT_Cabinet_Paint_Walnut"},
+               {"body_alt", "MAT_Cabinet_Paint_Oxblood"},
+               {"front", "MAT_Cabinet_Laminate"},
+               {"molding", "MAT_Metal_Brushed"},
+               {"molding_alt", "MAT_Metal_Brushed"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"metal_trim", "MAT_Metal_Brushed"},
+               {"plastic_accent", "MAT_Fabric_Vinyl_Red"},
+               {"marquee", "MAT_Marquee_Amber"},
+               {"marquee_alt", "MAT_Marquee_Amber"},
+               {"screen_back", "MAT_Screen_Idle"},
+               {"screen", "MAT_Screen_CRT_Room"}}},
         {"cartridge",
          Roles{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Cover"}, {"spine", "MAT_Label_Cover"}}},
         // I6 step 5's hub.

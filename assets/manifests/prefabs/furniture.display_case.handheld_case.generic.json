@@ -1,5 +1,8 @@
 // The low display case of the media family case_handheld (ADR-0013 §4; I4 step 2): the 16-bit case's vitrine, levels,
 // tilt, gaps and margins, its face-out slots the item's 12.5 x 14 x 1.4 cm. Falls back to the 16-bit case.
+// Since I6 step 6 a low counter showcase (style §5.5, §14.5): its base a glass counter of generic handhelds on stands
+// rather than a closed cabinet ("counter"), the slots and the bounds as before, so no plan changes; lit inside where the
+// pack names "board_light" (the handheld archive).
 {
   "schemaVersion": 1,
   "id": "furniture.display_case.handheld_case.generic",
@@ -19,7 +22,7 @@
   "runtime": {
     "generator": "display_case",
     "params": {
-      "slotSize": [0.125, 0.14, 0.014]
+      "slotSize": [0.125, 0.14, 0.014], "counter": true
     },
     "scaleMeters": [1.2, 0.95, 0.5],
     "lods": [],

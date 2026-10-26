@@ -141,7 +141,7 @@ PlacedFixture makeFixture(const LayoutInput& input, FixtureId id, FixtureRole ro
     fixture.depthMm = info.depthMm();
     if (role == FixtureRole::HeroModule || role == FixtureRole::SideModule || role == FixtureRole::Display) {
         for (const SlotLevelInfo& level : info.levels) {
-            const LevelFacing facing = level.facing(input.family);
+            const LevelFacing facing = level.facing(input.family, role);
             fixture.levels.push_back({level.level, level.slots, levelSection(role, facing)});
             placed.facings.push_back(facing);
         }

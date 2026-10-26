@@ -120,7 +120,21 @@ std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId&
             planned.emplace(fixture.id, &fixture);
         }
     }
-    REQUIRE(drawn->size() == planned.size());
+    // A hero part the pack leaves out (I6 step 6: the arcade's TV cabinet, the hero cabinet standing in its place) is
+    // not drawn; every other fixture is.
+    std::size_t leftOut = 0;
+    for (const auto& [id, fixture] : planned) {
+        if (fixture->role != FixtureRole::HeroCorner) {
+            continue;
+        }
+        const auto listed = data.furniture.heroParts.find(id.part());
+        if (room.kind == rv::world::RoomKind::Arcade && listed != data.furniture.heroParts.end() &&
+            listed->second.empty()) {
+            ++leftOut;
+            CHECK(std::none_of(drawn->begin(), drawn->end(), [&](const Fixture& candidate) { return candidate.id == id; }));
+        }
+    }
+    REQUIRE(drawn->size() + leftOut == planned.size());
     std::size_t replaced = 0;
     for (const Fixture& fixture : *drawn) {
         const Fixture& original = *planned.at(fixture.id);
@@ -304,7 +318,19 @@ TEST_CASE("world/era furniture: the reader refuses a broken piece or a list with
                ContainsSubstring("/furniture/decoration/poster_frame/0/weight"));
     CHECK_THAT(refusal(R"({"decoration": {"poster_frame": [{"weight": 1, "xMm": 5, "prefab": )" + poster + "}]}}"),
                ContainsSubstring("xMm"));
-    CHECK_THAT(refusal(R"({"heroParts": {"armchair": []}})"), ContainsSubstring("non-empty"));
+    // An empty hero part's list leaves the part undrawn (I6 step 6), never the CRT's; a decoration's needs pieces.
+    auto leftOut = parse(R"({"heroParts": {"tv-cabinet": []}})");
+    REQUIRE(leftOut.has_value());
+    CHECK(leftOut->furniture.heroParts.at("tv-cabinet").empty());
+    CHECK_THAT(refusal(R"({"heroParts": {"crt": []}})"), ContainsSubstring("non-empty"));
+    CHECK_THAT(refusal(R"({"decoration": {"poster_frame": []}})"), ContainsSubstring("non-empty"));
+    // The CRT only as arcade cabinets (I6 step 6's hero cabinet), a piece standing at a height of its own.
+    CHECK_THAT(refusal(R"({"heroParts": {"crt": [{"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}}]}})"),
+               ContainsSubstring("arcade cabinet"));
+    auto cabinet = parse(R"({"heroParts": {"crt": [{"prefab": {"manifest": "furniture.arcade_cabinet.generic",
+                                                               "kind": "arcade_cabinet"}, "yMm": 0, "zMm": 440}]}})");
+    REQUIRE(cabinet.has_value());
+    CHECK(cabinet->furniture.heroParts.at("crt").front().yMm == 0);
     CHECK_THAT(refusal(R"({"heroParts": {"armchair": [{"prefab": )" + poster + R"(, "textures": {"picture": "mona"}}]}})"),
                ContainsSubstring("/furniture/heroParts/armchair/0/textures/picture"));
     CHECK_THAT(refusal(R"({"heroParts": {"armchair": [{"prefab": )" + poster + R"(, "materials": {"frame": "oak"}}]}})"),

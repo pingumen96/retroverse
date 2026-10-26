@@ -50,6 +50,12 @@
     "plant": {"pot": "MAT_Ceramic_Glazed", "soil": "MAT_Soil", "leaves": "MAT_Plant_Leaf",
               "leaves_alt": "MAT_Plant_Leaf_Light"},
     "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
+    "arcade_cabinet": {"body": "MAT_Cabinet_Paint_Plum", "body_alt": "MAT_Cabinet_Paint_Oxblood",
+                       "front": "MAT_Cabinet_Laminate", "molding": "MAT_Molding_Magenta",
+                       "molding_alt": "MAT_Molding_Cyan", "plastic_dark": "MAT_Plastic_Black",
+                       "metal_trim": "MAT_Metal_Brushed", "plastic_accent": "MAT_Fabric_Vinyl_Red",
+                       "marquee": "MAT_Marquee_Magenta", "marquee_alt": "MAT_Marquee_Cyan",
+                       "screen_back": "MAT_Screen_Idle", "screen": "MAT_Screen_CRT_Room"},
     "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
     "column": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                "metal_trim": "MAT_Metal_Brass"},
@@ -75,20 +81,27 @@
   "heroParts": {
     "sign": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Neon_Pink"}
   },
-  // The era's furniture (I6 step 3b, concept panel 5; step 6 adds the cabinets): two red bar stools by the TV's
-  // console side in the armchair's place (until step 6's cabinets stand there), a dark red runner for the rug (its
-  // material on the piece: the rug kind keeps the ornate carpet, drawn when the runner is not), the arcade's flyers,
-  // graphite-framed showcases of big-box software for the sideboards.
+  // The era's furniture (I6 step 3b, concept panel 5; since I6 step 6 the cabinets): the hero corner's TV becomes the
+  // hero cabinet, a deluxe upright (0.7 x 1.85 x 0.85 m) on the floor where the TV's cabinet stood, its 4:3 screen the
+  // room's video (the "crt" part's piece: the room's CRT is this cabinet's screen; the "tv-cabinet" part is left out,
+  // the cabinet standing in its place, in the arcade room only), two red bar stools by its side, clear of its
+  // player's place, and the dark red runner leading to it; the arcade's flyers, graphite-framed showcases of big-box software for the sideboards.
   "furniture": {
     "heroParts": {
+      "crt": [
+        {"prefab": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"},
+         "params": {"count": 1, "width": 0.7, "height": 1.85, "depth": 0.85, "panelHeight": 0.9,
+                    "marqueeHeight": 0.24, "screenSize": [0.5, 0.375], "screenTiltDeg": 12, "slots": false},
+         "textures": {"screen": "color_bars"}, "xMm": 0, "yMm": 0, "zMm": 440, "yawCdeg": 0}],
+      "tv-cabinet": [],
       "armchair": [
         {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"},
-         "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 640, "zMm": 750},
+         "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 640, "zMm": 800},
         {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"},
-         "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 1020, "zMm": 750}],
+         "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 1020, "zMm": 800}],
       "rug": [
         {"prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
-         "params": {"width": 1.0, "depth": 2.5}, "materials": {"fabric": "MAT_Carpet_Runner"}, "xMm": 0, "zMm": 1650}]
+         "params": {"width": 0.9, "depth": 1.6}, "materials": {"fabric": "MAT_Carpet_Runner"}, "xMm": 0, "zMm": 2150}]
     },
     "decoration": {
       "poster_frame": [

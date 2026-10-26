@@ -47,6 +47,17 @@
 //                 label quad); without them, the layer's own shape (I3's spines, the cartridges');
 //   "shellMaterial": the material of the item's shell (a material of assets/materials; optional: the theme's
 //                 "cartridge" role, plastic_shell), e.g. a jewel case's smoky dark plastic or a big box's cardboard.
+//
+// Since I6 step 6 (ADR-0014 §2 and §6, the arcade room's cabinets):
+//   "spineFacing": "front": the family's items never stand spine-out: every slot of its fixtures shows the item's front
+//                 (a cabinet's screen), so its spine-out slot is its face-out one (both the item as it is) and its
+//                 item has no spine label; a level of its hero-wall or side-wall modules is the spine section's by the
+//                 fixture's role (capacity.hpp's levelFacing(): the collection's titles in the fill order, the reserve
+//                 kept, no hero band), a level of its display fixtures the featured titles'. Its rooms take no shelf
+//                 dressing (an empty cabinet's screen stays dark: withFamilyFixtures());
+//   its fixtures may then be of the kind "arcade_cabinet" (a row of cabinets, one face-out slot each) under any key;
+//   "labelMaterial": the material of the item's front, the cover's layer (optional: the theme's "cartridge" role,
+//                 label), e.g. the cabinets' screens drawn through a picture tube.
 
 #include <cstdint>
 #include <filesystem>
@@ -113,20 +124,27 @@ struct FamilyFixtures {
 enum class SpineFacing : std::uint8_t {
     End,  ///< on the item's end, its top face out (geometry::SlotFacing::SpineOut): I3's cartridges
     Side, ///< on its side, upright, its -X face out (geometry::SlotFacing::SideOut): I6's cases and boxes
+    /// Never: in a module too the item stands as it does face-out (geometry::SlotFacing::FaceOut), its front out, its
+    /// spine-out slot its face-out one: I6 step 6's arcade cabinets, each the game's screen. The modules' levels are
+    /// the spine section's by their fixture's role (capacity.hpp's levelFacing()), the display fixtures' the featured
+    /// titles'.
+    Front,
 };
 
-/// "end", "side".
+/// "end", "side", "front".
 [[nodiscard]] constexpr std::string_view toString(SpineFacing facing) noexcept {
     switch (facing) {
     case SpineFacing::End:
         return "end";
     case SpineFacing::Side:
         return "side";
+    case SpineFacing::Front:
+        return "front";
     }
     return "unknown";
 }
 [[nodiscard]] constexpr std::optional<SpineFacing> parseSpineFacing(std::string_view text) noexcept {
-    return detail::enumFromString(text, SpineFacing::Side);
+    return detail::enumFromString(text, SpineFacing::Front);
 }
 
 struct MediaFamily {
@@ -154,6 +172,9 @@ struct MediaFamily {
     assets::LabelAspect spineLabel;
     /// The material of its items' shells; empty: the theme's "cartridge" role.
     std::string shellMaterial;
+    /// The material of its items' fronts, the cover's layer (I6 step 6: the cabinets' screens, an unlit picture tube);
+    /// empty: the theme's "cartridge" label role.
+    std::string labelMaterial;
 
     /// The shape its front pictures are made for (cover_fit.hpp): its label quad, the layer's own for CoverFit::Layer.
     [[nodiscard]] assets::LabelAspect coverAspect() const noexcept;
@@ -200,7 +221,8 @@ struct MediaFamilyRegistry {
 /// `roomTemplate` as a room of `family` stands it (ADR-0013 §4): the family's hero-wall and side-wall modules instead
 /// of the template's, its display case in every display socket whose prefab is a display case and its wall shelf in
 /// every one whose prefab is a wall shelf; what the family does not name stays the template's (all of it for a family
-/// without fixtures). The id, the version and the sockets' places are the template's.
+/// without fixtures). The id, the version and the sockets' places are the template's. A family facing front (I6 step
+/// 6's cabinets) takes no shelf dressing: the template's list is emptied.
 [[nodiscard]] RoomTemplate withFamilyFixtures(RoomTemplate roomTemplate, const MediaFamily& family);
 
 } // namespace rv::world

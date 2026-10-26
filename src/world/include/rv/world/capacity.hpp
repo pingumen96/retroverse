@@ -52,6 +52,10 @@ struct SlotLevelInfo {
     /// The height of the slots' centres: bottomMm + slotHeightMm / 2 (rounded down).
     [[nodiscard]] std::int64_t centreMm() const noexcept { return bottomMm + slotHeightMm / 2; }
     [[nodiscard]] LevelFacing facing(const MediaFamily& family) const noexcept;
+    /// Its facing in a fixture of `role` (I6 step 6): facing(family), but that a family facing front (its items in a
+    /// module as face-out: the arcade cabinets, SpineFacing::Front) stands a hero-wall or side-wall module's face-out
+    /// level as the spine-out section's (every title in a cabinet of the fill order, the reserve kept, no hero band).
+    [[nodiscard]] LevelFacing facing(const MediaFamily& family, FixtureRole role) const noexcept;
 
     auto operator<=>(const SlotLevelInfo&) const = default;
 };
@@ -87,6 +91,8 @@ struct PrefabInfo {
     [[nodiscard]] std::int64_t depthMm() const noexcept { return maxZMm - minZMm; }
     /// The slots of the levels whose items stand with `facing`.
     [[nodiscard]] std::uint64_t slots(const MediaFamily& family, LevelFacing facing) const noexcept;
+    /// The slots of the levels whose items stand with `facing` in a fixture of `role` (SlotLevelInfo::facing()).
+    [[nodiscard]] std::uint64_t slots(const MediaFamily& family, LevelFacing facing, FixtureRole role) const noexcept;
 
     auto operator<=>(const PrefabInfo&) const = default;
 };
