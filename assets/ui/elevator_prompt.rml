@@ -7,6 +7,8 @@
 		(src/app/src/elevator_prompt_panel.cpp), which also names the ids below: keep them in step
 		(src/app/include/rv/app/elevator_prompt_ui.hpp, tests/unit/app/test_elevator_prompt_document.cpp).
 		key: the key's or the button's name (data, not a sentence of the UI). It takes no input and never the focus.
+		totem (I6 step 5): the walker stands before the hub's directory totem, whose prompt reads "Indice" and opens the
+		directory at its floors too (a proximity zone like the elevator's, ADR-0014 §3).
 	-->
 	<title>Ascensore</title>
 	<link type="text/rcss" href="elevator_prompt.rcss"/>
@@ -14,9 +16,11 @@
 <body data-model="elevator_prompt">
 	<div id="elevator-prompt">
 		<span class="prompt">
-			<span class="name">Ascensore</span>
+			<span class="name" data-if="!totem">Ascensore</span>
+			<span class="name" data-if="totem">Indice</span>
 			<span class="key">{{ key }}</span>
-			<span class="action">Scegli il piano</span>
+			<span class="action" data-if="!totem">Scegli il piano</span>
+			<span class="action" data-if="totem">Piani e stanze</span>
 		</span>
 	</div>
 </body>

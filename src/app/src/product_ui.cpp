@@ -178,6 +178,7 @@ struct ProductUi::Impl {
     DirectoryRecord directoryRecord;
     std::unique_ptr<ElevatorPromptPanel> prompt;
     std::optional<std::string> wantedPrompt;
+    bool wantedTotem = false;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
@@ -237,7 +238,7 @@ struct ProductUi::Impl {
         if (!wantedPrompt || overWorld()) {
             prompt->hide();
         } else {
-            prompt->show(*wantedPrompt);
+            prompt->show(*wantedPrompt, wantedTotem);
         }
     }
 
@@ -921,6 +922,20 @@ void ProductUi::openDirectory(ui::DirectoryTab tab, std::string_view via) {
                  via, s.directory.building().floors.size());
 }
 
+void ProductUi::openDirectoryCard(const ui::DirectoryGame& game, std::string_view via) {
+    Impl& s = *m_impl;
+    if (s.directory.isOpen() || s.catalogOpen) {
+        return;
+    }
+    openDirectory(ui::DirectoryTab::Games, via);
+    if (!s.directory.isOpen()) {
+        return;
+    }
+    s.directory.openGame(game);
+    s.addDirectoryEvent("open-card", game.gameId, std::string(via));
+    spdlog::info("Frame {}: the directory opened at the card of {} ({})", s.context.frameIndex(), game.gameId, via);
+}
+
 void ProductUi::directoryBack() {
     Impl& s = *m_impl;
     if (s.directory.isOpen()) {
@@ -960,8 +975,9 @@ void ProductUi::refuseDirectory(const ui::DirectoryCommand& command, std::string
                  ui::toString(command.kind), command.id, notice);
 }
 
-void ProductUi::setElevatorPrompt(std::optional<std::string> key) {
+void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
     m_impl->wantedPrompt = std::move(key);
+    m_impl->wantedTotem = totem;
 }
 
 bool ProductUi::handleEvent(const SDL_Event& event) {

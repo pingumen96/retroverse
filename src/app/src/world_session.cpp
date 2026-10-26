@@ -10,7 +10,9 @@
 #include <rv/app/app_logic.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/scene_graphics.hpp>
+#include <rv/app/world_focus.hpp>
 #include <rv/app/world_inspect.hpp>
+#include <rv/app/world_label_ui.hpp>
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/render/gl_device.hpp>
 #include <rv/render/material_registry.hpp>
@@ -145,6 +147,13 @@ WorldSession::~WorldSession() {
         const std::lock_guard lock(m_floorBox->mutex);
         m_floorBox->wake = nullptr;
     }
+    m_pool.cancel(m_showcaseGeneration);
+    if (m_showcaseBox) {
+        const std::lock_guard lock(m_showcaseBox->mutex);
+        m_showcaseBox->wake = nullptr;
+    }
+    m_showcaseLoader.reset();
+    m_showcase.reset();
     m_interaction.reset();
     m_rooms.clear();
 }
@@ -238,6 +247,9 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         followScreenRoom(product, timeSeconds);
     }
     coverRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
+    // I6 step 5: the hub's favourites showcase (world_showcase.cpp).
+    followShowcase(product);
+    showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
 }
@@ -378,6 +390,12 @@ void WorldSession::syncCollections() {
             }
         }
     }
+    // I6 step 5: the hub's showcase (its own loader serves it: not one of the floor loader's collections).
+    if (m_showcase) {
+        for (const gl::StaticInstanceGroup* group : m_showcase->groups()) {
+            m_groups.push_back(group);
+        }
+    }
 }
 
 void WorldSession::coverRound(ProductUi& product, const gl::UploadBudget& budget, bool frame) {
@@ -498,6 +516,9 @@ bool WorldSession::settled(bool all) const {
     if (m_loader && !(all ? m_loader->done() : m_loader->viewDone())) {
         return false;
     }
+    if (!showcaseSettled()) {
+        return false;
+    }
     if (m_heroItem && m_heroes && m_loader && m_heroes->loading(m_loader->items()[m_heroItem->loaderItem].game)) {
         return false;
     }
@@ -526,6 +547,8 @@ void WorldSession::settle(ProductUi& product) {
         }
         m_loader->waitForResults(std::chrono::milliseconds(20));
         coverRound(product, kIdleUploadBudget, false);
+        followShowcase(product);
+        showcaseRound(product, kIdleUploadBudget, false);
         showHero();
     }
     m_lockstepWaitMs += millisecondsSince(start);
@@ -601,6 +624,7 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.added = 0;
     m_record.kept = 0;
     m_record.migratedRooms.clear();
+    m_record.replacedRooms.clear();
     m_record.needsConfirmation.clear();
     if (build.changes) {
         m_record.changeOutcome = std::string(world::toString(build.changes->outcome));
@@ -610,6 +634,10 @@ void WorldSession::recordBuild(const WorldBuild& build) {
         for (const world::MigratedRoom& migrated : build.changes->migratedRooms) {
             m_record.migratedRooms.push_back(
                 {migrated.room.toString(), migrated.from, migrated.to, migrated.unplacedForCapacity});
+        }
+        for (const world::ReplacedRoom& replaced : build.changes->replacedRooms) {
+            m_record.replacedRooms.push_back({replaced.room.toString(), replaced.from.xMm, replaced.from.zMm,
+                                              replaced.to.xMm, replaced.to.zMm});
         }
         m_record.needsConfirmation = build.changes->needsConfirmation;
     }
@@ -780,6 +808,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
         m_card.bind();
     }
     startCoverLoader(build, std::move(shownLoader));
+    startShowcase(build); // I6 step 5: the hub's favourites showcase, its content asked for
     keepShown(build); // I3 step 15b: the next live update compares with it
     // The hero CRT of the scene just shown plays its room's games (bound with them by the scene's show).
     m_record.screenGames = screenGames.size();
@@ -884,6 +913,7 @@ InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
         m_interaction->setActiveRoom(eye ? m_rooms[*eye].interactionRoom : std::nullopt);
     }
     InteractionResult result = m_interaction->update(frame);
+    hoverShowcase(frame); // I6 step 5
     // The hero item (I3 step 12): the focused item (Focus, Inspect), else the hovered one.
     const WorldInteraction& interaction = m_interaction->interaction();
     setHeroItem(interaction.focused() != world::kNoPick ? interaction.focused() : interaction.hovered());
@@ -972,7 +1002,21 @@ void WorldSession::afterInteraction(const InteractionResult& result, ProductUi& 
 }
 
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
-    return m_interaction->labelFor(camera, viewSize);
+    if (std::optional<WorldLabelContent> label = m_interaction->labelFor(camera, viewSize)) {
+        return label;
+    }
+    // I6 step 5: a proxy of the hub's showcase hovered.
+    const world::CollectionItem* item = m_showcaseLayout.find(m_showcaseHovered);
+    if (item == nullptr || viewSize.x <= 0 || viewSize.y <= 0) {
+        return std::nullopt;
+    }
+    scene::Camera view = camera;
+    view.setAspect(static_cast<float>(viewSize.x) / static_cast<float>(viewSize.y));
+    const auto anchor = labelAnchor(item->worldBounds(), view.viewProjection(), viewSize, world_label::kTopMargin);
+    if (!anchor) {
+        return std::nullopt;
+    }
+    return WorldLabelContent{item->title, true, anchor->x, anchor->y};
 }
 
 void WorldSession::frameRendered() {
@@ -1014,7 +1058,7 @@ bool WorldSession::waits() const {
     const bool flowPending =
         m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
-                         ridePending || (m_retargetPending && !m_retargetResult);
+                         ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled();
     if (!pending) {
         return false;
     }
@@ -1037,6 +1081,7 @@ void WorldSession::dropCollection() {
     m_loader.reset();
     m_interaction->clear();
     m_rooms.clear();
+    dropShowcase(); // I6 step 5
     syncCollections();
     m_shown.reset();
     m_launch.setPlan(nullptr);
@@ -1044,6 +1089,8 @@ void WorldSession::dropCollection() {
     m_floor.clear();
     m_elevatorZone = core::Aabb{};
     m_elevatorDoors = glm::vec3(0.0f);
+    m_totemZone = core::Aabb{};
+    m_totemScreen = glm::vec3(0.0f);
     m_doorways.clear();
     if (std::exchange(m_coverPhaseOpen, false)) {
         m_context.frameTiming().closePhase(kPhaseCoverLoad);
@@ -1087,6 +1134,7 @@ void WorldSession::record(RunReport& report) const {
         world.rides.push_back(m_ride->record());
     }
     world.hoverChanges = m_interaction->hoverChanges();
+    world.showcase = m_showcaseRecord; // I6 step 5
     m_interaction->record(world.interaction);
     world.card = m_card.record();
     world.launch = m_launch.record();

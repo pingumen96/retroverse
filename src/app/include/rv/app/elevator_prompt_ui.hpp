@@ -8,6 +8,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,7 +30,8 @@ namespace elevator_prompt {
 
 inline constexpr std::string_view kDocumentPath = "ui/elevator_prompt.rml";
 inline constexpr std::string_view kStyleSheetPath = "ui/elevator_prompt.rcss";
-/// The data model: "key" (the name of the interact key or button to press: "E", "A").
+/// The data model: "key" (the name of the interact key or button to press: "E", "A"), "totem" (I6 step 5: the hub's
+/// directory totem's prompt, "Indice", rather than the elevator's).
 inline constexpr std::string_view kDataModel = "elevator_prompt";
 inline constexpr std::string_view kPanelId = "elevator-prompt";
 
@@ -94,6 +96,16 @@ inline constexpr float kFacesElevatorCosine = 0.17f;
     }
     const glm::vec2 view(std::sin(yawRadians), -std::cos(yawRadians));
     return glm::dot(toDoors / distance, view) > kFacesElevatorCosine;
+}
+
+/// The prompt's two places (I6 step 5): a floor's elevator, the hub's directory totem.
+enum class PromptPlace : std::uint8_t { Elevator, Totem };
+
+/// The walker whose feet stand at `feet`, looking along `yawRadians`, is before the hub's directory totem (I6 step 5):
+/// its feet in the totem's proximity zone and the middle of its screen in front of it (facesElevator()'s rule).
+[[nodiscard]] inline bool facesTotem(const glm::vec3& feet, float yawRadians, const core::Aabb& zone,
+                                     const glm::vec3& screen) noexcept {
+    return facesElevator(feet, yawRadians, zone, screen);
 }
 
 } // namespace rv::app

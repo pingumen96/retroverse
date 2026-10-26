@@ -96,6 +96,10 @@ public:
     /// Opens the directory on `tab` (`via`: "elevator" or "map", for the run report); its screen is made the first
     /// time (a screen that cannot be made is logged and the directory stays closed).
     void openDirectory(ui::DirectoryTab tab, std::string_view via);
+    /// Opens the directory at `game`'s card (I6 step 5: a proxy of the hub's favourites showcase, `via` "showcase"), the
+    /// quick catalog's card with Avvia and Mostra nella stanza, its games list behind it. Nothing while the quick
+    /// catalog or the directory is open.
+    void openDirectoryCard(const ui::DirectoryGame& game, std::string_view via);
     /// Its Back level (BackAction::DirectoryBack): one level back, closing it at its root.
     void directoryBack();
     /// Closes it (Map pressed while it shows); nothing while the panel shows over it.
@@ -107,9 +111,10 @@ public:
     /// `command` refused for now by the world (a ride in Focus, a plan not ready): the panel again where it was, with
     /// `notice` (ui::directory::kNotices) under its list.
     void refuseDirectory(const ui::DirectoryCommand& command, std::string_view notice);
-    /// The elevator's prompt naming `key` from now on (nothing: none): shown over the scene while neither the quick
-    /// catalog, the directory nor the game-session panel shows. It takes no input.
-    void setElevatorPrompt(std::optional<std::string> key);
+    /// The elevator's prompt naming `key` from now on (nothing: none), the hub's totem's with `totem` (I6 step 5):
+    /// shown over the scene while neither the quick catalog, the directory nor the game-session panel shows. It takes no
+    /// input.
+    void setElevatorPrompt(std::optional<std::string> key, bool totem = false);
 
     /// Opens the quick catalog where it was left (its focus and selection), the UI's held directions forgotten; the
     /// first time, its screen is made (a screen that cannot be made is logged and the catalog stays closed).

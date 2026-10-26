@@ -55,6 +55,14 @@
 // stanza" of the quick catalog is told by the world's notice (the directory tells its own). A building's result or a
 // live update that ends during a ride applies after it (built again for the floor shown when it was built for another,
 // then applied once no launched game runs). Input is suspended during the ride.
+//
+// The hub (I6 step 5, world_showcase.cpp; ADR-0014 §3): in front of its directory totem (its zone, facing its screen)
+// the prompt reads "Indice" and interact opens the directory at its floors; its favourites showcase holds runtime
+// proxies of the catalog's favourite and recent games (hub_showcase.hpp: a job on the pool reads them on the catalog's
+// world reader), drawn as a collection of its own with a cover loader of its own, hovered by the frame's ray when no
+// room's item is (its title label shows), interact on one opening the directory at its card; the proxies are made
+// again when a launched game returns and after a refresh of the catalog. Lockstep runs wait for them like the floor's
+// covers.
 
 #include <chrono>
 #include <cstdint>
@@ -248,11 +256,21 @@ public:
     /// atElevator() in free roam with nothing hovered and no ride: the prompt shows, interact opens the directory (the
     /// interaction's state of this frame, after interact()).
     [[nodiscard]] bool idleAtElevator() const;
+    /// I6 step 5: the walker stands in the hub's directory totem's zone, facing its screen (facesTotem()); and so in
+    /// free roam with nothing hovered and no ride (idleAtElevator()'s conditions): its prompt ("Indice") shows,
+    /// interact opens the directory at its floors.
+    [[nodiscard]] bool atTotem() const;
+    [[nodiscard]] bool idleAtTotem() const;
     /// Opens the directory on `tab` with the building's floors and rooms and where the walker is (`via`: "elevator" or
     /// "map", the run report's); nothing without a product UI's catalog of rooms.
     void openDirectory(ProductUi& product, ui::DirectoryTab tab, std::string_view via);
-    /// The elevator's prompt of this frame: shown naming `key`, or hidden (none); the frames it shows are counted.
-    void elevatorPrompt(ProductUi& product, std::optional<std::string> key);
+    /// I6 step 5: a proxy of the hub's favourites showcase is hovered (free roam, nothing of a room hovered); interact on
+    /// it opens the directory at its game's card (`via` "showcase").
+    [[nodiscard]] bool showcaseHovered() const noexcept { return m_showcaseHovered != world::kNoPick; }
+    void openShowcaseCard(ProductUi& product);
+    /// The elevator's prompt of this frame: shown naming `key` (the totem's with `totem`, I6 step 5), or hidden (none);
+    /// the frames it shows are counted.
+    void elevatorPrompt(ProductUi& product, std::optional<std::string> key, bool totem = false);
 
 private:
     using Clock = std::chrono::steady_clock;
@@ -411,6 +429,29 @@ private:
     /// I4 step 8: the destination room of the last ride followed until every item of it is resident (its record's
     /// roomResidentMs, `elapsedMs` after the ride's request), while the walker's floor is the ride's.
     void followRideRoom(double elapsedMs);
+    // I6 step 5: the hub's favourites showcase (world_showcase.cpp).
+    /// What a showcase job posts: its content, the generation it was asked under; the host's wake.
+    struct ShowcaseBox {
+        std::mutex mutex;
+        std::optional<ShowcaseContent> content;
+        std::uint64_t generation = 0;
+        std::function<void()> wake;
+    };
+    /// A floor with a showcase is shown (`build`'s): its slots kept, its content asked for.
+    void startShowcase(const WorldBuild& build);
+    /// Its content asked of the pool (the catalog's world reader open; else asked again next frame).
+    void requestShowcase(ProductUi& product);
+    /// Every frame: a launch's return or a refresh asks for the content again, an answer is shown.
+    void followShowcase(ProductUi& product);
+    void showShowcase(ShowcaseContent content);
+    void dropShowcase();
+    /// Its cover loader's round (as the floor's: paused while a launched game runs).
+    void showcaseRound(ProductUi& product, const gl::UploadBudget& budget, bool frame);
+    /// The frame's hover of the showcase's proxies (nothing while a room's item is hovered or the interaction is not in
+    /// free roam).
+    void hoverShowcase(const WorldHover::Frame& frame);
+    [[nodiscard]] bool showcaseSettled() const;
+
     /// The plan shown's state for the rides' floor jobs, the floor's elevator, arrival and doorways, its floors' record.
     void keepPlan(const WorldBuild& build);
     /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
@@ -504,6 +545,25 @@ private:
     std::string m_floor;
     core::Aabb m_elevatorZone;
     glm::vec3 m_elevatorDoors{0.0f};
+    /// I6 step 5: the hub's directory totem's zone and screen (empty off the ground floor).
+    core::Aabb m_totemZone;
+    glm::vec3 m_totemScreen{0.0f};
+    /// I6 step 5: the showcase of the floor shown (none off the hub), its job's mailbox and generation, whether a job
+    /// runs and whether a new content is wanted (a launch returned, a refresh ended) once it answers, the proxies' games,
+    /// layout, collection, cover loader and pick index, the hovered proxy, whether a launch was active last frame.
+    std::optional<HubShowcase> m_showcaseSpec;
+    std::shared_ptr<ShowcaseBox> m_showcaseBox;
+    core::JobGeneration m_showcaseGeneration;
+    bool m_showcaseAsked = false;
+    bool m_showcaseWanted = false;
+    std::vector<ShowcaseGame> m_showcaseGames;
+    world::CollectionLayout m_showcaseLayout;
+    std::unique_ptr<CollectionInstance> m_showcase;
+    std::unique_ptr<CoverLoader> m_showcaseLoader;
+    std::unique_ptr<world::PickIndex> m_showcasePicks;
+    world::PickId m_showcaseHovered = world::kNoPick;
+    bool m_showcaseLaunchSeen = false;
+    ShowcaseRecord m_showcaseRecord;
     scene::CameraSetup m_arrival;
     std::map<std::string, scene::CameraSetup> m_doorways;
     ui::DirectoryBuilding m_directoryBuilding;

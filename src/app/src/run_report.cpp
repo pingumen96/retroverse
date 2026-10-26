@@ -1008,6 +1008,15 @@ Json worldToJson(const WorldRecord& world) {
                                 {"unplacedForCapacity", room.unplacedForCapacity}});
     }
     json["migratedRooms"] = std::move(migrated);
+    Json replaced = Json::array();
+    for (const ReplacedRoomRecord& room : world.replacedRooms) {
+        replaced.push_back(Json{{"room", room.room},
+                                {"fromXMm", room.fromXMm},
+                                {"fromZMm", room.fromZMm},
+                                {"toXMm", room.toXMm},
+                                {"toZMm", room.toZMm}});
+    }
+    json["replacedRooms"] = std::move(replaced);
     json["needsConfirmation"] = world.needsConfirmation;
     json["hardFindings"] = world.hardFindings;
     json["softFindings"] = world.softFindings;
@@ -1168,6 +1177,15 @@ Json worldToJson(const WorldRecord& world) {
     }
     json["teleports"] = std::move(teleports);
     json["elevatorPromptFrames"] = world.elevatorPromptFrames;
+    json["totemPromptFrames"] = world.totemPromptFrames;
+    if (world.showcase.bound) {
+        json["showcase"] = Json{{"games", world.showcase.games},
+                                {"builds", world.showcase.builds},
+                                {"cardsOpened", world.showcase.cardsOpened},
+                                {"lastCard", world.showcase.lastCard},
+                                {"hovered", world.showcase.hovered},
+                                {"frontsResident", world.showcase.frontsResident}};
+    }
     return json;
 }
 
@@ -1224,6 +1242,15 @@ WorldRecord readWorld(FieldReader& fields) {
         record.to = room.string("to");
         record.unplacedForCapacity = room.optionalCount("unplacedForCapacity").value_or(0);
         world.migratedRooms.push_back(std::move(record));
+    }
+    for (FieldReader& room : fields.optionalObjectArray("replacedRooms")) {
+        ReplacedRoomRecord record;
+        record.room = room.string("room");
+        record.fromXMm = room.integer("fromXMm");
+        record.fromZMm = room.integer("fromZMm");
+        record.toXMm = room.integer("toXMm");
+        record.toZMm = room.integer("toZMm");
+        world.replacedRooms.push_back(std::move(record));
     }
     world.needsConfirmation = fields.optionalStringArray("needsConfirmation");
     world.hardFindings = fields.count("hardFindings");
@@ -1381,6 +1408,16 @@ WorldRecord readWorld(FieldReader& fields) {
         world.teleports.push_back(std::move(record));
     }
     world.elevatorPromptFrames = fields.optionalCount("elevatorPromptFrames").value_or(0);
+    world.totemPromptFrames = fields.optionalCount("totemPromptFrames").value_or(0);
+    if (std::optional<FieldReader> showcase = fields.optionalObject("showcase")) {
+        world.showcase.bound = true;
+        world.showcase.games = showcase->optionalStringArray("games");
+        world.showcase.builds = showcase->count("builds");
+        world.showcase.cardsOpened = showcase->count("cardsOpened");
+        world.showcase.lastCard = showcase->string("lastCard");
+        world.showcase.hovered = showcase->string("hovered");
+        world.showcase.frontsResident = showcase->count("frontsResident");
+    }
     return world;
 }
 

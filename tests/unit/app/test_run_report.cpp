@@ -356,6 +356,16 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.migratedRooms = {{"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
                            {"room:amiga", "big_box", "big_box_v2", 139}};
     world.needsConfirmation = {"migrate room:saturn from disc_case_cd to disc_case_cd_v2: a pin names the room"};
+    // I6 step 5: the rooms re-placed onto the hub, the totem's prompt, the favourites' showcase.
+    world.replacedRooms = {{"area:arcade", 7650, -8150, 9000, -12150}};
+    world.totemPromptFrames = 14;
+    world.showcase.bound = true;
+    world.showcase.games = {"g000000000000b002", "g000000000000b003"};
+    world.showcase.builds = 2;
+    world.showcase.cardsOpened = 1;
+    world.showcase.lastCard = "g000000000000b002";
+    world.showcase.hovered = "g000000000000b003";
+    world.showcase.frontsResident = 2;
     world.hardFindings = 0;
     world.softFindings = 2;
     world.objects = 42;

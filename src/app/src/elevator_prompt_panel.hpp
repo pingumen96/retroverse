@@ -25,7 +25,7 @@ public:
     ElevatorPromptPanel& operator=(const ElevatorPromptPanel&) = delete;
 
     /// Shows the prompt naming `key`; the same key again changes nothing.
-    void show(const std::string& key);
+    void show(const std::string& key, bool totem = false);
     void hide();
     [[nodiscard]] bool visible() const noexcept;
 

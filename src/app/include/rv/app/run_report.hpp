@@ -774,6 +774,32 @@ struct MigratedRoomRecord {
     bool operator==(const MigratedRoomRecord&) const = default;
 };
 
+/// A room the run's update re-placed onto the hub (I6 step 5: world::ReplacedRoom), its place on the ground floor before
+/// and after (millimetres).
+struct ReplacedRoomRecord {
+    std::string room;
+    std::int64_t fromXMm = 0;
+    std::int64_t fromZMm = 0;
+    std::int64_t toXMm = 0;
+    std::int64_t toZMm = 0;
+
+    bool operator==(const ReplacedRoomRecord&) const = default;
+};
+
+/// The hub's favourites showcase of the run (I6 step 5): its proxies' games (GameIds, in slot order) as shown last, how
+/// many times its content was made, the cards it opened, the proxy hovered at the end, its layers' residency.
+struct ShowcaseRecord {
+    bool bound = false;
+    std::vector<std::string> games;
+    std::uint64_t builds = 0;
+    std::uint64_t cardsOpened = 0;
+    std::string lastCard;
+    std::string hovered;
+    std::uint64_t frontsResident = 0;
+
+    bool operator==(const ShowcaseRecord&) const = default;
+};
+
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
@@ -825,6 +851,8 @@ struct WorldRecord {
     std::uint64_t kept = 0;
     /// The rooms the update migrated to their families' successors (I6 step 4), by room.
     std::vector<MigratedRoomRecord> migratedRooms;
+    /// The rooms the update re-placed onto the hub (I6 step 5), by room.
+    std::vector<ReplacedRoomRecord> replacedRooms;
     /// What the update left undone because it would have moved something pinned (world::ChangeReport's
     /// needsConfirmation: an unhonoured pin, a pinned room not migrated), as the report words it.
     std::vector<std::string> needsConfirmation;
@@ -881,6 +909,9 @@ struct WorldRecord {
     std::vector<RideRecord> rides;
     std::vector<TeleportRecord> teleports;
     std::uint64_t elevatorPromptFrames = 0;
+    /// I6 step 5: the frames the hub's directory totem's prompt showed, its favourites showcase.
+    std::uint64_t totemPromptFrames = 0;
+    ShowcaseRecord showcase;
 
     bool operator==(const WorldRecord&) const = default;
 };

@@ -35,6 +35,7 @@ struct ElevatorPromptPanel::Impl {
         }
         modelCreated = true;
         constructor.Bind("key", &key);
+        constructor.Bind("totem", &totem);
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -55,6 +56,7 @@ struct ElevatorPromptPanel::Impl {
     bool modelCreated = false;
     bool shown = false;
     Rml::String key;
+    bool totem = false;
 };
 
 ElevatorPromptPanel::ElevatorPromptPanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -72,12 +74,13 @@ Expected<std::unique_ptr<ElevatorPromptPanel>> ElevatorPromptPanel::create(ui::U
     return std::unique_ptr<ElevatorPromptPanel>(new ElevatorPromptPanel(std::move(impl)));
 }
 
-void ElevatorPromptPanel::show(const std::string& key) {
+void ElevatorPromptPanel::show(const std::string& key, bool totem) {
     Impl& impl = *m_impl;
-    if (impl.document == nullptr || (impl.shown && impl.key == key)) {
+    if (impl.document == nullptr || (impl.shown && impl.key == key && impl.totem == totem)) {
         return;
     }
     impl.key = Rml::String(key);
+    impl.totem = totem;
     impl.handle.DirtyAllVariables();
     if (!impl.shown) {
         // Shown without taking the focus: the world keeps the input.
