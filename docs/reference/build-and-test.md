@@ -86,7 +86,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   the same walk ends without them, gen4 rebuilt as megadrive enters its new shared room with the walker kept in the
   hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the
   hall and the arrival point are read from the generated plan and its floors' layout, never named), the room goldens
-  (`gpu.golden/G02` ... `G13`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
+  (`gpu.golden/G02` ... `G14`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
   (`gpu.directory: ...`, I4 step 7a: `tests/input_scripts/directory_panel.json` over a fixed model, each checkpoint's
   view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command), and the elevator and the
   directory in the app (`gpu.world elevator: ...`, I4 step 7b, `test_world_elevator.cpp`, `[world_elevator]`, on
@@ -100,7 +100,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   games tab against the fixture's gamelists and a card's room key; Avvia on the directory's card into the fake and
   back, and one that cannot start with its outcome on the card; interact and Map in one frame inspecting an item and
   opening nothing, the directory opened once back in free roam; the fade's view against the view before it, each
-  value times the fade's share; a game launched from the lobby starting its room's CRT on another floor after a ride);
+  value times the fade's share; a game launched from the lobby starting its room's CRT on another floor after a ride),
+  and the hub (`gpu.world hub: ...`, I6 step 5, `test_world_hub.cpp`, `[world_hub]`: the directory's totem's prompt and
+  interact opening the directory at its floors; the favourites' showcase holding the directory's first favourite and
+  recent games, a proxy hovered and its card opened, its Avvia into the fake emulator and the showcase made again on
+  its return; the arcade room reached past the landmark,
+  `tests/input_scripts/hub_walk_into_arcade.json`);
   the room's test files
   repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
