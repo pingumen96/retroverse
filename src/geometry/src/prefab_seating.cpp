@@ -63,7 +63,7 @@ float sofaArmWidth(const SofaParams& p) noexcept {
 
 Status validateSofa(const SofaParams& p) {
     if (Status status = firstError({
-            checkRange(kSofa, "width", p.width, 1.0f, 3.0f),
+            checkRange(kSofa, "width", p.width, 0.7f, 3.0f),
             checkRange(kSofa, "depth", p.depth, 0.6f, 1.2f),
             checkRange(kSofa, "height", p.height, 0.5f, 1.2f),
             checkRange(kSofa, "seatHeight", p.seatHeight, 0.25f, 0.6f),
@@ -172,10 +172,11 @@ ProceduralPrefab assembleSofa(const SofaParams& p) {
 
 constexpr std::string_view kBeanbag = "beanbag";
 /// The body's height and the back lump's, as shares of the bean bag's height; the lump's width and depth as shares.
-constexpr float kBodyHeight = 0.62f;
+/// (The step's review: a lower body and a wider, deeper lump, so that it slumps as one bag, not two stacked balls.)
+constexpr float kBodyHeight = 0.5f;
 constexpr float kLumpHeight = 0.78f;
-constexpr float kLumpWidth = 0.92f;
-constexpr float kLumpDepth = 0.46f;
+constexpr float kLumpWidth = 1.0f;
+constexpr float kLumpDepth = 0.6f;
 
 Status validateBeanbag(const BeanbagParams& p) {
     return firstError({

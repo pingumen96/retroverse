@@ -71,7 +71,8 @@
 //   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
 //   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
 //   read: the weights are the variants' (ThemeFurniture). A piece that leaves its footprint where it is drawn is not
-//   drawn (scene_builder.hpp: the plan's part or decoration is, with a warning).
+//   drawn (scene_builder.hpp: the plan's part or decoration is, with a warning). A showcase kind with "board_light"
+//   draws its strip under the cap (geometry::ShowcaseParams::boardLight).
 //   A shelf kind with the roles "board_light" and "board_glow" (both or neither; the reader refuses one alone), or a
 //   wall shelf kind with "board_light" (a wall shelf has no glow), is drawn with its lit interior (I6 step 3,
 //   geometry::ShelfParams::boardLight): a strip under each board and, on a shelf with a back, a glow on the back panel

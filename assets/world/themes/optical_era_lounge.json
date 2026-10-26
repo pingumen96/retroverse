@@ -37,7 +37,8 @@
     "showcase": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                  "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy", "glass": "MAT_Glass_Display",
                  "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
-                 "plastic_accent": "MAT_Plastic_Accent"},
+                 "plastic_accent": "MAT_Plastic_Accent", "board_light": "MAT_Shelf_Light",
+                 "cover": "MAT_Label_Cover"},
     "display_case": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy",
                      "glass": "MAT_Glass_Display"},
@@ -58,15 +59,15 @@
   "heroParts": {
     "sign": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Neon_Blue"}
   },
-  // The era's furniture (I6 step 3b, concept panel 4): a two-seat leather sofa along the hero corner's side, turned to
-  // the TV and the rug, large framed cinematic posters, glass showcases on walnut with a console for the sideboards;
+  // The era's furniture (I6 step 3b, concept panel 4): a two-seat leather sofa across the rug's south edge, facing the
+  // TV (the step's review: along the side it turned its back to the TV), large framed cinematic posters, glass showcases on walnut with a console for the sideboards;
   // the rug blue (its kind's material above).
   "furniture": {
     "heroParts": {
       "armchair": [
         {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"},
-         "params": {"width": 1.7, "depth": 0.82, "height": 0.8, "seats": 2}, "xMm": 785, "zMm": 1950,
-         "yawCdeg": 27000}]
+         "params": {"width": 1.7, "depth": 0.82, "height": 0.74, "armHeight": 0.58, "seats": 2},
+         "xMm": -150, "zMm": 2560, "yawCdeg": 18000}]
     },
     "decoration": {
       "poster_frame": [

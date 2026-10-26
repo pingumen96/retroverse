@@ -31,12 +31,13 @@
     "office_chair": {"fabric": "MAT_Fabric_Wool_Green", "plastic_dark": "MAT_Plastic_Black",
                      "metal": "MAT_Metal_Brushed"},
     "bar_stool": {"fabric": "MAT_Fabric_Leather", "metal": "MAT_Metal_Brass"},
-    "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+    "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Oak",
                     "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
     "showcase": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
                  "metal_trim": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Display_Green", "glass": "MAT_Glass_Display",
                  "plastic_body": "MAT_Plastic_AgedIvory", "plastic_dark": "MAT_Plastic_Black",
-                 "plastic_accent": "MAT_Plastic_Accent"},
+                 "plastic_accent": "MAT_Plastic_Accent", "board_light": "MAT_Shelf_Light",
+                 "cover": "MAT_Label_Cover"},
     "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Display_Green",
                      "glass": "MAT_Glass_Display"},
@@ -57,16 +58,18 @@
   "heroParts": {
     "sign": {"frame": "MAT_Wood_Walnut", "picture": "MAT_Neon_Green"}
   },
-  // The era's furniture (I6 step 3b): a desk with a home computer and its swivel chair in the armchair's place,
-  // banker's lamps on small stands, cork boards and prints in turn; the rug a bottle green (its kind's material above).
+  // The era's furniture (I6 step 3b): a desk with a home computer side-on along the hero corner's east edge and its
+  // swivel chair facing it, in the armchair's place (the step's review: in front of the TV the monitor hid it),
+  // banker's lamps on card catalogues, cork boards and prints in turn, glass showcases of big-box software for the
+  // sideboards; the rug a bottle green (its kind's material above).
   "furniture": {
     "heroParts": {
       "armchair": [
         {"prefab": {"manifest": "furniture.desk.generic", "kind": "desk"},
-         "params": {"width": 1.1, "depth": 0.7, "height": 0.74, "computer": true}, "xMm": 620, "zMm": 2050,
-         "yawCdeg": 0},
+         "params": {"width": 1.0, "depth": 0.6, "height": 0.74, "computer": true}, "xMm": 880, "zMm": 2200,
+         "yawCdeg": 27000},
         {"prefab": {"manifest": "furniture.office_chair.generic", "kind": "office_chair"},
-         "xMm": 750, "zMm": 2650, "yawCdeg": 18000}],
+         "xMm": 430, "zMm": 2300, "yawCdeg": 9000}],
       "lamp": [
         {"prefab": {"manifest": "decor.banker_lamp.generic", "kind": "banker_lamp"}, "params": {"standHeight": 1.11}}]
     },
@@ -80,7 +83,11 @@
          "textures": {"picture": "print"}}],
       "floor_lamp": [
         {"weight": 1.0, "prefab": {"manifest": "decor.banker_lamp.generic", "kind": "banker_lamp"},
-         "params": {"standHeight": 1.04}}]
+         "params": {"standHeight": 1.04}}],
+      "tv_cabinet": [
+        {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
+         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "boxes"},
+         "materials": {"plastic_body": "MAT_Paper_Print"}, "textures": {"cover": "cover"}}]
     }
   },
   "labelPalette": ["#6EAF93", "#C8B89A", "#76513A", "#4A6450", "#45547A", "#B8B2A2", "#252A2E", "#8E7151"],

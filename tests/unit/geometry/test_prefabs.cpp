@@ -1665,4 +1665,23 @@ TEST_CASE("geometry/prefabs: the era furniture's lights, seats and refusals (I6 
     CHECK(refused("showcase", {{"height", 0.8}, {"baseHeight", 0.6}}) == "showcase.baseHeight");
     CHECK(refused("showcase", {{"item", "jukebox"}}) == "showcase.item");
     CHECK(refused("beanbag", {{"height", 0.2}}) == "beanbag.height");
+
+    // The step's review: a one-seat sofa from 0.7 m (the handheld archive's lounge chair), the showcase's big boxes
+    // with their covers, its lit strip, and a vitrine too small for its item refused.
+    CHECK(buildOk("sofa", {{"width", 0.7}, {"seats", 1}, {"pillows", false}, {"legHeight", 0.2}}).bounds.size().x ==
+          Approx(0.7f));
+    CHECK(refused("sofa", {{"width", 0.65}, {"seats", 1}}) == "sofa.width");
+    const ProceduralPrefab boxes = buildOk("showcase", {{"item", "boxes"}, {"boardLight", true}});
+    CHECK(rv::geometry::findPart(boxes, "cover") != nullptr);
+    CHECK(rv::geometry::findPart(boxes, "plastic_body") != nullptr);
+    CHECK(rv::geometry::findPart(boxes, "board_light") != nullptr);
+    CHECK(part(boxes, "cover").mesh.vertices.size() == 3u * 4u); // three boxes, a quad each
+    CHECK(boxes.bounds == buildOk("showcase").bounds);
+    CHECK(rv::geometry::findPart(buildOk("showcase"), "board_light") == nullptr);
+    CHECK(rv::geometry::findPart(buildOk("showcase"), "cover") == nullptr);
+    CHECK(refused("showcase", {{"height", 0.7}, {"baseHeight", 0.4}, {"item", "boxes"}}) == "showcase.item");
+    CHECK(buildOk("showcase", {{"height", 0.7}, {"baseHeight", 0.4}, {"item", "none"}}).bounds.size().y ==
+          Approx(0.7f));
+    // The banker's lamp stands on a card catalogue: 3 x 6 drawer fronts (chamfered boxes of 96 vertices).
+    CHECK(part(buildOk("banker_lamp"), "wood_secondary").mesh.vertices.size() == 18u * 96u);
 }

@@ -127,10 +127,11 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
     return nullptr;
 }
 
-/// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside.
+/// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside, and so its
+/// showcases (I6 step 3b's review).
 void lightInside(json& object, std::string_view generator, const std::map<std::string, std::string>& materials) {
-    if ((generator == "shelf" || generator == "wall_shelf") && materials.contains("board_light") &&
-        object["params"].is_object()) {
+    if ((generator == "shelf" || generator == "wall_shelf" || generator == "showcase") &&
+        materials.contains("board_light") && object["params"].is_object()) {
         object["params"]["boardLight"] = true;
     }
 }

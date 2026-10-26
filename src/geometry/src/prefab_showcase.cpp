@@ -1,5 +1,6 @@
-// I6 step 3b's showcase (the optical era's, the 90s collector's and the handheld archive's sideboards, ADR-0014 §1
-// amended): a glass vitrine on a closed two-door base, a generic console or an upright handheld on a plinth inside.
+// I6 step 3b's showcase (the sideboards of every era pack, ADR-0014 §1 amended): a glass vitrine on a closed two-door
+// base, a generic console, an upright handheld or a row of upright big-box software on a plinth inside, lit by a strip
+// under the cap (the step's review: unlit, the glass read as an open cabinet).
 
 #include <algorithm>
 #include <string>
@@ -31,14 +32,71 @@ constexpr float kPlinthToe = 0.05f;
 /// The base's carcass stands behind its doors and their knobs.
 constexpr float kFrontRoom = 0.04f;
 constexpr float kKnobRadius = 0.01f;
-/// The covered plinth inside the vitrine.
-constexpr float kPlinthHeight = 0.05f;
+/// The covered plinth inside the vitrine (raised by the step's review: the item stands in the glass's middle).
+constexpr float kPlinthHeight = 0.13f;
+/// The lit strip under the cap (ShowcaseParams::boardLight), near the front, as a wall shelf's.
+constexpr float kStripThickness = 0.003f;
+constexpr float kStripDepth = 0.012f;
+constexpr float kStripBehindFront = 0.02f;
+/// The smallest scale an item is drawn at: a vitrine too small for it is refused.
+constexpr float kMinItemScale = 0.9f;
 /// The generic console's size (its body), the upright handheld's.
 constexpr glm::vec3 kConsole{0.26f, 0.055f, 0.19f};
 constexpr glm::vec3 kHandheld{0.09f, 0.15f, 0.028f};
 constexpr float kHandheldLeanDeg = 12.0f;
+/// An upright big box of software (I6 step 3b's review), up to three side by side, a gap between them.
+constexpr glm::vec3 kBigBox{0.17f, 0.22f, 0.045f};
+constexpr float kBigBoxGap = 0.025f;
+constexpr int kMaxBigBoxes = 3;
 constexpr BoxUv kGrain = BoxUv::GrainMeters;
 constexpr float kWoodTile = detail::kWoodMetersPerTile;
+
+/// The inside of the vitrine and what stands in it: the plinth's size, the room above it, the item's scale and (boxes)
+/// how many stand side by side.
+struct Interior {
+    float innerWidth = 0.0f;
+    float innerDepth = 0.0f;
+    float plinthWidth = 0.0f;
+    float plinthDepth = 0.0f;
+    float plinthTop = 0.0f;
+    float scale = 1.0f;
+    int boxes = 0;
+};
+
+Interior interiorOf(const ShowcaseParams& p) {
+    Interior in;
+    in.innerWidth = p.width - 2.0f * kPost;
+    in.innerDepth = p.depth - 2.0f * kPost;
+    in.plinthDepth = std::min(0.7f * in.innerDepth, 0.3f);
+    in.plinthTop = p.baseHeight + kPlinthHeight;
+    const float room = p.height - kCap - in.plinthTop - 0.02f;
+    switch (p.item) {
+    case ShowcaseItem::None:
+        in.plinthWidth = std::min(0.6f * in.innerWidth, 0.4f);
+        break;
+    case ShowcaseItem::Console:
+        in.plinthWidth = std::min(0.6f * in.innerWidth, 0.4f);
+        in.scale = std::min({1.0f, (in.plinthWidth - 0.02f) / kConsole.x, (in.plinthDepth - 0.02f) / kConsole.z,
+                             room / (kConsole.y + 0.03f)});
+        break;
+    case ShowcaseItem::Handheld:
+        in.plinthWidth = std::min(0.6f * in.innerWidth, 0.4f);
+        in.scale = std::min({1.0f, room / (kHandheld.y + 0.03f), (in.plinthDepth - 0.02f) / 0.08f});
+        break;
+    case ShowcaseItem::Boxes: {
+        // As many boxes as fit at full size (one at least), on a plinth as wide as they stand.
+        in.plinthWidth =
+            std::min(in.innerWidth - 0.06f, static_cast<float>(kMaxBigBoxes) * (kBigBox.x + kBigBoxGap) + 0.02f);
+        in.scale = std::min({1.0f, room / kBigBox.y, (in.plinthWidth - 0.02f) / kBigBox.x});
+        const float pitch = in.scale * (kBigBox.x + kBigBoxGap);
+        in.boxes =
+            std::clamp(static_cast<int>((in.plinthWidth - 0.02f + in.scale * kBigBoxGap) / pitch), 1, kMaxBigBoxes);
+        in.plinthWidth = std::min(in.plinthWidth, static_cast<float>(in.boxes) * pitch + 0.02f);
+        break;
+    }
+    }
+    return in;
+}
 
 Status validate(const ShowcaseParams& p) {
     if (Status status = firstError({
@@ -52,6 +110,11 @@ Status validate(const ShowcaseParams& p) {
     if (!(p.baseHeight >= 0.15f && p.baseHeight <= p.height - 0.25f)) {
         return outOfRange(kKind, "baseHeight",
                           formatNumber(p.baseHeight) + " is outside [0.15, " + formatNumber(p.height - 0.25f) + "]");
+    }
+    if (const Interior in = interiorOf(p); p.item != ShowcaseItem::None && in.scale < kMinItemScale) {
+        return outOfRange(kKind, "item",
+                          "the vitrine is too small for its item (drawn at " + formatNumber(in.scale) + ", at least " +
+                              formatNumber(kMinItemScale) + ")");
     }
     return ok();
 }
@@ -93,6 +156,24 @@ void addHandheld(detail::PrefabAssembler& out, const glm::mat4& at, float scale)
     for (const glm::vec2 button : {glm::vec2(0.018f, -0.03f), glm::vec2(0.03f, -0.04f)}) {
         out.part("plastic_accent")
             .box(glm::vec3(0.01f, 0.01f, 0.004f), body * translation(glm::vec3(button.x, button.y, face)));
+    }
+}
+
+/// `count` upright big boxes of software side by side (y = 0 the plinth's top), scaled by `scale`: each a box of
+/// "plastic_body" with its cover (role "cover", the whole picture) on its front, the outer two turned a little inwards.
+void addBoxes(detail::PrefabAssembler& out, const glm::mat4& at, float scale, int count) {
+    const glm::mat4 frame = glm::scale(at, glm::vec3(scale));
+    MeshBuilder& body = out.part("plastic_body");
+    MeshBuilder& cover = out.part("cover");
+    const float pitch = kBigBox.x + kBigBoxGap;
+    for (int i = 0; i < count; ++i) {
+        const float offset = static_cast<float>(i) - 0.5f * static_cast<float>(count - 1);
+        const float turn = core::degreesToRadians(-8.0f * offset);
+        glm::mat4 box = glm::rotate(frame * translation(glm::vec3(offset * pitch, 0.5f * kBigBox.y, 0.0f)), turn,
+                                    glm::vec3(0.0f, 1.0f, 0.0f));
+        body.chamferedBox(kBigBox, 0.002f, box);
+        cover.quad(glm::vec2(kBigBox.x - 0.006f, kBigBox.y - 0.006f),
+                   box * translation(glm::vec3(0.0f, 0.0f, 0.5f * kBigBox.z + 0.0005f)));
     }
 }
 
@@ -153,21 +234,25 @@ ProceduralPrefab assemble(const ShowcaseParams& p) {
     }
 
     // The plinth and the item on it.
-    const float plinthWidth = std::min(0.6f * innerWidth, 0.4f);
-    const float plinthDepth = std::min(0.7f * innerDepth, 0.3f);
+    const Interior in = interiorOf(p);
     const float floorY = p.baseHeight;
-    out.part("fabric").chamferedBox(glm::vec3(plinthWidth, kPlinthHeight, plinthDepth), 0.006f,
+    out.part("fabric").chamferedBox(glm::vec3(in.plinthWidth, kPlinthHeight, in.plinthDepth), 0.006f,
                                     translation(glm::vec3(0.0f, floorY + 0.5f * kPlinthHeight, 0.0f)));
-    const float plinthTop = floorY + kPlinthHeight;
-    const glm::mat4 itemFrame = translation(glm::vec3(0.0f, plinthTop, 0.0f));
-    const float room = p.height - kCap - plinthTop - 0.02f;
+    const glm::mat4 itemFrame = translation(glm::vec3(0.0f, in.plinthTop, 0.0f));
     if (p.item == ShowcaseItem::Console) {
-        const float scale = std::min({1.0f, (plinthWidth - 0.02f) / kConsole.x, (plinthDepth - 0.02f) / kConsole.z,
-                                      room / (kConsole.y + 0.03f)});
-        addConsole(out, itemFrame, scale);
+        addConsole(out, itemFrame, in.scale);
     } else if (p.item == ShowcaseItem::Handheld) {
-        const float scale = std::min({1.0f, room / (kHandheld.y + 0.03f), (plinthDepth - 0.02f) / 0.08f});
-        addHandheld(out, itemFrame, scale);
+        addHandheld(out, itemFrame, in.scale);
+    } else if (p.item == ShowcaseItem::Boxes) {
+        addBoxes(out, itemFrame, in.scale, in.boxes);
+    }
+    // The lit strip under the cap, near the front: it lights the item and the lining (emissive, no light of its own).
+    if (p.boardLight) {
+        out.part("board_light")
+            .box(glm::vec3(innerWidth - 0.02f, kStripThickness, kStripDepth),
+                 translation(glm::vec3(0.0f, p.height - kCap - 0.5f * kStripThickness,
+                                       halfDepth - kStripBehindFront - 0.5f * kStripDepth)),
+                 BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
     }
     out.addSocket("Item", SocketKind::Anchor, itemFrame);
     return std::move(out).finish();

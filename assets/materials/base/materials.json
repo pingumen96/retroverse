@@ -224,7 +224,7 @@
     "MAT_Fabric_Slate": { "baseColor": "#3A4656", "metallic": 0.0, "roughness": 0.9 },
     // The era furniture's covers (I6 step 3b): the 90s bean bag's glossy purple vinyl, the arcade stools' red vinyl
     // (the diner red of concept panel 5's stools), the study chair's bottle-green wool.
-    "MAT_Fabric_Vinyl_Purple": { "baseColor": "#5A3E86", "metallic": 0.0, "roughness": 0.45 },
+    "MAT_Fabric_Vinyl_Purple": { "baseColor": "#5A3E86", "metallic": 0.0, "roughness": 0.6 },
     "MAT_Fabric_Vinyl_Red": { "baseColor": "#7A2A33", "metallic": 0.0, "roughness": 0.4 },
     "MAT_Fabric_Wool_Green": { "baseColor": "#33493B", "metallic": 0.0, "roughness": 0.9 },
     // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over

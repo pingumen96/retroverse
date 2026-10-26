@@ -1,5 +1,7 @@
 // I6 step 3b's banker's lamp (the computer studio's lamps, ADR-0014 §1 amended): a green glass half-tube shade on a
-// brass stem and base, standing on a small two-drawer stand so that its bulb stands about where a floor lamp's does.
+// brass stem and base, standing on a card catalogue (three columns of six small drawers, each with a brass label holder
+// and pull; the step's review: a plain two-drawer stand read as a tall dark chest) so that its bulb stands about where a
+// floor lamp's does.
 
 #include <algorithm>
 #include <cmath>
@@ -22,13 +24,17 @@ using detail::translation;
 
 constexpr std::string_view kKind = "banker_lamp";
 constexpr float kTop = 0.03f;
-constexpr float kDrawer = 0.12f;
-constexpr float kFront = 0.018f;
-constexpr float kReveal = 0.004f;
+constexpr float kFront = 0.016f;
+constexpr float kReveal = 0.005f;
 constexpr float kPlinth = 0.07f;
+/// The card catalogue's drawers: columns and rows; a drawer's brass label holder and its pull.
+constexpr int kColumns = 3;
+constexpr int kRows = 6;
+constexpr glm::vec2 kLabel{0.05f, 0.024f};
+constexpr float kLabelThickness = 0.003f;
+constexpr glm::vec3 kPull{0.032f, 0.01f, 0.012f};
 /// The carcass's front stands this far behind the top's front edge (the fronts and the knobs in front of it).
 constexpr float kFrontRoom = 0.045f;
-constexpr float kKnobRadius = 0.012f;
 /// The lamp on the stand: its base plate, its stem, the shade's radius and wall, the shade's axis above the stand.
 constexpr glm::vec3 kBasePlate{0.2f, 0.025f, 0.13f};
 constexpr float kStemRadius = 0.008f;
@@ -124,7 +130,7 @@ ProceduralPrefab assemble(const BankerLampParams& p) {
     MeshBuilder& fronts = out.part("wood_secondary");
     MeshBuilder& metal = out.part("metal");
 
-    // The stand: a carcass under an overhanging top, two drawers and a door below them, on a recessed plinth.
+    // The stand: a carcass under an overhanging top on a recessed plinth, a card catalogue's grid of drawers in front.
     const float halfDepth = 0.5f * p.standDepth;
     const float underTop = p.standHeight - kTop;
     const float carcassFront = halfDepth - kFrontRoom;
@@ -136,22 +142,26 @@ ProceduralPrefab assemble(const BankerLampParams& p) {
     wood.chamferedBox(glm::vec3(carcassWidth, underTop, carcassDepth), 0.002f,
                       translation(glm::vec3(0.0f, 0.5f * underTop, carcassFront - 0.5f * carcassDepth)), kGrain,
                       kWoodTile);
-    const float frontWidth = carcassWidth - 2.0f * kReveal;
+    const float drawerWidth = (carcassWidth - static_cast<float>(kColumns + 1) * kReveal) / static_cast<float>(kColumns);
+    const float drawerHeight = (underTop - kPlinth - static_cast<float>(kRows + 1) * kReveal) / static_cast<float>(kRows);
     const float frontZ = carcassFront + 0.5f * kFront;
-    const float knobZ = carcassFront + kFront + kKnobRadius;
-    float top = underTop - kReveal;
-    for (int i = 0; i < 2; ++i) {
-        const float height = std::min(kDrawer, 0.25f * (underTop - kPlinth));
-        fronts.chamferedBox(glm::vec3(frontWidth, height, kFront), 0.003f,
-                            translation(glm::vec3(0.0f, top - 0.5f * height, frontZ)), kGrain, kWoodTile);
-        metal.uvSphere(kKnobRadius, 12, 6, translation(glm::vec3(0.0f, top - 0.5f * height, knobZ)));
-        top -= height + kReveal;
-    }
-    if (top - kPlinth > 0.05f) {
-        fronts.chamferedBox(glm::vec3(frontWidth, top - kPlinth, kFront), 0.003f,
-                            translation(glm::vec3(0.0f, 0.5f * (top + kPlinth), frontZ)), kGrain, kWoodTile);
-        metal.uvSphere(kKnobRadius, 12, 6,
-                       translation(glm::vec3(0.35f * frontWidth, top - std::min(0.1f, 0.3f * (top - kPlinth)), knobZ)));
+    const float hardwareZ = carcassFront + kFront;
+    // The label holders and pulls scale down with a small drawer.
+    const float hardware = std::min(1.0f, std::min(drawerWidth / 0.11f, drawerHeight / 0.1f));
+    for (int row = 0; row < kRows; ++row) {
+        const float y = kPlinth + kReveal + (static_cast<float>(row) + 0.5f) * drawerHeight +
+                        static_cast<float>(row) * kReveal;
+        for (int column = 0; column < kColumns; ++column) {
+            const float x = -0.5f * carcassWidth + kReveal + (static_cast<float>(column) + 0.5f) * drawerWidth +
+                            static_cast<float>(column) * kReveal;
+            fronts.chamferedBox(glm::vec3(drawerWidth, drawerHeight, kFront), 0.002f,
+                                translation(glm::vec3(x, y, frontZ)), kGrain, kWoodTile);
+            metal.box(glm::vec3(kLabel.x * hardware, kLabel.y * hardware, kLabelThickness),
+                      translation(glm::vec3(x, y + 0.2f * drawerHeight, hardwareZ + 0.5f * kLabelThickness)));
+            metal.chamferedBox(kPull * hardware, 0.003f * hardware,
+                               translation(glm::vec3(x, y - 0.18f * drawerHeight,
+                                                     hardwareZ + 0.5f * kPull.z * hardware)));
+        }
     }
 
     // The lamp: a brass plate, a stem at the back, a bar under the shade, the shade over the bulb.

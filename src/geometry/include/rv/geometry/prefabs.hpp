@@ -333,7 +333,7 @@ struct ArmchairParams {
 /// corner when `pillows`. Roles: "fabric" (back, armrests, base, cushions), "wood" (legs, when legHeight > 0.1 mm),
 /// "pillow" (the throw pillows). Sockets: "Seat" (Anchor) at the middle of the seat's top, +Y up.
 struct SofaParams {
-    float width = 1.6f;       ///< [1, 3]
+    float width = 1.6f;       ///< [0.7, 3]: from 0.7 a lounge chair (one seat)
     float depth = 0.86f;      ///< [0.6, 1.2]
     float height = 0.8f;      ///< [0.5, 1.2]: the top of the back; at least 5 cm above armHeight
     float seatHeight = 0.42f; ///< [0.25, 0.6]: the top of the 12 cm seat cushions, at least 5 cm above the legs
@@ -399,21 +399,25 @@ struct BankerLampParams {
     float shadeLength = 0.3f;  ///< [0.15, 0.6], at most standWidth
 };
 
-/// What a showcase holds (I6 step 3b).
-enum class ShowcaseItem { None, Console, Handheld };
+/// What a showcase holds (I6 step 3b; Boxes since the step's review).
+enum class ShowcaseItem { None, Console, Handheld, Boxes };
 
 /// "showcase" (I6 step 3b), pivot floor, front +Z; bounds = width x height x depth. A glass vitrine on a closed base
 /// with two doors: a glass front and glass sides between four slim posts under a wooden cap, a back panel, a covered
-/// plinth inside carrying a generic console or an upright handheld (original designs), or nothing. Roles: "wood_primary" (base, posts,
-/// rails), "wood_secondary" (doors, back panel), "metal_trim" (knobs), "fabric" (the plinth), "glass" (the panes, one
-/// sheet each: a blended, double-sided material), "plastic_body", "plastic_dark", "plastic_accent" (the item).
-/// Sockets: "Item" (Anchor) on the plinth's top, centred.
+/// plinth inside (13 cm high) carrying a generic console, an upright handheld (original designs), up to three upright
+/// big boxes of software side by side, or nothing. An item is drawn at its size or scaled down to fit, never below 0.9
+/// (a smaller vitrine is refused). Roles: "wood_primary" (base, posts, rails), "wood_secondary" (doors, back panel),
+/// "metal_trim" (knobs), "fabric" (the plinth), "glass" (the panes, one sheet each: a blended, double-sided material),
+/// "plastic_body", "plastic_dark", "plastic_accent" (the item; the boxes' bodies "plastic_body"); after them, only when
+/// built, "cover" (each box's front, the whole picture upright) and "board_light" (with `boardLight`: an emissive strip
+/// under the cap near the front, 3 mm thick, as a lit shelf's). Sockets: "Item" (Anchor) on the plinth's top, centred.
 struct ShowcaseParams {
     float width = 0.8f;                        ///< [0.4, 2]
     float height = 1.15f;                      ///< [0.6, 2]
     float depth = 0.36f;                       ///< [0.25, 1]
     float baseHeight = 0.62f;                  ///< [0.15, height - 0.25]: the vitrine's floor
-    ShowcaseItem item = ShowcaseItem::Console; ///< JSON "none", "console" or "handheld"
+    ShowcaseItem item = ShowcaseItem::Console; ///< JSON "none", "console", "handheld" or "boxes"
+    bool boardLight = false;                   ///< the lit strip under the cap (a pack naming "board_light")
 };
 
 /// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8

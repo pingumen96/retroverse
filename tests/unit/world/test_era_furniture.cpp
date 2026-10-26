@@ -243,10 +243,22 @@ TEST_CASE("world/era furniture: every pack's pieces resolve and build, the class
         }
         const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
         CHECK(theme->furniture.empty() == classic);
+        if (pack == "arcade_after_dark") {
+            // The runner's material is its piece's: the rug kind stays the ornate carpet, which a plan's rug drawn as
+            // planned (the piece left out) keeps instead of a runner stretched over 2.4 x 1.6 m.
+            CHECK(theme->materials("rug").at("fabric") == "MAT_Carpet_Ornate");
+            CHECK(theme->furniture.heroParts.at("rug").front().materials.at("fabric") == "MAT_Carpet_Runner");
+        }
         if (!classic) {
-            // Each era's seat differs from the armchair, and its rug from the classic one.
+            // Each era's seat differs from the armchair, and its rug from the classic one (the rug piece's own
+            // material, or the rug kind's).
             CHECK(theme->furniture.heroParts.contains("armchair"));
-            CHECK(theme->materials("rug").at("fabric") != "MAT_Carpet_Ornate");
+            std::string rug = theme->materials("rug").at("fabric");
+            if (const auto piece = theme->furniture.heroParts.find("rug");
+                piece != theme->furniture.heroParts.end() && piece->second.front().materials.contains("fabric")) {
+                rug = piece->second.front().materials.at("fabric");
+            }
+            CHECK(rug != "MAT_Carpet_Ornate");
             CHECK(theme->furniture.decoration.contains("poster_frame"));
         }
     }

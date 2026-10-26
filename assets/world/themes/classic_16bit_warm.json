@@ -39,7 +39,8 @@
     "showcase": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                  "metal_trim": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Display", "glass": "MAT_Glass_Display",
                  "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
-                 "plastic_accent": "MAT_Plastic_Accent"},
+                 "plastic_accent": "MAT_Plastic_Accent", "board_light": "MAT_Shelf_Light",
+                 "cover": "MAT_Label_Cover"},
     // The cases: a lighter oak frame and carcass (they stand in the middle of the room and must not read as dark
     // boxes), the lining a bordeaux of the armchair's family, their glass clear (no haze over the covers).
     "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",

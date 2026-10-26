@@ -510,13 +510,17 @@ Expected<ProceduralPrefab> bankerLampFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
     ShowcaseParams p;
-    ParamReader r("showcase", params, {"width", "height", "depth", "baseHeight", "item"});
+    ParamReader r("showcase", params, {"width", "height", "depth", "baseHeight", "item", "boardLight"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
     r.read("baseHeight", p.baseHeight);
     r.readEnum("item", p.item,
-               {{"none", ShowcaseItem::None}, {"console", ShowcaseItem::Console}, {"handheld", ShowcaseItem::Handheld}});
+               {{"none", ShowcaseItem::None},
+                {"console", ShowcaseItem::Console},
+                {"handheld", ShowcaseItem::Handheld},
+                {"boxes", ShowcaseItem::Boxes}});
+    r.read("boardLight", p.boardLight);
     if (!r.ok()) {
         return propagate(r.error());
     }
