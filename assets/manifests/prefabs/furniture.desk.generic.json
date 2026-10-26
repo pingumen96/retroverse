@@ -1,0 +1,34 @@
+// The study's desk with a generic home computer of the computer studio's hero corner (I6 step 3b, ADR-0014 §1 amended).
+{
+  "schemaVersion": 1,
+  "id": "furniture.desk.generic",
+  "assetType": "furniture",
+  "category": "desk",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-25",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "desk",
+    "params": {},
+    "scaleMeters": [1.3, 1.18, 0.7],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "top": "Top",
+      "monitor": "Screen"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "desk", "computer", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

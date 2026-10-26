@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -298,7 +299,8 @@ TEST_CASE("assets/test_patterns: cartridge labels keep long titles legible", "[a
 TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     const auto names = rv::assets::patternNames();
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
-          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon"});
+          std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon", "poster_memphis",
+                                        "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -488,4 +490,31 @@ TEST_CASE("assets/test_patterns: pattern keys name the pattern, its title and it
     CHECK(rv::assets::patternKey("cover", "RETRO RALLY 16", 101) == "pattern:cover:RETRO RALLY 16:101");
     CHECK(rv::assets::patternKey("color_bars", "", 0) == "pattern:color_bars::0");
     CHECK(rv::assets::patternKey("cover", "A", 1) != rv::assets::patternKey("cover", "A", 2));
+}
+
+TEST_CASE("assets/test_patterns: the era posters, the cork board and the terminal (I6 step 3b)", "[assets][patterns]") {
+    for (const std::string_view name :
+         {"poster_memphis", "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal"}) {
+        INFO(name);
+        const auto first = rv::assets::makeNamedPattern(name, 360, 512, "NEON HARBOR", 7);
+        REQUIRE(first.has_value());
+        CHECK(first->width == 360);
+        CHECK(first->height == 512);
+        // Deterministic, opaque, and more than one colour.
+        CHECK(first->pixels == rv::assets::makeNamedPattern(name, 360, 512, "NEON HARBOR", 7)->pixels);
+        std::set<std::uint32_t> colours;
+        for (std::size_t i = 0; i < first->pixels.size(); i += 4) {
+            CHECK(first->pixels[i + 3] == 255);
+            colours.insert(static_cast<std::uint32_t>(first->pixels[i]) << 16 |
+                           static_cast<std::uint32_t>(first->pixels[i + 1]) << 8 | first->pixels[i + 2]);
+        }
+        // The terminal is green ink on its ground; the posters and the board draw many colours.
+        CHECK(colours.size() >= (name == std::string_view("terminal") ? 2u : 4u));
+        // Tiny and wide surfaces never fail.
+        CHECK(rv::assets::makeNamedPattern(name, 3, 2, "X", 1).has_value());
+        CHECK(rv::assets::makeNamedPattern(name, 512, 64, "", 1).has_value());
+    }
+    // The seed varies the posters.
+    CHECK(rv::assets::makeNamedPattern("poster_memphis", 128, 160, "T", 1)->pixels !=
+          rv::assets::makeNamedPattern("poster_memphis", 128, 160, "T", 2)->pixels);
 }

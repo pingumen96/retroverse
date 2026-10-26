@@ -58,6 +58,12 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 [[nodiscard]] ProceduralSurface makeOak(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makePaintedPlaster(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeOrnateRug(const ProceduralSurfaceInfo& info);
+/// The rugs of I6 step 3b's packs: the ornamental rug in a blue, a sage and a green palette, a runner, a geometric rug.
+[[nodiscard]] ProceduralSurface makeOrnateRugBlue(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeOrnateRugSage(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeOrnateRugGreen(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeRunnerRug(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeGeometricRug(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeBrushedMetal(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info);

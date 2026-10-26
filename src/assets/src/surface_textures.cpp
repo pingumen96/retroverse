@@ -16,8 +16,8 @@ struct CatalogEntry {
     Generator generate;
 };
 
-const std::array<CatalogEntry, 10>& catalog() {
-    static const std::array<CatalogEntry, 10> entries{{
+const std::array<CatalogEntry, 15>& catalog() {
+    static const std::array<CatalogEntry, 15> entries{{
         {{"oak_planks", {1024, 1024}, {2.0f, 2.0f}, true, true,
           "Oak floor planks 14.3 cm wide running along v, staggered joints with a dark gap and a micro-bevel, a tint "
           "and a slight cup per plank, satin varnish with worn traffic areas. Full surface (white base color, "
@@ -46,6 +46,29 @@ const std::array<CatalogEntry, 10>& catalog() {
           "designed for 2.4 x 1.6 m (the rug prefab's default size); its outer guard band is uniform, so its edges "
           "join seamlessly when repeated. Full surface, no normal map."},
          &detail::makeOrnateRug},
+        // I6 step 3b: the rugs the packs choose (ADR-0014 §1 amended), a little coarser than the classic one.
+        {{"ornate_rug_blue", {1152, 768}, {2.4f, 1.6f}, false, false,
+          "The ornamental rug's design in the optical era's colours: a deep blue field, lattice and borders, red "
+          "motifs, cream, muted gold and a cold blue (concept panel 4). A picture like ornate_rug's; no normal map."},
+         &detail::makeOrnateRugBlue},
+        {{"ornate_rug_sage", {1152, 768}, {2.4f, 1.6f}, false, false,
+          "The ornamental rug's design muted for the handheld archive: a sage field, slate-green borders, terracotta, "
+          "cream and a soft teal. A picture like ornate_rug's; no normal map."},
+         &detail::makeOrnateRugSage},
+        {{"ornate_rug_green", {1152, 768}, {2.4f, 1.6f}, false, false,
+          "The ornamental rug's design for the computer studio: a bottle-green field, near-black green borders, olive "
+          "motifs and an old gold. A picture like ornate_rug's; no normal map."},
+         &detail::makeOrnateRugGreen},
+        {{"geometric_rug", {1152, 768}, {2.4f, 1.6f}, false, false,
+          "The 90s collector's rug: confetti of the decade (triangles, rings, zigzags, dots, squares and bars in teal, "
+          "magenta, yellow, violet and cream, one per 20 cm cell) on charcoal inside a teal border and a yellow line. "
+          "A picture over uv 0..1 of a 2.4 x 1.6 m rug; no normal map."},
+         &detail::makeGeometricRug},
+        {{"runner_rug", {512, 1280}, {1.0f, 2.5f}, false, false,
+          "The arcade's runner (concept panel 5): the ornamental rug's borders around a field of lozenge medallions "
+          "repeated along its length, red on a near-black ground. A picture over uv 0..1 of a 1.0 x 2.5 m runner "
+          "(u across it, v along it); no normal map."},
+         &detail::makeRunnerRug},
         {{"brushed_metal", {512, 512}, {0.25f, 0.25f}, true, true,
           "Satin steel brushed along u: streaks of brightness and sheen, fine scratches across them; metallic. Full "
           "surface (white base color, roughness and metallic factors 1); one repeat covers 25 x 25 cm."},
@@ -111,8 +134,8 @@ std::optional<SurfaceMap> surfaceMapFromString(std::string_view name) noexcept {
 }
 
 std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept {
-    static const std::array<ProceduralSurfaceInfo, 10> infos = [] {
-        std::array<ProceduralSurfaceInfo, 10> list{};
+    static const std::array<ProceduralSurfaceInfo, 15> infos = [] {
+        std::array<ProceduralSurfaceInfo, 15> list{};
         std::transform(catalog().begin(), catalog().end(), list.begin(),
                        [](const CatalogEntry& entry) { return entry.info; });
         return list;

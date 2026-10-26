@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <glm/vec2.hpp>
+
 namespace rv::assets {
 namespace {
 
@@ -703,9 +705,388 @@ ImageData makeSolid(int width, int height, glm::u8vec4 color) {
     return image;
 }
 
+// ---- The era posters, the cork board and the terminal (I6 step 3b) ------------------------------------------------
+
+namespace {
+
+/// `a` towards `b` by t in [0, 1], per channel, rounded.
+Rgba mix(Rgba a, Rgba b, float t) noexcept {
+    const auto channel = [t](std::uint8_t x, std::uint8_t y) {
+        return static_cast<std::uint8_t>(std::lround(static_cast<float>(x) + (static_cast<float>(y) - x) * t));
+    };
+    return Rgba(channel(a.r, b.r), channel(a.g, b.g), channel(a.b, b.b), 255);
+}
+
+/// A disc (or a ring of `thickness` pixels when > 0) of radius r centred on (cx, cy), clipped to the image.
+void fillDisc(ImageData& image, float cx, float cy, float r, Rgba color, float thickness = 0.0f) noexcept {
+    const int x0 = std::max(0, static_cast<int>(std::floor(cx - r)));
+    const int x1 = std::min(image.width, static_cast<int>(std::ceil(cx + r)) + 1);
+    const int y0 = std::max(0, static_cast<int>(std::floor(cy - r)));
+    const int y1 = std::min(image.height, static_cast<int>(std::ceil(cy + r)) + 1);
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            const float dx = static_cast<float>(x) + 0.5f - cx;
+            const float dy = static_cast<float>(y) + 0.5f - cy;
+            const float d = std::sqrt(dx * dx + dy * dy);
+            if (d <= r && (thickness <= 0.0f || d >= r - thickness)) {
+                setPixel(image, x, y, color);
+            }
+        }
+    }
+}
+
+/// A filled triangle, clipped to the image.
+void fillTriangle(ImageData& image, glm::vec2 a, glm::vec2 b, glm::vec2 c, Rgba color) noexcept {
+    const int x0 = std::max(0, static_cast<int>(std::floor(std::min({a.x, b.x, c.x}))));
+    const int x1 = std::min(image.width, static_cast<int>(std::ceil(std::max({a.x, b.x, c.x}))) + 1);
+    const int y0 = std::max(0, static_cast<int>(std::floor(std::min({a.y, b.y, c.y}))));
+    const int y1 = std::min(image.height, static_cast<int>(std::ceil(std::max({a.y, b.y, c.y}))) + 1);
+    const auto edge = [](glm::vec2 p, glm::vec2 q, glm::vec2 r) {
+        return (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    };
+    const float area = edge(a, b, c);
+    if (area == 0.0f) {
+        return;
+    }
+    for (int y = y0; y < y1; ++y) {
+        for (int x = x0; x < x1; ++x) {
+            const glm::vec2 p(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f);
+            const float w0 = edge(b, c, p) / area;
+            const float w1 = edge(c, a, p) / area;
+            const float w2 = edge(a, b, p) / area;
+            if (w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f) {
+                setPixel(image, x, y, color);
+            }
+        }
+    }
+}
+
+/// A zigzag stroke from (x0, y) rightwards over `length` pixels, `teeth` teeth of `amplitude`, `thickness` wide.
+void drawZigzag(ImageData& image, float x0, float y, float length, int teeth, float amplitude, float thickness,
+                Rgba color) noexcept {
+    const int steps = std::max(8, static_cast<int>(length * 2.0f));
+    for (int i = 0; i <= steps; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(steps);
+        const float phase = t * static_cast<float>(teeth);
+        const float tri = 2.0f * std::abs(phase - std::floor(phase) - 0.5f); // 1 at the teeth, 0 between
+        fillDisc(image, x0 + t * length, y + (tri - 0.5f) * 2.0f * amplitude, 0.5f * thickness, color);
+    }
+}
+
+/// The title of an era poster, in `color` within the band, at most three lines.
+void posterTitle(ImageData& image, std::string_view title, int x0, int y0, int x1, int y1, Rgba color) {
+    drawTitle(image, title, x0, y0, x1, y1, color, kMaxCoverTitleLines);
+}
+
+/// A 90s collector's poster: confetti of the decade (triangles, rings, zigzags, dots and squares) in teal, magenta,
+/// yellow and violet on a charcoal or off-white ground, the title in a yellow or teal band below.
+ImageData memphisPoster(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed ^ 0x90A5C011u);
+    const bool dark = rng.below(2) == 0;
+    const Rgba ground = dark ? fromHex(0x22232A) : fromHex(0xEDE6D6);
+    constexpr std::array<Rgba, 5> kConfetti = {fromHex(0x2FA59C), fromHex(0xD9487E), fromHex(0xF2C230),
+                                               fromHex(0x6B4FA0), fromHex(0xEF7B45)};
+    fillRect(image, 0, 0, width, height, ground);
+    const float unit = static_cast<float>(std::min(width, height));
+    const int bandTop = height * 70 / 100;
+    const int shapes = 18 + rng.below(8);
+    for (int i = 0; i < shapes; ++i) {
+        const Rgba color = kConfetti[static_cast<std::size_t>(rng.below(static_cast<int>(kConfetti.size())))];
+        const float cx = static_cast<float>(rng.below(width));
+        const float cy = static_cast<float>(rng.below(std::max(1, bandTop)));
+        const float size = unit * (0.05f + 0.01f * static_cast<float>(rng.below(8)));
+        switch (rng.below(5)) {
+        case 0:
+            fillTriangle(image, {cx, cy - size}, {cx - size, cy + size * 0.8f}, {cx + size, cy + size * 0.6f}, color);
+            break;
+        case 1:
+            fillDisc(image, cx, cy, size, color, std::max(2.0f, size * 0.3f));
+            break;
+        case 2:
+            drawZigzag(image, cx - size * 1.5f, cy, size * 3.0f, 4, size * 0.3f, std::max(2.0f, size * 0.18f), color);
+            break;
+        case 3:
+            for (int dy = 0; dy < 3; ++dy) {
+                for (int dx = 0; dx < 3; ++dx) {
+                    const float step = size * 0.6f;
+                    fillDisc(image, cx + static_cast<float>(dx) * step, cy + static_cast<float>(dy) * step,
+                             std::max(1.0f, size * 0.12f), color);
+                }
+            }
+            break;
+        default:
+            fillRect(image, static_cast<int>(cx - size * 0.6f), static_cast<int>(cy - size * 0.6f),
+                     static_cast<int>(cx + size * 0.6f), static_cast<int>(cy + size * 0.6f), color);
+            break;
+        }
+    }
+    const Rgba band = rng.below(2) == 0 ? fromHex(0xF2C230) : fromHex(0x2FA59C);
+    fillRect(image, 0, bandTop, width, height, band);
+    const int pad = std::max(1, width / 16);
+    posterTitle(image, title, pad, bandTop + pad / 2, width - pad, height - pad / 2, fromHex(0x22232A));
+    return image;
+}
+
+/// An optical era's large poster: a cinematic night, a deep blue gradient, a great pale disc with a cold rim of light
+/// over a horizon of light, the title in pale letters at the top and a block of credits at the foot.
+ImageData loungePoster(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed ^ 0x0F71CA15u);
+    constexpr std::array<Rgba, 3> kSkies = {fromHex(0x1E2F55), fromHex(0x3A2450), fromHex(0x123A44)};
+    const Rgba sky = kSkies[static_cast<std::size_t>(rng.below(3))];
+    const Rgba top = fromHex(0x07090F);
+    for (int y = 0; y < height; ++y) {
+        const float t = static_cast<float>(y) / static_cast<float>(height);
+        const Rgba row = t < 0.6f ? mix(top, sky, t / 0.6f) : mix(sky, fromHex(0x05060A), (t - 0.6f) / 0.4f);
+        fillRect(image, 0, y, width, y + 1, row);
+    }
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    const float r = w * (0.28f + 0.01f * static_cast<float>(rng.below(8)));
+    const float cx = w * (0.35f + 0.05f * static_cast<float>(rng.below(7)));
+    const float cy = h * 0.42f;
+    fillDisc(image, cx, cy, r * 1.08f, mix(sky, fromHex(0x4C8BC9), 0.45f));
+    fillDisc(image, cx, cy, r, fromHex(0xC8CED6));
+    fillDisc(image, cx + r * 0.18f, cy - r * 0.12f, r * 0.9f, mix(fromHex(0xC8CED6), sky, 0.35f));
+    // A horizon of light across the foot of the disc, and a dark silhouette ridge below it.
+    fillRect(image, 0, static_cast<int>(h * 0.62f), width, static_cast<int>(h * 0.62f) + std::max(1, height / 120),
+             fromHex(0x9CC4F0));
+    fillTriangle(image, {0.0f, h * 0.78f}, {w * 0.45f, h * 0.63f}, {w * 0.9f, h * 0.78f}, fromHex(0x05060A));
+    fillRect(image, 0, static_cast<int>(h * 0.78f), width, height, fromHex(0x05060A));
+    const int pad = std::max(1, width / 14);
+    posterTitle(image, title, pad, height * 4 / 100, width - pad, height * 20 / 100, fromHex(0xE8ECF2));
+    // Credits: rows of short grey bars.
+    const int rowHeight = std::max(1, height / 90);
+    for (int row = 0; row < 4; ++row) {
+        const int y = height * 86 / 100 + row * rowHeight * 2;
+        int x = pad;
+        while (x < width - pad) {
+            const int word = std::max(1, width / 30 + rng.below(std::max(1, width / 12)));
+            fillRect(image, x, y, std::min(x + word, width - pad), y + rowHeight, fromHex(0x6A7380));
+            x += word + std::max(1, width / 40);
+        }
+    }
+    return image;
+}
+
+/// A handheld archive's console art: a pocket console of original design drawn large on a pale ground (a body of a
+/// seeded colour, its green screen, a cross pad and two buttons), the title in a band below.
+ImageData consolePoster(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed ^ 0x6A11D0E7u);
+    constexpr std::array<Rgba, 4> kBodies = {fromHex(0xB8B4A8), fromHex(0x3E8A86), fromHex(0xD8B64A),
+                                             fromHex(0xA8414E)};
+    fillRect(image, 0, 0, width, height, fromHex(0xE8DFC8));
+    // Diagonal stripes behind the console.
+    const Rgba stripe = fromHex(0xDCCFB0);
+    const int period = std::max(4, width / 8);
+    for (int y = 0; y < height * 7 / 10; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if ((x + y) % period < period / 3) {
+                setPixel(image, x, y, stripe);
+            }
+        }
+    }
+    const Rgba body = kBodies[static_cast<std::size_t>(rng.below(4))];
+    const int bx0 = width * 26 / 100;
+    const int bx1 = width * 74 / 100;
+    const int by0 = height * 7 / 100;
+    const int by1 = height * 66 / 100;
+    const int corner = (bx1 - bx0) / 8;
+    fillRect(image, bx0 + corner, by0, bx1 - corner, by1, body);
+    fillRect(image, bx0, by0 + corner, bx1, by1 - corner, body);
+    for (const int x : {bx0 + corner, bx1 - corner}) {
+        for (const int y : {by0 + corner, by1 - corner}) {
+            fillDisc(image, static_cast<float>(x), static_cast<float>(y), static_cast<float>(corner), body);
+        }
+    }
+    const int sx0 = bx0 + (bx1 - bx0) / 7;
+    const int sx1 = bx1 - (bx1 - bx0) / 7;
+    const int sy0 = by0 + (by1 - by0) / 10;
+    const int sy1 = by0 + (by1 - by0) * 48 / 100;
+    fillRect(image, sx0 - 4, sy0 - 4, sx1 + 4, sy1 + 4, fromHex(0x3A3A40));
+    fillRect(image, sx0, sy0, sx1, sy1, fromHex(0x8EA35A));
+    fillRect(image, sx0 + (sx1 - sx0) / 5, sy0 + (sy1 - sy0) * 3 / 5, sx1 - (sx1 - sx0) / 3,
+             sy0 + (sy1 - sy0) * 3 / 5 + std::max(2, height / 80), fromHex(0x4E6A2E));
+    const float padY = static_cast<float>(by0) + static_cast<float>(by1 - by0) * 0.72f;
+    const float padX = static_cast<float>(bx0) + static_cast<float>(bx1 - bx0) * 0.3f;
+    const float arm = static_cast<float>(bx1 - bx0) * 0.1f;
+    const float thick = arm * 0.38f;
+    fillRect(image, static_cast<int>(padX - arm), static_cast<int>(padY - thick), static_cast<int>(padX + arm),
+             static_cast<int>(padY + thick), fromHex(0x2A2A30));
+    fillRect(image, static_cast<int>(padX - thick), static_cast<int>(padY - arm), static_cast<int>(padX + thick),
+             static_cast<int>(padY + arm), fromHex(0x2A2A30));
+    const float buttonX = static_cast<float>(bx0) + static_cast<float>(bx1 - bx0) * 0.7f;
+    fillDisc(image, buttonX, padY + arm * 0.3f, arm * 0.45f, fromHex(0x8C2A48));
+    fillDisc(image, buttonX + arm * 1.1f, padY - arm * 0.4f, arm * 0.45f, fromHex(0x8C2A48));
+    const int bandTop = height * 72 / 100;
+    fillRect(image, 0, bandTop, width, height, fromHex(0x2E3B36));
+    const int pad = std::max(1, width / 16);
+    posterTitle(image, title, pad, bandTop + pad / 2, width - pad, height - pad / 2, fromHex(0xE8DFC8));
+    return image;
+}
+
+/// An arcade's flyer: a magenta and violet sunburst on black over a chequered floor, the title in yellow with a
+/// magenta shadow at the top.
+ImageData flyerPoster(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed ^ 0xA2CADE77u);
+    const float cx = static_cast<float>(width) * 0.5f;
+    const float cy = static_cast<float>(height) * (0.5f + 0.02f * static_cast<float>(rng.below(5)));
+    const int rays = 14 + 2 * rng.below(4);
+    const Rgba rayA = fromHex(0xB34DCE);
+    const Rgba rayB = fromHex(0x2A0F33);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float angle = std::atan2(static_cast<float>(y) + 0.5f - cy, static_cast<float>(x) + 0.5f - cx);
+            const float turn = (angle + 3.14159265f) / 6.2831853f;
+            const int sector = static_cast<int>(std::floor(turn * static_cast<float>(rays)));
+            setPixel(image, x, y, sector % 2 == 0 ? rayA : rayB);
+        }
+    }
+    fillDisc(image, cx, cy, static_cast<float>(width) * 0.16f, fromHex(0x5AD8F0));
+    fillDisc(image, cx, cy, static_cast<float>(width) * 0.12f, fromHex(0x0A0A12));
+    // The chequered floor.
+    const int floorTop = height * 74 / 100;
+    const int cell = std::max(2, width / 10);
+    for (int y = floorTop; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const bool dark = ((x / cell) + ((y - floorTop) / cell)) % 2 == 0;
+            setPixel(image, x, y, dark ? fromHex(0x0A0A12) : fromHex(0xE0E0E8));
+        }
+    }
+    const int pad = std::max(1, width / 14);
+    const int shadow = std::max(1, width / 90);
+    posterTitle(image, title, pad + shadow, height * 4 / 100 + shadow, width - pad + shadow,
+                height * 26 / 100 + shadow, fromHex(0xF0509E));
+    posterTitle(image, title, pad, height * 4 / 100, width - pad, height * 26 / 100, fromHex(0xF2D040));
+    return image;
+}
+
+/// The computer studio's cork board: speckled cork with pinned index cards (ruled, one carrying the title), a few
+/// sticky notes and a photograph, each with a coloured pin.
+ImageData corkBoard(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng speckle(0xC0B5u);
+    const Rgba cork = fromHex(0xB0835A);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const int value = speckle.below(100);
+            const Rgba grain = value < 12   ? fromHex(0x7A5634)
+                               : value < 24 ? fromHex(0xC89A6A)
+                               : value < 30 ? fromHex(0x8E6642)
+                                            : cork;
+            setPixel(image, x, y, grain);
+        }
+    }
+    Rng rng(seed ^ 0xC0A4B0A2u);
+    const auto pin = [&](int x, int y) {
+        constexpr std::array<Rgba, 3> kPins = {fromHex(0xC23A3A), fromHex(0x3A6AC2), fromHex(0xE0B030)};
+        const float r = std::max(2.0f, static_cast<float>(std::min(width, height)) / 50.0f);
+        fillDisc(image, static_cast<float>(x), static_cast<float>(y), r,
+                 kPins[static_cast<std::size_t>(rng.below(3))]);
+    };
+    // The title card, then others around it.
+    const int cardW = width * 42 / 100;
+    const int cardH = height * 30 / 100;
+    const int tx = width * 8 / 100;
+    const int ty = height * 10 / 100;
+    fillRect(image, tx + 3, ty + 3, tx + cardW + 3, ty + cardH + 3, fromHex(0x5A3F28));
+    fillRect(image, tx, ty, tx + cardW, ty + cardH, fromHex(0xF2EAD6));
+    fillRect(image, tx, ty + cardH / 5, tx + cardW, ty + cardH / 5 + std::max(1, height / 200), fromHex(0xC85050));
+    for (int line = 2; line < 5; ++line) {
+        fillRect(image, tx, ty + cardH * line / 5, tx + cardW, ty + cardH * line / 5 + std::max(1, height / 300),
+                 fromHex(0x9AB0D0));
+    }
+    posterTitle(image, title, tx + cardW / 12, ty + cardH / 4, tx + cardW - cardW / 12, ty + cardH - cardH / 8,
+                fromHex(0x2A2A40));
+    pin(tx + cardW / 2, ty + cardH / 12);
+    const int items = 4 + rng.below(3);
+    for (int i = 0; i < items; ++i) {
+        const int kind = rng.below(3);
+        const int w = kind == 1 ? width * 16 / 100 : width * (20 + rng.below(10)) / 100;
+        const int h = kind == 1 ? w : height * (16 + rng.below(10)) / 100; // a sticky note is square
+        const int x = width * 50 / 100 + rng.below(std::max(1, width / 2 - w - width / 20));
+        const int y = rng.below(std::max(1, height - h - height / 20)) + height / 40;
+        const Rgba paper = kind == 0 ? fromHex(0xF2EAD6) : kind == 1 ? fromHex(0xF2D84A) : fromHex(0x4A6A8A);
+        fillRect(image, x + 2, y + 2, x + w + 2, y + h + 2, fromHex(0x5A3F28));
+        fillRect(image, x, y, x + w, y + h, paper);
+        if (kind == 2) { // a photograph: a sky and a hill
+            fillRect(image, x + w / 10, y + h / 10, x + w - w / 10, y + h * 6 / 10, fromHex(0x8AB0D8));
+            fillRect(image, x + w / 10, y + h * 6 / 10, x + w - w / 10, y + h - h / 10, fromHex(0x5A7A4A));
+        } else {
+            for (int line = 1; line < 4; ++line) {
+                const int lineY = y + h * line / 4;
+                fillRect(image, x + w / 8, lineY, x + w - w / 4, lineY + std::max(1, height / 150), fromHex(0x6A6A7A));
+            }
+        }
+        pin(x + w / 2, y + h / 10);
+    }
+    // The lower left: a second ruled card.
+    const int lx = width * 12 / 100;
+    const int ly = height * 52 / 100;
+    fillRect(image, lx + 3, ly + 3, lx + cardW * 8 / 10 + 3, ly + cardH + 3, fromHex(0x5A3F28));
+    fillRect(image, lx, ly, lx + cardW * 8 / 10, ly + cardH, fromHex(0xEDE3C8));
+    for (int line = 1; line < 5; ++line) {
+        const int lineY = ly + cardH * line / 5;
+        fillRect(image, lx + cardW / 12, lineY, lx + cardW * 7 / 10, lineY + std::max(1, height / 150),
+                 fromHex(0x6A6A7A));
+    }
+    pin(lx + cardW * 4 / 10, ly + cardH / 12);
+    return image;
+}
+
+/// A home computer's screen in a study: green text on a black-green ground (a prompt, a short listing that names the
+/// title, a cursor), framed by a dark border.
+ImageData terminalScreen(int width, int height, std::string_view title) {
+    ImageData image = makeSolid(width, height, fromHex(0x0A1A10));
+    if (!image.isValid()) {
+        return image;
+    }
+    const Rgba ink = fromHex(0x7CF09A);
+    const int border = std::max(1, std::min(width, height) / 16);
+    const std::string name = normalizeTitle(title.empty() ? std::string_view("PROGRAM") : title);
+    const std::vector<std::string> lines = {"READY.", "10 PRINT \"" + name.substr(0, 14) + "\"", "20 GOTO 10", "RUN"};
+    const int scale = std::max(1, (height - 2 * border) / (8 * (kGlyphHeight + kLineGap)));
+    int y = border;
+    // Each line left-aligned: drawn in a box exactly its width.
+    const auto line = [&](const std::string& text) {
+        const int right = border + static_cast<int>(text.size()) * kGlyphAdvance * scale;
+        drawText(image, {text}, scale, border, y, right, y + kGlyphHeight * scale, ink);
+        y += (kGlyphHeight + kLineGap) * scale;
+    };
+    for (const std::string& text : lines) {
+        line(text);
+    }
+    line(name.substr(0, 14));
+    line(name.substr(0, 14));
+    fillRect(image, border, y, border + kGlyphWidth * scale, y + kGlyphHeight * scale, ink);
+    return image;
+}
+
+} // namespace
+
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 6> kNames = {kPatternColorBars, kPatternChecker, kPatternCover,
-                                                               kPatternSign, kPatternPrint, kPatternNeon};
+    static constexpr std::array<std::string_view, 12> kNames = {
+        kPatternColorBars,     kPatternChecker,      kPatternCover,        kPatternSign,
+        kPatternPrint,         kPatternNeon,         kPatternPosterMemphis, kPatternPosterLounge,
+        kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal};
     return kNames;
 }
 
@@ -735,8 +1116,27 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternNeon) {
         return makeNeonLettering(width, height, title);
     }
+    if (name == kPatternPosterMemphis) {
+        return memphisPoster(width, height, title, seed);
+    }
+    if (name == kPatternPosterLounge) {
+        return loungePoster(width, height, title, seed);
+    }
+    if (name == kPatternPosterConsole) {
+        return consolePoster(width, height, title, seed);
+    }
+    if (name == kPatternPosterFlyer) {
+        return flyerPoster(width, height, title, seed);
+    }
+    if (name == kPatternCorkBoard) {
+        return corkBoard(width, height, title, seed);
+    }
+    if (name == kPatternTerminal) {
+        return terminalScreen(width, height, title);
+    }
     return makeError(ErrorCode::NotFound,
-                     "unknown test pattern (expected color_bars, checker, cover, sign, print or neon)",
+                     "unknown test pattern (expected color_bars, checker, cover, sign, print, neon, poster_memphis, "
+                     "poster_lounge, poster_console, poster_flyer, cork_board or terminal)",
                      std::string(name));
 }
 

@@ -298,15 +298,20 @@ struct RugParams {
     float thickness = 0.012f; ///< [0.001, 0.1]
 };
 
+/// The shade of a floor lamp: a drum around the bulb, or (I6 step 3b) a torchiere's bowl open upwards.
+enum class LampShade { Drum, Torchiere };
+
 /// "floor_lamp", pivot floor; bounds = [-r, 0, -r] .. [r, height, r] with r = max(baseRadius, shadeRadius).
 /// Roles: "metal" (base, pole, bulb holder, shade spider), "lamp_shade" (open shade built as a thin closed shell
 /// with a 2 mm wall: renders from inside and outside with or without back-face culling). Sockets: "LightSource"
-/// (Anchor) at the bulb inside the shade.
+/// (Anchor) at the bulb inside the shade. With `shade` "torchiere" (I6 step 3b, the 90s uplighter): the shade is a
+/// bowl widening upwards to shadeRadius, its rim at `height`, on the pole; no spider; the bulb in the bowl.
 struct FloorLampParams {
-    float height = 1.6f;       ///< [0.5, 3]
-    float baseRadius = 0.16f;  ///< [0.05, 1]
-    float shadeRadius = 0.22f; ///< [0.05, 1]
-    float shadeHeight = 0.3f;  ///< [0.05, 1], at most height / 2
+    float height = 1.6f;               ///< [0.5, 3]
+    float baseRadius = 0.16f;          ///< [0.05, 1]
+    float shadeRadius = 0.22f;         ///< [0.05, 1]
+    float shadeHeight = 0.3f;          ///< [0.05, 1], at most height / 2
+    LampShade shade = LampShade::Drum; ///< JSON "drum" or "torchiere"
 };
 
 /// "armchair", pivot floor, front +Z; bounds = width x height x depth. An upholstered club armchair (original design):
@@ -321,6 +326,98 @@ struct ArmchairParams {
     float seatHeight = 0.44f; ///< [0.25, 0.7]: the top of the 12 cm seat cushion, at least 5 cm above the legs
     float armHeight = 0.62f;  ///< [0.3, 1]: the top of the armrests; at least 5 cm above seatHeight
     float legHeight = 0.1f;   ///< [0, 0.3]; up to 0.1 mm no legs are built
+};
+
+/// "sofa" (I6 step 3b), pivot floor, front +Z; bounds = width x height x depth. An upholstered sofa of original design:
+/// the armchair's build stretched to `seats` seat and back cushions side by side, a throw pillow leaning in each
+/// corner when `pillows`. Roles: "fabric" (back, armrests, base, cushions), "wood" (legs, when legHeight > 0.1 mm),
+/// "pillow" (the throw pillows). Sockets: "Seat" (Anchor) at the middle of the seat's top, +Y up.
+struct SofaParams {
+    float width = 1.6f;       ///< [0.7, 3]: from 0.7 a lounge chair (one seat)
+    float depth = 0.86f;      ///< [0.6, 1.2]
+    float height = 0.8f;      ///< [0.5, 1.2]: the top of the back; at least 5 cm above armHeight
+    float seatHeight = 0.42f; ///< [0.25, 0.6]: the top of the 12 cm seat cushions, at least 5 cm above the legs
+    float armHeight = 0.6f;   ///< [0.3, 0.9]: the top of the armrests; at least 5 cm above seatHeight
+    float legHeight = 0.08f;  ///< [0, 0.3]; up to 0.1 mm no legs are built
+    int seats = 2;            ///< [1, 4]
+    bool pillows = true;
+};
+
+/// "beanbag" (I6 step 3b), pivot floor; bounds = [-width/2, 0, -depth/2] .. [width/2, height, depth/2]. A bean bag
+/// chair: a squat round body on the floor with a softer lump rising at its back. Role "fabric". No sockets.
+struct BeanbagParams {
+    float width = 0.85f;  ///< [0.4, 1.5]
+    float depth = 0.85f;  ///< [0.4, 1.5]
+    float height = 0.72f; ///< [0.3, 1.2]
+};
+
+/// "desk" (I6 step 3b), pivot floor, front +Z (where one sits); bounds = width x depth from the floor to the top's
+/// surface, or to the monitor's top with the computer. A study's desk of original design: a top on a drawer pedestal
+/// (left) and a side panel (right), a modesty panel at the back; with `computer`, a generic home computer of the 80s
+/// and 90s on the top: a flat system unit at the back, a monitor on it (its screen a quad facing +Z), a keyboard in
+/// front. Roles: "wood_primary" (top, sides, modesty panel), "wood_secondary" (drawer fronts), "metal_trim"
+/// (handles), "plastic_body" (the computer's shells), "plastic_dark" (keys, vents, the screen's bezel), "screen" (the
+/// screen, uv (0, 0) top-left). Sockets: "Top" (Anchor) at the middle of the top's surface; with the computer
+/// "Screen" (Other) at the screen's centre facing +Z, bounds = the screen's rectangle.
+struct DeskParams {
+    float width = 1.3f;   ///< [0.8, 2.4]
+    float depth = 0.7f;   ///< [0.5, 1]
+    float height = 0.75f; ///< [0.6, 0.9]: the top's surface
+    bool computer = true;
+};
+
+/// "office_chair" (I6 step 3b), pivot floor, front +Z; bounds = width x height x depth. A swivel chair: a five-star
+/// base on casters within the footprint, a gas lift, an upholstered seat and back, two armrests when `arms`.
+/// Roles: "fabric" (seat, back), "plastic_dark" (base, casters, arms, the back's stem), "metal" (the gas lift).
+/// Sockets: "Seat" (Anchor) at the middle of the seat's top.
+struct OfficeChairParams {
+    float width = 0.6f;       ///< [0.45, 0.8]
+    float depth = 0.6f;       ///< [0.45, 0.8]
+    float height = 0.95f;     ///< [0.7, 1.3]: the top of the back, at least 25 cm above the seat
+    float seatHeight = 0.47f; ///< [0.35, 0.6]
+    bool arms = true;
+};
+
+/// "bar_stool" (I6 step 3b), pivot floor; bounds = [-r, 0, -r] .. [r, height, r], r = max(seatRadius, baseRadius).
+/// A round padded seat on a pole with a foot ring, on a weighted disc base. Roles: "fabric" (the cushion), "metal"
+/// (pole, ring, base, the seat's pan). Sockets: "Seat" (Anchor) at the cushion's top.
+struct BarStoolParams {
+    float height = 0.76f;     ///< [0.45, 1]: the cushion's top
+    float seatRadius = 0.19f; ///< [0.12, 0.3]
+    float baseRadius = 0.22f; ///< [0.12, 0.35]
+};
+
+/// "banker_lamp" (I6 step 3b), pivot floor, front +Z; bounds = standWidth x standDepth, from the floor to the shade's
+/// top. A banker's desk lamp (a green glass half-tube shade on a brass stem and base) on a small two-drawer stand, so
+/// that its bulb stands about where a floor lamp's does. Roles: "wood_primary" (the stand's carcass and top),
+/// "wood_secondary" (its drawer fronts), "metal" (the lamp's base, stem and arm, the drawers' knobs), "lamp_shade"
+/// (the shade, a thin shell seen from inside and outside). Sockets: "LightSource" (Anchor) under the shade.
+struct BankerLampParams {
+    float standWidth = 0.42f;  ///< [0.25, 0.8]
+    float standDepth = 0.36f;  ///< [0.25, 0.6]
+    float standHeight = 1.05f; ///< [0.4, 1.4]
+    float shadeLength = 0.3f;  ///< [0.15, 0.6], at most standWidth
+};
+
+/// What a showcase holds (I6 step 3b; Boxes since the step's review).
+enum class ShowcaseItem { None, Console, Handheld, Boxes };
+
+/// "showcase" (I6 step 3b), pivot floor, front +Z; bounds = width x height x depth. A glass vitrine on a closed base
+/// with two doors: a glass front and glass sides between four slim posts under a wooden cap, a back panel, a covered
+/// plinth inside (13 cm high) carrying a generic console, an upright handheld (original designs), up to three upright
+/// big boxes of software side by side, or nothing. An item is drawn at its size or scaled down to fit, never below 0.9
+/// (a smaller vitrine is refused). Roles: "wood_primary" (base, posts, rails), "wood_secondary" (doors, back panel),
+/// "metal_trim" (knobs), "fabric" (the plinth), "glass" (the panes, one sheet each: a blended, double-sided material),
+/// "plastic_body", "plastic_dark", "plastic_accent" (the item; the boxes' bodies "plastic_body"); after them, only when
+/// built, "cover" (each box's front, the whole picture upright) and "board_light" (with `boardLight`: an emissive strip
+/// under the cap near the front, 3 mm thick, as a lit shelf's). Sockets: "Item" (Anchor) on the plinth's top, centred.
+struct ShowcaseParams {
+    float width = 0.8f;                        ///< [0.4, 2]
+    float height = 1.15f;                      ///< [0.6, 2]
+    float depth = 0.36f;                       ///< [0.25, 1]
+    float baseHeight = 0.62f;                  ///< [0.15, height - 0.25]: the vitrine's floor
+    ShowcaseItem item = ShowcaseItem::Console; ///< JSON "none", "console", "handheld" or "boxes"
+    bool boardLight = false;                   ///< the lit strip under the cap (a pack naming "board_light")
 };
 
 /// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8
@@ -432,6 +529,13 @@ struct PlantParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildMagazineStack(const ShelfDressingParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildBookends(const ShelfDressingParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildPlant(const PlantParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildSofa(const SofaParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildBeanbag(const BeanbagParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildDesk(const DeskParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildOfficeChair(const OfficeChairParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildBarStool(const BarStoolParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildBankerLamp(const BankerLampParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildShowcase(const ShowcaseParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -455,7 +559,8 @@ struct PlantParams {
 
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
-/// bookends, plant.
+/// bookends, plant, and I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp,
+/// showcase.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

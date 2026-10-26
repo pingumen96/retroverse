@@ -21,9 +21,24 @@
     "console_cartridge": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
                           "plastic_accent": "MAT_Plastic_Accent"},
     "poster_frame": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Paper_Print"},
-    "rug": {"fabric": "MAT_Carpet_Ornate"},
+    "rug": {"fabric": "MAT_Carpet_Ornate_Blue"},
     "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
     "armchair": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite"},
+    "sofa": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite", "pillow": "MAT_Fabric_Slate"},
+    "beanbag": {"fabric": "MAT_Fabric_Leather"},
+    "desk": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Metal_Graphite",
+             "metal_trim": "MAT_Metal_Brushed", "plastic_body": "MAT_Plastic_Gray",
+             "plastic_dark": "MAT_Plastic_Black", "screen": "MAT_Screen_Emissive"},
+    "office_chair": {"fabric": "MAT_Fabric_Leather", "plastic_dark": "MAT_Plastic_Black",
+                     "metal": "MAT_Metal_Brushed"},
+    "bar_stool": {"fabric": "MAT_Fabric_Leather", "metal": "MAT_Metal_Graphite"},
+    "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Metal_Graphite",
+                    "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
+    "showcase": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                 "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy", "glass": "MAT_Glass_Display",
+                 "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                 "plastic_accent": "MAT_Plastic_Accent", "board_light": "MAT_Shelf_Light",
+                 "cover": "MAT_Label_Cover"},
     "display_case": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy",
                      "glass": "MAT_Glass_Display"},
@@ -44,10 +59,28 @@
   "heroParts": {
     "sign": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Neon_Blue"}
   },
+  // The era's furniture (I6 step 3b, concept panel 4): a two-seat leather sofa across the rug's south edge, facing the
+  // TV (the step's review: along the side it turned its back to the TV), large framed cinematic posters, glass showcases on walnut with a console for the sideboards;
+  // the rug blue (its kind's material above).
+  "furniture": {
+    "heroParts": {
+      "armchair": [
+        {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"},
+         "params": {"width": 1.7, "depth": 0.82, "height": 0.74, "armHeight": 0.58, "seats": 2},
+         "xMm": -150, "zMm": 2560, "yawCdeg": 18000}]
+    },
+    "decoration": {
+      "poster_frame": [
+        {"weight": 1.0, "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+         "params": {"width": 0.68, "height": 1.0, "frameWidth": 0.035, "depth": 0.03},
+         "textures": {"picture": "poster_lounge"}}],
+      "tv_cabinet": [
+        {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
+         "params": {"width": 0.8, "height": 1.2, "depth": 0.36, "baseHeight": 0.62, "item": "console"}}]
+    }
+  },
   "labelPalette": ["#2B3A55", "#4C8BC9", "#252A2E", "#5A6470", "#8A93A0", "#683D42", "#1C2430", "#C8CED6"],
   "neon": "#4C8BC9",
   "neonGlow": {"intensity": 4.0, "range": 3.5},
-  "lightTints": {"key": "#E6EEFF", "pendant": "#C8D6FF", "wallWasher": "#B8C8FF"},
-  "decorationWeights": {"bookends": 0.4, "floor_lamp": 0.8, "magazine_stack": 0.6, "plant": 0.7, "poster_frame": 1.0,
-                        "storage_box": 0.5, "tv_cabinet": 0.6}
+  "lightTints": {"key": "#E6EEFF", "pendant": "#C8D6FF", "wallWasher": "#B8C8FF"}
 }

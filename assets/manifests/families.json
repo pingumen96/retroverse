@@ -8,6 +8,9 @@
   "families": [
     {"id": "architecture.room_shell", "generic": "architecture.room_shell.generic", "generator": "room_shell",
      "params": {}},
+    // I6 step 3b (ADR-0014 §1 amended): the era furniture a theme pack draws within the footprints of the hero corner's
+    // parts and the decoration sockets.
+    {"id": "decor.banker_lamp", "generic": "decor.banker_lamp.generic", "generator": "banker_lamp", "params": {}},
     {"id": "decor.bookends", "generic": "decor.bookends.generic", "generator": "bookends", "params": {}},
     {"id": "decor.lamp", "generic": "decor.lamp.floor.generic", "generator": "floor_lamp", "params": {}},
     {"id": "decor.magazine_stack", "generic": "decor.magazine_stack.generic", "generator": "magazine_stack",
@@ -22,7 +25,12 @@
     {"id": "decor.storage_box", "generic": "decor.storage_box.generic", "generator": "storage_box", "params": {}},
     {"id": "electronics.crt", "generic": "electronics.crt.consumer.generic", "generator": "crt", "params": {}},
     {"id": "furniture.armchair", "generic": "furniture.armchair.generic", "generator": "armchair", "params": {}},
+    {"id": "furniture.bar_stool", "generic": "furniture.bar_stool.generic", "generator": "bar_stool", "params": {}},
+    {"id": "furniture.beanbag", "generic": "furniture.beanbag.generic", "generator": "beanbag", "params": {}},
+    {"id": "furniture.desk", "generic": "furniture.desk.generic", "generator": "desk", "params": {}},
     {"id": "furniture.display_case", "generic": "furniture.display_case.generic", "generator": "display_case",
+     "params": {}},
+    {"id": "furniture.office_chair", "generic": "furniture.office_chair.generic", "generator": "office_chair",
      "params": {}},
     // The collection's modules: the hero-wall module falls back to the side-wall module, which fits its socket.
     {"id": "furniture.shelf", "generic": "furniture.shelf.side_module.generic", "generator": "shelf",
@@ -33,6 +41,8 @@
      }},
     {"id": "furniture.shelf_modular", "generic": "furniture.shelf_modular.generic", "generator": "shelf",
      "params": {}},
+    {"id": "furniture.showcase", "generic": "furniture.showcase.generic", "generator": "showcase", "params": {}},
+    {"id": "furniture.sofa", "generic": "furniture.sofa.generic", "generator": "sofa", "params": {}},
     {"id": "furniture.tv_cabinet", "generic": "furniture.tv_cabinet.generic", "generator": "tv_cabinet",
      "params": {}},
     {"id": "furniture.wall_shelf", "generic": "furniture.wall_shelf.featured.generic", "generator": "wall_shelf",

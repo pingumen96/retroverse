@@ -116,16 +116,22 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
         CHECK(info.meters.x / static_cast<float>(info.size.x) ==
               Approx(info.meters.y / static_cast<float>(info.size.y)));
     }
-    CHECK(names == std::vector<std::string_view>{"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster",
-                                                 "ornate_rug", "brushed_metal", "aged_plastic", "wallwash",
-                                                 "shelfglow"});
+    CHECK(names == std::vector<std::string_view>{"oak_planks",      "walnut",          "varnished_wood",
+                                                 "oak",             "painted_plaster", "ornate_rug",
+                                                 "ornate_rug_blue", "ornate_rug_sage", "ornate_rug_green",
+                                                 "geometric_rug",   "runner_rug",      "brushed_metal",
+                                                 "aged_plastic",    "wallwash",        "shelfglow"});
     CHECK(rv::assets::findProceduralSurface("teak") == nullptr);
     const auto unknown = rv::assets::makeProceduralSurface("teak");
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == ErrorCode::NotFound);
     // The rug, the wall wash and the shelf glow are pictures; every other surface tiles.
-    CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->tiles);
-    CHECK_FALSE(rv::assets::findProceduralSurface("ornate_rug")->hasNormalMap);
+    for (const char* rug : {"ornate_rug", "ornate_rug_blue", "ornate_rug_sage", "ornate_rug_green", "geometric_rug",
+                            "runner_rug"}) {
+        INFO(rug);
+        CHECK_FALSE(rv::assets::findProceduralSurface(rug)->tiles);
+        CHECK_FALSE(rv::assets::findProceduralSurface(rug)->hasNormalMap);
+    }
     CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->tiles);
     CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->hasNormalMap);
     CHECK_FALSE(rv::assets::findProceduralSurface("shelfglow")->tiles);
@@ -286,6 +292,23 @@ TEST_CASE("assets/surface_textures: full surfaces average the style palette", "[
     CHECK(rug.r > rug.g);
     CHECK(rug.r > rug.b);
     CHECK(rug.r < 0.25f);
+    // I6 step 3b's rugs: the optical era's blue, the archive's sage, the study's green, the arcade's red runner, the
+    // 90s collector's charcoal with its confetti.
+    const glm::vec3 blue = meanLinearColor(surfaceOf("ornate_rug_blue").baseColor);
+    CHECK(blue.b > blue.g);
+    CHECK(blue.b > blue.r);
+    const glm::vec3 sage = meanLinearColor(surfaceOf("ornate_rug_sage").baseColor);
+    CHECK(sage.g > sage.b);
+    CHECK(sage.g > 0.08f);
+    const glm::vec3 green = meanLinearColor(surfaceOf("ornate_rug_green").baseColor);
+    CHECK(green.g > green.r);
+    CHECK(green.g > green.b);
+    const glm::vec3 runner = meanLinearColor(surfaceOf("runner_rug").baseColor);
+    CHECK(runner.r > 1.5f * runner.g);
+    CHECK(runner.r < 0.2f);
+    const glm::vec3 geometric = meanLinearColor(surfaceOf("geometric_rug").baseColor);
+    CHECK(geometric.r < 0.12f);
+    CHECK(geometric.g > 0.02f);
 }
 
 TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[assets][surfaces]") {
@@ -301,6 +324,8 @@ TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[asse
     CHECK(roughness("varnished_wood") < roughness("walnut"));
     CHECK(roughness("painted_plaster") > 0.8);
     CHECK(roughness("ornate_rug") > 0.85);
+    CHECK(roughness("geometric_rug") > 0.85);
+    CHECK(roughness("runner_rug") > 0.85);
     CHECK(roughness("brushed_metal") == Approx(0.32).margin(0.08));
     for (const char* name : {"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster", "ornate_rug",
                              "aged_plastic"}) {

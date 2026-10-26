@@ -68,13 +68,29 @@ inline constexpr std::string_view kPatternCover = "cover";
 inline constexpr std::string_view kPatternSign = "sign";
 inline constexpr std::string_view kPatternPrint = "print";
 inline constexpr std::string_view kPatternNeon = "neon";
+/// The era posters a theme pack hangs in its rooms (I6 step 3b), each original, with `title` and varied by `seed`:
+/// "poster_memphis" the 90s collector's confetti (triangles, rings, zigzags, dots in teal, magenta, yellow and violet)
+/// over a title band; "poster_lounge" the optical era's large cinematic night (a deep blue gradient, a pale disc with a
+/// cold rim over a horizon of light, the title at the top, credits at the foot); "poster_console" the handheld
+/// archive's console art (a pocket console of original design drawn large on a pale ground, the title below);
+/// "poster_flyer" the arcade's flyer (a magenta sunburst over a chequered floor, a yellow title with a magenta
+/// shadow); "cork_board" the computer studio's cork board (speckled cork, pinned index cards, the title on one, sticky
+/// notes and a photograph); "terminal" a home computer's screen (green text on black-green: a prompt, a short listing
+/// naming the title, a cursor; `seed` unused).
+inline constexpr std::string_view kPatternPosterMemphis = "poster_memphis";
+inline constexpr std::string_view kPatternPosterLounge = "poster_lounge";
+inline constexpr std::string_view kPatternPosterConsole = "poster_console";
+inline constexpr std::string_view kPatternPosterFlyer = "poster_flyer";
+inline constexpr std::string_view kPatternCorkBoard = "cork_board";
+inline constexpr std::string_view kPatternTerminal = "terminal";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
 
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
-/// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`). Errors: NotFound for an unknown name,
+/// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`); the era posters, the cork board and the terminal
+/// above (I6 step 3b). Errors: NotFound for an unknown name,
 /// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);

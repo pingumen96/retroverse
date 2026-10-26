@@ -173,10 +173,15 @@ build/rvdata`).
   that light moved into the glow, 0.06, `bloomRadius` 0.7 and `vignette` 0.05 by default; `lights`, at most 16
   point/spot plus one directional), material presets in `assets/materials/base/materials.json`, shaders in
   `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
-- Surfaces are procedural, generated at startup (`rv/assets/surface_textures.hpp`, about 0.6 s in Release, 3 s in Debug,
-  logged per surface): `oak_planks`, `walnut`, `varnished_wood`, `oak`, `painted_plaster`, `ornate_rug`,
-  `brushed_metal`, `aged_plastic`, each with base color, metallic-roughness and (except the rug) normal maps. Materials
-  name a map as `"procedural:<surface>/<map>"` in a texture slot, scene files as `{"procedural": "<surface>/<map>"}` in
+- Surfaces are procedural (`rv/assets/surface_textures.hpp`), generated when first used and kept for the run (the
+  texture cache, logged per surface): a world run makes every one at its start, before its first room (about 0.9 s in
+  Release since I6 step 3b, the five packs' rugs 0.5 s of it), so no room's commit or ride waits for one; a scene
+  (`--scene`, `--model`) makes those its materials name. All of them take 123 MiB of GPU memory (80.3 MiB before
+  I6 step 3b; `gpuMemory`'s `proceduralSurfaces`), held for the whole run: `oak_planks`, `walnut`, `varnished_wood`,
+  `oak`, `painted_plaster`, `ornate_rug` (and since I6 step 3b the packs' rugs `ornate_rug_blue`, `ornate_rug_sage`,
+  `ornate_rug_green`, `geometric_rug`, `runner_rug`), `brushed_metal`, `aged_plastic`, the halls' `wallwash` and the
+  shelves' `shelfglow`, each with base color, metallic-roughness and (except the rugs and the pictures) normal maps.
+  Materials name a map as `"procedural:<surface>/<map>"` in a texture slot, scene files as `{"procedural": "<surface>/<map>"}` in
   `textures`; they repeat, at the scale each surface's description gives (the furniture prefabs and the room shell map
   their faces in meters along the grain). Never add downloaded textures: new looks are new generators or parameters. A
   screen material with a `crt` block (`MAT_Screen_CRT`: line count, scanline and mask strength, curvature, which also

@@ -1,0 +1,33 @@
+// The swivel chair at the computer studio's desk (I6 step 3b, ADR-0014 §1 amended).
+{
+  "schemaVersion": 1,
+  "id": "furniture.office_chair.generic",
+  "assetType": "furniture",
+  "category": "seating",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-25",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "office_chair",
+    "params": {},
+    "scaleMeters": [0.6, 0.95, 0.6],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "seat": "Seat"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "seating", "office_chair", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

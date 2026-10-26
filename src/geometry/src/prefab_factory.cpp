@@ -399,11 +399,12 @@ Expected<ProceduralPrefab> plantFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> floorLampFromJson(const Json& params) {
     FloorLampParams p;
-    ParamReader r("floor_lamp", params, {"height", "baseRadius", "shadeRadius", "shadeHeight"});
+    ParamReader r("floor_lamp", params, {"height", "baseRadius", "shadeRadius", "shadeHeight", "shade"});
     r.read("height", p.height);
     r.read("baseRadius", p.baseRadius);
     r.read("shadeRadius", p.shadeRadius);
     r.read("shadeHeight", p.shadeHeight);
+    r.readEnum("shade", p.shade, {{"drum", LampShade::Drum}, {"torchiere", LampShade::Torchiere}});
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -423,6 +424,107 @@ Expected<ProceduralPrefab> armchairFromJson(const Json& params) {
         return propagate(r.error());
     }
     return buildArmchair(p);
+}
+
+Expected<ProceduralPrefab> sofaFromJson(const Json& params) {
+    SofaParams p;
+    ParamReader r("sofa", params,
+                  {"width", "depth", "height", "seatHeight", "armHeight", "legHeight", "seats", "pillows"});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    r.read("seatHeight", p.seatHeight);
+    r.read("armHeight", p.armHeight);
+    r.read("legHeight", p.legHeight);
+    r.read("seats", p.seats);
+    r.read("pillows", p.pillows);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildSofa(p);
+}
+
+Expected<ProceduralPrefab> beanbagFromJson(const Json& params) {
+    BeanbagParams p;
+    ParamReader r("beanbag", params, {"width", "depth", "height"});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildBeanbag(p);
+}
+
+Expected<ProceduralPrefab> deskFromJson(const Json& params) {
+    DeskParams p;
+    ParamReader r("desk", params, {"width", "depth", "height", "computer"});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    r.read("computer", p.computer);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildDesk(p);
+}
+
+Expected<ProceduralPrefab> officeChairFromJson(const Json& params) {
+    OfficeChairParams p;
+    ParamReader r("office_chair", params, {"width", "depth", "height", "seatHeight", "arms"});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    r.read("seatHeight", p.seatHeight);
+    r.read("arms", p.arms);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildOfficeChair(p);
+}
+
+Expected<ProceduralPrefab> barStoolFromJson(const Json& params) {
+    BarStoolParams p;
+    ParamReader r("bar_stool", params, {"height", "seatRadius", "baseRadius"});
+    r.read("height", p.height);
+    r.read("seatRadius", p.seatRadius);
+    r.read("baseRadius", p.baseRadius);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildBarStool(p);
+}
+
+Expected<ProceduralPrefab> bankerLampFromJson(const Json& params) {
+    BankerLampParams p;
+    ParamReader r("banker_lamp", params, {"standWidth", "standDepth", "standHeight", "shadeLength"});
+    r.read("standWidth", p.standWidth);
+    r.read("standDepth", p.standDepth);
+    r.read("standHeight", p.standHeight);
+    r.read("shadeLength", p.shadeLength);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildBankerLamp(p);
+}
+
+Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
+    ShowcaseParams p;
+    ParamReader r("showcase", params, {"width", "height", "depth", "baseHeight", "item", "boardLight"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("baseHeight", p.baseHeight);
+    r.readEnum("item", p.item,
+               {{"none", ShowcaseItem::None},
+                {"console", ShowcaseItem::Console},
+                {"handheld", ShowcaseItem::Handheld},
+                {"boxes", ShowcaseItem::Boxes}});
+    r.read("boardLight", p.boardLight);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildShowcase(p);
 }
 
 Expected<ProceduralPrefab> displayCaseFromJson(const Json& params) {
@@ -636,7 +738,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 16> kPrefabs{{
+constexpr std::array<PrefabEntry, 23> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -653,6 +755,13 @@ constexpr std::array<PrefabEntry, 16> kPrefabs{{
     {"magazine_stack", &magazineStackFromJson},
     {"bookends", &bookendsFromJson},
     {"plant", &plantFromJson},
+    {"sofa", &sofaFromJson},
+    {"beanbag", &beanbagFromJson},
+    {"desk", &deskFromJson},
+    {"office_chair", &officeChairFromJson},
+    {"bar_stool", &barStoolFromJson},
+    {"banker_lamp", &bankerLampFromJson},
+    {"showcase", &showcaseFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

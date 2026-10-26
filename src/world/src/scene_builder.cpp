@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <map>
+#include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -16,6 +19,7 @@
 
 #include <rv/core/math.hpp>
 #include <rv/core/random.hpp>
+#include <rv/core/seed.hpp>
 #include <rv/geometry/socket.hpp>
 #include <rv/world/seeds.hpp>
 
@@ -75,10 +79,16 @@ std::int64_t toMm(float value) noexcept {
     return static_cast<std::int64_t>(std::llround(static_cast<double>(value) * 1000.0));
 }
 
-json coverTexture(std::uint64_t seed) {
+/// A picture of `pattern` with an invented title and seed drawn from `seed` (the posters' covers, I6 step 3b's era
+/// pictures).
+json patternTexture(std::string_view pattern, std::uint64_t seed) {
     core::Random random(seed);
     const auto title = kPictureTitles[static_cast<std::size_t>(random.below(kPictureTitles.size()))];
-    return json{{"pattern", "cover"}, {"title", std::string(title)}, {"seed", random.below(1000000)}};
+    return json{{"pattern", std::string(pattern)}, {"title", std::string(title)}, {"seed", random.below(1000000)}};
+}
+
+json coverTexture(std::uint64_t seed) {
+    return patternTexture("cover", seed);
 }
 
 /// The textures of a prefab kind's roles: the CRT's idle colour bars, a poster's or a magazine's invented cover, the
@@ -93,6 +103,9 @@ json themeTextures(std::string_view kind, bool sign, const PlatformManifest& pla
     }
     if (kind == "magazine_stack") {
         return json{{"cover", coverTexture(seed)}};
+    }
+    if (kind == "desk") {
+        return json{{"screen", patternTexture("terminal", seed)}}; // I6 step 3b: the study's computer, on
     }
     return json::object();
 }
@@ -114,6 +127,15 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
     return nullptr;
 }
 
+/// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside, and so its
+/// showcases (I6 step 3b's review).
+void lightInside(json& object, std::string_view generator, const std::map<std::string, std::string>& materials) {
+    if ((generator == "shelf" || generator == "wall_shelf" || generator == "showcase") &&
+        materials.contains("board_light") && object["params"].is_object()) {
+        object["params"]["boardLight"] = true;
+    }
+}
+
 /// A prefab object of the scene file: the prefab as it resolved (with `params` instead of its own when given), its
 /// theme's materials (those of the hero corner's part `heroPart` when the theme lists it), where it stands.
 json prefabObject(std::string id, const ScenePrefab& prefab, const json* params, json position, json rotationDeg,
@@ -127,17 +149,237 @@ json prefabObject(std::string id, const ScenePrefab& prefab, const json* params,
     object["prefab"] = prefab.generator;
     object["params"] = params != nullptr ? *params : prefab.params;
     const std::map<std::string, std::string> materials = data.theme.materials(prefab.generator, heroPart);
-    // A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside.
-    if ((prefab.generator == "shelf" || prefab.generator == "wall_shelf") && materials.contains("board_light") &&
-        object["params"].is_object()) {
-        object["params"]["boardLight"] = true;
-    }
+    lightInside(object, prefab.generator, materials);
     object["materials"] = materialsJson(materials);
     if (json textures = themeTextures(prefab.generator, sign, data.platform, seed); !textures.empty()) {
         object["textures"] = std::move(textures);
     }
     // Thin geometry on walls casts no shadow (its shadow would be narrower than the filter); the rug lies on the floor
     // and is walked over.
+    if (prefab.generator == "poster_frame" || prefab.generator == "rug") {
+        object["castsShadows"] = false;
+    }
+    if (prefab.generator == "rug") {
+        object["collides"] = false;
+    }
+    return object;
+}
+
+/// (dx, dz) millimetres of a frame turned by `yawCdeg` about +Y, in the room's frame (room_frames::yawRotation()'s
+/// sense: local +X to (cos, -sin), local +Z to (sin, cos)); quarter turns exact, others rounded to the millimetre.
+std::pair<std::int64_t, std::int64_t> turned(std::int64_t dx, std::int64_t dz, std::int32_t yawCdeg) noexcept {
+    switch (((yawCdeg % 36000) + 36000) % 36000) {
+    case 0:
+        return {dx, dz};
+    case 9000:
+        return {dz, -dx};
+    case 18000:
+        return {-dx, -dz};
+    case 27000:
+        return {-dz, dx};
+    default: {
+        const double radians = static_cast<double>(yawCdeg) / 100.0 * (3.14159265358979323846 / 180.0);
+        const double c = std::cos(radians);
+        const double sn = std::sin(radians);
+        return {std::llround(c * static_cast<double>(dx) + sn * static_cast<double>(dz)),
+                std::llround(-sn * static_cast<double>(dx) + c * static_cast<double>(dz))};
+    }
+    }
+}
+
+/// Millimetres from meters, down and up (a hundredth of a millimetre of float noise forgiven).
+std::int64_t downMm(float meters) noexcept {
+    return static_cast<std::int64_t>(std::floor(std::round(static_cast<double>(meters) * 1e5) / 100.0));
+}
+std::int64_t upMm(float meters) noexcept {
+    return static_cast<std::int64_t>(std::ceil(std::round(static_cast<double>(meters) * 1e5) / 100.0));
+}
+
+/// Grows [low, high] by `bounds` standing at (xMm, yMm, zMm) in the room, turned by `yawCdeg` about +Y.
+void extendBy(glm::vec3& low, glm::vec3& high, const core::Aabb& bounds, std::int64_t xMm, std::int64_t yMm,
+              std::int64_t zMm, std::int32_t yawCdeg) {
+    glm::mat4 frame = room_frames::yawRotation(yawCdeg);
+    frame[3] = glm::vec4(static_cast<float>(meters(xMm)), static_cast<float>(meters(yMm)),
+                         static_cast<float>(meters(zMm)), 1.0f);
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 local((corner & 1) != 0 ? bounds.max.x : bounds.min.x,
+                              (corner & 2) != 0 ? bounds.max.y : bounds.min.y,
+                              (corner & 4) != 0 ? bounds.max.z : bounds.min.z);
+        const glm::vec3 point = glm::vec3(frame * glm::vec4(local, 1.0f));
+        low = glm::min(low, point);
+        high = glm::max(high, point);
+    }
+}
+
+/// The floor [low, high] covers, rounded outwards to millimetres.
+Footprint floorOf(const glm::vec3& low, const glm::vec3& high) noexcept {
+    return Footprint{downMm(low.x), downMm(low.z), upMm(high.x), upMm(high.z)};
+}
+
+/// A warning logged once per `key` in the process (a room drawn again does not repeat it).
+void warnOnce(const std::string& key, const std::string& message) {
+    static std::mutex mutex;
+    static std::set<std::string, std::less<>> warned;
+    const std::lock_guard lock(mutex);
+    if (warned.insert(key).second) {
+        spdlog::warn("{}", message);
+    }
+}
+
+/// A piece of the pack's furniture where it stands in the room (I6 step 3b).
+struct DrawnPiece {
+    const ScenePiece* piece = nullptr;
+    std::string id;
+    std::int64_t xMm = 0;
+    std::int64_t yMm = 0;
+    std::int64_t zMm = 0;
+    std::int32_t yawCdeg = 0;
+    std::uint64_t seed = 0;
+};
+
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard.
+std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+    std::vector<DrawnPiece> pieces;
+    const std::uint64_t seed = fixtureSeed(room.seed, fixture.id);
+    if (fixture.role == FixtureRole::HeroCorner) {
+        const auto found = data.furniture.heroParts.find(fixture.id.part());
+        const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+        if (found == data.furniture.heroParts.end() || socket == nullptr) {
+            return pieces;
+        }
+        const auto part = std::find_if(socket->parts.begin(), socket->parts.end(),
+                                       [&](const HeroPart& candidate) { return candidate.role == fixture.id.part(); });
+        if (part == socket->parts.end()) {
+            return pieces;
+        }
+        for (std::size_t i = 0; i < found->second.size(); ++i) {
+            const ScenePiece& piece = found->second[i];
+            const std::int64_t dx = piece.piece.xMm.value_or(part->xMm) - part->xMm;
+            const std::int64_t dz = piece.piece.zMm.value_or(part->zMm) - part->zMm;
+            const auto [roomX, roomZ] = turned(dx, dz, socket->yawCdeg);
+            DrawnPiece drawn;
+            drawn.piece = &piece;
+            drawn.id = fixture.id.localText() + (i == 0 ? std::string() : "." + std::to_string(i + 1));
+            drawn.xMm = fixture.xMm + roomX;
+            drawn.yMm = fixture.yMm;
+            drawn.zMm = fixture.zMm + roomZ;
+            drawn.yawCdeg = ((socket->yawCdeg + piece.piece.yawCdeg.value_or(part->yawCdeg)) % 36000 + 36000) % 36000;
+            drawn.seed = i == 0 ? seed : core::deriveSeed(seed, "piece", static_cast<std::uint64_t>(i));
+            pieces.push_back(std::move(drawn));
+        }
+        return pieces;
+    }
+    if (fixture.role != FixtureRole::Decoration) {
+        return pieces;
+    }
+    const auto found = data.furniture.decoration.find(fixture.prefab.kind);
+    const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+    if (found == data.furniture.decoration.end() || own == nullptr || !own->prefab) {
+        return pieces;
+    }
+    std::uint64_t total = 0;
+    for (const auto& [weight, piece] : found->second) {
+        total += weight;
+    }
+    if (total == 0) {
+        return pieces;
+    }
+    // The variant by weight, from the room's seed and the fixture's id.
+    core::Random random(core::deriveSeed(room.seed, "furniture", fixture.id.localText()));
+    std::uint64_t draw = random.below(total);
+    const ScenePiece* chosen = nullptr;
+    for (const auto& [weight, piece] : found->second) {
+        if (draw < weight) {
+            chosen = &piece;
+            break;
+        }
+        draw -= weight;
+    }
+    // Its back on the socket's back edge and centred across it, where the plan's prefab stands.
+    const core::Aabb& planned = own->prefab->bounds;
+    const core::Aabb& drawnBounds = chosen->prefab.prefab->bounds;
+    const std::int64_t dx =
+        toMm(0.5f * (planned.min.x + planned.max.x)) - toMm(0.5f * (drawnBounds.min.x + drawnBounds.max.x));
+    const std::int64_t dz = toMm(planned.min.z) - toMm(drawnBounds.min.z);
+    const auto [roomX, roomZ] = turned(dx, dz, fixture.yawCdeg);
+    DrawnPiece drawn;
+    drawn.piece = chosen;
+    drawn.id = fixture.id.localText();
+    drawn.xMm = fixture.xMm + roomX;
+    drawn.yMm = fixture.yMm;
+    drawn.zMm = fixture.zMm + roomZ;
+    drawn.yawCdeg = fixture.yawCdeg;
+    drawn.seed = seed;
+    pieces.push_back(std::move(drawn));
+    return pieces;
+}
+
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment); none: the plan's prefab draws it. The guard of
+/// ADR-0014 §1 (amended): a decoration's variant that leaves its socket's footprint (turned with the socket), or a hero
+/// part's piece that leaves the hero corner (and the planned part's own floor, where the part reaches out of the corner:
+/// the lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once.
+std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+    std::vector<DrawnPiece> pieces = placedPieces(room, fixture, data);
+    const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+    if (pieces.empty() || socket == nullptr) {
+        return pieces;
+    }
+    Footprint allowed = socketFootprint(data.roomTemplate, *socket, room.growthSteps);
+    if (fixture.role == FixtureRole::HeroCorner) {
+        if (const ScenePrefab* own = data.prefabs.find(fixture.prefab); own != nullptr && own->prefab) {
+            glm::vec3 low(std::numeric_limits<float>::max());
+            glm::vec3 high(std::numeric_limits<float>::lowest());
+            extendBy(low, high, own->prefab->bounds, fixture.xMm, fixture.yMm, fixture.zMm, fixture.yawCdeg);
+            const Footprint part = floorOf(low, high);
+            allowed = Footprint{std::min(allowed.minXMm, part.minXMm), std::min(allowed.minZMm, part.minZMm),
+                                std::max(allowed.maxXMm, part.maxXMm), std::max(allowed.maxZMm, part.maxZMm)};
+        }
+    }
+    // A millimetre of rounding forgiven.
+    const Footprint tolerated{allowed.minXMm - 1, allowed.minZMm - 1, allowed.maxXMm + 1, allowed.maxZMm + 1};
+    for (const DrawnPiece& drawn : pieces) {
+        glm::vec3 low(std::numeric_limits<float>::max());
+        glm::vec3 high(std::numeric_limits<float>::lowest());
+        extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+        if (const Footprint floor = floorOf(low, high); !tolerated.contains(floor)) {
+            warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " " +
+                         drawn.piece->piece.prefab.manifest,
+                     fmt::format("World: the pack {}'s {} leaves the footprint of {} ([{}, {}] x [{}, {}] mm, "
+                                 "allowed [{}, {}] x [{}, {}]); the plan's {} is drawn instead",
+                                 data.theme.id, drawn.piece->piece.prefab.manifest, fixture.id.toString(),
+                                 floor.minXMm, floor.maxXMm, floor.minZMm, floor.maxZMm, allowed.minXMm,
+                                 allowed.maxXMm, allowed.minZMm, allowed.maxZMm, fixture.prefab.manifest));
+            return {};
+        }
+    }
+    return pieces;
+}
+
+/// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
+/// is of the part's kind) under its own, the kind's pictures under its patterns.
+json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_view heroPart, const SceneData& data) {
+    const ScenePiece& piece = *drawn.piece;
+    const ScenePrefab& prefab = piece.prefab;
+    std::map<std::string, std::string> materials = piece.piece.prefab.kind == fixture.prefab.kind
+                                                       ? data.theme.materials(prefab.generator, heroPart)
+                                                       : data.theme.materials(prefab.generator);
+    for (const auto& [role, material] : piece.piece.materials) {
+        materials[role] = material;
+    }
+    json object{{"id", drawn.id},
+                {"prefab", prefab.generator},
+                {"params", prefab.params},
+                {"position", pointJson(drawn.xMm, drawn.yMm, drawn.zMm)},
+                {"rotationDeg", vec3Json(0.0, degrees(drawn.yawCdeg), 0.0)},
+                {"materials", materialsJson(materials)}};
+    lightInside(object, prefab.generator, materials);
+    json textures = themeTextures(prefab.generator, heroPart == "sign", data.platform, drawn.seed);
+    for (const auto& [role, pattern] : piece.piece.textures) {
+        textures[role] = patternTexture(pattern, drawn.seed);
+    }
+    if (!textures.empty()) {
+        object["textures"] = std::move(textures);
+    }
     if (prefab.generator == "poster_frame" || prefab.generator == "rug") {
         object["castsShadows"] = false;
     }
@@ -335,6 +577,65 @@ Expected<ScenePrefabs> loadScenePrefabs(const std::filesystem::path& assetRoot, 
     return result;
 }
 
+SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot, const assets::PrefabFamilies& families,
+                                     const ThemeFurniture& furniture) {
+    const auto resolve = [&](const FurniturePiece& piece) -> std::optional<ScenePiece> {
+        auto resolved = assets::resolvePrefab(assetRoot, families, piece.prefab.manifest);
+        if (!resolved) {
+            spdlog::warn("World: the furniture piece {} does not resolve ({}); its part is drawn as planned",
+                         piece.prefab.manifest, resolved.error().toString());
+            return std::nullopt;
+        }
+        if (!resolved->prefab || resolved->generator != piece.prefab.kind) {
+            spdlog::warn("World: the furniture piece {} is not a procedural '{}' prefab; its part is drawn as planned",
+                         piece.prefab.manifest, piece.prefab.kind);
+            return std::nullopt;
+        }
+        json params = resolved->params.is_object() ? resolved->params : json::object();
+        params.merge_patch(piece.params);
+        auto built = geometry::buildPrefab(resolved->generator, params);
+        if (!built) {
+            spdlog::warn("World: the furniture piece {} does not build with its parameters ({}); its part is drawn as "
+                         "planned",
+                         piece.prefab.manifest, built.error().toString());
+            return std::nullopt;
+        }
+        ScenePiece out;
+        out.piece = piece;
+        out.prefab.ref = piece.prefab;
+        out.prefab.source = resolved->source;
+        out.prefab.fallbackReason = resolved->fallbackReason;
+        out.prefab.generator = resolved->generator;
+        out.prefab.params = std::move(params);
+        out.prefab.prefab = std::move(*built);
+        return out;
+    };
+    SceneFurniture result;
+    for (const auto& [part, pieces] : furniture.heroParts) {
+        std::vector<ScenePiece> resolved;
+        for (const FurniturePiece& piece : pieces) {
+            if (auto scenePiece = resolve(piece)) {
+                resolved.push_back(std::move(*scenePiece));
+            }
+        }
+        if (!resolved.empty()) {
+            result.heroParts.emplace(part, std::move(resolved));
+        }
+    }
+    for (const auto& [kind, variants] : furniture.decoration) {
+        std::vector<std::pair<std::uint32_t, ScenePiece>> resolved;
+        for (const FurnitureVariant& variant : variants) {
+            if (auto scenePiece = resolve(variant.piece)) {
+                resolved.emplace_back(variant.weightPermille, std::move(*scenePiece));
+            }
+        }
+        if (!resolved.empty()) {
+            result.decoration.emplace(kind, std::move(resolved));
+        }
+    }
+    return result;
+}
+
 Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan, const RoomId& roomId,
                                   const std::optional<LightingProfile>& lighting,
                                   std::span<const std::string> platformTags) {
@@ -417,6 +718,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
     }
     // The pack's light: its tints of the profile's roles, the sign's accent in its neon (I6 step 3).
     data.lighting = themedLighting(data.lighting, data.theme);
+    // The pack's furniture (I6 step 3b).
+    data.furniture = resolveSceneFurniture(assetRoot, *families, data.theme.furniture);
     return data;
 }
 
@@ -445,6 +748,13 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                              fixture.id.toString());
         }
         const std::string heroPart = fixture.role == FixtureRole::HeroCorner ? fixture.id.part() : std::string();
+        // The pack's furniture in place of the part or the decoration (I6 step 3b).
+        if (const std::vector<DrawnPiece> pieces = drawnPieces(*room, fixture, data); !pieces.empty()) {
+            for (const DrawnPiece& drawn : pieces) {
+                objects.push_back(pieceObject(drawn, fixture, heroPart, data));
+            }
+            continue;
+        }
         objects.push_back(prefabObject(fixture.id.localText(), *prefab, nullptr,
                                        pointJson(fixture.xMm, fixture.yMm, fixture.zMm),
                                        vec3Json(0.0, degrees(fixture.yawCdeg), 0.0), heroPart, data,
@@ -534,6 +844,56 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                            {"lights", std::move(lights)},
                            {"objects", std::move(objects)}};
     return build;
+}
+
+Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId& roomId, const SceneData& data) {
+    const Room* room = findRoom(plan, roomId);
+    if (room == nullptr) {
+        return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
+    }
+    std::vector<Fixture> fixtures;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != roomId) {
+            continue;
+        }
+        const std::vector<DrawnPiece> pieces = drawnPieces(*room, fixture, data);
+        if (pieces.empty()) {
+            fixtures.push_back(fixture);
+            continue;
+        }
+        glm::vec3 low(std::numeric_limits<float>::max());
+        glm::vec3 high(std::numeric_limits<float>::lowest());
+        for (const DrawnPiece& drawn : pieces) {
+            extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+        }
+        std::int64_t minX = downMm(low.x);
+        std::int64_t maxX = upMm(high.x);
+        std::int64_t minY = downMm(low.y);
+        std::int64_t maxY = upMm(high.y);
+        std::int64_t minZ = downMm(low.z);
+        std::int64_t maxZ = upMm(high.z);
+        // Even spans, so that the centre is a whole millimetre (outwards again).
+        maxX += (maxX - minX) % 2;
+        maxZ += (maxZ - minZ) % 2;
+        maxY += (maxY - minY) % 2;
+        Fixture covered = fixture;
+        covered.prefab = pieces.front().piece->prefab.ref;
+        covered.yawCdeg = 0;
+        covered.widthMm = maxX - minX;
+        covered.depthMm = maxZ - minZ;
+        covered.heightMm = maxY - minY;
+        covered.xMm = (minX + maxX) / 2;
+        if (covered.prefab.kind == "poster_frame") {
+            // Hung from the middle of its back: the box reaches its depth out along +Z and is centred on its height.
+            covered.zMm = minZ;
+            covered.yMm = (minY + maxY) / 2;
+        } else {
+            covered.zMm = (minZ + maxZ) / 2;
+            covered.yMm = minY;
+        }
+        fixtures.push_back(std::move(covered));
+    }
+    return fixtures;
 }
 
 Expected<scene::SceneDescription> toSceneDescription(const WorldPlan& plan, const RoomId& room, const SceneData& data) {
