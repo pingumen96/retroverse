@@ -739,6 +739,8 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
         ++lines;
     }
     CHECK(lines == 3);
+    // I6 step 5: the arcade room, at I4's lobby, re-placed onto the hub in the same update, said once.
+    CHECK(contains(updated.out, "area:arcade: onto the hub, x 9000 z -12150 (was x 7650 z -8150)"));
     auto plan = rv::world::readPlan(readText(session.files.plan), "migrated");
     REQUIRE(plan.has_value());
     CHECK(plan->generatorVersion == rv::world::kGeneratorVersion);
@@ -748,6 +750,17 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
     CHECK(again.code == ExitCode::Ok);
     CHECK(contains(again.out, "is up to date"));
     CHECK_FALSE(contains(again.out, "Room migrated"));
+    CHECK_FALSE(contains(again.out, "Room re-placed"));
+
+    // The stored 1.3 building shown: its ground floor drawn as the app draws it, the arcade room on the hub.
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, legacy).has_value());
+    const RunResult shown = session.run({"worldplan", "show", "--library", "esde", "--floor", "ground", "--json"});
+    INFO(shown.err);
+    REQUIRE(shown.code == ExitCode::Ok);
+    const nlohmann::json floor = nlohmann::json::parse(shown.out)["floorScene"];
+    REQUIRE(floor["drawnOnHub"].size() == 1);
+    CHECK(floor["drawnOnHub"][0]["room"] == "area:arcade");
+    CHECK(floor["drawnOnHub"][0]["to"] == nlohmann::json{{"xMm", 9000}, {"zMm", -12150}, {"yawHalfTurns", 0}});
 
     // The same update of the stored 1.3 building as JSON: changes.migratedRooms.
     REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, legacy).has_value());
@@ -770,4 +783,8 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
                                         {"to", "disc_case_cd_v2"},
                                         {"unplacedForCapacity", 0}});
     CHECK(document["changes"]["rebuild"] == "full");
+    const nlohmann::json& replaced = document["changes"]["replacedRooms"];
+    REQUIRE(replaced.size() == 1);
+    CHECK(replaced[0]["room"] == "area:arcade");
+    CHECK(replaced[0]["from"] == nlohmann::json{{"xMm", 7650}, {"zMm", -8150}, {"yawHalfTurns", 0}});
 }

@@ -320,6 +320,12 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
     if (!plan) {
         return notAPlan(context, *file, json, planText, plan.error());
     }
+    // A stored building whose ground floor's rooms stand at I4's lobby is judged as the app draws it and the next update
+    // writes it: those rooms on the hub (world::placeOnHub(), I6 step 5's review); the file is not written.
+    for (const world::ReplacedRoom& replaced : world::placeOnHub(plan->rooms, building->layout)) {
+        spdlog::info("worldplan check: {} stands at I4's lobby; judged on the hub at x {} z {}",
+                     replaced.room.toString(), replaced.to.xMm, replaced.to.zMm);
+    }
     validation.building = *building;
     if (!validation.selections.empty()) {
         const world::RoomId& room = validation.selections.front().room;

@@ -29,6 +29,7 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/floor_scene.hpp>
 #include <rv/world/generation.hpp>
@@ -40,6 +41,7 @@
 #include "commands.hpp"
 #include "esde_text.hpp"
 #include "world_plan_text.hpp"
+#include "world_selection.hpp"
 
 namespace rv::cli {
 namespace {
@@ -219,12 +221,21 @@ std::map<world::RoomId, std::string> resolvedThemePacks(CommandContext& context,
 struct FloorView {
     world::FloorSceneBuild build;
     std::string sceneLine;
+    /// The ground floor's rooms standing at I4's lobby, drawn on the hub as the app draws them (I6 step 5's review).
+    std::vector<world::ReplacedRoom> drawnOnHub;
 };
 
 /// Builds the floor `floor` of `plan` (its data from the asset root, the rooms' systems classified with the catalog's
 /// platform tags) and writes its scene to `scenePath` when given; nothing after a failure (reported).
-std::optional<FloorView> buildFloor(CommandContext& context, const world::WorldPlan& plan, std::string_view floor,
+std::optional<FloorView> buildFloor(CommandContext& context, const world::WorldPlan& stored, std::string_view floor,
                                     const std::optional<std::filesystem::path>& scenePath) {
+    // A stored building whose ground floor's rooms stand at I4's lobby is drawn with them on the hub, as the app draws
+    // it (world::placeOnHub(), the next update's re-placement); nothing is written.
+    world::WorldPlan plan = stored;
+    std::vector<world::ReplacedRoom> drawnOnHub;
+    if (auto building = world::loadBuildingData(context.paths.assetRoot())) {
+        drawnOnHub = world::placeOnHub(plan.rooms, building->layout);
+    }
     auto data = world::loadFloorSceneData(context.paths.assetRoot(), plan, floor, std::nullopt,
                                           catalogPlatformTagsOf(context.paths, plan.library));
     if (!data) {
@@ -236,7 +247,7 @@ std::optional<FloorView> buildFloor(CommandContext& context, const world::WorldP
         context.err.writeLine(fmt::format("{}: the floor's scene: {}", kName, build.error().toString()));
         return std::nullopt;
     }
-    FloorView view{std::move(*build), {}};
+    FloorView view{std::move(*build), {}, std::move(drawnOnHub)};
     if (!scenePath) {
         return view;
     }
@@ -457,6 +468,7 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         }
         if (floorView) {
             json["floorScene"] = floorJson(floorView->build);
+            json["floorScene"]["drawnOnHub"] = replacedRoomsJson(floorView->drawnOnHub);
             if (const auto scenePath = args->value("scene")) {
                 json["scene"] = *scenePath;
                 json["sceneFloor"] = floorView->build.hall.floor;
@@ -476,6 +488,12 @@ ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> 
         }
         if (floorView) {
             results += floorText(floorView->build);
+            for (const world::ReplacedRoom& replaced : floorView->drawnOnHub) {
+                results += fmt::format("  {}  stored at I4's lobby (x {} z {}): drawn on the hub at x {} z {} until an "
+                                       "update re-places it\n",
+                                       replaced.room.toString(), replaced.from.xMm, replaced.from.zMm, replaced.to.xMm,
+                                       replaced.to.zMm);
+            }
             results += floorView->sceneLine;
         }
         if (sceneLine) {
