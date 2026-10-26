@@ -1,0 +1,40 @@
+// The hub's central landmark (I6 step 5, ADR-0014 §3, style §5.2 and §8 special/hub_landmark): an original glowing
+// wireframe globe on a pedestal in a railed circular showcase of generic consoles (no map, no trade mark).
+{
+  "schemaVersion": 1,
+  "id": "special.hub_landmark.generic",
+  "assetType": "special",
+  "category": "landmark",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "hub_landmark",
+    "params": {},
+    "scaleMeters": [4.2, 3.2, 4.2],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "globe": "Globe"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": [
+    "special",
+    "landmark",
+    "globe",
+    "hub",
+    "procedural"
+  ],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

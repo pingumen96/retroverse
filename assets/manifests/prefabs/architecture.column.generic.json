@@ -1,0 +1,36 @@
+// The hub's columns (I6 step 5, ADR-0014 §3, style §5.2 and §8: pillars): a tapered walnut shaft on a plinth under a
+// capital, brass rings at its foot and neck, under the balcony's edge and rising to the ceiling.
+{
+  "schemaVersion": 1,
+  "id": "architecture.column.generic",
+  "assetType": "architecture",
+  "category": "structure",
+  "role": "structure",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "column",
+    "params": {},
+    "scaleMeters": [0.56, 5.0, 0.56],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": [
+    "architecture",
+    "column",
+    "procedural"
+  ],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

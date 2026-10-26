@@ -1,5 +1,6 @@
 # rv_geometry: CPU mesh data, procedural mesh builder and procedural prefabs (since I3 step 1b the display case, the
-# featured wall shelf and the shelf dressing; since I6 step 3b the era furniture). GPU-free.
+# featured wall shelf and the shelf dressing; since I6 step 3b the era furniture; since I6 step 5 the hub's columns,
+# railing, landmark and totem). GPU-free.
 
 add_library(rv_geometry STATIC
     src/mesh_builder.cpp
@@ -15,6 +16,7 @@ add_library(rv_geometry STATIC
     src/prefab_display_case.cpp
     src/prefab_factory.cpp
     src/prefab_floor_lamp.cpp
+    src/prefab_hub.cpp
     src/prefab_plant.cpp
     src/prefab_poster_frame.cpp
     src/prefab_room_shell.cpp

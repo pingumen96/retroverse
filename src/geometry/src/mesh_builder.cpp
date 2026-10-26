@@ -524,6 +524,46 @@ MeshBuilder& MeshBuilder::uvSphere(float radius, int segments, int rings, const 
     return *this;
 }
 
+MeshBuilder& MeshBuilder::torus(float majorRadius, float minorRadius, int segments, int sides,
+                                const glm::mat4& transform) {
+    const std::optional<Affine> affine = makeAffine(transform);
+    if (!affine || !std::isfinite(majorRadius) || !std::isfinite(minorRadius)) {
+        return *this;
+    }
+    const float major = std::fabs(majorRadius);
+    const float minor = std::fabs(minorRadius);
+    if (!(major > 0.0f) || !(minor > 0.0f) || minor >= major) {
+        return *this;
+    }
+    const Azimuth azimuth(std::clamp(segments, kMinSegments, kMaxSegments));
+    const int segmentCount = azimuth.segments();
+    const int sideCount = std::clamp(sides, kMinSegments, kMaxSegments);
+    const auto columns = static_cast<std::uint32_t>(sideCount + 1);
+
+    MeshData local;
+    for (int i = 0; i <= segmentCount; ++i) {
+        const glm::vec3 radial = azimuth.radial(i);
+        const glm::vec4 tangent(azimuth.tangent(i), 1.0f);
+        for (int j = 0; j <= sideCount; ++j) {
+            const float v = static_cast<float>(j) / static_cast<float>(sideCount);
+            const float theta = core::kTwoPi * v;
+            const glm::vec3 normal = radial * std::cos(theta) + glm::vec3(0.0f, std::sin(theta), 0.0f);
+            addVertex(local, radial * major + normal * minor, normal, tangent, glm::vec2(azimuth.u(i), v));
+        }
+    }
+    // Along u (the tangent) then around the tube: their cross product is the outward normal.
+    for (int i = 0; i < segmentCount; ++i) {
+        for (int j = 0; j < sideCount; ++j) {
+            const std::uint32_t a = static_cast<std::uint32_t>(i) * columns + static_cast<std::uint32_t>(j);
+            const std::uint32_t b = a + columns;
+            addTriangle(local, a, b, b + 1);
+            addTriangle(local, a, b + 1, a + 1);
+        }
+    }
+    appendMesh(m_vertices, m_indices, local, *affine);
+    return *this;
+}
+
 MeshBuilder& MeshBuilder::cylinder(float radius, float height, int segments, bool capped, const glm::mat4& transform) {
     return frustum(radius, radius, height, segments, capped, false, transform);
 }

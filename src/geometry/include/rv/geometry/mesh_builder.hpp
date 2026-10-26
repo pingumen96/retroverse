@@ -120,6 +120,13 @@ public:
     MeshBuilder& frustum(float bottomRadius, float topRadius, float height, int segments, bool capped, bool doubleSided,
                          const glm::mat4& transform = glm::mat4(1.0f));
 
+    /// Torus centred on the origin around the Y axis (a ring lying in the XZ plane): its tube of radius minorRadius
+    /// around a circle of radius majorRadius. `segments` around the axis, `sides` around the tube; u around the axis
+    /// as for uvSphere, v around the tube from its outer equator upwards. (segments + 1) * (sides + 1) vertices,
+    /// 6 * segments * sides indices. A tube as wide as the circle or wider, or a zero radius, appends nothing.
+    MeshBuilder& torus(float majorRadius, float minorRadius, int segments, int sides,
+                       const glm::mat4& transform = glm::mat4(1.0f));
+
     /// Appends an existing mesh (its triangles must reference valid vertices; incomplete or out-of-range
     /// triangles are dropped). A mesh with a non-finite position or uv on any vertex is skipped as a whole;
     /// non-finite normals and tangents are replaced by valid ones.

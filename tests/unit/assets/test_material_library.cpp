@@ -55,7 +55,9 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Fabric_Vinyl_Purple", "MAT_Fabric_Vinyl_Red", "MAT_Fabric_Wool_Green",
     // The packs' rugs (I6 step 3b).
     "MAT_Carpet_Ornate_Blue", "MAT_Carpet_Ornate_Sage", "MAT_Carpet_Ornate_Green", "MAT_Carpet_Geometric",
-    "MAT_Carpet_Runner"};
+    "MAT_Carpet_Runner",
+    // The hub's (I6 step 5): the globe's wireframe and core, the downlights, the chandelier's bulbs, the screens.
+    "MAT_Globe_Lines", "MAT_Globe_Core", "MAT_Downlight", "MAT_Bulb_Warm", "MAT_Screen_Board"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

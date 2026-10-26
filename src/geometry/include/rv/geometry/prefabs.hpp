@@ -509,6 +509,62 @@ struct PlantParams {
     float saucerRadius = 0.0f; ///< 0: the saucer as wide as the spread, in the pot's role; else [potRadius, spread]
 };
 
+/// "column" (I6 step 5: the hub's colonnade, style §8 architecture), pivot floor; bounds = plinthSize x height x
+/// plinthSize. A round wooden shaft with a slight taper (its top radius 0.92 of its foot's) on a square chamfered
+/// plinth with a brass torus at the shaft's foot, under a capital: an echinus widening to 1.25 times the radius and a
+/// square abacus, a brass ring at the neck. Roles: "wood_primary" (the shaft), "wood_secondary" (plinth, echinus,
+/// abacus), "metal_trim" (the two rings). No sockets; its bounds collide.
+struct ColumnParams {
+    float radius = 0.2f;         ///< the shaft's foot, [0.05, 0.6]
+    float height = 5.0f;         ///< [1, 10]
+    float plinthSize = 0.56f;    ///< [2.2 radius, 1.5]
+    float plinthHeight = 0.3f;   ///< [0.05, height / 4]
+    float capitalHeight = 0.32f; ///< [0.1, height / 4]
+};
+
+/// "railing" (I6 step 5: the hub's balcony), pivot floor, along X, symmetric about Z; bounds = length x height x
+/// 0.09. A wooden handrail on newel posts (at both ends and at most every postPitch between them), a bottom rail and
+/// slim metal balusters every balusterPitch between the posts. Roles: "wood_primary" (handrail, posts),
+/// "wood_secondary" (bottom rail), "metal" (balusters). No sockets; its bounds collide.
+struct RailingParams {
+    float length = 3.0f;         ///< [0.3, 60]
+    float height = 0.95f;        ///< [0.5, 1.5]
+    float postPitch = 1.5f;      ///< [0.5, 10]
+    float balusterPitch = 0.14f; ///< [0.05, 0.5]
+};
+
+/// "hub_landmark" (I6 step 5, style §5.2 and §8 special/hub_landmark: the hub's central landmark, concept panel 1),
+/// pivot floor, centred; bounds within [-radius, 0, -radius] .. [radius, top, radius]. A round walnut dais with a brass
+/// rim, a low glass wall between brass posts under a round brass handrail (a railed circular showcase), inside it a
+/// ring counter with a baize top carrying consoles generic consoles of original design facing out, and in the middle
+/// a tapered pedestal with a brass dish holding a glowing globe: an original, stylised wireframe of meridians and
+/// parallels (no map) around a softly lit core, its axis tilted, held by a brass meridian ring. Roles: "wood_primary"
+/// (dais, pedestal), "wood_secondary" (ring counter), "metal_trim" (rim, posts, handrail, dish, meridian ring, axis),
+/// "glass" (the wall: one double-sided sheet, a blended material), "fabric" (the counter's top), "plastic_body",
+/// "plastic_dark", "plastic_accent" (the consoles), "globe" (the wireframe, an emissive material), "globe_core" (the
+/// core, a blended emissive material). Sockets: "Globe" (Anchor) at the globe's centre. Its bounds collide.
+struct HubLandmarkParams {
+    float radius = 2.1f;         ///< [1, 4]
+    float baseHeight = 0.3f;     ///< the dais, [0.1, 0.6]
+    float railHeight = 0.95f;    ///< above the dais, [0.5, 1.4]
+    float pedestalHeight = 1.1f; ///< above the ring counter, [0.4, 3]
+    float globeRadius = 0.55f;   ///< [0.2, min(1.2, radius / 2)]
+    int consoles = 6;            ///< [0, 12]
+};
+
+/// "info_totem" (I6 step 5: the directory's totem in the hub), pivot floor, front +Z; bounds = width x height x depth.
+/// A slim walnut kiosk set back on a dark plinth (the plinth the whole footprint): a brass-framed screen on its front (role "screen", a quad with uv (0, 0) at its
+/// top-left, for a picture) and a lettered plate in a brass band at its head (role "sign", a quad likewise). Roles:
+/// "wood_primary" (the body), "wood_secondary" (plinth, head), "metal_trim" (the screen's bezel, the band), "screen",
+/// "sign". Sockets: "Screen" (Anchor) at the screen's centre, +Z out of it. Its bounds collide.
+struct InfoTotemParams {
+    float width = 0.6f;         ///< [0.3, 1.2]
+    float height = 1.75f;       ///< [1, 2.5]
+    float depth = 0.32f;        ///< [0.15, 0.8]
+    float screenWidth = 0.46f;  ///< [0.1, width - 0.12]
+    float screenHeight = 0.62f; ///< [0.1, height - 0.6]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -536,6 +592,10 @@ struct PlantParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildBarStool(const BarStoolParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildBankerLamp(const BankerLampParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildShowcase(const ShowcaseParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildColumn(const ColumnParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildRailing(const RailingParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildHubLandmark(const HubLandmarkParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildInfoTotem(const InfoTotemParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -559,8 +619,8 @@ struct PlantParams {
 
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
-/// bookends, plant, and I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp,
-/// showcase.
+/// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
+/// and I6 step 5's hub: column, railing, hub_landmark, info_totem.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

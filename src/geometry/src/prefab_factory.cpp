@@ -527,6 +527,63 @@ Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
     return buildShowcase(p);
 }
 
+Expected<ProceduralPrefab> columnFromJson(const Json& params) {
+    ColumnParams p;
+    ParamReader r("column", params, {"radius", "height", "plinthSize", "plinthHeight", "capitalHeight"});
+    r.read("radius", p.radius);
+    r.read("height", p.height);
+    r.read("plinthSize", p.plinthSize);
+    r.read("plinthHeight", p.plinthHeight);
+    r.read("capitalHeight", p.capitalHeight);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildColumn(p);
+}
+
+Expected<ProceduralPrefab> railingFromJson(const Json& params) {
+    RailingParams p;
+    ParamReader r("railing", params, {"length", "height", "postPitch", "balusterPitch"});
+    r.read("length", p.length);
+    r.read("height", p.height);
+    r.read("postPitch", p.postPitch);
+    r.read("balusterPitch", p.balusterPitch);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildRailing(p);
+}
+
+Expected<ProceduralPrefab> hubLandmarkFromJson(const Json& params) {
+    HubLandmarkParams p;
+    ParamReader r("hub_landmark", params,
+                  {"radius", "baseHeight", "railHeight", "pedestalHeight", "globeRadius", "consoles"});
+    r.read("radius", p.radius);
+    r.read("baseHeight", p.baseHeight);
+    r.read("railHeight", p.railHeight);
+    r.read("pedestalHeight", p.pedestalHeight);
+    r.read("globeRadius", p.globeRadius);
+    r.read("consoles", p.consoles);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildHubLandmark(p);
+}
+
+Expected<ProceduralPrefab> infoTotemFromJson(const Json& params) {
+    InfoTotemParams p;
+    ParamReader r("info_totem", params, {"width", "height", "depth", "screenWidth", "screenHeight"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("screenWidth", p.screenWidth);
+    r.read("screenHeight", p.screenHeight);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildInfoTotem(p);
+}
+
 Expected<ProceduralPrefab> displayCaseFromJson(const Json& params) {
     DisplayCaseParams p;
     ParamReader r("display_case", params,
@@ -738,7 +795,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 23> kPrefabs{{
+constexpr std::array<PrefabEntry, 27> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -762,6 +819,10 @@ constexpr std::array<PrefabEntry, 23> kPrefabs{{
     {"bar_stool", &barStoolFromJson},
     {"banker_lamp", &bankerLampFromJson},
     {"showcase", &showcaseFromJson},
+    {"column", &columnFromJson},
+    {"railing", &railingFromJson},
+    {"hub_landmark", &hubLandmarkFromJson},
+    {"info_totem", &infoTotemFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

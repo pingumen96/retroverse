@@ -300,7 +300,8 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     const auto names = rv::assets::patternNames();
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
           std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon", "poster_memphis",
-                                        "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal"});
+                                        "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal",
+                                        "board"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -517,4 +518,29 @@ TEST_CASE("assets/test_patterns: the era posters, the cork board and the termina
     // The seed varies the posters.
     CHECK(rv::assets::makeNamedPattern("poster_memphis", 128, 160, "T", 1)->pixels !=
           rv::assets::makeNamedPattern("poster_memphis", 128, 160, "T", 2)->pixels);
+}
+
+TEST_CASE("assets/test_patterns: the hub's information board (I6 step 5)", "[assets][patterns]") {
+    // A heading and the floors, '|'-separated: amber heading and markers, ivory lines, on a dark navy ground framed in
+    // amber; deterministic and opaque; a longer list never fails (the lines that do not fit are left out).
+    const std::string title = "BUILDING DIRECTORY|LOBBY AND ARCADE|EARLY CONSOLES|16-BIT CONSOLES";
+    const auto board = rv::assets::makeNamedPattern("board", 512, 284, title, 0);
+    REQUIRE(board.has_value());
+    CHECK(board->pixels == rv::assets::makeNamedPattern("board", 512, 284, title, 9)->pixels); // no seed
+    CHECK(pixel(*board, 0, 0) == Rgba(0xFF, 0xC8, 0x8A, 255));                                   // the border
+    CHECK(pixel(*board, 256, 270) == Rgba(0x12, 0x18, 0x20, 255));                               // the ground
+    std::set<std::uint32_t> colours;
+    for (std::size_t i = 0; i < board->pixels.size(); i += 4) {
+        CHECK(board->pixels[i + 3] == 255);
+        colours.insert(static_cast<std::uint32_t>(board->pixels[i]) << 16 |
+                       static_cast<std::uint32_t>(board->pixels[i + 1]) << 8 | board->pixels[i + 2]);
+    }
+    CHECK(colours.size() == 3); // ground, amber, ivory
+    CHECK(board->pixels != rv::assets::makeNamedPattern("board", 512, 284, "BUILDING DIRECTORY", 0)->pixels);
+    std::string many = "FLOORS";
+    for (int i = 0; i < 40; ++i) {
+        many += "|FLOOR " + std::to_string(i);
+    }
+    CHECK(rv::assets::makeNamedPattern("board", 256, 128, many, 0).has_value());
+    CHECK(rv::assets::makeNamedPattern("board", 3, 2, "", 0).has_value());
 }

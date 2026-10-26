@@ -133,6 +133,29 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
                              {"glass", "MAT_Glass_Display"},          {"plastic_body", "MAT_Plastic_Gray"},
                              {"plastic_dark", "MAT_Plastic_Black"},   {"plastic_accent", "MAT_Plastic_Accent"}};
     }
+    // I6 step 5's hub, in retro_library_hub's materials.
+    if (kind == "column") {
+        return RoleMaterials{
+            {"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished_Dark"}, {"metal_trim", "MAT_Metal_Brass"}};
+    }
+    if (kind == "railing") {
+        return RoleMaterials{
+            {"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished_Dark"}, {"metal", "MAT_Metal_Graphite"}};
+    }
+    if (kind == "hub_landmark") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},     {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+                             {"metal_trim", "MAT_Metal_Brass"},       {"glass", "MAT_Glass_Display"},
+                             {"fabric", "MAT_Fabric_Wool_Green"},     {"plastic_body", "MAT_Plastic_AgedIvory"},
+                             {"plastic_dark", "MAT_Plastic_Black"},   {"plastic_accent", "MAT_Plastic_Accent"},
+                             {"globe", "MAT_Globe_Lines"},            {"globe_core", "MAT_Globe_Core"}};
+    }
+    if (kind == "info_totem") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},
+                             {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+                             {"metal_trim", "MAT_Metal_Brass"},
+                             {"screen", "MAT_Screen_Board"},
+                             {"sign", "MAT_Sign_Tungsten"}};
+    }
     return {};
 }
 
@@ -149,6 +172,8 @@ std::map<std::string, scene::TextureSource> prefabRoleTextures(std::string_view 
         textures.emplace("picture", cover("PREVIEW POSTER", 11));
     } else if (kind == "magazine_stack") {
         textures.emplace("cover", cover("PREVIEW MAGAZINE", 13));
+    } else if (kind == "info_totem") {
+        textures.emplace("screen", cover("PREVIEW DIRECTORY", 17));
     }
     return textures;
 }

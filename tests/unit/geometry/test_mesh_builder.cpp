@@ -765,3 +765,26 @@ TEST_CASE("geometry/mesh_builder: invalid input is skipped without NaN", "[geome
     CHECK(kept.indices.size() == 6);
     CHECK(rv::geometry::validateMesh(kept).has_value());
 }
+
+TEST_CASE("geometry/mesh_builder: torus around +Y, outward normals, closed seams", "[geometry][mesh_builder][torus]") {
+    // I6 step 5: the hub's rings (the landmark's handrail and globe, the columns' mouldings).
+    MeshBuilder builder;
+    builder.torus(0.5f, 0.05f, 32, 8);
+    const MeshData ring = std::move(builder).build("torus");
+    CHECK(ring.vertices.size() == 33 * 9);
+    CHECK(ring.indices.size() == 6 * 32 * 8);
+    CHECK(rv::geometry::validateMesh(ring).has_value());
+    CHECK(closeTo(ring.bounds.min, glm::vec3(-0.55f, -0.05f, -0.55f), 1e-5f));
+    CHECK(closeTo(ring.bounds.max, glm::vec3(0.55f, 0.05f, 0.55f), 1e-5f));
+    CHECK(rv::test::nonUnitNormals(ring) == 0);
+    CHECK(rv::test::windingMismatches(ring) == 0);
+    for (const Vertex& v : ring.vertices) {
+        // The normal points from the tube's centre line to the vertex.
+        const glm::vec3 axis = glm::normalize(glm::vec3(v.position.x, 0.0f, v.position.z)) * 0.5f;
+        CHECK(closeTo(v.normal, (v.position - axis) / 0.05f, 1e-4f));
+    }
+    // A tube as wide as the circle, a zero radius or a non-finite one appends nothing.
+    MeshBuilder empty;
+    empty.torus(0.1f, 0.1f, 16, 8).torus(0.0f, 0.01f, 16, 8).torus(0.5f, std::nanf(""), 16, 8);
+    CHECK(empty.empty());
+}
