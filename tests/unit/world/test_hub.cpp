@@ -53,6 +53,23 @@ using rv::world::WorldPlan;
 
 namespace {
 
+/// A 9 x 10 m room as I4's lobby placed it (rows from 3.0 m, the lobby 6 m wide; another floor's hall 3 m wide).
+Room lobbyRoom(std::string_view id, std::string_view floor, std::int64_t x, std::uint32_t yaw) {
+    Room room;
+    room.id = *rv::world::RoomId::parse(id);
+    room.floor = std::string(floor);
+    room.minXMm = -4500;
+    room.maxXMm = 4500;
+    room.minZMm = -5000;
+    room.maxZMm = 5000;
+    room.heightMm = 3200;
+    room.placement.xMm = x;
+    room.placement.yawHalfTurns = yaw;
+    const std::int64_t half = floor == rv::world::kGroundFloor ? 3000 : 1500;
+    room.placement.zMm = yaw == 0 ? -half - 5150 : half + 5150;
+    return room;
+}
+
 constexpr float kFixedDt = 0.016667f;
 
 /// The golden building of the building fixture's systems (test_floor_scene.cpp generates and pins it).
@@ -507,21 +524,7 @@ TEST_CASE("world/hub: a stored building's ground floor rooms at I4's lobby are r
           "[world][hub][building]") {
     const rv::world::BuildingLayout layout = rv::test::world::shippedWorld(102938).building.layout;
     // Three rooms of the ground floor as I4's lobby placed them (rows from 3.0 m, the lobby 6 m wide) and one of gen4.
-    auto roomAt = [&](std::string_view id, std::string_view floor, std::int64_t x, std::uint32_t yaw) {
-        Room room;
-        room.id = *rv::world::RoomId::parse(id);
-        room.floor = std::string(floor);
-        room.minXMm = -4500;
-        room.maxXMm = 4500;
-        room.minZMm = -5000;
-        room.maxZMm = 5000;
-        room.heightMm = 3200;
-        room.placement.xMm = x;
-        room.placement.yawHalfTurns = yaw;
-        const std::int64_t half = floor == rv::world::kGroundFloor ? 3000 : 1500;
-        room.placement.zMm = yaw == 0 ? -half - 5150 : half + 5150;
-        return room;
-    };
+    const auto roomAt = lobbyRoom;
     std::vector<Room> rooms{roomAt("area:arcade", "ground", 7650, 0), roomAt("room:snes", "gen4", 7650, 0),
                             roomAt("area:arcade:2", "ground", 7650, 1), roomAt("area:arcade:3", "ground", 16950, 0)};
     for (const Room& room : rooms) {
@@ -547,6 +550,44 @@ TEST_CASE("world/hub: a stored building's ground floor rooms at I4's lobby are r
     CHECK(std::is_sorted(replaced.begin(), replaced.end()));
     // Once: the next call moves nothing.
     CHECK(rv::world::placeOnHub(rooms, layout).empty());
+}
+
+TEST_CASE("world/hub: a mixed ground floor: the room at I4's lobby joins its row after the room on the hub",
+          "[world][hub][building]") {
+    const rv::world::BuildingLayout layout = rv::test::world::shippedWorld(102938).building.layout;
+    // The arcade room already on the hub (the middle of the north wall), another north room still at I4's lobby.
+    std::vector<Room> rooms{lobbyRoom("area:arcade", "ground", 7650, 0), lobbyRoom("area:arcade:2", "ground", 7650, 0)};
+    rooms[0].placement = RoomPlacement{9000, -12150, 0};
+    REQUIRE(rv::world::standsOnHub(rooms[0], layout));
+    REQUIRE_FALSE(rv::world::standsOnHub(rooms[1], layout));
+    const Room standing = rooms[0];
+    std::vector<rv::world::RoomId> refused;
+    const std::vector<rv::world::ReplacedRoom> replaced = rv::world::placeOnHub(rooms, layout, &refused);
+    CHECK(refused.empty());
+    REQUIRE(replaced.size() == 1);
+    CHECK(replaced.front().room == rooms[1].id);
+    CHECK(rooms[0] == standing); // the room on the hub never moves
+    CHECK(rooms[1].placement == RoomPlacement{18300, -12150, 0}); // its own row's east end, its yaw kept
+    CHECK(rv::world::standsOnHub(rooms[1], layout));
+    CHECK(rv::world::placeOnHub(rooms, layout).empty());
+}
+
+TEST_CASE("world/hub: a room whose own row on the hub is full is refused, never turned to the other row; nothing moves",
+          "[world][hub][building]") {
+    const rv::world::BuildingLayout layout = rv::test::world::shippedWorld(102938).building.layout;
+    // maxRoomsPerRow + 1 north rooms at I4's lobby (the south row empty) and one south room.
+    std::vector<Room> rooms;
+    for (std::uint32_t i = 0; i <= layout.maxRoomsPerRow; ++i) {
+        rooms.push_back(lobbyRoom("area:shared:n" + std::to_string(i), "ground", 7650 + 9300 * std::int64_t{i}, 0));
+    }
+    rooms.push_back(lobbyRoom("area:shared:s0", "ground", 7650, 1));
+    const std::vector<Room> before = rooms;
+    std::vector<rv::world::RoomId> refused;
+    CHECK(rv::world::placeOnHub(rooms, layout, &refused).empty());
+    // The easternmost north room finds its row full: refused by id, every room where it stood (all or nothing).
+    REQUIRE(refused.size() == 1);
+    CHECK(refused.front() == rooms[layout.maxRoomsPerRow].id);
+    CHECK(rooms == before);
 }
 
 TEST_CASE("world/hub: a longer hub grows east with its rows; a doorway's approach takes the showcase's place",

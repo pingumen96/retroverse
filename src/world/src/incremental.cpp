@@ -13,6 +13,8 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
+
 #include <rv/core/random.hpp>
 #include <rv/world/capacity.hpp>
 #include <rv/world/lift.hpp>
@@ -931,7 +933,28 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
 
     // The ground floor's rooms that stand at I4's lobby are re-placed onto the hub, once (I6 step 5, ADR-0014 §3): new x
     // and z, their yaw and contents unchanged in their own frames, before any system enters among them.
-    std::vector<ReplacedRoom> replacedRooms = placeOnHub(previous.rooms, building.layout);
+    // A room whose own row on the hub is full is never put in the other row (its doorway would turn): the update refuses
+    // explicitly, writing nothing, rather than leaving the room inside the hub (I6 step 5's review).
+    std::vector<RoomId> refusedOnHub;
+    std::vector<ReplacedRoom> replacedRooms = placeOnHub(previous.rooms, building.layout, &refusedOnHub);
+    if (!refusedOnHub.empty()) {
+        std::string names;
+        for (const RoomId& room : refusedOnHub) {
+            names += (names.empty() ? "" : ", ") + room.toString();
+        }
+        GenerationResult result;
+        result.plan = std::move(previous);
+        result.changes.outcome = GenerationOutcome::RequiresExplicitRegeneration;
+        result.changes.rebuild = RebuildLevel::NoRebuild;
+        result.changes.kept = result.plan.placements.size();
+        result.changes.regenerationReason =
+            fmt::format("the hub's row of {} is full: the room cannot be re-placed onto the hub from I4's lobby "
+                        "(ADR-0014 §3); regenerate the building",
+                        names);
+        result.changes.digestBefore = digestBefore;
+        result.changes.digestAfter = std::move(digestBefore);
+        return result;
+    }
 
     // The inputs read: the selections of the rooms given every section's, each with its room's data (the systems
     // entering the building are added below with the data of the room they took, as a fresh building hashes them).
@@ -1222,7 +1245,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
         return plan == repacked;
     };
-    const bool keepProvenance = digestRooms.empty() || (partial && sameButPacks());
+    // A room re-placed onto the hub (I6 step 5) changes the plan whatever the selections: never kept then (`previous`
+    // holds the re-placed rooms already, so sameButPacks() cannot tell).
+    const bool keepProvenance = (digestRooms.empty() || (partial && sameButPacks())) && replacedRooms.empty();
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;

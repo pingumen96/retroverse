@@ -453,3 +453,35 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     CHECK(again.plan == migrated.plan);
     CHECK(again.changes.digestAfter == again.changes.digestBefore);
 }
+
+TEST_CASE("world/migration: a partial update of generator 1.3's building re-places the arcade room and names its inputs "
+          "anew; the next moves nothing",
+          "[world][migration]") {
+    // I6 step 5's review: the update gives snes alone a selection (the others held as they stand), so that nothing but
+    // the arcade room's place on the hub (and the packs) changes; the re-placement still changes the plan, so its
+    // provenance is never kept.
+    BuildingWorld world = shippedWorld(kWorldSeed);
+    world.tags[systemName("pocketlab")] = {"gb"};
+    const std::filesystem::path file = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" / "world" /
+                                       "legacy" / "building-esde-seed-102938-generator-1.3.json";
+    auto text = rv::core::readTextFile(file);
+    REQUIRE(text.has_value());
+    auto legacy = rv::world::readPlan(*text, "legacy");
+    REQUIRE(legacy.has_value());
+    const std::vector<RoomSelection> given{systemSelection("snes", 40, 4006)};
+
+    const GenerationResult first = updateBuildingOf(world, *legacy, given);
+    CHECK(first.validation.passed());
+    CHECK(first.changes.outcome == rv::world::GenerationOutcome::Updated);
+    REQUIRE(first.changes.replacedRooms.size() == 1);
+    CHECK(first.changes.replacedRooms.front().room.toString() == "area:arcade");
+    CHECK(first.changes.rebuild == rv::world::RebuildLevel::Full);
+    CHECK(findRoom(first.plan, "area:arcade")->placement == rv::world::RoomPlacement{9000, -12150, 0});
+    CHECK(first.plan.inputDigest != legacy->inputDigest);
+    CHECK(first.changes.digestAfter != first.changes.digestBefore);
+
+    // The next partial update finds every room on the hub: nothing re-placed, the plan as it was.
+    const GenerationResult again = updateBuildingOf(world, first.plan, given);
+    CHECK(again.changes.replacedRooms.empty());
+    CHECK(again.plan == first.plan);
+}

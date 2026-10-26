@@ -377,9 +377,12 @@ struct ReplacedRoom {
 /// The ground floor's rooms of `rooms` that do not stand on the hub (a stored building's, at I4's lobby) re-placed onto
 /// it, once (ADR-0014 §3: new x and z, their yaw and contents unchanged in their own frames): west to east by where they
 /// stood (the north row first on a tie, then by id), each at the east end of its own row among the rooms that stand on
-/// the hub and those re-placed before it (placeEnteringRoom()'s choice when its row is full), its z abutting the hub at
-/// its depth. Rooms that stand on the hub, and every other floor's, are untouched. The rooms re-placed, by id; none
-/// when every room stands on the hub (the next call moves nothing).
-std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout);
+/// the hub and those re-placed before it, its z abutting the hub at its depth. A room never changes rows (its yaw stays):
+/// when its own row holds maxRoomsPerRow rooms already, nothing is re-placed (`rooms` as they were) and the rooms that
+/// found no place are named in `refused` (by id; an update refuses then, incremental.hpp). Rooms that stand on the hub,
+/// and every other floor's, are untouched. The rooms re-placed, by id; none when every room stands on the hub (the next
+/// call moves nothing) or when a room was refused.
+std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout,
+                                     std::vector<RoomId>* refused = nullptr);
 
 } // namespace rv::world

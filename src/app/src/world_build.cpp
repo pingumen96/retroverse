@@ -1209,10 +1209,16 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
     // is) is drawn with them on the hub (I6 step 5, ADR-0014 §3): the building job's update re-places them the same way
     // (world::placeOnHub()), so its result finds them where they show. Nothing is written here.
     if (auto building = world::loadBuildingData(paths.assetRoot)) {
-        for (const world::ReplacedRoom& replaced : world::placeOnHub(build.plan->rooms, building->layout)) {
+        std::vector<world::RoomId> refused;
+        for (const world::ReplacedRoom& replaced : world::placeOnHub(build.plan->rooms, building->layout, &refused)) {
             spdlog::info("World: the stored {} stands at the lobby's old place; drawn on the hub until an update "
                          "re-places it",
                          replaced.room.toString());
+        }
+        for (const world::RoomId& room : refused) {
+            spdlog::warn("World: the stored {} stands at the lobby's old place and its row on the hub is full; drawn "
+                         "where it stands (the update refuses: regenerate the building)",
+                         room.toString());
         }
     }
     const Clock::time_point start = Clock::now();

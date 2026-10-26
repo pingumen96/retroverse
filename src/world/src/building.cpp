@@ -541,7 +541,8 @@ bool standsOnHub(const Room& room, const BuildingLayout& layout) noexcept {
            floorFootprint(room, layout).minXMm >= layout.hub.rowStartXMm;
 }
 
-std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout) {
+std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout,
+                                     std::vector<RoomId>* refused) {
     std::vector<std::size_t> moving;
     std::vector<Room> standing;
     for (std::size_t i = 0; i < rooms.size(); ++i) {
@@ -566,29 +567,39 @@ std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLay
         }
         return rooms[a].id < rooms[b].id;
     });
+    // Each at the east end of its own row: never the other row (its yaw, and so its doorway's side, stays). A row that
+    // is full refuses the room, and then the whole re-placement (all or nothing: no room is left at I4's lobby inside
+    // the hub beside rooms that moved).
     std::vector<ReplacedRoom> replaced;
+    std::vector<RoomId> full;
     for (const std::size_t index : moving) {
-        Room& room = rooms[index];
+        Room room = rooms[index];
         const FloorRows rows = floorRows(standing, kGroundFloor, layout);
         const Row row = rowOf(room.placement);
-        const bool open = (row == Row::North ? rows.northRooms : rows.southRooms) < layout.maxRoomsPerRow;
-        std::optional<RoomPlacement> placement;
-        if (open) {
-            // At the east end of its own row: x + minX (north), x - maxX (south, turned) on that end.
-            const Footprint own = roomFootprint(room, layout);
-            RoomPlacement kept = room.placement;
-            kept.xMm = row == Row::North ? rows.northEndMm - own.minXMm : rows.southEndMm + own.maxXMm;
-            kept.zMm = abuttingZ(room, row, kGroundFloor, layout);
-            placement = kept;
-        } else {
-            placement = placeEnteringRoom(room, rows, layout);
+        if ((row == Row::North ? rows.northRooms : rows.southRooms) >= layout.maxRoomsPerRow) {
+            full.push_back(room.id);
+            continue;
         }
-        if (!placement) {
-            continue; // a hub whose rows are full: the room stays where it stood (validation tells)
+        // At the east end of its own row: x + minX (north), x - maxX (south, turned) on that end.
+        const Footprint own = roomFootprint(room, layout);
+        RoomPlacement placement = room.placement;
+        placement.xMm = row == Row::North ? rows.northEndMm - own.minXMm : rows.southEndMm + own.maxXMm;
+        placement.zMm = abuttingZ(room, row, kGroundFloor, layout);
+        replaced.push_back({room.id, room.placement, placement});
+        room.placement = placement;
+        standing.push_back(std::move(room));
+    }
+    if (!full.empty()) {
+        std::sort(full.begin(), full.end());
+        if (refused != nullptr) {
+            *refused = std::move(full);
         }
-        replaced.push_back({room.id, room.placement, *placement});
-        room.placement = *placement;
-        standing.push_back(room);
+        return {};
+    }
+    for (const ReplacedRoom& entry : replaced) {
+        const auto room =
+            std::find_if(rooms.begin(), rooms.end(), [&](const Room& candidate) { return candidate.id == entry.room; });
+        room->placement = entry.to;
     }
     std::sort(replaced.begin(), replaced.end());
     return replaced;
