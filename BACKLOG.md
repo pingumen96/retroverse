@@ -497,12 +497,20 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   of step 6), a lounge chair of its own for the handheld archive (since the review a one-seat sofa on tall legs: from
   behind a plain upholstered back; an armchair whose back is thinner than its arms and leans back), the bean bags'
   shape (two ellipsoids, matte since the review), shelf dressing per era (the storage boxes and magazines are every
-  pack's), the rugs' metallic-roughness maps at a quarter of their size (about 20 MiB of the 42.7).
+  pack's). (The rugs' metallic-roughness maps went to a quarter of their size with every procedural surface's in
+  I6 step 5's review: their roughness alone, R8.)
 - **The hub (I6 step 5, `docs/i6/step-5.md`):** done (the balcony, the coffered ceiling, the landmark, the portals,
   the totem, a screen, the favourites' showcase). Left: stairs to the balcony and a walkable gallery; the showcase's
   proxies are all keep cases (a proxy in its own system's family would need each family's prefab and arrays in the
-  hub); the brand-like neon of the concept's room signs (ours are the rooms' lit signs: the accent share stays low); the
-  landmark's consoles are generic boxes on its plinth.
+  hub); the landmark's consoles are generic boxes on its plinth. After the step's review (signs in their rooms' neon,
+  a calm blue entrance, a green elevator sign, the globe's light, darker floor and rugs): the accent share stays at 1
+  to 4% against the concept's 5.6% (its brand neons; a hub of the fixture has one room's portal), and the wall band
+  under the balcony at 27 to 47 against 47 (a brighter wainscot made it warmer, not brighter); the rugs repeat one
+  design (the runner as rugs end to end: `runner_rug` along it, one large rug before the core, the packs' variants
+  would vary it); procedural surfaces stay resident for the whole run (every one generated at the start: per-floor
+  residency would save about 34 MiB on a floor but needs their generation off the commit); the hub's lights reach the
+  area's 15 with the globe's (a light per room sign pushed the doorway's fill out of the arcade's view: the
+  signs glow by their bloom alone; a hub of several portals adds a fill each, step 1's selection applies).
 - **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
   with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
   room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall

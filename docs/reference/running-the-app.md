@@ -176,8 +176,9 @@ build/rvdata`).
 - Surfaces are procedural (`rv/assets/surface_textures.hpp`), generated when first used and kept for the run (the
   texture cache, logged per surface): a world run makes every one at its start, before its first room (about 0.9 s in
   Release since I6 step 3b, the five packs' rugs 0.5 s of it), so no room's commit or ride waits for one; a scene
-  (`--scene`, `--model`) makes those its materials name. All of them take 123 MiB of GPU memory (80.3 MiB before
-  I6 step 3b; `gpuMemory`'s `proceduralSurfaces`), held for the whole run: `oak_planks`, `walnut`, `varnished_wood`,
+  (`--scene`, `--model`) makes those its materials name. All of them take 85 MiB of GPU memory (123 MiB until
+  I6 step 5's review stored each metallic-roughness map as its roughness alone, R8; `gpuMemory`'s
+  `proceduralSurfaces`), held for the whole run: `oak_planks`, `walnut`, `varnished_wood`,
   `oak`, `painted_plaster`, `ornate_rug` (and since I6 step 3b the packs' rugs `ornate_rug_blue`, `ornate_rug_sage`,
   `ornate_rug_green`, `geometric_rug`, `runner_rug`), `brushed_metal`, `aged_plastic`, the halls' `wallwash` and the
   shelves' `shelfglow`, each with base color, metallic-roughness and (except the rugs and the pictures) normal maps.
