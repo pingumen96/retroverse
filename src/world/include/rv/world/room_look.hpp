@@ -42,9 +42,9 @@
 //    "neonGlow": {"intensity": 4, "range": 3.5},  // optional: the neon's glow on the wall
 //    "bloomStrength": 0.28,                 // optional: the room's bloom
 //    "lightTints": {"key": "#E6EEFF"},      // optional: the profile's roles tinted
-//    "decorationWeights": {"plant": 1.0}}   // optional, reserved: the pack's decoration weights
+//    "furniture": {...}}                    // optional: the pack's furniture variants (I6 step 3b, below)
 //   (all of them I6 step 3; a pack leaving one out takes classic_16bit_warm's: its palette, its magenta, the profile's
-//   glow and bloom, no tints, no weights). A hero corner part listed under heroParts takes those materials instead of
+//   glow and bloom, no tints, no variants). A hero corner part listed under heroParts takes those materials instead of
 //   its kind's (the sign: its neon lettering's material, "picture", glows in the pack's "neon" colour, unit-tested).
 //   The label palette replaces assets::kDefaultLabelPalette for the room's generated spines and labels
 //   (classic_16bit_warm's is that palette). "neon" colours the light on the sign (themedLighting()): the profile's
@@ -54,10 +54,22 @@
 //   profile's when left out; the room's area's in a floor's scene, eased like its other terms). "lightTints" multiply,
 //   in linear light, the colours of the profile's roles in the pack's rooms ("key", "pendant", "lamp", "picture",
 //   "wallWasher") and halls ("hall", the ceiling lights, and "doorwayFill"): an evening's tungsten cooler in the
-//   optical era, magenta and cyan in the arcade; a role not listed keeps the profile's colour. "decorationWeights" are
-//   reserved for the furniture variants per pack within the same footprints (I6 step 3b) and the layout candidates
-//   ADR-0014 defers: nothing reads them yet (a pack never moves a placement), the reader checks them (kinds as data
-//   ids, weights from 0 to 1).
+//   optical era, magenta and cyan in the arcade; a role not listed keeps the profile's colour.
+//   "furniture" (I6 step 3b, ADR-0014 §1 amended: rooms that differ by more than colour) draws the hero corner's parts
+//   and the decoration as the pack's era has them, within their footprints; the plan's fixtures, slots and lights stay
+//   as they are (the scene builder, scene_builder.hpp, places the pieces):
+//     "furniture": {
+//       "heroParts": {"armchair": [<piece>, ...], "lamp": [<piece>], "rug": [<piece>]},  // by the part's role
+//       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
+//   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
+//   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
+//   (a scene pattern, scene::kTexturePatternNames, drawn with an invented title and the piece's seed), and for a hero
+//   part's piece "xMm", "zMm", "yawCdeg" (in the hero corner socket's frame, as the template's parts; the part's own
+//   when left out)}. A hero part's list replaces the part by its pieces (one or more: a desk and its chair, two
+//   stools); a decoration kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
+//   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
+//   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
+//   read: the weights are the variants' (ThemeFurniture).
 //   A shelf kind with the roles "board_light" and "board_glow" (both or neither; the reader refuses one alone), or a
 //   wall shelf kind with "board_light" (a wall shelf has no glow), is drawn with its lit interior (I6 step 3,
 //   geometry::ShelfParams::boardLight): a strip under each board and, on a shelf with a back, a glow on the back panel
@@ -80,8 +92,10 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include <rv/core/expected.hpp>
+#include <rv/world/ids.hpp>
 #include <rv/world/world_config.hpp>
 #include <rv/world/world_plan.hpp>
 
@@ -220,8 +234,42 @@ struct NeonGlow {
 /// The share of the pack's neon in its sign's picture light (themedLighting()).
 inline constexpr double kSignLightNeonShare = 0.45;
 
+/// A piece of furniture a pack draws in place of a hero corner's part or a socket's decoration (I6 step 3b, ADR-0014
+/// §1 amended): its prefab, parameters over the manifest's, materials over the pack's kind's, picture patterns by
+/// role, and (a hero part's piece only) where it stands in the hero corner socket's frame (the part's when left out).
+struct FurniturePiece {
+    PrefabRef prefab;
+    nlohmann::json params = nlohmann::json::object();
+    std::map<std::string, std::string> materials;
+    /// By material role: a scene texture pattern (scene::kTexturePatternNames).
+    std::map<std::string, std::string> textures;
+    std::optional<std::int64_t> xMm;
+    std::optional<std::int64_t> zMm;
+    std::optional<std::int32_t> yawCdeg;
+
+    bool operator==(const FurniturePiece&) const = default;
+};
+
+/// One of a decoration kind's variants and its weight, in thousandths (the reader's weight from 0 to 1, rounded).
+struct FurnitureVariant {
+    std::uint32_t weightPermille = 1000;
+    FurniturePiece piece;
+
+    bool operator==(const FurnitureVariant&) const = default;
+};
+
+/// A pack's furniture variants: the pieces that replace a hero corner's part (by its role), and the weighted variants
+/// of a decoration (by its prefab kind).
+struct ThemeFurniture {
+    std::map<std::string, std::vector<FurniturePiece>, std::less<>> heroParts;
+    std::map<std::string, std::vector<FurnitureVariant>, std::less<>> decoration;
+
+    [[nodiscard]] bool empty() const noexcept { return heroParts.empty() && decoration.empty(); }
+    bool operator==(const ThemeFurniture&) const = default;
+};
+
 /// A theme pack: its materials per material role of a prefab kind, and of the hero corner's parts that differ, its
-/// label palette, neon accent and glow, bloom, light tints and decoration weights (I6 step 3).
+/// label palette, neon accent and glow, bloom, light tints (I6 step 3) and furniture variants (I6 step 3b).
 struct ThemeMaterials {
     std::string id;
     std::map<std::string, std::map<std::string, std::string>, std::less<>> kinds;
@@ -237,9 +285,8 @@ struct ThemeMaterials {
     /// By role ("key", "pendant", "lamp", "picture", "wallWasher", "hall", "doorwayFill"): sRGB tints multiplied, in
     /// linear light, into the profile's colours.
     std::map<std::string, std::string, std::less<>> lightTints;
-    /// By prefab kind, from 0 to 1: reserved for I6 step 3b's furniture variants per pack (same footprints) and the
-    /// layout candidates ADR-0014 defers; read by nothing yet.
-    std::map<std::string, double, std::less<>> decorationWeights;
+    /// The pack's furniture variants (I6 step 3b): what draws the hero corner's parts and the decoration.
+    ThemeFurniture furniture;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
     /// empty for a kind the theme does not dress.

@@ -1,0 +1,34 @@
+// The two-seat sofa of the optical era's hero corner (I6 step 3b, ADR-0014 §1 amended: a pack's furniture variant within the
+// footprint of the part it fills; style §8 `furniture/seating`).
+{
+  "schemaVersion": 1,
+  "id": "furniture.sofa.generic",
+  "assetType": "furniture",
+  "category": "seating",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-25",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "sofa",
+    "params": {},
+    "scaleMeters": [1.6, 0.8, 0.86],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "seat": "Seat"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "seating", "sofa", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

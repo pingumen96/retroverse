@@ -1,0 +1,33 @@
+// The arcade's bar stool (I6 step 3b, ADR-0014 §1 amended; style §5.4).
+{
+  "schemaVersion": 1,
+  "id": "furniture.bar_stool.generic",
+  "assetType": "furniture",
+  "category": "seating",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-25",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "bar_stool",
+    "params": {},
+    "scaleMeters": [0.44, 0.76, 0.44],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "seat": "Seat"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "seating", "bar_stool", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

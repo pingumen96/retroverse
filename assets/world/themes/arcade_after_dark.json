@@ -23,9 +23,23 @@
     "console_cartridge": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
                           "plastic_accent": "MAT_Plastic_Accent"},
     "poster_frame": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Paper_Print"},
-    "rug": {"fabric": "MAT_Carpet_Ornate"},
+    "rug": {"fabric": "MAT_Carpet_Runner"},
     "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
     "armchair": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite"},
+    "sofa": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite", "pillow": "MAT_Fabric_Vinyl_Red"},
+    "beanbag": {"fabric": "MAT_Fabric_Vinyl_Red"},
+    "desk": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+             "metal_trim": "MAT_Metal_Graphite", "plastic_body": "MAT_Plastic_Gray",
+             "plastic_dark": "MAT_Plastic_Black", "screen": "MAT_Screen_Emissive"},
+    "office_chair": {"fabric": "MAT_Fabric_Leather", "plastic_dark": "MAT_Plastic_Black",
+                     "metal": "MAT_Metal_Brushed"},
+    "bar_stool": {"fabric": "MAT_Fabric_Vinyl_Red", "metal": "MAT_Metal_Brushed"},
+    "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                    "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
+    "showcase": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                 "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy", "glass": "MAT_Glass_Display",
+                 "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                 "plastic_accent": "MAT_Plastic_Accent"},
     "display_case": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                      "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Navy",
                      "glass": "MAT_Glass_Display"},
@@ -46,11 +60,27 @@
   "heroParts": {
     "sign": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Neon_Pink"}
   },
+  // The era's furniture (I6 step 3b, concept panel 5; step 6 adds the cabinets): two red bar stools in the armchair's
+  // place, a dark red runner for the rug, the arcade's flyers.
+  "furniture": {
+    "heroParts": {
+      "armchair": [
+        {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"}, "xMm": 350, "zMm": 2350},
+        {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"}, "xMm": 900, "zMm": 2350}],
+      "rug": [
+        {"prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
+         "params": {"width": 1.0, "depth": 2.5}, "xMm": 0, "zMm": 1650}]
+    },
+    "decoration": {
+      "poster_frame": [
+        {"weight": 1.0, "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+         "params": {"width": 0.6, "height": 0.85},
+         "textures": {"picture": "poster_flyer"}}]
+    }
+  },
   "labelPalette": ["#B34DCE", "#3FB8D0", "#D04848", "#E0A030", "#2A2238", "#4C8BC9", "#E04F9E", "#F4EFE6"],
   "neon": "#F0509E",
   "neonGlow": {"intensity": 4.5, "range": 3.5},
   "bloomStrength": 0.28,
-  "lightTints": {"key": "#FFD0E8", "pendant": "#E0A8FF", "wallWasher": "#A8E0FF"},
-  "decorationWeights": {"bookends": 0.3, "floor_lamp": 0.5, "magazine_stack": 0.6, "plant": 0.4, "poster_frame": 1.0,
-                        "storage_box": 0.6, "tv_cabinet": 0.4}
+  "lightTints": {"key": "#FFD0E8", "pendant": "#E0A8FF", "wallWasher": "#A8E0FF"}
 }

@@ -162,7 +162,8 @@ void checkPrefab(const ProceduralPrefab& prefab) {
 const std::vector<std::string_view> kExpectedKinds{
     "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
-    "bookends",   "plant"};
+    "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
+    "banker_lamp", "showcase"};
 
 } // namespace
 
@@ -202,6 +203,15 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"magazine_stack", {"paper", "cover"}},
         {"bookends", {"metal", "book", "book_alt"}},
         {"plant", {"pot", "soil", "leaves", "leaves_alt"}},
+        {"sofa", {"fabric", "wood", "pillow"}},
+        {"beanbag", {"fabric"}},
+        {"desk", {"wood_primary", "wood_secondary", "metal_trim", "plastic_body", "plastic_dark", "screen"}},
+        {"office_chair", {"fabric", "plastic_dark", "metal"}},
+        {"bar_stool", {"fabric", "metal"}},
+        {"banker_lamp", {"wood_primary", "wood_secondary", "metal", "lamp_shade"}},
+        {"showcase",
+         {"wood_primary", "wood_secondary", "metal_trim", "fabric", "glass", "plastic_body", "plastic_dark",
+          "plastic_accent"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -219,6 +229,15 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
     CHECK(rv::geometry::findPart(buildOk("room_shell", {{"doorway", nullptr}, {"baseboardHeight", 0.0}}), "trim") ==
           nullptr);
     CHECK(rv::geometry::findPart(buildOk("armchair", {{"legHeight", 0.0}}), "wood") == nullptr);
+    // I6 step 3b: the sofa without legs or pillows, the desk without its computer, the empty showcase.
+    CHECK(rv::geometry::findPart(buildOk("sofa", {{"legHeight", 0.0}}), "wood") == nullptr);
+    CHECK(rv::geometry::findPart(buildOk("sofa", {{"pillows", false}}), "pillow") == nullptr);
+    const ProceduralPrefab bareDesk = buildOk("desk", {{"computer", false}});
+    CHECK(rv::geometry::findPart(bareDesk, "screen") == nullptr);
+    CHECK(rv::geometry::findPart(bareDesk, "plastic_body") == nullptr);
+    const ProceduralPrefab emptyCase = buildOk("showcase", {{"item", "none"}});
+    CHECK(rv::geometry::findPart(emptyCase, "plastic_body") == nullptr);
+    CHECK(rv::geometry::findPart(buildOk("showcase", {{"item", "handheld"}}), "plastic_accent") != nullptr);
     // The spine is optional: only with spineLabel, after the label.
     const ProceduralPrefab spined = buildOk("cartridge", {{"spineLabel", true}});
     REQUIRE(spined.parts.size() == 3);
@@ -290,6 +309,25 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"wall_shelf",
          {{"width", 0.6}, {"height", 0.5}, {"depth", 0.1}, {"mountHeight", 0.9}, {"ledges", 3}},
          box({-0.3f, 0.9f, -0.05f}, {0.3f, 1.4f, 0.05f})},
+        // I6 step 3b's era furniture, pivot floor.
+        {"floor_lamp", {{"shade", "torchiere"}}, box({-0.22f, 0.0f, -0.22f}, {0.22f, 1.6f, 0.22f})},
+        {"sofa", nullptr, box({-0.8f, 0.0f, -0.43f}, {0.8f, 0.8f, 0.43f})},
+        {"sofa",
+         {{"width", 2.2}, {"depth", 0.95}, {"seats", 3}, {"legHeight", 0.0}},
+         box({-1.1f, 0.0f, -0.475f}, {1.1f, 0.8f, 0.475f})},
+        {"beanbag", nullptr, box({-0.425f, 0.0f, -0.425f}, {0.425f, 0.72f, 0.425f})},
+        {"beanbag", {{"width", 1.0}, {"depth", 0.7}, {"height", 0.5}}, box({-0.5f, 0.0f, -0.35f}, {0.5f, 0.5f, 0.35f})},
+        {"desk", nullptr, box({-0.65f, 0.0f, -0.35f}, {0.65f, 1.18f, 0.35f})},
+        {"desk", {{"computer", false}, {"height", 0.72}}, box({-0.65f, 0.0f, -0.35f}, {0.65f, 0.72f, 0.35f})},
+        {"office_chair", nullptr, box({-0.3f, 0.0f, -0.3f}, {0.3f, 0.95f, 0.3f})},
+        {"office_chair", {{"arms", false}, {"width", 0.5}}, box({-0.25f, 0.0f, -0.3f}, {0.25f, 0.95f, 0.3f})},
+        {"bar_stool", nullptr, box({-0.22f, 0.0f, -0.22f}, {0.22f, 0.76f, 0.22f})},
+        {"bar_stool", {{"seatRadius", 0.25}}, box({-0.25f, 0.0f, -0.25f}, {0.25f, 0.76f, 0.25f})},
+        {"banker_lamp", nullptr, box({-0.21f, 0.0f, -0.18f}, {0.21f, 1.475f, 0.18f})},
+        {"showcase", nullptr, box({-0.4f, 0.0f, -0.18f}, {0.4f, 1.15f, 0.18f})},
+        {"showcase",
+         {{"width", 1.0}, {"height", 0.95}, {"depth", 0.45}, {"baseHeight", 0.5}, {"item", "handheld"}},
+         box({-0.5f, 0.0f, -0.225f}, {0.5f, 0.95f, 0.225f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -319,6 +357,13 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"magazine_stack", {}},
         {"bookends", {}},
         {"plant", {}},
+        {"sofa", {{"Seat", SocketKind::Anchor}}},
+        {"beanbag", {}},
+        {"desk", {{"Top", SocketKind::Anchor}, {"Screen", SocketKind::Other}}},
+        {"office_chair", {{"Seat", SocketKind::Anchor}}},
+        {"bar_stool", {{"Seat", SocketKind::Anchor}}},
+        {"banker_lamp", {{"LightSource", SocketKind::Anchor}}},
+        {"showcase", {{"Item", SocketKind::Anchor}}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1586,4 +1631,38 @@ TEST_CASE("geometry/primitives: defaults, overrides and errors", "[geometry][pri
     REQUIRE_FALSE(unknown.has_value());
     CHECK(unknown.error().code == rv::ErrorCode::NotFound);
     CHECK(unknown.error().context == "torus");
+}
+
+TEST_CASE("geometry/prefabs: the era furniture's lights, seats and refusals (I6 step 3b)", "[geometry][prefabs]") {
+    // The banker's lamp's bulb 0.34 m above its stand, about where a floor lamp's stands (1.45 m) on a 1.11 m stand.
+    const ProceduralPrefab banker = buildOk("banker_lamp", {{"standHeight", 1.11}});
+    CHECK(position(socket(banker, "LightSource")).y == Approx(1.45f).margin(1e-4f));
+    CHECK(position(socket(buildOk("floor_lamp"), "LightSource")).y == Approx(1.454f).margin(1e-4f));
+    // The torchiere's bulb in its bowl, below the rim.
+    const ProceduralPrefab torchiere = buildOk("floor_lamp", {{"shade", "torchiere"}, {"shadeHeight", 0.16}});
+    CHECK(position(socket(torchiere, "LightSource")).y == Approx(1.6f - 0.6f * 0.16f).margin(1e-4f));
+    CHECK(position(socket(buildOk("sofa"), "Seat")).y == Approx(0.42f));
+    CHECK(position(socket(buildOk("bar_stool"), "Seat")).y == Approx(0.76f));
+    // The desk's screen faces the sitter, above the top.
+    const ProceduralPrefab desk = buildOk("desk");
+    const Socket& screen = socket(desk, "Screen");
+    CHECK(position(screen).y > 0.75f);
+    CHECK(screen.bounds.size().x == Approx(0.27f));
+
+    const auto refused = [](std::string_view kind, const json& params) {
+        auto built = rv::geometry::buildPrefab(kind, params);
+        REQUIRE_FALSE(built.has_value());
+        return built.error().context;
+    };
+    CHECK(refused("floor_lamp", {{"shade", "cone"}}) == "floor_lamp.shade");
+    CHECK(refused("sofa", {{"seats", 5}}) == "sofa.seats");
+    CHECK(refused("sofa", {{"armHeight", 0.44}}) == "sofa.armHeight");
+    CHECK(refused("desk", {{"depth", 0.55}}) == "desk.depth"); // too shallow for the computer
+    CHECK(buildOk("desk", {{"depth", 0.55}, {"computer", false}}).bounds.size().z == Approx(0.55f));
+    CHECK(refused("office_chair", {{"height", 0.7}, {"seatHeight", 0.5}}) == "office_chair.height");
+    CHECK(refused("bar_stool", {{"height", 1.2}}) == "bar_stool.height");
+    CHECK(refused("banker_lamp", {{"standWidth", 0.3}, {"shadeLength", 0.35}}) == "banker_lamp.shadeLength");
+    CHECK(refused("showcase", {{"height", 0.8}, {"baseHeight", 0.6}}) == "showcase.baseHeight");
+    CHECK(refused("showcase", {{"item", "jukebox"}}) == "showcase.item");
+    CHECK(refused("beanbag", {{"height", 0.2}}) == "beanbag.height");
 }

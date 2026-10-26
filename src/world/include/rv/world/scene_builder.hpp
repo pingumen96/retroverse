@@ -29,7 +29,15 @@
 //     while the scene's limit leaves room (I3 step 16);
 //   - an empty level of a display case (too thin for a dressing prop): a riser card leaning on it, an invented cover
 //     on a card the level's size (I3 step 16), so that no display level stands bare;
-//   - the profile's environment and a camera at the doorway, at eye height, looking north.
+//   - the profile's environment and a camera at the doorway, at eye height, looking north;
+//   - the pack's furniture (I6 step 3b, ADR-0014 §1 amended, room_look.hpp's "furniture"): a hero corner's part the
+//     pack lists is drawn as the pack's pieces (the first with the part's id, the others with ".2", ".3", ...), each at
+//     its place in the hero corner socket's frame (the part's when the piece names none), at the part's height; a
+//     decoration whose kind the pack lists is drawn as one of its variants, chosen by weight from the room's seed and
+//     the fixture's id, its back on the socket's back edge and centred across it as the plan's prefab stood, at the
+//     plan's height. The pieces take the pack's materials of their kind (the part's own when the piece is of the
+//     part's kind) under the piece's, the kind's pictures (a poster's cover, a desk's screen) under the piece's
+//     patterns. The plan's fixtures, slots and lights are untouched: what the pieces cover is drawnFixtures().
 // The collection's items are not scene objects: collection_layout.hpp places them (ADR-0011 §1).
 
 #include <cstdint>
@@ -90,6 +98,27 @@ struct ScenePrefabs {
                                                       const assets::PrefabFamilies& families,
                                                       std::span<const PrefabRef> refs);
 
+/// A piece of the pack's furniture as rooms draw it (I6 step 3b): the piece, its prefab resolved and built with the
+/// piece's parameters over the manifest's (ScenePrefab::params the merged parameters).
+struct ScenePiece {
+    FurniturePiece piece;
+    ScenePrefab prefab;
+};
+
+/// A pack's furniture resolved: the pieces of each hero corner part and the weighted variants of each decoration kind.
+struct SceneFurniture {
+    std::map<std::string, std::vector<ScenePiece>, std::less<>> heroParts;
+    std::map<std::string, std::vector<std::pair<std::uint32_t, ScenePiece>>, std::less<>> decoration;
+};
+
+/// Resolves `furniture` (assets::resolvePrefab, then geometry::buildPrefab with the piece's parameters over the
+/// resolved ones). A piece that fails (its manifest unresolved, a model, a generator other than its kind, parameters
+/// the generator refuses) is left out with a warning; a part or kind left without pieces is drawn as the plan has it,
+/// and so is a kind whose variants are left without weight. Never fails.
+[[nodiscard]] SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot,
+                                                   const assets::PrefabFamilies& families,
+                                                   const ThemeFurniture& furniture);
+
 /// What drawing a room of a plan reads besides the plan: its template (wall thickness, doorway, the sockets' walls and
 /// order), the system's platform manifest (the sign's text), its media family (the item), the prefabs, the lighting
 /// profile and the theme pack's materials (room_look.hpp).
@@ -100,6 +129,8 @@ struct SceneData {
     ScenePrefabs prefabs;
     LightingProfile lighting = eveningLightingProfile();
     ThemeMaterials theme = builtInThemeMaterials();
+    /// The theme pack's furniture (I6 step 3b), resolved.
+    SceneFurniture furniture;
 };
 
 /// Reads the scene data of `room` of `plan` from the asset root: the room's template (by its templateId), the
@@ -137,6 +168,14 @@ struct SceneBuild {
 /// `data` lacks; ValidationFailed for a dressed level or slot the fixture's prefab lacks, or more lights than the
 /// scene format takes.
 [[nodiscard]] Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& room, const SceneData& data);
+
+/// The fixtures of `room` as its scene draws them (I6 step 3b): a fixture the pack's furniture replaces covers the box
+/// around its pieces as drawn (in the room's frame, rounded outwards to millimetres; its yaw 0, its prefab the first
+/// piece's, its id and role the plan's), every other fixture stands as the plan has it. What the variants' footprints,
+/// collisions and navigation are judged with (validatePlan() of the plan holding these fixtures). Errors: those of
+/// toSceneFile().
+[[nodiscard]] Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId& room,
+                                                           const SceneData& data);
 
 /// toSceneFile() read back as the scene the app instantiates (scene::parseSceneDescription, context "<room id>").
 [[nodiscard]] Expected<scene::SceneDescription> toSceneDescription(const WorldPlan& plan, const RoomId& room,

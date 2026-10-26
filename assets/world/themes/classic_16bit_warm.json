@@ -27,6 +27,19 @@
     "rug": {"fabric": "MAT_Carpet_Ornate"},
     "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
     "armchair": {"fabric": "MAT_Fabric_Sofa", "wood": "MAT_Wood_Walnut"},
+    "sofa": {"fabric": "MAT_Fabric_Sofa", "wood": "MAT_Wood_Walnut", "pillow": "MAT_Fabric_Display"},
+    "beanbag": {"fabric": "MAT_Fabric_Sofa"},
+    "desk": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+             "metal_trim": "MAT_Metal_Brass", "plastic_body": "MAT_Plastic_AgedIvory",
+             "plastic_dark": "MAT_Plastic_Black", "screen": "MAT_Screen_Emissive"},
+    "office_chair": {"fabric": "MAT_Fabric_Sofa", "plastic_dark": "MAT_Plastic_Black", "metal": "MAT_Metal_Brushed"},
+    "bar_stool": {"fabric": "MAT_Fabric_Sofa", "metal": "MAT_Metal_Brushed"},
+    "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                    "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
+    "showcase": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                 "metal_trim": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Display", "glass": "MAT_Glass_Display",
+                 "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black",
+                 "plastic_accent": "MAT_Plastic_Accent"},
     // The cases: a lighter oak frame and carcass (they stand in the middle of the room and must not read as dark
     // boxes), the lining a bordeaux of the armchair's family, their glass clear (no haze over the covers).
     "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
@@ -62,7 +75,5 @@
   "labelPalette": ["#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"],
   "neon": "#B34DCE",
   "neonGlow": {"intensity": 4.0, "range": 3.5},
-  "lightTints": {},
-  "decorationWeights": {"bookends": 0.6, "floor_lamp": 0.8, "magazine_stack": 1.0, "plant": 0.6, "poster_frame": 1.0,
-                        "storage_box": 0.8, "tv_cabinet": 0.5}
+  "lightTints": {}
 }

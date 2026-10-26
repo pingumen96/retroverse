@@ -102,12 +102,43 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
                              {"leaves", "MAT_Plant_Leaf"},
                              {"leaves_alt", "MAT_Plant_Leaf_Light"}};
     }
+    // I6 step 3b's era furniture, in the materials of the packs that draw it.
+    if (kind == "sofa") {
+        return RoleMaterials{{"fabric", "MAT_Fabric_Leather"}, {"wood", "MAT_Wood_Walnut"}, {"pillow", "MAT_Fabric_Slate"}};
+    }
+    if (kind == "beanbag") {
+        return RoleMaterials{{"fabric", "MAT_Fabric_Vinyl_Purple"}};
+    }
+    if (kind == "desk") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Oak"},          {"wood_secondary", "MAT_Wood_Varnished"},
+                             {"metal_trim", "MAT_Metal_Brass"},         {"plastic_body", "MAT_Plastic_AgedIvory"},
+                             {"plastic_dark", "MAT_Plastic_Black"},     {"screen", std::string(kScreenMaterialName)}};
+    }
+    if (kind == "office_chair") {
+        return RoleMaterials{
+            {"fabric", "MAT_Fabric_Wool_Green"}, {"plastic_dark", "MAT_Plastic_Black"}, {"metal", "MAT_Metal_Brushed"}};
+    }
+    if (kind == "bar_stool") {
+        return RoleMaterials{{"fabric", "MAT_Fabric_Vinyl_Red"}, {"metal", "MAT_Metal_Brushed"}};
+    }
+    if (kind == "banker_lamp") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},
+                             {"wood_secondary", "MAT_Wood_Varnished"},
+                             {"metal", "MAT_Metal_Brass"},
+                             {"lamp_shade", "MAT_Lamp_Shade_Green"}};
+    }
+    if (kind == "showcase") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},     {"wood_secondary", "MAT_Wood_Varnished"},
+                             {"metal_trim", "MAT_Metal_Brushed"},     {"fabric", "MAT_Fabric_Display_Navy"},
+                             {"glass", "MAT_Glass_Display"},          {"plastic_body", "MAT_Plastic_Gray"},
+                             {"plastic_dark", "MAT_Plastic_Black"},   {"plastic_accent", "MAT_Plastic_Accent"}};
+    }
     return {};
 }
 
 std::map<std::string, scene::TextureSource> prefabRoleTextures(std::string_view kind) {
     std::map<std::string, scene::TextureSource> textures;
-    if (kind == "crt") {
+    if (kind == "crt" || kind == "desk") {
         scene::TextureSource bars;
         bars.kind = scene::TextureSource::Kind::Pattern;
         bars.pattern = std::string(kScreenPattern);

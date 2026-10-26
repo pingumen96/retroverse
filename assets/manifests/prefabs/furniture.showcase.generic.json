@@ -1,0 +1,34 @@
+// The glass showcase on a walnut base that stands for a sideboard in the 90s collector's, the optical era's and the
+// handheld archive's rooms (I6 step 3b, ADR-0014 §1 amended), a generic console or handheld inside.
+{
+  "schemaVersion": 1,
+  "id": "furniture.showcase.generic",
+  "assetType": "furniture",
+  "category": "display",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-25",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "showcase",
+    "params": {},
+    "scaleMeters": [0.8, 1.15, 0.36],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "item": "Item"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "showcase", "glass", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

@@ -174,8 +174,10 @@ build/rvdata`).
   point/spot plus one directional), material presets in `assets/materials/base/materials.json`, shaders in
   `assets/shaders/{common,pbr,unlit,depth,ssao,post}`.
 - Surfaces are procedural, generated at startup (`rv/assets/surface_textures.hpp`, about 0.6 s in Release, 3 s in Debug,
-  logged per surface): `oak_planks`, `walnut`, `varnished_wood`, `oak`, `painted_plaster`, `ornate_rug`,
-  `brushed_metal`, `aged_plastic`, each with base color, metallic-roughness and (except the rug) normal maps. Materials
+  logged per surface): `oak_planks`, `walnut`, `varnished_wood`, `oak`, `painted_plaster`, `ornate_rug` (and since
+  I6 step 3b the packs' rugs `ornate_rug_blue`, `ornate_rug_sage`, `ornate_rug_green`, `geometric_rug`, `runner_rug`),
+  `brushed_metal`, `aged_plastic`, the halls' `wallwash` and the shelves' `shelfglow`, each with base color,
+  metallic-roughness and (except the rugs and the pictures) normal maps. Materials
   name a map as `"procedural:<surface>/<map>"` in a texture slot, scene files as `{"procedural": "<surface>/<map>"}` in
   `textures`; they repeat, at the scale each surface's description gives (the furniture prefabs and the room shell map
   their faces in meters along the grain). Never add downloaded textures: new looks are new generators or parameters. A

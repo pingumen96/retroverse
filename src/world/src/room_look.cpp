@@ -11,6 +11,7 @@
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/scene/scene_description.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/platform_manifest.hpp>
 #include <rv/world/world_config.hpp>
@@ -195,8 +196,10 @@ LightingProfile builtInEvening() {
 /// The roles a pack's lightTints may name.
 constexpr std::string_view kTintRoles[] = {"doorwayFill", "hall", "key", "lamp", "pendant", "picture", "wallWasher"};
 constexpr std::size_t kMaxLabelPalette = 16;
+/// How far a hero part's piece may stand from its socket's anchor (millimetres).
+constexpr std::int64_t kMaxPieceOffsetMm = 20000;
 
-/// The label palette, the neon, its glow, the light tints, the bloom and the decoration weights of a pack (I6 step 3);
+/// The label palette, the neon, its glow, the light tints and the bloom of a pack (I6 step 3);
 /// each optional, a pack without one takes classic_16bit_warm's (ThemeMaterials' defaults).
 void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
     DocumentReader& document = reader.document();
@@ -246,26 +249,126 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
             theme.lightTints[role] = tint.get<std::string>();
         }
     }
-    if (!document.failed() && reader.has("decorationWeights")) {
-        const Json& weights = reader.value("decorationWeights");
-        if (!weights.is_object()) {
-            document.fail(reader.pointer("decorationWeights"),
-                          "expected an object, found " + detail::describeType(weights));
-            return;
+}
+
+/// A piece of the pack's furniture (I6 step 3b, room_look.hpp): its prefab, parameters, materials, patterns and, for a
+/// hero part's piece (`placed`), where it stands in the hero corner socket's frame.
+FurniturePiece readPiece(DocumentReader& document, const Json& value, const std::string& at, bool placed,
+                         bool weighted, std::uint32_t* weightPermille) {
+    FurniturePiece piece;
+    std::initializer_list<std::string_view> heroKeys = {"materials", "params", "prefab", "textures", "xMm", "yawCdeg",
+                                                         "zMm"};
+    std::initializer_list<std::string_view> decorationKeys = {"materials", "params", "prefab", "textures", "weight"};
+    const ObjectReader reader(document, value, at, placed ? heroKeys : decorationKeys);
+    if (document.failed()) {
+        return piece;
+    }
+    piece.prefab = reader.prefab("prefab");
+    if (!document.failed() && reader.has("params")) {
+        const Json& params = reader.value("params");
+        if (!params.is_object()) {
+            document.fail(reader.pointer("params"), "expected an object of prefab parameters");
+            return piece;
         }
-        for (const auto& [kind, weight] : weights.items()) {
-            const std::string at = detail::pointerChild(reader.pointer("decorationWeights"), kind);
-            if (!isValidDataId(kind)) {
-                document.fail(at, "expected a prefab kind (a data id)");
-                return;
+        piece.params = params;
+    }
+    if (!document.failed() && reader.has("materials")) {
+        const Json& materials = reader.value("materials");
+        if (!materials.is_object()) {
+            document.fail(reader.pointer("materials"), "expected an object of material roles");
+            return piece;
+        }
+        for (const auto& [role, material] : materials.items()) {
+            const std::string rolePointer = detail::pointerChild(reader.pointer("materials"), role);
+            if (!isValidDataId(role)) {
+                document.fail(rolePointer, "expected a material role (a data id)");
+                return piece;
             }
-            if (!weight.is_number() || !(weight.get<double>() >= 0.0 && weight.get<double>() <= 1.0)) {
-                document.fail(at, "expected a weight from 0 to 1");
-                return;
+            if (!material.is_string() || !isMaterialName(material.get<std::string>())) {
+                document.fail(rolePointer, "expected a library material name MAT_<letters, digits, _>");
+                return piece;
             }
-            theme.decorationWeights[kind] = weight.get<double>();
+            piece.materials[role] = material.get<std::string>();
         }
     }
+    if (!document.failed() && reader.has("textures")) {
+        const Json& textures = reader.value("textures");
+        if (!textures.is_object()) {
+            document.fail(reader.pointer("textures"), "expected an object of patterns by material role");
+            return piece;
+        }
+        for (const auto& [role, pattern] : textures.items()) {
+            const std::string rolePointer = detail::pointerChild(reader.pointer("textures"), role);
+            const bool known =
+                pattern.is_string() && std::find(scene::kTexturePatternNames.begin(), scene::kTexturePatternNames.end(),
+                                                 pattern.get<std::string>()) != scene::kTexturePatternNames.end();
+            if (!isValidDataId(role) || !known) {
+                document.fail(rolePointer, "expected a material role naming a scene texture pattern");
+                return piece;
+            }
+            piece.textures[role] = pattern.get<std::string>();
+        }
+    }
+    if (!document.failed() && placed) {
+        piece.xMm = reader.optionalInteger("xMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
+        piece.zMm = reader.optionalInteger("zMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
+        if (const auto yaw = reader.optionalInteger("yawCdeg", 0, 35999)) {
+            piece.yawCdeg = static_cast<std::int32_t>(*yaw);
+        }
+    }
+    if (!document.failed() && weighted) {
+        const double weight = reader.number("weight", 0.0, 1.0);
+        *weightPermille = static_cast<std::uint32_t>(std::lround(weight * 1000.0));
+    }
+    return piece;
+}
+
+/// The pack's furniture (I6 step 3b): pieces by hero part role, weighted variants by decoration kind.
+void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
+    DocumentReader& document = reader.document();
+    if (document.failed() || !reader.has("furniture")) {
+        return;
+    }
+    const ObjectReader furniture = reader.object("furniture", {"decoration", "heroParts"});
+    const auto readLists = [&](std::string_view key, bool hero) {
+        if (document.failed() || !furniture.has(key)) {
+            return;
+        }
+        const Json& lists = furniture.value(key);
+        if (!lists.is_object()) {
+            document.fail(furniture.pointer(key), "expected an object of lists of pieces");
+            return;
+        }
+        for (const auto& [name, list] : lists.items()) {
+            const std::string at = detail::pointerChild(furniture.pointer(key), name);
+            if (!(hero ? isValidSocketName(name) : isValidPrefabKind(name))) {
+                document.fail(at, hero ? "expected a hero corner part's role" : "expected a prefab kind");
+                return;
+            }
+            if (!list.is_array() || list.empty()) {
+                document.fail(at, "expected a non-empty array of pieces");
+                return;
+            }
+            std::uint32_t total = 0;
+            for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
+                const std::string elementAt = at + "/" + std::to_string(i);
+                std::uint32_t weight = 1000;
+                FurniturePiece piece = readPiece(document, list[i], elementAt, hero, !hero, &weight);
+                if (hero) {
+                    theme.furniture.heroParts[name].push_back(std::move(piece));
+                } else {
+                    total += weight;
+                    theme.furniture.decoration[name].push_back(FurnitureVariant{weight, std::move(piece)});
+                }
+            }
+            if (!document.failed() && !hero && total == 0) {
+                document.fail(at, "expected a weight above 0 among the variants");
+                return;
+            }
+        }
+    };
+    readLists("heroParts", true);
+    readLists("decoration", false);
 }
 
 /// The lit shelves' roles (I6 step 3, geometry::ShelfParams::boardLight): a shelf's strips light its back panel, so it
@@ -327,6 +430,33 @@ ThemeMaterials builtInTheme() {
         {"rug", Roles{{"fabric", "MAT_Carpet_Ornate"}}},
         {"floor_lamp", Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade_Warm"}}},
         {"armchair", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}}},
+        // I6 step 3b's era furniture.
+        {"sofa", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}, {"pillow", "MAT_Fabric_Display"}}},
+        {"beanbag", Roles{{"fabric", "MAT_Fabric_Sofa"}}},
+        {"desk",
+         Roles{{"wood_primary", "MAT_Wood_Walnut"},
+               {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+               {"metal_trim", "MAT_Metal_Brass"},
+               {"plastic_body", "MAT_Plastic_AgedIvory"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"screen", "MAT_Screen_Emissive"}}},
+        {"office_chair",
+         Roles{{"fabric", "MAT_Fabric_Sofa"}, {"plastic_dark", "MAT_Plastic_Black"}, {"metal", "MAT_Metal_Brushed"}}},
+        {"bar_stool", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"metal", "MAT_Metal_Brushed"}}},
+        {"banker_lamp",
+         Roles{{"wood_primary", "MAT_Wood_Walnut"},
+               {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+               {"metal", "MAT_Metal_Brass"},
+               {"lamp_shade", "MAT_Lamp_Shade_Green"}}},
+        {"showcase",
+         Roles{{"wood_primary", "MAT_Wood_Walnut"},
+               {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+               {"metal_trim", "MAT_Metal_Brass"},
+               {"fabric", "MAT_Fabric_Display"},
+               {"glass", "MAT_Glass_Display"},
+               {"plastic_body", "MAT_Plastic_Gray"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"plastic_accent", "MAT_Plastic_Accent"}}},
         {"display_case",
          Roles{{"wood_primary", "MAT_Wood_Oak"},
                {"wood_secondary", "MAT_Wood_Varnished_Dark"},
@@ -368,8 +498,6 @@ ThemeMaterials builtInTheme() {
     theme.labelPalette = {"#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"};
     theme.neon = "#B34DCE";
     theme.neonGlow = NeonGlow{4.0, 3.5};
-    theme.decorationWeights = {{"bookends", 0.6}, {"floor_lamp", 0.8}, {"magazine_stack", 1.0}, {"plant", 0.6},
-                               {"poster_frame", 1.0}, {"storage_box", 0.8}, {"tv_cabinet", 0.5}};
     return theme;
 }
 
@@ -557,7 +685,7 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"bloomStrength", "decorationWeights", "heroParts", "id", "kinds", "labelPalette",
+                              {"bloomStrength", "furniture", "heroParts", "id", "kinds", "labelPalette",
                                "lightTints", "name", "neon", "neonGlow", "schemaVersion"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
@@ -569,6 +697,7 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     theme.heroParts = readMaterialTable(document, reader.value("heroParts"), reader.pointer("heroParts"));
     checkLitShelves(document, theme, reader.pointer("kinds"));
     readThemeLook(reader, theme);
+    readFurniture(reader, theme);
     if (document.failed()) {
         return propagate(document.error());
     }

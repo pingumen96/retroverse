@@ -222,12 +222,45 @@
     "MAT_Fabric_Teal": { "baseColor": "#2F5654", "metallic": 0.0, "roughness": 0.9 },
     // The handheld archive's seats (the step's review): a slate-blue wool, the exhibition's cool note beside its oak.
     "MAT_Fabric_Slate": { "baseColor": "#3A4656", "metallic": 0.0, "roughness": 0.9 },
+    // The era furniture's covers (I6 step 3b): the 90s bean bag's glossy purple vinyl, the arcade stools' red vinyl
+    // (the diner red of concept panel 5's stools), the study chair's bottle-green wool.
+    "MAT_Fabric_Vinyl_Purple": { "baseColor": "#5A3E86", "metallic": 0.0, "roughness": 0.45 },
+    "MAT_Fabric_Vinyl_Red": { "baseColor": "#7A2A33", "metallic": 0.0, "roughness": 0.4 },
+    "MAT_Fabric_Wool_Green": { "baseColor": "#33493B", "metallic": 0.0, "roughness": 0.9 },
     // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over
     // the rug's top face (uv 0..1), designed for the rug prefab's default 2.4 x 1.6 m.
     "MAT_Carpet_Ornate": {
       "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
       "baseColorTexture": "procedural:ornate_rug/baseColor",
       "metallicRoughnessTexture": "procedural:ornate_rug/metallicRoughness"
+    },
+    // The packs' rugs (I6 step 3b, ADR-0014 §1 amended): the ornamental design in the optical era's blue, the handheld
+    // archive's sage and the study's green, the 90s collector's geometric confetti, the arcade's dark red runner
+    // (designed for 1.0 x 2.5 m).
+    "MAT_Carpet_Ornate_Blue": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:ornate_rug_blue/baseColor",
+      "metallicRoughnessTexture": "procedural:ornate_rug_blue/metallicRoughness"
+    },
+    "MAT_Carpet_Ornate_Sage": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:ornate_rug_sage/baseColor",
+      "metallicRoughnessTexture": "procedural:ornate_rug_sage/metallicRoughness"
+    },
+    "MAT_Carpet_Ornate_Green": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:ornate_rug_green/baseColor",
+      "metallicRoughnessTexture": "procedural:ornate_rug_green/metallicRoughness"
+    },
+    "MAT_Carpet_Geometric": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:geometric_rug/baseColor",
+      "metallicRoughnessTexture": "procedural:geometric_rug/metallicRoughness"
+    },
+    "MAT_Carpet_Runner": {
+      "baseColor": "#FFFFFF", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:runner_rug/baseColor",
+      "metallicRoughnessTexture": "procedural:runner_rug/metallicRoughness"
     },
     // The display cases' lining (I3 step 16; lighter since step 17a's review, so that a lit case reads from the
     // doorway): a bordeaux velvet of the armchair's family, dark enough that the face-out covers stand out from it.

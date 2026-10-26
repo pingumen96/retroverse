@@ -28,6 +28,8 @@ constexpr float kShadeTopRatio = 0.72f;
 /// inside and outside whatever the material's culling mode (no coincident opposite faces).
 constexpr float kShadeWall = 0.002f;
 constexpr int kSpiderArms = 3;
+/// A torchiere's bowl at its foot, as a share of its rim's radius.
+constexpr float kTorchiereFootRatio = 0.25f;
 
 Status validate(const FloorLampParams& p) {
     return firstError({
@@ -62,6 +64,30 @@ ProceduralPrefab assemble(const FloorLampParams& p) {
     const float bossHeight = 0.03f;
     metal.frustum(bossRadius, 0.6f * bossRadius, bossHeight, kSegments / 2, true, false,
                   translation(glm::vec3(0.0f, kBaseThickness + 0.5f * bossHeight, 0.0f)));
+
+    if (p.shade == LampShade::Torchiere) {
+        // A torchiere (I6 step 3b): the pole up to a bowl that widens upwards to its rim at the top, the bulb inside.
+        const float bowlBottom = p.height - p.shadeHeight;
+        const float bowlFoot = std::min(kTorchiereFootRatio * p.shadeRadius, 0.06f);
+        const float poleBottom = kBaseThickness + bossHeight;
+        metal.cylinder(kPoleRadius, bowlBottom - poleBottom, 16, false,
+                       translation(glm::vec3(0.0f, 0.5f * (poleBottom + bowlBottom), 0.0f)));
+        const glm::mat4 bowlFrame = translation(glm::vec3(0.0f, p.height - 0.5f * p.shadeHeight, 0.0f));
+        MeshBuilder inner;
+        inner.frustum(bowlFoot - kShadeWall, p.shadeRadius - kShadeWall, p.shadeHeight, kSegments, false, false,
+                      bowlFrame);
+        out.part("lamp_shade")
+            .frustum(bowlFoot, p.shadeRadius, p.shadeHeight, kSegments, false, false, bowlFrame)
+            .append(insideOut(std::move(inner).build("inner")))
+            .frustum(p.shadeRadius, p.shadeRadius - kShadeWall, 0.0f, kSegments, false, false,
+                     translation(glm::vec3(0.0f, p.height, 0.0f)));
+        // A collar closing the bowl's foot on the pole.
+        metal.cylinder(bowlFoot, kHolderHeight, kSegments / 2, true,
+                       translation(glm::vec3(0.0f, bowlBottom + 0.5f * kHolderHeight - 0.005f, 0.0f)));
+        out.addSocket("LightSource", SocketKind::Anchor,
+                      translation(glm::vec3(0.0f, p.height - 0.6f * p.shadeHeight, 0.0f)));
+        return std::move(out).finish();
+    }
 
     // Shade on top; the bulb holder hangs on a three-arm spider inside it.
     const float shadeBottom = p.height - p.shadeHeight;

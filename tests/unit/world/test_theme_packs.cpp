@@ -122,10 +122,9 @@ TEST_CASE("world/theme packs: the seven shipped packs, each complete and coheren
         CHECK(theme->materials("shelf").at("board_light") == "MAT_Shelf_Light");
         CHECK(theme->materials("shelf").at("board_glow") == "MAT_Shelf_Glow");
         CHECK(theme->materials("wall_shelf").at("board_light") == "MAT_Shelf_Light");
-        // A label palette of 8 colours, none twice; tints of known roles; weights of the decoration's kinds.
+        // A label palette of 8 colours, none twice; tints of known roles.
         CHECK(theme->labelPalette.size() == 8);
         CHECK(std::set<std::string>(theme->labelPalette.begin(), theme->labelPalette.end()).size() == 8);
-        CHECK(theme->decorationWeights.size() == 7);
     }
     // Each pack its own neon.
     CHECK(neons.size() == ids.size());
@@ -139,7 +138,7 @@ TEST_CASE("world/theme packs: the seven shipped packs, each complete and coheren
     CHECK(classic->lightTints.empty());
 }
 
-TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, bloom, tint, weight or lit shelf",
+TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, bloom, tint or lit shelf",
           "[world][theme_packs]") {
     const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, )";
     const auto parse = [&](const std::string& tail) {
@@ -152,13 +151,12 @@ TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, b
     };
     auto good = parse(R"(, "labelPalette": ["#000000", "#FFFFFF"], "neon": "#4C8BC9",
                          "neonGlow": {"intensity": 4.0, "range": 3.5}, "bloomStrength": 0.28,
-                         "lightTints": {"picture": "#A0B0FF"}, "decorationWeights": {"plant": 0.5})");
+                         "lightTints": {"picture": "#A0B0FF"})");
     REQUIRE(good.has_value());
     CHECK(good->neon == "#4C8BC9");
     CHECK(good->neonGlow == rv::world::NeonGlow{4.0, 3.5});
     CHECK(good->bloomStrength == 0.28);
     CHECK(good->lightTints.at("picture") == "#A0B0FF");
-    CHECK(good->decorationWeights.at("plant") == 0.5);
     // Every look key is optional: a pack without them takes classic_16bit_warm's palette and neon, the profile's glow
     // and bloom.
     auto bare = parse("");
@@ -168,7 +166,7 @@ TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, b
     CHECK_FALSE(bare->neonGlow.has_value());
     CHECK_FALSE(bare->bloomStrength.has_value());
     CHECK(bare->lightTints.empty());
-    CHECK(bare->decorationWeights.empty());
+    CHECK(bare->furniture.empty());
     CHECK_THAT(refusal(R"(, "labelPalette": ["#000000"])"), ContainsSubstring("2 to 16 colours"));
     CHECK_THAT(refusal(R"(, "labelPalette": ["#000000", "red"])"), ContainsSubstring("/labelPalette/1"));
     CHECK_THAT(refusal(R"(, "neon": "#4c8bc9")"), ContainsSubstring("/neon"));
@@ -176,7 +174,8 @@ TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, b
     CHECK_THAT(refusal(R"(, "neonGlow": {"intensity": -1, "range": 3})"), ContainsSubstring("/neonGlow/intensity"));
     CHECK_THAT(refusal(R"(, "bloomStrength": 1.5)"), ContainsSubstring("/bloomStrength"));
     CHECK_THAT(refusal(R"(, "lightTints": {"sun": "#FFFFFF"})"), ContainsSubstring("/lightTints/sun"));
-    CHECK_THAT(refusal(R"(, "decorationWeights": {"plant": 2})"), ContainsSubstring("from 0 to 1"));
+    // Step 3's reserved decoration weights are gone: the weights are the furniture variants' (I6 step 3b).
+    CHECK_THAT(refusal(R"(, "decorationWeights": {"plant": 0.5})"), ContainsSubstring("decorationWeights"));
     // A lit shelf names its strip and its glow together; a wall shelf has no glow.
     const auto kinds = [&](const std::string& table) {
         return rv::world::parseThemeMaterials(head + R"("kinds": )" + table + "}", "t.json");
