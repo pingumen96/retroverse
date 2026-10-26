@@ -159,8 +159,9 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
     // slim lamp, the narrow cabinet and the room's sign (I3 step 16); the eight media families of I4 step 2 an item
     // and four fixtures each (ADR-0013 §4); the five successors of I6 step 4 an item and two modules each (their display
     // fixtures are their predecessors', ADR-0014 §2); I6 step 3b's era furniture and I6 step 5's hub (column, railing,
-    // landmark, totem) one each, counted with the kinds.
-    CHECK(count == kGeneratorKinds.size() + 5 + 8 * 5 + 5 * 3);
+    // landmark, totem) one each, counted with the kinds; I6 step 6's arcade cabinets (counted with the kinds) and their
+    // screen, the arcade_cabinet family's item.
+    CHECK(count == kGeneratorKinds.size() + 5 + 8 * 5 + 5 * 3 + 1);
     CHECK(generators == kGeneratorKinds);
     // Every kind the geometry builds is a manifest kind.
     const auto built = rv::geometry::prefabKinds();

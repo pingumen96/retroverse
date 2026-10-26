@@ -6,7 +6,7 @@
       "path": "materials/base/materials.json",
       "kind": "material-library",
       "provenance": "retroverse-original",
-      "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3); their textures are procedural surfaces generated in code (src/assets/include/rv/assets/surface_textures.hpp), no image files. Since I6 step 4 also the dark shells of cases and boxes standing on their side (MAT_Case_Jewel_Smoke, MAT_Case_Keep_Black, MAT_Case_Plastic_Dark, MAT_Cardboard_BigBox), original presets."
+      "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3); their textures are procedural surfaces generated in code (src/assets/include/rv/assets/surface_textures.hpp), no image files. Since I6 step 4 also the dark shells of cases and boxes standing on their side (MAT_Case_Jewel_Smoke, MAT_Case_Keep_Black, MAT_Case_Plastic_Dark, MAT_Cardboard_BigBox), original presets; since I6 step 6 the arcade cabinets' laminate, paints, lit mouldings and marquees and their screens (MAT_Cabinet_*, MAT_Molding_*, MAT_Marquee_*, MAT_Screen_Off, MAT_Screen_Idle, MAT_Screen_Arcade), original presets."
     },
     {
       "path": "ui/fonts/AtkinsonHyperlegible-Regular.ttf",

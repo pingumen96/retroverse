@@ -69,6 +69,17 @@ constexpr float kTopClear = 0.01f;
 /// risers'.
 constexpr float kSideInset = 0.001f;
 constexpr float kFitTolerance = 1e-4f;
+// I6 step 6: the lit strips and the counter's base.
+constexpr float kStripThickness = 0.003f;
+constexpr float kStripDepth = 0.012f;
+constexpr float kCounterPanel = 0.015f;
+/// The counter's deck stands this high above the plinth; its handhelds' stands on it.
+constexpr float kDeckRise = 0.06f;
+/// A generic handheld of original design (body w, h, d), how far it leans back, and its pitch along the counter.
+constexpr glm::vec3 kHandheld{0.085f, 0.14f, 0.026f};
+constexpr float kHandheldLeanDeg = 22.0f;
+constexpr float kHandheldPitch = 0.19f;
+constexpr int kMaxHandhelds = 6;
 constexpr BoxUv kGrain = BoxUv::GrainMeters;
 constexpr float kWoodTile = detail::kWoodMetersPerTile;
 
@@ -177,6 +188,65 @@ Status validate(const DisplayCaseParams& p) {
     return ok();
 }
 
+/// A generic handheld of original design leaning back on a small stand (its foot at `at`, the deck's top), its front
+/// towards +Z: the body, a dark screen, a cross pad and two buttons.
+void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at) {
+    MeshBuilder& dark = out.part("plastic_dark");
+    dark.chamferedBox(glm::vec3(0.065f, 0.018f, 0.055f), 0.003f, translation(at + glm::vec3(0.0f, 0.009f, -0.01f)));
+    const float lean = core::degreesToRadians(kHandheldLeanDeg);
+    glm::mat4 body = glm::rotate(translation(at + glm::vec3(0.0f, 0.018f, 0.0f)), -lean, glm::vec3(1, 0, 0));
+    body = body * translation(glm::vec3(0.0f, 0.5f * kHandheld.y, 0.0f));
+    out.part("plastic_body").chamferedBox(kHandheld, 0.007f, body);
+    const float face = 0.5f * kHandheld.z + 0.001f;
+    dark.box(glm::vec3(0.06f, 0.052f, 0.002f), body * translation(glm::vec3(0.0f, 0.032f, face)));
+    dark.box(glm::vec3(0.024f, 0.007f, 0.004f), body * translation(glm::vec3(-0.02f, -0.032f, face)));
+    dark.box(glm::vec3(0.007f, 0.024f, 0.004f), body * translation(glm::vec3(-0.02f, -0.032f, face)));
+    for (const glm::vec2 button : {glm::vec2(0.016f, -0.028f), glm::vec2(0.028f, -0.038f)}) {
+        out.part("plastic_accent")
+            .box(glm::vec3(0.009f, 0.009f, 0.004f), body * translation(glm::vec3(button.x, button.y, face)));
+    }
+}
+
+/// The counter's base (DisplayCaseParams::counter): side and back panels under the base's top, a glass front set back
+/// where the doors stood, a covered deck inside with handhelds on their stands, a lit strip under the top.
+void addCounter(detail::PrefabAssembler& out, const DisplayCaseParams& p, float carcassTop, float glassZ) {
+    MeshBuilder& wood = out.part("wood_primary");
+    MeshBuilder& panels = out.part("wood_secondary");
+    const float halfWidth = 0.5f * p.width;
+    const float halfDepth = 0.5f * p.depth;
+    const float innerHalf = halfWidth - kCounterPanel;
+    for (const float side : {-1.0f, 1.0f}) {
+        wood.box(glm::vec3(kCounterPanel, carcassTop - kPlinth, p.depth),
+                 translation(glm::vec3(side * (halfWidth - 0.5f * kCounterPanel), 0.5f * (kPlinth + carcassTop), 0.0f)),
+                 kGrain, kWoodTile);
+    }
+    panels.box(glm::vec3(2.0f * innerHalf, carcassTop - kPlinth, kBack),
+               translation(glm::vec3(0.0f, 0.5f * (kPlinth + carcassTop), -halfDepth + 0.5f * kBack)), kGrain,
+               kWoodTile);
+    // The bottom rail under the glass, and the deck behind it.
+    const float railTop = kPlinth + kDeckRise;
+    wood.box(glm::vec3(2.0f * innerHalf, railTop - kPlinth, kDoor),
+             translation(glm::vec3(0.0f, 0.5f * (kPlinth + railTop), glassZ - 0.5f * kDoor)), kGrain, kWoodTile);
+    const float deckBack = -halfDepth + kBack;
+    const float deckFront = glassZ - kDoor;
+    out.part("fabric").box(glm::vec3(2.0f * innerHalf, railTop - kPlinth, deckFront - deckBack),
+                           translation(glm::vec3(0.0f, 0.5f * (kPlinth + railTop), 0.5f * (deckBack + deckFront))),
+                           BoxUv::WorldMeters, 0.25f, FaceMask::All & ~FaceMask::NegY);
+    out.part("glass").quad(glm::vec2(2.0f * innerHalf, carcassTop - railTop),
+                           translation(glm::vec3(0.0f, 0.5f * (railTop + carcassTop), glassZ)));
+    // Handhelds along the deck, as many as fit at their pitch (one at least), their front towards the glass.
+    const int count = std::clamp(static_cast<int>((2.0f * innerHalf - 0.04f) / kHandheldPitch), 1, kMaxHandhelds);
+    const float deckMiddle = 0.5f * (deckBack + deckFront);
+    for (int i = 0; i < count; ++i) {
+        const float x = (static_cast<float>(i) - 0.5f * static_cast<float>(count - 1)) * kHandheldPitch;
+        addHandheld(out, glm::vec3(x, railTop, deckMiddle));
+    }
+    out.part("board_light")
+        .box(glm::vec3(2.0f * innerHalf - 0.02f, kStripThickness, kStripDepth),
+             translation(glm::vec3(0.0f, carcassTop - 0.5f * kStripThickness, glassZ - 0.02f - 0.5f * kStripDepth)),
+             BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
+}
+
 ProceduralPrefab assemble(const DisplayCaseParams& p) {
     const CaseLayout l = layoutOf(p);
     detail::PrefabAssembler out(kKind, {"wood_primary", "wood_secondary", "metal_trim", "fabric", "glass"});
@@ -190,22 +260,30 @@ ProceduralPrefab assemble(const DisplayCaseParams& p) {
     const float halfDepth = 0.5f * p.depth;
     const float innerHalf = 0.5f * l.innerWidth;
 
-    // Base: the recessed plinth, the carcass behind the doors, the top slab over everything (its top edges bevelled).
+    // Base: the recessed plinth, the carcass behind the doors, the top slab over everything (its top edges bevelled);
+    // or the counter's glass base (I6 step 6).
     const float carcassTop = p.baseHeight - kBaseTop;
     const float carcassFront = halfDepth - kKnobRoom - kDoor;
     wood.box(glm::vec3(p.width - 2.0f * kPlinthRecess, kPlinth, p.depth - 2.0f * kPlinthRecess),
              translation(glm::vec3(0.0f, 0.5f * kPlinth, 0.0f)), kGrain, kWoodTile, FaceMask::All & ~FaceMask::NegY);
-    wood.box(glm::vec3(p.width, carcassTop - kPlinth, carcassFront + halfDepth),
-             translation(glm::vec3(0.0f, 0.5f * (kPlinth + carcassTop), 0.5f * (carcassFront - halfDepth))), kGrain,
-             kWoodTile);
+    if (p.counter) {
+        addCounter(out, p, carcassTop, carcassFront + kDoor);
+    } else {
+        wood.box(glm::vec3(p.width, carcassTop - kPlinth, carcassFront + halfDepth),
+                 translation(glm::vec3(0.0f, 0.5f * (kPlinth + carcassTop), 0.5f * (carcassFront - halfDepth))),
+                 kGrain, kWoodTile);
+    }
     wood.chamferedBox(glm::vec3(p.width, kBaseTop, p.depth), kChamfer,
                       translation(glm::vec3(0.0f, carcassTop + 0.5f * kBaseTop, 0.0f)), kGrain, kWoodTile,
                       FaceMask::PosY);
-    // Two doors with a knob each, near the meeting edges.
+    // Two doors with a knob each, near the meeting edges (none on a counter).
     const float doorBottom = kPlinth + kReveal;
     const float doorTop = carcassTop - kReveal;
     const float doorZ = carcassFront + 0.5f * kDoor;
     for (const float side : {-1.0f, 1.0f}) {
+        if (p.counter) {
+            break;
+        }
         const float x0 = 0.5f * kReveal;
         const float x1 = halfWidth - kReveal;
         panels.chamferedBox(glm::vec3(x1 - x0, doorTop - doorBottom, kDoor), kChamfer,
@@ -254,6 +332,16 @@ ProceduralPrefab assemble(const DisplayCaseParams& p) {
     }
     glass.plane(glm::vec2(l.innerWidth, p.depth - 2.0f * kRailDepth),
                 translation(glm::vec3(0.0f, p.height - kTopGlassDrop - 0.5f * kGlass, 0.0f)));
+    // The lit strips under the front and back top rails (I6 step 6): emissive, no light of their own.
+    if (p.boardLight) {
+        for (const float side : {-1.0f, 1.0f}) {
+            out.part("board_light")
+                .box(glm::vec3(l.innerWidth - 0.02f, kStripThickness, kStripDepth),
+                     translation(glm::vec3(0.0f, l.interiorTop - 0.5f * kStripThickness,
+                                           side * (halfDepth - kRailDepth + 0.5f * kStripDepth + 0.002f))),
+                     BoxUv::PerFace, 1.0f, FaceMask::NegY | (side > 0.0f ? FaceMask::NegZ : FaceMask::PosZ));
+        }
+    }
 
     // Levels: each riser fills its band from the floor; the tilted ledge, lip and panel stand on its front edge.
     const glm::vec3 item = p.slotSize;

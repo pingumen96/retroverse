@@ -163,7 +163,7 @@ const std::vector<std::string_view> kExpectedKinds{
     "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
-    "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem"};
+    "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet"};
 
 } // namespace
 
@@ -219,6 +219,10 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
          {"wood_primary", "wood_secondary", "metal_trim", "glass", "fabric", "plastic_body", "plastic_dark",
           "plastic_accent", "globe", "globe_core"}},
         {"info_totem", {"wood_primary", "wood_secondary", "metal_trim", "screen", "sign"}},
+        // I6 step 6's arcade cabinets: a pair, the second in the alternate paint, moulding and marquee.
+        {"arcade_cabinet",
+         {"body", "body_alt", "front", "molding", "molding_alt", "plastic_dark", "metal_trim", "plastic_accent",
+          "marquee", "marquee_alt", "screen_back"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -341,6 +345,11 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"railing", nullptr, box({-1.5f, 0.0f, -0.045f}, {1.5f, 0.95f, 0.045f})},
         {"railing", {{"length", 7.2}, {"height", 1.0}}, box({-3.6f, 0.0f, -0.045f}, {3.6f, 1.0f, 0.045f})},
         {"info_totem", nullptr, box({-0.3f, 0.0f, -0.16f}, {0.3f, 1.75f, 0.16f})},
+        // I6 step 6: a pair of cabinets 4 cm apart, the moulding 5 mm proud of the cap's front; the hero cabinet alone.
+        {"arcade_cabinet", nullptr, box({-0.44f, 0.0f, -0.2f}, {0.44f, 1.7f, 0.2f})},
+        {"arcade_cabinet",
+         {{"count", 1}, {"width", 0.7}, {"height", 1.85}, {"depth", 0.85}, {"slots", false}},
+         box({-0.35f, 0.0f, -0.425f}, {0.35f, 1.85f, 0.425f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -381,6 +390,8 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"railing", {}},
         {"hub_landmark", {{"Globe", SocketKind::Anchor}}},
         {"info_totem", {{"Screen", SocketKind::Anchor}}},
+        {"arcade_cabinet",
+         {{"Level_0", SocketKind::Anchor}, {"Slot_0_0", SocketKind::ShelfSlot}, {"Slot_0_1", SocketKind::ShelfSlot}}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1748,4 +1759,90 @@ TEST_CASE("geometry/prefabs: the hub's landmark, totem, column and railing (I6 s
     CHECK(railing.bounds.size().x == Approx(6.0f).margin(1e-4));
     CHECK(part(railing, "metal").mesh.vertices.size() > 0);
     CHECK(buildError("railing", {{"length", 0.1}}).context == "railing.length");
+}
+
+TEST_CASE("geometry/prefabs: the arcade cabinets' slots and the hero cabinet's screen (I6 step 6)",
+          "[geometry][prefabs][arcade]") {
+    // A pair: one face-out slot per cabinet, the screen item's volume, at each cabinet's middle, leaning back and set
+    // into its bezel, the level's anchor spanning both screens.
+    const ProceduralPrefab pair = buildOk("arcade_cabinet");
+    const std::vector<rv::geometry::SlotLevel> levels = rv::geometry::slotLevels(pair.sockets);
+    REQUIRE(levels.size() == 1);
+    CHECK(levels.front().level == 0);
+    CHECK(levels.front().count == 2);
+    CHECK(closeTo(levels.front().slotSize, glm::vec3(0.3f, 0.4f, 0.006f)));
+    const Socket& left = socket(pair, "Slot_0_0");
+    const Socket& right = socket(pair, "Slot_0_1");
+    CHECK(position(left).x == Approx(-0.23f).margin(1e-5));
+    CHECK(position(right).x == Approx(0.23f).margin(1e-5));
+    CHECK(position(left).y == Approx(0.86f + 0.05f * std::cos(glm::radians(8.0f))).margin(2e-3));
+    const glm::vec3 out(left.transform[2]);
+    CHECK(out.z == Approx(std::cos(glm::radians(8.0f))).margin(1e-5));
+    CHECK(out.y == Approx(std::sin(glm::radians(8.0f))).margin(1e-5));
+    CHECK(position(left).z < 0.2f - 0.1f);
+    const Socket& level = socket(pair, "Level_0");
+    CHECK(level.bounds.min.x == Approx(-0.38f).margin(1e-4));
+    CHECK(level.bounds.max.x == Approx(0.38f).margin(1e-4));
+    CHECK(pair.bounds.contains(level.bounds));
+    // The marquees and the paints alternate: one quad of each marquee role, the pair's two bodies apart.
+    CHECK(part(pair, "marquee").mesh.bounds.max.x < 0.0f);
+    CHECK(part(pair, "marquee_alt").mesh.bounds.min.x > 0.0f);
+    CHECK(part(pair, "body").mesh.bounds.max.x < 0.0f);
+    CHECK(part(pair, "body_alt").mesh.bounds.min.x > 0.0f);
+    CHECK(rv::geometry::findPart(pair, "screen") == nullptr);
+    // Four in a row; one alone has no alternate roles.
+    CHECK(buildOk("arcade_cabinet", {{"count", 4}}).sockets.size() == 1 + 4);
+    const ProceduralPrefab single = buildOk("arcade_cabinet", {{"count", 1}});
+    CHECK(rv::geometry::findPart(single, "body_alt") == nullptr);
+    CHECK(rv::geometry::findPart(single, "marquee_alt") == nullptr);
+    // The hero cabinet: no slot, a screen quad carrying the ScreenSurface, facing out of the leaning bezel.
+    const ProceduralPrefab hero = buildOk(
+        "arcade_cabinet", {{"count", 1}, {"width", 0.7}, {"height", 1.85}, {"depth", 0.85}, {"slots", false},
+                           {"screenSize", {0.5, 0.375}}, {"screenTiltDeg", 12.0}, {"marqueeHeight", 0.24}});
+    CHECK(rv::geometry::slotLevels(hero.sockets).empty());
+    const Socket& surface = socket(hero, "ScreenSurface");
+    CHECK(surface.kind == SocketKind::ScreenSurface);
+    REQUIRE(surface.meshIndex.has_value());
+    CHECK(hero.parts[*surface.meshIndex].materialRole == "screen");
+    CHECK(part(hero, "screen").mesh.bounds.size().x == Approx(0.5f).margin(1e-4));
+    CHECK(position(surface).y > 1.0f);
+    CHECK(position(surface).y < 1.5f);
+    CHECK(rv::geometry::findPart(hero, "screen_back") == nullptr);
+    // Refusals: a screen wider than the cabinet, taller than the panel and the marquee leave, a tilt through its back.
+    CHECK(buildError("arcade_cabinet", {{"screenSize", {0.4, 0.4}}}).context == "arcade_cabinet.screenSize");
+    CHECK(buildError("arcade_cabinet", {{"screenSize", {0.3, 0.8}}}).context == "arcade_cabinet.screenSize");
+    CHECK(buildError("arcade_cabinet", {{"depth", 0.3}, {"screenTiltDeg", 25.0}, {"screenSize", {0.3, 0.3}}}).context ==
+          "arcade_cabinet.screenTiltDeg");
+    CHECK(buildError("arcade_cabinet", {{"count", 5}}).context == "arcade_cabinet.count");
+}
+
+TEST_CASE("geometry/prefabs: the handhelds' counter showcase keeps the display case's slots and bounds (I6 step 6)",
+          "[geometry][prefabs][display_case]") {
+    const json params{{"slotSize", {0.057, 0.065, 0.008}}};
+    const ProceduralPrefab plain = buildOk("display_case", params);
+    json counterParams = params;
+    counterParams["counter"] = true;
+    counterParams["boardLight"] = true;
+    const ProceduralPrefab counter = buildOk("display_case", counterParams);
+    // The same bounds and slots: a look, never a plan fact.
+    CHECK(closeTo(counter.bounds, plain.bounds));
+    REQUIRE(counter.sockets.size() == plain.sockets.size());
+    for (std::size_t i = 0; i < plain.sockets.size(); ++i) {
+        INFO(plain.sockets[i].id);
+        CHECK(counter.sockets[i].id == plain.sockets[i].id);
+        CHECK(counter.sockets[i].transform == plain.sockets[i].transform);
+        CHECK(counter.sockets[i].bounds == plain.sockets[i].bounds);
+    }
+    // Handhelds on the deck of the glass base, under the vitrine's floor; the lit strips; no door.
+    const PrefabPart& handhelds = part(counter, "plastic_body");
+    CHECK(handhelds.mesh.bounds.max.y < 0.52f);
+    CHECK(handhelds.mesh.bounds.min.y > 0.06f);
+    CHECK(handhelds.mesh.bounds.size().x > 0.6f);
+    CHECK(rv::geometry::findPart(counter, "board_light") != nullptr);
+    CHECK(rv::geometry::findPart(plain, "board_light") == nullptr);
+    CHECK(rv::geometry::findPart(plain, "plastic_body") == nullptr);
+    CHECK(rv::geometry::findPart(counter, "metal_trim") == nullptr); // no doors, no knobs
+    // Lit alone, the vitrine's strips only.
+    const ProceduralPrefab lit = buildOk("display_case", {{"boardLight", true}});
+    CHECK(part(lit, "board_light").mesh.bounds.min.y > 0.9f);
 }
