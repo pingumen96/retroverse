@@ -18,8 +18,8 @@
 //
 // The Gate C goldens of the building (I4 step 8; ADR-0013, style §5.2 as ADR-0013 amends it), on tests/fixtures/esde/
 // building under the shipped threshold (no world.json: its small systems share their floors' rooms), each run as the
-// user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's lobby
-// from the elevator's arrival point, G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
+// user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's hub
+// from a step beside the elevator's arrival point (I6 step 5; --spawn since its review), G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
 // handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway.
 
 #include <catch2/catch_test_macros.hpp>
@@ -797,8 +797,12 @@ TEST_CASE("golden/G11: the building's hub from the elevator's arrival point", "[
     CHECK(first.world.floor == rv::world::kGroundFloor);
     const fs::path shot = room.dir / "g11.png";
     constexpr std::uint32_t kFrames = 30;
-    const AppRun run = room.app(
-        "g11", startArguments(std::nullopt, kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    // I6 step 5's review: a step north of the arrival point, turned a little north of east, so that the arcade room's
+    // portal and the landmark show together and the globe hides no sign of the entrance's.
+    constexpr std::string_view kSpawn = "1.2,0,-2.4,84,-6";
+    const AppRun run = room.app("g11", startArguments(std::nullopt, kFrames, shot,
+                                                      {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
+                                                       std::string(kSpawn)}));
     requireBuildingRun(run, rv::world::kGroundFloor, "");
     INFO(run.describe());
     const rv::app::RunReport& report = *run.report;
@@ -815,18 +819,18 @@ TEST_CASE("golden/G11: the building's hub from the elevator's arrival point", "[
     CHECK(report.world.showcase.frontsResident == report.world.showcase.games.size());
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G11", "g11_lobby_golden",
-                       "Gate D golden of the building's hub (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1): the "
-                       "esde/building fixture planned under the shipped threshold, the walker as every start without "
-                       "--start-room stands, at the elevator's arrival point facing east across the 18 x 14 x 5 m hub: "
-                       "the glowing wireframe globe on its pedestal in the railed circular showcase of generic consoles "
-                       "and plants, a runner of rugs leading to it, walnut columns under the balcony on three sides with "
-                       "its railing, the coffered ceiling with its downlights, the chandelier's ring of bulbs and the "
-                       "lanterns over the core, the leather sofas on their rugs facing the landmark, lit bookcases of books, "
-                       "sconces and prints on the walls under the balcony and on the gallery's, the arcade room's sign "
-                       "on the balcony's "
-                       "fascia, the main entrance's portal and the floor's sign at the far end; lit by the hub's own "
-                       "lights and its own ambient and fill.",
-                       "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)",
+                       "Gate D golden of the building's hub (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1; its "
+                       "look as the step's review left it): the esde/building fixture planned under the shipped "
+                       "threshold, the walker a step north of the elevator's arrival point looking east across the 18 x "
+                       "14 x 5 m hub: the arcade room's portal on the left under its pink neon on the balcony's fascia "
+                       "(its own small plaque on the entablature, the purple room beyond), the glowing wireframe globe, "
+                       "the brightest thing below the ceiling, low on its pedestal in the railed circular showcase of "
+                       "generic consoles and boxed games on a bordeaux counter, the main entrance's blue signs beside it "
+                       "at the far end, walnut columns under the balcony on three sides with its railing and large "
+                       "posters on the gallery's walls, the coffered ceiling with its downlights, the chandelier's ring "
+                       "of bulbs and the lanterns over the core, lit bookcases of warm bindings, a darker oak floor and "
+                       "darker rugs; lit by the hub's own lights, the globe's cool light and the sign's glow.",
+                       "--spawn 1.2,0,-2.4,84,-6: a step north of the elevator's arrival point (no --start-room)",
                        std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -837,8 +841,9 @@ TEST_CASE("golden/G14: the building's hub from its entrance", "[gpu][golden][gol
     CHECK(first.world.floor == rv::world::kGroundFloor);
     const fs::path shot = room.dir / "g14.png";
     constexpr std::uint32_t kFrames = 30;
-    // Before the closed entrance doors at the hub's east end, facing west: the elevator's portal at the far end.
-    constexpr std::string_view kSpawn = "16.3,0,0.6,-92,-3";
+    // Before the closed entrance doors at the hub's east end, a step south of its middle, facing west (I6 step 5's
+    // review: the elevator's portal and its sign at the far end beside the globe, not behind it).
+    constexpr std::string_view kSpawn = "16.3,0,1.8,-96,-3";
     const AppRun run = room.app("g14", startArguments(std::nullopt, kFrames, shot,
                                                       {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
                                                        std::string(kSpawn)}));
@@ -850,13 +855,14 @@ TEST_CASE("golden/G14: the building's hub from its entrance", "[gpu][golden][gol
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G14", "g14_hub_entrance_golden",
                        "Gate D golden of the building's hub from its entrance (I6 step 5, ADR-0014 §3, style 5.2, "
-                       "concept panel 1): the esde/building fixture planned under the shipped threshold, the walker "
-                       "before the closed entrance doors at the hub's east end facing west: the landmark's glowing "
-                       "globe before the elevator's portal and its floor sign, the directory's totem beside it, the "
-                       "favourites' showcase with its proxies' covers and the information screen's edge on the left "
-                       "(south), lit bookcases along both walls under the balcony, its columns and railings, the "
-                       "coffered ceiling with the chandelier's bulbs, the sofas and rugs.",
-                       "--spawn 16.3,0,0.6,-92,-3: before the entrance facing west (no --start-room)", std::nullopt},
+                       "concept panel 1; its look as the step's review left it): the esde/building fixture planned "
+                       "under the shipped threshold, the walker before the closed entrance doors at the hub's east end, "
+                       "a step south of its middle, facing west: the landmark's glowing globe beside the elevator's "
+                       "portal and its green floor sign, the directory's totem's back beside it, the favourites' "
+                       "showcase with its proxies' covers and the information screen's list on the left (south), the "
+                       "oxblood sofas on their rugs, lit bookcases along both walls under the balcony, its columns and "
+                       "railings, posters on the gallery's walls, the coffered ceiling with the chandelier's bulbs.",
+                       "--spawn 16.3,0,1.8,-96,-3: before the entrance facing west (no --start-room)", std::nullopt},
                       room, run, shot, kFrames);
 }
 
