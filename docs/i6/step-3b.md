@@ -25,12 +25,14 @@ prints and sideboards; this step gives each era its own.
   socket's back edge and centred as the plan's prefab stood. The plan, its fixtures, slots and lights are untouched;
   `drawnFixtures()` gives the boxes the pieces cover. `resolveSceneFurniture()` leaves out (logged) a piece that does
   not resolve or build: its part is drawn as planned.
-- **Per pack**: classic and the hub unchanged. 90s collector: two bean bags, torchieres, the geometric rug, confetti
-  posters, oak showcases with a console. Optical era: a two-seat leather sofa along the corner's side turned to the TV
-  and rug, the blue rug, large framed cinematic posters (0.68 x 1.0 m), walnut showcases. Handheld archive: a small
-  lounge chair, the sage rug, console-art posters, low counter showcases with a handheld. Computer studio: a desk with
-  the computer and a swivel chair, banker's lamps, the green rug, cork boards and prints half and half. Arcade: two
-  red bar stools, the dark red runner, flyers.
+- **Per pack** (as the review left them, below): classic and the hub unchanged. 90s collector: two bean bags,
+  torchieres, the geometric rug, confetti posters, lit oak showcases with a console. Optical era: a two-seat leather
+  sofa across the rug's south edge facing the TV, the blue rug, large framed cinematic posters (0.68 x 1.0 m), lit
+  walnut showcases. Handheld archive: a one-seat lounge chair on tall legs, the sage rug, console-art posters, low lit
+  showcases with a handheld. Computer studio: a desk side-on along the corner's east edge with the computer and a
+  swivel chair facing it, banker's lamps on card catalogues, the green rug, cork boards and prints half and half, lit
+  showcases of big-box software for the sideboards. Arcade: two red bar stools by the TV's console side, the dark red
+  runner, flyers, graphite-framed showcases of big-box software.
 - **`decorationWeights` dropped**: step 3 read them and nothing used them; they could not choose decoration (a plan
   fact). The weights are now the decoration variants' own (`"weight"`, 0 to 1; the reader refuses the old key).
 
@@ -47,7 +49,11 @@ prints and sideboards; this step gives each era its own.
 - Plan goldens untouched; `building-esde-seed-102938.floors.json` rewritten on purpose (computer, gen5, ground with
   the arcade, handheld; gen4, the SNES floor, unchanged); the golden plans' scene digests unchanged (classic). G12 and
   G13 regenerated on purpose (Debug); G01-G11 unchanged (the classic SNES rooms; G11's arcade doorway within tolerance).
-- Procedural surfaces 123.0 MiB (80.3 + 42.7 for the five rugs).
+- Procedural surfaces 123.0 MiB (80.3 + 42.7 for the five rugs), generated at a world run's start and held for the
+  whole run (`docs/reference/running-the-app.md`): about 0.9 s in Release, the rugs 0.5 s of it (the geometric rug
+  0.24 s), before the first room, so no ride waits for one. The busiest floor of the real library measured 407 MiB in
+  I4 step 7b; with the rugs about 450 MiB, within the acceptable 512 MiB (not measured again on the real library: the
+  step does not touch it).
 
 ## Screenshots and judgement
 
@@ -73,11 +79,64 @@ From the hero corner (`*_corner.png`) colour / accent: classic 12.4 / 1.5, 90s 6
 the furniture is a small part of the frame and was chosen for shape, not colour (style §1.2); the colour gap to the
 concept (its posters, screens and signs) stays as step 3 measured it.
 
+## The step's review
+
+The look review (`build/i6/review3b`) found the optical sofa turned away from the TV, its back hiding the TV cabinet;
+the study's desk in front of the CRT, its monitor covering it; the banker's lamps on tall dark chests; the handheld
+lounge chair a slate box from behind; the showcases reading as open cabinets; the bean bags as two stacked glossy
+spheres; the arcade's stools in the middle of the room. Fixed:
+
+- **Optical sofa**: across the rug's south edge facing the TV (x -150, z 2560 in the hero corner's frame, yaw 180), its
+  back 0.74 m so the screen stays clear of it from the doorway (concept panel 4).
+- **Study desk**: 1.0 x 0.6 m side-on along the hero corner's east edge (x 880, z 2200, yaw 270), the chair facing
+  it from the west (x 430, z 2300). The reviewer's z 1900 closed the main passage to the CRT's interaction point (the
+  test's soft finding `passage-narrow`): 300 mm further south it stays as it was.
+- **Banker's lamp**: the stand is a card catalogue, three columns of six drawers, each with a brass label holder and a
+  pull; the study's drawers oak in a walnut carcass.
+- **Handheld lounge chair**: a one-seat sofa (`sofa` now from 0.7 m wide) on 0.2 m legs, its back cushion apart, no
+  pillows: a chair from the doorway, still a plain upholstered back from behind (BACKLOG).
+- **Showcases**: a lit strip under the cap (the kind's `board_light`, `ShowcaseParams::boardLight`, as a lit shelf's),
+  the plinth 0.08 m higher, an item never drawn under 0.9 of its size (a smaller vitrine is refused), and a new item
+  `boxes`: up to three upright big boxes of software with their cover (role `cover`, the piece's texture pattern
+  `cover`). The computer studio and the arcade draw their sideboards as showcases of boxes, the arcade's framed in
+  graphite. Every pack's showcase kind names `board_light` and `cover` (the built-in pack's too).
+- **Bean bags**: a lower body (0.5 of the height) under a lump as wide as it and deeper (0.6), the purple vinyl's
+  roughness 0.45 -> 0.6. Still two ellipsoids, now matte (BACKLOG).
+- **Arcade stools**: by the TV's console side (x 640 and 1020, z 750; seat and base radius 0.18 to stay in the hero
+  corner) until step 6's cabinets.
+- **The runner's material** is its piece's (`"materials": {"fabric": "MAT_Carpet_Runner"}`); the arcade's rug kind
+  keeps `MAT_Carpet_Ornate`, so a plan's rug drawn as planned (its piece left out) is never a stretched runner.
+- **A runtime guard** (`drawnPieces`): a decoration's variant that leaves its socket's footprint (turned with the
+  socket), or a hero part's piece that leaves the hero corner (with the planned part's own floor where the part
+  reaches out of the corner: the lamp beside the TV), is not drawn; the plan's prefab is, a warning logged once per
+  pack, fixture and piece. Tested with a socket narrowed under its variant and a sofa moved out of the corner.
+- **The reader refuses** furniture for the hero roles `crt`, `sign` and `console` (the room's video, its neon and its
+  system's console).
+- `test_era_furniture`: `validatePlan()` of a plan once, not per pack (and none again when nothing is replaced): the
+  golden building's case 4.5 s in Debug, the file's five cases 20.8 s (the five golden plans
+  with the seven packs 15.5 s of it).
+- Floor scene digests rewritten again (computer, gen5, ground, handheld; gen4 unchanged); G12 and G13 regenerated on
+  purpose (Debug: G12's bean bags and showcases, G13's lounge chair) then compared clean; G11 within tolerance.
+- Tests: the whole unit suite in Debug and Release (1,912 cases each), every GPU case in Release (108, one skipped:
+  the developer overlay's pick), every golden in Debug (G01 to G13); the benchmark path in Release p50 3.45 ms, p99
+  4.86 ms, 303.6 MiB at its peak (acceptable: 16.7 ms, 33.3 ms, 512 MiB); Debug and Release built without a warning.
+- Not done: the rugs' metallic-roughness maps at a quarter of their size (about 20 MiB saved): optional, it needs a
+  map size per surface map; in BACKLOG.
+
+Screenshots after the review in `build/i6/step3b` (`build/i6/step3b-before-review` before it; the same `shots.sh`).
+From the doorway the shares barely move again (the 90s room 96.1 / 3.0 / 0.9, the optical 97.9 / 1.3 / 0.7, the
+study 97.9 / 1.0 / 1.1, the arcade 85.7 / 13.0 / 1.3); what changes is what the furniture says: the lounge's sofa
+faces the TV with its screen clear above the back, the study's CRT stands free beside the desk and its computer, its
+lamps on card catalogues and its sideboards showcases of software boxes, the handheld chair stands on legs, the
+showcases are lit inside with the console or handheld standing in the glass's middle, the arcade's stools wait by the
+TV and its sideboards show boxes in graphite frames. Left as they are: the bean bags still read as two soft lumps, the
+lounge chair's back from behind.
+
 ## Deviations and follow-ups
 
 - The variants fill the hero corner and the decoration sockets only: no new socket, so no counter showcase row
-  (step 6), no bookcase of boxes for the study, no coffee table; the sideboards of the computer studio and the arcade
-  stay the narrow cabinet. BACKLOG.
-- The handheld archive's lounge chair is the armchair's prefab with other proportions; from behind it reads as a box.
+  (step 6), no bookcase of boxes for the study, no coffee table. BACKLOG.
+- The handheld archive's lounge chair is a one-seat sofa on tall legs: from the doorway a chair, from behind still a
+  plain upholstered back (a lounge chair of its own, its back thinner than its arms, stays in BACKLOG).
 - A piece is placed by data per template part; a second template would need its own placements (the test judges every
   plan drawn, so a misplaced piece fails it).
