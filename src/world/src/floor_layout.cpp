@@ -1,6 +1,7 @@
 #include <rv/world/floor_layout.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 
@@ -80,7 +81,24 @@ std::int64_t reach(const Footprint& footprint, bool north, std::int64_t half) no
     return north ? footprint.maxZMm + half : half - footprint.minZMm;
 }
 
-/// The hall's dressing (see the header's file comment), from its east end and its doorways.
+/// True when [from, to] on the edge `north` comes within `margin` of a hub piece that stands against that wall (the
+/// showcase, the screen).
+bool nearHubWallPiece(const Hall& hall, bool north, std::int64_t from, std::int64_t to, std::int64_t margin) noexcept {
+    if (!hall.hub) {
+        return false;
+    }
+    const std::int64_t half = hall.widthMm / 2;
+    return std::any_of(hall.hub->pieces.begin(), hall.hub->pieces.end(), [&](const HubPiece& piece) {
+        const bool againstWall = north ? piece.footprint.minZMm <= -half + kHubShowcaseGapMm
+                                       : piece.footprint.maxZMm >= half - kHubShowcaseGapMm;
+        const bool onWall = piece.kind == HubPieceKind::Showcase || piece.kind == HubPieceKind::Screen ||
+                            piece.kind == HubPieceKind::Bookcase;
+        return onWall && againstWall && from < piece.footprint.maxXMm + margin && to > piece.footprint.minXMm - margin;
+    });
+}
+
+/// The hall's dressing (see the header's file comment), from its east end and its doorways (the hub: the slots' wall
+/// pieces off its showcase and screen, no floor piece, and a sconce on the gallery's walls every column bay).
 std::vector<HallPiece> hallDressing(const Hall& hall) {
     std::vector<HallPiece> pieces;
     const std::int64_t half = hall.widthMm / 2;
@@ -104,7 +122,8 @@ std::vector<HallPiece> hallDressing(const Hall& hall) {
             const std::int64_t from = x - width / 2;
             const std::int64_t to = from + width;
             if (from >= kHallEndClearMm && to + kHallEndClearMm <= east &&
-                !nearDoorway(hall.doorways, north, false, from, to, margin)) {
+                !nearDoorway(hall.doorways, north, false, from, to, margin) &&
+                !nearHubWallPiece(hall, north, from, to, kHallPictureDoorMarginMm)) {
                 pieces.push_back(HallPiece{id + "/" + std::string(pieceName(wallKind)), wallKind, north, slot,
                                            landscape, x,
                                            againstWall(north, half, x, width, 0,
@@ -118,7 +137,7 @@ std::vector<HallPiece> hallDressing(const Hall& hall) {
             } else if (phase == (north ? kHallNorthPlantSlot : kHallSouthPlantSlot)) {
                 floorKind = HallPieceKind::Plant;
             }
-            if (!floorKind) {
+            if (!floorKind || hall.hub) {
                 continue;
             }
             const bool bench = *floorKind == HallPieceKind::Bench;
@@ -157,10 +176,196 @@ std::vector<HallPiece> hallDressing(const Hall& hall) {
                                        againstWall(north, half, x, kHallSconceWidthMm, 0, kHallSconceDepthMm)});
         }
     }
+    // The hub's gallery: a sconce on each long wall above the balcony in the middle of every column bay, while short of
+    // the east balcony.
+    if (hall.hub) {
+        for (const bool north : {true, false}) {
+            for (std::int64_t x = kHubColumnPitchMm / 2; x + kHubColumnPitchMm / 2 <= hall.hub->eastEdgeXMm;
+                 x += kHubColumnPitchMm) {
+                HallPiece piece{std::string(north ? "gallery-north-" : "gallery-south-") + std::to_string(x) +
+                                    "/sconce",
+                                HallPieceKind::Sconce,
+                                north,
+                                -1,
+                                false,
+                                x,
+                                againstWall(north, half, x, kHallSconceWidthMm, 0, kHallSconceDepthMm)};
+                piece.centreMm = kHubGallerySconceMm;
+                pieces.push_back(std::move(piece));
+            }
+        }
+    }
     return pieces;
 }
 
+/// A square footprint of side `side` around (x, z).
+Footprint square(std::int64_t x, std::int64_t z, std::int64_t side) noexcept {
+    return {x - side / 2, z - side / 2, x - side / 2 + side, z - side / 2 + side};
+}
+
+/// A footprint `alongX` wide along x and `alongZ` along z around (x, z).
+Footprint around(std::int64_t x, std::int64_t z, std::int64_t alongX, std::int64_t alongZ) noexcept {
+    return {x - alongX / 2, z - alongZ / 2, x - alongX / 2 + alongX, z - alongZ / 2 + alongZ};
+}
+
+/// The hub's own (see the header's file comment), from its interior and its doorways.
+Hub deriveHub(const Hall& hall, const HubLayout& layout) {
+    Hub hub;
+    const std::int64_t half = hall.widthMm / 2;
+    const std::int64_t east = hall.interior.maxXMm;
+    hub.northEdgeZMm = -half + kHubBalconyDepthMm;
+    hub.southEdgeZMm = half - kHubBalconyDepthMm;
+    hub.eastEdgeXMm = east - kHubBalconyDepthMm;
+    hub.centreXMm = layout.lengthMm / 2;
+    const std::int64_t cx = hub.centreXMm;
+
+    // The doorways' approaches: no solid piece and no wall piece stands in one.
+    std::vector<Footprint> approaches;
+    for (const FloorDoorway& doorway : hall.doorways) {
+        if (!doorway.opensOntoHall()) {
+            continue;
+        }
+        const std::int64_t inward = doorway.hallEdgeZMm < 0 ? 1 : -1;
+        const std::int64_t far = doorway.hallEdgeZMm + inward * kHubApproachDepthMm;
+        approaches.push_back({doorway.minMm - kHubApproachMm, std::min(doorway.hallEdgeZMm, far),
+                              doorway.maxMm + kHubApproachMm, std::max(doorway.hallEdgeZMm, far)});
+    }
+    const auto add = [&](HubPiece piece) {
+        const bool blocked =
+            piece.kind != HubPieceKind::Rug && std::any_of(approaches.begin(), approaches.end(), [&](const Footprint& a) {
+                return a.overlaps(piece.footprint);
+            });
+        if (!blocked) {
+            hub.pieces.push_back(std::move(piece));
+        }
+    };
+
+    // The columns under the balcony's edges: along the long edges at the pitch, none before a doorway or the
+    // showcase; the east edge's corners and either side of the entrance.
+    const auto opening = [&](bool north, std::int64_t x) {
+        const bool doorway = std::any_of(hall.doorways.begin(), hall.doorways.end(), [&](const FloorDoorway& door) {
+            return door.opensOntoHall() && (door.hallEdgeZMm < 0) == north &&
+                   std::abs((door.minMm + door.maxMm) / 2 - x) < kHubColumnClearMm;
+        });
+        return doorway || (!north && std::abs(cx - x) < kHubColumnClearMm);
+    };
+    for (const bool north : {true, false}) {
+        const std::int64_t z = north ? hub.northEdgeZMm : hub.southEdgeZMm;
+        for (std::int64_t x = kHubColumnPitchMm; x + kHubColumnEndClearMm <= hub.eastEdgeXMm; x += kHubColumnPitchMm) {
+            if (!opening(north, x)) {
+                add({std::string(north ? "column-north-" : "column-south-") + std::to_string(x), HubPieceKind::Column,
+                     {x, z}, 0, square(x, z, kHubColumnSizeMm)});
+            }
+        }
+    }
+    for (const std::int64_t z : {hub.northEdgeZMm, -kHubEastColumnZMm, kHubEastColumnZMm, hub.southEdgeZMm}) {
+        add({"column-east-" + std::to_string(z), HubPieceKind::Column, {hub.eastEdgeXMm, z}, 0,
+             square(hub.eastEdgeXMm, z, kHubColumnSizeMm)});
+    }
+
+    // The landmark, the totem facing the elevator, the favourites' showcase and the screen above it.
+    add({"landmark", HubPieceKind::Landmark, {cx, 0}, 0, square(cx, 0, 2 * kHubLandmarkRadiusMm)});
+    const FloorPoint totem{cx - kHubTotemFromCentreMm, kHubTotemZMm};
+    add({"totem", HubPieceKind::Totem, totem, 27000,
+         around(totem.xMm, totem.zMm, kHubTotemDepthMm, kHubTotemWidthMm)});
+    hub.totemFace = {totem.xMm - kHubTotemDepthMm / 2, totem.zMm};
+    hub.totemZone = {hub.totemFace.xMm - kHubTotemZoneDepthMm, totem.zMm - kHubTotemZoneWidthMm / 2, hub.totemFace.xMm,
+                     totem.zMm + kHubTotemZoneWidthMm / 2};
+    const std::int64_t showcaseZ = half - kHubShowcaseGapMm - kHubShowcaseDepthMm / 2;
+    add({"showcase", HubPieceKind::Showcase, {cx, showcaseZ}, 18000,
+         around(cx, showcaseZ, kHubShowcaseWidthMm, kHubShowcaseDepthMm)});
+    add({"screen", HubPieceKind::Screen, {cx, half}, 18000,
+         {cx - kHubScreenWidthMm / 2, half - kHallPictureDepthMm, cx + kHubScreenWidthMm / 2, half}});
+
+    // The sofas facing the landmark on their rugs, the runner from the elevator to the landmark and on to the entrance,
+    // the rug before the core's north wall.
+    for (const auto& [side, x] : {std::pair{std::string_view("west"), cx - kHubSofaFromCentreMm},
+                                  std::pair{std::string_view("east"), cx + kHubSofaFromCentreMm}}) {
+        add({"sofa-" + std::string(side), HubPieceKind::Sofa, {x, kHubSofaZMm}, 18000,
+             around(x, kHubSofaZMm, kHubSofaWidthMm, kHubSofaDepthMm)});
+    }
+    for (const auto& [side, x] : {std::pair{std::string_view("west"), cx - kHubSofaFromCentreMm},
+                                  std::pair{std::string_view("east"), cx + kHubSofaFromCentreMm}}) {
+        add({"rug-sofa-" + std::string(side), HubPieceKind::Rug, {x, kHubSofaRugZMm}, 0,
+             around(x, kHubSofaRugZMm, kHubSofaRugWidthMm, kHubSofaRugDepthMm)});
+    }
+    std::int64_t runner = 0;
+    const std::int64_t landmarkWest = cx - kHubLandmarkRadiusMm - kHubLandmarkClearMm;
+    for (std::int64_t from = kHubRunnerStartMm; from + kHubRugLengthMm <= landmarkWest; from += kHubRugLengthMm) {
+        const std::int64_t x = from + kHubRugLengthMm / 2;
+        add({"rug-runner-" + std::to_string(runner++), HubPieceKind::Rug, {x, 0}, 0,
+             around(x, 0, kHubRugLengthMm, kHubRugWidthMm)});
+    }
+    for (std::int64_t from = cx + kHubLandmarkRadiusMm + kHubLandmarkClearMm;
+         from + kHubRugLengthMm + kHubRunnerEndClearMm <= hub.eastEdgeXMm; from += kHubRugLengthMm) {
+        const std::int64_t x = from + kHubRugLengthMm / 2;
+        add({"rug-runner-" + std::to_string(runner++), HubPieceKind::Rug, {x, 0}, 0,
+             around(x, 0, kHubRugLengthMm, kHubRugWidthMm)});
+    }
+    const std::int64_t northRugZ = -half + kHubPortalRugFromWallMm;
+    add({"rug-north", HubPieceKind::Rug, {cx, northRugZ}, 0, around(cx, northRugZ, kHubRugLengthMm, kHubRugWidthMm)});
+
+    // The bookcases against the long walls, in the middle of every column bay off the core's middle.
+    for (const bool north : {true, false}) {
+        const std::int64_t z = north ? -half + kHubBookcaseGapMm + kHubBookcaseDepthMm / 2
+                                     : half - kHubBookcaseGapMm - kHubBookcaseDepthMm / 2;
+        for (std::int64_t x = kHubColumnPitchMm / 2; x + kHubBookcaseWidthMm / 2 + kHallEndClearMm <= east;
+             x += kHubColumnPitchMm) {
+            if (std::abs(x - cx) < kHubBookcaseCoreClearMm) {
+                continue;
+            }
+            add({std::string(north ? "bookcase-north-" : "bookcase-south-") + std::to_string(x),
+                 HubPieceKind::Bookcase, {x, z}, north ? 0 : 18000,
+                 around(x, z, kHubBookcaseWidthMm, kHubBookcaseDepthMm)});
+        }
+    }
+    // The plants: by the elevator, by the entrance, beside the showcase, beside the core's north wall's middle.
+    const std::int64_t plantSide = 2 * kHubPlantSpreadMm;
+    const auto plant = [&](std::string id, std::int64_t x, std::int64_t z) {
+        add({"plant-" + std::move(id), HubPieceKind::Plant, {x, z}, 0, square(x, z, plantSide)});
+    };
+    plant("elevator-north", kHubPlantFromWallMm, -kHubPlantBesideMm);
+    plant("elevator-south", kHubPlantFromWallMm, kHubPlantBesideMm);
+    plant("entrance-north", east - kHubPlantFromWallMm, -kHubPlantBesideMm);
+    plant("entrance-south", east - kHubPlantFromWallMm, kHubPlantBesideMm);
+    plant("showcase-west", cx - kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
+    plant("showcase-east", cx + kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
+    plant("north-west", cx - kHubPlantBesideMm, -half + kHubPlantFromWallMm);
+    plant("north-east", cx + kHubPlantBesideMm, -half + kHubPlantFromWallMm);
+    return hub;
+}
+
+/// The hub's lights (see the header's file comment): over its core (and along a longer hub's middle every pitch), and
+/// under the balcony.
+void hubLights(Hall& hall) {
+    const Hub& hub = *hall.hub;
+    const std::int64_t cx = hub.centreXMm;
+    const std::int64_t half = hall.widthMm / 2;
+    hall.lightDropMm = kHubLightDropMm;
+    hall.lights = {{kHubEndLightXMm, 0},
+                   {cx - kHubSideLightXMm, -kHubInnerLightZMm},
+                   {cx - kHubSideLightXMm, kHubInnerLightZMm},
+                   {cx, -kHubOuterLightZMm},
+                   {cx, 0},
+                   {cx, kHubOuterLightZMm},
+                   {cx + kHubSideLightXMm, -kHubInnerLightZMm},
+                   {cx + kHubSideLightXMm, kHubInnerLightZMm}};
+    for (std::int64_t x = 2 * cx - kHubEndLightXMm; x < hub.eastEdgeXMm; x += kHallLightPitchMm) {
+        hall.lights.push_back({x, 0});
+    }
+    for (const std::int64_t x : {cx - kHubSideLightXMm, cx + kHubSideLightXMm}) {
+        for (const std::int64_t z : {-half + kHubLowLightFromWallMm, half - kHubLowLightFromWallMm}) {
+            hall.lowLights.push_back({x, z});
+        }
+    }
+}
+
 } // namespace
+
+const HubPiece* Hub::find(std::string_view id) const noexcept {
+    const auto found = std::find_if(pieces.begin(), pieces.end(), [&](const HubPiece& piece) { return piece.id == id; });
+    return found != pieces.end() ? &*found : nullptr;
+}
 
 Footprint Hall::footprint() const noexcept {
     return {interior.minXMm - wallMm, interior.minZMm, interior.maxXMm + wallMm, interior.maxZMm};
@@ -260,16 +465,32 @@ Hall deriveHall(std::string_view floor, std::span<const FloorRoom> rooms, const 
     const std::int64_t half = hall.widthMm / 2;
     const std::int64_t wall = hall.wallMm;
 
-    std::int64_t east = std::max(kMinHallLengthMm, layout.rowStartXMm);
+    if (hall.lobby) {
+        hall.heightMm = layout.hub.heightMm;
+    }
+    std::int64_t east = std::max(kMinHallLengthMm, rowStartOf(floor, layout));
+    if (hall.lobby) {
+        east = std::max(east, layout.hub.lengthMm);
+    }
     std::vector<std::pair<std::int64_t, std::int64_t>> north;
     std::vector<std::pair<std::int64_t, std::int64_t>> south;
+    // The hub's walls above its rooms: each room's span on its edge and its height.
+    struct Upper {
+        bool north = true;
+        std::int64_t from = 0;
+        std::int64_t to = 0;
+        std::int64_t bottom = 0;
+    };
+    std::vector<Upper> uppers;
     for (const FloorRoom& entry : rooms) {
         if (entry.room == nullptr || entry.room->floor != floor) {
             continue;
         }
         const Footprint footprint = floorFootprint(*entry.room, layout);
         east = std::max(east, footprint.maxXMm);
-        (rowOf(entry.room->placement) == Row::North ? north : south).emplace_back(footprint.minXMm, footprint.maxXMm);
+        const bool northRow = rowOf(entry.room->placement) == Row::North;
+        (northRow ? north : south).emplace_back(footprint.minXMm, footprint.maxXMm);
+        uppers.push_back({northRow, footprint.minXMm, footprint.maxXMm, entry.room->heightMm});
         if (entry.roomTemplate != nullptr) {
             hall.doorways.push_back(floorDoorway(*entry.room, *entry.roomTemplate, layout));
         }
@@ -288,8 +509,26 @@ Hall deriveHall(std::string_view floor, std::span<const FloorRoom> rooms, const 
     for (const auto& [from, to] : uncovered(0, east, south)) {
         hall.walls.push_back({"south-" + std::to_string(index++), {from, half, to, half + wall}});
     }
-    for (std::int64_t x = kHallLightPitchMm / 2; x < east; x += kHallLightPitchMm) {
-        hall.lights.push_back({x, 0});
+    // The hub closes its edges above its rooms (a hall is as high as its rooms).
+    if (hall.lobby) {
+        std::sort(uppers.begin(), uppers.end(),
+                  [](const Upper& a, const Upper& b) { return std::pair(!a.north, a.from) < std::pair(!b.north, b.from); });
+        std::size_t northUpper = 0;
+        std::size_t southUpper = 0;
+        for (const Upper& upper : uppers) {
+            if (upper.bottom >= hall.heightMm) {
+                continue;
+            }
+            const std::string id = upper.north ? "north-upper-" + std::to_string(northUpper++)
+                                               : "south-upper-" + std::to_string(southUpper++);
+            const Footprint footprint = upper.north ? Footprint{upper.from, -half - wall, upper.to, -half}
+                                                    : Footprint{upper.from, half, upper.to, half + wall};
+            hall.walls.push_back({id, footprint, upper.bottom});
+        }
+    } else {
+        for (std::int64_t x = kHallLightPitchMm / 2; x < east; x += kHallLightPitchMm) {
+            hall.lights.push_back({x, 0});
+        }
     }
     const std::int64_t frameHalf = kElevatorDoorWidthMm / 2 + kElevatorFrameMm;
     hall.elevator = {0, -frameHalf, kElevatorFrameDepthMm, frameHalf};
@@ -297,6 +536,8 @@ Hall deriveHall(std::string_view floor, std::span<const FloorRoom> rooms, const 
     hall.arrival = {kArrivalXMm, 0};
     if (hall.lobby) {
         hall.entrance = {east, -kEntranceWidthMm / 2, east + wall, kEntranceWidthMm / 2};
+        hall.hub = deriveHub(hall, layout.hub);
+        hubLights(hall);
     }
     hall.dressing = hallDressing(hall);
     return hall;

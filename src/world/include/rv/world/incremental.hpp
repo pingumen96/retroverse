@@ -85,6 +85,10 @@
 // needsConfirmation. Each room migrates at most once per succession: its new family has no successor in rooms of its
 // kind, so the next update of an unchanged catalog writes nothing (the arcade room keeps generic_case, which I6 step
 // 6's arcade_cabinet succeeds there: its own migration, once).
+// The second exception (I6 step 5, ADR-0014 §3): the ground floor's rooms that stand at I4's lobby (their doorway wall
+// not on the hub's edge) are re-placed onto the hub once, before any system enters, by building.hpp's placeOnHub(): new
+// x and z, their yaw and contents unchanged in their own frames; the report lists them (replacedRooms, {room, from,
+// to}), the rebuild level is full and the plan is written. The next update finds them on the hub and moves nothing.
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
 // of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
 // that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an

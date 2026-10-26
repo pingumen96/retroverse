@@ -929,6 +929,10 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         return result;
     }
 
+    // The ground floor's rooms that stand at I4's lobby are re-placed onto the hub, once (I6 step 5, ADR-0014 §3): new x
+    // and z, their yaw and contents unchanged in their own frames, before any system enters among them.
+    std::vector<ReplacedRoom> replacedRooms = placeOnHub(previous.rooms, building.layout);
+
     // The inputs read: the selections of the rooms given every section's, each with its room's data (the systems
     // entering the building are added below with the data of the room they took, as a fresh building hashes them).
     std::vector<std::pair<const RoomSelection*, const WorldData*>> digestRooms;
@@ -1293,12 +1297,13 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.systemsEntered = sortedUnique(std::move(systemsEntered));
     changes.systemsWaiting = sortedUnique(std::move(systemsWaiting));
     changes.migratedRooms = sortedUnique(std::move(migratedRooms));
+    changes.replacedRooms = std::move(replacedRooms);
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||
                           !changes.fixturesRemoved.empty() || !changes.fixturesMoved.empty() ||
                           plan.lights != previous.lights;
     changes.rebuild =
-        !changes.migratedRooms.empty()
+        !changes.migratedRooms.empty() || !changes.replacedRooms.empty()
             ? RebuildLevel::Full
             : (grew ? RebuildLevel::RoomExpansion : (geometry ? RebuildLevel::LocalReflow : RebuildLevel::NoRebuild));
 
@@ -1319,7 +1324,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                                      pins.unhonoured.end());
     changes.needsConfirmation = sortedUnique(std::move(changes.needsConfirmation));
     changes.digestBefore = std::move(digestBefore);
-    if (stored.schemaVersion == kPlanSchemaVersion && plan == previous) {
+    if (stored.schemaVersion == kPlanSchemaVersion && plan == previous && changes.replacedRooms.empty()) {
         changes.digestAfter = changes.digestBefore;
     } else {
         // The text savePlan() writes (with the writer's check by the reader) has this digest.

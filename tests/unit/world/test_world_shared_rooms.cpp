@@ -298,7 +298,7 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
     // gb entered the handheld floor first, the north row; the shared room the south row's first place.
     CHECK(roomOf(plan, "room:gb").placement == rv::world::RoomPlacement{7650, -6650, 0});
     CHECK(shared.placement == rv::world::RoomPlacement{7650, 6650, 1});
-    CHECK(arcade.placement.xMm == 7650);
+    CHECK(arcade.placement.xMm == 9000); // the hub's first place (I6 step 5)
     CHECK(arcade.placement.yawHalfTurns == 0);
     // Every game of a section is placed in its room or unplaced there.
     for (const RoomSelection& selection : building.input.selections) {

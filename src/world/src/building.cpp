@@ -213,7 +213,7 @@ Expected<BuildingData> parseBuildingData(std::string_view text, std::string_view
         building.floors.push_back(std::move(spec));
     });
     const ObjectReader layout = reader.object(
-        "layout", {"hallWidthMm", "lobbyWidthMm", "maxRoomsPerRow", "rowStartXMm", "wallAllowanceMm"});
+        "layout", {"hallWidthMm", "hub", "lobbyWidthMm", "maxRoomsPerRow", "rowStartXMm", "wallAllowanceMm"});
     building.layout.hallWidthMm = layout.integer("hallWidthMm", 2, kMaxLayoutMm);
     building.layout.lobbyWidthMm = layout.integer("lobbyWidthMm", 2, kMaxLayoutMm);
     building.layout.rowStartXMm = layout.integer("rowStartXMm", 0, kMaxLayoutMm);
@@ -224,6 +224,18 @@ Expected<BuildingData> parseBuildingData(std::string_view text, std::string_view
     }
     if (!document.failed() && building.layout.lobbyWidthMm % 2 != 0) {
         document.fail("/layout/lobbyWidthMm", "must be even");
+    }
+    // The hub (I6 step 5): optional, HubLayout's defaults without it.
+    if (!document.failed() && layout.has("hub")) {
+        const ObjectReader hub = layout.object("hub", {"heightMm", "lengthMm", "rowStartXMm", "widthMm"});
+        HubLayout& read = building.layout.hub;
+        read.lengthMm = hub.integer("lengthMm", 12'000, 60'000);
+        read.widthMm = hub.integer("widthMm", 8'000, 30'000);
+        read.heightMm = hub.integer("heightMm", 4'000, 8'000);
+        read.rowStartXMm = hub.integer("rowStartXMm", 0, kMaxLayoutMm);
+        if (!document.failed() && read.widthMm % 2 != 0) {
+            document.fail("/layout/hub/widthMm", "must be even");
+        }
     }
     // Floors: ids once each, the ground floor first, every kind and generation on exactly one floor.
     std::set<std::string> ids;
@@ -270,6 +282,13 @@ Expected<BuildingData> loadBuildingData(const std::filesystem::path& assetRoot) 
         return propagate(text.error());
     }
     return parseBuildingData(*text, core::pathToUtf8Lossy(path));
+}
+
+nlohmann::json hubLayoutToJson(const HubLayout& hub) {
+    return Json{{"heightMm", hub.heightMm},
+                {"lengthMm", hub.lengthMm},
+                {"rowStartXMm", hub.rowStartXMm},
+                {"widthMm", hub.widthMm}};
 }
 
 nlohmann::json buildingDataToJson(const BuildingData& building) {
@@ -432,7 +451,11 @@ Classification classify(const catalog::SystemName& system, std::span<const std::
 // --- The floor's layout ---------------------------------------------------------------------------------------------
 
 std::int64_t hallWidthOf(std::string_view floor, const BuildingLayout& layout) noexcept {
-    return floor == kGroundFloor ? layout.lobbyWidthMm : layout.hallWidthMm;
+    return floor == kGroundFloor ? layout.hub.widthMm : layout.hallWidthMm;
+}
+
+std::int64_t rowStartOf(std::string_view floor, const BuildingLayout& layout) noexcept {
+    return floor == kGroundFloor ? layout.hub.rowStartXMm : layout.rowStartXMm;
 }
 
 FloorPoint roomToFloor(const RoomPlacement& placement, std::int64_t xMm, std::int64_t zMm) noexcept {
@@ -475,8 +498,8 @@ RoomPlacement followDepth(const Room& room, const BuildingLayout& layout) noexce
 
 FloorRows floorRows(std::span<const Room> rooms, std::string_view floor, const BuildingLayout& layout) {
     FloorRows rows;
-    rows.northEndMm = layout.rowStartXMm;
-    rows.southEndMm = layout.rowStartXMm;
+    rows.northEndMm = rowStartOf(floor, layout);
+    rows.southEndMm = rows.northEndMm;
     for (const Room& room : rooms) {
         if (room.floor != floor) {
             continue;
@@ -508,6 +531,67 @@ std::optional<RoomPlacement> placeEnteringRoom(const Room& room, const FloorRows
     placement.xMm = row == Row::North ? rows.northEndMm - own.minXMm : rows.southEndMm + own.maxXMm;
     placement.zMm = abuttingZ(room, row, room.floor, layout);
     return placement;
+}
+
+bool standsOnHub(const Room& room, const BuildingLayout& layout) noexcept {
+    if (room.floor != kGroundFloor) {
+        return true;
+    }
+    return room.placement.zMm == abuttingZ(room, rowOf(room.placement), room.floor, layout) &&
+           floorFootprint(room, layout).minXMm >= layout.hub.rowStartXMm;
+}
+
+std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout) {
+    std::vector<std::size_t> moving;
+    std::vector<Room> standing;
+    for (std::size_t i = 0; i < rooms.size(); ++i) {
+        if (rooms[i].floor != kGroundFloor) {
+            continue;
+        }
+        if (standsOnHub(rooms[i], layout)) {
+            standing.push_back(rooms[i]);
+        } else {
+            moving.push_back(i);
+        }
+    }
+    // West to east by where they stood, the north row first on a tie, then by id.
+    std::sort(moving.begin(), moving.end(), [&](std::size_t a, std::size_t b) {
+        const Footprint fa = floorFootprint(rooms[a], layout);
+        const Footprint fb = floorFootprint(rooms[b], layout);
+        if (fa.minXMm != fb.minXMm) {
+            return fa.minXMm < fb.minXMm;
+        }
+        if (rowOf(rooms[a].placement) != rowOf(rooms[b].placement)) {
+            return rowOf(rooms[a].placement) == Row::North;
+        }
+        return rooms[a].id < rooms[b].id;
+    });
+    std::vector<ReplacedRoom> replaced;
+    for (const std::size_t index : moving) {
+        Room& room = rooms[index];
+        const FloorRows rows = floorRows(standing, kGroundFloor, layout);
+        const Row row = rowOf(room.placement);
+        const bool open = (row == Row::North ? rows.northRooms : rows.southRooms) < layout.maxRoomsPerRow;
+        std::optional<RoomPlacement> placement;
+        if (open) {
+            // At the east end of its own row: x + minX (north), x - maxX (south, turned) on that end.
+            const Footprint own = roomFootprint(room, layout);
+            RoomPlacement kept = room.placement;
+            kept.xMm = row == Row::North ? rows.northEndMm - own.minXMm : rows.southEndMm + own.maxXMm;
+            kept.zMm = abuttingZ(room, row, kGroundFloor, layout);
+            placement = kept;
+        } else {
+            placement = placeEnteringRoom(room, rows, layout);
+        }
+        if (!placement) {
+            continue; // a hub whose rows are full: the room stays where it stood (validation tells)
+        }
+        replaced.push_back({room.id, room.placement, *placement});
+        room.placement = *placement;
+        standing.push_back(room);
+    }
+    std::sort(replaced.begin(), replaced.end());
+    return replaced;
 }
 
 } // namespace rv::world

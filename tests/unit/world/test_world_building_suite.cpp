@@ -132,7 +132,7 @@ void checkNewRoomsAtTheEnd(const WorldPlan& before, const GenerationResult& resu
             continue;
         }
         const rv::world::Footprint own = rv::world::floorFootprint(*room, layout);
-        bool onAnEdge = own.minXMm == layout.rowStartXMm;
+        bool onAnEdge = own.minXMm == rv::world::rowStartOf(room->floor, layout);
         std::uint32_t inRow = 0;
         for (const Room& other : result.plan.rooms) {
             if (other.id == room->id || other.floor != room->floor ||

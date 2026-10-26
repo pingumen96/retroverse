@@ -47,8 +47,36 @@
 // Benches and plants stand on the floor: they collide and are obstacles of the floor's navigation (validation.hpp's
 // floor-unreachable); they keep the hall's middle clear, at least kHallMinClearMm wide wherever they stand. Sconces and
 // pictures hang on the wall (sconces above the head).
+//
+// The ground floor's hall is the hub (I6 step 5, ADR-0014 §3, style §5.2, concept panel 1): building.json's hub, at
+// least HubLayout::lengthMm long (18 m: further when its rows reach further east), HubLayout::widthMm wide (14 m) and
+// HubLayout::heightMm high (5 m), its rooms on its long walls (building.hpp's rowStartOf()). Where a room stands on an
+// edge its doorway wall is the hub's wall up to the room's height, and a wall of the hub's own closes the edge above it
+// (HallWall::bottomMm). Its corridor dressing is the slots' wall pieces only (no bench or plant: Hub's pieces stand
+// instead), and its own (Hub, all of it fixed around the hub's core, the first HubLayout::lengthMm, or along the
+// balcony's edges at a fixed pitch, so that a longer hub appends columns and moves none):
+//   - a balcony kHubBalconyDepthMm deep along the north, south and east walls (decorative: nothing walks on it), its
+//     edge on columns every kHubColumnPitchMm from x = kHubColumnPitchMm along the long edges (while
+//     kHubColumnEndClearMm short of the east balcony's edge) and at the east edge's corners and kHubEastColumnZMm either
+//     side of its middle; a column within kHubColumnClearMm of a doorway's or the showcase's middle along its edge is
+//     left out (the portal and the showcase open onto the hub);
+//   - the landmark in the core's middle (kHubLandmarkRadiusMm: a glowing globe on a pedestal in a railed circular
+//     showcase of generic consoles), the directory's totem west of it facing the elevator (its proximity zone in front
+//     of it: Hub::totemZone, like the elevator's), the favourites' showcase against the south wall in the core's middle
+//     (its cases are runtime proxies, never plan placements: ADR-0013 §10) with an information screen above it, two
+//     sofas facing the landmark on rugs, a runner of rugs from the elevator to the landmark and on to the entrance, a
+//     rug before the core's north wall, plants by the elevator, the entrance, the showcase and the core's north portal,
+//     a lit bookcase of books against each long wall in the middle of every column bay off the core's middle;
+//   - its lights: point lights kHubLightDropMm below the ceiling over the core (Hall::lights) and under the balcony
+//     (Hall::lowLights, kHubLowLightHeightMm high).
+// A piece within a doorway's approach (kHubApproachMm along the edge beside the opening, kHubApproachDepthMm into the
+// hub) is left out, so that a room entering the hub later never has its doorway blocked (it may take a piece away, as
+// a hall's doorway takes a slot's piece). The hub's solid pieces (columns, the landmark, the totem, the showcase, the
+// sofas, the plants) collide and are obstacles of the floor's navigation; the totem's zone and the showcase's front are
+// reached from the arrival point (validation.hpp's floor-unreachable).
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -116,11 +144,14 @@ struct FloorDoorway {
     bool operator==(const FloorDoorway&) const = default;
 };
 
-/// A box of a hall's walls on the floor, standing its whole height.
+/// A box of a hall's walls on the floor, standing its whole height (above `bottomMm`).
 struct HallWall {
-    /// "west", "east", "north-<n>" and "south-<n>" (n from 0, west to east).
+    /// "west", "east", "north-<n>" and "south-<n>" (n from 0, west to east); the hub's walls above its rooms
+    /// "north-upper-<n>" and "south-upper-<n>".
     std::string id;
     Footprint footprint;
+    /// 0, or the height of the room below it (the hub's walls above its rooms, I6 step 5).
+    std::int64_t bottomMm = 0;
 
     bool operator==(const HallWall&) const = default;
 };
@@ -183,6 +214,8 @@ struct HallPiece {
     std::int64_t xMm = 0;
     /// What it takes on the floor: from the wall's face into the hall by its depth, its width along x.
     Footprint footprint;
+    /// A sconce's centre's height; 0: the hall's (the hub's gallery sconces kHubGallerySconceMm).
+    std::int64_t centreMm = 0;
 
     /// It stands on the floor: a collision and navigation obstacle.
     [[nodiscard]] bool solid() const noexcept { return kind == HallPieceKind::Bench || kind == HallPieceKind::Plant; }
@@ -190,10 +223,146 @@ struct HallPiece {
     bool operator==(const HallPiece&) const = default;
 };
 
+/// The hub's sizes and places (see the file comment), millimetres.
+/// The balcony: how deep from the wall to its edge, its walking surface's height, its slab's thickness under it, the
+/// fascia along its edge (its bottom; its top the walking surface's), its railing's height.
+inline constexpr std::int64_t kHubBalconyDepthMm = 1200;
+inline constexpr std::int64_t kHubBalconyFloorMm = 3150;
+inline constexpr std::int64_t kHubBalconySlabMm = 200;
+inline constexpr std::int64_t kHubFasciaBottomMm = 2850;
+inline constexpr std::int64_t kHubRailingHeightMm = 950;
+/// The columns: their pitch along the long edges, how far short of the east balcony's edge they stop, how far from a
+/// doorway's or the showcase's middle none stands, the east edge's columns either side of its middle, the plinth's side.
+inline constexpr std::int64_t kHubColumnPitchMm = 3000;
+inline constexpr std::int64_t kHubColumnEndClearMm = 1500;
+inline constexpr std::int64_t kHubColumnClearMm = 2000;
+inline constexpr std::int64_t kHubEastColumnZMm = 2900;
+inline constexpr std::int64_t kHubColumnSizeMm = 560;
+/// The landmark's radius (its railed showcase's outer rim) in the core's middle.
+inline constexpr std::int64_t kHubLandmarkRadiusMm = 2100;
+/// The directory's totem: its place west of the landmark (from the core's middle along x, and z), its width and depth,
+/// its zone's depth before it and width.
+inline constexpr std::int64_t kHubTotemFromCentreMm = 5400;
+inline constexpr std::int64_t kHubTotemZMm = 2400;
+inline constexpr std::int64_t kHubTotemWidthMm = 600;
+inline constexpr std::int64_t kHubTotemDepthMm = 320;
+inline constexpr std::int64_t kHubTotemZoneDepthMm = 1500;
+inline constexpr std::int64_t kHubTotemZoneWidthMm = 1600;
+/// The favourites' showcase (a display case of kHubShowcaseSlots face-out cases) against the south wall in the core's
+/// middle: its width, depth and gap to the wall; the information screen above it on the wall.
+inline constexpr std::int64_t kHubShowcaseWidthMm = 2000;
+inline constexpr std::int64_t kHubShowcaseDepthMm = 500;
+inline constexpr std::int64_t kHubShowcaseGapMm = 30;
+inline constexpr std::size_t kHubShowcaseSlots = 12;
+/// Where the walker stands before the showcase to pick a case: this far before its front.
+inline constexpr std::int64_t kHubShowcaseFrontMm = 700;
+inline constexpr std::int64_t kHubScreenWidthMm = 1800;
+inline constexpr std::int64_t kHubScreenHeightMm = 1000;
+inline constexpr std::int64_t kHubScreenCentreMm = 2100;
+/// A sofa facing the landmark (from the core's middle along x, its z), its width and depth; its rug.
+inline constexpr std::int64_t kHubSofaFromCentreMm = 2700;
+inline constexpr std::int64_t kHubSofaZMm = 4200;
+inline constexpr std::int64_t kHubSofaWidthMm = 2000;
+inline constexpr std::int64_t kHubSofaDepthMm = 900;
+inline constexpr std::int64_t kHubSofaRugWidthMm = 3000;
+inline constexpr std::int64_t kHubSofaRugDepthMm = 2000;
+inline constexpr std::int64_t kHubSofaRugZMm = 3900;
+/// The runner's and the portal rug's size (the halls' runner rug), the portal rug's distance from its wall.
+inline constexpr std::int64_t kHubRugLengthMm = 2400;
+inline constexpr std::int64_t kHubRugWidthMm = 1600;
+inline constexpr std::int64_t kHubPortalRugFromWallMm = 2500;
+/// A plant's spread (the halls'), how far its pot stands from its wall, and from a portal's or the showcase's middle.
+inline constexpr std::int64_t kHubPlantSpreadMm = 300;
+inline constexpr std::int64_t kHubPlantFromWallMm = 450;
+inline constexpr std::int64_t kHubPlantBesideMm = 2000;
+inline constexpr std::int64_t kHubPlantBesideShowcaseMm = 1700;
+/// A doorway's approach that no piece takes: beside its opening along its wall, and into the hub from it.
+inline constexpr std::int64_t kHubApproachMm = 900;
+inline constexpr std::int64_t kHubApproachDepthMm = 2500;
+/// The bookcases against the long walls (the museum-library, style §5.2): one in the middle of every column bay, this
+/// wide, deep and far from the wall, none within kHubBookcaseCoreClearMm of the core's middle (its portal, its
+/// showcase, their plants).
+inline constexpr std::int64_t kHubBookcaseWidthMm = 1800;
+inline constexpr std::int64_t kHubBookcaseDepthMm = 340;
+inline constexpr std::int64_t kHubBookcaseGapMm = 30;
+inline constexpr std::int64_t kHubBookcaseCoreClearMm = 3000;
+/// The runner: from this far east of the elevator (the halls' runner start) to this far short of the landmark's rim,
+/// on from as far east of it, while this far short of the east balcony's edge.
+inline constexpr std::int64_t kHubRunnerStartMm = 1800;
+inline constexpr std::int64_t kHubLandmarkClearMm = 300;
+inline constexpr std::int64_t kHubRunnerEndClearMm = 600;
+/// The hub's lights: how far below the ceiling the core's hang (one by the elevator kHubEndLightXMm from the west wall
+/// and its mirror by the entrance, kHubSideLightXMm either side of the core's middle kHubInnerLightZMm off the centre
+/// line, three over the middle at 0 and kHubOuterLightZMm either side, a longer hub's along its centre line every
+/// kHallLightPitchMm), how high those under the balcony are and how far from their wall (kHubSideLightXMm either side
+/// of the core's middle).
+inline constexpr std::int64_t kHubLightDropMm = 800;
+inline constexpr std::int64_t kHubEndLightXMm = 1500;
+inline constexpr std::int64_t kHubSideLightXMm = 4500;
+inline constexpr std::int64_t kHubInnerLightZMm = 1450;
+inline constexpr std::int64_t kHubOuterLightZMm = 4350;
+inline constexpr std::int64_t kHubLowLightHeightMm = 2600;
+inline constexpr std::int64_t kHubLowLightFromWallMm = 600;
+/// The gallery's sconces (above the balcony on the hub's long walls, one every column bay): their centre's height.
+inline constexpr std::int64_t kHubGallerySconceMm = 4250;
+
+/// What a piece of the hub is (see the file comment).
+enum class HubPieceKind : std::uint8_t {
+    Column,   ///< a column under the balcony's edge, rising to the ceiling
+    Landmark, ///< the glowing globe in its railed circular showcase
+    Totem,    ///< the directory's totem
+    Showcase, ///< the favourites' showcase (its cases are runtime proxies)
+    Screen,   ///< an information screen on a wall (flat: nothing on the floor)
+    Sofa,     ///< a sofa facing the landmark
+    Plant,    ///< a large potted plant
+    Rug,      ///< a rug (walked over)
+    Bookcase, ///< a lit bookcase of books against a long wall, under the balcony (the museum-library)
+};
+
+/// A piece of the hub (see the file comment), in the floor's frame.
+struct HubPiece {
+    /// "landmark", "totem", "showcase", "screen", "column-north-<x>", "column-east-<z>", "sofa-west", "rug-runner-<k>",
+    /// "plant-elevator-north", ... (x and z in millimetres).
+    std::string id;
+    HubPieceKind kind = HubPieceKind::Column;
+    /// Its middle on the floor, and where its front faces (hundredths of a degree about +Y, the scene's: 0 towards +Z,
+    /// 9000 towards +X, 18000 towards -Z, 27000 towards -X).
+    FloorPoint centre;
+    std::int32_t yawCdeg = 0;
+    /// What it takes on the floor (a screen: its width along its wall, its depth off it).
+    Footprint footprint;
+
+    /// It stands on the floor: a collision and navigation obstacle.
+    [[nodiscard]] bool solid() const noexcept { return kind != HubPieceKind::Screen && kind != HubPieceKind::Rug; }
+
+    bool operator==(const HubPiece&) const = default;
+};
+
+/// The hub (see the file comment): the balcony's edges, its pieces, the totem's zone.
+struct Hub {
+    /// The balcony's edges: the long ones' z (north negative), the east one's x.
+    std::int64_t northEdgeZMm = 0;
+    std::int64_t southEdgeZMm = 0;
+    std::int64_t eastEdgeXMm = 0;
+    /// The core's middle along x (HubLayout::lengthMm / 2): the landmark's, the showcase's.
+    std::int64_t centreXMm = 0;
+    /// Columns (north edge, south edge, east edge), then the landmark, the totem, the showcase, the screen, the sofas,
+    /// the rugs and the plants; those a doorway's approach takes left out.
+    std::vector<HubPiece> pieces;
+    /// The totem's proximity zone (before its screen, like the elevator's) and the middle of its screen on the floor.
+    Footprint totemZone;
+    FloorPoint totemFace;
+
+    /// The piece `id`, or null.
+    [[nodiscard]] const HubPiece* find(std::string_view id) const noexcept;
+
+    bool operator==(const Hub&) const = default;
+};
+
 /// A floor's hall (see the file comment).
 struct Hall {
     std::string floor;
-    /// The ground floor's hall is the lobby.
+    /// The ground floor's hall, the hub (I6 step 5; I4's lobby).
     bool lobby = false;
     std::int64_t widthMm = 0;
     std::int64_t heightMm = kHallHeightMm;
@@ -204,8 +373,11 @@ struct Hall {
     std::vector<HallWall> walls;
     /// The doorways of the floor's rooms that have a template, by room id.
     std::vector<FloorDoorway> doorways;
-    /// The lights' places (x, z) on the centre line, west to east; their height is heightMm - kHallLightDropMm.
+    /// The lights' places (x, z) on the centre line, west to east; their height is heightMm - lightDropMm. The hub's
+    /// over its core (lightDropMm kHubLightDropMm), and its lights under the balcony (kHubLowLightHeightMm high).
     std::vector<FloorPoint> lights;
+    std::int64_t lightDropMm = kHallLightDropMm;
+    std::vector<FloorPoint> lowLights;
     /// The elevator's frame on the west wall (what stands proud of it), its proximity zone, and the arrival point.
     Footprint elevator;
     Footprint elevatorZone;
@@ -215,6 +387,8 @@ struct Hall {
     /// The dressing (see the file comment): the north edge's slot pieces west to east, the south edge's, then each
     /// doorway's sconces by room id.
     std::vector<HallPiece> dressing;
+    /// The hub's own (the ground floor's hall only).
+    std::optional<Hub> hub;
 
     /// The hall with its walls and the elevator's frame (what a room of the floor must not overlap).
     [[nodiscard]] Footprint footprint() const noexcept;

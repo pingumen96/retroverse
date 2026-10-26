@@ -161,6 +161,9 @@ struct ChangeReport {
     /// The rooms this update migrated to their families' successors (I6 step 4, ADR-0014 §2), by room: each one
     /// regenerated once, its id, floor, x, sections and seed kept.
     std::vector<MigratedRoom> migratedRooms;
+    /// The ground floor's rooms this update re-placed onto the hub (I6 step 5, ADR-0014 §3), by room: new x and z, their
+    /// contents unchanged in their own frames (building.hpp's placeOnHub()).
+    std::vector<ReplacedRoom> replacedRooms;
     /// The plan digests before (empty without a previous plan) and after.
     std::string digestBefore;
     std::string digestAfter;

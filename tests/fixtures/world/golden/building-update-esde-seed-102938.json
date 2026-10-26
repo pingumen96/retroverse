@@ -367,7 +367,7 @@
 {"id":"gen5","order":4},
 {"id":"handheld","order":7},
 {"id":"computer","order":8}
-],"generatorVersion":"1.4","inputDigest":"4cbdf1b711dc9630fdf55466830d0905f79a04e63d06698faf971c4406e6043f","library":"esde","lights":[
+],"generatorVersion":"1.4","inputDigest":"46d2495e55925a2230017581a2a1fb2982bd73a5b6f3f2546652afda8df47c52","library":"esde","lights":[
 {"id":"area:arcade/fx:dec-nw.light","role":"lamp","spanMm":0,"targetXMm":-3650,"targetYMm":1379,"targetZMm":-4800,"xMm":-3650,"yMm":1379,"zMm":-4800},
 {"id":"area:arcade/fx:e01.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-4000,"xMm":4300,"yMm":1379,"zMm":-4000},
 {"id":"area:arcade/fx:hero.key-light","role":"key","spanMm":5750,"targetXMm":0,"targetYMm":500,"targetZMm":-4870,"xMm":0,"yMm":2920,"zMm":-2670},
@@ -706,7 +706,7 @@
 {"game":"g6e0e0f643b78f1b6","insetMm":0,"slot":"room:snes/fx:hw-w/s:4.3","yawCdeg":0},
 {"game":"g21dc08808906aee5","insetMm":3,"slot":"room:snes/fx:hw-w/s:4.4","yawCdeg":0}
 ],"preset":"retro_museum_cozy","randomAlgorithm":"splitmix64/1","rooms":[
-{"floor":"ground","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"area:arcade","kind":"arcade","maxXMm":4500,"maxZMm":5000,"mediaFamily":"generic_case","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-8150},"sections":["mame","fbneo"],"seed":6911584476454774649,"template":"console_room_9x10","templateVersion":2,"themePack":"arcade_after_dark"},
+{"floor":"ground","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"area:arcade","kind":"arcade","maxXMm":4500,"maxZMm":5000,"mediaFamily":"generic_case","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":9000,"yawHalfTurns":0,"zMm":-12150},"sections":["mame","fbneo"],"seed":6911584476454774649,"template":"console_room_9x10","templateVersion":2,"themePack":"arcade_after_dark"},
 {"floor":"computer","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"area:shared:computer","kind":"shared","maxXMm":4500,"maxZMm":5000,"mediaFamily":"generic_case_v2","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["amiga"],"seed":11966398571839661472,"template":"console_room_9x10","templateVersion":2,"themePack":"computer_studio"},
 {"floor":"gen4","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"area:shared:gen4","kind":"shared","maxXMm":4500,"maxZMm":5000,"mediaFamily":"generic_case_v2","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":1,"zMm":6650},"sections":["megadrive","neogeo"],"seed":15370591833244310929,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"},
 {"floor":"handheld","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"area:shared:handheld","kind":"shared","maxXMm":4500,"maxZMm":5000,"mediaFamily":"generic_case_v2","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":1,"zMm":6650},"sections":["pocketlab","pokemini"],"seed":3547165841484389501,"template":"console_room_9x10","templateVersion":2,"themePack":"handheld_archive"},

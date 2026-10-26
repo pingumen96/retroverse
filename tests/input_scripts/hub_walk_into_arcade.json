@@ -1,0 +1,16 @@
+// I6 step 5 verification: from the ground floor's arrival point in front of the elevator (feet at (1.2, 0, 0), facing
+// east), turn half right of the hub's middle and walk past the landmark's north side to before the arcade room's
+// doorway in the middle of the hub's north wall (its centre at x 9.0 m, the wall at z -7.0 m), turn north and walk
+// through the portal into the room.
+// Expected (2.5 m/s, 0.0022 rad per mouse pixel, --fixed-dt 0.016667): frames 0-9 turn 32.14 degrees left (yaw 57.86),
+// frames 10-230 walk 9.21 m, feet about (9.0, 0, -4.9), in the hub north of the landmark; frames 231-240 turn 57.86
+// degrees left, yaw 0 (north); frames 241-340 walk 4.17 m north through the portal, feet about (9.0, 0, -9.07), 1.9 m
+// into the room past its south wall's inner face at z -7.15.
+//   retroverse.exe --exit-after-frames --frames 341 --fixed-dt 0.016667 --hidden
+//     --input-script tests/input_scripts/hub_walk_into_arcade.json --data-dir <a building's data>
+[
+  {"fromFrame": 0, "toFrame": 9, "actions": {"look_delta_x": -25.4956}},
+  {"fromFrame": 10, "toFrame": 230, "actions": {"move_forward": 1.0}},
+  {"fromFrame": 231, "toFrame": 240, "actions": {"look_delta_x": -45.9044}},
+  {"fromFrame": 241, "toFrame": 340, "actions": {"move_forward": 1.0}}
+]

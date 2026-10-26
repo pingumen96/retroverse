@@ -382,6 +382,16 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     };
     CHECK(migrated.changes.migratedRooms == expected);
     CHECK(migrated.changes.needsConfirmation.empty());
+    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, is re-placed onto the hub once: new x and z,
+    // its yaw and contents unchanged.
+    const Room* legacyArcade = findRoom(*legacy, "area:arcade");
+    REQUIRE(legacyArcade != nullptr);
+    CHECK(legacyArcade->placement == rv::world::RoomPlacement{7650, -8150, 0});
+    const std::vector<rv::world::ReplacedRoom> replaced{{*rv::world::RoomId::parse("area:arcade"),
+                                                         legacyArcade->placement,
+                                                         rv::world::RoomPlacement{9000, -12150, 0}}};
+    CHECK(migrated.changes.replacedRooms == replaced);
+    CHECK(findRoom(migrated.plan, "area:arcade")->placement == replaced.front().to);
     CHECK(migrated.plan.generatorVersion == rv::world::kGeneratorVersion);
 
     // Every room records the pack its floor resolves now (I6 step 3, ADR-0014 §1: a look, written by every update),
@@ -397,9 +407,14 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     }
 
     // Every other room byte for byte, and the whole plan outside the migrated rooms but for the generator's stamps,
-    // the inputs' digest and the rewritten packs: the floors, the hall's lights, every element of gb, snes and the
-    // arcade room.
+    // the inputs' digest, the rewritten packs and the arcade room's place on the hub: the floors, the hall's lights,
+    // every element of gb, snes and the arcade room.
     const auto withoutMigrated = [&](WorldPlan plan) {
+        for (Room& room : plan.rooms) {
+            if (room.id.toString() == "area:arcade") {
+                room.placement = legacyArcade->placement;
+            }
+        }
         for (const MigratedRoom& entry : expected) {
             std::erase_if(plan.rooms, [&](const Room& room) { return room.id == entry.room; });
             std::erase_if(plan.fixtures, [&](const auto& fixture) { return fixture.id.room() == entry.room; });

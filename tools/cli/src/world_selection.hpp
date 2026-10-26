@@ -341,6 +341,11 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
                  : fmt::format("{}: {} -> {}, {} unplaced for capacity", migrated.room.toString(), migrated.from,
                                migrated.to, migrated.unplacedForCapacity));
     }
+    // The ground floor's rooms re-placed once onto the hub (I6 step 5, ADR-0014 §3).
+    for (const world::ReplacedRoom& replaced : changes.replacedRooms) {
+        line("Room re-placed", fmt::format("{}: onto the hub, x {} z {} (was x {} z {})", replaced.room.toString(),
+                                           replaced.to.xMm, replaced.to.zMm, replaced.from.xMm, replaced.from.zMm));
+    }
     // The systems that entered the building (I4 step 6a): each in the room it opened or as a section of one.
     for (const world::SystemRoom& entered : changes.systemsEntered) {
         const bool opened = std::find(changes.roomsAdded.begin(), changes.roomsAdded.end(), entered.room) !=
@@ -405,6 +410,19 @@ inline CatalogJson migratedRoomsJson(const std::vector<world::MigratedRoom>& roo
     return array;
 }
 
+/// The rooms an update re-placed onto the hub, as JSON: [{"room", "from": {"xMm", "zMm", "yawHalfTurns"}, "to"}].
+inline CatalogJson replacedRoomsJson(const std::vector<world::ReplacedRoom>& rooms) {
+    const auto placement = [](const world::RoomPlacement& at) {
+        return CatalogJson{{"xMm", at.xMm}, {"zMm", at.zMm}, {"yawHalfTurns", at.yawHalfTurns}};
+    };
+    CatalogJson array = CatalogJson::array();
+    for (const world::ReplacedRoom& replaced : rooms) {
+        array.push_back(CatalogJson{
+            {"room", replaced.room.toString()}, {"from", placement(replaced.from)}, {"to", placement(replaced.to)}});
+    }
+    return array;
+}
+
 /// Systems with their rooms, as JSON: [{"system", "room"}].
 inline CatalogJson systemRoomsJson(const std::vector<world::SystemRoom>& systems) {
     CatalogJson array = CatalogJson::array();
@@ -442,6 +460,7 @@ inline CatalogJson changeReportJson(const world::ChangeReport& changes) {
                        {"systemsEntered", systemRoomsJson(changes.systemsEntered)},
                        {"systemsWaiting", systemRoomsJson(changes.systemsWaiting)},
                        {"migratedRooms", migratedRoomsJson(changes.migratedRooms)},
+                       {"replacedRooms", replacedRoomsJson(changes.replacedRooms)},
                        {"digestBefore", changes.digestBefore},
                        {"digestAfter", changes.digestAfter}};
 }

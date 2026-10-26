@@ -464,11 +464,13 @@ TEST_CASE("world/building: rooms enter the shorter row at its east end, north on
     const Room sixth = enter(rooms, roomOn("gen4", "nes"));
     CHECK(sixth.placement.yawHalfTurns == 1);
     CHECK(sixth.placement.xMm == 21600 + 4650);
-    // Rooms of another floor are not in these rows; the ground floor's lobby is 6 m wide.
+    // Rooms of another floor are not in these rows; the ground floor's hall is the hub (I6 step 5): 14 m wide, its rows
+    // from 4.35 m, so that its first room (9.3 m with its walls) stands in the middle of its 18 m north wall.
     std::vector<Room> ground;
     const Room arcade = enter(ground, roomOn("ground", "mame"));
-    CHECK(arcade.placement == RoomPlacement{7650, -3000 - 150 - 5000, 0});
-    CHECK(rv::world::floorRows(rooms, "ground", layout) == rv::world::FloorRows{3000, 3000, 0, 0});
+    CHECK(arcade.placement == RoomPlacement{9000, -7000 - 150 - 5000, 0});
+    CHECK(rv::world::floorRows(rooms, "ground", layout) == rv::world::FloorRows{4350, 4350, 0, 0});
+    CHECK(rv::world::standsOnHub(arcade, layout));
     // No two rooms of the floor overlap.
     for (std::size_t i = 0; i < rooms.size(); ++i) {
         for (std::size_t j = i + 1; j < rooms.size(); ++j) {
@@ -540,8 +542,10 @@ TEST_CASE("world/building: the room's frame on its floor's", "[world][building]"
     CHECK(rv::world::roomYawToFloor(south, 0) == 18000);
     CHECK(rv::world::rowOf(north) == rv::world::Row::North);
     CHECK(rv::world::rowOf(south) == rv::world::Row::South);
-    CHECK(rv::world::hallWidthOf("ground", building().layout) == 6000);
+    CHECK(rv::world::hallWidthOf("ground", building().layout) == 14000);
     CHECK(rv::world::hallWidthOf("gen4", building().layout) == 3000);
+    CHECK(rv::world::rowStartOf("ground", building().layout) == 4350);
+    CHECK(rv::world::rowStartOf("gen4", building().layout) == 3000);
 }
 
 TEST_CASE("world/building: every form of room id seeds its room by its text", "[world][building]") {
