@@ -22,7 +22,7 @@ using namespace rv::smoke;
 namespace {
 
 /// Every map of every procedural surface the test room uses (all but the halls' wall wash, I6 step 2), RGBA8 with its
-/// full chain (each map uploaded once, in its own color space): the bytes and the count of the textures
+/// full chain (the metallic-roughness map R8 since I6 step 5's review) (each map uploaded once, in its own color space): the bytes and the count of the textures
 /// gl::TextureCache generates for it.
 struct SurfaceMaps {
     std::uint64_t bytes = 0;
@@ -40,9 +40,11 @@ SurfaceMaps proceduralSurfaceMaps() {
             continue;
         }
         const std::uint64_t maps = surface.hasNormalMap ? 3 : 2;
+        const int levels = rv::gl::fullMipLevelCount(surface.size);
         total.maps += maps;
-        total.bytes += maps * rv::gl::textureBytes(rv::gl::GpuFormat::Rgba8, surface.size,
-                                                   rv::gl::fullMipLevelCount(surface.size));
+        // The metallic-roughness map its roughness alone (R8: every surface is all metal or none).
+        total.bytes += (maps - 1) * rv::gl::textureBytes(rv::gl::GpuFormat::Rgba8, surface.size, levels) +
+                       rv::gl::textureBytes(rv::gl::GpuFormat::R8, surface.size, levels);
     }
     return total;
 }

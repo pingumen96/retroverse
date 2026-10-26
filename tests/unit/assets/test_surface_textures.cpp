@@ -327,12 +327,11 @@ TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[asse
     CHECK(roughness("geometric_rug") > 0.85);
     CHECK(roughness("runner_rug") > 0.85);
     CHECK(roughness("brushed_metal") == Approx(0.32).margin(0.08));
-    for (const char* name : {"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster", "ornate_rug",
-                             "aged_plastic"}) {
-        INFO(name);
-        CHECK(metallic(name) == 0.0);
+    // Every surface is all metal or none (the GPU keeps its roughness alone: gl::metallicRoughnessFormat, R8).
+    for (const rv::assets::ProceduralSurfaceInfo& info : rv::assets::proceduralSurfaces()) {
+        INFO(info.name);
+        CHECK(metallic(std::string(info.name).c_str()) == (info.name == "brushed_metal" ? 1.0 : 0.0));
     }
-    CHECK(metallic("brushed_metal") == 1.0);
     // The detail surface stays close to 1, so that it modulates a material's own color and roughness.
     const glm::vec3 plastic = meanLinearColor(surfaceOf("aged_plastic").baseColor);
     CHECK(plastic.r > 0.95f);
