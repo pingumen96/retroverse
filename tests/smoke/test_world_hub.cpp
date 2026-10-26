@@ -7,6 +7,7 @@
 //   - the favourites' showcase: its proxies are the catalog's favourite and recent games in the directory's order (the
 //     first twelve of its list), their fronts resident; interact on the first one opens the directory at its card;
 //     its Avvia launches it into the fake emulator (RV_LAUNCH_ALLOWLIST), and on its return the showcase is made again;
+//     a refresh that keeps the floor makes it again in place (a favourite marked since), the registries as they were;
 //   - the arcade room reached from the elevator past the landmark (tests/input_scripts/hub_walk_into_arcade.json): the
 //     eye in the arcade room at the end.
 // The screenshots stay in build/<preset>/smoke/world_hub for a look.
@@ -291,4 +292,69 @@ TEST_CASE("world hub: a game launched from a proxy's card returns and the showca
     REQUIRE_FALSE(report.world.showcase.games.empty());
     CHECK(report.world.showcase.games.front() == games.front());
     CHECK(report.world.showcase.frontsResident == report.world.showcase.games.size());
+    // I6 step 5's review: drawn once per content that differs from the one shown, in place after the first; the
+    // registries never grow with a drawing.
+    REQUIRE_FALSE(report.world.showcase.draws.empty());
+    CHECK(report.world.showcase.draws.size() + report.world.showcase.unchanged == report.world.showcase.builds);
+    CHECK_FALSE(report.world.showcase.draws.front().inPlace);
+    for (const rv::app::ShowcaseDrawRecord& draw : report.world.showcase.draws) {
+        CHECK(draw.meshes == report.world.showcase.draws.front().meshes);
+        CHECK(draw.materials == report.world.showcase.draws.front().materials);
+    }
+}
+
+TEST_CASE("world hub: a favourite marked since and Aggiorna libreria pressed: the showcase is made again in place, the "
+          "registries as they were",
+          "[gpu][world][world_hub]") {
+    const PlannedBuilding building("world_hub/showcase_refresh", false);
+    const AppRun first = runApp(retroverseExe(), building.dir, "first", hubArguments(2));
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    REQUIRE(first.report->world.showcase.bound);
+    const std::vector<std::string> before = first.report->world.showcase.games;
+    REQUIRE_FALSE(before.empty());
+
+    // The arcade's last game marked a favourite in its gamelist (the fixture's copy): the refresh imports it, and the
+    // favourites come first in the showcase.
+    const fs::path gamelist = building.fixture.path("ES-DE/gamelists/mame/gamelist.xml");
+    auto text = rv::core::readTextFile(gamelist);
+    REQUIRE(text.has_value());
+    const std::size_t last = text->rfind("\t\t<players>");
+    REQUIRE(last != std::string::npos);
+    const std::size_t lineEnd = text->find('\n', last);
+    REQUIRE(lineEnd != std::string::npos);
+    const std::size_t gameEnd = text->find("</game>", lineEnd);
+    REQUIRE(gameEnd != std::string::npos);
+    REQUIRE(text->substr(lineEnd, gameEnd - lineEnd).find("<favorite>") == std::string::npos);
+    text->insert(lineEnd + 1, "\t\t<favorite>true</favorite>\n");
+    REQUIRE(rv::core::writeTextFileAtomic(gamelist, *text).has_value());
+
+    // The quick catalog's "Aggiorna libreria" (tests/smoke/test_world_live_update.cpp's path) on frame 20, the floor
+    // shown and its showcase drawn by then (lockstep).
+    const Json script = Json::array({press(2, "quick_catalog"), press(4, "ui_home"), press(6, "ui_up"),
+                                     press(8, "ui_up"), press(10, "ui_up"), press(12, "ui_up"),
+                                     press(20, "ui_activate"), press(24, "quick_catalog")});
+    const fs::path scriptFile = building.dir / "aggiorna.json";
+    REQUIRE(rv::core::writeTextFileAtomic(scriptFile, script.dump(2) + "\n").has_value());
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "refresh", hubArguments(240, {"--input-script", arg(scriptFile)}));
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.catalog.has_value());
+    REQUIRE(report.catalog->refreshes.size() == 1);
+    CHECK(report.catalog->refreshes.front().outcome == "done");
+    // The floor kept (no rebuild): the showcase alone is made again.
+    REQUIRE(report.world.liveUpdates.size() == 1);
+    CHECK(report.world.liveUpdates.front().kind != "rebuild");
+    const rv::app::ShowcaseRecord& showcase = report.world.showcase;
+    CHECK(showcase.builds == 2);
+    CHECK(showcase.unchanged == 0);
+    CHECK(showcase.games != before);
+    CHECK(showcase.frontsResident == showcase.games.size());
+    REQUIRE(showcase.draws.size() == 2);
+    CHECK_FALSE(showcase.draws[0].inPlace);
+    CHECK(showcase.draws[1].inPlace);
+    CHECK(showcase.draws[1].meshes == showcase.draws[0].meshes);
+    CHECK(showcase.draws[1].materials == showcase.draws[0].materials);
 }

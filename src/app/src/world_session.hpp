@@ -444,6 +444,12 @@ private:
     /// Every frame: a launch's return or a refresh asks for the content again, an answer is shown.
     void followShowcase(ProductUi& product);
     void showShowcase(ShowcaseContent content);
+    /// Asks for the showcase's content again (a refresh that keeps the floor); nothing off the hub.
+    void wantShowcase() noexcept {
+        if (m_showcaseSpec) {
+            m_showcaseWanted = true;
+        }
+    }
     void dropShowcase();
     /// Its cover loader's round (as the floor's: paused while a launched game runs).
     void showcaseRound(ProductUi& product, const gl::UploadBudget& budget, bool frame);
@@ -557,6 +563,8 @@ private:
     bool m_showcaseAsked = false;
     bool m_showcaseWanted = false;
     std::vector<ShowcaseGame> m_showcaseGames;
+    /// The covers of the content shown (a content equal to it, games and covers, is not drawn again).
+    std::vector<CoverItem> m_showcaseCovers;
     world::CollectionLayout m_showcaseLayout;
     std::unique_ptr<CollectionInstance> m_showcase;
     std::unique_ptr<CoverLoader> m_showcaseLoader;

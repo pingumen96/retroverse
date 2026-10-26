@@ -1179,8 +1179,14 @@ Json worldToJson(const WorldRecord& world) {
     json["elevatorPromptFrames"] = world.elevatorPromptFrames;
     json["totemPromptFrames"] = world.totemPromptFrames;
     if (world.showcase.bound) {
+        Json draws = Json::array();
+        for (const ShowcaseDrawRecord& draw : world.showcase.draws) {
+            draws.push_back(Json{{"meshes", draw.meshes}, {"materials", draw.materials}, {"inPlace", draw.inPlace}});
+        }
         json["showcase"] = Json{{"games", world.showcase.games},
                                 {"builds", world.showcase.builds},
+                                {"unchanged", world.showcase.unchanged},
+                                {"draws", std::move(draws)},
                                 {"cardsOpened", world.showcase.cardsOpened},
                                 {"lastCard", world.showcase.lastCard},
                                 {"hovered", world.showcase.hovered},
@@ -1413,6 +1419,11 @@ WorldRecord readWorld(FieldReader& fields) {
         world.showcase.bound = true;
         world.showcase.games = showcase->optionalStringArray("games");
         world.showcase.builds = showcase->count("builds");
+        world.showcase.unchanged = showcase->optionalCount("unchanged").value_or(0);
+        for (FieldReader& draw : showcase->optionalObjectArray("draws")) {
+            world.showcase.draws.push_back(
+                ShowcaseDrawRecord{draw.count("meshes"), draw.count("materials"), draw.boolean("inPlace")});
+        }
         world.showcase.cardsOpened = showcase->count("cardsOpened");
         world.showcase.lastCard = showcase->string("lastCard");
         world.showcase.hovered = showcase->string("hovered");

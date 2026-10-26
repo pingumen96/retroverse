@@ -15,6 +15,8 @@
 #include <rv/assets/derived_texture_cache.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/render/gl_device.hpp>
+#include <rv/render/material_registry.hpp>
+#include <rv/render/mesh_registry.hpp>
 
 #include "collection_instance.hpp"
 #include "cover_loader.hpp"
@@ -108,14 +110,29 @@ void WorldSession::followShowcase(ProductUi& product) {
 }
 
 void WorldSession::showShowcase(ShowcaseContent content) {
-    // The proxies shown go (their layers released with their arrays), the new ones come with their own loader.
+    ++m_showcaseRecord.builds;
+    // A content equal to the one shown (the same games, the same covers: a launch or a refresh that changed none of
+    // them) leaves the showcase as it stands, its layers and pick index with it.
+    if (content.games == m_showcaseGames && content.covers == m_showcaseCovers) {
+        ++m_showcaseRecord.unchanged;
+        spdlog::info("Frame {}: the hub's showcase is unchanged ({} game(s), made in {:.1f} ms)", m_context.frameIndex(),
+                     m_showcaseGames.size(), content.milliseconds);
+        return;
+    }
+    // The proxies shown go: the pick index and the loader with them; the collection stays (its registry entries name
+    // its arrays and its textures: the registries keep a key's first entry until the floor's scene goes) and takes the
+    // new layout in place, the layers of the games that stand kept with their pictures.
     m_showcaseHovered = world::kNoPick;
+    if (m_showcase) {
+        if (Status cleared = m_showcase->setHovered(world::kNoPick); !cleared) {
+            spdlog::error("World: the showcase's hover: {}", cleared.error().toString());
+        }
+    }
     m_showcasePicks.reset();
     m_showcaseLoader.reset();
-    m_showcase.reset();
     m_showcaseGames = std::move(content.games);
+    m_showcaseCovers = content.covers;
     m_showcaseLayout = std::move(content.layout);
-    ++m_showcaseRecord.builds;
     m_showcaseRecord.games.clear();
     for (const ShowcaseGame& game : m_showcaseGames) {
         m_showcaseRecord.games.push_back(game.game.toString());
@@ -123,21 +140,34 @@ void WorldSession::showShowcase(ShowcaseContent content) {
     spdlog::info("Frame {}: the hub's showcase holds {} favourite or recent game(s) (made in {:.1f} ms)",
                  m_context.frameIndex(), m_showcaseGames.size(), content.milliseconds);
     if (m_showcaseLayout.items.empty() || !m_showcaseSpec) {
-        syncCollections();
+        syncCollections(); // a collection that stands is kept, not drawn (syncCollections() skips an empty layout)
         return;
     }
-    // Keys of this build's own: the registries keep a key's first entry until the floor's scene goes (showScene()), and
-    // the entries of the build before name its textures, released above.
-    const std::string keyPrefix = fmt::format("{}/{}", kShowcaseKeyPrefix, m_showcaseRecord.builds);
-    auto collection = CollectionInstance::create(m_showcaseLayout, m_showcaseSpec->data, m_graphics,
-                                                 m_context.device().caps().uniformBufferOffsetAlignment, std::nullopt,
-                                                 keyPrefix);
-    if (!collection) {
-        spdlog::error("World: the hub's showcase cannot be drawn: {}", collection.error().toString());
-        syncCollections();
-        return;
+    const int alignment = m_context.device().caps().uniformBufferOffsetAlignment;
+    const bool inPlace = m_showcase != nullptr;
+    if (m_showcase) {
+        if (auto updated = m_showcase->applyLayout(m_showcaseLayout, m_graphics, alignment); !updated) {
+            // Partly updated: kept (its registry entries name it) but neither drawn nor picked.
+            spdlog::error("World: the hub's showcase cannot be updated: {}", updated.error().toString());
+            m_showcaseLayout = world::CollectionLayout{};
+            m_showcaseCovers.clear(); // the next content is drawn whatever it holds
+            syncCollections();
+            return;
+        }
+    } else {
+        auto collection = CollectionInstance::create(m_showcaseLayout, m_showcaseSpec->data, m_graphics, alignment,
+                                                     std::nullopt, kShowcaseKeyPrefix);
+        if (!collection) {
+            spdlog::error("World: the hub's showcase cannot be drawn: {}", collection.error().toString());
+            m_showcaseLayout = world::CollectionLayout{};
+            m_showcaseCovers.clear(); // the next content is drawn whatever it holds
+            syncCollections();
+            return;
+        }
+        m_showcase = std::move(*collection);
     }
-    m_showcase = std::move(*collection);
+    m_showcaseRecord.draws.push_back(ShowcaseDrawRecord{m_graphics.meshes().size(), m_graphics.materials().size(),
+                                                        inPlace});
     if (auto picks = world::PickIndex::build(m_showcaseLayout.pickTargets(), {})) {
         m_showcasePicks = std::make_unique<world::PickIndex>(std::move(*picks));
     } else {
@@ -172,6 +202,7 @@ void WorldSession::dropShowcase() {
     m_showcaseLoader.reset();
     m_showcase.reset();
     m_showcaseGames.clear();
+    m_showcaseCovers.clear();
     m_showcaseLayout = world::CollectionLayout{};
     m_showcaseSpec.reset();
 }

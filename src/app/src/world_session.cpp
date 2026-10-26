@@ -391,7 +391,7 @@ void WorldSession::syncCollections() {
         }
     }
     // I6 step 5: the hub's showcase (its own loader serves it: not one of the floor loader's collections).
-    if (m_showcase) {
+    if (m_showcase && !m_showcaseLayout.items.empty()) {
         for (const gl::StaticInstanceGroup* group : m_showcase->groups()) {
             m_groups.push_back(group);
         }

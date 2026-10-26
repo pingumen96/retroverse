@@ -9,9 +9,10 @@
 // case of kShowcaseFamily (one family for every proxy: a keep case, whatever the game's own room shows), its cover
 // from the rooms' items files (the game's system's: a game no room places, or no file knows, shows its generated
 // label). The app (WorldSession, rv_app) draws them as a collection of its own (registry keys under
-// kShowcaseKeyPrefix, a prefix per build), brings their layers in with a cover loader of their own, picks them with a
+// kShowcaseKeyPrefix, one collection per floor shown, updated in place by a new content), brings their layers in with a cover loader of their own, picks them with a
 // pick index of their own, and on interact opens the directory at the game's card (Avvia, Mostra nella stanza). The
-// content is made again when a launched game returns and after a refresh of the catalog.
+// content is made again when a launched game returns and after a refresh of the catalog; a content equal to the one
+// shown is not drawn again.
 
 #include <chrono>
 #include <cstdint>

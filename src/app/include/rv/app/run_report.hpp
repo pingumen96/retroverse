@@ -786,12 +786,25 @@ struct ReplacedRoomRecord {
     bool operator==(const ReplacedRoomRecord&) const = default;
 };
 
+/// A drawing of the hub's showcase (I6 step 5's review): the scene's mesh and material registries' sizes after it, and
+/// whether its collection was updated in place (every drawing after the first of a floor).
+struct ShowcaseDrawRecord {
+    std::uint64_t meshes = 0;
+    std::uint64_t materials = 0;
+    bool inPlace = false;
+
+    bool operator==(const ShowcaseDrawRecord&) const = default;
+};
+
 /// The hub's favourites showcase of the run (I6 step 5): its proxies' games (GameIds, in slot order) as shown last, how
-/// many times its content was made, the cards it opened, the proxy hovered at the end, its layers' residency.
+/// many times its content was made, of them how many equalled the content shown (nothing drawn again), each drawing,
+/// the cards it opened, the proxy hovered at the end, its layers' residency.
 struct ShowcaseRecord {
     bool bound = false;
     std::vector<std::string> games;
     std::uint64_t builds = 0;
+    std::uint64_t unchanged = 0;
+    std::vector<ShowcaseDrawRecord> draws;
     std::uint64_t cardsOpened = 0;
     std::string lastCard;
     std::string hovered;

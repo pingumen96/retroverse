@@ -361,7 +361,9 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.totemPromptFrames = 14;
     world.showcase.bound = true;
     world.showcase.games = {"g000000000000b002", "g000000000000b003"};
-    world.showcase.builds = 2;
+    world.showcase.builds = 3;
+    world.showcase.unchanged = 1;
+    world.showcase.draws = {{120, 340, false}, {120, 340, true}};
     world.showcase.cardsOpened = 1;
     world.showcase.lastCard = "g000000000000b002";
     world.showcase.hovered = "g000000000000b003";
