@@ -1177,8 +1177,10 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
         CHECK((*runner)["position"][0].get<double>() - 1.2 >= static_cast<double>(hall.elevatorZone.maxXMm) / 1000.0);
         for (const nlohmann::json& light : scene["lights"]) {
             const std::string lightName = light["name"].get<std::string>();
+            // The hub's own (I6 step 5's review): the globe's light.
             CHECK((!lightName.starts_with(prefix) || lightName.starts_with(prefix + "light-") ||
-                   lightName.starts_with(prefix + "low-light-") || lightName.starts_with(prefix + "doorway-fill:")));
+                   lightName.starts_with(prefix + "low-light-") || lightName.starts_with(prefix + "doorway-fill:") ||
+                   (hall.hub && lightName == prefix + "globe")));
         }
         // Through the collision world: the walker stands at the arrival point and before every doorway, never in a
         // bench or a plant.

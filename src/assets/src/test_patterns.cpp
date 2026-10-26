@@ -1113,8 +1113,14 @@ ImageData informationBoard(int width, int height, std::string_view title) {
     const int rows = static_cast<int>(lines.size()) + 1; // the heading's rule takes a row's worth
     int scale = std::max(1, innerWidth / std::max(1, static_cast<int>(longest) * kGlyphAdvance));
     scale = std::min(scale, std::max(1, (height - 2 * margin) / (rows * (kGlyphHeight + kLineGap))));
-    const int lineHeight = (kGlyphHeight + kLineGap) * scale;
-    int y = margin;
+    // The lines spread (up to half as much again apart) and the block centred in the board's height (I6 step 5's
+    // review: a short list fills the board rather than its top).
+    const int available = height - 2 * margin;
+    const int tight = (kGlyphHeight + kLineGap) * scale;
+    const int spread = (3 * available) / (3 * static_cast<int>(lines.size()) + 1);
+    const int lineHeight = std::max(tight, std::min(spread, tight * 3 / 2));
+    const int block = lineHeight * static_cast<int>(lines.size()) + lineHeight / 3 - (lineHeight - kGlyphHeight * scale);
+    int y = margin + std::max(0, (available - block) / 2);
     const auto line = [&](const std::string& text, int x, Rgba color) {
         const int right = x + static_cast<int>(text.size()) * kGlyphAdvance * scale;
         drawText(image, {text}, scale, x, y, right, y + kGlyphHeight * scale, color);

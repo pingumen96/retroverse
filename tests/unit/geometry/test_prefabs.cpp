@@ -1720,6 +1720,16 @@ TEST_CASE("geometry/prefabs: the hub's landmark, totem, column and railing (I6 s
           part(landmark, "plastic_body").mesh.vertices.size());
     CHECK(buildError("hub_landmark", {{"globeRadius", 1.2}}).context == "hub_landmark.globeRadius");
     CHECK(buildError("hub_landmark", {{"consoles", 13}}).context == "hub_landmark.consoles");
+    // I6 step 5's review: larger consoles, and a riser for a boxed game between them, each a socket on its top.
+    const ProceduralPrefab displays = buildOk("hub_landmark", {{"consoles", 9}, {"consoleScale", 1.4}, {"displays", 9}});
+    CHECK(displays.sockets.size() == 1 + 9);
+    const glm::vec3 riser(socket(displays, "Display_0").transform[3]);
+    CHECK(riser.y > 0.3f + 0.38f);
+    CHECK(std::abs(riser.z) > 1.0f);
+    CHECK(part(displays, "plastic_body").mesh.bounds.max.y >
+          part(buildOk("hub_landmark", {{"consoles", 9}}), "plastic_body").mesh.bounds.max.y);
+    CHECK(buildError("hub_landmark", {{"consoleScale", 3.0}}).context == "hub_landmark.consoleScale");
+    CHECK(buildError("hub_landmark", {{"displays", 13}}).context == "hub_landmark.displays");
     // The totem: its screen and sign quads on its front, the screen's socket at its centre facing out.
     const ProceduralPrefab totem = buildOk("info_totem");
     const Socket& screen = socket(totem, "Screen");

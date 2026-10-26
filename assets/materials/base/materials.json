@@ -330,6 +330,29 @@
     "MAT_Downlight": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 3.0 },
     "MAT_Bulb_Warm": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 3.5 },
     "MAT_Screen_Board": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 1.4 },
+    // The hub after step 5's review (concept panel 1): its rugs the ornamental design dyed darker (the classic rug's
+    // picture under a tint: a deep bordeaux field, its cream medallion dimmer than the globe), its sofas an oxblood
+    // leather, the landmark's glass a little more present, its shelves' books mostly warm bindings.
+    "MAT_Carpet_Ornate_Hub": {
+      "baseColor": "#C4B0A8", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:ornate_rug/baseColor",
+      "metallicRoughnessTexture": "procedural:ornate_rug/metallicRoughness"
+    },
+    "MAT_Plaster_Hub": {
+      "baseColor": "#8C7360", "metallic": 0.0, "roughness": 1.0,
+      "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
+      "normalTexture": "procedural:painted_plaster/normal"
+    },
+    "MAT_Fabric_Leather_Oxblood": { "baseColor": "#5A2C27", "metallic": 0.0, "roughness": 0.5 },
+    "MAT_Glass_Hub": {
+      "baseColor": "#26302F",
+      "alpha": 0.12,
+      "alphaMode": "blend",
+      "doubleSided": true,
+      "metallic": 0.0,
+      "roughness": 0.3
+    },
+    "MAT_Book_Cloth_Bordeaux": { "baseColor": "#6A3034", "metallic": 0.0, "roughness": 0.85 },
     // In-world screens: multiplied by the video or test pattern texture.
     "MAT_Screen_Emissive": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0 },
     // The picture tube of a CRT television (style 15.2, CRT_Subtle of style 25): a 240-line picture with a light

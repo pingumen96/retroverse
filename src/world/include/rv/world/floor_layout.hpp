@@ -248,8 +248,11 @@ inline constexpr std::int64_t kHubTotemWidthMm = 600;
 inline constexpr std::int64_t kHubTotemDepthMm = 320;
 inline constexpr std::int64_t kHubTotemZoneDepthMm = 1500;
 inline constexpr std::int64_t kHubTotemZoneWidthMm = 1600;
-/// The favourites' showcase (a display case of kHubShowcaseSlots face-out cases) against the south wall in the core's
-/// middle: its width, depth and gap to the wall; the information screen above it on the wall.
+/// The favourites' showcase (a display case of kHubShowcaseSlots face-out cases) against the south wall in the column
+/// bay west of the core's middle (kHubShowcaseOffsetMm west of it since I6 step 5's review, off the arcade portal's
+/// axis: the globe never hides it from the north doorway), between two columns: its width, depth and gap to the wall;
+/// the information screen above it on the wall.
+inline constexpr std::int64_t kHubShowcaseOffsetMm = 1500;
 inline constexpr std::int64_t kHubShowcaseWidthMm = 2000;
 inline constexpr std::int64_t kHubShowcaseDepthMm = 500;
 inline constexpr std::int64_t kHubShowcaseGapMm = 30;

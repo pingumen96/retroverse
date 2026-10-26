@@ -129,6 +129,9 @@ struct HubShowcaseSlots {
 /// The hub's bookcases (I6 step 5): the shelf the hub's scene draws at each "bookcase-*" piece (lit inside, a row of
 /// books between bookends on each level).
 [[nodiscard]] nlohmann::json hubBookcaseParams();
+/// The hub's landmark (I6 step 5; its globe lower and larger, its consoles larger and more of them, risers for boxed
+/// games between them since the step's review): the hub_landmark the hub's scene draws at its "landmark" piece.
+[[nodiscard]] nlohmann::json hubLandmarkParams();
 [[nodiscard]] HubShowcaseSlots hubShowcaseSlots(const Hall& hall);
 
 /// A floor scene's id of an object or light of a room: "<room id>/<id within the room>".

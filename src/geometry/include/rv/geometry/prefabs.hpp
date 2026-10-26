@@ -542,7 +542,10 @@ struct RailingParams {
 /// (dais, pedestal), "wood_secondary" (ring counter), "metal_trim" (rim, posts, handrail, dish, meridian ring, axis),
 /// "glass" (the wall: one double-sided sheet, a blended material), "fabric" (the counter's top), "plastic_body",
 /// "plastic_dark", "plastic_accent" (the consoles), "globe" (the wireframe, an emissive material), "globe_core" (the
-/// core, a blended emissive material). Sockets: "Globe" (Anchor) at the globe's centre. Its bounds collide.
+/// core, a blended emissive material). Since I6 step 5's review the consoles may be larger (`consoleScale`), and
+/// `displays` low walnut risers stand on the counter between them (half a step off the consoles), each a socket for a
+/// boxed game the scene stands on it. Sockets: "Globe" (Anchor) at the globe's centre; "Display_<i>" (Anchor) on each
+/// riser's top at its middle, +Z facing out of the showcase. Its bounds collide.
 struct HubLandmarkParams {
     float radius = 2.1f;         ///< [1, 4]
     float baseHeight = 0.3f;     ///< the dais, [0.1, 0.6]
@@ -550,6 +553,8 @@ struct HubLandmarkParams {
     float pedestalHeight = 1.1f; ///< above the ring counter, [0.4, 3]
     float globeRadius = 0.55f;   ///< [0.2, min(1.2, radius / 2)]
     int consoles = 6;            ///< [0, 12]
+    float consoleScale = 1.0f;   ///< [0.5, 2]
+    int displays = 0;            ///< [0, 12]
 };
 
 /// "info_totem" (I6 step 5: the directory's totem in the hub), pivot floor, front +Z; bounds = width x height x depth.

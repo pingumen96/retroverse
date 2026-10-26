@@ -557,13 +557,16 @@ Expected<ProceduralPrefab> railingFromJson(const Json& params) {
 Expected<ProceduralPrefab> hubLandmarkFromJson(const Json& params) {
     HubLandmarkParams p;
     ParamReader r("hub_landmark", params,
-                  {"radius", "baseHeight", "railHeight", "pedestalHeight", "globeRadius", "consoles"});
+                  {"radius", "baseHeight", "railHeight", "pedestalHeight", "globeRadius", "consoles", "consoleScale",
+                   "displays"});
     r.read("radius", p.radius);
     r.read("baseHeight", p.baseHeight);
     r.read("railHeight", p.railHeight);
     r.read("pedestalHeight", p.pedestalHeight);
     r.read("globeRadius", p.globeRadius);
     r.read("consoles", p.consoles);
+    r.read("consoleScale", p.consoleScale);
+    r.read("displays", p.displays);
     if (!r.ok()) {
         return propagate(r.error());
     }

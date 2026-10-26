@@ -241,13 +241,14 @@ Hub deriveHub(const Hall& hall, const HubLayout& layout) {
     };
 
     // The columns under the balcony's edges: along the long edges at the pitch, none before a doorway or the
-    // showcase; the east edge's corners and either side of the entrance.
+    // showcase (which stands between two of them); the east edge's corners and either side of the entrance.
+    const std::int64_t showcaseX = cx - kHubShowcaseOffsetMm;
     const auto opening = [&](bool north, std::int64_t x) {
         const bool doorway = std::any_of(hall.doorways.begin(), hall.doorways.end(), [&](const FloorDoorway& door) {
             return door.opensOntoHall() && (door.hallEdgeZMm < 0) == north &&
                    std::abs((door.minMm + door.maxMm) / 2 - x) < kHubColumnClearMm;
         });
-        return doorway || (!north && std::abs(cx - x) < kHubColumnClearMm);
+        return doorway || (!north && std::abs(showcaseX - x) < (kHubShowcaseWidthMm + kHubColumnSizeMm) / 2);
     };
     for (const bool north : {true, false}) {
         const std::int64_t z = north ? hub.northEdgeZMm : hub.southEdgeZMm;
@@ -272,10 +273,10 @@ Hub deriveHub(const Hall& hall, const HubLayout& layout) {
     hub.totemZone = {hub.totemFace.xMm - kHubTotemZoneDepthMm, totem.zMm - kHubTotemZoneWidthMm / 2, hub.totemFace.xMm,
                      totem.zMm + kHubTotemZoneWidthMm / 2};
     const std::int64_t showcaseZ = half - kHubShowcaseGapMm - kHubShowcaseDepthMm / 2;
-    add({"showcase", HubPieceKind::Showcase, {cx, showcaseZ}, 18000,
-         around(cx, showcaseZ, kHubShowcaseWidthMm, kHubShowcaseDepthMm)});
-    add({"screen", HubPieceKind::Screen, {cx, half}, 18000,
-         {cx - kHubScreenWidthMm / 2, half - kHallPictureDepthMm, cx + kHubScreenWidthMm / 2, half}});
+    add({"showcase", HubPieceKind::Showcase, {showcaseX, showcaseZ}, 18000,
+         around(showcaseX, showcaseZ, kHubShowcaseWidthMm, kHubShowcaseDepthMm)});
+    add({"screen", HubPieceKind::Screen, {showcaseX, half}, 18000,
+         {showcaseX - kHubScreenWidthMm / 2, half - kHallPictureDepthMm, showcaseX + kHubScreenWidthMm / 2, half}});
 
     // The sofas facing the landmark on their rugs, the runner from the elevator to the landmark and on to the entrance,
     // the rug before the core's north wall.
@@ -328,8 +329,8 @@ Hub deriveHub(const Hall& hall, const HubLayout& layout) {
     plant("elevator-south", kHubPlantFromWallMm, kHubPlantBesideMm);
     plant("entrance-north", east - kHubPlantFromWallMm, -kHubPlantBesideMm);
     plant("entrance-south", east - kHubPlantFromWallMm, kHubPlantBesideMm);
-    plant("showcase-west", cx - kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
-    plant("showcase-east", cx + kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
+    plant("showcase-west", showcaseX - kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
+    plant("showcase-east", showcaseX + kHubPlantBesideShowcaseMm, half - kHubPlantFromWallMm);
     plant("north-west", cx - kHubPlantBesideMm, -half + kHubPlantFromWallMm);
     plant("north-east", cx + kHubPlantBesideMm, -half + kHubPlantFromWallMm);
     return hub;

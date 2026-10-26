@@ -253,10 +253,12 @@ TEST_CASE("world/hub: the ground floor's hall is the hub, 18 x 14 x 5 m, its bal
             columns.insert(piece.id);
         }
     }
+    // The showcase stands between the south columns at 6 and 9 m (I6 step 5's review: off the arcade portal's axis).
     CHECK(columns == std::set<std::string>{"column-north-3000", "column-north-6000", "column-north-12000",
                                            "column-north-15000", "column-south-3000", "column-south-6000",
-                                           "column-south-12000", "column-south-15000", "column-east--5800",
-                                           "column-east--2900", "column-east-2900", "column-east-5800"});
+                                           "column-south-9000", "column-south-12000", "column-south-15000",
+                                           "column-east--5800", "column-east--2900", "column-east-2900",
+                                           "column-east-5800"});
     // The landmark in the middle, the totem west of it facing the elevator, its zone before it; the showcase and its
     // screen in the middle of the south wall; two sofas facing the landmark; the plants and the rugs.
     const HubPiece* landmark = hub.find("landmark");
@@ -431,7 +433,7 @@ TEST_CASE("world/hub: the hub's scene: the balcony, the columns, the coffers, th
         }
         CHECK(object->value("collides", true) == piece.solid());
     }
-    CHECK(columns == 12);
+    CHECK(columns == 13);
     // The bookcases: the lit shelf, a row of books on each of its six levels.
     const nlohmann::json* bookcase = findObject(scene, prefix + "bookcase-north-1500");
     REQUIRE(bookcase != nullptr);
@@ -442,7 +444,7 @@ TEST_CASE("world/hub: the hub's scene: the balcony, the columns, the coffers, th
     CHECK(countObjects(scene, prefix + "bookcase-") == 8 * 7);
     // The coffered ceiling: beams across at the columns' x and the east balcony's edge, along at the edges and either
     // side of the middle; downlights in the coffers and under the balcony; the chandelier over the landmark.
-    CHECK(countObjects(scene, prefix + "beam-x") == 5);
+    CHECK(countObjects(scene, prefix + "beam-x") == 6);
     CHECK(countObjects(scene, prefix + "beam-z") == 4);
     CHECK(countObjects(scene, prefix + "downlight-") > 10);
     CHECK(countObjects(scene, prefix + "soffit-") > 20);
@@ -454,6 +456,10 @@ TEST_CASE("world/hub: the hub's scene: the balcony, the columns, the coffers, th
     CHECK((*landmark)["materials"]["globe"] == "MAT_Globe_Lines");
     CHECK((*landmark)["materials"]["globe_core"] == "MAT_Globe_Core");
     CHECK(countObjects(scene, prefix + "landmark/plant-") == 4);
+    // Since the step's review: the globe lower and larger, more and larger consoles, a boxed game on each riser.
+    CHECK((*landmark)["params"] == rv::world::hubLandmarkParams());
+    CHECK(countObjects(scene, prefix + "landmark/box-") == 9);
+    CHECK((*landmark)["materials"]["fabric"] == "MAT_Fabric_Display");
     // The totem: its screen the building's floors on the board, its plate's lettering.
     const nlohmann::json* totem = findObject(scene, prefix + "totem");
     REQUIRE(totem != nullptr);
@@ -478,6 +484,16 @@ TEST_CASE("world/hub: the hub's scene: the balcony, the columns, the coffers, th
     CHECK(findObject(scene, "hall:ground/sign")->at("position")[0].get<double>() == Approx(0.13));
     CHECK(findObject(scene, prefix + "portal:entrance/sign")->at("textures")["picture"]["title"] == "MAIN ENTRANCE");
     CHECK(findObject(scene, prefix + "fascia-sign:area:arcade")->at("textures")["picture"]["title"] == "ARCADE");
+    // Since the step's review: the fascia's sign in its room's neon (the arcade pack's), the portal's own a small plaque;
+    // the elevator's floor sign signage green, the entrance's a calm blue; large posters on the gallery's walls.
+    const nlohmann::json* arcadeSign = findObject(scene, prefix + "fascia-sign:area:arcade");
+    CHECK((*arcadeSign)["materials"]["picture"] == "MAT_Neon_Pink");
+    CHECK((*arcadeSign)["textures"]["picture"]["pattern"] == "neon");
+    CHECK(findObject(scene, "hall:ground/portal:area:arcade/sign")->at("params")["width"].get<double>() ==
+          Approx(0.8));
+    CHECK(findObject(scene, "hall:ground/sign")->at("materials")["picture"] == "MAT_Neon_Green");
+    CHECK(findObject(scene, prefix + "portal:entrance/sign")->at("materials")["picture"] == "MAT_Neon_Blue");
+    CHECK(countObjects(scene, prefix + "gallery-poster/") == 4 + 5 + 2 + 2); // the arcade's bay left out
     // Its lights in the hub's area: the core's, those under the balcony, the arcade doorway's fill; the hall's drum
     // pendants left out (lanterns instead) and its runner (the hub's rugs).
     std::size_t lights = 0;
@@ -486,7 +502,21 @@ TEST_CASE("world/hub: the hub's scene: the balcony, the columns, the coffers, th
             ++lights;
         }
     }
-    CHECK(lights == 9 + 4 + 1);
+    // Since the step's review the globe has its own light, after the doorway's fill.
+    CHECK(lights == 9 + 4 + 1 + 1);
+    const auto lightNamed = [&](const std::string& name) -> const nlohmann::json* {
+        for (const nlohmann::json& light : scene["lights"]) {
+            if (light["name"] == name) {
+                return &light;
+            }
+        }
+        return nullptr;
+    };
+    const nlohmann::json* globeLight = lightNamed("hall:ground/globe");
+    REQUIRE(globeLight != nullptr);
+    CHECK((*globeLight)["color"] == "#4C8BC9");
+    CHECK((*globeLight)["position"][1].get<double>() == Approx(1.92).margin(0.01));
+    CHECK(scene["lights"].back()["name"] == "hall:ground/globe");
     CHECK(countObjects(scene, "hall:ground/lamp-") == 0);
     CHECK(countObjects(scene, "hall:ground/runner-") == 0);
     CHECK(countObjects(scene, prefix + "lantern-") == 2 * 8); // a bulb and its stem each, the chandelier's light none

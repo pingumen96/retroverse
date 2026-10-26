@@ -182,6 +182,8 @@ constexpr float kGlobeLineTube = 0.009f;
 constexpr float kMeridianRingGap = 0.06f;
 /// A generic console of original design (the showcase's proportions): body, deck, slot, ports, buttons.
 constexpr glm::vec3 kConsole{0.26f, 0.055f, 0.19f};
+/// A riser for a boxed game between the consoles (I6 step 5's review).
+constexpr glm::vec3 kRiser{0.2f, 0.07f, 0.12f};
 
 Status validateLandmark(const HubLandmarkParams& p) {
     if (Status status = firstError({
@@ -190,6 +192,8 @@ Status validateLandmark(const HubLandmarkParams& p) {
             checkRange(kLandmark, "railHeight", p.railHeight, 0.5f, 1.4f),
             checkRange(kLandmark, "pedestalHeight", p.pedestalHeight, 0.4f, 3.0f),
             checkRange(kLandmark, "consoles", p.consoles, 0, 12),
+            checkRange(kLandmark, "consoleScale", p.consoleScale, 0.5f, 2.0f),
+            checkRange(kLandmark, "displays", p.displays, 0, 12),
         });
         !status) {
         return status;
@@ -202,7 +206,7 @@ Status validateLandmark(const HubLandmarkParams& p) {
     return ok();
 }
 
-/// A generic console standing on y = 0 of `at`, its front towards +Z.
+/// A generic console standing on y = 0 of `at`, its front towards +Z (`at` may scale it).
 void addConsole(detail::PrefabAssembler& out, const glm::mat4& at) {
     out.part("plastic_body")
         .chamferedBox(kConsole, 0.008f, at * translation(glm::vec3(0.0f, 0.5f * kConsole.y, 0.0f)))
@@ -259,8 +263,19 @@ ProceduralPrefab assembleLandmark(const HubLandmarkParams& p) {
         const float angle = core::kTwoPi * (static_cast<float>(i) + 0.5f) / static_cast<float>(p.consoles);
         const glm::mat4 at = translation(glm::vec3(consoleRadius * std::sin(angle), counterTop + 0.012f,
                                                    consoleRadius * std::cos(angle))) *
-                             rotationY(angle);
+                             rotationY(angle) * glm::scale(glm::mat4(1.0f), glm::vec3(p.consoleScale));
         addConsole(out, at);
+    }
+    // The risers for boxed games between the consoles (on the axes when there are none), facing out.
+    for (int i = 0; i < p.displays; ++i) {
+        const float angle = core::kTwoPi * static_cast<float>(i) / static_cast<float>(p.displays);
+        const glm::mat4 riser = translation(glm::vec3(consoleRadius * std::sin(angle), counterTop + 0.012f,
+                                                      consoleRadius * std::cos(angle))) *
+                                rotationY(angle);
+        counter.chamferedBox(kRiser, 0.006f, riser * translation(glm::vec3(0.0f, 0.5f * kRiser.y, 0.0f)), kGrain,
+                             kWoodTile);
+        out.addSocket("Display_" + std::to_string(i), SocketKind::Anchor,
+                      riser * translation(glm::vec3(0.0f, kRiser.y, 0.0f)));
     }
     // The pedestal, its brass rings and dish.
     wood.frustum(kPedestalFoot, kPedestalTop, p.pedestalHeight, 48, false, false,
