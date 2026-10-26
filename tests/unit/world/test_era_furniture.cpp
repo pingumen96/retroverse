@@ -106,8 +106,10 @@ std::set<std::string> findingsOf(const rv::world::ValidationReport& report, rv::
 }
 
 /// What one room drawn with one pack must keep (see the file comment); returns how many fixtures the pack replaced.
+/// `before` is validatePlan(plan, context), computed once per plan (it takes seconds in Debug on the building).
 std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId& roomId,
-                      const rv::world::SceneData& data, const rv::world::ValidationContext& context) {
+                      const rv::world::SceneData& data, const rv::world::ValidationContext& context,
+                      const rv::world::ValidationReport& before) {
     const rv::world::Room& room = *std::find_if(plan.rooms.begin(), plan.rooms.end(),
                                                 [&](const rv::world::Room& candidate) { return candidate.id == roomId; });
     auto drawn = rv::world::drawnFixtures(plan, roomId, data);
@@ -153,17 +155,19 @@ std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId&
         CHECK((fixture.yMm == 0 && fixture.heightMm <= rv::world::kFloorCoveringMaxHeightMm) == covering);
     }
 
-    // The validation of the plan holding the drawn fixtures: no hard finding, the same soft ones.
-    rv::world::WorldPlan drawnPlan = plan;
-    drawnPlan.fixtures.erase(std::remove_if(drawnPlan.fixtures.begin(), drawnPlan.fixtures.end(),
-                                            [&](const Fixture& fixture) { return fixture.id.room() == roomId; }),
-                             drawnPlan.fixtures.end());
-    drawnPlan.fixtures.insert(drawnPlan.fixtures.end(), drawn->begin(), drawn->end());
-    const rv::world::ValidationReport before = rv::world::validatePlan(plan, context);
-    const rv::world::ValidationReport after = rv::world::validatePlan(drawnPlan, context);
+    // The validation of the plan holding the drawn fixtures: no hard finding, the same soft ones (the plan's own when
+    // nothing is replaced).
     CHECK(findingsOf(before, rv::world::Severity::Hard).empty());
-    CHECK(findingsOf(after, rv::world::Severity::Hard) == findingsOf(before, rv::world::Severity::Hard));
-    CHECK(findingsOf(after, rv::world::Severity::Soft) == findingsOf(before, rv::world::Severity::Soft));
+    if (replaced > 0) {
+        rv::world::WorldPlan drawnPlan = plan;
+        drawnPlan.fixtures.erase(std::remove_if(drawnPlan.fixtures.begin(), drawnPlan.fixtures.end(),
+                                                [&](const Fixture& fixture) { return fixture.id.room() == roomId; }),
+                                 drawnPlan.fixtures.end());
+        drawnPlan.fixtures.insert(drawnPlan.fixtures.end(), drawn->begin(), drawn->end());
+        const rv::world::ValidationReport after = rv::world::validatePlan(drawnPlan, context);
+        CHECK(findingsOf(after, rv::world::Severity::Hard) == findingsOf(before, rv::world::Severity::Hard));
+        CHECK(findingsOf(after, rv::world::Severity::Soft) == findingsOf(before, rv::world::Severity::Soft));
+    }
 
     // The scene: every piece's colliders inside its bounds; a lamp's bulb near the plan's light it stands for.
     auto scene = rv::world::toSceneFile(plan, roomId, data);
@@ -298,6 +302,12 @@ TEST_CASE("world/era furniture: the reader refuses a broken piece or a list with
     CHECK_THAT(refusal(R"({"heroParts": {"armchair": [{"prefab": {"manifest": "x", "kind": "Sofa"}}]}})"),
                ContainsSubstring("prefab"));
     CHECK_THAT(refusal(R"({"sofas": {}})"), ContainsSubstring("sofas"));
+    // The CRT, the sign and the console are what the room is about, never furniture.
+    for (const std::string role : {"crt", "sign", "console"}) {
+        INFO(role);
+        CHECK_THAT(refusal(R"({"heroParts": {")" + role + R"(": [{"prefab": )" + poster + "}]}}"),
+                   ContainsSubstring("/furniture/heroParts/" + role));
+    }
 }
 
 TEST_CASE("world/era furniture: every pack's variants stand within their footprints in the golden plans' rooms, the "
@@ -311,10 +321,11 @@ TEST_CASE("world/era furniture: every pack's variants stand within their footpri
         rv::world::ValidationContext context;
         context.templates = {*roomTemplate};
         context.prefabSlots = rv::world::manifestPrefabSlots(assets());
+        const rv::world::ValidationReport before = rv::world::validatePlan(entry.plan, context);
         for (const std::string& pack : kPacks) {
             INFO(name << " drawn as " << pack);
             const rv::world::SceneData data = withPack(entry.data, pack);
-            const std::size_t replaced = checkRoom(entry.plan, entry.room, data, context);
+            const std::size_t replaced = checkRoom(entry.plan, entry.room, data, context, before);
             const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
             if (classic) {
                 CHECK(replaced == 0);
@@ -345,15 +356,75 @@ TEST_CASE("world/era furniture: the golden building's rooms with their floors' p
             context.templates.push_back(*roomTemplate);
         }
     }
+    const rv::world::ValidationReport before = rv::world::validatePlan(*plan, context);
     std::set<std::string> packs;
     for (const rv::world::Room& room : plan->rooms) {
         INFO(room.id.toString());
         auto data = rv::world::loadSceneData(assets(), *plan, room.id);
         REQUIRE(data.has_value());
         packs.insert(data->theme.id);
-        const std::size_t replaced = checkRoom(*plan, room.id, *data, context);
+        const std::size_t replaced = checkRoom(*plan, room.id, *data, context, before);
         CHECK((replaced > 0) == !data->theme.furniture.empty());
     }
     // The building's rooms draw five packs' furniture besides the classic SNES room's.
     CHECK(packs.size() >= 5);
+}
+
+TEST_CASE("world/era furniture: a piece leaving its footprint is not drawn, the plan's prefab is",
+          "[world][era_furniture]") {
+    const rv::test::world::PlanCase& entry = rv::test::world::planCase("plan-0-seed-102938");
+    const rv::world::SceneData data = withPack(entry.data, "optical_era_lounge");
+    const auto objectOf = [&](const rv::world::SceneData& sceneData, const std::string& id) {
+        auto scene = rv::world::toSceneFile(entry.plan, entry.room, sceneData);
+        REQUIRE(scene.has_value());
+        nlohmann::json found;
+        for (const nlohmann::json& object : scene->sceneFile.at("objects")) {
+            if (object.at("id") == id) {
+                found = object;
+            }
+        }
+        REQUIRE(found.is_object());
+        return found;
+    };
+    const auto drawnOf = [&](const rv::world::SceneData& sceneData, const rv::world::FixtureId& id) {
+        auto drawn = rv::world::drawnFixtures(entry.plan, entry.room, sceneData);
+        REQUIRE(drawn.has_value());
+        const auto found = std::find_if(drawn->begin(), drawn->end(), [&](const Fixture& f) { return f.id == id; });
+        REQUIRE(found != drawn->end());
+        return *found;
+    };
+
+    // A decoration the pack replaces, in a socket narrowed under its variant: drawn as the plan has it.
+    const Fixture* decoration = nullptr;
+    for (const Fixture& fixture : entry.plan.fixtures) {
+        if (fixture.id.room() == entry.room && fixture.role == FixtureRole::Decoration &&
+            data.furniture.decoration.contains(fixture.prefab.kind)) {
+            decoration = &fixture;
+            break;
+        }
+    }
+    REQUIRE(decoration != nullptr);
+    INFO(decoration->id.toString());
+    CHECK_FALSE(drawnOf(data, decoration->id) == *decoration);
+    rv::world::SceneData narrow = data;
+    for (rv::world::TemplateSocket& socket : narrow.roomTemplate.sockets) {
+        if (socket.id == decoration->id.socket()) {
+            socket.widthMm = 300; // narrower than every variant of the pack
+        }
+    }
+    CHECK(drawnOf(narrow, decoration->id) == *decoration);
+    const nlohmann::json planned = objectOf(narrow, decoration->id.localText());
+    CHECK(planned.at("prefab") == decoration->prefab.kind);
+
+    // The sofa moved out of the hero corner: the plan's armchair is drawn, with the part's id.
+    rv::world::SceneData outside = data;
+    REQUIRE(outside.furniture.heroParts.contains("armchair"));
+    outside.furniture.heroParts.at("armchair").front().piece.xMm = 2500;
+    const Fixture& armchair =
+        *std::find_if(entry.plan.fixtures.begin(), entry.plan.fixtures.end(), [&](const Fixture& f) {
+            return f.id.room() == entry.room && f.role == FixtureRole::HeroCorner && f.id.part() == "armchair";
+        });
+    CHECK(objectOf(data, armchair.id.localText()).at("prefab") == "sofa");
+    CHECK(objectOf(outside, armchair.id.localText()).at("prefab") == "armchair");
+    CHECK(drawnOf(outside, armchair.id) == armchair);
 }

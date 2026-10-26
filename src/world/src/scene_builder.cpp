@@ -8,6 +8,8 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -125,6 +127,14 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
     return nullptr;
 }
 
+/// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside.
+void lightInside(json& object, std::string_view generator, const std::map<std::string, std::string>& materials) {
+    if ((generator == "shelf" || generator == "wall_shelf") && materials.contains("board_light") &&
+        object["params"].is_object()) {
+        object["params"]["boardLight"] = true;
+    }
+}
+
 /// A prefab object of the scene file: the prefab as it resolved (with `params` instead of its own when given), its
 /// theme's materials (those of the hero corner's part `heroPart` when the theme lists it), where it stands.
 json prefabObject(std::string id, const ScenePrefab& prefab, const json* params, json position, json rotationDeg,
@@ -138,11 +148,7 @@ json prefabObject(std::string id, const ScenePrefab& prefab, const json* params,
     object["prefab"] = prefab.generator;
     object["params"] = params != nullptr ? *params : prefab.params;
     const std::map<std::string, std::string> materials = data.theme.materials(prefab.generator, heroPart);
-    // A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside.
-    if ((prefab.generator == "shelf" || prefab.generator == "wall_shelf") && materials.contains("board_light") &&
-        object["params"].is_object()) {
-        object["params"]["boardLight"] = true;
-    }
+    lightInside(object, prefab.generator, materials);
     object["materials"] = materialsJson(materials);
     if (json textures = themeTextures(prefab.generator, sign, data.platform, seed); !textures.empty()) {
         object["textures"] = std::move(textures);
@@ -180,6 +186,45 @@ std::pair<std::int64_t, std::int64_t> turned(std::int64_t dx, std::int64_t dz, s
     }
 }
 
+/// Millimetres from meters, down and up (a hundredth of a millimetre of float noise forgiven).
+std::int64_t downMm(float meters) noexcept {
+    return static_cast<std::int64_t>(std::floor(std::round(static_cast<double>(meters) * 1e5) / 100.0));
+}
+std::int64_t upMm(float meters) noexcept {
+    return static_cast<std::int64_t>(std::ceil(std::round(static_cast<double>(meters) * 1e5) / 100.0));
+}
+
+/// Grows [low, high] by `bounds` standing at (xMm, yMm, zMm) in the room, turned by `yawCdeg` about +Y.
+void extendBy(glm::vec3& low, glm::vec3& high, const core::Aabb& bounds, std::int64_t xMm, std::int64_t yMm,
+              std::int64_t zMm, std::int32_t yawCdeg) {
+    glm::mat4 frame = room_frames::yawRotation(yawCdeg);
+    frame[3] = glm::vec4(static_cast<float>(meters(xMm)), static_cast<float>(meters(yMm)),
+                         static_cast<float>(meters(zMm)), 1.0f);
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 local((corner & 1) != 0 ? bounds.max.x : bounds.min.x,
+                              (corner & 2) != 0 ? bounds.max.y : bounds.min.y,
+                              (corner & 4) != 0 ? bounds.max.z : bounds.min.z);
+        const glm::vec3 point = glm::vec3(frame * glm::vec4(local, 1.0f));
+        low = glm::min(low, point);
+        high = glm::max(high, point);
+    }
+}
+
+/// The floor [low, high] covers, rounded outwards to millimetres.
+Footprint floorOf(const glm::vec3& low, const glm::vec3& high) noexcept {
+    return Footprint{downMm(low.x), downMm(low.z), upMm(high.x), upMm(high.z)};
+}
+
+/// A warning logged once per `key` in the process (a room drawn again does not repeat it).
+void warnOnce(const std::string& key, const std::string& message) {
+    static std::mutex mutex;
+    static std::set<std::string, std::less<>> warned;
+    const std::lock_guard lock(mutex);
+    if (warned.insert(key).second) {
+        spdlog::warn("{}", message);
+    }
+}
+
 /// A piece of the pack's furniture where it stands in the room (I6 step 3b).
 struct DrawnPiece {
     const ScenePiece* piece = nullptr;
@@ -191,8 +236,8 @@ struct DrawnPiece {
     std::uint64_t seed = 0;
 };
 
-/// The pieces that draw `fixture` (scene_builder.hpp's file comment); none: the plan's prefab draws it.
-std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard.
+std::vector<DrawnPiece> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
     std::vector<DrawnPiece> pieces;
     const std::uint64_t seed = fixtureSeed(room.seed, fixture.id);
     if (fixture.role == FixtureRole::HeroCorner) {
@@ -268,6 +313,47 @@ std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, co
     return pieces;
 }
 
+/// The pieces that draw `fixture` (scene_builder.hpp's file comment); none: the plan's prefab draws it. The guard of
+/// ADR-0014 §1 (amended): a decoration's variant that leaves its socket's footprint (turned with the socket), or a hero
+/// part's piece that leaves the hero corner (and the planned part's own floor, where the part reaches out of the corner:
+/// the lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once.
+std::vector<DrawnPiece> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+    std::vector<DrawnPiece> pieces = placedPieces(room, fixture, data);
+    const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+    if (pieces.empty() || socket == nullptr) {
+        return pieces;
+    }
+    Footprint allowed = socketFootprint(data.roomTemplate, *socket, room.growthSteps);
+    if (fixture.role == FixtureRole::HeroCorner) {
+        if (const ScenePrefab* own = data.prefabs.find(fixture.prefab); own != nullptr && own->prefab) {
+            glm::vec3 low(std::numeric_limits<float>::max());
+            glm::vec3 high(std::numeric_limits<float>::lowest());
+            extendBy(low, high, own->prefab->bounds, fixture.xMm, fixture.yMm, fixture.zMm, fixture.yawCdeg);
+            const Footprint part = floorOf(low, high);
+            allowed = Footprint{std::min(allowed.minXMm, part.minXMm), std::min(allowed.minZMm, part.minZMm),
+                                std::max(allowed.maxXMm, part.maxXMm), std::max(allowed.maxZMm, part.maxZMm)};
+        }
+    }
+    // A millimetre of rounding forgiven.
+    const Footprint tolerated{allowed.minXMm - 1, allowed.minZMm - 1, allowed.maxXMm + 1, allowed.maxZMm + 1};
+    for (const DrawnPiece& drawn : pieces) {
+        glm::vec3 low(std::numeric_limits<float>::max());
+        glm::vec3 high(std::numeric_limits<float>::lowest());
+        extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+        if (const Footprint floor = floorOf(low, high); !tolerated.contains(floor)) {
+            warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " " +
+                         drawn.piece->piece.prefab.manifest,
+                     fmt::format("World: the pack {}'s {} leaves the footprint of {} ([{}, {}] x [{}, {}] mm, "
+                                 "allowed [{}, {}] x [{}, {}]); the plan's {} is drawn instead",
+                                 data.theme.id, drawn.piece->piece.prefab.manifest, fixture.id.toString(),
+                                 floor.minXMm, floor.maxXMm, floor.minZMm, floor.maxZMm, allowed.minXMm,
+                                 allowed.maxXMm, allowed.minZMm, allowed.maxZMm, fixture.prefab.manifest));
+            return {};
+        }
+    }
+    return pieces;
+}
+
 /// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
 /// is of the part's kind) under its own, the kind's pictures under its patterns.
 json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_view heroPart, const SceneData& data) {
@@ -285,6 +371,7 @@ json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_vi
                 {"position", pointJson(drawn.xMm, drawn.yMm, drawn.zMm)},
                 {"rotationDeg", vec3Json(0.0, degrees(drawn.yawCdeg), 0.0)},
                 {"materials", materialsJson(materials)}};
+    lightInside(object, prefab.generator, materials);
     json textures = themeTextures(prefab.generator, heroPart == "sign", data.platform, drawn.seed);
     for (const auto& [role, pattern] : piece.piece.textures) {
         textures[role] = patternTexture(pattern, drawn.seed);
@@ -763,13 +850,6 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
     if (room == nullptr) {
         return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
     }
-    // Millimetres from meters, outwards (a hundredth of a millimetre of float noise forgiven).
-    const auto down = [](float meters) {
-        return static_cast<std::int64_t>(std::floor(std::round(static_cast<double>(meters) * 1e5) / 100.0));
-    };
-    const auto up = [](float meters) {
-        return static_cast<std::int64_t>(std::ceil(std::round(static_cast<double>(meters) * 1e5) / 100.0));
-    };
     std::vector<Fixture> fixtures;
     for (const Fixture& fixture : plan.fixtures) {
         if (fixture.id.room() != roomId) {
@@ -783,25 +863,14 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
         glm::vec3 low(std::numeric_limits<float>::max());
         glm::vec3 high(std::numeric_limits<float>::lowest());
         for (const DrawnPiece& drawn : pieces) {
-            const core::Aabb& bounds = drawn.piece->prefab.prefab->bounds;
-            glm::mat4 frame = room_frames::yawRotation(drawn.yawCdeg);
-            frame[3] = glm::vec4(static_cast<float>(meters(drawn.xMm)), static_cast<float>(meters(drawn.yMm)),
-                                 static_cast<float>(meters(drawn.zMm)), 1.0f);
-            for (int corner = 0; corner < 8; ++corner) {
-                const glm::vec3 local((corner & 1) != 0 ? bounds.max.x : bounds.min.x,
-                                      (corner & 2) != 0 ? bounds.max.y : bounds.min.y,
-                                      (corner & 4) != 0 ? bounds.max.z : bounds.min.z);
-                const glm::vec3 point = glm::vec3(frame * glm::vec4(local, 1.0f));
-                low = glm::min(low, point);
-                high = glm::max(high, point);
-            }
+            extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
         }
-        std::int64_t minX = down(low.x);
-        std::int64_t maxX = up(high.x);
-        std::int64_t minY = down(low.y);
-        std::int64_t maxY = up(high.y);
-        std::int64_t minZ = down(low.z);
-        std::int64_t maxZ = up(high.z);
+        std::int64_t minX = downMm(low.x);
+        std::int64_t maxX = upMm(high.x);
+        std::int64_t minY = downMm(low.y);
+        std::int64_t maxY = upMm(high.y);
+        std::int64_t minZ = downMm(low.z);
+        std::int64_t maxZ = upMm(high.z);
         // Even spans, so that the centre is a whole millimetre (outwards again).
         maxX += (maxX - minX) % 2;
         maxZ += (maxZ - minZ) % 2;

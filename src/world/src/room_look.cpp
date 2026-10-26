@@ -345,6 +345,12 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
                 document.fail(at, hero ? "expected a hero corner part's role" : "expected a prefab kind");
                 return;
             }
+            // The CRT (the room's video), the sign (its neon and light) and the console (the system's own) are what the
+            // room is about, never furniture.
+            if (hero && (name == "crt" || name == "sign" || name == "console")) {
+                document.fail(at, "the hero corner's crt, sign and console are not furniture: expected another part");
+                return;
+            }
             if (!list.is_array() || list.empty()) {
                 document.fail(at, "expected a non-empty array of pieces");
                 return;

@@ -60,6 +60,7 @@
 //   as they are (the scene builder, scene_builder.hpp, places the pieces):
 //     "furniture": {
 //       "heroParts": {"armchair": [<piece>, ...], "lamp": [<piece>], "rug": [<piece>]},  // by the part's role
+//                                                    // (never "crt", "sign" or "console": the reader refuses them)
 //       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
 //   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
 //   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
@@ -69,7 +70,8 @@
 //   stools); a decoration kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
 //   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
 //   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
-//   read: the weights are the variants' (ThemeFurniture).
+//   read: the weights are the variants' (ThemeFurniture). A piece that leaves its footprint where it is drawn is not
+//   drawn (scene_builder.hpp: the plan's part or decoration is, with a warning).
 //   A shelf kind with the roles "board_light" and "board_glow" (both or neither; the reader refuses one alone), or a
 //   wall shelf kind with "board_light" (a wall shelf has no glow), is drawn with its lit interior (I6 step 3,
 //   geometry::ShelfParams::boardLight): a strip under each board and, on a shelf with a back, a glow on the back panel

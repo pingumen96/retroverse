@@ -37,7 +37,10 @@
 //     the fixture's id, its back on the socket's back edge and centred across it as the plan's prefab stood, at the
 //     plan's height. The pieces take the pack's materials of their kind (the part's own when the piece is of the
 //     part's kind) under the piece's, the kind's pictures (a poster's cover, a desk's screen) under the piece's
-//     patterns. The plan's fixtures, slots and lights are untouched: what the pieces cover is drawnFixtures().
+//     patterns. The plan's fixtures, slots and lights are untouched: what the pieces cover is drawnFixtures(). A guard
+//     (the step's review) keeps them within their footprints whatever the data: a decoration's variant that leaves its
+//     socket's footprint, or a hero part's piece that leaves the hero corner (with the planned part's own floor where
+//     the part reaches out of it, the lamp beside the TV), is not drawn; the plan's prefab is, a warning logged once.
 // The collection's items are not scene objects: collection_layout.hpp places them (ADR-0011 §1).
 
 #include <cstdint>
