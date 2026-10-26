@@ -794,7 +794,10 @@ void addHubObjects(const Hall& hall, std::string_view sign, const ThemeMaterials
                               meters((kHubFasciaBottomMm + fasciaTop) / 2), 0.0, -kFacingEastDeg, kHubFasciaSignWidthM,
                               kHubFasciaSignHeightM, std::string(sign), materials));
 
-    // The pieces.
+    // The pieces. The bookcases' books stand on the sockets of the very shelf drawn (its parameters as the scene object
+    // carries them), built once.
+    const json bookcase = hubBookcaseParams();
+    const Expected<geometry::ProceduralPrefab> bookcaseShelf = geometry::buildPrefab("shelf", bookcase);
     const json column = materialsJson(kindMaterials(theme, "column"));
     std::map<std::string, std::string> plant = kindMaterials(theme, "plant");
     plant["pot"] = materials.at("plant");
@@ -884,9 +887,8 @@ void addHubObjects(const Hall& hall, std::string_view sign, const ThemeMaterials
         }
         case HubPieceKind::Bookcase: {
             // A lit bookcase (the pack's shelf, its strips and glow), a row of books between bookends on each level.
-            const json params = hubBookcaseParams();
-            objects.push_back(hubPrefab(id, "shelf", piece, params, materialsJson(kindMaterials(theme, "shelf"))));
-            static const auto shelf = geometry::buildPrefab("shelf", hubBookcaseParams());
+            objects.push_back(hubPrefab(id, "shelf", piece, bookcase, materialsJson(kindMaterials(theme, "shelf"))));
+            const Expected<geometry::ProceduralPrefab>& shelf = bookcaseShelf;
             if (!shelf) {
                 break;
             }
