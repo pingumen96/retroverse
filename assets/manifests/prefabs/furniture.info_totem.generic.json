@@ -1,0 +1,40 @@
+// The directory's totem in the hub (I6 step 5, ADR-0014 §3, style §5.2: a map terminal): a walnut kiosk with a
+// brass-framed screen; interact before it opens the directory.
+{
+  "schemaVersion": 1,
+  "id": "furniture.info_totem.generic",
+  "assetType": "furniture",
+  "category": "signage",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "info_totem",
+    "params": {},
+    "scaleMeters": [0.6, 1.75, 0.32],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "display": "Screen"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": [
+    "furniture",
+    "totem",
+    "directory",
+    "hub",
+    "procedural"
+  ],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

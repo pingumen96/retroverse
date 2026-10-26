@@ -163,7 +163,7 @@ const std::vector<std::string_view> kExpectedKinds{
     "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
-    "banker_lamp", "showcase"};
+    "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem"};
 
 } // namespace
 
@@ -212,6 +212,13 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"showcase",
          {"wood_primary", "wood_secondary", "metal_trim", "fabric", "glass", "plastic_body", "plastic_dark",
           "plastic_accent"}},
+        // I6 step 5's hub.
+        {"column", {"wood_primary", "wood_secondary", "metal_trim"}},
+        {"railing", {"wood_primary", "wood_secondary", "metal"}},
+        {"hub_landmark",
+         {"wood_primary", "wood_secondary", "metal_trim", "glass", "fabric", "plastic_body", "plastic_dark",
+          "plastic_accent", "globe", "globe_core"}},
+        {"info_totem", {"wood_primary", "wood_secondary", "metal_trim", "screen", "sign"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -328,6 +335,12 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"showcase",
          {{"width", 1.0}, {"height", 0.95}, {"depth", 0.45}, {"baseHeight", 0.5}, {"item", "handheld"}},
          box({-0.5f, 0.0f, -0.225f}, {0.5f, 0.95f, 0.225f})},
+        // I6 step 5's hub, pivot floor: the column's plinth, the railing along X, the totem's plinth.
+        {"column", nullptr, box({-0.28f, 0.0f, -0.28f}, {0.28f, 5.0f, 0.28f})},
+        {"column", {{"radius", 0.15}, {"height", 3.0}, {"plinthSize", 0.4}}, box({-0.2f, 0.0f, -0.2f}, {0.2f, 3.0f, 0.2f})},
+        {"railing", nullptr, box({-1.5f, 0.0f, -0.045f}, {1.5f, 0.95f, 0.045f})},
+        {"railing", {{"length", 7.2}, {"height", 1.0}}, box({-3.6f, 0.0f, -0.045f}, {3.6f, 1.0f, 0.045f})},
+        {"info_totem", nullptr, box({-0.3f, 0.0f, -0.16f}, {0.3f, 1.75f, 0.16f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -364,6 +377,10 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"bar_stool", {{"Seat", SocketKind::Anchor}}},
         {"banker_lamp", {{"LightSource", SocketKind::Anchor}}},
         {"showcase", {{"Item", SocketKind::Anchor}}},
+        {"column", {}},
+        {"railing", {}},
+        {"hub_landmark", {{"Globe", SocketKind::Anchor}}},
+        {"info_totem", {{"Screen", SocketKind::Anchor}}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1684,4 +1701,51 @@ TEST_CASE("geometry/prefabs: the era furniture's lights, seats and refusals (I6 
           Approx(0.7f));
     // The banker's lamp stands on a card catalogue: 3 x 6 drawer fronts (chamfered boxes of 96 vertices).
     CHECK(part(buildOk("banker_lamp"), "wood_secondary").mesh.vertices.size() == 18u * 96u);
+}
+
+TEST_CASE("geometry/prefabs: the hub's landmark, totem, column and railing (I6 step 5)", "[geometry][prefabs][hub]") {
+    // The landmark: within its radius, its globe above the pedestal at the socket, its consoles counted.
+    const ProceduralPrefab landmark = buildOk("hub_landmark");
+    CHECK(landmark.bounds.min.x == Approx(-2.1f).margin(1e-4));
+    CHECK(landmark.bounds.max.z == Approx(2.1f).margin(1e-4));
+    CHECK(landmark.bounds.min.y == Approx(0.0f).margin(1e-5));
+    const Socket& globe = socket(landmark, "Globe");
+    const glm::vec3 centre(globe.transform[3]);
+    CHECK(centre.x == Approx(0.0f).margin(1e-5));
+    CHECK(centre.y > 2.0f);
+    CHECK(landmark.bounds.max.y == Approx(centre.y + 0.55f + 0.06f + 0.014f).margin(0.01));
+    CHECK(part(landmark, "globe").mesh.bounds.max.y <= centre.y + 0.56f);
+    CHECK(rv::geometry::findPart(buildOk("hub_landmark", {{"consoles", 0}}), "plastic_body") == nullptr);
+    CHECK(part(buildOk("hub_landmark", {{"consoles", 12}}), "plastic_body").mesh.vertices.size() >
+          part(landmark, "plastic_body").mesh.vertices.size());
+    CHECK(buildError("hub_landmark", {{"globeRadius", 1.2}}).context == "hub_landmark.globeRadius");
+    CHECK(buildError("hub_landmark", {{"consoles", 13}}).context == "hub_landmark.consoles");
+    // I6 step 5's review: larger consoles, and a riser for a boxed game between them, each a socket on its top.
+    const ProceduralPrefab displays = buildOk("hub_landmark", {{"consoles", 9}, {"consoleScale", 1.4}, {"displays", 9}});
+    CHECK(displays.sockets.size() == 1 + 9);
+    const glm::vec3 riser(socket(displays, "Display_0").transform[3]);
+    CHECK(riser.y > 0.3f + 0.38f);
+    CHECK(std::abs(riser.z) > 1.0f);
+    CHECK(part(displays, "plastic_body").mesh.bounds.max.y >
+          part(buildOk("hub_landmark", {{"consoles", 9}}), "plastic_body").mesh.bounds.max.y);
+    CHECK(buildError("hub_landmark", {{"consoleScale", 3.0}}).context == "hub_landmark.consoleScale");
+    CHECK(buildError("hub_landmark", {{"displays", 13}}).context == "hub_landmark.displays");
+    // The totem: its screen and sign quads on its front, the screen's socket at its centre facing out.
+    const ProceduralPrefab totem = buildOk("info_totem");
+    const Socket& screen = socket(totem, "Screen");
+    CHECK(glm::vec3(screen.transform[3]).z > 0.1f);
+    CHECK(glm::vec3(screen.transform[3]).z < 0.16f);
+    CHECK(part(totem, "screen").mesh.bounds.size().x == Approx(0.46f).margin(1e-4));
+    CHECK(part(totem, "sign").mesh.bounds.max.y < 1.75f);
+    CHECK(buildError("info_totem", {{"screenWidth", 0.55}}).context == "info_totem.screenWidth");
+    // The column: the plinth its footprint, the capital's abacus within it; refused too thin a plinth.
+    const ProceduralPrefab column = buildOk("column", {{"height", 4.0}});
+    CHECK(column.bounds.max.y == Approx(4.0f).margin(1e-4));
+    CHECK(part(column, "wood_secondary").mesh.bounds.max.x <= 0.28f + 1e-4f);
+    CHECK(buildError("column", {{"plinthSize", 0.3}}).context == "column.plinthSize");
+    // The railing: posts at both ends at most postPitch apart, balusters between them.
+    const ProceduralPrefab railing = buildOk("railing", {{"length", 6.0}, {"postPitch", 1.5}});
+    CHECK(railing.bounds.size().x == Approx(6.0f).margin(1e-4));
+    CHECK(part(railing, "metal").mesh.vertices.size() > 0);
+    CHECK(buildError("railing", {{"length", 0.1}}).context == "railing.length");
 }

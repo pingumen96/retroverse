@@ -1,0 +1,37 @@
+// The hub's balcony railing (I6 step 5, ADR-0014 §3, style §5.2 and §8: railings): a walnut handrail on newel posts over
+// slim graphite balusters.
+{
+  "schemaVersion": 1,
+  "id": "architecture.railing.generic",
+  "assetType": "architecture",
+  "category": "structure",
+  "role": "structure",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "railing",
+    "params": {},
+    "scaleMeters": [3.0, 0.95, 0.09],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": [
+    "architecture",
+    "railing",
+    "balcony",
+    "procedural"
+  ],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

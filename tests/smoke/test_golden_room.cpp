@@ -18,8 +18,8 @@
 //
 // The Gate C goldens of the building (I4 step 8; ADR-0013, style §5.2 as ADR-0013 amends it), on tests/fixtures/esde/
 // building under the shipped threshold (no world.json: its small systems share their floors' rooms), each run as the
-// user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's lobby
-// from the elevator's arrival point, G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
+// user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's hub
+// from a step beside the elevator's arrival point (I6 step 5; --spawn since its review), G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
 // handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway.
 
 #include <catch2/catch_test_macros.hpp>
@@ -791,38 +791,78 @@ rv::world::WorldPlan planOf(const GoldenRoom& room, const rv::app::RunReport& re
 
 } // namespace
 
-TEST_CASE("golden/G11: the building's lobby from the elevator's arrival point", "[gpu][golden][golden_room]") {
+TEST_CASE("golden/G11: the building's hub from the elevator's arrival point", "[gpu][golden][golden_room]") {
     GoldenRoom room("g11", "esde/building");
     const rv::app::RunReport first = firstRun(room, std::nullopt);
     CHECK(first.world.floor == rv::world::kGroundFloor);
     const fs::path shot = room.dir / "g11.png";
     constexpr std::uint32_t kFrames = 30;
-    const AppRun run = room.app(
-        "g11", startArguments(std::nullopt, kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    // I6 step 5's review: a step north of the arrival point, turned a little north of east, so that the arcade room's
+    // portal and the landmark show together and the globe hides no sign of the entrance's.
+    constexpr std::string_view kSpawn = "1.2,0,-2.4,84,-6";
+    const AppRun run = room.app("g11", startArguments(std::nullopt, kFrames, shot,
+                                                      {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
+                                                       std::string(kSpawn)}));
     requireBuildingRun(run, rv::world::kGroundFloor, "");
     INFO(run.describe());
     const rv::app::RunReport& report = *run.report;
-    // The lobby holds the arcade room (mame's section, every arcade system's: ADR-0013 §3), the eye in the hall: no hero
-    // CRT is bound until the eye stays in a room.
+    // The hub holds the arcade room (mame's section, every arcade system's: ADR-0013 §3) in the middle of its north wall
+    // (I6 step 5), the eye in the hub: no hero CRT is bound until the eye stays in a room. Its favourites' showcase holds
+    // the catalog's favourite and recent games, their fronts resident.
     const rv::world::WorldPlan plan = planOf(room, report);
     CHECK(roomHolding(plan, "mame").id.toString() == "area:arcade");
+    CHECK(roomHolding(plan, "mame").placement == rv::world::RoomPlacement{9000, -12150, 0});
     REQUIRE(report.sceneAreas.has_value());
     CHECK(report.sceneAreas->area == rv::world::hallAreaId(rv::world::kGroundFloor));
     CHECK_FALSE(report.video.bound);
+    CHECK_FALSE(report.world.showcase.games.empty());
+    CHECK(report.world.showcase.frontsResident == report.world.showcase.games.size());
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G11", "g11_lobby_golden",
-                       "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground "
-                       "floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as "
-                       "every start without --start-room stands, at the elevator's arrival point facing east down the "
-                       "6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game "
-                       "room's open doorway on the north side with its lamp seen through it, the closed entrance doors "
-                       "at the east end (since I6 step 1 lit by the hall's own lights and the arcade room's seen "
-                       "through its doorway, the hall's own ambient and fill; since I6 step 2 dressed: a panelled "
-                       "wainscot under dark warm plaster, beams across a darker ceiling and drum pendants, the arcade "
-                       "room's portal with its lit sign over it and on a blade sign, sconces washing the wall and muted "
-                       "prints in turn, a bench with a plant, the runner, the elevator's brass doors behind).",
-                       "the floor scene's camera at the elevator's arrival point (no --start-room, no --spawn)",
+                       "Gate D golden of the building's hub (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1; its "
+                       "look as the step's review left it): the esde/building fixture planned under the shipped "
+                       "threshold, the walker a step north of the elevator's arrival point looking east across the 18 x "
+                       "14 x 5 m hub: the arcade room's portal on the left under its pink neon on the balcony's fascia "
+                       "(its own small plaque on the entablature, the purple room beyond), the glowing wireframe globe, "
+                       "the brightest thing below the ceiling, low on its pedestal in the railed circular showcase of "
+                       "generic consoles and boxed games on a bordeaux counter, the main entrance's blue signs beside it "
+                       "at the far end, walnut columns under the balcony on three sides with its railing and large "
+                       "posters on the gallery's walls, the coffered ceiling with its downlights, the chandelier's ring "
+                       "of bulbs and the lanterns over the core, lit bookcases of warm bindings, a darker oak floor and "
+                       "darker rugs; lit by the hub's own lights, the globe's cool light and the sign's glow.",
+                       "--spawn 1.2,0,-2.4,84,-6: a step north of the elevator's arrival point (no --start-room)",
                        std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G14: the building's hub from its entrance", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g14", "esde/building");
+    const rv::app::RunReport first = firstRun(room, std::nullopt);
+    CHECK(first.world.floor == rv::world::kGroundFloor);
+    const fs::path shot = room.dir / "g14.png";
+    constexpr std::uint32_t kFrames = 30;
+    // Before the closed entrance doors at the hub's east end, a step south of its middle, facing west (I6 step 5's
+    // review: the elevator's portal and its sign at the far end beside the globe, not behind it).
+    constexpr std::string_view kSpawn = "16.3,0,1.8,-96,-3";
+    const AppRun run = room.app("g14", startArguments(std::nullopt, kFrames, shot,
+                                                      {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
+                                                       std::string(kSpawn)}));
+    requireBuildingRun(run, rv::world::kGroundFloor, "");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.sceneAreas.has_value());
+    CHECK(report.sceneAreas->area == rv::world::hallAreaId(rv::world::kGroundFloor));
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G14", "g14_hub_entrance_golden",
+                       "Gate D golden of the building's hub from its entrance (I6 step 5, ADR-0014 §3, style 5.2, "
+                       "concept panel 1; its look as the step's review left it): the esde/building fixture planned "
+                       "under the shipped threshold, the walker before the closed entrance doors at the hub's east end, "
+                       "a step south of its middle, facing west: the landmark's glowing globe beside the elevator's "
+                       "portal and its green floor sign, the directory's totem's back beside it, the favourites' "
+                       "showcase with its proxies' covers and the information screen's list on the left (south), the "
+                       "oxblood sofas on their rugs, lit bookcases along both walls under the balcony, its columns and "
+                       "railings, posters on the gallery's walls, the coffered ceiling with the chandelier's bulbs.",
+                       "--spawn 16.3,0,1.8,-96,-3: before the entrance facing west (no --start-room)", std::nullopt},
                       room, run, shot, kFrames);
 }
 

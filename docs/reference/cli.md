@@ -153,7 +153,10 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   given every section's selection and named by no pin: regenerated with the successor (standing on its side), its id,
   floor, x, sections and seed kept, its face-out titles chosen again ("Room migrated: <room>: <from> -> <to>", with ",
   <n> unplaced for capacity" when its new room holds fewer; JSON `changes.migratedRooms` {`room`, `from`, `to`,
-  `unplacedForCapacity`}, rebuild `full`); a pinned room's refusal is among the confirmations. It prints the change
+  `unplacedForCapacity`}, rebuild `full`); a pinned room's refusal is among the confirmations. Since I6 step 5
+  (`docs/i6/step-5.md`, ADR-0014 §3) a ground floor room standing at I4's lobby is re-placed once onto the hub's wall,
+  its contents unchanged ("Room re-placed: <room>: onto the hub, x <x> z <z> (was x <x> z <z>)"; JSON
+  `changes.replacedRooms` {`room`, `from`, `to`: {`xMm`, `zMm`, `yawHalfTurns`}}, rebuild `full`). It prints the change
   report. Both exit 0 written or up to date; 1 nothing written (a plan
   exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate --replace`:
   another seed, preset or generator major version; the media unknown; no such system in the catalog); 2 usage; 3 the
@@ -172,7 +175,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   without a catalog, systems.json's fallback). `--floor <id>` (I4 step 3, `docs/i4/step-3.md`) also summarizes that
   floor: its hall derived from its rooms (length, width, height, its lights every 6 m, the elevator at its west end)
   and each room with its row and its doorway onto the hall ("Floor <id>: hall ...", JSON `floorScene` {`floor`,
-  `lobby`, `hall`, `rooms`}); with `--scene` it writes the whole floor instead of a room ("Scene <file> of floor
+  `lobby`, `hall`, `rooms`}: `lobby` true for the ground floor's hall, the hub since I6 step 5); with `--scene` it
+  writes the whole floor instead of a room ("Scene <file> of floor
   <id>: ...", JSON `sceneFloor`): every room moved onto the floor by its placement (its ids prefixed with the room's,
   its doorway's stop left out), the hall's walls, floor, ceiling, lights and lamps, the elevator stand-in with the
   floor's sign (building.json), the lobby's entrance doors on the ground floor, the hall's dressing (I6 step 2,

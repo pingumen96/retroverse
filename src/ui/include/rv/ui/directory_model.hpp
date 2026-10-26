@@ -25,6 +25,8 @@
 // a tab, a row or a card button does what its key would (DirectoryClick); a click on the row of the game whose card
 // shows leaves the card as it is.
 //
+// I6 step 5: openGame() opens the panel straight at a game's card (the hub's favourites showcase), on the games tab, the
+// list asked for behind it.
 // What the model asks of the app (step 7b) besides its commands: a new gamesRequest() asks for the games list (the
 // panel opened on the games, or the games tab entered), a new cardRequest() asks for the content of cardGameId()'s
 // card (a card opened, the same game's again included). A command the app refuses for now (a ride) is undone with
@@ -233,6 +235,10 @@ public:
     /// with the first one selected (the list's own order: favourites, then the most recent), also once the list asked
     /// for comes (setGames()). The list has the focus. On the games: a new gamesRequest().
     void open(DirectoryTab tab);
+    /// Opens the panel at `game`'s card on the games tab (I6 step 5: a proxy of the hub's favourites showcase), the
+    /// games list asked for behind it (a new gamesRequest(): Back leads to it, the game selected once it comes) and its
+    /// card's content (a new cardRequest()). The card's buttons have the focus.
+    void openGame(const DirectoryGame& game);
     /// Opens the panel again where it closed (the command that left it refused, ADR-0013 §10's ride): its tab, view,
     /// selections and card, the list focused, the notice cleared. Nothing when it is open; a panel never opened opens
     /// on the floors (open()).

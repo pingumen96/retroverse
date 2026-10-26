@@ -65,6 +65,7 @@ add_library(rv_app_catalog STATIC
     src/catalog_launch_library.cpp
     src/catalog_worker.cpp
     src/game_screens.cpp
+    src/hub_showcase.cpp
     src/library_refresh.cpp
     src/room_screen.cpp
     src/room_snapshot.cpp
@@ -109,6 +110,7 @@ add_library(rv_app STATIC
     src/world_notice_panel.cpp
     src/world_ride.cpp
     src/world_session.cpp
+    src/world_showcase.cpp
     src/world_start.cpp
 )
 add_library(rv::app ALIAS rv_app)

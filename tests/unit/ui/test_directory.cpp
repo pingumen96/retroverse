@@ -396,6 +396,33 @@ TEST_CASE("ui/directory: a game's card: Avvia launches, Mostra nella stanza show
     CHECK(model.view() == DirectoryView::Games);
 }
 
+TEST_CASE("ui/directory: openGame() opens straight at a game's card, the games list behind it (I6 step 5)",
+          "[ui][directory]") {
+    DirectoryModel model;
+    const DirectoryGame game = games(5)[3];
+    const std::uint64_t gamesAsked = model.gamesRequest();
+    const std::uint64_t cardsAsked = model.cardRequest();
+    model.openGame(game);
+    CHECK(model.isOpen());
+    CHECK(model.tab() == DirectoryTab::Games);
+    CHECK(model.view() == DirectoryView::Card);
+    CHECK(model.cardGameId() == game.gameId);
+    CHECK(model.cardContent().title == game.title);
+    CHECK(model.cardButton() == DirectoryCardButton::Play);
+    CHECK(model.focusedElement() == dir::kCardPlayId);
+    CHECK(model.gamesRequest() == gamesAsked + 1); // the list asked for behind the card
+    CHECK(model.cardRequest() == cardsAsked + 1);  // and the card's content
+    // The list comes: the card stays; Back leads to the list with the game selected.
+    model.setGames(games(5));
+    CHECK(model.view() == DirectoryView::Card);
+    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK(model.view() == DirectoryView::Games);
+    CHECK(model.focusedElement() == "dir-game-3");
+    // Avvia on the card launches the game.
+    model.openGame(game);
+    CHECK(model.apply(UiCommand::Activate) == command(DirectoryCommandKind::Launch, game.gameId));
+}
+
 TEST_CASE("ui/directory: Mostra nella stanza leaves the panel; an unplaced game has none", "[ui][directory]") {
     SECTION("placed") {
         DirectoryModel model = cardModel(std::string(qc::kRoomPlaced));

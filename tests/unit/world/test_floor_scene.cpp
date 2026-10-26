@@ -297,15 +297,19 @@ TEST_CASE("world/floor: the hall is derived from its rooms: walls where none sta
         INFO(floor);
         const rv::world::FloorSceneData data = floorData(plan, floor, building.tags);
         const Hall hall = floorScene(plan, floor, data).hall;
-        const std::int64_t half = floor == "ground" ? 3000 : 1500;
-        CHECK(hall.lobby == (floor == "ground"));
+        // The ground floor's hall is the hub (I6 step 5): 14 m wide, 5 m high, at least 18 m long.
+        const bool hub = floor == "ground";
+        const std::int64_t half = hub ? 7000 : 1500;
+        CHECK(hall.lobby == hub);
+        CHECK(hall.hub.has_value() == hub);
         CHECK(hall.widthMm == 2 * half);
-        CHECK(hall.heightMm == 3200);
+        CHECK(hall.heightMm == (hub ? 5000 : 3200));
         CHECK(hall.interior.minXMm == 0);
         CHECK(hall.interior.minZMm == -half);
         CHECK(hall.interior.maxZMm == half);
-        // The east end is the easternmost room's edge (the rooms are 9.3 m wide with their walls, from x 3.0 m).
-        std::int64_t east = rv::world::kMinHallLengthMm;
+        // The east end is the easternmost room's edge (the rooms are 9.3 m wide with their walls, from x 3.0 m; the
+        // hub's from 4.35 m), at least the hub's length on the ground floor.
+        std::int64_t east = hub ? 18000 : rv::world::kMinHallLengthMm;
         std::vector<std::pair<std::int64_t, std::int64_t>> north;
         std::vector<std::pair<std::int64_t, std::int64_t>> south;
         for (const rv::world::Room* room : rv::world::roomsOnFloor(plan, floor)) {
@@ -322,6 +326,13 @@ TEST_CASE("world/floor: the hall is derived from its rooms: walls where none sta
         std::vector<std::pair<std::int64_t, std::int64_t>> northWalls;
         std::vector<std::pair<std::int64_t, std::int64_t>> southWalls;
         for (const rv::world::HallWall& wall : hall.walls) {
+            if (wall.id.find("-upper-") != std::string::npos) {
+                // The hub closes its edges above its rooms, from their height to its own.
+                CHECK(hub);
+                CHECK(wall.bottomMm == 3200);
+                continue;
+            }
+            CHECK(wall.bottomMm == 0);
             if (wall.id.starts_with("north-")) {
                 CHECK(wall.footprint.maxZMm == -half);
                 CHECK(wall.footprint.minZMm == -half - 150);
@@ -337,14 +348,27 @@ TEST_CASE("world/floor: the hall is derived from its rooms: walls where none sta
             CHECK(covered(0, east, both) == east);
             CHECK(covered(0, east, rooms) + covered(0, east, walls) == east);
         }
-        // Lights every 6 m from 3 m, below the east end; the elevator in the west wall's middle.
+        // Lights every 6 m from 3 m, below the east end (the hub's over its core and under its balcony); the elevator in
+        // the west wall's middle.
         REQUIRE_FALSE(hall.lights.empty());
-        for (std::size_t i = 0; i < hall.lights.size(); ++i) {
-            CHECK(hall.lights[i].xMm == 3000 + 6000 * static_cast<std::int64_t>(i));
-            CHECK(hall.lights[i].zMm == 0);
+        if (hub) {
+            CHECK(hall.lights.size() == 9); // eight over the core, one by the entrance
+            CHECK(hall.lowLights.size() == 4);
+            CHECK(hall.lightDropMm == rv::world::kHubLightDropMm);
+            for (const rv::world::FloorPoint& light : hall.lights) {
+                CHECK(light.xMm > 0);
+                CHECK(light.xMm < hall.hub->eastEdgeXMm);
+                CHECK(std::abs(light.zMm) < hall.hub->southEdgeZMm);
+            }
+        } else {
+            for (std::size_t i = 0; i < hall.lights.size(); ++i) {
+                CHECK(hall.lights[i].xMm == 3000 + 6000 * static_cast<std::int64_t>(i));
+                CHECK(hall.lights[i].zMm == 0);
+            }
+            CHECK(hall.lights.back().xMm < east);
+            CHECK(hall.lights.back().xMm + 6000 >= east);
+            CHECK(hall.lowLights.empty());
         }
-        CHECK(hall.lights.back().xMm < east);
-        CHECK(hall.lights.back().xMm + 6000 >= east);
         CHECK(hall.elevator == Footprint{0, -700, 50, 700});
         CHECK(hall.arrival == rv::world::FloorPoint{1200, 0});
         CHECK((hall.entrance.maxXMm > 0) == hall.lobby);
@@ -964,13 +988,30 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
             CHECK((*sign)["textures"]["picture"]["pattern"] == "sign");
             CHECK((*sign)["textures"]["picture"]["title"] == data.rooms.at(doorway.room).platform.signText);
             CHECK((*sign)["materials"]["picture"] == "MAT_Sign_Tungsten");
-            // Above the lintel, below the beam, facing into the hall.
+            // Above the lintel, below the beam (the hub's under its balcony, on its portal's entablature), facing into
+            // the hall.
             const double signY = (*sign)["position"][1].get<double>();
             CHECK(signY - 0.17 > static_cast<double>(doorway.heightMm) / 1000.0 + 0.15);
-            CHECK(signY + 0.17 < static_cast<double>(hall.heightMm) / 1000.0 - 0.22);
+            CHECK(signY + 0.17 < static_cast<double>(hall.hub ? rv::world::kHubBalconyFloorMm - rv::world::kHubBalconySlabMm
+                                                              : hall.heightMm - 220) /
+                                     1000.0);
             CHECK((*sign)["rotationDeg"][1].get<double>() == (doorway.hallEdgeZMm < 0 ? 0.0 : 180.0));
-            // A beam over it: its own, or the grid's within 0.75 m.
             const std::int64_t centre = (doorway.minMm + doorway.maxMm) / 2;
+            if (hall.hub) {
+                // The hub's portal: pilasters and an entablature; its sign again, larger, on the balcony's fascia; no
+                // blade sign, no beam of the hall's grid (its coffered ceiling has its own).
+                CHECK(findObject(scene, portal + "/pilaster-west") != nullptr);
+                CHECK(findObject(scene, portal + "/pilaster-east") != nullptr);
+                CHECK(findObject(scene, portal + "/entablature") != nullptr);
+                const nlohmann::json* fascia = findObject(scene, prefix + "hub/fascia-sign:" + doorway.room.toString());
+                REQUIRE(fascia != nullptr);
+                CHECK((*fascia)["textures"]["picture"]["title"] == (*sign)["textures"]["picture"]["title"]);
+                CHECK(findObject(scene, portal + "/blade-east") == nullptr);
+                CHECK(beams.empty());
+                CHECK(findObject(scene, portal + "/sconce-west/shade") != nullptr);
+                continue;
+            }
+            // A beam over it: its own, or the grid's within 0.75 m.
             CHECK(std::any_of(beams.begin(), beams.end(), [&](std::int64_t x) { return std::abs(x - centre) <= 750; }));
             // Its two sconces beside the opening.
             CHECK(findObject(scene, portal + "/sconce-west/shade") != nullptr);
@@ -995,8 +1036,8 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
             REQUIRE(arm != nullptr);
             CHECK_FALSE(arm->value("collides", true));
         }
-        // Beams every 3 m from the west end, while 1 m short of the east end.
-        for (std::int64_t x = 3000; x + 1000 <= hall.interior.maxXMm; x += 3000) {
+        // Beams every 3 m from the west end, while 1 m short of the east end (the hub's coffers instead).
+        for (std::int64_t x = 3000; x + 1000 <= hall.interior.maxXMm && !hall.hub; x += 3000) {
             CHECK(beams.contains(x));
         }
         // Sconces and prints in turn along each edge; the floor's pieces are objects that collide.
@@ -1069,7 +1110,8 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
                 break;
             }
             }
-            if (!piece.id.starts_with("portal:") && !piece.solid()) {
+            // The slots' wall pieces (not a portal's sconces, not the hub's gallery sconces: I6 step 5).
+            if (!piece.id.starts_with("portal:") && !piece.id.starts_with("gallery-") && !piece.solid()) {
                 slots[piece.id.substr(0, piece.id.find('/'))] = piece.kind;
             }
         }
@@ -1096,8 +1138,8 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
         CHECK(pictures.size() <= 16);
         // The east end wall's print in a hall, none in the lobby (its entrance stands there).
         CHECK((findObject(scene, prefix + "east/print") == nullptr) == hall.lobby);
-        // The lamps: a drum over each light, the light at its foot, below the beams.
-        for (std::size_t i = 0; i < hall.lights.size(); ++i) {
+        // The lamps: a drum over each light, the light at its foot, below the beams (the hub's lanterns: test_hub.cpp).
+        for (std::size_t i = 0; i < hall.lights.size() && !hall.hub; ++i) {
             const nlohmann::json* lamp = findObject(scene, prefix + "lamp-" + std::to_string(i));
             REQUIRE(lamp != nullptr);
             CHECK((*lamp)["primitive"] == "cylinder");
@@ -1129,13 +1171,16 @@ TEST_CASE("world/floor: the hall's dressing: portals at the doorways, sconces an
         }
         CHECK(battens > 10);
         // The runner starts past the elevator's zone; nothing of the dressing is a light.
-        const nlohmann::json* runner = findObject(scene, prefix + "runner-0");
+        // The hub's runner is its own (hub/rug-runner-<k>, test_hub.cpp).
+        const nlohmann::json* runner = findObject(scene, prefix + (hall.hub ? "hub/rug-runner-0" : "runner-0"));
         REQUIRE(runner != nullptr);
         CHECK((*runner)["position"][0].get<double>() - 1.2 >= static_cast<double>(hall.elevatorZone.maxXMm) / 1000.0);
         for (const nlohmann::json& light : scene["lights"]) {
             const std::string lightName = light["name"].get<std::string>();
+            // The hub's own (I6 step 5's review): the globe's light.
             CHECK((!lightName.starts_with(prefix) || lightName.starts_with(prefix + "light-") ||
-                   lightName.starts_with(prefix + "doorway-fill:")));
+                   lightName.starts_with(prefix + "low-light-") || lightName.starts_with(prefix + "doorway-fill:") ||
+                   (hall.hub && lightName == prefix + "globe")));
         }
         // Through the collision world: the walker stands at the arrival point and before every doorway, never in a
         // bench or a plant.

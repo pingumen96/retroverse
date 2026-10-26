@@ -219,6 +219,16 @@ void DirectoryModel::open(DirectoryTab tab) {
     changed();
 }
 
+void DirectoryModel::openGame(const DirectoryGame& game) {
+    open(DirectoryTab::Games);
+    // The list comes behind the card (open() asked for it): its first game then, this one once the user is back on it.
+    m_games = {game};
+    m_game = 0;
+    openCard();
+    followRows();
+    changed();
+}
+
 void DirectoryModel::reopen() {
     if (m_open) {
         return;

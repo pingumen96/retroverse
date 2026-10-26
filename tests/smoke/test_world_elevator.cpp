@@ -643,7 +643,8 @@ TEST_CASE("world elevator: a room of another floor chosen with Map rides there a
     requireCleanRun(lobby);
     INFO("arrays: handheld " << arrayBytesOf(*direct.report) << ", ground " << arrayBytesOf(*lobby.report));
     requireFloorMemory(ride, *direct.report);
-    CHECK(arrayBytesOf(*direct.report) != arrayBytesOf(*lobby.report));
+    // The rooms' arrays differ (the ground floor's total, with the hub showcase's own arrays, may round to the same).
+    CHECK(direct.report->residency.arrayBytes != lobby.report->residency.arrayBytes);
     CHECK(arrayBytesOf(report) == arrayBytesOf(*direct.report));
     CHECK(residentRooms(report) == collectionRooms(plan, destination));
 }
@@ -1067,9 +1068,11 @@ TEST_CASE("world elevator: the ride's fade dims every pixel of the view alike, i
     CHECK(brightestA >= 200); // the view has bright lights to dim
     CHECK(std::abs(sumB / sumA - share) < 0.01);
     CHECK(static_cast<double>(brightestB) <= share * brightestA + 3.0);
-    // Measured in I6 step 2's dressed lobby: a worst block 4.4 off, 0.012% of the blocks' values off by more than 2.
+    // Measured in I6 step 2's dressed lobby: a worst block 4.4 off, 0.012% of the blocks' values off by more than 2;
+    // in I6 step 5's hub (the balcony's balusters, the showcase's rails, the rugs' borders: edges anti-aliased a pixel
+    // apart in the darker view, the whole view's mean excess about 0): a worst block 5.7 off, 0.074%.
     CHECK(worst <= 8.0);
-    CHECK(offShare < 0.0005);
+    CHECK(offShare < 0.002);
 }
 
 TEST_CASE("world elevator: a game played before a ride is the start choice of its room's CRT on the destination",

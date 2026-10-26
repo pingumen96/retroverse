@@ -28,9 +28,12 @@
 // I4 step 3) and judged with them: no room overlaps the hall (hall-overlap), every room's doorway is in its doorway
 // wall, which stands on the hall's edge (doorway-off-hall), and every room can be walked to from the elevator
 // (floor-unreachable): the floor's navigation grid (nav_grid.hpp, 0.1 m cells over the hall and the floor's rooms;
-// obstacles the hall's walls, the elevator's frame, the hall's benches and plants (I6 step 2), the rooms' walls around
-// their doorways and their fixtures, dilated by half the minimum clear width) searched from the arrival point in
-// front of the elevator reaches every doorway's clear area's centre within kInteractionRadiusMm. The hall's lights
+// obstacles the hall's walls, the elevator's frame, the hall's benches and plants (I6 step 2), the hub's solid pieces
+// (I6 step 5: columns, the landmark, the totem, the showcase, sofas and plants; its walls above its rooms are not), the
+// rooms' walls around their doorways and their fixtures, dilated by half the minimum clear width) searched from the
+// arrival point in front of the elevator reaches every doorway's clear area's centre within kInteractionRadiusMm, and
+// on the ground floor the middle of the totem's zone and the point kHubShowcaseFrontMm before the showcase's front
+// (subjects "hall:ground/totem" and "hall:ground/showcase"). The hall's lights
 // are not the plan's: only the rooms keep the light limit. A room an update kept as it is (ValidationContext::keptRooms) is reported (soft, room-kept); its
 // template's version and its prefabs' slots are not judged, since it keeps what an older template or prefab made.
 //

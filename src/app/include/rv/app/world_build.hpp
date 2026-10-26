@@ -73,6 +73,7 @@
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/collection_layers.hpp>
+#include <rv/app/hub_showcase.hpp>
 #include <rv/app/room_items.hpp>
 #include <rv/app/room_snapshot.hpp>
 #include <rv/app/screen_policy.hpp>
@@ -211,6 +212,14 @@ struct WorldBuild {
     /// The middle of the elevator's doors on the floor (y 0), in the scene's frame: the prompt shows to a walker in the
     /// zone that faces them (elevator_prompt_ui.hpp's facesElevator()).
     glm::vec3 elevatorDoors{0.0f};
+    /// The hub's directory totem (I6 step 5, ADR-0014 §3; the ground floor only, empty elsewhere): its proximity zone
+    /// (world::Hub::totemZone, from the floor to the totem's top) and the middle of its screen on the floor (y 0), in
+    /// the scene's frame: its prompt shows to a walker in the zone that faces it (facesTotem()).
+    core::Aabb totemZone;
+    glm::vec3 totemScreen{0.0f};
+    /// The hub's favourites showcase (I6 step 5): its slots in the scene's frame and its proxies' data; none off the
+    /// ground floor (or when its data do not load: logged).
+    std::optional<HubShowcase> showcase;
     catalog::LibraryId library;
     /// The plan shown and its digest (the SHA-256 of its canonical text); none for NoPlan.
     std::optional<world::WorldPlan> plan;

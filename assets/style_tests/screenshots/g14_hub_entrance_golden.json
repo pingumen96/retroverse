@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "18c2f6764414a3634b4bacdb662c63db617a858f",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate D golden of the building's hub from its entrance (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1; its look as the step's review left it): the esde/building fixture planned under the shipped threshold, the walker before the closed entrance doors at the hub's east end, a step south of its middle, facing west: the landmark's glowing globe beside the elevator's portal and its green floor sign, the directory's totem's back beside it, the favourites' showcase with its proxies' covers and the information screen's list on the left (south), the oxblood sofas on their rugs, lit bookcases along both walls under the balcony, its columns and railings, posters on the gallery's walls, the coffered ceiling with the chandelier's bulbs.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G14",
+  "image": {
+    "file": "g14_hub_entrance_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "f98f1d12f67e4ab510036bc64f1c5a167858df3ed57c1b12d78fab9b2025b595",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
+      "fileSha256": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
+      "items": 15,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "da8ac363dadea504a65ab8c09d0d5eb9588c2ddfcd1a5bfa2d4c4bbe32077f8d"
+    }
+  },
+  "renderedOn": "2026-10-26",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G14:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g14.png --screenshot-size 1920x1080 --video-freeze-pts 1 --spawn 16.3,0,1.8,-96,-3 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--spawn 16.3,0,1.8,-96,-3: before the entrance facing west (no --start-room)"
+}

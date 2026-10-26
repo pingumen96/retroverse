@@ -329,12 +329,14 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
     std::vector<std::pair<const RoomSelection*, const WorldData*>> sorted = input.rooms;
     std::sort(sorted.begin(), sorted.end(),
               [](const auto& a, const auto& b) { return a.first->room < b.first->room; });
+    bool groundFloor = false;
     for (const auto& [selection, data] : sorted) {
         const catalog::SystemName& system = selection->room.system();
         const auto tags = input.platformTags.find(system);
         const std::vector<std::string> platformTags =
             tags != input.platformTags.end() ? tags->second : std::vector<std::string>{};
         const Classification classification = classify(system, platformTags, input.systems, input.building);
+        groundFloor = groundFloor || classification.floor == kGroundFloor;
         // What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
         // fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller
         // knows (a selection file's none, the app's and the CLI's the catalog's), so that one catalog gives one plan.
@@ -349,13 +351,18 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
         }
         rooms.push_back(std::move(*room));
     }
-    const Json document{{"building", buildingDataToJson(input.building)},
-                        {"configuration", std::move(*config)},
-                        {"generatorVersion", kGeneratorVersion.toString()},
-                        {"library", input.library.str()},
-                        {"rooms", std::move(rooms)},
-                        {"systems", std::move(systems)},
-                        {"worldSeed", input.seed}};
+    Json document{{"building", buildingDataToJson(input.building)},
+                  {"configuration", std::move(*config)},
+                  {"generatorVersion", kGeneratorVersion.toString()},
+                  {"library", input.library.str()},
+                  {"rooms", std::move(rooms)},
+                  {"systems", std::move(systems)},
+                  {"worldSeed", input.seed}};
+    // The hub places the ground floor's rooms (I6 step 5): hashed when one of them is among the rooms, so that the
+    // other floors' plans keep their provenance.
+    if (groundFloor) {
+        document["building"]["hub"] = hubLayoutToJson(input.building.layout.hub);
+    }
     return core::canonicalJsonDigest(document);
 }
 

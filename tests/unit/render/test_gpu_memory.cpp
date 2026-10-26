@@ -47,19 +47,46 @@ TEST_CASE("render/gpu_memory: the bytes of a texture follow its format, size, le
     CHECK(rv::gl::textureBytes(GpuFormat::Rgba8, glm::ivec2(-1, 4), 1) == 0);
 }
 
-TEST_CASE("render/gpu_memory: the procedural surfaces take 123 MiB with their full chains", "[render][gpu_memory]") {
-    // The figure ADR-0011 §9 budgets (and the test room's run report shows): every map RGBA8 with its full chain.
+TEST_CASE("render/gpu_memory: the procedural surfaces take 85 MiB with their full chains", "[render][gpu_memory]") {
+    // The figure ADR-0011 §9 budgets (and the test room's run report shows): every base color and normal map RGBA8
+    // with its full chain, every metallic-roughness map its roughness alone, R8 (I6 step 5's review: every surface is
+    // all metal or none, gl::metallicRoughnessFormat; test_surface_textures checks it).
     std::size_t bytes = 0;
+    std::size_t before = 0;
     for (const rv::assets::ProceduralSurfaceInfo& surface : rv::assets::proceduralSurfaces()) {
-        const std::size_t maps = surface.hasNormalMap ? 3 : 2;
-        bytes += maps * rv::gl::textureBytes(GpuFormat::Rgba8, surface.size, rv::gl::fullMipLevelCount(surface.size));
+        const int levels = rv::gl::fullMipLevelCount(surface.size);
+        const std::size_t rgba = rv::gl::textureBytes(GpuFormat::Rgba8, surface.size, levels);
+        bytes += (surface.hasNormalMap ? 2 : 1) * rgba + rv::gl::textureBytes(GpuFormat::R8, surface.size, levels);
+        before += (surface.hasNormalMap ? 3 : 2) * rgba;
     }
-    // 36 bytes under 80 MiB: the chains stop at 1 x 1, a little under 4/3 of the base levels. Three 1024 x 1024
-    // surfaces with three maps (5,592,404 bytes each), four 512 x 512 ones (1,398,100), the 1536 x 1024 rug with two
-    // (8,388,604); since I6 step 2 the 128 x 192 wall wash with two (131,068 each), 256 KiB more; since I6 step 3 the
-    // 128 x 64 shelf glow with two (43,692 each); since I6 step 3b four 1152 x 768 rugs with two (4,718,580 each) and
-    // the 512 x 1280 runner with two (3,495,252 each).
-    CHECK(bytes == std::size_t{83'886'044 + 262'136 + 87'384 + 4 * 2 * 4'718'580 + 2 * 3'495'252});
+    // Until then every map was RGBA8: 123 MiB. 36 bytes under 80 MiB: the chains stop at 1 x 1, a little under 4/3 of
+    // the base levels. Three 1024 x 1024 surfaces with three maps (5,592,404 bytes each), four 512 x 512 ones
+    // (1,398,100), the 1536 x 1024 rug with two (8,388,604); since I6 step 2 the 128 x 192 wall wash with two (131,068
+    // each), 256 KiB more; since I6 step 3 the 128 x 64 shelf glow with two (43,692 each); since I6 step 3b four 1152 x
+    // 768 rugs with two (4,718,580 each) and the 512 x 1280 runner with two (3,495,252 each).
+    CHECK(before == std::size_t{83'886'044 + 262'136 + 87'384 + 4 * 2 * 4'718'580 + 2 * 3'495'252});
+    CHECK(bytes == std::size_t{88'997'797});
+    CHECK(rv::gl::textureBytes(GpuFormat::Rg8, glm::ivec2(4, 2), 1) == 16u);
+}
+
+TEST_CASE("render/gpu_memory: a metallic-roughness map keeps its roughness alone when it is all metal or none",
+          "[render][gpu_memory]") {
+    rv::assets::ImageData image;
+    image.width = 2;
+    image.height = 1;
+    image.channels = 4;
+    image.pixels = {255, 120, 0, 255, 255, 200, 0, 255};
+    CHECK(rv::gl::metallicRoughnessFormat(image) == GpuFormat::R8);
+    image.pixels[2] = image.pixels[6] = 255;
+    CHECK(rv::gl::metallicRoughnessFormat(image) == GpuFormat::R8);
+    image.pixels[6] = 0;
+    CHECK(rv::gl::metallicRoughnessFormat(image) == GpuFormat::Rg8);
+    image.pixels[2] = image.pixels[6] = 128;
+    CHECK(rv::gl::metallicRoughnessFormat(image) == GpuFormat::Rg8);
+    image.channels = 2;
+    image.pixels = {120, 255, 200, 255};
+    CHECK(rv::gl::metallicRoughnessFormat(image) == GpuFormat::Rgba8);
+    CHECK(rv::gl::metallicRoughnessFormat(rv::assets::ImageData{}) == GpuFormat::Rgba8);
 }
 
 TEST_CASE("render/gpu_memory: kinds have stable names", "[render][gpu_memory]") {

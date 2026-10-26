@@ -255,6 +255,12 @@ void WorldSession::applyLive(WorldResult result) {
         return;
     }
     recordBuild(build);
+    // I6 step 5's review: a refresh that keeps the floor makes the hub's showcase again (favourites and recent games
+    // may have changed); a floor committed again starts its own (showFloor()).
+    if (plan.kind == LiveUpdateKind::Unchanged || plan.kind == LiveUpdateKind::Textures ||
+        plan.kind == LiveUpdateKind::Items) {
+        wantShowcase();
+    }
     // Room by room (I4 step 6b): an unchanged room keeps its collection and its pictures.
     record.rooms = roomRecords(plan, false);
     switch (plan.kind) {

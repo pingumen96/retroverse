@@ -2,15 +2,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <utility>
 
 #include <fmt/format.h>
+#include <glm/ext/matrix_transform.hpp>
 #include <spdlog/spdlog.h>
 
 #include <rv/core/seed.hpp>
+#include <rv/geometry/prefabs.hpp>
 
 namespace rv::world {
 namespace {
@@ -64,6 +68,17 @@ constexpr double kSignHeightM = 0.4;
 constexpr double kSignFrameM = 0.025;
 constexpr double kSignDepthM = 0.04;
 constexpr std::int64_t kSignCentreMm = 2750;
+/// The hub's lights (I6 step 5): the hall role's, the core's brighter and reaching further (hung higher; 1.6 times until
+/// the step's review, which made the floor darker and the globe the brightest thing), those under the balcony shorter
+/// (as bright as the role's since the review, 0.45 of it before: the walls and bookcases under it lit); the globe's own
+/// cool light, at its centre.
+constexpr double kHubLightScale = 1.2;
+constexpr double kHubLightRangeM = 2.0;
+constexpr double kHubLowLightScale = 1.0;
+constexpr double kHubLowLightRangeM = 5.0;
+constexpr std::string_view kHubGlobeLightColor = "#4C8BC9";
+constexpr double kHubGlobeLightIntensity = 5.0;
+constexpr double kHubGlobeLightRangeM = 5.0;
 /// The fill spot before each doorway (I6 step 1): this far into the hall from its edge, this far below the doorway's
 /// head, aimed at a point this far into the room at this height (the cases and the hero wall at eye height rather than
 /// the floor).
@@ -123,6 +138,86 @@ constexpr std::int64_t kBladeArmLengthMm = 900;
 constexpr std::int64_t kBladeMinHallMm = 2400;
 /// What a portal's sign reads when its room has no sign text (never the room's id).
 constexpr std::string_view kGenericSign = "GAME ROOM";
+/// The hub (I6 step 5): its portals' pilasters (width, depth, base and capital, the lip they stand proud by, their
+/// top) and entablature (depth, how far past the pilasters, its cornice, its top under the balcony's slab; the
+/// elevator's, on the west wall without a balcony, higher, its pilasters kHubElevatorPortalSideMm beside the frame,
+/// clear of the call panel), the signs on them and on the balcony's fascia (the entrance's text, the totem's).
+constexpr std::int64_t kHubPilasterWidthMm = 260;
+constexpr std::int64_t kHubPilasterDepthMm = 110;
+constexpr std::int64_t kHubPilasterBaseMm = 220;
+constexpr std::int64_t kHubCapitalMm = 90;
+constexpr std::int64_t kHubPilasterLipMm = 20;
+constexpr std::int64_t kHubPilasterTopMm = 2480;
+constexpr std::int64_t kHubEntablatureDepthMm = 130;
+constexpr std::int64_t kHubEntablatureOverhangMm = 60;
+constexpr std::int64_t kHubCorniceMm = 60;
+constexpr std::int64_t kHubPortalTopMm = 2940;
+constexpr std::int64_t kHubPortalSignCentreMm = 2700;
+constexpr std::int64_t kHubElevatorPortalSideMm = 400;
+constexpr std::int64_t kHubElevatorPortalTopMm = 3060;
+constexpr std::string_view kHubEntranceSign = "MAIN ENTRANCE";
+/// The elevator's floor sign on the hub: signage green; the entrance's signs a calm blue neon; the rooms' theirs (I6
+/// step 5's review: the hub's accents are its portals' colours). A doorway's portal on the hub carries a small plaque of its room's name, its
+/// neon on the fascia above.
+constexpr std::string_view kHubElevatorSignMaterial = "MAT_Neon_Green";
+constexpr std::string_view kHubEntranceSignMaterial = "MAT_Neon_Blue";
+constexpr double kHubPlaqueWidthM = 0.8;
+constexpr double kHubPlaqueHeightM = 0.18;
+constexpr std::string_view kHubTotemSign = "DIRECTORY";
+/// The balcony's fascia (its depth, how far it rises above the walking surface), the railing's set-back from the edge
+/// (behind the columns' shafts), the signs on the fascia.
+constexpr std::int64_t kHubFasciaDepthMm = 80;
+constexpr std::int64_t kHubFasciaUpstandMm = 50;
+constexpr std::int64_t kHubRailingSetBackMm = 300;
+constexpr double kHubFasciaSignWidthM = 2.4;
+constexpr double kHubFasciaSignHeightM = 0.34;
+/// The coffered ceiling: the beams' width and depth (those along x a step shallower, between those across), the
+/// beams along x either side of the middle, the downlights (radius, thickness), the soffits' downlights' pitch.
+constexpr std::int64_t kHubBeamWidthMm = 240;
+constexpr std::int64_t kHubBeamDepthMm = 320;
+constexpr std::int64_t kHubBeamStepMm = 40;
+constexpr std::int64_t kHubBeamZMm = 2900;
+constexpr std::int64_t kHubDownlightRadiusMm = 200;
+constexpr std::int64_t kHubDownlightThicknessMm = 24;
+constexpr std::int64_t kHubSoffitLightPitchMm = 1500;
+/// The chandelier over the landmark: its outer ring's radius and height, the inner ring a step higher, the band's
+/// height, the bulbs' radius; the lanterns of the core's lights (a bulb just above each light).
+constexpr std::int64_t kHubChandelierRadiusMm = 1500;
+constexpr std::int64_t kHubChandelierMm = 4050;
+constexpr std::int64_t kHubChandelierStepMm = 150;
+constexpr std::int64_t kHubChandelierBandMm = 40;
+constexpr std::int64_t kHubBulbRadiusMm = 45;
+constexpr std::int64_t kHubLanternRadiusMm = 90;
+constexpr std::int64_t kHubLanternAboveLightMm = 100;
+/// The columns' shaft radius; the landmark's dais height and its plants' distance inside its rim.
+constexpr std::int64_t kHubColumnRadiusMm = 200;
+constexpr std::int64_t kHubLandmarkDaisMm = 300;
+constexpr std::int64_t kHubLandmarkPlantInsetMm = 240;
+/// The favourites' showcase: a display case of two levels of six keep cases (disc_case_dvd's face-out size, the
+/// proxies' family), its height and base; its slots' gap and margin give six per level.
+constexpr double kHubShowcaseHeightM = 1.16;
+/// The back level stands this much higher than the front one (I6 step 5's review: above the front top rail seen from
+/// before the case, so that the rail never crosses its titles).
+constexpr double kHubShowcaseLevelRiseM = 0.24;
+constexpr double kHubShowcaseBaseM = 0.55;
+constexpr double kHubShowcaseSlotW = 0.135;
+constexpr double kHubShowcaseSlotH = 0.19;
+constexpr double kHubShowcaseSlotD = 0.014;
+constexpr double kHubShowcaseSlotGapM = 0.17;
+constexpr double kHubShowcaseSlotMarginM = 0.06;
+/// The large posters on the hub's gallery walls (I6 step 5's review): their size, centre height, the east wall's pair
+/// either side of its middle.
+constexpr double kHubPosterWidthM = 0.78;
+constexpr double kHubPosterHeightM = 1.04;
+constexpr std::int64_t kHubPosterCentreMm = 4130;
+constexpr std::int64_t kHubEastPosterZMm = 1500;
+/// The hub's bookcases' height (under the balcony's soffit).
+constexpr double kHubBookcaseHeightM = 2.4;
+/// The hub's large plants.
+constexpr double kHubPlantHeightM = 1.6;
+constexpr double kHubPlantPotRadiusM = 0.21;
+constexpr double kHubPlantPotHeightM = 0.42;
+constexpr double kHubPlantSaucerRadiusM = 0.24;
 /// A sconce: a backplate and a lit shade standing off it, centred this high (above the head: it blocks nothing, and
 /// collides with nothing), and its wash on the wall: a quad this wide and high, centred this far above the shade, this
 /// far off the plaster.
@@ -372,9 +467,9 @@ void addWallRun(const std::string& id, const WallFace& wall, std::int64_t from, 
 /// A sconce on an edge's wall at `x`: a backplate on the plaster and its lit shade, a short cylinder, standing off it,
 /// and the wash of its light on the wall (an unlit quad, the wall wash's picture; every sconce's the same mesh and
 /// material, instanced). Above the head, they collide with nothing.
-void addSconce(const std::string& id, const WallFace& wall, std::int64_t x,
+void addSconce(const std::string& id, const WallFace& wall, std::int64_t x, std::int64_t centreMm,
                const std::map<std::string, std::string>& materials, json& objects) {
-    const std::int64_t plateBottom = kSconceCentreMm - kSconcePlateHeightMm / 2;
+    const std::int64_t plateBottom = centreMm - kSconcePlateHeightMm / 2;
     objects.push_back(boxObject(id + "/backplate",
                                 wall.piece(x - kSconcePlateWidthMm / 2, x + kSconcePlateWidthMm / 2, kSconcePlateDepthMm,
                                            kSkinDepthMm),
@@ -387,7 +482,7 @@ void addSconce(const std::string& id, const WallFace& wall, std::int64_t x,
                            {"params", json{{"radius", meters(radius)},
                                            {"height", meters(kSconceShadeHeightMm)},
                                            {"segments", kSconceShadeSegments}}},
-                           {"position", vec3Json(meters(x), meters(kSconceCentreMm), meters(axis))},
+                           {"position", vec3Json(meters(x), meters(centreMm), meters(axis))},
                            {"material", materials.at("sconce")},
                            {"castsShadows", false},
                            {"collides", false}});
@@ -397,7 +492,7 @@ void addSconce(const std::string& id, const WallFace& wall, std::int64_t x,
                            {"primitive", "quad"},
                            {"params", json{{"size", json::array({kWashWidthM, kWashHeightM})}}},
                            {"position",
-                            vec3Json(meters(x), meters(kSconceCentreMm + kWashAboveMm), rounded(wash, 1e6))},
+                            vec3Json(meters(x), meters(centreMm + kWashAboveMm), rounded(wash, 1e6))},
                            {"rotationDeg", vec3Json(0.0, wall.inward > 0 ? 0.0 : 180.0, 0.0)},
                            {"material", materials.at("wash")},
                            {"castsShadows", false},
@@ -439,11 +534,506 @@ void addBench(const std::string& id, const WallFace& wall, std::int64_t x,
                                 materials.at("cushion"), true, true));
 }
 
+/// A portal of the hub (I6 step 5): pilasters either side of an opening [from, to] along `wall` (its casing's outer
+/// edges), each on a base block under a capital, and an entablature across them up to `topMm` (under the balcony), the
+/// opening's sign proud of it (the caller's).
+void addHubPortal(const std::string& id, const WallFace& wall, std::int64_t from, std::int64_t to, std::int64_t topMm,
+                  const std::map<std::string, std::string>& hall, const std::map<std::string, std::string>& hub,
+                  json& objects) {
+    const std::string& wood = hub.at("pilaster");
+    for (const auto& [side, a, b] :
+         {std::tuple{std::string_view("west"), from - kCasingWidthMm - kHubPilasterWidthMm, from - kCasingWidthMm},
+          std::tuple{std::string_view("east"), to + kCasingWidthMm, to + kCasingWidthMm + kHubPilasterWidthMm}}) {
+        const std::string name = id + "/pilaster-" + std::string(side);
+        objects.push_back(boxObject(name, wall.piece(a, b, kHubPilasterDepthMm), 0, kHubPilasterTopMm, wood, false,
+                                    false, BoxUvMode::Grain));
+        objects.push_back(boxObject(name + "/base", wall.piece(a - kHubPilasterLipMm, b + kHubPilasterLipMm,
+                                                               kHubPilasterDepthMm + kHubPilasterLipMm),
+                                    0, kHubPilasterBaseMm, hall.at("trim"), false, false, BoxUvMode::Grain));
+        objects.push_back(boxObject(name + "/capital",
+                                    wall.piece(a - kHubPilasterLipMm, b + kHubPilasterLipMm,
+                                               kHubPilasterDepthMm + kHubPilasterLipMm),
+                                    kHubPilasterTopMm - kHubCapitalMm, kHubPilasterTopMm, hall.at("trim"), false, false,
+                                    BoxUvMode::Grain));
+    }
+    const std::int64_t left = from - kCasingWidthMm - kHubPilasterWidthMm - kHubEntablatureOverhangMm;
+    const std::int64_t right = to + kCasingWidthMm + kHubPilasterWidthMm + kHubEntablatureOverhangMm;
+    objects.push_back(boxObject(id + "/entablature", wall.piece(left, right, kHubEntablatureDepthMm),
+                                kHubPilasterTopMm, topMm, wood, false, false, BoxUvMode::Grain));
+    objects.push_back(boxObject(id + "/cornice",
+                                wall.piece(left - kHubPilasterLipMm, right + kHubPilasterLipMm,
+                                           kHubEntablatureDepthMm + kHubPilasterLipMm),
+                                topMm - kHubCorniceMm, topMm, hall.at("trim"), false, false, BoxUvMode::Grain));
+}
+
+/// A lit sign (the hall's sign lettering on the poster frame's 'sign' pattern) centred at (x, y, z) facing `yawDeg`;
+/// with `neon` (a room pack's sign material, I6 step 5's review) the room's neon lettering in that colour instead.
+json hubSign(const std::string& id, double x, double y, double z, double yawDeg, double width, double height,
+             const std::string& title, const std::map<std::string, std::string>& hall, const std::string& neon = {}) {
+    return json{{"id", id},
+                {"prefab", "poster_frame"},
+                {"params", json{{"width", width},
+                                {"height", height},
+                                {"frameWidth", kPortalSignFrameM},
+                                {"depth", kPortalSignDepthM}}},
+                {"position", vec3Json(rounded(x, 1e6), rounded(y, 1e6), rounded(z, 1e6))},
+                {"rotationDeg", vec3Json(0.0, yawDeg, 0.0)},
+                {"materials", json{{"frame", hall.at("trim")}, {"picture", neon.empty() ? hall.at("sign") : neon}}},
+                {"textures", json{{"picture", json{{"pattern", neon.empty() ? "sign" : "neon"}, {"title", title}}}}},
+                {"castsShadows", false},
+                {"collides", false}};
+}
+
+/// A prefab object of the hub at a piece's place (its yaw the piece's), of `kind` with `params` and `materials`.
+json hubPrefab(const std::string& id, std::string_view kind, const HubPiece& piece, json params, json materials,
+               double y = 0.0) {
+    return json{{"id", id},
+                {"prefab", std::string(kind)},
+                {"params", std::move(params)},
+                {"position", vec3Json(meters(piece.centre.xMm), y, meters(piece.centre.zMm))},
+                {"rotationDeg", vec3Json(0.0, rounded(static_cast<double>(piece.yawCdeg) / 100.0, 1e4), 0.0)},
+                {"materials", std::move(materials)}};
+}
+
+/// The board's lines: its heading, then the building's floors' signs (I6 step 5: the information screen and the
+/// totem's).
+std::string boardTitle(std::string_view heading, std::span<const std::string> floorSigns) {
+    std::string title(heading);
+    for (const std::string& sign : floorSigns) {
+        title += "|" + sign;
+    }
+    return title;
+}
+
+/// The hub's own objects (floor_layout.hpp's Hub, I6 step 5): the balcony (slabs, fascias, railings, signs on the
+/// fascia over the portals), the columns, the coffered ceiling (beams, downlights, the chandelier over the landmark),
+/// the downlights under the balcony, the lanterns of its lights, the elevator's and the entrance's portals, the
+/// landmark and its plants, the totem, the favourites' showcase and the screen above it, the sofas, the rugs and the
+/// plants.
+void addHubObjects(const Hall& hall, std::string_view sign, const ThemeMaterials& theme,
+                   const std::map<RoomId, std::string>& roomSigns, const std::map<RoomId, std::string>& roomNeons,
+                   std::span<const std::string> floorSigns, json& objects) {
+    const Hub& hub = *hall.hub;
+    const std::string prefix = hallAreaId(hall.floor) + "/hub/";
+    const std::int64_t height = hall.heightMm;
+    const std::int64_t half = hall.widthMm / 2;
+    const std::int64_t east = hall.interior.maxXMm;
+    const std::map<std::string, std::string> materials = kindMaterials(theme, "hall");
+    const std::map<std::string, std::string> own = kindMaterials(theme, "hub");
+    const std::int64_t slabBottom = kHubBalconyFloorMm - kHubBalconySlabMm;
+
+    // The balcony: the long slabs from the west wall to the east wall, the east slab between them; a fascia along
+    // each edge; a railing set back from it (behind the columns' shafts).
+    objects.push_back(boxObject(prefix + "balcony/north", {0, -half, east, hub.northEdgeZMm}, slabBottom,
+                                kHubBalconyFloorMm, own.at("balcony"), false, true, BoxUvMode::Grain));
+    objects.push_back(boxObject(prefix + "balcony/south", {0, hub.southEdgeZMm, east, half}, slabBottom,
+                                kHubBalconyFloorMm, own.at("balcony"), false, true, BoxUvMode::Grain));
+    objects.push_back(boxObject(prefix + "balcony/east", {hub.eastEdgeXMm, hub.northEdgeZMm, east, hub.southEdgeZMm},
+                                slabBottom, kHubBalconyFloorMm, own.at("balcony"), false, true, BoxUvMode::Grain));
+    const std::int64_t fasciaTop = kHubBalconyFloorMm + kHubFasciaUpstandMm;
+    objects.push_back(boxObject(prefix + "fascia/north",
+                                {0, hub.northEdgeZMm, hub.eastEdgeXMm, hub.northEdgeZMm + kHubFasciaDepthMm},
+                                kHubFasciaBottomMm, fasciaTop, own.at("fascia"), false, true, BoxUvMode::Grain));
+    objects.push_back(boxObject(prefix + "fascia/south",
+                                {0, hub.southEdgeZMm - kHubFasciaDepthMm, hub.eastEdgeXMm, hub.southEdgeZMm},
+                                kHubFasciaBottomMm, fasciaTop, own.at("fascia"), false, true, BoxUvMode::Grain));
+    objects.push_back(boxObject(prefix + "fascia/east",
+                                {hub.eastEdgeXMm - kHubFasciaDepthMm, hub.northEdgeZMm,
+                                 hub.eastEdgeXMm, hub.southEdgeZMm},
+                                kHubFasciaBottomMm, fasciaTop, own.at("fascia"), false, true, BoxUvMode::Grain));
+    const json railingMaterials = materialsJson(kindMaterials(theme, "railing"));
+    const auto railing = [&](const std::string& id, double x, double z, double length, double yawDeg) {
+        objects.push_back(json{{"id", prefix + "railing/" + id},
+                               {"prefab", "railing"},
+                               {"params", json{{"length", rounded(length, 1e6)},
+                                               {"height", meters(kHubRailingHeightMm)}}},
+                               {"position", vec3Json(rounded(x, 1e6), meters(kHubBalconyFloorMm), rounded(z, 1e6))},
+                               {"rotationDeg", vec3Json(0.0, yawDeg, 0.0)},
+                               {"materials", railingMaterials},
+                               {"collides", false}});
+    };
+    const double setBack = meters(kHubRailingSetBackMm);
+    const double longRail = meters(hub.eastEdgeXMm) - setBack;
+    railing("north", longRail / 2.0, meters(hub.northEdgeZMm) - setBack, longRail, 0.0);
+    railing("south", longRail / 2.0, meters(hub.southEdgeZMm) + setBack, longRail, 180.0);
+    railing("east", meters(hub.eastEdgeXMm) + setBack, 0.0,
+            meters(hub.southEdgeZMm - hub.northEdgeZMm) - 2.0 * setBack, 90.0);
+
+    // Large framed posters on the gallery's walls (I6 step 5's review): on the long walls at every column's x but over
+    // a doorway, and two on each end wall either side of its middle (the west one's above the elevator's portal);
+    // invented titles, each its own picture.
+    std::map<std::string, std::string> poster = kindMaterials(theme, "poster_frame");
+    poster["frame"] = materials.at("picture");
+    const json posterMaterials = materialsJson(poster);
+    std::size_t posterIndex = static_cast<std::size_t>(core::deriveSeed("hub-posters", hall.floor) % kHallPrintTitles.size());
+    const auto galleryPoster = [&](const std::string& id, double x, double z, double yawDeg) {
+        const std::string_view title = kHallPrintTitles[posterIndex++ % kHallPrintTitles.size()];
+        objects.push_back(json{{"id", prefix + "gallery-poster/" + id},
+                               {"prefab", "poster_frame"},
+                               {"params", json{{"width", kHubPosterWidthM},
+                                               {"height", kHubPosterHeightM},
+                                               {"frameWidth", kPictureFrameM},
+                                               {"depth", meters(kHallPictureDepthMm)}}},
+                               {"position", vec3Json(rounded(x, 1e6), meters(kHubPosterCentreMm), rounded(z, 1e6))},
+                               {"rotationDeg", vec3Json(0.0, yawDeg, 0.0)},
+                               {"materials", posterMaterials},
+                               {"textures", json{{"picture", json{{"pattern", "print"},
+                                                                  {"title", std::string(title)},
+                                                                  {"seed", core::deriveSeed("hub-poster", title) % 1000000}}}}},
+                               {"castsShadows", false},
+                               {"collides", false}});
+    };
+    for (const bool north : {true, false}) {
+        for (std::int64_t x = kHubColumnPitchMm; x + kHubColumnEndClearMm <= hub.eastEdgeXMm; x += kHubColumnPitchMm) {
+            const bool overDoorway = std::any_of(hall.doorways.begin(), hall.doorways.end(), [&](const FloorDoorway& d) {
+                return d.opensOntoHall() && (d.hallEdgeZMm < 0) == north && x > d.minMm - kHubColumnPitchMm / 2 &&
+                       x < d.maxMm + kHubColumnPitchMm / 2;
+            });
+            if (!overDoorway) {
+                galleryPoster(std::string(north ? "north-" : "south-") + std::to_string(x), meters(x),
+                              north ? meters(-half) : meters(half), north ? 0.0 : 180.0);
+            }
+        }
+    }
+    for (const std::int64_t z : {-kHubEastPosterZMm, kHubEastPosterZMm}) {
+        galleryPoster("east-" + std::to_string(z), meters(east), meters(z), -kFacingEastDeg);
+    }
+    for (const std::int64_t z : {-kHubEastPosterZMm, kHubEastPosterZMm}) {
+        galleryPoster("west-" + std::to_string(z), 0.0, meters(z), kFacingEastDeg);
+    }
+
+    // The coffered ceiling: beams across at the columns' x (and the east balcony's edge), along at the balcony's edges
+    // and kHubBeamZMm either side of the middle; a downlight in each coffer, the chandelier in the core's middle one.
+    std::set<std::int64_t> across;
+    std::set<std::int64_t> alongZ{hub.northEdgeZMm, -kHubBeamZMm, kHubBeamZMm, hub.southEdgeZMm};
+    for (const HubPiece& piece : hub.pieces) {
+        if (piece.kind == HubPieceKind::Column && piece.centre.xMm < hub.eastEdgeXMm) {
+            across.insert(piece.centre.xMm);
+        }
+    }
+    across.insert(hub.eastEdgeXMm);
+    const std::string& beamWood = materials.at("beam");
+    for (const std::int64_t x : across) {
+        objects.push_back(boxObject(prefix + "beam-x" + std::to_string(x),
+                                    {x - kHubBeamWidthMm / 2, -half, x + kHubBeamWidthMm / 2, half},
+                                    height - kHubBeamDepthMm, height, beamWood, false, true, BoxUvMode::Grain));
+    }
+    for (const std::int64_t z : alongZ) {
+        objects.push_back(boxObject(prefix + "beam-z" + std::to_string(z),
+                                    {0, z - kHubBeamWidthMm / 2, hub.eastEdgeXMm, z + kHubBeamWidthMm / 2},
+                                    height - kHubBeamDepthMm + kHubBeamStepMm, height - kHubBeamStepMm, beamWood,
+                                    false, true, BoxUvMode::Grain));
+    }
+    std::vector<std::int64_t> xs{0};
+    xs.insert(xs.end(), across.begin(), across.end());
+    const std::vector<std::int64_t> zs(alongZ.begin(), alongZ.end());
+    const auto disc = [&](const std::string& id, std::int64_t x, std::int64_t y, std::int64_t z) {
+        objects.push_back(json{{"id", id},
+                               {"primitive", "cylinder"},
+                               {"params", json{{"radius", meters(kHubDownlightRadiusMm)},
+                                               {"height", meters(kHubDownlightThicknessMm)},
+                                               {"segments", 24}}},
+                               {"position", vec3Json(meters(x), meters(y), meters(z))},
+                               {"material", own.at("downlight")},
+                               {"castsShadows", false},
+                               {"collides", false}});
+    };
+    const std::int64_t discY = height - kHubDownlightThicknessMm / 2;
+    for (std::size_t i = 0; i + 1 < xs.size(); ++i) {
+        for (std::size_t k = 0; k + 1 < zs.size(); ++k) {
+            const std::int64_t x0 = xs[i];
+            const std::int64_t x1 = xs[i + 1];
+            const std::int64_t zc = (zs[k] + zs[k + 1]) / 2;
+            if (x0 < hub.centreXMm && x1 > hub.centreXMm && zs[k] < 0 && zs[k + 1] > 0) {
+                continue; // the chandelier's coffer
+            }
+            const std::int64_t count = std::max<std::int64_t>(1, (x1 - x0 + kHubColumnPitchMm / 2) / kHubColumnPitchMm);
+            for (std::int64_t n = 0; n < count; ++n) {
+                const std::int64_t x = x0 + (2 * n + 1) * (x1 - x0) / (2 * count);
+                disc(prefix + "downlight-" + std::to_string(x) + "-" + std::to_string(zc), x, discY, zc);
+            }
+        }
+    }
+    // Under the balcony: a downlight every pitch along the long sides' soffits and the east one's.
+    const std::int64_t soffit = slabBottom - kHubDownlightThicknessMm / 2;
+    for (std::int64_t x = kHubSoffitLightPitchMm / 2; x + kHubSoffitLightPitchMm / 2 <= hub.eastEdgeXMm;
+         x += kHubSoffitLightPitchMm) {
+        disc(prefix + "soffit-north-" + std::to_string(x), x, soffit, -half + kHubLowLightFromWallMm);
+        disc(prefix + "soffit-south-" + std::to_string(x), x, soffit, half - kHubLowLightFromWallMm);
+    }
+    for (std::int64_t z = -kHubEastColumnZMm - kHubSoffitLightPitchMm; z <= kHubEastColumnZMm + kHubSoffitLightPitchMm;
+         z += kHubSoffitLightPitchMm) {
+        disc(prefix + "soffit-east-" + std::to_string(z), east - kHubLowLightFromWallMm, soffit, z);
+    }
+    // The chandelier: a brass ring hung on three rods, its bulbs around it, a smaller ring of bulbs inside.
+    const std::int64_t cx = hub.centreXMm;
+    for (const auto& [name, radius, y, bulbs] :
+         {std::tuple{std::string("outer"), kHubChandelierRadiusMm, kHubChandelierMm, 20},
+          std::tuple{std::string("inner"), kHubChandelierRadiusMm / 2, kHubChandelierMm + kHubChandelierStepMm, 10}}) {
+        for (int i = 0; i < bulbs; ++i) {
+            const double angle = 2.0 * 3.14159265358979323846 * (static_cast<double>(i) + 0.5) / bulbs;
+            objects.push_back(json{{"id", prefix + "chandelier/" + name + "-bulb-" + std::to_string(i)},
+                                   {"primitive", "sphere"},
+                                   {"params", json{{"radius", meters(kHubBulbRadiusMm)}, {"segments", 12}, {"rings", 8}}},
+                                   {"position", vec3Json(rounded(meters(cx) + meters(radius) * std::sin(angle), 1e6),
+                                                         meters(y + kHubBulbRadiusMm),
+                                                         rounded(meters(radius) * std::cos(angle), 1e6))},
+                                   {"material", own.at("bulb")},
+                                   {"castsShadows", false},
+                                   {"collides", false}});
+        }
+        // The ring: a ring of short boxes would facet; a thin cylinder band reads as a brass hoop from below.
+        objects.push_back(json{{"id", prefix + "chandelier/" + name + "-ring"},
+                               {"primitive", "cylinder"},
+                               {"params", json{{"radius", meters(radius)},
+                                               {"height", meters(kHubChandelierBandMm)},
+                                               {"segments", 64},
+                                               {"capped", false}}},
+                               {"position", vec3Json(meters(cx), meters(y), 0.0)},
+                               {"material", own.at("chandelier")},
+                               {"castsShadows", false},
+                               {"collides", false}});
+    }
+    for (int i = 0; i < 3; ++i) {
+        const double angle = 2.0 * 3.14159265358979323846 * i / 3.0;
+        const double x = meters(cx) + meters(kHubChandelierRadiusMm) * std::sin(angle);
+        const double z = meters(kHubChandelierRadiusMm) * std::cos(angle);
+        const std::int64_t rod = height - kHubChandelierMm;
+        objects.push_back(json{{"id", prefix + "chandelier/rod-" + std::to_string(i)},
+                               {"primitive", "cylinder"},
+                               {"params", json{{"radius", 0.008}, {"height", meters(rod)}, {"segments", 8}}},
+                               {"position", vec3Json(rounded(x, 1e6), meters(kHubChandelierMm + rod / 2), rounded(z, 1e6))},
+                               {"material", own.at("chandelier")},
+                               {"castsShadows", false},
+                               {"collides", false}});
+    }
+    // The lanterns of the core's lights: a brass stem from the ceiling to a warm glass bulb just above the light.
+    for (std::size_t i = 0; i < hall.lights.size(); ++i) {
+        const FloorPoint& light = hall.lights[i];
+        if (light.xMm == cx && light.zMm == 0) {
+            continue; // the chandelier's light
+        }
+        const std::int64_t bulb = height - hall.lightDropMm + kHubLanternAboveLightMm;
+        objects.push_back(json{{"id", prefix + "lantern-" + std::to_string(i)},
+                               {"primitive", "sphere"},
+                               {"params", json{{"radius", meters(kHubLanternRadiusMm)}, {"segments", 16}, {"rings", 10}}},
+                               {"position", vec3Json(meters(light.xMm), meters(bulb), meters(light.zMm))},
+                               {"material", own.at("bulb")},
+                               {"castsShadows", false},
+                               {"collides", false}});
+        objects.push_back(boxObject(prefix + "lantern-" + std::to_string(i) + "/stem",
+                                    {light.xMm - kLampStemMm / 2, light.zMm - kLampStemMm / 2,
+                                     light.xMm + kLampStemMm / 2, light.zMm + kLampStemMm / 2},
+                                    bulb + kHubLanternRadiusMm, height, own.at("chandelier"), false, false));
+    }
+
+    // The elevator's portal (its floor's sign on the entablature, I4's sign) and the entrance's (its own sign).
+    const WallFace westWall{false, 0, 1};
+    const std::int64_t elevatorHalf = kElevatorDoorWidthMm / 2 + kElevatorFrameMm;
+    addHubPortal(prefix + "portal:elevator", westWall, -elevatorHalf - kHubElevatorPortalSideMm,
+                 elevatorHalf + kHubElevatorPortalSideMm, kHubElevatorPortalTopMm, materials, own, objects);
+    const WallFace eastWall{false, east, -1};
+    const std::int64_t entranceHalf = kEntranceWidthMm / 2 + kElevatorFrameMm;
+    addHubPortal(prefix + "portal:entrance", eastWall, -entranceHalf, entranceHalf, kHubPortalTopMm, materials, own,
+                 objects);
+    objects.push_back(hubSign(prefix + "portal:entrance/sign", meters(east - kHubEntablatureDepthMm),
+                              meters(kHubPortalSignCentreMm),
+                              0.0, -kFacingEastDeg, kPortalSignWidthM, kPortalSignHeightM,
+                              std::string(kHubEntranceSign), materials, std::string(kHubEntranceSignMaterial)));
+    // The big signs on the balcony's fascia over the portals: each doorway's room's, the entrance's.
+    for (const FloorDoorway& doorway : hall.doorways) {
+        if (!doorway.opensOntoHall()) {
+            continue;
+        }
+        const bool north = doorway.hallEdgeZMm < 0;
+        const auto text = roomSigns.find(doorway.room);
+        const std::string title =
+            text != roomSigns.end() && !text->second.empty() ? text->second : std::string(kGenericSign);
+        const double z = north ? meters(hub.northEdgeZMm + kHubFasciaDepthMm) : meters(hub.southEdgeZMm - kHubFasciaDepthMm);
+        // In its room's colour (the room pack's neon sign, I6 step 5's review): the hub's accents are its rooms'.
+        const auto neon = roomNeons.find(doorway.room);
+        objects.push_back(hubSign(prefix + "fascia-sign:" + doorway.room.toString(),
+                                  meters((doorway.minMm + doorway.maxMm) / 2),
+                                  meters((kHubFasciaBottomMm + fasciaTop) / 2), z, north ? 0.0 : 180.0,
+                                  kHubFasciaSignWidthM, kHubFasciaSignHeightM, title, materials,
+                                  neon != roomNeons.end() ? neon->second : std::string()));
+    }
+    objects.push_back(hubSign(prefix + "fascia-sign:entrance", meters(hub.eastEdgeXMm - kHubFasciaDepthMm),
+                              meters((kHubFasciaBottomMm + fasciaTop) / 2), 0.0, -kFacingEastDeg, kHubFasciaSignWidthM,
+                              kHubFasciaSignHeightM, std::string(sign), materials,
+                              std::string(kHubEntranceSignMaterial)));
+
+    // The pieces. The bookcases' books stand on the sockets of the very shelf drawn (its parameters as the scene object
+    // carries them), built once.
+    const json bookcase = hubBookcaseParams();
+    const Expected<geometry::ProceduralPrefab> bookcaseShelf = geometry::buildPrefab("shelf", bookcase);
+    const json column = materialsJson(kindMaterials(theme, "column"));
+    std::map<std::string, std::string> plant = kindMaterials(theme, "plant");
+    plant["pot"] = materials.at("plant");
+    plant["saucer"] = materials.at("saucer");
+    for (const HubPiece& piece : hub.pieces) {
+        const std::string id = prefix + piece.id;
+        const std::uint64_t seed = core::deriveSeed("hub", hall.floor, piece.id);
+        switch (piece.kind) {
+        case HubPieceKind::Column:
+            objects.push_back(hubPrefab(id, "column",
+                                        piece,
+                                        json{{"radius", meters(kHubColumnRadiusMm)},
+                                             {"height", meters(height)},
+                                             {"plinthSize", meters(kHubColumnSizeMm)}},
+                                        column));
+            break;
+        case HubPieceKind::Landmark: {
+            const json landmarkParams = hubLandmarkParams();
+            objects.push_back(hubPrefab(id, "hub_landmark", piece, landmarkParams,
+                                        materialsJson(kindMaterials(theme, "hub_landmark"))));
+            // A boxed game of invented cover on each riser between the consoles, facing out (the riser cards'
+            // materials).
+            if (const auto landmark = geometry::buildPrefab("hub_landmark", landmarkParams)) {
+                const json boxMaterials = materialsJson(kindMaterials(theme, "riser_card"));
+                for (const geometry::Socket& socket : landmark->sockets) {
+                    if (!socket.id.starts_with("Display_")) {
+                        continue;
+                    }
+                    const glm::vec3 at(socket.transform[3]);
+                    const glm::vec3 out(socket.transform[2]);
+                    const double yawDeg = std::atan2(out.x, out.z) * 180.0 / 3.14159265358979323846;
+                    objects.push_back(json{
+                        {"id", id + "/box-" + socket.id.substr(8)},
+                        {"prefab", "poster_frame"},
+                        {"params", json{{"width", 0.135}, {"height", 0.19}, {"frameWidth", 0.006}, {"depth", 0.03}}},
+                        {"position", vec3Json(rounded(meters(piece.centre.xMm) + at.x, 1e6), rounded(at.y + 0.095, 1e6),
+                                              rounded(meters(piece.centre.zMm) + at.z, 1e6))},
+                        {"rotationDeg", vec3Json(0.0, rounded(yawDeg, 1e4), 0.0)},
+                        {"materials", boxMaterials},
+                        {"textures", json{{"picture", json{{"pattern", "cover"},
+                                                           {"seed", static_cast<std::int64_t>(
+                                                                        core::deriveSeed(seed, socket.id) % 1000000)}}}}},
+                        {"castsShadows", false},
+                        {"collides", false}});
+                }
+            }
+            // Plants inside the railed showcase, on the dais between its wall and the ring counter.
+            for (int i = 0; i < 4; ++i) {
+                const double angle = 3.14159265358979323846 * (0.25 + 0.5 * i);
+                const double r = meters(kHubLandmarkRadiusMm - kHubLandmarkPlantInsetMm);
+                objects.push_back(json{
+                    {"id", id + "/plant-" + std::to_string(i)},
+                    {"prefab", "plant"},
+                    {"params", json{{"height", 0.95},
+                                    {"potRadius", 0.12},
+                                    {"potHeight", 0.24},
+                                    {"spread", 0.17},
+                                    {"leaves", 14},
+                                    {"seed", static_cast<std::int64_t>((seed + static_cast<std::uint64_t>(i)) % 2147483647u)}}},
+                    {"position", vec3Json(rounded(meters(piece.centre.xMm) + r * std::sin(angle), 1e6),
+                                          meters(kHubLandmarkDaisMm), rounded(r * std::cos(angle), 1e6))},
+                    {"rotationDeg", vec3Json(0.0, 0.0, 0.0)},
+                    {"materials", materialsJson(plant)},
+                    {"collides", false}});
+            }
+            break;
+        }
+        case HubPieceKind::Totem: {
+            json totem = hubPrefab(id, "info_totem", piece, json::object(),
+                                   materialsJson(kindMaterials(theme, "info_totem")));
+            totem["textures"] = json{{"screen", json{{"pattern", "board"}, {"title", boardTitle("DIRECTORY", floorSigns)}}},
+                                     {"sign", json{{"pattern", "sign"}, {"title", std::string(kHubTotemSign)}}}};
+            objects.push_back(std::move(totem));
+            break;
+        }
+        case HubPieceKind::Showcase:
+            objects.push_back(hubPrefab(id, "display_case", piece, hubShowcaseParams(),
+                                        materialsJson(kindMaterials(theme, "display_case"))));
+            break;
+        case HubPieceKind::Screen: {
+            const WallFace wall{true, half, -1};
+            json screen = wallFrame(id, wall, piece.centre.xMm, kHubScreenCentreMm,
+                                    json{{"width", meters(kHubScreenWidthMm)},
+                                         {"height", meters(kHubScreenHeightMm)},
+                                         {"frameWidth", 0.05},
+                                         {"depth", 0.04}},
+                                    json{{"frame", materials.at("trim")}, {"picture", own.at("screen")}},
+                                    json{{"pattern", "board"}, {"title", boardTitle("BUILDING DIRECTORY", floorSigns)}});
+            screen["collides"] = false;
+            objects.push_back(std::move(screen));
+            break;
+        }
+        case HubPieceKind::Sofa: {
+            std::map<std::string, std::string> sofa = kindMaterials(theme, "sofa");
+            sofa["fabric"] = own.at("seat");
+            objects.push_back(hubPrefab(id, "sofa", piece,
+                                        json{{"width", meters(kHubSofaWidthMm)},
+                                             {"depth", meters(kHubSofaDepthMm)},
+                                             {"seats", 3}},
+                                        materialsJson(sofa)));
+            break;
+        }
+        case HubPieceKind::Rug: {
+            const bool runner = piece.id.rfind("rug-runner-", 0) == 0;
+            json rug = hubPrefab(id, "rug", piece,
+                                 json{{"width", meters(piece.footprint.maxXMm - piece.footprint.minXMm)},
+                                      {"depth", meters(piece.footprint.maxZMm - piece.footprint.minZMm)}},
+                                 json{{"fabric", runner ? materials.at("runner") : own.at("rug")}});
+            rug["castsShadows"] = false;
+            rug["collides"] = false;
+            objects.push_back(std::move(rug));
+            break;
+        }
+        case HubPieceKind::Bookcase: {
+            // A lit bookcase (the pack's shelf, its strips and glow), a row of books between bookends on each level.
+            objects.push_back(hubPrefab(id, "shelf", piece, bookcase, materialsJson(kindMaterials(theme, "shelf"))));
+            const Expected<geometry::ProceduralPrefab>& shelf = bookcaseShelf;
+            if (!shelf) {
+                break;
+            }
+            const double yaw = static_cast<double>(piece.yawCdeg) / 100.0;
+            const double facing = piece.yawCdeg == 0 ? 1.0 : -1.0; // the case faces +Z (north wall) or -Z (south)
+            const json books = materialsJson(kindMaterials(theme, "bookends"));
+            for (const geometry::Socket& socket : shelf->sockets) {
+                if (!socket.id.starts_with("Level_")) {
+                    continue;
+                }
+                const glm::vec3 at(socket.transform[3]);
+                const glm::vec3 room = socket.bounds.size();
+                const std::uint64_t levelSeed = core::deriveSeed(seed, socket.id);
+                objects.push_back(json{
+                    {"id", id + "/books-" + socket.id.substr(6)},
+                    {"prefab", "bookends"},
+                    {"params", json{{"width", rounded(room.x - 0.04, 1e4)},
+                                    {"height", rounded(std::min(room.y - 0.03, 0.3), 1e4)},
+                                    {"depth", rounded(std::min(room.z - 0.04, 0.24), 1e4)},
+                                    {"seed", static_cast<std::int64_t>(levelSeed % 2147483647u)}}},
+                    {"position", vec3Json(rounded(meters(piece.centre.xMm) + facing * at.x, 1e6), rounded(at.y, 1e6),
+                                          rounded(meters(piece.centre.zMm) + facing * at.z, 1e6))},
+                    {"rotationDeg", vec3Json(0.0, yaw, 0.0)},
+                    {"materials", books},
+                    {"castsShadows", false},
+                    {"collides", false}});
+            }
+            break;
+        }
+        case HubPieceKind::Plant: {
+            json params{{"height", kHubPlantHeightM},
+                        {"potRadius", kHubPlantPotRadiusM},
+                        {"potHeight", kHubPlantPotHeightM},
+                        {"spread", meters(kHubPlantSpreadMm)},
+                        {"leaves", 18},
+                        {"seed", static_cast<std::int64_t>(seed % 2147483647u)},
+                        {"saucerRadius", kHubPlantSaucerRadiusM}};
+            objects.push_back(hubPrefab(id, "plant", piece, std::move(params), materialsJson(plant)));
+            break;
+        }
+        }
+    }
+}
+
 /// The hall's objects (see the header): its floor, ceiling and walls, its lamps, the elevator, the sign and the lobby's
 /// entrance, then its dressing (I6 step 2): the trim of its walls, a portal at each doorway, the beams over them, the
 /// sconces, prints, benches and plants, the runner.
 void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterials& theme,
-                    const std::map<RoomId, std::string>& roomSigns, json& objects) {
+                    const std::map<RoomId, std::string>& roomSigns, const std::map<RoomId, std::string>& roomNeons,
+                    std::span<const std::string> floorSigns, json& objects) {
     const std::string prefix = hallAreaId(hall.floor) + "/";
     const std::int64_t height = hall.heightMm;
     const std::int64_t half = hall.widthMm / 2;
@@ -453,25 +1043,25 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
     objects.push_back(
         boxObject(prefix + "ceiling", hall.interior, height, height + kSlabMm, materials.at("ceiling"), false, false));
     for (const HallWall& wall : hall.walls) {
-        objects.push_back(boxObject(prefix + "wall-" + wall.id, wall.footprint, 0, height, materials.at("wall"), true,
-                                    true, BoxUvMode::PlacedMeters));
+        objects.push_back(boxObject(prefix + "wall-" + wall.id, wall.footprint, wall.bottomMm, height,
+                                    materials.at("wall"), true, true, BoxUvMode::PlacedMeters));
     }
     // The beams across the ceiling, by x: a fixed grid from the west end, and one over each doorway the grid leaves
     // without a beam nearby (one where two doorways face each other).
     std::set<std::int64_t> beams;
-    for (std::int64_t x = kBeamPitchMm; x + kBeamEndClearMm <= east; x += kBeamPitchMm) {
+    for (std::int64_t x = kBeamPitchMm; x + kBeamEndClearMm <= east && !hall.hub; x += kBeamPitchMm) {
         beams.insert(x);
     }
     const std::set<std::int64_t> grid = beams;
     for (const FloorDoorway& doorway : hall.doorways) {
         const std::int64_t centre = (doorway.minMm + doorway.maxMm) / 2;
         const auto near = grid.lower_bound(centre - kBeamMergeMm);
-        if (doorway.opensOntoHall() && (near == grid.end() || *near > centre + kBeamMergeMm)) {
+        if (doorway.opensOntoHall() && !hall.hub && (near == grid.end() || *near > centre + kBeamMergeMm)) {
             beams.insert(centre);
         }
     }
     // The lamps: a drum shade over each light on a stem from the ceiling (through a beam over it).
-    for (std::size_t i = 0; i < hall.lights.size(); ++i) {
+    for (std::size_t i = 0; i < hall.lights.size() && !hall.hub; ++i) {
         const FloorPoint& light = hall.lights[i];
         const std::int64_t centre = height - kHallLightDropMm + kLampAboveLightMm;
         objects.push_back(json{{"id", prefix + "lamp-" + std::to_string(i)},
@@ -517,12 +1107,15 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                     {"height", kSignHeightM},
                                     {"frameWidth", kSignFrameM},
                                     {"depth", kSignDepthM}}},
-                    {"position", vec3Json(0.0, meters(kSignCentreMm), 0.0)},
+                    {"position", vec3Json(hall.hub ? meters(kHubEntablatureDepthMm) : 0.0, meters(kSignCentreMm), 0.0)},
                     {"rotationDeg", vec3Json(0.0, kFacingEastDeg, 0.0)},
                     {"textures", json{{"picture", json{{"pattern", "sign"}, {"title", std::string(sign)}}}}},
                     {"castsShadows", false},
                     {"collides", false}};
     signObject["materials"] = materialsJson(theme.materials("poster_frame", "sign"));
+    if (hall.hub) {
+        signObject["materials"]["picture"] = std::string(kHubElevatorSignMaterial); // signage green (step 5's review)
+    }
     objects.push_back(std::move(signObject));
     // The lobby's entrance at its east end: two closed leaves in a frame (decoration).
     if (hall.lobby) {
@@ -621,19 +1214,29 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
         const auto text = roomSigns.find(doorway.room);
         const std::string title =
             text != roomSigns.end() && !text->second.empty() ? text->second : std::string(kGenericSign);
-        const std::int64_t signCentre = (lintel + kLintelHeightMm + height - kBeamDepthMm) / 2;
+        const std::int64_t signCentre = hall.hub ? kHubPortalSignCentreMm
+                                                 : (lintel + kLintelHeightMm + height - kBeamDepthMm) / 2;
         json signFrame = wallFrame(id + "/sign", wall, (doorway.minMm + doorway.maxMm) / 2, signCentre,
-                                   json{{"width", kPortalSignWidthM},
-                                        {"height", kPortalSignHeightM},
+                                   json{{"width", hall.hub ? kHubPlaqueWidthM : kPortalSignWidthM},
+                                        {"height", hall.hub ? kHubPlaqueHeightM : kPortalSignHeightM},
                                         {"frameWidth", kPortalSignFrameM},
                                         {"depth", kPortalSignDepthM}},
                                    json{{"frame", materials.at("trim")}, {"picture", materials.at("sign")}},
                                    json{{"pattern", "sign"}, {"title", title}});
         signFrame["collides"] = false;
+        if (hall.hub) {
+            // Proud of the hub portal's entablature (addHubPortal()).
+            signFrame["position"] = vec3Json(meters((doorway.minMm + doorway.maxMm) / 2), meters(signCentre),
+                                             meters(wall.faceMm + wall.inward * kHubEntablatureDepthMm));
+        }
         objects.push_back(std::move(signFrame));
+        if (hall.hub) {
+            addHubPortal(id, wall, doorway.minMm, doorway.maxMm, kHubPortalTopMm, materials,
+                         kindMaterials(theme, "hub"), objects);
+        }
         // The blade sign: the same lettering on both faces of a panel standing out from the wall towards the
         // elevator, read from down the hall either way; a graphite arm under the ceiling holds it.
-        if (hall.widthMm < kBladeMinHallMm) {
+        if (hall.widthMm < kBladeMinHallMm || hall.hub) {
             continue;
         }
         const std::int64_t bladeX = (doorway.minMm + doorway.maxMm) / 2 - kBladeOffsetMm;
@@ -689,7 +1292,7 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
         const std::uint64_t seed = core::deriveSeed("hall", hall.floor, piece.id);
         switch (piece.kind) {
         case HallPieceKind::Sconce:
-            addSconce(id, wall, piece.xMm, materials, objects);
+            addSconce(id, wall, piece.xMm, piece.centreMm > 0 ? piece.centreMm : kSconceCentreMm, materials, objects);
             break;
         case HallPieceKind::Picture: {
             const std::size_t place = static_cast<std::size_t>(piece.slot / 2) + titleOffset +
@@ -740,7 +1343,7 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                {"castsShadows", false}});
     }
     // The runner: rugs end to end down the middle, from past the elevator's zone.
-    for (std::int64_t k = 0;; ++k) {
+    for (std::int64_t k = 0; !hall.hub; ++k) {
         const std::int64_t from = kRunnerStartMm + k * kRunnerLengthMm;
         if (from + kRunnerLengthMm + kRunnerEndClearMm > east) {
             break;
@@ -753,6 +1356,9 @@ void addHallObjects(const Hall& hall, std::string_view sign, const ThemeMaterial
                                {"materials", json{{"fabric", materials.at("runner")}}},
                                {"castsShadows", false},
                                {"collides", false}});
+    }
+    if (hall.hub) {
+        addHubObjects(hall, sign, theme, roomSigns, roomNeons, floorSigns, objects);
     }
 }
 
@@ -767,11 +1373,23 @@ void addHallLights(const Hall& hall, const LightingProfile& lighting, json& ligh
         const FloorPoint& light = hall.lights[i];
         lights.push_back(json{{"name", area + "/light-" + std::to_string(i)},
                               {"type", "point"},
-                              {"position", vec3Json(meters(light.xMm), meters(hall.heightMm - kHallLightDropMm),
+                              {"position", vec3Json(meters(light.xMm), meters(hall.heightMm - hall.lightDropMm),
                                                     meters(light.zMm))},
                               {"color", style.color},
-                              {"intensity", style.intensity},
-                              {"range", style.range},
+                              {"intensity", hall.hub ? style.intensity * kHubLightScale : style.intensity},
+                              {"range", hall.hub ? style.range + kHubLightRangeM : style.range},
+                              {"area", area}});
+    }
+    // The hub's lights under the balcony: shorter (I6 step 5).
+    for (std::size_t i = 0; i < hall.lowLights.size(); ++i) {
+        const FloorPoint& light = hall.lowLights[i];
+        lights.push_back(json{{"name", area + "/low-light-" + std::to_string(i)},
+                              {"type", "point"},
+                              {"position", vec3Json(meters(light.xMm), meters(kHubLowLightHeightMm),
+                                                    meters(light.zMm))},
+                              {"color", style.color},
+                              {"intensity", style.intensity * kHubLowLightScale},
+                              {"range", kHubLowLightRangeM},
                               {"area", area}});
     }
     const LightStyle& fill = lighting.hall.doorwayFill;
@@ -802,6 +1420,30 @@ void addHallLights(const Hall& hall, const LightingProfile& lighting, json& ligh
                               {"outerConeDeg", rounded(outer, 1e4)},
                               {"area", area}});
     }
+    // After the doorways' fills (an area's lights past the view's capacity are left out from its end: the fills come
+    // first): the globe's cool light (I6 step 5's review), at its centre: the landmark the brightest thing below the
+    // ceiling. (The room signs' neon glows by its bloom: a light per sign would push the doorways' fills out of the
+    // rooms' views.)
+    if (hall.hub) {
+        const HubPiece* landmark = hall.hub->find("landmark");
+        const auto prefab = geometry::buildPrefab("hub_landmark", hubLandmarkParams());
+        if (landmark != nullptr && prefab) {
+            for (const geometry::Socket& socket : prefab->sockets) {
+                if (socket.id == "Globe") {
+                    const glm::vec3 at(socket.transform[3]);
+                    lights.push_back(json{{"name", area + "/globe"},
+                                          {"type", "point"},
+                                          {"position", vec3Json(rounded(meters(landmark->centre.xMm) + at.x, 1e6),
+                                                                rounded(at.y, 1e6),
+                                                                rounded(meters(landmark->centre.zMm) + at.z, 1e6))},
+                                          {"color", std::string(kHubGlobeLightColor)},
+                                          {"intensity", kHubGlobeLightIntensity},
+                                          {"range", kHubGlobeLightRangeM},
+                                          {"area", area}});
+                }
+            }
+        }
+    }
 }
 
 } // namespace
@@ -815,6 +1457,74 @@ std::vector<const Room*> roomsOnFloor(const WorldPlan& plan, std::string_view fl
     }
     std::sort(rooms.begin(), rooms.end(), [](const Room* a, const Room* b) { return a->id < b->id; });
     return rooms;
+}
+
+json hubLandmarkParams() {
+    return json{{"radius", meters(kHubLandmarkRadiusMm)},
+                {"pedestalHeight", 0.4},
+                {"globeRadius", 0.65},
+                {"consoles", 9},
+                {"consoleScale", 1.4},
+                {"displays", 9}};
+}
+
+json hubBookcaseParams() {
+    return json{{"width", meters(kHubBookcaseWidthMm)},
+                {"height", kHubBookcaseHeightM},
+                {"depth", meters(kHubBookcaseDepthMm)},
+                {"levels", 6},
+                {"back", true},
+                {"plinthHeight", 0.1},
+                {"boardLight", true}};
+}
+
+json hubShowcaseParams() {
+    return json{{"width", meters(kHubShowcaseWidthMm)},
+                {"depth", meters(kHubShowcaseDepthMm)},
+                {"height", kHubShowcaseHeightM},
+                {"baseHeight", kHubShowcaseBaseM},
+                {"levelRise", kHubShowcaseLevelRiseM},
+                {"levels", 2},
+                {"slotSize", json::array({kHubShowcaseSlotW, kHubShowcaseSlotH, kHubShowcaseSlotD})},
+                {"slotGap", kHubShowcaseSlotGapM},
+                {"slotMargin", kHubShowcaseSlotMarginM}};
+}
+
+HubShowcaseSlots hubShowcaseSlots(const Hall& hall) {
+    HubShowcaseSlots slots;
+    const HubPiece* piece = hall.hub ? hall.hub->find("showcase") : nullptr;
+    if (piece == nullptr) {
+        return slots;
+    }
+    auto prefab = geometry::buildPrefab("display_case", hubShowcaseParams());
+    if (!prefab) {
+        spdlog::warn("World: the hub's showcase does not build: {}", prefab.error().toString());
+        return slots;
+    }
+    slots.size = glm::vec3(static_cast<float>(kHubShowcaseSlotW), static_cast<float>(kHubShowcaseSlotH),
+                           static_cast<float>(kHubShowcaseSlotD));
+    const float yaw = static_cast<float>(piece->yawCdeg) / 100.0f * 3.14159265358979323846f / 180.0f;
+    const glm::mat4 place =
+        glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(static_cast<float>(meters(piece->centre.xMm)), 0.0f,
+                                                              static_cast<float>(meters(piece->centre.zMm)))),
+                    yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+    for (int level = 0;; ++level) {
+        bool any = false;
+        for (int index = 0;; ++index) {
+            const std::string name = "Slot_" + std::to_string(level) + "_" + std::to_string(index);
+            const auto socket = std::find_if(prefab->sockets.begin(), prefab->sockets.end(),
+                                             [&](const geometry::Socket& s) { return s.id == name; });
+            if (socket == prefab->sockets.end()) {
+                break;
+            }
+            any = true;
+            slots.frames.push_back(place * socket->transform);
+        }
+        if (!any) {
+            break;
+        }
+    }
+    return slots;
 }
 
 std::string floorObjectId(const RoomId& room, std::string_view local) {
@@ -932,11 +1642,29 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     const std::string sign = spec != nullptr && !spec->sign.empty() ? spec->sign : std::string(floor);
     // The floor's pack dresses and tints the hall (I6 step 3, ADR-0014 §5).
     std::map<RoomId, std::string> roomSigns;
+    std::map<RoomId, std::string> roomNeons; // each room pack's sign material (the hub's signs in their rooms' colours)
     for (const FloorRoom& entry : floorRooms) {
-        roomSigns.emplace(entry.room->id, data.rooms.at(entry.room->id).platform.signText);
+        const SceneData& room = data.rooms.at(entry.room->id);
+        roomSigns.emplace(entry.room->id, room.platform.signText);
+        const std::map<std::string, std::string> signMaterials = room.theme.materials("poster_frame", "sign");
+        if (const auto picture = signMaterials.find("picture"); picture != signMaterials.end()) {
+            roomNeons.emplace(entry.room->id, picture->second);
+        }
     }
     const LightingProfile hallLighting = themedLighting(data.lighting, data.hallTheme);
-    addHallObjects(build.hall, sign, data.hallTheme, roomSigns, objects);
+    // The building's floors the plan holds, in the elevator's order (the hub's boards list them, I6 step 5).
+    std::vector<std::string> floorSigns;
+    for (const FloorSpec& entry : data.building.floors) {
+        if (std::none_of(plan.floors.begin(), plan.floors.end(),
+                         [&](const Floor& held) { return held.id == entry.id; })) {
+            continue;
+        }
+        std::string text = entry.sign.empty() ? entry.id : entry.sign;
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](char c) { return static_cast<char>(std::toupper(static_cast<unsigned char>(c))); });
+        floorSigns.push_back(std::move(text));
+    }
+    addHallObjects(build.hall, sign, data.hallTheme, roomSigns, roomNeons, floorSigns, objects);
     addHallLights(build.hall, hallLighting, lights);
 
     // The rooms' areas are lit as the scene (the profile's environment); the hall by the hall role's own terms (the

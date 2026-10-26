@@ -68,6 +68,11 @@ struct TextureDesc {
     SamplingDesc sampling;
     /// What the texture's memory is recorded as (gpuMemoryLedger()).
     GpuMemoryKind memoryKind = GpuMemoryKind::SceneTextures;
+    /// A glTF metallic-roughness map (linear; I6 step 5's review): only its G (roughness) and B (metallic) are stored,
+    /// as GL_R8 when every B is 0 or every B is 255 (none or all metal: the roughness alone) or GL_RG8, swizzled so that
+    /// sampling returns what the RGBA8 texture would (R and A 1, G the roughness, B the metallic): a quarter or half of
+    /// the memory, the same texels.
+    bool metallicRoughness = false;
 };
 
 /// Move-only RAII 2D texture with immutable storage (glTextureStorage2D, DSA), uploaded once from an 8-bit image:
@@ -89,8 +94,8 @@ public:
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_size; }
     [[nodiscard]] int mipLevels() const noexcept { return m_levels; }
     [[nodiscard]] const TextureDesc& desc() const noexcept { return m_desc; }
-    /// Bytes of all allocated levels (4 per texel), recorded in gpuMemoryLedger() under TextureDesc::memoryKind while
-    /// the texture lives.
+    /// Bytes of all allocated levels (4 per texel; 1 or 2 for a metallic-roughness map), recorded in gpuMemoryLedger()
+    /// under TextureDesc::memoryKind while the texture lives.
     [[nodiscard]] std::size_t estimatedBytes() const noexcept { return m_bytes; }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 

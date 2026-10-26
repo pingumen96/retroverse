@@ -40,12 +40,13 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's
-  items). `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
+  items), `hub_showcase` (I6 step 5: the hub's favourites' proxies, their content made on the pool). `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
   `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`
   (14b), `world_launch` (15a), `world_live_update` (15b), `world_ride` (I4 step 7b: the directory's commands, the
-  teleports, the ride's floor swap) and `elevator_prompt_panel` (7b); the outline pass's dimming shader
+  teleports, the ride's floor swap), `elevator_prompt_panel` (7b; the hub's totem's prompt since I6 step 5) and
+  `world_showcase` (I6 step 5: the hub's favourites' showcase drawn, hovered and opened); the outline pass's dimming shader
   `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
@@ -57,7 +58,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   placement functions; `lift.hpp`, the schema-1 lift; `generateBuilding` and `updateBuilding`; since step 2
   `media_family.hpp`'s label quad, cover fit and family fixtures, `withFamilyFixtures`; since step 3
   `floor_layout.hpp`, a floor's derived hall, its rooms' doorways and walls on it, its areas and `roomToFloorMatrix`,
-  since I6 step 2 the hall's dressing (`HallPiece`: sconces, prints, benches, plants at fixed slots),
+  since I6 step 2 the hall's dressing (`HallPiece`: sconces, prints, benches, plants at fixed slots), since I6 step 5
+  the hub (`Hub`, `HubPiece`: the ground floor's hall, its balcony, columns, landmark, totem, showcase, bookcases) and
+  `placeOnHub()` in `building.hpp`,
   and `floor_scene.hpp`, a floor's scene, `loadFloorSceneData`, `toFloorSceneFile`, `floorCollectionLayout`),
   `WorldConfig` with the preset and `world.json`, the readers of
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
@@ -75,7 +78,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   decoration, `drawnFixtures()` the boxes they cover). I3's other modules: `rv_geometry` the collection's
   prefabs (`display_case`, `wall_shelf`, `storage_box`, `magazine_stack`, `bookends`, `plant` (16); I6 step 3b's era
   furniture `sofa`, `beanbag`, `desk`, `office_chair`, `bar_stool`, `banker_lamp`, `showcase` and the floor lamp's
-  torchiere), the cartridge's
+  torchiere; I6 step 5's hub `column`, `railing`, `hub_landmark`, `info_totem` and `MeshBuilder::torus`), the cartridge's
   `spineLabel`, `shelf`'s display levels and front inset; `Slot_<level>_<index>` and `Level_<n>` sockets, `SlotFacing`,
   `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's
   object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:

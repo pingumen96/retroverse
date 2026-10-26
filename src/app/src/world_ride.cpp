@@ -51,16 +51,30 @@ bool WorldSession::idleAtElevator() const {
            atElevator();
 }
 
+bool WorldSession::atTotem() const {
+    if (m_state != "room" || m_floor.empty() || !m_host.walker || m_totemZone.isEmpty()) {
+        return false;
+    }
+    const scene::WalkerPose walker = m_host.walker();
+    return facesTotem(walker.feet, walker.yaw, m_totemZone, m_totemScreen);
+}
+
+bool WorldSession::idleAtTotem() const {
+    const WorldInteraction& interaction = m_interaction->interaction();
+    return !m_ride && interaction.state() == WorldState::FreeRoam && interaction.hovered() == world::kNoPick &&
+           atTotem();
+}
+
 void WorldSession::openDirectory(ProductUi& product, ui::DirectoryTab tab, std::string_view via) {
     syncDirectory(product);
     product.openDirectory(tab, via);
 }
 
-void WorldSession::elevatorPrompt(ProductUi& product, std::optional<std::string> key) {
+void WorldSession::elevatorPrompt(ProductUi& product, std::optional<std::string> key, bool totem) {
     if (key) {
-        ++m_record.elevatorPromptFrames;
+        ++(totem ? m_record.totemPromptFrames : m_record.elevatorPromptFrames);
     }
-    product.setElevatorPrompt(std::move(key));
+    product.setElevatorPrompt(std::move(key), totem);
 }
 
 WorldMoveConditions WorldSession::moveConditions(const ProductUi& product) const {
@@ -86,6 +100,8 @@ void WorldSession::keepPlan(const WorldBuild& build) {
     m_floor = build.floor;
     m_elevatorZone = build.elevatorZone;
     m_elevatorDoors = build.elevatorDoors;
+    m_totemZone = build.totemZone;
+    m_totemScreen = build.totemScreen;
     m_arrival = build.arrival;
     m_doorways.clear();
     for (const RoomCollection& room : build.rooms) {

@@ -19,6 +19,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rv/core/expected.hpp>
@@ -80,9 +81,13 @@ public:
     /// `pictures` (I3 step 15b): the arrays of the collection this one replaces, used instead of new ones when they are
     /// of the same family and format: the layers of the games gone released, the arrays grown to the room, every item
     /// that stood showing its picture from the first frame.
+    ///
+    /// `keyPrefix` (I6 step 5): the registry keys' prefix in place of "collection/<room id>" (the hub's showcase, a
+    /// collection of no room: hub_showcase.hpp's kShowcaseKeyPrefix).
     [[nodiscard]] static Expected<std::unique_ptr<CollectionInstance>>
     create(const world::CollectionLayout& layout, const world::SceneData& data, SceneGraphics& graphics,
-           int uniformBufferOffsetAlignment, std::optional<CollectionPictures> pictures = std::nullopt);
+           int uniformBufferOffsetAlignment, std::optional<CollectionPictures> pictures = std::nullopt,
+           std::string_view keyPrefix = {});
     /// Gives up its arrays to the collection that replaces it (CollectionInstance::create's `pictures`); this one is
     /// only to be destroyed then.
     [[nodiscard]] CollectionPictures takePictures();

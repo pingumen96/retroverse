@@ -110,8 +110,9 @@ own frame since I4 step 5a, so the floor around it changes no pixel; `--video-fr
 checks the run report and compares within G01's tolerance (`comparison.txt` and a heatmap in
 `build/<preset>/smoke/golden_room/<case>`), skipped on another GPU or driver. The Gate C goldens of the building (I4
 step 8, the same file, `gpu.golden/G11` ... `G13`) are made the same way from `esde/building` under the shipped
-threshold (no `world.json`): G11 (`g11_lobby_golden.png`: the ground floor's lobby from the elevator's arrival point,
-no `--start-room`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:psx`, the jewel cases of
+threshold (no `world.json`): G11 (`g11_lobby_golden.png`: the ground floor's hub from the elevator's arrival point,
+no `--start-room`; since I6 step 5 the hub, and G14, `g14_hub_entrance_golden.png`, the hub from its entrance,
+`--spawn 16.3,0,0.6,-92,-3`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:psx`, the jewel cases of
 `disc_case_cd_v2` from the doorway, every one face-out) and G13 (`g13_shared_room_golden.png`: `--start-room
 area:shared:handheld`, the handheld floor's shared room of two sections, generic cases of `generic_case_v2`, from the
 doorway); the cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
@@ -123,7 +124,7 @@ again without the variable, update `docs/testing/gate-b.md`'s or `gate-c.md`'s p
 with a fixture recorded and imported (`retroverse-cli --data-dir <dir> library create --home <materialized fixture>
 --install <fixture>/Programs/ES-DE`, then `import`), then `retroverse.exe --start-room room:snes --exit-after-frames
 --frames 30 --fixed-dt 0.016667 --hidden --data-dir <dir> --screenshot build/screenshots/room.png` (the doorway;
-without `--start-room` the run starts in the ground floor's lobby, at the elevator); the `gpu.world*` cases leave
+without `--start-room` the run starts in the ground floor's hub, at the elevator); the `gpu.world*` cases leave
 theirs under `build/<preset>/smoke/world*/`. The benchmark path: `--start-room room:snes --width 1920 --height 1080
 --no-vsync --exit-after-frames --frames 1270 --fixed-dt 0.016667 --input-script
 tests/input_scripts/bench_snes_room.json` from the room's scene camera (the `benchmark` phase of the run report, with

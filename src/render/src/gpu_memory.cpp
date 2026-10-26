@@ -19,6 +19,8 @@ constexpr std::size_t bytesPerTexel(GpuFormat format) noexcept {
     switch (format) {
     case GpuFormat::R8:
         return 1;
+    case GpuFormat::Rg8:
+        return 2;
     case GpuFormat::Rgba8:
     case GpuFormat::Srgb8Alpha8:
     case GpuFormat::Rg16F:

@@ -1380,6 +1380,12 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                     state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "map");
                 } else if (actions.pressed(input::Action::Interact) && state.world->idleAtElevator()) {
                     state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "elevator");
+                } else if (actions.pressed(input::Action::Interact) && state.world->idleAtTotem()) {
+                    // I6 step 5: the hub's directory totem opens it at its floors too.
+                    state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "totem");
+                } else if (actions.pressed(input::Action::Interact) && state.world->showcaseHovered()) {
+                    // I6 step 5: a proxy of the hub's favourites showcase opens the directory at its card.
+                    state.world->openShowcaseCard(*state.product);
                 }
                 state.syncCaptureLayers();
             }
@@ -1425,10 +1431,15 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // The elevator's prompt in front of a floor's elevator (I4 step 7b), naming the interact key of the device
         // used last.
         std::optional<std::string> prompt;
+        bool totem = false;
         if (worldShown && !state.product->hasInput() && state.world->idleAtElevator()) {
             prompt = promptKeyLabel(state.input->system().map(), input::Action::Interact, actions.activeDevice());
+        } else if (worldShown && !state.product->hasInput() && state.world->idleAtTotem()) {
+            // I6 step 5: the hub's directory totem's prompt, "Indice".
+            prompt = promptKeyLabel(state.input->system().map(), input::Action::Interact, actions.activeDevice());
+            totem = true;
         }
-        state.world->elevatorPrompt(*state.product, std::move(prompt));
+        state.world->elevatorPrompt(*state.product, std::move(prompt), totem);
     }
     if (state.product) {
         // Text an --input-script types on this frame, into the product UI's focused field (the catalog's search).

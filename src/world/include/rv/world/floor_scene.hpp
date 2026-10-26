@@ -116,6 +116,24 @@ struct FloorSceneBuild {
 [[nodiscard]] Expected<scene::SceneDescription> toFloorSceneDescription(const WorldPlan& plan, std::string_view floor,
                                                                         const FloorSceneData& data);
 
+/// The hub's favourites showcase (I6 step 5, ADR-0014 §3): the display case the hub's scene draws at its "showcase"
+/// piece, and its face-out slots on the floor: their frames (geometry's "Slot_<level>_<index>" sockets: the slot's
+/// bottom centre, turned back by the case's tilt, +Z out of the item's face) in the floor's frame, the front level's
+/// left to right as one faces the case, then the back level's; the slot's size (the proxies' face-out item). None
+/// without a showcase (a doorway's approach took it, or another floor).
+struct HubShowcaseSlots {
+    std::vector<glm::mat4> frames;
+    glm::vec3 size{0.0f};
+};
+[[nodiscard]] nlohmann::json hubShowcaseParams();
+/// The hub's bookcases (I6 step 5): the shelf the hub's scene draws at each "bookcase-*" piece (lit inside, a row of
+/// books between bookends on each level).
+[[nodiscard]] nlohmann::json hubBookcaseParams();
+/// The hub's landmark (I6 step 5; its globe lower and larger, its consoles larger and more of them, risers for boxed
+/// games between them since the step's review): the hub_landmark the hub's scene draws at its "landmark" piece.
+[[nodiscard]] nlohmann::json hubLandmarkParams();
+[[nodiscard]] HubShowcaseSlots hubShowcaseSlots(const Hall& hall);
+
 /// A floor scene's id of an object or light of a room: "<room id>/<id within the room>".
 [[nodiscard]] std::string floorObjectId(const RoomId& room, std::string_view local);
 

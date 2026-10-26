@@ -43,7 +43,8 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
                                                                          const world::SceneData& data,
                                                                          SceneGraphics& graphics,
                                                                          int uniformBufferOffsetAlignment,
-                                                                         std::optional<CollectionPictures> pictures) {
+                                                                         std::optional<CollectionPictures> pictures,
+                                                                         std::string_view keyPrefix) {
     std::unique_ptr<CollectionInstance> instance(new CollectionInstance());
     if (layout.groups.size() != 1) {
         return makeError(ErrorCode::Unsupported,
@@ -62,7 +63,9 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     gl::MeshRegistry& meshes = graphics.meshes();
     instance->m_family = family.mediaFamily;
     instance->m_room = layout.room;
-    instance->m_keyPrefix = fmt::format("collection/{}/{}", layout.room.toString(), family.mediaFamily);
+    instance->m_keyPrefix = keyPrefix.empty()
+                                ? fmt::format("collection/{}/{}", layout.room.toString(), family.mediaFamily)
+                                : fmt::format("{}/{}", keyPrefix, family.mediaFamily);
     auto& partMeshes = instance->m_partMeshes;
     for (std::size_t part = 0; part < kPartRoles.size(); ++part) {
         const geometry::PrefabPart* found = geometry::findPart(prefab, kPartRoles[part]);
@@ -100,7 +103,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     desc.format = graphics.collectionArrayFormat();
     const gl::Rgb8 pending = pendingColorOf(shellDesc);
     desc.pendingColors = {pending, pending};
-    desc.debugName = "Collection " + layout.room.toString();
+    desc.debugName = "Collection " + (keyPrefix.empty() ? layout.room.toString() : std::string(keyPrefix));
     // Sized to the placements (planArrayLayers rounds them up to 64): 2,000 items take one array of 2,048 layers per
     // class, within ADR-0011 §9's 80 MiB; a placement added later takes a layer of that headroom or grows the arrays by
     // a GPU copy (CollectionArrays::reserve, step 15b).

@@ -7,13 +7,16 @@
 // kind but "excluded" lands on exactly one floor for each generation from 1 to 9 (home consoles and handhelds) or for
 // any (the others): generations 1 and 2 on gen2, 7 to 9 on gen7, every handheld on handheld, the computers and the
 // kind "other" (engines, ports, PC shortcuts, fantasy consoles, mobile) on computer. The ground floor, first, holds the
-// lobby and the arcade game room.
+// hub and the arcade game room.
 //
 // Each floor's "sign" is the generic text by its elevator (I4 step 3; never a trade name). Each floor's "themePack" is
 // the look of its rooms and its hall (I6 step 3, ADR-0014 §5, docs/i6/look.md); the arcade room takes its kind's
-// (systems.json's arcade_after_dark) wherever it stands. Layout, in millimetres: the halls 3.0 m wide and the ground floor's lobby 6.0 m; the rooms' rows start 3.0 m east of
-// the hall's west end (the elevator's landing); a room's footprint on its floor is its interior grown by the wall
-// allowance (the room template's wall, 150 mm); at most 12 rooms stand in a row.
+// (systems.json's arcade_after_dark) wherever it stands. Layout, in millimetres: the halls 3.0 m wide (I4's lobby 6.0 m,
+// kept as the plans' provenance only); the rooms' rows start 3.0 m east of the hall's west end (the elevator's
+// landing); a room's footprint on its floor is its interior grown by the wall allowance (the room template's wall,
+// 150 mm); at most 12 rooms stand in a row. The ground floor's hall is the hub (I6 step 5, ADR-0014 §3, style §5.2): 18
+// x 14 m and 5 m high, its rooms on its long walls from 4.35 m east of its west wall, so that the first room of a row
+// (9.3 m with its walls) stands in the middle of an 18 m wall.
 {
   "schemaVersion": 1,
   "floors": [
@@ -35,6 +38,7 @@
     "lobbyWidthMm": 6000,
     "rowStartXMm": 3000,
     "wallAllowanceMm": 150,
-    "maxRoomsPerRow": 12
+    "maxRoomsPerRow": 12,
+    "hub": {"lengthMm": 18000, "widthMm": 14000, "heightMm": 5000, "rowStartXMm": 4350}
   }
 }

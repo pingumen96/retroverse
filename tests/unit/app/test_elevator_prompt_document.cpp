@@ -42,6 +42,10 @@ TEST_CASE("app/elevator_prompt_document: the ids, the data model and the words",
     CHECK(contains(rml, "{{ key }}"));
     CHECK(contains(rml, ">Ascensore<"));
     CHECK(contains(rml, ">Scegli il piano<"));
+    // I6 step 5: the hub's directory totem's own words, by the model's "totem".
+    CHECK(contains(rml, "data-if=\"totem\">Indice<"));
+    CHECK(contains(rml, "data-if=\"!totem\">Ascensore<"));
+    CHECK(contains(rml, "data-if=\"totem\">Piani e stanze<"));
     // It takes no input: nothing in it can be focused or clicked.
     CHECK_FALSE(contains(rml, "<button"));
     CHECK_FALSE(contains(rml, "<input"));
@@ -68,6 +72,19 @@ TEST_CASE("app/elevator_prompt_document: the prompt names the interact key or bu
     CHECK(rv::app::promptKeyLabel(rv::input::ActionMap{}, Action::Interact, DeviceKind::Gamepad).empty());
     CHECK(rv::app::gamepadButtonLabel(rv::input::GamepadButton::Back) ==
           rv::input::gamepadButtonName(rv::input::GamepadButton::Back));
+}
+
+TEST_CASE("app/elevator_prompt_document: the totem's prompt shows to a walker in its zone that faces its screen",
+          "[app][elevator_prompt]") {
+    // The hub's totem as the floor build gives it (I6 step 5): its zone 1.5 m deep west of its screen, which faces west
+    // at (3.44, 2.4).
+    const rv::core::Aabb zone{glm::vec3(1.94f, 0.0f, 1.6f), glm::vec3(3.44f, 2.2f, 3.2f)};
+    const glm::vec3 screen(3.44f, 0.0f, 2.4f);
+    constexpr float kDegrees = 3.14159265f / 180.0f;
+    CHECK(rv::app::facesTotem(glm::vec3(2.6f, 0.0f, 2.4f), 90.0f * kDegrees, zone, screen));   // facing east, at it
+    CHECK_FALSE(rv::app::facesTotem(glm::vec3(2.6f, 0.0f, 2.4f), 270.0f * kDegrees, zone, screen)); // its back to it
+    CHECK_FALSE(rv::app::facesTotem(glm::vec3(1.2f, 0.0f, 0.0f), 90.0f * kDegrees, zone, screen));  // the arrival
+    CHECK_FALSE(rv::app::facesTotem(glm::vec3(2.6f, 0.0f, 2.4f), 90.0f * kDegrees, rv::core::Aabb{}, screen));
 }
 
 TEST_CASE("app/elevator_prompt_document: the prompt shows to a walker in the elevator's zone that faces its doors",

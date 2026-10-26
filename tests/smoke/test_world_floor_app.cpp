@@ -265,9 +265,9 @@ void requireFloorShown(const AppRun& run, const PlannedBuilding& building, std::
     }
     CHECK(arrayBytes == residency.arrayBytes);
     CHECK(roomItems == residency.items);
-    // A static group per collection room.
+    // A static group per collection room, and the hub showcase's on the ground floor when it holds games.
     REQUIRE(report.lastView.has_value());
-    CHECK(report.lastView->staticGroups == collections);
+    CHECK(report.lastView->staticGroups == collections + (world.showcase.games.empty() ? 0u : 1u));
     // The floor within the acceptable GPU memory.
     INFO("GPU memory peak " << report.gpuMemory.peakTotalBytes / (1024 * 1024) << " MiB");
     CHECK(report.gpuMemory.peakTotalBytes <= kAcceptableGpuBytes);
@@ -773,7 +773,10 @@ TEST_CASE("world floor app: from the lobby into the arcade room, whose CRT is bo
         floorSceneOf(stored.plan, rv::world::kGroundFloor, first.report->assetRoot);
     const Doorway door = doorwayOf(lobby.hall, arcade);
     const glm::vec3 arrival(meters(lobby.hall.arrival.xMm), 0.0f, meters(lobby.hall.arrival.zMm));
-    const glm::vec3 hallPoint(door.x, 0.0f, hallCentreZ(lobby.hall));
+    // The hub (I6 step 5): its landmark stands on the centre line; the walk turns 2 m before the doorway's wall.
+    const rv::world::FloorDoorway& arcadeDoor = hallDoorwayOf(lobby.hall, arcade);
+    const float hallZ = lobby.hall.hub ? meters(arcadeDoor.hallEdgeZMm) - door.into * 2.0f : hallCentreZ(lobby.hall);
+    const glm::vec3 hallPoint(door.x, 0.0f, hallZ);
     double yaw = lobby.sceneFile.at("camera").value("yawDeg", 0.0);
     Json script = Json::array();
     std::uint64_t frame = 0;
@@ -796,7 +799,7 @@ TEST_CASE("world floor app: from the lobby into the arcade room, whose CRT is bo
         script.push_back(turn(frame, 20, into));
         frame += 20;
     }
-    const std::uint64_t inside = walkFrames(door.depth + 1.0);
+    const std::uint64_t inside = walkFrames(door.depth - std::abs(hallZ - hallCentreZ(lobby.hall)) + 1.0);
     script.push_back(walk(frame, inside));
     frame += inside;
     const std::uint64_t frames = frame + 100; // the dwell (18 frames), then the screenBind phase's 60

@@ -118,6 +118,20 @@ The ground floor's derived hall becomes the hub (style §5.2, ADR-0013's lobby):
 **Re-placement.** Rooms on the ground floor are re-placed once onto the hub's walls: new x and z, their contents
 unchanged in their own frames. The hub is derived, not stored, as halls are (ADR-0013 §5).
 
+*Amended on 2026-10-26 (I6 step 5):*
+- **Its size is data.** `building.json`'s `layout.hub` (18 x 14 x 5 m, its rows from 4.35 m so that a first room stands in
+  the middle of a long wall); I4's `lobbyWidthMm` stays in the file as provenance only. A plan's `inputDigest` hashes
+  the hub only when a ground floor room is among its rooms, so that the other floors' plans keep their provenance.
+- **The re-placement rule.** A ground floor room whose doorway wall is not on the hub's edge is re-placed by the next
+  update, before any system enters: west to east by where it stood, at the east end of its own row on the hub (its yaw
+  kept), its z abutting the hub at its depth. It is reported like the migration (the change report's `replacedRooms`,
+  the run report, the notice `rooms-migrated`) and the next update moves nothing; a plan shown as it is (the persisted
+  start's preview, a plan kept) draws its rooms there already. The generator stays 1.4: a room's placement on its floor
+  moves, no game in its room.
+- **What the hub holds** is drawn, never stored: a balcony on columns along three sides, the landmark, the totem, the
+  favourites' showcase and its information screen, lit bookcases, sofas, rugs and plants, kept off every doorway's
+  approach (a room entering the hub later may take a piece away, never move one).
+
 ### 4. Light through doorways
 
 An area's light selection adds, after its own lights and within the 16:

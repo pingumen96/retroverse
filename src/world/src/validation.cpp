@@ -609,13 +609,23 @@ private:
             extent.maxZMm += hall.wallMm;
             std::vector<Footprint> obstacles;
             for (const HallWall& wall : hall.walls) {
-                obstacles.push_back(wall.footprint);
+                if (wall.bottomMm == 0) { // the hub's walls above its rooms stand over the rooms' own
+                    obstacles.push_back(wall.footprint);
+                }
             }
             obstacles.push_back(hall.elevator);
-            // The hall's dressing that stands on the floor (I6 step 2: benches and plants).
+            // The hall's dressing that stands on the floor (I6 step 2: benches and plants), the hub's solid pieces (I6
+            // step 5: columns, the landmark, the totem, the showcase, sofas, plants).
             for (const HallPiece& piece : hall.dressing) {
                 if (piece.solid()) {
                     obstacles.push_back(piece.footprint);
+                }
+            }
+            if (hall.hub) {
+                for (const HubPiece& piece : hall.hub->pieces) {
+                    if (piece.solid()) {
+                        obstacles.push_back(piece.footprint);
+                    }
                 }
             }
             for (const FloorRoom& entry : rooms) {
@@ -654,7 +664,7 @@ private:
                                                doorway.outerMm, floor, doorway.hallEdgeZMm));
                 }
             }
-            if (hall.doorways.empty()) {
+            if (hall.doorways.empty() && !hall.hub) {
                 continue;
             }
             const NavGrid grid(extent, obstacles, clearance);
@@ -673,6 +683,30 @@ private:
                                                "to from the elevator through {} mm",
                                                doorway.clearCentre.xMm, doorway.clearCentre.zMm, floor,
                                                m_context.config.minClearWidthMm));
+                }
+            }
+            // The hub's totem's zone and the showcase's front (I6 step 5): where the walker interacts.
+            if (hall.hub) {
+                const std::string prefix = hallAreaId(floor) + "/";
+                const Footprint& zone = hall.hub->totemZone;
+                if (hall.hub->find("totem") != nullptr &&
+                    !reach.reachesNear((zone.minXMm + zone.maxXMm) / 2, (zone.minZMm + zone.maxZMm) / 2,
+                                       kInteractionRadiusMm)) {
+                    m_findings.add(rule::kFloorUnreachable, prefix + "totem",
+                                   fmt::format("the directory's totem's zone cannot be walked to from the elevator "
+                                               "through {} mm",
+                                               m_context.config.minClearWidthMm));
+                }
+                if (const HubPiece* showcase = hall.hub->find("showcase")) {
+                    // Before its front, which faces north (-Z), half a metre off it.
+                    const std::int64_t x = showcase->centre.xMm;
+                    const std::int64_t z = showcase->footprint.minZMm - kHubShowcaseFrontMm;
+                    if (!reach.reachesNear(x, z, kInteractionRadiusMm)) {
+                        m_findings.add(rule::kFloorUnreachable, prefix + "showcase",
+                                       fmt::format("the favourites' showcase's front (x {}, z {}) cannot be walked to "
+                                                   "from the elevator through {} mm",
+                                                   x, z, m_context.config.minClearWidthMm));
+                    }
                 }
             }
         }

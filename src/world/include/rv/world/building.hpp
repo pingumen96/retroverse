@@ -7,7 +7,8 @@
 //    "floors": [{"id": "ground", "kinds": ["arcade"], "sign": "LOBBY AND ARCADE"},
 //               {"id": "gen2", "kinds": ["home"], "generations": [1, 2], "sign": "EARLY CONSOLES"}, ...],
 //    "layout": {"hallWidthMm": 3000, "lobbyWidthMm": 6000, "rowStartXMm": 3000, "wallAllowanceMm": 150,
-//               "maxRoomsPerRow": 12}}
+//               "maxRoomsPerRow": 12,
+//               "hub": {"lengthMm": 18000, "widthMm": 14000, "heightMm": 5000, "rowStartXMm": 4350}}}
 // The floors in the elevator's order (a floor's order is its index; the first is the ground floor, kGroundFloor), each
 // holding the systems of its kinds, and of those generations only when "generations" (optional, 1 to 9) is given
 // (generations bind only the kinds that have them: a floor of ["home", "other"] with [1, 2] holds every "other"). The
@@ -18,9 +19,11 @@
 // rooms and its hall (themePackOf()), never a plan fact: buildingDataToJson() leaves it out too, and it reaches the
 // inputDigest (provenance only) only as the pack each room's platform resolves, which the plan records in
 // Room::themePack (generation.hpp's generationInputDigest()). Layout:
-// the hall's and the ground floor's lobby's widths (even), the x where the rooms' rows start east of the hall's west
-// end (the elevator's landing), the allowance a room's walls add around its interior on the floor, and the rooms a row
-// holds at most.
+// the hall's and I4's lobby's widths (even; the lobby's is only provenance since the hub), the x where the rooms' rows
+// start east of the hall's west end (the elevator's landing), the allowance a room's walls add around its interior on
+// the floor, the rooms a row holds at most, and (optional, I6 step 5, ADR-0014 §3) the hub: the ground floor's hall, at
+// least `lengthMm` long (from 12 to 60 m), `widthMm` wide (even, 8 to 30 m) and `heightMm` high (4 to 8 m), its rows
+// starting `rowStartXMm` east of its west wall (HubLayout's defaults when it is left out).
 //
 // assets/world/systems.json (JSON with comments):
 //   {"schemaVersion": 1,
@@ -46,7 +49,9 @@
 // entering a floor stands at the current east end of the shorter of the two rows (by the east end's x, the north row on
 // a tie), unless that row holds maxRoomsPerRow rooms already; its x never changes after. Its z follows its depth
 // (followDepth): a room that grows moves away from the hall as a whole, its contents keeping their place in its own
-// frame.
+// frame. The ground floor's hall is the hub (I6 step 5): its rooms stand on its long walls, from its own row start, and
+// a stored building's rooms standing at I4's lobby are re-placed onto it once (placeOnHub(), ADR-0014 §3: the one
+// announced move of a room's x, with ADR-0014 §2's migration).
 
 #include <cstdint>
 #include <filesystem>
@@ -117,12 +122,27 @@ struct FloorSpec {
     bool operator==(const FloorSpec&) const = default;
 };
 
+/// The ground floor's hall, the hub (I6 step 5, ADR-0014 §3, style §5.2): at least this long along +X (the floor's east
+/// end when its rooms reach further), this wide across it (even: its edges at -width / 2 and +width / 2) and this high,
+/// its rooms' rows starting this far east of its west wall (the first room of a row centred on an 18 m wall).
+struct HubLayout {
+    std::int64_t lengthMm = 18000;
+    std::int64_t widthMm = 14000;
+    std::int64_t heightMm = 5000;
+    std::int64_t rowStartXMm = 4350;
+
+    bool operator==(const HubLayout&) const = default;
+};
+
 struct BuildingLayout {
     std::int64_t hallWidthMm = 3000;
+    /// I4's lobby, the ground floor's corridor before the hub (ADR-0013 §6): read and kept in the plans' provenance
+    /// (buildingDataToJson()), nothing stands by it since I6 step 5 (the hub's `hub.widthMm` is the ground floor's).
     std::int64_t lobbyWidthMm = 6000;
     std::int64_t rowStartXMm = 3000;
     std::int64_t wallAllowanceMm = 150;
     std::uint32_t maxRoomsPerRow = 12;
+    HubLayout hub;
 
     bool operator==(const BuildingLayout&) const = default;
 };
@@ -152,8 +172,12 @@ struct BuildingData {
 /// Reads <assetRoot>/world/building.json.
 [[nodiscard]] Expected<BuildingData> loadBuildingData(const std::filesystem::path& assetRoot);
 /// The canonical document of the building's data (the plans' inputDigest): the floors' ids, kinds and generations and
-/// the layout; the floors' signs only draw them and are left out.
+/// the layout; the floors' signs only draw them and are left out, and so is the hub (I6 step 5), which a plan's
+/// inputDigest hashes (hubLayoutToJson()) only when a room of the ground floor is among its rooms, so that the plans of
+/// the other floors keep their provenance.
 [[nodiscard]] nlohmann::json buildingDataToJson(const BuildingData& building);
+/// The hub's layout as the inputDigest hashes it (I6 step 5).
+[[nodiscard]] nlohmann::json hubLayoutToJson(const HubLayout& hub);
 
 // --- systems.json ---------------------------------------------------------------------------------------------------
 
@@ -285,8 +309,10 @@ enum class Row : std::uint8_t {
     return placement.yawHalfTurns == 0 ? Row::North : Row::South;
 }
 
-/// The width of a floor's hall: the lobby's on the ground floor, the hall's elsewhere.
+/// The width of a floor's hall: the hub's on the ground floor (I6 step 5), the hall's elsewhere.
 [[nodiscard]] std::int64_t hallWidthOf(std::string_view floor, const BuildingLayout& layout) noexcept;
+/// Where a floor's rows start east of its hall's west end: the hub's on the ground floor, the layout's elsewhere.
+[[nodiscard]] std::int64_t rowStartOf(std::string_view floor, const BuildingLayout& layout) noexcept;
 
 /// A point of a room's frame in its floor's frame (x, z in millimetres).
 struct FloorPoint {
@@ -334,5 +360,29 @@ struct FloorRows {
 /// its z abutting the hall. Nothing when both rows are full.
 [[nodiscard]] std::optional<RoomPlacement> placeEnteringRoom(const Room& room, const FloorRows& rows,
                                                              const BuildingLayout& layout);
+
+/// A room of the ground floor stands on the hub (I6 step 5): its doorway wall on the hub's edge (its z abutting the
+/// hub at its depth) and its footprint east of the hub's row start. A room of another floor always does.
+[[nodiscard]] bool standsOnHub(const Room& room, const BuildingLayout& layout) noexcept;
+
+/// A room re-placed onto the hub (I6 step 5, ADR-0014 §3): where it stood (I4's lobby) and where it stands now.
+struct ReplacedRoom {
+    RoomId room;
+    RoomPlacement from;
+    RoomPlacement to;
+
+    auto operator<=>(const ReplacedRoom&) const = default;
+};
+
+/// The ground floor's rooms of `rooms` that do not stand on the hub (a stored building's, at I4's lobby) re-placed onto
+/// it, once (ADR-0014 §3: new x and z, their yaw and contents unchanged in their own frames): west to east by where they
+/// stood (the north row first on a tie, then by id), each at the east end of its own row among the rooms that stand on
+/// the hub and those re-placed before it, its z abutting the hub at its depth. A room never changes rows (its yaw stays):
+/// when its own row holds maxRoomsPerRow rooms already, nothing is re-placed (`rooms` as they were) and the rooms that
+/// found no place are named in `refused` (by id; an update refuses then, incremental.hpp). Rooms that stand on the hub,
+/// and every other floor's, are untouched. The rooms re-placed, by id; none when every room stands on the hub (the next
+/// call moves nothing) or when a room was refused.
+std::vector<ReplacedRoom> placeOnHub(std::vector<Room>& rooms, const BuildingLayout& layout,
+                                     std::vector<RoomId>* refused = nullptr);
 
 } // namespace rv::world

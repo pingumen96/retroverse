@@ -4,6 +4,7 @@
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -70,10 +71,26 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
                          fmt::format("{}x{} exceeds the largest texture side, {}", image.width, image.height, maxSize),
                          name);
     }
-    // Texel rows are uploaded as tightly packed RGBA8: 4 bytes per texel, so every row is 4-byte aligned.
+    // Texel rows are uploaded as tightly packed RGBA8: 4 bytes per texel, so every row is 4-byte aligned. A
+    // metallic-roughness map keeps its G and B alone (R8 or RG8, rows packed byte by byte).
+    const GpuFormat format = desc.metallicRoughness && desc.colorSpace == ColorSpace::Linear
+                                 ? metallicRoughnessFormat(image)
+                                 : (desc.colorSpace == ColorSpace::Srgb ? GpuFormat::Srgb8Alpha8 : GpuFormat::Rgba8);
     assets::ImageData converted;
     const assets::ImageData* source = &image;
-    if (image.channels != 4) {
+    std::vector<std::uint8_t> packed;
+    if (format == GpuFormat::R8 || format == GpuFormat::Rg8) {
+        const std::size_t channels = static_cast<std::size_t>(image.channels);
+        const std::size_t kept = format == GpuFormat::R8 ? 1 : 2;
+        const std::size_t texels = image.pixels.size() / channels;
+        packed.resize(texels * kept);
+        for (std::size_t texel = 0; texel < texels; ++texel) {
+            packed[texel * kept] = image.pixels[texel * channels + 1]; // roughness
+            if (kept == 2) {
+                packed[texel * kept + 1] = image.pixels[texel * channels + 2]; // metallic
+            }
+        }
+    } else if (image.channels != 4) {
         converted = assets::convertChannels(image, 4);
         source = &converted;
     }
@@ -86,7 +103,10 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     if (id == 0) {
         return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", name);
     }
-    glTextureStorage2D(id, levels, internalFormat(desc.colorSpace), size.x, size.y);
+    const GLenum storage = format == GpuFormat::R8    ? GL_R8
+                           : format == GpuFormat::Rg8 ? GL_RG8
+                                                      : internalFormat(desc.colorSpace);
+    glTextureStorage2D(id, levels, storage, size.x, size.y);
     // Storage only becomes immutable when the allocation succeeded (GL_OUT_OF_MEMORY otherwise).
     GLint immutable = GL_FALSE;
     glGetTextureParameteriv(id, GL_TEXTURE_IMMUTABLE_FORMAT, &immutable);
@@ -96,9 +116,21 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
                          name);
     }
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    glTextureSubImage2D(id, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, source->pixels.data());
+    if (!packed.empty()) {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTextureSubImage2D(id, 0, 0, 0, size.x, size.y, format == GpuFormat::R8 ? GL_RED : GL_RG, GL_UNSIGNED_BYTE,
+                            packed.data());
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        // Sampled as the RGBA8 map would be: R and A 1, G the roughness, B the metallic (its one value, 0 or 1, when
+        // none is stored).
+        const GLint metallic = format == GpuFormat::Rg8 ? GL_GREEN : (image.pixels[2] == 0 ? GL_ZERO : GL_ONE);
+        const GLint swizzle[4] = {GL_ONE, GL_RED, metallic, GL_ONE};
+        glTextureParameteriv(id, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+    } else {
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTextureSubImage2D(id, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, source->pixels.data());
+    }
     if (levels > 1) {
         glGenerateTextureMipmap(id);
     }
@@ -117,8 +149,7 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     result.m_texture = std::move(texture);
     result.m_size = size;
     result.m_levels = levels;
-    result.m_bytes = textureBytes(desc.colorSpace == ColorSpace::Srgb ? GpuFormat::Srgb8Alpha8 : GpuFormat::Rgba8, size,
-                                  levels);
+    result.m_bytes = textureBytes(format, size, levels);
     result.m_desc = desc;
     result.m_memory = GpuMemoryAllocation(desc.memoryKind, result.m_bytes);
     result.m_debugName = std::move(name);

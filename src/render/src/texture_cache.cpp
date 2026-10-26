@@ -160,6 +160,12 @@ Expected<Texture2D> TextureCache::upload(const std::string& key, const assets::I
     // The keys of procedural surface maps start with their source, "procedural:<surface>/<map>".
     desc.memoryKind = key.starts_with(assets::kProceduralTexturePrefix) ? GpuMemoryKind::ProceduralSurfaces
                                                                         : GpuMemoryKind::SceneTextures;
+    // A procedural surface's metallic-roughness map keeps its G and B alone (I6 step 5's review: R8 or RG8, the same
+    // texels sampled).
+    desc.metallicRoughness = key.starts_with(assets::kProceduralTexturePrefix) &&
+                             key.find(fmt::format("/{}", assets::toString(assets::SurfaceMap::MetallicRoughness))) !=
+                                 std::string::npos &&
+                             colorSpace == ColorSpace::Linear;
     return Texture2D::create(image, desc, "Texture " + key);
 }
 

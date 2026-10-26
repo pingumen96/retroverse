@@ -30,7 +30,9 @@
 // RV_LEGACY_CLI names, built from I6 step 2's commit: cases and boxes on their end), then started in this build's
 // retroverse.exe: the rooms of succeeded families migrated once (the run report's migratedRooms, the notice), every
 // other room's elements as they stood, no title of a migrated room over capacity; a second start and the CLI's update
-// write nothing. Skipped without RV_LEGACY_CLI.
+// write nothing. Skipped without RV_LEGACY_CLI. I6 step 5 (ADR-0014 §3): in the first case the arcade room planned on
+// the hub's north wall at once, the run starting in the hub; in the second the ground floor's rooms, standing at I4's
+// lobby, re-placed once onto the hub in the same update (the run report's replacedRooms), their contents as they stood.
 // The figures are printed for docs/i4/step-6b.md, step-7b.md and Gate C (the lines starting "Real building:"; the gate
 // reads the runs' reports in build/<preset>/real-library/building). The checks hold whatever the
 // collection holds (this machine's figures are not versioned); nothing derived from the user's titles is written
@@ -56,6 +58,7 @@
 #include <rv/esde/library_source.hpp>
 #include <rv/esde/media_resolver.hpp>
 #include <rv/esde/settings.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/media_family.hpp>
 #include <rv/world/plan_json.hpp>
@@ -294,6 +297,22 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     CHECK(first.world.planWritten);
     CHECK(first.world.hardFindings == 0);
     CHECK(first.world.floor == "ground");
+    // I6 step 5: the ground floor's hall is the hub, its rooms on its walls from the start (none to re-place).
+    {
+        const auto plan = rv::world::readStoredPlan(rv::world::worldFiles(data, profile.id).plan);
+        REQUIRE(plan.has_value());
+        const auto building = rv::world::loadBuildingData(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR));
+        REQUIRE(building.has_value());
+        for (const rv::world::Room& room : plan->plan.rooms) {
+            if (room.floor == rv::world::kGroundFloor) {
+                INFO(room.id.toString());
+                CHECK(rv::world::standsOnHub(room, building->layout));
+                std::cout << fmt::format("Real building: {} on the hub at x {} z {} mm\n", room.id.toString(),
+                                         room.placement.xMm, room.placement.zMm);
+            }
+        }
+        CHECK(first.world.replacedRooms.empty());
+    }
 
     // Gate C: the building planned twice. The plans' folder removed, the same catalog planned again from nothing: one
     // plan digest and one file SHA-256 (ADR-0010 §8, ADR-0013 §5: plan equality is the file's SHA-256).
@@ -596,15 +615,50 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
         expectedRecords.push_back({room.room.toString(), room.from, room.to});
     }
     CHECK(first.world.migratedRooms == expectedRecords);
+    // I6 step 5 (ADR-0014 §3): the ground floor's rooms, standing at I4's lobby, re-placed once onto the hub in the same
+    // update: new x and z, their contents unchanged.
+    const auto building = rv::world::loadBuildingData(rv::core::pathFromUtf8(RV_TEST_ASSET_DIR));
+    REQUIRE(building.has_value());
+    std::vector<rv::world::Room> onHub = legacy->plan.rooms;
+    const std::vector<rv::world::ReplacedRoom> replaced = rv::world::placeOnHub(onHub, building->layout);
+    REQUIRE_FALSE(replaced.empty());
+    std::vector<rv::app::ReplacedRoomRecord> expectedReplaced;
+    for (const rv::world::ReplacedRoom& room : replaced) {
+        expectedReplaced.push_back(
+            {room.room.toString(), room.from.xMm, room.from.zMm, room.to.xMm, room.to.zMm});
+        std::cout << fmt::format("Real building: re-placed {} onto the hub: x {} z {} mm (was x {} z {})\n",
+                                 room.room.toString(), room.to.xMm, room.to.zMm, room.from.xMm, room.from.zMm);
+    }
+    CHECK(first.world.replacedRooms == expectedReplaced);
     const auto migrated = rv::world::readStoredPlan(planFile);
     REQUIRE(migrated.has_value());
     CHECK(migrated->plan.generatorVersion == rv::world::kGeneratorVersion);
+    // The rooms re-placed stand where placeOnHub() put them; compared below as they stood before (their contents). The
+    // theme pack every update records for its floor (I6 step 3, ADR-0014 §1: a look, never a reason; generator 1.3 had
+    // none per floor) is compared as it stood too.
+    rv::world::WorldPlan migratedAsStood = migrated->plan;
+    std::size_t repacked = 0;
+    for (rv::world::Room& room : migratedAsStood.rooms) {
+        for (const rv::world::ReplacedRoom& entry : replaced) {
+            if (entry.room == room.id) {
+                CHECK(room.placement == entry.to);
+                room.placement = entry.from;
+            }
+        }
+        for (const rv::world::Room& old : legacy->plan.rooms) {
+            if (old.id == room.id && old.themePack != room.themePack) {
+                room.themePack = old.themePack;
+                ++repacked;
+            }
+        }
+    }
+    std::cout << fmt::format("Real building: {} room(s) given their floor's theme pack by the update\n", repacked);
 
     // Every other room's elements as they stood (whichever generator version its record names); every migrated room
     // where it stood on its floor, of its successor, none of its titles over capacity.
     const rv::world::GeneratorVersion same{1, 0};
     const auto before = rv::world::roomContentDigests(withGenerator(legacy->plan, same));
-    const auto after = rv::world::roomContentDigests(withGenerator(migrated->plan, same));
+    const auto after = rv::world::roomContentDigests(withGenerator(migratedAsStood, same));
     REQUIRE(before.has_value());
     REQUIRE(after.has_value());
     std::size_t untouched = 0;
@@ -680,6 +734,7 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
     CHECK(second.world.outcome == "unchanged");
     CHECK_FALSE(second.world.planWritten);
     CHECK(second.world.migratedRooms.empty());
+    CHECK(second.world.replacedRooms.empty());
     CHECK(second.world.notice.empty());
     const fs::path stamp = rv::app::buildingStampFile(paths.cacheDir(), profile->id);
     if (fs::exists(stamp)) {

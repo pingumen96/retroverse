@@ -176,8 +176,9 @@ build/rvdata`).
 - Surfaces are procedural (`rv/assets/surface_textures.hpp`), generated when first used and kept for the run (the
   texture cache, logged per surface): a world run makes every one at its start, before its first room (about 0.9 s in
   Release since I6 step 3b, the five packs' rugs 0.5 s of it), so no room's commit or ride waits for one; a scene
-  (`--scene`, `--model`) makes those its materials name. All of them take 123 MiB of GPU memory (80.3 MiB before
-  I6 step 3b; `gpuMemory`'s `proceduralSurfaces`), held for the whole run: `oak_planks`, `walnut`, `varnished_wood`,
+  (`--scene`, `--model`) makes those its materials name. All of them take 85 MiB of GPU memory (123 MiB until
+  I6 step 5's review stored each metallic-roughness map as its roughness alone, R8; `gpuMemory`'s
+  `proceduralSurfaces`), held for the whole run: `oak_planks`, `walnut`, `varnished_wood`,
   `oak`, `painted_plaster`, `ornate_rug` (and since I6 step 3b the packs' rugs `ornate_rug_blue`, `ornate_rug_sage`,
   `ornate_rug_green`, `geometric_rug`, `runner_rug`), `brushed_metal`, `aged_plastic`, the halls' `wallwash` and the
   shelves' `shelfglow`, each with base color, metallic-roughness and (except the rugs and the pictures) normal maps.
@@ -240,6 +241,9 @@ build/rvdata`).
   with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
   planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run
   report's `world.migratedRooms` {`room`, `from`, `to`, `unplacedForCapacity`} and with the notice `rooms-migrated`;
+  since I6 step 5 a ground floor room standing at I4's lobby is re-placed once onto the hub's wall, logged, in
+  `world.replacedRooms` {`room`, `fromXMm`, `fromZMm`, `toXMm`, `toZMm`} and with the same notice, and a plan kept or
+  previewed as it is draws it there already;
   what the update left undone for a pin, a pinned room not migrated among it, is logged and in
   `world.needsConfirmation`) and writes, only when they changed, each
   system's room items (`<user data>/cache/world/<library id>/room-<system>.json`: titles, cover paths, years, the
@@ -256,7 +260,7 @@ build/rvdata`).
   (every `collection/<room id>/...` registry key carrying the room id, so that two rooms of one family sample their own
   arrays) and their covers and spines through the derived-texture cache `<user data>/cache/textures/<library id>` (one
   cover loader for the floor: the view is the room that holds the eye and the rooms whose doorway the frustum meets).
-  The run starts in the ground floor's lobby, at the elevator's arrival point facing east down the hall (no hero CRT
+  The run starts in the ground floor's hub (I6 step 5, below), at the elevator's arrival point facing east (no hero CRT
   bound until the eye stays in a room); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that
   room's doorway camera on its floor, its CRT the hero CRT from the start (a shared or arcade room's playing all its
   sections' games; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
@@ -354,10 +358,23 @@ build/rvdata`).
   catalog's "Mostra nella stanza" refused or failed so says the world's notice (`room-unreachable`, 12 s), and in the
   room the walker is in it is taken while a floor applies, as before I4. After a ride the scene's frame is the
   destination floor's (the start room's on its own floor): `--spawn` applies to the start only.
+- The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
+  `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
+  along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase
+  of consoles; it collides as a 4.2 m square), lit bookcases, sofas, rugs, plants. Its directory totem stands west of the
+  landmark facing the elevator: in its zone (1.5 m deep before its screen) facing it the prompt reads "Indice" (E or
+  A: "Piani e stanze") and interact opens the directory at its floors (`via` "totem"; the frames it shows are
+  `world.totemPromptFrames`). Its favourites' showcase against the south wall holds up to 12 runtime proxies of the
+  catalog's favourite and recent games (the directory's list's first, as keep cases with their covers from the rooms'
+  items files, a generated label otherwise; never in the plan), made on the pool when the hub shows, again when a
+  launched game returns and after a refresh; the reticle on one within 2.5 m outlines it and labels its title, interact
+  opens the directory at its card (Avvia, "Mostra nella stanza"; `via` "showcase"); lockstep runs wait for them like the
+  floor's covers. The run report's `world.showcase` {`games`, `builds`, `cardsOpened`, `lastCard`, `hovered`,
+  `frontsResident`}.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
-  directory, E (gamepad A) at an elevator too (above); Esc (gamepad B)
+  directory, E (gamepad A) at an elevator, the hub's totem or a proxy of its showcase too (above); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
   panel, else steps back through the quick catalog or the directory and closes it, else releases the mouse, else closes
   the overlay, else quits; F1 toggles the overlay; F5 reloads the shaders, F12 saves

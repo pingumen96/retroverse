@@ -1080,13 +1080,71 @@ ImageData terminalScreen(int width, int height, std::string_view title) {
     return image;
 }
 
+/// The hub's information board (I6 step 5): a heading and lines from `title` ('|'-separated), see kPatternBoard.
+ImageData informationBoard(int width, int height, std::string_view title) {
+    ImageData image = makeSolid(width, height, fromHex(0x121820));
+    if (!image.isValid()) {
+        return image;
+    }
+    const Rgba amber = kTungsten;
+    const Rgba ivory = kUiText;
+    const int border = std::max(1, std::min(width, height) / 40);
+    fillRect(image, 0, 0, width, border, amber);
+    fillRect(image, 0, height - border, width, height, amber);
+    fillRect(image, 0, 0, border, height, amber);
+    fillRect(image, width - border, 0, width, height, amber);
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    while (start <= title.size()) {
+        const std::size_t end = std::min(title.find('|', start), title.size());
+        lines.push_back(normalizeTitle(title.substr(start, end - start)));
+        start = end + 1;
+    }
+    if (lines.empty() || lines.front().empty()) {
+        lines.insert(lines.begin(), "INFORMATION");
+    }
+    const int margin = 3 * border;
+    const int innerWidth = width - 2 * margin;
+    // One text size for every line: the longest line (with its marker) fits the width, every line the height.
+    std::size_t longest = lines.front().size();
+    for (std::size_t i = 1; i < lines.size(); ++i) {
+        longest = std::max(longest, lines[i].size() + 2);
+    }
+    const int rows = static_cast<int>(lines.size()) + 1; // the heading's rule takes a row's worth
+    int scale = std::max(1, innerWidth / std::max(1, static_cast<int>(longest) * kGlyphAdvance));
+    scale = std::min(scale, std::max(1, (height - 2 * margin) / (rows * (kGlyphHeight + kLineGap))));
+    // The lines spread (up to half as much again apart) and the block centred in the board's height (I6 step 5's
+    // review: a short list fills the board rather than its top).
+    const int available = height - 2 * margin;
+    const int tight = (kGlyphHeight + kLineGap) * scale;
+    const int spread = (3 * available) / (3 * static_cast<int>(lines.size()) + 1);
+    const int lineHeight = std::max(tight, std::min(spread, tight * 3 / 2));
+    const int block = lineHeight * static_cast<int>(lines.size()) + lineHeight / 3 - (lineHeight - kGlyphHeight * scale);
+    int y = margin + std::max(0, (available - block) / 2);
+    const auto line = [&](const std::string& text, int x, Rgba color) {
+        const int right = x + static_cast<int>(text.size()) * kGlyphAdvance * scale;
+        drawText(image, {text}, scale, x, y, right, y + kGlyphHeight * scale, color);
+    };
+    line(lines.front(), margin, amber);
+    y += lineHeight;
+    fillRect(image, margin, y - lineHeight / 3, width - margin, y - lineHeight / 3 + std::max(1, scale / 2), amber);
+    y += lineHeight / 3;
+    for (std::size_t i = 1; i < lines.size() && y + kGlyphHeight * scale <= height - margin; ++i) {
+        fillRect(image, margin, y + 2 * scale, margin + 3 * scale, y + 5 * scale, amber);
+        line(lines[i], margin + 2 * kGlyphAdvance * scale, ivory);
+        y += lineHeight;
+    }
+    return image;
+}
+
 } // namespace
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 12> kNames = {
+    static constexpr std::array<std::string_view, 13> kNames = {
         kPatternColorBars,     kPatternChecker,      kPatternCover,        kPatternSign,
         kPatternPrint,         kPatternNeon,         kPatternPosterMemphis, kPatternPosterLounge,
-        kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal};
+        kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal,
+        kPatternBoard};
     return kNames;
 }
 
@@ -1134,9 +1192,12 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternTerminal) {
         return terminalScreen(width, height, title);
     }
+    if (name == kPatternBoard) {
+        return informationBoard(width, height, title);
+    }
     return makeError(ErrorCode::NotFound,
                      "unknown test pattern (expected color_bars, checker, cover, sign, print, neon, poster_memphis, "
-                     "poster_lounge, poster_console, poster_flyer, cork_board or terminal)",
+                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal or board)",
                      std::string(name));
 }
 

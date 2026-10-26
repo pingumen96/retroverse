@@ -545,7 +545,13 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     for (const std::string& refused : result->changes.needsConfirmation) {
         spdlog::warn("World: left as it stands, it needs confirmation: {}", refused);
     }
-    if (!result->changes.migratedRooms.empty() && build.notice.empty()) {
+    // The ground floor's rooms re-placed once onto the hub (I6 step 5, ADR-0014 §3): the same notice, once.
+    for (const world::ReplacedRoom& replaced : result->changes.replacedRooms) {
+        spdlog::info("World: {} is re-placed once onto the hub's wall, from x {} z {} to x {} z {} on the ground floor "
+                     "(its contents unchanged)",
+                     replaced.room.toString(), replaced.from.xMm, replaced.from.zMm, replaced.to.xMm, replaced.to.zMm);
+    }
+    if ((!result->changes.migratedRooms.empty() || !result->changes.replacedRooms.empty()) && build.notice.empty()) {
         build.notice = std::string(world_notice::kRoomsMigrated);
     }
     // The systems that entered the building (I4 step 6a: a room of their own, or a section of a shared or arcade room),
@@ -650,12 +656,12 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     return core::Aabb{};
 }
 
-/// The elevator's proximity zone of `hall` as a box from the floor to the doors' top, in the frame of the room standing
-/// at `start` (none: the floor's).
-[[nodiscard]] core::Aabb elevatorZoneBox(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
-    const world::Footprint& zone = hall.elevatorZone;
+/// A proximity zone of a floor (`zone`, from the floor `heightMm` up) as a box in the frame of the room standing at
+/// `start` (none: the floor's).
+[[nodiscard]] core::Aabb zoneBox(const world::Footprint& zone, std::int64_t heightMm,
+                                 const std::optional<world::RoomPlacement>& start) {
     glm::vec3 a(static_cast<float>(meters(zone.minXMm)), 0.0f, static_cast<float>(meters(zone.minZMm)));
-    glm::vec3 b(static_cast<float>(meters(zone.maxXMm)), static_cast<float>(meters(world::kElevatorDoorHeightMm)),
+    glm::vec3 b(static_cast<float>(meters(zone.maxXMm)), static_cast<float>(meters(heightMm)),
                 static_cast<float>(meters(zone.maxZMm)));
     if (start) {
         const float sign = start->yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
@@ -666,12 +672,15 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     return core::Aabb{glm::min(a, b), glm::max(a, b)};
 }
 
-/// The middle of the elevator's doors of `hall` on the floor (its frame on the west wall), in the frame of the room
-/// standing at `start` (none: the floor's).
-[[nodiscard]] glm::vec3 elevatorDoorsPoint(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
-    const world::Footprint& frame = hall.elevator;
-    glm::vec3 point(static_cast<float>(meters(frame.minXMm + frame.maxXMm) / 2.0), 0.0f,
-                    static_cast<float>(meters(frame.minZMm + frame.maxZMm) / 2.0));
+/// The elevator's proximity zone of `hall` as a box from the floor to the doors' top, in the frame of the room standing
+/// at `start` (none: the floor's).
+[[nodiscard]] core::Aabb elevatorZoneBox(const world::Hall& hall, const std::optional<world::RoomPlacement>& start) {
+    return zoneBox(hall.elevatorZone, world::kElevatorDoorHeightMm, start);
+}
+
+/// A point of a floor (y 0) in the frame of the room standing at `start` (none: the floor's).
+[[nodiscard]] glm::vec3 floorPointIn(const world::FloorPoint& at, const std::optional<world::RoomPlacement>& start) {
+    glm::vec3 point(static_cast<float>(meters(at.xMm)), 0.0f, static_cast<float>(meters(at.zMm)));
     if (start) {
         const float sign = start->yawHalfTurns % 2 == 0 ? 1.0f : -1.0f;
         const glm::vec3 origin(static_cast<float>(meters(start->xMm)), 0.0f, static_cast<float>(meters(start->zMm)));
@@ -1196,6 +1205,22 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
     if (!build.plan) {
         return;
     }
+    // A stored building whose ground floor's rooms stand at I4's lobby (the persisted start's preview, a plan kept as it
+    // is) is drawn with them on the hub (I6 step 5, ADR-0014 §3): the building job's update re-places them the same way
+    // (world::placeOnHub()), so its result finds them where they show. Nothing is written here.
+    if (auto building = world::loadBuildingData(paths.assetRoot)) {
+        std::vector<world::RoomId> refused;
+        for (const world::ReplacedRoom& replaced : world::placeOnHub(build.plan->rooms, building->layout, &refused)) {
+            spdlog::info("World: the stored {} stands at the lobby's old place; drawn on the hub until an update "
+                         "re-places it",
+                         replaced.room.toString());
+        }
+        for (const world::RoomId& room : refused) {
+            spdlog::warn("World: the stored {} stands at the lobby's old place and its row on the hub is full; drawn "
+                         "where it stands (the update refuses: regenerate the building)",
+                         room.toString());
+        }
+    }
     const Clock::time_point start = Clock::now();
     try {
         const world::WorldPlan& plan = *build.plan;
@@ -1258,7 +1283,33 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         // I4 step 7b: the elevator's zone and the arrival camera (the floor scene's camera, moved with it), in the
         // scene's frame.
         build.elevatorZone = elevatorZoneBox(sceneBuild->hall, startPlacement);
-        build.elevatorDoors = elevatorDoorsPoint(sceneBuild->hall, startPlacement);
+        const world::Footprint& frame = sceneBuild->hall.elevator;
+        build.elevatorDoors = floorPointIn(
+            {(frame.minXMm + frame.maxXMm) / 2, (frame.minZMm + frame.maxZMm) / 2}, startPlacement);
+        // I6 step 5: the hub's favourites showcase, its slots in the scene's frame and the proxies' data.
+        build.showcase.reset();
+        if (const world::HubShowcaseSlots slots = world::hubShowcaseSlots(sceneBuild->hall); !slots.frames.empty()) {
+            if (auto showcaseData = loadShowcaseData(paths.assetRoot)) {
+                HubShowcase showcase;
+                showcase.slotSize = slots.size;
+                showcase.data = std::move(*showcaseData);
+                const glm::mat4 toScene =
+                    startPlacement ? glm::inverse(world::roomToFloorMatrix(*startPlacement)) : glm::mat4(1.0f);
+                for (const glm::mat4& slot : slots.frames) {
+                    showcase.slots.push_back(toScene * slot);
+                }
+                build.showcase = std::move(showcase);
+            } else {
+                spdlog::warn("World: the hub's favourites showcase has no proxies: {}",
+                             showcaseData.error().toString());
+            }
+        }
+        // I6 step 5: the hub's directory totem, its zone and its screen.
+        build.totemZone = core::Aabb{};
+        if (const auto& hub = sceneBuild->hall.hub; hub && hub->find("totem") != nullptr) {
+            build.totemZone = zoneBox(hub->totemZone, world::kElevatorDoorHeightMm, startPlacement);
+            build.totemScreen = floorPointIn(hub->totemFace, startPlacement);
+        }
         build.arrival = cameraOf(sceneBuild->sceneFile["camera"]);
         if (startPlacement) {
             // The start room's doorway camera, as its standalone scene has it (ADR-0013 §9: --start-room), seeing as
