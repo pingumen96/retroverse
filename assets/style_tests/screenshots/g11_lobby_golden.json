@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "02a68d22762161cfb3684a934d4920a4aabfe95d",
+    "gitCommit": "be06e3e1df6ebb3c43d8b1bf5a894034ba740e90",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "Gate C golden of the building's hub (style 5.2 as ADR-0013 amends it: the hub is the ground floor's lobby): the esde/building fixture planned under the shipped threshold, the walker as every start without --start-room stands, at the elevator's arrival point facing east down the 6 m wide lobby, the elevator and its sign behind: the hall's ceiling light, the arcade game room's open doorway on the north side with its lamp seen through it, the closed entrance doors at the east end (since I6 step 1 lit by the hall's own lights and the arcade room's seen through its doorway, the hall's own ambient and fill; since I6 step 2 dressed: a panelled wainscot under dark warm plaster, beams across a darker ceiling and drum pendants, the arcade room's portal with its lit sign over it and on a blade sign, sconces washing the wall and muted prints in turn, a bench with a plant, the runner, the elevator's brass doors behind).",
+  "description": "Gate D golden of the building's hub (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1): the esde/building fixture planned under the shipped threshold, the walker as every start without --start-room stands, at the elevator's arrival point facing east across the 18 x 14 x 5 m hub: the glowing wireframe globe on its pedestal in the railed circular showcase of generic consoles and plants, a runner of rugs leading to it, walnut columns under the balcony on three sides with its railing, the coffered ceiling with its downlights, the chandelier's ring of bulbs and the lanterns over the core, the leather sofas on their rugs facing the landmark, lit bookcases of books, sconces and prints on the walls under the balcony and on the gallery's, the arcade room's sign on the balcony's fascia, the main entrance's portal and the floor's sign at the far end; lit by the hub's own lights and its own ambient and fill.",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 617.42",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g11_lobby_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "d9ec2212444a684b2070ceddebe36472bd95d77583bdc62d443f68c2cb9736a2",
+    "sha256": "0134188d8ecf1962cd7edfd6c1396e7d82171a35f296e28e915536ca7d21bbce",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
-      "fileSha256": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
+      "digest": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
+      "fileSha256": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
       "items": 15,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "057764de31fec8b5859139578d271e606e96d8f50f77259f9a9326067eb22ef2"
+      "sha256": "3028b29153b1c25d359d432add2da27bc5b021af9495aced59c017f454b0b504"
     }
   },
-  "renderedOn": "2026-10-25",
+  "renderedOn": "2026-10-26",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

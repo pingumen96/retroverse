@@ -104,7 +104,8 @@ void requireRoomShown(const PlannedBuilding& building, const AppRun& run, std::s
     CHECK(residency.failed == 0);
     CHECK(residency.format == "bc1-srgb");
     REQUIRE(run.report->lastView.has_value());
-    CHECK(run.report->lastView->staticGroups == 1);
+    // The room's static group, and the hub showcase's when the floor is the ground floor and it holds games.
+    CHECK(run.report->lastView->staticGroups == (world.showcase.games.empty() ? 1u : 2u));
 }
 
 struct ShownRoom {
@@ -643,6 +644,9 @@ TEST_CASE("world families: a stored building of generator 1.3 is migrated once",
     };
     CHECK(migrated.migratedRooms == expected);
     CHECK(migrated.needsConfirmation.empty());
+    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, re-placed onto the hub once, in the same update.
+    const std::vector<rv::app::ReplacedRoomRecord> replaced{{"area:arcade", 7650, -8150, 9000, -12150}};
+    CHECK(migrated.replacedRooms == replaced);
     const rv::world::StoredPlan stored = building.plan();
     CHECK(stored.plan.generatorVersion == rv::world::kGeneratorVersion);
     CHECK(roomIn(stored.plan, "room:psx").mediaFamily == "disc_case_cd_v2");
@@ -654,5 +658,6 @@ TEST_CASE("world families: a stored building of generator 1.3 is migrated once",
     CHECK_FALSE(again.planWritten);
     CHECK(again.notice.empty());
     CHECK(again.migratedRooms.empty());
+    CHECK(again.replacedRooms.empty());
     CHECK(again.needsConfirmation.empty());
 }

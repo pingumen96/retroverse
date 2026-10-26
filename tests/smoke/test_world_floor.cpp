@@ -37,6 +37,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/floor_layout.hpp>
 #include <rv/world/world_store.hpp>
 
 #include "image_checks.hpp"
@@ -597,12 +598,19 @@ TEST_CASE("world floor: light reaches through the doorways: each room glows seen
         REQUIRE(hallArea != nullptr);
         const nlohmann::json& hallBox = (*hallArea)["boxes"][0];
         const float hallHeight = hallBox["max"][1].get<float>();
+        // The ground floor's hub (I6 step 5): a balcony along its walls, its soffit the ceiling beside a doorway.
+        const bool hub = floor.id == rv::world::kGroundFloor;
+        const float hallCeilingHeight =
+            hub ? static_cast<float>(rv::world::kHubBalconyFloorMm - rv::world::kHubBalconySlabMm) / 1000.0f
+                : hallHeight;
         for (const DoorwayView& door : doorwaysOf(*file)) {
             INFO(door.room);
             ++rooms;
             const float x = (door.passageMin.x + door.passageMax.x) / 2.0f;
-            // From the hall's far side, facing the doorway; from 4.5 m inside the room, facing out.
-            const float hallZ = door.north ? hallBox["max"][2].get<float>() - 0.4f : hallBox["min"][2].get<float>() + 0.4f;
+            // From the hall's far side (at most 3 m from the doorway: the ground floor's hub is 14 m wide, its
+            // landmark between its walls, I6 step 5), facing the doorway; from 4.5 m inside the room, facing out.
+            const float hallZ = door.north ? std::min(hallBox["max"][2].get<float>() - 0.4f, door.passageMax.z + 3.0f)
+                                           : std::max(hallBox["min"][2].get<float>() + 0.4f, door.passageMin.z - 3.0f);
             const float roomZ = door.north ? door.passageMin.z - 4.5f : door.passageMax.z + 4.5f;
             const float inYaw = door.north ? 0.0f : 180.0f;
             const float outYaw = door.north ? 180.0f : 0.0f;
@@ -632,7 +640,9 @@ TEST_CASE("world floor: light reaches through the doorways: each room glows seen
             CHECK(roomSeen > 12.0);
             CHECK(roomSeen > 2.0 * roomSeenI4);
             CHECK(hallSeen > 12.0);
-            CHECK(hallSeen > 2.0 * hallSeenI4);
+            if (!hub) {
+                CHECK(hallSeen > 2.0 * hallSeenI4);
+            }
             // The neighbours' share alone: the same scene with only the neighbours cut (the ambient, the fill spot and
             // the hall role kept) shows the far side darker by a clear margin.
             const double roomSeenCut = openingLuma(inwardCut.image, hallCamera, door, hallFace);
@@ -640,7 +650,16 @@ TEST_CASE("world floor: light reaches through the doorways: each room glows seen
             INFO("with the neighbours cut: the room from the hall " << roomSeenCut << ", the hall from the room "
                                                                     << hallSeenCut);
             CHECK(roomSeen > 1.25 * roomSeenCut + 2.0);
-            CHECK(hallSeen > 1.25 * hallSeenCut + 2.0);
+            if (hub) {
+                // The hub seen from a room holds its own light in every variant (the chandelier, the lanterns, the
+                // downlights and the fascia's signs glow; its own lights are brighter than a hall's): the room's view
+                // adds the hub's lights to it, not a multiple of it (I6 step 5, Release: about 24 above I4, 10 above
+                // the cut, 76 in all).
+                CHECK(hallSeen > hallSeenI4 + 12.0);
+                CHECK(hallSeen > hallSeenCut + 5.0);
+            } else {
+                CHECK(hallSeen > 1.25 * hallSeenCut + 2.0);
+            }
             WARN("light probes " << tag << ": the room from the hall " << roomSeen << " (cut " << roomSeenCut
                                  << ", I4 " << roomSeenI4 << "), the hall from the room " << hallSeen << " (cut "
                                  << hallSeenCut << ", I4 " << hallSeenI4 << ")");
@@ -666,7 +685,8 @@ TEST_CASE("world floor: light reaches through the doorways: each room glows seen
             for (const float side : {-1.0f, 1.0f}) {
                 const glm::vec3 roomCeiling(x + 2.0f * side, door.roomHeight - 0.01f, roomFace + 0.3f * roomInward);
                 const glm::vec3 roomFloor(x + 2.5f * side, 0.01f, roomFace + 0.15f * roomInward);
-                const glm::vec3 hallCeiling(x + 1.5f * side, hallHeight - 0.01f, hallFace - 0.3f * roomInward);
+                const glm::vec3 hallCeiling(x + 1.5f * side, hallCeilingHeight - 0.01f,
+                                            hallFace - 0.3f * roomInward);
                 const glm::vec3 hallFloor(x + 1.5f * side, 0.01f, hallFace - 0.15f * roomInward);
                 const double roomCeilingLuma = levelPatchLuma(roomUp.image, roomUpCamera, roomCeiling, 0.2f);
                 const double roomCeilingCut = levelPatchLuma(roomUpCut.image, roomUpCamera, roomCeiling, 0.2f);
