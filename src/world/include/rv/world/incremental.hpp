@@ -43,9 +43,13 @@
 //   - a new placement's offset comes from its seed as in a fresh plan; added modules, decoration and dressing are what
 //     a fresh layout of the room would place there;
 //   - pins (overrides.hpp) are protected: a side-wall socket whose fixture is pinned never takes a module (the module
-//     goes to the next socket), a growth that would move a pinned fixture of the south wall is not taken (the titles
-//     needing it are unplaced for capacity); both are reported in needsConfirmation, as are the pins the plan does not
-//     honour (which the update never applies), and the orphaned pins in orphanedPins.
+//     goes to the next socket), a growth that would move a fixture pinned in its socket of the south wall is not taken
+//     (the titles needing it are unplaced for capacity); both are reported in needsConfirmation, as are the pins the
+//     plan does not honour (which the update never applies), and the orphaned pins in orphanedPins. Since I4b step 2
+//     (ADR-0015 §3) a fixture pinned at a transform (moved by the user) stays where it stands when the room grows, its
+//     light too, the wall-washers then placed again over the modules where they stand; a socket whose new module or
+//     growth decoration would overlap a fixture standing there (one the user moved) takes none (a module goes to the
+//     next socket, reported in needsConfirmation).
 // An updated room's unplaced games are its selection's with their reasons (a duplicate's representative being the
 // placed game that represents its title), every placed game keeps its placement and no entry besides; it records this
 // generator's version. A system's selection goes to the room that holds its section (sticky: whatever its count now); a
@@ -92,7 +96,8 @@
 // update finds them on the hub and moves nothing. A room whose own row on the hub is full is never put in the other
 // row: the update then refuses (RequiresExplicitRegeneration, its reason naming the rooms) and writes nothing.
 // The plan records the highest of its rooms' generator versions, the selections' sort-key version and the inputDigest
-// of the inputs read (generationInputDigest(), over the rooms given a selection and the systems that entered; an update
+// of the inputs read, the pins it honours joined (generationInputDigest(), over the rooms given a selection and the
+// systems that entered, joined by the honoured pins' term as world_edit.hpp says; an update
 // that gives some room no selection and changes nothing keeps the previous inputDigest, which named more), so that an
 // update of an unchanged catalog gives the previous plan byte for byte, whichever of its rooms it is given, and an
 // update of the building of no room equals the fresh building of its selections. The change report lists the games

@@ -21,11 +21,13 @@
 // Schema 1 (I3: no provenance, no transform) is read lifted (origin file); schema 2 is the only one written; a file of
 // a newer schemaVersion is refused (written by a newer Retroverse).
 //
-// Until I4b step 2 pins are protected and reported, never applied: the generator and the incremental update never move
+// Pins are protected and reported, never applied by the generator: the generator and the incremental update never move
 // or remove a pinned object (a change that would is not applied and is reported as needing a confirmation), a pin that
 // names a game, slot, fixture or socket that no longer exists is reported as orphaned, and a pin the plan does not
-// honour is reported (ADR-0010 §10: "Overrides are applied last ... A change that would move a pinned object is not
-// applied and is reported").
+// honour is reported (ADR-0010 §10). Since I4b step 2 the editor's operations (world_edit.hpp) make pins as they change
+// the plan, an update leaves a fixture pinned at a transform where it stands (never moved by growth, the sockets it
+// overlaps skipped), and the pins a plan honours join its inputDigest (ADR-0015 §2); the regeneration that applies them
+// is step 5's.
 
 #include <cstdint>
 #include <filesystem>
@@ -147,6 +149,8 @@ struct PinCheck {
     std::vector<std::string> unhonoured;
     /// The pins the plan honours, and the orphaned ones.
     WorldOverrides honouredOrOrphaned;
+    /// The pins the plan honours (I4b step 2: their canonical form joins the plan's inputDigest, ADR-0015 §2).
+    WorldOverrides honoured;
 };
 
 /// Measures `overrides` against `plan` (its rooms' templates in `templates`, by id): a game pin is honoured when its

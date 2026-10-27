@@ -366,6 +366,68 @@ Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
     return core::canonicalJsonDigest(document);
 }
 
+Expected<std::string> overridesDigestTerm(const WorldOverrides& honoured) {
+    if (honoured.empty()) {
+        return std::string();
+    }
+    std::vector<const GamePin*> gamePins;
+    for (const GamePin& pin : honoured.gamePins) {
+        gamePins.push_back(&pin);
+    }
+    std::sort(gamePins.begin(), gamePins.end(), [](const GamePin* a, const GamePin* b) {
+        return std::tie(a->game, a->slot) < std::tie(b->game, b->slot);
+    });
+    std::vector<const FixturePin*> fixturePins;
+    for (const FixturePin& pin : honoured.fixturePins) {
+        fixturePins.push_back(&pin);
+    }
+    std::sort(fixturePins.begin(), fixturePins.end(),
+              [](const FixturePin* a, const FixturePin* b) { return a->fixture < b->fixture; });
+    Json games = Json::array();
+    for (const GamePin* pin : gamePins) {
+        games.push_back(Json{{"game", pin->game.toString()}, {"slot", pin->slot.toString()}});
+    }
+    Json fixtures = Json::array();
+    for (const FixturePin* pin : fixturePins) {
+        Json json{{"fixture", pin->fixture.toString()}};
+        if (pin->prefab) {
+            json["prefab"] = Json{{"kind", pin->prefab->kind}, {"manifest", pin->prefab->manifest}};
+        }
+        if (pin->transform) {
+            json["transform"] = Json{
+                {"xMm", pin->transform->xMm}, {"yawCdeg", pin->transform->yawCdeg}, {"zMm", pin->transform->zMm}};
+        }
+        fixtures.push_back(std::move(json));
+    }
+    return core::canonicalJsonDigest(Json{{"fixturePins", std::move(fixtures)}, {"gamePins", std::move(games)}});
+}
+
+Expected<std::string> joinDigestTerm(std::string_view digest, std::string_view term) {
+    if (!isSha256Hex(digest) || (!term.empty() && !isSha256Hex(term))) {
+        return makeError(ErrorCode::InvalidArgument, "a digest to join is not 64 lowercase hexadecimal digits",
+                         "inputDigest");
+    }
+    if (term.empty()) {
+        return std::string(digest);
+    }
+    constexpr std::string_view kDigits = "0123456789abcdef";
+    std::string joined(digest);
+    for (std::size_t i = 0; i < joined.size(); ++i) {
+        const std::size_t a = kDigits.find(digest[i]);
+        const std::size_t b = kDigits.find(term[i]);
+        joined[i] = kDigits[a ^ b];
+    }
+    return joined;
+}
+
+Expected<std::string> joinOverridesDigest(std::string_view digest, const WorldOverrides& honoured) {
+    auto term = overridesDigestTerm(honoured);
+    if (!term) {
+        return propagate(term.error());
+    }
+    return joinDigestTerm(digest, *term);
+}
+
 ValidationContext buildingValidationContext(const WorldPlan& plan, const WorldConfig& config,
                                             std::span<const RoomSelection> selections,
                                             std::span<const WorldData* const> rooms, const BuildingData& building,
@@ -863,7 +925,17 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
             datas.push_back(data);
         }
     }
+    // A fresh plan applies no pin (overrides.hpp): every pin is judged, so one the plan does not honour fails
+    // pin-broken and the plan is never saved. The pins it honours join its inputDigest (ADR-0015 §2).
+    std::vector<RoomTemplate> templates;
+    for (const WorldData* data : datas) {
+        templates.push_back(data->roomTemplate);
+    }
+    const PinCheck pins = checkPins(plan, templates, input.overrides);
     auto digest = detail::buildingInputDigest(digestInput);
+    if (digest) {
+        digest = detail::joinOverridesDigest(*digest, pins.honoured);
+    }
     if (!digest) {
         Error error = digest.error();
         error.code = ErrorCode::InvalidArgument;
@@ -894,13 +966,6 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     }
     changes.digestAfter = std::move(*after);
 
-    // A fresh plan applies no pin (overrides.hpp): every pin is judged, so one the plan does not honour fails
-    // pin-broken and the plan is never saved.
-    std::vector<RoomTemplate> templates;
-    for (const WorldData* data : datas) {
-        templates.push_back(data->roomTemplate);
-    }
-    const PinCheck pins = checkPins(plan, templates, input.overrides);
     changes.orphanedPins = pins.orphaned;
     changes.needsConfirmation = pins.unhonoured;
     result.validation =

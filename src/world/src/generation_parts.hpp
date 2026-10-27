@@ -59,6 +59,19 @@ struct BuildingDigestInput {
 };
 [[nodiscard]] Expected<std::string> buildingInputDigest(const BuildingDigestInput& input);
 
+/// The overrides' part of a plan's inputDigest (ADR-0015 §2, I4b step 2): the SHA-256 of the canonical form of the
+/// pins `honoured` holds, provenance left out ({"fixturePins": [{"fixture", "prefab"?, "transform"?}], "gamePins":
+/// [{"game", "slot"}]}, each list sorted), as 64 hexadecimal digits; empty when it holds no pin. Errors: those of
+/// core::canonicalJsonDigest().
+[[nodiscard]] Expected<std::string> overridesDigestTerm(const WorldOverrides& honoured);
+/// `digest` with `term` joined (each of the 32 bytes XORed): `digest` itself for an empty term, so a plan of a world
+/// without overrides keeps its digest byte for byte; joining a term twice takes it out again, so an edit replaces the
+/// honoured pins' term of a plan's inputDigest without the inputs (I4b step 2). Errors: InvalidArgument for a digest or
+/// a term that is not 64 lowercase hexadecimal digits.
+[[nodiscard]] Expected<std::string> joinDigestTerm(std::string_view digest, std::string_view term);
+/// joinDigestTerm(digest, overridesDigestTerm(honoured)).
+[[nodiscard]] Expected<std::string> joinOverridesDigest(std::string_view digest, const WorldOverrides& honoured);
+
 /// What a building generated or updated is judged against: the rooms' templates, the configuration, the selections,
 /// the prefabs' slots as measured, the plan's lights per room, the pins given, the building and the rooms kept.
 [[nodiscard]] ValidationContext buildingValidationContext(const WorldPlan& plan, const WorldConfig& config,

@@ -18,6 +18,7 @@
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/nav_grid.hpp>
 
+#include "fixture_geometry.hpp"
 #include "layout_score.hpp"
 
 namespace rv::world {
@@ -1429,6 +1430,17 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseSlotSocket(std::stri
 }
 
 } // namespace
+
+namespace detail {
+
+bool fixturesOverlap(const Fixture& a, const Fixture& b) noexcept {
+    if (isFloorCovering(a) || isFloorCovering(b)) {
+        return false;
+    }
+    return boxOf(a).overlaps(boxOf(b));
+}
+
+} // namespace detail
 
 std::span<const ValidationRule> validationRules() noexcept {
     return kRules;

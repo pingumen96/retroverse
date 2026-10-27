@@ -1,8 +1,8 @@
 // retroverse-cli worldplan snapshots and worldplan undo (I4b step 1, ADR-0015 §6) on a fixture world: the building
 // fixture's plan generated, a hand-written schema-1 overrides.json beside it, the explicit regeneration (generate
 // --replace) saved behind a snapshot (the overrides rewritten in schema 2), listed, undone with --dry-run (nothing
-// written) and then for real (the plan, its sidecar and the schema-1 overrides back byte for byte, an update finding
-// nothing to do), the undo itself never undone; a snapshot missing a file, a damaged folder and a journal the lock
+// written) and then for real (the plan, its sidecar and the schema-1 overrides back byte for byte, an update moving
+// nothing, writing once the inputDigest that the hand-written pin joins since I4b step 2), the undo itself never undone; a snapshot missing a file, a damaged folder and a journal the lock
 // cannot roll back each refused (exit 3) and listed. And the overflow fixture's building (I4b step 0): more titles than
 // the big-box room and the arcade room hold, unplaced for capacity until generator 1.5's expansion rooms (step 7).
 
@@ -223,18 +223,29 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(contentOf(session.files.plan) == firstPlan);
     CHECK(contentOf(session.files.meta) == firstMeta);
     CHECK(contentOf(session.files.overrides) == handOverrides);
-    // The catalog has not changed since: the update finds the restored plan up to date.
+    // The catalog has not changed since: the update moves nothing. The restored plan was generated before the pin was
+    // written by hand, so its inputDigest does not name it yet: since I4b step 2 the pins a plan honours join its
+    // inputDigest (ADR-0015 §2), so the first update writes the plan once, its digest alone changed, and the next one
+    // finds it up to date.
     const RunResult update = session.run({"worldplan", "update", "--seed", "102938"});
     INFO(update.out << update.err);
     CHECK(update.code == ExitCode::Ok);
-    CHECK(contains(update.out, "is up to date"));
-    CHECK(contentOf(session.files.plan) == firstPlan);
+    CHECK(contains(update.out, "rebuild no-rebuild"));
+    auto updatedPlan = rv::world::readPlan(*contentOf(session.files.plan), "plan");
+    REQUIRE(updatedPlan.has_value());
+    CHECK(updatedPlan->inputDigest != plan->inputDigest);
+    updatedPlan->inputDigest = plan->inputDigest;
+    CHECK(*updatedPlan == *plan);
+    const std::string pinnedPlan = *contentOf(session.files.plan);
+    const RunResult upToDate = session.run({"worldplan", "update", "--seed", "102938"});
+    CHECK(contains(upToDate.out, "is up to date"));
+    CHECK(contentOf(session.files.plan) == pinnedPlan);
 
     // Undo of undo refused: the undo's own snapshot is never offered, and no action is left.
     const RunResult again = session.run({"worldplan", "undo"});
     CHECK(again.code == ExitCode::ProblemsFound);
     CHECK(contains(again.err, "nothing to undo: the last change was an undo, which is never undone (no redo)"));
-    CHECK(contentOf(session.files.plan) == firstPlan);
+    CHECK(contentOf(session.files.plan) == pinnedPlan);
     const nlohmann::json after = nlohmann::json::parse(session.run({"worldplan", "snapshots", "--json"}).out);
     REQUIRE(after["snapshots"].size() == 2);
     CHECK(after["snapshots"][0]["kind"] == "undo");

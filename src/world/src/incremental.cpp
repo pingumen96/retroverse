@@ -23,6 +23,7 @@
 #include <rv/world/validation.hpp>
 
 #include "allocation.hpp"
+#include "fixture_geometry.hpp"
 #include "fixture_layout.hpp"
 #include "generation_parts.hpp"
 #include "plan_parts.hpp"
@@ -233,16 +234,35 @@ private:
 
     void refuse(std::string change) { m_refused.push_back(std::move(change)); }
 
-    /// The sockets whose fixtures are pinned and stand in the plan: a module never replaces them, and a growth that
-    /// would move one of the south wall is not taken.
+    /// The sockets whose fixtures are pinned and stand in the plan: a module never replaces them; a growth that would
+    /// move one pinned in its socket of the south wall is not taken; one pinned where the user put it (a transform,
+    /// I4b step 2) is never moved by growth.
     void protectPinnedFixtures() {
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
             const bool stands = std::any_of(m_plan.fixtures.begin(), m_plan.fixtures.end(),
                                             [&](const Fixture& fixture) { return fixture.id == pin.fixture; });
             if (stands && pin.fixture.room() == m_room->id) {
                 m_pinnedSockets.insert(pin.fixture.socket());
+                if (pin.transform) {
+                    m_held.insert(pin.fixture);
+                    m_heldSockets.insert(pin.fixture.socket());
+                } else {
+                    m_socketPinned.insert(pin.fixture.socket());
+                }
             }
         }
+    }
+
+    /// The fixture standing in the plan that `candidate` (a fixture for `socket`) would overlap, other than what
+    /// stands in `socket` itself, or null. Every fixture a layout places stays within its socket and the sockets do not
+    /// overlap, so only a fixture the user moved there is ever found (I4b step 2, ADR-0015 §3: its sockets skipped).
+    const Fixture* overlapped(const Fixture& candidate, const std::string& socket) const {
+        for (const Fixture& fixture : m_plan.fixtures) {
+            if (fixture.id.socket() != socket && detail::fixturesOverlap(candidate, fixture)) {
+                return &fixture;
+            }
+        }
+        return nullptr;
     }
 
     /// An alias hands its slot to the identity it stands for when that one has none, else frees it (ADR-0010 §10).
@@ -574,6 +594,11 @@ private:
             if (!module) {
                 return propagate(module.error());
             }
+            if (const Fixture* moved = overlapped(module->fixture, socketId)) {
+                refuse("socket " + socketId + ": a side-wall module would overlap " + moved->id.toString() +
+                       ", moved there; it went to the next socket");
+                continue;
+            }
             std::erase_if(m_plan.fixtures, [&](const Fixture& fixture) { return fixture.id.socket() == socketId; });
             // A lamp standing there took its light with it; the wall-washers are placed again below.
             std::erase_if(m_plan.lights, [&](const PlanLight& light) { return light.id.socket() == socketId; });
@@ -608,7 +633,7 @@ private:
                 southSockets.insert(socket.id);
             }
         }
-        for (const std::string& socket : m_pinnedSockets) {
+        for (const std::string& socket : m_socketPinned) {
             if (southSockets.contains(socket)) {
                 refuse("growth: the room would grow and move the pinned fixture of socket " + socket +
                        "; the titles that need it are unplaced for capacity");
@@ -624,17 +649,20 @@ private:
         m_room->minZMm = interior.minZMm;
         m_room->maxZMm = interior.maxZMm;
         m_layoutInput->counts.growthSteps = growth;
+        // A fixture the user moved stays where it was put, and so does its light (I4b step 2, ADR-0015 §3).
         for (Fixture& fixture : m_plan.fixtures) {
-            if (southSockets.contains(fixture.id.socket())) {
+            if (southSockets.contains(fixture.id.socket()) && !m_held.contains(fixture.id)) {
                 fixture.zMm += m_template.growthStepMm;
             }
         }
         for (PlanLight& light : m_plan.lights) {
-            if (southSockets.contains(light.id.socket())) {
+            if (southSockets.contains(light.id.socket()) && !m_heldSockets.contains(light.id.socket())) {
                 light.zMm += m_template.growthStepMm;
                 light.targetZMm += m_template.growthStepMm;
             }
         }
+        // The wall-washers then follow the modules where they stand.
+        m_lightsDirty = m_lightsDirty || !m_held.empty();
         for (const std::string& socketId : m_template.collectionOrder) {
             const TemplateSocket* socket = m_template.socket(socketId);
             if (socket == nullptr || socket->kind != SocketKind::SideWall || socket->growthStep != growth) {
@@ -642,7 +670,8 @@ private:
             }
             const std::size_t limit = std::min(m_template.lightLimit, kMaxSceneLights);
             const std::size_t left = limit - std::min(limit, m_plan.lights.size());
-            if (auto decoration = detail::decorationIn(*m_layoutInput, *socket, left, m_plan.fixtures)) {
+            auto decoration = detail::decorationIn(*m_layoutInput, *socket, left, m_plan.fixtures);
+            if (decoration && overlapped(decoration->fixture.fixture, socketId) == nullptr) {
                 m_plan.fixtures.push_back(std::move(decoration->fixture.fixture));
                 if (decoration->light) {
                     m_plan.lights.push_back(*decoration->light);
@@ -653,18 +682,15 @@ private:
         return true;
     }
 
-    /// The wall-washers over the modules as they stand now, within the lights the others leave (fixture_layout.hpp).
+    /// The wall-washers over the modules as they stand now (a module the user moved where it stands), within the
+    /// lights the others leave (fixture_layout.hpp).
     void placeWallWashersAgain() {
         std::erase_if(m_plan.lights, [](const PlanLight& light) { return light.role == LightRole::WallWasher; });
-        std::vector<detail::ModuleOnWall> modules;
-        for (const Fixture* module : modulesInOrder()) {
-            if (const TemplateSocket* socket = m_template.socket(module->id.socket())) {
-                modules.push_back({socket, module->depthMm});
-            }
-        }
+        const std::vector<const Fixture*> inOrder = modulesInOrder();
+        const detail::ModulesOnWalls modules = detail::modulesOnWalls(*m_layoutInput, *m_room, inOrder, m_held);
         const std::size_t limit = std::min(m_template.lightLimit, kMaxSceneLights);
         const std::size_t budget = limit - std::min(limit, m_plan.lights.size());
-        for (const PlanLight& light : detail::wallWasherLights(*m_layoutInput, modules, budget)) {
+        for (const PlanLight& light : detail::wallWasherLights(*m_layoutInput, modules.modules, budget)) {
             m_plan.lights.push_back(light);
         }
     }
@@ -702,6 +728,9 @@ private:
     std::vector<const RoomTitle*> m_newTitles;
     std::vector<UnplacedGame> m_unplaced;
     std::set<std::string> m_pinnedSockets;
+    std::set<std::string> m_socketPinned;
+    std::set<FixtureId> m_held;
+    std::set<std::string> m_heldSockets;
 
     std::vector<SpineLevel> m_fill;
     std::map<std::pair<FixtureId, std::uint32_t>, std::size_t> m_levelIndex;
@@ -1249,6 +1278,18 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // A room re-placed onto the hub (I6 step 5) changes the plan whatever the selections: never kept then (`previous`
     // holds the re-placed rooms already, so sameButPacks() cannot tell).
     const bool keepProvenance = (digestRooms.empty() || (partial && sameButPacks())) && replacedRooms.empty();
+    // The pins the plan honours join its inputDigest (ADR-0015 §2, I4b step 2): nothing changes for a world without.
+    std::vector<RoomTemplate> templates;
+    std::vector<const WorldData*> datas;
+    for (const auto& [room, data] : dataOf) {
+        templates.push_back(data->roomTemplate);
+        datas.push_back(data);
+    }
+    for (const WorldData* data : newRoomData) {
+        templates.push_back(data->roomTemplate);
+        datas.push_back(data);
+    }
+    const PinCheck pins = checkPins(plan, templates, input.overrides);
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;
@@ -1260,6 +1301,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     digestInput.rooms = digestRooms;
     if (!keepProvenance) {
         auto digest = detail::buildingInputDigest(digestInput);
+        if (digest) {
+            digest = detail::joinOverridesDigest(*digest, pins.honoured);
+        }
         if (!digest) {
             Error error = digest.error();
             error.code = ErrorCode::InvalidArgument;
@@ -1343,17 +1387,6 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             ? RebuildLevel::Full
             : (grew ? RebuildLevel::RoomExpansion : (geometry ? RebuildLevel::LocalReflow : RebuildLevel::NoRebuild));
 
-    std::vector<RoomTemplate> templates;
-    std::vector<const WorldData*> datas;
-    for (const auto& [room, data] : dataOf) {
-        templates.push_back(data->roomTemplate);
-        datas.push_back(data);
-    }
-    for (const WorldData* data : newRoomData) {
-        templates.push_back(data->roomTemplate);
-        datas.push_back(data);
-    }
-    const PinCheck pins = checkPins(plan, templates, input.overrides);
     changes.orphanedPins = pins.orphaned;
     changes.needsConfirmation = std::move(refused);
     changes.needsConfirmation.insert(changes.needsConfirmation.end(), pins.unhonoured.begin(),
