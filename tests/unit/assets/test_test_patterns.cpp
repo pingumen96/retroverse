@@ -301,7 +301,7 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
           std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon", "poster_memphis",
                                         "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal",
-                                        "board", "marquee"});
+                                        "board", "marquee", "side_art", "handheld_icon"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -547,13 +547,20 @@ TEST_CASE("assets/test_patterns: the hub's information board (I6 step 5)", "[ass
 
 TEST_CASE("assets/test_patterns: an arcade cabinet's marquee (I6 step 6)", "[assets][patterns]") {
     // A backlit panel: bright in its middle row, darker towards its edges, a dark band along its top and bottom, the
-    // word in dark lettering; opaque, deterministic, the sparkles placed by the seed.
+    // word in dark lettering, chaser bulbs along the bands; opaque, deterministic, the bulbs' phase by the seed.
     const auto marquee = rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 3);
     REQUIRE(marquee.has_value());
     CHECK(marquee->pixels == rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 3)->pixels);
-    CHECK(marquee->pixels != rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 4)->pixels);
-    CHECK(pixel(*marquee, 128, 1) == Rgba(60, 60, 60, 255));  // the top band
-    CHECK(pixel(*marquee, 128, 62) == Rgba(60, 60, 60, 255)); // the bottom band
+    std::set<std::vector<std::uint8_t>> phases;
+    for (std::uint32_t seed = 0; seed < 8; ++seed) {
+        phases.insert(rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", seed)->pixels);
+    }
+    CHECK(phases.size() == 2);
+    // The bands dark between their bulbs (the band is 5 pixels high, the bulbs 15 apart), a bulb lit or dimmed on them.
+    CHECK(pixel(*marquee, 0, 1) == Rgba(60, 60, 60, 255));   // the top band
+    CHECK(pixel(*marquee, 0, 62) == Rgba(60, 60, 60, 255));  // the bottom band
+    CHECK(pixel(*marquee, 7, 2).r >= 150);                   // the first bulb
+    CHECK(pixel(*marquee, 7, 61).r >= 150);
     std::size_t lettering = 0;
     std::size_t bright = 0;
     for (std::size_t i = 0; i < marquee->pixels.size(); i += 4) {
@@ -564,4 +571,33 @@ TEST_CASE("assets/test_patterns: an arcade cabinet's marquee (I6 step 6)", "[ass
     CHECK(lettering > 100);
     CHECK(bright * 2 > marquee->pixels.size() / 4); // mostly a lit panel
     CHECK(rv::assets::makeNamedPattern("marquee", 3, 2, "", 0).has_value());
+}
+
+TEST_CASE("assets/test_patterns: an arcade cabinet's side art (I6 step 6's review)", "[assets][patterns]") {
+    // Opaque, deterministic, a generic design by the seed: some seeds draw each of the three designs, each in at least
+    // two inks over the dark ground, and covering a good share of the panel.
+    const auto art = rv::assets::makeNamedPattern("side_art", 256, 64, "", 5);
+    REQUIRE(art.has_value());
+    CHECK(art->pixels == rv::assets::makeNamedPattern("side_art", 256, 64, "", 5)->pixels);
+    std::set<std::vector<std::uint8_t>> designs;
+    for (std::uint32_t seed = 0; seed < 12; ++seed) {
+        const auto image = rv::assets::makeNamedPattern("side_art", 128, 48, "", seed);
+        REQUIRE(image.has_value());
+        std::set<std::uint32_t> inks;
+        std::size_t inked = 0;
+        for (std::size_t i = 0; i < image->pixels.size(); i += 4) {
+            CHECK(image->pixels[i + 3] == 255);
+            const std::uint32_t colour = (static_cast<std::uint32_t>(image->pixels[i]) << 16) |
+                                         (static_cast<std::uint32_t>(image->pixels[i + 1]) << 8) | image->pixels[i + 2];
+            if (colour != 0x2A2238u) {
+                inks.insert(colour);
+                ++inked;
+            }
+        }
+        INFO(seed);
+        CHECK(inks.size() >= 2);
+        CHECK(inked * 4 > image->pixels.size() / 4); // more than a quarter of the panel inked
+        designs.insert(image->pixels);
+    }
+    CHECK(designs.size() >= 6);
 }

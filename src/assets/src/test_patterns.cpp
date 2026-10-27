@@ -642,11 +642,13 @@ std::vector<float> insideDistance(const std::vector<bool>& inside, int width, in
 
 } // namespace
 
-ImageData makeNeonLettering(int width, int height, std::string_view text) {
-    ImageData image = makeSignLettering(width, height, text);
-    if (!image.isValid()) {
-        return image;
-    }
+namespace {
+
+/// `image`'s strokes (its pixels of red 128 and more, white on black) drawn as bent glass tubes: a white core, the
+/// glass to the rim, a halo around them on a dark backing (makeNeonLettering(), the handheld icon).
+ImageData neonTubes(ImageData image) {
+    const int width = image.width;
+    const int height = image.height;
     const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
     std::vector<bool> stroke(count);
     for (std::size_t i = 0; i < count; ++i) {
@@ -695,6 +697,65 @@ ImageData makeNeonLettering(int width, int height, std::string_view text) {
         image.pixels[i * 4 + 2] = value;
     }
     return image;
+}
+
+} // namespace
+
+ImageData makeNeonLettering(int width, int height, std::string_view text) {
+    ImageData image = makeSignLettering(width, height, text);
+    if (!image.isValid()) {
+        return image;
+    }
+    return neonTubes(std::move(image));
+}
+
+ImageData makeHandheldIcon(int width, int height) {
+    ImageData image = makeSolid(width, height, Rgba(0, 0, 0, 255));
+    if (!image.isValid()) {
+        return image;
+    }
+    // In a box of the icon's 4:3 shape centred in the image: a landscape body with rounded corners, a screen in its
+    // middle, a cross pad on its left and two round buttons on its right, each a line of the same width.
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    const float boxW = std::min(w, h * 4.0f / 3.0f) * 0.9f;
+    const float boxH = boxW * 0.75f;
+    const float cx = 0.5f * w;
+    const float cy = 0.5f * h;
+    const float line = std::max(1.5f, boxH / 18.0f);
+    // Signed distance to a rounded rectangle of half size (hx, hy) and corner radius r centred at (x, y).
+    const auto roundedBox = [](float px, float py, float x, float y, float hx, float hy, float r) {
+        const float qx = std::abs(px - x) - (hx - r);
+        const float qy = std::abs(py - y) - (hy - r);
+        const float ox = std::max(qx, 0.0f);
+        const float oy = std::max(qy, 0.0f);
+        const float outside = std::sqrt(ox * ox + oy * oy);
+        return outside + std::min(std::max(qx, qy), 0.0f) - r;
+    };
+    const float bodyHx = 0.5f * boxW;
+    const float bodyHy = 0.32f * boxH;
+    const float padX = cx - 0.33f * boxW;
+    const float buttonX = cx + 0.33f * boxW;
+    const float arm = 0.1f * boxH;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float px = static_cast<float>(x) + 0.5f;
+            const float py = static_cast<float>(y) + 0.5f;
+            const bool body = std::abs(roundedBox(px, py, cx, cy, bodyHx, bodyHy, 0.45f * bodyHy)) < 0.5f * line;
+            const bool screen =
+                std::abs(roundedBox(px, py, cx, cy, 0.2f * boxW, 0.19f * boxH, 0.5f * line)) < 0.5f * line;
+            const bool pad = (std::abs(px - padX) < 0.5f * line && std::abs(py - cy) < arm) ||
+                             (std::abs(py - cy) < 0.5f * line && std::abs(px - padX) < arm);
+            const float b1 = std::hypot(px - buttonX + 0.04f * boxW, py - cy - 0.05f * boxH);
+            const float b2 = std::hypot(px - buttonX - 0.04f * boxW, py - cy + 0.05f * boxH);
+            const float radius = 0.045f * boxH;
+            const bool buttons = std::abs(b1 - radius) < 0.5f * line || std::abs(b2 - radius) < 0.5f * line;
+            if (body || screen || pad || buttons) {
+                setPixel(image, x, y, Rgba(255, 255, 255, 255));
+            }
+        }
+    }
+    return neonTubes(std::move(image));
 }
 
 ImageData makeSolid(int width, int height, glm::u8vec4 color) {
@@ -1151,27 +1212,93 @@ ImageData marqueePanel(int width, int height, std::string_view title, std::uint3
     const int band = std::max(1, std::min(width, height) / 12);
     fillRect(image, 0, 0, width, band, Rgba(60, 60, 60, 255));
     fillRect(image, 0, height - band, width, height, Rgba(60, 60, 60, 255));
+    // A row of chaser bulbs along each dark band (I6 step 6's review: rather than sparkles, which read as dead pixels),
+    // every other one lit, the row's phase by the seed.
     Rng rng(seed);
-    const int arm = std::max(1, height / 14);
-    for (int i = 0; i < 6; ++i) {
-        const int x = static_cast<int>(rng.next() % static_cast<std::uint32_t>(width));
-        const int y = band + arm + static_cast<int>(rng.next() % static_cast<std::uint32_t>(std::max(1, height - 2 * (band + arm))));
-        fillRect(image, x - arm, y, x + arm + 1, y + 1, Rgba(255, 255, 255, 255));
-        fillRect(image, x, y - arm, x + 1, y + arm + 1, Rgba(255, 255, 255, 255));
+    const float radius = 0.3f * static_cast<float>(band);
+    const int pitch = std::max(2, 3 * band);
+    const int phase = static_cast<int>(rng.next() % 2u);
+    for (int i = 0; (i + 0.5f) * static_cast<float>(pitch) < static_cast<float>(width); ++i) {
+        const float x = (static_cast<float>(i) + 0.5f) * static_cast<float>(pitch);
+        const Rgba bulb = (i + phase) % 2 == 0 ? Rgba(255, 255, 255, 255) : Rgba(150, 150, 150, 255);
+        fillDisc(image, x, 0.5f * static_cast<float>(band), radius, bulb);
+        fillDisc(image, x, static_cast<float>(height) - 0.5f * static_cast<float>(band), radius, bulb);
     }
     const int margin = band + std::max(1, height / 10);
     drawTitle(image, title, margin, margin, width - margin, height - margin, Rgba(40, 18, 52, 255), 2);
     return image;
 }
 
+/// An arcade cabinet's side art (I6 step 6's review), see kPatternSideArt.
+ImageData sideArt(int width, int height, std::uint32_t seed) {
+    constexpr Rgba kGround = fromHex(0x2A2238);
+    constexpr std::array<Rgba, 5> kInks = {fromHex(0xB34DCE), fromHex(0x3FB8D0), fromHex(0xD04848), fromHex(0xE0A030),
+                                           fromHex(0xE04F9E)};
+    ImageData image = makeSolid(width, height, kGround);
+    if (!image.isValid()) {
+        return image;
+    }
+    Rng rng(seed);
+    const int design = rng.below(3);
+    // Three different inks: the first by the seed, the next two after it at steps of one or two.
+    const int count = static_cast<int>(kInks.size());
+    const int firstIndex = rng.below(count);
+    const int step = 1 + rng.below(2);
+    const Rgba first = kInks[static_cast<std::size_t>(firstIndex)];
+    const Rgba second = kInks[static_cast<std::size_t>((firstIndex + step) % count)];
+    const Rgba third = kInks[static_cast<std::size_t>((firstIndex + 2 * step) % count)];
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    const float unit = std::max(1.0f, std::min(w, h) / 6.0f); // a band's width
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float px = static_cast<float>(x) + 0.5f;
+            const float py = static_cast<float>(y) + 0.5f;
+            Rgba colour = kGround;
+            if (design == 0) {
+                // Diagonal stripes across the lower part, in three colours with dark gaps.
+                const float t = (px + 0.6f * (h - py)) / unit;
+                const int band = static_cast<int>(std::floor(t));
+                const float frac = t - std::floor(t);
+                if (py > 0.35f * h && frac < 0.62f) {
+                    colour = band % 3 == 0 ? first : (band % 3 == 1 ? second : third);
+                }
+            } else if (design == 1) {
+                // Chevrons stacked along the panel, pointing to its front.
+                const float cy = 0.5f * h;
+                const float t = (px + 0.9f * std::abs(py - cy)) / (1.4f * unit);
+                const float frac = t - std::floor(t);
+                if (frac < 0.5f) {
+                    colour = static_cast<int>(std::floor(t)) % 2 == 0 ? first : second;
+                }
+            } else {
+                // A starburst: rays from a point low on the panel, a disc in its middle.
+                const float cx = 0.3f * w;
+                const float cy = 0.7f * h;
+                const float dx = px - cx;
+                const float dy = py - cy;
+                const float angle = std::atan2(dy, dx);
+                const int ray = static_cast<int>(std::floor((angle + 3.14159265f) / (3.14159265f / 8.0f)));
+                if (dx * dx + dy * dy < 1.6f * unit * 1.6f * unit) {
+                    colour = third;
+                } else if (ray % 2 == 0) {
+                    colour = ray % 4 == 0 ? first : second;
+                }
+            }
+            setPixel(image, x, y, colour);
+        }
+    }
+    return image;
+}
+
 } // namespace
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 14> kNames = {
+    static constexpr std::array<std::string_view, 16> kNames = {
         kPatternColorBars,     kPatternChecker,      kPatternCover,        kPatternSign,
         kPatternPrint,         kPatternNeon,         kPatternPosterMemphis, kPatternPosterLounge,
         kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal,
-        kPatternBoard,         kPatternMarquee};
+        kPatternBoard,         kPatternMarquee,      kPatternSideArt,       kPatternHandheldIcon};
     return kNames;
 }
 
@@ -1225,9 +1352,16 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternMarquee) {
         return marqueePanel(width, height, title, seed);
     }
+    if (name == kPatternSideArt) {
+        return sideArt(width, height, seed);
+    }
+    if (name == kPatternHandheldIcon) {
+        return makeHandheldIcon(width, height);
+    }
     return makeError(ErrorCode::NotFound,
                      "unknown test pattern (expected color_bars, checker, cover, sign, print, neon, poster_memphis, "
-                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal, board or marquee)",
+                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal, board, marquee, side_art or "
+                     "handheld_icon)",
                      std::string(name));
 }
 
