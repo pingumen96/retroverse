@@ -182,6 +182,15 @@ MediaFamily readFamily(const ObjectReader& reader) {
         family.fixtures.display = readFixture(fixtures, "display", "display_case", family.spineFacing);
         family.fixtures.wallShelf = readFixture(fixtures, "wallShelf", "wall_shelf", family.spineFacing);
     }
+    // A family facing front stands only in fixtures made for it (I6 step 6's review: the template's shelves and cases
+    // would stand its items as spines, which it has none of).
+    const FamilyFixtures& own = family.fixtures;
+    if (!reader.document().failed() && family.spineFacing == SpineFacing::Front &&
+        !(own.heroModule && own.sideModule && own.display && own.wallShelf)) {
+        reader.document().fail(
+            reader.pointer("fixtures"),
+            "a family facing front names every fixture (heroModule, sideModule, display, wallShelf)");
+    }
     return family;
 }
 

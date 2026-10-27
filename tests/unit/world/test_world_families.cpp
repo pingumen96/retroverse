@@ -328,6 +328,30 @@ TEST_CASE("world/families: cases and boxes have successors standing on their sid
     auto noKind = parse(side("b", "a", kSideSlot, R"("succeedsIn": [],)"));
     REQUIRE_FALSE(noKind.has_value());
     CHECK_THAT(noKind.error().message, ContainsSubstring("names no kind"));
+    // A family facing front (I6 step 6) names every fixture its items stand in; without (or with some) it is refused.
+    const auto front = [](std::string_view fixtures) {
+        return std::string(R"(, {"id": "f", "spineFacing": "front",
+                  "item": {"manifest": "media.screen.arcade.generic", "kind": "cartridge"},
+                  "itemWidthMm": 300, "itemHeightMm": 400, "itemDepthMm": 6, "labelWidthMm": 298,
+                  "labelHeightMm": 398, "coverFit": "label",
+                  "spineOut": {"widthMm": 300, "heightMm": 400, "depthMm": 6, "gapMm": 160, "marginMm": 80,
+                               "headroomMm": 0},
+                  "faceOut": {"widthMm": 300, "heightMm": 400, "depthMm": 6, "gapMm": 160, "marginMm": 80,
+                              "headroomMm": 0})") +
+               std::string(fixtures) + "}";
+    };
+    const std::string cabinet = R"({"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"})";
+    auto fronted = parse(front(R"(, "fixtures": {"heroModule": )" + cabinet + R"(, "sideModule": )" + cabinet +
+                               R"(, "display": )" + cabinet + R"(, "wallShelf": )" + cabinet + "}"));
+    REQUIRE(fronted.has_value());
+    CHECK(fronted->find("f")->fixtures.display->kind == "arcade_cabinet");
+    for (const std::string& fixtures :
+         {std::string(), R"(, "fixtures": {"heroModule": )" + cabinet + R"(, "sideModule": )" + cabinet + "}"}) {
+        INFO(fixtures);
+        auto bare = parse(front(fixtures));
+        REQUIRE_FALSE(bare.has_value());
+        CHECK_THAT(bare.error().message, ContainsSubstring("facing front names every fixture"));
+    }
     // A cycle: a succeeds c, b succeeds a, c succeeds b (each succeeded once, none by itself) is refused.
     {
         std::string cycle = side("b", "a", kSideSlot) + side("c", "b", kSideSlot);
@@ -827,4 +851,38 @@ TEST_CASE("world/families: the arcade room's cabinets face out in every fixture 
         }
     }
     CHECK(shown == first);
+
+    // An arcade over its capacity (53 titles at 16 m, ADR-0014 §6 amended): 60 titles fill the room grown to its
+    // largest, the 53 first by priority placed, the 7 last unplaced for capacity, naming the room; the same twice.
+    rv::world::GenerationInput over = input;
+    over.selection = selectionOf("mame", 60, 4601);
+    auto large = rv::world::generate(over, data);
+    REQUIRE(large.has_value());
+    CHECK(large->validation.passed());
+    CHECK(large->plan.placements.size() == 53);
+    CHECK(large->plan.dressing.empty());
+    std::set<rv::catalog::GameId> placed;
+    for (const rv::world::Placement& placement : large->plan.placements) {
+        placed.insert(placement.game);
+    }
+    std::set<rv::catalog::GameId> byPriority;
+    for (std::size_t i = 0; i < 53; ++i) {
+        byPriority.insert(over.selection.titles[i].game);
+    }
+    CHECK(placed == byPriority);
+    std::set<rv::catalog::GameId> overCapacity;
+    for (const rv::world::UnplacedGame& game : large->plan.unplaced) {
+        if (game.reason == rv::world::UnplacedReason::Capacity) {
+            CHECK(game.room == large->plan.rooms.front().id);
+            overCapacity.insert(game.game);
+        }
+    }
+    std::set<rv::catalog::GameId> last;
+    for (std::size_t i = 53; i < 60; ++i) {
+        last.insert(over.selection.titles[i].game);
+    }
+    CHECK(overCapacity == last);
+    auto again = rv::world::generate(over, data);
+    REQUIRE(again.has_value());
+    CHECK(again->plan == large->plan);
 }

@@ -55,7 +55,8 @@
 //                 fixture's role (capacity.hpp's levelFacing(): the collection's titles in the fill order, the reserve
 //                 kept, no hero band), a level of its display fixtures the featured titles'. Its rooms take no shelf
 //                 dressing (an empty cabinet's screen stays dark: withFamilyFixtures());
-//   its fixtures may then be of the kind "arcade_cabinet" (a row of cabinets, one face-out slot each) under any key;
+//   its fixtures may then be of the kind "arcade_cabinet" (a row of cabinets, one face-out slot each) under any key,
+//   and it names all four (heroModule, sideModule, display, wallShelf; the reader refuses it otherwise);
 //   "labelMaterial": the material of the item's front, the cover's layer (optional: the theme's "cartridge" role,
 //                 label), e.g. the cabinets' screens drawn through a picture tube.
 
