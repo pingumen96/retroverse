@@ -528,6 +528,63 @@ TEST_CASE("world/snapshots: an undo interrupted is rolled back, a damaged snapsh
     CHECK(stateOf(world.files) == edited);
 }
 
+TEST_CASE("world/snapshots: a damaged snapshot folder is listed, refuses undo and is rotated out",
+          "[world][snapshots]") {
+    World world(20);
+    auto lock = WorldLock::acquire(world.files);
+    REQUIRE(lock.has_value());
+    const GenerationResult next = resultOf(21);
+    auto committed = rv::world::commitWorld(*lock, WorldAction{"edit", ""}, next, {}, world.options);
+    REQUIRE(committed.has_value());
+    const WorldState edited = stateOf(world.files);
+    // A folder named as a snapshot (the oldest by name) whose snapshot.json is not one.
+    const std::string old = "20200101T000000.000Z-edit";
+    std::filesystem::create_directories(world.files.snapshots / old);
+    REQUIRE(rv::core::writeTextFileAtomic(world.files.snapshots / old / "snapshot.json", "{ torn").has_value());
+    const rv::world::SnapshotScan scan = rv::world::scanSnapshots(world.files);
+    CHECK(scan.snapshots == std::vector<WorldSnapshot>{*committed->snapshot});
+    REQUIRE(scan.damaged.size() == 1);
+    CHECK(scan.damaged.front().name == old);
+    CHECK(scan.damaged.front().error.code == rv::ErrorCode::ParseError);
+    CHECK(rv::world::listSnapshots(world.files) == scan.snapshots);
+
+    // Undo is refused, a dry run too: it might walk past the action that folder would undo.
+    rv::world::UndoOptions options;
+    options.clock = world.options.clock;
+    for (const bool dryRun : {true, false}) {
+        options.dryRun = dryRun;
+        auto refused = rv::world::undoLastAction(*lock, options);
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == rv::ErrorCode::ValidationFailed);
+        CHECK_THAT(refused.error().message,
+                   ContainsSubstring("undo is refused while a snapshot is damaged: " + old));
+        CHECK(stateOf(world.files) == edited);
+    }
+
+    // The rotation removes it once 20 folders are newer by name; a damaged folder among the newest 20 stays.
+    const std::string recent = "20991231T000000.000Z-edit";
+    std::filesystem::create_directories(world.files.snapshots / recent);
+    std::vector<std::string> removed;
+    for (std::size_t i = 1; i < rv::world::kSnapshotsKept; ++i) {
+        auto again = rv::world::commitWorld(*lock, WorldAction{"edit", ""}, resultOf(21 + i), {}, world.options);
+        REQUIRE(again.has_value());
+        removed.insert(removed.end(), again->snapshotsRemoved.begin(), again->snapshotsRemoved.end());
+        // 1 + i snapshots and the recent folder are newer by name: the old one goes once they are 20.
+        CHECK(std::filesystem::exists(world.files.snapshots / old) == (i + 2 < rv::world::kSnapshotsKept));
+    }
+    CHECK(removed == std::vector<std::string>{old});
+    const rv::world::SnapshotScan after = rv::world::scanSnapshots(world.files);
+    CHECK(after.snapshots.size() == rv::world::kSnapshotsKept);
+    REQUIRE(after.damaged.size() == 1);
+    CHECK(after.damaged.front().name == recent);
+    CHECK(after.damaged.front().error.code == rv::ErrorCode::NotFound);
+
+    // Moved out, undo goes on.
+    std::filesystem::remove_all(world.files.snapshots / recent);
+    options.dryRun = false;
+    CHECK(rv::world::undoLastAction(*lock, options).has_value());
+}
+
 TEST_CASE("world/snapshots: snapshot records it refuses", "[world][snapshots]") {
     WorldSnapshot snapshot;
     snapshot.sequence = 3;

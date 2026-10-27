@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <span>
 #include <system_error>
@@ -345,18 +346,40 @@ bool undoable(const WorldSnapshot& snapshot) {
 }
 
 /// Retires the snapshots beyond kSnapshotsKept (world_snapshots.hpp's rule), returning their names: first those undo
-/// never offers again (undo snapshots, undone ones), oldest first, then the oldest of those it offers.
+/// never offers again (undo snapshots, undone ones), oldest first, then the oldest of those it offers; then the damaged
+/// folders older, by name, than the newest kSnapshotsKept folders.
 std::vector<std::string> rotateSnapshots(const WorldFiles& files) {
     std::vector<std::string> removed;
-    const std::vector<WorldSnapshot> snapshots = listSnapshots(files); // newest first
-    if (snapshots.size() <= kSnapshotsKept) {
-        return removed;
+    const SnapshotScan scan = scanSnapshots(files);
+    const std::vector<WorldSnapshot>& snapshots = scan.snapshots; // newest first
+    if (snapshots.size() > kSnapshotsKept) {
+        const std::size_t excess = snapshots.size() - kSnapshotsKept;
+        for (const bool offered : {false, true}) {
+            for (auto snapshot = snapshots.rbegin(); snapshot != snapshots.rend() && removed.size() < excess;
+                 ++snapshot) {
+                if (undoable(*snapshot) == offered && retireSnapshot(files, snapshot->name)) {
+                    removed.push_back(snapshot->name);
+                }
+            }
+        }
     }
-    const std::size_t excess = snapshots.size() - kSnapshotsKept;
-    for (const bool offered : {false, true}) {
-        for (auto snapshot = snapshots.rbegin(); snapshot != snapshots.rend() && removed.size() < excess; ++snapshot) {
-            if (undoable(*snapshot) == offered && retireSnapshot(files, snapshot->name)) {
-                removed.push_back(snapshot->name);
+    if (!scan.damaged.empty()) {
+        std::vector<std::string> names;
+        for (const WorldSnapshot& snapshot : snapshots) {
+            if (std::find(removed.begin(), removed.end(), snapshot.name) == removed.end()) {
+                names.push_back(snapshot.name);
+            }
+        }
+        for (const DamagedSnapshot& damaged : scan.damaged) {
+            names.push_back(damaged.name);
+        }
+        std::sort(names.begin(), names.end(), std::greater<>());
+        for (const DamagedSnapshot& damaged : scan.damaged) {
+            const auto at = std::find(names.begin(), names.end(), damaged.name);
+            if (static_cast<std::size_t>(at - names.begin()) >= kSnapshotsKept &&
+                retireSnapshot(files, damaged.name)) {
+                spdlog::info("World store: a damaged snapshot folder rotated out: {}", damaged.name);
+                removed.push_back(damaged.name);
             }
         }
     }
@@ -457,8 +480,8 @@ Expected<WorldSnapshot> readSnapshotRecord(std::string_view text, std::string_vi
     return snapshot;
 }
 
-std::vector<WorldSnapshot> listSnapshots(const WorldFiles& files) {
-    std::vector<WorldSnapshot> snapshots;
+SnapshotScan scanSnapshots(const WorldFiles& files) {
+    SnapshotScan scan;
     std::error_code error;
     std::filesystem::directory_iterator entries(files.snapshots, error);
     for (; !error && entries != std::filesystem::directory_iterator(); entries.increment(error)) {
@@ -469,15 +492,22 @@ std::vector<WorldSnapshot> listSnapshots(const WorldFiles& files) {
         }
         auto record = readRecordIn(entries->path());
         if (!record) {
-            spdlog::warn("World store: a snapshot is left out: {}", record.error().toString());
+            spdlog::warn("World store: a snapshot is damaged: {}", record.error().toString());
+            scan.damaged.push_back(DamagedSnapshot{name, record.error()});
             continue;
         }
-        snapshots.push_back(std::move(*record));
+        scan.snapshots.push_back(std::move(*record));
     }
-    std::sort(snapshots.begin(), snapshots.end(), [](const WorldSnapshot& a, const WorldSnapshot& b) {
+    std::sort(scan.snapshots.begin(), scan.snapshots.end(), [](const WorldSnapshot& a, const WorldSnapshot& b) {
         return std::tie(a.sequence, a.name) > std::tie(b.sequence, b.name);
     });
-    return snapshots;
+    std::sort(scan.damaged.begin(), scan.damaged.end(),
+              [](const DamagedSnapshot& a, const DamagedSnapshot& b) { return a.name > b.name; });
+    return scan;
+}
+
+std::vector<WorldSnapshot> listSnapshots(const WorldFiles& files) {
+    return scanSnapshots(files).snapshots;
 }
 
 std::optional<WorldSnapshot> nextUndo(const std::vector<WorldSnapshot>& snapshots) {
@@ -597,7 +627,17 @@ Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoO
     if (!lock.held()) {
         return makeError(ErrorCode::InvalidArgument, "the world lock is not held (moved from)", "undoLastAction");
     }
-    const std::vector<WorldSnapshot> snapshots = listSnapshots(files);
+    const SnapshotScan scan = scanSnapshots(files);
+    if (!scan.damaged.empty()) {
+        // Undo walks back in order: past a snapshot it cannot read it might skip the action that one would undo.
+        const DamagedSnapshot& damaged = scan.damaged.front();
+        return makeError(ErrorCode::ValidationFailed,
+                         "undo is refused while a snapshot is damaged: " + damaged.name + " (" +
+                             damaged.error.toString() + "); move that folder out of backups/snapshots/ (or remove " +
+                             "it), then undo again",
+                         lossy(folderOf(files, damaged.name)));
+    }
+    const std::vector<WorldSnapshot>& snapshots = scan.snapshots;
     const std::optional<WorldSnapshot> target = nextUndo(snapshots);
     if (!target) {
         const bool afterUndo = !snapshots.empty() && snapshots.front().kind == SnapshotKind::Undo;

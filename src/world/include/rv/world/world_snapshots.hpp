@@ -118,8 +118,27 @@ struct WorldSnapshot {
 /// missing, unknown or of another type, an action name or a digest not as written), Unsupported (a newer schema).
 [[nodiscard]] Expected<WorldSnapshot> readSnapshotRecord(std::string_view text, std::string_view context);
 
-/// The world's snapshots, newest first (by sequence); a folder whose snapshot.json cannot be read is left out and
-/// logged. None when there is no backups/snapshots/.
+/// A folder of backups/snapshots/ named as a snapshot whose snapshot.json cannot be read.
+struct DamagedSnapshot {
+    std::string name;
+    /// Why it cannot be read.
+    Error error;
+};
+
+/// What backups/snapshots/ holds.
+struct SnapshotScan {
+    /// The snapshots, newest first (by sequence).
+    std::vector<WorldSnapshot> snapshots;
+    /// The damaged folders (logged), newest first by name. Undo is refused while there is one (it might walk past the
+    /// action that folder would undo); the rotation removes those older, by name, than the newest kSnapshotsKept
+    /// folders.
+    std::vector<DamagedSnapshot> damaged;
+};
+
+/// The world's snapshot folders; none when there is no backups/snapshots/. Folders "<name>.partial" and
+/// "<name>.removing" are no snapshots and left out.
+[[nodiscard]] SnapshotScan scanSnapshots(const WorldFiles& files);
+/// scanSnapshots()'s snapshots, the damaged folders left out.
 [[nodiscard]] std::vector<WorldSnapshot> listSnapshots(const WorldFiles& files);
 /// The snapshot undo restores next among `snapshots` (listSnapshots()'s): the newest of kind Action not undone.
 [[nodiscard]] std::optional<WorldSnapshot> nextUndo(const std::vector<WorldSnapshot>& snapshots);
@@ -171,7 +190,8 @@ struct UndoReport {
 /// of its own, behind a snapshot of kind Undo of the state it replaces; the snapshot restored marked undone. Errors:
 /// InvalidArgument for a lock moved from; NotFound when there is nothing to undo (no snapshot, or only undo snapshots
 /// and undone ones: an undo is never undone); ValidationFailed when the snapshot's files are not those its digests
-/// name or one is missing (damaged: nothing written); those of reading the snapshot and of the writes.
+/// name or one is missing, or while a snapshot folder is damaged (SnapshotScan::damaged; nothing written); those of
+/// reading the snapshot and of the writes.
 [[nodiscard]] Expected<UndoReport> undoLastAction(const WorldLock& lock, const UndoOptions& options = {});
 
 namespace detail {
