@@ -462,6 +462,34 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     CHECK(again.changes.digestAfter == again.changes.digestBefore);
 }
 
+TEST_CASE("world/migration: generator 1.3's arcade room migrated, grown and re-placed in one update is reported where "
+          "it stands",
+          "[world][migration]") {
+    // I6 step 6's review: placeOnHub() puts the room at the z of its old depth; its cabinets' room, grown a step for 38
+    // titles, follows its new depth. The re-placement's record names the plan's placement.
+    BuildingWorld world = shippedWorld(kWorldSeed);
+    world.tags[systemName("pocketlab")] = {"gb"};
+    const std::filesystem::path file = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" / "world" /
+                                       "legacy" / "building-esde-seed-102938-generator-1.3.json";
+    auto text = rv::core::readTextFile(file);
+    REQUIRE(text.has_value());
+    auto legacy = rv::world::readPlan(*text, "legacy");
+    REQUIRE(legacy.has_value());
+    const std::vector<RoomSelection> given{systemSelection("mame", 38, 4002, 38)};
+    const GenerationResult first = updateBuildingOf(world, *legacy, given);
+    CHECK(first.validation.passed());
+    REQUIRE(first.changes.migratedRooms.size() == 1);
+    CHECK(first.changes.migratedRooms.front().room.toString() == "area:arcade");
+    REQUIRE(first.changes.replacedRooms.size() == 1);
+    const rv::world::ReplacedRoom& replaced = first.changes.replacedRooms.front();
+    const Room* arcade = findRoom(first.plan, "area:arcade");
+    REQUIRE(arcade != nullptr);
+    CHECK(arcade->growthSteps > 0);
+    CHECK(replaced.to == arcade->placement);
+    CHECK(replaced.to.xMm == 9000);
+    CHECK(replaced.to.zMm < -12150); // deeper than the room it was: further from the hub's hall
+}
+
 TEST_CASE("world/migration: a partial update of generator 1.3's building re-places the arcade room and names its inputs "
           "anew; the next moves nothing",
           "[world][migration]") {

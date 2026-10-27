@@ -1323,6 +1323,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.systemsEntered = sortedUnique(std::move(systemsEntered));
     changes.systemsWaiting = sortedUnique(std::move(systemsWaiting));
     changes.migratedRooms = sortedUnique(std::move(migratedRooms));
+    // Where each re-placed room stands now: a room migrated or grown in the same update has its z follow its new depth
+    // after placeOnHub() (I6 step 6's review: the record named the old depth's z).
+    for (ReplacedRoom& replaced : replacedRooms) {
+        for (const Room& room : plan.rooms) {
+            if (room.id == replaced.room) {
+                replaced.to = room.placement;
+                break;
+            }
+        }
+    }
     changes.replacedRooms = std::move(replacedRooms);
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||

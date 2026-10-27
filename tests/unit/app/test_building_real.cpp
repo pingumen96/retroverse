@@ -622,33 +622,35 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
     std::vector<rv::world::Room> onHub = legacy->plan.rooms;
     const std::vector<rv::world::ReplacedRoom> replaced = rv::world::placeOnHub(onHub, building->layout);
     REQUIRE_FALSE(replaced.empty());
-    std::vector<rv::app::ReplacedRoomRecord> expectedReplaced;
-    for (const rv::world::ReplacedRoom& room : replaced) {
-        expectedReplaced.push_back(
-            {room.room.toString(), room.from.xMm, room.from.zMm, room.to.xMm, room.to.zMm});
-        std::cout << fmt::format("Real building: re-placed {} onto the hub: x {} z {} mm (was x {} z {})\n",
-                                 room.room.toString(), room.to.xMm, room.to.zMm, room.from.xMm, room.from.zMm);
-    }
-    CHECK(first.world.replacedRooms == expectedReplaced);
     const auto migrated = rv::world::readStoredPlan(planFile);
     REQUIRE(migrated.has_value());
     CHECK(migrated->plan.generatorVersion == rv::world::kGeneratorVersion);
-    // The rooms re-placed stand where placeOnHub() put them (a room migrated in the same update, I6 step 6's arcade
-    // room, at its x and yaw there, its z following its new depth); compared below as they stood before (their
-    // contents). The theme pack every update records for its floor (I6 step 3, ADR-0014 §1: a look, never a reason;
-    // generator 1.3 had none per floor) is compared as it stood too.
+    // The run report names where each re-placed room stands in the stored plan: placeOnHub()'s x and yaw, its z
+    // abutting the hub at its depth now (a room migrated in the same update, I6 step 6's arcade room, has grown: the
+    // step's review).
+    std::vector<rv::app::ReplacedRoomRecord> expectedReplaced;
+    for (const rv::world::ReplacedRoom& room : replaced) {
+        const auto now = std::find_if(migrated->plan.rooms.begin(), migrated->plan.rooms.end(),
+                                      [&](const rv::world::Room& candidate) { return candidate.id == room.room; });
+        REQUIRE(now != migrated->plan.rooms.end());
+        CHECK(now->placement.xMm == room.to.xMm);
+        CHECK(now->placement.yawHalfTurns == room.to.yawHalfTurns);
+        CHECK(now->placement == rv::world::followDepth(*now, building->layout));
+        expectedReplaced.push_back(
+            {room.room.toString(), room.from.xMm, room.from.zMm, now->placement.xMm, now->placement.zMm});
+        std::cout << fmt::format("Real building: re-placed {} onto the hub: x {} z {} mm (was x {} z {})\n",
+                                 room.room.toString(), now->placement.xMm, now->placement.zMm, room.from.xMm,
+                                 room.from.zMm);
+    }
+    CHECK(first.world.replacedRooms == expectedReplaced);
+    // The rooms re-placed stand where the run report says; compared below as they stood before (their contents). The
+    // theme pack every update records for its floor (I6 step 3, ADR-0014 §1: a look, never a reason; generator 1.3 had
+    // none per floor) is compared as it stood too.
     rv::world::WorldPlan migratedAsStood = migrated->plan;
     std::size_t repacked = 0;
     for (rv::world::Room& room : migratedAsStood.rooms) {
-        const bool alsoMigrated = std::any_of(expected.begin(), expected.end(),
-                                              [&](const rv::world::MigratedRoom& entry) { return entry.room == room.id; });
         for (const rv::world::ReplacedRoom& entry : replaced) {
             if (entry.room == room.id) {
-                CHECK(room.placement.xMm == entry.to.xMm);
-                CHECK(room.placement.yawHalfTurns == entry.to.yawHalfTurns);
-                if (!alsoMigrated) {
-                    CHECK(room.placement == entry.to);
-                }
                 room.placement = entry.from;
             }
         }

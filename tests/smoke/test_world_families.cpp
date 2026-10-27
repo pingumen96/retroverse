@@ -732,10 +732,15 @@ TEST_CASE("world families: a stored building of generator 1.3 is migrated once",
     };
     CHECK(migrated.migratedRooms == expected);
     CHECK(migrated.needsConfirmation.empty());
-    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, re-placed onto the hub once, in the same update.
-    const std::vector<rv::app::ReplacedRoomRecord> replaced{{"area:arcade", 7650, -8150, 9000, -12150}};
-    CHECK(migrated.replacedRooms == replaced);
+    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, re-placed onto the hub once, in the same
+    // update; the report names where it stands in the stored plan (its z following the depth of its cabinets' room, I6
+    // step 6's review).
     const rv::world::StoredPlan stored = building.plan();
+    const rv::world::RoomPlacement arcadeNow = roomIn(stored.plan, "area:arcade").placement;
+    CHECK(arcadeNow.xMm == 9000);
+    const std::vector<rv::app::ReplacedRoomRecord> replaced{
+        {"area:arcade", 7650, -8150, arcadeNow.xMm, arcadeNow.zMm}};
+    CHECK(migrated.replacedRooms == replaced);
     CHECK(stored.plan.generatorVersion == rv::world::kGeneratorVersion);
     CHECK(roomIn(stored.plan, "room:psx").mediaFamily == "disc_case_cd_v2");
     CHECK(roomIn(stored.plan, "area:arcade").mediaFamily == "arcade_cabinet");
