@@ -168,7 +168,7 @@ struct UndoReport {
 /// of its own, behind a snapshot of kind Undo of the state it replaces; the snapshot restored marked undone. Errors:
 /// InvalidArgument for a lock moved from; NotFound when there is nothing to undo (no snapshot, or only undo snapshots
 /// and undone ones: an undo is never undone); ValidationFailed when the snapshot's files are not those its digests
-/// name (damaged: nothing written); those of reading the snapshot and of the writes.
+/// name or one is missing (damaged: nothing written); those of reading the snapshot and of the writes.
 [[nodiscard]] Expected<UndoReport> undoLastAction(const WorldLock& lock, const UndoOptions& options = {});
 
 namespace detail {

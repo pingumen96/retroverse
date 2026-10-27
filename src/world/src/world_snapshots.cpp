@@ -238,11 +238,19 @@ Expected<std::vector<std::optional<std::vector<std::byte>>>> readKeptFiles(const
         const std::filesystem::path path = folder / std::filesystem::path(file.name);
         auto bytes = core::readBinaryFile(path);
         if (!bytes) {
+            if (bytes.error().code == ErrorCode::NotFound) {
+                // Not "nothing to undo": the snapshot is there, one of its files is not.
+                return makeError(ErrorCode::ValidationFailed,
+                                 "the snapshot " + snapshot.name + " is damaged: " + std::string(file.name) +
+                                     " is missing",
+                                 lossy(path));
+            }
             return propagate(bytes.error());
         }
         if (core::sha256Hex(*bytes) != digest) {
             return makeError(ErrorCode::ValidationFailed,
-                             "the snapshot is damaged: " + std::string(file.name) + " is not the file it kept",
+                             "the snapshot " + snapshot.name + " is damaged: " + std::string(file.name) +
+                                 " is not the file it kept",
                              lossy(path));
         }
         kept.emplace_back(std::move(*bytes));

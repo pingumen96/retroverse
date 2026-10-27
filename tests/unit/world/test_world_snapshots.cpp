@@ -477,9 +477,17 @@ TEST_CASE("world/snapshots: an undo interrupted is rolled back, a damaged snapsh
     auto damaged = rv::world::undoLastAction(*lock);
     REQUIRE_FALSE(damaged.has_value());
     CHECK(damaged.error().code == rv::ErrorCode::ValidationFailed);
-    CHECK_THAT(damaged.error().message, ContainsSubstring("damaged"));
+    CHECK_THAT(damaged.error().message, ContainsSubstring("the snapshot " + target + " is damaged"));
     CHECK(stateOf(world.files) == edited);
     CHECK(rv::world::listSnapshots(world.files).size() == 1);
+
+    // A snapshot missing a file it kept: damaged too, not "nothing to undo".
+    std::filesystem::remove(world.files.snapshots / target / "world-plan.json");
+    auto missing = rv::world::undoLastAction(*lock);
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().code == rv::ErrorCode::ValidationFailed);
+    CHECK(missing.error().message == "the snapshot " + target + " is damaged: world-plan.json is missing");
+    CHECK(stateOf(world.files) == edited);
 }
 
 TEST_CASE("world/snapshots: snapshot records it refuses", "[world][snapshots]") {
