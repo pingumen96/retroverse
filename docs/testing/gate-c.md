@@ -11,7 +11,7 @@ ADR-0013's decisions and M3 part 1's requirements are proven, the follow-ups, an
 
 **Status: passed** (October 22, 2026, reference machine: `./scripts/gate.ps1 -Gate C`, then `./scripts/gate.ps1
 -Gate C -RealLibrary`, below). Every correctness check passed and every timing row is within the acceptable limits.
-Next the user walks the building ("Try the building", below) and declares I4 done.
+The user declared I4 done on October 27, 2026, together with I6 (Gate D); the walk is postponed.
 
 ## What the gate checks
 

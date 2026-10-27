@@ -25,9 +25,10 @@ decoding, Linux, an OpenGL 3.3 fallback.
 
 Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. I4, the
 building ([ADR-0013](decisions/ADR-0013-the-building.md)): Gate C passed on October 22, 2026
-([testing/gate-c.md](testing/gate-c.md)); the user walks the building and declares I4 done. I6, the styling pass
-([ADR-0014](decisions/ADR-0014-the-styling-pass.md)), before I5 and I4b: Gate D passed on October 27, 2026
-([testing/gate-d.md](testing/gate-d.md)); the user walks the building and declares I6 done.
+([testing/gate-c.md](testing/gate-c.md)). I6, the styling pass ([ADR-0014](decisions/ADR-0014-the-styling-pass.md)),
+before I5 and I4b: Gate D passed on October 27, 2026 ([testing/gate-d.md](testing/gate-d.md)). The user declared I4
+and I6 done on October 27, 2026, the walk of the building postponed (its list stays in gate-d.md, "Walk the
+building").
 
 ## Acceptable performance
 
@@ -205,7 +206,7 @@ SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the test
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
 
-## I6: the styling pass of the building (Gate D passed; the user walks the building)
+## I6: the styling pass of the building (done, Gate D)
 
 [ADR-0014](decisions/ADR-0014-the-styling-pass.md), decided with the user on October 24, 2026: the whole pass:
 - the hub;
@@ -228,9 +229,9 @@ are regenerated on purpose only.
 | 3b | Era furniture (ADR-0014 §1, amended): each pack chooses variants of the hero corner's parts and the decoration within their footprints (sofa, beanbag, desk with a monitor and keyboard, banker's lamp, the rug's pattern and colour, large framed posters in the pack's palette), chosen by the variants' own weights from the room's seed (step 3's `decorationWeights`, which nothing read, dropped) | 3, 4 | A room of each pack recognisably its era beside its concept panel; plans, slots and navigation unchanged | done ([i6/step-3b.md](i6/step-3b.md)): seven prefabs (sofa, bean bag, desk with a home computer, swivel chair, bar stool, banker's lamp, glass showcase) and a torchiere, five rugs and six era pictures; each pack's `furniture` draws the hero corner's seat, lamp and rug and the decoration's posters, lamps and sideboards within their footprints (unit-tested: inside the part or socket, validation and passages as they were, lamps at their lights); the weights are the variants' (`decorationWeights` dropped); G12, G13 regenerated; after review: the lounge's sofa facing the TV, the study's desk side-on beside the CRT, banker's lamps on card catalogues, a one-seat lounge chair on legs, lit showcases (big boxes of software for the study and the arcade), matte bean bags, the arcade's stools by the TV, a runtime guard drawing the plan's prefab for a piece out of its footprint, `crt`, `sign` and `console` refused as furniture |
 | 5 | The hub: 18 x 14 x 5 m, the landmark, portals, the directory's totem, information screens, the favourites showcase (runtime proxies), the ground floor's rooms re-placed once | 3, 4 | The hub's golden; the totem opens the directory, a proxy opens a card; the real library's hub | done ([i6/step-5.md](i6/step-5.md)): an 18 x 14 x 5 m hall of dark wood with a balcony on three sides, a coffered ceiling, a chandelier over a glowing wireframe globe in a railed showcase of generic consoles, portals with their signs, lit bookcases, sofas and rugs; the directory's totem ("Indice") and a screen of the floors; a showcase of up to 12 favourite or recent games as runtime proxies opening their cards; the arcade room re-placed once onto the hub's north wall (the real library: the hub shown in 2.7 s, 0 differences); G11 regenerated, G14 added |
 | 6 | Arcade and handhelds: the `arcade_cabinet` prefab and family, the hero cabinet with the video, stools and runner; handheld counter showcases and stations | 5 | The arcade and handheld goldens next to concept panels 5 and 6 | done ([i6/step-6.md](i6/step-6.md)): the arcade room's family `arcade_cabinet` (a family facing front: pairs of generic upright cabinets in every socket, each screen a game's cover through a picture tube, lit marquees in generic words) succeeds `generic_case` there, migrated once (the real library: its 36 titles in cabinets, 25 rooms migrated, the other 19 byte for byte, 0 differences); the hero cabinet carries the room's video in the TV's place (the pack's furniture, the arcade room only), stools and the runner by it; the handheld families' display cases drawn as lit counters of handhelds and stations on pedestals, no plan changed; G15 and G16 added, G13 regenerated; the busiest floor 471.8 MiB as before, the hub in 2.6 s |
-| 7 | Gate D: `scripts/gate.ps1 -Gate D` (and `-RealLibrary`), the new goldens, the style §26.2 checklist per golden against `example.png`, `docs/testing/gate-d.md` | 6 | The gate passes; the user walks the building | done ([testing/gate-d.md](testing/gate-d.md)): Gate D passed with and without the real library (every golden 0 pixels apart in Debug and Release, every timing row within the acceptable limits, again on a quiet machine with `-TimingOnly`; the real library's 25 rooms migrated once from generator 1.3, the arcade room re-placed onto the hub, 0 differences); G17 (an optical-era lounge room) and G18 (a floor's hall) added; the §26.2 checklist filled in for every golden: every era told apart, calmer than the concept (its colour is commercial art), the optical-era lounge the darkest (BACKLOG). Awaiting the user's walk |
+| 7 | Gate D: `scripts/gate.ps1 -Gate D` (and `-RealLibrary`), the new goldens, the style §26.2 checklist per golden against `example.png`, `docs/testing/gate-d.md` | 6 | The gate passes; the user walks the building | done ([testing/gate-d.md](testing/gate-d.md)): Gate D passed with and without the real library (every golden 0 pixels apart in Debug and Release, every timing row within the acceptable limits, again on a quiet machine with `-TimingOnly`; the real library's 25 rooms migrated once from generator 1.3, the arcade room re-placed onto the hub, 0 differences); G17 (an optical-era lounge room) and G18 (a floor's hall) added; the §26.2 checklist filled in for every golden: every era told apart, calmer than the concept (its colour is commercial art), the optical-era lounge the darkest (BACKLOG). The user declared I6 done on October 27, 2026, the walk postponed |
 
-## I4: M3 part 1, the building (Gate C passed; the user walks the building)
+## I4: M3 part 1, the building (done, Gate C)
 
 The building of [ADR-0013](decisions/ADR-0013-the-building.md), decided with the user on October 20, 2026:
 - **one room per console**, on **one floor per console generation**, joined by an **elevator**;
@@ -276,7 +277,7 @@ the building planned twice with one SHA-256, an unchanged restart's building job
 the lobby (5 s), the busiest floor's GPU memory (512 MiB), the rides cold and warm (the view back within 10 s and 3 s,
 the room that holds the walker within 30 s and 3 s), and Gate B's rows of the SNES room. `docs/testing/gate-c.md`
 holds the figures, where ADR-0013's decisions and M3 part 1's requirements are proven, the follow-ups and how to try
-the building. The gate passed on October 22, 2026; the user walks the building and declares I4 done.
+the building. The gate passed on October 22, 2026; the user declared I4 done on October 27, 2026, the walk postponed.
 
 ## I3: M2 SNES vertical slice (done)
 
