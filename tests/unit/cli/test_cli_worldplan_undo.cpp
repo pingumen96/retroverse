@@ -171,6 +171,33 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(contains(listedText.out, "  " + name + "  regenerate of world, "));
     CHECK(contains(listedText.out, "Next undo:       " + name + " (regenerate of world)\n"));
 
+    // A snapshot missing a file it kept is damaged (exit 3), not "nothing to undo".
+    const std::filesystem::path keptPlan = session.files.snapshots / name / "world-plan.json";
+    const std::filesystem::path aside = session.dir.file("world-plan.aside");
+    std::filesystem::rename(keptPlan, aside);
+    const RunResult missing = session.run({"worldplan", "undo"});
+    CHECK(missing.code == ExitCode::RuntimeFailure);
+    CHECK(contains(missing.err, "the snapshot " + name + " is damaged: world-plan.json is missing"));
+    std::filesystem::rename(aside, keptPlan);
+    // A folder whose snapshot.json cannot be read: listed as damaged, undo refused (exit 3) until it is moved out.
+    const std::filesystem::path torn = session.files.snapshots / "20200101T000000.000Z-edit";
+    std::filesystem::create_directories(torn);
+    REQUIRE(rv::core::writeTextFileAtomic(torn / "snapshot.json", "{ torn").has_value());
+    const RunResult damagedText = session.run({"worldplan", "snapshots"});
+    REQUIRE(damagedText.code == ExitCode::Ok);
+    CHECK(contains(damagedText.out, "  20200101T000000.000Z-edit  damaged: "));
+    CHECK(contains(damagedText.out, "Next undo:       refused while a snapshot is damaged"));
+    const nlohmann::json damagedList =
+        nlohmann::json::parse(session.run({"worldplan", "snapshots", "--json"}).out);
+    REQUIRE(damagedList["damaged"].size() == 1);
+    CHECK(damagedList["damaged"][0]["name"] == "20200101T000000.000Z-edit");
+    CHECK(damagedList["nextUndo"].is_null());
+    const RunResult refused = session.run({"worldplan", "undo", "--dry-run"});
+    CHECK(refused.code == ExitCode::RuntimeFailure);
+    CHECK(contains(refused.err, "undo is refused while a snapshot is damaged: 20200101T000000.000Z-edit"));
+    std::filesystem::remove_all(torn);
+    CHECK(contentOf(session.files.plan) == secondPlan);
+
     // A dry run names the snapshot and writes nothing.
     const RunResult dry = session.run({"worldplan", "undo", "--dry-run"});
     INFO(dry.err);
