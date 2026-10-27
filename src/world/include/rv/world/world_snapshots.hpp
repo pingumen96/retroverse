@@ -4,14 +4,18 @@
 // editor save, a regeneration, a CLI edit, an undo) changes the plan and the overrides together, under the world lock
 // (world_store.hpp):
 //   1. a snapshot of the world's files as they are, backups/snapshots/<YYYYMMDDTHHMMSS.mmmZ>-<action>[-<n>]/: the
-//      plan, its meta sidecar and overrides.json (those that are there) and snapshot.json (below), made in a folder
-//      "<name>.partial" renamed whole once written;
-//   2. the journal, transaction.json in the world's folder, naming the snapshot;
+//      plan, its meta sidecar and overrides.json (those that are there) and snapshot.json (below), written whole in a
+//      folder "<name>.partial";
+//   2. the journal, transaction.json in the world's folder, naming the snapshot; then the folder renamed "<name>";
 //   3. overrides.json, then the plan (savePlan(): its backup and its sidecar), each written atomically;
-//   4. the journal removed; then the snapshots beyond the newest kSnapshotsKept removed.
+//   4. the journal removed; then the snapshots rotated (kSnapshotsKept).
 // A lock that finds a journal (an action interrupted between 2 and 4: a crash, a power loss) restores its snapshot's
-// files byte for byte, removes the journal and the snapshot (the action never happened), and logs it; a
-// "<name>.partial" folder (interrupted at 1) is removed. So the plan and the overrides never disagree.
+// files byte for byte, retires the snapshot (renamed "<name>.removing": the action never happened), removes the
+// journal and logs it; a journal naming a "<name>.partial" or "<name>.removing" folder (stopped before the rename, or
+// during a rollback once restored) finds the world's files the snapshot's already and is removed. The lock then removes
+// every ".partial" and ".removing" folder. So the plan and the overrides never disagree, and a stop anywhere never
+// leaves a snapshot undo would offer that changes nothing. A snapshot is retired (rotation, rollback) by renaming it
+// "<name>.removing" first, so that a removal stopped half-way never leaves a half snapshot listed.
 //
 // Undo restores the newest snapshot of kind `action` not yet undone, byte for byte, as an action of its own: the state
 // it replaces becomes a snapshot of kind `undo` (naming the snapshot it undid), which undo never offers, and the
@@ -171,11 +175,12 @@ namespace detail {
 
 /// Where commitWorld() or undoLastAction() stops, as a process ended at that point would (tests of the rollback).
 enum class TransactionStop : std::uint8_t {
-    None,              ///< the whole action
-    AfterSnapshot,     ///< the snapshot made, no journal
-    AfterJournal,      ///< the journal written, nothing else
-    BetweenWrites,     ///< overrides.json written, not the plan
-    BeforeJournalEnds, ///< both written, the journal still there
+    None,               ///< the whole action
+    AfterSnapshot,      ///< the snapshot made ("<name>.partial"), no journal
+    AfterJournal,       ///< the journal written, the snapshot not yet named
+    AfterSnapshotNamed, ///< the snapshot named, nothing written into the world
+    BetweenWrites,      ///< overrides.json written, not the plan
+    BeforeJournalEnds,  ///< both written, the journal still there
 };
 
 /// commitWorld() stopped at `stop`: what it wrote is left as it is and Cancelled returned (tests only).
@@ -187,9 +192,11 @@ enum class TransactionStop : std::uint8_t {
 [[nodiscard]] Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoOptions& options,
                                                             TransactionStop stop);
 
-/// What the lock does when taken (WorldLock::acquire()): removes the "<name>.partial" snapshot folders and the
-/// temporary files in the snapshots, and rolls back the action a journal names. Returns the snapshot restored, if any.
-/// Errors: those of reading the journal or the snapshot and of restoring it (the journal then stays).
+/// What the lock does when taken (WorldLock::acquire(), after removing the temporary files): rolls back the action a
+/// journal names (its snapshot restored and retired, or, when the journal names a "<name>.partial" or
+/// "<name>.removing" folder, nothing to restore), then removes the ".partial" and ".removing" snapshot folders. Returns
+/// the snapshot of the action rolled back, if any. Errors: those of reading the journal or the snapshot, of restoring
+/// it and of retiring it (the journal then stays).
 [[nodiscard]] Expected<std::optional<std::string>> recoverInterruptedAction(const WorldFiles& files);
 
 } // namespace detail

@@ -28,8 +28,13 @@ using detail::DocumentReader;
 using detail::ObjectReader;
 using detail::TransactionStop;
 
-/// A snapshot being written: "<name>.partial", renamed to "<name>" once whole.
+/// A snapshot being written: "<name>.partial", renamed to "<name>" once whole and named by the journal.
 constexpr std::string_view kPartialSuffix = ".partial";
+/// A snapshot being retired (rotated out, or rolled back): renamed "<name>.removing" first, which no listing reads,
+/// then removed; a lock removes what a removal stopped half-way left.
+constexpr std::string_view kRemovingSuffix = ".removing";
+/// The folder names a snapshot's name stands for: itself, half made, being removed.
+constexpr std::array<std::string_view, 3> kFolderSuffixes{"", kPartialSuffix, kRemovingSuffix};
 /// The names tried for one millisecond and action: "<time>-<action>", then "-2" ...
 constexpr unsigned kMaxNameCounter = 1000;
 /// snapshot.json and the journal are a few hundred bytes.
@@ -70,7 +75,8 @@ std::string folderTime(std::chrono::system_clock::time_point time) {
 
 /// A snapshot's folder name as this program makes them: letters, digits, '.', '-'; never "." or "..".
 bool isSnapshotName(std::string_view name) {
-    if (name.empty() || name.size() > 128 || name == "." || name == ".." || name.ends_with(kPartialSuffix)) {
+    if (name.empty() || name.size() > 128 || name == "." || name == ".." || name.ends_with(kPartialSuffix) ||
+        name.ends_with(kRemovingSuffix)) {
         return false;
     }
     return std::all_of(name.begin(), name.end(), [](char c) {
@@ -80,6 +86,11 @@ bool isSnapshotName(std::string_view name) {
 
 std::filesystem::path folderOf(const WorldFiles& files, std::string_view name) {
     return files.snapshots / core::pathFromUtf8(name);
+}
+
+/// "<name>.partial" or "<name>.removing".
+std::filesystem::path folderOf(const WorldFiles& files, std::string_view name, std::string_view suffix) {
+    return folderOf(files, std::string(name) + std::string(suffix));
 }
 
 /// A file's bytes, or nothing when it is not there.
@@ -124,7 +135,23 @@ bool removeFolder(const std::filesystem::path& folder) {
     return true;
 }
 
-/// Copies the world's files into a new snapshot (a "<name>.partial" folder renamed whole), with its record.
+/// Retires a snapshot: renamed "<name>.removing" (atomically: from then on no listing offers it), then removed. False
+/// (logged) when it could not be renamed: it stays a snapshot. A removal stopped half-way leaves the ".removing" folder
+/// to the next lock.
+bool retireSnapshot(const WorldFiles& files, std::string_view name) {
+    const std::filesystem::path retired = folderOf(files, name, kRemovingSuffix);
+    std::error_code error;
+    std::filesystem::rename(folderOf(files, name), retired, error);
+    if (error) {
+        spdlog::warn("World store: a snapshot could not be retired: {} ({})", name, error.message());
+        return false;
+    }
+    removeFolder(retired);
+    return true;
+}
+
+/// Copies the world's files into a new snapshot, with its record, in a folder "<name>.partial" (whole when this
+/// returns): nameSnapshot() renames it once the journal names it.
 Expected<WorldSnapshot> takeSnapshot(const WorldFiles& files, WorldSnapshot snapshot,
                                      std::chrono::system_clock::time_point now,
                                      const std::vector<WorldSnapshot>& existing) {
@@ -134,14 +161,18 @@ Expected<WorldSnapshot> takeSnapshot(const WorldFiles& files, WorldSnapshot snap
     snapshot.sequence += 1;
     snapshot.takenAt = core::formatUtcIso8601(now);
     const std::string stem = folderTime(now) + "-" + snapshot.action;
-    std::error_code error;
     for (unsigned counter = 1; counter <= kMaxNameCounter && snapshot.name.empty(); ++counter) {
         const std::string name = counter == 1 ? stem : stem + "-" + std::to_string(counter);
-        const bool taken = std::filesystem::exists(folderOf(files, name), error) ||
-                           std::filesystem::exists(folderOf(files, name + std::string(kPartialSuffix)), error);
-        if (error) {
-            return makeError(ErrorCode::IoError, "cannot look into the snapshots' folder: " + error.message(),
-                             lossy(files.snapshots));
+        bool taken = false;
+        for (const std::string_view suffix : kFolderSuffixes) {
+            std::error_code looked; // one per call: an error is never overwritten by the next call's success
+            if (std::filesystem::exists(folderOf(files, name, suffix), looked)) {
+                taken = true;
+            }
+            if (looked) {
+                return makeError(ErrorCode::IoError, "cannot look into the snapshots' folder: " + looked.message(),
+                                 lossy(files.snapshots));
+            }
         }
         if (!taken) {
             snapshot.name = name;
@@ -150,7 +181,8 @@ Expected<WorldSnapshot> takeSnapshot(const WorldFiles& files, WorldSnapshot snap
     if (snapshot.name.empty()) {
         return makeError(ErrorCode::Conflict, "no free snapshot name for this time", lossy(files.snapshots));
     }
-    const std::filesystem::path partial = folderOf(files, snapshot.name + std::string(kPartialSuffix));
+    const std::filesystem::path partial = folderOf(files, snapshot.name, kPartialSuffix);
+    std::error_code error;
     std::filesystem::create_directories(partial, error);
     if (error) {
         return makeError(ErrorCode::IoError, "cannot create a snapshot's folder: " + error.message(), lossy(partial));
@@ -176,11 +208,19 @@ Expected<WorldSnapshot> takeSnapshot(const WorldFiles& files, WorldSnapshot snap
     if (Status written = writeRecordIn(partial, snapshot); !written) {
         return fail(written.error());
     }
-    std::filesystem::rename(partial, folderOf(files, snapshot.name), error);
-    if (error) {
-        return fail(Error{ErrorCode::IoError, "cannot complete a snapshot: " + error.message(), lossy(partial)});
-    }
     return snapshot;
+}
+
+/// Renames a snapshot taken whole ("<name>.partial") to its name, once the journal names it: before, a stop leaves a
+/// folder no listing reads, so that an action that never wrote anything never leaves a snapshot behind.
+Status nameSnapshot(const WorldFiles& files, std::string_view name) {
+    const std::filesystem::path partial = folderOf(files, name, kPartialSuffix);
+    std::error_code error;
+    std::filesystem::rename(partial, folderOf(files, name), error);
+    if (error) {
+        return makeError(ErrorCode::IoError, "cannot complete a snapshot: " + error.message(), lossy(partial));
+    }
+    return ok();
 }
 
 /// The bytes of a snapshot's files, checked against its digests (nothing when the file was not there), in kKeptFiles'
@@ -265,12 +305,38 @@ Status removeJournal(const WorldFiles& files) {
     return ok();
 }
 
+/// Where the snapshot a journal names stands.
+enum class JournalSnapshot : std::uint8_t {
+    Named, ///< "<name>": the world's files may have been written since; restoring it rolls the action back
+    Left,  ///< "<name>.partial" (not named yet: nothing written) or "<name>.removing" (a rollback had restored it)
+};
+
+/// Errors: NotFound when no folder of the name is there; IoError when the folder cannot be looked into.
+Expected<JournalSnapshot> journalSnapshotState(const WorldFiles& files, std::string_view name) {
+    for (const std::string_view suffix : kFolderSuffixes) {
+        std::error_code looked;
+        const std::filesystem::file_status status = std::filesystem::status(folderOf(files, name, suffix), looked);
+        if (status.type() == std::filesystem::file_type::not_found) {
+            continue; // reported as an error too by some libraries
+        }
+        if (looked) {
+            return makeError(ErrorCode::IoError, "cannot look into the snapshots' folder: " + looked.message(),
+                             lossy(files.snapshots));
+        }
+        if (status.type() == std::filesystem::file_type::directory) {
+            return suffix.empty() ? JournalSnapshot::Named : JournalSnapshot::Left;
+        }
+    }
+    return makeError(ErrorCode::NotFound, "the snapshot the journal names is not there",
+                     lossy(folderOf(files, name)));
+}
+
 /// Removes the snapshots beyond the newest kSnapshotsKept, returning their names.
 std::vector<std::string> rotateSnapshots(const WorldFiles& files) {
     std::vector<std::string> removed;
     const std::vector<WorldSnapshot> snapshots = listSnapshots(files);
     for (std::size_t i = kSnapshotsKept; i < snapshots.size(); ++i) {
-        if (removeFolder(folderOf(files, snapshots[i].name))) {
+        if (retireSnapshot(files, snapshots[i].name)) {
             removed.push_back(snapshots[i].name);
         }
     }
@@ -466,10 +532,16 @@ Expected<CommitReport> commitWorldStoppingAt(const WorldLock& lock, const WorldA
         return propagate(stopped());
     }
     if (Status journal = core::writeTextFileAtomic(files.transaction, writeJournal(*snapshot)); !journal) {
-        removeFolder(folderOf(files, snapshot->name));
+        removeFolder(folderOf(files, snapshot->name, kPartialSuffix));
         return propagate(journal.error());
     }
     if (stop == TransactionStop::AfterJournal) {
+        return propagate(stopped());
+    }
+    if (Status named = nameSnapshot(files, snapshot->name); !named) {
+        return rollBackAfter<CommitReport>(files, named.error());
+    }
+    if (stop == TransactionStop::AfterSnapshotNamed) {
         return propagate(stopped());
     }
     auto savedOverrides = saveOverrides(lock, overrides);
@@ -540,10 +612,16 @@ Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoO
         return propagate(stopped());
     }
     if (Status journal = core::writeTextFileAtomic(files.transaction, writeJournal(*snapshot)); !journal) {
-        removeFolder(folderOf(files, snapshot->name));
+        removeFolder(folderOf(files, snapshot->name, kPartialSuffix));
         return propagate(journal.error());
     }
     if (stop == TransactionStop::AfterJournal) {
+        return propagate(stopped());
+    }
+    if (Status named = nameSnapshot(files, snapshot->name); !named) {
+        return rollBackAfter<UndoReport>(files, named.error());
+    }
+    if (stop == TransactionStop::AfterSnapshotNamed) {
         return propagate(stopped());
     }
     if (stop == TransactionStop::BetweenWrites) {
@@ -575,64 +653,88 @@ Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoO
 }
 
 Expected<std::optional<std::string>> recoverInterruptedAction(const WorldFiles& files) {
-    // Snapshots half made (interrupted before their journal): the action never started.
+    std::optional<std::string> rolledBack;
+    auto journal = core::readTextFile(files.transaction, kMaxRecordBytes);
+    if (!journal && journal.error().code != ErrorCode::NotFound) {
+        return propagate(journal.error());
+    }
+    if (journal) {
+        auto name = readJournal(*journal, lossy(files.transaction.filename()));
+        if (!name) {
+            return propagate(name.error());
+        }
+        auto state = journalSnapshotState(files, *name);
+        if (!state) {
+            return propagate(state.error());
+        }
+        if (*state == JournalSnapshot::Named) {
+            const std::filesystem::path folder = folderOf(files, *name);
+            auto snapshot = readRecordIn(folder);
+            if (!snapshot) {
+                return propagate(snapshot.error());
+            }
+            auto kept = readKeptFiles(files, *snapshot);
+            if (!kept) {
+                return propagate(kept.error());
+            }
+            if (Status restored = restoreFiles(files, *kept, kKeptFiles.size()); !restored) {
+                return propagate(restored.error());
+            }
+            // An interrupted undo may have marked the snapshot it restored: it is not undone.
+            if (snapshot->kind == SnapshotKind::Undo && !snapshot->undoes.empty()) {
+                const std::filesystem::path undoneFolder = folderOf(files, snapshot->undoes);
+                if (auto undone = readRecordIn(undoneFolder); undone && undone->undone) {
+                    undone->undone = false;
+                    if (Status marked = writeRecordIn(undoneFolder, *undone); !marked) {
+                        return propagate(marked.error());
+                    }
+                }
+            }
+            // The action never happened: its snapshot, the state as it now stands, is retired before the journal goes
+            // (a stop in between leaves the journal naming a ".removing" folder: the case below), never offered.
+            std::error_code error;
+            std::filesystem::rename(folder, folderOf(files, *name, kRemovingSuffix), error);
+            if (error) {
+                return makeError(ErrorCode::IoError,
+                                 "cannot retire the snapshot of the action rolled back: " + error.message(),
+                                 lossy(folder));
+            }
+            spdlog::warn("World store: an interrupted {} was rolled back: the plan and the overrides of the snapshot "
+                         "{} restored",
+                         snapshot->action, *name);
+        } else {
+            // A journal written before its snapshot was named (nothing written into the world yet), or a rollback
+            // stopped after restoring and retiring the snapshot: either way the world's files are the snapshot's.
+            spdlog::warn("World store: an interrupted action was rolled back: the world's files were already those of "
+                         "the snapshot {}",
+                         *name);
+        }
+        if (Status ended = removeJournal(files); !ended) {
+            return propagate(ended.error());
+        }
+        rolledBack = std::move(*name);
+    }
+
+    // Snapshots half made (stopped before their journal named them) or half removed (a retirement stopped): never
+    // listed, removed once the journal, which may name one, is dealt with.
     std::error_code error;
     std::filesystem::directory_iterator entries(files.snapshots, error);
-    std::vector<std::filesystem::path> partial;
+    std::vector<std::filesystem::path> leftovers;
     for (; !error && entries != std::filesystem::directory_iterator(); entries.increment(error)) {
         std::error_code kind;
-        if (entries->is_directory(kind) && lossy(entries->path().filename()).ends_with(kPartialSuffix)) {
-            partial.push_back(entries->path());
+        const std::string name = lossy(entries->path().filename());
+        if (entries->is_directory(kind) && (name.ends_with(kPartialSuffix) || name.ends_with(kRemovingSuffix))) {
+            leftovers.push_back(entries->path());
         }
     }
-    std::sort(partial.begin(), partial.end());
-    for (const std::filesystem::path& folder : partial) {
+    std::sort(leftovers.begin(), leftovers.end());
+    for (const std::filesystem::path& folder : leftovers) {
         if (removeFolder(folder)) {
-            spdlog::info("World store: removed the snapshot an interrupted action left half made: {}",
+            spdlog::info("World store: removed a snapshot folder an interrupted action left: {}",
                          lossy(folder.filename()));
         }
     }
-
-    auto journal = core::readTextFile(files.transaction, kMaxRecordBytes);
-    if (!journal) {
-        if (journal.error().code == ErrorCode::NotFound) {
-            return std::optional<std::string>{};
-        }
-        return propagate(journal.error());
-    }
-    auto name = readJournal(*journal, lossy(files.transaction.filename()));
-    if (!name) {
-        return propagate(name.error());
-    }
-    auto snapshot = readRecordIn(folderOf(files, *name));
-    if (!snapshot) {
-        return propagate(snapshot.error());
-    }
-    auto kept = readKeptFiles(files, *snapshot);
-    if (!kept) {
-        return propagate(kept.error());
-    }
-    if (Status restored = restoreFiles(files, *kept, kKeptFiles.size()); !restored) {
-        return propagate(restored.error());
-    }
-    // An interrupted undo may have marked the snapshot it restored: it is not undone.
-    if (snapshot->kind == SnapshotKind::Undo && !snapshot->undoes.empty()) {
-        const std::filesystem::path undoneFolder = folderOf(files, snapshot->undoes);
-        if (auto undone = readRecordIn(undoneFolder); undone && undone->undone) {
-            undone->undone = false;
-            if (Status marked = writeRecordIn(undoneFolder, *undone); !marked) {
-                return propagate(marked.error());
-            }
-        }
-    }
-    if (Status ended = removeJournal(files); !ended) {
-        return propagate(ended.error());
-    }
-    removeFolder(folderOf(files, *name)); // the action never happened: its snapshot is the state as it stands
-    spdlog::warn("World store: an interrupted {} was rolled back: the plan and the overrides of the snapshot {} "
-                 "restored",
-                 snapshot->action, *name);
-    return std::optional<std::string>(*name);
+    return rolledBack;
 }
 
 } // namespace detail

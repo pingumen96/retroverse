@@ -17,7 +17,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/sha256.hpp>
@@ -63,6 +66,25 @@ struct WorldState {
 
 WorldState stateOf(const WorldFiles& files) {
     return WorldState{contentOf(files.plan), contentOf(files.meta), contentOf(files.overrides)};
+}
+
+/// The snapshot the journal names.
+std::string journalSnapshot(const WorldFiles& files) {
+    const std::optional<std::string> journal = contentOf(files.transaction);
+    REQUIRE(journal.has_value());
+    return nlohmann::json::parse(*journal).at("snapshot").get<std::string>();
+}
+
+/// The folders in backups/snapshots/, by name.
+std::vector<std::string> snapshotFolders(const WorldFiles& files) {
+    std::vector<std::string> names;
+    std::error_code error;
+    for (std::filesystem::directory_iterator entries(files.snapshots, error);
+         !error && entries != std::filesystem::directory_iterator(); entries.increment(error)) {
+        names.push_back(entries->path().filename().string());
+    }
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 /// A clock that ticks one second per call from 2026-10-27T10:00:00Z.
@@ -210,8 +232,8 @@ TEST_CASE("world/snapshots: the plan and the overrides committed together behind
 
 TEST_CASE("world/snapshots: an action interrupted between its writes is rolled back at the next lock",
           "[world][snapshots]") {
-    for (const TransactionStop stop :
-         {TransactionStop::AfterJournal, TransactionStop::BetweenWrites, TransactionStop::BeforeJournalEnds}) {
+    for (const TransactionStop stop : {TransactionStop::AfterJournal, TransactionStop::AfterSnapshotNamed,
+                                       TransactionStop::BetweenWrites, TransactionStop::BeforeJournalEnds}) {
         INFO("stop " << static_cast<int>(stop));
         World world(30);
         {
@@ -231,28 +253,32 @@ TEST_CASE("world/snapshots: an action interrupted between its writes is rolled b
             REQUIRE_FALSE(interrupted.has_value());
             CHECK(interrupted.error().code == rv::ErrorCode::Cancelled);
             REQUIRE(std::filesystem::exists(world.files.transaction));
+            snapshotName = journalSnapshot(world.files);
             const WorldState torn = stateOf(world.files);
-            if (stop == TransactionStop::BetweenWrites) {
+            if (stop == TransactionStop::AfterJournal) {
+                // The journal names a snapshot not yet named: nothing listed, nothing written.
+                CHECK(rv::world::listSnapshots(world.files).empty());
+                CHECK(torn == before);
+            } else if (stop == TransactionStop::BetweenWrites) {
                 // The crash this guards against: the new overrides beside the old plan.
                 CHECK(torn.overrides == *rv::world::writeOverrides(pins));
                 CHECK(torn.plan == before.plan);
             } else if (stop == TransactionStop::BeforeJournalEnds) {
                 CHECK(torn.plan == *rv::world::writePlan(next.plan));
             }
-            snapshotName = rv::world::listSnapshots(world.files).front().name;
         } // the process "ends": its lock is released
         auto lock = WorldLock::acquire(world.files);
         REQUIRE(lock.has_value());
         CHECK(lock->rolledBack() == snapshotName);
         CHECK(stateOf(world.files) == before);
         CHECK_FALSE(std::filesystem::exists(world.files.transaction));
-        // The action never happened: its snapshot is gone, nothing to undo.
-        CHECK(rv::world::listSnapshots(world.files).empty());
+        // The action never happened: its snapshot is gone, folder and all, nothing to undo.
+        CHECK(snapshotFolders(world.files).empty());
         CHECK(rv::world::undoLastAction(*lock).error().code == rv::ErrorCode::NotFound);
     }
 
-    // Interrupted before its journal: nothing changed and nothing is rolled back (the snapshot, of the state as it
-    // stands, stays); a snapshot half made is removed by the next lock.
+    // Interrupted before its journal: nothing changed and nothing is rolled back; the snapshot, still half made, is
+    // removed by the next lock, as is a snapshot half removed.
     World world(30);
     const WorldState before = stateOf(world.files);
     {
@@ -262,24 +288,49 @@ TEST_CASE("world/snapshots: an action interrupted between its writes is rolled b
                                                        world.options, TransactionStop::AfterSnapshot)
                   .error()
                   .code == rv::ErrorCode::Cancelled);
+        CHECK(rv::world::listSnapshots(world.files).empty());
     }
-    std::filesystem::create_directories(world.files.snapshots / "20261027T120000.000Z-edit.partial");
-    REQUIRE(rv::core::writeTextFileAtomic(world.files.snapshots / "20261027T120000.000Z-edit.partial" /
+    std::filesystem::create_directories(world.files.snapshots / "20261027T120000.000Z-edit.removing");
+    REQUIRE(rv::core::writeTextFileAtomic(world.files.snapshots / "20261027T120000.000Z-edit.removing" /
                                               "world-plan.json",
                                           "half")
                 .has_value());
-    auto lock = WorldLock::acquire(world.files);
-    REQUIRE(lock.has_value());
-    CHECK_FALSE(lock->rolledBack().has_value());
-    CHECK(stateOf(world.files) == before);
-    CHECK_FALSE(std::filesystem::exists(world.files.snapshots / "20261027T120000.000Z-edit.partial"));
-    CHECK(rv::world::listSnapshots(world.files).size() == 1);
+    CHECK(rv::world::listSnapshots(world.files).empty());
+    {
+        auto lock = WorldLock::acquire(world.files);
+        REQUIRE(lock.has_value());
+        CHECK_FALSE(lock->rolledBack().has_value());
+        CHECK(stateOf(world.files) == before);
+        CHECK(snapshotFolders(world.files).empty());
+    }
+
+    // A rollback stopped once it restored and retired the snapshot, before the journal went: the next lock finds the
+    // world's files the snapshot's and ends it, leaving no snapshot.
+    {
+        auto lock = WorldLock::acquire(world.files);
+        REQUIRE(lock.has_value());
+        CHECK(rv::world::detail::commitWorldStoppingAt(*lock, WorldAction{"edit", ""}, resultOf(31), {},
+                                                       world.options, TransactionStop::BeforeJournalEnds)
+                  .error()
+                  .code == rv::ErrorCode::Cancelled);
+    }
+    const std::string retired = journalSnapshot(world.files);
+    REQUIRE(rv::core::writeTextFileAtomic(world.files.plan, *before.plan).has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(world.files.meta, *before.meta).has_value());
+    std::filesystem::rename(world.files.snapshots / retired, world.files.snapshots / (retired + ".removing"));
+    {
+        auto lock = WorldLock::acquire(world.files);
+        REQUIRE(lock.has_value());
+        CHECK(lock->rolledBack() == retired);
+        CHECK(stateOf(world.files) == before);
+        CHECK_FALSE(std::filesystem::exists(world.files.transaction));
+        CHECK(snapshotFolders(world.files).empty());
+    }
 
     // A journal that names no snapshot: nothing is written into the world until it is repaired.
     REQUIRE(rv::core::writeTextFileAtomic(world.files.transaction,
                                           R"({"schemaVersion": 1, "snapshot": "nowhere", "action": "edit"})")
                 .has_value());
-    { const WorldLock released = std::move(*lock); }
     auto refused = WorldLock::acquire(world.files);
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error().code == rv::ErrorCode::NotFound);
@@ -395,7 +446,9 @@ TEST_CASE("world/snapshots: an undo interrupted is rolled back, a damaged snapsh
         target = committed->snapshot->name;
     }
     const WorldState edited = stateOf(world.files);
-    for (const TransactionStop stop : {TransactionStop::BetweenWrites, TransactionStop::BeforeJournalEnds}) {
+    for (const TransactionStop stop : {TransactionStop::AfterSnapshot, TransactionStop::AfterJournal,
+                                       TransactionStop::AfterSnapshotNamed, TransactionStop::BetweenWrites,
+                                       TransactionStop::BeforeJournalEnds}) {
         INFO("stop " << static_cast<int>(stop));
         {
             auto lock = WorldLock::acquire(world.files);
@@ -407,8 +460,9 @@ TEST_CASE("world/snapshots: an undo interrupted is rolled back, a damaged snapsh
         }
         auto lock = WorldLock::acquire(world.files);
         REQUIRE(lock.has_value());
-        CHECK(lock->rolledBack().has_value());
+        CHECK(lock->rolledBack().has_value() == (stop != TransactionStop::AfterSnapshot));
         CHECK(stateOf(world.files) == edited);
+        CHECK(snapshotFolders(world.files) == std::vector<std::string>{target});
         // The snapshot it was restoring is not undone: the next undo offers it again.
         const std::vector<WorldSnapshot> snapshots = rv::world::listSnapshots(world.files);
         REQUIRE(snapshots.size() == 1);
