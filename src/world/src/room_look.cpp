@@ -14,6 +14,7 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/platform_manifest.hpp>
+#include <rv/world/validation.hpp>
 #include <rv/world/world_config.hpp>
 
 #include "data_reader.hpp"
@@ -389,6 +390,18 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
         }
     };
     readLists("heroParts", true);
+    // A part is left out only for the hero cabinet standing in its place (I6 step 6's review): a pack that leaves one
+    // out without drawing the CRT as a cabinet would leave the room's CRT floating.
+    if (!document.failed() && !theme.furniture.heroParts.contains(kHeroTvPart)) {
+        for (const auto& [name, pieces] : theme.furniture.heroParts) {
+            if (pieces.empty()) {
+                document.fail(detail::pointerChild(furniture.pointer("heroParts"), name),
+                              "a hero part is left out only where the crt stands as an arcade cabinet: expected "
+                              "pieces under heroParts/crt");
+                return;
+            }
+        }
+    }
     readLists("decoration", false);
 }
 

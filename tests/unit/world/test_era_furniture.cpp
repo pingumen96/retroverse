@@ -318,10 +318,16 @@ TEST_CASE("world/era furniture: the reader refuses a broken piece or a list with
                ContainsSubstring("/furniture/decoration/poster_frame/0/weight"));
     CHECK_THAT(refusal(R"({"decoration": {"poster_frame": [{"weight": 1, "xMm": 5, "prefab": )" + poster + "}]}}"),
                ContainsSubstring("xMm"));
-    // An empty hero part's list leaves the part undrawn (I6 step 6), never the CRT's; a decoration's needs pieces.
-    auto leftOut = parse(R"({"heroParts": {"tv-cabinet": []}})");
+    // An empty hero part's list leaves the part undrawn (I6 step 6) where the CRT stands as a cabinet in its place,
+    // never the CRT's own; without the cabinet the pack is refused (the CRT would float); a decoration's needs pieces.
+    const std::string heroCabinet = R"({"prefab": {"manifest": "furniture.arcade_cabinet.generic",
+                                                   "kind": "arcade_cabinet"}, "yMm": 0, "zMm": 440})";
+    auto leftOut = parse(R"({"heroParts": {"crt": [)" + heroCabinet + R"(], "tv-cabinet": []}})");
     REQUIRE(leftOut.has_value());
     CHECK(leftOut->furniture.heroParts.at("tv-cabinet").empty());
+    CHECK_THAT(refusal(R"({"heroParts": {"tv-cabinet": []}})"),
+               ContainsSubstring("/furniture/heroParts/tv-cabinet"));
+    CHECK_THAT(refusal(R"({"heroParts": {"tv-cabinet": []}})"), ContainsSubstring("heroParts/crt"));
     CHECK_THAT(refusal(R"({"heroParts": {"crt": []}})"), ContainsSubstring("non-empty"));
     CHECK_THAT(refusal(R"({"decoration": {"poster_frame": []}})"), ContainsSubstring("non-empty"));
     // The CRT only as arcade cabinets (I6 step 6's hero cabinet), a piece standing at a height of its own.
@@ -465,4 +471,81 @@ TEST_CASE("world/era furniture: a piece leaving its footprint is not drawn, the 
     CHECK(objectOf(data, armchair.id.localText()).at("prefab") == "sofa");
     CHECK(objectOf(outside, armchair.id.localText()).at("prefab") == "armchair");
     CHECK(drawnOf(outside, armchair.id) == armchair);
+}
+
+TEST_CASE("world/era furniture: the arcade's TV cabinet is left out only under the hero cabinet (I6 step 6's review)",
+          "[world][era_furniture]") {
+    auto text = rv::core::readTextFile(rv::test::world::goldenPlanDir() / "building-esde-seed-102938.json");
+    REQUIRE(text.has_value());
+    auto plan = rv::world::readPlan(*text, "building-esde-seed-102938");
+    REQUIRE(plan.has_value());
+    const auto arcade = std::find_if(plan->rooms.begin(), plan->rooms.end(), [](const rv::world::Room& room) {
+        return room.kind == rv::world::RoomKind::Arcade;
+    });
+    REQUIRE(arcade != plan->rooms.end());
+    auto data = rv::world::loadSceneData(assets(), *plan, arcade->id);
+    REQUIRE(data.has_value());
+    REQUIRE(data->theme.id == "arcade_after_dark");
+    auto families = rv::assets::loadPrefabFamilies(assets());
+    REQUIRE(families.has_value());
+    // The hero corner's CRT and TV cabinet as drawn: their objects' prefabs ("" when not drawn), and whether the TV
+    // cabinet covers its floor among the drawn fixtures.
+    struct Drawn {
+        std::string crt;
+        std::string tvCabinet;
+        bool tvCabinetCovers = false;
+    };
+    const auto drawnWith = [&](const rv::world::SceneData& sceneData) {
+        auto scene = rv::world::toSceneFile(*plan, arcade->id, sceneData);
+        REQUIRE(scene.has_value());
+        Drawn result;
+        for (const nlohmann::json& object : scene->sceneFile.at("objects")) {
+            const std::string id = object.at("id");
+            const std::string prefab = object.value("prefab", std::string());
+            if (id == "fx:hero.crt") {
+                result.crt = prefab;
+            } else if (id == "fx:hero.tv-cabinet") {
+                result.tvCabinet = prefab;
+            }
+        }
+        auto fixtures = rv::world::drawnFixtures(*plan, arcade->id, sceneData);
+        REQUIRE(fixtures.has_value());
+        result.tvCabinetCovers = std::any_of(fixtures->begin(), fixtures->end(), [](const Fixture& fixture) {
+            return fixture.role == FixtureRole::HeroCorner && fixture.id.part() == "tv-cabinet";
+        });
+        return result;
+    };
+    const auto withCrt = [&](const nlohmann::json& patch, const std::string& manifest) {
+        rv::world::ThemeFurniture furniture = data->theme.furniture;
+        rv::world::FurniturePiece& piece = furniture.heroParts.at("crt").front();
+        piece.params.merge_patch(patch);
+        if (!manifest.empty()) {
+            piece.prefab.manifest = manifest;
+        }
+        rv::world::SceneData changed = *data;
+        changed.furniture = rv::world::resolveSceneFurniture(assets(), *families, furniture);
+        return changed;
+    };
+
+    // As the pack has it: the hero cabinet in the CRT's place, the TV cabinet left out.
+    const Drawn packed = drawnWith(*data);
+    CHECK(packed.crt == "arcade_cabinet");
+    CHECK(packed.tvCabinet.empty());
+    CHECK_FALSE(packed.tvCabinetCovers);
+    // A cabinet without a screen surface (its screen a slot), or a manifest that resolves to no cabinet: the CRT is
+    // drawn as planned, on its TV cabinet.
+    for (const auto& changed : {withCrt(nlohmann::json{{"slots", true}}, {}),
+                                withCrt(nlohmann::json::object(), "furniture.sofa.generic")}) {
+        const Drawn planned = drawnWith(changed);
+        CHECK(planned.crt == "crt");
+        CHECK(planned.tvCabinet == "tv_cabinet");
+        CHECK(planned.tvCabinetCovers);
+    }
+    // A cabinet that leaves the hero corner (the guard): the same.
+    rv::world::SceneData outside = *data;
+    outside.furniture.heroParts.at("crt").front().piece.xMm = 2500;
+    const Drawn guarded = drawnWith(outside);
+    CHECK(guarded.crt == "crt");
+    CHECK(guarded.tvCabinet == "tv_cabinet");
+    CHECK(guarded.tvCabinetCovers);
 }

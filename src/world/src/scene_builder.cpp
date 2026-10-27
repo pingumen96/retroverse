@@ -352,13 +352,38 @@ std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixt
     return pieces;
 }
 
+std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
+                                                   const SceneData& data);
+
+/// Whether the hero corner of `fixture`'s socket draws its CRT as the pack's pieces (resolved, holding the screen,
+/// inside the guard): only then are the parts the pack leaves out left out, the cabinet standing in their place (I6
+/// step 6's review: else the CRT, drawn as planned, would float where its TV cabinet is missing).
+bool heroCrtSubstituted(const WorldPlan& plan, const Room& room, const Fixture& fixture, const SceneData& data) {
+    for (const Fixture& candidate : plan.fixtures) {
+        if (candidate.role == FixtureRole::HeroCorner && candidate.id.room() == room.id &&
+            candidate.id.socket() == fixture.id.socket() && candidate.id.part() == kHeroTvPart) {
+            const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, candidate, data);
+            return pieces.has_value() && !pieces->empty();
+        }
+    }
+    return false;
+}
+
 /// The pieces that draw `fixture` (scene_builder.hpp's file comment); nothing: the plan's prefab draws it; none: it is
-/// not drawn (I6 step 6). The guard of ADR-0014 §1 (amended): a decoration's variant that leaves its socket's
-/// footprint (turned with the socket), or a hero part's piece that leaves the hero corner (and the planned part's own
-/// floor, where the part reaches out of the corner: the lamp beside the TV), is not drawn; the plan's prefab is, with a
-/// warning logged once.
-std::optional<std::vector<DrawnPiece>> drawnPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+/// not drawn (I6 step 6: a part the pack leaves out, while its CRT stands as the pack's cabinet). The guard of ADR-0014
+/// §1 (amended): a decoration's variant that leaves its socket's footprint (turned with the socket), or a hero part's
+/// piece that leaves the hero corner (and the planned part's own floor, where the part reaches out of the corner: the
+/// lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once.
+std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
+                                                   const SceneData& data) {
     std::optional<std::vector<DrawnPiece>> placed = placedPieces(room, fixture, data);
+    if (placed && placed->empty() && !heroCrtSubstituted(plan, room, fixture, data)) {
+        warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " kept",
+                 fmt::format("World: the pack {} leaves out {}, but its CRT is not drawn as the pack's cabinet; the "
+                             "part is drawn as planned",
+                             data.theme.id, fixture.id.toString()));
+        return std::nullopt;
+    }
     const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
     if (!placed || placed->empty() || socket == nullptr) {
         return placed;
@@ -802,7 +827,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
         const std::string heroPart = fixture.role == FixtureRole::HeroCorner ? fixture.id.part() : std::string();
         // The pack's furniture in place of the part or the decoration (I6 step 3b); a part it leaves out is not drawn
         // (I6 step 6).
-        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(*room, fixture, data)) {
+        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, *room, fixture, data)) {
             for (const DrawnPiece& drawn : *pieces) {
                 objects.push_back(pieceObject(drawn, fixture, heroPart, data));
             }
@@ -909,7 +934,7 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
         if (fixture.id.room() != roomId) {
             continue;
         }
-        const std::optional<std::vector<DrawnPiece>> placed = drawnPieces(*room, fixture, data);
+        const std::optional<std::vector<DrawnPiece>> placed = drawnPieces(plan, *room, fixture, data);
         if (!placed) {
             fixtures.push_back(fixture);
             continue;

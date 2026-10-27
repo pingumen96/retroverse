@@ -70,9 +70,10 @@
 //   when left out) and "yMm" (I6 step 6: its height above the room's floor; the part's when left out)}. A hero part's
 //   list replaces the part by its pieces (one or more: a desk and its chair, two stools), or, empty (I6 step 6), leaves
 //   the part undrawn: another part's piece stands in its place (the arcade's hero cabinet on the floor where the TV's
-//   cabinet stood). The "crt" (the room's video) is listed only as arcade cabinets ("arcade_cabinet" pieces, the first
-//   carrying a ScreenSurface: the room's video plays on it; one that does not is left out, the CRT drawn as planned):
-//   the hero cabinet of ADR-0014 §6, a part substitution by the arcade room's pack, whose kind it is. Both the "crt"'s
+//   cabinet stood; the reader refuses an empty list without "crt" pieces, and the scene draws the part as planned
+//   whenever the CRT is not drawn as the pack's cabinet, I6 step 6's review). The "crt" (the room's video) is listed
+//   only as arcade cabinets ("arcade_cabinet" pieces, the first carrying a ScreenSurface: the room's video plays on
+//   it; one that does not is left out, the CRT drawn as planned): the hero cabinet of ADR-0014 §6, a part substitution by the arcade room's pack, whose kind it is. Both the "crt"'s
 //   pieces and a part left out apply in the arcade room only (its hero corner holds no console): another room drawn
 //   with the pack keeps its CRT, TV cabinet and console as planned; a decoration
 //   kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
