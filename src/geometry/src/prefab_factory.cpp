@@ -404,7 +404,8 @@ Expected<ProceduralPrefab> floorLampFromJson(const Json& params) {
     r.read("baseRadius", p.baseRadius);
     r.read("shadeRadius", p.shadeRadius);
     r.read("shadeHeight", p.shadeHeight);
-    r.readEnum("shade", p.shade, {{"drum", LampShade::Drum}, {"torchiere", LampShade::Torchiere}});
+    r.readEnum("shade", p.shade,
+               {{"drum", LampShade::Drum}, {"torchiere", LampShade::Torchiere}, {"tube", LampShade::Tube}});
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -510,7 +511,8 @@ Expected<ProceduralPrefab> bankerLampFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
     ShowcaseParams p;
-    ParamReader r("showcase", params, {"width", "height", "depth", "baseHeight", "item", "boardLight"});
+    ParamReader r("showcase", params,
+                  {"width", "height", "depth", "baseHeight", "item", "boardLight", "coverPerBox", "litScreen"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -521,6 +523,8 @@ Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
                 {"handheld", ShowcaseItem::Handheld},
                 {"boxes", ShowcaseItem::Boxes}});
     r.read("boardLight", p.boardLight);
+    r.read("coverPerBox", p.coverPerBox);
+    r.read("litScreen", p.litScreen);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -591,7 +595,7 @@ Expected<ProceduralPrefab> arcadeCabinetFromJson(const Json& params) {
     ArcadeCabinetParams p;
     ParamReader r("arcade_cabinet", params,
                   {"width", "height", "depth", "count", "gap", "panelHeight", "marqueeHeight", "screenSize",
-                   "screenTiltDeg", "slots", "slotDepth"});
+                   "screenTiltDeg", "slots", "slotDepth", "sideArt"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -603,6 +607,7 @@ Expected<ProceduralPrefab> arcadeCabinetFromJson(const Json& params) {
     r.read("screenTiltDeg", p.screenTiltDeg);
     r.read("slots", p.slots);
     r.read("slotDepth", p.slotDepth);
+    r.read("sideArt", p.sideArt);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -613,7 +618,7 @@ Expected<ProceduralPrefab> displayCaseFromJson(const Json& params) {
     DisplayCaseParams p;
     ParamReader r("display_case", params,
                   {"width", "height", "depth", "baseHeight", "levels", "tiltDeg", "levelRise", "slotSize", "slotGap",
-                   "slotMargin", "boardLight", "counter"});
+                   "slotMargin", "boardLight", "counter", "litScreens"});
     r.read("width", p.width);
     r.read("height", p.height);
     r.read("depth", p.depth);
@@ -626,6 +631,7 @@ Expected<ProceduralPrefab> displayCaseFromJson(const Json& params) {
     r.read("slotMargin", p.slotMargin);
     r.read("boardLight", p.boardLight);
     r.read("counter", p.counter);
+    r.read("litScreens", p.litScreens);
     if (!r.ok()) {
         return propagate(r.error());
     }

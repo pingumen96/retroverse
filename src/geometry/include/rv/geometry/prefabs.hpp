@@ -298,20 +298,24 @@ struct RugParams {
     float thickness = 0.012f; ///< [0.001, 0.1]
 };
 
-/// The shade of a floor lamp: a drum around the bulb, or (I6 step 3b) a torchiere's bowl open upwards.
-enum class LampShade { Drum, Torchiere };
+/// The shade of a floor lamp: a drum around the bulb, (I6 step 3b) a torchiere's bowl open upwards, or (I6 step 6's
+/// review) a lit tube standing on the base: a light column.
+enum class LampShade { Drum, Torchiere, Tube };
 
 /// "floor_lamp", pivot floor; bounds = [-r, 0, -r] .. [r, height, r] with r = max(baseRadius, shadeRadius).
 /// Roles: "metal" (base, pole, bulb holder, shade spider), "lamp_shade" (open shade built as a thin closed shell
 /// with a 2 mm wall: renders from inside and outside with or without back-face culling). Sockets: "LightSource"
 /// (Anchor) at the bulb inside the shade. With `shade` "torchiere" (I6 step 3b, the 90s uplighter): the shade is a
-/// bowl widening upwards to shadeRadius, its rim at `height`, on the pole; no spider; the bulb in the bowl.
+/// bowl widening upwards to shadeRadius, its rim at `height`, on the pole; no spider; the bulb in the bowl. With
+/// "tube" (I6 step 6's review, the arcade's light columns): a lit tube ("lamp_shade", 6 cm across) from just above the
+/// base to `height` beside a slim metal spine, capped in metal at both ends; "LightSource" where a drum's bulb would
+/// be.
 struct FloorLampParams {
     float height = 1.6f;               ///< [0.5, 3]
     float baseRadius = 0.16f;          ///< [0.05, 1]
     float shadeRadius = 0.22f;         ///< [0.05, 1]
     float shadeHeight = 0.3f;          ///< [0.05, 1], at most height / 2
-    LampShade shade = LampShade::Drum; ///< JSON "drum" or "torchiere"
+    LampShade shade = LampShade::Drum; ///< JSON "drum", "torchiere" or "tube"
 };
 
 /// "armchair", pivot floor, front +Z; bounds = width x height x depth. An upholstered club armchair (original design):
@@ -409,8 +413,11 @@ enum class ShowcaseItem { None, Console, Handheld, Boxes };
 /// (a smaller vitrine is refused). Roles: "wood_primary" (base, posts, rails), "wood_secondary" (doors, back panel),
 /// "metal_trim" (knobs), "fabric" (the plinth), "glass" (the panes, one sheet each: a blended, double-sided material),
 /// "plastic_body", "plastic_dark", "plastic_accent" (the item; the boxes' bodies "plastic_body"); after them, only when
-/// built, "cover" (each box's front, the whole picture upright) and "board_light" (with `boardLight`: an emissive strip
-/// under the cap near the front, 3 mm thick, as a lit shelf's). Sockets: "Item" (Anchor) on the plinth's top, centred.
+/// built, "cover" (each box's front, the whole picture upright; with `coverPerBox`, I6 step 6's review, the second and
+/// third boxes' fronts "cover_2" and "cover_3", so that each takes a picture of its own), "board_light" (with
+/// `boardLight`: an emissive strip under the cap near the front, 3 mm thick, as a lit shelf's) and "screen" (with
+/// `litScreen`, the handheld's screen, else "plastic_dark": a pack naming that role lights it). Sockets: "Item"
+/// (Anchor) on the plinth's top, centred.
 struct ShowcaseParams {
     float width = 0.8f;                        ///< [0.4, 2]
     float height = 1.15f;                      ///< [0.6, 2]
@@ -418,6 +425,8 @@ struct ShowcaseParams {
     float baseHeight = 0.62f;                  ///< [0.15, height - 0.25]: the vitrine's floor
     ShowcaseItem item = ShowcaseItem::Console; ///< JSON "none", "console", "handheld" or "boxes"
     bool boardLight = false;                   ///< the lit strip under the cap (a pack naming "board_light")
+    bool coverPerBox = false;                  ///< each box's cover a role of its own ("cover", "cover_2", "cover_3")
+    bool litScreen = false;                    ///< the handheld's screen in "screen" (a pack naming that role)
 };
 
 /// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8
@@ -442,7 +451,8 @@ struct ShowcaseParams {
 /// cabinet: side and back panels, a glass front set back where the doors stood, a covered deck inside and on it up to
 /// six generic handhelds of original design leaning back on small stands (roles "plastic_body" and "plastic_accent" in
 /// turn for their bodies, "plastic_dark", "plastic_accent" for their buttons), lit by a strip under the base's top
-/// (role "board_light").
+/// (role "board_light", with `boardLight` only: the step's review); with `litScreens` each handheld's display shows in
+/// "screen" (a pack naming that role: a lit LCD).
 struct DisplayCaseParams {
     float width = 1.2f;       ///< [0.4, 4]
     float height = 0.95f;     ///< [0.5, 1.6]
@@ -456,6 +466,7 @@ struct DisplayCaseParams {
     float slotMargin = 0.03f;                   ///< [0, 1]
     bool boardLight = false; ///< the vitrine lit by a strip under its top rails (a pack naming "board_light")
     bool counter = false;    ///< the base a glass counter of handhelds (the handheld families' display cases)
+    bool litScreens = false; ///< the counter's handhelds' screens in "screen" (a pack naming that role)
 };
 
 /// "wall_shelf", the featured wall shelf (ADR-0010 §3, §4), front +Z, hung on a wall: pivot on the floor below the
@@ -599,7 +610,10 @@ struct InfoTotemParams {
 /// black laminate), "molding", "molding_alt" (the T-moulding along the side panels' front edges), "plastic_dark"
 /// (bezel plate, control panel, coin door), "metal_trim" (coin slots, the joystick's shaft), "plastic_accent"
 /// (buttons, the joystick's ball), "marquee", "marquee_alt" (the marquee's lit face, uv (0, 0) at its top-left: an
-/// emissive material, a picture), and "screen_back" (with slots) or "screen" (without). Its bounds collide.
+/// emissive material, a picture), and "screen_back" (with slots) or "screen" (without); with `sideArt` (I6 step 6's
+/// review) "side_art", a printed panel on the outer side of the row's first and last cabinets (two quads following the
+/// stepped profile, from the toe to the marquee, 15 mm in from its edges, one picture across both: u along the panel
+/// as seen from outside, v down it). Its bounds collide.
 struct ArcadeCabinetParams {
     float width = 0.42f;        ///< one cabinet, [0.3, 1.2]
     float height = 1.7f;        ///< [1.2, 2.4]
@@ -614,6 +628,7 @@ struct ArcadeCabinetParams {
     float screenTiltDeg = 8.0f; ///< [0, 25]
     bool slots = true;
     float slotDepth = 0.006f; ///< the screen item's depth, [0.002, 0.05]
+    bool sideArt = false;     ///< the row's outer side panels carry "side_art" (a pack naming that role)
 };
 
 // ---------------------------------------------------------------------------------------------------------------

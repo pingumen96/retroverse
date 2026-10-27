@@ -1845,4 +1845,76 @@ TEST_CASE("geometry/prefabs: the handhelds' counter showcase keeps the display c
     // Lit alone, the vitrine's strips only.
     const ProceduralPrefab lit = buildOk("display_case", {{"boardLight", true}});
     CHECK(part(lit, "board_light").mesh.bounds.min.y > 0.9f);
+    // A counter of a pack without the light has no strip at all (I6 step 6's review: not under its base's top either).
+    json unlitParams = counterParams;
+    unlitParams["boardLight"] = false;
+    const ProceduralPrefab unlit = buildOk("display_case", unlitParams);
+    CHECK(rv::geometry::findPart(unlit, "board_light") == nullptr);
+    CHECK(rv::geometry::findPart(unlit, "plastic_body") != nullptr);
+}
+
+TEST_CASE("geometry/prefabs: the review of I6 step 6: side art, lit handheld screens, a cover per box, a light column",
+          "[geometry][prefabs][arcade]") {
+    // The cabinets' side art: on the outer sides of the row's first and last cabinets only, within the row's bounds,
+    // a few millimetres off the side panels; neither the slots nor the bounds move.
+    const ProceduralPrefab plain = buildOk("arcade_cabinet");
+    const ProceduralPrefab art = buildOk("arcade_cabinet", {{"sideArt", true}});
+    CHECK(rv::geometry::findPart(plain, "side_art") == nullptr);
+    const MeshData& sides = part(art, "side_art").mesh;
+    CHECK(closeTo(art.bounds, plain.bounds));
+    CHECK(art.sockets.size() == plain.sockets.size());
+    CHECK(sides.bounds.min.x == Approx(plain.bounds.min.x + 0.001f).margin(1e-4));
+    CHECK(sides.bounds.max.x == Approx(plain.bounds.max.x - 0.001f).margin(1e-4));
+    CHECK(sides.bounds.min.y > 0.05f);
+    CHECK(sides.bounds.max.y < 1.7f - 0.2f);
+    // Two quads per side, their normals facing out of the row; the picture's uv spans 0..1 across both.
+    std::size_t outward = 0;
+    float uMin = 1.0f;
+    float uMax = 0.0f;
+    float vMin = 1.0f;
+    float vMax = 0.0f;
+    for (const rv::geometry::Vertex& v : sides.vertices) {
+        outward += (v.position.x < 0.0f && v.normal.x < -0.99f) || (v.position.x > 0.0f && v.normal.x > 0.99f) ? 1 : 0;
+        uMin = std::min(uMin, v.uv0.x);
+        uMax = std::max(uMax, v.uv0.x);
+        vMin = std::min(vMin, v.uv0.y);
+        vMax = std::max(vMax, v.uv0.y);
+    }
+    CHECK(outward == sides.vertices.size());
+    CHECK(sides.triangleCount() == 2 * 2 * 2);
+    CHECK(uMin == Approx(0.0f).margin(1e-5));
+    CHECK(uMax == Approx(1.0f).margin(1e-5));
+    CHECK(vMin == Approx(0.0f).margin(1e-5));
+    CHECK(vMax == Approx(1.0f).margin(1e-5));
+    CHECK(part(buildOk("arcade_cabinet", {{"sideArt", true}, {"count", 1}}), "side_art").mesh.triangleCount() == 8);
+
+    // A showcase's handheld lit in "screen", its boxes each a cover of its own.
+    const ProceduralPrefab handheld = buildOk("showcase", {{"item", "handheld"}, {"litScreen", true}});
+    CHECK(rv::geometry::findPart(handheld, "screen") != nullptr);
+    CHECK(rv::geometry::findPart(buildOk("showcase", {{"item", "handheld"}}), "screen") == nullptr);
+    const ProceduralPrefab boxes = buildOk("showcase", {{"item", "boxes"}, {"coverPerBox", true}});
+    CHECK(part(boxes, "cover").mesh.triangleCount() == 2);
+    CHECK(part(boxes, "cover_2").mesh.triangleCount() == 2);
+    CHECK(part(boxes, "cover_3").mesh.triangleCount() == 2);
+    CHECK(part(buildOk("showcase", {{"item", "boxes"}}), "cover").mesh.triangleCount() == 6);
+
+    // A counter's handhelds lit: one display each, on the deck.
+    const json counter{{"slotSize", {0.057, 0.065, 0.008}}, {"counter", true}, {"litScreens", true}};
+    const ProceduralPrefab lit = buildOk("display_case", counter);
+    const MeshData& screens = part(lit, "screen").mesh;
+    CHECK(screens.triangleCount() >= 2 * 4); // a quad per handheld, four at least on a 1.2 m counter
+    CHECK(screens.triangleCount() % 2 == 0);
+    CHECK(screens.bounds.max.y < part(lit, "plastic_body").mesh.bounds.max.y);
+
+    // A light column: a lit tube on the base, the bulb where a drum lamp's would be, within the lamp's bounds.
+    const ProceduralPrefab drum =
+        buildOk("floor_lamp", {{"height", 1.5}, {"shadeRadius", 0.17}, {"shadeHeight", 0.26}});
+    const ProceduralPrefab column =
+        buildOk("floor_lamp", {{"height", 1.5}, {"shadeRadius", 0.17}, {"shadeHeight", 0.26}, {"shade", "tube"}});
+    CHECK(position(socket(column, "LightSource")) == position(socket(drum, "LightSource")));
+    const MeshData& tube = part(column, "lamp_shade").mesh;
+    CHECK(tube.bounds.min.y < 0.1f);
+    CHECK(tube.bounds.max.y > 1.4f);
+    CHECK(tube.bounds.size().x < 0.07f);
+    CHECK(drum.bounds.contains(column.bounds));
 }

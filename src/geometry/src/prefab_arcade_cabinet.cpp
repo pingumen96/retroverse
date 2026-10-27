@@ -41,6 +41,8 @@ constexpr float kScreenMargin = 0.02f;  ///< at least this much plate either sid
 /// offset) never brings an edge through the plate.
 constexpr float kScreenRecess = 0.006f;
 constexpr float kChamfer = 0.003f;
+/// A side panel carrying side art stands this far in from the row's side, the art half-way (I6 step 6's review).
+constexpr float kArtInset = 0.002f;
 
 // The stepped profile, as shares of the depth from the back.
 constexpr float kLowerFrontShare = 0.76f;
@@ -157,9 +159,15 @@ void addCabinet(detail::PrefabAssembler& out, const ArcadeCabinetParams& p, cons
     // The side panels: the lower body, the control panel's band, the screen's and the marquee's (under the cap), each
     // as deep as the profile there, a moulding along each front edge.
     const float screenSideFront = f.bezel + 0.02f;
+    // A side carrying the row's side art stands kArtInset inside the row's width, the art over it (the bounds as
+    // without).
+    const auto artSide = [&](float side) {
+        return p.sideArt && ((side < 0.0f && i == 0) || (side > 0.0f && i == p.count - 1));
+    };
     for (const float side : {-1.0f, 1.0f}) {
-        const float x0 = x + side * half - (side > 0.0f ? kSide : 0.0f);
-        const float x1 = x0 + kSide;
+        const float inset = artSide(side) ? kArtInset : 0.0f;
+        const float x0 = x + side * half - (side > 0.0f ? kSide : 0.0f) + (side < 0.0f ? inset : 0.0f);
+        const float x1 = x0 + kSide - inset;
         boxBetween(body, glm::vec3(x0, 0.0f, f.back), glm::vec3(x1, f.panelBottom, f.lowerFront));
         boxBetween(body, glm::vec3(x0, f.panelBottom, f.back), glm::vec3(x1, p.panelHeight + 0.02f, f.panelFront));
         boxBetween(body, glm::vec3(x0, p.panelHeight + 0.02f, f.back), glm::vec3(x1, f.marqueeBottom, screenSideFront));
@@ -172,6 +180,39 @@ void addCabinet(detail::PrefabAssembler& out, const ArcadeCabinetParams& p, cons
                    glm::vec3(m1, f.marqueeBottom, screenSideFront + kMolding));
         boxBetween(molding, glm::vec3(m0, f.marqueeBottom, f.capFront),
                    glm::vec3(m1, f.marqueeTop, f.capFront + kMolding));
+    }
+
+    // The row's side art (I6 step 6's review): a printed panel on the outer side of its first and last cabinets, from
+    // the toe to the marquee, the stepped profile's outline less a margin; one picture across both quads.
+    if (artSide(-1.0f) || artSide(1.0f)) {
+        constexpr float kArtMargin = 0.015f;
+        const float z0 = f.back + kArtMargin;
+        const float zLow = f.lowerFront - kArtMargin;
+        const float zHigh = screenSideFront - kArtMargin;
+        const float y0 = kToeHeight;
+        const float yBand = p.panelHeight + 0.02f;
+        const float y1 = f.marqueeBottom - kArtMargin;
+        MeshBuilder& art = out.part("side_art");
+        for (const float side : {-1.0f, 1.0f}) {
+            if (!artSide(side)) {
+                continue;
+            }
+            // u along the panel (from the back on the left side, from the front on the right: each read from
+            // outside), v down it.
+            const auto u = [&](float z) { return side < 0.0f ? (z - z0) / (zLow - z0) : (zLow - z) / (zLow - z0); };
+            const auto v = [&](float y) { return (y1 - y) / (y1 - y0); };
+            const float faceX = x + side * (half - 0.5f * kArtInset);
+            const auto quadBetween = [&](float za, float zb, float ya, float yb) {
+                glm::mat4 frame = glm::rotate(glm::mat4(1.0f), side * glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                frame[3] = glm::vec4(faceX, 0.5f * (ya + yb), 0.5f * (za + zb), 1.0f);
+                // The quad's left edge (-X before the turn) is at the back on the left side, the front on the right.
+                const float left = side < 0.0f ? za : zb;
+                const float right = side < 0.0f ? zb : za;
+                art.quad(glm::vec2(zb - za, yb - ya), frame, glm::vec4(u(left), v(yb), u(right), v(ya)));
+            };
+            quadBetween(z0, zLow, y0, yBand);
+            quadBetween(z0, zHigh, yBand, y1);
+        }
     }
 
     // The back, the top cap, the lower front over a recessed toe.

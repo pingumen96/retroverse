@@ -140,8 +140,8 @@ void addConsole(detail::PrefabAssembler& out, const glm::mat4& at, float scale) 
 }
 
 /// An upright handheld of original design leaning back on a small stand (y = 0 the plinth's top), scaled by `scale`:
-/// its body, a dark screen, a cross pad and two buttons.
-void addHandheld(detail::PrefabAssembler& out, const glm::mat4& at, float scale) {
+/// its body, a screen (dark, or in "screen" when `lit`), a cross pad and two buttons.
+void addHandheld(detail::PrefabAssembler& out, const glm::mat4& at, float scale, bool lit) {
     const glm::mat4 frame = glm::scale(at, glm::vec3(scale));
     MeshBuilder& dark = out.part("plastic_dark");
     dark.chamferedBox(glm::vec3(0.07f, 0.02f, 0.06f), 0.004f, frame * translation(glm::vec3(0.0f, 0.01f, -0.005f)));
@@ -150,7 +150,13 @@ void addHandheld(detail::PrefabAssembler& out, const glm::mat4& at, float scale)
     body = body * translation(glm::vec3(0.0f, 0.5f * kHandheld.y, 0.0f));
     out.part("plastic_body").chamferedBox(kHandheld, 0.008f, body);
     const float face = 0.5f * kHandheld.z + 0.001f;
-    dark.box(glm::vec3(0.064f, 0.056f, 0.002f), body * translation(glm::vec3(0.0f, 0.035f, face)));
+    if (lit) {
+        // The lit display inside a dark frame.
+        dark.box(glm::vec3(0.064f, 0.056f, 0.002f), body * translation(glm::vec3(0.0f, 0.035f, face)));
+        out.part("screen").quad(glm::vec2(0.046f, 0.04f), body * translation(glm::vec3(0.0f, 0.035f, face + 0.0012f)));
+    } else {
+        dark.box(glm::vec3(0.064f, 0.056f, 0.002f), body * translation(glm::vec3(0.0f, 0.035f, face)));
+    }
     dark.box(glm::vec3(0.026f, 0.008f, 0.004f), body * translation(glm::vec3(-0.022f, -0.035f, face)));
     dark.box(glm::vec3(0.008f, 0.026f, 0.004f), body * translation(glm::vec3(-0.022f, -0.035f, face)));
     for (const glm::vec2 button : {glm::vec2(0.018f, -0.03f), glm::vec2(0.03f, -0.04f)}) {
@@ -160,11 +166,11 @@ void addHandheld(detail::PrefabAssembler& out, const glm::mat4& at, float scale)
 }
 
 /// `count` upright big boxes of software side by side (y = 0 the plinth's top), scaled by `scale`: each a box of
-/// "plastic_body" with its cover (role "cover", the whole picture) on its front, the outer two turned a little inwards.
-void addBoxes(detail::PrefabAssembler& out, const glm::mat4& at, float scale, int count) {
+/// "plastic_body" with its cover (role "cover", the whole picture; with `perBox` the second and third "cover_2" and
+/// "cover_3") on its front, the outer two turned a little inwards.
+void addBoxes(detail::PrefabAssembler& out, const glm::mat4& at, float scale, int count, bool perBox) {
     const glm::mat4 frame = glm::scale(at, glm::vec3(scale));
     MeshBuilder& body = out.part("plastic_body");
-    MeshBuilder& cover = out.part("cover");
     const float pitch = kBigBox.x + kBigBoxGap;
     for (int i = 0; i < count; ++i) {
         const float offset = static_cast<float>(i) - 0.5f * static_cast<float>(count - 1);
@@ -172,6 +178,7 @@ void addBoxes(detail::PrefabAssembler& out, const glm::mat4& at, float scale, in
         glm::mat4 box = glm::rotate(frame * translation(glm::vec3(offset * pitch, 0.5f * kBigBox.y, 0.0f)), turn,
                                     glm::vec3(0.0f, 1.0f, 0.0f));
         body.chamferedBox(kBigBox, 0.002f, box);
+        MeshBuilder& cover = out.part(perBox && i > 0 ? "cover_" + std::to_string(i + 1) : std::string("cover"));
         cover.quad(glm::vec2(kBigBox.x - 0.006f, kBigBox.y - 0.006f),
                    box * translation(glm::vec3(0.0f, 0.0f, 0.5f * kBigBox.z + 0.0005f)));
     }
@@ -242,9 +249,9 @@ ProceduralPrefab assemble(const ShowcaseParams& p) {
     if (p.item == ShowcaseItem::Console) {
         addConsole(out, itemFrame, in.scale);
     } else if (p.item == ShowcaseItem::Handheld) {
-        addHandheld(out, itemFrame, in.scale);
+        addHandheld(out, itemFrame, in.scale, p.litScreen);
     } else if (p.item == ShowcaseItem::Boxes) {
-        addBoxes(out, itemFrame, in.scale, in.boxes);
+        addBoxes(out, itemFrame, in.scale, in.boxes, p.coverPerBox);
     }
     // The lit strip under the cap, near the front: it lights the item and the lining (emissive, no light of its own).
     if (p.boardLight) {

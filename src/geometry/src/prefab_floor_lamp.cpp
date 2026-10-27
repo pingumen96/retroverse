@@ -65,6 +65,28 @@ ProceduralPrefab assemble(const FloorLampParams& p) {
     metal.frustum(bossRadius, 0.6f * bossRadius, bossHeight, kSegments / 2, true, false,
                   translation(glm::vec3(0.0f, kBaseThickness + 0.5f * bossHeight, 0.0f)));
 
+    if (p.shade == LampShade::Tube) {
+        // A light column (I6 step 6's review): a lit tube from the boss to the top beside a slim spine, metal caps at
+        // both ends; the bulb where a drum's would be, so that the plan's light stays the lamp's.
+        constexpr float kTubeRadius = 0.03f;
+        constexpr float kCapHeight = 0.03f;
+        const float tubeBottom = kBaseThickness + bossHeight + kCapHeight;
+        const float tubeTop = p.height - kCapHeight;
+        metal.cylinder(kTubeRadius + 0.004f, kCapHeight, 24, true,
+                       translation(glm::vec3(0.0f, tubeBottom - 0.5f * kCapHeight, 0.0f)));
+        metal.cylinder(kTubeRadius + 0.004f, kCapHeight, 24, true,
+                       translation(glm::vec3(0.0f, p.height - 0.5f * kCapHeight, 0.0f)));
+        metal.box(glm::vec3(0.012f, tubeTop - tubeBottom, 0.012f),
+                  translation(glm::vec3(0.0f, 0.5f * (tubeBottom + tubeTop), -kTubeRadius - 0.008f)));
+        out.part("lamp_shade")
+            .cylinder(kTubeRadius, tubeTop - tubeBottom, 24, false,
+                      translation(glm::vec3(0.0f, 0.5f * (tubeBottom + tubeTop), 0.0f)));
+        const float armY = p.height - 0.62f * p.shadeHeight;
+        out.addSocket("LightSource", SocketKind::Anchor,
+                      translation(glm::vec3(0.0f, std::min(armY + 0.04f, p.height - 0.2f * p.shadeHeight), 0.0f)));
+        return std::move(out).finish();
+    }
+
     if (p.shade == LampShade::Torchiere) {
         // A torchiere (I6 step 3b): the pole up to a bowl that widens upwards to its rim at the top, the bulb inside.
         const float bowlBottom = p.height - p.shadeHeight;

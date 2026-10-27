@@ -190,7 +190,7 @@ Status validate(const DisplayCaseParams& p) {
 
 /// A generic handheld of original design leaning back on a small stand (its foot at `at`, the deck's top), its front
 /// towards +Z: the body (in `bodyRole`), a dark screen, a cross pad and two buttons.
-void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at, std::string_view bodyRole) {
+void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at, std::string_view bodyRole, bool lit) {
     MeshBuilder& dark = out.part("plastic_dark");
     dark.chamferedBox(glm::vec3(0.065f, 0.018f, 0.055f), 0.003f, translation(at + glm::vec3(0.0f, 0.009f, -0.01f)));
     const float lean = core::degreesToRadians(kHandheldLeanDeg);
@@ -199,6 +199,10 @@ void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at, std::string_
     out.part(bodyRole).chamferedBox(kHandheld, 0.007f, body);
     const float face = 0.5f * kHandheld.z + 0.001f;
     dark.box(glm::vec3(0.06f, 0.052f, 0.002f), body * translation(glm::vec3(0.0f, 0.032f, face)));
+    if (lit) {
+        // The lit display inside the dark frame (I6 step 6's review).
+        out.part("screen").quad(glm::vec2(0.044f, 0.038f), body * translation(glm::vec3(0.0f, 0.032f, face + 0.0012f)));
+    }
     dark.box(glm::vec3(0.024f, 0.007f, 0.004f), body * translation(glm::vec3(-0.02f, -0.032f, face)));
     dark.box(glm::vec3(0.007f, 0.024f, 0.004f), body * translation(glm::vec3(-0.02f, -0.032f, face)));
     for (const glm::vec2 button : {glm::vec2(0.016f, -0.028f), glm::vec2(0.028f, -0.038f)}) {
@@ -240,12 +244,16 @@ void addCounter(detail::PrefabAssembler& out, const DisplayCaseParams& p, float 
     for (int i = 0; i < count; ++i) {
         const float x = (static_cast<float>(i) - 0.5f * static_cast<float>(count - 1)) * kHandheldPitch;
         // Two plastics in turn: the pack's body and accent colours.
-        addHandheld(out, glm::vec3(x, railTop, deckMiddle), i % 2 == 0 ? "plastic_body" : "plastic_accent");
+        addHandheld(out, glm::vec3(x, railTop, deckMiddle), i % 2 == 0 ? "plastic_body" : "plastic_accent",
+                    p.litScreens);
     }
-    out.part("board_light")
-        .box(glm::vec3(2.0f * innerHalf - 0.02f, kStripThickness, kStripDepth),
-             translation(glm::vec3(0.0f, carcassTop - 0.5f * kStripThickness, glassZ - 0.02f - 0.5f * kStripDepth)),
-             BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
+    // Lit inside as the vitrine is (a pack naming "board_light"): a counter of a pack without stays unlit.
+    if (p.boardLight) {
+        out.part("board_light")
+            .box(glm::vec3(2.0f * innerHalf - 0.02f, kStripThickness, kStripDepth),
+                 translation(glm::vec3(0.0f, carcassTop - 0.5f * kStripThickness, glassZ - 0.02f - 0.5f * kStripDepth)),
+                 BoxUv::PerFace, 1.0f, FaceMask::NegY | FaceMask::PosZ);
+    }
 }
 
 ProceduralPrefab assemble(const DisplayCaseParams& p) {
