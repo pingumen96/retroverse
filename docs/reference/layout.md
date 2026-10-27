@@ -67,9 +67,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   titles, `title-key/1`, representatives by region rank, status and revision, priority; 2); `generation.hpp`
   (`generate`, `loadWorldData`), `capacity.hpp`, `seeds.hpp`, the plan's lights (3); `validation.hpp` (`validatePlan`,
   37 rules since I4 step 3) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and
-  `slot_navigation.hpp` (the D-pad steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`),
-  `incremental.hpp` (`update`), `overrides.hpp`
-  (pins: protected, never applied) and `where_is.hpp` (`PlanIndex`; 9); `scene_builder.hpp` (`toSceneFile`,
+  `slot_navigation.hpp` (the D-pad steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`; since I4b
+  step 1 `saveOverrides` and the lock's rollback), `incremental.hpp` (`update`), `overrides.hpp`
+  (pins: protected, never applied; since I4b step 1 schema 2, `writeOverrides`) and `where_is.hpp` (`PlanIndex`; 9);
+  `world_snapshots.hpp` (I4b step 1: the paired snapshots, `commitWorld`, `undoLastAction`, the journal); `scene_builder.hpp` (`toSceneFile`,
   `toSceneDescription`, `loadSceneData`) and `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light
@@ -154,7 +155,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   ten in `additions/`), `esde/snes-single` (one ROM, no media) and `esde/snes-stress` (2,000 generated titles, 300
   second releases), their system `snes` with the invented full name "Lumen 16 Home System", their READMEs stating the
   counts the tests assert; for I4 `esde/building` (step 2: nine systems with invented full names over the ground
-  floor and four floors, every family's covers, a custom system, an excluded one, `additions/` with a new system); `tests/fixtures/world/` the golden selections, plans and scenes), `tests/fake_emulator`
+  floor and four floors, every family's covers, a custom system, an excluded one, `additions/` with a new system);
+  for I4b `esde/overflow` (step 1: 1,700 big boxes and 60 arcade sets, more than their rooms hold); `tests/fixtures/world/` the golden selections, plans and scenes), `tests/fake_emulator`
   (`rv_fake_emulator`, built with the tests or the spikes), `tests/collection_probe` (`rv_collection_probe`, built with
   the tests; its `probe_layout.hpp` shared with the smoke tests), `tests/ui_probe` (`rv_ui_probe`, built with the
   tests, I4 step 7a: the directory from a fixed model; its `directory_fixture.hpp` shared with the unit and smoke
