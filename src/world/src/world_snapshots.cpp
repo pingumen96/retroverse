@@ -339,13 +339,25 @@ Expected<JournalSnapshot> journalSnapshotState(const WorldFiles& files, std::str
                      lossy(folderOf(files, name)));
 }
 
-/// Removes the snapshots beyond the newest kSnapshotsKept, returning their names.
+/// Whether undo may still offer a snapshot: of kind Action, not undone.
+bool undoable(const WorldSnapshot& snapshot) {
+    return snapshot.kind == SnapshotKind::Action && !snapshot.undone;
+}
+
+/// Retires the snapshots beyond kSnapshotsKept (world_snapshots.hpp's rule), returning their names: first those undo
+/// never offers again (undo snapshots, undone ones), oldest first, then the oldest of those it offers.
 std::vector<std::string> rotateSnapshots(const WorldFiles& files) {
     std::vector<std::string> removed;
-    const std::vector<WorldSnapshot> snapshots = listSnapshots(files);
-    for (std::size_t i = kSnapshotsKept; i < snapshots.size(); ++i) {
-        if (retireSnapshot(files, snapshots[i].name)) {
-            removed.push_back(snapshots[i].name);
+    const std::vector<WorldSnapshot> snapshots = listSnapshots(files); // newest first
+    if (snapshots.size() <= kSnapshotsKept) {
+        return removed;
+    }
+    const std::size_t excess = snapshots.size() - kSnapshotsKept;
+    for (const bool offered : {false, true}) {
+        for (auto snapshot = snapshots.rbegin(); snapshot != snapshots.rend() && removed.size() < excess; ++snapshot) {
+            if (undoable(*snapshot) == offered && retireSnapshot(files, snapshot->name)) {
+                removed.push_back(snapshot->name);
+            }
         }
     }
     return removed;
@@ -471,8 +483,7 @@ std::vector<WorldSnapshot> listSnapshots(const WorldFiles& files) {
 std::optional<WorldSnapshot> nextUndo(const std::vector<WorldSnapshot>& snapshots) {
     std::optional<WorldSnapshot> next;
     for (const WorldSnapshot& snapshot : snapshots) {
-        if (snapshot.kind == SnapshotKind::Action && !snapshot.undone &&
-            (!next || snapshot.sequence > next->sequence)) {
+        if (undoable(snapshot) && (!next || snapshot.sequence > next->sequence)) {
             next = snapshot;
         }
     }

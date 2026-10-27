@@ -1,8 +1,8 @@
 // The world's explicit actions (rv/world/world_snapshots.hpp, ADR-0015 §6; I4b step 1): saveOverrides() under the
 // world lock, the plan and the overrides committed together behind a paired snapshot, snapshot.json read back, an
-// action interrupted at each point rolled back at the next lock (the plan and the overrides never disagree), the last
-// 20 snapshots kept, undo restoring both files byte for byte and walking back, undo of undo refused, a dry run writing
-// nothing, a damaged snapshot refused. The CLI's undo on a fixture world is test_cli_worldplan_undo.cpp's.
+// action interrupted at each point rolled back at the next lock (the plan and the overrides never disagree, and no
+// snapshot that changes nothing is left), the last 20 snapshots kept, 20 actions undone in a row, undo restoring both
+// files byte for byte and walking back, undo of undo refused, a dry run writing nothing, a damaged snapshot refused. The CLI's undo on a fixture world is test_cli_worldplan_undo.cpp's.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -358,6 +358,44 @@ TEST_CASE("world/snapshots: the last 20 snapshots are kept", "[world][snapshots]
     CHECK(kept.back().name == names[5]);
     CHECK(kept.back().sequence == 6);
     CHECK_FALSE(std::filesystem::exists(world.files.snapshots / names[4]));
+}
+
+TEST_CASE("world/snapshots: 20 actions in a row are undone one after the other", "[world][snapshots]") {
+    // The undo snapshots and the undone ones go first: undoing never pushes out the actions left to undo.
+    World world(20);
+    const WorldState first = stateOf(world.files);
+    auto lock = WorldLock::acquire(world.files);
+    REQUIRE(lock.has_value());
+    std::vector<WorldState> states{first};
+    for (std::size_t i = 0; i < rv::world::kSnapshotsKept; ++i) {
+        const GenerationResult next = resultOf(21 + i);
+        auto committed =
+            rv::world::commitWorld(*lock, WorldAction{"edit", ""}, next, pinsOf(next, i % 3), world.options);
+        REQUIRE(committed.has_value());
+        REQUIRE(committed->written);
+        states.push_back(stateOf(world.files));
+    }
+    rv::world::UndoOptions options;
+    options.clock = world.options.clock;
+    for (std::size_t i = 0; i < rv::world::kSnapshotsKept; ++i) {
+        INFO("undo " << i + 1);
+        auto undone = rv::world::undoLastAction(*lock, options);
+        REQUIRE(undone.has_value());
+        states.pop_back();
+        CHECK(stateOf(world.files) == states.back());
+        CHECK(rv::world::listSnapshots(world.files).size() <= rv::world::kSnapshotsKept);
+        // Each undo retires one snapshot never offered again, the oldest: the action just undone or an older undo's.
+        CHECK(undone->snapshotsRemoved.size() == 1);
+    }
+    CHECK(stateOf(world.files) == first);
+    auto none = rv::world::undoLastAction(*lock, options);
+    REQUIRE_FALSE(none.has_value());
+    CHECK(none.error().code == rv::ErrorCode::NotFound);
+    // What is left: the 20 undo snapshots, each of the state it replaced.
+    const std::vector<WorldSnapshot> kept = rv::world::listSnapshots(world.files);
+    CHECK(kept.size() == rv::world::kSnapshotsKept);
+    CHECK(std::all_of(kept.begin(), kept.end(),
+                      [](const WorldSnapshot& snapshot) { return snapshot.kind == SnapshotKind::Undo; }));
 }
 
 TEST_CASE("world/snapshots: undo restores the plan and the overrides byte for byte, never an undo",

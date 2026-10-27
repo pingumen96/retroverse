@@ -48,7 +48,10 @@
 namespace rv::world {
 
 inline constexpr std::string_view kSnapshotFileName = "snapshot.json";
-/// The snapshots kept in backups/snapshots/, the newest (ADR-0015 §6).
+/// The snapshots kept in backups/snapshots/ (ADR-0015 §6). After each action the rotation keeps at most this many:
+/// beyond them it removes first the snapshots undo never offers again (of kind Undo, or undone), oldest (by sequence)
+/// first, and only then the oldest of those it offers; so the newest 20 actions not undone are always kept, and 20
+/// actions in a row can be undone one after the other.
 inline constexpr std::size_t kSnapshotsKept = 20;
 inline constexpr std::int64_t kSnapshotSchemaVersion = 1;
 inline constexpr std::int64_t kTransactionSchemaVersion = 1;
