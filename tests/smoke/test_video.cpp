@@ -1,7 +1,8 @@
-// The hero CRT's video (I3 step 11, ADR-0012 §7): the test room's CRT playing generated clips (media::writeTestVideo,
-// written into the case directory, never committed) of a mock catalog's games, through app::ScreenService. The run
-// reports tell what the screen did (the video section: the one decoder, the clip's frames, the fallbacks, the
-// launches); the screenshots show it (--video-freeze-pts holds one frame, the same in two runs).
+// The hero CRT's video (I3 step 11, ADR-0012 §7; since I5 step 1 its playlist, ADR-0016 §3): the test room's CRT
+// playing generated clips (media::writeTestVideo, written into the case directory, never committed) of a mock
+// catalog's games, through app::ScreenService. The run reports tell what the screen did (the video section: the one
+// decoder, the clip's frames, the fallbacks, the launches, the games played and the pictures shown); the screenshots
+// show it (--video-freeze-pts holds one frame, the same in two runs).
 
 #include "image_checks.hpp"
 #include "launch_support.hpp"
@@ -306,9 +307,8 @@ TEST_CASE("video: --video-freeze-pts holds one frame, the same in two runs", "[g
     CHECK(moved.outside * 100 <= moved.pixels);
 
     // Without a game to show, the screen keeps its own picture (the colour bars), as golden G01 shows it: the video
-    // replaced it, there only.
-    const std::filesystem::path idleCatalog =
-        writeCatalog(dir, Json::array({videoGame("g000000000000b009", "Senza Media")}));
+    // replaced it, there only. (Since I5 step 1 a game without media shows its title card: no game at all here.)
+    const std::filesystem::path idleCatalog = writeCatalog(dir, Json::array());
     const std::filesystem::path idleShot = dir / "idle.png";
     const AppRun idle =
         runVideo(dir, "idle", idleCatalog, 40,
@@ -377,7 +377,8 @@ TEST_CASE("video: missing, empty, corrupt, truncated and unsupported files fall 
           {"cover", "pictures/cover.png"}},
          "cover",
          {{"screenshot", "unsupported"}, {"title-screen", "parse-error"}, {"video", "truncated"}}},
-        {"unsupported_codec", {{"video", "clips/unsupported.avi"}}, "idle-pattern", {{"video", "unsupported-codec"}}},
+        // I5 step 1: the chain ends at the game's title card (ADR-0016 §8), never the colour bars.
+        {"unsupported_codec", {{"video", "clips/unsupported.avi"}}, "title-card", {{"video", "unsupported-codec"}}},
         {"not_playable",
          {{"video", "clips/clip.flv"}, {"cover", "pictures/cover.png"}},
          "cover",
@@ -511,4 +512,174 @@ TEST_CASE("video: the decoder is stopped and joined before a launch and reopened
     CHECK(*video.firstPtsSeconds >= *stop.positionSeconds - 1.5 / kClipFps);
     CHECK(*video.firstPtsSeconds < *stop.positionSeconds + 0.5);
     WARN("decoder stopped for the launch in " << stop.stopMs << " ms at " << *stop.positionSeconds << " s");
+}
+
+// --- I5 step 1 (ADR-0016 §3, §8): the playlist, the picture held between clips, the title card ----------------------
+
+namespace {
+
+/// The playlist's room: a game without media first (the quick catalog opens on it), then three games with 3 s clips,
+/// in the order of tests/unit/app/test_screen_policy.cpp's playlistRoom(). video.json gives the hero 2 s a game.
+std::filesystem::path writePlaylistRoom(const std::filesystem::path& dir) {
+    writeClip(dir / "clips" / "e001.mp4", 3.0, 61);
+    writeClip(dir / "clips" / "e002.mp4", 3.0, 62);
+    writeClip(dir / "clips" / "e003.mp4", 3.0, 63);
+    const std::filesystem::path config = dir / "data" / "config";
+    std::filesystem::create_directories(config);
+    REQUIRE(rv::core::writeTextFileAtomic(config / "video.json", R"({"hero": {"previewDuration": 2}})"
+                                                                   "\n")
+                .has_value());
+    Json silent = videoGame("g000000000000e009", "Acquerello Muto");
+    silent["year"] = 1994;
+    return writeCatalog(
+        dir, Json::array({silent, videoGame("g000000000000e001", "Bussola d'Ottone", {{"video", "clips/e001.mp4"}}),
+                          videoGame("g000000000000e002", "Campana di Rame", {{"video", "clips/e002.mp4"}}),
+                          videoGame("g000000000000e003", "Duna di Vetro", {{"video", "clips/e003.mp4"}})}));
+}
+
+/// The F12 screenshots of a run (<data>/screenshots), in the order they were taken (their names).
+std::vector<std::filesystem::path> takenScreenshots(const std::filesystem::path& dir) {
+    std::vector<std::filesystem::path> files;
+    std::error_code error;
+    for (const auto& entry : std::filesystem::directory_iterator(dir / "data" / "screenshots", error)) {
+        if (entry.path().extension() == ".png") {
+            files.push_back(entry.path());
+        }
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+/// The screen's own picture in the test room: the colour bars a run without a game shows, from the scene camera.
+rv::assets::ImageData idleShot(const std::filesystem::path& dir) {
+    std::filesystem::create_directories(dir / "idle");
+    const std::filesystem::path catalog = writeCatalog(dir / "idle", Json::array());
+    const std::filesystem::path shot = dir / "idle" / "idle.png";
+    const AppRun idle =
+        runVideo(dir / "idle", "idle", catalog, 20, {"--screenshot", arg(shot), "--screenshot-size", "960x540"});
+    const rv::app::VideoRecord& video = requireVideo(idle);
+    CHECK(video.picture == "idle-pattern");
+    return requireScreenshot(idle, shot, kShotSize);
+}
+
+} // namespace
+
+TEST_CASE("video: the hero screen plays its playlist, holding the last frame between clips, never its pattern",
+          "[gpu][video][playlist]") {
+    const std::filesystem::path dir = freshCaseDir("video/playlist");
+    const std::filesystem::path catalog = writePlaylistRoom(dir);
+    // F12 screenshots around the first two switches (frames 120 and 240, the policy's table), every other frame (a press
+    // needs a release between).
+    Json steps = Json::array();
+    for (const int center : {120, 240}) {
+        for (int frame = center - 2; frame <= center + 6; frame += 2) {
+            steps.push_back(step(frame, frame, {{"screenshot", 1}}));
+        }
+    }
+    const AppRun run = runVideo(dir, "playlist", catalog, 450,
+                                {"--input-script", arg(writeScript(dir, "shots.json", steps)), "--screenshot-size",
+                                 "960x540"});
+    const rv::app::VideoRecord& video = requireVideo(run);
+    INFO(run.describe());
+    CHECK(video.playlistMode == "shuffle");
+    CHECK(video.playlistRoom == "m0_testroom");
+    CHECK(video.previewSeconds == 2.0);
+    CHECK(video.playlistOrder ==
+          std::vector<std::string>{"g000000000000e002", "g000000000000e003", "g000000000000e001"});
+    // The start choice, then the playlist in the unit table's order (test_screen_policy.cpp: frames 0, 120, 240, 360),
+    // 2 s each.
+    const std::vector<std::pair<std::string, std::string>> expected{{"g000000000000e001", "start"},
+                                                                    {"g000000000000e002", "playlist"},
+                                                                    {"g000000000000e003", "playlist"},
+                                                                    {"g000000000000e001", "playlist"}};
+    std::vector<std::pair<std::string, std::string>> played;
+    for (const rv::app::VideoPlayedRecord& entry : video.played) {
+        played.emplace_back(entry.gameId, entry.origin);
+    }
+    CHECK(played == expected);
+    REQUIRE(video.played.size() == expected.size());
+    for (std::size_t i = 1; i < video.played.size(); ++i) {
+        CHECK(std::abs(video.played[i].atSeconds - video.played[i - 1].atSeconds - 2.0) < 1.5 * kStep);
+    }
+    CHECK(video.decodersStarted == 4);
+    CHECK(video.maxDecoderThreads == 1);
+    CHECK(video.fallbacks.empty());
+    // No frame of a switch shows the screen's own pattern: after the first clip's first frame, every picture shown is
+    // a clip, and the frames between two clips held the last one's.
+    std::size_t firstVideo = video.shown.size();
+    for (std::size_t i = 0; i < video.shown.size(); ++i) {
+        if (video.shown[i].picture == "video") {
+            firstVideo = std::min(firstVideo, i);
+        }
+        if (i > firstVideo) {
+            INFO("shown " << i << ": " << video.shown[i].gameId << " " << video.shown[i].picture);
+            CHECK(video.shown[i].picture == "video");
+        }
+    }
+    CHECK(video.shown.size() - firstVideo == 4);
+    CHECK(video.heldFrames > 0);
+    WARN("frames held between clips: " << video.heldFrames << "; frames of the pattern before the first frame: "
+                                       << video.idleFramesWithGame);
+
+    // The probes: each screenshot of a switch shows a picture on the tube, never the colour bars.
+    const rv::assets::ImageData bars = idleShot(dir);
+    const auto [crtMin, crtMax] = crtRegion();
+    const std::vector<std::filesystem::path> shots = takenScreenshots(dir);
+    REQUIRE(shots.size() == steps.size());
+    for (const std::filesystem::path& file : shots) {
+        INFO(arg(file));
+        auto shot = rv::assets::loadImage(file);
+        REQUIRE(shot.has_value());
+        REQUIRE(shot->width == kShotSize.x);
+        const Difference fromBars = difference(*shot, bars, crtMin, crtMax);
+        INFO("differs from the colour bars in " << fromBars.pixels << " pixel(s)");
+        CHECK(fromBars.pixels > 1000);
+    }
+}
+
+TEST_CASE("video: a game without media shows its title card, and the playlist comes back after it",
+          "[gpu][video][playlist]") {
+    const std::filesystem::path dir = freshCaseDir("video/title_card");
+    const std::filesystem::path catalog = writePlaylistRoom(dir);
+    // The quick catalog opens on the game without media (selected after the dwell); closed at frame 60: its turn lasts
+    // 2 s more (an F12 screenshot of its card at frame 120, the catalog gone), then the start choice it interrupted
+    // plays again.
+    const std::filesystem::path script =
+        writeScript(dir, "card.json",
+                    Json::array({step(2, 2, {{"quick_catalog", 1}}), step(60, 60, {{"ui_back", 1}}),
+                                 step(120, 120, {{"screenshot", 1}})}));
+    const AppRun run =
+        runVideo(dir, "card", catalog, 240, {"--input-script", arg(script), "--screenshot-size", "960x540"});
+    const rv::app::VideoRecord& video = requireVideo(run);
+    INFO(run.describe());
+    std::vector<std::pair<std::string, std::string>> played;
+    for (const rv::app::VideoPlayedRecord& entry : video.played) {
+        played.emplace_back(entry.gameId, entry.origin);
+    }
+    const std::vector<std::pair<std::string, std::string>> expected{
+        {"g000000000000e001", "start"}, {"g000000000000e009", "selection"}, {"g000000000000e001", "start"}};
+    CHECK(played == expected);
+    REQUIRE(video.played.size() == 3);
+    // Let go at frame 60: 2 s later (the first frame let go starts the hold).
+    CHECK(std::abs(video.played[2].atSeconds - (61 * kStep + 2.0)) < 2.5 * kStep);
+    CHECK(video.selections == 1);
+    CHECK(video.fallbacks.empty()); // no media to fail: the card is the chain's whole
+    const auto card = std::find_if(video.shown.begin(), video.shown.end(), [](const rv::app::VideoShownRecord& entry) {
+        return entry.gameId == "g000000000000e009";
+    });
+    REQUIRE(card != video.shown.end());
+    CHECK(card->picture == "title-card");
+    for (const rv::app::VideoShownRecord& entry : video.shown) {
+        CHECK((entry.picture != "idle-pattern" || &entry == &video.shown.front()));
+    }
+    CHECK(video.picture == "video");
+
+    const std::vector<std::filesystem::path> shots = takenScreenshots(dir);
+    REQUIRE(shots.size() == 1);
+    auto shot = rv::assets::loadImage(shots.front());
+    REQUIRE(shot.has_value());
+    const auto [crtMin, crtMax] = crtRegion();
+    const Difference fromBars = difference(*shot, idleShot(dir), crtMin, crtMax);
+    INFO("the card differs from the colour bars in " << fromBars.pixels << " pixel(s)");
+    CHECK(fromBars.pixels > 1000);
 }
