@@ -633,15 +633,22 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
     const auto migrated = rv::world::readStoredPlan(planFile);
     REQUIRE(migrated.has_value());
     CHECK(migrated->plan.generatorVersion == rv::world::kGeneratorVersion);
-    // The rooms re-placed stand where placeOnHub() put them; compared below as they stood before (their contents). The
-    // theme pack every update records for its floor (I6 step 3, ADR-0014 §1: a look, never a reason; generator 1.3 had
-    // none per floor) is compared as it stood too.
+    // The rooms re-placed stand where placeOnHub() put them (a room migrated in the same update, I6 step 6's arcade
+    // room, at its x and yaw there, its z following its new depth); compared below as they stood before (their
+    // contents). The theme pack every update records for its floor (I6 step 3, ADR-0014 §1: a look, never a reason;
+    // generator 1.3 had none per floor) is compared as it stood too.
     rv::world::WorldPlan migratedAsStood = migrated->plan;
     std::size_t repacked = 0;
     for (rv::world::Room& room : migratedAsStood.rooms) {
+        const bool alsoMigrated = std::any_of(expected.begin(), expected.end(),
+                                              [&](const rv::world::MigratedRoom& entry) { return entry.room == room.id; });
         for (const rv::world::ReplacedRoom& entry : replaced) {
             if (entry.room == room.id) {
-                CHECK(room.placement == entry.to);
+                CHECK(room.placement.xMm == entry.to.xMm);
+                CHECK(room.placement.yawHalfTurns == entry.to.yawHalfTurns);
+                if (!alsoMigrated) {
+                    CHECK(room.placement == entry.to);
+                }
                 room.placement = entry.from;
             }
         }
