@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <rv/core/backups.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
@@ -52,7 +53,7 @@ struct KeptFile {
     std::string_view name;
     std::string WorldSnapshot::* digest;
 };
-const std::array<KeptFile, 3> kKeptFiles{{
+const std::array<KeptFile, 3> kKeptFiles{{ // the plan last (undoLastAction() finds it there)
     {&WorldFiles::overrides, kOverridesFileName, &WorldSnapshot::overridesDigest},
     {&WorldFiles::meta, kPlanMetaFileName, &WorldSnapshot::metaDigest},
     {&WorldFiles::plan, kPlanFileName, &WorldSnapshot::planDigest},
@@ -776,6 +777,24 @@ Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoO
     report.restored = *target;
     if (options.dryRun) {
         return report;
+    }
+
+    // The restore writes the plan byte for byte (core::writeFileAtomic, not savePlan(), which would write it anew), but
+    // keeps savePlan()'s backup of the plan it replaces (ADR-0015 §6: every plan write keeps its backup; ADR-0010 §9).
+    auto plan = readIfThere(files.plan);
+    if (!plan) {
+        return propagate(plan.error());
+    }
+    const auto& restoredPlan = (*kept)[kKeptFiles.size() - 1]; // kKeptFiles' last: the plan
+    if (*plan && (!restoredPlan || *restoredPlan != **plan)) {
+        core::BackupOptions backup;
+        backup.keep = kPlanBackupsKept;
+        backup.clock = options.clock;
+        auto backedUp = core::backUpFile(files.plan, files.backups, backup);
+        if (!backedUp) {
+            return propagate(backedUp.error());
+        }
+        report.planBackup = std::move(backedUp->backup);
     }
 
     WorldSnapshot record;

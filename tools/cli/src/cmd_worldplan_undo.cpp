@@ -121,6 +121,7 @@ ExitCode runWorldPlanUndo(CommandContext& context, std::span<const std::string> 
         json["dryRun"] = options.dryRun;
         json["restored"] = snapshotJson(restored);
         json["kept"] = undone->kept ? snapshotJson(*undone->kept) : CatalogJson(nullptr);
+        json["planBackup"] = undone->planBackup ? CatalogJson(pathText(*undone->planBackup)) : CatalogJson(nullptr);
         json["snapshotsRemoved"] = undone->snapshotsRemoved;
         json["rolledBack"] = lock->rolledBack() ? CatalogJson(*lock->rolledBack()) : CatalogJson(nullptr);
         text = jsonText(json);
@@ -132,6 +133,10 @@ ExitCode runWorldPlanUndo(CommandContext& context, std::span<const std::string> 
         if (undone->kept) {
             text += fmt::format("  {:<17}the state replaced, as {} (never undone: no redo)\n", "Kept:",
                                 undone->kept->name);
+        }
+        if (undone->planBackup) {
+            text += fmt::format("  {:<17}the plan replaced, as {}\n", "Plan backup:",
+                                pathText(undone->planBackup->filename()));
         }
         for (const std::string& removed : undone->snapshotsRemoved) {
             text += fmt::format("  {:<17}{}\n", "Rotated out:", removed);

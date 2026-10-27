@@ -24,6 +24,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <rv/core/backups.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/time.hpp>
@@ -452,6 +453,7 @@ TEST_CASE("world/snapshots: undo restores the plan and the overrides byte for by
     REQUIRE(dry.has_value());
     CHECK(dry->restored == *last->snapshot);
     CHECK_FALSE(dry->kept.has_value());
+    CHECK_FALSE(dry->planBackup.has_value());
     CHECK(stateOf(world.files) == afterSecondAction);
     CHECK(rv::world::listSnapshots(world.files).size() == 2);
 
@@ -470,6 +472,11 @@ TEST_CASE("world/snapshots: undo restores the plan and the overrides byte for by
     CHECK(undone->kept->planDigest == rv::core::sha256Hex(*afterSecondAction.plan));
     CHECK(undone->kept->overridesDigest == rv::core::sha256Hex(*afterSecondAction.overrides));
     CHECK_FALSE(std::filesystem::exists(world.files.transaction));
+    // The plan it replaced kept in backups/, as savePlan() keeps it.
+    REQUIRE(undone->planBackup.has_value());
+    CHECK(undone->planBackup->parent_path() == world.files.backups);
+    CHECK(contentOf(*undone->planBackup) == afterSecondAction.plan);
+    CHECK(rv::core::listBackupsOf(world.files.plan, world.files.backups).front() == *undone->planBackup);
 
     // Undo walks back: the first action undone, the world as it was before it (no overrides.json: removed).
     auto back = rv::world::undoLastAction(*lock, options);

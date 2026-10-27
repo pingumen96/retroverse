@@ -207,8 +207,9 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `worldplan undo [--library <id>] [--dry-run] [--json]` restores the newest snapshot of an action not undone yet,
   byte for byte (the plan, its meta sidecar and `overrides.json`; a file the snapshot did not hold removed), under the
   world lock, behind a snapshot of kind `undo` of the state it replaced, which undo never offers (no redo): "Undid
-  <action> of <scope>: the snapshot <name> taken <time> by <writer>", the digests, "Kept:" (JSON `dryRun`,
-  `restored`, `kept`, `snapshotsRemoved`, `rolledBack`). `--dry-run` names it and writes nothing. Exit 0 undone; 1
+  <action> of <scope>: the snapshot <name> taken <time> by <writer>", the digests, "Kept:", "Plan backup:" (the plan
+  it replaced, kept in `backups/` as every plan write keeps it) (JSON `dryRun`, `restored`, `kept`, `planBackup`,
+  `snapshotsRemoved`, `rolledBack`). `--dry-run` names it and writes nothing. Exit 0 undone; 1
   nothing to undo (no world, no snapshot, or only undone ones and undos: "the last change was an undo, which is never
   undone (no redo)"); 2 usage; 3 the lock held by another program, a damaged snapshot (its files not those its digests
   name: nothing written), a failed read or write.

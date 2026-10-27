@@ -33,6 +33,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -182,12 +183,17 @@ struct UndoReport {
     WorldSnapshot restored;
     /// The state it replaced, kept as a snapshot of kind Undo; none for a dry run.
     std::optional<WorldSnapshot> kept;
+    /// The backup in backups/ of the plan the restore replaced (as savePlan() keeps one); none for a dry run, or when
+    /// the plan did not change.
+    std::optional<std::filesystem::path> planBackup;
     std::vector<std::string> snapshotsRemoved;
 };
 
 /// Undoes the last explicit action not undone yet, under `lock`: the newest snapshot of kind Action not undone
 /// restored byte for byte (the plan, its sidecar and overrides.json; a file it did not hold removed) as a transaction
-/// of its own, behind a snapshot of kind Undo of the state it replaces; the snapshot restored marked undone. Errors:
+/// of its own, behind a snapshot of kind Undo of the state it replaces; the snapshot restored marked undone. The plan
+/// is written as the snapshot kept it (core::writeFileAtomic, not savePlan()), after the plan it replaces is copied
+/// into backups/ as savePlan() does. Errors:
 /// InvalidArgument for a lock moved from; NotFound when there is nothing to undo (no snapshot, or only undo snapshots
 /// and undone ones: an undo is never undone); ValidationFailed when the snapshot's files are not those its digests
 /// name or one is missing, or while a snapshot folder is damaged (SnapshotScan::damaged; nothing written); those of

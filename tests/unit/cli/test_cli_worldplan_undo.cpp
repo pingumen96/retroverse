@@ -218,6 +218,8 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(result["kept"]["kind"] == "undo");
     CHECK(result["kept"]["undoes"] == name);
     CHECK(result["rolledBack"].is_null());
+    REQUIRE(result["planBackup"].is_string());
+    CHECK(contentOf(rv::core::pathFromUtf8(result["planBackup"].get<std::string>())) == secondPlan);
     CHECK(contentOf(session.files.plan) == firstPlan);
     CHECK(contentOf(session.files.meta) == firstMeta);
     CHECK(contentOf(session.files.overrides) == handOverrides);
