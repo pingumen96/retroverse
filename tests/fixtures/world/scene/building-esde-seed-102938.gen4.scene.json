@@ -785,7 +785,7 @@
       ],
       "textures": {
         "screen": {
-          "pattern": "color_bars"
+          "pattern": "standby"
         }
       }
     },
