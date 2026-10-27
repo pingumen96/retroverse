@@ -84,7 +84,8 @@
 
 		<div data-if="notice == 'rooms-migrated'">
 			<h1>Alcune stanze sono state riordinate</h1>
-			<p>Custodie e scatole ora stanno in piedi sugli scaffali e mostrano la costa. I giochi in vetrina sono stati
+			<p>Alcune stanze ora mostrano i giochi in un modo nuovo: custodie e scatole in piedi sugli scaffali con la
+				costa in vista, i giochi della sala giochi sugli schermi dei cabinati. I giochi in vetrina sono stati
 				scelti di nuovo; il catalogo rapido (Tab) li trova tutti come prima.</p>
 		</div>
 	</div>

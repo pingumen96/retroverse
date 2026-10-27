@@ -42,8 +42,8 @@ inline constexpr std::string_view kFailed = "failed";
 /// the floor for kShownSeconds.
 inline constexpr std::string_view kRoomUnreachable = "room-unreachable";
 /// I6 step 4 (ADR-0014 §2): the update that saved the building migrated rooms of cases and boxes once to their
-/// families' successors (standing on their side, the spine out): shown over the floor for kShownSeconds, once (the next
-/// update migrates nothing).
+/// families' successors (standing on their side, the spine out; since I6 step 6 the arcade room's cases to its
+/// cabinets' screens): shown over the floor for kShownSeconds, once (the next update migrates nothing).
 inline constexpr std::string_view kRoomsMigrated = "rooms-migrated";
 
 /// Every key with a sentence of its own.

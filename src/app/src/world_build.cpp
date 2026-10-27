@@ -533,9 +533,11 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
     // The rooms of cases and boxes migrated once to their families' successors (I6 step 4, ADR-0014 §2): said in the
     // log and by a notice over the floor (the next update migrates nothing, so it shows once).
     for (const world::MigratedRoom& migrated : result->changes.migratedRooms) {
-        spdlog::info("World: {} is rearranged once, from the media family {} to {} (its cases or boxes now stand on "
-                     "their side, the spine out)",
-                     migrated.room.toString(), migrated.from, migrated.to);
+        spdlog::info("World: {} is rearranged once, from the media family {} to {} ({})", migrated.room.toString(),
+                     migrated.from, migrated.to,
+                     migrated.to == world::kArcadeRoomFamily
+                         ? "its games now stand on its arcade cabinets' screens"
+                         : "its cases or boxes now stand on their side, the spine out");
         if (migrated.unplacedForCapacity > 0) {
             spdlog::warn("World: {} holds no slot for {} of its titles after its rearrangement (unplaced for capacity)",
                          migrated.room.toString(), migrated.unplacedForCapacity);
