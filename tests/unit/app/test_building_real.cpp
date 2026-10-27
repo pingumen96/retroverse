@@ -688,7 +688,15 @@ TEST_CASE("app/world: the real library's building of generator 1.3 migrated once
         CHECK(now.floor == then.floor);
         CHECK(now.sections == then.sections);
         CHECK(now.seed == then.seed);
-        CHECK(now.placement.xMm == then.placement.xMm);
+        // Where it stood on its floor, or where the update re-placed it onto the hub (I6 step 6: the arcade room, both
+        // migrated to its cabinets and re-placed in the same update).
+        std::int64_t xMm = then.placement.xMm;
+        for (const rv::world::ReplacedRoom& placed : replaced) {
+            if (placed.room == entry.room) {
+                xMm = placed.to.xMm;
+            }
+        }
+        CHECK(now.placement.xMm == xMm);
         CHECK(now.placement.yawHalfTurns == then.placement.yawHalfTurns);
         const auto count = [&](const rv::world::WorldPlan& plan, bool faceOut) {
             std::size_t total = 0;
