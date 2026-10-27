@@ -36,7 +36,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
   `world_launch_ui.hpp` (15a), `screen_room.hpp` (I4 step 6b: which room's CRT is the hero CRT), `elevator_ride.hpp`
   (I4 step 7b: the ride's state machine), `directory_data.hpp` (7b: the directory's building and games, where its
-  commands lead) and `elevator_prompt_ui.hpp` (7b). `rv_app_catalog`
+  commands lead) and `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its
+  title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
+  defaults `assets/config/video.json`). `rv_app_catalog`
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's

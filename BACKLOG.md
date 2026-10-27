@@ -186,10 +186,8 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Asynchronous copies:** NVIDIA reports id 131154 ("Pixel transfer is synchronized with 3D rendering") for every
   upload, about 0.5 ms GPU per 720p frame: try a second GL context for the copies (the debug filter drops the id on
   NVIDIA since I3 step 11).
-- **No colour bars between two clips:** when the hero CRT's selection moves from one clip to another and neither game
-  has a still, the screen shows its colour bars for the frame or two the previous decoder's thread takes to end (one
-  decoder thread at a time, I3 step 11); keep the previous clip's last frame up instead (the scheduler's, or I3 step 13b
-  if it shows in the room).
+- **No colour bars between two clips:** done in I5 step 1 (`docs/i5/step-1.md`): the previous picture stays up until
+  the next game's still or first frame, and the building's screens show `standby`, not the bars.
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
 - **Library-wide checks:** the corruption and truncation thresholds against every video of the collection; an hour-long
   soak with the scene renderer.
