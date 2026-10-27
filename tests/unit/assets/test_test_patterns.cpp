@@ -301,7 +301,7 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
           std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon", "poster_memphis",
                                         "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal",
-                                        "board"});
+                                        "board", "marquee"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());
@@ -543,4 +543,25 @@ TEST_CASE("assets/test_patterns: the hub's information board (I6 step 5)", "[ass
     }
     CHECK(rv::assets::makeNamedPattern("board", 256, 128, many, 0).has_value());
     CHECK(rv::assets::makeNamedPattern("board", 3, 2, "", 0).has_value());
+}
+
+TEST_CASE("assets/test_patterns: an arcade cabinet's marquee (I6 step 6)", "[assets][patterns]") {
+    // A backlit panel: bright in its middle row, darker towards its edges, a dark band along its top and bottom, the
+    // word in dark lettering; opaque, deterministic, the sparkles placed by the seed.
+    const auto marquee = rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 3);
+    REQUIRE(marquee.has_value());
+    CHECK(marquee->pixels == rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 3)->pixels);
+    CHECK(marquee->pixels != rv::assets::makeNamedPattern("marquee", 256, 64, "PLAY", 4)->pixels);
+    CHECK(pixel(*marquee, 128, 1) == Rgba(60, 60, 60, 255));  // the top band
+    CHECK(pixel(*marquee, 128, 62) == Rgba(60, 60, 60, 255)); // the bottom band
+    std::size_t lettering = 0;
+    std::size_t bright = 0;
+    for (std::size_t i = 0; i < marquee->pixels.size(); i += 4) {
+        CHECK(marquee->pixels[i + 3] == 255);
+        lettering += marquee->pixels[i] == 40 && marquee->pixels[i + 1] == 18 ? 1 : 0;
+        bright += marquee->pixels[i] >= 200 ? 1 : 0;
+    }
+    CHECK(lettering > 100);
+    CHECK(bright * 2 > marquee->pixels.size() / 4); // mostly a lit panel
+    CHECK(rv::assets::makeNamedPattern("marquee", 3, 2, "", 0).has_value());
 }

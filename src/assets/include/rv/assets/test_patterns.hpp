@@ -87,6 +87,10 @@ inline constexpr std::string_view kPatternTerminal = "terminal";
 /// tungsten amber over a rule), the others listed below it in ivory, each after a small amber marker, on a dark navy
 /// ground in a thin amber border; as many lines as fit at one text size (the longest line sets it), the rest left out.
 inline constexpr std::string_view kPatternBoard = "board";
+/// An arcade cabinet's marquee (I6 step 6): a backlit panel (white, darker towards its top and bottom edges, a dark
+/// band along each), `title` across it in dark lettering, small sparkles placed by `seed`; drawn times its material's
+/// colour, a lit panel of that colour.
+inline constexpr std::string_view kPatternMarquee = "marquee";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
@@ -94,7 +98,7 @@ inline constexpr std::string_view kPatternBoard = "board";
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
 /// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`); the era posters, the cork board and the terminal
-/// above (I6 step 3b); "board" (I6 step 5, above). Errors: NotFound for an unknown name,
+/// above (I6 step 3b); "board" (I6 step 5, above); "marquee" (I6 step 6, above). Errors: NotFound for an unknown name,
 /// InvalidArgument for a side outside [1, kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);

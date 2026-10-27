@@ -1137,14 +1137,41 @@ ImageData informationBoard(int width, int height, std::string_view title) {
     return image;
 }
 
+/// An arcade cabinet's marquee (I6 step 6), see kPatternMarquee.
+ImageData marqueePanel(int width, int height, std::string_view title, std::uint32_t seed) {
+    ImageData image = makeSolid(width, height, Rgba(255, 255, 255, 255));
+    if (!image.isValid()) {
+        return image;
+    }
+    for (int y = 0; y < height; ++y) {
+        const float t = std::abs((static_cast<float>(y) + 0.5f) / static_cast<float>(height) - 0.5f) * 2.0f;
+        const auto value = static_cast<std::uint8_t>(std::lround(255.0f - 75.0f * t * t));
+        fillRect(image, 0, y, width, y + 1, Rgba(value, value, value, 255));
+    }
+    const int band = std::max(1, std::min(width, height) / 12);
+    fillRect(image, 0, 0, width, band, Rgba(60, 60, 60, 255));
+    fillRect(image, 0, height - band, width, height, Rgba(60, 60, 60, 255));
+    Rng rng(seed);
+    const int arm = std::max(1, height / 14);
+    for (int i = 0; i < 6; ++i) {
+        const int x = static_cast<int>(rng.next() % static_cast<std::uint32_t>(width));
+        const int y = band + arm + static_cast<int>(rng.next() % static_cast<std::uint32_t>(std::max(1, height - 2 * (band + arm))));
+        fillRect(image, x - arm, y, x + arm + 1, y + 1, Rgba(255, 255, 255, 255));
+        fillRect(image, x, y - arm, x + 1, y + arm + 1, Rgba(255, 255, 255, 255));
+    }
+    const int margin = band + std::max(1, height / 10);
+    drawTitle(image, title, margin, margin, width - margin, height - margin, Rgba(40, 18, 52, 255), 2);
+    return image;
+}
+
 } // namespace
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 13> kNames = {
+    static constexpr std::array<std::string_view, 14> kNames = {
         kPatternColorBars,     kPatternChecker,      kPatternCover,        kPatternSign,
         kPatternPrint,         kPatternNeon,         kPatternPosterMemphis, kPatternPosterLounge,
         kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal,
-        kPatternBoard};
+        kPatternBoard,         kPatternMarquee};
     return kNames;
 }
 
@@ -1195,9 +1222,12 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternBoard) {
         return informationBoard(width, height, title);
     }
+    if (name == kPatternMarquee) {
+        return marqueePanel(width, height, title, seed);
+    }
     return makeError(ErrorCode::NotFound,
                      "unknown test pattern (expected color_bars, checker, cover, sign, print, neon, poster_memphis, "
-                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal or board)",
+                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal, board or marquee)",
                      std::string(name));
 }
 

@@ -440,8 +440,9 @@ struct ShowcaseParams {
 /// `boardLight` a strip under the front and back top rails (role "board_light", 3 mm thick and 12 mm deep, its
 /// underside and front showing) lights the vitrine; with `counter` the base is a glass counter rather than a closed
 /// cabinet: side and back panels, a glass front set back where the doors stood, a covered deck inside and on it up to
-/// six generic handhelds of original design leaning back on small stands (roles "plastic_body", "plastic_dark",
-/// "plastic_accent"), lit by a strip under the base's top (role "board_light").
+/// six generic handhelds of original design leaning back on small stands (roles "plastic_body" and "plastic_accent" in
+/// turn for their bodies, "plastic_dark", "plastic_accent" for their buttons), lit by a strip under the base's top
+/// (role "board_light").
 struct DisplayCaseParams {
     float width = 1.2f;       ///< [0.4, 4]
     float height = 0.95f;     ///< [0.5, 1.6]

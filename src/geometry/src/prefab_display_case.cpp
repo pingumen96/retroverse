@@ -189,14 +189,14 @@ Status validate(const DisplayCaseParams& p) {
 }
 
 /// A generic handheld of original design leaning back on a small stand (its foot at `at`, the deck's top), its front
-/// towards +Z: the body, a dark screen, a cross pad and two buttons.
-void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at) {
+/// towards +Z: the body (in `bodyRole`), a dark screen, a cross pad and two buttons.
+void addHandheld(detail::PrefabAssembler& out, const glm::vec3& at, std::string_view bodyRole) {
     MeshBuilder& dark = out.part("plastic_dark");
     dark.chamferedBox(glm::vec3(0.065f, 0.018f, 0.055f), 0.003f, translation(at + glm::vec3(0.0f, 0.009f, -0.01f)));
     const float lean = core::degreesToRadians(kHandheldLeanDeg);
     glm::mat4 body = glm::rotate(translation(at + glm::vec3(0.0f, 0.018f, 0.0f)), -lean, glm::vec3(1, 0, 0));
     body = body * translation(glm::vec3(0.0f, 0.5f * kHandheld.y, 0.0f));
-    out.part("plastic_body").chamferedBox(kHandheld, 0.007f, body);
+    out.part(bodyRole).chamferedBox(kHandheld, 0.007f, body);
     const float face = 0.5f * kHandheld.z + 0.001f;
     dark.box(glm::vec3(0.06f, 0.052f, 0.002f), body * translation(glm::vec3(0.0f, 0.032f, face)));
     dark.box(glm::vec3(0.024f, 0.007f, 0.004f), body * translation(glm::vec3(-0.02f, -0.032f, face)));
@@ -239,7 +239,8 @@ void addCounter(detail::PrefabAssembler& out, const DisplayCaseParams& p, float 
     const float deckMiddle = 0.5f * (deckBack + deckFront);
     for (int i = 0; i < count; ++i) {
         const float x = (static_cast<float>(i) - 0.5f * static_cast<float>(count - 1)) * kHandheldPitch;
-        addHandheld(out, glm::vec3(x, railTop, deckMiddle));
+        // Two plastics in turn: the pack's body and accent colours.
+        addHandheld(out, glm::vec3(x, railTop, deckMiddle), i % 2 == 0 ? "plastic_body" : "plastic_accent");
     }
     out.part("board_light")
         .box(glm::vec3(2.0f * innerHalf - 0.02f, kStripThickness, kStripDepth),

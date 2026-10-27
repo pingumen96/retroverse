@@ -126,10 +126,10 @@ inline constexpr std::size_t kMaxSceneInstances = 100000;
 inline constexpr float kMaxSsaoRadius = 5.0f;
 inline constexpr float kMaxSsaoIntensity = 4.0f;
 /// Procedural texture patterns understood by the asset layer (assets::test patterns).
-inline constexpr std::array<std::string_view, 13> kTexturePatternNames{
+inline constexpr std::array<std::string_view, 14> kTexturePatternNames{
     "color_bars",     "checker",       "cover",          "sign",         "print",      "neon",
     "poster_memphis", "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal",
-    "board"};
+    "board",          "marquee"};
 
 /// Initial camera of the scene (Camera conventions, angles in degrees).
 struct CameraSetup {

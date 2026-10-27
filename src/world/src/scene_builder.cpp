@@ -88,7 +88,7 @@ json patternTexture(std::string_view pattern, std::uint64_t seed) {
     return json{{"pattern", std::string(pattern)}, {"title", std::string(title)}, {"seed", random.below(1000000)}};
 }
 
-/// The cabinets' marquees (I6 step 6): generic arcade words in neon, never a title (the game on a cabinet's screen
+/// The cabinets' marquees (I6 step 6): generic arcade words on a backlit panel, never a title (the game on a cabinet's screen
 /// changes; its marquee stays) or a trade name.
 constexpr std::array<std::string_view, 10> kMarqueeWords{"PLAY",      "1 UP",     "2 UP",    "HI SCORE",   "BONUS",
                                                          "PLAYER 1", "GAME ON", "TOP SCORE", "EXTRA LIFE", "LEVEL UP"};
@@ -96,7 +96,7 @@ constexpr std::array<std::string_view, 10> kMarqueeWords{"PLAY",      "1 UP",   
 json marqueeTexture(std::uint64_t seed) {
     core::Random random(seed);
     const auto word = kMarqueeWords[static_cast<std::size_t>(random.below(kMarqueeWords.size()))];
-    return json{{"pattern", "neon"}, {"title", std::string(word)}, {"seed", random.below(1000000)}};
+    return json{{"pattern", "marquee"}, {"title", std::string(word)}, {"seed", random.below(1000000)}};
 }
 
 json coverTexture(std::uint64_t seed) {
@@ -105,7 +105,7 @@ json coverTexture(std::uint64_t seed) {
 
 /// The textures of a prefab kind's roles: the CRT's idle colour bars, a poster's or a magazine's invented cover, the
 /// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour), an arcade cabinet's
-/// marquees and idle screens (I6 step 6: generic words in neon).
+/// marquees and idle screens (I6 step 6: generic words on a lit panel, in neon).
 json themeTextures(std::string_view kind, bool sign, const PlatformManifest& platform, std::uint64_t seed) {
     if (kind == "crt") {
         return json{{"screen", json{{"pattern", "color_bars"}}}};
@@ -121,7 +121,7 @@ json themeTextures(std::string_view kind, bool sign, const PlatformManifest& pla
         return json{{"screen", patternTexture("terminal", seed)}}; // I6 step 3b: the study's computer, on
     }
     if (kind == "arcade_cabinet") {
-        // I6 step 6: each cabinet's marquee lit with a generic word in neon (the odd cabinets' another), and an empty
+        // I6 step 6: each cabinet's marquee a lit panel with a generic word (the odd cabinets' another), and an empty
         // cabinet's screen asking for a coin, dimly.
         return json{{"marquee", marqueeTexture(seed)},
                     {"marquee_alt", marqueeTexture(core::deriveSeed(seed, "marquee_alt"))},
