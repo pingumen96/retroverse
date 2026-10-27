@@ -10,8 +10,8 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I2 | M1 ES-DE catalog (discovery, gamelist/media/es_systems parsing, SQLite + FTS5, stable IDs) + Windows launcher + `retroverse-cli` | M1 Done: reads a real ES-DE collection without moving ROMs, launches an emulator and returns |
 | I3 | M2 SNES vertical slice: single-room generator and persistent WorldPlan (one cartridge per title with media, spine-out shelves and face-out displays), instanced cartridges with real covers in texture arrays, picking, inspect, play from the world, the hero CRT's video (one decoder), incremental update (with I2's step 13r: the catalog's refresh on the app's worker) | Gate B: already looks like the concept with one room; deterministic WorldPlan snapshot; NFR-08; 60 FPS at 1080p |
 | I4 | M3 part 1, the building (ADR-0013): every system of the library in a room, one room per console, floors by console generation joined by an elevator, a lobby and the arcade room on the ground floor, a handheld floor and a computer floor, small systems sharing a room per floor, functional media families, one floor resident, the directory (floors, rooms, favourites and recent games) and teleport | Gate C: the whole library in one building, walkable floor by floor, functional look |
-| I4b | M3 part 2, customization: the editor and pins written to `overrides.json`, "Rigenera stanza / piano / mondo" with an impact preview, backup and undo, expansion rooms if I4 did not need them | M3 Done |
-| I5 | M4 screens and media: decoder scheduler, audio, CRT shader, playlists, fallbacks for missing videos | Every room has working TVs within the decoder budget |
+| I4b | M3 part 2, customization (ADR-0015): the editor (games moved, swapped and pinned, furniture moved on the room's grid) written to `overrides.json`, "Rigenera stanza / piano / mondo" with an impact preview and consent, snapshots and undo, linked expansion rooms past a room's capacity (generator 1.5) | Gate M3: M3 Done (customizable without manual per-game work) |
+| I5 | M4 screens and media (ADR-0016): the decoder scheduler (2 decoders in Balanced, 1 in Low, priorities, visibility, shared textures, staggered uploads, the priority boost), playlists, secondary TVs, arcade cabinets playing clips, clip audio (miniaudio, spatial, one dominant source), CRT presets and the picture's aspect, fallbacks and video verdicts, videos and manuals in the media viewer, the insertion animation | Gate M4: every room has working TVs within the decoder budget, M4 Done |
 | I6 | The styling pass of the building (ADR-0014), done before I5 and I4b: light through doorways and per area, dressed halls, theme packs per floor, side-face spines for cases and boxes, the hub, arcade cabinets and handheld showcases | Gate D: the building reads like the concept, era by era |
 | I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
@@ -28,7 +28,10 @@ building ([ADR-0013](decisions/ADR-0013-the-building.md)): Gate C passed on Octo
 ([testing/gate-c.md](testing/gate-c.md)). I6, the styling pass ([ADR-0014](decisions/ADR-0014-the-styling-pass.md)),
 before I5 and I4b: Gate D passed on October 27, 2026 ([testing/gate-d.md](testing/gate-d.md)). The user declared I4
 and I6 done on October 27, 2026, the walk of the building postponed (its list stays in gate-d.md, "Walk the
-building").
+building"). Next, planned on October 27, 2026 on the user's request: I4b, customization
+([ADR-0015](decisions/ADR-0015-customization.md)), and I5, screens and media
+([ADR-0016](decisions/ADR-0016-screens-and-media.md)), their steps run side by side where they own their files
+([i4b/plan.md](i4b/plan.md), [i5/plan.md](i5/plan.md), "Beside I5" / "Beside I4b").
 
 ## Acceptable performance
 
@@ -49,6 +52,12 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | Per-frame CPU work checked by smoke tests | loosely, at the median (cover uploads 4 ms, collection planning 1 ms) |
 | An elevator ride (ADR-0013 §13) | the view back within 3 s warm and 10 s cold; the frames behind the fade exempt |
 | The room that holds the walker on a floor | covers resident within 30 s cold and 3 s warm; the rest of the floor informative |
+| An edit shown (a move, a swap, a fixture moved) | 0.25 s, the frames within the 50 ms p99 row |
+| The impact preview of a regeneration | a room 2 s, the world 15 s on the reference library |
+| A save, a regeneration's commit or an undo | the room shown again within 3 s warm |
+| Frame time with two clips playing (the benchmark path past a secondary TV) | p50 at most 16.7 ms, p99 at most 33.3 ms |
+| GPU memory with the screens playing (the busiest floor, two slots; the viewer's clip) | all textures at most 512 MiB |
+| A clip's sound against its picture | within 80 ms at p95 |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -205,6 +214,119 @@ FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 a
 SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the tests and gate figures that prove it,
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
+
+## I4b: M3 part 2, customization
+
+[ADR-0015](decisions/ADR-0015-customization.md), planned on October 27, 2026 after the user asked to proceed with
+I4b and then I5 (decisions taken on the user's behalf: [i4b/plan.md](i4b/plan.md), "Risks and open questions"):
+- **the editor**: games moved, swapped and pinned, furniture moved on the room's grid, written to `overrides.json`;
+- **"Rigenera stanza / piano / mondo"** with an impact preview and explicit consent to drop customizations;
+- **snapshots and undo** of every explicit action;
+- **linked expansion rooms** for titles past a room's capacity (generator 1.5).
+
+It closes M3: "a heterogeneous collection generated automatically, navigable and customizable without manual
+per-game work". The look does not change: no golden is expected to move, and none is added.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0015, this plan, the BACKLOG's I4b items moved here; a fixture `esde/overflow` (a big-box system of about 1,700 titles, an arcade of 60, generated at test time) | | The files exist | the documents done; the fixture with step 1 |
+| 1 | Overrides written and undone: `overrides.json` schema 2 (provenance, the schema-1 lift), `saveOverrides` under the world lock, paired snapshots in `backups/snapshots/` (the last 20), the journal and its rollback, `undo`; `worldplan snapshots` and `worldplan undo` | 0 | Unit: round trips, the lift, a crash injected between the two writes rolled back at the next lock, the rotation, undo restoring both files byte for byte, undo of undo refused; the CLI's `undo` on a fixture world | |
+| 2 | Edits in `rv_world`: `applyEdit` (move, swap, pin, unpin, move and turn a fixture) on a plan and its overrides, validated by the hard rules, dressing and wall-washers placed again; updates honouring moved fixtures (sockets they overlap skipped, never moved by growth); the overrides in `inputDigest`; `worldplan edit` (with `--script`) | 1 | Unit and property: each edit and each refusal by rule; an edit then an update of an unchanged catalog writes nothing; an update with additions keeps every pin and moved fixture (§21.3); a world without overrides keeps its digests; an edited room through `worldplan show --scene` and `retroverse.exe --scene`, judged by eye | |
+| 3 | The editor in the app, games: the state `Edit` and its context, "Modifica stanza" in the directory and "Sposta" on the card, empty slots and the held item, move, swap, pin and unpin, `edit_bar.rml`, the draft through the live update's path, Salva / Annulla ultima azione / Esci senza salvare, updates deferred during a session | 2 | Unit: the interaction's transitions and contexts, the draft's history, a save replayed over a changed plan; GPU `gpu.world_edit`: a scripted session moves a cartridge onto a display case and swaps two, saves, restarts and finds them there; a discarded session leaves the plan's SHA-256 unchanged; screenshots of the bar | |
+| 4 | The editor, furniture: fixtures picked, moved on the 100 mm grid and turned, the outline and the bar naming the broken rule, a lamp's light and the wall-washers following | 3 | Unit: drops refused in a doorway, a door-reserved socket, over another fixture, closing the 1.2 m passage, cutting a module off; GPU: a poster and a side module moved and saved, a refused drop, the room walked after; screenshots | |
+| 5 | Regeneration in `rv_world`: room chain, floor and world, honouring overrides (pinned fixtures first, pinned games reserved, the pin winning the representative), conflicts with reasons, the impact summary, keep or drop; `worldplan regenerate`, `generate --replace` as `--world` | 2 (beside 3, 4) | Unit and property: a regeneration never drops an override without `--drop-overrides`; every honoured pin stands; the face-out set chosen again by priority; a `room-kept` room regenerated to the current template; a floor's sharing decided again; a dry run writes nothing; the impact equals the plans' difference; twice one SHA-256; the real library's dry runs (a room, a floor, the world) through `real-library.ps1`, 0 differences | |
+| 6 | Regeneration and undo in the app: the directory's "Rigenera stanza / piano / mondo" and "Annulla ultima modifica", `regenerate_preview.rml` (the counts, the conflicts, the three choices and the second confirmation), the job on the pool, the floor reconciled, the walker at the room's doorway; the update's `needsConfirmation` notice opening the preview | 5, 3 | Unit: the preview's model and commands; GPU: a room regenerated with its pins kept, then undone (the plan's SHA-256 back); a regeneration dropping overrides only after the second confirmation; the preview within 2 s; screenshots of the preview | |
+| 7 | Expansion rooms in `rv_world` (generator 1.5): chains, ids and `expands`, entry on the floor, one fill order per chain, the fresh split in equal alphabetical shares, update-created expansions without face-out titles, the migration of capacity entries, chains in regeneration and validation, a full floor | 5 | Unit and property on `esde/overflow`: no title over capacity while the floor has room; a 1.4 plan with capacity entries migrated, every other room byte for byte in its elements; an expansion's head's freed slots used first; twice one SHA-256; the real library's update through `real-library.ps1`: no capacity entry before or after, every room's elements byte for byte | |
+| 8 | Expansion rooms in the app: the portal and neon signs with their number, the directory's chains with title ranges, teleport, "Mostra nella stanza" and where-is into an expansion, its CRT playing its games, the editor within a chain | 7, 6 | GPU on `esde/overflow`: a walk from the hall into `room:<system>:2`, a cover inspected; the arcade's 60 titles all placed; a game moved from the head to its expansion; screenshots of the hall's portals and the directory | |
+| 9 | Gate M3: `scripts/gate.ps1 -Gate M3` (and `-RealLibrary`), `docs/testing/gate-m3.md` | 4, 8 | The gate passes; the user tries the editor, a regeneration and an undo, and declares M3 done | |
+
+Order: 0, 1, 2, then 3 and 4 beside 5 and 7, then 6, 8, 9. Steps 1, 2, 5 and 7 change `rv_world`, `tools/cli` and
+their unit tests only; steps 3, 4, 6 and 8 change `rv_app`, `rv_ui`, `rv_input` and `assets/ui`. `applyEdit`'s and
+the regeneration's signatures are frozen at the end of steps 2 and 5.
+
+### Gate M3
+
+`scripts/gate.ps1 -Gate M3` runs Gate A's build matrix (no warning), the unit tests and the GPU smoke tests in Debug
+and Release, every golden in both (G01 to G18, none rewritten), a row per I4b area counted from those runs (the
+overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their preview, undo, the
+expansion rooms in the world and in the app), the benchmark path in Release and ADR-0015 §9's rows against the
+acceptable limits, prints the summary table (logs in `build/gate-m3`) and exits 1 when a step failed; all of it under
+`scripts/focus_watch.py`. `-RealLibrary` adds, with ES-DE closed, one `scripts/real-library.ps1` run (snapshots before
+and after, 0 differences): the building updated by generator 1.5 (no capacity entry, every room's elements byte for
+byte), dry runs of "Rigenera stanza" on the SNES room, of a floor and of the world (their impact counts, nothing
+written, the preview's time), a CLI edit session on the real plan in the build's data directory (a move, a swap, a
+pin, a fixture moved), an update moving nothing, an undo restoring the plan's SHA-256, and Gate C's rows (the lobby
+within 5 s, the busiest floor within 512 MiB, the rides). `docs/testing/gate-m3.md` holds the figures, where ADR-0015
+and M3 part 2's requirements (SC-09, FR-009, FR-025, §7.6, §16.3, §21.3) are proven, the follow-ups and how to try
+the editor. Then the user tries it and declares M3 done.
+
+## I5: M4, screens and media
+
+[ADR-0016](decisions/ADR-0016-screens-and-media.md), decided on October 27, 2026 on the user's "procedi" (its choices
+are listed in `docs/i5/plan.md`, "Risks and open questions"):
+- **The decoder scheduler:** 2 decoders in Balanced, 1 in Low, priority classes, visibility, shared textures,
+  staggered uploads, the process priority boost.
+- **Playlists:** the hero screen's playlist, and secondary TVs as a theme pack's furniture.
+- **The arcade's cabinets** play their own clips.
+- **The clips' sound:** miniaudio, spatial, one dominant source, never audible in tests.
+- **The picture:** CRT presets and the picture's aspect.
+- **Fallbacks** ending at a generated title card, and video verdicts.
+- **The media viewer:** videos and manuals.
+- **The insertion animation.**
+
+The media manager and its downloads stay out (ADR-0003).
+
+Every step shows what it adds on screen or through the speakers, and is reviewed for correctness, for stability and
+the ADR, and for the look. In tests, clips are generated at test time: tone tracks at 44.1, 48 and 96 kHz,
+portrait and 16:9 clips, and the damaged kinds of SC-08. Goldens freeze every screen with `--video-freeze-pts`, and
+every test runs with `RV_AUDIO=null`.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0016, this plan | | The files exist | done |
+| 1 | Playlists and fallbacks on the hero screen (one decoder still): `app::Playlist` (shuffle, sequential, favourites, recent, explicit), the hero's start choice then its playlist, a selection that interrupts it and gives it back after its clip, `video.json` read (defaults and the user's overrides), the generated title card at the chain's end, the `standby` pattern, the previous clip's last frame held between clips | 0 | Unit: each mode's order as a table, no repeat within a cycle, the selection's hold, unknown explicit ids skipped. GPU, at `--fixed-dt` with a 2 s `previewDuration`, three clips in the room: the playlist's games in the unit table's order; no frame of a switch shows standby or bars (probes); a game without media shows its card. G01 to G18 0 pixels apart | |
+| 2 | The decoder scheduler: `app::ScreenScheduler` (classes, sharing, visibility pause then stop after 10 s, hysteresis, the late-frame drop to one decoder), `ScreenService` on several screens and slots, NFR-07's assertion on the budget, uploads at most 4 MiB a frame, the above-normal priority while rendering, `--max-decoders`; on a smoke scene of four CRTs | 1 | Unit: the scheduler's tables, never more threads than the budget, a slot reopened only after its thread ended. GPU (`screens_four`): 2 decoders for 3 clips on 4 screens, two of them one texture; a screen turned away paused within a frame and stopped after 10 s; `--max-decoders 1` gives one; two 720p clips due together never upload more than 4 MiB in a frame; the report's priority above normal while rendering and normal during the fake emulator's game; G01 unchanged | |
+| 3 | Secondary TVs: the `secondary_tv` piece (a sideboard and a small CRT) in the packs' furniture, at most one per room (two past 12 m), none in the arcade or the hub; the `ambient` class with `proximityMeters` | 2 (beside 4, 5, 7) | Plans and plan goldens byte-identical; scene digests rewritten; GPU: walking from the doorway, the secondary takes the second slot within its proximity and in view while the hero keeps the first, and with one decoder it shows its still; the goldens where it stands regenerated on purpose, and new G19 (a console room, both screens frozen at 1.0 s); real library: the busiest floor with both slots playing at most 512 MiB, 0 differences | |
+| 4 | Arcade cabinets playing clips: the focused or inspected cabinet's screen plays on the dynamic path (pooled video materials, its static instance hidden), attract on the nearest cabinet facing the eye within 3 m, the hero cabinet never following the selection; the picture rectangle in `MaterialUniforms` (letterbox and pillarbox, never stretched) | 2 (beside 3, 5, 7) | Unit: the attract choice, the rectangle's table (4:3, 16:9, portrait on 4:3 and 3:4). GPU: the focused cabinet's screen shows the clip's frame counter, then its cover again when Back; a 16:9 clip on a CRT shows black bars (probes); G08a and every 4:3 screen 0 pixels apart; new G20 (a cabinet playing in Focus, frozen); real arcade room: clips on the cabinets, 0 differences | |
+| 5 | The clips' sound: `rv_audio` (miniaudio from vcpkg, the null and offline mixer, `--audio`, `--mute`, `RV_AUDIO`), audio decoded on the decoder's thread and resampled by swresample, the sync to the video's media time, one dominant source with a cross-fade, spatial gain and pan, ducking under the card, the directory and the quick catalog, `toggle_mute` (F8), the device stopped around a launch; the test presets and `real-library.ps1` set `RV_AUDIO=null` | 2 (beside 3, 4, 7) | Unit: 96, 48 and 44.1 kHz tones resampled (frequency within 0.5 Hz, level within 0.1 dB, no clipping), the gain and pan table, the sync's correction and resync, the ring's bounds, an offline mix equal bit for bit over two runs. GPU (offline mix): a clip's beeps within 20 ms of its flashes; of two screens only the audible one in the mix (the other's tone below -40 dB by Goertzel); walking away lowers the level as the table says; every smoke case asserts `audio.device` null or off. Real library: a 96 kHz SNES clip's sound within 80 ms of its picture; the user hears the real room | |
+| 6 | CRT presets: `crt_presets.json` (neutral, consumer, arcade, monitor), chosen by `crtEffect`, the room, the pack's `screenPreset` and the screen kind; the arcade's and the optical-era lounge's presets | 4 | `consumer` equal to today's values: every golden but the lounge's 0 pixels apart; each preset on a test scene, reviewed, with probes (neutral: no row modulation; arcade: deeper than consumer); G17 regenerated on purpose | |
+| 7 | Missing media: the video verdicts (`cache/media/videos.json`), clips known to fail never opened, `retroverse-cli media --check-videos`; the library-wide check of ADR-0004's thresholds; a `[.soak]` hour with the renderer (informative) | 2 (beside 3, 4, 5) | Unit: the verdicts' keys, a change of size or time checked again, a byte-identical round trip; the CLI on each damaged fixture kind gives its verdict. GPU: a known-bad clip is opened 0 times, its screen on its still from the first frame. Real library (`real-library.ps1`): the SNES clips' verdicts per kind, each failure looked at in the step note, the whole library with `-FullVideoScan`, 0 differences; the soak's private bytes flat | |
+| 8 | Videos and manuals in the media viewer: the `videos` page with sound (`direct`, 720 rows, a `GL_RGBA8` view as `rv-texture:media-viewer-video`), the world paused under it; the `manuals` page opening the PDF through `rv_launcher` | 5 | Unit: the pages with videos and manuals; the manual's plan `explorer.exe` plus one argument (hostile names stay one argument); the guard refusing it under the allowlist. GPU: frames advance on the viewer's page (counter read from the screenshot); the world's decoders paused while it is open; the offline mix holds the viewer's clip only; a damaged clip shows the page's fallback with its reason | |
+| 9 | The insertion animation: `AnimatingToConsole` (450 ms to the console's media socket, skippable, instant under `reduceMotion`), the hand-over after both it and the decoders' stop | 2 (after I4b's interaction changes) | Unit: the transition table (skip, `reduceMotion`, a refused launch back to Inspect with the item in hand, none in the arcade or without a console). GPU with the fake emulator: the item at the socket within 1 cm at 450 ms; a skip launches within a frame; the hand-over after the decoders stopped; back in Inspect with the item on its shelf, the session verified | |
+| 10 | Gate M4: `scripts/gate.ps1 -Gate M4` (and `-RealLibrary`), `docs/testing/gate-m4.md`, documentation | 1-9 | The gate passes; the user tries the screens and the sound and declares M4 done | |
+
+Order: 1, 2, then 3, 4, 5 and 7 (parallel worktrees: each owns its files), then 6 after 4, 8 after 5, 9, 10.
+
+### Gate M4
+
+`scripts/gate.ps1 -Gate M4` runs everything Gate D runs, under `scripts/focus_watch.py`:
+- the build matrix (no warning);
+- the unit tests and the GPU smoke tests in Debug and Release;
+- every golden in both, G19 and G20 added;
+- a row per I5 area counted from those runs: playlists, the scheduler, secondary TVs, cabinets, audio, presets,
+  verdicts, the viewer, the insertion;
+- the benchmark path in Release with two clips playing, against the acceptable rows (ADR-0016 §12).
+
+It prints the summary table (logs in `build/gate-m4`) and exits 1 when a step failed.
+
+`-RealLibrary` adds, with ES-DE closed and `RV_AUDIO=null`, one `scripts/real-library.ps1` run with snapshots before
+and after and 0 differences:
+- **every collection room of the real building** started with `--start-room` for a few seconds: its hero screen shows
+  a clip or its chain's still, never standby while the room has media, with at most 2 decoders;
+- the busiest floor's GPU memory with both slots playing;
+- the arcade's cabinets playing;
+- a 96 kHz clip's sync;
+- the SNES clips' verdicts;
+- Gate D's real rows.
+
+`-FullVideoScan` adds the whole library's verdicts.
+
+`docs/testing/gate-m4.md` holds:
+- the figures;
+- where ADR-0016 and M4's requirements are proven: FR-015 to FR-017, FR-030, NFR-06, NFR-07, SC-03, SC-08, spec §9;
+- the follow-ups;
+- what to try: a room's playlist and a selection, a secondary TV, the arcade, the sound walking away, mute, the
+  viewer's video and a manual, a launch with its animation.
 
 ## I6: the styling pass of the building (done, Gate D)
 
@@ -451,12 +573,10 @@ passed and the user declared M2 done on October 20, 2026 (the manual session uns
 ### Deferred
 
 - **I4** (since replanned by ADR-0013, above): the hub, the room graph and doors, rooms for other systems, room
-  streaming, the map and the teleport between rooms; **I4b**: linked expansion rooms for titles past a room's capacity
-  (until then `unplaced` with reason `capacity`), the editor with overrides and pins, "Regenerate room" and "Regenerate
-  world" with an impact preview, backup and undo (the in-app way to choose the face-out set again); **I6**: L-shaped
+  streaming, the map and the teleport between rooms; **I4b** (since planned by ADR-0015, above); **I6**: L-shaped
   and lounge templates, several layout candidates chosen by the LayoutScore, theme packs; a table for where-is if
   worlds outgrow an in-memory index.
-- **I5**: the decoder scheduler (two decoders, priorities, visibility, shared textures), RoomShuffle and the other
+- **I5** (since planned by ADR-0016, above): the decoder scheduler (two decoders, priorities, visibility, shared textures), RoomShuffle and the other
   playlists, secondary TVs with video, audio (miniaudio, the 96 kHz clips resampled), the process priority boost and the
   upload staggering of ADR-0004, CRT presets, videos and manuals in the media viewer, the optional insertion animation
   into the console (specification §8.3's `AnimatingToConsole`, style §16.2: always skippable).
