@@ -71,7 +71,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   1 `saveOverrides` and the lock's rollback), `incremental.hpp` (`update`), `overrides.hpp` (pins: protected, never
   applied; since I4b step 1 schema 2, `writeOverrides`) and `where_is.hpp` (`PlanIndex`; 9); `world_snapshots.hpp` (I4b
   step 1: the paired snapshots, `commitWorld`, `undoLastAction`, `scanSnapshots`, the journal and
-  `checkInterruptedAction`); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
+  `checkInterruptedAction`); `world_edit.hpp` (I4b step 2: the editor's operations, `applyEdit` / `applyEdits`,
+  `editRooms`, `editedResult`, the edit script); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
   `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light
