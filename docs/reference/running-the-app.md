@@ -263,7 +263,7 @@ build/rvdata`).
   The run starts in the ground floor's hub (I6 step 5, below), at the elevator's arrival point facing east (no hero CRT
   bound until the eye stays in a room); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that
   room's doorway camera on its floor, its CRT the hero CRT from the start (a shared or arcade room's playing all its
-  sections' games; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
+  sections' games; since I6 step 6 the arcade room's hero cabinet, which stands for its CRT; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
   room's when one is given, else the floor's (building.hpp: x east from the elevator, the hall's centre line on z 0):
   `--spawn`, the input scripts' poses and the run report's walker poses are in that frame, and the start room's own
   objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches

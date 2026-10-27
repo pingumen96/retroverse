@@ -191,6 +191,29 @@ to black, and a dark arcade can sit beside a bright hub.
 - **The handhelds.** The handheld families' fixtures gain low counter showcases. Handheld rooms gain stations: a
   generic console on a stand.
 
+*Amended on 2026-10-27 (I6 step 6):*
+- **The cabinets are a family facing front.** `arcade_cabinet` (§2's succession in the arcade room) stands every one of
+  its fixtures as a pair of generic upright cabinets 0.88 x 1.7 x 0.4 m, so that a pair fits the template's 0.9 x 0.4 m
+  sockets: the hero-wall and side-wall modules are rows of cabinets along the walls, the display sockets pairs facing
+  the aisle. Its item is a cabinet's portrait screen (0.30 x 0.40 m) and never stands spine-out (`spineFacing`
+  "front"): a module's screens are the spine section's by the fixture's role (the titles in the fill order, the
+  reserve kept, no hero band), the display fixtures' the featured titles' (ADR-0010 §3's priority). Its rooms take no
+  shelf dressing: an empty cabinet's screen stays dark, asking for a coin. Its screens show the collection's front
+  layer (the cover) through a picture tube; no new texture.
+- **Capacity.** 33 titles in the 9 x 10 m room, 53 at 16 m, the reserve kept. A larger arcade places the rest as
+  unplaced for capacity (ADR-0010 §5's rule as for every family), launchable from the quick catalog; more arcade rooms
+  or a back room of cases are deferred (BACKLOG).
+- **The hero cabinet** is the arcade pack's furniture (§1 amended): the hero corner's `crt` drawn as a deluxe cabinet
+  whose screen carries the room's video, standing on the floor where the TV's cabinet stood (that part left out). The
+  pack may list the `crt` only as arcade cabinets, and both the `crt`'s pieces and a part left out apply in the arcade
+  room only (its hero corner holds no console): the plan keeps its CRT, TV cabinet and lights, the template is
+  unchanged, and any other room drawn with the pack keeps them as planned.
+- **The handhelds' counters are a look.** The handheld families' display cases are drawn as counters (their base a
+  glass front over generic handhelds on stands) by a manifest parameter that moves neither a slot nor the bounds, lit
+  inside where the pack names `board_light` (the handheld archive): no plan changes, no migration. The stations stand
+  in most decoration plants' place as the handheld archive's furniture variants (a handheld in a small lit vitrine on
+  a pedestal), within the sockets' footprints.
+
 ## Amendments
 
 - **ADR-0013 §3:** the recorded theme pack is no longer authoritative (§1 above). The recorded family stays.

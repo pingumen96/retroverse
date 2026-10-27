@@ -115,7 +115,14 @@ no `--start-room`; since I6 step 5 the hub, and G14, `g14_hub_entrance_golden.pn
 `--spawn 16.3,0,0.6,-92,-3`), G12 (`g12_jewel_case_room_golden.png`: `--start-room room:psx`, the jewel cases of
 `disc_case_cd_v2` from the doorway, every one face-out) and G13 (`g13_shared_room_golden.png`: `--start-room
 area:shared:handheld`, the handheld floor's shared room of two sections, generic cases of `generic_case_v2`, from the
-doorway); the cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
+doorway). I6 step 6 adds G15 (`g15_arcade_room_golden.png`: `--start-room area:arcade`, the arcade room's rows of
+cabinets of `arcade_cabinet`, the hero cabinet carrying the room's clip held at 1.0 s, from the doorway) and G16
+(`g16_handheld_room_golden.png`: `--start-room room:gb`, the gb room's counter showcases and stations, from the
+doorway); the arcade's views of the step (the doorway, the north wall from the room's middle `--spawn 0,0,0.8,0,-3`,
+the hero cabinet `--spawn -0.625,0,-2.4,0,-6`, a west row `--spawn -2.3,0,-2.6,-90,-6`, the aisle's pairs `--spawn
+0.3,0,1.0,-90,-8`) and the gb room's counter up close (`--spawn 0.4,0,1.0,-90,-28`) are in `docs/i6/step-6.md`;
+the arcade's cabinets up close and a launch from a cabinet's screen are `gpu.world families: the arcade room's
+cabinets ...` and `... a game launched from its cabinet's screen ...`. The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
 `esde/case-shelves` fixture: 160 jewel cases, 100 keep cases, 120 big boxes, most of them spine-out, their dark shells
 and full-height printed spines since the step's review) and `gpu.world families: a stored building of generator 1.3 is
 migrated once` (`tests/fixtures/world/legacy/`). `$env:RV_UPDATE_GOLDEN=1;

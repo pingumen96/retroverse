@@ -493,8 +493,7 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   move: the concept's colour is its posters' art, screens and signs); a print
   palette per pack for the halls.
 - **Era furniture (I6 step 3b, `docs/i6/step-3b.md`):** done in the hero corner and the decoration sockets. Left:
-  furniture that needs a place of its own (a coffee table, the study's bookcases of boxes, the handheld counter rows
-  of step 6), a lounge chair of its own for the handheld archive (since the review a one-seat sofa on tall legs: from
+  furniture that needs a place of its own (a coffee table, the study's bookcases of boxes), a lounge chair of its own for the handheld archive (since the review a one-seat sofa on tall legs: from
   behind a plain upholstered back; an armchair whose back is thinner than its arms and leans back), the bean bags'
   shape (two ellipsoids, matte since the review), shelf dressing per era (the storage boxes and magazines are every
   pack's). (The rugs' metallic-roughness maps went to a quarter of their size with every procedural surface's in
@@ -511,6 +510,15 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   residency would save about 34 MiB on a floor but needs their generation off the commit); the hub's lights reach the
   area's 15 with the globe's (a light per room sign pushed the doorway's fill out of the arcade's view: the
   signs glow by their bloom alone; a hub of several portals adds a fill each, step 1's selection applies).
+- **Arcade and handhelds (I6 step 6, `docs/i6/step-6.md`):** done (the arcade's rows of cabinets and its hero
+  cabinet, the handhelds' counters and stations). Left: an arcade of more than 53 titles places the rest as unplaced
+  for capacity (a second arcade room, a back room of cases or cabinets of two games, ADR-0014 §6 amended); the
+  cabinets are slim (0.4 m deep, to fit the template's sockets: an arcade template with deeper sockets, a cabinet with
+  a stool before each); a cabinet's marquee shows a generic word, not its game's title or marquee art (a marquee
+  layer per item in the collection's arrays); the screens show the cover, never the game's screenshot or a clip (one
+  decoder: ADR-0004, I5); empty cabinets of the reserve ask for a coin; the handheld rooms stay calmer than concept
+  panel 6 (its colour comes from coloured boxes and a brand neon; our handheld cartridges are small and dark), the
+  counters' handhelds seen from the aisle only.
 - **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
   with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
   room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall
@@ -530,8 +538,7 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   (`media.case.plain.generic`, its spine on the top face; a manifest's `fallbackPrefab` must name its family's generic,
   so the side generic would need a prefab family of its own); a big box's shell tinted from its spine's colour (the
   spine array's background row sampled by the shell's material); the faithful per-console families.
-- **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, the arcade cabinet in place of the
-  arcade room's CRT, theme packs per floor, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
+- **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
   "Deferred"). In a shared room of few titles the display cases' riser cards (an invented cover across the empty
   slots) outnumber the games there and read like games (G13: five cards beside four cases); plainer cards or other
   dressing on a mostly empty case.

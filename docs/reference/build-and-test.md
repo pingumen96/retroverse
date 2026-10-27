@@ -86,7 +86,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   the same walk ends without them, gen4 rebuilt as megadrive enters its new shared room with the walker kept in the
   hall's frame, and gen5's new titles, only saved meanwhile, shown at its next start; the rooms, the doorways, the
   hall and the arrival point are read from the generated plan and its floors' layout, never named), the room goldens
-  (`gpu.golden/G02` ... `G14`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
+  (`gpu.golden/G02` ... `G16`, `[golden_room]`, see "Visual verification"), and the directory through `rv_ui_probe`
   (`gpu.directory: ...`, I4 step 7a: `tests/input_scripts/directory_panel.json` over a fixed model, each checkpoint's
   view and RmlUi focus, the focus's edge in its screenshot, Mostra nella stanza's command), and the elevator and the
   directory in the app (`gpu.world elevator: ...`, I4 step 7b, `test_world_elevator.cpp`, `[world_elevator]`, on

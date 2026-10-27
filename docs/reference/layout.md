@@ -78,7 +78,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   decoration, `drawnFixtures()` the boxes they cover). I3's other modules: `rv_geometry` the collection's
   prefabs (`display_case`, `wall_shelf`, `storage_box`, `magazine_stack`, `bookends`, `plant` (16); I6 step 3b's era
   furniture `sofa`, `beanbag`, `desk`, `office_chair`, `bar_stool`, `banker_lamp`, `showcase` and the floor lamp's
-  torchiere; I6 step 5's hub `column`, `railing`, `hub_landmark`, `info_totem` and `MeshBuilder::torus`), the cartridge's
+  torchiere; I6 step 5's hub `column`, `railing`, `hub_landmark`, `info_totem` and `MeshBuilder::torus`; I6 step 6's
+  `arcade_cabinet` and the display case's counter and lit strip), the cartridge's
   `spineLabel`, `shelf`'s display levels and front inset; `Slot_<level>_<index>` and `Level_<n>` sockets, `SlotFacing`,
   `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's
   object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:
