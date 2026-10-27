@@ -1,8 +1,10 @@
 // retroverse-cli worldplan snapshots: the world's paired snapshots of the plan and the overrides (ADR-0015 §6, I4b step
 // 1): <user data>/worlds/<library id>/backups/snapshots/, newest first, each with the action it came before, its
 // scope, who took it and when, its files' digests, and whether an undo restored it; the folders whose snapshot.json
-// cannot be read, as damaged; then the snapshot the next 'worldplan undo' restores (none while a folder is damaged). Reads only: no lock is taken and nothing is written (a journal of an interrupted action is
-// reported; the next writer's lock rolls it back).
+// cannot be read, as damaged; then the snapshot the next 'worldplan undo' restores (none while a folder is damaged).
+// Reads only: no lock is taken and nothing is written. A journal of an interrupted action is reported, checked as the
+// next writer's lock reads it: that lock rolls it back, or, when it cannot (the journal or its snapshot unreadable),
+// the report says so and how to repair the world by hand.
 
 #include <filesystem>
 #include <optional>
@@ -78,8 +80,8 @@ ExitCode runWorldPlanSnapshots(CommandContext& context, std::span<const std::str
     // Undo refuses while a folder is damaged (it might walk past the action that folder would undo).
     const std::optional<world::WorldSnapshot> next =
         scan.damaged.empty() ? world::nextUndo(snapshots) : std::optional<world::WorldSnapshot>();
-    std::error_code error;
-    const bool interrupted = std::filesystem::exists(files.transaction, error);
+    // A journal is checked as the next writer's lock would roll it back (read only).
+    const std::optional<world::InterruptedAction> interrupted = world::checkInterruptedAction(files);
 
     std::string text;
     if (args->has("json")) {
@@ -98,7 +100,12 @@ ExitCode runWorldPlanSnapshots(CommandContext& context, std::span<const std::str
         }
         json["damaged"] = std::move(damaged);
         json["nextUndo"] = next ? CatalogJson(next->name) : CatalogJson(nullptr);
-        json["interruptedAction"] = interrupted;
+        json["interruptedAction"] = interrupted.has_value();
+        json["interruptedSnapshot"] = interrupted && !interrupted->snapshot.empty()
+                                          ? CatalogJson(interrupted->snapshot)
+                                          : CatalogJson(nullptr);
+        json["rollbackBlocked"] = interrupted && interrupted->blocked ? CatalogJson(interrupted->blocked->message)
+                                                                      : CatalogJson(nullptr);
         text = jsonText(json);
     } else {
         text = fmt::format("Snapshots of the world of {}: {} (newest first, the last {} kept)\n", library->str(),
@@ -127,8 +134,12 @@ ExitCode runWorldPlanSnapshots(CommandContext& context, std::span<const std::str
             text += next ? fmt::format("Next undo:       {} ({})\n", next->name, snapshotActionText(*next))
                          : std::string("Next undo:       nothing to undo\n");
         }
-        if (interrupted) {
-            text += "Interrupted:     an action was interrupted between its writes; the next writer rolls it back\n";
+        if (interrupted && interrupted->blocked) {
+            text += fmt::format("Interrupted:     {}\n", interrupted->blocked->message);
+        } else if (interrupted) {
+            text += fmt::format("Interrupted:     an action was interrupted between its writes (the snapshot {}); the "
+                                "next writer rolls it back\n",
+                                interrupted->snapshot);
         }
     }
     return writeResults(context, *file, text, ExitCode::Ok);

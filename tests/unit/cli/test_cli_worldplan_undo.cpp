@@ -2,8 +2,9 @@
 // fixture's plan generated, a hand-written schema-1 overrides.json beside it, the explicit regeneration (generate
 // --replace) saved behind a snapshot (the overrides rewritten in schema 2), listed, undone with --dry-run (nothing
 // written) and then for real (the plan, its sidecar and the schema-1 overrides back byte for byte, an update finding
-// nothing to do), the undo itself never undone. And the overflow fixture's building (I4b step 0): more titles than the
-// big-box room and the arcade room hold, unplaced for capacity until generator 1.5's expansion rooms (step 7).
+// nothing to do), the undo itself never undone; a snapshot missing a file, a damaged folder and a journal the lock
+// cannot roll back each refused (exit 3) and listed. And the overflow fixture's building (I4b step 0): more titles than
+// the big-box room and the arcade room hold, unplaced for capacity until generator 1.5's expansion rooms (step 7).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -237,6 +238,28 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(after["snapshots"][0]["kind"] == "undo");
     CHECK(after["snapshots"][1]["undone"] == true);
     CHECK(after["nextUndo"].is_null());
+    CHECK(after["interruptedAction"] == false);
+    CHECK(after["rollbackBlocked"].is_null());
+
+    // A journal the lock cannot roll back (it names no snapshot): every writer refused, naming transaction.json, the
+    // snapshot and the repair by hand; the list says so.
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.transaction,
+                                          R"({"schemaVersion": 1, "snapshot": "nowhere", "action": "edit"})")
+                .has_value());
+    const RunResult blockedText = session.run({"worldplan", "snapshots"});
+    REQUIRE(blockedText.code == ExitCode::Ok);
+    CHECK(contains(blockedText.out, "Interrupted:     the journal transaction.json of an interrupted action names "
+                                    "the snapshot nowhere, which cannot be rolled back automatically"));
+    CHECK(contains(blockedText.out, "then remove transaction.json\n"));
+    const nlohmann::json blocked = nlohmann::json::parse(session.run({"worldplan", "snapshots", "--json"}).out);
+    CHECK(blocked["interruptedAction"] == true);
+    CHECK(blocked["interruptedSnapshot"] == "nowhere");
+    CHECK(contains(blocked["rollbackBlocked"].get<std::string>(), "cannot be rolled back automatically"));
+    const RunResult locked = session.run({"worldplan", "undo"});
+    CHECK(locked.code == ExitCode::RuntimeFailure);
+    CHECK(contains(locked.err, "the journal transaction.json of an interrupted action names the snapshot nowhere"));
+    CHECK(contains(locked.err, "backups/snapshots/nowhere/"));
+    CHECK(contentOf(session.files.plan) == firstPlan);
 }
 
 TEST_CASE("cli/worldplan: the overflow fixture's building holds more titles than its rooms", "[cli][worldplan]") {
