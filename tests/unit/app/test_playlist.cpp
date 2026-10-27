@@ -2,7 +2,8 @@
 // fallbacks to shuffle, excluded clips. The shuffled orders come from scripts/world_seed_oracle.py's derive_seed and
 // SplitMix64 (Python's hashlib, independent of rv_core): a cycle is the room's games with a clip, in their order,
 // shuffled by Random(deriveSeed(room id, screen id, mode, cycle)), its first game swapped with its last when it is the
-// previous cycle's last.
+// previous cycle's last. `python -I scripts/world_seed_oracle.py --check ... tests/unit/app/test_playlist.cpp` finds the
+// oracle's playlist table below.
 
 #include <rv/app/playlist.hpp>
 
@@ -10,9 +11,11 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using rv::app::Playlist;
@@ -174,6 +177,49 @@ TEST_CASE("app/playlist: each mode's order, cycle after cycle", "[app][playlist]
             CHECK(playlist.cycle() == row.cycles.size() - 1);
             CHECK(playlist.current() == expected.back());
         }
+    }
+}
+
+TEST_CASE("app/playlist: the shuffled cycles are the oracle's", "[app][playlist]") {
+    // `python -I scripts/world_seed_oracle.py`'s playlist table, pasted as printed (its --check finds these lines
+    // here): room id, screen id, mode, cycle, the previous cycle's last, the cycle's order. The rooms are roomGames()
+    // and the test room's three clips (test_screen_policy.cpp's playlistRoom(), its order e002, e003, e001).
+    struct OracleCycle {
+        const char* room;
+        const char* screen;
+        const char* mode;
+        std::uint64_t cycle;
+        const char* previousLast;
+        Ids order;
+    };
+    // clang-format off
+    const std::vector<OracleCycle> cycles{
+{"room:snes", "hero", "shuffle", 0, "", {"g000000000000a002", "g000000000000a005", "g000000000000a001", "g000000000000a004", "g000000000000a003"}},
+{"room:snes", "hero", "shuffle", 1, "g000000000000a003", {"g000000000000a002", "g000000000000a003", "g000000000000a001", "g000000000000a005", "g000000000000a004"}},
+{"room:snes", "hero", "shuffle", 2, "g000000000000a004", {"g000000000000a002", "g000000000000a003", "g000000000000a001", "g000000000000a005", "g000000000000a004"}},
+{"room:snes", "hero", "shuffle", 3, "g000000000000a004", {"g000000000000a005", "g000000000000a003", "g000000000000a002", "g000000000000a004", "g000000000000a001"}},
+{"room:nes", "hero", "shuffle", 0, "", {"g000000000000a004", "g000000000000a002", "g000000000000a003", "g000000000000a005", "g000000000000a001"}},
+{"room:snes", "hero", "favorites", 0, "", {"g000000000000a002", "g000000000000a004", "g000000000000a005"}},
+{"room:snes", "hero", "favorites", 1, "g000000000000a005", {"g000000000000a004", "g000000000000a002", "g000000000000a005"}},
+{"m0_testroom", "hero", "shuffle", 0, "", {"g000000000000e002", "g000000000000e003", "g000000000000e001"}},
+{"m0_testroom", "hero", "shuffle", 1, "g000000000000e001", {"g000000000000e002", "g000000000000e001", "g000000000000e003"}},
+    };
+    // clang-format on
+    const std::vector<ScreenGame> testRoom{game("g000000000000e001"), game("g000000000000e002"),
+                                           game("g000000000000e003"), game("g000000000000e009", false)};
+    for (const OracleCycle& row : cycles) {
+        INFO(row.room << " " << row.mode << " cycle " << row.cycle);
+        PlaylistOptions options;
+        options.roomId = row.room;
+        options.screenId = row.screen;
+        const std::optional<PlaylistMode> mode = rv::app::parsePlaylistMode(row.mode);
+        REQUIRE(mode.has_value());
+        options.mode = *mode;
+        const std::string_view previous = row.previousLast;
+        const std::optional<std::string_view> last =
+            previous.empty() ? std::nullopt : std::optional<std::string_view>(previous);
+        const std::vector<ScreenGame> games = row.room == std::string_view("m0_testroom") ? testRoom : roomGames();
+        CHECK(rv::app::playlistCycle(games, options, row.cycle, last) == row.order);
     }
 }
 

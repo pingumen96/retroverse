@@ -133,7 +133,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   sequences and canonical texts come from `scripts/world_seed_oracle.py` (Python's hashlib and json) and the title
   keys and version choice of `tests/unit/world/test_title_key.cpp` from `scripts/title_key_oracle.py`; a rule change
   changes both, and these must pass: `python -I scripts/world_seed_oracle.py --check
-  tests/unit/core/test_seed_random.cpp tests/unit/core/test_canonical_json.cpp` and
+  tests/unit/core/test_seed_random.cpp tests/unit/core/test_canonical_json.cpp tests/unit/app/test_playlist.cpp` and
   `python -I scripts/title_key_oracle.py --check tests/unit/world/test_title_key.cpp`.
 - Product code starts processes only through `rv_launcher` and `rv_platform_win` (`Win32ProcessRunner`): argv, never a
   shell string, no batch files; the product never terminates an emulator. An emulator profile's argument template
