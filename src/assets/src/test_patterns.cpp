@@ -550,18 +550,15 @@ ImageData makeStandby(int width, int height) {
     if (!image.isValid()) {
         return image;
     }
-    // A dim, cold ground brightest at the middle (the tube's glow), a raster of darker rows, a short trace across the
-    // middle and a small amber lamp at the bottom right: a set that is on and waiting.
+    // A dim, cold ground brightest at the middle (the tube's glow), a raster of darker rows and a short trace across
+    // the middle: a set that is on and waiting.
     constexpr glm::vec3 kEdge{11.0f, 15.0f, 20.0f};
     constexpr glm::vec3 kCentre{24.0f, 31.0f, 39.0f};
     constexpr glm::vec3 kTrace{44.0f, 58.0f, 70.0f};
-    constexpr glm::vec3 kLamp{110.0f, 78.0f, 40.0f};
     const float w = static_cast<float>(width);
     const float h = static_cast<float>(height);
     const int rasterPitch = std::max(2, height / 120);
     const float traceHalfHeight = std::max(0.5f, h / 180.0f);
-    const float lampRadius = std::max(1.0f, std::min(w, h) / 40.0f);
-    const glm::vec2 lamp{w * 0.88f, h * 0.86f};
     for (int y = 0; y < height; ++y) {
         const float v = (static_cast<float>(y) + 0.5f) / h * 2.0f - 1.0f;
         for (int x = 0; x < width; ++x) {
@@ -574,14 +571,6 @@ ImageData makeStandby(int width, int height) {
             }
             if (y % rasterPitch == 0) {
                 colour *= 0.7f;
-            }
-            const glm::vec2 point{static_cast<float>(x) + 0.5f, py};
-            const float distance = glm::length(point - lamp);
-            if (distance <= lampRadius) {
-                colour = kLamp;
-            } else if (distance <= lampRadius * 1.8f) {
-                const float halo = 1.0f - (distance - lampRadius) / (lampRadius * 0.8f);
-                colour += (kLamp - colour) * (0.35f * halo);
             }
             setPixel(image, x, y,
                      Rgba(static_cast<std::uint8_t>(std::lround(colour.r)), static_cast<std::uint8_t>(std::lround(colour.g)),

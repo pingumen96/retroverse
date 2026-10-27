@@ -238,7 +238,7 @@ build/rvdata`).
   media has its card only; drawn only once a clip cannot play), not the colour bars; a room without any clip shows its
   first game's stills and card; between two games the previous picture stays up (the last frame of its clip, or its
   still) until the next one's still or first frame is ready. A screen with no game shows its own
-  pattern: the test room's colour bars, the building's `standby` (a dim raster with an amber lamp; the arcade's hero
+  pattern: the test room's colour bars, the building's `standby` (a dim cold raster with a faint trace; the arcade's hero
   cabinet too). `<user data>/config/video.json` (read, never written; the shipped defaults `assets/config/video.json`,
   merged key by key; a file that does not load is left out whole, said in the log) sets `enabled` (clips at all),
   `maxDecoders`, `maxRows`, `viewerMaxRows`, `proximityMeters`, `crtEffect`, `audio` (read for the steps after), and

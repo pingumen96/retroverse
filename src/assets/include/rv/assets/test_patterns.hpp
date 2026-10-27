@@ -24,8 +24,8 @@ namespace rv::assets {
 [[nodiscard]] ImageData makeColorBars(int width, int height);
 
 /// A screen on standby (I5 step 1, ADR-0016 §8: the building's screens with no game at all, where the test room keeps
-/// its colour bars): a dim cold ground brightest at the middle, a raster of darker rows, a short dim trace across the
-/// middle and a small amber lamp at the bottom right; never text or a mark.
+/// its colour bars): a dim cold ground brightest at the middle, a raster of darker rows and a short dim trace across the
+/// middle; never text or a mark (nor a lamp, which would read as a burnt-in spot on the tube).
 [[nodiscard]] ImageData makeStandby(int width, int height);
 
 /// `cells` x `cells` checkerboard (cells clamped to [1, min(width, height)]); the top-left cell uses `a`.

@@ -156,24 +156,24 @@ TEST_CASE("assets/test_patterns: the standby screen is dim, cold and lit at its 
     const ImageData standby = rv::assets::makeStandby(640, 480);
     REQUIRE(standby.isValid());
     const auto luma = [](Rgba p) { return 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b; };
-    // Dim everywhere but its lamp: nothing like the colour bars' 75% (191).
-    int bright = 0;
+    // Dim everywhere, the trace included: nothing like the colour bars' 75% (191), and no lamp or warm spot that would
+    // read as burn-in.
     for (int y = 0; y < standby.height; ++y) {
         for (int x = 0; x < standby.width; ++x) {
-            bright += luma(pixel(standby, x, y)) > 80.0 ? 1 : 0;
+            const Rgba p = pixel(standby, x, y);
+            if (luma(p) > 60.0 || p.r > p.b) {
+                FAIL_CHECK("a bright or warm pixel at " << x << ", " << y);
+            }
         }
     }
-    CHECK(bright < standby.width * standby.height / 200);
     // The middle brighter than the corners (the tube's glow), the ground cold (blue over red); a raster of darker rows.
     const Rgba corner = pixel(standby, 1, 1);
     const Rgba middle = pixel(standby, 320, 200);
     CHECK(luma(middle) > luma(corner));
     CHECK(middle.b > middle.r);
     CHECK(luma(pixel(standby, 100, 4)) < luma(pixel(standby, 100, 5)));
-    // The amber lamp at the bottom right.
-    const Rgba lamp = pixel(standby, 563, 413);
-    CHECK(lamp.r > lamp.b);
-    CHECK(luma(lamp) > 60.0);
+    // The trace across the middle, brighter than the ground beside it.
+    CHECK(luma(pixel(standby, 320, 241)) > luma(pixel(standby, 320, 230)));
     // By name, the same pixels; invalid sizes give an invalid image.
     const auto named = rv::assets::makeNamedPattern("standby", 640, 480);
     REQUIRE(named.has_value());
