@@ -1,0 +1,378 @@
+# ADR-0016: Screens and media: the decoder scheduler, playlists, audio, CRT presets, fallbacks
+
+- Status: accepted (the user's "procedi" on I4b and I5; the choices below made on the user's behalf in planning,
+  listed in [i5/plan.md](../i5/plan.md), "Risks and open questions")
+- Date: 2026-10-27
+- Amends: ADR-0004 (rows per screen, audio on the decoder thread, the presentation clock, staggering by bytes),
+  ADR-0012 §5 and §7 (the viewer's videos and manuals; the hero CRT's playlist, its fallback's end, its sound),
+  ADR-0013 §9 (one decoder per floor becomes the scheduler's budget), ADR-0014 §1 and §6 (a secondary TV as a pack's
+  furniture; cabinets' screens playing clips; a pack's screen preset); specification §9.3, §9.7 and style §15.1 as
+  recorded under "Amendments"
+- Relates to: ADR-0003 (no scraper: no "Scarica anteprima"), ADR-0005 (`rv-texture:` pictures), ADR-0006 (the
+  launch, the process priority around it), ADR-0011 §8 (hero textures); roadmap I5 (Gate M4)
+
+## Context
+
+I3 put one 480-row decoder on the hero CRT (ADR-0012 §7); I4 moved it to the CRT of the room that holds the eye
+(ADR-0013 §9); I6 gave the arcade a hero cabinet carrying the same video and rows of cabinets whose screens show
+covers (ADR-0014 §6). Everything else M4 asks for was deferred here:
+
+- **Specification §9:** screen types (§9.1), playlists `SelectedGame`, `RoomShuffle`, `RoomSequential`, `Favorites`,
+  `RecentlyPlayed`, `ExplicitPlaylist`, `IdleAttract` (§9.2), priorities (§9.3), at most 2 decoders in the normal
+  profile and 1 in the low one, stills for screens out of view, a shared texture for one clip on several screens
+  (§9.5), CRT presets with a clean option (§9.6), the clips' sound through miniaudio, spatial and ducked, one dominant
+  source (§9.7); NFR-06 (2 s to the first frame), NFR-07 (2 decoders, asserted), FR-017, FR-030, SC-03, SC-08.
+- **Style:** one hero TV and at most 1-2 secondary ones per room (§15.3), "the preview stays linked to its physical
+  object" in inspection, one dominant TV sound, ducking under a card, mute always at hand (§15.4), stills when the scene
+  is out of view (§20.2), the fallback chain screenshot, title screen, cover, idle screen (§21), the insertion into the
+  console in 300-650 ms, always skippable (§16.2).
+- **ADR-0004's open points:** the process priority boost, upload staggering (two 720p uploads due on one frame reach
+  2.1 to 2.7 ms at p99), dropping to one decoder when frames come late, the audio clock, cheaper uploads if needed.
+- **BACKLOG:** no colour bars between clips, library-wide checks of the clips (thresholds, an hour-long soak), video
+  frames in the UI, videos and manuals in the media viewer.
+
+Facts that bound the design:
+
+- **The clips:** the reference library's are H.264 640 x 480 at 59.94 fps (82% of the games have one, ADR-0003); a
+  third of the SNES clips carry 96 kHz audio. 57% of the games have a manual (PDF).
+- **GPU memory:** the busiest real floor holds 471.8 MiB of the acceptable 512 MiB (Gate D), the hero CRT's 480-row
+  texture and ring (about 4.8 MiB) included.
+- **Costs per decoder (ADR-0004):** a 480p clip 7-9% of a core, uploads p99 about 0.4 ms; a 720p one 3.5 MiB per
+  frame, p99 1.2-1.4 ms.
+- **Libraries at the pinned baseline:** miniaudio 0.11.25 (header-only, Unlicense or MIT-0); no permissive PDF
+  renderer (pdfium and mupdf are absent, poppler is GPL).
+- **Tests:** they never take the foreground, and must not play sound on the user's machine.
+
+## Decision
+
+### 1. Screens and their kinds
+
+A **screen** is a surface that can show a picture: a `ScreenSurface` or a prefab's picture role, with a material
+instance whose base colour the service overrides (ADR-0012 §7's binding, generalized).
+
+| Kind | What it is | Plays by default |
+|---|---|---|
+| `hero` | the CRT of a collection room's hero corner, or the arcade's hero cabinet | the room's playlist; the focused or inspected game after its dwell (not in the arcade) |
+| `secondary` | a small TV a theme pack stands in a decoration socket (§5) | its own playlist, at low priority |
+| `cabinet` | an arcade cabinet's screen, a collection item (ADR-0014 §6) | its cover; its own clip when focused, inspected or nearest in attract (§6) |
+| `viewer` | the media viewer's video page (§10) | the viewed game's clip |
+
+The hub's information screens and the totem stay boards; neon and signs are no screens. A screen belongs to an area;
+only screens of the area that holds the eye (ADR-0013 §9) ask for video.
+
+### 2. The decoder scheduler
+
+`app::ScreenScheduler`, GPU-free in `rv_app_cli`, decides each frame from the screens' requests. `app::ScreenService`
+in `rv_app` carries the decisions out: decoders, textures, stills, overrides and audio.
+
+- **Budget.** `maxDecoders` is 2 (the Balanced profile) or 1 (the Low profile, I8's, or `video.json`, or
+  `--max-decoders 1`). NFR-07 becomes a runtime assertion on the budget: never more than 2 decoders active, and
+  never more decoder threads alive than the budget.
+- **Slots.** A slot owns one `media::VideoDecoder`, one `gl::VideoTexture` and one audio ring. A slot opens its next
+  clip only once its previous decoder's thread has ended (I3's rule, per slot). The render loop never waits for it.
+- **Priority classes** (specification §9.3):
+  1. `direct`: the viewer's video, or an inspected cabinet.
+  2. `focus`: the screen showing the focused or inspected game.
+  3. `room`: the eye's room's hero screen playing its playlist.
+  4. `ambient`: secondary TVs and attract cabinets.
+
+  Ties go to the nearer screen, then the screen id, so decisions are deterministic.
+- **Sharing.** Requests for the same clip share one slot and one texture (§9.5, style §15.3). Each screen keeps its own
+  picture rectangle (§7).
+- **Visibility.** A screen is visible when its bounds are in the view frustum and its area holds the eye. No occlusion
+  queries.
+  - A screen that leaves the view pauses at once and keeps its frame (`VideoPlayback::pause`).
+  - It is stopped after 10 s out of view, or when its slot is needed.
+  - Its screen then shows its still (§8).
+- **Stability.** A slot changes hands at most once a second, unless a `direct` or `focus` request asks. Ambient
+  requests enter and leave by `proximityMeters` with a 0.5 m hysteresis.
+- **Late frames.** A slot whose late plus dropped frames exceed 5% over 4 s drops the budget to 1 for 30 s, and the
+  lowest class loses its slot (ADR-0004's open risk). Each drop is logged and reported.
+- **Launches and the window.**
+  - Before the hand-over every slot is stopped and its thread waited for, at most 1 s in all (ADR-0012 §6), and the
+    audio device stops.
+  - After the return the slots reopen at their positions.
+  - While the window is minimized the slots pause.
+  - At shutdown `waitForStoppedDecoders()` runs.
+- **Rows.** World screens decode at most **480 rows** in both profiles: the clips are 480p and the screens are small.
+  The viewer decodes at most 720 rows in Balanced and 480 in Low. This replaces ADR-0004 point 4's 720 default.
+- **Upload staggering.** The video uploads of one render frame carry at most **4 MiB**: one 720p frame or three 480p
+  ones. A frame over the budget stays pending one render frame, oldest first, or is superseded (ADR-0004's budget, by
+  bytes rather than by count).
+- **Process priority** (ADR-0004 point 9). `rv_platform_win` sets `ABOVE_NORMAL_PRIORITY_CLASS` while the 3D view
+  renders and the window is not minimized. It returns to `NORMAL_PRIORITY_CLASS` before an emulator starts and while
+  minimized. The run report records each change. A thread-only boost and MMCSS were not measured, so not adopted.
+- **Cheaper uploads are not built.** Converting straight into the mapped PBO, YUV planes and a second context for
+  asynchronous copies stay contingencies, in that order, used only if Gate M4's frame rows fail.
+
+### 3. Playlists
+
+`app::Playlist` is GPU-free. It draws its games from the room's items (ADR-0013 §9's items files: the clip, the stills,
+the favourite flag, the last play, the sort key). Its order is deterministic: seeds come from `core::deriveSeed(room
+id, screen id, mode, cycle)`.
+
+- **`shuffle` (`RoomShuffle`, the default).** A permutation of the room's games with a playable clip. No game repeats
+  until all have played. A new cycle reshuffles, never starting with the previous cycle's last game.
+- **`sequential`.** The room's sort order.
+- **`favorites`.** The room's favourites, in shuffle order; `shuffle` when there are none.
+- **`recent`.** The 10 games played most recently, the newest first.
+- **`explicit`.** The GameIds listed in the user's `video.json` for that room and screen. Unknown ids are skipped and
+  logged once.
+- **A clip** plays for `previewDuration` (30 s), or to its end if shorter, then the next one plays. A clip that fails
+  is skipped for the rest of the run. With no clip in the playlist the screen shows its game's still.
+- **The hero screen (`IdleAttract` + `SelectedGame`).**
+  - At the start it plays ADR-0012 §7's start choice, then its playlist.
+  - A selection (focus or inspect, after the 300 ms dwell) interrupts the playlist (SC-03).
+  - Once the walker is back in free roam, the selected clip plays to its end, at most `previewDuration`. The playlist
+    then resumes where it stopped.
+  - This replaces ADR-0012 §7's "keeps looping until another item is selected".
+  - In the arcade the hero cabinet never follows the selection: the selected cabinet plays the clip itself (§6).
+- **Frozen runs.** Under `--video-freeze-pts` every screen opens the first clip of its playlist (the start choice for
+  the hero screen), paused at that time. Goldens stay reproducible and the existing room goldens unchanged.
+- **No prefetch** of the next clip: a 480p clip's first frame comes in about 20 ms, and its still covers the switch
+  (specification §9.5: prefetch only within budget).
+
+### 4. Configuration: `video.json`
+
+`assets/config/video.json` holds the shipped defaults (JSON with comments). The user's `<user data>/config/video.json`
+overrides them per key. Retroverse reads it and never writes it, so the mute state is the run's own.
+
+- **Global keys:**
+  - `enabled`;
+  - `maxDecoders` (1 or 2);
+  - `maxRows` (world screens) and `viewerMaxRows`;
+  - `proximityMeters` (12);
+  - `crtEffect` (`off`, `light`, `vintage`);
+  - `audio`: `mode` (`nearest-focused` or `off`), `master`, `video`, `effects`, `ambience`, `muted`.
+- **Per screen kind** (`hero`, `secondary`, `cabinet`): `enabled`, `playlist`, `previewDuration`, `showOnFocus`,
+  `volume`, `crtPreset`.
+- **Per room** (`rooms.<room id>.<kind>`): the same keys, and `games` for `explicit`.
+
+Specification §9.2's other parameters map as follows:
+- `autoplay` is `enabled`;
+- `priority` is the kind's class;
+- `loop` is the playlist's cycle;
+- `maxResolution` is the rows;
+- `fallbackImageType` is the chain of §8, which is not configurable.
+
+### 5. Secondary TVs: a theme pack's furniture
+
+A secondary TV is a **look, not a plan fact** (ADR-0014 §1). A pack's furniture may list a `secondary_tv` piece (a
+sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under a decoration kind.
+
+- **Where.** The scene builder draws at most one per room (two in a room grown past 12 m), at the sockets of that kind
+  that the room's seed picks, within their footprints.
+- **What changes.** No plan, slot, migration or navigation changes. Scene digests change, and goldens are regenerated
+  on purpose where the piece shows.
+- **Where none.** The arcade has none (its cabinets are its screens), and neither do the hub nor the halls.
+- **The reader rule.** ADR-0014 §1's rule that refuses `crt` as furniture outside the arcade now admits a
+  `secondary_tv` piece in decoration kinds only.
+- **What it plays.** Its own playlist (`shuffle` with its own seed by default) in the `ambient` class, with its game's
+  still when it has no slot.
+
+### 6. Arcade cabinets with clips
+
+A cabinet's screen is a collection item showing its cover (ADR-0014 §6). With a slot:
+- the item is drawn on the dynamic path, as a pulled-out item is;
+- it uses one of a pool of `MAT_Screen_Arcade` video instances (as many as `maxDecoders`), whose texture is the slot's;
+- its static instance is hidden.
+
+Which cabinet plays:
+- **The focused or inspected cabinet** (`focus`; `direct` when inspected). The clip plays in the hand during the
+  inspection: the preview stays linked to its object (style §15.3).
+- **In attract** (`ambient`), the nearest cabinet in view within 3 m whose screen faces the eye, after a 1 s dwell.
+- **The hero cabinet** keeps the room's playlist (`room`).
+
+With one decoder, a focused cabinet takes the slot and the hero cabinet keeps its paused frame. A cabinet without a
+slot shows its cover, as today; its still is the cover.
+
+### 7. The picture's aspect and CRT presets
+
+- **Aspect** (style §15.2). Each screen material instance gains a picture rectangle (`MaterialUniforms`, a `vec4`), set
+  from the clip's size and the screen's. Pictures are letterboxed or pillarboxed in the tube's black and never
+  stretched: a portrait arcade clip fills a cabinet's 3:4 screen, a 16:9 clip shows bars on a 4:3 CRT. A 4:3 clip on a
+  4:3 screen keeps the full rectangle, so its pixels are unchanged.
+- **Presets** (`assets/materials/crt_presets.json`, specification §9.6). Each preset is a set of `assets::CrtEffect`
+  values; an effect at 0 is off:
+  - `neutral`: the clean video (no scanlines, mask, curvature or vignette);
+  - `consumer`: today's `CrtEffect` defaults exactly, so every existing screen's pixels stay;
+  - `arcade`: deeper scanlines, a stronger mask, more curvature;
+  - `monitor`: a fine mask, little curvature.
+- **Which preset a screen takes** (the first that applies):
+  1. the user's `crtEffect`: `off` makes every screen `neutral`, `vintage` steps each one stronger (`consumer` to
+     `arcade`);
+  2. the room's `video.json`;
+  3. the theme pack's `screenPreset` (the optical-era lounge's `monitor`, the arcade's `arcade`);
+  4. the screen kind's default.
+
+  A preset is a look: it moves nothing.
+- **Phosphor persistence** needs the previous frame, and is not built (BACKLOG). The "light bloom" is the scene's bloom
+  on the emissive screen.
+
+### 8. Fallbacks and missing media
+
+- **The chain** (style §21, SC-08): clip, screenshot, title screen, cover, then a **generated title card**. The card
+  shows the game's title and year and the system's full name in the bundled font, on the room pack's label palette:
+  - it is 640 x 480, made on the worker with `rv_assets`' label rasterizer;
+  - it is never a trademark;
+  - it replaces the colour bars as the chain's end.
+- **Standby.** A screen with no game at all shows a dim original raster (a new scene pattern, `standby`). The colour
+  bars stay the test room's own pattern, so G01 is unchanged.
+- **Between clips.** The previous clip's last frame stays up until the next picture is ready: the next game's still,
+  else its first frame. Never standby, never bars (the BACKLOG item).
+- **Video verdicts.** `<user data>/cache/media/videos.json` is a canonical JSON keyed by the clip's path under the media
+  root, its size and its time. Each entry holds `playable`, or the `DecodeFailure` with its duration, size and audio
+  rate.
+  - It is written by the app when a clip fails or plays through once clean, and by `retroverse-cli media
+    --check-videos`.
+  - A clip whose verdict is a failure and whose file is unchanged is never opened: its screen goes to its still at once.
+  - A changed file is checked again.
+  - Nothing is ever written under the media root.
+- **`media --check-videos [--system <name>] [--jobs N]`.** It decodes the first 2 s of each clip and 1 s from its
+  middle, and checks its streams' durations, at below-normal priority with 2 jobs by default. It is resumable and
+  reports counts per failure kind and system. This settles ADR-0004's thresholds on the whole library.
+- **No "Scarica anteprima"** (specification §9.3): there is no scraper (ADR-0003). I7's media coverage report reads
+  the verdicts.
+
+### 9. Audio
+
+- **The module.** A new module, `rv_audio`, GPU-free, depends on `rv_core` only.
+  - It uses **miniaudio** 0.11.25 from vcpkg: header-only, its implementation in one source of `rv_audio`, its headers
+    external so that `/W4 /WX` still applies to our code.
+  - It is a new dependency, not a baseline change. `docs/third-party.md` records it.
+  - Layer rules forbid `rv_audio` from reaching SDL3, glad, FFmpeg, RmlUi or SQLite.
+  - `rv_media` stays FFmpeg's only home. `rv_app` connects the two.
+- **Decoding.** The clip's first audio stream is decoded on its decoder's thread, keeping one thread per clip
+  (ADR-0004 point 2).
+  - It is resampled by swresample to the mixer's rate, stereo float: 44.1, 48 and 96 kHz sources, mono up-mixed,
+    more than two channels down-mixed.
+  - It goes into a bounded ring of 0.5 s per slot, timestamped.
+  - A slot that is not audible discards its audio packets, so it costs no audio decoding.
+- **The clock.** The render clock stays the master: `media::PresentationClock` is deterministic under `--fixed-dt` and
+  its pacing is proven. Audio follows the video's media time:
+  - within 20 ms, nothing is done;
+  - from 20 to 120 ms, the source's resampling ratio corrects by up to 1%;
+  - beyond 120 ms (a seek, a loop, a resume, a stall), a hard resync drops samples or pads silence.
+
+  A pause fades the sound out in 30 ms.
+- **One dominant source** (§9.3, style §15.4). The audible screen is the visible one of the best class, then the
+  nearest, within `proximityMeters`. A change cross-fades in 300 ms; the others are silent.
+  - **Gain** is 1 within 1.5 m, then 1.5/d, fading to 0 over the last 2 m before `proximityMeters`. A screen outside
+    the eye's area is silent.
+  - **Pan** is equal-power, from the screen's azimuth, limited to +-0.6.
+  - **Volumes** multiply: master, then the bus, then the screen, then the spatial gain, then the duck.
+  - **Ducking** is -9 dB while the card, the directory or the quick catalog is open. The viewer's own clip plays at
+    full volume while the world is paused.
+- **Devices.** `--audio device|null|off`.
+  - `device`, the default of interactive runs, is miniaudio's shared-mode default endpoint.
+  - `null` never touches the operating system's audio stack: the main thread pulls the mix, `dt` x rate frames per
+    frame under `--fixed-dt` (deterministic), otherwise the elapsed time.
+  - `off` builds no mixer and decodes no audio.
+  - Every frame-limited run defaults to `null`, and `RV_AUDIO=null` forces it. The unit and gpu presets and
+    `scripts/real-library.ps1` set `RV_AUDIO=null`. Every smoke case asserts the report's `audio.device` is `null` or
+    `off`, so no test can play sound on the user's machine.
+- **Mute.** The `toggle_mute` action (F8; no pad button by default, I7 remaps it) and `--mute` mute at once.
+- **Launches.** Before a launch the mix fades out in 50 ms and the device stops, leaving the endpoint to the emulator.
+  It restarts after the return.
+- **Effects and ambience.** These buses exist with their volumes, but carry no sounds in I5: interaction sounds and
+  ambience need original sounds with provenance (I8).
+
+### 10. Videos and manuals in the media viewer
+
+- **The `videos` page** comes after the title screen. It plays the clip with its sound in the `direct` class at
+  `viewerMaxRows`.
+  - `ui_activate` pauses it and plays it again.
+  - The world's screens pause while the viewer is open. In Low the world's slot is taken, and its screen shows its
+    held frame, then its still.
+  - The frame reaches RmlUi as `rv-texture:media-viewer-video`, through a `GL_RGBA8` view of the video's
+    `GL_SRGB8_ALPHA8` texture (the UI composites encoded sRGB values, as `devui::TexturePreviews` does).
+  - A clip whose verdict is a failure shows the page's fallback with its reason, from the RML document.
+- **The `manuals` page** names the manual and offers "Apri il manuale". The action opens the PDF in Windows' default
+  program through `rv_launcher`:
+  - the plan is `explorer.exe` with the file as its one argument, run through `Win32ProcessRunner`, never a shell
+    string;
+  - it is not a game session;
+  - the automation guard refuses it in automated runs unless allowlisted;
+  - Retroverse keeps running.
+
+  In-app pages need a permissive PDF renderer outside the pinned baseline, which needs a new ADR (BACKLOG).
+- **Not built in I5:** a video preview in the quick catalog's card (I7, BACKLOG).
+
+### 11. The insertion animation (style §16.2, specification §8.3)
+
+Included, as `AnimatingToConsole` between Inspect and Launching:
+- **When.** Avvia from the world's card in a room whose hero corner has a console. The quick catalog, the arcade and a
+  room without a console have no animation.
+- **The motion.** The held item eases over 450 ms to the console's media socket (added to the console prefabs where
+  missing: a socket is no plan change) and shrinks into it. Meanwhile the hero screen shows the game's title card and
+  the sound fades.
+- **Skipping.** Any button skips it, and `reduceMotion` makes it instant.
+- **The hand-over** starts after both the animation and the decoders' stop (at most 1 s), so the animation hides the
+  stop's wait.
+- **Failures and the return.** A refused or failed launch returns to Inspect with the item in the hand. The return is
+  ADR-0012 §6's: Inspect, the item back on its shelf.
+
+### 12. Budgets and acceptable performance
+
+- **GPU memory.** The world's video is at most two 480-row slots (texture and ring, about 4.8 MiB each). The viewer's
+  720-row slot is about 14 MiB, allocated only while it plays. Stills and title cards stay within the hero textures'
+  8 (ADR-0011 §8).
+  - The busiest real floor rises from 471.8 to about 495 MiB with everything playing.
+  - If a step measures it over 512 MiB, the first remedy is per-floor residency of the procedural surfaces (about
+    34 MiB, BACKLOG), not the video.
+- **CPU.** Two 480p decoders use about 15 to 20% of one core. Uploads stay within 4 MiB per frame (§2).
+- **New rows in the roadmap's "Acceptable performance".** Video's "first frame within 2 s" stands.
+
+  | Measure | Acceptable |
+  |---|---|
+  | Frame time with two clips playing (the benchmark path past a secondary TV) | p50 at most 16.7 ms, p99 at most 33.3 ms |
+  | GPU memory with the screens playing (the busiest floor, two slots; the viewer's clip) | all textures at most 512 MiB |
+  | A clip's sound against its picture | within 80 ms at p95 |
+
+## Amendments
+
+- **ADR-0004.**
+  - **Point 4:** world screens decode at 480 rows in both profiles, the viewer at 720 in Balanced.
+  - **Point 2:** the clip's audio is decoded on its decoder's thread.
+  - **The open risk "Audio":** the render clock stays the master and audio follows it (§9).
+  - **Budgets:** staggering by bytes (4 MiB per frame); dropping to one decoder on late frames.
+- **ADR-0012.**
+  - **§5:** the viewer gains its video and manual pages.
+  - **§7:** the hero CRT plays a playlist and returns to it after a selection; its chain ends at a generated title card,
+    not the colour bars; its clip has sound; the one-decoder assertion becomes the budget's (§2).
+- **ADR-0013 §9.** "The hero CRT ... with one decoder" reads: every screen of the area that holds the eye, within the
+  scheduler's budget.
+- **ADR-0014.**
+  - **§1:** a `secondary_tv` piece is admitted in decoration kinds, and a pack may name a `screenPreset`.
+  - **§6:** cabinets' screens play clips on the dynamic path (§6 above).
+- **Specification.**
+  - **§9.3:** no "Scarica anteprima" (ADR-0003).
+  - **§9.7:** interaction sounds and ambience are I8's.
+  - **§9.1:** the "Monitor moderno" is the optical-era pack's `monitor` preset on its hero CRT; the information
+    monitor is the hub's board.
+- **Style §15.1.** One consumer CRT model in two sizes (the hero and the secondary). The LCD and projection screens are
+  deferred.
+
+## Consequences
+
+**Gains**
+- **The rooms.** Every room's hero screen plays a rotating playlist with sound, follows the selection and comes back.
+  Rooms gain a secondary TV, the arcade's cabinets play their own games, and the viewer plays clips.
+- **Bounds.** Decoders and GPU memory stay inside the acceptable limits and NFR-07's assertion.
+- **No colour bars** ever show between clips or for a game without media.
+- **Broken clips** are found once, library-wide, and never opened again until they change.
+
+**Costs**
+- **New pieces:** a new module and a new dependency (miniaudio), a GPU-free scheduler with many states (unit-tested by
+  tables), and a material uniform (the picture rectangle).
+- **Goldens:** those of rooms that gain a secondary TV, and the optical-era lounge's (its preset), are regenerated on
+  purpose. Two new goldens: a console room with both screens playing frozen, and a cabinet playing in Focus.
+- **The process** runs above normal priority while it renders.
+
+**Deferred**
+- In-app manual pages (a permissive PDF renderer).
+- A video in the quick catalog's card (I7).
+- Interaction sounds and ambience (I8).
+- Phosphor persistence; LCD and projection screens.
+- Hardware decoding (beyond v1), and more than 2 decoders in a High profile (I8, after measurement).
+- The hub's screens playing favourites' clips.
