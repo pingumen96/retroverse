@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
 #include <rv/screenshot_diff/screenshot_diff.hpp>
@@ -315,6 +316,12 @@ TEST_CASE("launch: a closed catalog draws nothing over the scene", "[gpu][launch
     ensureLaunchAllowList();
     const std::filesystem::path dir = freshCaseDir("launch/closed_catalog");
     const std::filesystem::path catalog = writeFakeCatalog(dir, {fake_games::kReturns});
+    // Since I5 step 1 the CRT would show the catalog game's title card (a room without a clip shows its first game's
+    // picture): the hero screen's autoplay off, so that only the product UI could tell the runs apart.
+    std::filesystem::create_directories(dir / "data" / "config");
+    REQUIRE(rv::core::writeTextFileAtomic(dir / "data" / "config" / "video.json", R"({"hero": {"enabled": false}})"
+                                                                                  "\n")
+                .has_value());
     const std::filesystem::path without = dir / "without_catalog.png";
     const std::filesystem::path with = dir / "with_catalog.png";
     const AppRun plain = runApp(retroverseExe(), dir, "without_catalog",
