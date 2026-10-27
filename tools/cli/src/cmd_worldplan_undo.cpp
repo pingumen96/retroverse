@@ -1,8 +1,9 @@
 // retroverse-cli worldplan undo: undoes the world's last explicit action (ADR-0015 §6, I4b step 1): under the world
 // lock, the newest snapshot not yet undone (backups/snapshots/) restored byte for byte, the plan, its meta sidecar and
 // overrides.json together (world::undoLastAction), the state it replaces kept as a snapshot of kind undo, which undo
-// never offers (no redo). --dry-run names the snapshot without writing (the lock is still taken: an interrupted action
-// is rolled back first, as by every writer). The catalog's changes since the snapshot come back with the next update.
+// never offers (no redo). --dry-run names the snapshot and restores nothing, but still takes the lock like every
+// writer (which may create world.lock and roll back an interrupted action first). The catalog's changes since the
+// snapshot come back with the next update.
 
 #include <filesystem>
 #include <optional>
@@ -43,13 +44,15 @@ constexpr std::string_view kUsage =
     "\n"
     "Options:\n"
     "  --library <id>   The library whose world to undo (default: the one library.json records).\n"
-    "  --dry-run        Name the snapshot that would be restored; write nothing.\n"
+    "  --dry-run        Name the snapshot that would be restored; restore nothing. The world's lock is still\n"
+    "                   taken, which may create world.lock and roll back an interrupted action first.\n"
     "  --json           Write the result as JSON.\n"
     "  --output <file>  Write the result to this file (UTF-8) instead of stdout.\n"
     "  -h, --help       Show this help and exit.\n"
     "\n"
     "Exit codes: 0 undone (or, with --dry-run, something to undo); 1 nothing to undo; 2 usage error; 3 the world is\n"
-    "locked by another program, a snapshot is damaged, or a file could not be read or written.\n";
+    "locked by another program or holds the journal of an action that cannot be rolled back (the message says how\n"
+    "to repair it), a snapshot is damaged (undo is refused while one is), or a file could not be read or written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
@@ -66,7 +69,7 @@ ExitCode nothingToUndo(CommandContext& context, std::string_view why) {
 ExitCode runWorldPlanUndo(CommandContext& context, std::span<const std::string> arguments) {
     core::ArgParser parser{std::string(kName)};
     parser.option("library", "id", "The library whose world to undo.");
-    parser.flag("dry-run", "Name the snapshot that would be restored; write nothing.");
+    parser.flag("dry-run", "Name the snapshot that would be restored; restore nothing (the lock is still taken).");
     parser.flag("json", "Write the result as JSON.");
     addOutputOption(parser);
     auto args = parser.parse(arguments);

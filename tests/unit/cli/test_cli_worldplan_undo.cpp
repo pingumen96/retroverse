@@ -199,7 +199,7 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     std::filesystem::remove_all(torn);
     CHECK(contentOf(session.files.plan) == secondPlan);
 
-    // A dry run names the snapshot and writes nothing.
+    // A dry run names the snapshot and restores nothing.
     const RunResult dry = session.run({"worldplan", "undo", "--dry-run"});
     INFO(dry.err);
     REQUIRE(dry.code == ExitCode::Ok);
