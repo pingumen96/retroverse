@@ -45,6 +45,7 @@
 #include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/world/world_snapshots.hpp>
 #include <rv/world/world_store.hpp>
 
 #include "catalog_text.hpp"
@@ -196,21 +197,24 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         context.err.writeLine(fmt::format("{}: {} left out of the building: {}", kName, system.str(), why));
     }
     const world::WorldFiles files = world::worldFiles(context.paths.userDataRoot(), selected.library);
-    auto overrides = world::loadOverrides(files.overrides);
-    if (!overrides) {
-        return failure(context, "the world's overrides", overrides.error());
-    }
 
-    // The world's plan is written under its lock, taken before anything is decided from the folder.
+    // The world's plan is written under its lock, taken before anything is decided from the folder (the lock rolls
+    // back an action interrupted between its writes, so the overrides are read after it).
     std::optional<world::WorldLock> lock;
     std::error_code error;
+    bool stored = false;
     if (!planOption) {
         auto acquired = world::WorldLock::acquire(files);
         if (!acquired) {
             return failure(context, "the world's lock", acquired.error());
         }
         lock.emplace(std::move(*acquired));
-        const bool stored = std::filesystem::exists(files.plan, error);
+        if (lock->rolledBack()) {
+            context.err.writeLine(fmt::format("{}: an interrupted action was rolled back first: the snapshot {} "
+                                              "restored",
+                                              kName, *lock->rolledBack()));
+        }
+        stored = std::filesystem::exists(files.plan, error);
         if (stored && !replace) {
             context.err.writeLine(fmt::format(
                 "{}: a plan exists already: {} ('worldplan update' updates it; 'worldplan generate --replace' "
@@ -250,6 +254,11 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         }
     }
 
+    auto overrides = world::loadOverrides(files.overrides);
+    if (!overrides) {
+        return failure(context, "the world's overrides", overrides.error());
+    }
+
     const auto started = std::chrono::steady_clock::now();
     world::BuildingInput input;
     input.library = selected.library;
@@ -276,6 +285,7 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
 
     std::filesystem::path planPath;
     std::string saved;
+    std::string snapshot;
     if (planOption) {
         planPath = core::pathFromUtf8(*planOption);
         auto text = world::writePlan(result->plan);
@@ -291,9 +301,24 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         options.writer = fmt::format("retroverse-cli worldplan generate{} ({})", replace ? " --replace" : "",
                                      core::versionBanner());
         options.duration = duration;
-        auto report = world::savePlan(*lock, *result, options);
+        // A regeneration over a stored plan is an explicit action (ADR-0015 §6): the plan and the overrides kept in a
+        // snapshot first, which 'worldplan undo' restores.
+        std::optional<world::CommitReport> committed;
+        if (replace && stored) {
+            auto commit = world::commitWorld(*lock, world::WorldAction{"regenerate", "world"}, *result,
+                                             input.overrides, options);
+            if (!commit) {
+                return failure(context, "the plan", commit.error());
+            }
+            committed = std::move(*commit);
+        }
+        auto report =
+            committed ? Expected<world::SaveReport>(committed->plan) : world::savePlan(*lock, *result, options);
         if (!report) {
             return failure(context, "the plan", report.error());
+        }
+        if (committed && committed->snapshot) {
+            snapshot = committed->snapshot->name;
         }
         if (report->backup) {
             saved = fmt::format("the previous plan kept as {}", pathText(report->backup->filename()));
@@ -311,6 +336,7 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         json["plan"] = pathText(planPath);
         json["replaced"] = replace;
         json["backup"] = saved;
+        json["snapshot"] = snapshot.empty() ? CatalogJson(nullptr) : CatalogJson(snapshot);
         json["validation"] = CatalogJson{{"passed", true},
                                          {"soft", soft},
                                          {"layoutScorePermille", validation.layoutScorePermille
@@ -333,6 +359,9 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
                                                               : std::string("none"));
         if (!saved.empty()) {
             summary += fmt::format("  {:<17}{}\n", "Backup:", saved);
+        }
+        if (!snapshot.empty()) {
+            summary += fmt::format("  {:<17}{} ('worldplan undo' restores it)\n", "Snapshot:", snapshot);
         }
         for (const std::string& pin : result->changes.orphanedPins) {
             summary += fmt::format("  {:<17}{}\n", "Orphaned pin:", pin);
