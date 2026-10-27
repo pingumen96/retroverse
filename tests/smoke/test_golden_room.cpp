@@ -20,7 +20,9 @@
 // building under the shipped threshold (no world.json: its small systems share their floors' rooms), each run as the
 // user starts the app (no --start-room) or in a room (--start-room, its doorway camera): G11 the ground floor's hub
 // from a step beside the elevator's arrival point (I6 step 5; --spawn since its review), G12 the jewel-case room (psx, the disc_case_cd family) from its doorway, G13 the
-// handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway.
+// handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway. The Gate D goldens
+// of I6 step 6 (ADR-0014 §6, concept panels 5 and 6): G15 the arcade room from its doorway (its rows of cabinets, the
+// hero cabinet with the room's video), G16 the handheld room of gb (its counter showcases, stations) from its doorway.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -932,5 +934,71 @@ TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu
                        "shelf, no console beside the CRT (shared rooms have none), from the doorway (the room's "
                        "doorway camera), the hero CRT showing its colour bars (no section has a clip).",
                        "--start-room area:shared:handheld: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G15: the building's arcade room from its doorway", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g15", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "area:arcade");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    // The arcade room's cabinets (I6 step 6, ADR-0014 §2 and §6): mame's 15 titles, each a cabinet's screen.
+    const rv::world::Room& arcade = roomHolding(plan, "mame");
+    CHECK(arcade.id.toString() == "area:arcade");
+    CHECK(arcade.mediaFamily == "arcade_cabinet");
+    const fs::path shot = room.dir / "g15.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run = room.app(
+        "g15", startArguments("area:arcade", kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, arcade.floor, "area:arcade");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.items == 15);
+    CHECK(report.residency.coverFailures == 0);
+    // The hero cabinet stands for the CRT: its screen carries the room's video, the clip held at 1.0 s.
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == "area:arcade/fx:hero.crt");
+    CHECK(report.video.picture == "video");
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G15", "g15_arcade_room_golden",
+                       "Gate D golden of the arcade room (I6 step 6, ADR-0014 §6, style 5.4 and 14.4, concept panel 5): "
+                       "the esde/building fixture's arcade room under its pink ARCADE neon, mame's 15 invented titles "
+                       "as the screens of pairs of generic upright cabinets (arcade_cabinet: lit marquees in generic "
+                       "words, magenta and cyan mouldings, portrait screens through a picture tube), the six featured "
+                       "in the two pairs facing the aisle and the pair beside the hero corner, the rest along the "
+                       "walls, the empty cabinets' screens asking for a coin; the hero cabinet carrying the room's clip "
+                       "held at 1.0 s where the TV stood, red bar stools by its side, the dark red runner, a floor lamp, "
+                       "flyers and plants; from the doorway (the room's doorway camera).",
+                       "--start-room area:arcade: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G16: the building's handheld room from its doorway", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g16", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "room:gb");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    const rv::world::Room& gb = roomHolding(plan, "gb");
+    CHECK(gb.id.toString() == "room:gb");
+    CHECK(gb.mediaFamily == "cartridge_handheld");
+    CHECK(gb.themePack == "handheld_archive");
+    const fs::path shot = room.dir / "g16.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run =
+        room.app("g16", startArguments("room:gb", kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, gb.floor, "room:gb");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.residency.coverFailures == 0);
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == "room:gb/fx:hero.crt");
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G16", "g16_handheld_room_golden",
+                       "Gate D golden of a handheld room (I6 step 6, ADR-0014 §6, style 5.5 and 14.5, concept panel 6): "
+                       "the esde/building fixture's gb room on the handheld floor under its cyan neon, its invented "
+                       "titles as handheld cartridges on lit walnut shelves and face-out in the two low counter "
+                       "showcases (lit inside, generic handhelds on stands behind the glass of their bases) and the "
+                       "featured wall shelf, stations (a generic handheld in a small lit vitrine on a pedestal) along "
+                       "the walls, the one-seat lounge chair on the sage rug, console-art posters; from the doorway "
+                       "(the room's doorway camera), the hero CRT's clip held at 1.0 s.",
+                       "--start-room room:gb: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }

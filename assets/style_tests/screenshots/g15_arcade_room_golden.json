@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "024e122973fc28ad326ee3d976777405b739d0e2",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate D golden of the arcade room (I6 step 6, ADR-0014 §6, style 5.4 and 14.4, concept panel 5): the esde/building fixture's arcade room under its pink ARCADE neon, mame's 15 invented titles as the screens of pairs of generic upright cabinets (arcade_cabinet: lit marquees in generic words, magenta and cyan mouldings, portrait screens through a picture tube), the six featured in the two pairs facing the aisle and the pair beside the hero corner, the rest along the walls, the empty cabinets' screens asking for a coin; the hero cabinet carrying the room's clip held at 1.0 s where the TV stood, red bar stools by its side, the dark red runner, a floor lamp, flyers and plants; from the doorway (the room's doorway camera).",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G15",
+  "image": {
+    "file": "g15_arcade_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "415d0d4ab8dfd75e91eab4b95de5296c4c8b7e0e350f77c627fd813d8d0f4934",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "items": 15,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "cd1a7ba7e482b8618ef3b698449164ae40d7d77588fd6ae15d47ac420de49e88"
+    }
+  },
+  "renderedOn": "2026-10-26",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G15:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room area:arcade --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g15.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room area:arcade: the room's doorway camera (no --spawn)"
+}

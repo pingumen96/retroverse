@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "024e122973fc28ad326ee3d976777405b739d0e2",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate D golden of a handheld room (I6 step 6, ADR-0014 §6, style 5.5 and 14.5, concept panel 6): the esde/building fixture's gb room on the handheld floor under its cyan neon, its invented titles as handheld cartridges on lit walnut shelves and face-out in the two low counter showcases (lit inside, generic handhelds on stands behind the glass of their bases) and the featured wall shelf, stations (a generic handheld in a small lit vitrine on a pedestal) along the walls, the one-seat lounge chair on the sage rug, console-art posters; from the doorway (the room's doorway camera), the hero CRT's clip held at 1.0 s.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G16",
+  "image": {
+    "file": "g16_handheld_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "c6c34d58ffa7dbf1609e6ea7efe93c39419bb993f1df3dc5f77932c9b51be2eb",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "items": 44,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "cd1a7ba7e482b8618ef3b698449164ae40d7d77588fd6ae15d47ac420de49e88"
+    }
+  },
+  "renderedOn": "2026-10-26",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G16:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:gb --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g16.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room room:gb: the room's doorway camera (no --spawn)"
+}
