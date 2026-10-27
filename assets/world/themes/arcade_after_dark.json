@@ -130,7 +130,7 @@
     "pictures": {"centreYMm": 2220, "widthMm": 460, "heightMm": 600, "roles": ["hero-module", "side-module"],
                  "kinds": ["tv_cabinet"], "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox",
                  "pattern": "poster_flyer"},
-    "cans": {"roles": ["key", "wall-washer"], "body": "MAT_Metal_Graphite", "lens": "MAT_Bulb_Warm"},
+    "cans": {"roles": ["key", "wall-washer"], "body": "MAT_Metal_Graphite", "lens": "MAT_Can_Lens"},
     "runner": {"widthMm": 900, "lengthMm": 3500, "material": "MAT_Carpet_Runner"}
   },
   "accents": [
@@ -142,5 +142,5 @@
   "neon": "#F0509E",
   "neonGlow": {"intensity": 4.5, "range": 3.5},
   "bloomStrength": 0.28,
-  "lightTints": {"key": "#FFD0E8", "pendant": "#B040FF", "wallWasher": "#30C8FF"}
+  "lightTints": {"key": "#FFE4F2", "pendant": "#E0A8FF", "wallWasher": "#50D0FF"}
 }

@@ -397,8 +397,8 @@
     },
     // I6 step 6's review (concept panels 5 and 6). The arcade: its cabinets' side art (a printed design that glows a
     // little under the arcade's black light: unlit, dim), the neon coves along its side walls (magenta and cyan,
-    // brighter than the mouldings), its lightbox flyers (a backlit print), its light columns (a lit tube in the neon's
-    // pink). The handhelds: the counters' and stations' ivory lining, their brighter glass (a pale sheen over the
+    // brighter than the mouldings), its lightbox flyers (a backlit print, dim: seen through the doorway from the hub
+    // they must not outshine the room's light), its light columns (a lit tube in the neon's pink), its spot cans' lenses. The handhelds: the counters' and stations' ivory lining, their brighter glass (a pale sheen over the
     // handhelds, more present than the cases' elsewhere), the handhelds' lit displays (a pale green LCD), the stations'
     // brighter strip.
     "MAT_Side_Art": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.6 },
@@ -419,7 +419,8 @@
       "shading": "unlit", "baseColor": "#FFC890", "emissiveStrength": 1.0, "alpha": 0.5, "alphaMode": "blend",
       "baseColorTexture": "procedural:shelfglow/baseColor"
     },
-    "MAT_Lightbox": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.9 },
+    "MAT_Lightbox": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.35 },
+    "MAT_Can_Lens": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 1.2 },
     "MAT_Neon_Tube_Pink": { "shading": "unlit", "baseColor": "#F060B8", "emissiveStrength": 2.4 },
     "MAT_Fabric_Display_Ivory": { "baseColor": "#CFC6B2", "metallic": 0.0, "roughness": 0.95 },
     "MAT_Glass_Counter": {
