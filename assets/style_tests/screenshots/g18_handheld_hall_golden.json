@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "cda506d6eca9f6d89f4c175637ec35d561ac2e54",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate D golden of a floor's hall (I6 steps 1 and 2, ADR-0014, style 4 and 13.4, look.md's halls: rooms glow through their doorways, never black holes): the esde/building fixture's handheld floor, the walker on the hall's centre line east of its two doorways looking west to the elevator: the gb room's doorway on the right and the shared room's on the left, each under its portal with the room's lit sign and a blade sign, their rooms lit through them (the neighbours' lights through the doorway, the doorway fill), the handheld archive's dressed hall (dark warm plaster over a panelled wainscot, beams, sconces and muted prints in turn, a bench and a plant clear of the passage, the runner) and the elevator's doors under the floor's sign.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G18",
+  "image": {
+    "file": "g18_handheld_hall_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "39ca400376bf1b31da05500766c33534a48f3a88bd03150671aaa66101e376b3",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "plan": {
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "items": 44,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "3a8509f6c514015f7c943477a62e845cf2804c52117207af903287a56af96f5e"
+    }
+  },
+  "renderedOn": "2026-10-27",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G18:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:gb --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g18.png --screenshot-size 1920x1080 --video-freeze-pts 1 --spawn 3.85,0,6.65,270,-4 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room room:gb --spawn 3.85,0,6.65,270,-4: the floor's x 11.5 m on the hall's centre line, facing west (in room:gb's frame)"
+}
