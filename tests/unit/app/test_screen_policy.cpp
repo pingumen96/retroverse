@@ -424,6 +424,14 @@ TEST_CASE("app/screen_policy: a clip shorter than previewDuration plays to its e
     const Targets targets = run(policy, 1, 70);
     REQUIRE_FALSE(targets.empty());
     CHECK(targets.front() == std::pair<int, std::string>{60, "g000000000000e002"});
+    // Its time counts from its first frame: one that took half a second to come still plays its whole second.
+    ScreenPolicy late(playlistRoom(), playlistSettings(30.0));
+    REQUIRE(run(late, 0, 31).empty());
+    late.videoShowing();
+    late.clipDuration(1.0);
+    const Targets lateTargets = run(late, 31, 70);
+    REQUIRE_FALSE(lateTargets.empty());
+    CHECK(lateTargets.front() == std::pair<int, std::string>{90, "g000000000000e002"});
     // A room with one clip only keeps playing it (its clip loops), never restarted.
     ScreenPolicy single({game("g000000000000e001", "e001.mp4")}, playlistSettings());
     CHECK(run(single, 0, 400).empty());
@@ -436,25 +444,26 @@ TEST_CASE("app/screen_policy: a selection interrupts the playlist and gives it b
     run(policy, 0, 150); // e002 from frame 120
     REQUIRE(policy.targetId() == "g000000000000e002");
     // e003 focused from frame 150: the selection after the dwell (frame 168), held while focused, beyond
-    // previewDuration.
+    // previewDuration. Its clip of 1.5 s shows its first frame on that frame.
     for (int frame = 150; frame < 450; ++frame) {
         policy.hover(std::string_view("g000000000000e003"), frame * kFrame);
         policy.tick(frame * kFrame);
+        if (frame == 168) {
+            policy.videoShowing();
+            policy.clipDuration(1.5);
+        }
     }
     CHECK(policy.targetId() == "g000000000000e003");
     CHECK(policy.origin() == ScreenOrigin::Selection);
     CHECK(policy.selections() == 1);
     CHECK_FALSE(policy.holdLeft().has_value());
-    // Its clip of 1.5 s shows: let go 283 frames (4.72 s) after it became the target, 0.22 s into the looping clip's
-    // fourth pass, which plays to its end (1.28 s, within previewDuration); then the playlist's e002 again from its
-    // start.
-    policy.videoShowing();
-    policy.clipDuration(1.5);
+    // Let go 282 frames (4.70 s) after its first frame, 0.20 s into the looping clip's fourth pass, which plays to its
+    // end (1.30 s, within previewDuration); then the playlist's e002 again from its start.
     const Targets back = run(policy, 450, 200);
     CHECK_FALSE(policy.holdLeft().has_value());
     REQUIRE(back.size() >= 2);
     CHECK(back.front().second == "g000000000000e002");
-    CHECK(back.front().first == 450 + 77);
+    CHECK(back.front().first == 450 + 78);
     // Then the playlist goes on after it: e003, 2 s later.
     CHECK(back[1].second == "g000000000000e003");
     CHECK(back[1].first - back[0].first == 120);
@@ -609,4 +618,61 @@ TEST_CASE("app/screen_policy: a room without a clip shows its first game's still
     ScreenPolicy nothing({bare}, playlistSettings());
     CHECK(nothing.targetId().empty());
     CHECK(nothing.picture() == ScreenPicture::IdlePattern);
+}
+
+TEST_CASE("app/screen_policy: a selection let go gives the screen back without any clip to play",
+          "[app][screen][playlist]") {
+    ScreenGame covered = withStills(game("g000000000000f003"), false, false, true);
+    ScreenGame carded = game("g000000000000f002");
+    carded.card.title = "Lanterna";
+    // Selects `id` from frame `first` (the dwell's 19 frames, the policy's clock running), lets go, and runs 200
+    // frames more; the targets as they changed after the selection.
+    const auto selectAndLetGo = [](ScreenPolicy& policy, const std::string& id, int first) {
+        for (int frame = first; frame < first + 19; ++frame) {
+            policy.hover(std::string_view(id), frame * kFrame);
+            policy.tick(frame * kFrame);
+        }
+        REQUIRE(policy.targetId() == id);
+        REQUIRE(policy.origin() == ScreenOrigin::Selection);
+        return run(policy, first + 19, 200);
+    };
+
+    SECTION("a room without a clip: back to its start choice after the hold") {
+        ScreenPolicy policy({covered, carded}, playlistSettings());
+        REQUIRE(policy.targetId() == "g000000000000f003");
+        REQUIRE(policy.playlist().empty());
+        const Targets back = selectAndLetGo(policy, "g000000000000f002", 0);
+        // The first frame let go sets the hold (2 s, no clip), the 120 after it count it down.
+        CHECK(back == Targets{{19 + 120, "g000000000000f003"}});
+        CHECK(policy.origin() == ScreenOrigin::Start);
+        CHECK_FALSE(policy.selected());
+        CHECK(policy.wantedStill() == ScreenPicture::Cover);
+    }
+    SECTION("a room without a clip, its start choice selected: it plays on as the start choice") {
+        ScreenPolicy policy({covered, carded}, playlistSettings());
+        const std::uint64_t generation = policy.targetGeneration();
+        const Targets back = selectAndLetGo(policy, "g000000000000f003", 0);
+        CHECK(back.empty());
+        CHECK(policy.targetGeneration() == generation);
+        CHECK(policy.targetId() == "g000000000000f003");
+        CHECK(policy.origin() == ScreenOrigin::Start);
+        CHECK_FALSE(policy.selected());
+    }
+    SECTION("every clip failed: back to the game interrupted, its stills") {
+        ScreenPolicy policy({withStills(game("g000000000000e001", "e001.mp4"), false, true, false), carded},
+                            playlistSettings());
+        REQUIRE(policy.targetId() == "g000000000000e001");
+        policy.videoFailed(); // the room's only clip: the playlist has nothing to give from now on
+        REQUIRE(policy.playlist().excluded().contains("g000000000000e001"));
+        const Targets back = selectAndLetGo(policy, "g000000000000f002", 0);
+        CHECK(back == Targets{{19 + 120, "g000000000000e001"}});
+        CHECK(policy.origin() == ScreenOrigin::Start);
+        CHECK_FALSE(policy.hasVideo());
+        CHECK(policy.wantedStill() == ScreenPicture::TitleScreen);
+        // The failed start choice selected and let go: it stays, as the start choice.
+        const Targets again = selectAndLetGo(policy, "g000000000000e001", 300);
+        CHECK(again.empty());
+        CHECK(policy.origin() == ScreenOrigin::Start);
+        CHECK_FALSE(policy.selected());
+    }
 }

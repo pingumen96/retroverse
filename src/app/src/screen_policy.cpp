@@ -140,14 +140,16 @@ ScreenPolicy::ScreenPolicy(std::vector<ScreenGame> games, ScreenPlaySettings set
     m_generation = 0; // the start choice is the first target
 }
 
-void ScreenPolicy::startChoice() {
-    std::optional<std::size_t> start;
-    if (m_settings.autoplay) {
-        start = chooseStartGame(m_games);
-        if (!start) {
-            start = chooseStillGame(m_games); // no clip in the room: its first game's stills, its card last
-        }
+std::optional<std::size_t> ScreenPolicy::startIndex() const {
+    if (!m_settings.autoplay) {
+        return std::nullopt;
     }
+    const std::optional<std::size_t> start = chooseStartGame(m_games);
+    return start ? start : chooseStillGame(m_games); // no clip in the room: its first game's stills, its card last
+}
+
+void ScreenPolicy::startChoice() {
+    const std::optional<std::size_t> start = startIndex();
     if (start) {
         retarget(m_games[*start].id, ScreenOrigin::Start);
     } else {
@@ -159,13 +161,7 @@ void ScreenPolicy::setGames(std::vector<ScreenGame> games) {
     m_games = std::move(games);
     m_playlist = Playlist(m_games, m_settings.playlist, m_failed);
     if (!m_selected && m_origin != ScreenOrigin::Playlist) {
-        std::optional<std::size_t> start;
-        if (m_settings.autoplay) {
-            start = chooseStartGame(m_games);
-            if (!start) {
-                start = chooseStillGame(m_games);
-            }
-        }
+        const std::optional<std::size_t> start = startIndex();
         std::string id = start ? m_games[*start].id : std::string();
         if (id != m_targetId) {
             retarget(std::move(id), start ? ScreenOrigin::Start : ScreenOrigin::None);
@@ -249,7 +245,7 @@ void ScreenPolicy::tick(double nowSeconds) {
             // Let go: its clip plays to its end (the current pass of the looping clip), at most previewSeconds.
             double hold = m_settings.previewSeconds;
             if (m_videoShowing && m_clipSeconds && *m_clipSeconds > 0.0) {
-                hold = std::min(hold, *m_clipSeconds - std::fmod(m_elapsed, *m_clipSeconds));
+                hold = std::min(hold, *m_clipSeconds - clipPhase());
             }
             m_holdLeft = hold;
             return;
@@ -263,32 +259,58 @@ void ScreenPolicy::tick(double nowSeconds) {
     if (!m_settings.autoplay) {
         return;
     }
-    if (m_elapsed + kDwellTolerance >= itemSeconds()) {
+    if (itemPlayed()) {
         advance();
     }
 }
 
-double ScreenPolicy::itemSeconds() const noexcept {
-    if (m_videoShowing && m_clipSeconds && *m_clipSeconds > 0.0) {
-        return std::min(m_settings.previewSeconds, *m_clipSeconds);
+bool ScreenPolicy::itemPlayed() const noexcept {
+    if (m_videoShowing && m_clipShownAt && m_clipSeconds && *m_clipSeconds > 0.0 &&
+        *m_clipSeconds < m_settings.previewSeconds) {
+        // A clip shorter than previewSeconds plays to its end, counted from its first frame: the frames the decoder
+        // took to deliver it are not taken from it.
+        return clipSeconds() + kDwellTolerance >= *m_clipSeconds;
     }
-    return m_settings.previewSeconds;
+    return m_elapsed + kDwellTolerance >= m_settings.previewSeconds;
 }
 
-void ScreenPolicy::advance() {
+double ScreenPolicy::clipSeconds() const noexcept {
+    return m_clipShownAt ? m_elapsed - *m_clipShownAt : m_elapsed;
+}
+
+double ScreenPolicy::clipPhase() const noexcept {
+    const double position = clipSeconds();
+    if (!m_clipSeconds || *m_clipSeconds <= 0.0) {
+        return position;
+    }
+    // Whole passes taken off; a pass that ended within the tolerance counts as ended (its phase 0, not the clip's
+    // length).
+    return position - *m_clipSeconds * std::floor((position + kDwellTolerance) / *m_clipSeconds);
+}
+
+void ScreenPolicy::restartClock() noexcept {
+    const double phase = clipPhase();
+    m_elapsed = 0.0;
+    if (m_clipShownAt) {
+        m_clipShownAt = -phase; // the looping clip goes on: its passes keep their phase
+    }
+}
+
+bool ScreenPolicy::advance() {
     std::optional<std::string> next = m_playlist.next();
     if (next && *next == m_targetId) {
         next = m_playlist.next(); // never the game just shown, when the playlist has another
     }
     if (!next || *next == m_targetId) {
         // One game, or none left: the target keeps playing (its clip loops), its time counted afresh.
-        m_elapsed = 0.0;
+        restartClock();
         if (next) {
             m_origin = ScreenOrigin::Playlist;
         }
-        return;
+        return next.has_value();
     }
     retarget(std::move(*next), ScreenOrigin::Playlist);
+    return true;
 }
 
 void ScreenPolicy::resume() {
@@ -300,11 +322,25 @@ void ScreenPolicy::resume() {
         retarget(std::string(), ScreenOrigin::None); // selections only: back to no game
         return;
     }
-    if (!back.empty() && back != m_targetId && (canPlay(back) || !m_settings.clips)) {
+    // The game interrupted, while the room still has it: its clip, or its stills and card when the clip failed or
+    // clips are off.
+    if (!back.empty() && back != m_targetId && find(back) != nullptr) {
         retarget(std::move(back), backOrigin);
         return;
     }
-    advance();
+    if (advance()) {
+        return;
+    }
+    // No playlist to go on with (a room without a clip, or every clip failed): the start choice, never the selection
+    // held for good.
+    const std::optional<std::size_t> start = startIndex();
+    if (start && m_games[*start].id == m_targetId) {
+        m_origin = ScreenOrigin::Start; // the selection was the start choice: it plays on, not restarted
+    } else if (start) {
+        retarget(m_games[*start].id, ScreenOrigin::Start);
+    } else {
+        retarget(std::string(), ScreenOrigin::None);
+    }
 }
 
 bool ScreenPolicy::canPlay(std::string_view id) const {
@@ -337,6 +373,13 @@ std::optional<ScreenPicture> ScreenPolicy::wantedStill() const noexcept {
         return std::nullopt;
     }
     return m_chain[m_chainIndex];
+}
+
+void ScreenPolicy::videoShowing() noexcept {
+    if (!m_clipShownAt) {
+        m_clipShownAt = m_elapsed; // the clip's own clock starts at its first frame
+    }
+    m_videoShowing = true;
 }
 
 void ScreenPolicy::clipDuration(double seconds) noexcept {
@@ -403,6 +446,7 @@ void ScreenPolicy::retarget(std::string id, ScreenOrigin origin) {
     m_videoShowing = false;
     m_videoFailed = false;
     m_elapsed = 0.0;
+    m_clipShownAt.reset();
     m_clipSeconds.reset();
     m_holdLeft.reset();
     m_launchPosition.reset();

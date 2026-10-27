@@ -106,8 +106,8 @@ struct ScreenPlaySettings {
 ///    playlist's games one after the other (tick()), the game just shown skipped when the playlist has another. The item
 ///    focused or inspected (hover()) becomes the target once it has been so for kScreenDwellSeconds, held while it or
 ///    anything else is hovered; once nothing is (free roam, the quick catalog closed) its clip plays to its end, at most
-///    previewSeconds, then the game the selection interrupted plays again from its start and the playlist goes on after
-///    it. The item clocks run while the screen is in view and Running. An id the games do not list is a game without
+///    previewSeconds, then the game the selection interrupted plays again from its start (its stills when its clip
+///    failed) and the playlist goes on after it; with no such game and no playlist, the start choice. The item clocks run while the screen is in view and Running. An id the games do not list is a game without
 ///    media or card: the idle pattern. Each new target bumps targetGeneration().
 ///  - The picture of the target: its video once a frame of it is shown (videoShowing()), else the still of the fallback
 ///    chain that is ready (stillReady()), the title card last (for a game with a card, once its clip cannot play), else
@@ -173,10 +173,10 @@ public:
     /// The still loaded and shown while the video is not (nothing yet).
     [[nodiscard]] std::optional<ScreenPicture> readyStill() const noexcept { return m_readyStill; }
 
-    /// A frame of the target's video is on the screen.
-    void videoShowing() noexcept { m_videoShowing = true; }
+    /// A frame of the target's video is on the screen (the first one starts the clip's own clock).
+    void videoShowing() noexcept;
     /// The target's clip lasts `seconds` (known once its first frame shows): a shorter clip than previewSeconds plays
-    /// to its end.
+    /// to its end, counted from its first frame.
     void clipDuration(double seconds) noexcept;
     /// The target's video failed (its decoder's DecodeFailure, or it could not start): the stills from now on, and the
     /// clip skipped for the rest of the run.
@@ -205,14 +205,23 @@ public:
 private:
     /// Makes `id` the target (its media from the list, none when unlisted) and starts its picture afresh.
     void retarget(std::string id, ScreenOrigin origin);
+    /// The start choice's index in the games (chooseStartGame, else chooseStillGame); none without autoplay.
+    [[nodiscard]] std::optional<std::size_t> startIndex() const;
     /// The start choice (autoplay), else no game.
     void startChoice();
-    /// The playlist's next game (the one just shown skipped when there is another).
-    void advance();
-    /// The selection let go has played: the game it interrupted, else the playlist's next.
+    /// The playlist's next game (the one just shown skipped when there is another); false when the playlist has none
+    /// (the target plays on).
+    bool advance();
+    /// The selection let go has played: the game it interrupted while the room has it, else the playlist's next, else
+    /// the start choice.
     void resume();
-    /// What the target is given before the next: previewSeconds, its clip's duration when shorter.
-    [[nodiscard]] double itemSeconds() const noexcept;
+    /// The target has had its time: previewSeconds from the switch, or a shorter clip's length from its first frame.
+    [[nodiscard]] bool itemPlayed() const noexcept;
+    /// Seconds since the clip's first frame (since the switch before it shows), and the same within its current pass.
+    [[nodiscard]] double clipSeconds() const noexcept;
+    [[nodiscard]] double clipPhase() const noexcept;
+    /// The target plays on (a playlist of one): its time counted afresh, its clip's pass kept.
+    void restartClock() noexcept;
     /// `id` is listed with a playable clip that has not failed.
     [[nodiscard]] bool canPlay(std::string_view id) const;
     [[nodiscard]] const ScreenGame* find(std::string_view id) const noexcept;
@@ -239,6 +248,8 @@ private:
     /// The item's clock: the last tick, the seconds the target played, the clip's duration, the selection's hold left.
     std::optional<double> m_lastTick;
     double m_elapsed = 0.0;
+    /// m_elapsed when the clip's first frame showed (the clip's own clock), nothing before.
+    std::optional<double> m_clipShownAt;
     std::optional<double> m_clipSeconds;
     std::optional<double> m_holdLeft;
 
