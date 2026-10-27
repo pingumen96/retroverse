@@ -23,6 +23,8 @@
 // handheld floor's shared room (pocketlab's and pokemini's sections, generic cases) from its doorway. The Gate D goldens
 // of I6 step 6 (ADR-0014 §6, concept panels 5 and 6): G15 the arcade room from its doorway (its rows of cabinets, the
 // hero cabinet with the room's video), G16 the handheld room of gb (its counter showcases, stations) from its doorway.
+// Gate D's (I6 step 7): G17 an optical-era lounge room (esde/case-shelves' ps2 on gen6, concept panel 4) from its
+// doorway, G18 the handheld floor's hall from east of its doorways, looking back to the elevator.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1009,5 +1011,84 @@ TEST_CASE("golden/G16: the building's handheld room from its doorway", "[gpu][go
                        "pictogram beside the neon; from the doorway (the room's doorway camera), the hero CRT's clip "
                        "held at 1.0 s.",
                        "--start-room room:gb: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G17: an optical-era lounge room from its doorway", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g17", "esde/case-shelves");
+    const rv::app::RunReport first = firstRun(room, "room:ps2");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    // ps2 stands on gen6, whose pack is the optical era's lounge (ADR-0014 §1, look.md: concept panel 4); its 100
+    // titles as DVD keep cases, most of them standing on their side with an upright spine (I6 step 4).
+    const rv::world::Room& ps2 = roomHolding(plan, "ps2");
+    CHECK(ps2.id.toString() == "room:ps2");
+    CHECK(ps2.floor == "gen6");
+    CHECK(ps2.mediaFamily == "disc_case_dvd_v2");
+    CHECK(ps2.themePack == "optical_era_lounge");
+    const fs::path shot = room.dir / "g17.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run =
+        room.app("g17", startArguments("room:ps2", kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireBuildingRun(run, ps2.floor, "room:ps2");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.items == 100);
+    CHECK(report.residency.labels == 0);
+    CHECK(report.residency.coverFailures == 0);
+    REQUIRE(report.video.bound);
+    CHECK(report.video.screen == "room:ps2/fx:hero.crt");
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G17", "g17_optical_era_room_golden",
+                       "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style "
+                       "14.3, concept panel 4): the esde/case-shelves fixture's ps2 room on gen6 under the "
+                       "optical_era_lounge pack (dark blue walls over the walnut wainscot, a discreet blue against warm "
+                       "lamps), its 100 invented titles as DVD keep cases (disc_case_dvd_v2): the featured ones "
+                       "face-out in the two lit glass display cases and on the featured wall shelf, the hero modules' "
+                       "bookcases lit inside with a face-out band and cases standing on their side with their spines "
+                       "upright; the pack's era furniture: a low sofa "
+                       "facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on "
+                       "sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from "
+                       "the doorway (the room's doorway camera), the hero CRT showing its colour bars (no clip).",
+                       "--start-room room:ps2: the room's doorway camera (no --spawn)", std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G18: a floor's hall looking back to its elevator", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g18", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "room:gb");
+    const rv::world::WorldPlan plan = planOf(room, first);
+    // The handheld floor's two rooms face each other across its hall: gb in the north row, the shared room in the south
+    // row, both at x 7650 mm (ADR-0013 §7). --spawn is in --start-room's frame (room:gb's, yaw 0 on the north row):
+    // the floor's x 11.5 m on the hall's centre line is room:gb's (11.5 - 7.65, 0 + 6.65).
+    const rv::world::Room& gb = roomHolding(plan, "gb");
+    const rv::world::Room& shared = roomHolding(plan, "pokemini");
+    CHECK(gb.floor == "handheld");
+    CHECK(shared.floor == "handheld");
+    CHECK(gb.placement == rv::world::RoomPlacement{7650, -6650, 0});
+    CHECK(shared.placement.xMm == 7650);
+    const fs::path shot = room.dir / "g18.png";
+    constexpr std::uint32_t kFrames = 30;
+    constexpr std::string_view kSpawn = "3.85,0,6.65,270,-4";
+    const AppRun run = room.app("g18", startArguments("room:gb", kFrames, shot,
+                                                      {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
+                                                       std::string(kSpawn)}));
+    requireBuildingRun(run, gb.floor, "");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.sceneAreas.has_value());
+    CHECK(report.sceneAreas->area == rv::world::hallAreaId(gb.floor));
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G18", "g18_handheld_hall_golden",
+                       "Gate D golden of a floor's hall (I6 steps 1 and 2, ADR-0014, style 4 and 13.4, look.md's "
+                       "halls: rooms glow through their doorways, never black holes): the esde/building fixture's "
+                       "handheld floor, the walker on the hall's centre line east of its two doorways looking west to "
+                       "the elevator: the gb room's doorway on the right and the shared room's on the left, each "
+                       "under its portal with the room's lit sign and a blade sign, their rooms lit through them (the "
+                       "neighbours' lights through the doorway, the doorway fill), the handheld archive's dressed hall "
+                       "(dark warm plaster over a panelled wainscot, beams, sconces and muted prints in turn, a bench "
+                       "and a plant clear of the passage, the runner) and the elevator's doors under the floor's sign.",
+                       "--start-room room:gb --spawn 3.85,0,6.65,270,-4: the floor's x 11.5 m on the hall's centre "
+                       "line, facing west (in room:gb's frame)",
+                       std::nullopt},
                       room, run, shot, kFrames);
 }

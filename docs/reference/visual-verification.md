@@ -122,7 +122,11 @@ doorway); the arcade's views of the step (the doorway, the north wall from the r
 the hero cabinet `--spawn -0.625,0,-2.4,0,-6`, a west row `--spawn -2.3,0,-2.6,-90,-6`, the aisle's pairs `--spawn
 0.3,0,1.0,-90,-8`) and the gb room's counter up close (`--spawn 0.4,0,1.0,-90,-28`) are in `docs/i6/step-6.md`;
 the arcade's cabinets up close and a launch from a cabinet's screen are `gpu.world families: the arcade room's
-cabinets ...` and `... a game launched from its cabinet's screen ...`. The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
+cabinets ...` and `... a game launched from its cabinet's screen ...`. Gate D (I6 step 7) adds G17
+(`g17_optical_era_room_golden.png`: `esde/case-shelves`, `--start-room room:ps2`, the optical-era lounge's room on gen6
+with its DVD keep cases, from the doorway) and G18 (`g18_handheld_hall_golden.png`: `esde/building`, `--start-room
+room:gb --spawn 3.85,0,6.65,270,-4`, the handheld floor's hall from east of its doorways looking back to the elevator:
+`--spawn` is in the start room's frame, here the floor's x 11.5 m on the hall's centre line). The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
 `esde/case-shelves` fixture: 160 jewel cases, 100 keep cases, 120 big boxes, most of them spine-out, their dark shells
 and full-height printed spines since the step's review) and `gpu.world families: a stored building of generator 1.3 is
 migrated once` (`tests/fixtures/world/legacy/`). `$env:RV_UPDATE_GOLDEN=1;

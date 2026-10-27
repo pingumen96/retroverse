@@ -23,6 +23,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate B -Benchmarks                # also every hidden benchmark, informative
 ./scripts/gate.ps1 -Gate C                            # Gate C: Gate A + every golden, the I4 checks, the benchmark path
 ./scripts/gate.ps1 -Gate C -RealLibrary               # also the real library's building and SNES room (ES-DE closed)
+./scripts/gate.ps1 -Gate D                            # Gate D: Gate C + the I6 checks, every golden to G18
+./scripts/gate.ps1 -Gate D -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # also the migrations
+./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary   # the timing parts alone (Release), a quiet-machine rerun
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -169,6 +172,16 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   stamp within 3 s, NFR-01 to the lobby (5 s), the busiest floor's GPU memory (512 MiB), the rides cold and warm (the
   view back within 10 s and 3 s, the room that holds the walker within 30 s and 3 s), then Gate B's rows of the SNES
   room.
+- `scripts/gate.ps1 -Gate D` (`docs/testing/gate-d.md`, logs in `build/gate-d`) runs Gate C's steps with every golden
+  (G01 to G18: I6's G14 to G18 among them) and, per Debug and Release, a row per I6 area counted from the unit and GPU
+  runs (light through the doorways, the dressed halls, the theme packs, the side-face spines and their migration, the
+  era furniture, the hub, the arcade and the handhelds; a case may count in an I4 row too). `-RealLibrary` runs Gate C's
+  real-library run with `RV_LEGACY_CLI` set from `-LegacyCli` (or the variable): the migrations' case runs too, and two
+  rows read its reports (`build/msvc-x64-release/real-library/migration/<run>.json`): generator 1.3's building
+  migrated once (the rooms of succeeded families, the others byte for byte, none over capacity, a second start and the
+  whole job writing nothing) and the ground floor's rooms re-placed onto the hub in the same update. `-TimingOnly`
+  builds Release alone and runs the benchmark path and, with `-RealLibrary`, the real library's run (a rerun of the
+  timing parts on a quiet machine).
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure

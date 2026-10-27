@@ -25,8 +25,8 @@ tools).
 ./scripts/test.ps1                                    # unit tests (label "unit")
 ./scripts/test.ps1 -Filter aabb                       # ctest -R aabb
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also the GPU smoke tests (label "gpu")
-./scripts/gate.ps1 -Gate C                            # the latest gate: build matrix, tests, goldens, benchmark path
-./scripts/gate.ps1 -Gate C -RealLibrary               # also the real library's building and SNES room, ES-DE closed
+./scripts/gate.ps1 -Gate D                            # the latest gate: build matrix, tests, goldens, benchmark path
+./scripts/gate.ps1 -Gate D -RealLibrary               # also the real library's building, migrations and SNES room
 ./scripts/real-library.ps1 -Filter '[real-library][building]'   # the real library, ES-DE closed (see Safety)
 ```
 

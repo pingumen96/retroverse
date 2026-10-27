@@ -491,7 +491,11 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   of the halls stay tungsten (a dim version of their room's neon was left out); the era's colour beyond materials and
   light (since step 3b the furniture, rugs and posters are the era's, but from the doorway the colour shares barely
   move: the concept's colour is its posters' art, screens and signs); a print
-  palette per pack for the halls.
+  palette per pack for the halls. Gate D's G17 (the optical-era lounge from its doorway, `docs/testing/gate-d.md`):
+  the room reads darker and calmer than concept panel 4 (median luma 28 against 35, colour 1.8% against 13%, blue
+  5% against 19%), its upper walls and ceiling falling close to black (the top quarter's median 17 against 27: style
+  §4 asks that they never do; a blue wash or cove on the upper walls, as the arcade's and the handhelds' got at step
+  6), the sofa seen from the doorway a plain dark back, the large posters on the front wall behind the walker.
 - **Era furniture (I6 step 3b, `docs/i6/step-3b.md`):** done in the hero corner and the decoration sockets. Left:
   furniture that needs a place of its own (a coffee table, the study's bookcases of boxes), a lounge chair of its own for the handheld archive (since the review a one-seat sofa on tall legs: from
   behind a plain upholstered back; an armchair whose back is thinner than its arms and leans back), the bean bags'

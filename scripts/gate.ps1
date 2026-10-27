@@ -65,7 +65,20 @@
          restart's building job skipped by its stamp (3 s), NFR-01 to the lobby (5 s), the busiest floor's GPU memory
          (512 MiB), the rides cold and warm (the view back within 10 s cold and 3 s warm, the room within 30 s and 3 s),
          and Gate B's rows of the SNES room.
-    Gates M1, B and C run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
+    Gate D (I6, the styling pass of the building, ADR-0014; docs/testing/gate-d.md): everything Gate C runs, with every
+    golden (Gate C's and I6's G14 to G18) and Gate B's benchmark path in Release, and
+      7. per Debug and Release, rows for the I6 test cases counted from the unit and GPU runs, one per area (light through
+         the doorways, the dressed halls, the theme packs, the side-face spines and their migration, the era furniture,
+         the hub, the arcade and the handhelds); a case may count in an I4 row too;
+      8. with -RealLibrary, Gate C's real-library run with the family migrations' case too ([real-library][building]
+         holds it): the library planned by generator 1.3's retroverse-cli.exe (-LegacyCli or RV_LEGACY_CLI; the case
+         and its row fail without it), then started in this build: its rows read the case's run reports in
+         build/msvc-x64-release/real-library/migration (the rooms of succeeded families migrated once, the others byte
+         for byte, none over capacity, the ground floor's rooms re-placed onto the hub in the same update, a second
+         start and the whole job writing nothing).
+    -TimingOnly (Gate D) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the benchmark
+    path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests).
+    Gates M1, B, C and D run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
     shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
     a failing program of the user's (a WerFault or loader box) against the run too: its row names the rule that
     matched, so such a finding can be told from a test's.
@@ -86,10 +99,13 @@
     ./scripts/gate.ps1 -Gate B -Benchmarks      # also every hidden benchmark, informative
     ./scripts/gate.ps1 -Gate C
     ./scripts/gate.ps1 -Gate C -RealLibrary     # the real library's building and SNES room, ES-DE closed
+    ./scripts/gate.ps1 -Gate D
+    ./scripts/gate.ps1 -Gate D -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # ES-DE closed
+    ./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary     # the timing parts again, on a quiet machine
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'M1', 'B', 'C')]
+    [ValidateSet('A', 'M1', 'B', 'C', 'D')]
     [string]$Gate,
     [switch]$Clean,
     [switch]$RealLibrary,
@@ -99,7 +115,9 @@ param(
     [string]$MediaRoot = $env:RV_REAL_MEDIA_ROOT,
     [string]$RetroArchExe = $env:RV_REAL_RETROARCH_EXE,
     [switch]$FullHashPass,
-    [switch]$Benchmarks
+    [switch]$Benchmarks,
+    [string]$LegacyCli = $env:RV_LEGACY_CLI,
+    [switch]$TimingOnly
 )
 $ErrorActionPreference = 'Stop'
 # Numbers in the summary are formatted with the invariant culture: an Italian Windows would print 1235 s as "1.235 s".
@@ -112,11 +130,15 @@ $resultsFile = Join-Path $logDir 'results.json'
 $focusReport = Join-Path $logDir 'focus_watch.json'
 
 if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
-    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B and C, -FullHashPass to -Gate M1' -ForegroundColor Red
+    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C and D, -FullHashPass to -Gate M1' -ForegroundColor Red
     exit 2
 }
-if ($Benchmarks -and $Gate -notin @('B', 'C')) {
-    Write-Host 'gate: -Benchmarks belongs to -Gate B and C' -ForegroundColor Red
+if ($Benchmarks -and $Gate -notin @('B', 'C', 'D')) {
+    Write-Host 'gate: -Benchmarks belongs to -Gate B, C and D' -ForegroundColor Red
+    exit 2
+}
+if ($TimingOnly -and $Gate -ne 'D') {
+    Write-Host 'gate: -TimingOnly belongs to -Gate D' -ForegroundColor Red
     exit 2
 }
 if ($FullHashPass -and -not $RealLibrary) {
@@ -170,7 +192,7 @@ $gateTimer = [Diagnostics.Stopwatch]::StartNew()
 # --- Gates M1, B and C under the focus watcher -------------------------------------------------------------------------
 # The outer run starts the gate again under scripts/focus_watch.py, with RV_GATE_INNER set; the inner run does the work
 # and leaves its rows in results.json, which the outer one prints with the watcher's verdict.
-if ($Gate -in @('M1', 'B', 'C') -and $env:RV_GATE_INNER -ne '1') {
+if ($Gate -in @('M1', 'B', 'C', 'D') -and $env:RV_GATE_INNER -ne '1') {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if (-not $python) {
         Write-Host 'gate: Python 3.10 or later (python) is not on PATH: scripts/focus_watch.py needs it.' -ForegroundColor Red
@@ -189,6 +211,8 @@ if ($Gate -in @('M1', 'B', 'C') -and $env:RV_GATE_INNER -ne '1') {
     }
     if ($FullHashPass) { $arguments += '-FullHashPass' }
     if ($Benchmarks) { $arguments += '-Benchmarks' }
+    if ($LegacyCli) { $arguments += @('-LegacyCli', $LegacyCli) }
+    if ($TimingOnly) { $arguments += '-TimingOnly' }
     $shell = (Get-Process -Id $PID).Path
     Write-Host "Gate $Gate under scripts/focus_watch.py (logs in $logDir)"
     $env:RV_GATE_INNER = '1'
@@ -307,12 +331,14 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt')
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
-    $pattern = if ($Gate -in @('B', 'C')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
+    $pattern = if ($Gate -in @('B', 'C', 'D')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
     # The goldens the gate's page promises: one that the run does not report (renamed, untagged, not discovered) is a
     # failed row, never a row that silently disappears.
     $expected = switch ($Gate) {
         'B' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10') }
         'C' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13') }
+        'D' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15', 'G16',
+                'G17', 'G18') }
         default { @('G01') }
     }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)
@@ -766,10 +792,10 @@ $i4Areas = [ordered]@{
         'the quick catalog''s selection)'
 }
 
-# A row per I4 area: its unit and GPU cases of the preset's runs.
-function Add-I4Rows([string]$Preset, $UnitCases, $GpuCases) {
-    foreach ($area in $i4Areas.Keys) {
-        $pattern = $i4Areas[$area]
+# A row per area of $Areas (I4's or I6's): its unit and GPU cases of the preset's runs.
+function Add-AreaRows([string]$Label, $Areas, [string]$Preset, $UnitCases, $GpuCases) {
+    foreach ($area in $Areas.Keys) {
+        $pattern = $Areas[$area]
         $unit = @($UnitCases | Where-Object { $_.name -match $pattern })
         $gpu = @($GpuCases | Where-Object { $_.name -match $pattern })
         $counts = Get-CaseCounts (@($unit) + @($gpu))
@@ -782,33 +808,70 @@ function Add-I4Rows([string]$Preset, $UnitCases, $GpuCases) {
         $details = '{0} passed, {1} failed, {2} skipped ({3} unit, {4} GPU)' -f $counts.Passed, $counts.Failed,
             $counts.Skipped, $unit.Count, $gpu.Count
         if ($failedNames.Count -gt 0) { $details += ': ' + ($failedNames -join '; ') }
-        Add-Result "I4 $area $Preset" $result $details $time
+        Add-Result "$Label $area $Preset" $result $details $time
     }
+}
+
+# --- Gate D: the I6 checks -----------------------------------------------------------------------------------------------
+# The I6 test cases among the unit and GPU runs, by area (the step that made them; docs/i6/step-*.md). A case counts in
+# one I6 area only, and may count in an I4 row too (the floors, the families, the light packing grew at I6); the goldens
+# have their own rows.
+$i6Areas = [ordered]@{
+    'light'            = '^unit\.(scene/areas:|render/light_packing:|world/room_look:|' +
+        'world/floor: (a full floor: the hall facing|the review''s cases))|' +
+        '^gpu\.world floor: light reaches through the doorways'
+    'halls'            = '^unit\.(world/floor: (the hall''s|a narrow hall|a longer hall appends its dressing)|' +
+        'assets/surface_textures:|assets/test_patterns: a hall''s print)'
+    'theme packs'      = '^unit\.(world/theme packs:|cli/worldplan: a stale theme pack|' +
+        'world/building plan: a stored room''s recorded family is authoritative, its theme pack|' +
+        'assets/test_patterns: neon|geometry/prefabs: a shelf lit inside|' +
+        'render/gpu_memory: (the procedural surfaces|a metallic-roughness map))|' +
+        '^gpu\.world look:'
+    'spines'           = '^unit\.(world/families: cases|world/migration:|geometry/collection: a case''s side spine|' +
+        'assets/collection_labels: a printed spine|cli/worldplan update: generator 1\.3)|' +
+        '^gpu\.world families: (jewel cases stand|a stored building of generator 1\.3)'
+    'era furniture'    = '^unit\.(world/era furniture:|geometry/prefabs: the era|assets/test_patterns: the era)'
+    'hub'              = '^unit\.(world/hub:|app/hub_showcase:|app/elevator_prompt_document: the totem|' +
+        'ui/directory: openGame|geometry/prefabs: the hub|geometry/mesh_builder: torus|' +
+        'assets/test_patterns: the hub)|^gpu\.world hub:'
+    'arcade handhelds' = '^unit\.(world/families: the arcade|geometry/prefabs: (the arcade|the handhelds|the review of I6)|' +
+        'assets/test_patterns: an arcade)|^gpu\.world families: (the arcade room''s cabinets|a game launched from its cabinet)'
 }
 
 # The real library's building (tests/unit/app/test_building_real.cpp, [real-library][building]) and I3's SNES room
 # ([real-library][room-real]) through one scripts/real-library.ps1 run (one pair of snapshots), their figures read from
 # the run reports the tests leave in build/msvc-x64-release/real-library/building and .../room.
-function Invoke-RealBuilding {
+# Gate D (-Migration): the same run with generator 1.3's CLI named (RV_LEGACY_CLI, from -LegacyCli), so that the
+# migrations' case ([real-library][building][migration]) runs too; its rows read its reports in .../migration.
+function Invoke-RealBuilding([switch]$Migration) {
     $preset = 'msvc-x64-release'
     $realDir = Join-Path $logDir 'real-library'
     $buildingDir = Join-Path $root "build/$preset/real-library/building"
     $roomDir = Join-Path $root "build/$preset/real-library/room"
+    $migrationDir = Join-Path $root "build/$preset/real-library/migration"
     $realLog = Join-Path $logDir 'real-library.log'
     $testLog = Join-Path $realDir 'tests.log'
     # An earlier run's reports must not stand for this run's.
     Remove-Item -LiteralPath $testLog -ErrorAction SilentlyContinue
-    foreach ($dir in @($buildingDir, $roomDir)) {
+    foreach ($dir in @($buildingDir, $roomDir, $migrationDir)) {
         Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue | Remove-Item
     }
+    $savedLegacy = $env:RV_LEGACY_CLI
+    if ($Migration -and $LegacyCli) { $env:RV_LEGACY_CLI = $LegacyCli }
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
-        -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir `
-        -Filter '[real-library][building],[real-library][room-real]' *> $realLog
-    $realCode = $LASTEXITCODE
+    try {
+        & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
+            -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir `
+            -Filter '[real-library][building],[real-library][room-real]' *> $realLog
+        $realCode = $LASTEXITCODE
+    }
+    finally {
+        $env:RV_LEGACY_CLI = $savedLegacy
+    }
     $firstRow = $results.Count
     if (Add-RealLibraryCheckRows $preset $realLog $testLog $realCode $timer.Elapsed.TotalSeconds '[building] and [room-real]') {
         Add-RealBuildingRows $buildingDir $testLog
+        if ($Migration) { Add-RealMigrationRows $migrationDir $testLog }
         Add-RealRoomRows $roomDir $testLog
     }
     if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
@@ -895,14 +958,62 @@ function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
     }
 }
 
+# The family migrations on the real library (Gate D; tests/unit/app/test_building_real.cpp's second case, I6 steps 4 to
+# 6): the library planned by generator 1.3, then started in this build (`migrate`), again (`second`) and with the
+# building stamp removed (`whole`). The case checks every room (the test's verdict is its own row); these rows give
+# what it found. Nothing derived from the user's titles is printed: counts, the families' and the rooms' ids.
+function Add-RealMigrationRows([string]$migrationDir, [string]$testLog) {
+    $names = @('migrate', 'second', 'whole')
+    $runs = [ordered]@{}
+    foreach ($name in $names) { $runs[$name] = Read-Report (Join-Path $migrationDir "$name.json") }
+    $missing = @($names | Where-Object { -not $runs[$_] })
+    if ($missing.Count -gt 0) {
+        $why = if (-not $LegacyCli) { 'no generator 1.3 CLI: give -LegacyCli or RV_LEGACY_CLI (docs/i6/step-4.md)' }
+               else { "the reports of {0} are missing, see $testLog" -f ($missing -join ', ') }
+        Add-Result 'Real building: generator 1.3 migrated once' 'FAILED' $why 0 'once, 0 over capacity'
+        Add-Result 'Real building: re-placed onto the hub' 'FAILED' 'not run' 0 'in the same update'
+        return
+    }
+    $summary = if (Test-Path $testLog) {
+        Select-String -Path $testLog -Pattern 'Real building: (\d+) room\(s\) migrated, (\d+) other room\(s\) byte for byte in their elements, (\d+) title\(s\) over capacity' |
+            Select-Object -Last 1
+    }
+    $m = $runs['migrate'].world
+    $migrated = @($m.migratedRooms)
+    $families = @($migrated | Group-Object { "$($_.from) -> $($_.to)" } | Sort-Object Name |
+            ForEach-Object { '{0} {1}' -f $_.Count, $_.Name }) -join ', '
+    $later = @($runs['second'].world, $runs['whole'].world)
+    $onceOk = $summary -and $m.outcome -eq 'updated' -and $m.planWritten -and $m.notice -eq 'rooms-migrated' -and
+        $migrated.Count -gt 0 -and [int]$summary.Matches[0].Groups[1].Value -eq $migrated.Count -and
+        [int]$summary.Matches[0].Groups[3].Value -eq 0 -and
+        @($later | Where-Object { $_.outcome -ne 'unchanged' -or @($_.migratedRooms).Count -gt 0 -or
+                @($_.replacedRooms).Count -gt 0 }).Count -eq 0 -and -not $runs['second'].world.planWritten
+    $details = if ($summary) {
+        '{0} rooms migrated ({1}), {2} other rooms byte for byte in their elements, {3} titles over capacity; the update {4} (notice {5}); a second start and the whole job (its stamp removed): {6} and {7}, nothing migrated or written' -f
+            $migrated.Count, $families, $summary.Matches[0].Groups[2].Value, $summary.Matches[0].Groups[3].Value,
+            (Format-Seconds2 $m.times.job.totalMs), $m.notice, $runs['second'].world.outcome, $runs['whole'].world.outcome
+    }
+    else { "no summary line in $testLog" }
+    Add-Result 'Real building: generator 1.3 migrated once' ($(if ($onceOk) { 'passed' } else { 'FAILED' })) $details 0 `
+        'once, 0 over capacity'
+    $replaced = @($m.replacedRooms)
+    $placed = @($replaced | ForEach-Object { '{0} from x {1} z {2} to x {3} z {4} mm' -f $_.room, $_.fromXMm, $_.fromZMm,
+            $_.toXMm, $_.toZMm }) -join '; '
+    Add-Result 'Real building: re-placed onto the hub' ($(if ($replaced.Count -gt 0 -and $onceOk) { 'passed' } else { 'FAILED' })) `
+        ('{0} ground-floor room(s) re-placed in the migrating update: {1}' -f $replaced.Count, $placed) 0 'in the same update'
+}
+
 Write-Host "Gate $Gate (logs in $logDir)"
 Push-Location $root
 try {
     $built = @{}
-    foreach ($preset in @('msvc-x64-debug', 'msvc-x64-relwithdebinfo', 'msvc-x64-release')) {
+    # -TimingOnly: the Release build alone, then the benchmark path and the real library below.
+    $buildPresets = if ($TimingOnly) { @('msvc-x64-release') }
+                    else { @('msvc-x64-debug', 'msvc-x64-relwithdebinfo', 'msvc-x64-release') }
+    foreach ($preset in $buildPresets) {
         $built[$preset] = Invoke-Build $preset
     }
-    foreach ($preset in @('msvc-x64-debug', 'msvc-x64-release')) {
+    foreach ($preset in $(if ($TimingOnly) { @() } else { @('msvc-x64-debug', 'msvc-x64-release') })) {
         if (-not $built[$preset]) {
             Add-Result "Unit tests $preset" 'not run' 'the build failed' 0
             Add-Result "GPU smoke tests $preset" 'not run' 'the build failed' 0
@@ -922,11 +1033,14 @@ try {
             Add-CaseRow "I3 unit tests $preset" $unit.Cases $i3UnitPattern 'world, the room in the app, covers, interaction, card and screens; of the unit run'
             Add-CaseRow "I3 GPU cases $preset" $gpu.Cases $i3GpuPattern 'gpu.world*, covers, media viewer, refresh, arrays, static groups, video; of the GPU run'
         }
-        if ($Gate -eq 'C') {
-            Add-I4Rows $preset $unit.Cases $gpu.Cases
+        if ($Gate -in @('C', 'D')) {
+            Add-AreaRows 'I4' $i4Areas $preset $unit.Cases $gpu.Cases
+        }
+        if ($Gate -eq 'D') {
+            Add-AreaRows 'I6' $i6Areas $preset $unit.Cases $gpu.Cases
         }
     }
-    if ($Gate -in @('B', 'C')) {
+    if ($Gate -in @('B', 'C', 'D')) {
         if ($built['msvc-x64-release']) {
             try { Invoke-Benchmarks }
             catch { Add-Result 'Benchmarks (Release)' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
@@ -941,6 +1055,7 @@ try {
                     'M1' { Invoke-RealLibrary }
                     'B' { Invoke-RealRoom }
                     'C' { Invoke-RealBuilding }
+                    'D' { Invoke-RealBuilding -Migration }
                 }
             }
             catch { Add-Result 'Real library' 'FAILED' "stopped: $($_.Exception.Message)" 0 }

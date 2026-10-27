@@ -1,0 +1,57 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "cda506d6eca9f6d89f4c175637ec35d561ac2e54",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style 14.3, concept panel 4): the esde/case-shelves fixture's ps2 room on gen6 under the optical_era_lounge pack (dark blue walls over the walnut wainscot, a discreet blue against warm lamps), its 100 invented titles as DVD keep cases (disc_case_dvd_v2): the featured ones face-out in the two lit glass display cases and on the featured wall shelf, the hero modules' bookcases lit inside with a face-out band and cases standing on their side with their spines upright; the pack's era furniture: a low sofa facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from the doorway (the room's doorway camera), the hero CRT showing its colour bars (no clip).",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G17",
+  "image": {
+    "file": "g17_optical_era_room_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "028a2c62562dda0117d5f15183e1e5267f1bf043e257a375bf3e1b953963e7b0",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/case-shelves",
+      "path": "tests/fixtures/esde/case-shelves",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "c3ffe959db5e4fe988d88fb6f800da8bad3e7884bbe0f2b252bea7a57b78ef31"
+    },
+    "plan": {
+      "digest": "5f3e72edc651cc94dd04c150238827df6d87e73ee4ffc16b0626aa82e91e5c52",
+      "fileSha256": "5f3e72edc651cc94dd04c150238827df6d87e73ee4ffc16b0626aa82e91e5c52",
+      "items": 100,
+      "placements": 420
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "3a8509f6c514015f7c943477a62e845cf2804c52117207af903287a56af96f5e"
+    }
+  },
+  "renderedOn": "2026-10-27",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G17:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/case-shelves into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:ps2 --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g17.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room room:ps2: the room's doorway camera (no --spawn)"
+}
