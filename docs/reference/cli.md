@@ -123,7 +123,7 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   over a stored plan they must hold every system of the stored building (else exit 2: `--replace` never drops a room).
   Since I4b step 1 `--replace` over a stored plan is an explicit action: the plan and the overrides (rewritten in
   schema 2) are saved together behind a snapshot ("Snapshot: <name> ('worldplan undo' restores it)", JSON `snapshot`,
-  else null), which `worldplan undo` restores.
+  else null), which `worldplan undo` restores; when only the overrides change, "Backup:" says the plan is unchanged.
   Since I4 step 4 (`docs/i4/step-4.md`) every arcade system takes a section of the arcade room `area:arcade` on the
   ground floor, a system with fewer distinct titles over all its games (with a cover or not) than `world.json`'s
   `sharedRoomMinTitles` (default 30) a section of its floor's shared room `area:shared:<floor>`, every other system its
@@ -201,18 +201,24 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `worldplan snapshots [--library <id>] [--json]` (I4b step 1, ADR-0015 §6) lists the world's snapshots newest first:
   each folder's name, its action and scope, when and by whom it was taken, the plan's and the overrides' digests
   (shortened; "none" for a file it did not hold), "undone" or, for an undo's own snapshot, the snapshot it undid; then
-  "Next undo:" (JSON `snapshots` with `name`, `sequence`, `kind` `action` | `undo`, `action`, `scope`, `writer`,
-  `takenAt`, `planDigest`, `metaDigest`, `overridesDigest` (null when absent), `undone`, `undoes`; `nextUndo`, `kept`
-  20, `interruptedAction` when a journal waits for the next lock). It reads only: exit 0 (none included), 2 usage.
+  the folders whose `snapshot.json` cannot be read, "damaged: <why>"; then "Next undo:" ("refused while a snapshot is
+  damaged" when one is) and, when a journal waits for the next lock, "Interrupted:" with the snapshot it names, or,
+  when the lock cannot roll it back, why and the repair by hand (JSON `snapshots` with `name`, `sequence`, `kind`
+  `action` | `undo`, `action`, `scope`, `writer`, `takenAt`, `planDigest`, `metaDigest`, `overridesDigest` (null when
+  absent), `undone`, `undoes`; `damaged` {`name`, `error`}; `nextUndo` (null while a folder is damaged), `kept` 20,
+  `interruptedAction`, `interruptedSnapshot`, `rollbackBlocked` (the repair, or null)). It reads only: exit 0 (none
+  included), 2 usage.
   `worldplan undo [--library <id>] [--dry-run] [--json]` restores the newest snapshot of an action not undone yet,
   byte for byte (the plan, its meta sidecar and `overrides.json`; a file the snapshot did not hold removed), under the
   world lock, behind a snapshot of kind `undo` of the state it replaced, which undo never offers (no redo): "Undid
   <action> of <scope>: the snapshot <name> taken <time> by <writer>", the digests, "Kept:", "Plan backup:" (the plan
   it replaced, kept in `backups/` as every plan write keeps it) (JSON `dryRun`, `restored`, `kept`, `planBackup`,
-  `snapshotsRemoved`, `rolledBack`). `--dry-run` names it and writes nothing. Exit 0 undone; 1
-  nothing to undo (no world, no snapshot, or only undone ones and undos: "the last change was an undo, which is never
-  undone (no redo)"); 2 usage; 3 the lock held by another program, a damaged snapshot (its files not those its digests
-  name: nothing written), a failed read or write.
+  `snapshotsRemoved`, `rolledBack`). `--dry-run` names it and restores nothing; it still takes the world lock, which
+  may create `world.lock` and roll back an interrupted action first, as for every writer. Exit 0 undone; 1 nothing
+  to undo (no world, no snapshot, or only undone ones and undos: "the last change was an undo, which is never undone
+  (no redo)"); 2 usage; 3 the lock held by another program or a journal it cannot roll back (the message names
+  `transaction.json`, the snapshot and the repair by hand), a damaged snapshot (its files missing or not those its
+  digests name) or any damaged folder (nothing written), a failed read or write.
 - `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in the building's plan
   (floor, room, fixture, slot, face-out or spine-out; JSON `floor`) or why it is not placed, with the version that
   stands for it; exit 1 no plan or a game the plan does not hold, 2 usage, 3 a plan refused.
