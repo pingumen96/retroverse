@@ -203,11 +203,16 @@ struct GeneratedLayer {
 inline constexpr int kMinTitleCardSide = 64;
 
 /// A screen's generated title card (I5 step 1, ADR-0016 §8: the end of a game's fallback chain on the hero CRT, 640 x
-/// 480): the generated front label's design (the frame, the stripes, the title centred, the system's name at the bottom
-/// left and the year at the bottom right, on the request's palette colour for its seed) drawn at `width` x `height`
-/// directly, never resampled: its sizes those of the 256 px wide label times width / 256, the rows a taller canvas adds
-/// given to the title's band; `request.label` is not used. Errors: InvalidArgument (no title font; a side below
-/// kMinTitleCardSide or above kMaxImageDimension).
+/// 480), a period title screen of the item's label: the label's layout (a frame, the title centred, the system's name
+/// at the bottom left and the year at the bottom right; one thin rule across the top for the label's two stripes) drawn
+/// at `width` x `height` directly, never resampled, its sizes those of the 256 px wide label times width / 256 (the
+/// title's 1.3 times, the details' 1.5 times), the rows a taller canvas adds given to the title's band. Its colours come
+/// from the request's palette colour for its seed (the label's on the shelf): a dark field of that colour, muted 30%
+/// towards grey and scaled to one luma for every colour (about the clips' level on the tube, never a bright panel), the
+/// title, details, frame and rule in that colour raised and mixed towards ivory; a soft glow at the middle falling off
+/// to the edges is baked in (as makeStandby's). GeneratedPicture::colours holds the field (before the glow) and the
+/// ink. `request.label` is not used. Errors: InvalidArgument (no title font; a side below kMinTitleCardSide or above
+/// kMaxImageDimension).
 [[nodiscard]] Expected<GeneratedPicture> drawTitleCard(const LabelFonts& fonts, const FrontLabelRequest& request,
                                                        int width, int height);
 
