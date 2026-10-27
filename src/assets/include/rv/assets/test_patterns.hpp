@@ -23,6 +23,11 @@ namespace rv::assets {
 /// and a bottom strip with a horizontal black-to-white grey ramp.
 [[nodiscard]] ImageData makeColorBars(int width, int height);
 
+/// A screen on standby (I5 step 1, ADR-0016 §8: the building's screens with no game at all, where the test room keeps
+/// its colour bars): a dim cold ground brightest at the middle, a raster of darker rows, a short dim trace across the
+/// middle and a small amber lamp at the bottom right; never text or a mark.
+[[nodiscard]] ImageData makeStandby(int width, int height);
+
 /// `cells` x `cells` checkerboard (cells clamped to [1, min(width, height)]); the top-left cell uses `a`.
 [[nodiscard]] ImageData makeCheckerboard(int width, int height, int cells, glm::u8vec4 a, glm::u8vec4 b);
 
@@ -101,6 +106,8 @@ inline constexpr std::string_view kPatternSideArt = "side_art";
 /// landscape body with rounded corners, a screen in its middle, a cross pad on its left and two round buttons on its
 /// right, drawn as makeNeonLettering() draws its letters (bent glass on a dark backing); never a console's outline.
 inline constexpr std::string_view kPatternHandheldIcon = "handheld_icon";
+/// makeStandby() (I5 step 1): the building's screens' own picture.
+inline constexpr std::string_view kPatternStandby = "standby";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
@@ -109,7 +116,7 @@ inline constexpr std::string_view kPatternHandheldIcon = "handheld_icon";
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
 /// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`); the era posters, the cork board and the terminal
 /// above (I6 step 3b); "board" (I6 step 5, above); "marquee" (I6 step 6, above); "side_art" (I6 step 6's review,
-/// above); "handheld_icon" (above). Errors: NotFound for an unknown name, InvalidArgument for a side outside [1,
+/// above); "handheld_icon" (above); "standby" (I5 step 1, above). Errors: NotFound for an unknown name, InvalidArgument for a side outside [1,
 /// kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);

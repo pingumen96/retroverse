@@ -199,6 +199,18 @@ struct GeneratedLayer {
 [[nodiscard]] Expected<GeneratedLayer> buildFrontLabelLayer(const LabelFonts& fonts, const FrontLabelRequest& request,
                                                             TextureFormat format);
 
+/// The smallest side of a title card.
+inline constexpr int kMinTitleCardSide = 64;
+
+/// A screen's generated title card (I5 step 1, ADR-0016 §8: the end of a game's fallback chain on the hero CRT, 640 x
+/// 480): the generated front label's design (the frame, the stripes, the title centred, the system's name at the bottom
+/// left and the year at the bottom right, on the request's palette colour for its seed) drawn at `width` x `height`
+/// directly, never resampled: its sizes those of the 256 px wide label times width / 256, the rows a taller canvas adds
+/// given to the title's band; `request.label` is not used. Errors: InvalidArgument (no title font; a side below
+/// kMinTitleCardSide or above kMaxImageDimension).
+[[nodiscard]] Expected<GeneratedPicture> drawTitleCard(const LabelFonts& fonts, const FrontLabelRequest& request,
+                                                       int width, int height);
+
 /// Where a front layer came from.
 enum class FrontOrigin {
     Cover,          ///< the cover, fitted

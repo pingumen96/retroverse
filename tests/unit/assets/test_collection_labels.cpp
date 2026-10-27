@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -470,4 +471,35 @@ TEST_CASE("assets/collection_labels: a printed spine drawn at its quad's shape (
     CHECK(onJewel.lines.size() <= onLayer.lines.size());
     CHECK(onJewel.pixelHeight >= onLayer.pixelHeight);
     CHECK_FALSE(onJewel.ellipsized);
+}
+
+TEST_CASE("assets/collection_labels: the screen's title card is the label's design at 640 x 480 (I5 step 1)",
+          "[assets][collection_labels]") {
+    const std::array<Rgb8, 2> palette{{{0x1D, 0x4E, 0x5C}, {0xB3, 0x4D, 0xCE}}};
+    FrontLabelRequest request{"Comet Courier", "", "Fantasy Home System", "1994", 5};
+    request.palette = palette;
+    auto card = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(card.has_value());
+    CHECK(card->picture.width == 640);
+    CHECK(card->picture.height == 480);
+    CHECK(card->picture.channels == 4);
+    // The label's colour for the seed on the room's palette, its text legible.
+    CHECK(card->colours.background == labelColours(paletteColour(5, palette)).background);
+    CHECK(mostCommon(card->picture) == card->colours.background);
+    CHECK(textContrast(card->picture, card->colours.background) >= kMinTextContrast);
+    // The title on one line at the label's size scaled by 2.5, never resampled from the 256 px layer.
+    CHECK(card->layout.lines == std::vector<std::string>{"Comet Courier"});
+    CHECK(card->layout.pixelHeight > 2.0F * 34.0F);
+    // The same pixels every time.
+    auto again = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(again.has_value());
+    CHECK(pixelHash(again->picture) == pixelHash(card->picture));
+    // A long title wraps as the label's does.
+    request.title = "The Extraordinarily Long Adventures of Captain Pemberton Across the Seven Floating Archipelagos";
+    auto wrapped = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(wrapped.has_value());
+    CHECK(wrapped->layout.lines.size() == 3);
+
+    CHECK(drawTitleCard(fonts(), request, 32, 480).error().code == rv::ErrorCode::InvalidArgument);
+    CHECK(drawTitleCard(LabelFonts{}, request, 640, 480).error().code == rv::ErrorCode::InvalidArgument);
 }

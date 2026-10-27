@@ -5,6 +5,7 @@
 #include <cmath>
 #include <utility>
 
+#include <rv/assets/image_io.hpp>
 #include <rv/core/random.hpp>
 
 namespace rv::assets {
@@ -680,23 +681,16 @@ Expected<GeneratedLayer> buildSpineLayer(const LabelFonts& fonts, const SpineReq
     return encodeGenerated(drawSpine(fonts, request, format), TextureClass::Spine, format);
 }
 
-Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLabelRequest& request,
-                                          TextureFormat format) {
-    if (fonts.title == nullptr) {
-        return makeError(ErrorCode::InvalidArgument, "a generated label needs the title font", "front label");
-    }
-    const FontFace& titleFont = *fonts.title;
-    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
-    const LayerSize layer = layerSize(TextureClass::Front, format);
-    // Laid out on a canvas of the label's shape (ADR-0013 §4), resampled once into the layer below; the layer itself
-    // for I3's shape.
-    const bool onCanvas = !request.label.isLayer();
-    const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
-    const float k = frontScale(format);
+namespace {
+
+/// The generated front label's design (the file comment) on a canvas of `size`, at scale `k` (its sizes those of the
+/// 256 px wide label times k), `layerHeight` the 188 rows of the label at k (a taller canvas adds to the title's band),
+/// `onCanvas`: the canvas is no layer (its text runs to its right edge less the margin), `layout` the title's.
+GeneratedPicture drawFrontDesign(const FontFace& titleFont, const FontFace& detailFont, const FrontLabelRequest& request,
+                                 float k, CanvasSize size, float layerHeight, bool onCanvas, TitleLayout layout) {
     GeneratedPicture result;
     result.colours = labelColours(paletteColour(request.seed, labelPaletteOr(request.palette)));
-    result.layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
-                             : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
+    result.layout = std::move(layout);
     result.picture = filledImage(size.width, size.height, result.colours.background);
     const Rgb8 background = result.colours.background;
     const Rgb8 text = result.colours.text;
@@ -707,7 +701,7 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
     const auto h = static_cast<float>(size.height);
     // What a canvas taller than the layer's 188 (at k) adds below the stripes: the title's band grows, the details
     // stay at the bottom (0 for the layer).
-    const float extra = onCanvas ? h - static_cast<float>(layer.height) : 0.0F;
+    const float extra = onCanvas ? h - layerHeight : 0.0F;
     const float inset = kFrontFrameInset * k;
     const float stroke = kFrontFrameStroke * k;
     fillRect(result.picture, inset, inset, w - inset, inset + stroke, frame);
@@ -754,6 +748,28 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
                         detailBaseline});
     }
     drawText(result.picture, text, runs);
+    return result;
+}
+
+} // namespace
+
+Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLabelRequest& request,
+                                          TextureFormat format) {
+    if (fonts.title == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "a generated label needs the title font", "front label");
+    }
+    const FontFace& titleFont = *fonts.title;
+    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
+    const LayerSize layer = layerSize(TextureClass::Front, format);
+    // Laid out on a canvas of the label's shape (ADR-0013 §4), resampled once into the layer below; the layer itself
+    // for I3's shape.
+    const bool onCanvas = !request.label.isLayer();
+    const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
+    const float k = frontScale(format);
+    TitleLayout layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
+                                  : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
+    GeneratedPicture result = drawFrontDesign(titleFont, detailFont, request, k, size,
+                                              static_cast<float>(layer.height), onCanvas, std::move(layout));
     if (onCanvas) {
         auto squeezed = resampleSrgb(result.picture, layer.width, layer.height);
         if (!squeezed) {
@@ -762,6 +778,26 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
         result.picture = std::move(*squeezed);
     }
     return result;
+}
+
+Expected<GeneratedPicture> drawTitleCard(const LabelFonts& fonts, const FrontLabelRequest& request, int width,
+                                         int height) {
+    if (fonts.title == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "a title card needs the title font", "title card");
+    }
+    if (width < kMinTitleCardSide || height < kMinTitleCardSide || width > kMaxImageDimension ||
+        height > kMaxImageDimension) {
+        return makeError(ErrorCode::InvalidArgument, "a title card's sides are from 64 to the largest image's",
+                         "title card");
+    }
+    const FontFace& titleFont = *fonts.title;
+    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
+    const LayerSize reference = layerSize(TextureClass::Front, TextureFormat::Bc1Srgb);
+    const float k = static_cast<float>(width) / kFrontReference;
+    TitleLayout layout = layoutFrontTitleIn(titleFont, request.title, request.fallbackTitle, k,
+                                            static_cast<float>(width) - 2.0F * kFrontTextLeft * k);
+    return drawFrontDesign(titleFont, detailFont, request, k, CanvasSize{width, height},
+                           static_cast<float>(reference.height) * k, true, std::move(layout));
 }
 
 Expected<GeneratedLayer> buildFrontLabelLayer(const LabelFonts& fonts, const FrontLabelRequest& request,
