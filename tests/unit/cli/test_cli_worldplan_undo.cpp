@@ -243,6 +243,19 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(after["interruptedAction"] == false);
     CHECK(after["rollbackBlocked"].is_null());
 
+    // A regeneration that changes only the overrides (the schema-1 file again beside the same plan) says so.
+    REQUIRE(session.run({"worldplan", "generate", "--replace", "--seed", "4242"}).code == ExitCode::Ok);
+    REQUIRE(contentOf(session.files.plan) == secondPlan);
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.overrides, handOverrides).has_value());
+    const RunResult overridesOnly = session.run({"worldplan", "generate", "--replace", "--seed", "4242"});
+    INFO(overridesOnly.out << overridesOnly.err);
+    REQUIRE(overridesOnly.code == ExitCode::Ok);
+    CHECK(contains(overridesOnly.out, "Backup:          none needed: the plan is unchanged, only the overrides were "
+                                      "rewritten\n"));
+    CHECK(contains(overridesOnly.out, "Snapshot:        "));
+    CHECK(contentOf(session.files.plan) == secondPlan);
+    CHECK(contentOf(session.files.overrides) == liftedOverrides);
+
     // A journal the lock cannot roll back (it names no snapshot): every writer refused, naming transaction.json, the
     // snapshot and the repair by hand; the list says so.
     REQUIRE(rv::core::writeTextFileAtomic(session.files.transaction,
@@ -261,7 +274,7 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(locked.code == ExitCode::RuntimeFailure);
     CHECK(contains(locked.err, "the journal transaction.json of an interrupted action names the snapshot nowhere"));
     CHECK(contains(locked.err, "backups/snapshots/nowhere/"));
-    CHECK(contentOf(session.files.plan) == firstPlan);
+    CHECK(contentOf(session.files.plan) == secondPlan);
 }
 
 TEST_CASE("cli/worldplan: the overflow fixture's building holds more titles than its rooms", "[cli][worldplan]") {

@@ -322,6 +322,9 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         }
         if (report->backup) {
             saved = fmt::format("the previous plan kept as {}", pathText(report->backup->filename()));
+        } else if (committed && committed->written && !report->written) {
+            // The same plan, the overrides changed (a schema-1 file rewritten in schema 2): the snapshot undoes that.
+            saved = "none needed: the plan is unchanged, only the overrides were rewritten";
         } else if (replace) {
             saved = report->written ? "no previous plan" : "the previous plan was this plan already";
         }
