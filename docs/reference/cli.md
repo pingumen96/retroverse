@@ -103,10 +103,13 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `assign`'s as `game.id` and `game.requested`; the text says "(for <alias>, an alias)".
 - `worldplan` (I3, ADR-0010, `docs/i3/step-3.md`, `step-4.md`, `step-9.md`, `step-10a.md`; the building since I4 step
   1, ADR-0013, `docs/i4/step-1.md`): the building's plan, the canonical JSON `<user data>/worlds/<library id>/
-  world-plan.json` in schema 2 (its floors and rooms; beside it `world-plan.meta.json`, `overrides.json`'s pins, read
-  and never written, the last 10 plans in `backups/` and the world lock `world.lock`, waited for 2 s). A plan of schema 1
-  (I3's one room) is read lifted into the building (`world::lift`: the room on its system's floor at the north row's
-  first position, the ground floor) by every subcommand and `where-is`; the first update writes it in schema 2.
+  world-plan.json` in schema 2 (its floors and rooms; beside it `world-plan.meta.json`, `overrides.json`'s pins, the
+  last 10 plans in `backups/`, the paired snapshots of the explicit actions in `backups/snapshots/` and the world lock
+  `world.lock`, waited for 2 s; since I4b step 1, `docs/i4b/step-1.md`, `overrides.json` is schema 2, schema 1 read
+  lifted, and a lock that finds the journal `transaction.json` of an interrupted action rolls it back first). A plan
+  of schema 1 (I3's one room) is read lifted into the building (`world::lift`: the room on its system's floor at the
+  north row's first position, the ground floor) by every subcommand and `where-is`; the first update writes it in
+  schema 2.
   `worldplan generate [--system <system>]... [--selection <file>]... [--seed <n>] [--library <id>] [--replace | --plan
   <file>] [--json]` generates a fresh building from the catalog's selections (or canonical selection files, one per
   system, which name the building's systems), validates it and saves it under the world lock, never over an existing
@@ -118,6 +121,9 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   ("Left out:", JSON `leftOut` {`system`, `reason`}); `--system` (repeatable) restricts it, only with `--plan` or when
   no plan is stored (else exit 2). Selection files given with `--system` name the same systems, and with `--replace`
   over a stored plan they must hold every system of the stored building (else exit 2: `--replace` never drops a room).
+  Since I4b step 1 `--replace` over a stored plan is an explicit action: the plan and the overrides (rewritten in
+  schema 2) are saved together behind a snapshot ("Snapshot: <name> ('worldplan undo' restores it)", JSON `snapshot`,
+  else null), which `worldplan undo` restores; when only the overrides change, "Backup:" says the plan is unchanged.
   Since I4 step 4 (`docs/i4/step-4.md`) every arcade system takes a section of the arcade room `area:arcade` on the
   ground floor, a system with fewer distinct titles over all its games (with a cover or not) than `world.json`'s
   `sharedRoomMinTitles` (default 30) a section of its floor's shared room `area:shared:<floor>`, every other system its
@@ -192,6 +198,27 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a hard rule broken or not
   a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3 unreadable). Every subcommand
   takes `--output <file>`.
+  `worldplan snapshots [--library <id>] [--json]` (I4b step 1, ADR-0015 §6) lists the world's snapshots newest first:
+  each folder's name, its action and scope, when and by whom it was taken, the plan's and the overrides' digests
+  (shortened; "none" for a file it did not hold), "undone" or, for an undo's own snapshot, the snapshot it undid; then
+  the folders whose `snapshot.json` cannot be read, "damaged: <why>"; then "Next undo:" ("refused while a snapshot is
+  damaged" when one is) and, when a journal waits for the next lock, "Interrupted:" with the snapshot it names, or,
+  when the lock cannot roll it back, why and the repair by hand (JSON `snapshots` with `name`, `sequence`, `kind`
+  `action` | `undo`, `action`, `scope`, `writer`, `takenAt`, `planDigest`, `metaDigest`, `overridesDigest` (null when
+  absent), `undone`, `undoes`; `damaged` {`name`, `error`}; `nextUndo` (null while a folder is damaged), `kept` 20,
+  `interruptedAction`, `interruptedSnapshot`, `rollbackBlocked` (the repair, or null)). It reads only: exit 0 (none
+  included), 2 usage.
+  `worldplan undo [--library <id>] [--dry-run] [--json]` restores the newest snapshot of an action not undone yet,
+  byte for byte (the plan, its meta sidecar and `overrides.json`; a file the snapshot did not hold removed), under the
+  world lock, behind a snapshot of kind `undo` of the state it replaced, which undo never offers (no redo): "Undid
+  <action> of <scope>: the snapshot <name> taken <time> by <writer>", the digests, "Kept:", "Plan backup:" (the plan
+  it replaced, kept in `backups/` as every plan write keeps it) (JSON `dryRun`, `restored`, `kept`, `planBackup`,
+  `snapshotsRemoved`, `rolledBack`). `--dry-run` names it and restores nothing; it still takes the world lock, which
+  may create `world.lock` and roll back an interrupted action first, as for every writer. Exit 0 undone; 1 nothing
+  to undo (no world, no snapshot, or only undone ones and undos: "the last change was an undo, which is never undone
+  (no redo)"); 2 usage; 3 the lock held by another program or a journal it cannot roll back (the message names
+  `transaction.json`, the snapshot and the repair by hand), a damaged snapshot (its files missing or not those its
+  digests name) or any damaged folder (nothing written), a failed read or write.
 - `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in the building's plan
   (floor, room, fixture, slot, face-out or spine-out; JSON `floor`) or why it is not placed, with the version that
   stands for it; exit 1 no plan or a game the plan does not hold, 2 usage, 3 a plan refused.

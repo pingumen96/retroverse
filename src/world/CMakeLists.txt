@@ -40,6 +40,7 @@ add_library(rv_world STATIC
     src/where_is.cpp
     src/world_config.cpp
     src/world_plan.cpp
+    src/world_snapshots.cpp
     src/world_store.cpp
 )
 add_library(rv::world ALIAS rv_world)

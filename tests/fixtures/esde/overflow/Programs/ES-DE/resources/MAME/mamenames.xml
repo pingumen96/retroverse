@@ -1,0 +1,5 @@
+<!-- An invented set, in the format of ES-DE's resources/MAME/mamenames.xml (the fixture's sets have gamelist names) -->
+<game>
+	<mamename>overflowset</mamename>
+	<realname>Overflow Set</realname>
+</game>

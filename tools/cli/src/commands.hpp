@@ -46,5 +46,7 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
 ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string> arguments);
 ExitCode runWorldPlanShow(CommandContext& context, std::span<const std::string> arguments);
 ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string> arguments);
+ExitCode runWorldPlanSnapshots(CommandContext& context, std::span<const std::string> arguments);
+ExitCode runWorldPlanUndo(CommandContext& context, std::span<const std::string> arguments);
 
 } // namespace rv::cli

@@ -68,8 +68,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `tests/unit/world/test_world_families.cpp` checks for every family.
 - World plans (ADR-0010, ADR-0013 §5): a plan is `writePlan()`'s canonical text, in schema 2 (the building), and is
   only ever written through `world::savePlan()` under the world lock (a hard rule broken is never saved); never edit
-  one by hand (it is then refused). A schema-1 plan is read and lifted (`world::lift`), never written. Placements are
-  never moved by an update; only `worldplan generate --replace` chooses the face-out titles again. The frozen oracles
+  one by hand (it is then refused). The one exception (I4b step 1, ADR-0015 §6): undo and the lock's rollback of an
+  interrupted action restore a snapshot's plan byte for byte with `core::writeFileAtomic` under the world lock, a plan
+  `savePlan()` wrote before; undo first keeps the plan it replaces in `backups/` (`core::backUpFile`) as `savePlan()`
+  does. A schema-1 plan is read and lifted (`world::lift`), never written. Placements are never moved by an update;
+  only `worldplan generate --replace` chooses the face-out titles again, and an undo can bring back the earlier plan's
+  (the plan before the action it undoes, byte for byte). The frozen oracles
   `tests/fixtures/world/v1/` are never rewritten; the goldens of `tests/fixtures/world/golden/` only with
   `RV_UPDATE_GOLDEN=1`.
 - Catalog identities (ADR-0008 §4, `rv_catalog`): a GameId is derived once from (`rv-game/1`, library, system, lookup

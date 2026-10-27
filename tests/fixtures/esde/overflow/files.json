@@ -1,0 +1,17 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe, the fake emulator's copy, and a generated
+// collection per system (tests/support/fixture_collection.hpp): ROM payloads, gamelists and small covers.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"}
+    ],
+    "directories": ["ES-DE/custom_systems"],
+    "collections": [
+        {"seed": 5100, "titles": 60, "duplicates": 0, "videos": 0, "coverSizes": [[140, 200]],
+         "romFolder": "roms/mame", "romExtension": ".zip", "romSize": 1024,
+         "gamelist": "ES-DE/gamelists/mame/gamelist.xml", "mediaFolder": "media/mame"},
+        {"seed": 5200, "titles": 1700, "duplicates": 0, "videos": 0, "coverSizes": [[160, 220]],
+         "romFolder": "roms/amiga", "romExtension": ".adf", "romSize": 1024,
+         "gamelist": "ES-DE/gamelists/amiga/gamelist.xml", "mediaFolder": "media/amiga"}
+    ]
+}

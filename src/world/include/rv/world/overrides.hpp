@@ -1,22 +1,31 @@
 #pragma once
 
-// overrides.json (ADR-0010 §9, §10; I3 step 9): <user data>/worlds/<library id>/overrides.json holds the world's pins,
-// a game held in a slot and a fixture held in its socket (with its prefab, when the pin names one). Retroverse reads it
-// and never writes it: I4's editor will (until then a test, or the user by hand). A missing file holds no pin.
+// overrides.json (ADR-0010 §9, §10; I3 step 9; schema 2 since I4b step 1, ADR-0015 §2):
+// <user data>/worlds/<library id>/overrides.json holds the world's pins, a game held in a slot and a fixture held in
+// its socket (with its prefab, when the pin names one) or at the place the user gave it. Since I4b Retroverse writes it
+// (writeOverrides(), saved under the world lock by world_store.hpp's saveOverrides() and world_snapshots.hpp's
+// commitWorld()); the user may still edit it by hand. A missing file holds no pin.
 //
 // The file (JSON with comments, every key but schemaVersion optional):
-//   {"schemaVersion": 1,
-//    "gamePins": [{"game": "g0123456789abcdef", "slot": "room:snes/fx:w01/s:3.12"}],
+//   {"schemaVersion": 2,
+//    "gamePins": [{"game": "g0123456789abcdef", "slot": "room:snes/fx:w01/s:3.12",
+//                  "provenance": {"origin": "editor", "time": "2026-10-27T10:00:00.000Z"}}],
 //    "fixturePins": [{"fixture": "room:snes/fx:w05", "prefab": {"manifest": "decor.poster.generic",
-//                                                                 "kind": "poster_frame"}}]}
-// A game is pinned once and a slot holds one pin; a fixture is pinned once; "prefab" is optional. A file of a newer
-// schemaVersion is refused (written by a newer Retroverse).
+//                                                                 "kind": "poster_frame"},
+//                     "transform": {"xMm": 1200, "zMm": -300, "yawCdeg": 9000},
+//                     "provenance": {"origin": "cli"}}]}
+// A game is pinned once and a slot holds one pin; a fixture is pinned once. "prefab", "transform" (the fixture's place
+// in the room's frame, its height the prefab's; absent for a fixture pinned in its socket) and "provenance" are
+// optional. Provenance says who made the pin (`origin`: editor, cli, or file for a schema-1 pin or a hand edit, the
+// default) and when (`time`, UTC, absent when unknown); it never decides anything and is left out of every digest.
+// Schema 1 (I3: no provenance, no transform) is read lifted (origin file); schema 2 is the only one written; a file of
+// a newer schemaVersion is refused (written by a newer Retroverse).
 //
-// In I3 pins are protected and reported, never applied: the generator and the incremental update never move or remove
-// a pinned object (a change that would is not applied and is reported as needing a confirmation, which I4's editor
-// asks for), a pin that names a game, slot, fixture or socket that no longer exists is reported as orphaned, and a pin
-// the plan does not honour is reported (ADR-0010 §10: "Overrides are applied last ... A change that would move a pinned
-// object is not applied and is reported").
+// Until I4b step 2 pins are protected and reported, never applied: the generator and the incremental update never move
+// or remove a pinned object (a change that would is not applied and is reported as needing a confirmation), a pin that
+// names a game, slot, fixture or socket that no longer exists is reported as orphaned, and a pin the plan does not
+// honour is reported (ADR-0010 §10: "Overrides are applied last ... A change that would move a pinned object is not
+// applied and is reported").
 
 #include <cstdint>
 #include <filesystem>
@@ -33,21 +42,71 @@
 
 namespace rv::world {
 
-/// overrides.json's format.
-inline constexpr std::int64_t kOverridesSchemaVersion = 1;
+/// overrides.json's format, the one written (schema 1 is read lifted).
+inline constexpr std::int64_t kOverridesSchemaVersion = 2;
+
+/// Who made a pin (ADR-0015 §2).
+enum class PinOrigin : std::uint8_t {
+    File,   ///< a schema-1 pin, or a pin written by hand (the default)
+    Editor, ///< the app's editor
+    Cli,    ///< retroverse-cli
+};
+
+[[nodiscard]] constexpr std::string_view toString(PinOrigin origin) noexcept {
+    switch (origin) {
+    case PinOrigin::File:
+        return "file";
+    case PinOrigin::Editor:
+        return "editor";
+    case PinOrigin::Cli:
+        return "cli";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::optional<PinOrigin> parsePinOrigin(std::string_view text) noexcept {
+    return detail::enumFromString(text, PinOrigin::Cli);
+}
+
+/// Where a pin came from: informative, never deciding anything, never in a digest.
+struct PinProvenance {
+    PinOrigin origin = PinOrigin::File;
+    /// When the pin was made, UTC as core::formatUtcIso8601() writes it; empty when unknown (a lifted pin).
+    std::string time;
+
+    bool operator==(const PinProvenance&) const = default;
+};
+
+/// A fixture's place given by the user, in its room's frame: its pivot on the floor and its yaw (the height stays the
+/// prefab's).
+struct FixtureTransform {
+    std::int64_t xMm = 0;
+    std::int64_t zMm = 0;
+    /// 0 to 35999.
+    std::int32_t yawCdeg = 0;
+
+    bool operator==(const FixtureTransform&) const = default;
+};
+
+/// The bounds of a transform's coordinates: a room is a few metres wide, its frame never reaches 1 km.
+inline constexpr std::int64_t kMaxFixtureOffsetMm = 1'000'000;
 
 /// A game held in a slot.
 struct GamePin {
     catalog::GameId game;
     SlotId slot;
+    PinProvenance provenance;
 
     bool operator==(const GamePin&) const = default;
 };
 
-/// A fixture held in its socket, with its prefab when the pin names one.
+/// A fixture held in its socket, or at the transform the user gave it, with its prefab when the pin names one.
 struct FixturePin {
     FixtureId fixture;
     std::optional<PrefabRef> prefab;
+    /// Absent: the fixture is held in its socket.
+    std::optional<FixtureTransform> transform;
+    PinProvenance provenance;
 
     bool operator==(const FixturePin&) const = default;
 };
@@ -62,13 +121,21 @@ struct WorldOverrides {
     bool operator==(const WorldOverrides&) const = default;
 };
 
-/// Reads overrides.json's text. Errors (context and line): ParseError, ValidationFailed (a key unknown, missing or of
-/// another type, a malformed GameId, slot or fixture id, a game, slot or fixture pinned twice), Unsupported (a newer
-/// schemaVersion).
+/// Reads overrides.json's text, schema 1 lifted (every pin's origin `file`, no time, no transform), the pins sorted by
+/// game and by fixture. Errors (context and line): ParseError, ValidationFailed (a key unknown, missing or of another
+/// type, a malformed GameId, slot or fixture id, an origin or a time not as written, a transform out of range, a key of
+/// schema 2 in a schema-1 file, a game, slot or fixture pinned twice), Unsupported (a newer schemaVersion).
 [[nodiscard]] Expected<WorldOverrides> parseOverrides(std::string_view text, std::string_view context);
 /// Reads the file; a missing file holds no pin. Errors: those of reading the file (other than NotFound) and of
 /// parseOverrides().
 [[nodiscard]] Expected<WorldOverrides> loadOverrides(const std::filesystem::path& file);
+
+/// The canonical text of schema 2: formatted JSON (two-space indents, keys sorted, a final line feed), the pins sorted
+/// by game and by fixture, a provenance's time and a pin's prefab and transform only when set. parseOverrides() reads
+/// it back equal (the pins sorted), and the text of what it reads is this text again. Errors: InvalidArgument for
+/// overrides that could not be read back (a game, slot or fixture pinned twice, an invalid id, a transform out of
+/// range, a time that core::parseUtcIso8601() refuses).
+[[nodiscard]] Expected<std::string> writeOverrides(const WorldOverrides& overrides);
 
 /// The pins measured against a plan.
 struct PinCheck {
@@ -85,12 +152,13 @@ struct PinCheck {
 /// Measures `overrides` against `plan` (its rooms' templates in `templates`, by id): a game pin is honoured when its
 /// game stands in its slot, orphaned when the slot is not one of the plan's (fixture, level and index) or the game has
 /// no entry in the plan; a fixture pin is honoured when the plan holds the fixture (with the pin's prefab, when it
-/// names one), orphaned when its room is not the plan's or its socket is not in the room's template. Lists sorted.
+/// names one, at the pin's transform, when it has one), orphaned when its room is not the plan's or its socket is not
+/// in the room's template. Lists sorted.
 [[nodiscard]] PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
                                  const WorldOverrides& overrides);
 
 /// "game g0123456789abcdef pinned to room:snes/fx:w01/s:3.12", "fixture room:snes/fx:w05 pinned" (with " as
-/// <manifest>" when the pin names a prefab).
+/// <manifest>" when the pin names a prefab, " at x <x> z <z> mm, yaw <yaw> cdeg" when it has a transform).
 [[nodiscard]] std::string pinText(const GamePin& pin);
 [[nodiscard]] std::string pinText(const FixturePin& pin);
 

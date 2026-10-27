@@ -1134,6 +1134,15 @@ private:
                 m_findings.add(rule::kPinBroken, subject,
                                fmt::format("the fixture is pinned with the prefab {} but holds {}",
                                            pin.prefab->manifest, fixture->second->prefab.manifest));
+            } else if (pin.transform &&
+                       (pin.transform->xMm != fixture->second->xMm || pin.transform->zMm != fixture->second->zMm ||
+                        pin.transform->yawCdeg != fixture->second->yawCdeg)) {
+                // I4b: a fixture the user moved is pinned where it was put (ADR-0015 §2).
+                m_findings.add(rule::kPinBroken, subject,
+                               fmt::format("the fixture is pinned at x {} z {} mm, yaw {} cdeg but stands at x {} z {} "
+                                           "mm, yaw {} cdeg",
+                                           pin.transform->xMm, pin.transform->zMm, pin.transform->yawCdeg,
+                                           fixture->second->xMm, fixture->second->zMm, fixture->second->yawCdeg));
             }
         }
     }

@@ -7,6 +7,8 @@
 //   worldplan show      a plan as text or JSON (cmd_worldplan_show.cpp, I3 step 3; --scene, its static part as a scene
 //                       file, I3 step 10a)
 //   worldplan check     a plan's validation, exit 1 on a hard failure (cmd_worldplan_check.cpp, I3 step 4)
+//   worldplan snapshots the world's snapshots of the plan and the overrides (cmd_worldplan_snapshots.cpp, I4b step 1)
+//   worldplan undo      the last explicit action undone from its snapshot (cmd_worldplan_undo.cpp, I4b step 1)
 // This file only dispatches: the arguments after a subcommand's name are its own.
 
 #include <array>
@@ -34,10 +36,12 @@ constexpr std::string_view kUsage =
     "  update    Update a previous plan incrementally and report what changed.\n"
     "  show      Show a plan.\n"
     "  check     Validate a plan; exit 1 when a hard rule fails.\n"
+    "  snapshots List the world's snapshots of the plan and the overrides.\n"
+    "  undo      Undo the last explicit action (a regeneration, an edit) from its snapshot.\n"
     "\n"
     "Run 'retroverse-cli worldplan <subcommand> --help' for its options.\n"
     "\n"
-    "Exit codes: 0 ok; 1 the check found problems; 2 usage error; 3 runtime failure.\n";
+    "Exit codes: 0 ok; 1 the check found problems, or nothing to undo; 2 usage error; 3 runtime failure.\n";
 
 using SubcommandFunction = ExitCode (*)(CommandContext& context, std::span<const std::string> arguments);
 
@@ -46,11 +50,13 @@ struct Subcommand {
     SubcommandFunction run = nullptr;
 };
 
-constexpr std::array<Subcommand, 4> kSubcommands{{
+constexpr std::array<Subcommand, 6> kSubcommands{{
     {"generate", runWorldPlanGenerate},
     {"update", runWorldPlanUpdate},
     {"show", runWorldPlanShow},
     {"check", runWorldPlanCheck},
+    {"snapshots", runWorldPlanSnapshots},
+    {"undo", runWorldPlanUndo},
 }};
 
 } // namespace
