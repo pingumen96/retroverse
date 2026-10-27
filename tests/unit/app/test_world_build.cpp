@@ -1110,8 +1110,15 @@ TEST_CASE("app/room_screen: the room's hero CRT plays the most recently played p
     REQUIRE(build.plan.has_value());
     RoomSnapshotResult snapshot = snapshotOf(imported);
     const rv::world::CollectionLayout& layout = roomOf(build).layout;
-    // The build's games (from the room's items) are those of the start room's snapshot.
-    CHECK(build.screenGames == rv::app::roomScreenGames(*build.plan, layout, snapshot));
+    // The build's games (from the room's items) are those of the start room's snapshot, with their title cards (I5
+    // step 1: each its item's text in its label's colour, which the build adds).
+    std::vector<rv::app::ScreenGame> withoutCards = build.screenGames;
+    for (rv::app::ScreenGame& game : withoutCards) {
+        CHECK_FALSE(game.card.empty());
+        CHECK(game.card.systemName == roomOf(build).covers.front().systemName);
+        game.card = {};
+    }
+    CHECK(withoutCards == rv::app::roomScreenGames(*build.plan, layout, snapshot));
     const auto titleOf = [&](const std::string& id) {
         for (const rv::catalog::RoomEntry& entry : snapshot.snapshot.entries) {
             if (entry.id.toString() == id) {

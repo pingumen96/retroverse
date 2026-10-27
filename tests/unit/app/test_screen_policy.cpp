@@ -1,5 +1,6 @@
 // The hero CRT's decisions without a GPU or a decoder (I3 step 11, ADR-0012 §7): the start choice, the dwell, the
-// fallback chain and the decoder's life around launches.
+// fallback chain and the decoder's life around launches; since I5 step 1 (ADR-0016 §3, §8) the playlist after the start
+// choice, the selection's hold, the title card at the chain's end.
 
 #include <rv/app/screen_policy.hpp>
 #include <rv/esde/media_resolver.hpp>
@@ -7,9 +8,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 using rv::app::ScreenGame;
@@ -344,4 +347,266 @@ TEST_CASE("app/screen_policy: another screen's games restart the choice, a selec
     policy.restart({game("c", "c.mp4")});
     CHECK(policy.phase() == ScreenPhase::Quit);
     CHECK_FALSE(policy.wantsDecoder());
+}
+
+// --- I5 step 1: the playlist, the selection's hold, the title card (ADR-0016 §3, §8) ---------------------------------
+
+namespace {
+
+using rv::app::ScreenOrigin;
+using rv::app::ScreenPlaySettings;
+
+/// The GPU case's room (tests/smoke/test_video.cpp, "the hero screen plays its playlist"): the test room's three games
+/// with clips, in the mock catalog's order, and a fourth without media; 2 s a game.
+std::vector<ScreenGame> playlistRoom() {
+    std::vector<ScreenGame> games{game("g000000000000e001", "e001.mp4"), game("g000000000000e002", "e002.mp4"),
+                                  game("g000000000000e003", "e003.mp4"), game("g000000000000e009")};
+    for (ScreenGame& g : games) {
+        g.card.title = "Title of " + g.id;
+    }
+    return games;
+}
+
+ScreenPlaySettings playlistSettings(double previewSeconds = 2.0) {
+    ScreenPlaySettings settings;
+    settings.previewSeconds = previewSeconds;
+    settings.playlist.roomId = "m0_testroom";
+    return settings;
+}
+
+using Targets = std::vector<std::pair<int, std::string>>;
+
+/// Runs `frames` frames of free roam from frame `first` (simulated time first * kFrame), nothing hovered; returns the
+/// targets as they changed: (frame, id).
+Targets run(ScreenPolicy& policy, int first, int frames) {
+    Targets targets;
+    std::uint64_t generation = policy.targetGeneration();
+    for (int frame = first; frame < first + frames; ++frame) {
+        const double now = frame * kFrame;
+        policy.hover(std::nullopt, now);
+        policy.tick(now);
+        if (policy.targetGeneration() != generation) {
+            generation = policy.targetGeneration();
+            targets.emplace_back(frame, policy.targetId());
+        }
+    }
+    return targets;
+}
+
+} // namespace
+
+TEST_CASE("app/screen_policy: the start choice, then the playlist's games, each for previewDuration",
+          "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings());
+    // Nothing played yet: the first game with a clip; then the shuffle of the test room (the oracle's, as in
+    // test_playlist.cpp): e002, e003, e001, then the next cycle's e002, e001, e003 (e001 just shown: never twice).
+    CHECK(policy.targetId() == "g000000000000e001");
+    CHECK(policy.origin() == ScreenOrigin::Start);
+    // Its card is never drawn over the wait for its clip's first frame: only once the clip cannot play.
+    CHECK_FALSE(policy.wantedStill().has_value());
+    CHECK(policy.playlist().order() ==
+          std::vector<std::string>{"g000000000000e002", "g000000000000e003", "g000000000000e001"});
+    const Targets targets = run(policy, 0, 721);
+    // 2 s at 1/60 s: the 120th frame after a game began (its first frame counts no time). Cycle 0 ends with e001,
+    // which follows e003; cycle 1 (e002, e001, e003) begins with e002.
+    const Targets expected{{120, "g000000000000e002"}, {240, "g000000000000e003"}, {360, "g000000000000e001"},
+                           {480, "g000000000000e002"}, {600, "g000000000000e001"}, {720, "g000000000000e003"}};
+    CHECK(targets == expected);
+    CHECK(policy.origin() == ScreenOrigin::Playlist);
+    CHECK(policy.selections() == 0);
+}
+
+TEST_CASE("app/screen_policy: a clip shorter than previewDuration plays to its end", "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings(30.0));
+    policy.tick(0.0);
+    policy.videoShowing();
+    policy.clipDuration(1.0);
+    const Targets targets = run(policy, 1, 70);
+    REQUIRE_FALSE(targets.empty());
+    CHECK(targets.front() == std::pair<int, std::string>{60, "g000000000000e002"});
+    // A room with one clip only keeps playing it (its clip loops), never restarted.
+    ScreenPolicy single({game("g000000000000e001", "e001.mp4")}, playlistSettings());
+    CHECK(run(single, 0, 400).empty());
+    CHECK(single.targetId() == "g000000000000e001");
+}
+
+TEST_CASE("app/screen_policy: a selection interrupts the playlist and gives it back after its clip",
+          "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings());
+    run(policy, 0, 150); // e002 from frame 120
+    REQUIRE(policy.targetId() == "g000000000000e002");
+    // e003 focused from frame 150: the selection after the dwell (frame 168), held while focused, beyond
+    // previewDuration.
+    for (int frame = 150; frame < 450; ++frame) {
+        policy.hover(std::string_view("g000000000000e003"), frame * kFrame);
+        policy.tick(frame * kFrame);
+    }
+    CHECK(policy.targetId() == "g000000000000e003");
+    CHECK(policy.origin() == ScreenOrigin::Selection);
+    CHECK(policy.selections() == 1);
+    CHECK_FALSE(policy.holdLeft().has_value());
+    // Its clip of 1.5 s shows: let go 283 frames (4.72 s) after it became the target, 0.22 s into the looping clip's
+    // fourth pass, which plays to its end (1.28 s, within previewDuration); then the playlist's e002 again from its
+    // start.
+    policy.videoShowing();
+    policy.clipDuration(1.5);
+    const Targets back = run(policy, 450, 200);
+    CHECK_FALSE(policy.holdLeft().has_value());
+    REQUIRE(back.size() >= 2);
+    CHECK(back.front().second == "g000000000000e002");
+    CHECK(back.front().first == 450 + 77);
+    // Then the playlist goes on after it: e003, 2 s later.
+    CHECK(back[1].second == "g000000000000e003");
+    CHECK(back[1].first - back[0].first == 120);
+    CHECK(policy.origin() == ScreenOrigin::Playlist);
+    CHECK_FALSE(policy.selected());
+}
+
+TEST_CASE("app/screen_policy: a selection let go holds for previewDuration without a clip, again when hovered",
+          "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings());
+    // The game without media selected at frame 18 (the start choice interrupted): its card, the chain's end.
+    hoverFor(policy, std::string("g000000000000e009"), 19, 0.0);
+    REQUIRE(policy.targetId() == "g000000000000e009");
+    CHECK(policy.wantedStill() == ScreenPicture::TitleCard);
+    // Let go for 60 frames, focused again (the hold forgotten), let go again: 2 s from then, back to the start choice.
+    int frame = 19;
+    for (; frame < 80; ++frame) {
+        policy.hover(std::nullopt, frame * kFrame);
+        policy.tick(frame * kFrame);
+    }
+    REQUIRE(policy.holdLeft().has_value());
+    CHECK(policy.targetId() == "g000000000000e009");
+    policy.hover(std::string_view("g000000000000e009"), frame * kFrame);
+    policy.tick(frame * kFrame);
+    CHECK_FALSE(policy.holdLeft().has_value());
+    ++frame;
+    const Targets back = run(policy, frame, 200);
+    REQUIRE_FALSE(back.empty());
+    // The first frame let go sets the hold, the 120 after it count it down.
+    CHECK(back.front() == std::pair<int, std::string>{frame + 120, "g000000000000e001"});
+    CHECK(policy.origin() == ScreenOrigin::Start);
+}
+
+TEST_CASE("app/screen_policy: frozen runs hold the start choice, autoplay off plays selections only",
+          "[app][screen][playlist]") {
+    ScreenPlaySettings frozen = playlistSettings();
+    frozen.frozen = true;
+    ScreenPolicy held(playlistRoom(), frozen);
+    CHECK(run(held, 0, 600).empty());
+    CHECK(held.targetId() == "g000000000000e001");
+
+    ScreenPlaySettings selectionsOnly = playlistSettings();
+    selectionsOnly.autoplay = false;
+    ScreenPolicy policy(playlistRoom(), selectionsOnly);
+    CHECK(policy.targetId().empty());
+    CHECK(policy.picture() == ScreenPicture::IdlePattern);
+    CHECK(run(policy, 0, 300).empty());
+    hoverFor(policy, std::string("g000000000000e003"), 19, 300 * kFrame);
+    CHECK(policy.targetId() == "g000000000000e003");
+    const Targets back = run(policy, 319, 200);
+    REQUIRE(back.size() == 1);
+    CHECK(back.front().second.empty()); // after its turn, no game again
+    CHECK(policy.origin() == ScreenOrigin::None);
+
+    ScreenPlaySettings noFocus = playlistSettings();
+    noFocus.showOnFocus = false;
+    ScreenPolicy ignoring(playlistRoom(), noFocus);
+    hoverFor(ignoring, std::string("g000000000000e003"), 60, 0.0);
+    CHECK(ignoring.targetId() == "g000000000000e001");
+    CHECK(ignoring.selections() == 0);
+}
+
+TEST_CASE("app/screen_policy: out of view or during a game the item's clock stops", "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings());
+    run(policy, 0, 60);
+    policy.setVisible(false);
+    CHECK(run(policy, 60, 300).empty());
+    policy.setVisible(true);
+    policy.launchStarting(std::nullopt);
+    CHECK(run(policy, 360, 300).empty());
+    policy.launchEnded();
+    const Targets targets = run(policy, 660, 100);
+    REQUIRE_FALSE(targets.empty());
+    // 59 frames counted before (frame 0 counts none), 61 after.
+    CHECK(targets.front() == std::pair<int, std::string>{720, "g000000000000e002"});
+}
+
+TEST_CASE("app/screen_policy: a clip that failed leaves the playlist for the run, its card at the chain's end",
+          "[app][screen][playlist]") {
+    std::vector<ScreenGame> games = playlistRoom();
+    games[1] = withStills(games[1], false, false, true);
+    ScreenPolicy policy(games, playlistSettings());
+    run(policy, 0, 121);
+    REQUIRE(policy.targetId() == "g000000000000e002");
+    CHECK(policy.wantedStill() == ScreenPicture::Cover);
+    policy.videoFailed();
+    CHECK_FALSE(policy.hasVideo());
+    CHECK(policy.playlist().excluded().contains("g000000000000e002"));
+    policy.stillFailed(); // the cover cannot be read: the card
+    CHECK(policy.wantedStill() == ScreenPicture::TitleCard);
+    CHECK(rv::app::mediaPath(policy.targetMedia(), ScreenPicture::TitleCard) == nullptr);
+    policy.stillReady();
+    CHECK(policy.picture() == ScreenPicture::TitleCard);
+    // Never again in the run: not in the next cycles, nor after the screen is bound again.
+    for (const auto& [frame, id] : run(policy, 121, 1200)) {
+        CHECK(id != "g000000000000e002");
+    }
+    policy.restart(games);
+    CHECK(policy.playlist().excluded().contains("g000000000000e002"));
+    CHECK_FALSE(policy.playlist().order().empty());
+    // Clips off (video.json's "enabled": false): the playlist goes on with the games' stills and cards.
+    ScreenPlaySettings stills = playlistSettings();
+    stills.clips = false;
+    ScreenPolicy noClips(games, stills);
+    CHECK_FALSE(noClips.hasVideo());
+    CHECK(noClips.wantedStill() == ScreenPicture::TitleCard);
+    CHECK(run(noClips, 0, 121).size() == 1);
+}
+
+TEST_CASE("app/screen_policy: unknown explicit ids are skipped", "[app][screen][playlist]") {
+    ScreenPlaySettings settings = playlistSettings();
+    settings.playlist.mode = rv::app::PlaylistMode::Explicit;
+    settings.playlist.explicitGames = {"g000000000000e003", "g00000000000fffff", "g000000000000e009",
+                                       "g000000000000e001"};
+    ScreenPolicy policy(playlistRoom(), settings);
+    CHECK(policy.playlist().mode() == rv::app::PlaylistMode::Explicit);
+    CHECK(policy.playlist().order() == std::vector<std::string>{"g000000000000e003", "g000000000000e001"});
+    CHECK(policy.playlist().unknownIds() == std::vector<std::string>{"g00000000000fffff"});
+    CHECK(policy.playlist().unplayableIds() == std::vector<std::string>{"g000000000000e009"});
+    // The start choice (e001), then the list: e003, e001, e003, ...
+    const Targets expected{{120, "g000000000000e003"}, {240, "g000000000000e001"}, {360, "g000000000000e003"}};
+    CHECK(run(policy, 0, 361) == expected);
+}
+
+TEST_CASE("app/screen_policy: a room without a clip shows its first game's stills, its card last",
+          "[app][screen][playlist]") {
+    using rv::app::chooseStillGame;
+    // The first start candidate with a still or a card, in the room's order; none without either.
+    ScreenGame bare = game("g000000000000f001");
+    ScreenGame carded = game("g000000000000f002");
+    carded.card.title = "Lanterna";
+    ScreenGame covered = withStills(game("g000000000000f003"), false, false, true);
+    ScreenGame unplaced = withStills(game("g000000000000f004"), true, false, false);
+    unplaced.startCandidate = false;
+    CHECK_FALSE(chooseStillGame({}).has_value());
+    CHECK_FALSE(chooseStillGame(std::vector<ScreenGame>{bare}).has_value());
+    CHECK(chooseStillGame(std::vector<ScreenGame>{bare, unplaced, covered, carded}) == 2u);
+    CHECK(chooseStillGame(std::vector<ScreenGame>{carded, covered}) == 0u);
+
+    ScreenPolicy policy({bare, covered, carded}, playlistSettings());
+    CHECK(policy.targetId() == "g000000000000f003");
+    CHECK(policy.origin() == ScreenOrigin::Start);
+    CHECK_FALSE(policy.hasVideo());
+    CHECK(policy.wantedStill() == ScreenPicture::Cover);
+    CHECK(policy.playlist().empty());
+    // No playlist to go on with: the still stays.
+    CHECK(run(policy, 0, 600).empty());
+    // A clip in the room wins over any still.
+    ScreenPolicy withClip({covered, game("g000000000000f005", "f005.mp4")}, playlistSettings());
+    CHECK(withClip.targetId() == "g000000000000f005");
+    // Nothing to show at all: the idle pattern.
+    ScreenPolicy nothing({bare}, playlistSettings());
+    CHECK(nothing.targetId().empty());
+    CHECK(nothing.picture() == ScreenPicture::IdlePattern);
 }

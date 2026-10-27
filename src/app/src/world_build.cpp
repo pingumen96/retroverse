@@ -45,6 +45,45 @@
 namespace rv::app {
 namespace {
 
+/// The title card of a placed game (I5 step 1, ADR-0016 §8): its item's text, on its room's palette in its generated
+/// label's colour (the placement's seed).
+[[nodiscard]] ScreenCard screenCardOf(const CoverItem& cover) {
+    ScreenCard card;
+    card.title = cover.title;
+    card.fallbackTitle = cover.fallbackTitle;
+    card.year = cover.year;
+    card.systemName = cover.systemName;
+    card.seed = cover.seed;
+    const std::span<const assets::Rgb8> palette = cover.palette.view();
+    card.palette.assign(palette.begin(), palette.end());
+    return card;
+}
+
+/// The hero CRT's games of a room with their title cards (I5 step 1): each listed game's card from its item, and the
+/// placed games without any media after them, with their card only (never in a playlist; the start choice only of a
+/// room without any media, a selection of one shows its card).
+void addScreenCards(std::vector<ScreenGame>& games, const std::vector<CoverItem>& covers) {
+    std::map<std::string, const CoverItem*, std::less<>> byGame;
+    for (const CoverItem& cover : covers) {
+        byGame.emplace(cover.game.toString(), &cover);
+    }
+    for (ScreenGame& game : games) {
+        if (const auto cover = byGame.find(game.id); cover != byGame.end()) {
+            game.card = screenCardOf(*cover->second);
+            byGame.erase(cover);
+        }
+    }
+    for (const CoverItem& cover : covers) {
+        if (!byGame.contains(cover.game.toString())) {
+            continue; // listed above
+        }
+        ScreenGame game;
+        game.id = cover.game.toString();
+        game.card = screenCardOf(cover);
+        games.push_back(std::move(game));
+    }
+}
+
 using Clock = std::chrono::steady_clock;
 using Json = nlohmann::json;
 
@@ -1440,6 +1479,9 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
                     game.lastPlayed = played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second)
                                                                           : std::nullopt;
                 }
+            }
+            if (sources.screenMediaRoot) {
+                addScreenCards(collection.screenGames, collection.covers);
             }
             if (build.startRoom && room->id == *build.startRoom) {
                 build.screenGames = collection.screenGames;

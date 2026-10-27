@@ -73,6 +73,9 @@ struct PlacedScreen {
     std::vector<ScreenGame> games;
     games.reserve(placed.size());
     for (PlacedScreen& entry : placed) {
+        // I5 step 1: the playlist's data (the sequential mode's sort key, the favourites mode's flag), the title's.
+        entry.game.sortKey = entry.title.sortKey;
+        entry.game.favorite = entry.title.favorite;
         games.push_back(std::move(entry.game));
     }
     return games;

@@ -1,0 +1,52 @@
+// How the screens play (ADR-0016 §4; src/app/include/rv/app/video_settings.hpp). Every key is here; the user's
+// <user data>/config/video.json overrides them key by key and is never written by Retroverse.
+{
+  "schemaVersion": 1,
+  // Clips play at all (false: stills and title cards only).
+  "enabled": true,
+  // Decoders at once: 2 (Balanced) or 1 (Low).
+  "maxDecoders": 2,
+  // Rows the world's screens and the media viewer decode at, at most.
+  "maxRows": 480,
+  "viewerMaxRows": 720,
+  // Ambient screens (secondary TVs, attract cabinets) play within this distance of the eye.
+  "proximityMeters": 12,
+  // "off", "light" or "vintage".
+  "crtEffect": "light",
+  "audio": {
+    "mode": "nearest-focused",
+    "master": 1,
+    "video": 1,
+    "effects": 1,
+    "ambience": 1,
+    "muted": false
+  },
+  // Per screen kind: autoplay, the playlist ("shuffle", "sequential", "favorites", "recent", "explicit"), the seconds a
+  // clip plays before the next, whether the focused game plays, the volume, the CRT preset ("" for the kind's own).
+  "hero": {
+    "enabled": true,
+    "playlist": "shuffle",
+    "previewDuration": 30,
+    "showOnFocus": true,
+    "volume": 1,
+    "crtPreset": ""
+  },
+  "secondary": {
+    "enabled": true,
+    "playlist": "shuffle",
+    "previewDuration": 30,
+    "showOnFocus": false,
+    "volume": 1,
+    "crtPreset": ""
+  },
+  "cabinet": {
+    "enabled": true,
+    "playlist": "shuffle",
+    "previewDuration": 30,
+    "showOnFocus": true,
+    "volume": 1,
+    "crtPreset": ""
+  },
+  // Per room: "rooms": {"room:snes": {"hero": {"playlist": "explicit", "games": ["g0123456789abcdef"]}}}.
+  "rooms": {}
+}

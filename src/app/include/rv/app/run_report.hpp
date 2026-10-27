@@ -1098,6 +1098,25 @@ struct VideoBindRecord {
     bool operator==(const VideoBindRecord&) const = default;
 };
 
+/// A game the hero CRT played (I5 step 1): when its turn began (the run's simulated seconds), its catalog id and why it
+/// played (app::toString(ScreenOrigin): "start", "playlist", "selection").
+struct VideoPlayedRecord {
+    double atSeconds = 0.0;
+    std::string gameId;
+    std::string origin;
+
+    bool operator==(const VideoPlayedRecord&) const = default;
+};
+
+/// A picture the hero CRT began to show (I5 step 1): when, the game and the picture (app::toString(ScreenPicture)).
+struct VideoShownRecord {
+    double atSeconds = 0.0;
+    std::string gameId;
+    std::string picture;
+
+    bool operator==(const VideoShownRecord&) const = default;
+};
+
 /// The hero CRT's video (I3 step 11, ADR-0012 §7: app::ScreenService): what it showed at the end of the run, the one
 /// decoder, the current clip's first frame and uploads, the fallbacks and the launches.
 struct VideoRecord {
@@ -1147,6 +1166,20 @@ struct VideoRecord {
     std::vector<VideoLaunchRecord> launches;
     /// The screens bound after the first (I4 step 6b), in order.
     std::vector<VideoBindRecord> binds;
+    /// The playlist at the end of the run (I5 step 1, ADR-0016 §3): its mode as played (toString(PlaylistMode)), its
+    /// room, the seconds a game plays, its current cycle's order, and why the last target played.
+    std::string playlistMode;
+    std::string playlistRoom;
+    double previewSeconds = 0.0;
+    std::vector<std::string> playlistOrder;
+    std::string origin;
+    /// Each game played, and each picture shown, in order (the first 512 of each).
+    std::vector<VideoPlayedRecord> played;
+    std::vector<VideoShownRecord> shown;
+    /// Frames a switch kept the previous picture up while the next was not ready, and frames the screen's own pattern
+    /// showed although it had a game (before its first picture since it was bound; never between two games).
+    std::uint64_t heldFrames = 0;
+    std::uint64_t idleFramesWithGame = 0;
 
     bool operator==(const VideoRecord&) const = default;
 };

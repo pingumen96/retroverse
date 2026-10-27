@@ -2,6 +2,7 @@
 #include <rv/core/utf8.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace rv::app {
@@ -30,6 +31,22 @@ std::string_view toString(ScreenPicture picture) noexcept {
         return "title-screen";
     case ScreenPicture::Cover:
         return "cover";
+    case ScreenPicture::TitleCard:
+        return "title-card";
+    }
+    return "unknown";
+}
+
+std::string_view toString(ScreenOrigin origin) noexcept {
+    switch (origin) {
+    case ScreenOrigin::None:
+        return "none";
+    case ScreenOrigin::Start:
+        return "start";
+    case ScreenOrigin::Playlist:
+        return "playlist";
+    case ScreenOrigin::Selection:
+        return "selection";
     }
     return "unknown";
 }
@@ -82,6 +99,7 @@ const std::filesystem::path* mediaPath(const ScreenMedia& media, ScreenPicture p
     case ScreenPicture::Cover:
         return &media.cover;
     case ScreenPicture::IdlePattern:
+    case ScreenPicture::TitleCard:
         break;
     }
     return nullptr;
@@ -105,41 +123,85 @@ std::optional<std::size_t> chooseStartGame(std::span<const ScreenGame> games) {
     return played ? played : first;
 }
 
-ScreenPolicy::ScreenPolicy(std::vector<ScreenGame> games) : m_games(std::move(games)) {
-    if (const std::optional<std::size_t> start = chooseStartGame(m_games)) {
-        retarget(m_games[*start].id);
+std::optional<std::size_t> chooseStillGame(std::span<const ScreenGame> games) {
+    for (std::size_t index = 0; index < games.size(); ++index) {
+        const ScreenGame& game = games[index];
+        if (game.startCandidate && (!stillChain(game.media).empty() || !game.card.empty())) {
+            return index;
+        }
     }
+    return std::nullopt;
+}
+
+ScreenPolicy::ScreenPolicy(std::vector<ScreenGame> games, ScreenPlaySettings settings)
+    : m_games(std::move(games)), m_settings(std::move(settings)) {
+    m_playlist = Playlist(m_games, m_settings.playlist, m_failed);
+    startChoice();
     m_generation = 0; // the start choice is the first target
+}
+
+void ScreenPolicy::startChoice() {
+    std::optional<std::size_t> start;
+    if (m_settings.autoplay) {
+        start = chooseStartGame(m_games);
+        if (!start) {
+            start = chooseStillGame(m_games); // no clip in the room: its first game's stills, its card last
+        }
+    }
+    if (start) {
+        retarget(m_games[*start].id, ScreenOrigin::Start);
+    } else {
+        retarget(std::string(), ScreenOrigin::None);
+    }
 }
 
 void ScreenPolicy::setGames(std::vector<ScreenGame> games) {
     m_games = std::move(games);
-    if (!m_selected) {
-        const std::optional<std::size_t> start = chooseStartGame(m_games);
+    m_playlist = Playlist(m_games, m_settings.playlist, m_failed);
+    if (!m_selected && m_origin != ScreenOrigin::Playlist) {
+        std::optional<std::size_t> start;
+        if (m_settings.autoplay) {
+            start = chooseStartGame(m_games);
+            if (!start) {
+                start = chooseStillGame(m_games);
+            }
+        }
         std::string id = start ? m_games[*start].id : std::string();
         if (id != m_targetId) {
-            retarget(std::move(id));
+            retarget(std::move(id), start ? ScreenOrigin::Start : ScreenOrigin::None);
             return;
         }
     }
+    if (!m_selected && m_origin == ScreenOrigin::Playlist && !canPlay(m_targetId)) {
+        advance(); // the playlist's game left the room, or lost its clip
+        return;
+    }
     const ScreenGame* listed = find(m_targetId);
     const ScreenMedia media = listed != nullptr ? listed->media : ScreenMedia{};
-    if (!m_targetId.empty() && media != m_targetMedia) {
-        retarget(m_targetId); // its media changed: shown afresh
+    const ScreenCard card = listed != nullptr ? listed->card : ScreenCard{};
+    if (!m_targetId.empty() && (media != m_targetMedia || card != m_targetCard)) {
+        retarget(m_targetId, m_origin); // its media changed: shown afresh
     }
 }
 
 void ScreenPolicy::restart(std::vector<ScreenGame> games) {
+    restart(std::move(games), m_settings);
+}
+
+void ScreenPolicy::restart(std::vector<ScreenGame> games, ScreenPlaySettings settings) {
     m_games = std::move(games);
+    m_settings = std::move(settings);
+    m_playlist = Playlist(m_games, m_settings.playlist, m_failed);
     m_selected = false;
+    m_interrupted.clear();
+    m_interruptedOrigin = ScreenOrigin::None;
     m_hoverId.clear();
     m_hoverSince.reset();
-    const std::optional<std::size_t> start = chooseStartGame(m_games);
-    retarget(start ? m_games[*start].id : std::string());
+    startChoice();
 }
 
 void ScreenPolicy::hover(std::optional<std::string_view> id, double nowSeconds) {
-    if (!id || id->empty()) {
+    if (!id || id->empty() || !m_settings.showOnFocus) {
         m_hoverId.clear();
         m_hoverSince.reset();
         return;
@@ -155,10 +217,99 @@ void ScreenPolicy::hover(std::optional<std::string_view> id, double nowSeconds) 
         return;
     }
     ++m_selections;
+    if (!m_selected && m_interrupted.empty()) {
+        // The game the selection interrupts plays again once the selection has played (ADR-0016 §3).
+        m_interrupted = m_targetId;
+        m_interruptedOrigin = m_origin;
+    }
     m_selected = true;
     if (m_hoverId != m_targetId) {
-        retarget(m_hoverId);
+        retarget(m_hoverId, ScreenOrigin::Selection);
+    } else {
+        m_origin = ScreenOrigin::Selection;
+        m_holdLeft.reset();
     }
+}
+
+void ScreenPolicy::tick(double nowSeconds) {
+    const double step = m_lastTick ? std::max(0.0, nowSeconds - *m_lastTick) : 0.0;
+    m_lastTick = nowSeconds;
+    if (m_settings.frozen || m_phase != ScreenPhase::Running || m_targetId.empty()) {
+        return;
+    }
+    // The item's clock runs while its screen plays: in view, no game running.
+    const double played = m_visible ? step : 0.0;
+    m_elapsed += played;
+    if (m_selected) {
+        if (!m_hoverId.empty()) {
+            m_holdLeft.reset(); // still focused, inspected or selected: held
+            return;
+        }
+        if (!m_holdLeft) {
+            // Let go: its clip plays to its end (the current pass of the looping clip), at most previewSeconds.
+            double hold = m_settings.previewSeconds;
+            if (m_videoShowing && m_clipSeconds && *m_clipSeconds > 0.0) {
+                hold = std::min(hold, *m_clipSeconds - std::fmod(m_elapsed, *m_clipSeconds));
+            }
+            m_holdLeft = hold;
+            return;
+        }
+        *m_holdLeft -= played;
+        if (*m_holdLeft <= kDwellTolerance) {
+            resume();
+        }
+        return;
+    }
+    if (!m_settings.autoplay) {
+        return;
+    }
+    if (m_elapsed + kDwellTolerance >= itemSeconds()) {
+        advance();
+    }
+}
+
+double ScreenPolicy::itemSeconds() const noexcept {
+    if (m_videoShowing && m_clipSeconds && *m_clipSeconds > 0.0) {
+        return std::min(m_settings.previewSeconds, *m_clipSeconds);
+    }
+    return m_settings.previewSeconds;
+}
+
+void ScreenPolicy::advance() {
+    std::optional<std::string> next = m_playlist.next();
+    if (next && *next == m_targetId) {
+        next = m_playlist.next(); // never the game just shown, when the playlist has another
+    }
+    if (!next || *next == m_targetId) {
+        // One game, or none left: the target keeps playing (its clip loops), its time counted afresh.
+        m_elapsed = 0.0;
+        if (next) {
+            m_origin = ScreenOrigin::Playlist;
+        }
+        return;
+    }
+    retarget(std::move(*next), ScreenOrigin::Playlist);
+}
+
+void ScreenPolicy::resume() {
+    m_selected = false;
+    m_holdLeft.reset();
+    std::string back = std::exchange(m_interrupted, std::string());
+    const ScreenOrigin backOrigin = std::exchange(m_interruptedOrigin, ScreenOrigin::None);
+    if (!m_settings.autoplay) {
+        retarget(std::string(), ScreenOrigin::None); // selections only: back to no game
+        return;
+    }
+    if (!back.empty() && back != m_targetId && (canPlay(back) || !m_settings.clips)) {
+        retarget(std::move(back), backOrigin);
+        return;
+    }
+    advance();
+}
+
+bool ScreenPolicy::canPlay(std::string_view id) const {
+    const ScreenGame* game = find(id);
+    return game != nullptr && isPlayableVideoFile(game->media.video) && !m_failed.contains(id);
 }
 
 ScreenPicture ScreenPolicy::picture() const noexcept {
@@ -172,19 +323,35 @@ ScreenPicture ScreenPolicy::picture() const noexcept {
 }
 
 bool ScreenPolicy::hasVideo() const noexcept {
-    return !m_targetId.empty() && !m_videoFailed && isPlayableVideoFile(m_targetMedia.video);
+    return m_settings.clips && !m_targetId.empty() && !m_videoFailed && !m_failed.contains(m_targetId) &&
+           isPlayableVideoFile(m_targetMedia.video);
 }
 
 std::optional<ScreenPicture> ScreenPolicy::wantedStill() const noexcept {
     if (m_readyStill || m_chainIndex >= m_chain.size()) {
         return std::nullopt;
     }
+    // The card stands for a clip that does not play: never drawn over the wait for a clip's first frame (the previous
+    // picture stays up meanwhile).
+    if (m_chain[m_chainIndex] == ScreenPicture::TitleCard && hasVideo()) {
+        return std::nullopt;
+    }
     return m_chain[m_chainIndex];
 }
 
-void ScreenPolicy::videoFailed() noexcept {
+void ScreenPolicy::clipDuration(double seconds) noexcept {
+    if (seconds > 0.0) {
+        m_clipSeconds = seconds;
+    }
+}
+
+void ScreenPolicy::videoFailed() {
     m_videoFailed = true;
     m_videoShowing = false;
+    if (!m_targetId.empty()) {
+        m_failed.insert(m_targetId);
+        m_playlist.exclude(m_targetId);
+    }
 }
 
 void ScreenPolicy::stillReady() noexcept {
@@ -220,16 +387,24 @@ std::optional<double> ScreenPolicy::takeResumePosition() noexcept {
     return std::exchange(m_resumePosition, std::nullopt);
 }
 
-void ScreenPolicy::retarget(std::string id) {
+void ScreenPolicy::retarget(std::string id, ScreenOrigin origin) {
     m_targetId = std::move(id);
+    m_origin = m_targetId.empty() ? ScreenOrigin::None : origin;
     const ScreenGame* listed = find(m_targetId);
     m_targetMedia = listed != nullptr ? listed->media : ScreenMedia{};
+    m_targetCard = listed != nullptr ? listed->card : ScreenCard{};
     ++m_generation;
     m_chain = stillChain(m_targetMedia);
+    if (!m_targetCard.empty()) {
+        m_chain.push_back(ScreenPicture::TitleCard); // the chain's end (ADR-0016 §8)
+    }
     m_chainIndex = 0;
     m_readyStill.reset();
     m_videoShowing = false;
     m_videoFailed = false;
+    m_elapsed = 0.0;
+    m_clipSeconds.reset();
+    m_holdLeft.reset();
     m_launchPosition.reset();
     m_resumePosition.reset();
 }
