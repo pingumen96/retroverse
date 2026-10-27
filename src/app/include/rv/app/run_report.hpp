@@ -1177,7 +1177,8 @@ struct VideoRecord {
     std::vector<VideoPlayedRecord> played;
     std::vector<VideoShownRecord> shown;
     /// Frames a switch kept the previous picture up while the next was not ready, and frames the screen's own pattern
-    /// showed although it had a game (before its first picture since it was bound; never between two games).
+    /// showed although it had a game (before its first picture since it was bound, or once a switch's hold ran out:
+    /// app::kMaxHeldPictureSeconds, or nothing left that could show).
     std::uint64_t heldFrames = 0;
     std::uint64_t idleFramesWithGame = 0;
 

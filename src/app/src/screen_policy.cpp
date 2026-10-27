@@ -462,4 +462,21 @@ const ScreenGame* ScreenPolicy::find(std::string_view id) const noexcept {
     return found != m_games.end() ? &*found : nullptr;
 }
 
+bool PictureHold::hold(bool arriving, double nowSeconds, double wallSeconds) noexcept {
+    if (!arriving) {
+        return false;
+    }
+    if (!m_since || !m_wallSince) {
+        m_since = nowSeconds;
+        m_wallSince = wallSeconds;
+    }
+    // Over only once both clocks ran past the cap.
+    return nowSeconds - *m_since < kMaxHeldPictureSeconds || wallSeconds - *m_wallSince < kMaxHeldPictureSeconds;
+}
+
+void PictureHold::reset() noexcept {
+    m_since.reset();
+    m_wallSince.reset();
+}
+
 } // namespace rv::app

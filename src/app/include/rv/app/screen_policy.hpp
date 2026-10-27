@@ -265,4 +265,26 @@ private:
     bool m_visible = true;
 };
 
+/// The longest the previous game's picture stays on the screen while the new target's is awaited, seconds: of the run's
+/// simulated time and of the wall clock both (a lockstep run faster or slower than real time still gives a decoder its
+/// real second).
+inline constexpr double kMaxHeldPictureSeconds = 1.0;
+
+/// Whether the screen keeps its previous picture on a frame where the target shows nothing yet (I5 step 1, the
+/// screen service's applyPicture): only while the target's picture can still arrive (`arriving`: its decoder or a
+/// still is wanted), and for at most kMaxHeldPictureSeconds; past that, or when nothing can arrive (an id without
+/// media, every still and the card failed), the screen's own pattern shows.
+class PictureHold {
+public:
+    /// This frame, at `nowSeconds` (the run's simulated time) and `wallSeconds` (a steady clock): true to keep the
+    /// previous picture. The hold's clock starts at its first frame.
+    [[nodiscard]] bool hold(bool arriving, double nowSeconds, double wallSeconds) noexcept;
+    /// A picture of the target shows (or the screen was let go): the next hold starts afresh.
+    void reset() noexcept;
+
+private:
+    std::optional<double> m_since;
+    std::optional<double> m_wallSince;
+};
+
 } // namespace rv::app

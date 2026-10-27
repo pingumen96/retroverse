@@ -676,3 +676,33 @@ TEST_CASE("app/screen_policy: a selection let go gives the screen back without a
         CHECK_FALSE(policy.selected());
     }
 }
+
+TEST_CASE("app/screen_policy: the previous picture is held only while the next can come, at most a second",
+          "[app][screen][playlist]") {
+    using rv::app::kMaxHeldPictureSeconds;
+    using rv::app::PictureHold;
+    REQUIRE(kMaxHeldPictureSeconds == 1.0);
+    // Nothing can come (an id without media, every still and the card failed): the pattern at once.
+    PictureHold none;
+    CHECK_FALSE(none.hold(false, 0.0, 100.0));
+    // A clip whose first frame never comes: held for a second of both clocks, then the pattern.
+    PictureHold held;
+    int frames = 0;
+    for (int frame = 0; frame < 600 && held.hold(true, frame * kFrame, 100.0 + frame * kFrame); ++frame) {
+        ++frames;
+    }
+    CHECK(frames == 60);
+    // A lockstep run faster than real time: the decoder still gets its real second (and the run its 60 frames).
+    PictureHold fast;
+    CHECK(fast.hold(true, 0.0, 100.0));
+    CHECK(fast.hold(true, 2.0, 100.5));
+    CHECK_FALSE(fast.hold(true, 2.0, 101.0));
+    PictureHold slow;
+    CHECK(slow.hold(true, 0.0, 100.0));
+    CHECK(slow.hold(true, 0.5, 103.0));
+    CHECK_FALSE(slow.hold(true, 1.0, 103.0));
+    // A picture shown starts the next hold afresh.
+    slow.reset();
+    CHECK(slow.hold(true, 5.0, 200.0));
+    CHECK(slow.hold(true, 5.9, 200.9));
+}

@@ -248,6 +248,8 @@ struct ScreenService::Impl {
     std::set<std::string, std::less<>> loggedPlaylistIds;
     std::uint64_t followedGeneration = 0;
     bool followed = false;
+    /// The previous picture held while the target's is awaited.
+    PictureHold held;
     bool reopenPending = false;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
@@ -601,11 +603,17 @@ struct ScreenService::Impl {
             return;
         }
         if (picture == ScreenPicture::IdlePattern && !policy.targetId().empty()) {
-            if (appliedOverride != 0) {
-                ++counters.heldFrames; // between two games: the previous picture stays (never the idle pattern)
+            // Between two games the previous picture stays while the new one can still come, at most
+            // kMaxHeldPictureSeconds; then (or when nothing can come) the screen's own pattern.
+            const bool arriving = policy.wantsDecoder() || policy.wantedStill().has_value();
+            const double wallSeconds = std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
+            if (appliedOverride != 0 && held.hold(arriving, nowSeconds, wallSeconds)) {
+                ++counters.heldFrames;
                 return;
             }
-            ++counters.idleFramesWithGame; // nothing shown yet since the screen was bound
+            ++counters.idleFramesWithGame; // nothing shown yet since the screen was bound, or the hold ran out
+        } else {
+            held.reset();
         }
         GLuint texture = 0;
         if (picture == ScreenPicture::Video) {
@@ -751,6 +759,7 @@ struct ScreenService::Impl {
         loadingPicture.reset();
         still = gl::Texture2D();
         heldStill = gl::Texture2D();
+        held.reset();
         shownGame.clear();
         if (clearOverride && screen && appliedOverride != 0) {
             if (auto cleared = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, 0);
