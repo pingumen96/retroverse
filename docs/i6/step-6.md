@@ -60,8 +60,10 @@ panels 5 and 6).
 | arcade_cabinet | 6 | 0 | 4 | 2 | 33 | 53 |
 | generic_case (the arcade room's until now) | 38 | 10 | 410 | 328 | 4,391 | 7,813 |
 
-The reference library's arcade room places 36 titles: every one in a cabinet, the room grown one step (40 at 12 m). A larger arcade places the rest as unplaced for capacity, launchable from the quick catalog (ADR-0014
-§6 amended; BACKLOG).
+The real library's arcade room places 36 titles: every one in a cabinet, the room grown one step (40 at 12 m); the
+unit test's room of 38 titles, a little above it, fits the same way. A larger arcade places the rest as unplaced for
+capacity, launchable from the quick catalog (ADR-0014 §6 amended; BACKLOG): the review's test of 60 titles places the
+53 first by priority and reports the 7 last.
 
 ## Proof
 
@@ -144,11 +146,97 @@ and its brand neon, and from its doorway our counters show their ends, their han
 ## Deviations and follow-ups
 
 - **Capacity.** The arcade holds 53 titles at most (16 m); beyond, unplaced for capacity (ADR-0014 §6 amended). The
-  real library's 38 fit. More arcade rooms or a back room are in the BACKLOG.
+  real library's 36 fit. More arcade rooms or a back room are in the BACKLOG.
 - **Slim cabinets** (0.4 m deep) so that a pair fits the template's sockets with no new template version; a deeper
   arcade template with a stool before each cabinet is in the BACKLOG. Stools stand in the hero corner only.
 - **Marquees** show generic words, not the game's title or art (no per-item marquee layer; BACKLOG). The screens show
   the cover; the hero cabinet alone plays a clip (one decoder, ADR-0004; I5).
-- **The run report's re-placement** of a room migrated in the same update names the z of its old depth; the plan
-  holds the z of its new one (the real arcade room: -12150 reported, -14150 stored).
+- **The run report's re-placement** of a room migrated in the same update named the z of its old depth (the real
+  arcade room: -12150 reported, -14150 stored): fixed by the review, the report names where the plan stores it.
 - **Handheld colour** stays below panel 6 (BACKLOG); the counters' handhelds face the aisle, unseen from the doorway.
+
+## Review
+
+The step's review found two broken behaviours, three smaller faults and a look short of panels 5 and 6. Fixed:
+
+- **A floating CRT.** A pack leaving a hero part out (the arcade's TV cabinet) left it out whatever became of the CRT:
+  a cabinet without a screen surface, one that does not resolve or one the footprint guard refuses drew the plan's
+  CRT in the air. A part is now left out only while its socket's CRT is drawn as the pack's cabinet, and the reader
+  refuses a pack that leaves a part out without pieces for the CRT (`test_era_furniture.cpp`: a cabinet with slots, a
+  manifest of another kind, a cabinet moved out of the corner each draw the TV cabinet under the CRT).
+- **A stale re-placement record.** The update recorded placeOnHub()'s placement before the migration grew the room;
+  each record now names the placement the plan stores, and the tests (the real library's included) compare whole
+  placements again. buildFloor()'s preview of a stored plan draws the stored room at the z of its stored depth, where
+  it stands until the update: nothing to fix there.
+- **The migration notice** now names both rearrangements (cases standing with their spine out, the arcade's games on
+  its cabinets' screens), the log line what each room became.
+- **A counter's strip** under its base's top is drawn only where the pack lights the case (`boardLight`).
+- **Tests:** an arcade of 60 titles (the 53 first by priority placed, the 7 last unplaced for capacity naming the room,
+  the same twice); a family facing front without every fixture refused. The capacity text above said 38 where the
+  real library has 36: corrected.
+
+The look, everything generic (invented words, procedural patterns, no brand or real title, no console's outline):
+
+- The handhelds' counters showed a cover stretched 16:1 across an empty level: a pack may now ask for a riser card per
+  slot at the item's shape (`roomDressing.cardPerSlot`, the handheld archive's; a counter always), so both handheld
+  rooms show rows of small cards. Other packs keep one card per span (G02 to G12 unchanged; BACKLOG).
+- The hero cabinet's hood printed a jagged shadow across its bezel: the hero cabinet casts no shadow (the ambient
+  occlusion grounds it).
+- The marquees' sparkles read as dead pixels: chaser bulbs along their bands instead, every other one lit.
+- The showcases' three boxes were one picture: each box takes a cover of its own (`coverPerBox`).
+- Side art (`side_art` pattern: stripes, chevrons or a starburst in the arcade's colours, by seed) on the outer sides of
+  every pair and of the hero cabinet, a dim glow as under black light.
+- The arcade's upper walls and ceiling: a magenta neon cove along the west wall and a cyan one along the east at 2.6 m,
+  each washing its wall up to the ceiling and below; backlit flyers over the rows and showcases at 2.2 m; a can over
+  each key and washer spot; the aisle's pairs lit cyan and red in turn (a pack accent, 3 of the 4 free lights: 15 of
+  16). Saturated tints (washers `#50D0FF`) — the pendant keeps its violet and the key turns a little lighter, and the
+  flyers glow dimmer, so that the arcade seen from the hub keeps the light probe of I6 step 1 (`roomSeen` 21.2 against
+  21.0 required: a thin margin, the coves' glow counting in the probe's cut view too; BACKLOG).
+- The arcade's dressing: a 3.5 m runner from the hero cabinet out into the room (the hero corner's rug left out), two
+  light columns (a pink tube) in the decoration's floor lamps' place, their light the lamps'.
+- The handhelds: counters and stations lined in ivory under a brighter glass (alpha 0.13), every handheld's display a
+  lit pale green, the stations' strip brighter, a warm cove washing the upper walls, posters over the shelves and
+  showcases at 2.0 to 2.4 m, a generic handheld pictogram in the neon beside the sign.
+- Parked: taller cabinets (item 9: they change the arcade room's plan, its fixtures' heights, for a look), brushed
+  metal on the counters' glass edges, a per-part shadow flag (BACKLOG).
+
+Measured as above (768 x 432, `build/i6/step6-fix`, Release, the building fixture; before: the step's table):
+
+| image | median luma | calm / colour / accent % | luma < 12 % |
+|---|---|---|---|
+| concept panel 5 | 27.4 | 57.1 / 30.7 / 12.1 | 27.1 |
+| arcade_doorway (G15) before | 25.0 | 85.8 / 12.5 / 1.7 | 10.8 |
+| arcade_doorway (G15) after | 30.3 | 74.6 / 18.6 / 6.8 | 4.4 |
+| arcade_inside before / after | 27.0 / 27.7 | 75.3 / 21.4 / 3.3 → 79.0 / 17.4 / 3.6 | 8.6 / 8.1 |
+| arcade_west_row before / after | 18.0 / 18.6 | 87.0 / 8.1 / 4.9 → 74.3 / 19.5 / 6.2 | 11.7 / 13.7 |
+| arcade_aisle before / after | 19.3 / 28.8 | 83.9 / 9.3 / 6.8 → 61.3 / 24.8 / 13.9 | 5.9 / 5.5 |
+| arcade_back before / after | 17.7 / 19.0 | 95.0 / 4.5 / 0.4 → 88.7 / 8.2 / 3.1 | 10.3 / 9.8 |
+| concept panel 6 | 54.8 | 85.6 / 8.8 / 5.6 | 6.9 |
+| handheld_gb (G16) before / after | 45.3 / 52.0 | 99.0 / 0.4 / 0.6 → 96.5 / 0.5 / 3.0 | 0.9 / 0.9 |
+| handheld_shared (G13) before / after | 42.7 / 49.4 | 98.2 / 0.6 / 1.1 → 96.7 / 0.7 / 2.6 | 0.9 / 0.7 |
+| handheld_gb_case before / after | 45.6 / 52.7 | 98.3 / 0.4 / 1.2 → 88.0 / 0.5 / 11.5 | 3.6 / 2.5 |
+| handheld_gb_station before / after | 24.7 / 25.7 | 100.0 / 0.0 / 0.0 → 100.0 / 0.0 / 0.0 | 14.9 / 12.0 |
+
+Beside panel 5 the arcade now has its lit upper walls (magenta and cyan coves, flyers over the rows), side art on
+every pair and spots under its ceiling: accent from 1.7 to 6.8 % (panel 12.1), colour from 12.5 to 18.6 % (panel
+30.7: its screens show full-colour action and its walls are covered in art; our floor and wainscot stay dark wood),
+its median 30 (panel 27). Beside panel 6 the handheld rooms reach its brightness (52 against 55) with an accent of 3 %
+(5.6): ivory counters of lit handhelds, a warm cove, posters high on the walls, the pictogram by the neon; they stay
+calmer (its colour is its shelves of coloured boxes). The station view looks into the room's darkest corner.
+
+Goldens: G13, G15 and G16 regenerated (Debug, within the tolerance in Release); G11 too, on purpose: the hub's view
+from the elevator sees the arcade through its doorway (its cyan cove, a flyer, a light column; 1.07 % of the pixels).
+G01 to G10, G12 and G14 unchanged. The floors' scene digests rewritten for the ground and handheld floors only; no
+plan golden changed (the room dressing is a look: nothing collides, nothing moves).
+
+The real library (`./scripts/real-library.ps1 -Filter '[real-library][building]'`, ES-DE closed, `RV_LEGACY_CLI` of
+generator 1.3; 0 differences among 542,120 entries): all passed; the arcade room migrated and re-placed in one update,
+reported where it is stored (x 9000, z -14150; it was reported at -12150), its 36 titles in cabinets (6 featured, 30
+in the rows), grown one step; planned twice to one digest and SHA-256 (19,985 placements); the lobby shown 2.74 s
+after the process started (NFR-01: 5 s); the busiest floor (computer) 471.8 MiB cold and warm, unchanged (512
+acceptable), the ground floor 239.4 MiB (212.2 before: the arcade's flyers, side art and coves); the warm ride's view
+back in 1.52 s (3 s), the cold one timed out at 2.5 s with its covers pending as before (the room whole at 13.4 s,
+30 s). The benchmark path (Release, 1920 x 1080, `--no-vsync`, 1,230 frames): p50 3.31 ms, p95 3.58 ms, p99 3.86 ms,
+GPU memory peak 265.5 MiB (before: 3.30, 3.55, 3.77, 265.5).
+Tests after the review: Debug 1,942 unit tests, all passed; `./scripts/test.ps1 -Preset msvc-x64-release-gpu` 2,059
+(1,942 unit, 117 GPU), all passed but the overlay's pick (skipped as always).

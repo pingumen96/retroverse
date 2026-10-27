@@ -518,7 +518,17 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   layer per item in the collection's arrays); the screens show the cover, never the game's screenshot or a clip (one
   decoder: ADR-0004, I5); empty cabinets of the reserve ask for a coin; the handheld rooms stay calmer than concept
   panel 6 (its colour comes from coloured boxes and a brand neon; our handheld cartridges are small and dark), the
-  counters' handhelds seen from the aisle only.
+  counters' handhelds seen from the aisle only. After the step's review (`docs/i6/step-6.md`, "Review"): the arcade's
+  colour share stays at about 18% from its doorway against the panel's 31% (the panel's screens show full-colour
+  action and its walls are covered in art; our floor and lower walls stay dark wood); taller cabinets (1.85 m, a 0.24 m
+  marquee) are parked: they change the arcade room's plan (its fixtures' heights) and so every stored arcade room, for
+  a look; the cabinets' hood still casts no separate shadow (the hero cabinet casts none at all: a per-part shadow
+  flag would let its body shadow the wall while its hood does not); the other packs' display cases still stretch one
+  riser card across an empty level (a card per slot changes G01 and the console rooms' goldens: done for the
+  handhelds' counters only); the handhelds' glass has no brushed-metal edges (oak rails); a station in a dark corner
+  stays dim (its strip lights its vitrine, not the corner); the doorway light probe of I6 step 1 passes for the arcade
+  with a thin margin (21.2 against 21.0): emissive dressing (coves, flyers, side art) counts in its cut view as in its
+  lit one, so a brighter arcade dressing needs the probe to subtract an emissive-only view first.
 - **Light seen through doorways (I4 step 3):** done in I6 step 1 (`docs/i6/step-1.md`, ADR-0014 §4). Left: a hall
   with several doorways lights its rooms' walls near a doorway unclipped (a hall's own lights carry no portal; a
   room's, and a hall's of a single room, do), a faint light on a room's ceiling beside its doorway seen from the hall
