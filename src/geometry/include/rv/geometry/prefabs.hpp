@@ -298,20 +298,24 @@ struct RugParams {
     float thickness = 0.012f; ///< [0.001, 0.1]
 };
 
-/// The shade of a floor lamp: a drum around the bulb, or (I6 step 3b) a torchiere's bowl open upwards.
-enum class LampShade { Drum, Torchiere };
+/// The shade of a floor lamp: a drum around the bulb, (I6 step 3b) a torchiere's bowl open upwards, or (I6 step 6's
+/// review) a lit tube standing on the base: a light column.
+enum class LampShade { Drum, Torchiere, Tube };
 
 /// "floor_lamp", pivot floor; bounds = [-r, 0, -r] .. [r, height, r] with r = max(baseRadius, shadeRadius).
 /// Roles: "metal" (base, pole, bulb holder, shade spider), "lamp_shade" (open shade built as a thin closed shell
 /// with a 2 mm wall: renders from inside and outside with or without back-face culling). Sockets: "LightSource"
 /// (Anchor) at the bulb inside the shade. With `shade` "torchiere" (I6 step 3b, the 90s uplighter): the shade is a
-/// bowl widening upwards to shadeRadius, its rim at `height`, on the pole; no spider; the bulb in the bowl.
+/// bowl widening upwards to shadeRadius, its rim at `height`, on the pole; no spider; the bulb in the bowl. With
+/// "tube" (I6 step 6's review, the arcade's light columns): a lit tube ("lamp_shade", 6 cm across) from just above the
+/// base to `height` beside a slim metal spine, capped in metal at both ends; "LightSource" where a drum's bulb would
+/// be.
 struct FloorLampParams {
     float height = 1.6f;               ///< [0.5, 3]
     float baseRadius = 0.16f;          ///< [0.05, 1]
     float shadeRadius = 0.22f;         ///< [0.05, 1]
     float shadeHeight = 0.3f;          ///< [0.05, 1], at most height / 2
-    LampShade shade = LampShade::Drum; ///< JSON "drum" or "torchiere"
+    LampShade shade = LampShade::Drum; ///< JSON "drum", "torchiere" or "tube"
 };
 
 /// "armchair", pivot floor, front +Z; bounds = width x height x depth. An upholstered club armchair (original design):
@@ -409,8 +413,11 @@ enum class ShowcaseItem { None, Console, Handheld, Boxes };
 /// (a smaller vitrine is refused). Roles: "wood_primary" (base, posts, rails), "wood_secondary" (doors, back panel),
 /// "metal_trim" (knobs), "fabric" (the plinth), "glass" (the panes, one sheet each: a blended, double-sided material),
 /// "plastic_body", "plastic_dark", "plastic_accent" (the item; the boxes' bodies "plastic_body"); after them, only when
-/// built, "cover" (each box's front, the whole picture upright) and "board_light" (with `boardLight`: an emissive strip
-/// under the cap near the front, 3 mm thick, as a lit shelf's). Sockets: "Item" (Anchor) on the plinth's top, centred.
+/// built, "cover" (each box's front, the whole picture upright; with `coverPerBox`, I6 step 6's review, the second and
+/// third boxes' fronts "cover_2" and "cover_3", so that each takes a picture of its own), "board_light" (with
+/// `boardLight`: an emissive strip under the cap near the front, 3 mm thick, as a lit shelf's) and "screen" (with
+/// `litScreen`, the handheld's screen, else "plastic_dark": a pack naming that role lights it). Sockets: "Item"
+/// (Anchor) on the plinth's top, centred.
 struct ShowcaseParams {
     float width = 0.8f;                        ///< [0.4, 2]
     float height = 1.15f;                      ///< [0.6, 2]
@@ -418,6 +425,8 @@ struct ShowcaseParams {
     float baseHeight = 0.62f;                  ///< [0.15, height - 0.25]: the vitrine's floor
     ShowcaseItem item = ShowcaseItem::Console; ///< JSON "none", "console", "handheld" or "boxes"
     bool boardLight = false;                   ///< the lit strip under the cap (a pack naming "board_light")
+    bool coverPerBox = false;                  ///< each box's cover a role of its own ("cover", "cover_2", "cover_3")
+    bool litScreen = false;                    ///< the handheld's screen in "screen" (a pack naming that role)
 };
 
 /// "display_case", pivot floor, front +Z; bounds = width x height x depth. A low collector's case (style §8
@@ -436,6 +445,14 @@ struct ShowcaseParams {
 /// tiltDeg about +X (the item's front faces up and forward); bounds = item volume [-w/2, 0, -d/2] .. [w/2, h, d/2].
 /// Before each level's slots, "Level_<level>" (Anchor): the level's leaning frame at x = 0, bounds = its free volume
 /// on the ledge, from the panel to the lip and up to the panel's top (2.5 cm above the items).
+/// I6 step 6 (the handhelds' low counter showcases, style §5.5, §14.5), neither moving a slot nor the bounds: with
+/// `boardLight` a strip under the front and back top rails (role "board_light", 3 mm thick and 12 mm deep, its
+/// underside and front showing) lights the vitrine; with `counter` the base is a glass counter rather than a closed
+/// cabinet: side and back panels, a glass front set back where the doors stood, a covered deck inside and on it up to
+/// six generic handhelds of original design leaning back on small stands (roles "plastic_body" and "plastic_accent" in
+/// turn for their bodies, "plastic_dark", "plastic_accent" for their buttons), lit by a strip under the base's top
+/// (role "board_light", with `boardLight` only: the step's review); with `litScreens` each handheld's display shows in
+/// "screen" (a pack naming that role: a lit LCD).
 struct DisplayCaseParams {
     float width = 1.2f;       ///< [0.4, 4]
     float height = 0.95f;     ///< [0.5, 1.6]
@@ -447,6 +464,9 @@ struct DisplayCaseParams {
     glm::vec3 slotSize{0.125f, 0.085f, 0.020f}; ///< the face-out item (w, h, d), each [0.005, 0.5]
     float slotGap = 0.012f;                     ///< [0, 0.5]
     float slotMargin = 0.03f;                   ///< [0, 1]
+    bool boardLight = false; ///< the vitrine lit by a strip under its top rails (a pack naming "board_light")
+    bool counter = false;    ///< the base a glass counter of handhelds (the handheld families' display cases)
+    bool litScreens = false; ///< the counter's handhelds' screens in "screen" (a pack naming that role)
 };
 
 /// "wall_shelf", the featured wall shelf (ADR-0010 §3, §4), front +Z, hung on a wall: pivot on the floor below the
@@ -570,6 +590,47 @@ struct InfoTotemParams {
     float screenHeight = 0.62f; ///< [0.1, height - 0.6]
 };
 
+/// "arcade_cabinet" (I6 step 6, ADR-0014 §6, style §5.4: `CabinetGeneric`), pivot floor, front +Z; bounds = the row's
+/// width (count x width + (count - 1) x gap) x height x depth. A row of `count` upright arcade cabinets of original,
+/// generic design side by side, `gap` apart, each: two side panels with the classic stepped profile (the lower body,
+/// the control panel standing out at `panelHeight`, the screen set back and leaning back by `screenTiltDeg`, the
+/// marquee's hood over it) edged by a coloured T-moulding, a recessed toe, a coin door with two coin slots, a control
+/// panel with a joystick and three buttons, a dark bezel plate around the screen, and a lit marquee under a cap; no
+/// brand, logo or artwork. Cabinets alternate between two paints, mouldings and marquees (the odd ones the "_alt"
+/// roles), so that a row reads as distinct cabinets.
+/// With `slots` (the collection's cabinets, ADR-0014 §2's arcade_cabinet family) each screen is a face-out slot: behind
+/// the bezel's opening a dark screen ("screen_back"), and in front of it "Slot_0_<i>" (ShelfSlot, i from the left),
+/// its origin at the bottom centre of the opening 2 mm behind the bezel's face, leaning back with it, bounds = the item
+/// volume [-w/2, 0, -d/2] .. [w/2, h, d/2] of (screenSize, slotDepth): the game's screen, drawn by the collection.
+/// "Level_0" (Anchor) has the identity transform and the box the row's screens span as bounds (their open volume).
+/// Without `slots` (the hero cabinet, which carries the room's video) each screen is a "screen" quad (uv (0, 0) at its
+/// top-left) and the first cabinet's is the "ScreenSurface" socket (ScreenSurface, centred on the screen facing out
+/// of it, bounds = the screen rectangle, meshIndex the "screen" part).
+/// Roles, in order: "body" (side panels), "body_alt", "front" (back, top, toe, lower front, the marquee's hood: the
+/// black laminate), "molding", "molding_alt" (the T-moulding along the side panels' front edges), "plastic_dark"
+/// (bezel plate, control panel, coin door), "metal_trim" (coin slots, the joystick's shaft), "plastic_accent"
+/// (buttons, the joystick's ball), "marquee", "marquee_alt" (the marquee's lit face, uv (0, 0) at its top-left: an
+/// emissive material, a picture), and "screen_back" (with slots) or "screen" (without); with `sideArt` (I6 step 6's
+/// review) "side_art", a printed panel on the outer side of the row's first and last cabinets (two quads following the
+/// stepped profile, from the toe to the marquee, 15 mm in from its edges, one picture across both: u along the panel
+/// as seen from outside, v down it). Its bounds collide.
+struct ArcadeCabinetParams {
+    float width = 0.42f;        ///< one cabinet, [0.3, 1.2]
+    float height = 1.7f;        ///< [1.2, 2.4]
+    float depth = 0.4f;         ///< [0.3, 1.2]
+    int count = 2;              ///< cabinets in the row, [1, 4]
+    float gap = 0.04f;          ///< between two cabinets, [0, 0.5]
+    float panelHeight = 0.86f;  ///< the control panel's top at its front edge, [0.6, 1.1]
+    float marqueeHeight = 0.2f; ///< the lit marquee, [0.08, 0.4]
+    /// The screen (w, h): w at most width - 2 x 4 cm, h at most what the control panel and the marquee leave (each
+    /// [0.1, 1]).
+    glm::vec2 screenSize{0.3f, 0.4f};
+    float screenTiltDeg = 8.0f; ///< [0, 25]
+    bool slots = true;
+    float slotDepth = 0.006f; ///< the screen item's depth, [0.002, 0.05]
+    bool sideArt = false;     ///< the row's outer side panels carry "side_art" (a pack naming that role)
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -601,6 +662,7 @@ struct InfoTotemParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildRailing(const RailingParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildHubLandmark(const HubLandmarkParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildInfoTotem(const InfoTotemParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildArcadeCabinet(const ArcadeCabinetParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -625,7 +687,7 @@ struct InfoTotemParams {
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
 /// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
-/// and I6 step 5's hub: column, railing, hub_landmark, info_totem.
+/// I6 step 5's hub: column, railing, hub_landmark, info_totem, and I6 step 6's arcade_cabinet.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

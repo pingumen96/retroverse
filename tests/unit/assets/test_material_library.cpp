@@ -60,7 +60,16 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Globe_Lines", "MAT_Globe_Core", "MAT_Downlight", "MAT_Bulb_Warm", "MAT_Screen_Board",
     // The hub after the step's review: its darker rugs, its walls, oxblood sofas, the landmark's glass, warm bindings.
     "MAT_Carpet_Ornate_Hub", "MAT_Plaster_Hub", "MAT_Fabric_Leather_Oxblood", "MAT_Glass_Hub",
-    "MAT_Book_Cloth_Bordeaux"};
+    "MAT_Book_Cloth_Bordeaux",
+    // The arcade cabinets (I6 step 6): laminate, paints, lit mouldings, marquees, their screens.
+    "MAT_Cabinet_Laminate", "MAT_Cabinet_Paint_Plum", "MAT_Cabinet_Paint_Oxblood", "MAT_Cabinet_Paint_Walnut",
+    "MAT_Molding_Magenta", "MAT_Molding_Cyan", "MAT_Marquee_Magenta", "MAT_Marquee_Cyan", "MAT_Marquee_Amber",
+    "MAT_Screen_Off", "MAT_Screen_Idle", "MAT_Screen_Arcade", "MAT_Plastic_Teal",
+    // I6 step 6's review.
+    "MAT_Side_Art", "MAT_Cove_Magenta", "MAT_Cove_Cyan", "MAT_Lightbox", "MAT_Neon_Tube_Pink",
+    "MAT_Fabric_Display_Ivory", "MAT_Glass_Counter", "MAT_Screen_LCD", "MAT_Shelf_Light_Bright",
+    "MAT_Cove_Wash_Magenta", "MAT_Cove_Wash_Cyan", "MAT_Cove_Warm", "MAT_Cove_Wash_Warm",
+    "MAT_Can_Lens"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

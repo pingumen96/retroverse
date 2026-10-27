@@ -60,14 +60,23 @@
 //   as they are (the scene builder, scene_builder.hpp, places the pieces):
 //     "furniture": {
 //       "heroParts": {"armchair": [<piece>, ...], "lamp": [<piece>], "rug": [<piece>]},  // by the part's role
-//                                                    // (never "crt", "sign" or "console": the reader refuses them)
+//                                                    // (never "sign" or "console": the reader refuses them; "crt"
+//                                                    // only as arcade cabinets, I6 step 6, below)
 //       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
 //   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
 //   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
 //   (a scene pattern, scene::kTexturePatternNames, drawn with an invented title and the piece's seed), and for a hero
 //   part's piece "xMm", "zMm", "yawCdeg" (in the hero corner socket's frame, as the template's parts; the part's own
-//   when left out)}. A hero part's list replaces the part by its pieces (one or more: a desk and its chair, two
-//   stools); a decoration kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
+//   when left out) and "yMm" (I6 step 6: its height above the room's floor; the part's when left out)}. A hero part's
+//   list replaces the part by its pieces (one or more: a desk and its chair, two stools), or, empty (I6 step 6), leaves
+//   the part undrawn: another part's piece stands in its place (the arcade's hero cabinet on the floor where the TV's
+//   cabinet stood; the reader refuses an empty list without "crt" pieces, and the scene draws the part as planned
+//   whenever the CRT is not drawn as the pack's cabinet, I6 step 6's review). The "crt" (the room's video) is listed
+//   only as arcade cabinets ("arcade_cabinet" pieces, the first carrying a ScreenSurface: the room's video plays on
+//   it; one that does not is left out, the CRT drawn as planned): the hero cabinet of ADR-0014 §6, a part substitution by the arcade room's pack, whose kind it is. Both the "crt"'s
+//   pieces and a part left out apply in the arcade room only (its hero corner holds no console): another room drawn
+//   with the pack keeps its CRT, TV cabinet and console as planned; a decoration
+//   kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
 //   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
 //   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
 //   read: the weights are the variants' (ThemeFurniture). A piece that leaves its footprint where it is drawn is not
@@ -85,6 +94,19 @@
 //   print the "poster_frame" kind's picture), sconce (the lit shade), wash (the sconce's light on its wall) and sign
 //   (the portal and blade signs' lettering). A role the pack lacks is the built-in pack's (so is a role of the
 //   "plant" and "poster_frame" kinds the hall uses).
+//   Since I6 step 6's review, optional: "accents": [<accent>, ...], the profile's accent format (lighting profiles),
+//   with "colorAlt" (a display accent's colour on every other display fixture), drawn after the profile's; and
+//   "roomDressing": {"cove": {"yMm", "west", "east", "westWash", "eastWash"} (a lit strip along the west and east
+//   walls, materials, and optionally the light each throws on its wall above and below it),
+//   "pictures": {"centreYMm", "widthMm", "heightMm", "roles": ["hero-module", ...], "kinds": ["tv_cabinet", ...],
+//   "frame", "picture", "pattern"} (a framed picture high on the wall over each fixture of those roles, or decoration
+//   of those kinds, standing against a wall, its seed from the room's and the fixture's), "cans": {"roles": ["key",
+//   ...], "body", "lens"} (a can over each spot light of those roles, hung from the ceiling, its lens lit) and
+//   "runner": {"widthMm", "lengthMm", "material"} (a runner from the hero corner's rug's back edge out into the room,
+//   centred on it: a pack leaving the hero's "rug" out draws it alone), "signIcon": {"widthMm",
+//   "heightMm", "pattern", "material"} (a lit pictogram on the hero corner's sign's right, framed as the sign),
+//   "cardPerSlot": true (a display case's empty level a riser card per slot, the item's size)}: a look
+//   of the room's upper walls, ceiling and floor, never colliding nor casting shadows (scene_builder.hpp).
 
 #include <cstdint>
 #include <filesystem>
@@ -141,6 +163,9 @@ struct AccentLight {
     /// Spots only: where it points, in the anchor's frame.
     glm::dvec3 target{0.0, 0.0, 1.0};
     std::string color = "#FFFFFF";
+    /// A display accent's colour on every other display fixture (the second, fourth, ... the room lists), sRGB
+    /// "#RRGGBB" (I6 step 6's review: the arcade's pairs lit cyan and red in turn); empty: `color` on every one.
+    std::string colorAlt;
     double intensity = 1.0;
     double range = 3.0;
     double innerConeDeg = 30.0;
@@ -234,6 +259,83 @@ struct NeonGlow {
     bool operator==(const NeonGlow&) const = default;
 };
 
+/// A lit strip along a room's west and east walls (a pack's "roomDressing" "cove", I6 step 6's review): `yMm` above
+/// the floor, of material `west` on the room's west wall (its -X side in its own frame) and `east` on its east wall.
+struct CoveStrip {
+    std::int64_t yMm = 2600;
+    std::string west;
+    std::string east;
+    /// The light each strip throws on its wall, up to the ceiling and down below it (optional, both or neither): an
+    /// unlit, alpha-blended material whose picture fades away from its bottom edge (procedural:shelfglow).
+    std::string westWash;
+    std::string eastWash;
+
+    bool operator==(const CoveStrip&) const = default;
+};
+
+/// Pictures hung high on the walls over some fixtures (a pack's "roomDressing" "pictures", I6 step 6's review).
+struct WallPictures {
+    std::int64_t centreYMm = 2200;
+    std::int64_t widthMm = 500;
+    std::int64_t heightMm = 600;
+    /// Over the fixtures of these roles standing against a wall...
+    std::vector<FixtureRole> roles;
+    /// ... and over the decorations of these prefab kinds.
+    std::vector<std::string> kinds;
+    std::string frame;   ///< the frame's material
+    std::string picture; ///< the picture's material
+    std::string pattern; ///< a scene texture pattern (scene::kTexturePatternNames)
+
+    bool operator==(const WallPictures&) const = default;
+};
+
+/// Visible cans over the spot lights of some roles (a pack's "roomDressing" "cans", I6 step 6's review).
+struct SpotCans {
+    std::vector<LightRole> roles;
+    std::string body; ///< the can's and its stem's material
+    std::string lens; ///< the lit lens under it
+
+    bool operator==(const SpotCans&) const = default;
+};
+
+/// A runner on the floor leading to the hero corner (a pack's "roomDressing" "runner", I6 step 6's review): from the
+/// back edge of the hero corner's rug (the plan's part) out into the room along it, centred on it.
+struct HeroRunner {
+    std::int64_t widthMm = 900;
+    std::int64_t lengthMm = 3500;
+    std::string material;
+
+    bool operator==(const HeroRunner&) const = default;
+};
+
+/// A lit pictogram beside the hero corner's sign (a pack's "roomDressing" "signIcon", I6 step 6's review): a picture of
+/// `pattern` in `material` (a neon), framed as the sign, on the sign's right on its wall.
+struct SignIcon {
+    std::int64_t widthMm = 400;
+    std::int64_t heightMm = 300;
+    std::string pattern;
+    std::string material;
+
+    bool operator==(const SignIcon&) const = default;
+};
+
+/// What a pack adds to its rooms' upper walls, ceiling and floor beyond the plan's fixtures (I6 step 6's review): a
+/// look, never the plan's: nothing collides, nothing casts a shadow.
+struct RoomDressing {
+    std::optional<CoveStrip> cove;
+    std::optional<WallPictures> pictures;
+    std::optional<SpotCans> cans;
+    std::optional<HeroRunner> runner;
+    std::optional<SignIcon> signIcon;
+    /// A display case's empty level shows a riser card in each slot rather than one across the span.
+    bool cardPerSlot = false;
+
+    [[nodiscard]] bool empty() const noexcept {
+        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot;
+    }
+    bool operator==(const RoomDressing&) const = default;
+};
+
 /// The share of the pack's neon in its sign's picture light (themedLighting()).
 inline constexpr double kSignLightNeonShare = 0.45;
 
@@ -249,6 +351,8 @@ struct FurniturePiece {
     std::optional<std::int64_t> xMm;
     std::optional<std::int64_t> zMm;
     std::optional<std::int32_t> yawCdeg;
+    /// A hero part's piece: its height above the room's floor (I6 step 6); the part's when left out.
+    std::optional<std::int64_t> yMm;
 
     bool operator==(const FurniturePiece&) const = default;
 };
@@ -261,8 +365,8 @@ struct FurnitureVariant {
     bool operator==(const FurnitureVariant&) const = default;
 };
 
-/// A pack's furniture variants: the pieces that replace a hero corner's part (by its role), and the weighted variants
-/// of a decoration (by its prefab kind).
+/// A pack's furniture variants: the pieces that replace a hero corner's part (by its role; none: the part is not drawn,
+/// I6 step 6), and the weighted variants of a decoration (by its prefab kind).
 struct ThemeFurniture {
     std::map<std::string, std::vector<FurniturePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<FurnitureVariant>, std::less<>> decoration;
@@ -290,6 +394,10 @@ struct ThemeMaterials {
     std::map<std::string, std::string, std::less<>> lightTints;
     /// The pack's furniture variants (I6 step 3b): what draws the hero corner's parts and the decoration.
     ThemeFurniture furniture;
+    /// The pack's accent lights (I6 step 6's review), drawn after the profile's while the room's lights leave room.
+    std::vector<AccentLight> accents;
+    /// The pack's dressing of its rooms' upper walls, ceiling and floor (I6 step 6's review).
+    RoomDressing dressing;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
     /// empty for a kind the theme does not dress.

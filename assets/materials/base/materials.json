@@ -372,6 +372,67 @@
       "crt": {"lineCount": 240, "scanlineStrength": 0.35, "maskTriadCount": 320, "maskStrength": 0.25,
               "curvature": 0.06, "vignette": 0.3, "glassReflection": 0.25}
     },
+    // I6 step 6's arcade cabinets (style §5.4, §14.4: original, generic, no artwork): the black laminate of their
+    // fronts, two deep paints for their side panels (a plum and an oxblood, so that a row reads as distinct cabinets),
+    // lit T-mouldings in the arcade's magenta and cyan (dimmer than the room's neon), the marquees' lit faces (a picture
+    // of the scene's own times the colour), the dark glass of the screens' borders, an empty cabinet's idle screen (its
+    // dim lettering), and the games' screens: the collection's front layer through a picture tube (the CRT's grille and
+    // scanlines on an unlit, layered material).
+    "MAT_Cabinet_Laminate": { "baseColor": "#151318", "metallic": 0.0, "roughness": 0.45 },
+    "MAT_Cabinet_Paint_Plum": { "baseColor": "#3A2148", "metallic": 0.0, "roughness": 0.38 },
+    "MAT_Cabinet_Paint_Oxblood": { "baseColor": "#4E1A22", "metallic": 0.0, "roughness": 0.38 },
+    "MAT_Cabinet_Paint_Walnut": { "baseColor": "#3B2A20", "metallic": 0.0, "roughness": 0.42 },
+    "MAT_Molding_Magenta": { "shading": "unlit", "baseColor": "#C85AD8", "emissiveStrength": 1.5 },
+    "MAT_Molding_Cyan": { "shading": "unlit", "baseColor": "#4CC0D8", "emissiveStrength": 1.5 },
+    "MAT_Marquee_Magenta": { "shading": "unlit", "baseColor": "#E05AC8", "emissiveStrength": 1.2 },
+    "MAT_Marquee_Cyan": { "shading": "unlit", "baseColor": "#48C4E0", "emissiveStrength": 1.2 },
+    "MAT_Marquee_Amber": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.1 },
+    "MAT_Plastic_Teal": { "baseColor": "#3E9A94", "metallic": 0.0, "roughness": 0.4 },
+    "MAT_Screen_Off": { "baseColor": "#08090C", "metallic": 0.0, "roughness": 0.3 },
+    "MAT_Screen_Idle": { "shading": "unlit", "baseColor": "#3A6E86", "emissiveStrength": 0.7 },
+    "MAT_Screen_Arcade": {
+      "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 1.15,
+      "crt": {"lineCount": 240, "scanlineStrength": 0.3, "maskTriadCount": 240, "maskStrength": 0.2,
+              "curvature": 0.04, "vignette": 0.25, "glassReflection": 0.2}
+    },
+    // I6 step 6's review (concept panels 5 and 6). The arcade: its cabinets' side art (a printed design that glows a
+    // little under the arcade's black light: unlit, dim), the neon coves along its side walls (magenta and cyan,
+    // brighter than the mouldings), its lightbox flyers (a backlit print, dim: seen through the doorway from the hub
+    // they must not outshine the room's light), its light columns (a lit tube in the neon's pink), its spot cans' lenses. The handhelds: the counters' and stations' ivory lining, their brighter glass (a pale sheen over the
+    // handhelds, more present than the cases' elsewhere), the handhelds' lit displays (a pale green LCD), the stations'
+    // brighter strip.
+    "MAT_Side_Art": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.6 },
+    "MAT_Cove_Magenta": { "shading": "unlit", "baseColor": "#E050D8", "emissiveStrength": 2.4 },
+    "MAT_Cove_Cyan": { "shading": "unlit", "baseColor": "#38C8F4", "emissiveStrength": 2.4 },
+    // The coves' light on their walls (as the halls' wall wash and the shelves' glow: a picture fading from the strip,
+    // blended over the plaster, no light of its own); the handhelds' cove a warm tungsten.
+    "MAT_Cove_Wash_Magenta": {
+      "shading": "unlit", "baseColor": "#D048D0", "emissiveStrength": 1.6, "alpha": 0.8, "alphaMode": "blend",
+      "baseColorTexture": "procedural:shelfglow/baseColor"
+    },
+    "MAT_Cove_Wash_Cyan": {
+      "shading": "unlit", "baseColor": "#30B8E8", "emissiveStrength": 1.6, "alpha": 0.8, "alphaMode": "blend",
+      "baseColorTexture": "procedural:shelfglow/baseColor"
+    },
+    "MAT_Cove_Warm": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.8 },
+    "MAT_Cove_Wash_Warm": {
+      "shading": "unlit", "baseColor": "#FFC890", "emissiveStrength": 1.0, "alpha": 0.5, "alphaMode": "blend",
+      "baseColorTexture": "procedural:shelfglow/baseColor"
+    },
+    "MAT_Lightbox": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.35 },
+    "MAT_Can_Lens": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 1.2 },
+    "MAT_Neon_Tube_Pink": { "shading": "unlit", "baseColor": "#F060B8", "emissiveStrength": 2.4 },
+    "MAT_Fabric_Display_Ivory": { "baseColor": "#CFC6B2", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Glass_Counter": {
+      "baseColor": "#D8E4E6",
+      "alpha": 0.13,
+      "alphaMode": "blend",
+      "doubleSided": true,
+      "metallic": 0.0,
+      "roughness": 0.3
+    },
+    "MAT_Screen_LCD": { "shading": "unlit", "baseColor": "#A8D8A8", "emissiveStrength": 0.9 },
+    "MAT_Shelf_Light_Bright": { "shading": "unlit", "baseColor": "#FFD2A0", "emissiveStrength": 2.4 },
     // Fabric shade lit from the inside by a warm tungsten bulb; seen from inside and outside.
     "MAT_Lamp_Shade": {
       "baseColor": "#E8D7B9",

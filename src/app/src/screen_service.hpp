@@ -35,7 +35,8 @@ struct HeroScreen {
     core::Aabb bounds;
 };
 
-/// The first object of `description` built from the `crt` prefab whose screen shows a picture (its "screen" role has a
+/// The first object of `description` built from the `crt` prefab, or from the `arcade_cabinet` prefab that stands for it
+/// in the arcade (I6 step 6's hero cabinet), whose screen shows a picture (its "screen" role has a
 /// scene texture, so that its material has a base colour texture to override), with its screen's material in
 /// `materials` (registered by SceneInstance under "<object id>/screen...") and the bounds of its first instance;
 /// nothing when the scene has none (the model viewer, scenes without a TV). With `idPrefix` (I4 step 5a: a floor's start

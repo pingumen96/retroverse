@@ -146,6 +146,9 @@ struct CollectionGroup {
     /// The material of the items' shells (MediaFamily::shellMaterial, I6 step 4's review); empty: the theme's
     /// "cartridge" role.
     std::string shellMaterial;
+    /// The material of the items' fronts (MediaFamily::labelMaterial, I6 step 6: the cabinets' screens); empty: the
+    /// theme's "cartridge" label role.
+    std::string labelMaterial;
     std::uint32_t firstCluster = 0;
     std::uint32_t clusterCount = 0;
     std::uint32_t firstItem = 0;

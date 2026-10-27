@@ -14,6 +14,7 @@
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/platform_manifest.hpp>
+#include <rv/world/validation.hpp>
 #include <rv/world/world_config.hpp>
 
 #include "data_reader.hpp"
@@ -85,8 +86,8 @@ glm::dvec3 readPoint(const ObjectReader& reader, std::string_view key) {
 AccentLight readAccent(DocumentReader& document, const Json& value, const std::string& pointer) {
     AccentLight accent;
     const ObjectReader reader(document, value, pointer,
-                              {"anchor", "color", "innerConeDeg", "intensity", "name", "on", "outerConeDeg",
-                               "position", "range", "target", "type"});
+                              {"anchor", "color", "colorAlt", "innerConeDeg", "intensity", "name", "on",
+                               "outerConeDeg", "position", "range", "target", "type"});
     accent.name = reader.dataId("name");
     if (reader.has("on")) {
         const std::string on = reader.string("on");
@@ -104,6 +105,12 @@ AccentLight readAccent(DocumentReader& document, const Json& value, const std::s
     accent.spot = type == "spot";
     accent.position = readPoint(reader, "position");
     accent.color = colour(reader, "color");
+    if (reader.has("colorAlt")) {
+        accent.colorAlt = colour(reader, "colorAlt");
+        if (!document.failed() && accent.on != AccentAnchor::Display) {
+            document.fail(reader.pointer("colorAlt"), "only a display accent alternates its colour");
+        }
+    }
     accent.intensity = reader.number("intensity", 0.0, kMaxIntensity);
     accent.range = reader.number("range", 0.01, kMaxRange);
     if (accent.spot) {
@@ -198,6 +205,10 @@ constexpr std::string_view kTintRoles[] = {"doorwayFill", "hall", "key", "lamp",
 constexpr std::size_t kMaxLabelPalette = 16;
 /// How far a hero part's piece may stand from its socket's anchor (millimetres).
 constexpr std::int64_t kMaxPieceOffsetMm = 20000;
+/// A hero part's piece stands at most this high above the floor (I6 step 6's "yMm").
+constexpr std::int64_t kMaxPieceHeightMm = 5000;
+/// The kind of the only pieces that may stand for the hero corner's CRT (I6 step 6: the hero cabinet).
+constexpr std::string_view kHeroCabinetKind = "arcade_cabinet";
 
 /// The label palette, the neon, its glow, the light tints and the bloom of a pack (I6 step 3);
 /// each optional, a pack without one takes classic_16bit_warm's (ThemeMaterials' defaults).
@@ -256,8 +267,8 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
 FurniturePiece readPiece(DocumentReader& document, const Json& value, const std::string& at, bool placed,
                          bool weighted, std::uint32_t* weightPermille) {
     FurniturePiece piece;
-    std::initializer_list<std::string_view> heroKeys = {"materials", "params", "prefab", "textures", "xMm", "yawCdeg",
-                                                         "zMm"};
+    std::initializer_list<std::string_view> heroKeys = {"materials", "params", "prefab", "textures", "xMm",
+                                                         "yMm",       "yawCdeg", "zMm"};
     std::initializer_list<std::string_view> decorationKeys = {"materials", "params", "prefab", "textures", "weight"};
     const ObjectReader reader(document, value, at, placed ? heroKeys : decorationKeys);
     if (document.failed()) {
@@ -312,6 +323,7 @@ FurniturePiece readPiece(DocumentReader& document, const Json& value, const std:
     if (!document.failed() && placed) {
         piece.xMm = reader.optionalInteger("xMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
         piece.zMm = reader.optionalInteger("zMm", -kMaxPieceOffsetMm, kMaxPieceOffsetMm);
+        piece.yMm = reader.optionalInteger("yMm", 0, kMaxPieceHeightMm);
         if (const auto yaw = reader.optionalInteger("yawCdeg", 0, 35999)) {
             piece.yawCdeg = static_cast<std::int32_t>(*yaw);
         }
@@ -345,21 +357,31 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
                 document.fail(at, hero ? "expected a hero corner part's role" : "expected a prefab kind");
                 return;
             }
-            // The CRT (the room's video), the sign (its neon and light) and the console (the system's own) are what the
-            // room is about, never furniture.
-            if (hero && (name == "crt" || name == "sign" || name == "console")) {
-                document.fail(at, "the hero corner's crt, sign and console are not furniture: expected another part");
+            // The sign (its neon and light) and the console (the system's own) are what the room is about, never
+            // furniture; the CRT (the room's video) only as arcade cabinets, one of which carries it (I6 step 6).
+            if (hero && (name == "sign" || name == "console")) {
+                document.fail(at, "the hero corner's sign and console are not furniture: expected another part");
                 return;
             }
-            if (!list.is_array() || list.empty()) {
+            // A hero part's empty list leaves the part undrawn (I6 step 6), never the CRT's.
+            if (!list.is_array() || (list.empty() && (!hero || name == "crt"))) {
                 document.fail(at, "expected a non-empty array of pieces");
                 return;
+            }
+            if (hero && list.empty()) {
+                theme.furniture.heroParts[name];
+                continue;
             }
             std::uint32_t total = 0;
             for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
                 const std::string elementAt = at + "/" + std::to_string(i);
                 std::uint32_t weight = 1000;
                 FurniturePiece piece = readPiece(document, list[i], elementAt, hero, !hero, &weight);
+                if (hero && name == "crt" && !document.failed() && piece.prefab.kind != kHeroCabinetKind) {
+                    document.fail(elementAt + "/prefab",
+                                  "the hero corner's crt is the room's video: only an arcade cabinet stands for it");
+                    return;
+                }
                 if (hero) {
                     theme.furniture.heroParts[name].push_back(std::move(piece));
                 } else {
@@ -374,7 +396,153 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
         }
     };
     readLists("heroParts", true);
+    // A part is left out only for the hero cabinet standing in its place (I6 step 6's review): a pack that leaves one
+    // out without drawing the CRT as a cabinet would leave the room's CRT floating.
+    if (!document.failed() && !theme.furniture.heroParts.contains(kHeroTvPart)) {
+        for (const auto& [name, pieces] : theme.furniture.heroParts) {
+            if (pieces.empty()) {
+                document.fail(detail::pointerChild(furniture.pointer("heroParts"), name),
+                              "a hero part is left out only where the crt stands as an arcade cabinet: expected "
+                              "pieces under heroParts/crt");
+                return;
+            }
+        }
+    }
     readLists("decoration", false);
+}
+
+std::string materialName(const ObjectReader& reader, std::string_view key) {
+    return reader.checkedString(key, isMaterialName, "a library material name MAT_<letters, digits, _>");
+}
+
+/// The pack's accents (I6 step 6's review): the profile's format, names of their own.
+void readPackAccents(const ObjectReader& reader, ThemeMaterials& theme) {
+    DocumentReader& document = reader.document();
+    if (document.failed() || !reader.has("accents")) {
+        return;
+    }
+    detail::forEachElement(reader.array("accents"), reader.pointer("accents"),
+                           [&](const Json& element, const std::string& at) {
+                               if (!document.failed()) {
+                                   theme.accents.push_back(readAccent(document, element, at));
+                               }
+                           });
+    for (std::size_t i = 0; i < theme.accents.size() && !document.failed(); ++i) {
+        for (std::size_t j = 0; j < i; ++j) {
+            if (theme.accents[j].name == theme.accents[i].name) {
+                document.fail(detail::pointerChild(reader.pointer("accents"), i), "a name that appears twice");
+                break;
+            }
+        }
+    }
+}
+
+/// The pack's dressing of its rooms (I6 step 6's review, room_look.hpp's "roomDressing").
+void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
+    DocumentReader& document = reader.document();
+    if (document.failed() || !reader.has("roomDressing")) {
+        return;
+    }
+    const ObjectReader dressing =
+        reader.object("roomDressing", {"cans", "cardPerSlot", "cove", "pictures", "runner", "signIcon"});
+    if (!document.failed() && dressing.has("cardPerSlot")) {
+        theme.dressing.cardPerSlot = dressing.boolean("cardPerSlot");
+    }
+    RoomDressing& out = theme.dressing;
+    if (!document.failed() && dressing.has("cove")) {
+        const ObjectReader cove = dressing.object("cove", {"east", "eastWash", "west", "westWash", "yMm"});
+        CoveStrip strip;
+        strip.yMm = cove.integer("yMm", 500, 5000);
+        strip.west = materialName(cove, "west");
+        strip.east = materialName(cove, "east");
+        if (cove.has("westWash") != cove.has("eastWash")) {
+            if (!document.failed()) {
+                document.fail(cove.pointer(cove.has("westWash") ? "eastWash" : "westWash"),
+                              "a cove's washes go together: expected both or neither");
+            }
+        } else if (cove.has("westWash")) {
+            strip.westWash = materialName(cove, "westWash");
+            strip.eastWash = materialName(cove, "eastWash");
+        }
+        out.cove = strip;
+    }
+    if (!document.failed() && dressing.has("pictures")) {
+        const ObjectReader pictures = dressing.object(
+            "pictures", {"centreYMm", "frame", "heightMm", "kinds", "pattern", "picture", "roles", "widthMm"});
+        WallPictures wall;
+        wall.centreYMm = pictures.integer("centreYMm", 500, 5000);
+        wall.widthMm = pictures.integer("widthMm", 100, 3000);
+        wall.heightMm = pictures.integer("heightMm", 100, 3000);
+        wall.frame = materialName(pictures, "frame");
+        wall.picture = materialName(pictures, "picture");
+        wall.pattern = pictures.string("pattern");
+        if (!document.failed() && std::find(scene::kTexturePatternNames.begin(), scene::kTexturePatternNames.end(),
+                                            wall.pattern) == scene::kTexturePatternNames.end()) {
+            document.fail(pictures.pointer("pattern"), "expected a scene texture pattern");
+        }
+        if (pictures.has("roles")) {
+            detail::forEachElement(pictures.array("roles"), pictures.pointer("roles"),
+                                   [&](const Json& element, const std::string& at) {
+                                       const std::string text = detail::readString(document, element, at);
+                                       if (const auto role = parseFixtureRole(text)) {
+                                           wall.roles.push_back(*role);
+                                       } else if (!document.failed()) {
+                                           document.fail(at, "expected a fixture role");
+                                       }
+                                   });
+        }
+        if (pictures.has("kinds")) {
+            detail::forEachElement(pictures.array("kinds"), pictures.pointer("kinds"),
+                                   [&](const Json& element, const std::string& at) {
+                                       std::string kind = detail::readString(document, element, at);
+                                       if (!document.failed() && !isValidPrefabKind(kind)) {
+                                           document.fail(at, "expected a prefab kind");
+                                       }
+                                       wall.kinds.push_back(std::move(kind));
+                                   });
+        }
+        out.pictures = std::move(wall);
+    }
+    if (!document.failed() && dressing.has("cans")) {
+        const ObjectReader cans = dressing.object("cans", {"body", "lens", "roles"});
+        SpotCans spots;
+        spots.body = materialName(cans, "body");
+        spots.lens = materialName(cans, "lens");
+        detail::forEachElement(
+            cans.array("roles"), cans.pointer("roles"), [&](const Json& element, const std::string& at) {
+                const std::string text = detail::readString(document, element, at);
+                const auto role = parseLightRole(text);
+                if (!role || lightKind(*role) != LightKind::Spot) {
+                    if (!document.failed()) {
+                        document.fail(at, "expected the role of a spot light (key, picture, wall-washer)");
+                    }
+                    return;
+                }
+                spots.roles.push_back(*role);
+            });
+        out.cans = std::move(spots);
+    }
+    if (!document.failed() && dressing.has("runner")) {
+        const ObjectReader runner = dressing.object("runner", {"lengthMm", "material", "widthMm"});
+        HeroRunner rug;
+        rug.widthMm = runner.integer("widthMm", 200, 3000);
+        rug.lengthMm = runner.integer("lengthMm", 500, 10000);
+        rug.material = materialName(runner, "material");
+        out.runner = rug;
+    }
+    if (!document.failed() && dressing.has("signIcon")) {
+        const ObjectReader icon = dressing.object("signIcon", {"heightMm", "material", "pattern", "widthMm"});
+        SignIcon sign;
+        sign.widthMm = icon.integer("widthMm", 100, 2000);
+        sign.heightMm = icon.integer("heightMm", 100, 2000);
+        sign.material = materialName(icon, "material");
+        sign.pattern = icon.string("pattern");
+        if (!document.failed() && std::find(scene::kTexturePatternNames.begin(), scene::kTexturePatternNames.end(),
+                                            sign.pattern) == scene::kTexturePatternNames.end()) {
+            document.fail(icon.pointer("pattern"), "expected a scene texture pattern");
+        }
+        out.signIcon = sign;
+    }
 }
 
 /// The lit shelves' roles (I6 step 3, geometry::ShelfParams::boardLight): a shelf's strips light its back panel, so it
@@ -481,6 +649,20 @@ ThemeMaterials builtInTheme() {
                {"leaves", "MAT_Plant_Leaf"},
                {"leaves_alt", "MAT_Plant_Leaf_Light"}}},
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
+        // I6 step 6's arcade cabinets.
+        {"arcade_cabinet",
+         Roles{{"body", "MAT_Cabinet_Paint_Walnut"},
+               {"body_alt", "MAT_Cabinet_Paint_Oxblood"},
+               {"front", "MAT_Cabinet_Laminate"},
+               {"molding", "MAT_Metal_Brushed"},
+               {"molding_alt", "MAT_Metal_Brushed"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"metal_trim", "MAT_Metal_Brushed"},
+               {"plastic_accent", "MAT_Fabric_Vinyl_Red"},
+               {"marquee", "MAT_Marquee_Amber"},
+               {"marquee_alt", "MAT_Marquee_Amber"},
+               {"screen_back", "MAT_Screen_Idle"},
+               {"screen", "MAT_Screen_CRT_Room"}}},
         {"cartridge",
          Roles{{"plastic_shell", "MAT_Plastic_Gray"}, {"label", "MAT_Label_Cover"}, {"spine", "MAT_Label_Cover"}}},
         // I6 step 5's hub.
@@ -731,8 +913,8 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"bloomStrength", "furniture", "heroParts", "id", "kinds", "labelPalette",
-                               "lightTints", "name", "neon", "neonGlow", "schemaVersion"});
+                              {"accents", "bloomStrength", "furniture", "heroParts", "id", "kinds", "labelPalette",
+                               "lightTints", "name", "neon", "neonGlow", "roomDressing", "schemaVersion"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
     theme.id = reader.dataId("id");
@@ -744,6 +926,8 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     checkLitShelves(document, theme, reader.pointer("kinds"));
     readThemeLook(reader, theme);
     readFurniture(reader, theme);
+    readPackAccents(reader, theme);
+    readRoomDressing(reader, theme);
     if (document.failed()) {
         return propagate(document.error());
     }
@@ -861,6 +1045,16 @@ LightingProfile themedLighting(const LightingProfile& profile, const ThemeMateri
     }
     if (theme.bloomStrength) {
         themed.bloomStrength = *theme.bloomStrength;
+    }
+    // The pack's own accents after the profile's (I6 step 6's review); a name the profile has is the pack's.
+    for (const AccentLight& accent : theme.accents) {
+        const auto same = std::find_if(themed.accents.begin(), themed.accents.end(),
+                                       [&](const AccentLight& candidate) { return candidate.name == accent.name; });
+        if (same != themed.accents.end()) {
+            *same = accent;
+        } else {
+            themed.accents.push_back(accent);
+        }
     }
     return themed;
 }

@@ -97,7 +97,9 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     instance->m_shellMaterial =
         materials.add(fmt::format("{}/shell", instance->m_keyPrefix), "collection shell", shellDesc,
                       gl::resolveMaterialTextures(shellDesc, graphics.textures()));
-    instance->m_labelMaterials = {roleMaterial("label"), roleMaterial("spine")};
+    // The front's layers: the family's (I6 step 6: the cabinets' screens through a picture tube), else the theme's label.
+    const std::string frontMaterial = family.labelMaterial.empty() ? roleMaterial("label") : family.labelMaterial;
+    instance->m_labelMaterials = {frontMaterial, roleMaterial("spine")};
 
     gl::CollectionArrays::Desc desc;
     desc.format = graphics.collectionArrayFormat();
@@ -144,7 +146,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     // The hero textures' front (I3 step 12): the label's material with a base colour texture of its own (white), which
     // the hero texture shown overrides.
     {
-        const assets::MaterialDesc& labelDesc = library.getOrFallback(roleMaterial("label"));
+        const assets::MaterialDesc& labelDesc = library.getOrFallback(frontMaterial);
         // Clamped like a picture: the sampler bound with the override follows this texture's wrap mode.
         assets::ImageData white;
         white.width = 1;

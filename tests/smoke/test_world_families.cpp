@@ -33,6 +33,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
@@ -547,7 +548,7 @@ TEST_CASE("world families: jewel cases stand on their side on the shelves, their
     (void)requireScreenshot(amiga, boxes, kShotSize);
 }
 
-TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and on the card, at their label's shape",
+TEST_CASE("world families: the arcade room's cabinets show their games' flyers on their screens and on the card",
           "[gpu][world][families]") {
     ImportedBuilding building("mame");
     const fs::path doorway = building.dir / "mame-doorway.png";
@@ -555,21 +556,107 @@ TEST_CASE("world families: the arcade room's portrait flyers, on the shelves and
         runApp(retroverseExe(), building.dir, "mame_doorway", roomArguments(building, "mame", "40", doorway));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
-    // The 15 sets with a cover, every one face-out on the display slots; the 10 without one unplaced (no-cover). The
-    // ground floor holds the arcade room (area:arcade since I4 step 4, its one section mame's) and the lobby.
+    // The 15 sets with a cover, each a cabinet's screen (I6 step 6, ADR-0014 §2 and §6), the first six by priority in
+    // the display pairs (featured), the rest in the modules' cabinets; the 10 without one unplaced (no-cover). The
+    // ground floor holds the arcade room (area:arcade since I4 step 4, its one section mame's) and the hub.
     CHECK(building.roomOf("mame") == "area:arcade");
     requireRoomShown(building, run, "area:arcade", 15);
-    CHECK(run.report->world.featured == 15);
+    CHECK(run.report->world.featured == 6);
+    CHECK(run.report->world.band == 0);
     CHECK(run.report->residency.covers == 15);
     CHECK(run.report->residency.coverFailures == 0);
+    // The hero cabinet carries the room's video.
+    REQUIRE(run.report->video.bound);
+    CHECK(run.report->video.screen == "area:arcade/fx:hero.crt");
     (void)requireScreenshot(run, doorway, kShotSize);
     const ShownRoom shown = shownRoom(building, *run.report);
     const rv::world::Room& room = roomIn(shown.stored.plan, building.roomOf("mame"));
-    CHECK(room.mediaFamily == "generic_case"); // the arcade room keeps it until I6 step 6 (ADR-0014 §2)
+    CHECK(room.mediaFamily == "arcade_cabinet");
     CHECK(room.floor == "ground");
-    // A flyer inspected: portrait on the card, at the case's 118 x 168 mm label.
+    // Every item a screen facing out, in a cabinet; the room dresses none.
+    for (const rv::world::CollectionItem& item : shown.layout.items) {
+        CHECK(item.stance == rv::world::ItemStance::FaceOut);
+    }
+    CHECK(std::none_of(shown.stored.plan.dressing.begin(), shown.stored.plan.dressing.end(), [](const auto& dressed) {
+        return dressed.level.fixture().room().toString() == "area:arcade";
+    }));
+    // A screen up close: its game's flyer, lit (an unlit picture tube over the front layer), not the dark glass; the
+    // first featured cabinet's (the display pairs', as the first items stood before the cabinets).
+    const auto found = std::find_if(shown.layout.items.begin(), shown.layout.items.end(), [](const auto& item) {
+        return item.section == rv::world::Section::Featured;
+    });
+    REQUIRE(found != shown.layout.items.end());
+    const rv::world::CollectionItem& screen = *found;
+    const fs::path close = building.dir / "mame-screen.png";
+    const Viewpoint view = viewpointOf(screen, shown.scene.camera);
+    const AppRun closeRun = runApp(retroverseExe(), building.dir, "mame_screen",
+                                   roomArguments(building, "mame", "12", close, {"--spawn", spawnArgument(view.spawn)}));
+    requireCleanRun(closeRun);
+    const rv::assets::ImageData closeImage = requireScreenshot(closeRun, close, kShotSize);
+    const std::optional<glm::ivec2> centre = projectToPixel(view.camera, kShotSize, view.face);
+    REQUIRE(centre.has_value());
+    double sum = 0.0;
+    std::size_t samples = 0;
+    for (int y = centre->y - 30; y < centre->y + 30; ++y) {
+        for (int x = centre->x - 30; x < centre->x + 30; ++x) {
+            if (x < 0 || y < 0 || x >= kShotSize.x || y >= kShotSize.y) {
+                continue;
+            }
+            const std::size_t at = (static_cast<std::size_t>(y) * static_cast<std::size_t>(closeImage.width) +
+                                    static_cast<std::size_t>(x)) *
+                                   static_cast<std::size_t>(closeImage.channels);
+            sum += 0.2126 * closeImage.pixels[at] + 0.7152 * closeImage.pixels[at + 1] +
+                   0.0722 * closeImage.pixels[at + 2];
+            ++samples;
+        }
+    }
+    REQUIRE(samples > 0);
+    WARN("mame's screen up close: mean luma " << sum / static_cast<double>(samples));
+    CHECK(sum / static_cast<double>(samples) > 40.0);
+    // A flyer inspected: portrait on the card, at the screen's 298 x 398 mm label.
+    checkInspectedCard(building, shown, "mame", screen, {298, 398});
+}
+
+TEST_CASE("world families: a game launched from its cabinet's screen returns to the arcade room",
+          "[gpu][world][families]") {
+    // I6 step 6: the cabinet's screen is the game's item: from its Focus pose, interact inspects it and shows its card,
+    // Avvia launches it into the fake emulator (RV_LAUNCH_ALLOWLIST), and the room comes back as it was.
+    ensureLaunchAllowList();
+    ImportedBuilding building("mame_launch");
+    const nlohmann::json profile{{"id", "fake-return"},
+                                 {"executable", arg(fakeEmulatorExe())},
+                                 {"arguments", {"--sleep-ms", "2500", "--exit-timeout-ms", "30000", "--", "{rom}"}},
+                                 {"windowTimeoutSeconds", 0},
+                                 {"hideConsoleWindow", true},
+                                 {"systems", {{"mame", nlohmann::json::object()}}}};
+    const nlohmann::json document{{"schemaVersion", 1}, {"profiles", nlohmann::json::array({profile})}};
+    REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "emulators.json", document.dump(2) + "\n")
+                .has_value());
+    building.cli("assign_mame", {"assign", "mame", "--profile", "fake-return"});
+    const fs::path first = building.dir / "first.png";
+    const AppRun firstRun = runApp(retroverseExe(), building.dir, "first", roomArguments(building, "mame", "2", first));
+    skipWithoutOpenGl(firstRun);
+    requireCleanRun(firstRun);
+    const ShownRoom shown = shownRoom(building, *firstRun.report);
     REQUIRE_FALSE(shown.layout.items.empty());
-    checkInspectedCard(building, shown, "mame", shown.layout.items.front(), {118, 168});
+    const rv::world::CollectionItem& item = shown.layout.items.front();
+    const fs::path shot = building.dir / "returned.png";
+    const AppRun run = runApp(retroverseExe(), building.dir, "launch",
+                              roomArguments(building, "mame", "120", shot,
+                                            {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)),
+                                             "--input-script", arg(inputScript("world_launch.json"))}));
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.launches.size() == 1);
+    CHECK(report.launches.front().gameId == item.game.toString());
+    CHECK(report.launches.front().profile == "fake-return");
+    CHECK(report.launches.front().outcome == "returned");
+    CHECK(report.world.launch.returned == 1);
+    CHECK(report.world.launch.poseRestored);
+    CHECK(report.world.interaction.state == "inspect");
+    CHECK(report.world.interaction.focusedGame == item.game.toString());
+    CHECK(report.world.room == "area:arcade");
 }
 
 TEST_CASE("world families: the building's big-box room without media shows generated labels",
@@ -604,7 +691,7 @@ TEST_CASE("world families: a stored building of generator 1.3 is migrated once",
     // I6 step 4 (ADR-0014 §2): main's golden building as generator 1.3 wrote it (tests/fixtures/world/legacy/: the
     // building fixture's systems, the cases standing on their end) as the stored plan of a data directory of the
     // building fixture, the world seed its own. The first start updates it: the jewel-case room and the two shared
-    // rooms migrated once, in the run report and with the notice; the arcade room keeps its generic case. The second
+    // rooms migrated once, in the run report and with the notice, and since I6 step 6 the arcade room too. The second
     // start migrates nothing and shows no notice.
     PlannedBuilding building("world_families/legacy_migration", false);
     REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "world.json", "{\"seed\": 102938}\n").has_value());
@@ -638,19 +725,25 @@ TEST_CASE("world families: a stored building of generator 1.3 is migrated once",
     CHECK(migrated.planWritten);
     CHECK(migrated.notice == "rooms-migrated");
     const std::vector<rv::app::MigratedRoomRecord> expected{
+        {"area:arcade", "generic_case", "arcade_cabinet", 0}, // I6 step 6: its cases become its cabinets
         {"area:shared:computer", "generic_case", "generic_case_v2", 0},
         {"area:shared:handheld", "generic_case", "generic_case_v2", 0},
         {"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
     };
     CHECK(migrated.migratedRooms == expected);
     CHECK(migrated.needsConfirmation.empty());
-    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, re-placed onto the hub once, in the same update.
-    const std::vector<rv::app::ReplacedRoomRecord> replaced{{"area:arcade", 7650, -8150, 9000, -12150}};
-    CHECK(migrated.replacedRooms == replaced);
+    // I6 step 5 (ADR-0014 §3): the arcade room, standing at I4's lobby, re-placed onto the hub once, in the same
+    // update; the report names where it stands in the stored plan (its z following the depth of its cabinets' room, I6
+    // step 6's review).
     const rv::world::StoredPlan stored = building.plan();
+    const rv::world::RoomPlacement arcadeNow = roomIn(stored.plan, "area:arcade").placement;
+    CHECK(arcadeNow.xMm == 9000);
+    const std::vector<rv::app::ReplacedRoomRecord> replaced{
+        {"area:arcade", 7650, -8150, arcadeNow.xMm, arcadeNow.zMm}};
+    CHECK(migrated.replacedRooms == replaced);
     CHECK(stored.plan.generatorVersion == rv::world::kGeneratorVersion);
     CHECK(roomIn(stored.plan, "room:psx").mediaFamily == "disc_case_cd_v2");
-    CHECK(roomIn(stored.plan, "area:arcade").mediaFamily == "generic_case");
+    CHECK(roomIn(stored.plan, "area:arcade").mediaFamily == "arcade_cabinet");
 
     const AppRun second = start("again");
     const rv::app::WorldRecord& again = second.report->world;

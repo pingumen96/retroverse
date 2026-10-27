@@ -263,7 +263,7 @@ build/rvdata`).
   The run starts in the ground floor's hub (I6 step 5, below), at the elevator's arrival point facing east (no hero CRT
   bound until the eye stays in a room); `--start-room <room id>` (`room:snes`, `area:arcade`, ...) starts at that
   room's doorway camera on its floor, its CRT the hero CRT from the start (a shared or arcade room's playing all its
-  sections' games; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
+  sections' games; since I6 step 6 the arcade room's hero cabinet, which stands for its CRT; a room the plan lacks once it exists ends the run: exit 2). The scene's frame is the start
   room's when one is given, else the floor's (building.hpp: x east from the elevator, the hall's centre line on z 0):
   `--spawn`, the input scripts' poses and the run report's walker poses are in that frame, and the start room's own
   objects keep the very coordinates of its standalone scene. Hover, pull-out, Focus, Inspect, the card and launches
@@ -326,7 +326,10 @@ build/rvdata`).
   `handheld_archive`, the computers `computer_studio`, the ground floor's hall `retro_library_hub`), the arcade room's
   `arcade_after_dark` wherever it stands, a platform manifest's only when it names one (`snes.json` names none);
   resolved when the room is drawn (materials, the neon sign and the light on it, the lit shelves, the generated
-  spines' and labels' palette, light tints, the bloom), never a reason to move anything. With the mouse free (the developer overlay open) the cursor picks.
+  spines' and labels' palette, light tints, the bloom; since I6 step 6's review its own accents, the arcade's pairs lit
+  cyan and red in turn, and its `roomDressing`: the arcade's neon coves, backlit flyers, spot cans and runner, the
+  handhelds' warm cove, posters and pictogram beside the sign), never a reason to move anything. With the mouse free
+  (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
   proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
   degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the

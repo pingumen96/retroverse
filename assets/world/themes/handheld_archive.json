@@ -34,19 +34,26 @@
     "banker_lamp": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
                     "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
     "showcase": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
-                 "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Green",
-                 "glass": "MAT_Glass_Display", "plastic_body": "MAT_Plastic_AgedIvory",
-                 "plastic_dark": "MAT_Plastic_Black", "plastic_accent": "MAT_Plastic_Accent",
-                 "board_light": "MAT_Shelf_Light", "cover": "MAT_Label_Cover"},
+                 "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Ivory",
+                 "glass": "MAT_Glass_Counter", "plastic_body": "MAT_Plastic_AgedIvory",
+                 "plastic_dark": "MAT_Plastic_Black", "plastic_accent": "MAT_Plastic_Teal",
+                 "board_light": "MAT_Shelf_Light", "cover": "MAT_Label_Cover", "screen": "MAT_Screen_LCD"},
     "display_case": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
-                     "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Green",
-                     "glass": "MAT_Glass_Display"},
+                     "metal_trim": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Display_Ivory",
+                     "glass": "MAT_Glass_Counter",
+                     "board_light": "MAT_Shelf_Light", "screen": "MAT_Screen_LCD"},
     "storage_box": {"cardboard": "MAT_Cardboard_Box", "label": "MAT_Paper_Print"},
     "magazine_stack": {"paper": "MAT_Paper_Magazine", "cover": "MAT_Label_Print"},
     "bookends": {"metal": "MAT_Metal_Graphite", "book": "MAT_Book_Cloth", "book_alt": "MAT_Book_Cloth_Alt"},
     "plant": {"pot": "MAT_Ceramic_Glazed", "soil": "MAT_Soil", "leaves": "MAT_Plant_Leaf",
               "leaves_alt": "MAT_Plant_Leaf_Light"},
     "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
+    "arcade_cabinet": {"body": "MAT_Cabinet_Paint_Walnut", "body_alt": "MAT_Cabinet_Paint_Oxblood",
+                       "front": "MAT_Cabinet_Laminate", "molding": "MAT_Metal_Brushed",
+                       "molding_alt": "MAT_Metal_Brushed", "plastic_dark": "MAT_Plastic_Black",
+                       "metal_trim": "MAT_Metal_Brushed", "plastic_accent": "MAT_Fabric_Vinyl_Red",
+                       "marquee": "MAT_Marquee_Amber", "marquee_alt": "MAT_Marquee_Amber",
+                       "screen_back": "MAT_Screen_Idle", "screen": "MAT_Screen_CRT_Room"},
     "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
     "column": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                "metal_trim": "MAT_Metal_Brass"},
@@ -75,6 +82,9 @@
   // The era's furniture (I6 step 3b, concept panel 6): a small lounge chair in the armchair's place (a one-seat sofa
   // on tall legs, its back cushion apart), framed console
   // art, low counter showcases with a handheld for the sideboards; the rug a muted sage (its kind's material above).
+  // Since I6 step 6 (style §5.5, §14.5): stations, a generic handheld in a small lit vitrine on a tall pedestal at
+  // viewing height, in the place of most plants; the display cases lit inside ("board_light"), the handheld
+  // families' drawn as counters of handhelds (their manifests' "counter").
   "furniture": {
     "heroParts": {
       "armchair": [
@@ -89,8 +99,25 @@
          "textures": {"picture": "poster_console"}}],
       "tv_cabinet": [
         {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
-         "params": {"width": 0.8, "height": 0.95, "depth": 0.36, "baseHeight": 0.55, "item": "handheld"}}]
+         "params": {"width": 0.8, "height": 0.95, "depth": 0.36, "baseHeight": 0.55, "item": "handheld"}}],
+      "plant": [
+        {"weight": 0.6, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
+         "params": {"width": 0.42, "height": 1.25, "depth": 0.36, "baseHeight": 0.85, "item": "handheld"},
+         "materials": {"board_light": "MAT_Shelf_Light_Bright"}},
+        {"weight": 0.4, "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"}}]
     }
+  },
+  // I6 step 6's review (concept panel 6): a warm cove along the side walls lighting the upper walls, posters of the era
+  // high on the walls over the shelves and the showcases, a pictogram of a generic handheld in the room's neon beside
+  // its sign, a riser card per empty slot of the display cases (never a cover stretched across a level).
+  "roomDressing": {
+    "cove": {"yMm": 2650, "west": "MAT_Cove_Warm", "east": "MAT_Cove_Warm", "westWash": "MAT_Cove_Wash_Warm",
+             "eastWash": "MAT_Cove_Wash_Warm"},
+    "pictures": {"centreYMm": 2200, "widthMm": 520, "heightMm": 400, "roles": ["hero-module", "side-module"],
+                 "kinds": ["tv_cabinet"], "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print",
+                 "pattern": "poster_console"},
+    "signIcon": {"widthMm": 400, "heightMm": 300, "pattern": "handheld_icon", "material": "MAT_Neon_Cyan"},
+    "cardPerSlot": true
   },
   "labelPalette": ["#6EAF93", "#4C8BC9", "#9DB8A0", "#76513A", "#C9C4B6", "#5E7F9E", "#8E8E8A", "#F4EFE6"],
   "neon": "#5AB4D6",

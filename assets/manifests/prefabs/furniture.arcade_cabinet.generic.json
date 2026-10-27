@@ -1,0 +1,38 @@
+// The arcade room's cabinets (I6 step 6, ADR-0014 §2 and §6, style §5.4's CabinetGeneric): a pair of generic upright
+// cabinets of original design, 0.42 m wide, 1.7 m tall and 0.4 m deep (so that a pair stands in a 0.9 x 0.4 m
+// side-wall socket, the stepped profile kept: the lower body, the control panel with a joystick and three buttons, the
+// screen leaning back in a dark bezel, the lit marquee under the cap), 4 cm apart, their portrait screens (0.3 x 0.4 m)
+// the face-out slots of the media family arcade_cabinet: the game's screen, drawn by the collection. Every fixture of
+// that family (the hero-wall, side-wall and display sockets) is this row. No brand, logo or artwork.
+{
+  "schemaVersion": 1,
+  "id": "furniture.arcade_cabinet.generic",
+  "assetType": "furniture",
+  "category": "arcade_cabinet",
+  "role": "module",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "arcade_cabinet",
+    "params": {},
+    "scaleMeters": [0.88, 1.7, 0.4],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "firstSlot": "Slot_0_0"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "arcade_cabinet", "game_slots", "face_out", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

@@ -41,6 +41,8 @@
 //     (the step's review) keeps them within their footprints whatever the data: a decoration's variant that leaves its
 //     socket's footprint, or a hero part's piece that leaves the hero corner (with the planned part's own floor where
 //     the part reaches out of it, the lamp beside the TV), is not drawn; the plan's prefab is, a warning logged once.
+//     A hero part the pack leaves out (I6 step 6) is left out only while its socket's CRT is drawn as the pack's
+//     cabinet (resolved, holding its screen, within the guard); otherwise it is drawn as planned, under the CRT.
 //     A showcase is lit inside as a shelf (its kind's "board_light").
 // The collection's items are not scene objects: collection_layout.hpp places them (ADR-0011 §1).
 

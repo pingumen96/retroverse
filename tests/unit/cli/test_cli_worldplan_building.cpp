@@ -443,7 +443,7 @@ TEST_CASE("cli/worldplan: the building fixture's whole building, then its additi
         std::size_t placed;
     };
     const Expected expected[] = {
-        {"area:arcade", "ground", "generic_case", 15},               // mame: 25 sets, 15 with a cover
+        {"area:arcade", "ground", "arcade_cabinet", 15},             // mame: 25 sets, 15 with a cover
         {"area:shared:computer", "computer", "generic_case_v2", 20}, // amiga: no media at all, generated labels
         {"area:shared:handheld", "handheld", "generic_case_v2", 14}, // pocketlab (gb's row by its tag) 6, pokemini 8
         {"room:gb", "handheld", "cartridge_handheld", 30},           // 32 games, 2 second releases
@@ -732,13 +732,14 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
     CHECK(contains(updated.out, "area:shared:computer: generic_case -> generic_case_v2"));
     CHECK(contains(updated.out, "area:shared:handheld: generic_case -> generic_case_v2"));
     CHECK(contains(updated.out, "room:psx: disc_case_cd -> disc_case_cd_v2"));
-    CHECK_FALSE(contains(updated.out, "area:arcade: generic_case"));
+    // I6 step 6: the arcade room's generic cases become its cabinets in the same update.
+    CHECK(contains(updated.out, "area:arcade: generic_case -> arcade_cabinet"));
     std::size_t lines = 0;
     for (std::size_t at = updated.out.find("Room migrated"); at != std::string::npos;
          at = updated.out.find("Room migrated", at + 1)) {
         ++lines;
     }
-    CHECK(lines == 3);
+    CHECK(lines == 4);
     // I6 step 5: the arcade room, at I4's lobby, re-placed onto the hub in the same update, said once.
     CHECK(contains(updated.out, "area:arcade: onto the hub, x 9000 z -12150 (was x 7650 z -8150)"));
     auto plan = rv::world::readPlan(readText(session.files.plan), "migrated");
@@ -772,13 +773,17 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
     const nlohmann::json document = nlohmann::json::parse(reported.out);
     const nlohmann::json& migrated = document["changes"]["migratedRooms"];
     REQUIRE(migrated.is_array());
-    REQUIRE(migrated.size() == 3);
-    CHECK(migrated[0] == nlohmann::json{{"room", "area:shared:computer"},
+    REQUIRE(migrated.size() == 4);
+    CHECK(migrated[0] == nlohmann::json{{"room", "area:arcade"},
+                                        {"from", "generic_case"},
+                                        {"to", "arcade_cabinet"},
+                                        {"unplacedForCapacity", 0}});
+    CHECK(migrated[1] == nlohmann::json{{"room", "area:shared:computer"},
                                         {"from", "generic_case"},
                                         {"to", "generic_case_v2"},
                                         {"unplacedForCapacity", 0}});
-    CHECK(migrated[1]["room"] == "area:shared:handheld");
-    CHECK(migrated[2] == nlohmann::json{{"room", "room:psx"},
+    CHECK(migrated[2]["room"] == "area:shared:handheld");
+    CHECK(migrated[3] == nlohmann::json{{"room", "room:psx"},
                                         {"from", "disc_case_cd"},
                                         {"to", "disc_case_cd_v2"},
                                         {"unplacedForCapacity", 0}});

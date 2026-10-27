@@ -41,8 +41,18 @@
 // shells are dark ("shellMaterial": the jewel case's smoky plastic, the keep case's black, the other cases' dark
 // plastic, the big box's cardboard), the cartridges' the theme's plastic.
 // generic_case_v2 succeeds generic_case in console and shared rooms only ("succeedsIn"; ADR-0014 §2, amended on
-// 2026-10-24): the arcade room keeps generic_case, migrated once when I6 step 6's arcade_cabinet succeeds it there.
+// 2026-10-24): the arcade room kept generic_case until I6 step 6's arcade_cabinet succeeded it there.
 // The cartridge families keep I3's spine on the top face and have no successor.
+//
+// I6 step 6 (ADR-0014 §2 and §6): arcade_cabinet, the arcade room's family, succeeds generic_case in the arcade room
+// only (its stored room migrated once, as the cases and boxes were). Its item is a cabinet's screen, 30 x 40 x 0.6 cm
+// (a vertical monitor's portrait screen, the cover fitted to its 298 x 398 mm label, drawn through a picture tube:
+// "labelMaterial"), which never stands spine-out ("spineFacing": "front": its spine-out slot is its face-out one); its
+// every fixture is a pair of generic upright cabinets (furniture.arcade_cabinet.generic, 0.88 x 1.7 x 0.4 m, one
+// screen each), so that the arcade's modules are rows of cabinets along its walls and the display sockets pairs
+// facing its aisle; a hero-wall or side-wall module's screens are the spine section's (the titles in the fill order,
+// the reserve kept, no hero band), the display fixtures' the featured titles'. Capacity (the reserve kept): 6 featured,
+// 4 on the hero wall, 2 per side-wall module: 33 titles in the 9 x 10 m room, 40 at 12 m, 53 at 16 m.
 {
   "schemaVersion": 1,
   "families": [
@@ -316,6 +326,29 @@
         "sideModule": {"manifest": "furniture.shelf.side_module.plain_case_side.generic", "kind": "shelf"},
         "display": {"manifest": "furniture.display_case.plain_case.generic", "kind": "display_case"},
         "wallShelf": {"manifest": "furniture.wall_shelf.featured.plain_case.generic", "kind": "wall_shelf"}
+      }
+    },
+    {
+      "id": "arcade_cabinet",
+      "succeeds": "generic_case",
+      "succeedsIn": ["arcade"],
+      "item": {"manifest": "media.screen.arcade.generic", "kind": "cartridge"},
+      "itemWidthMm": 300,
+      "itemHeightMm": 400,
+      "itemDepthMm": 6,
+      "labelWidthMm": 298,
+      "labelHeightMm": 398,
+      "coverFit": "label",
+      "spineFacing": "front",
+      "shellMaterial": "MAT_Screen_Off",
+      "labelMaterial": "MAT_Screen_Arcade",
+      "spineOut": {"widthMm": 300, "heightMm": 400, "depthMm": 6, "gapMm": 160, "marginMm": 80, "headroomMm": 0},
+      "faceOut": {"widthMm": 300, "heightMm": 400, "depthMm": 6, "gapMm": 160, "marginMm": 80, "headroomMm": 0},
+      "fixtures": {
+        "heroModule": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"},
+        "sideModule": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"},
+        "display": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"},
+        "wallShelf": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"}
       }
     }
   ]

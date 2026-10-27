@@ -256,10 +256,10 @@ inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";
 /// The media family of every shared room (ADR-0013 §6): since I6 step 4 the generic case standing on its side
 /// (ADR-0014 §2), which succeeds I4's generic_case in console and shared rooms.
 inline constexpr std::string_view kSharedRoomFamily = "generic_case_v2";
-/// The media family of the arcade room (ADR-0013 §6): I4's generic case, which the arcade room keeps until I6 step 6's
-/// arcade_cabinet succeeds it there (ADR-0014 §2, amended on 2026-10-24: the arcade room migrates once, to its
-/// cabinets).
-inline constexpr std::string_view kArcadeRoomFamily = "generic_case";
+/// The media family of the arcade room (ADR-0013 §6): since I6 step 6 its cabinets, arcade_cabinet, which succeeds
+/// I4's generic case in the arcade room only (ADR-0014 §2, amended on 2026-10-24: the arcade room migrates once, to
+/// its cabinets).
+inline constexpr std::string_view kArcadeRoomFamily = "arcade_cabinet";
 
 /// What a generation reads from the asset root for one room: the template, the platform (a system's manifest, or what
 /// systems.json gives it; a shared or arcade room's, sharedRoomPlatform()), its media family and every prefab they

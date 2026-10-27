@@ -112,6 +112,7 @@ world::CollectionLayout showcaseLayout(const HubShowcase& showcase, std::span<co
     group.item = family.item;
     group.itemSize = item;
     group.shellMaterial = family.shellMaterial;
+    group.labelMaterial = family.labelMaterial;
     group.clusterCount = static_cast<std::uint32_t>(layout.clusters.size());
     group.itemCount = static_cast<std::uint32_t>(layout.items.size());
     layout.groups.push_back(std::move(group));

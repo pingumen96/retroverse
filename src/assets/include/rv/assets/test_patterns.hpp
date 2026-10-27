@@ -60,6 +60,8 @@ inline constexpr float kNeonTubeEdge = 0.62f;
 inline constexpr float kNeonHalo = 0.40f;
 inline constexpr float kNeonBacking = 0.05f;
 [[nodiscard]] ImageData makeNeonLettering(int width, int height, std::string_view text);
+/// The "handheld_icon" pattern (kPatternHandheldIcon): a generic handheld's pictogram in the neon's tubes.
+[[nodiscard]] ImageData makeHandheldIcon(int width, int height);
 
 /// Pattern names shared with the scene description files (textures.<role>.pattern).
 inline constexpr std::string_view kPatternColorBars = "color_bars";
@@ -87,6 +89,18 @@ inline constexpr std::string_view kPatternTerminal = "terminal";
 /// tungsten amber over a rule), the others listed below it in ivory, each after a small amber marker, on a dark navy
 /// ground in a thin amber border; as many lines as fit at one text size (the longest line sets it), the rest left out.
 inline constexpr std::string_view kPatternBoard = "board";
+/// An arcade cabinet's marquee (I6 step 6): a backlit panel (white, darker towards its top and bottom edges, a dark
+/// band along each, with a row of chaser bulbs, every other one lit, their phase by `seed`), `title` across it in dark
+/// lettering; drawn times its material's colour, a lit panel of that colour.
+inline constexpr std::string_view kPatternMarquee = "marquee";
+/// An arcade cabinet's side art (I6 step 6's review): a generic design in the arcade's colours (magenta, cyan, red,
+/// amber, pink) on a dark navy ground, chosen by `seed` among diagonal stripes, chevrons pointing along the panel and
+/// a starburst, with its colours; never a character, a logo or a word.
+inline constexpr std::string_view kPatternSideArt = "side_art";
+/// A neon pictogram of a generic handheld game (I6 step 6's review, the handhelds' rooms beside their sign): a
+/// landscape body with rounded corners, a screen in its middle, a cross pad on its left and two round buttons on its
+/// right, drawn as makeNeonLettering() draws its letters (bent glass on a dark backing); never a console's outline.
+inline constexpr std::string_view kPatternHandheldIcon = "handheld_icon";
 
 /// The pattern names accepted by makeNamedPattern(), in a fixed order.
 [[nodiscard]] std::span<const std::string_view> patternNames() noexcept;
@@ -94,8 +108,9 @@ inline constexpr std::string_view kPatternBoard = "board";
 /// Builds a pattern by name: "color_bars"; "checker" (8 x 8 cells, ivory #F4EFE6 and wall grey #383735);
 /// "cover" (uses `title` and `seed`); "sign" (uses `title` as the lettering); "print" (makePrintPlaceholder(), uses
 /// `title` and `seed`); "neon" (makeNeonLettering(), uses `title`); the era posters, the cork board and the terminal
-/// above (I6 step 3b); "board" (I6 step 5, above). Errors: NotFound for an unknown name,
-/// InvalidArgument for a side outside [1, kMaxImageDimension].
+/// above (I6 step 3b); "board" (I6 step 5, above); "marquee" (I6 step 6, above); "side_art" (I6 step 6's review,
+/// above); "handheld_icon" (above). Errors: NotFound for an unknown name, InvalidArgument for a side outside [1,
+/// kMaxImageDimension].
 [[nodiscard]] Expected<ImageData> makeNamedPattern(std::string_view name, int width, int height,
                                                    std::string_view title = {}, std::uint32_t seed = 0);
 

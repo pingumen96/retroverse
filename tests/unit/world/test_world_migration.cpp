@@ -2,8 +2,8 @@
 // data: a stored building of the old families (generator 1.3's: jewel cases, big boxes and generic cases standing on
 // their end) updated by this generator regenerates each room of a family succeeded in rooms of its kind once with its
 // successor (standing on its side), keeping its id, floor, x, yaw, sections and seed, its face-out titles chosen again
-// by the same priority; every other room (the cartridges', and the arcade room, whose generic case keeps until I6 step
-// 6's cabinets) stays byte for byte in its elements; the report lists the migrated rooms; a second update writes
+// by the same priority (since I6 step 6 the arcade room too, its generic cases succeeded by its cabinets); every other
+// room (the cartridges') stays byte for byte in its elements; the report lists the migrated rooms; a second update writes
 // nothing; a pinned room or one without every section's selection is not migrated; a migrated room may grow beyond
 // its successor's capacity (its titles unplaced for capacity, counted in the report) or shrink, its z following its
 // depth either way; main's generator-1.3 golden building (tests/fixtures/world/legacy/) migrated once.
@@ -135,6 +135,7 @@ TEST_CASE("world/migration: rooms of succeeded families are migrated once, every
     CHECK(migrated.changes.rebuild == rv::world::RebuildLevel::Full);
     CHECK(migrated.changes.keptRooms.empty());
     const std::vector<MigratedRoom> expected{
+        {*rv::world::RoomId::parse("area:arcade"), "generic_case", "arcade_cabinet"},
         {*rv::world::RoomId::parse("area:shared:gen6"), "generic_case", "generic_case_v2"},
         {*rv::world::RoomId::parse("room:amiga"), "big_box", "big_box_v2"},
         {*rv::world::RoomId::parse("room:psx"), "disc_case_cd", "disc_case_cd_v2"},
@@ -143,9 +144,8 @@ TEST_CASE("world/migration: rooms of succeeded families are migrated once, every
     const WorldPlan& plan = migrated.plan;
     CHECK(plan.generatorVersion == rv::world::kGeneratorVersion);
 
-    // The cartridges' rooms and the arcade room stand byte for byte in their elements.
-    CHECK(findRoom(plan, "area:arcade")->mediaFamily == "generic_case");
-    for (const std::string_view id : {"room:snes", "room:gb", "area:arcade"}) {
+    // The cartridges' rooms stand byte for byte in their elements.
+    for (const std::string_view id : {"room:snes", "room:gb"}) {
         INFO(id);
         auto before = rv::world::roomContentDigest(legacy, *rv::world::RoomId::parse(id));
         auto after = rv::world::roomContentDigest(plan, *rv::world::RoomId::parse(id));
@@ -174,16 +174,23 @@ TEST_CASE("world/migration: rooms of succeeded families are migrated once, every
         CHECK(now->templateId == then->templateId);
         CHECK(now->templateVersion == then->templateVersion);
         CHECK(now->generatorVersion == rv::world::kGeneratorVersion);
-        // Its fixtures are its successor's modules.
+        // Its fixtures are its successor's modules (the arcade room's every collection fixture a row of cabinets).
         const WorldPlan part = roomPart(plan, id);
+        const bool cabinets = entry.to == "arcade_cabinet";
         bool successorModules = true;
         for (const auto& fixture : part.fixtures) {
             if (fixture.role == rv::world::FixtureRole::SideModule ||
-                fixture.role == rv::world::FixtureRole::HeroModule) {
-                successorModules = successorModules && fixture.prefab.manifest.find("_side.") != std::string::npos;
+                fixture.role == rv::world::FixtureRole::HeroModule ||
+                (cabinets && fixture.role == rv::world::FixtureRole::Display)) {
+                successorModules = successorModules && (cabinets ? fixture.prefab.kind == "arcade_cabinet"
+                                                                 : fixture.prefab.manifest.find("_side.") !=
+                                                                       std::string::npos);
             }
         }
         CHECK(successorModules);
+        if (cabinets) {
+            CHECK(part.dressing.empty()); // an empty cabinet's screen stays dark
+        }
         for (const auto& game : part.unplaced) {
             CHECK(game.reason != rv::world::UnplacedReason::Capacity);
         }
@@ -242,9 +249,9 @@ TEST_CASE("world/migration: a room without every section's selection or with a p
             REQUIRE(after.has_value());
             CHECK(*before == *after);
         }
-        // A later update given the rest migrates the rest, once (the arcade room stays).
+        // A later update given the rest migrates the rest, once (since I6 step 6 the arcade room too).
         const GenerationResult rest = updateBuildingOf(world, partial.plan, given);
-        CHECK(rest.changes.migratedRooms.size() == 2);
+        CHECK(rest.changes.migratedRooms.size() == 3);
         CHECK(findRoom(rest.plan, "room:psx")->mediaFamily == "disc_case_cd_v2");
         auto psxBefore = rv::world::roomContentDigest(partial.plan, *rv::world::RoomId::parse("room:psx"));
         auto psxAfter = rv::world::roomContentDigest(rest.plan, *rv::world::RoomId::parse("room:psx"));
@@ -271,7 +278,7 @@ TEST_CASE("world/migration: a room without every section's selection or with a p
         REQUIRE(pinned.has_value());
         CHECK(pinned->validation.passed());
         CHECK(findRoom(pinned->plan, "room:psx")->mediaFamily == "disc_case_cd");
-        CHECK(pinned->changes.migratedRooms.size() == 2);
+        CHECK(pinned->changes.migratedRooms.size() == 3);
         CHECK(std::any_of(pinned->changes.needsConfirmation.begin(), pinned->changes.needsConfirmation.end(),
                           [](const std::string& text) { return text.find("migrate room:psx") != std::string::npos; }));
     }
@@ -285,7 +292,7 @@ TEST_CASE("world/migration: a new room of a succeeded family takes its successor
     CHECK(findRoom(fresh.plan, "room:psx")->mediaFamily == "disc_case_cd_v2");
     CHECK(findRoom(fresh.plan, "room:amiga")->mediaFamily == "big_box_v2");
     CHECK(findRoom(fresh.plan, "area:shared:gen6")->mediaFamily == "generic_case_v2");
-    CHECK(findRoom(fresh.plan, "area:arcade")->mediaFamily == "generic_case");
+    CHECK(findRoom(fresh.plan, "area:arcade")->mediaFamily == "arcade_cabinet");
     const GenerationResult updated = updateBuildingOf(world, fresh.plan, given);
     CHECK(updated.changes.migratedRooms.empty());
     CHECK(updated.plan == fresh.plan);
@@ -376,6 +383,7 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     CHECK(migrated.changes.outcome == rv::world::GenerationOutcome::Updated);
     CHECK(migrated.changes.rebuild == rv::world::RebuildLevel::Full);
     const std::vector<MigratedRoom> expected{
+        {*rv::world::RoomId::parse("area:arcade"), "generic_case", "arcade_cabinet"},
         {*rv::world::RoomId::parse("area:shared:computer"), "generic_case", "generic_case_v2"},
         {*rv::world::RoomId::parse("area:shared:handheld"), "generic_case", "generic_case_v2"},
         {*rv::world::RoomId::parse("room:psx"), "disc_case_cd", "disc_case_cd_v2"},
@@ -407,8 +415,8 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     }
 
     // Every other room byte for byte, and the whole plan outside the migrated rooms but for the generator's stamps,
-    // the inputs' digest, the rewritten packs and the arcade room's place on the hub: the floors, the hall's lights,
-    // every element of gb, snes and the arcade room.
+    // the inputs' digest and the rewritten packs: the floors, the hall's lights, every element of gb and snes (since I6
+    // step 6 the arcade room is migrated too, re-placed on the hub in the same update).
     const auto withoutMigrated = [&](WorldPlan plan) {
         for (Room& room : plan.rooms) {
             if (room.id.toString() == "area:arcade") {
@@ -436,7 +444,7 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
         return *written;
     };
     CHECK(withoutMigrated(migrated.plan) == withoutMigrated(*legacy));
-    CHECK(findRoom(migrated.plan, "area:arcade")->mediaFamily == "generic_case");
+    CHECK(findRoom(migrated.plan, "area:arcade")->mediaFamily == "arcade_cabinet");
     // The migrated rooms: their successor's, every title of theirs placed as before.
     for (const MigratedRoom& entry : expected) {
         INFO(entry.room.toString());
@@ -452,6 +460,34 @@ TEST_CASE("world/migration: main's generator-1.3 building of the building fixtur
     CHECK(again.changes.migratedRooms.empty());
     CHECK(again.plan == migrated.plan);
     CHECK(again.changes.digestAfter == again.changes.digestBefore);
+}
+
+TEST_CASE("world/migration: generator 1.3's arcade room migrated, grown and re-placed in one update is reported where "
+          "it stands",
+          "[world][migration]") {
+    // I6 step 6's review: placeOnHub() puts the room at the z of its old depth; its cabinets' room, grown a step for 38
+    // titles, follows its new depth. The re-placement's record names the plan's placement.
+    BuildingWorld world = shippedWorld(kWorldSeed);
+    world.tags[systemName("pocketlab")] = {"gb"};
+    const std::filesystem::path file = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" / "world" /
+                                       "legacy" / "building-esde-seed-102938-generator-1.3.json";
+    auto text = rv::core::readTextFile(file);
+    REQUIRE(text.has_value());
+    auto legacy = rv::world::readPlan(*text, "legacy");
+    REQUIRE(legacy.has_value());
+    const std::vector<RoomSelection> given{systemSelection("mame", 38, 4002, 38)};
+    const GenerationResult first = updateBuildingOf(world, *legacy, given);
+    CHECK(first.validation.passed());
+    REQUIRE(first.changes.migratedRooms.size() == 1);
+    CHECK(first.changes.migratedRooms.front().room.toString() == "area:arcade");
+    REQUIRE(first.changes.replacedRooms.size() == 1);
+    const rv::world::ReplacedRoom& replaced = first.changes.replacedRooms.front();
+    const Room* arcade = findRoom(first.plan, "area:arcade");
+    REQUIRE(arcade != nullptr);
+    CHECK(arcade->growthSteps > 0);
+    CHECK(replaced.to == arcade->placement);
+    CHECK(replaced.to.xMm == 9000);
+    CHECK(replaced.to.zMm < -12150); // deeper than the room it was: further from the hub's hall
 }
 
 TEST_CASE("world/migration: a partial update of generator 1.3's building re-places the arcade room and names its inputs "

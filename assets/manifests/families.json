@@ -27,6 +27,9 @@
      "params": {"width": 1.6, "height": 0.4, "frameWidth": 0.025, "depth": 0.04}},
     {"id": "decor.storage_box", "generic": "decor.storage_box.generic", "generator": "storage_box", "params": {}},
     {"id": "electronics.crt", "generic": "electronics.crt.consumer.generic", "generator": "crt", "params": {}},
+    // I6 step 6 (ADR-0014 §6): the arcade room's cabinets, the media family arcade_cabinet's fixtures.
+    {"id": "furniture.arcade_cabinet", "generic": "furniture.arcade_cabinet.generic", "generator": "arcade_cabinet",
+     "params": {}},
     {"id": "furniture.armchair", "generic": "furniture.armchair.generic", "generator": "armchair", "params": {}},
     {"id": "furniture.bar_stool", "generic": "furniture.bar_stool.generic", "generator": "bar_stool", "params": {}},
     {"id": "furniture.beanbag", "generic": "furniture.beanbag.generic", "generator": "beanbag", "params": {}},
@@ -67,6 +70,12 @@
      "params": {
        "size": [0.13, 0.18, 0.015], "chamfer": 0.0015, "labelMargin": [0.006, 0.006], "labelInset": 0.0008,
        "gripRidges": false, "spineLabel": true, "spineLabelSize": [0.01, 0.064]
+     }},
+    // I6 step 6: the arcade cabinets' screen, the media family arcade_cabinet's item.
+    {"id": "media.screen", "generic": "media.screen.arcade.generic", "generator": "cartridge",
+     "params": {
+       "size": [0.3, 0.4, 0.006], "chamfer": 0.0005, "labelMargin": [0.001, 0.001], "labelInset": 0.0005,
+       "gripRidges": false, "spineLabel": false
      }},
     {"id": "special.hub_landmark", "generic": "special.hub_landmark.generic", "generator": "hub_landmark",
      "params": {}}

@@ -55,6 +55,12 @@
     // A display case's empty level: a paper riser card with an invented cover.
     "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
     // The collection's item.
+    "arcade_cabinet": {"body": "MAT_Cabinet_Paint_Walnut", "body_alt": "MAT_Cabinet_Paint_Oxblood",
+                       "front": "MAT_Cabinet_Laminate", "molding": "MAT_Metal_Brushed",
+                       "molding_alt": "MAT_Metal_Brushed", "plastic_dark": "MAT_Plastic_Black",
+                       "metal_trim": "MAT_Metal_Brushed", "plastic_accent": "MAT_Fabric_Vinyl_Red",
+                       "marquee": "MAT_Marquee_Amber", "marquee_alt": "MAT_Marquee_Amber",
+                       "screen_back": "MAT_Screen_Idle", "screen": "MAT_Screen_CRT_Room"},
     "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
     // The floor's hall (I6 step 2, read by floor_scene.hpp): oak planks under a medallion runner, a dark varnished
     // wainscot under a dark warm plaster and a darker ceiling, walnut trim, casings and beams, walnut benches with

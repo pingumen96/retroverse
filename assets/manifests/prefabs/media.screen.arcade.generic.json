@@ -1,0 +1,39 @@
+// The arcade cabinets' screen (media family arcade_cabinet, ADR-0014 §2 and §6; I6 step 6), 30 x 40 x 0.6 cm: the
+// 'cartridge' prefab at the screen's size, a thin black shell whose front label (298 x 398 mm, a 1 mm border) is the
+// game's picture, its cover fitted to the portrait screen of a vertical monitor; no spine label (a cabinet's screen
+// always faces out). It stands in a cabinet's bezel, drawn through a picture tube (the family's labelMaterial).
+{
+  "schemaVersion": 1,
+  "id": "media.screen.arcade.generic",
+  "assetType": "physical_media",
+  "category": "screen",
+  "role": "collection_item",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-26",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cartridge",
+    "params": {
+      "size": [0.3, 0.4, 0.006], "chamfer": 0.0005, "labelMargin": [0.001, 0.001], "labelInset": 0.0005,
+      "gripRidges": false, "spineLabel": false
+    },
+    "scaleMeters": [0.3, 0.4, 0.006],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "label": "Label"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["media", "screen", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

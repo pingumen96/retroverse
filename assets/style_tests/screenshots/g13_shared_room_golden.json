@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "3abd0ca8caeb4da2a80c641971f222b6589f0378",
+    "gitCommit": "9f393bbfa28f15b0c9a0f7213193d04672b36a6a",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one collection ordered by section, every one face-out in the display cases and the featured wall shelf, no console beside the CRT (shared rooms have none), from the doorway (the room's doorway camera), the hero CRT showing its colour bars (no section has a clip).",
+  "description": "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one collection ordered by section, every one face-out in the display cases and the featured wall shelf, no console beside the CRT (shared rooms have none); the handheld archive's look of I6 step 6 and its review (counters of lit handhelds, stations, a warm cove, posters high on the walls, the pictogram beside the sign); from the doorway (the room's doorway camera), the hero CRT showing its colour bars (no section has a clip).",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 617.42",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g13_shared_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "c093fcc6a841f907687ed193a8265d357785ac4a3597caaa65804a8d1ea35555",
+    "sha256": "c3b36426e1957bc0af16c79a77ed1506816faa20b3cdf1d618888aec50183732",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
-      "fileSha256": "4bb176cfe95153ed51f3de00bab5eb0b3e61283d5432ac588f3e9208644927a7",
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
       "items": 44,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "945dff88adcc74b72c2b119b8723bdde4d305eed0d4cd73e4eda9438ca9c46e6"
+      "sha256": "1e49613c8e9fc4fb149acd1046562e0e5dabb7bf34c5541bf7470de1f5996ce9"
     }
   },
-  "renderedOn": "2026-10-26",
+  "renderedOn": "2026-10-27",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

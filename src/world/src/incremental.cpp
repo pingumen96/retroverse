@@ -404,7 +404,7 @@ private:
             }
             std::vector<LevelFacing> facings;
             for (const SlotLevelInfo& level : info->levels) {
-                facings.push_back(level.facing(m_data.mediaFamily));
+                facings.push_back(level.facing(m_data.mediaFamily, module->role));
             }
             modules.push_back(module);
             infos.push_back(info);
@@ -761,8 +761,9 @@ std::string roomKeepReason(const WorldPlan& plan, const Room& room, const WorldD
         bool same = info != nullptr && info->levels.size() == fixture.levels.size();
         for (std::size_t i = 0; same && i < info->levels.size(); ++i) {
             const SlotLevelInfo& level = info->levels[i];
-            same = fixture.levels[i] == FixtureLevel{level.level, level.slots,
-                                                     detail::sectionOf(fixture.role, level.facing(data.mediaFamily))};
+            same = fixture.levels[i] ==
+                   FixtureLevel{level.level, level.slots,
+                                detail::sectionOf(fixture.role, level.facing(data.mediaFamily, fixture.role))};
         }
         if (!same) {
             return "the levels of " + fixture.id.toString() + " are no longer its prefab " + fixture.prefab.manifest +
@@ -1322,6 +1323,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     changes.systemsEntered = sortedUnique(std::move(systemsEntered));
     changes.systemsWaiting = sortedUnique(std::move(systemsWaiting));
     changes.migratedRooms = sortedUnique(std::move(migratedRooms));
+    // Where each re-placed room stands now: a room migrated or grown in the same update has its z follow its new depth
+    // after placeOnHub() (I6 step 6's review: the record named the old depth's z).
+    for (ReplacedRoom& replaced : replacedRooms) {
+        for (const Room& room : plan.rooms) {
+            if (room.id == replaced.room) {
+                replaced.to = room.placement;
+                break;
+            }
+        }
+    }
     changes.replacedRooms = std::move(replacedRooms);
     // A slot handed to an alias's identity is a texture swap: no geometry changes for it.
     const bool geometry = newItems || !changes.dressingRemoved.empty() || !changes.fixturesAdded.empty() ||

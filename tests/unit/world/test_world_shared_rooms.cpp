@@ -241,7 +241,9 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
     building.rooms.push_back(dataOf("snes"));
     building.rooms.push_back(dataOf("amiga"));
     building.input.selections.push_back(selectionOf("mame", 15, 3100, 25));
-    building.input.selections.push_back(selectionOf("fbneo", 40, 3150)); // arcade, whatever its size
+    // Arcade, whatever its size (30: since I6 step 6 the arcade room's cabinets hold 53 titles at most, its two
+    // sections' 45 every one).
+    building.input.selections.push_back(selectionOf("fbneo", 30, 3150));
     building.input.selections.push_back(selectionOf("snes", 40, 3200));
     building.input.selections.push_back(selectionOf("amiga", 20, 3600)); // under 30 distinct titles
     const GenerationResult result = generate(building);
@@ -269,7 +271,7 @@ TEST_CASE("world/shared rooms: arcade systems in the arcade room, small systems 
     const WorldData& gb = building.rooms.front();
     for (const Room* room : {&arcade, &shared, &roomOf(plan, "area:shared:computer")}) {
         INFO(room->id.toString());
-        // The arcade room keeps I4's generic case until I6 step 6 (ADR-0014 §2, amended on 2026-10-24).
+        // The arcade room's cabinets since I6 step 6 (ADR-0014 §2, amended on 2026-10-24).
         CHECK(room->mediaFamily ==
               (room->kind == RoomKind::Arcade ? rv::world::kArcadeRoomFamily : rv::world::kSharedRoomFamily));
         // The pack its floor gives it, the arcade room's its kind's (I6 step 3, ADR-0014 §5).

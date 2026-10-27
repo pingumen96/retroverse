@@ -149,6 +149,15 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
                              {"plastic_dark", "MAT_Plastic_Black"},   {"plastic_accent", "MAT_Plastic_Accent"},
                              {"globe", "MAT_Globe_Lines"},            {"globe_core", "MAT_Globe_Core"}};
     }
+    // I6 step 6's arcade cabinets, in arcade_after_dark's materials.
+    if (kind == "arcade_cabinet") {
+        return RoleMaterials{{"body", "MAT_Cabinet_Paint_Plum"},          {"body_alt", "MAT_Cabinet_Paint_Oxblood"},
+                             {"front", "MAT_Cabinet_Laminate"},           {"molding", "MAT_Molding_Magenta"},
+                             {"molding_alt", "MAT_Molding_Cyan"},         {"plastic_dark", "MAT_Plastic_Black"},
+                             {"metal_trim", "MAT_Metal_Brushed"},         {"plastic_accent", "MAT_Fabric_Vinyl_Red"},
+                             {"marquee", "MAT_Marquee_Magenta"},          {"marquee_alt", "MAT_Marquee_Cyan"},
+                             {"screen_back", "MAT_Screen_Idle"},           {"screen", "MAT_Screen_CRT_Room"}};
+    }
     if (kind == "info_totem") {
         return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},
                              {"wood_secondary", "MAT_Wood_Varnished_Dark"},
@@ -174,6 +183,10 @@ std::map<std::string, scene::TextureSource> prefabRoleTextures(std::string_view 
         textures.emplace("cover", cover("PREVIEW MAGAZINE", 13));
     } else if (kind == "info_totem") {
         textures.emplace("screen", cover("PREVIEW DIRECTORY", 17));
+    } else if (kind == "arcade_cabinet") {
+        textures.emplace("marquee", cover("PREVIEW MARQUEE", 19));
+        textures.emplace("marquee_alt", cover("PREVIEW MARQUEE", 23));
+        textures.emplace("screen_back", cover("PREVIEW SCREEN", 29));
     }
     return textures;
 }
