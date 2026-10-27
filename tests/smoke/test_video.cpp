@@ -518,17 +518,18 @@ TEST_CASE("video: the decoder is stopped and joined before a launch and reopened
 
 namespace {
 
-/// The playlist's room: a game without media first (the quick catalog opens on it), then three games with 3 s clips,
-/// in the order of tests/unit/app/test_screen_policy.cpp's playlistRoom(). video.json gives the hero 2 s a game.
-std::filesystem::path writePlaylistRoom(const std::filesystem::path& dir) {
-    writeClip(dir / "clips" / "e001.mp4", 3.0, 61);
-    writeClip(dir / "clips" / "e002.mp4", 3.0, 62);
-    writeClip(dir / "clips" / "e003.mp4", 3.0, 63);
+/// The playlist's room: a game without media first (the quick catalog opens on it), then three games with clips of
+/// `previewSeconds` + 1 s, in the order of tests/unit/app/test_screen_policy.cpp's playlistRoom(). video.json gives the
+/// hero `previewSeconds` a game (each turn lasts that long: the clips are longer).
+std::filesystem::path writePlaylistRoom(const std::filesystem::path& dir, int previewSeconds = 2) {
+    const double clipSeconds = previewSeconds + 1.0;
+    writeClip(dir / "clips" / "e001.mp4", clipSeconds, 61);
+    writeClip(dir / "clips" / "e002.mp4", clipSeconds, 62);
+    writeClip(dir / "clips" / "e003.mp4", clipSeconds, 63);
     const std::filesystem::path config = dir / "data" / "config";
     std::filesystem::create_directories(config);
-    REQUIRE(rv::core::writeTextFileAtomic(config / "video.json", R"({"hero": {"previewDuration": 2}})"
-                                                                   "\n")
-                .has_value());
+    const std::string settings = R"({"hero": {"previewDuration": )" + std::to_string(previewSeconds) + "}}\n";
+    REQUIRE(rv::core::writeTextFileAtomic(config / "video.json", settings).has_value());
     Json silent = videoGame("g000000000000e009", "Acquerello Muto");
     silent["year"] = 1994;
     return writeCatalog(
@@ -567,27 +568,31 @@ rv::assets::ImageData idleShot(const std::filesystem::path& dir) {
 TEST_CASE("video: the hero screen plays its playlist, holding the last frame between clips, never its pattern",
           "[gpu][video][playlist]") {
     const std::filesystem::path dir = freshCaseDir("video/playlist");
-    const std::filesystem::path catalog = writePlaylistRoom(dir);
-    // F12 screenshots around the first two switches (frames 120 and 240, the policy's table), every other frame (a press
-    // needs a release between).
+    // 4 s a game, 240 frames: each clip's first frame has far more than its decoder's real time to come within its turn
+    // (the unit table's 2 s turns left a slow Debug run little margin).
+    constexpr int kTurnSeconds = 4;
+    constexpr int kTurnFrames = kTurnSeconds * 60;
+    const std::filesystem::path catalog = writePlaylistRoom(dir, kTurnSeconds);
+    // F12 screenshots around the first two switches (frames 240 and 480), every other frame (a press needs a release
+    // between).
     Json steps = Json::array();
-    for (const int center : {120, 240}) {
+    for (const int center : {kTurnFrames, 2 * kTurnFrames}) {
         for (int frame = center - 2; frame <= center + 6; frame += 2) {
             steps.push_back(step(frame, frame, {{"screenshot", 1}}));
         }
     }
-    const AppRun run = runVideo(dir, "playlist", catalog, 450,
+    const AppRun run = runVideo(dir, "playlist", catalog, 3 * kTurnFrames + 180,
                                 {"--input-script", arg(writeScript(dir, "shots.json", steps)), "--screenshot-size",
                                  "960x540"});
     const rv::app::VideoRecord& video = requireVideo(run);
     INFO(run.describe());
     CHECK(video.playlistMode == "shuffle");
     CHECK(video.playlistRoom == "m0_testroom");
-    CHECK(video.previewSeconds == 2.0);
+    CHECK(video.previewSeconds == kTurnSeconds);
     CHECK(video.playlistOrder ==
           std::vector<std::string>{"g000000000000e002", "g000000000000e003", "g000000000000e001"});
-    // The start choice, then the playlist in the unit table's order (test_screen_policy.cpp: frames 0, 120, 240, 360),
-    // 2 s each.
+    // The start choice, then the playlist in the unit table's order (test_screen_policy.cpp, 2 s turns there: the
+    // order does not depend on their length), 4 s each.
     const std::vector<std::pair<std::string, std::string>> expected{{"g000000000000e001", "start"},
                                                                     {"g000000000000e002", "playlist"},
                                                                     {"g000000000000e003", "playlist"},
@@ -599,7 +604,7 @@ TEST_CASE("video: the hero screen plays its playlist, holding the last frame bet
     CHECK(played == expected);
     REQUIRE(video.played.size() == expected.size());
     for (std::size_t i = 1; i < video.played.size(); ++i) {
-        CHECK(std::abs(video.played[i].atSeconds - video.played[i - 1].atSeconds - 2.0) < 1.5 * kStep);
+        CHECK(std::abs(video.played[i].atSeconds - video.played[i - 1].atSeconds - kTurnSeconds) < 1.5 * kStep);
     }
     CHECK(video.decodersStarted == 4);
     CHECK(video.maxDecoderThreads == 1);
