@@ -931,8 +931,10 @@ TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu
                        "under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES "
                        "sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one "
                        "collection ordered by section, every one face-out in the display cases and the featured wall "
-                       "shelf, no console beside the CRT (shared rooms have none), from the doorway (the room's "
-                       "doorway camera), the hero CRT showing its colour bars (no section has a clip).",
+                       "shelf, no console beside the CRT (shared rooms have none); the handheld archive's look of I6 "
+                       "step 6 and its review (counters of lit handhelds, stations, a warm cove, posters high on the "
+                       "walls, the pictogram beside the sign); from the doorway (the room's doorway camera), the hero "
+                       "CRT showing its colour bars (no section has a clip).",
                        "--start-room area:shared:handheld: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -965,9 +967,13 @@ TEST_CASE("golden/G15: the building's arcade room from its doorway", "[gpu][gold
                        "as the screens of pairs of generic upright cabinets (arcade_cabinet: lit marquees in generic "
                        "words, magenta and cyan mouldings, portrait screens through a picture tube), the six featured "
                        "in the two pairs facing the aisle and the pair beside the hero corner, the rest along the "
-                       "walls, the empty cabinets' screens asking for a coin; the hero cabinet carrying the room's clip "
-                       "held at 1.0 s where the TV stood, red bar stools by its side, the dark red runner, a floor lamp, "
-                       "flyers and plants; from the doorway (the room's doorway camera).",
+                       "walls, the empty cabinets' screens asking for a coin; since the step's review the rows' outer "
+                       "sides printed with generic side art, chaser bulbs along the marquees, a magenta and a cyan neon "
+                       "cove washing the side walls' upper halves, backlit flyers over the rows, spot cans under the "
+                       "ceiling, the aisle's pairs lit cyan and red; the hero cabinet carrying the room's clip held at "
+                       "1.0 s where the TV stood, red bar stools by its side, the dark red runner leading to it, a "
+                       "floor lamp, showcases of three boxes each, plants; from the doorway (the room's doorway "
+                       "camera).",
                        "--start-room area:arcade: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -997,8 +1003,11 @@ TEST_CASE("golden/G16: the building's handheld room from its doorway", "[gpu][go
                        "titles as handheld cartridges on lit walnut shelves and face-out in the two low counter "
                        "showcases (lit inside, generic handhelds on stands behind the glass of their bases) and the "
                        "featured wall shelf, stations (a generic handheld in a small lit vitrine on a pedestal) along "
-                       "the walls, the one-seat lounge chair on the sage rug, console-art posters; from the doorway "
-                       "(the room's doorway camera), the hero CRT's clip held at 1.0 s.",
+                       "the walls, the one-seat lounge chair on the sage rug, console-art posters; since the step's "
+                       "review the counters lined in ivory under brighter glass, their handhelds' displays lit, a card "
+                       "per empty slot, a warm cove along the side walls, posters high over the shelves, a handheld "
+                       "pictogram beside the neon; from the doorway (the room's doorway camera), the hero CRT's clip "
+                       "held at 1.0 s.",
                        "--start-room room:gb: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }

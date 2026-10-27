@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "18c2f6764414a3634b4bacdb662c63db617a858f",
+    "gitCommit": "25d250db98245751aa9d8e2258cd17b1a7cd23eb",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g11_lobby_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "a3c308899c2aab4ecea5dd05ce1189e9b8c694948422c005743d925c6eb9a7cd",
+    "sha256": "23cde21441838942163e6c490491ccff2dfd605c3f5b1cfe13b0ca62ea566afb",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
-      "fileSha256": "b35f3c040fea2ee568f9a10a1fe89f186ccc9797d63c42465ba2db773cbd5323",
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
       "items": 15,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "da8ac363dadea504a65ab8c09d0d5eb9588c2ddfcd1a5bfa2d4c4bbe32077f8d"
+      "sha256": "3a8509f6c514015f7c943477a62e845cf2804c52117207af903287a56af96f5e"
     }
   },
-  "renderedOn": "2026-10-26",
+  "renderedOn": "2026-10-27",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
