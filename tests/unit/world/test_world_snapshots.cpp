@@ -1,8 +1,10 @@
 // The world's explicit actions (rv/world/world_snapshots.hpp, ADR-0015 §6; I4b step 1): saveOverrides() under the
 // world lock, the plan and the overrides committed together behind a paired snapshot, snapshot.json read back, an
 // action interrupted at each point rolled back at the next lock (the plan and the overrides never disagree, and no
-// snapshot that changes nothing is left), the last 20 snapshots kept, 20 actions undone in a row, undo restoring both
-// files byte for byte and walking back, undo of undo refused, a dry run writing nothing, a damaged snapshot refused. The CLI's undo on a fixture world is test_cli_worldplan_undo.cpp's.
+// snapshot that changes nothing is left), a journal the lock cannot roll back naming the repair, the last 20 snapshots
+// kept, 20 actions undone in a row, undo restoring both files byte for byte and walking back, undo of undo refused, a
+// dry run writing nothing, a damaged snapshot refused, a damaged folder listed and rotated out. The CLI's undo on a
+// fixture world is test_cli_worldplan_undo.cpp's.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -254,6 +256,10 @@ TEST_CASE("world/snapshots: an action interrupted between its writes is rolled b
             CHECK(interrupted.error().code == rv::ErrorCode::Cancelled);
             REQUIRE(std::filesystem::exists(world.files.transaction));
             snapshotName = journalSnapshot(world.files);
+            const std::optional<rv::world::InterruptedAction> pending = rv::world::checkInterruptedAction(world.files);
+            REQUIRE(pending.has_value());
+            CHECK(pending->snapshot == snapshotName);
+            CHECK_FALSE(pending->blocked.has_value());
             const WorldState torn = stateOf(world.files);
             if (stop == TransactionStop::AfterJournal) {
                 // The journal names a snapshot not yet named: nothing listed, nothing written.
@@ -272,6 +278,7 @@ TEST_CASE("world/snapshots: an action interrupted between its writes is rolled b
         CHECK(lock->rolledBack() == snapshotName);
         CHECK(stateOf(world.files) == before);
         CHECK_FALSE(std::filesystem::exists(world.files.transaction));
+        CHECK_FALSE(rv::world::checkInterruptedAction(world.files).has_value());
         // The action never happened: its snapshot is gone, folder and all, nothing to undo.
         CHECK(snapshotFolders(world.files).empty());
         CHECK(rv::world::undoLastAction(*lock).error().code == rv::ErrorCode::NotFound);
@@ -334,6 +341,25 @@ TEST_CASE("world/snapshots: an action interrupted between its writes is rolled b
     auto refused = WorldLock::acquire(world.files);
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error().code == rv::ErrorCode::NotFound);
+    // The error names the journal, the snapshot and the repair by hand; a check without the lock finds the same.
+    CHECK_THAT(refused.error().message,
+               ContainsSubstring("the journal transaction.json of an interrupted action names the snapshot nowhere, "
+                                 "which cannot be rolled back automatically"));
+    CHECK_THAT(refused.error().message, ContainsSubstring("then remove transaction.json"));
+    const std::optional<rv::world::InterruptedAction> blocked = rv::world::checkInterruptedAction(world.files);
+    REQUIRE(blocked.has_value());
+    CHECK(blocked->snapshot == "nowhere");
+    REQUIRE(blocked->blocked.has_value());
+    CHECK(blocked->blocked->message == refused.error().message);
+    // A journal that cannot be read names no snapshot.
+    REQUIRE(rv::core::writeTextFileAtomic(world.files.transaction, "{ torn").has_value());
+    const std::optional<rv::world::InterruptedAction> unreadable = rv::world::checkInterruptedAction(world.files);
+    REQUIRE(unreadable.has_value());
+    CHECK(unreadable->snapshot.empty());
+    REQUIRE(unreadable->blocked.has_value());
+    CHECK_THAT(unreadable->blocked->message,
+               ContainsSubstring("the journal transaction.json of an interrupted action cannot be rolled back"));
+    CHECK(WorldLock::acquire(world.files).error().code == rv::ErrorCode::ParseError);
 }
 
 TEST_CASE("world/snapshots: the last 20 snapshots are kept", "[world][snapshots]") {

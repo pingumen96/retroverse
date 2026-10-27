@@ -77,11 +77,12 @@ public:
     /// Creates the world folder and the lock file when missing and locks the file exclusively, trying again until
     /// `wait` has passed while another holder (another process, or another WorldLock of this one) keeps it; then
     /// removes the temporary files that an interrupted write left in the folder, in backups/ and in the snapshots
-    /// ("<name>.tmp-<pid>-<n>", core::writeFileAtomic) and the snapshots an interrupted action left half made, and
-    /// rolls back the explicit action a journal names (world_snapshots.hpp: its snapshot restored, logged). Errors:
-    /// Conflict when the lock is still held after `wait`; IoError or Unavailable when the folder or the lock file
-    /// cannot be created or opened; those of the rollback (a journal or its snapshot unreadable: nothing is written
-    /// into the world until it is repaired).
+    /// ("<name>.tmp-<pid>-<n>", core::writeFileAtomic), rolls back the explicit action a journal names
+    /// (world_snapshots.hpp: its snapshot restored, logged) and removes the snapshot folders an interrupted action left
+    /// half made or half removed. Errors: Conflict when the lock is still held after `wait`; IoError or Unavailable
+    /// when the folder or the lock file cannot be created or opened; those of the rollback (a journal or its snapshot
+    /// unreadable, a restore that fails), whose message names transaction.json, the snapshot and how to repair the
+    /// world by hand: nothing is written into the world until it is repaired.
     [[nodiscard]] static Expected<WorldLock> acquire(const WorldFiles& files,
                                                      std::chrono::milliseconds wait = kWorldLockWait);
 

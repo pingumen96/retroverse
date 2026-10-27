@@ -194,6 +194,19 @@ struct UndoReport {
 /// reading the snapshot and of the writes.
 [[nodiscard]] Expected<UndoReport> undoLastAction(const WorldLock& lock, const UndoOptions& options = {});
 
+/// The journal of an interrupted action (transaction.json), as the next lock would find it.
+struct InterruptedAction {
+    /// The snapshot it names; empty when the journal cannot be read.
+    std::string snapshot;
+    /// Why the next lock cannot roll it back (it then fails, and nothing is written into the world): the message names
+    /// transaction.json, the snapshot and what to do by hand. None when the lock can.
+    std::optional<Error> blocked;
+};
+
+/// The journal of an interrupted action, if there is one, checked as the lock's rollback reads it (the journal, the
+/// snapshot it names, that snapshot's record and files), writing nothing.
+[[nodiscard]] std::optional<InterruptedAction> checkInterruptedAction(const WorldFiles& files);
+
 namespace detail {
 
 /// Where commitWorld() or undoLastAction() stops, as a process ended at that point would (tests of the rollback).
@@ -219,7 +232,8 @@ enum class TransactionStop : std::uint8_t {
 /// journal names (its snapshot restored and retired, or, when the journal names a "<name>.partial" or
 /// "<name>.removing" folder, nothing to restore), then removes the ".partial" and ".removing" snapshot folders. Returns
 /// the snapshot of the action rolled back, if any. Errors: those of reading the journal or the snapshot, of restoring
-/// it and of retiring it (the journal then stays).
+/// it and of retiring it, with their codes, the message naming transaction.json, the snapshot and the remedy by hand
+/// (the journal then stays).
 [[nodiscard]] Expected<std::optional<std::string>> recoverInterruptedAction(const WorldFiles& files);
 
 } // namespace detail

@@ -340,6 +340,112 @@ Expected<JournalSnapshot> journalSnapshotState(const WorldFiles& files, std::str
                      lossy(folderOf(files, name)));
 }
 
+/// The snapshot the journal names; nothing when there is no journal.
+Expected<std::optional<std::string>> readJournalFile(const WorldFiles& files) {
+    auto journal = core::readTextFile(files.transaction, kMaxRecordBytes);
+    if (!journal) {
+        if (journal.error().code == ErrorCode::NotFound) {
+            return std::optional<std::string>{};
+        }
+        return propagate(journal.error());
+    }
+    auto name = readJournal(*journal, lossy(files.transaction.filename()));
+    if (!name) {
+        return propagate(name.error());
+    }
+    return std::optional<std::string>(std::move(*name));
+}
+
+/// Checks, writing nothing, that the snapshot a journal names can be restored: its folder there, and when named, its
+/// record and files whole.
+Expected<JournalSnapshot> checkJournalSnapshot(const WorldFiles& files, std::string_view name) {
+    auto state = journalSnapshotState(files, name);
+    if (!state) {
+        return propagate(state.error());
+    }
+    if (*state == JournalSnapshot::Named) {
+        auto snapshot = readRecordIn(folderOf(files, name));
+        if (!snapshot) {
+            return propagate(snapshot.error());
+        }
+        if (auto kept = readKeptFiles(files, *snapshot); !kept) {
+            return propagate(kept.error());
+        }
+    }
+    return state;
+}
+
+/// Rolls back the action a journal names and removes the journal (world_snapshots.hpp).
+Status rollBackJournal(const WorldFiles& files, const std::string& name) {
+    auto state = journalSnapshotState(files, name);
+    if (!state) {
+        return propagate(state.error());
+    }
+    if (*state == JournalSnapshot::Named) {
+        const std::filesystem::path folder = folderOf(files, name);
+        auto snapshot = readRecordIn(folder);
+        if (!snapshot) {
+            return propagate(snapshot.error());
+        }
+        auto kept = readKeptFiles(files, *snapshot);
+        if (!kept) {
+            return propagate(kept.error());
+        }
+        if (Status restored = restoreFiles(files, *kept, kKeptFiles.size()); !restored) {
+            return restored;
+        }
+        // An interrupted undo may have marked the snapshot it restored: it is not undone.
+        if (snapshot->kind == SnapshotKind::Undo && !snapshot->undoes.empty()) {
+            const std::filesystem::path undoneFolder = folderOf(files, snapshot->undoes);
+            if (auto undone = readRecordIn(undoneFolder); undone && undone->undone) {
+                undone->undone = false;
+                if (Status marked = writeRecordIn(undoneFolder, *undone); !marked) {
+                    return marked;
+                }
+            }
+        }
+        // The action never happened: its snapshot, the state as it now stands, is retired before the journal goes (a
+        // stop in between leaves the journal naming a ".removing" folder: the case below), never offered.
+        std::error_code error;
+        std::filesystem::rename(folder, folderOf(files, name, kRemovingSuffix), error);
+        if (error) {
+            return makeError(ErrorCode::IoError,
+                             "cannot retire the snapshot of the action rolled back: " + error.message(), lossy(folder));
+        }
+        spdlog::warn("World store: an interrupted {} was rolled back: the plan and the overrides of the snapshot {} "
+                     "restored",
+                     snapshot->action, name);
+    } else {
+        // A journal written before its snapshot was named (nothing written into the world yet), or a rollback stopped
+        // after restoring and retiring the snapshot: either way the world's files are the snapshot's.
+        spdlog::warn("World store: an interrupted action was rolled back: the world's files were already those of the "
+                     "snapshot {}",
+                     name);
+    }
+    return removeJournal(files);
+}
+
+/// The error of a journal the lock cannot roll back: it names transaction.json, the snapshot (when the journal could
+/// be read) and what to do by hand; its code is `why`'s.
+Error unrecoverable(const WorldFiles& files, std::string_view snapshot, const Error& why) {
+    const std::string journal(kTransactionFileName);
+    std::string message = "the journal " + journal + " of an interrupted action";
+    if (!snapshot.empty()) {
+        message += " names the snapshot " + std::string(snapshot) + ", which";
+    }
+    message += " cannot be rolled back automatically (" + why.toString() +
+               "); nothing is written into this world until it is repaired by hand: ";
+    if (!snapshot.empty()) {
+        message += "if backups/snapshots/" + std::string(snapshot) + "/ is whole, copy its " +
+                   std::string(kPlanFileName) + ", " + std::string(kPlanMetaFileName) + " and " +
+                   std::string(kOverridesFileName) + " into the world's folder (removing those it does not hold); "
+                   "else ";
+    }
+    message += "check that " + std::string(kPlanFileName) + " and " + std::string(kOverridesFileName) +
+               " belong together (the plan's backups are in backups/); then remove " + journal;
+    return Error{why.code, std::move(message), lossy(files.transaction)};
+}
+
 /// Whether undo may still offer a snapshot: of kind Action, not undone.
 bool undoable(const WorldSnapshot& snapshot) {
     return snapshot.kind == SnapshotKind::Action && !snapshot.undone;
@@ -518,6 +624,21 @@ std::optional<WorldSnapshot> nextUndo(const std::vector<WorldSnapshot>& snapshot
         }
     }
     return next;
+}
+
+std::optional<InterruptedAction> checkInterruptedAction(const WorldFiles& files) {
+    auto journal = readJournalFile(files);
+    if (!journal) {
+        return InterruptedAction{std::string(), unrecoverable(files, "", journal.error())};
+    }
+    if (!*journal) {
+        return std::nullopt;
+    }
+    InterruptedAction action{**journal, std::nullopt};
+    if (auto checked = checkJournalSnapshot(files, action.snapshot); !checked) {
+        action.blocked = unrecoverable(files, action.snapshot, checked.error());
+    }
+    return action;
 }
 
 namespace detail {
@@ -713,65 +834,15 @@ Expected<UndoReport> undoLastActionStoppingAt(const WorldLock& lock, const UndoO
 
 Expected<std::optional<std::string>> recoverInterruptedAction(const WorldFiles& files) {
     std::optional<std::string> rolledBack;
-    auto journal = core::readTextFile(files.transaction, kMaxRecordBytes);
-    if (!journal && journal.error().code != ErrorCode::NotFound) {
-        return propagate(journal.error());
+    auto journal = readJournalFile(files);
+    if (!journal) {
+        return propagate(unrecoverable(files, "", journal.error()));
     }
-    if (journal) {
-        auto name = readJournal(*journal, lossy(files.transaction.filename()));
-        if (!name) {
-            return propagate(name.error());
+    if (*journal) {
+        if (Status rolled = rollBackJournal(files, **journal); !rolled) {
+            return propagate(unrecoverable(files, **journal, rolled.error()));
         }
-        auto state = journalSnapshotState(files, *name);
-        if (!state) {
-            return propagate(state.error());
-        }
-        if (*state == JournalSnapshot::Named) {
-            const std::filesystem::path folder = folderOf(files, *name);
-            auto snapshot = readRecordIn(folder);
-            if (!snapshot) {
-                return propagate(snapshot.error());
-            }
-            auto kept = readKeptFiles(files, *snapshot);
-            if (!kept) {
-                return propagate(kept.error());
-            }
-            if (Status restored = restoreFiles(files, *kept, kKeptFiles.size()); !restored) {
-                return propagate(restored.error());
-            }
-            // An interrupted undo may have marked the snapshot it restored: it is not undone.
-            if (snapshot->kind == SnapshotKind::Undo && !snapshot->undoes.empty()) {
-                const std::filesystem::path undoneFolder = folderOf(files, snapshot->undoes);
-                if (auto undone = readRecordIn(undoneFolder); undone && undone->undone) {
-                    undone->undone = false;
-                    if (Status marked = writeRecordIn(undoneFolder, *undone); !marked) {
-                        return propagate(marked.error());
-                    }
-                }
-            }
-            // The action never happened: its snapshot, the state as it now stands, is retired before the journal goes
-            // (a stop in between leaves the journal naming a ".removing" folder: the case below), never offered.
-            std::error_code error;
-            std::filesystem::rename(folder, folderOf(files, *name, kRemovingSuffix), error);
-            if (error) {
-                return makeError(ErrorCode::IoError,
-                                 "cannot retire the snapshot of the action rolled back: " + error.message(),
-                                 lossy(folder));
-            }
-            spdlog::warn("World store: an interrupted {} was rolled back: the plan and the overrides of the snapshot "
-                         "{} restored",
-                         snapshot->action, *name);
-        } else {
-            // A journal written before its snapshot was named (nothing written into the world yet), or a rollback
-            // stopped after restoring and retiring the snapshot: either way the world's files are the snapshot's.
-            spdlog::warn("World store: an interrupted action was rolled back: the world's files were already those of "
-                         "the snapshot {}",
-                         *name);
-        }
-        if (Status ended = removeJournal(files); !ended) {
-            return propagate(ended.error());
-        }
-        rolledBack = std::move(*name);
+        rolledBack = std::move(*journal);
     }
 
     // Snapshots half made (stopped before their journal named them) or half removed (a retirement stopped): never
