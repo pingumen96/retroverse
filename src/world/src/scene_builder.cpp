@@ -104,12 +104,13 @@ json coverTexture(std::uint64_t seed) {
     return patternTexture("cover", seed);
 }
 
-/// The textures of a prefab kind's roles: the CRT's idle colour bars, a poster's or a magazine's invented cover, the
+/// The textures of a prefab kind's roles: the CRT's standby picture (I5 step 1, ADR-0016 §8: the colour bars stay the
+/// test room's), a poster's or a magazine's invented cover, the
 /// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour), an arcade cabinet's
 /// marquees and idle screens (I6 step 6: generic words on a lit panel, in neon).
 json themeTextures(std::string_view kind, bool sign, const PlatformManifest& platform, std::uint64_t seed) {
     if (kind == "crt") {
-        return json{{"screen", json{{"pattern", "color_bars"}}}};
+        return json{{"screen", json{{"pattern", "standby"}}}};
     }
     if (kind == "poster_frame") {
         return sign ? json{{"picture", json{{"pattern", "neon"}, {"title", platform.signText}}}}

@@ -534,12 +534,13 @@ TEST_CASE("golden/G06: the snes-single room, one ROM and no media", "[gpu][golde
     INFO(run.describe());
     CHECK(run.report->world.outcome == "unchanged");
     CHECK(run.report->world.items == 1);
+    CHECK(run.report->video.picture == "title-card"); // its one game has no media (I5 step 1)
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G06", "g06_snes_single_golden",
                        "Gate B golden of the P0 single-ROM room (style 26.1 6, style 21): the snes-single fixture's "
                        "one ROM without any media, its cartridge face-out with a generated label, the room furnished "
-                       "from the template alone, the hero CRT without a clip, from the doorway (the plan's scene "
-                       "camera).",
+                       "from the template alone, the hero CRT showing the game's title card (no media: I5 step 1, "
+                       "ADR-0016 §8), from the doorway (the plan's scene camera).",
                        "the plan's scene camera at the doorway (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -922,11 +923,12 @@ TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu
     const rv::app::RunReport& report = *run.report;
     CHECK(report.residency.labels == 0);
     CHECK(report.residency.coverFailures == 0);
-    // The shared room's CRT is the hero CRT with both sections' games; they have no clip: its colour bars.
+    // The shared room's CRT is the hero CRT with both sections' games; they have no clip: since I5 step 1 its first
+    // game's cover (ADR-0016 §3), where its colour bars were.
     REQUIRE(report.video.bound);
     CHECK(report.video.screen == "area:shared:handheld/fx:hero.crt");
     CHECK(report.world.screenGames == 14);
-    CHECK(report.video.picture == "idle-pattern");
+    CHECK(report.video.picture == "cover");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G13", "g13_shared_room_golden",
                        "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room "
@@ -936,7 +938,7 @@ TEST_CASE("golden/G13: the handheld floor's shared room from its doorway", "[gpu
                        "shelf, no console beside the CRT (shared rooms have none); the handheld archive's look of I6 "
                        "step 6 and its review (counters of lit handhelds, stations, a warm cove, posters high on the "
                        "walls, the pictogram beside the sign); from the doorway (the room's doorway camera), the hero "
-                       "CRT showing its colour bars (no section has a clip).",
+                       "CRT showing its first game's cover (no section has a clip: I5 step 1, ADR-0016 §3).",
                        "--start-room area:shared:handheld: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -1037,6 +1039,7 @@ TEST_CASE("golden/G17: an optical-era lounge room from its doorway", "[gpu][gold
     CHECK(report.residency.coverFailures == 0);
     REQUIRE(report.video.bound);
     CHECK(report.video.screen == "room:ps2/fx:hero.crt");
+    CHECK(report.video.picture == "cover"); // no clip in the room: its first game's cover (I5 step 1)
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G17", "g17_optical_era_room_golden",
                        "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style "
@@ -1048,7 +1051,7 @@ TEST_CASE("golden/G17: an optical-era lounge room from its doorway", "[gpu][gold
                        "upright; the pack's era furniture: a low sofa "
                        "facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on "
                        "sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from "
-                       "the doorway (the room's doorway camera), the hero CRT showing its colour bars (no clip).",
+                       "the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no clip: I5 step 1, ADR-0016 §3).",
                        "--start-room room:ps2: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }

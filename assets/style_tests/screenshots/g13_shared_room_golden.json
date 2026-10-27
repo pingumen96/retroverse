@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "9f393bbfa28f15b0c9a0f7213193d04672b36a6a",
+    "gitCommit": "5960d227535f35da204c143e4b27b93082f4ac6a",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one collection ordered by section, every one face-out in the display cases and the featured wall shelf, no console beside the CRT (shared rooms have none); the handheld archive's look of I6 step 6 and its review (counters of lit handhelds, stations, a warm cove, posters high on the walls, the pictogram beside the sign); from the doorway (the room's doorway camera), the hero CRT showing its colour bars (no section has a clip).",
+  "description": "Gate C golden of a shared room (style 5.6 as ADR-0013 amends it: a section of the shared room under 30 titles): the esde/building fixture's handheld floor's shared room under its MORE GAMES sign, its two sections (pocketlab's 6 and pokemini's 8 invented titles) as generic cases in one collection ordered by section, every one face-out in the display cases and the featured wall shelf, no console beside the CRT (shared rooms have none); the handheld archive's look of I6 step 6 and its review (counters of lit handhelds, stations, a warm cove, posters high on the walls, the pictogram beside the sign); from the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no section has a clip: I5 step 1, ADR-0016 §3).",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 617.42",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g13_shared_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "c3b36426e1957bc0af16c79a77ed1506816faa20b3cdf1d618888aec50183732",
+    "sha256": "4aa63da4fdbdb40db77e320d93d2108f32554a472e11cb719f2a57d2823a5e80",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "1e49613c8e9fc4fb149acd1046562e0e5dabb7bf34c5541bf7470de1f5996ce9"
+      "sha256": "4a1217897ee893d8a75c6004c2827144acb48ab2c3c9c42197a0260ff77d100b"
     }
   },
   "renderedOn": "2026-10-27",

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <rv/app/screen_policy.hpp>
+#include <rv/app/video_settings.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/scene/render_item.hpp>
 
 #include <glm/vec2.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,11 +30,14 @@ class SceneInstance;
 struct VideoRecord;
 
 /// The hero CRT of a scene: its object, the material its screen is drawn with (a picture instance of MAT_Screen_CRT,
-/// whose base colour texture the service overrides) and its world bounds (the view test that pauses the decoder).
+/// whose base colour texture the service overrides) and its world bounds (the view test that pauses the decoder);
+/// since I5 step 1 its room's id (video.json's rooms, the playlist's seeds): the room of a floor ("room:snes"), else
+/// the scene's name (the test room's "m0_testroom").
 struct HeroScreen {
     std::string objectId;
     scene::MaterialHandle material;
     core::Aabb bounds;
+    std::string roomId;
 };
 
 /// The first object of `description` built from the `crt` prefab, or from the `arcade_cabinet` prefab that stands for it
@@ -40,7 +45,8 @@ struct HeroScreen {
 /// scene texture, so that its material has a base colour texture to override), with its screen's material in
 /// `materials` (registered by SceneInstance under "<object id>/screen...") and the bounds of its first instance;
 /// nothing when the scene has none (the model viewer, scenes without a TV). With `idPrefix` (I4 step 5a: a floor's start
-/// room, "room:snes/") only an object whose id starts with it counts; an empty prefix finds none.
+/// room, "room:snes/") only an object whose id starts with it counts, and the room's id is the prefix without its "/";
+/// an empty prefix finds none. Without, the room's id is the scene's name.
 [[nodiscard]] std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& description,
                                                        const SceneInstance& instance,
                                                        const gl::MaterialRegistry& materials,
@@ -53,7 +59,15 @@ struct ScreenServiceOptions {
     /// --fixed-dt (lockstep runs): a still picture being loaded is waited for (at most kStillWait), so that scripted
     /// runs show the same picture on the same frame.
     bool lockstep = false;
+    /// video.json (I5 step 1, ADR-0016 §4): clips at all, and each room's hero settings (its playlist, previewDuration,
+    /// showOnFocus, the explicit games).
+    VideoSettings video;
+    /// The asset root: the title cards' bundled fonts.
+    std::filesystem::path assetRoot;
 };
+
+/// The hero screen's play settings in room `roomId` (video.json's hero settings and the room's, the frozen runs').
+[[nodiscard]] ScreenPlaySettings heroPlaySettings(const ScreenServiceOptions& options, std::string_view roomId);
 
 /// The hero CRT's screen service (I3 step 11, ADR-0012 §7): one media::VideoDecoder at a time (a runtime assertion:
 /// never two, their threads included, which the run report's maxDecoderThreads shows), driven by a ScreenPolicy (what
@@ -68,6 +82,12 @@ struct ScreenServiceOptions {
 /// (media::waitForStoppedDecoders()). A clip that replaces another opens once the other's thread ended (the screen
 /// shows the new game's still meanwhile), so that no two decoder threads ever run. Files are logged by game, never by
 /// path (the user's folders). Main thread only; the material registry must outlive the service.
+///
+/// Since I5 step 1 (ADR-0016 §3, §8) it plays its room's playlist (ScreenPolicy::tick, the room's video.json
+/// settings), ends the chain at the game's generated title card (assets::drawTitleCard on the worker, 640 x 480), and
+/// keeps the picture shown up while the next game's is not ready (its still or its first frame): a switch never shows
+/// the screen's own pattern, which only a screen without a game shows (the test room's colour bars, the building's
+/// standby). The played games, the pictures shown and the frames held are recorded (VideoRecord).
 ///
 /// Since I4 step 6b (ADR-0013 §9) the service follows the CRT of the room that holds the eye: bind() moves it to
 /// another screen with that room's games, the clip of the previous one stopping as a clip replacement does (its

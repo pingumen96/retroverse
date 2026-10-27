@@ -5,7 +5,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -470,4 +472,73 @@ TEST_CASE("assets/collection_labels: a printed spine drawn at its quad's shape (
     CHECK(onJewel.lines.size() <= onLayer.lines.size());
     CHECK(onJewel.pixelHeight >= onLayer.pixelHeight);
     CHECK_FALSE(onJewel.ellipsized);
+}
+
+TEST_CASE("assets/collection_labels: the screen's title card is a dark title screen of the label's colour (I5 step 1)",
+          "[assets][collection_labels]") {
+    // Luma over the sRGB-encoded channels (Rec. 709 weights), 0 to 255.
+    const auto luma = [](const std::uint8_t* p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; };
+    const auto at = [](const ImageData& image, int x, int y) {
+        return image.pixels.data() + (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + x) * 4;
+    };
+    FrontLabelRequest request{"Comet Courier", "", "Fantasy Home System", "1994", 5};
+    // Every colour of the default palette, from bordeaux to ivory: a field of about one luma (I5 step 1's review: the
+    // tube shows it at the clips' level, never a bright panel), its hue the label's, the ink legible on it, the glow
+    // baked in.
+    for (const Rgb8 colour : kDefaultLabelPalette) {
+        INFO("label colour " << toHexCode(colour));
+        const std::array<Rgb8, 1> palette{colour};
+        request.palette = palette;
+        auto card = drawTitleCard(fonts(), request, 640, 480);
+        REQUIRE(card.has_value());
+        CHECK(card->picture.width == 640);
+        CHECK(card->picture.height == 480);
+        CHECK(card->picture.channels == 4);
+        const Rgb8 field = card->colours.background;
+        const std::uint8_t fieldPixel[] = {field.r, field.g, field.b};
+        CHECK(luma(fieldPixel) > 78.0);
+        CHECK(luma(fieldPixel) < 86.0);
+        std::vector<double> lumas;
+        for (std::size_t i = 0; i < card->picture.pixels.size(); i += 4) {
+            lumas.push_back(luma(card->picture.pixels.data() + i));
+        }
+        std::nth_element(lumas.begin(), lumas.begin() + static_cast<std::ptrdiff_t>(lumas.size() / 2), lumas.end());
+        const double median = lumas[lumas.size() / 2];
+        INFO("median luma " << median);
+        CHECK(median > 70.0);
+        CHECK(median < 95.0);
+        // The label's hue: its strongest channel stays the strongest (the greys aside).
+        const int spread = std::max({colour.r, colour.g, colour.b}) - std::min({colour.r, colour.g, colour.b});
+        if (spread > 40) {
+            const auto strongest = [](Rgb8 c) {
+                return c.r >= c.g && c.r >= c.b ? 0 : (c.g >= c.b ? 1 : 2);
+            };
+            CHECK(strongest(field) == strongest(colour));
+        }
+        CHECK(textContrast(card->picture, field) >= kMinTextContrast);
+        // The glow: the middle above the title brighter than the field near a corner.
+        CHECK(luma(at(card->picture, 320, 110)) > luma(at(card->picture, 34, 34)) + 20.0);
+    }
+    // The title at 1.3 times the label's sizes (scaled by 2.5): a short one at the one-line maximum, never resampled.
+    request.title = "Zap";
+    auto shortTitle = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(shortTitle.has_value());
+    CHECK(std::abs(shortTitle->layout.pixelHeight - 34.0F * 2.5F * 1.3F) < 0.01F);
+    request.title = "Comet Courier";
+    auto card = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(card.has_value());
+    CHECK(card->layout.lines == std::vector<std::string>{"Comet Courier"});
+    CHECK(card->layout.pixelHeight > 2.0F * 34.0F);
+    // The same pixels every time.
+    auto again = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(again.has_value());
+    CHECK(pixelHash(again->picture) == pixelHash(card->picture));
+    // A long title wraps as the label's does.
+    request.title = "The Extraordinarily Long Adventures of Captain Pemberton Across the Seven Floating Archipelagos";
+    auto wrapped = drawTitleCard(fonts(), request, 640, 480);
+    REQUIRE(wrapped.has_value());
+    CHECK(wrapped->layout.lines.size() == 3);
+
+    CHECK(drawTitleCard(fonts(), request, 32, 480).error().code == rv::ErrorCode::InvalidArgument);
+    CHECK(drawTitleCard(LabelFonts{}, request, 640, 480).error().code == rv::ErrorCode::InvalidArgument);
 }

@@ -418,7 +418,7 @@ TEST_CASE("world/plan_scene: the scene file reads back as the scene description,
     const rv::scene::SceneObject& sign = *loaded->findObject("fx:hero.sign");
     CHECK(sign.texturesByRole.at("picture").pattern == "neon");
     CHECK(sign.texturesByRole.at("picture").title == entry.data.platform.signText);
-    CHECK(loaded->findObject("fx:hero.crt")->texturesByRole.at("screen").pattern == "color_bars");
+    CHECK(loaded->findObject("fx:hero.crt")->texturesByRole.at("screen").pattern == "standby");
     CHECK(loaded->findObject("fx:hero.crt")->materialNameForRole("screen") == "MAT_Screen_CRT_Room");
 }
 

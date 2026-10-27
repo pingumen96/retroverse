@@ -92,7 +92,7 @@
         {"prefab": {"manifest": "furniture.arcade_cabinet.generic", "kind": "arcade_cabinet"},
          "params": {"count": 1, "width": 0.7, "height": 1.85, "depth": 0.85, "panelHeight": 0.9,
                     "marqueeHeight": 0.24, "screenSize": [0.5, 0.375], "screenTiltDeg": 12, "slots": false},
-         "textures": {"screen": "color_bars"}, "xMm": 0, "yMm": 0, "zMm": 440, "yawCdeg": 0}],
+         "textures": {"screen": "standby"}, "xMm": 0, "yMm": 0, "zMm": 440, "yawCdeg": 0}],
       "tv-cabinet": [],
       "armchair": [
         {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"},

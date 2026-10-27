@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <set>
 #include <span>
+#include <string>
 #include <system_error>
 #include <utility>
 
@@ -13,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include <rv/core/json.hpp>
+#include <rv/core/seed.hpp>
 #include <rv/core/time.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -282,7 +284,15 @@ std::vector<ScreenGame> MockCatalog::screenGames() const {
     std::vector<ScreenGame> list;
     list.reserve(games.size());
     for (const MockGame& game : games) {
-        list.push_back(ScreenGame{game.entry.id, game.media, game.lastPlayed});
+        ScreenGame screen{game.entry.id, game.media, game.lastPlayed};
+        // I5 step 1: the room's order is the titles' (the sequential playlist), and every game has its title card (its
+        // platform standing for the system's name, the default palette in the colour of a seed of its id).
+        screen.sortKey = game.entry.title;
+        screen.card.title = game.entry.title;
+        screen.card.year = game.entry.year > 0 ? std::to_string(game.entry.year) : std::string();
+        screen.card.systemName = game.entry.platform;
+        screen.card.seed = core::deriveSeed("title-card", game.entry.id);
+        list.push_back(std::move(screen));
     }
     return list;
 }

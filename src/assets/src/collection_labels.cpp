@@ -5,6 +5,7 @@
 #include <cmath>
 #include <utility>
 
+#include <rv/assets/image_io.hpp>
 #include <rv/core/random.hpp>
 
 namespace rv::assets {
@@ -680,23 +681,16 @@ Expected<GeneratedLayer> buildSpineLayer(const LabelFonts& fonts, const SpineReq
     return encodeGenerated(drawSpine(fonts, request, format), TextureClass::Spine, format);
 }
 
-Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLabelRequest& request,
-                                          TextureFormat format) {
-    if (fonts.title == nullptr) {
-        return makeError(ErrorCode::InvalidArgument, "a generated label needs the title font", "front label");
-    }
-    const FontFace& titleFont = *fonts.title;
-    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
-    const LayerSize layer = layerSize(TextureClass::Front, format);
-    // Laid out on a canvas of the label's shape (ADR-0013 §4), resampled once into the layer below; the layer itself
-    // for I3's shape.
-    const bool onCanvas = !request.label.isLayer();
-    const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
-    const float k = frontScale(format);
+namespace {
+
+/// The generated front label's design (the file comment) on a canvas of `size`, at scale `k` (its sizes those of the
+/// 256 px wide label times k), `layerHeight` the 188 rows of the label at k (a taller canvas adds to the title's band),
+/// `onCanvas`: the canvas is no layer (its text runs to its right edge less the margin), `layout` the title's.
+GeneratedPicture drawFrontDesign(const FontFace& titleFont, const FontFace& detailFont, const FrontLabelRequest& request,
+                                 float k, CanvasSize size, float layerHeight, bool onCanvas, TitleLayout layout) {
     GeneratedPicture result;
     result.colours = labelColours(paletteColour(request.seed, labelPaletteOr(request.palette)));
-    result.layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
-                             : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
+    result.layout = std::move(layout);
     result.picture = filledImage(size.width, size.height, result.colours.background);
     const Rgb8 background = result.colours.background;
     const Rgb8 text = result.colours.text;
@@ -707,7 +701,7 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
     const auto h = static_cast<float>(size.height);
     // What a canvas taller than the layer's 188 (at k) adds below the stripes: the title's band grows, the details
     // stay at the bottom (0 for the layer).
-    const float extra = onCanvas ? h - static_cast<float>(layer.height) : 0.0F;
+    const float extra = onCanvas ? h - layerHeight : 0.0F;
     const float inset = kFrontFrameInset * k;
     const float stroke = kFrontFrameStroke * k;
     fillRect(result.picture, inset, inset, w - inset, inset + stroke, frame);
@@ -754,6 +748,28 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
                         detailBaseline});
     }
     drawText(result.picture, text, runs);
+    return result;
+}
+
+} // namespace
+
+Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLabelRequest& request,
+                                          TextureFormat format) {
+    if (fonts.title == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "a generated label needs the title font", "front label");
+    }
+    const FontFace& titleFont = *fonts.title;
+    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
+    const LayerSize layer = layerSize(TextureClass::Front, format);
+    // Laid out on a canvas of the label's shape (ADR-0013 §4), resampled once into the layer below; the layer itself
+    // for I3's shape.
+    const bool onCanvas = !request.label.isLayer();
+    const CanvasSize size = labelCanvas(request.label, layer.width, layer.height);
+    const float k = frontScale(format);
+    TitleLayout layout = onCanvas ? layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format, request.label)
+                                  : layoutFrontTitle(titleFont, request.title, request.fallbackTitle, format);
+    GeneratedPicture result = drawFrontDesign(titleFont, detailFont, request, k, size,
+                                              static_cast<float>(layer.height), onCanvas, std::move(layout));
     if (onCanvas) {
         auto squeezed = resampleSrgb(result.picture, layer.width, layer.height);
         if (!squeezed) {
@@ -761,6 +777,188 @@ Expected<GeneratedPicture> drawFrontLabel(const LabelFonts& fonts, const FrontLa
         }
         result.picture = std::move(*squeezed);
     }
+    return result;
+}
+
+namespace {
+
+/// The title card's look (I5 step 1's review): a period title screen, dark and lit from within, never a bright flat
+/// panel brighter than the clips on the same tube.
+/// The field's luma before the glow (Rec. 709 weights over the sRGB-encoded channels, 0 to 1), whatever the label's
+/// colour: about the clips' level on the tube (a saturated colour and a grey of one luma render alike there).
+constexpr float kCardFieldLuma = 0.322F;
+/// How far the field's colour is taken towards the grey of its luminance first: a tube's muted colour, not a panel's.
+constexpr float kCardFieldMuting = 0.3F;
+/// The ink's (title, details, frame, rule): the label's colour raised to this luminance, then mixed towards ivory.
+constexpr float kCardInkLuminance = 0.60F;
+constexpr float kCardInkIvory = 0.35F;
+/// The frame and the rule, as shares of the way from the field to the ink.
+constexpr float kCardFrameShare = 0.55F;
+constexpr float kCardRuleShare = 0.70F;
+/// The glow baked in (as makeStandby's): the light at the middle and at the corners, times the field's.
+constexpr float kCardGlowCentre = 1.20F;
+constexpr float kCardGlowEdge = 0.55F;
+/// The label's sizes on the card (at width / 256): the title 1.3 times, the system and year 1.5 times; the frame's
+/// stroke, the one rule across the top (the label's two stripes, shrunk) and the title's band.
+constexpr float kCardTitleScale = 1.3F;
+constexpr float kCardDetailScale = 1.5F;
+constexpr float kCardFrameStroke = 2.0F;
+constexpr float kCardRuleTop = 21.0F;
+constexpr float kCardRuleBottom = 23.0F;
+constexpr float kCardTitleTop = 28.0F;
+constexpr float kCardTitleBottom = 148.0F;
+constexpr float kCardDetailBaseline = 170.0F;
+
+float linearLuminance(LinearRgb colour) noexcept {
+    return 0.2126F * colour.r + 0.7152F * colour.g + 0.0722F * colour.b;
+}
+
+/// `colour` scaled to the linear luminance `target`, its channels kept at most 1 (a grey of that luminance for black).
+LinearRgb withLuminance(LinearRgb colour, float target) noexcept {
+    const float luminance = linearLuminance(colour);
+    if (luminance <= 1e-6F) {
+        return {target, target, target};
+    }
+    const float k = target / luminance;
+    return {std::min(1.0F, colour.r * k), std::min(1.0F, colour.g * k), std::min(1.0F, colour.b * k)};
+}
+
+LinearRgb mixLinear(LinearRgb a, LinearRgb b, float t) noexcept {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
+}
+
+float srgbEncode(float linear) noexcept {
+    const float clamped = std::clamp(linear, 0.0F, 1.0F);
+    return clamped <= 0.0031308F ? clamped * 12.92F : 1.055F * std::pow(clamped, 1.0F / 2.4F) - 0.055F;
+}
+
+/// `colour` scaled until its luma (Rec. 709 weights over its sRGB-encoded channels) is `target`, its brightest channel
+/// at most 1 (a grey of that luma for black): the luma is what the eye compares across the palette.
+LinearRgb withLuma(LinearRgb colour, float target) noexcept {
+    if (std::max({colour.r, colour.g, colour.b}) <= 1e-6F) {
+        colour = {1.0F, 1.0F, 1.0F};
+    }
+    const auto luma = [&colour](float k) {
+        return 0.2126F * srgbEncode(colour.r * k) + 0.7152F * srgbEncode(colour.g * k) +
+               0.0722F * srgbEncode(colour.b * k);
+    };
+    float low = 0.0F;
+    float high = 1.0F / std::max({colour.r, colour.g, colour.b});
+    for (int step = 0; step < 32; ++step) {
+        const float middle = 0.5F * (low + high);
+        if (luma(middle) < target) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return {colour.r * low, colour.g * low, colour.b * low};
+}
+
+/// The tube's glow over the drawn card: every pixel's linear light times kCardGlowEdge at the corners rising to
+/// kCardGlowCentre at the middle (the falloff of makeStandby's ground).
+void bakeGlow(ImageData& image) {
+    const auto w = static_cast<float>(image.width);
+    const auto h = static_cast<float>(image.height);
+    for (int y = 0; y < image.height; ++y) {
+        const float v = (static_cast<float>(y) + 0.5F) / h * 2.0F - 1.0F;
+        for (int x = 0; x < image.width; ++x) {
+            const float u = (static_cast<float>(x) + 0.5F) / w * 2.0F - 1.0F;
+            const float glow = std::clamp(1.0F - (u * u * 0.6F + v * v), 0.0F, 1.0F);
+            const float gain = kCardGlowEdge + (kCardGlowCentre - kCardGlowEdge) * glow;
+            std::uint8_t* pixel = image.pixels.data() + (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) +
+                                                         static_cast<std::size_t>(x)) *
+                                                            4;
+            for (int c = 0; c < 3; ++c) {
+                pixel[c] = linearToSrgbByte(std::min(1.0F, srgbByteToLinear(pixel[c]) * gain));
+            }
+        }
+    }
+}
+
+} // namespace
+
+Expected<GeneratedPicture> drawTitleCard(const LabelFonts& fonts, const FrontLabelRequest& request, int width,
+                                         int height) {
+    if (fonts.title == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "a title card needs the title font", "title card");
+    }
+    if (width < kMinTitleCardSide || height < kMinTitleCardSide || width > kMaxImageDimension ||
+        height > kMaxImageDimension) {
+        return makeError(ErrorCode::InvalidArgument, "a title card's sides are from 64 to the largest image's",
+                         "title card");
+    }
+    const FontFace& titleFont = *fonts.title;
+    const FontFace& detailFont = fonts.detail != nullptr ? *fonts.detail : titleFont;
+    const LayerSize reference = layerSize(TextureClass::Front, TextureFormat::Bc1Srgb);
+    const float k = static_cast<float>(width) / kFrontReference;
+    const auto w = static_cast<float>(width);
+    const auto h = static_cast<float>(height);
+    // What a canvas taller than the label's 188 rows (at k) adds: the title's band grows, the details stay at the
+    // bottom.
+    const float extra = h - static_cast<float>(reference.height) * k;
+
+    // The item's label colour: a dark field of its hue, and its ink raised and warmed towards ivory.
+    const LinearRgb base = toLinear(paletteColour(request.seed, labelPaletteOr(request.palette)));
+    const float baseLuminance = linearLuminance(base);
+    const LinearRgb grey{baseLuminance, baseLuminance, baseLuminance};
+    const LinearRgb field = withLuma(mixLinear(base, grey, kCardFieldMuting), kCardFieldLuma);
+    const LinearRgb ink = mixLinear(withLuminance(base, kCardInkLuminance), toLinear(kLabelTextLight), kCardInkIvory);
+    GeneratedPicture result;
+    result.colours = {toSrgb8(field), toSrgb8(ink), 0.0};
+    result.colours.contrast = contrastRatio(result.colours.background, result.colours.text);
+    result.picture = filledImage(width, height, result.colours.background);
+
+    const Rgb8 frame = toSrgb8(mixLinear(field, ink, kCardFrameShare));
+    const float inset = kFrontFrameInset * k;
+    const float stroke = kCardFrameStroke * k;
+    fillRect(result.picture, inset, inset, w - inset, inset + stroke, frame);
+    fillRect(result.picture, inset, h - inset - stroke, w - inset, h - inset, frame);
+    fillRect(result.picture, inset, inset, inset + stroke, h - inset, frame);
+    fillRect(result.picture, w - inset - stroke, inset, w - inset, h - inset, frame);
+    fillRect(result.picture, 18.0F * k, kCardRuleTop * k, w - 18.0F * k, kCardRuleBottom * k,
+             toSrgb8(mixLinear(field, ink, kCardRuleShare)));
+
+    // The title, centred in its band at 1.3 times the label's sizes.
+    const float left = kFrontTextLeft * k;
+    const float right = w - kFrontTextLeft * k;
+    result.layout = layoutFrontTitleIn(titleFont, request.title, request.fallbackTitle, k * kCardTitleScale,
+                                       right - left);
+    std::vector<PlacedRun> runs;
+    const float pixelHeight = result.layout.pixelHeight;
+    const float cap = titleFont.capHeight(pixelHeight);
+    const std::size_t lineCount = result.layout.lines.size();
+    const float pitch = kFrontLinePitch * pixelHeight;
+    const float block = cap + pitch * static_cast<float>(lineCount > 0 ? lineCount - 1 : 0);
+    float baseline = ((kCardTitleTop + kCardTitleBottom) * k + extra) / 2.0F - block / 2.0F + cap;
+    for (const std::string& line : result.layout.lines) {
+        PlacedRun run;
+        run.font = &titleFont;
+        run.text = decodeUtf8(line);
+        run.pixelHeight = pixelHeight;
+        run.x = left + (right - left - widthAt(titleFont, run.text, pixelHeight)) / 2.0F;
+        run.baseline = baseline;
+        runs.push_back(std::move(run));
+        baseline += pitch;
+    }
+
+    // The system's name at the bottom left, the year at the bottom right, 1.5 times the label's size.
+    const float detailSize = kFrontDetailSize * kCardDetailScale * k;
+    const float detailBaseline = kCardDetailBaseline * k + extra;
+    const std::u32string year = collapseWhitespace(decodeUtf8(request.year));
+    float yearWidth = 0.0F;
+    if (!year.empty()) {
+        yearWidth = widthAt(detailFont, year, detailSize);
+        runs.push_back({&detailFont, year, detailSize, right - yearWidth, detailBaseline});
+    }
+    const std::u32string system = collapseWhitespace(decodeUtf8(request.systemName));
+    if (!system.empty()) {
+        const float room = right - left - (year.empty() ? 0.0F : yearWidth + kFrontDetailGap * k);
+        runs.push_back(
+            {&detailFont, ellipsize(detailFont, system, detailSize, room), detailSize, left, detailBaseline});
+    }
+    drawText(result.picture, result.colours.text, runs);
+    bakeGlow(result.picture);
     return result;
 }
 

@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
+#include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 namespace rv::assets {
 namespace {
@@ -538,6 +540,41 @@ ImageData makeColorBars(int width, int height) {
                 const auto level = static_cast<std::uint8_t>(width > 1 ? x * 255 / (width - 1) : 255);
                 setPixel(image, x, y, Rgba(level, level, level, 255));
             }
+        }
+    }
+    return image;
+}
+
+ImageData makeStandby(int width, int height) {
+    ImageData image = blankImage(width, height);
+    if (!image.isValid()) {
+        return image;
+    }
+    // A dim, cold ground brightest at the middle (the tube's glow), a raster of darker rows and a short trace across
+    // the middle: a set that is on and waiting.
+    constexpr glm::vec3 kEdge{11.0f, 15.0f, 20.0f};
+    constexpr glm::vec3 kCentre{24.0f, 31.0f, 39.0f};
+    constexpr glm::vec3 kTrace{44.0f, 58.0f, 70.0f};
+    const float w = static_cast<float>(width);
+    const float h = static_cast<float>(height);
+    const int rasterPitch = std::max(2, height / 120);
+    const float traceHalfHeight = std::max(0.5f, h / 180.0f);
+    for (int y = 0; y < height; ++y) {
+        const float v = (static_cast<float>(y) + 0.5f) / h * 2.0f - 1.0f;
+        for (int x = 0; x < width; ++x) {
+            const float u = (static_cast<float>(x) + 0.5f) / w * 2.0f - 1.0f;
+            const float glow = std::clamp(1.0f - (u * u * 0.6f + v * v), 0.0f, 1.0f);
+            glm::vec3 colour = kEdge + (kCentre - kEdge) * glow;
+            const float py = static_cast<float>(y) + 0.5f;
+            if (std::abs(u) < 0.34f && std::abs(py - h * 0.5f) <= traceHalfHeight) {
+                colour = kTrace;
+            }
+            if (y % rasterPitch == 0) {
+                colour *= 0.7f;
+            }
+            setPixel(image, x, y,
+                     Rgba(static_cast<std::uint8_t>(std::lround(colour.r)), static_cast<std::uint8_t>(std::lround(colour.g)),
+                          static_cast<std::uint8_t>(std::lround(colour.b)), std::uint8_t{255}));
         }
     }
     return image;
@@ -1294,11 +1331,12 @@ ImageData sideArt(int width, int height, std::uint32_t seed) {
 } // namespace
 
 std::span<const std::string_view> patternNames() noexcept {
-    static constexpr std::array<std::string_view, 16> kNames = {
+    static constexpr std::array<std::string_view, 17> kNames = {
         kPatternColorBars,     kPatternChecker,      kPatternCover,        kPatternSign,
         kPatternPrint,         kPatternNeon,         kPatternPosterMemphis, kPatternPosterLounge,
         kPatternPosterConsole, kPatternPosterFlyer,  kPatternCorkBoard,     kPatternTerminal,
-        kPatternBoard,         kPatternMarquee,      kPatternSideArt,       kPatternHandheldIcon};
+        kPatternBoard,         kPatternMarquee,      kPatternSideArt,       kPatternHandheldIcon,
+        kPatternStandby};
     return kNames;
 }
 
@@ -1358,10 +1396,13 @@ Expected<ImageData> makeNamedPattern(std::string_view name, int width, int heigh
     if (name == kPatternHandheldIcon) {
         return makeHandheldIcon(width, height);
     }
+    if (name == kPatternStandby) {
+        return makeStandby(width, height);
+    }
     return makeError(ErrorCode::NotFound,
                      "unknown test pattern (expected color_bars, checker, cover, sign, print, neon, poster_memphis, "
-                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal, board, marquee, side_art or "
-                     "handheld_icon)",
+                     "poster_lounge, poster_console, poster_flyer, cork_board, terminal, board, marquee, side_art, "
+                     "handheld_icon or standby)",
                      std::string(name));
 }
 

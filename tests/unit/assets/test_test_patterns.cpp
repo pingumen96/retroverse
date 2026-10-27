@@ -151,6 +151,36 @@ TEST_CASE("assets/test_patterns: color bars layout", "[assets][patterns]") {
     CHECK(rv::assets::makeColorBars(70, 60).pixels == bars.pixels);
 }
 
+TEST_CASE("assets/test_patterns: the standby screen is dim, cold and lit at its middle (I5 step 1)",
+          "[assets][patterns]") {
+    const ImageData standby = rv::assets::makeStandby(640, 480);
+    REQUIRE(standby.isValid());
+    const auto luma = [](Rgba p) { return 0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b; };
+    // Dim everywhere, the trace included: nothing like the colour bars' 75% (191), and no lamp or warm spot that would
+    // read as burn-in.
+    for (int y = 0; y < standby.height; ++y) {
+        for (int x = 0; x < standby.width; ++x) {
+            const Rgba p = pixel(standby, x, y);
+            if (luma(p) > 60.0 || p.r > p.b) {
+                FAIL_CHECK("a bright or warm pixel at " << x << ", " << y);
+            }
+        }
+    }
+    // The middle brighter than the corners (the tube's glow), the ground cold (blue over red); a raster of darker rows.
+    const Rgba corner = pixel(standby, 1, 1);
+    const Rgba middle = pixel(standby, 320, 200);
+    CHECK(luma(middle) > luma(corner));
+    CHECK(middle.b > middle.r);
+    CHECK(luma(pixel(standby, 100, 4)) < luma(pixel(standby, 100, 5)));
+    // The trace across the middle, brighter than the ground beside it.
+    CHECK(luma(pixel(standby, 320, 241)) > luma(pixel(standby, 320, 230)));
+    // By name, the same pixels; invalid sizes give an invalid image.
+    const auto named = rv::assets::makeNamedPattern("standby", 640, 480);
+    REQUIRE(named.has_value());
+    CHECK(named->pixels == standby.pixels);
+    CHECK_FALSE(rv::assets::makeStandby(0, 10).isValid());
+}
+
 TEST_CASE("assets/test_patterns: checkerboard and solid", "[assets][patterns]") {
     const Rgba a(255, 0, 0, 255);
     const Rgba b(0, 0, 255, 128);
@@ -301,7 +331,7 @@ TEST_CASE("assets/test_patterns: named patterns", "[assets][patterns]") {
     CHECK(std::vector<std::string_view>(names.begin(), names.end()) ==
           std::vector<std::string_view>{"color_bars", "checker", "cover", "sign", "print", "neon", "poster_memphis",
                                         "poster_lounge", "poster_console", "poster_flyer", "cork_board", "terminal",
-                                        "board", "marquee", "side_art", "handheld_icon"});
+                                        "board", "marquee", "side_art", "handheld_icon", "standby"});
 
     const auto bars = rv::assets::makeNamedPattern("color_bars", 70, 60);
     REQUIRE(bars.has_value());

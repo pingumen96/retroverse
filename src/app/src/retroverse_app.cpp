@@ -32,6 +32,7 @@
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/self_check.hpp>
+#include <rv/app/video_settings.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/assets/surface_textures.hpp>
@@ -399,6 +400,21 @@ bool isUserPress(const SDL_Event& event, std::uint32_t windowId) noexcept {
     }
 }
 
+/// video.json (I5 step 1): the shipped defaults with the user's file over them (a user file that does not load is left
+/// out, said in the log); the built-in defaults when the shipped file itself does not load.
+VideoSettings videoSettingsOf(const core::Paths& paths) {
+    auto loaded = loadVideoSettings(paths.assetRoot(), paths.configDir());
+    if (!loaded) {
+        spdlog::error("Video: the shipped video.json does not load ({}); the built-in defaults are used",
+                      loaded.error().toString());
+        return VideoSettings{};
+    }
+    for (const Error& issue : loaded->issues) {
+        spdlog::warn("Video: the user's video.json is left out, the defaults used: {}", issue.toString());
+    }
+    return loaded->settings;
+}
+
 } // namespace
 
 struct RetroverseApp::State {
@@ -656,6 +672,9 @@ struct RetroverseApp::State {
             ScreenServiceOptions screenOptions;
             screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
             screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
+            // I5 step 1: the rooms' playlists and the title cards' fonts.
+            screenOptions.video = videoSettingsOf(context.paths());
+            screenOptions.assetRoot = context.paths().assetRoot();
             screen = std::make_unique<ScreenService>(std::move(*hero), graphics->materials(), std::move(games),
                                                      screenOptions);
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {

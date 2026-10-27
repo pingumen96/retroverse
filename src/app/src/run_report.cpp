@@ -1660,6 +1660,23 @@ Json videoToJson(const VideoRecord& video) {
                              {"clipStopped", bind.clipStopped}});
     }
     json["binds"] = std::move(binds);
+    json["playlistMode"] = video.playlistMode;
+    json["playlistRoom"] = video.playlistRoom;
+    json["previewSeconds"] = video.previewSeconds;
+    json["playlistOrder"] = video.playlistOrder;
+    json["origin"] = video.origin;
+    Json played = Json::array();
+    for (const VideoPlayedRecord& entry : video.played) {
+        played.push_back(Json{{"atSeconds", entry.atSeconds}, {"gameId", entry.gameId}, {"origin", entry.origin}});
+    }
+    json["played"] = std::move(played);
+    Json shown = Json::array();
+    for (const VideoShownRecord& entry : video.shown) {
+        shown.push_back(Json{{"atSeconds", entry.atSeconds}, {"gameId", entry.gameId}, {"picture", entry.picture}});
+    }
+    json["shown"] = std::move(shown);
+    json["heldFrames"] = video.heldFrames;
+    json["idleFramesWithGame"] = video.idleFramesWithGame;
     return json;
 }
 
@@ -1717,6 +1734,24 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.clipStopped = bind.has("clipStopped") && bind.boolean("clipStopped");
         video.binds.push_back(std::move(entry));
     }
+    // I5 step 1's playlist (absent from earlier reports).
+    if (fields.has("playlistMode")) {
+        video.playlistMode = fields.string("playlistMode");
+        video.playlistRoom = fields.string("playlistRoom");
+        video.previewSeconds = fields.number("previewSeconds");
+        video.playlistOrder = fields.stringArray("playlistOrder");
+        video.origin = fields.string("origin");
+    }
+    for (FieldReader& entry : fields.optionalObjectArray("played")) {
+        video.played.push_back(
+            VideoPlayedRecord{entry.number("atSeconds"), entry.string("gameId"), entry.string("origin")});
+    }
+    for (FieldReader& entry : fields.optionalObjectArray("shown")) {
+        video.shown.push_back(
+            VideoShownRecord{entry.number("atSeconds"), entry.string("gameId"), entry.string("picture")});
+    }
+    video.heldFrames = fields.optionalCount("heldFrames").value_or(0);
+    video.idleFramesWithGame = fields.optionalCount("idleFramesWithGame").value_or(0);
     return video;
 }
 

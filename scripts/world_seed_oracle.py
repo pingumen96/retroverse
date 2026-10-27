@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Independent oracle of the world generator's seeds, random sequences and canonical JSON (ADR-0010 sections 7 and 8,
-I3 step 0b): the golden values of tests/unit/core/test_seed_random.cpp and tests/unit/core/test_canonical_json.cpp.
+I3 step 0b): the golden values of tests/unit/core/test_seed_random.cpp and tests/unit/core/test_canonical_json.cpp,
+and since I5 step 1 the screens' shuffled playlists of tests/unit/app/test_playlist.cpp.
 
     python -I scripts/world_seed_oracle.py                         print the golden tables
     python -I scripts/world_seed_oracle.py --check <file> [<file>]  exit 1 unless the files hold every line of them
+
+    python -I scripts/world_seed_oracle.py --check tests/unit/core/test_seed_random.cpp
+        tests/unit/core/test_canonical_json.cpp tests/unit/app/test_playlist.cpp      the check the tests rely on
 
 Seeds (core::deriveSeed): SHA-256 over the UTF-8 bytes of the tuple ("rv-seed/1", parts...), its elements separated by
 NUL characters (no NUL after the last); an integer part is its decimal ASCII digits, with '-' before a negative one;
@@ -18,6 +22,10 @@ z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9, z = (z ^ (z >> 27)) * 0x94D049BB133111
     range (hi - lo + 1 = 2^64) lo + one output; lo when hi < lo, nothing drawn;
   - unit(): (x >> 11) * 2^-53, in [0, 1), one output;
   - shuffle(items): Fisher-Yates from the last item, for i = n - 1 down to 1 swap items i and below(i + 1).
+
+Playlists (app::playlistCycle, I5 step 1, ADR-0016 section 3): a shuffled cycle is the room's games with a clip (the
+favourites only for "favorites"), in the room's order, shuffled by Random(deriveSeed(room id, screen id, mode, cycle)),
+then its first game swapped with its last when it is the previous cycle's last and the cycle has another.
 
 Canonical JSON (core::writeCanonicalJson): object members sorted by their keys' code points (the UTF-8 bytes in
 order), integers in decimal (no fraction, no exponent; a floating-point number is refused), strings in UTF-8 with
@@ -107,6 +115,21 @@ BETWEEN_RANGES = [
 ]
 
 DRAWS = 6
+
+# The playlists' rooms: their games with a clip in the room's order (tests/unit/app/test_playlist.cpp's roomGames(),
+# whose favourites are a002, a004 and a005; the test room's three clips of test_screen_policy.cpp's playlistRoom()).
+PLAYLIST_ROOM = ['g000000000000a001', 'g000000000000a002', 'g000000000000a003', 'g000000000000a004',
+                 'g000000000000a005']
+PLAYLIST_FAVOURITES = ['g000000000000a002', 'g000000000000a004', 'g000000000000a005']
+PLAYLIST_TEST_ROOM = ['g000000000000e001', 'g000000000000e002', 'g000000000000e003']
+
+# (room id, screen id, mode, games, cycles): the shuffles test_playlist.cpp tables, cycle after cycle.
+PLAYLISTS = [
+    ('room:snes', 'hero', 'shuffle', PLAYLIST_ROOM, 4),
+    ('room:nes', 'hero', 'shuffle', PLAYLIST_ROOM, 1),
+    ('room:snes', 'hero', 'favorites', PLAYLIST_FAVOURITES, 2),
+    ('m0_testroom', 'hero', 'shuffle', PLAYLIST_TEST_ROOM, 2),
+]
 
 # Canonical JSON cases: input texts (any valid JSON without floating-point numbers), parsed by both sides.
 CANONICAL_INPUTS = [
@@ -297,6 +320,26 @@ def shuffle_lines():
     return lines
 
 
+def playlist_cycle(room, screen, mode, games, cycle, previous_last):
+    order = list(games)
+    SplitMix64(derive_seed((room, screen, mode, cycle))).shuffle(order)
+    if previous_last is not None and len(order) > 1 and order[0] == previous_last:
+        order[0], order[-1] = order[-1], order[0]
+    return order
+
+
+def playlist_lines():
+    lines = []
+    for room, screen, mode, games, cycles in PLAYLISTS:
+        previous = None
+        for cycle in range(cycles):
+            order = playlist_cycle(room, screen, mode, games, cycle, previous)
+            lines.append('{"%s", "%s", "%s", %d, "%s", {%s}},' % (room, screen, mode, cycle, previous or '',
+                                                                 ', '.join('"%s"' % game for game in order)))
+            previous = order[-1]
+    return lines
+
+
 def canonical_lines():
     lines = []
     for text in CANONICAL_INPUTS:
@@ -316,6 +359,7 @@ def tables():
         ('unit', unit_lines()),
         ('shuffle', shuffle_lines()),
         ('canonical JSON', canonical_lines()),
+        ('playlist', playlist_lines()),
     ]
 
 

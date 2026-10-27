@@ -220,12 +220,34 @@ build/rvdata`).
   (the quick catalog's selection when the game stands in the eye's room, or the room's item focused or inspected,
   after a 300 ms dwell; before any, the most recently played placed game with a video, else the first featured one;
   a room's CRT plays its placed games only), else its screenshot, title screen or cover
-  (fitted to 640 x 480 on a worker), else its colour bars; it pauses out of view, stops (joined within 1 s) before a
-  launch and reopens at its position after the return. Its games come from the ES-DE catalog (the room's items, since
+  (fitted to 640 x 480 on a worker), else its colour bars (since I5 step 1 its title card, below); it pauses out of
+  view, stops (joined within 1 s) before a launch and reopens at its position after the return. Its games come from
+  the ES-DE catalog (the room's items, since
   I3 step 10c) or from `--mock-catalog`'s `"media"` (`video`, `screenshot`, `titlescreen`, `cover`; absolute or
   relative to the file) and `"lastPlayed"`. `--video-freeze-pts <seconds>` (frame-limited
   runs, 0 to 86400) opens every clip paused at that time and holds the frame: two runs give the same screenshot byte for
   byte. NVIDIA's message 131154 (every video upload) is dropped like the informational ids.
+  Since I5 step 1 (ADR-0016 §3, §4, §8; `docs/i5/step-1.md`) the start choice plays for `previewDuration` (its clip's
+  end when shorter), then the room's playlist (`app::Playlist`: `shuffle` by default, `sequential`, `favorites`,
+  `recent`, `explicit`; its games those with a playable clip, a clip that fails skipped for the run, the order seeded
+  by the room's id, `hero`, the mode and the cycle); a selection interrupts it and is held while focused, inspected or
+  selected in the quick catalog, then its clip plays to its end (at most `previewDuration`) and the game it
+  interrupted plays again, the playlist going on after it; the items' clock stops out of view and during a game, and
+  nothing advances under `--video-freeze-pts`. The chain's end is the game's generated title card (its title, year and
+  system on its room's label palette in its label's colour, 640 x 480, drawn on the worker; a placed game without any
+  media has its card only; drawn only once a clip cannot play), not the colour bars; a room without any clip shows its
+  first game's stills and card; between two games the previous picture stays up (the last frame of its clip, or its
+  still) until the next one's still or first frame is ready. A screen with no game shows its own
+  pattern: the test room's colour bars, the building's `standby` (a dim cold raster with a faint trace; the arcade's hero
+  cabinet too). `<user data>/config/video.json` (read, never written; the shipped defaults `assets/config/video.json`,
+  merged key by key; a file that does not load is left out whole, said in the log) sets `enabled` (clips at all),
+  `maxDecoders`, `maxRows`, `viewerMaxRows`, `proximityMeters`, `crtEffect`, `audio` (read for the steps after), and
+  per screen kind (`hero`, `secondary`, `cabinet`) `enabled` (autoplay), `playlist`, `previewDuration` (1 to 3600 s),
+  `showOnFocus`, `volume`, `crtPreset`, and per room `rooms.<room id>.<kind>` the same keys and `games` (the explicit
+  mode's GameIds; ids the room lacks, or without a clip, skipped and logged once). The test room's room id is
+  `m0_testroom`. The report's `video` section adds `playlistMode`, `playlistRoom`, `previewSeconds`, `playlistOrder`
+  (the current cycle), `origin` (`start`, `playlist`, `selection`), `played` and `shown` (each game played and each
+  picture shown, with the run's simulated seconds, the first 512), `heldFrames` and `idleFramesWithGame`.
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every

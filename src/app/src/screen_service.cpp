@@ -2,7 +2,9 @@
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/scene_instance.hpp>
+#include <rv/assets/collection_labels.hpp>
 #include <rv/assets/cover_fit.hpp>
+#include <rv/assets/text_raster.hpp>
 #include <rv/assets/image_io.hpp>
 #include <rv/core/cpu_timers.hpp>
 #include <rv/core/file_io.hpp>
@@ -26,6 +28,7 @@
 #include <cmath>
 #include <cstddef>
 #include <mutex>
+#include <set>
 #include <span>
 #include <thread>
 #include <utility>
@@ -40,6 +43,9 @@ constexpr std::chrono::seconds kFreezeWait{5};
 constexpr std::chrono::seconds kStillWait{5};
 /// Polling interval of those waits and of the stop before a launch.
 constexpr std::chrono::milliseconds kPollInterval{1};
+
+/// The run report's lists of the games played and the pictures shown keep their first entries only.
+constexpr std::size_t kMaxTimelineEntries = 512;
 
 /// Decoders of every screen service alive (playing or still ending): never more than one (NFR-07's single decoder of
 /// I3, ADR-0012 §7).
@@ -68,6 +74,48 @@ struct StillSlot {
     std::optional<StillResult> result;
 };
 
+/// The title cards' fonts, loaded once on the worker (the first card asked for).
+struct CardFonts {
+    std::once_flag loaded;
+    std::optional<assets::FontFace> title;
+    std::optional<assets::FontFace> detail;
+    std::optional<Error> error;
+
+    void load(const std::filesystem::path& assetRoot) {
+        std::call_once(loaded, [&] {
+            auto bold = assets::FontFace::loadBundled(assetRoot, assets::kLabelTitleFontPath);
+            auto regular = assets::FontFace::loadBundled(assetRoot, assets::kLabelDetailFontPath);
+            if (bold && regular) {
+                title = std::move(*bold);
+                detail = std::move(*regular);
+            } else {
+                error = bold ? regular.error() : bold.error();
+            }
+        });
+    }
+};
+
+/// Draws `card` at the screen's size (assets::drawTitleCard).
+Expected<assets::ImageData> drawCard(CardFonts& fonts, const std::filesystem::path& assetRoot, const ScreenCard& card) {
+    fonts.load(assetRoot);
+    if (fonts.error) {
+        return propagate(*fonts.error);
+    }
+    assets::FrontLabelRequest request;
+    request.title = card.title;
+    request.fallbackTitle = card.fallbackTitle;
+    request.systemName = card.systemName;
+    request.year = card.year;
+    request.seed = card.seed;
+    request.palette = card.palette;
+    auto drawn = assets::drawTitleCard(assets::LabelFonts{&*fonts.title, &*fonts.detail}, request,
+                                       ScreenService::kStillSize.x, ScreenService::kStillSize.y);
+    if (!drawn) {
+        return propagate(drawn.error());
+    }
+    return std::move(drawn->picture);
+}
+
 /// Reads (shared, as files other programs rewrite), decodes and fits a still to the screen's size. The error names the
 /// game's picture, not its path (the user's folders).
 Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::string_view context) {
@@ -87,6 +135,21 @@ Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::st
 }
 
 } // namespace
+
+ScreenPlaySettings heroPlaySettings(const ScreenServiceOptions& options, std::string_view roomId) {
+    const ScreenSettings hero = options.video.screen(ScreenKind::Hero, roomId);
+    ScreenPlaySettings settings;
+    settings.autoplay = hero.enabled;
+    settings.showOnFocus = hero.showOnFocus;
+    settings.clips = options.video.enabled;
+    settings.previewSeconds = hero.previewSeconds;
+    settings.playlist.mode = hero.playlist;
+    settings.playlist.roomId = std::string(roomId);
+    settings.playlist.screenId = std::string(kHeroScreenId);
+    settings.playlist.explicitGames = hero.games;
+    settings.frozen = options.freezePtsSeconds.has_value();
+    return settings;
+}
 
 std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& description, const SceneInstance& instance,
                                          const gl::MaterialRegistry& materials,
@@ -117,6 +180,8 @@ std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& descript
             }
             HeroScreen screen;
             screen.objectId = object.id;
+            screen.roomId = idPrefix ? (idPrefix->ends_with('/') ? idPrefix->substr(0, idPrefix->size() - 1) : *idPrefix)
+                                     : description.name;
             screen.material = scene::MaterialHandle{handle};
             const std::span<const glm::mat4> transforms = object.instanceTransforms();
             screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
@@ -129,11 +194,11 @@ std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& descript
 struct ScreenService::Impl {
     Impl(HeroScreen heroScreen, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
          ScreenServiceOptions serviceOptions)
-        : screen(std::move(heroScreen)), lastScreenId(screen->objectId), materials(registry), policy(std::move(games)),
-          options(serviceOptions),
+        : screen(std::move(heroScreen)), lastScreenId(screen->objectId), materials(registry),
+          policy(std::move(games), heroPlaySettings(serviceOptions, screen->roomId)), options(serviceOptions),
           pool(core::WorkerPoolOptions{
               .threads = 1, .capacity = 8, .belowNormalPriority = true, .name = "rv-screen-stills"}),
-          stillSlot(std::make_shared<StillSlot>()) {}
+          stillSlot(std::make_shared<StillSlot>()), cardFonts(std::make_shared<CardFonts>()) {}
 
     /// The screen bound (none between unbind() and bind()), and the last one's id (the record's at the end).
     std::optional<HeroScreen> screen;
@@ -170,12 +235,21 @@ struct ScreenService::Impl {
     bool stillLoading = false;
     std::optional<ScreenPicture> loadingPicture;
     gl::Texture2D still;
+    /// The previous target's still, kept on the screen while the new target's picture is not ready (I5 step 1).
+    gl::Texture2D heldStill;
+    std::shared_ptr<CardFonts> cardFonts;
 
     // What the material shows and the generation the screen follows.
     GLuint appliedOverride = 0;
     ScreenPicture shownPicture = ScreenPicture::IdlePattern;
+    /// The game whose picture is shown (the previous target's while it is held).
+    std::string shownGame;
+    /// Explicit playlist ids already logged as unknown or without a clip (once per run).
+    std::set<std::string, std::less<>> loggedPlaylistIds;
     std::uint64_t followedGeneration = 0;
     bool followed = false;
+    /// The previous picture held while the target's is awaited.
+    PictureHold held;
     bool reopenPending = false;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
@@ -337,6 +411,7 @@ struct ScreenService::Impl {
                 clipDuration = info->durationSeconds;
             }
             policy.videoShowing();
+            policy.clipDuration(clipDuration);
             spdlog::info("Hero CRT: the first frame of game {}'s video after {:.1f} ms", policy.targetId(),
                          *firstFrameMs);
         }
@@ -398,13 +473,18 @@ struct ScreenService::Impl {
         if (!wanted) {
             return;
         }
-        const std::filesystem::path path = *mediaPath(policy.targetMedia(), *wanted);
+        const std::filesystem::path* file = mediaPath(policy.targetMedia(), *wanted);
+        const std::filesystem::path path = file != nullptr ? *file : std::filesystem::path();
+        const bool card = *wanted == ScreenPicture::TitleCard;
         const std::uint64_t token = ++stillToken;
         const std::string context = fmt::format("{} of game {}", toString(*wanted), policy.targetId());
-        auto job = [slot = stillSlot, token, path, context](const core::JobContext& job) {
+        auto job = [slot = stillSlot, token, path, context, card, fonts = cardFonts, assetRoot = options.assetRoot,
+                    title = policy.targetCard()](const core::JobContext& job) {
             StillResult result{token, assets::ImageData{}};
             if (job.cancelled()) {
                 result.picture = makeError(ErrorCode::Cancelled, "cancelled", context);
+            } else if (card) {
+                result.picture = drawCard(*fonts, assetRoot, title); // the chain's end (ADR-0016 §8)
             } else {
                 result.picture = loadStill(path, context);
             }
@@ -478,8 +558,10 @@ struct ScreenService::Impl {
 
     // --- the screen ----------------------------------------------------------------------------------------------
 
-    /// A new target: the previous clip stops, its still goes, the new one's first still loads.
-    void followTarget() {
+    /// A new target: the previous clip stops, the new one's first still loads; the picture shown stays up until the
+    /// new one's is ready (its still, or its first frame into the video texture, which holds the previous clip's last
+    /// frame meanwhile).
+    void followTarget(double nowSeconds) {
         if (followed && policy.targetGeneration() == followedGeneration) {
             return;
         }
@@ -487,33 +569,66 @@ struct ScreenService::Impl {
         followedGeneration = policy.targetGeneration();
         if (!policy.targetId().empty()) {
             ++counters.targets;
+            if (counters.played.size() < kMaxTimelineEntries) {
+                counters.played.push_back(
+                    VideoPlayedRecord{nowSeconds, policy.targetId(), std::string(toString(policy.origin()))});
+            }
         }
         stopPlayback();
         pool.cancel(stillJobs);
         ++stillToken; // a result of the previous target is dropped
         stillLoading = false;
         loadingPicture.reset();
+        if (still.valid() && appliedOverride == still.id()) {
+            heldStill = std::move(still); // on the screen until the new target's picture is ready
+        }
         still = gl::Texture2D();
         if (policy.targetId().empty()) {
             spdlog::info("Hero CRT: no game to show, the idle pattern");
         } else {
             spdlog::info("Hero CRT: game {} ({})", policy.targetId(),
-                         policy.selected() ? "selected" : "the start choice");
+                         policy.origin() == ScreenOrigin::Selection ? "selected"
+                         : policy.origin() == ScreenOrigin::Playlist
+                             ? fmt::format("the {} playlist's", toString(policy.playlist().mode()))
+                             : std::string("the start choice"));
             if (!policy.targetMedia().video.empty() && !isPlayableVideoFile(policy.targetMedia().video)) {
                 addFallback(ScreenPicture::Video, "not-playable");
             }
         }
     }
 
-    void applyPicture() {
+    void applyPicture(double nowSeconds) {
         const ScreenPicture picture = policy.picture();
+        if (!screen) {
+            return;
+        }
+        if (picture == ScreenPicture::IdlePattern && !policy.targetId().empty()) {
+            // Between two games the previous picture stays while the new one can still come, at most
+            // kMaxHeldPictureSeconds; then (or when nothing can come) the screen's own pattern.
+            const bool arriving = policy.wantsDecoder() || policy.wantedStill().has_value();
+            const double wallSeconds = std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
+            if (appliedOverride != 0 && held.hold(arriving, nowSeconds, wallSeconds)) {
+                ++counters.heldFrames;
+                return;
+            }
+            ++counters.idleFramesWithGame; // nothing shown yet since the screen was bound, or the hold ran out
+        } else {
+            held.reset();
+        }
         GLuint texture = 0;
         if (picture == ScreenPicture::Video) {
             texture = videoTexture.textureId();
         } else if (picture != ScreenPicture::IdlePattern) {
             texture = still.id();
         }
-        if (!screen || (texture == appliedOverride && picture == shownPicture)) {
+        if (picture != shownPicture || policy.targetId() != shownGame) {
+            if (counters.shown.size() < kMaxTimelineEntries) {
+                counters.shown.push_back(VideoShownRecord{nowSeconds, policy.targetId(), std::string(toString(picture))});
+            }
+            shownGame = policy.targetId();
+        }
+        if (texture == appliedOverride && picture == shownPicture) {
+            releaseHeldStill();
             return;
         }
         if (auto set = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, texture);
@@ -527,6 +642,36 @@ struct ScreenService::Impl {
         }
         appliedOverride = texture;
         shownPicture = picture;
+        releaseHeldStill();
+    }
+
+    /// The held still goes once the screen no longer shows it.
+    void releaseHeldStill() {
+        if (heldStill.valid() && heldStill.id() != appliedOverride) {
+            heldStill = gl::Texture2D();
+        }
+    }
+
+    /// Logs the playlist the screen plays, and the explicit ids it skips (each once in the run).
+    void logPlaylist() {
+        const Playlist& playlist = policy.playlist();
+        spdlog::info("Hero CRT: the {} playlist of {} ({} game(s) with a clip), {:g} s a game{}",
+                     toString(playlist.mode()), policy.settings().playlist.roomId, playlist.size(),
+                     policy.settings().previewSeconds, policy.settings().autoplay ? "" : " (autoplay off)");
+        for (const std::string& id : playlist.unknownIds()) {
+            if (loggedPlaylistIds.insert(id).second) {
+                spdlog::warn("Hero CRT: video.json's explicit playlist of {} names {}, which the room does not have: "
+                             "skipped",
+                             policy.settings().playlist.roomId, id);
+            }
+        }
+        for (const std::string& id : playlist.unplayableIds()) {
+            if (loggedPlaylistIds.insert(id).second) {
+                spdlog::warn("Hero CRT: video.json's explicit playlist of {} names {}, which has no clip to play: "
+                             "skipped",
+                             policy.settings().playlist.roomId, id);
+            }
+        }
     }
 
     void update(double nowSeconds, const scene::Camera& camera, std::optional<std::string_view> hovered) {
@@ -540,9 +685,10 @@ struct ScreenService::Impl {
             return;
         }
         policy.hover(hovered, nowSeconds);
-        followTarget();
         const bool visible = camera.frustum().intersects(screen->bounds);
         policy.setVisible(visible);
+        policy.tick(nowSeconds);
+        followTarget(nowSeconds);
         reapDraining();
         if (policy.wantsDecoder() && !playback) {
             openDecoder(nowSeconds);
@@ -551,7 +697,7 @@ struct ScreenService::Impl {
             updatePlayback(nowSeconds);
         }
         updateStills();
-        applyPicture();
+        applyPicture(nowSeconds);
         counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
     }
 
@@ -612,6 +758,9 @@ struct ScreenService::Impl {
         stillLoading = false;
         loadingPicture.reset();
         still = gl::Texture2D();
+        heldStill = gl::Texture2D();
+        held.reset();
+        shownGame.clear();
         if (clearOverride && screen && appliedOverride != 0) {
             if (auto cleared = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, 0);
                 !cleared) {
@@ -636,7 +785,8 @@ struct ScreenService::Impl {
         }
         screen = std::move(next);
         lastScreenId = screen->objectId;
-        policy.restart(std::move(games));
+        policy.restart(std::move(games), heroPlaySettings(options, screen->roomId));
+        logPlaylist();
         followed = false; // the new target is followed at the next update
         reapDraining();
         VideoBindRecord record;
@@ -679,6 +829,7 @@ ScreenService::ScreenService(HeroScreen screen, gl::MaterialRegistry& materials,
                  m_impl->policy.games().size(),
                  options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *options.freezePtsSeconds)
                                           : std::string());
+    m_impl->logPlaylist();
 }
 
 ScreenService::~ScreenService() {
@@ -749,7 +900,13 @@ void ScreenService::record(VideoRecord& record) const {
     record.lastPtsSeconds = s.lastPts;
     record.clipUploadSeconds = s.firstUploadAt ? s.lastUploadAt - *s.firstUploadAt : 0.0;
     record.videoBytes = s.videoTexture.valid() ? s.videoTexture.gpuBytes() : 0;
-    record.stillBytes = s.still.valid() ? s.still.estimatedBytes() : 0;
+    record.stillBytes = (s.still.valid() ? s.still.estimatedBytes() : 0) +
+                        (s.heldStill.valid() ? s.heldStill.estimatedBytes() : 0);
+    record.playlistMode = std::string(toString(s.policy.playlist().mode()));
+    record.playlistRoom = s.policy.settings().playlist.roomId;
+    record.previewSeconds = s.policy.settings().previewSeconds;
+    record.playlistOrder = s.policy.playlist().order();
+    record.origin = std::string(toString(s.policy.origin()));
 }
 
 std::vector<std::string> ScreenService::statusLines() const {
@@ -767,6 +924,10 @@ std::vector<std::string> ScreenService::statusLines() const {
     if (s.lastPts) {
         lines.push_back(fmt::format("Clip time: {:.3f} s", *s.lastPts));
     }
+    lines.push_back(fmt::format("Playlist: {} of {} ({} game(s), cycle {}), {} ({:.1f} s played)",
+                                toString(s.policy.playlist().mode()), s.policy.settings().playlist.roomId,
+                                s.policy.playlist().size(), s.policy.playlist().cycle(), toString(s.policy.origin()),
+                                s.policy.targetSeconds()));
     lines.push_back(
         fmt::format("Fallbacks: {}; launches: {}", s.counters.fallbacks.size(), s.counters.launches.size()));
     return lines;
