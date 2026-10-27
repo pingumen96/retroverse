@@ -16,7 +16,9 @@
 #include <rv/core/text.hpp>
 #include <rv/core/time.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/world_snapshots.hpp>
 
 #include "data_reader.hpp"
 
@@ -107,6 +109,8 @@ WorldFiles WorldFiles::in(const std::filesystem::path& folder) {
     files.overrides = folder / std::filesystem::path(kOverridesFileName);
     files.backups = folder / std::filesystem::path(kPlanBackupsFolderName);
     files.lock = folder / std::filesystem::path(kWorldLockFileName);
+    files.snapshots = files.backups / std::filesystem::path(kSnapshotsFolderName);
+    files.transaction = folder / std::filesystem::path(kTransactionFileName);
     return files;
 }
 
@@ -155,15 +159,38 @@ Expected<WorldLock> WorldLock::acquire(const WorldFiles& files, std::chrono::mil
     for (std::filesystem::path& path : removeTemporaryFiles(files.backups)) {
         lock.m_removed.push_back(std::move(path));
     }
+    // A snapshot's record is rewritten in place when an undo marks it (world_snapshots.hpp).
+    std::vector<std::filesystem::path> snapshotFolders;
+    std::filesystem::directory_iterator snapshots(files.snapshots, error);
+    for (; !error && snapshots != std::filesystem::directory_iterator(); snapshots.increment(error)) {
+        std::error_code kind;
+        if (snapshots->is_directory(kind)) {
+            snapshotFolders.push_back(snapshots->path());
+        }
+    }
+    error.clear();
+    std::sort(snapshotFolders.begin(), snapshotFolders.end());
+    for (const std::filesystem::path& folder : snapshotFolders) {
+        for (std::filesystem::path& path : removeTemporaryFiles(folder)) {
+            lock.m_removed.push_back(std::move(path));
+        }
+    }
     if (!lock.m_removed.empty()) {
         spdlog::info("World store: removed {} temporary file(s) of an interrupted write", lock.m_removed.size());
     }
+    // An explicit action interrupted between its two writes: its snapshot restored, so that the plan and the overrides
+    // agree before anyone writes again.
+    auto recovered = detail::recoverInterruptedAction(files);
+    if (!recovered) {
+        return propagate(recovered.error());
+    }
+    lock.m_rolledBack = std::move(*recovered);
     return lock;
 }
 
 WorldLock::WorldLock(WorldLock&& other) noexcept
     : m_handle(std::exchange(other.m_handle, nullptr)), m_files(std::move(other.m_files)),
-      m_removed(std::move(other.m_removed)) {}
+      m_removed(std::move(other.m_removed)), m_rolledBack(std::move(other.m_rolledBack)) {}
 
 WorldLock& WorldLock::operator=(WorldLock&& other) noexcept {
     if (this != &other) {
@@ -171,6 +198,7 @@ WorldLock& WorldLock::operator=(WorldLock&& other) noexcept {
         m_handle = std::exchange(other.m_handle, nullptr);
         m_files = std::move(other.m_files);
         m_removed = std::move(other.m_removed);
+        m_rolledBack = std::move(other.m_rolledBack);
     }
     return *this;
 }
@@ -332,6 +360,34 @@ Expected<SaveReport> savePlan(const WorldLock& lock, const GenerationResult& res
         spdlog::warn("World store: the plan was saved, its meta sidecar not: {}", written.error().toString());
         report.metaError = written.error();
     }
+    return report;
+}
+
+Expected<OverridesSaveReport> saveOverrides(const WorldLock& lock, const WorldOverrides& overrides) {
+    const WorldFiles& files = lock.files();
+    if (!lock.held()) {
+        return makeError(ErrorCode::InvalidArgument, "the world lock is not held (moved from)", "saveOverrides");
+    }
+    auto text = writeOverrides(overrides);
+    if (!text) {
+        return propagate(text.error());
+    }
+    OverridesSaveReport report;
+    auto existing = core::readTextFile(files.overrides);
+    if (!existing && existing.error().code != ErrorCode::NotFound) {
+        return propagate(existing.error());
+    }
+    if (!existing && overrides.empty()) {
+        return report; // a world without overrides keeps no file
+    }
+    report.digest = core::sha256Hex(*text);
+    if (existing && *existing == *text) {
+        return report;
+    }
+    if (Status written = core::writeTextFileAtomic(files.overrides, *text); !written) {
+        return propagate(written.error());
+    }
+    report.written = true;
     return report;
 }
 

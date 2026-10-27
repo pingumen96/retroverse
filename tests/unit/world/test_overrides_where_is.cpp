@@ -1,9 +1,10 @@
-// overrides.json (rv/world/overrides.hpp: pins read, never written, checked against a plan) and where-is
-// (rv/world/where_is.hpp: the plan's index), I3 step 9.
+// overrides.json (rv/world/overrides.hpp: pins read and checked against a plan, I3 step 9; schema 2 written, schema 1
+// lifted, I4b step 1) and where-is (rv/world/where_is.hpp: the plan's index), I3 step 9.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -97,7 +98,7 @@ TEST_CASE("world/overrides: pins read from overrides.json", "[world][overrides]"
         CHECK(error.error().context == "overrides.json:" + std::to_string(test.line));
     }
     // A newer schema: written by a newer Retroverse.
-    const auto newer = rv::world::parseOverrides(R"({"schemaVersion": 2, "whatever": true})", "overrides.json");
+    const auto newer = rv::world::parseOverrides(R"({"schemaVersion": 3, "whatever": true})", "overrides.json");
     REQUIRE_FALSE(newer.has_value());
     CHECK(newer.error().code == rv::ErrorCode::Unsupported);
 
@@ -155,6 +156,174 @@ TEST_CASE("world/overrides: pins measured against a plan", "[world][overrides]")
         broken += finding.rule == rv::world::rule::kPinBroken ? 1 : 0;
     }
     CHECK(broken == 4);
+}
+
+TEST_CASE("world/overrides: schema 2 written and read back, schema 1 lifted", "[world][overrides]") {
+    using rv::world::FixtureTransform;
+    using rv::world::PinOrigin;
+    using rv::world::PinProvenance;
+    WorldOverrides overrides;
+    overrides.gamePins = {
+        {game("g00000000000000b2"), slot("room:snes/fx:w01/s:3.12"), {PinOrigin::Editor, "2026-10-27T10:00:00.000Z"}},
+        {game("g00000000000000a1"), slot("room:snes/fx:dc01/s:0.0"), {PinOrigin::File, ""}},
+    };
+    overrides.fixturePins = {
+        {fixture("room:snes/fx:w05"), rv::world::PrefabRef{"decor.poster.generic", "poster_frame"},
+         FixtureTransform{1200, -300, 9000}, {PinOrigin::Cli, "2026-10-27T11:30:00.250Z"}},
+        {fixture("room:snes/fx:hero.crt"), std::nullopt, std::nullopt, {}},
+    };
+    const auto text = rv::world::writeOverrides(overrides);
+    REQUIRE(text.has_value());
+    // The canonical text: keys sorted, pins sorted by game and by fixture, a time, a prefab and a transform only when
+    // set.
+    CHECK(*text == R"({
+  "fixturePins": [
+    {
+      "fixture": "room:snes/fx:hero.crt",
+      "provenance": {
+        "origin": "file"
+      }
+    },
+    {
+      "fixture": "room:snes/fx:w05",
+      "prefab": {
+        "kind": "poster_frame",
+        "manifest": "decor.poster.generic"
+      },
+      "provenance": {
+        "origin": "cli",
+        "time": "2026-10-27T11:30:00.250Z"
+      },
+      "transform": {
+        "xMm": 1200,
+        "yawCdeg": 9000,
+        "zMm": -300
+      }
+    }
+  ],
+  "gamePins": [
+    {
+      "game": "g00000000000000a1",
+      "provenance": {
+        "origin": "file"
+      },
+      "slot": "room:snes/fx:dc01/s:0.0"
+    },
+    {
+      "game": "g00000000000000b2",
+      "provenance": {
+        "origin": "editor",
+        "time": "2026-10-27T10:00:00.000Z"
+      },
+      "slot": "room:snes/fx:w01/s:3.12"
+    }
+  ],
+  "schemaVersion": 2
+}
+)");
+    // Round trips: the overrides back (sorted), and their text again.
+    const auto read = rv::world::parseOverrides(*text, "overrides.json");
+    REQUIRE(read.has_value());
+    WorldOverrides sorted = overrides;
+    std::swap(sorted.gamePins[0], sorted.gamePins[1]);
+    std::swap(sorted.fixturePins[0], sorted.fixturePins[1]);
+    CHECK(*read == sorted);
+    CHECK(rv::world::writeOverrides(*read) == *text);
+    CHECK(rv::world::writeOverrides(WorldOverrides{}) ==
+          std::string("{\n  \"fixturePins\": [],\n  \"gamePins\": [],\n  \"schemaVersion\": 2\n}\n"));
+
+    // Schema 1 lifted: every pin of origin file, no time, no transform; written again as schema 2.
+    const auto lifted = rv::world::parseOverrides(R"({"schemaVersion": 1,
+        "gamePins": [{"game": "g00000000000000a1", "slot": "room:snes/fx:dc01/s:0.0"}],
+        "fixturePins": [{"fixture": "room:snes/fx:w05",
+                         "prefab": {"manifest": "decor.poster.generic", "kind": "poster_frame"}}]})",
+                                                  "overrides.json");
+    REQUIRE(lifted.has_value());
+    REQUIRE(lifted->gamePins.size() == 1);
+    CHECK(lifted->gamePins[0].provenance == PinProvenance{PinOrigin::File, ""});
+    REQUIRE(lifted->fixturePins.size() == 1);
+    CHECK_FALSE(lifted->fixturePins[0].transform.has_value());
+    CHECK(lifted->fixturePins[0].provenance == PinProvenance{});
+    const auto liftedText = rv::world::writeOverrides(*lifted);
+    REQUIRE(liftedText.has_value());
+    CHECK(liftedText->find("\"schemaVersion\": 2") != std::string::npos);
+    CHECK(rv::world::parseOverrides(*liftedText, "o") == *lifted);
+    // A hand-written schema-2 pin without provenance: origin file.
+    const auto hand = rv::world::parseOverrides(
+        R"({"schemaVersion": 2, "gamePins": [{"game": "g00000000000000a1", "slot": "room:snes/fx:dc01/s:0.0"}]})", "o");
+    REQUIRE(hand.has_value());
+    CHECK(hand->gamePins[0].provenance == PinProvenance{});
+
+    struct Case {
+        std::string_view text;
+        std::string_view message;
+    };
+    const std::vector<Case> refused{
+        // Schema 2's keys in a schema-1 file.
+        {R"({"schemaVersion": 1, "gamePins": [{"game": "g00000000000000a1", "slot": "room:snes/fx:w01/s:0.0",
+             "provenance": {"origin": "cli"}}]})",
+         "/gamePins/0/provenance"},
+        {R"({"schemaVersion": 1, "fixturePins": [{"fixture": "room:snes/fx:w05",
+             "transform": {"xMm": 0, "zMm": 0, "yawCdeg": 0}}]})",
+         "/fixturePins/0/transform"},
+        {R"({"schemaVersion": 2, "gamePins": [{"game": "g00000000000000a1", "slot": "room:snes/fx:w01/s:0.0",
+             "provenance": {"origin": "someone"}}]})",
+         "one of editor, cli, file"},
+        {R"({"schemaVersion": 2, "gamePins": [{"game": "g00000000000000a1", "slot": "room:snes/fx:w01/s:0.0",
+             "provenance": {"origin": "cli", "time": "yesterday"}}]})",
+         "a UTC time"},
+        {R"({"schemaVersion": 2, "fixturePins": [{"fixture": "room:snes/fx:w05",
+             "transform": {"xMm": 0, "zMm": 0, "yawCdeg": 36000}}]})",
+         "/fixturePins/0/transform/yawCdeg"},
+        {R"({"schemaVersion": 2, "fixturePins": [{"fixture": "room:snes/fx:w05",
+             "transform": {"xMm": 0, "zMm": 0}}]})",
+         "yawCdeg"},
+        {R"({"schemaVersion": 0})", "schemaVersion"},
+    };
+    for (const Case& test : refused) {
+        INFO(test.text);
+        const auto error = rv::world::parseOverrides(test.text, "overrides.json");
+        REQUIRE_FALSE(error.has_value());
+        CHECK(error.error().code == rv::ErrorCode::ValidationFailed);
+        CHECK_THAT(error.error().message, ContainsSubstring(std::string(test.message)));
+    }
+    // Overrides the reader would refuse are never written.
+    WorldOverrides twice;
+    twice.gamePins = {{game("g00000000000000a1"), slot("room:snes/fx:w01/s:0.0")},
+                      {game("g00000000000000a1"), slot("room:snes/fx:w01/s:0.1")}};
+    CHECK(rv::world::writeOverrides(twice).error().code == rv::ErrorCode::InvalidArgument);
+    WorldOverrides badTime;
+    badTime.gamePins = {{game("g00000000000000a1"), slot("room:snes/fx:w01/s:0.0"), {PinOrigin::Cli, "now"}}};
+    CHECK(rv::world::writeOverrides(badTime).error().code == rv::ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("world/overrides: a fixture pinned at a transform is honoured where it stands", "[world][overrides]") {
+    const rv::world::WorldPlan plan = rv::test::world::generateRoom(890, 4242, 102938).plan;
+    const rv::world::Fixture& poster = *std::find_if(plan.fixtures.begin(), plan.fixtures.end(), [](const auto& f) {
+        return f.role == rv::world::FixtureRole::Decoration;
+    });
+    WorldOverrides overrides;
+    overrides.fixturePins = {
+        {poster.id, std::nullopt, rv::world::FixtureTransform{poster.xMm, poster.zMm, poster.yawCdeg}}};
+    const std::vector<rv::world::RoomTemplate> templates{rv::test::world::snesData().roomTemplate};
+    rv::world::PinCheck check = rv::world::checkPins(plan, templates, overrides);
+    CHECK(check.unhonoured.empty());
+    CHECK(check.honouredOrOrphaned.fixturePins.size() == 1);
+    rv::world::ValidationContext context;
+    context.templates = templates;
+    context.fixturePins = overrides.fixturePins;
+    CHECK(rv::world::validatePlan(plan, context).passed());
+
+    // Elsewhere: not honoured (the update never moves it there), and the validation says so.
+    overrides.fixturePins[0].transform->xMm += 100;
+    check = rv::world::checkPins(plan, templates, overrides);
+    REQUIRE(check.unhonoured.size() == 1);
+    CHECK_THAT(check.unhonoured[0], ContainsSubstring(" pinned at x " + std::to_string(poster.xMm + 100) + " z "));
+    context.fixturePins = overrides.fixturePins;
+    const rv::world::ValidationReport report = rv::world::validatePlan(plan, context);
+    CHECK(std::any_of(report.findings.begin(), report.findings.end(), [](const rv::world::ValidationFinding& finding) {
+        return finding.rule == rv::world::rule::kPinBroken;
+    }));
 }
 
 TEST_CASE("world/where-is: the plan's index answers placed and unplaced games", "[world][where_is]") {

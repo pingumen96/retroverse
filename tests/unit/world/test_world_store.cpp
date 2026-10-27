@@ -71,6 +71,8 @@ TEST_CASE("world/store: the folder of a library's world", "[world][store]") {
     CHECK(files.overrides == files.folder / "overrides.json");
     CHECK(files.backups == files.folder / "backups");
     CHECK(files.lock == files.folder / "world.lock");
+    CHECK(files.snapshots == files.folder / "backups" / "snapshots");
+    CHECK(files.transaction == files.folder / "transaction.json");
 }
 
 TEST_CASE("world/store: a plan saved, replaced after a backup, and not written again unchanged", "[world][store]") {

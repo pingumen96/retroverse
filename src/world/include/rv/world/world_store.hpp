@@ -5,13 +5,18 @@
 //   world-plan.meta.json  what is not canonical: when, by which program and how fast the plan was written, and its
 //                         change report's summary (formatted JSON, never hashed, never read to decide anything)
 //   backups/              the last kPlanBackupsKept plans before each write, named by UTC time (core::backUpFile)
-//   overrides.json        the pins (overrides.hpp), read and never written
+//   backups/snapshots/    the paired snapshots of the plan and the overrides before each explicit action (I4b step 1,
+//                         ADR-0015 §6: world_snapshots.hpp)
+//   overrides.json        the pins (overrides.hpp), written by saveOverrides() since I4b step 1
+//   transaction.json      the journal of an explicit action in progress (world_snapshots.hpp)
 //   world.lock            the world lock: an empty file locked exclusively (LockFileEx) by whoever writes the folder
 // The app and retroverse-cli both take the world lock before writing anything there, so that two writers never
 // interleave a backup and a write; reading needs no lock (every write is an atomic rename: a reader sees the previous
 // file or the new one, whole). The operating system releases the lock of a process that ends, a crash included, and
-// the next holder removes the temporary files a crashed write left behind. Callers run the data-directory guard
-// (core::checkUserDataDirectory, ADR-0008) before the first write under <user data>; retroverse-cli's dispatcher does.
+// the next holder removes the temporary files a crashed write left behind and, when a journal is there, rolls the
+// interrupted action back (world_snapshots.hpp: the plan and the overrides never disagree). Callers run the
+// data-directory guard (core::checkUserDataDirectory, ADR-0008) before the first write under <user data>;
+// retroverse-cli's dispatcher does.
 
 #include <chrono>
 #include <cstddef>
@@ -36,6 +41,8 @@ inline constexpr std::string_view kPlanMetaFileName = "world-plan.meta.json";
 inline constexpr std::string_view kOverridesFileName = "overrides.json";
 inline constexpr std::string_view kPlanBackupsFolderName = "backups";
 inline constexpr std::string_view kWorldLockFileName = "world.lock";
+inline constexpr std::string_view kSnapshotsFolderName = "snapshots";
+inline constexpr std::string_view kTransactionFileName = "transaction.json";
 /// The plans kept in backups/ (ADR-0010 §9), the newest.
 inline constexpr std::size_t kPlanBackupsKept = 10;
 /// How long a writer waits for the world lock by default.
@@ -51,6 +58,9 @@ struct WorldFiles {
     std::filesystem::path overrides;
     std::filesystem::path backups;
     std::filesystem::path lock;
+    /// backups/snapshots/ and the journal (world_snapshots.hpp).
+    std::filesystem::path snapshots;
+    std::filesystem::path transaction;
 
     /// The files of the world kept in `folder`.
     [[nodiscard]] static WorldFiles in(const std::filesystem::path& folder);
@@ -66,9 +76,12 @@ class WorldLock {
 public:
     /// Creates the world folder and the lock file when missing and locks the file exclusively, trying again until
     /// `wait` has passed while another holder (another process, or another WorldLock of this one) keeps it; then
-    /// removes the temporary files that an interrupted write left in the folder and in backups/
-    /// ("<name>.tmp-<pid>-<n>", core::writeFileAtomic). Errors: Conflict when the lock is still held after `wait`; IoError or Unavailable when
-    /// the folder or the lock file cannot be created or opened.
+    /// removes the temporary files that an interrupted write left in the folder, in backups/ and in the snapshots
+    /// ("<name>.tmp-<pid>-<n>", core::writeFileAtomic) and the snapshots an interrupted action left half made, and
+    /// rolls back the explicit action a journal names (world_snapshots.hpp: its snapshot restored, logged). Errors:
+    /// Conflict when the lock is still held after `wait`; IoError or Unavailable when the folder or the lock file
+    /// cannot be created or opened; those of the rollback (a journal or its snapshot unreadable: nothing is written
+    /// into the world until it is repaired).
     [[nodiscard]] static Expected<WorldLock> acquire(const WorldFiles& files,
                                                      std::chrono::milliseconds wait = kWorldLockWait);
 
@@ -84,6 +97,8 @@ public:
     [[nodiscard]] bool held() const noexcept { return m_handle != nullptr; }
     /// The temporary files of interrupted writes removed when the lock was taken.
     [[nodiscard]] const std::vector<std::filesystem::path>& staleFilesRemoved() const noexcept { return m_removed; }
+    /// The snapshot (its folder's name) restored when the lock was taken, the rollback of an interrupted action.
+    [[nodiscard]] const std::optional<std::string>& rolledBack() const noexcept { return m_rolledBack; }
 
 private:
     WorldLock(void* handle, WorldFiles files) noexcept : m_handle(handle), m_files(std::move(files)) {}
@@ -92,6 +107,7 @@ private:
     void* m_handle = nullptr; ///< a Win32 HANDLE; null once moved from
     WorldFiles m_files;
     std::vector<std::filesystem::path> m_removed;
+    std::optional<std::string> m_rolledBack;
 };
 
 /// A plan read from its file, with the SHA-256 of the file's bytes (its digest).
@@ -170,5 +186,20 @@ struct SaveReport {
 /// writePlan(), of the backup and of the plan's write.
 [[nodiscard]] Expected<SaveReport> savePlan(const WorldLock& lock, const GenerationResult& result,
                                             const SaveOptions& options = {});
+
+/// What saveOverrides() did.
+struct OverridesSaveReport {
+    /// False when the folder held that text already, or held no file and the overrides are empty: nothing written.
+    bool written = false;
+    /// The SHA-256 of the text saved; empty when no file is there (nothing written, no pin).
+    std::string digest;
+};
+
+/// Saves `overrides` as the world's overrides.json, under `lock` (the folder's): writeOverrides()'s text written
+/// atomically, unless the file holds it already, or there is no file and no pin (a world without overrides keeps no
+/// file). An explicit action saves the overrides and the plan together through commitWorld() (world_snapshots.hpp),
+/// which calls this. Errors: InvalidArgument for a lock moved from and for overrides writeOverrides() refuses; those of
+/// reading the file there and of the write.
+[[nodiscard]] Expected<OverridesSaveReport> saveOverrides(const WorldLock& lock, const WorldOverrides& overrides);
 
 } // namespace rv::world
