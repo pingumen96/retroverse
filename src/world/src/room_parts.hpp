@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <vector>
 #include <string>
 
 #include <glm/glm.hpp>
@@ -53,8 +54,16 @@ struct RiserCard {
 };
 
 /// The riser card of `dressed` on `fixture`, when its prefab is a display case whose level holds the span's slots and
-/// the span is at least 6 cm wide; nothing otherwise.
+/// the span is at least 6 cm wide; nothing otherwise. A counter of handhelds (the display case's "counter", I6 step 6's
+/// review), or any display case of a pack asking for it ("roomDressing" "cardPerSlot"), has a card in each slot of the
+/// span instead, as large as the slot's item less 3 mm at each side, so that no cover is stretched across a level
+/// (riserCards()).
 [[nodiscard]] std::optional<RiserCard> riserCard(const Fixture& fixture, const ScenePrefab& fixturePrefab,
                                                  const DressedLevel& dressed);
+
+/// The riser cards of `dressed` on `fixture`: riserCard()'s one card, or a card per slot (in the slots' order) on a
+/// counter or with `perSlot`; empty when there is none.
+[[nodiscard]] std::vector<RiserCard> riserCards(const Fixture& fixture, const ScenePrefab& fixturePrefab,
+                                                const DressedLevel& dressed, bool perSlot = false);
 
 } // namespace rv::world::detail

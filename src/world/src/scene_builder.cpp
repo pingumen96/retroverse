@@ -11,6 +11,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include <fmt/format.h>
@@ -123,9 +124,12 @@ json themeTextures(std::string_view kind, bool sign, const PlatformManifest& pla
     if (kind == "arcade_cabinet") {
         // I6 step 6: each cabinet's marquee a lit panel with a generic word (the odd cabinets' another), and an empty
         // cabinet's screen asking for a coin, dimly.
+        // Since the step's review, the row's side art (drawn where the pack names "side_art").
         return json{{"marquee", marqueeTexture(seed)},
                     {"marquee_alt", marqueeTexture(core::deriveSeed(seed, "marquee_alt"))},
-                    {"screen_back", json{{"pattern", "neon"}, {"title", "INSERT COIN"}}}};
+                    {"screen_back", json{{"pattern", "neon"}, {"title", "INSERT COIN"}}},
+                    {"side_art", json{{"pattern", "side_art"},
+                                      {"seed", core::Random(core::deriveSeed(seed, "side_art")).below(1000000)}}}};
     }
     return json::object();
 }
@@ -148,11 +152,25 @@ const Room* findRoom(const WorldPlan& plan, const RoomId& id) noexcept {
 }
 
 /// A pack that lights its shelves (I6 step 3, room_look.hpp: the "board_light" role) draws them lit inside, and so its
-/// showcases (I6 step 3b's review) and display cases (I6 step 6: the handheld archive's lit counters).
+/// showcases (I6 step 3b's review) and display cases (I6 step 6: the handheld archive's lit counters). Since I6 step
+/// 6's review, a pack naming "screen" for its showcases and display cases lights their handhelds' displays, and one
+/// naming "side_art" for its arcade cabinets prints their rows' outer sides.
 void lightInside(json& object, std::string_view generator, const std::map<std::string, std::string>& materials) {
+    if (!object["params"].is_object()) {
+        return;
+    }
     if ((generator == "shelf" || generator == "wall_shelf" || generator == "showcase" || generator == "display_case") &&
-        materials.contains("board_light") && object["params"].is_object()) {
+        materials.contains("board_light")) {
         object["params"]["boardLight"] = true;
+    }
+    if (generator == "showcase" && materials.contains("screen") && object["params"].value("item", "") == "handheld") {
+        object["params"]["litScreen"] = true;
+    }
+    if (generator == "display_case" && materials.contains("screen") && object["params"].value("counter", false)) {
+        object["params"]["litScreens"] = true;
+    }
+    if (generator == "arcade_cabinet" && materials.contains("side_art")) {
+        object["params"]["sideArt"] = true;
     }
 }
 
@@ -440,12 +458,21 @@ json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_vi
     lightInside(object, prefab.generator, materials);
     json textures = themeTextures(prefab.generator, heroPart == "sign", data.platform, drawn.seed);
     for (const auto& [role, pattern] : piece.piece.textures) {
-        textures[role] = patternTexture(pattern, drawn.seed);
+        // A numbered role ("cover_2": a showcase's second box, I6 step 6's review) takes a picture of its own.
+        const bool numbered =
+            role.size() > 2 && role[role.size() - 2] == '_' && role.back() >= '0' && role.back() <= '9';
+        textures[role] = patternTexture(pattern, numbered ? core::deriveSeed(drawn.seed, role) : drawn.seed);
     }
     if (!textures.empty()) {
         object["textures"] = std::move(textures);
     }
     if (prefab.generator == "poster_frame" || prefab.generator == "rug") {
+        object["castsShadows"] = false;
+    }
+    // The hero cabinet (I6 step 6) stands right under the key light: its marquee's hood and sides would print a jagged
+    // shadow across its leaning bezel (the step's review); its contact with the floor is the ambient occlusion's.
+    if (prefab.generator == "arcade_cabinet" && prefab.prefab &&
+        geometry::findSocket(prefab.prefab->sockets, "ScreenSurface") != nullptr) {
         object["castsShadows"] = false;
     }
     if (prefab.generator == "rug") {
@@ -565,6 +592,217 @@ json riserCardObject(std::string id, const detail::RiserCard& card, const SceneD
                 {"castsShadows", false},
                 {"collides", false}};
     return object;
+}
+
+/// How far a fixture's back may stand from a wall to count as standing against it (the pack's wall pictures).
+constexpr std::int64_t kAgainstWallMm = 200;
+/// The pack's wall pictures stand off their wall by this much, their frame this wide and deep.
+constexpr std::int64_t kWallPictureOffMm = 10;
+constexpr std::int64_t kWallPictureFrameMm = 25;
+constexpr std::int64_t kWallPictureDepthMm = 30;
+/// The cove strip: its depth from the wall and its height.
+constexpr std::int64_t kCoveDepthMm = 45;
+constexpr std::int64_t kCoveHeightMm = 30;
+/// The cove stops this far short of the room's corners; its washes stand this far off the wall, the lower one this
+/// tall.
+constexpr std::int64_t kCoveCornerMm = 150;
+constexpr std::int64_t kCoveWashOffMm = 4;
+constexpr std::int64_t kCoveWashBelowMm = 500;
+/// A spot's can: its radius and height, the gap under it to the light, its lens and its stem.
+constexpr std::int64_t kCanRadiusMm = 55;
+constexpr std::int64_t kCanHeightMm = 120;
+constexpr std::int64_t kCanGapMm = 15;
+constexpr std::int64_t kLensRadiusMm = 42;
+constexpr std::int64_t kLensHeightMm = 4;
+constexpr std::int64_t kStemRadiusMm = 8;
+/// The runner's thickness (a rug's is 12 mm).
+constexpr std::int64_t kRunnerThicknessMm = 8;
+
+/// A primitive of the pack's room dressing: no collision, no shadow.
+json dressingPrimitive(std::string id, std::string_view primitive, json params, json position, double yawDeg,
+                       const std::string& material) {
+    return json{{"id", std::move(id)},
+                {"primitive", std::string(primitive)},
+                {"params", std::move(params)},
+                {"position", std::move(position)},
+                {"rotationDeg", vec3Json(0.0, yawDeg, 0.0)},
+                {"material", material},
+                {"castsShadows", false},
+                {"collides", false}};
+}
+
+/// The pack's dressing of `room`'s upper walls, ceiling and floor (I6 step 6's review, room_look.hpp's
+/// "roomDressing"), in the room's frame: the cove strips, the pictures over the fixtures against a wall, the spots'
+/// cans, the sign's pictogram, the runner to the hero corner.
+void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data) {
+    const RoomDressing& dressing = data.theme.dressing;
+    if (const std::optional<CoveStrip>& cove = dressing.cove; cove && cove->yMm + kCoveHeightMm < room.heightMm) {
+        const std::int64_t length = room.maxZMm - room.minZMm - 2 * kCoveCornerMm;
+        const double centreZ = meters((room.minZMm + room.maxZMm) / 2);
+        const double y = meters(cove->yMm + kCoveHeightMm / 2);
+        const json size = vec3Json(meters(kCoveDepthMm), meters(kCoveHeightMm), meters(length));
+        objects.push_back(dressingPrimitive("dressing:cove-w", "box", json{{"size", size}},
+                                            vec3Json(meters(room.minXMm + kCoveDepthMm / 2), y, centreZ), 0.0,
+                                            cove->west));
+        objects.push_back(dressingPrimitive("dressing:cove-e", "box", json{{"size", size}},
+                                            vec3Json(meters(room.maxXMm - kCoveDepthMm / 2), y, centreZ), 0.0,
+                                            cove->east));
+        if (!cove->westWash.empty()) {
+            // Each strip's light on its wall: up to the ceiling (the picture turned over: brightest at the strip) and
+            // a shorter fall below it, a few millimetres off the wall, facing into the room.
+            const std::int64_t top = cove->yMm + kCoveHeightMm;
+            const std::int64_t above = room.heightMm - top;
+            const std::int64_t below = std::min<std::int64_t>(kCoveWashBelowMm, cove->yMm);
+            for (const auto& [suffix, x, yaw, material] :
+                 {std::tuple(std::string("w"), room.minXMm + kCoveWashOffMm, 90.0, cove->westWash),
+                  std::tuple(std::string("e"), room.maxXMm - kCoveWashOffMm, -90.0, cove->eastWash)}) {
+                objects.push_back(json{{"id", "dressing:cove-" + suffix + "/wash-up"},
+                                       {"primitive", "quad"},
+                                       {"params", json{{"size", json::array({meters(length), meters(above)})}}},
+                                       {"position", vec3Json(meters(x), meters(top + above / 2), centreZ)},
+                                       {"rotationDeg", vec3Json(0.0, yaw, 180.0)},
+                                       {"material", material},
+                                       {"castsShadows", false},
+                                       {"collides", false}});
+                objects.push_back(json{{"id", "dressing:cove-" + suffix + "/wash-down"},
+                                       {"primitive", "quad"},
+                                       {"params", json{{"size", json::array({meters(length), meters(below)})}}},
+                                       {"position", vec3Json(meters(x), meters(cove->yMm - below / 2), centreZ)},
+                                       {"rotationDeg", vec3Json(0.0, yaw, 0.0)},
+                                       {"material", material},
+                                       {"castsShadows", false},
+                                       {"collides", false}});
+            }
+        }
+    }
+    if (const std::optional<WallPictures>& pictures = dressing.pictures) {
+        for (const Fixture& fixture : plan.fixtures) {
+            if (fixture.id.room() != room.id) {
+                continue;
+            }
+            const bool byRole =
+                std::find(pictures->roles.begin(), pictures->roles.end(), fixture.role) != pictures->roles.end();
+            const bool byKind = fixture.role == FixtureRole::Decoration &&
+                                std::find(pictures->kinds.begin(), pictures->kinds.end(), fixture.prefab.kind) !=
+                                    pictures->kinds.end();
+            if (!byRole && !byKind) {
+                continue;
+            }
+            // Its back on a wall: the fixture's local -Z turned with it, half its depth from its pivot.
+            const auto [backX, backZ] = turned(0, -fixture.depthMm / 2, fixture.yawCdeg);
+            const std::int64_t x = fixture.xMm + backX;
+            const std::int64_t z = fixture.zMm + backZ;
+            std::int64_t wallX = x;
+            std::int64_t wallZ = z;
+            if (backX < 0 && x - room.minXMm <= kAgainstWallMm) {
+                wallX = room.minXMm + kWallPictureOffMm;
+            } else if (backX > 0 && room.maxXMm - x <= kAgainstWallMm) {
+                wallX = room.maxXMm - kWallPictureOffMm;
+            } else if (backZ < 0 && z - room.minZMm <= kAgainstWallMm) {
+                wallZ = room.minZMm + kWallPictureOffMm;
+            } else if (backZ > 0 && room.maxZMm - z <= kAgainstWallMm) {
+                wallZ = room.maxZMm - kWallPictureOffMm;
+            } else {
+                continue;
+            }
+            // Over the fixture, never into the ceiling.
+            const std::int64_t centre = std::max(pictures->centreYMm, fixture.yMm + fixture.heightMm + 80 +
+                                                                          pictures->heightMm / 2);
+            if (centre + pictures->heightMm / 2 > room.heightMm - 100) {
+                continue;
+            }
+            const std::uint64_t seed = core::deriveSeed(room.seed, "wall-picture", fixture.id.localText());
+            json object{{"id", "dressing:picture:" + fixture.id.localText()},
+                        {"prefab", "poster_frame"},
+                        {"params", json{{"width", meters(pictures->widthMm)},
+                                        {"height", meters(pictures->heightMm)},
+                                        {"frameWidth", meters(kWallPictureFrameMm)},
+                                        {"depth", meters(kWallPictureDepthMm)}}},
+                        {"position", pointJson(wallX, centre, wallZ)},
+                        {"rotationDeg", vec3Json(0.0, degrees(fixture.yawCdeg), 0.0)},
+                        {"materials", json{{"frame", pictures->frame}, {"picture", pictures->picture}}},
+                        {"textures", json{{"picture", patternTexture(pictures->pattern, seed)}}},
+                        {"castsShadows", false},
+                        {"collides", false}};
+            objects.push_back(std::move(object));
+        }
+    }
+    if (const std::optional<SpotCans>& cans = dressing.cans) {
+        for (const PlanLight& light : plan.lights) {
+            if (light.id.room() != room.id ||
+                std::find(cans->roles.begin(), cans->roles.end(), light.role) == cans->roles.end()) {
+                continue;
+            }
+            const std::int64_t bottom = light.yMm + kCanGapMm;
+            const std::int64_t top = bottom + kCanHeightMm;
+            if (top > room.heightMm) {
+                continue;
+            }
+            const std::string id = "dressing:can:" + light.id.localText();
+            objects.push_back(dressingPrimitive(
+                id, "cylinder",
+                json{{"radius", meters(kCanRadiusMm)}, {"height", meters(kCanHeightMm)}, {"segments", 20}},
+                pointJson(light.xMm, (bottom + top) / 2, light.zMm), 0.0, cans->body));
+            objects.push_back(dressingPrimitive(
+                id + "/lens", "cylinder",
+                json{{"radius", meters(kLensRadiusMm)}, {"height", meters(kLensHeightMm)}, {"segments", 20}},
+                pointJson(light.xMm, bottom - kLensHeightMm / 2, light.zMm), 0.0, cans->lens));
+            if (room.heightMm - top > 5) {
+                objects.push_back(dressingPrimitive(
+                    id + "/stem", "cylinder",
+                    json{{"radius", meters(kStemRadiusMm)}, {"height", meters(room.heightMm - top)}, {"segments", 8}},
+                    pointJson(light.xMm, (top + room.heightMm) / 2, light.zMm), 0.0, cans->body));
+            }
+        }
+    }
+    if (const std::optional<SignIcon>& icon = dressing.signIcon) {
+        // On the sign's right, on its wall at its height, a hand's width from it.
+        for (const Fixture& sign : plan.fixtures) {
+            if (sign.id.room() != room.id || sign.role != FixtureRole::HeroCorner || sign.id.part() != "sign") {
+                continue;
+            }
+            constexpr std::int64_t kIconGapMm = 100;
+            const auto [dx, dz] = turned(sign.widthMm / 2 + kIconGapMm + icon->widthMm / 2, 0, sign.yawCdeg);
+            const std::map<std::string, std::string> signMaterials = data.theme.materials("poster_frame", "sign");
+            const auto frame = signMaterials.find("frame");
+            objects.push_back(json{
+                {"id", "dressing:sign-icon"},
+                {"prefab", "poster_frame"},
+                {"params", json{{"width", meters(icon->widthMm)},
+                                {"height", meters(icon->heightMm)},
+                                {"frameWidth", 0.015},
+                                {"depth", 0.03}}},
+                {"position", pointJson(sign.xMm + dx, sign.yMm, sign.zMm + dz)},
+                {"rotationDeg", vec3Json(0.0, degrees(sign.yawCdeg), 0.0)},
+                {"materials", json{{"frame", frame != signMaterials.end() ? frame->second : icon->material},
+                                   {"picture", icon->material}}},
+                {"textures", json{{"picture", json{{"pattern", icon->pattern}}}}},
+                {"castsShadows", false},
+                {"collides", false}});
+            break;
+        }
+    }
+    if (const std::optional<HeroRunner>& runner = dressing.runner) {
+        // From the back edge of the hero corner's rug (the plan's part, under the hero) out into the room along it,
+        // centred on it; a little thinner than a rug, so that a rug drawn over it stays on top.
+        for (const Fixture& rug : plan.fixtures) {
+            if (rug.id.room() != room.id || rug.role != FixtureRole::HeroCorner || rug.id.part() != "rug") {
+                continue;
+            }
+            const auto [dx, dz] = turned(0, runner->lengthMm / 2 - rug.depthMm / 2, rug.yawCdeg);
+            objects.push_back(json{{"id", "dressing:runner"},
+                                   {"prefab", "rug"},
+                                   {"params", json{{"width", meters(runner->widthMm)},
+                                                   {"depth", meters(runner->lengthMm)},
+                                                   {"thickness", meters(kRunnerThicknessMm)}}},
+                                   {"position", pointJson(rug.xMm + dx, 0, rug.zMm + dz)},
+                                   {"rotationDeg", vec3Json(0.0, degrees(rug.yawCdeg), 0.0)},
+                                   {"materials", json{{"fabric", runner->material}}},
+                                   {"castsShadows", false},
+                                   {"collides", false}});
+            break;
+        }
+    }
 }
 
 /// The dressed span's object id: "dress:fx:w03/l:2", with ".<first slot>" for a span that does not start at slot 0.
@@ -866,9 +1104,23 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
             return propagate(placed.error());
         }
         if (!*placed) {
-            // A level too thin for any prop (a display case's leaning level) shows a riser card instead.
-            if (auto card = detail::riserCard(*fixture, *fixturePrefab, dressed)) {
-                objects.push_back(riserCardObject(dressingId(dressed), *card, data, propSeed(room->seed, dressed.level)));
+            // A level too thin for any prop (a display case's leaning level) shows a riser card instead (a counter's
+            // a card in each slot, I6 step 6's review: "<span's id>:<slot>", a few covers in turn).
+            const bool perSlot = data.theme.dressing.cardPerSlot || fixturePrefab->params.value("counter", false);
+            if (const std::vector<detail::RiserCard> cards =
+                    detail::riserCards(*fixture, *fixturePrefab, dressed, perSlot);
+                !cards.empty()) {
+                const std::uint64_t seed = propSeed(room->seed, dressed.level);
+                if (!perSlot) {
+                    objects.push_back(riserCardObject(dressingId(dressed), cards.front(), data, seed));
+                    continue;
+                }
+                constexpr std::uint64_t kCardCovers = 5;
+                for (std::size_t k = 0; k < cards.size(); ++k) {
+                    const std::uint64_t slot = dressed.firstSlot + k;
+                    objects.push_back(riserCardObject(dressingId(dressed) + ":" + std::to_string(slot), cards[k], data,
+                                                      core::deriveSeed(seed, "card", slot % kCardCovers)));
+                }
                 continue;
             }
             build.undressed.push_back(UndressedSpan{dressed.level, dressed.firstSlot, dressed.count, std::move(reason)});
@@ -878,6 +1130,9 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                                        rotationOf((*placed)->transform), {}, data,
                                        propSeed(room->seed, dressed.level)));
     }
+
+    // The pack's dressing of the room's upper walls, ceiling and floor (I6 step 6's review).
+    addRoomDressing(objects, plan, *room, data);
 
     json lights = json::array();
     for (const PlanLight& light : plan.lights) {
@@ -894,6 +1149,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
     // The profile's accents on the hero corner's parts and the display fixtures, while the scene's limit leaves room
     // for them.
     for (const AccentLight& accent : data.lighting.accents) {
+        std::size_t displays = 0; // the display fixtures this accent has lit (its colour alternates on them)
         for (const Fixture& fixture : plan.fixtures) {
             if (lights.size() >= kMaxSceneLights) {
                 break;
@@ -910,6 +1166,10 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                 fixture.prefab.kind == accent.anchor) {
                 json light = accentJson(accent, fixture);
                 light["name"] = "accent:" + accent.name + ":" + fixture.id.socket();
+                if (!accent.colorAlt.empty() && displays % 2 == 1) {
+                    light["color"] = accent.colorAlt;
+                }
+                ++displays;
                 lights.push_back(std::move(light));
             }
         }
@@ -1282,6 +1542,54 @@ std::optional<RiserCard> riserCard(const Fixture& fixture, const ScenePrefab& fi
     card.transform = room_frames::fixtureTransform(fixture) * level->transform * frame *
                      glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, static_cast<float>(meters(heightMm)) * 0.5f, 0.0f));
     return card;
+}
+
+std::vector<RiserCard> riserCards(const Fixture& fixture, const ScenePrefab& fixturePrefab,
+                                  const DressedLevel& dressed, bool perSlot) {
+    std::vector<RiserCard> cards;
+    if (!fixturePrefab.prefab || fixturePrefab.generator != "display_case" ||
+        !(perSlot || fixturePrefab.params.value("counter", false))) {
+        if (auto card = riserCard(fixture, fixturePrefab, dressed)) {
+            cards.push_back(std::move(*card));
+        }
+        return cards;
+    }
+    const geometry::ProceduralPrefab& built = *fixturePrefab.prefab;
+    const std::uint32_t levelNumber = dressed.level.level();
+    const geometry::Socket* level = levelSocket(built, levelNumber);
+    if (level == nullptr || dressed.count == 0 || dressed.firstSlot + dressed.count > slotCount(built, levelNumber)) {
+        return cards;
+    }
+    constexpr std::int64_t kCardInsetMm = 3;
+    constexpr std::int64_t kCardDepthMm = 5;
+    constexpr std::int64_t kCardFrameMm = 5; // poster_frame's thinnest frame
+    const glm::mat4 toLevel = glm::inverse(level->transform);
+    for (std::uint32_t k = 0; k < dressed.count; ++k) {
+        const geometry::Socket* slot = slotSocket(built, levelNumber, dressed.firstSlot + k);
+        if (slot == nullptr) {
+            return {};
+        }
+        // A card the item's size less its inset, standing on the slot's back plane like the item it stands in for.
+        const std::int64_t widthMm = toMm(slot->bounds.size().x) - 2 * kCardInsetMm;
+        const std::int64_t heightMm = toMm(slot->bounds.size().y) - kCardInsetMm;
+        if (widthMm < 4 * kCardFrameMm || heightMm < 4 * kCardFrameMm) {
+            return {};
+        }
+        const glm::mat4 slotFrame = toLevel * slot->transform;
+        const glm::vec3 slotBack = glm::vec3(slotFrame * glm::vec4(0.0f, 0.0f, slot->bounds.min.z, 1.0f));
+        glm::mat4 frame = slotFrame;
+        frame[3] = glm::vec4(slotBack, 1.0f);
+        RiserCard card;
+        card.params = json{{"width", meters(widthMm)},
+                           {"height", meters(heightMm)},
+                           {"frameWidth", meters(kCardFrameMm)},
+                           {"depth", meters(kCardDepthMm)}};
+        card.transform =
+            room_frames::fixtureTransform(fixture) * level->transform * frame *
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, static_cast<float>(meters(heightMm)) * 0.5f, 0.0f));
+        cards.push_back(std::move(card));
+    }
+    return cards;
 }
 
 } // namespace detail

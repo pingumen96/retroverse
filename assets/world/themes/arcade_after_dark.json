@@ -55,7 +55,7 @@
                        "molding_alt": "MAT_Molding_Cyan", "plastic_dark": "MAT_Plastic_Black",
                        "metal_trim": "MAT_Metal_Brushed", "plastic_accent": "MAT_Fabric_Vinyl_Red",
                        "marquee": "MAT_Marquee_Magenta", "marquee_alt": "MAT_Marquee_Cyan",
-                       "screen_back": "MAT_Screen_Idle", "screen": "MAT_Screen_CRT_Room"},
+                       "screen_back": "MAT_Screen_Idle", "screen": "MAT_Screen_CRT_Room", "side_art": "MAT_Side_Art"},
     "cartridge": {"plastic_shell": "MAT_Plastic_Gray", "label": "MAT_Label_Cover", "spine": "MAT_Label_Cover"},
     "column": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
                "metal_trim": "MAT_Metal_Brass"},
@@ -99,9 +99,8 @@
          "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 640, "zMm": 800},
         {"prefab": {"manifest": "furniture.bar_stool.generic", "kind": "bar_stool"},
          "params": {"seatRadius": 0.18, "baseRadius": 0.18}, "xMm": 1020, "zMm": 800}],
-      "rug": [
-        {"prefab": {"manifest": "decor.rug.generic", "kind": "rug"},
-         "params": {"width": 0.9, "depth": 1.6}, "materials": {"fabric": "MAT_Carpet_Runner"}, "xMm": 0, "zMm": 2150}]
+      // Since the step's review the runner is the room's dressing ("roomDressing"), 3.5 m long: the rug left out.
+      "rug": []
     },
     "decoration": {
       "poster_frame": [
@@ -110,13 +109,38 @@
          "textures": {"picture": "poster_flyer"}}],
       "tv_cabinet": [
         {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
-         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "boxes"},
-         "materials": {"plastic_body": "MAT_Paper_Print"}, "textures": {"cover": "cover"}}]
+         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "boxes",
+                    "coverPerBox": true},
+         "materials": {"plastic_body": "MAT_Paper_Print", "cover_2": "MAT_Label_Cover", "cover_3": "MAT_Label_Cover"},
+         "textures": {"cover": "cover", "cover_2": "cover", "cover_3": "cover"}}],
+      // Since the step's review, two light columns (a lit tube in the neon's pink) where the decoration's floor lamps
+      // stood, their light the lamps'; the hero corner's lamp stays tungsten.
+      "floor_lamp": [
+        {"weight": 1.0, "prefab": {"manifest": "decor.lamp.floor_slim.generic", "kind": "floor_lamp"},
+         "params": {"shade": "tube"}, "materials": {"lamp_shade": "MAT_Neon_Tube_Pink"}}]
     }
   },
+  // I6 step 6's review (concept panel 5): the upper walls and ceiling lit as the panel's: a neon cove along each side
+  // wall (magenta on the west, cyan on the east), backlit flyers over the rows of cabinets and the showcases, the
+  // spots' cans visible under the ceiling, the dark red runner leading 3.5 m from the hero cabinet out into the room;
+  // the aisle's pairs of cabinets lit from above in cyan and red in turn.
+  "roomDressing": {
+    "cove": {"yMm": 2600, "west": "MAT_Cove_Magenta", "east": "MAT_Cove_Cyan", "westWash": "MAT_Cove_Wash_Magenta",
+             "eastWash": "MAT_Cove_Wash_Cyan"},
+    "pictures": {"centreYMm": 2220, "widthMm": 460, "heightMm": 600, "roles": ["hero-module", "side-module"],
+                 "kinds": ["tv_cabinet"], "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox",
+                 "pattern": "poster_flyer"},
+    "cans": {"roles": ["key", "wall-washer"], "body": "MAT_Metal_Graphite", "lens": "MAT_Bulb_Warm"},
+    "runner": {"widthMm": 900, "lengthMm": 3500, "material": "MAT_Carpet_Runner"}
+  },
+  "accents": [
+    {"name": "aisle_glow", "on": "display", "anchor": "arcade_cabinet", "type": "spot", "position": [0.0, 2.6, 1.0],
+     "target": [0.0, 0.0, 0.8], "color": "#30C8FF", "colorAlt": "#FF3048", "intensity": 6, "range": 3.5,
+     "innerConeDeg": 25, "outerConeDeg": 45}
+  ],
   "labelPalette": ["#B34DCE", "#3FB8D0", "#D04848", "#E0A030", "#2A2238", "#4C8BC9", "#E04F9E", "#F4EFE6"],
   "neon": "#F0509E",
   "neonGlow": {"intensity": 4.5, "range": 3.5},
   "bloomStrength": 0.28,
-  "lightTints": {"key": "#FFD0E8", "pendant": "#E0A8FF", "wallWasher": "#A8E0FF"}
+  "lightTints": {"key": "#FFD0E8", "pendant": "#B040FF", "wallWasher": "#30C8FF"}
 }

@@ -75,7 +75,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light
   tints and `themedLighting()`, and `building.hpp`'s `themePackOf()`/`floorThemePack()` resolving a room's pack;
   since I6 step 3b the packs' `furniture`, which `scene_builder.hpp` draws in place of the hero corner's parts and the
-  decoration, `drawnFixtures()` the boxes they cover). I3's other modules: `rv_geometry` the collection's
+  decoration, `drawnFixtures()` the boxes they cover; since I6 step 6's review the packs' `accents` and
+  `roomDressing`, the coves, wall pictures, spot cans, runner and sign pictogram `scene_builder.hpp` adds to a room).
+  I3's other modules: `rv_geometry` the collection's
   prefabs (`display_case`, `wall_shelf`, `storage_box`, `magazine_stack`, `bookends`, `plant` (16); I6 step 3b's era
   furniture `sofa`, `beanbag`, `desk`, `office_chair`, `bar_stool`, `banker_lamp`, `showcase` and the floor lamp's
   torchiere; I6 step 5's hub `column`, `railing`, `hub_landmark`, `info_totem` and `MeshBuilder::torus`; I6 step 6's

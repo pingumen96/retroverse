@@ -258,19 +258,24 @@ TEST_CASE("world/era furniture: every pack's pieces resolve and build, the class
         const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
         CHECK(theme->furniture.empty() == classic);
         if (pack == "arcade_after_dark") {
-            // The runner's material is its piece's: the rug kind stays the ornate carpet, which a plan's rug drawn as
-            // planned (the piece left out) keeps instead of a runner stretched over 2.4 x 1.6 m.
+            // The runner is the room's dressing (I6 step 6's review: 3.5 m, longer than the hero corner), the hero's
+            // rug left out; the rug kind stays the ornate carpet, which a plan's rug drawn as planned keeps.
             CHECK(theme->materials("rug").at("fabric") == "MAT_Carpet_Ornate");
-            CHECK(theme->furniture.heroParts.at("rug").front().materials.at("fabric") == "MAT_Carpet_Runner");
+            CHECK(theme->furniture.heroParts.at("rug").empty());
+            REQUIRE(theme->dressing.runner.has_value());
+            CHECK(theme->dressing.runner->material == "MAT_Carpet_Runner");
         }
         if (!classic) {
             // Each era's seat differs from the armchair, and its rug from the classic one (the rug piece's own
             // material, or the rug kind's).
             CHECK(theme->furniture.heroParts.contains("armchair"));
             std::string rug = theme->materials("rug").at("fabric");
-            if (const auto piece = theme->furniture.heroParts.find("rug");
-                piece != theme->furniture.heroParts.end() && piece->second.front().materials.contains("fabric")) {
+            const auto piece = theme->furniture.heroParts.find("rug");
+            if (piece != theme->furniture.heroParts.end() && !piece->second.empty() &&
+                piece->second.front().materials.contains("fabric")) {
                 rug = piece->second.front().materials.at("fabric");
+            } else if (theme->dressing.runner) {
+                rug = theme->dressing.runner->material;
             }
             CHECK(rug != "MAT_Carpet_Ornate");
             CHECK(theme->furniture.decoration.contains("poster_frame"));
@@ -548,4 +553,178 @@ TEST_CASE("world/era furniture: the arcade's TV cabinet is left out only under t
     CHECK(guarded.crt == "crt");
     CHECK(guarded.tvCabinet == "tv_cabinet");
     CHECK(guarded.tvCabinetCovers);
+}
+
+TEST_CASE("world/era furniture: the reader takes a pack's room dressing and accents, refusing a broken one (I6 step "
+          "6's review)",
+          "[world][era_furniture]") {
+    const auto parse = [](const std::string& members) {
+        return rv::world::parseThemeMaterials(
+            R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {})" + members + "}", "t.json");
+    };
+    const auto refusal = [&](const std::string& members) {
+        auto parsed = parse(members);
+        REQUIRE_FALSE(parsed.has_value());
+        return parsed.error().message;
+    };
+    auto good = parse(R"(, "roomDressing": {
+        "cove": {"yMm": 2600, "west": "MAT_Cove_Magenta", "east": "MAT_Cove_Cyan", "westWash": "MAT_Cove_Wash_Magenta",
+                 "eastWash": "MAT_Cove_Wash_Cyan"},
+        "pictures": {"centreYMm": 2200, "widthMm": 460, "heightMm": 600, "roles": ["hero-module", "side-module"],
+                     "kinds": ["tv_cabinet"], "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox",
+                     "pattern": "poster_flyer"},
+        "cans": {"roles": ["key", "wall-washer"], "body": "MAT_Metal_Graphite", "lens": "MAT_Bulb_Warm"},
+        "runner": {"widthMm": 900, "lengthMm": 3500, "material": "MAT_Carpet_Runner"},
+        "signIcon": {"widthMm": 400, "heightMm": 300, "pattern": "handheld_icon", "material": "MAT_Neon_Cyan"}},
+      "accents": [{"name": "aisle", "on": "display", "anchor": "arcade_cabinet", "type": "point",
+                   "position": [0, 2.5, 1], "color": "#30C8FF", "colorAlt": "#FF3048", "intensity": 3, "range": 3}])");
+    REQUIRE(good.has_value());
+    const rv::world::RoomDressing& dressing = good->dressing;
+    REQUIRE(dressing.cove.has_value());
+    CHECK(dressing.cove->westWash == "MAT_Cove_Wash_Magenta");
+    REQUIRE(dressing.pictures.has_value());
+    CHECK(dressing.pictures->roles == std::vector<FixtureRole>{FixtureRole::HeroModule, FixtureRole::SideModule});
+    CHECK(dressing.pictures->kinds == std::vector<std::string>{"tv_cabinet"});
+    REQUIRE(dressing.cans.has_value());
+    CHECK(dressing.cans->roles ==
+          std::vector<rv::world::LightRole>{rv::world::LightRole::Key, rv::world::LightRole::WallWasher});
+    REQUIRE(dressing.runner.has_value());
+    CHECK(dressing.runner->lengthMm == 3500);
+    REQUIRE(dressing.signIcon.has_value());
+    CHECK(dressing.signIcon->pattern == "handheld_icon");
+    REQUIRE(good->accents.size() == 1);
+    CHECK(good->accents.front().colorAlt == "#FF3048");
+    CHECK(parse("")->dressing.empty());
+    CHECK(parse(R"(, "roomDressing": {"cardPerSlot": true})")->dressing.cardPerSlot);
+
+    CHECK_THAT(
+        refusal(R"(, "roomDressing": {"cove": {"yMm": 2600, "west": "MAT_A", "east": "MAT_B", "westWash": "MAT_C"}})"),
+        ContainsSubstring("both or neither"));
+    CHECK_THAT(refusal(R"(, "roomDressing": {"cans": {"roles": ["pendant"], "body": "MAT_A", "lens": "MAT_B"}})"),
+               ContainsSubstring("spot light"));
+    CHECK_THAT(refusal(R"(, "roomDressing": {"pictures": {"centreYMm": 2200, "widthMm": 400, "heightMm": 400,
+                                                          "roles": ["attic"], "frame": "MAT_A", "picture": "MAT_B",
+                                                          "pattern": "cover"}})"),
+               ContainsSubstring("fixture role"));
+    CHECK_THAT(refusal(R"(, "roomDressing": {"signIcon": {"widthMm": 400, "heightMm": 300, "pattern": "mona",
+                                                          "material": "MAT_A"}})"),
+               ContainsSubstring("texture pattern"));
+    CHECK_THAT(refusal(R"(, "roomDressing": {"runner": {"widthMm": 900, "lengthMm": 3500, "material": "red"}})"),
+               ContainsSubstring("MAT_"));
+    CHECK_THAT(refusal(R"(, "roomDressing": {"skylight": {}})"), ContainsSubstring("skylight"));
+    CHECK_THAT(refusal(R"(, "accents": [{"name": "glow", "anchor": "sign", "type": "point", "position": [0, 0, 0.3],
+                                         "color": "#FFFFFF", "colorAlt": "#000000", "intensity": 1, "range": 1}])"),
+               ContainsSubstring("alternates"));
+}
+
+TEST_CASE("world/era furniture: the arcade's and the handhelds' room dressing in their scenes (I6 step 6's review)",
+          "[world][era_furniture]") {
+    auto text = rv::core::readTextFile(rv::test::world::goldenPlanDir() / "building-esde-seed-102938.json");
+    REQUIRE(text.has_value());
+    auto plan = rv::world::readPlan(*text, "building-esde-seed-102938");
+    REQUIRE(plan.has_value());
+    const auto sceneOf = [&](const std::string& id) {
+        const rv::world::RoomId room = *rv::world::RoomId::parse(id);
+        auto data = rv::world::loadSceneData(assets(), *plan, room);
+        REQUIRE(data.has_value());
+        auto scene = rv::world::toSceneFile(*plan, room, *data);
+        REQUIRE(scene.has_value());
+        return scene->sceneFile;
+    };
+    const auto withPrefix = [](const nlohmann::json& scene, const std::string& prefix) {
+        std::vector<nlohmann::json> found;
+        for (const nlohmann::json& object : scene.at("objects")) {
+            if (object.at("id").get<std::string>().rfind(prefix, 0) == 0) {
+                found.push_back(object);
+            }
+        }
+        return found;
+    };
+
+    // The arcade: two coves (magenta west, cyan east) with their washes, a flyer over each module and showcase against
+    // a wall, a can over each key and washer spot, the runner; none collides or casts a shadow; the pairs' accents
+    // alternate their colours; every prefab builds.
+    const nlohmann::json arcade = sceneOf("area:arcade");
+    for (const nlohmann::json& object : withPrefix(arcade, "dressing:")) {
+        INFO(object.at("id").get<std::string>());
+        CHECK(object.at("castsShadows") == false);
+        CHECK(object.at("collides") == false);
+        if (object.contains("prefab")) {
+            CHECK(rv::geometry::buildPrefab(object.at("prefab").get<std::string>(), object.at("params")).has_value());
+        }
+    }
+    CHECK(withPrefix(arcade, "dressing:cove-w").size() == 3);
+    CHECK(withPrefix(arcade, "dressing:cove-e").size() == 3);
+    CHECK(withPrefix(arcade, "dressing:cove-w").front().at("material") == "MAT_Cove_Magenta");
+    std::size_t modules = 0;
+    std::size_t showcases = 0;
+    std::size_t spots = 0;
+    for (const Fixture& fixture : plan->fixtures) {
+        if (fixture.id.room().toString() != "area:arcade") {
+            continue;
+        }
+        modules += fixture.role == FixtureRole::HeroModule || fixture.role == FixtureRole::SideModule ? 1 : 0;
+        showcases += fixture.role == FixtureRole::Decoration && fixture.prefab.kind == "tv_cabinet" ? 1 : 0;
+    }
+    for (const rv::world::PlanLight& light : plan->lights) {
+        const bool spot = light.role == rv::world::LightRole::Key || light.role == rv::world::LightRole::WallWasher;
+        spots += light.id.room().toString() == "area:arcade" && spot ? 1 : 0;
+    }
+    CHECK(withPrefix(arcade, "dressing:picture:").size() == modules + showcases);
+    for (const nlohmann::json& flyer : withPrefix(arcade, "dressing:picture:")) {
+        CHECK(flyer.at("textures").at("picture").at("pattern") == "poster_flyer");
+        CHECK(flyer.at("position")[1].get<double>() - 0.3 > 1.7); // above the cabinets
+    }
+    CHECK(withPrefix(arcade, "dressing:can:").size() == 3 * spots); // a can, its lens, its stem
+    const auto runner = withPrefix(arcade, "dressing:runner");
+    REQUIRE(runner.size() == 1);
+    CHECK(runner.front().at("params").at("depth") == 3.5);
+    CHECK(withPrefix(arcade, "fx:hero.rug").empty()); // the hero's rug left out for the runner
+    std::vector<std::string> aisle;
+    for (const nlohmann::json& light : arcade.at("lights")) {
+        if (light.at("name").get<std::string>().rfind("accent:aisle_glow:", 0) == 0) {
+            aisle.push_back(light.at("color").get<std::string>());
+        }
+    }
+    REQUIRE(aisle.size() >= 2);
+    CHECK(aisle[0] == "#30C8FF");
+    CHECK(aisle[1] == "#FF3048");
+    CHECK(arcade.at("lights").size() <= rv::world::kMaxSceneLights);
+
+    // The gb room: posters over its shelves and showcases, the pictogram beside its sign; its counters' empty levels
+    // a card per slot at the item's shape (never a cover stretched across a level).
+    const nlohmann::json gb = sceneOf("room:gb");
+    CHECK_FALSE(withPrefix(gb, "dressing:picture:").empty());
+    const auto icon = withPrefix(gb, "dressing:sign-icon");
+    REQUIRE(icon.size() == 1);
+    CHECK(icon.front().at("textures").at("picture").at("pattern") == "handheld_icon");
+    // The handheld floor's shared room's display cases (not counters: the pack's "cardPerSlot") too.
+    for (const nlohmann::json& room : {gb, sceneOf("area:shared:handheld")}) {
+        std::size_t cards = 0;
+        for (const nlohmann::json& object : room.at("objects")) {
+            const std::string id = object.at("id");
+            if (id.rfind("dress:fx:dc", 0) == 0) {
+                INFO(room.at("name").get<std::string>() << " " << id);
+                CHECK(object.at("prefab") == "poster_frame");
+                const double width = object.at("params").at("width");
+                const double height = object.at("params").at("height");
+                CHECK(width / height < 1.5);
+                CHECK(width < 0.14);
+                CHECK(rv::geometry::buildPrefab("poster_frame", object.at("params")).has_value());
+                ++cards;
+            }
+        }
+        CHECK(cards > 0);
+    }
+    // The counters lit inside, their handhelds' displays lit.
+    std::size_t counters = 0;
+    for (const nlohmann::json& object : gb.at("objects")) {
+        if (object.value("prefab", "") == "display_case") {
+            CHECK(object.at("params").value("counter", false));
+            CHECK(object.at("params").value("litScreens", false));
+            CHECK(object.at("params").value("boardLight", false));
+            ++counters;
+        }
+    }
+    CHECK(counters > 0);
 }

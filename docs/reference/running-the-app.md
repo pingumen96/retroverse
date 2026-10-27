@@ -326,7 +326,10 @@ build/rvdata`).
   `handheld_archive`, the computers `computer_studio`, the ground floor's hall `retro_library_hub`), the arcade room's
   `arcade_after_dark` wherever it stands, a platform manifest's only when it names one (`snes.json` names none);
   resolved when the room is drawn (materials, the neon sign and the light on it, the lit shelves, the generated
-  spines' and labels' palette, light tints, the bloom), never a reason to move anything. With the mouse free (the developer overlay open) the cursor picks.
+  spines' and labels' palette, light tints, the bloom; since I6 step 6's review its own accents, the arcade's pairs lit
+  cyan and red in turn, and its `roomDressing`: the arcade's neon coves, backlit flyers, spot cans and runner, the
+  handhelds' warm cove, posters and pictogram beside the sign), never a reason to move anything. With the mouse free
+  (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
   proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
   degrees off the view: the arrival point faces the hall, so the walker turns to them first), a prompt names the

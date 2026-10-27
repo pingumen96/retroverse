@@ -94,9 +94,21 @@ TEST_CASE("world/theme packs: the seven shipped packs, each complete and coheren
                 INFO(role);
                 CHECK(theme->kinds.at(kind).contains(role));
             }
-            // Beyond them only the handheld archive's lit display cases (I6 step 6: "board_light").
-            const bool litCases = id == "handheld_archive" && kind == "display_case";
-            CHECK(theme->kinds.at(kind).size() == roles.size() + (litCases ? 1u : 0u));
+            // Beyond them only the handheld archive's lit display cases (I6 step 6: "board_light") and, since the
+            // step's review, its handhelds' lit displays ("screen") and the arcade cabinets' side art ("side_art").
+            std::size_t extra = 0;
+            if (id == "handheld_archive" && kind == "display_case") {
+                extra = 2;
+                CHECK(theme->kinds.at(kind).contains("board_light"));
+                CHECK(theme->kinds.at(kind).contains("screen"));
+            } else if (id == "handheld_archive" && kind == "showcase") {
+                extra = 1;
+                CHECK(theme->kinds.at(kind).contains("screen"));
+            } else if (id == "arcade_after_dark" && kind == "arcade_cabinet") {
+                extra = 1;
+                CHECK(theme->kinds.at(kind).contains("side_art"));
+            }
+            CHECK(theme->kinds.at(kind).size() == roles.size() + extra);
         }
         CHECK(theme->kinds.size() == builtIn.kinds.size());
         // Every material is the library's.
@@ -296,6 +308,14 @@ TEST_CASE("world/theme packs: the pack lights its rooms and halls", "[world][the
             // The neon's glow on the wall in its colour, the pack's intensity and range.
             for (const rv::world::AccentLight& accent : lit.accents) {
                 INFO(accent.name);
+                // The pack's own accents (I6 step 6's review) as the pack has them.
+                if (const auto own =
+                        std::find_if(theme->accents.begin(), theme->accents.end(),
+                                     [&](const rv::world::AccentLight& other) { return other.name == accent.name; });
+                    own != theme->accents.end()) {
+                    CHECK(accent == *own);
+                    continue;
+                }
                 const auto before =
                     std::find_if(profile->accents.begin(), profile->accents.end(),
                                  [&](const rv::world::AccentLight& other) { return other.name == accent.name; });
