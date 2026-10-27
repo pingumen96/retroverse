@@ -14,10 +14,12 @@ stay where ES-DE keeps them.
 > ([ADR-0013](docs/decisions/ADR-0013-the-building.md)): every system in a room, one room per console, the small
 > systems sharing their floor's room, the arcade systems in the arcade room; one floor per console generation, a
 > handheld floor and a computer floor, joined by an elevator whose directory also lists your favourites and recent
-> games; the ground floor's lobby as the hub. Every item stands with its real cover, and you can walk up to it, pull it
-> out, inspect it, read about it and launch it, while the room's CRT plays a clip. The look is functional; the styling
-> pass is I6's. Gate C's automated checks pass ([docs/testing/gate-c.md](docs/testing/gate-c.md)); the user walks the
-> building next. See [docs/roadmap.md](docs/roadmap.md).
+> games. Every item stands with its real cover, and you can walk up to it, pull it out, inspect it, read about it and
+> launch it, while the room's CRT plays a clip. I6 styled the building
+> ([ADR-0014](docs/decisions/ADR-0014-the-styling-pass.md)): light through the doorways, dressed halls, a theme per
+> floor, cases standing with their spines out, a double-height hub, arcade cabinets and handheld counters. I4 and I6
+> are done (Gates C and D: [docs/testing/gate-c.md](docs/testing/gate-c.md),
+> [docs/testing/gate-d.md](docs/testing/gate-d.md)). See [docs/roadmap.md](docs/roadmap.md).
 
 ![A generated room: golden G02s](assets/style_tests/screenshots/g02s_snes_stress_golden.png)
 
@@ -65,6 +67,7 @@ for the M0 test room (golden G01) in [docs/testing/gate-a.md](docs/testing/gate-
 ./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo, Release builds; tests of Debug and Release
 ./scripts/gate.ps1 -Gate B                         # Gate A, every golden, the I3 checks and the benchmarks
 ./scripts/gate.ps1 -Gate C                         # Gate A, every golden, the I4 checks and the benchmark path
+./scripts/gate.ps1 -Gate D                         # Gate C and the I6 checks (-RealLibrary: the real library too)
 ```
 
 Other presets: `msvc-x64-relwithdebinfo`, `msvc-x64-release` (no developer overlay, assets deployed next to the

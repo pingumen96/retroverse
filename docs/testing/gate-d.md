@@ -9,8 +9,8 @@ gate checks, how to run it, the figures of its runs on the reference machine, th
 golden against its `example.png` panel, the limits still open, and what to look at when walking the building.
 
 **Status: passed** (October 27, 2026, reference machine; the runs below). Every correctness check passed and every
-timing row is within the acceptable limits. Next the user walks the building ("Walk the building", below) and declares
-I6 done.
+timing row is within the acceptable limits. The user declared I6 (and I4) done on October 27, 2026; the walk of the
+building ("Walk the building", below) is postponed.
 
 ## What the gate checks
 
