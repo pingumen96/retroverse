@@ -18,6 +18,11 @@
 // in the room's frame, its height the prefab's; absent for a fixture pinned in its socket) and "provenance" are
 // optional. Provenance says who made the pin (`origin`: editor, cli, or file for a schema-1 pin or a hand edit, the
 // default) and when (`time`, UTC, absent when unknown); it never decides anything and is left out of every digest.
+// "conflict" (schema 2, since I4b step 5's review: ADR-0015 §3 as amended on 2026-10-28) is what the last regeneration
+// of the pin's room could not honour about it ("room-gone", "slot-gone", "game-gone", "invalid"): written by the
+// regeneration, cleared by the one that honours the pin (or by the editor's next pin of it), never in a digest. A pin
+// with a conflict that the plan does not honour is reported as orphaned at every update, never as needing a
+// confirmation (a regeneration, which the app's notice would offer, cannot honour it either).
 // Schema 1 (I3: no provenance, no transform) is read lifted (origin file); schema 2 is the only one written; a file of
 // a newer schemaVersion is refused (written by a newer Retroverse).
 //
@@ -94,11 +99,41 @@ struct FixtureTransform {
 /// The bounds of a transform's coordinates: a room is a few metres wide, its frame never reaches 1 km.
 inline constexpr std::int64_t kMaxFixtureOffsetMm = 1'000'000;
 
+/// Why a regeneration cannot honour a pin (ADR-0015 §3): a conflict, recorded on the pin (regeneration.hpp).
+enum class ConflictReason : std::uint8_t {
+    RoomGone, ///< its room is not in the new plan
+    SlotGone, ///< its slot, or its fixture's socket, is not in the new layout
+    GameGone, ///< its game is not a title of the room's selection
+    Invalid,  ///< the pinned fixture breaks a hard rule of the new layout
+};
+
+/// "room-gone", "slot-gone", "game-gone", "invalid".
+[[nodiscard]] constexpr std::string_view toString(ConflictReason reason) noexcept {
+    switch (reason) {
+    case ConflictReason::RoomGone:
+        return "room-gone";
+    case ConflictReason::SlotGone:
+        return "slot-gone";
+    case ConflictReason::GameGone:
+        return "game-gone";
+    case ConflictReason::Invalid:
+        return "invalid";
+    }
+    return "unknown";
+}
+[[nodiscard]] constexpr std::optional<ConflictReason> parseConflictReason(std::string_view text) noexcept {
+    return detail::enumFromString(text, ConflictReason::Invalid);
+}
+
 /// A game held in a slot.
 struct GamePin {
     catalog::GameId game;
     SlotId slot;
     PinProvenance provenance;
+    /// The conflict the last regeneration of its room found (ADR-0015 §3 as amended on 2026-10-28): while the pin is
+    /// not honoured, every update reports it as orphaned, not as needing a confirmation. Nothing: none (honoured, or
+    /// never regenerated).
+    std::optional<ConflictReason> conflict;
 
     bool operator==(const GamePin&) const = default;
 };
@@ -110,6 +145,8 @@ struct FixturePin {
     /// Absent: the fixture is held in its socket.
     std::optional<FixtureTransform> transform;
     PinProvenance provenance;
+    /// As GamePin::conflict.
+    std::optional<ConflictReason> conflict;
 
     bool operator==(const FixturePin&) const = default;
 };
@@ -142,13 +179,15 @@ struct WorldOverrides {
 
 /// The pins measured against a plan.
 struct PinCheck {
-    /// The pins that name a game, slot, fixture or socket the plan or its room's template no longer holds: never moved,
+    /// The pins that name a game, slot, fixture or socket the plan or its room's template no longer holds, and the
+    /// pins the plan does not honour that a regeneration recorded as conflicts (their `conflict`): never moved,
     /// reported (ChangeReport::orphanedPins), each as pinText().
     std::vector<std::string> orphaned;
     /// The pins the plan does not honour although what they name is there: applying them would move or replace
     /// something, which I3 never does (ChangeReport::needsConfirmation), each as pinText().
     std::vector<std::string> unhonoured;
-    /// The pins the plan honours, and the orphaned ones.
+    /// The pins the plan honours, and the orphaned ones but the recorded conflicts (reported, not judged: the
+    /// validation's pin-orphaned and pin-broken rules see these).
     WorldOverrides honouredOrOrphaned;
     /// The pins the plan honours (I4b step 2: their canonical form joins the plan's inputDigest, ADR-0015 §2).
     WorldOverrides honoured;
@@ -158,7 +197,8 @@ struct PinCheck {
 /// game stands in its slot, orphaned when the slot is not one of the plan's (fixture, level and index) or the game has
 /// no entry in the plan; a fixture pin is honoured when the plan holds the fixture (with the pin's prefab, when it
 /// names one, at the pin's transform, when it has one), orphaned when its room is not the plan's or its socket is not
-/// in the room's template. Lists sorted.
+/// in the room's template. Any other pin not honoured is orphaned when it records a regeneration's conflict, else
+/// unhonoured. Lists sorted.
 [[nodiscard]] PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
                                  const WorldOverrides& overrides);
 

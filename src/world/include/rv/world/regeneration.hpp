@@ -44,9 +44,10 @@
 // the new layout), `game-gone` (the game is not a title of the room's selection: not eligible, gone, another pinned
 // version represents its title) or `invalid` (a pinned fixture breaks a hard rule of the new layout: the room is then
 // generated without it, or its prefab is not one the room measures or does not fit its socket). A conflict is never
-// dropped silently: the overrides keep it (an update reports it as orphaned or not honoured, the editor shows it) unless
-// `dropOverrides` drops the scope's overrides, every one of them (ADR-0015 §5's consent). Pins outside the scope are
-// left as they are.
+// dropped silently: the overrides keep it, its reason recorded on the pin (`conflict`, overrides.hpp; cleared on the
+// scope's pins the new plan honours), so that every update reports it as orphaned, never as needing a confirmation
+// (ADR-0015 §3 as amended on 2026-10-28), and the editor shows it, unless `dropOverrides` drops the scope's overrides,
+// every one of them (ADR-0015 §5's consent). Pins outside the scope are left as they are.
 //
 // The regenerated plan's inputDigest is what an update of the same selections computes over it (the rooms given a
 // selection, each with the data of the room it stands in now, the honoured pins joined: ADR-0015 §2), so that an update
@@ -123,32 +124,6 @@ struct RegenerationScope {
 
     bool operator==(const RegenerationScope&) const = default;
 };
-
-/// Why a pin cannot be honoured (ADR-0015 §3).
-enum class ConflictReason : std::uint8_t {
-    RoomGone, ///< its room is not in the new plan
-    SlotGone, ///< its slot, or its fixture's socket, is not in the new layout
-    GameGone, ///< its game is not a title of the room's selection
-    Invalid,  ///< the pinned fixture breaks a hard rule of the new layout
-};
-
-/// "room-gone", "slot-gone", "game-gone", "invalid".
-[[nodiscard]] constexpr std::string_view toString(ConflictReason reason) noexcept {
-    switch (reason) {
-    case ConflictReason::RoomGone:
-        return "room-gone";
-    case ConflictReason::SlotGone:
-        return "slot-gone";
-    case ConflictReason::GameGone:
-        return "game-gone";
-    case ConflictReason::Invalid:
-        return "invalid";
-    }
-    return "unknown";
-}
-[[nodiscard]] constexpr std::optional<ConflictReason> parseConflictReason(std::string_view text) noexcept {
-    return detail::enumFromString(text, ConflictReason::Invalid);
-}
 
 /// A pin the regeneration does not honour: the pin (pinText()), the game or the fixture it names, the reason and a
 /// sentence.
@@ -235,11 +210,13 @@ struct RegenerationInput {
 /// A regeneration's answer.
 struct Regeneration {
     /// The plan (sorted), its change report against the previous plan (Generated, Full; the games placed anew, the
-    /// placements kept, the fixtures' difference, the rooms added; orphaned and unhonoured pins; the digests) and its
+    /// placements kept, the fixtures' difference, the rooms added; orphaned pins, the conflicts recorded among them,
+    /// and unhonoured pins (outside the scope only); the digests) and its
     /// validation.
     GenerationResult result;
     /// The overrides to save with the plan: the input's, the scope's dropped with dropOverrides, the transforms of the
-    /// pins that followed the south wall rewritten.
+    /// pins that followed the south wall rewritten, the scope's conflicts recorded on their pins (and cleared on the
+    /// scope's honoured pins).
     WorldOverrides overrides;
     RegenerationImpact impact;
     /// The plan or the overrides differ from the input's (false: a commit writes nothing).

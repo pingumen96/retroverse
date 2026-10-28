@@ -300,6 +300,38 @@ std::vector<SlotId> freeSlots(const WorldPlan& plan, rv::world::Section section)
     return slots;
 }
 
+/// `overrides` without the conflicts a regeneration records on their pins.
+WorldOverrides withoutConflicts(WorldOverrides overrides) {
+    for (rv::world::GamePin& pin : overrides.gamePins) {
+        pin.conflict.reset();
+    }
+    for (rv::world::FixturePin& pin : overrides.fixturePins) {
+        pin.conflict.reset();
+    }
+    return overrides;
+}
+
+/// Each conflict of `regeneration` recorded on its pin of the overrides it returns, no other pin recording one.
+void requireConflictsRecorded(const Regeneration& regeneration) {
+    std::map<std::string, rv::world::ConflictReason> expected;
+    for (const rv::world::OverrideConflict& conflict : regeneration.impact.conflicts) {
+        expected.emplace(conflict.fixture.empty() ? conflict.game.toString() : conflict.fixture.toString(),
+                         conflict.reason);
+    }
+    std::map<std::string, rv::world::ConflictReason> recorded;
+    for (const rv::world::GamePin& pin : regeneration.overrides.gamePins) {
+        if (pin.conflict) {
+            recorded.emplace(pin.game.toString(), *pin.conflict);
+        }
+    }
+    for (const rv::world::FixturePin& pin : regeneration.overrides.fixturePins) {
+        if (pin.conflict) {
+            recorded.emplace(pin.fixture.toString(), *pin.conflict);
+        }
+    }
+    CHECK(recorded == expected);
+}
+
 std::string sha256(const std::string& text) {
     return rv::core::sha256Hex(std::span<const std::byte>(reinterpret_cast<const std::byte*>(text.data()), text.size()));
 }
@@ -748,8 +780,9 @@ TEST_CASE("world/regeneration: conflicts with their reasons, kept in the overrid
         CHECK(reasons == std::map<GameId, rv::world::ConflictReason>{{games[0], rv::world::ConflictReason::GameGone},
                                                                       {games[1], rv::world::ConflictReason::SlotGone},
                                                                       {games[2], rv::world::ConflictReason::SlotGone}});
-        // Never dropped silently.
-        CHECK(regeneration.overrides == overrides);
+        // Never dropped silently: kept, each conflict recorded on its pin.
+        CHECK(withoutConflicts(regeneration.overrides) == overrides);
+        requireConflictsRecorded(regeneration);
         requirePinsAccounted(regeneration, overrides);
         requireImpactIsDifference(edited.plan, regeneration);
     }
@@ -779,7 +812,8 @@ TEST_CASE("world/regeneration: conflicts with their reasons, kept in the overrid
         CHECK(regeneration.result.validation.passed());
         REQUIRE(regeneration.impact.conflicts.size() == 1);
         CHECK(regeneration.impact.conflicts.front().reason == rv::world::ConflictReason::RoomGone);
-        CHECK(regeneration.overrides == overrides);
+        CHECK(withoutConflicts(regeneration.overrides) == overrides);
+        requireConflictsRecorded(regeneration);
     }
     SECTION("invalid: a display case moved where the smaller room has no floor") {
         // A room of one growth step: the display case moved into its grown part.
@@ -828,8 +862,70 @@ TEST_CASE("world/regeneration: conflicts with their reasons, kept in the overrid
         CHECK(conflict.message.find(rv::world::rule::kFixtureOutsideRoom) != std::string::npos);
         // The case stands in its socket; the pin kept.
         CHECK(fixtureOf(regeneration.result.plan, "room:snes/fx:dc01")->zMm == display.zMm);
-        CHECK(regeneration.overrides == edited.overrides);
+        CHECK(withoutConflicts(regeneration.overrides) == edited.overrides);
+        requireConflictsRecorded(regeneration);
     }
+}
+
+TEST_CASE("world/regeneration: a conflict recorded on its pin, reported as orphaned at every update, never as "
+          "needing a confirmation",
+          "[world][regeneration]") {
+    SnesWorld world = snesWorld(150, 44);
+    std::set<GameId> duplicated;
+    for (const rv::world::UnplacedGame& game : world.inputs.selections.front().unplaced) {
+        duplicated.insert(game.representative);
+    }
+    const Placement* chosen = nullptr;
+    for (const Placement& placement : world.plan.placements) {
+        if (chosen == nullptr && !duplicated.contains(placement.game)) {
+            chosen = &placement;
+        }
+    }
+    REQUIRE(chosen != nullptr);
+    const GameId game = chosen->game;
+    EditedWorld edited{world.plan, {}};
+    edit(edited, EditOperation::pin(game));
+    // The pinned game loses its cover: unplaced (no-cover), no longer a title of the room.
+    Inputs inputs = world.inputs;
+    RoomSelection& selection = inputs.selections.front();
+    std::erase_if(selection.titles, [&](const rv::world::RoomTitle& title) { return title.game == game; });
+    selection.unplaced.push_back({game, selection.room, rv::world::UnplacedReason::NoCover, {}});
+    std::sort(selection.unplaced.begin(), selection.unplaced.end());
+    selection.distinctTitles = selection.titles.size();
+    const RegenerationScope scope = RegenerationScope::ofRoom(*RoomId::parse("room:snes"));
+    const Regeneration regeneration = regenerateOf(edited.plan, inputs, scope, edited.overrides);
+    INFO(failedFindings(regeneration.result.validation));
+    CHECK(regeneration.result.validation.passed());
+    REQUIRE(regeneration.impact.conflicts.size() == 1);
+    CHECK(regeneration.impact.conflicts.front().reason == rv::world::ConflictReason::GameGone);
+    REQUIRE(regeneration.overrides.gamePins.size() == 1);
+    CHECK(regeneration.overrides.gamePins.front().conflict == rv::world::ConflictReason::GameGone);
+    const std::string pin = rv::world::pinText(regeneration.overrides.gamePins.front());
+    CHECK(regeneration.result.changes.needsConfirmation.empty());
+    CHECK(regeneration.result.changes.orphanedPins == std::vector<std::string>{pin});
+    // overrides.json keeps it: written and read back equal.
+    const auto text = rv::world::writeOverrides(regeneration.overrides);
+    REQUIRE(text.has_value());
+    CHECK(text->find("\"conflict\": \"game-gone\"") != std::string::npos);
+    CHECK(rv::world::parseOverrides(*text, "overrides.json") == regeneration.overrides);
+    // The update of the unchanged catalog: nothing written, the conflict orphaned, nothing to confirm.
+    const GenerationResult update = updateRoom(regeneration.result.plan, selection, kWorldSeed, regeneration.overrides);
+    CHECK(update.plan == regeneration.result.plan);
+    CHECK(update.validation.passed());
+    CHECK(update.changes.needsConfirmation.empty());
+    CHECK(update.changes.orphanedPins == std::vector<std::string>{pin});
+    // A pin without the record, as it was before the regeneration, would need a confirmation.
+    CHECK(updateRoom(regeneration.result.plan, selection, kWorldSeed, withoutConflicts(regeneration.overrides))
+              .changes.needsConfirmation == std::vector<std::string>{pin});
+    // Regenerated again: the same conflict, nothing changes.
+    CHECK_FALSE(regenerateOf(regeneration.result.plan, inputs, scope, regeneration.overrides).changed);
+    // The cover comes back: the pin honoured again, its record cleared.
+    const Regeneration back = regenerateOf(regeneration.result.plan, world.inputs, scope, regeneration.overrides);
+    CHECK(back.impact.conflicts.empty());
+    CHECK(back.overrides == edited.overrides);
+    const Placement* stands = placementOf(back.result.plan, game);
+    REQUIRE(stands != nullptr);
+    CHECK(stands->slot == chosen->slot);
 }
 
 TEST_CASE("world/regeneration: a hung decoration on the south wall follows it to the room's new depth",
@@ -1091,7 +1187,8 @@ TEST_CASE("world/regeneration: random edit sessions then a changed catalog: no o
             REQUIRE(regeneration.result.validation.passed());
             // No override dropped: the game pins as they were, the fixture pins too (a south-wall poster's transform
             // following its wall).
-            CHECK(regeneration.overrides.gamePins == edited.overrides.gamePins);
+            CHECK(withoutConflicts(regeneration.overrides).gamePins == edited.overrides.gamePins);
+            requireConflictsRecorded(regeneration);
             REQUIRE(regeneration.overrides.fixturePins.size() == edited.overrides.fixturePins.size());
             for (std::size_t i = 0; i < edited.overrides.fixturePins.size(); ++i) {
                 CHECK(regeneration.overrides.fixturePins[i].fixture == edited.overrides.fixturePins[i].fixture);

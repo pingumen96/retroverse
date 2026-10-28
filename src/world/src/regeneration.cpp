@@ -839,6 +839,40 @@ private:
         std::sort(impact.pinsKept.begin(), impact.pinsKept.end());
         std::sort(impact.roomsRegenerated.begin(), impact.roomsRegenerated.end());
 
+        // Each conflict recorded on its pin, the scope's honoured pins' cleared (ADR-0015 §3 as amended on
+        // 2026-10-28): an update then reports a conflict as orphaned, never as needing a confirmation that a
+        // regeneration could not give either.
+        std::map<GameId, ConflictReason> gameConflicts;
+        std::map<FixtureId, ConflictReason> fixtureConflicts;
+        for (const OverrideConflict& conflict : impact.conflicts) {
+            if (!conflict.fixture.empty()) {
+                fixtureConflicts.emplace(conflict.fixture, conflict.reason);
+            } else {
+                gameConflicts.emplace(conflict.game, conflict.reason);
+            }
+        }
+        std::set<GameId> scopeGames;
+        for (const GamePin& pin : honour.gamePins) {
+            scopeGames.insert(pin.game);
+        }
+        std::set<FixtureId> scopeFixtures;
+        for (const FixturePin& pin : honour.fixturePins) {
+            scopeFixtures.insert(pin.fixture);
+        }
+        for (GamePin& pin : overrides.gamePins) {
+            if (scopeGames.contains(pin.game)) {
+                const auto found = gameConflicts.find(pin.game);
+                pin.conflict = found != gameConflicts.end() ? std::optional(found->second) : std::nullopt;
+            }
+        }
+        for (FixturePin& pin : overrides.fixturePins) {
+            if (scopeFixtures.contains(pin.fixture)) {
+                const auto found = fixtureConflicts.find(pin.fixture);
+                pin.conflict = found != fixtureConflicts.end() ? std::optional(found->second) : std::nullopt;
+            }
+        }
+        const PinCheck reported = checkPins(plan, templates, overrides);
+
         // The change report against the previous plan.
         ChangeReport& changes = result.changes;
         changes.outcome = GenerationOutcome::Generated;
@@ -862,8 +896,8 @@ private:
         changes.fixturesMoved = impact.fixturesMoved;
         changes.roomsAdded = impact.roomsAdded;
         changes.systemsEntered = sortedUnique(std::move(generation.systemsEntered));
-        changes.orphanedPins = pins.orphaned;
-        changes.needsConfirmation = pins.unhonoured;
+        changes.orphanedPins = reported.orphaned;
+        changes.needsConfirmation = reported.unhonoured;
         changes.keptRooms = keptRooms;
         if (!m_input.previousDigest.empty()) {
             changes.digestBefore = m_input.previousDigest;
