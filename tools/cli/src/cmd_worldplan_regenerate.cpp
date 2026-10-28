@@ -4,7 +4,8 @@
 // added, removed and moved, the games that change slot, the titles entering and leaving face-out, the games newly
 // placed and unplaced, the fixtures added, removed and moved, the pins kept and the conflicts with their reasons.
 // --drop-overrides is the consent to drop the scope's overrides; --dry-run is the preview: it reads the world's plan and
-// overrides without taking the world's lock and writes nothing. Otherwise the plan and the overrides are read under the
+// overrides without taking the world's lock (world::readWorldUnlocked(): shared, so that a writer is never refused, and
+// checked again once both are read) and writes nothing. Otherwise the plan and the overrides are read under the
 // lock and saved together through world::commitWorld() behind a snapshot (action "regenerate"), which 'worldplan undo'
 // restores. The selections are the catalog's, as `worldplan update` reads them (every system of the catalog that gets a
 // room; the scope's systems required), or canonical selection files (--selection, repeatable). A plan that breaks a
@@ -90,8 +91,8 @@ constexpr std::string_view kUsage =
     "no such room or the building no such floor, a system of the scope has no selection, the plan needs --world\n"
     "(another seed, preset or generator major), the media are unknown; 2 usage error; 3 the data, the catalog, the\n"
     "selections, the plan or the overrides could not be read, the regenerated plan breaks a hard rule of the\n"
-    "validation, an interrupted action is pending (a dry run), the world is locked by another program, or the plan\n"
-    "could not be written.\n";
+    "validation, an action is in progress or was interrupted or the world changed while it was read (a dry run), the\n"
+    "world is locked by another program, or the plan could not be written.\n";
 
 ExitCode failure(CommandContext& context, std::string_view what, const Error& error) {
     context.err.writeLine(fmt::format("{}: {}: {}", kName, what, error.toString()));
@@ -175,15 +176,21 @@ ExitCode runWorldPlanRegenerate(CommandContext& context, std::span<const std::st
     }
     const world::WorldFiles files = world::worldFiles(context.paths.userDataRoot(), *library);
 
-    // A dry run reads without the lock and writes nothing (not even world.lock); a pending journal means the plan and
-    // the overrides may disagree until the next writer rolls the action back.
+    // A dry run reads without the lock and writes nothing (not even world.lock): the plan and the overrides read
+    // together (world::readWorldUnlocked(): with full sharing, so that a writer's commit is never refused, checked
+    // again once read); a journal there means the two may disagree until its action ends or is rolled back.
     std::optional<world::WorldLock> lock;
+    std::optional<world::UnlockedWorldRead> unlocked;
     if (dryRun) {
-        if (const auto pending = world::checkInterruptedAction(files)) {
-            context.err.writeLine(fmt::format("{}: an interrupted action is pending ({}): the next writer rolls it "
-                                              "back; 'worldplan snapshots' says more. Nothing previewed",
-                                              kName, pathText(files.transaction)));
+        auto read = world::readWorldUnlocked(files);
+        if (!read && read.error().code == ErrorCode::Conflict) {
+            context.err.writeLine(fmt::format("{}: {}. Nothing previewed", kName, read.error().toString()));
             return ExitCode::RuntimeFailure;
+        }
+        if (read) {
+            unlocked.emplace(std::move(*read));
+        } else if (read.error().code != ErrorCode::NotFound) {
+            return failure(context, "the world's files", read.error());
         }
     } else {
         auto acquired = world::WorldLock::acquire(files);
@@ -197,7 +204,20 @@ ExitCode runWorldPlanRegenerate(CommandContext& context, std::span<const std::st
                                               kName, *lock->rolledBack()));
         }
     }
-    auto stored = readPlanFile(context.paths, files.plan);
+    const auto readStored = [&]() -> Expected<PlanFile> {
+        if (!dryRun) {
+            return readPlanFile(context.paths, files.plan);
+        }
+        if (!unlocked) {
+            return makeError(ErrorCode::NotFound, "file does not exist", pathText(files.plan));
+        }
+        auto plan = world::readPlan(unlocked->plan, pathText(files.plan.filename()));
+        if (!plan) {
+            return propagate(plan.error());
+        }
+        return liftedPlanFile(context.paths, world::StoredPlan{std::move(*plan), unlocked->planDigest});
+    };
+    auto stored = readStored();
     if (!stored) {
         if (stored.error().code == ErrorCode::NotFound) {
             context.err.writeLine(fmt::format("{}: no plan to regenerate at {} (run 'retroverse-cli worldplan "
@@ -302,7 +322,10 @@ ExitCode runWorldPlanRegenerate(CommandContext& context, std::span<const std::st
     for (const auto& [system, why] : selected.leftOut) {
         context.err.writeLine(fmt::format("{}: {} left out of the building: {}", kName, system.str(), why));
     }
-    auto overrides = world::loadOverrides(files.overrides);
+    auto overrides = !dryRun ? world::loadOverrides(files.overrides)
+                     : unlocked->overrides ? world::parseOverrides(*unlocked->overrides,
+                                                                   pathText(files.overrides.filename()))
+                                           : Expected<world::WorldOverrides>(world::WorldOverrides{});
     if (!overrides) {
         return failure(context, "the world's overrides", overrides.error());
     }

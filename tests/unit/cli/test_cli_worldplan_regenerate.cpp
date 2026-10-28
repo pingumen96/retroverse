@@ -231,6 +231,16 @@ TEST_CASE("cli/worldplan regenerate: dry runs, a room, a floor and the world on 
     CHECK(preview["impact"]["counts"]["conflicts"] == 0);
     CHECK(preview["impact"]["pinsKept"][0] == "game " + game + " pinned to " + slot);
     CHECK(preview["timings"]["regenerationMs"].is_number());
+    // A journal there (an action in progress, or interrupted): the dry run previews nothing, writes nothing.
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.transaction, "{}\n").has_value());
+    const auto pending = folderContents(session.files.folder);
+    const RunResult busy =
+        session.run({"worldplan", "regenerate", "--room", "room:snes", "--seed", "102938", "--dry-run"});
+    CHECK(busy.code == ExitCode::RuntimeFailure);
+    CHECK(contains(busy.err, "an action is in progress or was interrupted"));
+    CHECK(contains(busy.err, "Nothing previewed"));
+    CHECK(folderContents(session.files.folder) == pending);
+    std::filesystem::remove(session.files.transaction);
     // The text summary of a dry run with --drop-overrides.
     const RunResult dryText = session.run(
         {"worldplan", "regenerate", "--world", "--seed", "102938", "--dry-run", "--drop-overrides"});

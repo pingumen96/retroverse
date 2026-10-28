@@ -68,19 +68,14 @@ struct PlanFile {
     [[nodiscard]] bool lifted() const noexcept { return fileSchema != plan.schemaVersion; }
 };
 
-/// Reads a plan file (world::readStoredPlan) and lifts a schema-1 plan with the building's data under the asset root.
-/// Errors: those of readStoredPlan() (NotFound: no file; ValidationFailed, ParseError, Unsupported: refused), those of
-/// reading the building's data, and the lift's (InvalidArgument: a schema-1 plan that is no building's room).
-inline Expected<PlanFile> readPlanFile(const core::Paths& paths, const std::filesystem::path& file) {
-    auto stored = world::readStoredPlan(file);
-    if (!stored) {
-        return propagate(stored.error());
-    }
+/// A plan read (world::readStoredPlan(), or world::readPlan() of a text read otherwise), a schema-1 plan lifted with
+/// the building's data under the asset root. Errors: those of reading the building's data, and the lift's.
+inline Expected<PlanFile> liftedPlanFile(const core::Paths& paths, world::StoredPlan stored) {
     PlanFile read;
-    read.digest = std::move(stored->digest);
-    read.fileSchema = stored->plan.schemaVersion;
-    if (stored->plan.schemaVersion == world::kPlanSchemaVersion) {
-        read.plan = std::move(stored->plan);
+    read.digest = std::move(stored.digest);
+    read.fileSchema = stored.plan.schemaVersion;
+    if (stored.plan.schemaVersion == world::kPlanSchemaVersion) {
+        read.plan = std::move(stored.plan);
         return read;
     }
     auto building = world::loadBuildingData(paths.assetRoot());
@@ -91,12 +86,23 @@ inline Expected<PlanFile> readPlanFile(const core::Paths& paths, const std::file
     if (!systems) {
         return propagate(systems.error());
     }
-    auto lifted = world::lift(stored->plan, *building, *systems);
+    auto lifted = world::lift(stored.plan, *building, *systems);
     if (!lifted) {
         return propagate(lifted.error());
     }
     read.plan = std::move(*lifted);
     return read;
+}
+
+/// Reads a plan file (world::readStoredPlan) and lifts a schema-1 plan with the building's data under the asset root.
+/// Errors: those of readStoredPlan() (NotFound: no file; ValidationFailed, ParseError, Unsupported: refused), those of
+/// reading the building's data, and the lift's (InvalidArgument: a schema-1 plan that is no building's room).
+inline Expected<PlanFile> readPlanFile(const core::Paths& paths, const std::filesystem::path& file) {
+    auto stored = world::readStoredPlan(file);
+    if (!stored) {
+        return propagate(stored.error());
+    }
+    return liftedPlanFile(paths, std::move(*stored));
 }
 
 /// "north row" or "south row".
