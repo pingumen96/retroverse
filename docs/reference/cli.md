@@ -254,34 +254,37 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   refused; 2 usage (an unknown operation, an option it does not take or lacks, a malformed id or number, a script that
   cannot be read); 3 the data or overrides unreadable, the lock held by another program, a failed write.
   `worldplan regenerate (--room <id> | --floor <id> | --world) [--drop-overrides] [--dry-run] [--selection <file>]...
-  [--seed <n>] [--library <id>] [--diff] [--json]` (I4b step 5, ADR-0015 §3, §5, §8, `docs/i4b/step-5.md`) regenerates
-  a room (its chain), a floor or the whole building of the world's plan through `world::regenerate()`
+  [--seed <n>] [--library <id>] [--diff] [--json]` (I4b step 5, ADR-0015 §3, §5, §8, `docs/i4b/step-5.md`) regenerates a
+  room (its chain), a floor or the whole building of the world's plan through `world::regenerate()`
   (`rv/world/regeneration.hpp`): a room afresh where it stands (the template's current version, the family's last
-  successor, the face-out titles and representatives chosen again; its id, floor, x, sections and seed kept); a floor's
-  systems decided again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a system
-  on the floor staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned fixtures
-  first, the sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's
+  successor, the face-out titles and representatives chosen again; its id, kind, floor, x, yaw, sections and seed kept);
+  a floor's systems decided again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a
+  system on the floor staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned
+  fixtures first, the sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's
   representative); a pin it cannot honour is a conflict (`room-gone`, `slot-gone`, `game-gone`, `invalid`), kept in
-  `overrides.json` and reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The selections
-  are the catalog's as `update` reads them (every system of the catalog that gets a room; the scope's systems required:
-  exit 1 without one) or selection files (`--world`'s must hold every system of the stored building, else exit 2). It
-  prints the impact: "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out, leave
-  it, newly placed, newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each
-  ("<pin>: <reason>: <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the
-  selections, the data and the regeneration); `--diff` lists every item (JSON `scope`, `dryRun`, `dropOverrides`,
-  `changed`, `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`,
-  `roomsMoved`, `gamesMoved` {`game`, `from`, `to`}, `faceOutEntering`, `faceOutLeaving`, `newlyPlaced`,
-  `newlyUnplaced`, `fixturesAdded`, `fixturesRemoved`, `fixturesMoved`, `pinsKept`, `conflicts` {`pin`, `game`,
-  `fixture`, `reason`, `message`}, `overridesDropped`}, `validation`, `digestBefore`, `digestAfter`, `gamePins`,
-  `fixturePins`, `timings` {`selectionsMs`, `dataMs`, `regenerationMs`, `totalMs`}, `leftOut`). Without `--dry-run`
-  the plan and the overrides are read under the world lock and saved together through `commitWorld()` behind a
-  snapshot (action `regenerate`, scope the room's id, `floor:<id>` or `world`), which `worldplan undo` restores;
-  nothing changed, nothing is written. `--dry-run` is the preview: it reads the plan and the overrides without the
-  lock and writes nothing, not even `world.lock` (an interrupted action's journal waiting: exit 3). A room or floor of
-  a plan of another seed, preset or generator major needs `--world` (exit 1). Exit 0 regenerated, nothing to change,
-  or a dry run; 1 nothing written: no plan, no such room or floor, a scope's system without a selection, a plan
-  needing `--world`, unknown media; 2 usage; 3 the data, catalog, selections, plan or overrides unreadable, a hard
-  rule broken (nothing written), a dry run's pending journal, the lock held, a failed write.
+  `overrides.json` with its reason recorded on the pin (`"conflict"`; an update then reports it as orphaned, not as
+  needing a confirmation) and reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The
+  selections are the catalog's as `update` reads them (every system of the catalog that gets a room; the scope's systems
+  required: exit 1 without one) or selection files (`--world`'s must hold every system of the stored building, else exit
+  2). It prints the impact: "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out,
+  leave it, newly placed, newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each
+  ("<pin>: <reason>: <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the selections,
+  the data and the regeneration); `--diff` lists every item (JSON `scope`, `library`, `plan`, `dryRun`, `dropOverrides`,
+  `changed`, `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`, `roomsMoved`,
+  `gamesMoved` {`game`, `from`, `to`}, `faceOutEntering`, `faceOutLeaving`, `newlyPlaced`, `newlyUnplaced`,
+  `fixturesAdded`, `fixturesRemoved`, `fixturesMoved`, `pinsKept`, `conflicts` {`pin`, `game`, `fixture`, `reason`,
+  `message`}, `overridesDropped`}, `validation`, `digestBefore`, `digestAfter`, `gamePins`, `fixturePins`, `timings`
+  {`selectionsMs`, `dataMs`, `regenerationMs`, `totalMs`}, `leftOut`). Without `--dry-run` the plan and the overrides
+  are read under the world lock and saved together through `commitWorld()` behind a snapshot (action `regenerate`, scope
+  the room's id, `floor:<id>` or `world`), which `worldplan undo` restores; nothing changed, nothing is written.
+  `--dry-run` is the preview: it reads the plan and the overrides without the lock (`world::readWorldUnlocked()`: with
+  full sharing, so a writer's commit never fails because of it, and checked again once both are read) and writes
+  nothing, not even `world.lock`; a journal there exits 3 ("an action is in progress or was interrupted ... Nothing
+  previewed"), and so does a world that changed during two readings (busy). A room or floor of a plan of another seed,
+  preset or generator major needs `--world` (exit 1). Exit 0 regenerated, nothing to change, or a dry run; 1 nothing
+  written: no plan, no such room or floor, a scope's system without a selection, a plan needing `--world`, unknown
+  media; 2 usage; 3 the data, catalog, selections, plan or overrides unreadable, a hard rule broken (nothing written), a
+  dry run finding a journal or a busy world, the lock held, a failed write.
 - `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in the building's plan
   (floor, room, fixture, slot, face-out or spine-out; JSON `floor`) or why it is not placed, with the version that
   stands for it; exit 1 no plan or a game the plan does not hold, 2 usage, 3 a plan refused.

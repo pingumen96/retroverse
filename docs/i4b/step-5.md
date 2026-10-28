@@ -17,7 +17,8 @@ Roadmap row: I4b step 5. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
 - **Honouring the overrides** (ADR-0015 §3's four rules): the private `pinned_room.cpp` generates a room around its
   pins: a pinned game takes its title's place when another version represents it now (the old representative
   unplaced as its duplicate, which the update's rule then keeps); the side-wall sockets of pinned slots and pinned
-  modules always take their module (the room grown to a growth step's socket when one holds them); the layout
+  modules always take their module (the room grown to a growth step's socket when one holds them, and further while
+  the side-wall sockets the pinned fixtures take or block leave the count's modules no socket); the layout
   (`fixture_layout.cpp`, `LayoutPins`) stands the pinned fixtures first, at their transform or in their socket with
   their prefab (a decoration's as it stood), decorates a pinned decoration's socket whatever the density draws, gives a
   pinned decoration's side-wall socket no module, and skips a socket whose new fixture would overlap a moved pinned
@@ -26,10 +27,12 @@ Roadmap row: I4b step 5. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
   the alphabetical fill skip those slots and games (a face-out level fills its other slots from the left, its free
   ones dressed; a spine-out level's quota counts its pinned games). Without pins every path is the old one.
 - **Conflicts** (`OverrideConflict`, by pin): `room-gone`, `slot-gone`, `game-gone`, `invalid`. A pinned fixture
-  named by a hard finding of the new plan (as its subject or in its message; else every pinned fixture of a room a
-  finding names) is `invalid`, and the scope is generated again without it. Conflicts stay in the overrides (the
-  validation judges the honoured and orphaned pins, as the update does); `dropOverrides` removes the scope's pins, all
-  of them.
+  named by a hard finding of the new plan (as its subject or in its message; else the pinned fixtures standing as
+  pinned in the room a finding is about, with that room's finding: `detail::breakingPins()`) is `invalid`, and the
+  scope is generated again without it. Conflicts stay in the overrides, each recorded on its pin (`conflict`, an
+  optional key of `overrides.json`'s schema 2, cleared when a regeneration honours the pin), so that every update
+  reports them as orphaned and never as needing a confirmation (ADR-0015 §3 as amended on 2026-10-28; the validation
+  judges the honoured and orphaned pins, as the update does); `dropOverrides` removes the scope's pins, all of them.
 - **The impact** (`RegenerationImpact`, `planDifference()`): rooms regenerated, added, removed and moved; games that
   change slot; titles entering and leaving face-out; games newly placed and unplaced; fixtures added, removed and
   moved; pins kept, conflicts, overrides dropped. The change report is the same difference (Generated, Full or
@@ -79,42 +82,64 @@ expansions is refused, `Unsupported`).
   keeps its prefab as it stood unless the pin names one; a module or display takes the template's unless it does. A
   fixed fixture (the hero corner, a hero-wall module) is honoured only as the fresh layout stands it.
 - **A pinned module or a pinned slot's socket grows the room** to its growth step; a pinned decoration of a growth
-  step the room no longer takes is `slot-gone`.
+  step the room no longer takes is `slot-gone`, judged once every pinned slot, module and display fixture has grown
+  the room (whatever order their sockets sort in). A decoration never grows the room itself. The side-wall sockets the
+  pinned fixtures take or block send their modules to the next sockets, and the room grows (within its template's
+  limit) until the count's modules stand, so a pin never costs titles while a larger step fits.
+- **A conflict is recorded on its pin** (`"conflict": "game-gone"`, ADR-0015 §3 as amended): a conflict cannot be
+  told from a hand edit by the plan alone, and an unhonoured pin is `needsConfirmation`, which step 6's notice turns
+  into an offer of "Rigenera" that could not clear it. A recorded conflict the plan does not honour is orphaned, not
+  judged; the editor's next pin of the thing replaces the pin and its record.
 - **A south-wall poster follows its wall** in a regeneration too (as the step-2 amendment does in an update): its pin's
   transform is rewritten in the result's overrides, so a room that shrinks keeps its poster on the wall rather than
   making it `invalid`.
 - **A face-out level holding a pinned game** fills from the left (not centred around it); a spine-out level holding a
   pinned game is never dressed.
-- **The dry run takes no lock** (unlike `undo` and `edit`): it reads the plan and the overrides, and refuses (exit 3)
-  while an interrupted action's journal waits, so that "a dry run writes nothing" holds for `world.lock` too.
-- **The floor's acceptable preview time** is the world's 15 s (ADR-0015 §9 names a room and the world only).
+- **The dry run takes no lock** (unlike `undo` and `edit`), so that "a dry run writes nothing" holds for
+  `world.lock` too: `world::readWorldUnlocked()` reads the plan and the overrides with full sharing (a writer's
+  atomic rename over either never fails because of it), refuses (exit 3) while a journal is there ("an action is in
+  progress or was interrupted"), and checks the journal and the plan's digest again once both are read, starting over
+  once, then reporting the world busy. Step 6's preview reads the world the same way.
+- **The floor's acceptable preview time** is the world's 15 s (ADR-0015 §9 as amended on 2026-10-28).
 
 ## Proofs
 
-- Unit (`tests/unit/world/test_world_regeneration.cpp`, 10 cases): every golden plan of the SNES room (0, 15, 57,
-  890 and 2,000 titles, the three golden seeds) and the golden building fixture's every room, floor and the world regenerated
-  equal to the golden text, nothing in the impact (no golden rewritten); new favourites entering face-out, the room
-  equal to a fresh plan of the selection, the update after it writing nothing; a room kept for its template version
-  regenerated to the current one; a floor's sharing decided again both ways (megadrive into its own room, snes into
-  the shared room), equal to the fresh building, a system reclassified onto gen3 staying on gen4 with the floor and
-  moved by the world; six game pins and two fixture pins (a move, two swaps, one onto a display fixture, a pin in
-  place, a moved display case, a decoration pinned) honoured in every scope, the overrides unchanged, the update after
-  writing nothing, twice one SHA-256, and dropped with the consent giving the fresh plan back; the pin winning the
+- Unit (`tests/unit/world/test_world_regeneration.cpp`, 15 cases): every golden plan of the SNES room (0, 15, 57, 890
+  and 2,000 titles, the three golden seeds) and the golden building fixture's every room, floor and the world
+  regenerated equal to the golden text, nothing in the impact (no golden rewritten); new favourites entering face-out,
+  the room equal to a fresh plan of the selection, the update after it writing nothing; a room kept for its template
+  version regenerated to the current one; a floor's sharing decided again both ways (megadrive into its own room, snes
+  into the shared room), equal to the fresh building, a system reclassified onto gen3 staying on gen4 with the floor and
+  moved by the world; six game pins and two fixture pins (a move, two swaps, one onto a display fixture, a pin in place,
+  a moved display case, a decoration pinned) honoured in every scope, the overrides unchanged, the update after writing
+  nothing, twice one SHA-256, and dropped with the consent giving the fresh plan back; the pin winning the
   representative; `game-gone`, `slot-gone`, `room-gone` and `invalid` (a display case moved into a grown room's south
-  part, the room shrunk: `fixture-outside-room`), each kept in the overrides; a south-wall poster following its wall
-  as the room shrinks; a property test of 3 × 40 random edits then a changed catalog (no override dropped, every pin
+  part, the room shrunk: `fixture-outside-room`), each kept in the overrides; a south-wall poster following its wall as
+  the room shrinks; a property test of 3 × 40 random edits then a changed catalog (no override dropped, every pin
   honoured or a conflict, the impact the plans' difference, the update after writing nothing, the drop giving the fresh
-  plan); the refusals. Every case checks the impact against a difference computed apart.
+  plan); the refusals. Every case checks the impact against a difference computed apart. After the review: a decoration
+  pinned (and slid) on e08, a growth step's socket, standing although the collection shrinks, since a module pinned on
+  w08 (sorted after it) keeps the step; a decoration pinned on e07 with a catalog that exactly fills the room without
+  growth: the room takes a step, no title unplaced; a `game-gone` conflict recorded on its pin, written and read back,
+  the update of the unchanged catalog listing it as orphaned with nothing to confirm (without the record it would need a
+  confirmation), a second regeneration changing nothing, the cover back clearing the record; `planDifference()`'s rooms
+  sorted whatever the plans' order; `detail::breakingPins()` blaming a named pin alone, else the applied pins of the
+  finding's own room with that room's finding.
+- Unit (`tests/unit/world/test_world_snapshots.cpp`): `readWorldUnlocked()` reading both files as they are (no
+  overrides file: none; no plan: not found), a commit between the reads read again as the commit's pair, a plan
+  changed at both readings reported busy, a journal begun between the reads reported as an action in progress.
 - CLI (`tests/unit/cli/test_cli_worldplan_regenerate.cpp`): on the building fixture, no plan (exit 1), usage errors,
   an unknown room or floor (exit 1), another seed (exit 1); a dry run writing nothing (the world's folder byte for
-  byte, no lock file) with its JSON impact; a room regenerated behind a snapshot with its pin kept, the update up to
+  byte, no lock file) with its JSON impact; a journal there failing the dry run (exit 3, "an action is in progress or
+  was interrupted", nothing written); a room regenerated behind a snapshot with its pin kept, the update up to
   date, a second run writing nothing, undone to the edited plan byte for byte; a floor; the world with
   `--drop-overrides` giving the generated plan back; `generate --replace` after a move honouring the pin (exit 0,
   undoable), then `regenerate --world` finding nothing to change. `test_cli_worldplan_edit` no longer expects
   `pin-broken` from `--replace`.
 - Real library (`tests/unit/cli/test_cli_worldplan_regenerate_real.cpp`, `[real-library][regenerate]`): the whole
-  library imported, its building generated, then dry runs of room:snes, the busiest floor and the world: exit 0,
-  nothing written, nothing to change, the preview within ADR-0015 §9's limits.
+  library imported (under `build/<preset>/real-library/regenerate`, never `%TEMP%`), its building generated, then dry
+  runs of room:snes, the busiest floor and the world: exit 0, nothing written, nothing to change, the preview within
+  ADR-0015 §9's limits.
 - No plan golden, scene golden, oracle or legacy fixture changed.
 
 ## Measurements
@@ -122,7 +147,8 @@ expansions is refused, `Unsupported`).
 The real library's dry runs in Release (`./scripts/real-library.ps1 -Filter '[real-library][regenerate]'`, ES-DE
 closed, 0 differences among 542,120 entries; 44 rooms on 9 floors, 19,985 placements; the library imported in 26 s,
 the building generated in 3.6 s). The preview is the rooms' data and the regeneration (impact and validation
-included), the time step 6's job takes on the pool; the catalog's selections, which the app holds already, apart:
+included), the time step 6's job takes on the pool; the catalog's selections apart (the app does not hold them yet:
+`world_build.cpp` builds them locally for each build and drops them, see "For step 6"):
 
 | Dry run | Preview | Of which | Selections apart | Acceptable (ADR-0015 §9) |
 |---|---|---|---|---|
@@ -132,16 +158,36 @@ included), the time step 6's job takes on the pool; the catalog's selections, wh
 
 Every dry run changed nothing (the catalog unchanged since the generation). The room's preview is within its row but
 its largest part is the building's rest (the standing rooms' data for the digest and the validation of every floor),
-not the room: the app's cached data (step 6) will take that part out.
+not the room; and with the selections built again for it, the whole path is about 1.34 s + 1.36 s, 2.7 s, over the
+row: step 6 must keep both (below).
 
 ## Open issues
 
-- `worldplan check` does not measure overrides yet (ADR-0015 §8: honoured, orphaned, conflicting); the conflicts'
-  reasons now exist for it.
+- `worldplan check` does not measure overrides yet (ADR-0015 §8: honoured, orphaned, conflicting), deferred twice:
+  now assigned to plan row 9 (Gate M3), which proves it; the recorded conflicts give it their reasons.
 - Expansion chains (step 7): the room scope refuses a room with expansions; the floor and world scopes will split a
   chain's titles once generator 1.5 makes them.
-- An `invalid` pin found by a finding that does not name it costs every pinned fixture of its room (the fallback is
-  conservative); none of the tests needs it.
 - The room preview's 1.34 s of 2 s is mostly the rest of the building (above); if step 6 measures it over the row on
   a slower machine, the validation can be narrowed to the scope's floors.
 - The app does not regenerate yet (step 6: the directory's actions, `regenerate_preview.rml`, the job on the pool).
+
+## For step 6
+
+- **Keep the last build's inputs.** The app holds no selections today: `world_build.cpp` builds them, with the
+  `platformTags`, locally for each build and drops them. Keep the last build's selections and `platformTags`, and each
+  room's `WorldData`, behind a caching `RoomDataLoader`, so that a preview builds neither again.
+- **Time the whole path** end to end (the catalog read, the selections, the data, `regenerate()`, the model shown)
+  against the room's 2 s: today about 1.34 s for the regeneration and 1.36 s for the selections, about 2.7 s.
+- **Commit the preview's own result** when the plan's and the overrides' digests are unchanged since it ran (read
+  again under the lock), rather than regenerating a second time after the consent; otherwise regenerate again.
+- **Cancellation** only through the loader returning `Cancelled` (`regenerate()`'s signature is frozen): the job's
+  loader checks its token and fails, and `regenerate()` propagates the error.
+- **The loader returns `WorldData` by value**: each call deep-copies a room's data (`assetRootLoader()`'s cache holds
+  shared copies); a caching loader for the app should keep those copies few.
+- **Read the world as the dry run does**: `world::readWorldUnlocked()` (shared, checked again), never `std::ifstream`.
+
+## For step 7
+
+- The floor scope (`Regenerator::check()`, the loop over the floor's rooms) pushes every room's sections into
+  `m_floorSystems`: a chain's head and its expansions share their sections, so a chain's systems would enter twice.
+  Deduplicate (keep the first) when expansions exist.

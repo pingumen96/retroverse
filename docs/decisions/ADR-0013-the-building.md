@@ -15,6 +15,9 @@
   of the room that holds the eye are resident, or 3 s after the request at the latest, no longer once the whole room
   is resident or after 10 s: on the reference library a cold ride to the largest computer room stayed black 9.5 s
   waiting for the whole room's covers. The other covers keep streaming in once the view is back
+- Amended: 2026-10-28, at I4b step 5's review: §3's arcade rule. Every arcade system entering the building gets a
+  section of the arcade game room on the ground floor; one standing on another floor (its classification changed
+  since) is decided by that floor's regeneration like any other system (ADR-0015 §5 as amended)
 
 ## Context
 
@@ -98,7 +101,10 @@ Its `defaults` per kind give the theme pack and the console prefab (none for `ar
   - own rooms to n64 (860), vic20 (885), pcengine (732), saturn (230), amigacd32 (179), ngpc (157) and dos (56); n64's
     room starts with 2 cartridges and fills in place as covers arrive;
   - sections of shared rooms to wii, ps3, psp, pokemini, pcfx, pc, channelf, segacd, windows and neogeo.
-- **Arcade.** Every `arcade` system gets a section of the arcade game room.
+- **Arcade.** Every `arcade` system gets a section of the arcade game room. **Amended (2026-10-28, I4b step 5's
+  review):** the arcade room stands on the ground floor; an arcade system standing on another floor (classified there
+  when it entered, its classification changed since) is decided by "Rigenera piano" of that floor like any other system,
+  an own room or a shared room's section by `sharedRoomMinTitles`; only "Rigenera mondo" moves it into the arcade room.
 - **Sticky.** The plan records each system's floor, room and section order, together with the room's family and theme
   pack. They change only through an explicit regeneration (I4b): neither the system's growth nor a change of the data
   (kind, generation, family, theme) moves them.

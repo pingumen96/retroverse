@@ -92,6 +92,17 @@ fixture moved back to its own socket loses its pin instead of being pinned there
 an explicit pin in a south-wall socket does. A hung decoration off every wall is a hard finding
 (`decoration-off-wall`).
 
+*Amended on 2026-10-28 (I4b step 5's review):* a hung decoration whose back is on the south wall follows that wall in
+a regeneration too, the room growing or shrinking, its pin's transform rewritten in the overrides saved with the plan
+(so a room that shrinks keeps its poster on the wall instead of making it `invalid`). A regeneration records each
+conflict on its pin in `overrides.json` (`"conflict": "<reason>"`, an optional key of schema 2, left out of every
+digest) and clears it on the pins it honours; a pin the plan does not honour that records a conflict is reported as
+orphaned at every update and never in `needsConfirmation`, since the regeneration that the app's notice would offer
+cannot honour it either. The editor's next pin of the same game or fixture replaces the pin and its record. The growth
+a regeneration gives a room comes from its pinned slots, modules and display fixtures, then a pinned decoration is
+judged against it; the side-wall sockets that pins take or block grow the room further, within its template's limit,
+until the modules the count needs stand.
+
 ### 4. The editor (amends ADR-0012 §1)
 
 A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad and keyboard alike. No Dear ImGui.
@@ -139,6 +150,11 @@ A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad a
   - **Rigenera piano**: every room of a floor, and the floor's rooms decided again: own or shared rooms by
     `sharedRoomMinTitles` on today's counts, the rooms placed again in entry order from the row start. Systems
     classified onto another floor stay where they are.
+
+    *Amended on 2026-10-28 (I4b step 5's review):* an arcade system standing on another floor than the ground floor
+    (its classification changed since it entered) is decided there like any other system, an own room or a section
+    of the floor's shared room by `sharedRoomMinTitles`; only "Rigenera mondo" moves it into the arcade room
+    (ADR-0013 §3 as amended).
   - **Rigenera mondo**: the whole building generated afresh (`generateBuilding`), honouring every override; systems
     move to the floors their classification names. `worldplan generate --replace` becomes this scope.
 - **The preview** runs the regeneration as a dry run on the pool and compares the plans: rooms regenerated, added,
@@ -207,6 +223,9 @@ A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad a
 
 - **An edit** (a move, a swap, a fixture moved) is shown within 0.25 s, the frames within the existing p99 of 50 ms.
 - **The impact preview** is shown within 2 s for a room and 15 s for the world on the reference library.
+
+*Amended on 2026-10-28 (I4b step 5's review):* a floor's impact preview is shown within 15 s, as the world's (the
+roadmap's row names it).
 - **A save, a regeneration's commit or an undo**: the room shown again within 3 s warm.
 
 ## Amendments

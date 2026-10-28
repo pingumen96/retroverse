@@ -30,7 +30,7 @@ per-game work". The look does not change: no golden is expected to move, and non
 | 6 | Regeneration and undo in the app: the directory's "Rigenera stanza / piano / mondo" and "Annulla ultima modifica", `regenerate_preview.rml` (the counts, the conflicts, the three choices and the second confirmation), the job on the pool, the floor reconciled, the walker at the room's doorway; the update's `needsConfirmation` notice opening the preview | 5, 3 | Unit: the preview's model and commands; GPU: a room regenerated with its pins kept, then undone (the plan's SHA-256 back); a regeneration dropping overrides only after the second confirmation; the preview within 2 s; screenshots of the preview | |
 | 7 | Expansion rooms in `rv_world` (generator 1.5): chains, ids and `expands`, entry on the floor, one fill order per chain, the fresh split in equal alphabetical shares, update-created expansions without face-out titles, the migration of capacity entries, chains in regeneration and validation, a full floor | 5 | Unit and property on `esde/overflow`: no title over capacity while the floor has room; a 1.4 plan with capacity entries migrated, every other room byte for byte in its elements; an expansion's head's freed slots used first; twice one SHA-256; the real library's update through `real-library.ps1`: no capacity entry before or after, every room's elements byte for byte | |
 | 8 | Expansion rooms in the app: the portal and neon signs with their number, the directory's chains with title ranges, teleport, "Mostra nella stanza" and where-is into an expansion, its CRT playing its games, the editor within a chain | 7, 6 | GPU on `esde/overflow`: a walk from the hall into `room:<system>:2`, a cover inspected; the arcade's 60 titles all placed; a game moved from the head to its expansion; screenshots of the hall's portals and the directory | |
-| 9 | Gate M3: `scripts/gate.ps1 -Gate M3` (and `-RealLibrary`), `docs/testing/gate-m3.md` | 4, 8 | The gate passes; the user tries the editor, a regeneration and an undo, and declares M3 done | |
+| 9 | Gate M3: `scripts/gate.ps1 -Gate M3` (and `-RealLibrary`), `docs/testing/gate-m3.md`; `worldplan check` measuring the overrides against the plan (ADR-0015 §8: honoured, orphaned, conflicting with their recorded reasons), deferred from steps 2 and 5 | 4, 8 | The gate passes; `worldplan check` on a world with an honoured pin, an orphaned one and a recorded conflict lists each (unit); the user tries the editor, a regeneration and an undo, and declares M3 done | |
 
 Order: 0, 1, 2, then 3 and 4 beside 5 and 7, then 6, 8, 9. Steps 1, 2, 5 and 7 change `rv_world`, `tools/cli` and
 their unit tests only; steps 3, 4, 6 and 8 change `rv_app`, `rv_ui`, `rv_input` and `assets/ui`. `applyEdit`'s and
@@ -68,7 +68,7 @@ October 27, 2026, I5 planned beside it."
 | Measure | Acceptable |
 |---|---|
 | An edit shown (a move, a swap, a fixture moved) | 0.25 s, the frames within the 50 ms p99 row |
-| The impact preview of a regeneration | a room 2 s, the world 15 s on the reference library |
+| The impact preview of a regeneration | a room 2 s, a floor and the world 15 s on the reference library |
 | A save, a regeneration's commit or an undo | the room shown again within 3 s warm |
 
 ## "Deferred"
