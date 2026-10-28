@@ -201,6 +201,19 @@ RoomId RoomId::head() const {
     return room;
 }
 
+Expected<RoomId> RoomId::inChain(std::uint32_t index) const {
+    if (empty()) {
+        return makeError(ErrorCode::InvalidArgument, "no room has a chain");
+    }
+    if (index < 1 || index > kMaxRoomIndex) {
+        return makeError(ErrorCode::InvalidArgument, "a room's index runs from 1 to " + decimal(kMaxRoomIndex),
+                         head().toString() + ":" + decimal(index));
+    }
+    RoomId room = *this;
+    room.m_index = index;
+    return room;
+}
+
 std::string RoomId::toString() const {
     if (empty()) {
         return {};

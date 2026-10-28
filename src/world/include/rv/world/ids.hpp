@@ -4,7 +4,7 @@
 // never a random choice of the generator, so that a plan's ids are the same whatever the seed:
 //   - RoomId, a tagged id of four forms:
 //       "room:<system>"            a system's console room ("room:snes"; RoomId::forSystem());
-//       "room:<system>:<n>"        an expansion of it, n from 2 (ADR-0013 §8: reserved, nothing generates one yet);
+//       "room:<system>:<n>"        an expansion of it, n from 2 (ADR-0013 §8, ADR-0015 §7: generator 1.5's);
 //       "area:shared:<floor>[:<n>]" the shared room of a floor ("area:shared:gen4"), its expansions from 2;
 //       "area:arcade[:<n>]"        the arcade game room on the ground floor, its expansions from 2.
 //     The system is an ES-DE system name (catalog::SystemName, which never holds ':' or '/'), the floor a data id
@@ -79,6 +79,9 @@ public:
     [[nodiscard]] bool isExpansion() const noexcept { return m_index > 1; }
     /// The head of the room's chain (the room itself when it is one).
     [[nodiscard]] RoomId head() const;
+    /// Room `index` of the room's chain (1 its head; I4b step 7, ADR-0015 §7): "room:snes" and 3 give "room:snes:3".
+    /// Errors: InvalidArgument for "no room" or an index outside 1 to kMaxRoomIndex.
+    [[nodiscard]] Expected<RoomId> inChain(std::uint32_t index) const;
     [[nodiscard]] bool empty() const noexcept { return m_kind == RoomIdKind::System && m_system.empty(); }
     /// "room:snes", "room:snes:2", "area:shared:gen4", "area:arcade"; empty for "no room".
     [[nodiscard]] std::string toString() const;
