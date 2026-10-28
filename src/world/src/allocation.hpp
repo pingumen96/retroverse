@@ -74,8 +74,9 @@ struct AllocationInput {
 struct Allocation {
     std::vector<Placement> placements;
     std::vector<DressedLevel> dressing;
-    /// The titles no slot was left for (only with reserved slots: the counts fit the titles otherwise), in their
-    /// order; the caller unplaces them for capacity.
+    /// The titles no slot was left for, in their order; the caller unplaces them for capacity. Only a regeneration's
+    /// pins leave any (the counts fit the titles otherwise): the slots reserved for pinned games, and the side-wall
+    /// sockets its pinned fixtures take or block once the room stands at its template's growth limit.
     std::vector<catalog::GameId> overflow;
 };
 

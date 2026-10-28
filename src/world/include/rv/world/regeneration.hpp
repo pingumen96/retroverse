@@ -30,7 +30,10 @@
 //      decoration whose back stood on the south wall follows that wall to the room's new depth, its pin's transform
 //      rewritten (the result's overrides), as an update's growth moves it (ADR-0015 §3 as amended);
 //   2. the side-wall sockets holding a pinned game's slot always take their module, whatever the count needs (the room
-//      grows to a socket of a growth step when one holds a pinned slot or module);
+//      grows to a socket of a growth step when one holds a pinned slot, module or display fixture, and a pinned
+//      decoration is judged against that growth, whatever order the pins' sockets sort in; the room grows further,
+//      within its template's limit, while the side-wall sockets the pinned fixtures take or block leave the modules
+//      the count needs no socket);
 //   3. pinned games are reserved in their slots before the allocation (allocation.hpp); the face-out choice and the
 //      alphabetical fill skip those slots and those games, every other title by the rules of a fresh room;
 //   4. a pinned game stays its title's representative although another version ranks first: it takes the title's

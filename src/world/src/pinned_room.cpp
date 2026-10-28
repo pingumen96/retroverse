@@ -182,8 +182,15 @@ Expected<WorldPlan> generatePinnedRoom(const RoomSelection& selection, const Wor
         slotPins.push_back(pin);
     }
 
-    // Rule 1: the pinned fixtures, before the layout fills the other sockets.
-    std::vector<const FixturePin*> appliedFixtures;
+    // Rule 1: the pinned fixtures, before the layout fills the other sockets. Two passes: the room's growth first, from
+    // the pinned slots, modules and display fixtures (whatever order their sockets sort in), then the pinned decoration
+    // judged against it (a decoration never grows the room: its socket's growth step must be one the room takes).
+    struct FixtureCandidate {
+        const FixturePin* pin = nullptr;
+        const TemplateSocket* socket = nullptr;
+        PinnedFixture pinned;
+    };
+    std::vector<FixtureCandidate> candidates;
     for (const FixturePin& pin : pins.fixtures) {
         if (pins.excluded.contains(pin.fixture)) {
             continue;
@@ -229,50 +236,78 @@ Expected<WorldPlan> generatePinnedRoom(const RoomSelection& selection, const Wor
         if (pinned.role == FixtureRole::Decoration) {
             pinned.liftMm = pinned.transform ? before->yMm
                                              : mountHeightOf(roomTemplate, *pinned.prefab).value_or(before->yMm);
-            if (socket->growthStep > growth) {
-                outcome.conflicts.push_back(fixtureConflict(
-                    pin, ConflictReason::SlotGone,
-                    "its socket " + socket->id + " comes with a growth step the room no longer takes"));
-                continue;
-            }
         } else {
             growth = std::max(growth, socket->growthStep);
         }
-        layoutPins.fixtures.emplace(socket->id, pinned);
-        appliedFixtures.push_back(&pin);
+        candidates.push_back({&pin, socket, std::move(pinned)});
     }
     growth = std::min(growth, roomTemplate.maxGrowthSteps());
-
-    // A hung decoration whose back stood on the south wall follows the wall to the room's new depth (ADR-0015 §3 as
-    // amended: as an update's growth moves it), its pin's transform rewritten.
-    const Footprint interior = interiorFootprint(roomTemplate, growth);
-    for (const FixturePin* pin : appliedFixtures) {
-        PinnedFixture& pinned = layoutPins.fixtures.at(pin->fixture.socket());
-        const auto standing = previousFixtures.find(pin->fixture);
-        if (!pinned.transform || previousRoom == nullptr || standing == previousFixtures.end() ||
-            pinned.role != FixtureRole::Decoration) {
+    std::vector<const FixturePin*> appliedFixtures;
+    for (FixtureCandidate& candidate : candidates) {
+        if (candidate.pinned.role == FixtureRole::Decoration && candidate.socket->growthStep > growth) {
+            outcome.conflicts.push_back(fixtureConflict(*candidate.pin, ConflictReason::SlotGone,
+                                                        "its socket " + candidate.socket->id +
+                                                            " comes with a growth step the room no longer takes"));
             continue;
         }
-        Fixture atPin = *standing->second;
-        atPin.xMm = pinned.transform->xMm;
-        atPin.zMm = pinned.transform->zMm;
-        atPin.yawCdeg = pinned.transform->yawCdeg;
-        const auto mount = wallMountOf(atPin, *previousRoom);
-        const std::int64_t shift = interior.maxZMm - previousRoom->maxZMm;
-        if (shift != 0 && isHungDecoration(atPin) && hangsOnWall(atPin, *previousRoom) && mount &&
-            mount->wall == Wall::South) {
-            pinned.transform->zMm += shift;
-            outcome.followed[pin->fixture] = *pinned.transform;
-        }
+        layoutPins.fixtures.emplace(candidate.socket->id, std::move(candidate.pinned));
+        appliedFixtures.push_back(candidate.pin);
     }
 
-    CollectionCounts grown = counts;
-    grown.growthSteps = growth;
-    auto layout = layOutRoom({roomTemplate, data.platform, data.mediaFamily, data.prefabs, room, seedOfRoom, grown,
-                              config.decorationDensityPermille, layoutPins.empty() ? nullptr : &layoutPins});
+    // The layout at `steps` of growth: a hung decoration whose back stood on the south wall follows the wall to the
+    // room's new depth (ADR-0015 §3 as amended: as an update's growth moves it), its pin's transform rewritten.
+    std::map<FixtureId, FixtureTransform> followed;
+    const auto layOutAt = [&](std::uint32_t steps) -> Expected<RoomLayout> {
+        followed.clear();
+        LayoutPins grownPins = layoutPins;
+        const Footprint interior = interiorFootprint(roomTemplate, steps);
+        for (const FixturePin* pin : appliedFixtures) {
+            PinnedFixture& pinned = grownPins.fixtures.at(pin->fixture.socket());
+            const auto standing = previousFixtures.find(pin->fixture);
+            if (!pinned.transform || previousRoom == nullptr || standing == previousFixtures.end() ||
+                pinned.role != FixtureRole::Decoration) {
+                continue;
+            }
+            Fixture atPin = *standing->second;
+            atPin.xMm = pinned.transform->xMm;
+            atPin.zMm = pinned.transform->zMm;
+            atPin.yawCdeg = pinned.transform->yawCdeg;
+            const auto mount = wallMountOf(atPin, *previousRoom);
+            const std::int64_t shift = interior.maxZMm - previousRoom->maxZMm;
+            if (shift != 0 && isHungDecoration(atPin) && hangsOnWall(atPin, *previousRoom) && mount &&
+                mount->wall == Wall::South) {
+                pinned.transform->zMm += shift;
+                followed[pin->fixture] = *pinned.transform;
+            }
+        }
+        CollectionCounts grown = counts;
+        grown.growthSteps = steps;
+        return layOutRoom({roomTemplate, data.platform, data.mediaFamily, data.prefabs, room, seedOfRoom, grown,
+                           config.decorationDensityPermille, grownPins.empty() ? nullptr : &grownPins});
+    };
+    // The side-wall sockets the pins take or block (a pinned decoration's, those a moved pinned fixture overlaps) send
+    // their modules to the next sockets: the room grows, within the template's limit, until the modules the count
+    // needs stand (a room without pins places them at the count's growth).
+    auto layout = layOutAt(growth);
+    const auto sideModulesOf = [](const RoomLayout& laid) {
+        std::uint32_t modules = 0;
+        for (const std::size_t index : laid.modules) {
+            modules += laid.fixtures[index].fixture.role == FixtureRole::SideModule ? 1 : 0;
+        }
+        return modules;
+    };
+    while (layout && sideModulesOf(*layout) < counts.sideModules && growth < roomTemplate.maxGrowthSteps()) {
+        ++growth;
+        layout = layOutAt(growth);
+    }
     if (!layout) {
         return propagate(layout.error());
     }
+    for (const auto& [fixture, transform] : followed) {
+        outcome.followed[fixture] = transform;
+    }
+    CollectionCounts grown = counts;
+    grown.growthSteps = growth;
 
     // Rule 3: the pinned games reserved in their slots (a slot of the layout's, on a level of the family's items).
     std::map<FixtureId, const PlacedFixture*> placedFixtures;

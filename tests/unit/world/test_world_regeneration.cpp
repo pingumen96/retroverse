@@ -30,6 +30,7 @@
 #include <rv/core/random.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/world/capacity.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/incremental.hpp>
 #include <rv/world/overrides.hpp>
@@ -882,6 +883,131 @@ TEST_CASE("world/regeneration: a hung decoration on the south wall follows it to
           rv::world::FixtureTransform{placed.xMm, placed.zMm + shift, placed.yawCdeg});
     CHECK(regeneration.impact.conflicts.empty());
     CHECK(regeneration.impact.pinsKept.size() == 1);
+}
+
+namespace {
+
+/// The side-wall modules `titles` titles need in the SNES room (capacity.hpp's count).
+std::uint32_t sideModulesOf(std::size_t titles) {
+    static const rv::world::CollectionCapacity capacity = [] {
+        auto measured = rv::world::collectionCapacity(snesData().roomTemplate, snesData().prefabs,
+                                                      snesData().mediaFamily);
+        REQUIRE(measured.has_value());
+        return *measured;
+    }();
+    return rv::world::countCollection(capacity, titles, rv::test::world::roomConfig(kWorldSeed).growthReservePermille)
+        .sideModules;
+}
+
+/// The most titles whose count needs `modules` side-wall modules.
+std::size_t mostTitlesFor(std::uint32_t modules) {
+    std::size_t titles = 1;
+    while (sideModulesOf(titles + 1) <= modules) {
+        ++titles;
+    }
+    REQUIRE(sideModulesOf(titles) == modules);
+    return titles;
+}
+
+std::size_t capacityUnplaced(const WorldPlan& plan) {
+    return static_cast<std::size_t>(
+        std::count_if(plan.unplaced.begin(), plan.unplaced.end(), [](const rv::world::UnplacedGame& game) {
+            return game.reason == rv::world::UnplacedReason::Capacity;
+        }));
+}
+
+} // namespace
+
+TEST_CASE("world/regeneration: a pinned decoration on a growth step's socket judged against the growth every pin "
+          "asks for",
+          "[world][regeneration]") {
+    // Fifteen side-wall modules: the room grown a step, w08 a module and e08 (after it in the collection's order)
+    // decoration. Both pinned; the collection shrinks to a room of no growth, but the pinned module keeps the step:
+    // the decoration of e08, which sorts before w08, stands.
+    SnesWorld world = snesWorld(mostTitlesFor(15), 62);
+    REQUIRE(world.plan.rooms.front().growthSteps == 1);
+    const Fixture* module = fixtureOf(world.plan, "room:snes/fx:w08");
+    const Fixture* decoration = fixtureOf(world.plan, "room:snes/fx:e08");
+    REQUIRE(module != nullptr);
+    REQUIRE(decoration != nullptr);
+    REQUIRE(module->role == FixtureRole::SideModule);
+    REQUIRE(decoration->role == FixtureRole::Decoration);
+    EditedWorld edited{world.plan, {}};
+    // The decoration slid along its wall (pinned at its transform: a fresh draw never stands it there).
+    bool slid = false;
+    for (const std::int64_t dz : {100, -100, 200, -200}) {
+        EditedWorld trial = edited;
+        auto result = rv::world::applyEdit(
+            trial, EditOperation::moveFixture(decoration->id, decoration->xMm, decoration->zMm + dz,
+                                              decoration->yawCdeg),
+            snesEditData(), kProvenance);
+        REQUIRE(result.has_value());
+        if (!result->refused) {
+            edited = trial;
+            slid = true;
+            break;
+        }
+    }
+    REQUIRE(slid);
+    edit(edited, EditOperation::pinFixture(module->id));
+    REQUIRE(edited.overrides.fixturePins.size() == 2);
+    REQUIRE(edited.overrides.fixturePins.front().fixture == decoration->id);
+    REQUIRE(edited.overrides.fixturePins.front().transform.has_value());
+    const Fixture moved = *fixtureOf(edited.plan, "room:snes/fx:e08");
+    Inputs inputs = world.inputs;
+    inputs.selections = {makeSelection(mostTitlesFor(10), 62)};
+    REQUIRE(generateSelection(inputs.selections.front(), kWorldSeed).plan.rooms.front().growthSteps == 0);
+    const Regeneration regeneration = regenerateOf(edited.plan, inputs,
+                                                   RegenerationScope::ofRoom(*RoomId::parse("room:snes")),
+                                                   edited.overrides);
+    INFO(failedFindings(regeneration.result.validation));
+    CHECK(regeneration.result.validation.passed());
+    for (const rv::world::OverrideConflict& conflict : regeneration.impact.conflicts) {
+        INFO(conflict.pin << ": " << rv::world::toString(conflict.reason) << ": " << conflict.message);
+        CHECK(false);
+    }
+    CHECK(regeneration.result.plan.rooms.front().growthSteps == 1);
+    const Fixture* standing = fixtureOf(regeneration.result.plan, "room:snes/fx:e08");
+    REQUIRE(standing != nullptr);
+    CHECK(*standing == moved);
+    REQUIRE(fixtureOf(regeneration.result.plan, "room:snes/fx:w08") != nullptr);
+    CHECK(fixtureOf(regeneration.result.plan, "room:snes/fx:w08")->role == FixtureRole::SideModule);
+    requirePinsAccounted(regeneration, edited.overrides);
+}
+
+TEST_CASE("world/regeneration: the modules a pinned fixture displaces grow the room", "[world][regeneration]") {
+    // Thirteen side-wall modules: e07, the last socket of the room without growth, holds decoration; pinned. The
+    // collection grows to exactly the fourteen modules the room without growth holds: with e07 pinned, the room
+    // takes a step and every title stands.
+    SnesWorld world = snesWorld(mostTitlesFor(13), 63);
+    REQUIRE(world.plan.rooms.front().growthSteps == 0);
+    const Fixture* decoration = fixtureOf(world.plan, "room:snes/fx:e07");
+    REQUIRE(decoration != nullptr);
+    REQUIRE(decoration->role == FixtureRole::Decoration);
+    EditedWorld edited{world.plan, {}};
+    edit(edited, EditOperation::pinFixture(decoration->id));
+    Inputs inputs = world.inputs;
+    inputs.selections = {makeSelection(mostTitlesFor(14), 63)};
+    const GenerationResult fresh = generateSelection(inputs.selections.front(), kWorldSeed);
+    REQUIRE(fresh.plan.rooms.front().growthSteps == 0);
+    REQUIRE(capacityUnplaced(fresh.plan) == 0);
+    const Regeneration regeneration = regenerateOf(edited.plan, inputs,
+                                                   RegenerationScope::ofRoom(*RoomId::parse("room:snes")),
+                                                   edited.overrides);
+    INFO(failedFindings(regeneration.result.validation));
+    CHECK(regeneration.result.validation.passed());
+    CHECK(regeneration.impact.conflicts.empty());
+    CHECK(regeneration.result.plan.rooms.front().growthSteps == 1);
+    CHECK(capacityUnplaced(regeneration.result.plan) == 0);
+    const Fixture* standing = fixtureOf(regeneration.result.plan, "room:snes/fx:e07");
+    REQUIRE(standing != nullptr);
+    CHECK(*standing == *decoration);
+    REQUIRE(fixtureOf(regeneration.result.plan, "room:snes/fx:w08") != nullptr);
+    CHECK(fixtureOf(regeneration.result.plan, "room:snes/fx:w08")->role == FixtureRole::SideModule);
+    requirePinsAccounted(regeneration, edited.overrides);
+    // The update of the same selection after it writes nothing.
+    CHECK(updateRoom(regeneration.result.plan, inputs.selections.front(), kWorldSeed, regeneration.overrides).plan ==
+          regeneration.result.plan);
 }
 
 TEST_CASE("world/regeneration: random edit sessions then a changed catalog: no override dropped, every pin honoured "
