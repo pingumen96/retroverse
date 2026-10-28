@@ -14,9 +14,9 @@
 //    stored them, presence and extension per kind, each file's path derived again under the library's media root
 //    (esde::EsdeMediaResolver::path(): paths are never stored, ADR-0008 §5); nothing on disk is looked at. The catalog
 //    is read as `show` reads it (nothing written into it).
-//  - media --check-videos [--system <name>] [--jobs N] [--json] [--output <file>] (I5 step 7, ADR-0016 §8): the clips'
-//    verdicts, the clips of the media root's videos folders checked and their verdicts merged into
-//    <user data>/cache/media/videos.json (cmd_media_videos.cpp).
+//  - media --check-videos [--system <name>] [--jobs N] [--recheck-failures] [--json] [--output <file>] (I5 step 7,
+//    ADR-0016 §8): the clips' verdicts, the clips of the media root's videos folders checked and their verdicts merged
+//    into <user data>/cache/media/videos.json (cmd_media_videos.cpp).
 // The library is the one <user data>/config/library.json records (library create). Exit codes: 0; 1 when something
 // could not be read (the media root, a media folder, the settings, the systems, a gamelist, a ROM folder, the ROM
 // folder of the path, a videos folder), for a --game the catalog does not have, and for a clip whose check did not
@@ -582,7 +582,8 @@ ExitCode runMedia(CommandContext& context) {
         .flag("json", "Print the results as JSON.")
         .flag("check-videos", "Check the clips of the videos folders (one system's with --system) that have no verdict "
                               "for their file as it is, and keep their verdicts in <user data>/cache/media/videos.json.")
-        .option("jobs", "n", "Clips checked at once by --check-videos (1 to 8; default 2).");
+        .option("jobs", "n", "Clips checked at once by --check-videos (1 to 8; default 2).")
+        .flag("recheck-failures", "With --check-videos, also check again the clips whose verdict is a failure.");
     addOutputOption(parser);
     const auto args = parser.parse(context.arguments);
     if (!args) {
@@ -610,6 +611,9 @@ ExitCode runMedia(CommandContext& context) {
             return usage(fmt::format("--jobs must be a whole number from 1 to {}", kMaxVideoCheckJobs));
         }
         jobs = parsed;
+    }
+    if (args->has("recheck-failures") && !checkVideosAsked) {
+        return usage("--recheck-failures goes with --check-videos");
     }
     if (checkVideosAsked && (args->has("game") || args->has("coverage") || args->has("path"))) {
         return usage("--check-videos takes neither --game, --path nor --coverage");
@@ -693,7 +697,8 @@ ExitCode runMedia(CommandContext& context) {
 
     const ExitCode code =
         checkVideosAsked
-            ? checkVideos(context, *destination.out, library.mediaRoot, *library.systems, system, jobs, args->has("json"))
+            ? checkVideos(context, *destination.out, library.mediaRoot, *library.systems, system, jobs,
+                          args->has("recheck-failures"), args->has("json"))
         : coverage ? showCoverage(context, *destination.out, library, system, args->has("json"))
                    : showPath(context, *destination.out, library, *system, romPath, args->has("json"));
     if (destination.file && destination.file->text().empty()) {

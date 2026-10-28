@@ -3,11 +3,13 @@
 // ES-DE's video extensions) without a verdict for its file as it is now is checked (media::checkVideo: its head, middle
 // and end decoded by the screens' own decoder) on `--jobs` threads at below-normal priority, and its verdict merged
 // into <user data>/cache/media/videos.json every few clips (media::updateVideoVerdicts), so that a run interrupted at
-// any point resumes where it stopped. Verdicts of clips no longer in a folder listed whole are removed. Nothing is
-// written under the media root: the clips are only read. The report counts the verdicts per kind and system (those of
-// earlier runs and of the app included), lists the failures (with the decoder's reason for those checked now) and the
-// near misses (playable clips in which the decoder counted errors or damaged frames: ADR-0004's thresholds), and the
-// clips whose check did not finish.
+// any point resumes where it stopped; a merge that fails (the app holds the lock, the file cannot be written) keeps its
+// verdicts for the next one. `--recheck-failures` checks the clips with a failure verdict again. A clip the system
+// could not read (DecodeFailure::ReadError) or that went meanwhile gets no verdict: it is listed as not checked.
+// Verdicts of clips no longer in a folder listed whole are removed. Nothing is written under the media root: the clips
+// are only read. The report counts the verdicts per kind and system (those of earlier runs and of the app included),
+// lists the failures (with the decoder's reason for those checked now) and the near misses (playable clips in which the
+// decoder counted errors or damaged frames: ADR-0004's thresholds), and the clips whose check did not finish.
 
 #include "esde_text.hpp"
 #include "media_videos.hpp"
@@ -316,7 +318,7 @@ Json countsJson(const Counts& counts) {
 
 ExitCode checkVideos(CommandContext& context, Output& out, const esde::ResolvedRoot& mediaRoot,
                      const esde::SystemsConfiguration& systems, const std::optional<catalog::SystemName>& system,
-                     int jobs, bool json) {
+                     int jobs, bool recheckFailures, bool json) {
     const Clock::time_point started = Clock::now();
     esde::EsdeMediaResolver resolver(mediaRoot);
     if (const Status root = resolver.checkRoot(); !root || !resolver.mediaRoot()) {
@@ -337,43 +339,53 @@ ExitCode checkVideos(CommandContext& context, Output& out, const esde::ResolvedR
     const fs::path file = media::videoVerdictsFile(context.paths.cacheDir());
     auto stored = media::readVideoVerdicts(file);
     if (!stored) {
-        spdlog::warn("Video verdicts: {} cannot be read ({}); it is written anew", pathText(file),
+        if (!media::isUnreadableText(stored.error().code)) {
+            // Its verdicts may all be there: checking every clip again for nothing, and failing to merge, helps no one.
+            context.err.writeLine(fmt::format("{}: the verdicts cannot be read: {}", kName, stored.error().toString()));
+            return ExitCode::RuntimeFailure;
+        }
+        spdlog::warn("Video verdicts: {} holds no verdicts ({}); it is written anew", pathText(file),
                      stored.error().toString());
         stored = media::VideoVerdicts{};
     }
     media::VideoVerdicts verdicts = std::move(*stored);
 
-    // The clips whose file has no verdict as it is now.
+    // The clips whose file has no verdict as it is now (and those with a failure's, with --recheck-failures).
     std::vector<std::size_t> tasks;
+    std::size_t rechecked = 0;
     for (std::size_t index = 0; index < clips.size(); ++index) {
-        if (verdicts.findCurrent(clips[index].path, clips[index].facts) == nullptr) {
+        const media::VideoVerdict* verdict = verdicts.findCurrent(clips[index].path, clips[index].facts);
+        if (verdict == nullptr) {
             tasks.push_back(index);
+        } else if (recheckFailures && !verdict->playable()) {
+            tasks.push_back(index);
+            ++rechecked;
         }
     }
     const std::size_t known = clips.size() - tasks.size();
     spdlog::info(
         "Video check: {} clip(s) in {} system(s), {} with a verdict for their file as it is, {} to check on {} "
-        "job(s)",
-        clips.size(), scans.size(), known, tasks.size(), jobs);
+        "job(s) ({} failure(s) checked again)",
+        clips.size(), scans.size(), known, tasks.size(), jobs, rechecked);
 
     std::vector<std::string> details(clips.size());
     std::vector<bool> checkedNow(clips.size(), false);
     std::vector<std::size_t> incomplete;
+    // The verdicts not merged into the file yet: a merge that fails keeps them for the next one.
     std::vector<media::VideoVerdict> pending;
-    bool writeFailed = false;
     const auto merge = [&](std::span<const std::string> removals) {
         if (pending.empty() && removals.empty()) {
-            return;
+            return true;
         }
         auto merged = media::updateVideoVerdicts(file, pending, removals);
         if (!merged) {
-            context.err.writeLine(
-                fmt::format("{}: the verdicts cannot be written: {}", kName, merged.error().toString()));
-            writeFailed = true;
-            return;
+            context.err.writeLine(fmt::format("{}: {} verdict(s) not written yet (kept for the next merge): {}", kName,
+                                              pending.size(), merged.error().toString()));
+            return false;
         }
         verdicts = std::move(*merged);
         pending.clear();
+        return true;
     };
     {
         const BelowNormalPriority priority;
@@ -383,14 +395,16 @@ ExitCode checkVideos(CommandContext& context, Output& out, const esde::ResolvedR
         Clock::time_point lastProgress = Clock::now();
         std::size_t done = 0;
         std::size_t failures = 0;
-        while (done < tasks.size() && !writeFailed) {
+        while (done < tasks.size()) {
             if (auto result = runner.next(std::chrono::milliseconds(500))) {
                 ++done;
                 const auto& [index, check] = *result;
                 const Clip& clip = clips[index];
                 details[index] = check.detail;
-                if (!check.completed || check.failure == DecodeFailure::FileNotFound) {
-                    incomplete.push_back(index); // no verdict: timed out, or the file went meanwhile
+                if (!check.completed || check.failure == DecodeFailure::FileNotFound ||
+                    check.failure == DecodeFailure::ReadError) {
+                    // No verdict: timed out, the file went meanwhile, or the system could not read it.
+                    incomplete.push_back(index);
                 } else {
                     media::VideoVerdict verdict;
                     verdict.path = clip.path;
@@ -408,7 +422,7 @@ ExitCode checkVideos(CommandContext& context, Output& out, const esde::ResolvedR
                 }
             }
             if (pending.size() >= kMergeEvery || (!pending.empty() && Clock::now() - lastMerge >= kMergeInterval)) {
-                merge({});
+                static_cast<void>(merge({})); // a failure keeps them: the next merge tries again
                 lastMerge = Clock::now();
             }
             if (Clock::now() - lastProgress >= kProgressInterval) {
@@ -439,9 +453,12 @@ ExitCode checkVideos(CommandContext& context, Output& out, const esde::ResolvedR
             }
         }
     }
-    if (!writeFailed) {
-        merge(removals);
+    // The last merge, with the removals; if it fails too, the report still shows the verdicts found.
+    const bool writeFailed = !merge(removals);
+    for (media::VideoVerdict& verdict : pending) {
+        static_cast<void>(verdicts.set(std::move(verdict)));
     }
+    pending.clear();
 
     // The report: every listed clip's verdict as the file holds it now.
     std::vector<Counts> perSystem(scans.size());

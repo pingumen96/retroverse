@@ -1,7 +1,8 @@
 // retroverse-cli media --check-videos (I5 step 7, ADR-0016 §8) through the dispatcher, on the video-verdicts fixture:
 // each damaged kind of SC-08 gets its verdict in <user data>/cache/media/videos.json, the report counts them per kind
-// and system and lists the failures; a second run checks nothing (it resumes), a clip whose file changed is checked
-// again and a clip gone loses its verdict; the usage errors. Nothing is written under the media root.
+// and system and lists the failures; a second run checks nothing (it resumes), --recheck-failures checks the failures
+// again, a clip whose file changed is checked again and a clip gone loses its verdict; the usage errors. Nothing is
+// written under the media root.
 
 #include "support/fixture.hpp"
 #include "support/temp_dir.hpp"
@@ -246,6 +247,19 @@ TEST_CASE("cli/media --check-videos: resumes, checks a changed clip again and fo
     }
     CHECK(rv::core::readTextFile(cli.verdictsFile()).value() == *firstText);
 
+    // --recheck-failures: the six failures checked again (their files unchanged), the same verdicts, each with the
+    // decoder's reason now; the playable clips left alone.
+    const RunResult failuresAgain = cli.check({"--json", "--recheck-failures"});
+    REQUIRE(failuresAgain.code == ExitCode::Ok);
+    const nlohmann::json recheckedFailures = parsed(failuresAgain.out);
+    CHECK(recheckedFailures["total"]["checked"] == 6);
+    CHECK(recheckedFailures["total"]["known"] == 2);
+    CHECK(recheckedFailures["total"]["verdicts"]["playable"] == 2);
+    REQUIRE(recheckedFailures["failures"].size() == 6);
+    for (const auto& failure : recheckedFailures["failures"]) {
+        CHECK(failure["detail"] != "");
+    }
+
     // The truncated clip is replaced by a whole one (another size and time): checked again, playable now.
     const fs::path brass = fixture.path("media/snes/videos/Brass Kettle (USA).mp4");
     rv::media::TestVideoSpec spec;
@@ -284,6 +298,7 @@ TEST_CASE("cli/media --check-videos: usage errors", "[cli][media][video_verdicts
     const Cli cli(*materialized, "rv-cli-videos-usage");
     for (const std::vector<std::string>& arguments :
          {std::vector<std::string>{"media", "--jobs", "2", "--coverage"},
+          std::vector<std::string>{"media", "--coverage", "--recheck-failures"},
           std::vector<std::string>{"media", "--check-videos", "--jobs", "0"},
           std::vector<std::string>{"media", "--check-videos", "--jobs", "9"},
           std::vector<std::string>{"media", "--check-videos", "--jobs", "two"},
