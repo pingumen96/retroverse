@@ -137,7 +137,9 @@ void appendContent(const scene::SceneGeometry& geometry, const SceneContentPlan&
         if (planned.picture) {
             slots[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] = &pictureTexture(planned, resources.textures);
         }
-        materials.push_back(resources.materials.add(planned.key, planned.label, planned.material, slots));
+        // The registry's key names the picture too (registryKeyOf()): an object rebuilt with another picture under
+        // the same id and role never takes the one registered before it.
+        materials.push_back(resources.materials.add(registryKeyOf(planned), planned.label, planned.material, slots));
     }
     items.reserve(items.size() + plan.items.size());
     for (const PlannedItem& item : plan.items) {

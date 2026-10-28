@@ -82,6 +82,13 @@ struct SceneContentPlan {
 /// assets::patternSizeForAspect).
 [[nodiscard]] glm::ivec2 patternSizeFor(const geometry::MeshData& mesh, const glm::mat4& model);
 
+/// The key `planned` is registered under in the scene's material registry (equal keys share one material): a shared
+/// material's name; an instance's plan key followed by "#" and a digest of its material's name and its picture (the
+/// texture's kind, path, pattern, title, seed or procedural name), so that an object rebuilt with the same id and role
+/// but another picture or material (SceneInstance::replaceObjects(), I4b step 4) never draws with the one registered
+/// before it.
+[[nodiscard]] std::string registryKeyOf(const PlannedMaterial& planned);
+
 /// Plans the content of `geometry`, deterministically, in scene order (objects, then parts, then instances):
 ///  - Meshes: one per distinct ScenePart::meshKey, in order of first use, so objects built from the same shape share
 ///    their meshes (the 24 cartridges of the test room: one shell mesh, one label mesh).

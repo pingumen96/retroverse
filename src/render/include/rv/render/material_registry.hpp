@@ -89,8 +89,8 @@ struct GpuMaterial {
 /// device capabilities) and the wrap mode of the texture they are bound with, so pictures stay clamped and surfaces
 /// tile.
 ///
-/// Materials are registered under keys that identify them (a library material's name, "<object>/<role>@WxH" for the
-/// picture instance of a part, "<model>#material<i>" for a glTF material): equal keys share one material. Usage:
+/// Materials are registered under keys that identify them (a library material's name, "<object>/<role>@WxH#<picture>"
+/// for the picture instance of a part, "<model>#material<i>" for a glTF material): equal keys share one material. Usage:
 /// add() materials, upload(), then bind() before drawing with one; materials added after an upload are drawable after
 /// the next one. The textures must outlive the registry (TextureCache, TextureDefaults). Main thread only.
 class MaterialRegistry {
