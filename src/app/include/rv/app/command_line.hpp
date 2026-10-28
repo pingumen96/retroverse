@@ -13,7 +13,7 @@
 #include <spdlog/common.h>
 
 #include <rv/app/self_check.hpp>
-#include <rv/audio/audio_engine.hpp>
+#include <rv/audio/audio_output.hpp>
 #include <rv/core/expected.hpp>
 
 namespace rv::core {

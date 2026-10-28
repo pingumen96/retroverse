@@ -7,21 +7,11 @@
 #include <string>
 #include <string_view>
 
+#include <rv/audio/audio_output.hpp>
 #include <rv/audio/mixer.hpp>
 #include <rv/core/expected.hpp>
 
 namespace rv::audio {
-
-/// Where the mix goes (ADR-0016 §9, --audio).
-enum class AudioOutput : std::uint8_t {
-    Device, ///< miniaudio's shared-mode default endpoint: the interactive runs' default
-    Null,   ///< no operating-system audio at all: the main thread pulls the mix (frame-limited runs, tests)
-    Off,    ///< no mixer and no audio decoded
-};
-
-/// "device", "null", "off".
-[[nodiscard]] std::string_view toString(AudioOutput output) noexcept;
-[[nodiscard]] std::optional<AudioOutput> audioOutputFromName(std::string_view name) noexcept;
 
 struct AudioEngineOptions {
     /// Device or Null (Off builds no engine).

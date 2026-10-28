@@ -12,7 +12,7 @@
 #include <string_view>
 
 #include <rv/app/screen_scheduler.hpp>
-#include <rv/audio/audio_engine.hpp>
+#include <rv/audio/audio_output.hpp>
 
 namespace rv::app {
 

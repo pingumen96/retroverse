@@ -53,9 +53,9 @@ add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
 target_include_directories(rv_app_cli PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # rv_world (I3): the world's plans, picking and the interaction states of the generated room (ADR-0010, ADR-0012).
-# rv_audio (I5 step 5): the output's names and the spatial rules (GPU-free, miniaudio private to it).
+# rv_audio_model (I5 step 5): the outputs' names and the spatial rules, without the engine or miniaudio.
 target_link_libraries(rv_app_cli PUBLIC
-    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms rv_world rv_audio)
+    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms rv_world rv_audio_model)
 rv_forbid_link(rv_app_cli)
 
 # GPU-free part of the application layer over the ES-DE catalog (I2 step 13): the catalog worker (the database's writer
