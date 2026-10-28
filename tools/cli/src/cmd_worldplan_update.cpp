@@ -48,6 +48,7 @@
 #include <rv/world/incremental.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/world_snapshots.hpp>
 #include <rv/world/world_store.hpp>
 
 #include "catalog_text.hpp"
@@ -456,15 +457,30 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
         if (Status status = core::writeTextFileAtomic(planPath, *text); !status) {
             return failure(context, "the plan", status.error());
         }
+        if (result->overrides) {
+            spdlog::warn("worldplan update: the pins that followed their wall are not saved (--plan writes the plan "
+                         "only)");
+        }
     } else {
         world::SaveOptions options;
         options.writer = fmt::format("retroverse-cli worldplan update ({})", core::versionBanner());
         options.duration = duration;
-        auto report = world::savePlan(*lock, *result, options);
-        if (!report) {
-            return failure(context, "the plan", report.error());
+        if (result->overrides) {
+            // A growth moved a pinned poster with the south wall: its pin follows it, saved with the plan together
+            // behind a snapshot (ADR-0015 §6), which 'worldplan undo' restores.
+            auto commit = world::commitWorld(*lock, world::WorldAction{"update", "world"}, *result,
+                                             *result->overrides, options);
+            if (!commit) {
+                return failure(context, "the plan", commit.error());
+            }
+            written = commit->written;
+        } else {
+            auto report = world::savePlan(*lock, *result, options);
+            if (!report) {
+                return failure(context, "the plan", report.error());
+            }
+            written = report->written;
         }
-        written = report->written;
     }
     spdlog::info("worldplan update: {} {} ({} added, {} kept, rebuild {}, digest {})", pathText(planPath),
                  written ? "written" : "unchanged", changes.added.size(), changes.kept,
