@@ -110,6 +110,7 @@ void ScreenScheduler::stop(std::size_t index, std::string_view reason, std::vect
     slot.state = SlotState::Draining;
     slot.paused = false;
     slot.hiddenSince.reset();
+    slot.previousScreens = std::move(slot.screens);
     slot.screens.clear();
     m_stats[index] = SlotStats{};
 }
@@ -331,18 +332,27 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         stop(*worst, "budget", stops);
     }
 
-    // A slot for each best clip without one: a free one, then a draining one, then one taken from a clip not among the
-    // best (the lowest-ranked), at most once a second unless the request is direct or focus.
+    // A slot for each best clip without one: the one a screen of it showed before (free, then still draining), then a
+    // free one, then a draining one, then one taken from a clip not among the best (the lowest-ranked), at most once a
+    // second unless the request is direct or focus.
     for (const std::size_t index : desired) {
         const Demand& demand = demands[index];
         if (holder(demand.clip)) {
             continue;
         }
+        const auto showedBefore = [&](const ScreenSlot& slot) {
+            return std::any_of(slot.previousScreens.begin(), slot.previousScreens.end(), [&](const std::string& id) {
+                return std::binary_search(demand.screens.begin(), demand.screens.end(), id);
+            });
+        };
         std::optional<std::size_t> pick;
-        for (const SlotState state : {SlotState::Free, SlotState::Draining}) {
-            for (std::size_t slot = 0; slot < m_slots.size() && !pick; ++slot) {
-                if (m_slots[slot].state == state && m_slots[slot].next.empty()) {
-                    pick = slot;
+        for (const bool own : {true, false}) {
+            for (const SlotState state : {SlotState::Free, SlotState::Draining}) {
+                for (std::size_t slot = 0; slot < m_slots.size() && !pick; ++slot) {
+                    const ScreenSlot& candidate = m_slots[slot];
+                    if (candidate.state == state && candidate.next.empty() && (!own || showedBefore(candidate))) {
+                        pick = slot;
+                    }
                 }
             }
         }
@@ -386,6 +396,7 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         slot.clip = std::exchange(slot.next, std::string());
         slot.paused = false;
         slot.hiddenSince.reset();
+        slot.previousScreens.clear();
         m_stats[index] = SlotStats{};
         opens.push_back(SlotCommand{SlotAction::Open, index, slot.clip, "wanted"});
     }

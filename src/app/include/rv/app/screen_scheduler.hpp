@@ -98,6 +98,9 @@ struct ScreenSlot {
     std::optional<double> hiddenSince;
     /// Open: the screens that show it, by id.
     std::vector<std::string> screens;
+    /// Draining or free: the screens it showed when it stopped. A screen switching clips gets its own slot back (one
+    /// thread for it, as with one decoder), not a free one.
+    std::vector<std::string> previousScreens;
 };
 
 enum class SlotAction : std::uint8_t {
@@ -163,7 +166,8 @@ struct BudgetDrop {
 ///  - A slot changes hands (a request takes it from a clip still asked for) at most once every kSlotHandOverSeconds
 ///    unless the request taking it is `direct` or `focus`. A clip no screen asks for any more stops at once.
 ///  - A stopped slot drains: it opens its next clip only once the service reports its thread ended, so that there are
-///    never more decoder threads than slots, nor more open decoders than the budget.
+///    never more decoder threads than slots, nor more open decoders than the budget. A clip takes the slot one of its
+///    screens showed before (a screen switching clips waits for its own slot), else a free one, else a draining one.
 ///  - The late-frame drop: a slot over kLateFrameRatio over kLateWindowSeconds lowers the budget to 1 for
 ///    kLateDropSeconds; the lowest-ranked clip loses its slot.
 class ScreenScheduler {

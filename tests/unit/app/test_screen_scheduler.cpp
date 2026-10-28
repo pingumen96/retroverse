@@ -428,3 +428,28 @@ TEST_CASE("app/screen_scheduler: never more decoders than the budget nor threads
         }
     }
 }
+
+TEST_CASE("app/screen_scheduler: a screen switching clips waits for its own slot, a free one left free",
+          "[app][screen_scheduler]") {
+    // One screen and two slots (the test room's hero in Balanced): one decoder thread at a time, as in I5 step 1.
+    ScreenScheduler scheduler;
+    Decoders decoders(2, 4);
+    double now = 0.0;
+    run(scheduler, decoders, {request("hero", ScreenClass::Room, "a", 3.0)}, now, 3);
+    const std::vector<ScreenRequest> next{request("hero", ScreenClass::Room, "b", 3.0)};
+    ScheduleResult result = scheduler.update(now, next, decoders.feedback());
+    decoders.apply(result);
+    now += kFrame;
+    CHECK(result.commands == std::vector<SlotCommand>{{SlotAction::Stop, 0, "a", "unwanted"}});
+    CHECK(result.screens.front() == (ScreenAssignment{0, false, true}));
+    std::size_t maxThreads = decoders.threads();
+    for (int frame = 0; frame < 10; ++frame) {
+        result = scheduler.update(now, next, decoders.feedback());
+        decoders.apply(result);
+        maxThreads = std::max(maxThreads, decoders.threads());
+        now += kFrame;
+    }
+    CHECK(result.screens.front() == playing(0));
+    CHECK(maxThreads == 1);
+    CHECK(scheduler.slots()[1].state == SlotState::Free);
+}
