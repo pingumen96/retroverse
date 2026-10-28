@@ -101,6 +101,12 @@ std::size_t ScreenScheduler::openSlots() const noexcept {
     }));
 }
 
+std::size_t ScreenScheduler::committedSlots() const noexcept {
+    return static_cast<std::size_t>(std::count_if(m_slots.begin(), m_slots.end(), [](const ScreenSlot& slot) {
+        return slot.state == SlotState::Open || !slot.next.empty();
+    }));
+}
+
 void ScreenScheduler::stop(std::size_t index, std::string_view reason, std::vector<SlotCommand>& stops) {
     ScreenSlot& slot = m_slots[index];
     if (slot.state != SlotState::Open) {
@@ -321,22 +327,43 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
             stop(index, "out-of-view", stops);
         }
     }
-    // Over the budget (the late-frame drop): the lowest-ranked open clips lose their slots.
-    while (openSlots() > budget) {
+    // A slot's commitment: its open clip, else the clip reserved for it (an open slot has no reservation). A clip not
+    // among the best ranks below every best one.
+    const auto committedClip = [](const ScreenSlot& slot) -> const std::string& {
+        return slot.state == SlotState::Open ? slot.clip : slot.next;
+    };
+    const auto rankOf = [&](const std::string& clip) {
+        const std::size_t index = demandIndex(clip).value_or(demands.size());
+        return isDesired(clip) ? index : demands.size() + 1 + index;
+    };
+    // The slot of the lowest-ranked commitment (`othersOnly`: of a clip not among the best only).
+    const auto worstCommitment = [&](bool othersOnly) -> std::optional<std::size_t> {
         std::optional<std::size_t> worst;
         std::size_t worstRank = 0;
         for (std::size_t index = 0; index < m_slots.size(); ++index) {
-            const ScreenSlot& slot = m_slots[index];
-            if (slot.state != SlotState::Open) {
+            const std::string& clip = committedClip(m_slots[index]);
+            if (clip.empty() || (othersOnly && isDesired(clip))) {
                 continue;
             }
-            const std::size_t rank = isDesired(slot.clip) ? demandIndex(slot.clip).value_or(0) : demands.size() + 1;
+            const std::size_t rank = rankOf(clip);
             if (!worst || rank >= worstRank) {
                 worst = index;
                 worstRank = rank;
             }
         }
-        stop(*worst, "budget", stops);
+        return worst;
+    };
+    // Lets go of the commitment of `index`: its open clip stopped ("budget"), else its reservation dropped.
+    const auto release = [&](std::size_t index) {
+        if (m_slots[index].state == SlotState::Open) {
+            stop(index, "budget", stops);
+        } else {
+            m_slots[index].next.clear();
+        }
+    };
+    // Over the budget (the late-frame drop): the lowest-ranked open clips and reservations go until the rest fit it.
+    while (committedSlots() > budget) {
+        release(*worstCommitment(false));
     }
 
     // A slot for each best clip without one: the one a screen of it showed before (free, then still draining), then a
@@ -362,6 +389,15 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
                     }
                 }
             }
+        }
+        if (pick && committedSlots() >= budget) {
+            // At the budget (the late-frame drop): a free or draining slot only once the lowest-ranked clip not among
+            // the best has let go of its decoder (whatever the hand-over rule); out of view, a clip takes none.
+            const std::optional<std::size_t> worst = worstCommitment(true);
+            if (!worst || !demand.visible) {
+                continue;
+            }
+            release(*worst);
         }
         if (!pick) {
             std::optional<std::size_t> victim;

@@ -171,7 +171,9 @@ struct BudgetDrop {
 ///    never more decoder threads than slots, nor more open decoders than the budget. A clip takes the slot one of its
 ///    screens showed before (a screen switching clips waits for its own slot), else a free one, else a draining one.
 ///  - The late-frame drop: a slot over kLateFrameRatio over kLateWindowSeconds lowers the budget to 1 for
-///    kLateDropSeconds; the lowest-ranked clip loses its slot.
+///    kLateDropSeconds; the lowest-ranked clip loses its slot. Open plus reserved slots never exceed the budget: at
+///    it, a clip in view takes a free or draining slot only once the lowest-ranked open clip not among the best has
+///    stopped ("budget", whatever the hand-over rule), and a clip out of view takes none.
 class ScreenScheduler {
 public:
     explicit ScreenScheduler(ScreenSchedulerSettings settings = {});
@@ -191,8 +193,9 @@ public:
     [[nodiscard]] std::span<const ScreenSlot> slots() const noexcept { return m_slots; }
     [[nodiscard]] const std::vector<BudgetDrop>& drops() const noexcept { return m_drops; }
     [[nodiscard]] const ScreenSchedulerSettings& settings() const noexcept { return m_settings; }
-    /// Slots open now.
+    /// Slots open now, and slots open or reserved for a clip (never more than the budget after update()).
     [[nodiscard]] std::size_t openSlots() const noexcept;
+    [[nodiscard]] std::size_t committedSlots() const noexcept;
     /// Times a slot was taken from a clip still asked for.
     [[nodiscard]] std::uint64_t handOvers() const noexcept { return m_handOvers; }
 

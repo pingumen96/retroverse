@@ -44,17 +44,31 @@ std::vector<ScreenRequest> fourScreens() {
             request("crt_c", ScreenClass::Ambient, "b", 3.1), request("crt_d", ScreenClass::Ambient, "c", 4.0)};
 }
 
-/// The decoders as the service runs them: a stopped one's thread ends `drainFrames` updates later.
+/// The decoders as the service runs them: a stopped one's thread ends `drainFrames` updates later; an open one's clock
+/// counts the frames present() gives it since it opened.
 class Decoders {
 public:
-    explicit Decoders(std::size_t slots, int drainFrames = 3) : m_left(slots, -1), m_drainFrames(drainFrames) {}
+    explicit Decoders(std::size_t slots, int drainFrames = 3)
+        : m_left(slots, -1), m_presented(slots, 0), m_late(slots, 0), m_drainFrames(drainFrames) {}
 
     [[nodiscard]] std::vector<SlotFeedback> feedback() const {
         std::vector<SlotFeedback> feedback(m_left.size());
         for (std::size_t slot = 0; slot < m_left.size(); ++slot) {
             feedback[slot].threadRunning = m_left[slot] != -1;
+            if (m_left[slot] == -2) {
+                feedback[slot].presented = m_presented[slot];
+                feedback[slot].late = m_late[slot];
+            }
         }
         return feedback;
+    }
+
+    /// The decoder of `slot`, if open, presents a frame, `late` or on time.
+    void present(std::size_t slot, bool late) {
+        if (m_left[slot] == -2) {
+            ++m_presented[slot];
+            m_late[slot] += late ? 1 : 0;
+        }
     }
 
     /// Carries the frame's commands out, checking that a slot opens only once its thread ended.
@@ -72,6 +86,8 @@ public:
                 INFO("slot " << command.slot << " opened " << command.clip);
                 CHECK(left == -1); // its previous thread ended
                 left = -2;         // running
+                m_presented[command.slot] = 0;
+                m_late[command.slot] = 0;
             } else if (command.action == SlotAction::Stop) {
                 CHECK(left == -2);
                 left = m_drainFrames;
@@ -86,6 +102,8 @@ public:
 private:
     /// -1 no thread, -2 running, n >= 0: stopped, ending in n updates.
     std::vector<int> m_left;
+    std::vector<std::uint64_t> m_presented;
+    std::vector<std::uint64_t> m_late;
     int m_drainFrames;
 };
 
@@ -480,4 +498,116 @@ TEST_CASE("app/screen_scheduler: a clip out of view opens paused in a free slot,
                  static_cast<int>(10.0 / kFrame) + 2);
     CHECK(scheduler.openSlots() == 0);
     CHECK(result.screens.front() == ScreenAssignment{});
+}
+
+TEST_CASE("app/screen_scheduler: during a late-frame drop a clip coming into view opens only once the other stopped",
+          "[app][screen_scheduler]") {
+    // I5 step 2's review: the budget dropped to 1, slot 0 playing a (the best), b stopped for the budget; the view
+    // turns, a leaves it and b enters. b takes a free slot only once a, no longer among the best, has stopped.
+    ScreenScheduler scheduler;
+    Decoders decoders(2, 0);
+    std::vector<ScreenRequest> requests{request("hero", ScreenClass::Room, "a", 3.0),
+                                        request("tv", ScreenClass::Ambient, "b", 2.0)};
+    double now = 0.0;
+    for (int frame = 0; frame < 600 && scheduler.drops().empty(); ++frame) {
+        decoders.present(0, frame % 5 == 0); // 20% late
+        decoders.present(1, false);
+        decoders.apply(scheduler.update(now, requests, decoders.feedback()));
+        now += kFrame;
+    }
+    REQUIRE(scheduler.drops().size() == 1);
+    run(scheduler, decoders, requests, now, 10); // b's thread ends
+    REQUIRE(scheduler.budget(now) == 1);
+    REQUIRE(scheduler.slots()[0].state == SlotState::Open);
+    REQUIRE(scheduler.slots()[1].state == SlotState::Free);
+    requests[0].visible = false;
+    const std::uint64_t handOvers = scheduler.handOvers();
+    ScheduleResult result = scheduler.update(now, requests, decoders.feedback());
+    decoders.apply(result);
+    now += kFrame;
+    CHECK(result.commands == std::vector<SlotCommand>{{SlotAction::Stop, 0, "a", "budget"},
+                                                      {SlotAction::Open, 1, "b", "wanted"}});
+    CHECK(scheduler.openSlots() == 1);
+    CHECK(scheduler.committedSlots() == 1);
+    CHECK(scheduler.handOvers() == handOvers); // the budget's rule, not a hand-over
+    // Turning back and forth within the drop: never more than one slot open or reserved.
+    for (int frame = 0; frame < 600; ++frame) {
+        if (frame % 45 == 0) {
+            requests[0].visible = !requests[0].visible;
+            requests[1].visible = !requests[0].visible;
+        }
+        result = scheduler.update(now, requests, decoders.feedback());
+        decoders.apply(result);
+        INFO("frame " << frame);
+        REQUIRE(scheduler.committedSlots() <= static_cast<std::size_t>(scheduler.budget(now)));
+        REQUIRE(decoders.threads() <= 2u);
+        now += kFrame;
+    }
+}
+
+TEST_CASE("app/screen_scheduler: open plus reserved slots never exceed the budget as late frames drop it, over seeded "
+          "runs",
+          "[app][screen_scheduler]") {
+    std::size_t drops = 0;
+    for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+        INFO("seed " << seed);
+        rv::core::Random random(seed * 104729u);
+        ScreenScheduler scheduler(ScreenSchedulerSettings{.maxDecoders = 2, .proximityMeters = 6.0});
+        Decoders decoders(2, static_cast<int>(random.below(8)));
+        std::vector<ScreenRequest> requests{request("hero", ScreenClass::Room, "a", 3.0),
+                                            request("tv_1", ScreenClass::Ambient, "b", 4.0),
+                                            request("tv_2", ScreenClass::Ambient, "c", 5.0),
+                                            request("tv_3", ScreenClass::Ambient, "a", 7.0)};
+        double now = 0.0;
+        // Each slot's decoder runs late (one frame in 4) or on time, switching every 4 s.
+        std::vector<bool> lateSlot(2, false);
+        for (int frame = 0; frame < 6000; ++frame) {
+            if (frame % 240 == 0) {
+                for (std::size_t slot = 0; slot < lateSlot.size(); ++slot) {
+                    lateSlot[slot] = random.below(3) == 0;
+                }
+            }
+            for (std::size_t slot = 0; slot < lateSlot.size(); ++slot) {
+                if (random.below(2) == 0) {
+                    decoders.present(slot, lateSlot[slot] && random.below(4) == 0);
+                }
+            }
+            // Now and then a screen turns, moves, switches clip or is focused: often within a drop, seldom outside one
+            // (a slot's late frames need 4 s of play to drop the budget).
+            const std::uint64_t odds = scheduler.budget(now) == 1 ? 40 : 1200;
+            for (ScreenRequest& r : requests) {
+                switch (random.below(odds)) {
+                case 0:
+                case 1:
+                    r.visible = !r.visible;
+                    break;
+                case 2:
+                    r.distanceMeters = 1.0 + static_cast<double>(random.below(80)) / 10.0;
+                    break;
+                case 3:
+                    r.clip = std::string(1, static_cast<char>('a' + random.below(5)));
+                    break;
+                case 4:
+                    r.clip.clear();
+                    break;
+                case 5:
+                    if (r.screenId == "hero") {
+                        r.screenClass = r.screenClass == ScreenClass::Room ? ScreenClass::Focus : ScreenClass::Room;
+                    }
+                    break;
+                default:
+                    break;
+                }
+            }
+            const ScheduleResult result = scheduler.update(now, requests, decoders.feedback());
+            decoders.apply(result); // checks every Open came after its slot's thread ended
+            INFO("frame " << frame << ", budget " << scheduler.budget(now));
+            REQUIRE(scheduler.openSlots() <= static_cast<std::size_t>(scheduler.budget(now)));
+            REQUIRE(scheduler.committedSlots() <= static_cast<std::size_t>(scheduler.budget(now)));
+            REQUIRE(decoders.threads() <= 2u);
+            now += kFrame;
+        }
+        drops += scheduler.drops().size();
+    }
+    CHECK(drops >= 10); // the runs went through drops
 }
