@@ -147,7 +147,26 @@ the dressing give way by building the resident floor again from the draft, until
 alone (I4b step 4, which also needs it for fixture moves); until then such an edit may exceed §9's 0.25 s on a large
 floor (2.0 s from the request to the frame that shows it on the reference library's computer floor, 5,314
 placements: the floor's job 1.4 s), and step 4 brings it within. The floor's live update does not start during a
-session: a refresh that ends during one starts it when the session ends.
+session: a refresh that ends during one starts it when the session ends. *Amended on 2026-10-28 (I4b step 4's
+review):* a move into a dressed slot now rebuilds the room's static part alone, like a fixture move, and no longer
+builds the floor again: on the reference library's computer floor it shows in 0.15 s (was 2.0 s), within §9; the
+exception above is closed.
+
+*Amended on 2026-10-28 (I4b step 4's review):* a fixture is targeted by the reticle where no game or slot is, within
+4 m, unless the hero corner or a hero-wall module stands before it, never by the D-pad's steps; it is held where the
+reticle took it (its offset from the floor point, a poster's wall point, kept), and the D-pad and the arrows nudge it
+one 100 mm step along the room's axis nearest the view's. `edit_pin` pins or unpins a fixture in place as it does a
+game. Each new place of a held fixture is judged on a copy of the draft (a probe); a drop where the last probe judged
+shows that probe's result; a place over the walker is refused at once, whatever the probe says
+(`fixture-on-walker`), so a drop never wedges the walker. A held fixture is drawn moved with its games and dressing,
+outlined wider than the hover (3.5 px at 1080 rows; the refusal in a lighter red, `#E8806E`) over a view dimmed a
+little, a lamp's light following it; the room's wall-washers are placed again at the drop, when the room's static part
+is rebuilt alone (planned before anything changes; when it cannot show in place, the floor is built again and
+committed, never a part the draft did not take). A fixture of a kept room names its refusal as soon as it is
+targeted. The plan's derived state (where-is, the card's versions, rides, launches) is made again when the session
+ends. After a session that rebuilt a room's static part the floor shown carries a synthetic scene digest: the next
+session takes it, and the next live update after a catalog refresh commits the floor once, not room by room, with the
+walker kept.
 
 ### 5. Explicit regeneration with an impact preview
 

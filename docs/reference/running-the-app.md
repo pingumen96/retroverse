@@ -442,16 +442,20 @@ build/rvdata`).
   refreshed catalog's live update waits for the session's end. `overrides.json` that cannot be read (written by a newer
   Retroverse) edits nothing: the world's notice `edit-unavailable`. Lockstep runs wait between frames for each edit.
   Furniture (I4b step 4, `docs/i4b/step-4.md`): where the reticle rests on no game or slot, it targets a side-wall
-  module, a display fixture or a decoration (within 4 m; the hero corner and the hero-wall modules are fixed); E (A)
-  picks it up, held where it was taken: it follows the floor point under the reticle (a poster the wall point, along
-  the walls only) on the room's 100 mm grid, drawn there with its games and dressing and outlined, warm white where
-  it may drop, red where a rule refuses it (the bar names the rule: another fixture, the doorway, a door-reserved wall,
-  a module or the TV no longer reached through 1.2 m, ...); each new place is judged on the pool. Q and R (the pad's
-  shoulders) turn it a quarter turn (decoration 15 degrees; a poster turns with its wall), the arrows (the D-pad) nudge
-  it by 10 cm along the room's axis nearest the view's (a poster along its wall) until the walker looks or walks; E
-  (A) drops it (a refusal keeps it in the hand), where it stood puts it back, as Esc (B) does; P (X) pins or unpins the
-  fixture targeted. A drop rebuilds the room's static part alone in place (its objects, dressing, wall-washers, a
-  lamp's light and colliders), then lays its collection out again; the fixture is pinned where it was put.
+  module, a display fixture or a decoration (within 4 m, not through the hero corner or a hero-wall module, which are
+  fixed; the bar names it by what it is drawn as: "Scaffale", "Cabinato", "Lampada da tavolo", ...; a kept room's
+  furniture names its refusal at once); E (A) picks it up ("Stai spostando: ..."), held where it was taken: it follows
+  the floor point under the reticle (a poster the wall point, along the walls only) on the room's 100 mm grid, drawn
+  there with its games and dressing, a lamp with its light, outlined 3.5 px wide over a view dimmed a little, warm white
+  where it may drop, a lighter red where a rule refuses it (the bar names the rule: another fixture, the doorway, a
+  door-reserved wall, a module or the TV no longer reached through 1.2 m, the walker standing there, ...); each new
+  place is judged on the pool. Q and R (the pad's shoulders) turn it a quarter turn (decoration 15 degrees; a poster
+  turns with its wall), the arrows (the D-pad) nudge it by 10 cm along the room's axis nearest the view's (a poster
+  along its wall) until the walker looks or walks; E (A) drops it (a refusal keeps it in the hand; over the walker it
+  is refused at once), where it stood puts it back, as Esc (B) does; P (X) pins or unpins the fixture targeted. A drop
+  rebuilds the room's static part alone in place (its objects, dressing, wall-washers, a lamp's light and colliders),
+  then lays its collection out again; the fixture is pinned where it was put. Salva logs its parts ("Editor: saved in
+  ... ms: read, result, commit, digest").
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase

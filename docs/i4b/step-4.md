@@ -42,8 +42,9 @@ amendment), §9. Plan: [plan.md](plan.md).
   slot take the same path. The run report's `path` is `room` for it; `world.edits` counts the `probes`. While a session
   shows its drafts, the plan's derived state (the plan state and its where-is index, the card's versions, the launch's
   placements) waits for its end (`keepShown()`, `endEdit()`).
-- **The bar** (`edit_bar.rml`): the mode `moving`, a fixture targeted ("Mobile", "Vetrina", "Poster", "Lampada",
-  "Tappeto", "Decorazione"), held ("Sposti: un mobile"), the place's verdict ("Si può posare qui.", "Verifica del
+- **The bar** (`edit_bar.rml`): the mode `moving`, a fixture targeted (named by what it is drawn as since the review:
+  "Scaffale", "Cabinato", "Vetrina", "Lampada da tavolo", ...), held ("Stai spostando: un cabinato"), the place's
+  verdict ("Si può posare qui.", "Verifica del
   posto...", "Qui non si può posare." with the rule's sentence), a sentence for each rule a fixture's move can break
   (another fixture, the doorway, a door-reserved wall, outside the room, a module or the TV cut off from the 1.2 m
   passage, the room's entrance, the floor, off its wall, the grid, the turn step, fixed furniture, a kept room, the
@@ -119,7 +120,7 @@ a plan of 19,985 placements, the pool shared with the cover loader); acceptable 
   game's move onto a free slot and swap with another game judged ahead, once per slot.
   `test_action.cpp`, `test_action_map.cpp`, `test_input_system.cpp`: the two actions appended, their bindings;
   `test_run_report.cpp`: `probes` and the path `room`; `test_edit_bar_document.cpp`: the mode `moving` and a sentence
-  for every rule (24).
+  for every rule (25 since the review).
 - GPU (`tests/smoke/test_world_edit_furniture.cpp`): `gpu.world_edit: a poster and a side-wall module moved and saved,
   a refused drop, the room walked after` on the building fixture's arcade room (room:snes has no side-wall module):
   the test plans where the walker stands and looks (a poster and a cabinet seen where no game is), the poster slid
@@ -141,25 +142,81 @@ a data directory under `build/msvc-x64-release/real-library/`.
 
 ## Screenshots
 
-`build/i4b/step4/`: `holding.png` (a cabinet held where it may drop, outlined warm white, its game's screen moving with
-it, the bar "Sposti: un mobile · Si può posare qui."), `refused.png` (the cabinet over its neighbour, outlined red, the
-bar "Qui non si può posare." and "Lì c'è già un altro mobile."), `saved.png` (the room just after Salva, the cabinet
+`build/i4b/step4/`: `holding.png` (a cabinet held where it may drop, outlined warm white 3.5 px wide over a view dimmed
+a little, its game's screen moving with it, the bar "Stai spostando: un cabinato · Si può posare qui."), `refused.png`
+(the cabinet over its neighbour, outlined in the lighter red, the bar "Qui non si può posare." and "Si sovrapporrebbe a
+un altro arredo."; both retaken in the review), `saved.png` (the room just after Salva, the cabinet
 out from the wall, lit as before), `walked.png` (the walker stopped against the cabinet), `bench.png` (the amiga room's
 module moved out).
 
 ## Open issues
 
-- A held fixture's lamp light and the wall-washers move only at the drop (the room's static part rebuilt); while it is
-  held its light stays where it stood (`BACKLOG.md`).
+- The room's wall-washers are placed again only at the drop (the room's static part rebuilt); a held lamp's light
+  follows it since the review (`BACKLOG.md`).
 - Fixtures are targeted by the reticle only; the D-pad's steps reach games and slots (`BACKLOG.md`).
 - After a session whose static part changed, the floor shown keeps a synthetic scene digest: the next live update after
   a refresh commits the floor once (2 s on the real computer floor, the walker kept); per-room digests would make it a
   room's work (`BACKLOG.md`).
-- Salva on the real computer floor takes 2.7 s of the 3 s row: the plan's read, snapshot and write (19,985
-  placements), the pool shared with the cover loader.
-- Replaced objects' meshes and materials stay registered until the floor is committed again (`BACKLOG.md`).
-- A fixture dropped onto the walker leaves the walker inside it until its next step pushes it out.
-- The outline is the hover's 2 px line: on a dark cabinet the red reads mostly through the bar's sentence.
+- Salva on the real computer floor takes 0.95 s since the review (was 2.9 s), most of it the commit's one
+  serialisation, snapshot and write of the plan of 19,985 placements (`BACKLOG.md`).
+- Replaced objects' meshes and materials stay registered, across sessions, until the floor is committed again
+  (`BACKLOG.md`).
+- A showEditBuild() that cannot show the rooms rebuilt alone in place builds the floor on the main thread (seconds on
+  the real computer floor, once): a defensive path, never taken in the tests.
+
+## Review
+
+Two reviews found no blockers; the fixes (ADR-0015 §4's I4b step 4 amendment, step 3's exception closed):
+
+- **The static part shown, or the floor.** `showEditBuild()` plans the live update before any room's objects are
+  replaced (the floor's scene digest the build's only once shown); a plan that needs the floor, or a failure after a
+  room's objects were replaced, builds the floor of the plan the answer shows on the main thread and commits it (path
+  `floor`), so the scene never shows a part the draft did not adopt. A session after one that rebuilt a room's static
+  part takes the floor shown's synthetic scene digest (its edits failed their in-place path before, the log saying the
+  floor read was not the floor shown). `roomStaticPart()` frames the part by the floor shown's `floorPlacement`.
+- **The walker.** A held fixture's place over the walker's capsule (its box moved there: `EditRoom::fixtureBoxAt()`,
+  `boxOnWalker()`, floor coverings excepted) is refused at once, whatever the probe said: `fixture-on-walker`, "Ci sei
+  tu: fatti da parte e posalo.", the fixture still held.
+- **The reticle.** The hero corner's parts and the hero-wall modules (`fixedFixtureBoxes()`) hide a movable fixture
+  behind them.
+- **A lamp's light follows it** while held (the scene's lights moved in place, packed again once per new place; put
+  back where they stood when it is put back); the wall-washers are placed again at the drop.
+- **The look.** A held fixture is outlined 3.5 px wide at 1080 rows whatever the verdict, a refusal in a lighter red of
+  the bar's hue (`#E8806E`; the bar keeps `#C8645A`), the rest of the view dimmed by 0.2.
+- **The bar.** A fixture is named by the prefab it is drawn with (`world::drawnFixtures()`: a pack's variant, so the
+  computer studio's lamp is "una lampada da tavolo"): uno scaffale, un cabinato, una mensola, una vetrina, una teca,
+  una credenza, un poster, una lampada a stelo, una lampada da tavolo, un tappeto, una pianta, un divano, una poltrona,
+  una scrivania, uno sgabello, un pouf, una sedia, else un arredo; "Stai spostando: ...", the target's title the noun
+  capitalised; gender-free lines; every refusal sentence says what its rule checks; a kept room's fixture names its
+  refusal as soon as it is targeted, without "Prendi".
+- **Smaller ones.** A picture instance is registered under a key naming its picture and material (`registryKeyOf()`),
+  so a rebuilt object never draws with a stale picture; `replaceObjects()` keeps the developer overlay's light edits;
+  the accepted drop of the furniture unit case is required.
+- **Tests.** Unit: the drop onto the walker (8 cases), the fixed fixtures hiding one behind them, a turned start
+  room's frame, the registry's key, the bar's 18 nouns. GPU: the moved cabinet walked into in the same session before
+  Salva (stopped where a fresh start on the saved plan stops, its feet the same within 2 micrometres), and the run
+  report's new `sceneContents` after the session's in-place replaces and Salva equal to a fresh start's (508 objects,
+  85 collider boxes, 31 lights in the arcade room's floor).
+- **Salva.** It read and parsed the stored plan, serialised it four times (`editedResult()`'s digest, the commit's
+  comparison, `savePlan()`, the plan shown's digest: about 0.45 s each on 19,985 placements). The commit now
+  serialises it once (`detail::savePlanText()`), the plan shown's digest is the commit's, and when the stored text is
+  still the session's base the base's plan is taken instead of parsing it. Validating only the edited rooms in
+  `commitWorld()` was considered: the commit validates nothing (the edits' validation, made at each edit, travels in
+  the result), so there is nothing to narrow; the snapshot already copies the files' bytes.
+
+Measurements of the review (Release; the real library through `./scripts/real-library.ps1 -Measure`, ES-DE closed, 0
+differences among 542,120 entries in each of three runs):
+
+| Salva on the real computer floor (room:amstradcpc) | Read | Result | Commit | Digest | Total | Room back |
+|---|---|---|---|---|---|---|
+| Before the review, unloaded | 532 ms | 617 ms | 1,267 ms | 457 ms | 2.87 s | 2.93 s |
+| Before the review, another build loading the machine (the step's run) | | | | | 3.4 s | |
+| After, unloaded | 48 ms | 39 ms | 861 ms | 4 ms | 0.95 s | 1.03 s |
+| After, another agent's build loading the machine | 56 ms | 124 ms | 1,885 ms | 9 ms | 2.07 s | |
+
+The commit's 861 ms: the plan serialised 490 ms, compared 9 ms, snapshotted 144 ms, `overrides.json` 10 ms, the plan
+and its backup written 207 ms. The module's move on the same floor showed in 147 to 153 ms (the job 38 ms); the session
+was ready in 1.5 s.
 
 ## For step 6
 
