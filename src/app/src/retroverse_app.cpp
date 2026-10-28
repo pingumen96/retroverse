@@ -701,6 +701,7 @@ struct RetroverseApp::State {
             // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget.
             screenOptions.video = videoSettingsOf(context.paths());
             screenOptions.maxDecoders = options.maxDecoders;
+            screenOptions.watchLateFrames = options.watchLateFrames;
             screenOptions.assetRoot = context.paths().assetRoot();
             screen = std::make_unique<ScreenService>(std::move(screens), graphics->materials(), std::move(games),
                                                      screenOptions);

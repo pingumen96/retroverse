@@ -650,6 +650,37 @@ TEST_CASE("app/command_line: --max-decoders sets the screens' decoder budget, 1 
     CHECK(helpListsOption(rv::app::commandLineHelp(), "--max-decoders"));
 }
 
+TEST_CASE("app/command_line: --simulate-minimized and --watch-late-frames, for tests (I5 step 2's review)",
+          "[app][command_line]") {
+    const auto plain = parse({});
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->simulateMinimized.has_value());
+    CHECK_FALSE(plain->watchLateFrames);
+    CHECK(parse({"--watch-late-frames"})->watchLateFrames);
+    const auto minimized = parse({"--exit-after-frames", "--frames", "90", "--simulate-minimized", "30:11.5"});
+    REQUIRE(minimized.has_value());
+    CHECK(minimized->simulateMinimized == rv::app::SimulatedMinimize{30, 11.5});
+    // Frame-limited runs only; FRAME:SECONDS, the seconds above 0 and at most 600.
+    const auto interactive = parse({"--simulate-minimized", "30:11"});
+    REQUIRE_FALSE(interactive.has_value());
+    CHECK(interactive.error().code == ErrorCode::InvalidArgument);
+    for (const char* value : {"30", "x:11", "30:", "30:1s", ":11"}) {
+        INFO(value);
+        const auto refused = parse({"--smoke", "--simulate-minimized", value});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::ParseError);
+        CHECK(refused.error().context.starts_with("--simulate-minimized="));
+    }
+    for (const char* value : {"30:0", "30:-1", "30:601"}) {
+        INFO(value);
+        const auto refused = parse({"--smoke", "--simulate-minimized", value});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::OutOfRange);
+    }
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--simulate-minimized"));
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--watch-late-frames"));
+}
+
 TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arrays uncompressed (I3 step 6)",
           "[app][command_line]") {
     const auto plain = parse({});
