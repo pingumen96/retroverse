@@ -1,0 +1,17 @@
+// I4b step 3: an edit session discarded (tests/smoke/test_world_edit.cpp): as world_edit_session.json up to the move
+// (frame 110), then the menu and "Esci senza salvare": the room shown as stored again, nothing written.
+//   frame 140  confirm: the menu, Salva focused     frame 150, 160  ui_down: Annulla ultima azione, Esci senza salvare
+//   frame 170  ui_activate: Esci senza salvare
+[
+  {"fromFrame": 30, "toFrame": 30, "actions": {"map": 1}},
+  {"fromFrame": 36, "toFrame": 36, "actions": {"ui_home": 1}},
+  {"fromFrame": 42, "toFrame": 42, "actions": {"ui_up": 1}},
+  {"fromFrame": 48, "toFrame": 48, "actions": {"ui_activate": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"interact": 1}},
+  {"fromFrame": 80, "toFrame": 80, "actions": {"ui_left": 1}},
+  {"fromFrame": 110, "toFrame": 110, "actions": {"interact": 1}},
+  {"fromFrame": 140, "toFrame": 140, "actions": {"confirm": 1}},
+  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_down": 1}},
+  {"fromFrame": 160, "toFrame": 160, "actions": {"ui_down": 1}},
+  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_activate": 1}}
+]
