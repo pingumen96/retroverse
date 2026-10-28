@@ -4,16 +4,33 @@
 
 namespace rv::app {
 
+namespace {
+
+bool usable(glm::vec2 size) noexcept {
+    return std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0.0f && size.y > 0.0f;
+}
+
+constexpr double kFourByThree = 4.0 / 3.0;
+
+} // namespace
+
+double displayAspect(glm::vec2 picture) noexcept {
+    if (!usable(picture)) {
+        return 0.0;
+    }
+    const double aspect = static_cast<double>(picture.x) / static_cast<double>(picture.y);
+    if (picture.y <= kLowResMaxRows && std::abs(aspect / kFourByThree - 1.0) <= kLowResAspectTolerance) {
+        return kFourByThree; // a console's frame its television showed at 4:3
+    }
+    return aspect;
+}
+
 glm::vec4 pictureRect(glm::vec2 picture, glm::vec2 screen) noexcept {
-    const auto usable = [](glm::vec2 size) {
-        return std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0.0f && size.y > 0.0f;
-    };
     if (!usable(picture) || !usable(screen)) {
         return kWholeScreen;
     }
-    // The picture's aspect over the screen's: above 1 the picture is wider than its screen.
-    const double ratio = (static_cast<double>(picture.x) / static_cast<double>(picture.y)) /
-                         (static_cast<double>(screen.x) / static_cast<double>(screen.y));
+    // The picture's aspect as shown over the screen's: above 1 the picture is wider than its screen.
+    const double ratio = displayAspect(picture) / (static_cast<double>(screen.x) / static_cast<double>(screen.y));
     if (std::abs(ratio - 1.0) <= kPictureAspectTolerance) {
         return kWholeScreen;
     }

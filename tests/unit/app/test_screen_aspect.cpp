@@ -80,15 +80,42 @@ TEST_CASE("app/screen aspect: the whole screen is exact for the same aspect, wit
     // An encoder's crop within 2 %: 640 x 478 and 584 x 446 (1.8 % narrower).
     CHECK(isWholeScreen(pictureRect({640.0f, 478.0f}, kCrt)));
     CHECK(isWholeScreen(pictureRect({584.0f, 446.0f}, kCrt)));
-    // Past it the clip keeps its aspect: 256 x 224 (8:7, 14 % narrower) is pillarboxed.
-    const glm::vec4 eightBySeven = pictureRect({256.0f, 224.0f}, kCrt);
+    // Past it a 480-row clip keeps its aspect: 548 x 480 (8:7 at 480 rows, 14 % narrower) is pillarboxed.
+    const glm::vec4 eightBySeven = pictureRect({548.0f, 480.0f}, kCrt);
     CHECK_FALSE(isWholeScreen(eightBySeven));
     CHECK(eightBySeven.w == 1.0f);
-    CHECK(eightBySeven.z == Catch::Approx(0.857143f).margin(1e-4));
+    CHECK(eightBySeven.z == Catch::Approx(0.85625f).margin(1e-4));
     // Nothing known: the screen as it is.
     constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
     CHECK(isWholeScreen(pictureRect({0.0f, 0.0f}, kCrt)));
     CHECK(isWholeScreen(pictureRect(kClip169, {0.0f, 0.36f})));
     CHECK(isWholeScreen(pictureRect({kNan, 480.0f}, kCrt)));
     CHECK(isWholeScreen(pictureRect(kClip169, {-1.0f, 1.0f})));
+}
+
+TEST_CASE("app/screen aspect: a console's low-resolution frame near 4:3 is shown at 4:3", "[app][screens][aspect]") {
+    // I5 step 4's review (ADR-0016 §7 amended): a frame of at most 240 rows within 15 % of 4:3 was shown at 4:3 by its
+    // television (style §15.2's original aspect): it fills a 4:3 tube, and is letterboxed as 4:3 on a cabinet's
+    // portrait screen. A 256 x 240 frame (8:7.5, 20 % narrower) and a 480-row one keep their own aspect.
+    const std::vector<Row> rows{
+        {"256 x 224 (8:7) on a CRT", {256.0f, 224.0f}, kCrt, kWholeScreen},
+        {"320 x 224 on a CRT", {320.0f, 224.0f}, kCrt, kWholeScreen},
+        {"320 x 240 on a CRT", {320.0f, 240.0f}, kCrt, kWholeScreen},
+        {"256 x 240 on a CRT", {256.0f, 240.0f}, kCrt, {0.1f, 0.0f, 0.8f, 1.0f}},
+        {"640 x 480 on a CRT", kClip43, kCrt, kWholeScreen},
+        {"512 x 448 on a CRT", {512.0f, 448.0f}, kCrt, {0.0714286f, 0.0f, 0.857143f, 1.0f}},
+        {"256 x 224 on a cabinet", {256.0f, 224.0f}, kCabinet, {0.0f, 0.219221f, 1.0f, 0.561558f}},
+    };
+    for (const Row& row : rows) {
+        INFO(row.name);
+        const glm::vec4 rect = pictureRect(row.clip, row.screen);
+        CHECK(rect.x == Catch::Approx(row.rect.x).margin(2e-3));
+        CHECK(rect.y == Catch::Approx(row.rect.y).margin(2e-3));
+        CHECK(rect.z == Catch::Approx(row.rect.z).margin(2e-3));
+        CHECK(rect.w == Catch::Approx(row.rect.w).margin(2e-3));
+    }
+    CHECK(rv::app::displayAspect({256.0f, 224.0f}) == Catch::Approx(4.0 / 3.0));
+    CHECK(rv::app::displayAspect({256.0f, 240.0f}) == Catch::Approx(256.0 / 240.0));
+    CHECK(rv::app::displayAspect({512.0f, 448.0f}) == Catch::Approx(512.0 / 448.0));
+    CHECK(rv::app::displayAspect({0.0f, 224.0f}) == 0.0);
 }
