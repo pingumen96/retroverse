@@ -649,3 +649,76 @@ TEST_CASE("world/snapshots: snapshot records it refuses", "[world][snapshots]") 
     CHECK_FALSE(rv::world::isValidActionName("edit/../x"));
     CHECK_FALSE(rv::world::isValidActionName(std::string(33, 'a')));
 }
+
+TEST_CASE("world/snapshots: the plan and the overrides read together without the lock", "[world][snapshots]") {
+    World world(30);
+    {
+        auto lock = WorldLock::acquire(world.files);
+        REQUIRE(lock.has_value());
+        REQUIRE(rv::world::saveOverrides(*lock, pinsOf(resultOf(30), 2)).has_value());
+    }
+    const WorldState state = stateOf(world.files);
+    REQUIRE(state.plan.has_value());
+    REQUIRE(state.overrides.has_value());
+
+    SECTION("read as they are, nothing written") {
+        auto read = rv::world::readWorldUnlocked(world.files);
+        REQUIRE(read.has_value());
+        CHECK(read->plan == *state.plan);
+        CHECK(read->planDigest == rv::core::sha256Hex(*state.plan));
+        CHECK(read->overrides == state.overrides);
+        CHECK(stateOf(world.files) == state);
+        // No overrides file: no pin.
+        std::filesystem::remove(world.files.overrides);
+        auto bare = rv::world::readWorldUnlocked(world.files);
+        REQUIRE(bare.has_value());
+        CHECK_FALSE(bare->overrides.has_value());
+        // No plan: not found.
+        std::filesystem::remove(world.files.plan);
+        CHECK(rv::world::readWorldUnlocked(world.files).error().code == rv::ErrorCode::NotFound);
+    }
+    SECTION("an action committed between the reads: read again, the pair the action's") {
+        const GenerationResult next = resultOf(31);
+        const WorldOverrides pins = pinsOf(next, 3);
+        auto read = rv::world::detail::readWorldUnlockedWith(world.files, [&](std::size_t attempt) {
+            if (attempt == 0) {
+                auto lock = WorldLock::acquire(world.files);
+                REQUIRE(lock.has_value());
+                REQUIRE(rv::world::commitWorld(*lock, WorldAction{"edit", "room:snes"}, next, pins, world.options)
+                            .has_value());
+            }
+        });
+        REQUIRE(read.has_value());
+        CHECK(read->plan != *state.plan);
+        CHECK(read->plan == contentOf(world.files.plan));
+        CHECK(read->overrides == contentOf(world.files.overrides));
+        CHECK(read->overrides == *rv::world::writeOverrides(pins));
+    }
+    SECTION("the plan changed at both readings: busy") {
+        std::size_t readings = 0;
+        auto read = rv::world::detail::readWorldUnlockedWith(world.files, [&](std::size_t attempt) {
+            ++readings;
+            auto lock = WorldLock::acquire(world.files);
+            REQUIRE(lock.has_value());
+            REQUIRE(rv::world::savePlan(*lock, resultOf(40 + attempt), world.options).has_value());
+        });
+        REQUIRE_FALSE(read.has_value());
+        CHECK(read.error().code == rv::ErrorCode::Conflict);
+        CHECK_THAT(read.error().message, ContainsSubstring("busy"));
+        CHECK(readings == 2);
+    }
+    SECTION("a journal begun between the reads, still there: an action in progress") {
+        std::size_t readings = 0;
+        auto read = rv::world::detail::readWorldUnlockedWith(world.files, [&](std::size_t) {
+            ++readings;
+            REQUIRE(rv::core::writeTextFileAtomic(world.files.transaction, "{}\n").has_value());
+        });
+        REQUIRE_FALSE(read.has_value());
+        CHECK(read.error().code == rv::ErrorCode::Conflict);
+        CHECK_THAT(read.error().message, ContainsSubstring("an action is in progress or was interrupted"));
+        CHECK(readings == 1);
+        // Gone: read.
+        std::filesystem::remove(world.files.transaction);
+        CHECK(rv::world::readWorldUnlocked(world.files).has_value());
+    }
+}

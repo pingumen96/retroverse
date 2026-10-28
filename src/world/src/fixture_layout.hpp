@@ -9,20 +9,46 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <rv/core/expected.hpp>
 #include <rv/world/capacity.hpp>
 #include <rv/world/media_family.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/platform_manifest.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/world_plan.hpp>
 
 namespace rv::world::detail {
+
+/// A fixture a regeneration stands as the user pinned it (ADR-0015 §3, I4b step 5), placed before the layout fills the
+/// other sockets: a side-wall module, a display fixture or a decoration, with its prefab (nothing: the template's for
+/// its socket; a decoration always names one) at its transform (nothing: in its socket), a decoration lifted by
+/// `liftMm` (its height above the floor, which an edit never changes).
+struct PinnedFixture {
+    FixtureRole role = FixtureRole::Decoration;
+    std::optional<PrefabRef> prefab;
+    std::optional<FixtureTransform> transform;
+    std::int64_t liftMm = 0;
+};
+
+/// What a regeneration asks of the layout (I4b step 5); empty: the layout of a fresh room.
+struct LayoutPins {
+    /// The side-wall sockets that always take a module, whatever the count needs (a pinned game's slot is on it).
+    std::set<std::string> moduleSockets;
+    /// The pinned fixtures, by socket id. A side-wall socket of a pinned decoration takes no module (the next socket
+    /// does); a decoration socket of one is decorated whatever the density draws; a socket whose fixture would overlap
+    /// a pinned fixture standing at its transform takes none (a module goes to the next socket).
+    std::map<std::string, PinnedFixture> fixtures;
+
+    [[nodiscard]] bool empty() const noexcept { return moduleSockets.empty() && fixtures.empty(); }
+};
 
 /// What the layout reads.
 struct LayoutInput {
@@ -34,6 +60,8 @@ struct LayoutInput {
     std::uint64_t roomSeed = 0;
     CollectionCounts counts;
     std::int64_t decorationDensityPermille = 0;
+    /// A regeneration's pins (null: none).
+    const LayoutPins* pins = nullptr;
 };
 
 /// A fixture with what was read of its prefab.
@@ -59,7 +87,7 @@ struct RoomLayout {
 };
 
 /// Errors: ValidationFailed for a module or display prefab that does not fit its socket, a socket the orders name that
-/// the template lacks; NotFound for a prefab the catalog lacks.
+/// the template lacks; NotFound for a prefab the catalog lacks (a pinned one included).
 [[nodiscard]] Expected<RoomLayout> layOutRoom(const LayoutInput& input);
 
 // The parts of the layout that the incremental update (incremental.cpp, I3 step 9) repeats on a room that stands, so
@@ -107,6 +135,10 @@ struct SocketPose {
 
 /// Whether a fixture of `role` moves in the editor (ADR-0015 §4): side-wall modules, display fixtures and decoration.
 [[nodiscard]] bool isMovableRole(FixtureRole role) noexcept;
+
+/// Whether `info`'s prefab fits `socket` (its width and depth within the socket's), as the layout requires of what it
+/// stands in a socket.
+[[nodiscard]] bool prefabFitsSocket(const PrefabInfo& info, const TemplateSocket& socket) noexcept;
 
 /// Whether `fixture` (of `input`'s room) stands elsewhere than its home, poseInSocket() at `input.counts.growthSteps`:
 /// one the user moved, pinned or not (I4b step 2). A fixture of a fixed role, of a socket the template lacks or of a

@@ -65,6 +65,16 @@ FixtureTransform readTransform(const ObjectReader& pin) {
     return transform;
 }
 
+/// A pin's recorded conflict (schema 2, ADR-0015 §3 as amended on 2026-10-28): "room-gone", "slot-gone", "game-gone"
+/// or "invalid"; absent: none.
+std::optional<ConflictReason> readConflict(const ObjectReader& pin) {
+    if (!pin.has("conflict")) {
+        return std::nullopt;
+    }
+    return pin.enumeration<ConflictReason>("conflict", parseConflictReason,
+                                           "one of room-gone, slot-gone, game-gone, invalid");
+}
+
 nlohmann::json provenanceJson(const PinProvenance& provenance) {
     nlohmann::json json{{"origin", std::string(toString(provenance.origin))}};
     if (!provenance.time.empty()) {
@@ -104,11 +114,13 @@ Expected<WorldOverrides> parseOverrides(std::string_view text, std::string_view 
             [&](const nlohmann::json& element, const std::string& pointer) {
                 const ObjectReader pin = lifted
                                              ? ObjectReader(document, element, pointer, {"game", "slot"})
-                                             : ObjectReader(document, element, pointer, {"game", "provenance", "slot"});
+                                             : ObjectReader(document, element, pointer,
+                                                            {"conflict", "game", "provenance", "slot"});
                 GamePin read;
                 read.game = pin.parsed<catalog::GameId>("game", catalog::GameId::parse, "a GameId");
                 read.slot = pin.parsed<SlotId>("slot", SlotId::parse, "a slot id");
                 read.provenance = readProvenance(pin);
+                read.conflict = readConflict(pin);
                 overrides.gamePins.push_back(std::move(read));
             });
     }
@@ -118,7 +130,8 @@ Expected<WorldOverrides> parseOverrides(std::string_view text, std::string_view 
             [&](const nlohmann::json& element, const std::string& pointer) {
                 const ObjectReader pin =
                     lifted ? ObjectReader(document, element, pointer, {"fixture", "prefab"})
-                           : ObjectReader(document, element, pointer, {"fixture", "prefab", "provenance", "transform"});
+                           : ObjectReader(document, element, pointer,
+                                          {"conflict", "fixture", "prefab", "provenance", "transform"});
                 FixturePin read;
                 read.fixture = pin.parsed<FixtureId>("fixture", FixtureId::parse, "a fixture id");
                 if (pin.has("prefab")) {
@@ -128,6 +141,7 @@ Expected<WorldOverrides> parseOverrides(std::string_view text, std::string_view 
                     read.transform = readTransform(pin);
                 }
                 read.provenance = readProvenance(pin);
+                read.conflict = readConflict(pin);
                 overrides.fixturePins.push_back(std::move(read));
             });
     }
@@ -189,9 +203,13 @@ Expected<std::string> writeOverrides(const WorldOverrides& overrides) {
 
     nlohmann::json games = nlohmann::json::array();
     for (const GamePin* pin : gamePins) {
-        games.push_back(nlohmann::json{{"game", pin->game.toString()},
-                                       {"slot", pin->slot.toString()},
-                                       {"provenance", provenanceJson(pin->provenance)}});
+        nlohmann::json json{{"game", pin->game.toString()},
+                            {"slot", pin->slot.toString()},
+                            {"provenance", provenanceJson(pin->provenance)}};
+        if (pin->conflict) {
+            json["conflict"] = std::string(toString(*pin->conflict));
+        }
+        games.push_back(std::move(json));
     }
     nlohmann::json fixtures = nlohmann::json::array();
     for (const FixturePin* pin : fixturePins) {
@@ -202,6 +220,9 @@ Expected<std::string> writeOverrides(const WorldOverrides& overrides) {
         if (pin->transform) {
             json["transform"] = nlohmann::json{
                 {"xMm", pin->transform->xMm}, {"zMm", pin->transform->zMm}, {"yawCdeg", pin->transform->yawCdeg}};
+        }
+        if (pin->conflict) {
+            json["conflict"] = std::string(toString(*pin->conflict));
         }
         fixtures.push_back(std::move(json));
     }
@@ -240,6 +261,8 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         } else if (!planHoldsSlot(fixtures, pin.slot) || (stands == placed.end() && !unplaced.contains(pin.game))) {
             check.orphaned.push_back(pinText(pin));
             check.honouredOrOrphaned.gamePins.push_back(pin);
+        } else if (pin.conflict) {
+            check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
         } else {
             check.unhonoured.push_back(pinText(pin));
         }
@@ -269,6 +292,8 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         } else if (roomTemplate == nullptr || roomTemplate->socket(pin.fixture.socket()) == nullptr) {
             check.orphaned.push_back(pinText(pin));
             check.honouredOrOrphaned.fixturePins.push_back(pin);
+        } else if (pin.conflict) {
+            check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
         } else {
             check.unhonoured.push_back(pinText(pin));
         }

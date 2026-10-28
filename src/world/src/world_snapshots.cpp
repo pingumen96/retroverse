@@ -644,6 +644,83 @@ std::optional<InterruptedAction> checkInterruptedAction(const WorldFiles& files)
 
 namespace detail {
 
+Expected<UnlockedWorldRead> readWorldUnlockedWith(const WorldFiles& files,
+                                                  const std::function<void(std::size_t)>& afterReads) {
+    // overrides.json's limit, as loadOverrides() reads it.
+    constexpr std::uintmax_t kMaxOverridesBytes = 16ull * 1024ull * 1024ull;
+    // Whether the journal is there, asked of the folder's entry: no handle is opened on it, so that the writer's
+    // removal of it is never refused.
+    const auto journalThere = [&]() -> Expected<bool> {
+        std::error_code ec;
+        const bool there = std::filesystem::exists(files.transaction, ec);
+        if (ec) {
+            return makeError(ErrorCode::IoError, "cannot look for the journal: " + ec.message(),
+                             lossy(files.transaction));
+        }
+        return there;
+    };
+    for (std::size_t attempt = 0; attempt < 2; ++attempt) {
+        auto pending = journalThere();
+        if (!pending) {
+            return propagate(pending.error());
+        }
+        if (*pending) {
+            return makeError(ErrorCode::Conflict,
+                             "an action is in progress or was interrupted (" + lossy(files.transaction.filename()) +
+                                 " is there): the plan and the overrides may disagree until it ends or the next "
+                                 "writer rolls it back ('worldplan snapshots' says more)",
+                             lossy(files.folder));
+        }
+        UnlockedWorldRead read;
+        auto plan = core::readFileShared(files.plan, core::kDefaultTextLimitBytes);
+        if (!plan) {
+            return propagate(plan.error());
+        }
+        read.plan = std::move(*plan);
+        read.planDigest = core::sha256Hex(read.plan);
+        auto overrides = core::readFileShared(files.overrides, kMaxOverridesBytes);
+        if (overrides) {
+            read.overrides = std::move(*overrides);
+        } else if (overrides.error().code != ErrorCode::NotFound) {
+            return propagate(overrides.error());
+        }
+        if (afterReads) {
+            afterReads(attempt);
+        }
+        // Both read together: no journal began meanwhile, and the plan is still the one read (a commit writes the
+        // overrides first, the plan last, under its journal).
+        auto began = journalThere();
+        if (!began) {
+            return propagate(began.error());
+        }
+        if (*began) {
+            continue;
+        }
+        auto again = core::readFileShared(files.plan, core::kDefaultTextLimitBytes);
+        if (!again) {
+            if (again.error().code == ErrorCode::NotFound) {
+                continue; // replaced or removed meanwhile
+            }
+            return propagate(again.error());
+        }
+        if (core::sha256Hex(*again) == read.planDigest) {
+            return read;
+        }
+    }
+    return makeError(ErrorCode::Conflict,
+                     "the world is busy: another program changed the plan or the overrides while they were read, "
+                     "twice; try again",
+                     lossy(files.folder));
+}
+
+} // namespace detail
+
+Expected<UnlockedWorldRead> readWorldUnlocked(const WorldFiles& files) {
+    return detail::readWorldUnlockedWith(files, {});
+}
+
+namespace detail {
+
 Expected<CommitReport> commitWorldStoppingAt(const WorldLock& lock, const WorldAction& action,
                                              const GenerationResult& result, const WorldOverrides& overrides,
                                              const SaveOptions& options, TransactionStop stop) {

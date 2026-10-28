@@ -76,7 +76,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   applied; since I4b step 1 schema 2, `writeOverrides`) and `where_is.hpp` (`PlanIndex`; 9); `world_snapshots.hpp` (I4b
   step 1: the paired snapshots, `commitWorld`, `undoLastAction`, `scanSnapshots`, the journal and
   `checkInterruptedAction`); `world_edit.hpp` (I4b step 2: the editor's operations, `applyEdit` / `applyEdits`,
-  `editRooms`, `editedResult`, the edit script); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
+  `editRooms`, `editedResult`, the edit script); `regeneration.hpp` (I4b step 5: `regenerate` of a room, a floor or
+  the world honouring the overrides, the conflicts, `planDifference`, the impact, `assetRootLoader`; the private
+  `pinned_room.cpp`, a room generated around its pins); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
   `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light

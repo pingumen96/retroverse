@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <utility>
@@ -17,6 +18,7 @@
 #include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/overrides.hpp>
+#include <rv/world/regeneration.hpp>
 #include <rv/world/validation.hpp>
 #include <rv/world/world_plan.hpp>
 
@@ -80,13 +82,44 @@ struct BuildingDigestInput {
                                                           const BuildingData& building, const WorldOverrides& pins,
                                                           std::vector<KeptRoom> keptRooms);
 
+/// A regeneration's pins of one room (I4b step 5, ADR-0015 §3; regeneration.hpp).
+struct RoomPins {
+    /// The game pins whose slot is in the room, and the fixture pins of its fixtures.
+    std::vector<GamePin> games;
+    std::vector<FixturePin> fixtures;
+    /// The previous plan: its fixtures give a pinned fixture's role, its prefab (a decoration's) and its lift, its room
+    /// record the south wall a hung decoration followed; null: none.
+    const WorldPlan* previous = nullptr;
+    /// The fixture pins a previous attempt found breaking a hard rule (the regeneration's `invalid`): not applied.
+    std::set<FixtureId> excluded;
+
+    [[nodiscard]] bool empty() const noexcept { return games.empty() && fixtures.empty(); }
+};
+
+/// What honouring a room's pins found: the pins it could not honour, and the transforms of the pinned hung
+/// decorations that followed the south wall (their pins rewritten), by fixture.
+struct RoomPinOutcome {
+    std::vector<OverrideConflict> conflicts;
+    std::map<FixtureId, FixtureTransform> followed;
+};
+
 /// One room as I3's room-level rules generate it (ADR-0010 §3 to §8): a plan of that one room (its record with the
 /// template's fields, without its building fields) with its fixtures, placements, dressing, lights and unplaced games
 /// (the selection's, and the titles over the template's capacity); a shared or arcade room's collection ordered by
-/// `sections` first (sectionsSelection()). Errors: those of the layout.
+/// `sections` first (sectionsSelection()). With `pins` (a regeneration's, not empty) the room honours them
+/// (regeneration.hpp's rules 1 to 4: generatePinnedRoom()), what it could not honour in `outcome`. Errors: those of the
+/// layout.
 [[nodiscard]] Expected<WorldPlan> generateRoomContent(const RoomSelection& selection, const WorldConfig& config,
                                                       std::uint64_t worldSeed, const WorldData& data,
-                                                      const SectionIndex* sections = nullptr);
+                                                      const SectionIndex* sections = nullptr,
+                                                      const RoomPins* pins = nullptr,
+                                                      RoomPinOutcome* outcome = nullptr);
+
+/// generateRoomContent() of a room with pins (pinned_room.cpp).
+[[nodiscard]] Expected<WorldPlan> generatePinnedRoom(const RoomSelection& selection, const WorldConfig& config,
+                                                     std::uint64_t worldSeed, const WorldData& data,
+                                                     const SectionIndex* sections, const RoomPins& pins,
+                                                     RoomPinOutcome& outcome);
 
 /// A system entering the building (ADR-0013 §3, §7): its selection, its own data (loadWorldData()'s: its console
 /// room's, with the data of the shared or arcade room it would take a section of), its classification and the order of
@@ -158,7 +191,9 @@ struct BuildingEntry {
 /// kind, floor, sections, this generator's version and its placement, its z following its depth (followDepth()).
 /// Errors: those of the layout.
 [[nodiscard]] Expected<WorldPlan> generateEnteredRoom(const BuildingRoom& room, const WorldConfig& config,
-                                                      std::uint64_t worldSeed, const BuildingData& building);
+                                                      std::uint64_t worldSeed, const BuildingData& building,
+                                                      const RoomPins* pins = nullptr,
+                                                      RoomPinOutcome* outcome = nullptr);
 
 /// Moves the room and the elements of `room` (a one-room plan) into `plan`.
 void appendRoom(WorldPlan& plan, WorldPlan&& room);

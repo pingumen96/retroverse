@@ -187,13 +187,7 @@ TEST_CASE("cli/worldplan edit: games moved, swapped and pinned on the building f
     CHECK(update.code == ExitCode::Ok);
     CHECK(contains(update.out, "is up to date"));
     CHECK(contentOf(session.files.plan) == afterMove);
-    // A fresh generation applies no pin yet: it breaks the move's pin, writes nothing and says how to go on.
-    const RunResult replaced = session.run({"worldplan", "generate", "--seed", "102938", "--replace"});
-    CHECK(replaced.code == ExitCode::RuntimeFailure);
-    CHECK(contains(replaced.err, "pin-broken"));
-    CHECK(contains(replaced.err, "'worldplan edit unpin --game <id>'"));
-    CHECK(contentOf(session.files.plan) == afterMove);
-    CHECK(session.snapshots() == 1);
+    // `generate --replace` honours the move's pin since I4b step 5 (test_cli_worldplan_regenerate.cpp).
 
     // Onto another game: refused by its rule, nothing written.
     const RunResult taken = session.run({"worldplan", "edit", "move", "--game", snes[1].game.toString(), "--slot", slot});
