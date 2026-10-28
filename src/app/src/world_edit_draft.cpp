@@ -267,12 +267,11 @@ Expected<RoomStaticPart> roomStaticPart(const WorldBuild& shown, const world::Wo
                         {"lights", std::move(part->lights)},
                         {"objects", std::move(part->objects)},
                         {"areas", nlohmann::json::array({std::move(area)})}};
-    // In the scene's frame as buildFloor() moves the floor: the start room's on its own floor.
-    if (shown.startRoom) {
-        if (const RoomCollection* start = shown.findRoom(*shown.startRoom)) {
-            moveSceneFileToRoom(file, start->placement);
-        }
-    }
+    // In the scene's frame as buildFloor() moved the floor shown: its floorPlacement (relativePlacement() of no
+    // placement in the start room's on the start room's floor, none elsewhere) read back as the start room's placement.
+    const world::RoomPlacement& floor = shown.floorPlacement;
+    const std::int64_t sign = floor.yawHalfTurns % 2 == 0 ? 1 : -1;
+    moveSceneFileToRoom(file, world::RoomPlacement{-sign * floor.xMm, -sign * floor.zMm, floor.yawHalfTurns % 2});
     auto description = scene::parseSceneDescription(file, "edit:" + room.toString());
     if (!description) {
         return propagate(description.error());

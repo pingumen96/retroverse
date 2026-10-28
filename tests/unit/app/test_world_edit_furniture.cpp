@@ -566,12 +566,11 @@ TEST_CASE("app/world_edit_furniture: drops refused in a doorway, a door-reserved
     EditDraft draft(rv::app::EditBase{world, "base"}, data);
     auto accepted = draft.apply(snappedMove(world, *data, display, {at.xMm, at.zMm + 300, at.yawCdeg}), kProvenance);
     REQUIRE(accepted.has_value());
-    if (!accepted->refused) {
-        CHECK(draft.size() == 1);
-        CHECK(accepted->rebuild == rv::world::RebuildLevel::LocalReflow);
-        REQUIRE(draft.current().overrides.fixturePins.size() == 1);
-        CHECK(draft.current().overrides.fixturePins.front().fixture == display.id);
-    }
+    REQUIRE_FALSE(accepted->refused);
+    CHECK(draft.size() == 1);
+    CHECK(accepted->rebuild == rv::world::RebuildLevel::LocalReflow);
+    REQUIRE(draft.current().overrides.fixturePins.size() == 1);
+    CHECK(draft.current().overrides.fixturePins.front().fixture == display.id);
 }
 
 TEST_CASE("app/world_edit_furniture: a room's static part rebuilt alone is the floor's scene of that room",
@@ -582,10 +581,12 @@ TEST_CASE("app/world_edit_furniture: a room's static part rebuilt alone is the f
     auto sceneData = rv::world::loadSceneData(rv::test::world::sourceAssetRoot(), plan, roomId);
     REQUIRE(sceneData.has_value());
 
-    // The floor shown: the room on its floor (its own frame the scene's: the start room).
+    // The floor shown: the room on its floor (its own frame the scene's: the start room, as buildFloor() frames it).
     rv::app::WorldBuild shown;
     shown.startRoom = roomId;
     shown.plan = plan;
+    shown.floor = roomOf(plan).floor;
+    shown.floorPlacement = rv::app::relativePlacement(rv::world::RoomPlacement{}, roomOf(plan).placement);
     rv::app::RoomCollection collection;
     collection.room = roomId;
     collection.placement = roomOf(plan).placement;
@@ -636,6 +637,26 @@ TEST_CASE("app/world_edit_furniture: a room's static part rebuilt alone is the f
     REQUIRE(caseBefore != before->objects.end());
     CHECK_FALSE(*caseObject == *caseBefore);
     CHECK(before->objects.front() == part->objects.front());
+    // The scene's frame is the floor shown's (its floorPlacement, as buildFloor() framed it): a start room turned half
+    // round elsewhere on the floor moves the part as it moved the floor.
+    const rv::world::RoomPlacement start{3000, 8000, 1};
+    rv::app::WorldBuild turned = shown;
+    turned.floorPlacement = rv::app::relativePlacement(rv::world::RoomPlacement{}, start);
+    auto turnedPart = rv::app::roomStaticPart(turned, world.plan, roomId);
+    REQUIRE(turnedPart.has_value());
+    auto turnedScene = rv::world::toFloorSceneFile(world.plan, roomOf(plan).floor, floorData);
+    REQUIRE(turnedScene.has_value());
+    rv::app::moveSceneFileToRoom(turnedScene->sceneFile, start);
+    auto turnedFloor = rv::scene::parseSceneDescription(turnedScene->sceneFile, "floor");
+    REQUIRE(turnedFloor.has_value());
+    std::vector<rv::scene::SceneObject> turnedObjects;
+    for (const rv::scene::SceneObject& object : turnedFloor->objects) {
+        if (object.id.starts_with(prefix)) {
+            turnedObjects.push_back(object);
+        }
+    }
+    CHECK(turnedObjects == turnedPart->objects);
+    CHECK_FALSE(turnedObjects == part->objects);
     // A room the floor shown keeps no data of cannot be rebuilt alone.
     shown.rooms.front().sceneData = rv::world::SceneData{};
     CHECK_FALSE(rv::app::roomStaticPart(shown, plan, roomId).has_value());
