@@ -609,8 +609,10 @@ struct ScreenService::Impl {
         std::vector<ScreenRequest> requests;
         requests.reserve(screens.size());
         for (const std::unique_ptr<ScreenState>& screen : screens) {
-            requests.push_back(
-                ScreenRequest{screen->binding.objectId, screen->screenClass, screen->clip, screen->distance, screen->visible});
+            // The hero's own slot is the hero's, whichever room's: a room changed reopens on it (one thread).
+            requests.push_back(ScreenRequest{screen->binding.objectId, screen->screenClass, screen->clip,
+                                             screen->distance, screen->visible,
+                                             isHero(*screen) ? std::string(kHeroScreenId) : std::string()});
         }
         const std::size_t drops = scheduler.drops().size();
         const ScheduleResult result = scheduler.update(now, requests, feedback);

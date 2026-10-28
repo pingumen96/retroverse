@@ -611,3 +611,42 @@ TEST_CASE("app/screen_scheduler: open plus reserved slots never exceed the budge
     }
     CHECK(drops >= 10); // the runs went through drops
 }
+
+TEST_CASE("app/screen_scheduler: the next room's hero takes the hero's slot back, one decoder thread across the change",
+          "[app][screen_scheduler]") {
+    // A room changed: its screens are bound with other object ids; the hero's owner is its role.
+    const auto hero = [](std::string id, std::string clip) {
+        ScreenRequest made = request(std::move(id), ScreenClass::Room, std::move(clip), 3.0);
+        made.owner = "hero";
+        return made;
+    };
+    ScreenScheduler scheduler;
+    Decoders decoders(2, 4);
+    double now = 0.0;
+    run(scheduler, decoders, {hero("room:a/crt", "a")}, now, 3);
+    decoders.apply(ScheduleResult{scheduler.stopAll("unbind"), {}});
+    const std::vector<ScreenRequest> next{hero("room:b/crt", "b")};
+    ScheduleResult result = scheduler.update(now, next, decoders.feedback());
+    decoders.apply(result);
+    now += kFrame;
+    CHECK(result.screens.front() == (ScreenAssignment{0, false, true})); // waiting for the hero's slot's thread
+    std::size_t maxThreads = decoders.threads();
+    for (int frame = 0; frame < 10; ++frame) {
+        result = scheduler.update(now, next, decoders.feedback());
+        decoders.apply(result);
+        maxThreads = std::max(maxThreads, decoders.threads());
+        now += kFrame;
+    }
+    CHECK(result.screens.front() == playing(0));
+    CHECK(maxThreads == 1);
+    CHECK(scheduler.slots()[1].state == SlotState::Free);
+    // By its id alone the new screen would take the free slot while the old thread still ends.
+    ScreenScheduler byId;
+    Decoders others(2, 4);
+    run(byId, others, {request("room:a/crt", ScreenClass::Room, "a", 3.0)}, now, 3);
+    others.apply(ScheduleResult{byId.stopAll("unbind"), {}});
+    result = byId.update(now, std::vector{request("room:b/crt", ScreenClass::Room, "b", 3.0)}, others.feedback());
+    others.apply(result);
+    CHECK(result.screens.front() == playing(1));
+    CHECK(others.threads() == 2);
+}

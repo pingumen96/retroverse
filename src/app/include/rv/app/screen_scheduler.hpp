@@ -65,6 +65,10 @@ struct ScreenRequest {
     double distanceMeters = 0.0;
     /// In the view frustum (the screens asked about are those of the area that holds the eye).
     bool visible = true;
+    /// Who the screen is to its own slot (a screen switching clips gets the slot it showed before): its role when one
+    /// stands for it across rebinds (the hero's kHeroScreenId: a room changed gives the new hero the old hero's slot),
+    /// else its id. Empty: `screenId`.
+    std::string owner;
 };
 
 /// What the service tells about a slot on each frame, before update(): its decoder's thread, and its clock's
@@ -97,11 +101,12 @@ struct ScreenSlot {
     double since = 0.0;
     /// Open: since when every screen showing it is out of view.
     std::optional<double> hiddenSince;
-    /// Open: the screens that show it, by id.
+    /// Open: the screens that show it, by id, and their owners (ScreenRequest::owner), sorted.
     std::vector<std::string> screens;
-    /// Draining or free: the screens it showed when it stopped. A screen switching clips gets its own slot back (one
-    /// thread for it, as with one decoder), not a free one.
-    std::vector<std::string> previousScreens;
+    std::vector<std::string> owners;
+    /// Draining or free: the owners of the screens it showed when it stopped. A screen switching clips (or the hero of
+    /// the next room) gets its own slot back (one thread for it, as with one decoder), not a free one.
+    std::vector<std::string> previousOwners;
 };
 
 enum class SlotAction : std::uint8_t {
@@ -169,7 +174,8 @@ struct BudgetDrop {
 ///    unless the request taking it is `direct` or `focus`. A clip no screen asks for any more stops at once.
 ///  - A stopped slot drains: it opens its next clip only once the service reports its thread ended, so that there are
 ///    never more decoder threads than slots, nor more open decoders than the budget. A clip takes the slot one of its
-///    screens showed before (a screen switching clips waits for its own slot), else a free one, else a draining one.
+///    screens' owners showed before (a screen switching clips, or the next room's hero, waits for its own slot), else
+///    a free one, else a draining one.
 ///  - The late-frame drop: a slot over kLateFrameRatio over kLateWindowSeconds lowers the budget to 1 for
 ///    kLateDropSeconds; the lowest-ranked clip loses its slot. Open plus reserved slots never exceed the budget: at
 ///    it, a clip in view takes a free or draining slot only once the lowest-ranked open clip not among the best has

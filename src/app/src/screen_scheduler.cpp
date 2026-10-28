@@ -18,6 +18,8 @@ struct Demand {
     double distance = 0.0;
     std::string screenId;
     std::vector<std::string> screens;
+    /// The screens' owners (ScreenRequest::owner): the own-slot rule's keys.
+    std::vector<std::string> owners;
 
     /// Visible first, then the class, the distance and the screen id.
     [[nodiscard]] auto key() const { return std::tie(screenClass, distance, screenId); }
@@ -116,7 +118,8 @@ void ScreenScheduler::stop(std::size_t index, std::string_view reason, std::vect
     slot.state = SlotState::Draining;
     slot.paused = false;
     slot.hiddenSince.reset();
-    slot.previousScreens = std::move(slot.screens);
+    slot.previousOwners = std::move(slot.owners);
+    slot.owners.clear();
     slot.screens.clear();
     m_stats[index] = SlotStats{};
 }
@@ -232,19 +235,24 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         }
         counted[index] = true;
         const Demand own = demandOf(request);
+        const std::string& owner = request.owner.empty() ? request.screenId : request.owner;
         const auto found = std::find_if(demands.begin(), demands.end(),
                                         [&](const Demand& demand) { return demand.clip == request.clip; });
         if (found == demands.end()) {
             demands.push_back(own);
             demands.back().screens.push_back(request.screenId);
+            demands.back().owners.push_back(owner);
             continue;
         }
         found->screens.push_back(request.screenId);
+        found->owners.push_back(owner);
         const bool visible = found->visible || own.visible;
         if (own.before(*found)) {
             std::vector<std::string> screens = std::move(found->screens);
+            std::vector<std::string> owners = std::move(found->owners);
             *found = own;
             found->screens = std::move(screens);
+            found->owners = std::move(owners);
         }
         found->visible = visible;
     }
@@ -253,6 +261,7 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
     std::sort(demands.begin(), demands.end(), [](const Demand& a, const Demand& b) { return a.before(b); });
     for (Demand& demand : demands) {
         std::sort(demand.screens.begin(), demand.screens.end());
+        std::sort(demand.owners.begin(), demand.owners.end());
     }
 
     // Since when each clip has been out of view (its stop after kScreenStopAfterSeconds counts from there).
@@ -375,8 +384,8 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
             continue;
         }
         const auto showedBefore = [&](const ScreenSlot& slot) {
-            return std::any_of(slot.previousScreens.begin(), slot.previousScreens.end(), [&](const std::string& id) {
-                return std::binary_search(demand.screens.begin(), demand.screens.end(), id);
+            return std::any_of(slot.previousOwners.begin(), slot.previousOwners.end(), [&](const std::string& owner) {
+                return std::binary_search(demand.owners.begin(), demand.owners.end(), owner);
             });
         };
         std::optional<std::size_t> pick;
@@ -439,7 +448,7 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         slot.clip = std::exchange(slot.next, std::string());
         slot.paused = false;
         slot.hiddenSince.reset();
-        slot.previousScreens.clear();
+        slot.previousOwners.clear();
         m_stats[index] = SlotStats{};
         opens.push_back(SlotCommand{SlotAction::Open, index, slot.clip, "wanted"});
     }
@@ -452,6 +461,7 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         }
         const std::optional<std::size_t> demand = demandIndex(slot.clip);
         slot.screens = demand ? demands[*demand].screens : std::vector<std::string>{};
+        slot.owners = demand ? demands[*demand].owners : std::vector<std::string>{};
         const bool visible = demand && demands[*demand].visible;
         if (!visible && !slot.paused) {
             slot.paused = true;
