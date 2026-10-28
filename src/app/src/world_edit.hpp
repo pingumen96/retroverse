@@ -54,6 +54,9 @@ struct EditJobContext {
     world::RoomId room;
     /// The session's edit data (none while it is prepared): the building's layout for the plan as shown.
     std::shared_ptr<const world::EditData> data;
+    /// The catalog's reader for the CRTs' last plays (catalogLastPlayed()), as a ride's floor reads them; none: the
+    /// items files'.
+    std::shared_ptr<WorldCatalogReader> reader;
 };
 
 /// What an editor's job answers.
@@ -113,6 +116,8 @@ struct WorldEditState {
     /// The room's family's item size and spine facing (where a held game would stand in a free slot).
     glm::vec3 itemSize{0.0f};
     world::SpineFacing spineFacing = world::SpineFacing::End;
+    /// The catalog's reader the session's floors read the CRTs' last plays with.
+    std::shared_ptr<WorldCatalogReader> reader;
     /// The job in flight, its mailbox and generation, when it was asked.
     EditJob job = EditJob::None;
     std::shared_ptr<EditJobBox> box;

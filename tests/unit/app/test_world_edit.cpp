@@ -406,6 +406,15 @@ TEST_CASE("app/world_edit: the D-pad steps over every slot, empty ones included,
         static_cast<void>(frame(editor, &held, item));
     }
     CHECK(editor.target()->pick == free);
+
+    // With the eye outside the edited room the D-pad steps nothing (the app samples no target there either).
+    EditFrame outside;
+    const ActionState left = press({Action::UiLeft});
+    outside.actions = &left;
+    outside.deltaSeconds = 0.016667f;
+    outside.inRoom = false;
+    static_cast<void>(editor.update(outside));
+    CHECK(editor.target()->pick == free);
 }
 
 TEST_CASE("app/world_edit: the menu, Back's levels, \"Sposta\" with the item held", "[app][world_edit]") {

@@ -350,7 +350,7 @@ void EditInteraction::readMenu(const input::ActionState& actions, EditFrameResul
 
 void EditInteraction::step(const input::ActionState& actions, const EditFrame& frame) {
     const std::optional<world::StepDirection> direction = stepPressed(actions);
-    if (!direction || m_room == nullptr) {
+    if (!direction || m_room == nullptr || !frame.inRoom) {
         return;
     }
     world::PickId from = m_target ? m_target->pick : m_heldFrom;

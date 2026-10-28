@@ -67,7 +67,13 @@ using Clock = std::chrono::steady_clock;
     build.plan = std::move(plan);
     build.planDigest = std::move(digest);
     build.reason = "the editor's floor";
-    buildFloor(context.paths, build, context.sources);
+    // The CRTs' games with the catalog's sessions now, as a ride's floor (a game played since the items files were
+    // written stays the room's CRT's choice after an edit).
+    FloorSources sources = context.sources;
+    if (context.reader) {
+        sources.lastPlayed = catalogLastPlayed(*context.reader);
+    }
+    buildFloor(context.paths, build, sources);
     return build;
 }
 
@@ -77,9 +83,11 @@ void displayInto(EditJobAnswer& answer, const EditJobContext& context, const std
                  const world::WorldPlan& plan, const std::string& digest, world::RebuildLevel rebuild,
                  std::span<const world::RoomId> rooms) {
     if (rebuild == world::RebuildLevel::NoRebuild && shown) {
+        // Each room once (a move or a swap within a room names it twice; an undo or a discard gathers several).
         std::vector<world::RoomId> onFloor;
         for (const world::RoomId& room : rooms) {
-            if (shown->findRoom(room) != nullptr) {
+            if (shown->findRoom(room) != nullptr &&
+                std::find(onFloor.begin(), onFloor.end(), room) == onFloor.end()) {
                 onFloor.push_back(room);
             }
         }
@@ -156,6 +164,7 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
     edit.session = ++m_editSessions;
     edit.box = std::make_shared<EditJobBox>();
     edit.box->wake = m_context.wakeCallback();
+    edit.reader = product.catalog().worldReader();
     edit.interaction.begin(held);
     edit.record.room = room.toString();
     edit.record.via = std::string(via);
@@ -261,6 +270,7 @@ EditJobContext WorldSession::editJobContext() const {
     if (m_edit) {
         context.room = m_edit->room;
         context.data = m_edit->draft ? m_edit->draft->data() : nullptr;
+        context.reader = m_edit->reader;
     }
     return context;
 }
@@ -293,8 +303,13 @@ InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
     input.walker = frame.walker;
     input.back = frame.back;
     input.viewer = frame.viewer;
+    // The edited room's targets only from inside it (its walls occlude them; its doorway would not): outside, nothing
+    // under the reticle and no step.
+    const std::optional<std::size_t> eye = eyeRoom();
+    input.inRoom = eye && m_rooms[*eye].id == edit.room;
     if (edit.editRoom && frame.ray) {
-        input.hover = edit.editRoom->index().sample(*frame.ray, edit.interaction.hovered());
+        input.hover = input.inRoom ? edit.editRoom->index().sample(*frame.ray, edit.interaction.hovered())
+                                   : world::HoverSample{};
     }
     const EditMode before = edit.interaction.mode();
     const EditFrameResult answer = edit.interaction.update(input);

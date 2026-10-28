@@ -72,6 +72,8 @@ struct EditFrame {
     BackState back;
     /// Where a step's pose is framed from.
     FocusViewer viewer;
+    /// The eye is in the edited room: outside it the D-pad steps nothing (the app samples no target there either).
+    bool inRoom = true;
 };
 
 /// What the session does after a frame.
