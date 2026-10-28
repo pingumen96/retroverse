@@ -1005,15 +1005,21 @@ struct ScreenService::Impl {
     }
 
     /// The picture the screen holds is still what it showed: a still is its own (heldStill); a video is its slot's
-    /// texture while that slot plays the same clip, or the screen's next one, and keeps its texture (a slot reopened
-    /// for another screen's clip would show that game, a reallocated texture is gone).
+    /// texture while the slot keeps that texture and does not play another screen's clip (it would show that game; a
+    /// reallocated texture is gone). The slot reopened for one of this screen's own clips keeps the hold.
     [[nodiscard]] bool heldPictureThere(const ScreenState& screen) const {
         if (!screen.overrideSlot) {
             return true;
         }
         const Slot& slot = slots[*screen.overrideSlot];
-        const bool clip = slot.clip == screen.overrideClip || (!screen.clip.empty() && slot.clip == screen.clip);
-        return clip && slot.texture.textureId() == screen.appliedOverride;
+        if (slot.texture.textureId() != screen.appliedOverride) {
+            return false;
+        }
+        if (slot.clip == screen.overrideClip || slot.clip == screen.clip) {
+            return true;
+        }
+        const std::vector<ScreenState*> on = requesters(slot.clip);
+        return on.empty();
     }
 
     /// The held still goes once the screen no longer shows it.
