@@ -1719,6 +1719,7 @@ Json videoToJson(const VideoRecord& video) {
                              {"untilSeconds", drop.untilSeconds}});
     }
     json["budgetDrops"] = std::move(drops);
+    json["slotEventsDropped"] = video.slotEventsDropped;
     return json;
 }
 
@@ -1850,6 +1851,7 @@ VideoRecord readVideo(FieldReader& fields) {
                                                           entry.string("gameId"), entry.number("ratio"),
                                                           entry.number("untilSeconds")});
     }
+    video.slotEventsDropped = fields.optionalCount("slotEventsDropped").value_or(0);
     return video;
 }
 

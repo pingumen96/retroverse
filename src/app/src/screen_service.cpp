@@ -443,6 +443,8 @@ struct ScreenService::Impl {
             counters.slotEvents.push_back(VideoSlotEventRecord{frameIndex, now, slot, std::string(toString(action)),
                                                                std::move(gameId), std::move(reason),
                                                                std::move(shownOn)});
+        } else {
+            ++counters.slotEventsDropped;
         }
     }
 

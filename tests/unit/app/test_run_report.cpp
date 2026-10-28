@@ -771,6 +771,7 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     video.slotEvents = {{3, 0.05, 1, "open", "g000000000000b002", "wanted", {"crt_a", "crt_b"}},
                         {900, 15.0, 1, "stop", "g000000000000b003", "out-of-view", {}}};
     video.budgetDrops = {{12.5, 1, "g000000000000b003", 0.075, 42.5}};
+    video.slotEventsDropped = 3;
     report.processPriority = rv::app::ProcessPriorityRecord{
         {{1, "above-normal", "rendering", true}, {37, "normal", "launch", true}, {200, "normal", "exit", true}}};
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");

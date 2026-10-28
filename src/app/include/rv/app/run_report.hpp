@@ -1244,6 +1244,8 @@ struct VideoRecord {
     std::vector<VideoScreenRecord> screens;
     std::vector<VideoSlotEventRecord> slotEvents;
     std::vector<VideoBudgetDropRecord> budgetDrops;
+    /// The slots' events after the first 512, not listed (I5 step 2's review).
+    std::uint64_t slotEventsDropped = 0;
 
     bool operator==(const VideoRecord&) const = default;
 };
