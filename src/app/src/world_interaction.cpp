@@ -29,6 +29,8 @@ constexpr int kLookMemoryFrames = world::kHoverChangeFrames;
     return action == Action::UiUp || action == Action::UiDown || action == Action::UiLeft || action == Action::UiRight;
 }
 
+constexpr Action kArrows[] = {Action::UiUp, Action::UiDown, Action::UiLeft, Action::UiRight};
+
 /// The D-pad step a frame asks for: the first of up, down, left, right pressed.
 [[nodiscard]] std::optional<world::StepDirection> stepPressed(const input::ActionState& actions) noexcept {
     if (actions.pressed(Action::UiUp)) {
@@ -60,6 +62,8 @@ std::string_view toString(WorldState state) noexcept {
         return "launching";
     case WorldState::Returning:
         return "returning";
+    case WorldState::Edit:
+        return "edit";
     }
     return "unknown";
 }
@@ -74,6 +78,8 @@ std::string_view toString(WorldContext context) noexcept {
         return "inspect";
     case WorldContext::Suspended:
         return "suspended";
+    case WorldContext::Edit:
+        return "edit";
     }
     return "unknown";
 }
@@ -114,6 +120,8 @@ std::string_view toString(CardAction action) noexcept {
         return "info";
     case CardAction::Back:
         return "back";
+    case CardAction::Move:
+        return "move";
     }
     return "unknown";
 }
@@ -135,6 +143,11 @@ bool readsAction(WorldContext context, Action action) noexcept {
                action == Action::Interact;
     case WorldContext::Suspended:
         return false;
+    case WorldContext::Edit:
+        if (action == Action::QuickCatalog || action == Action::Map || action == Action::Menu) {
+            return false;
+        }
+        return readsAction(InputContext::World, action) || isArrow(action) || action == Action::UiActivate;
     }
     return false;
 }
@@ -163,6 +176,17 @@ input::ActionState walkerActionsFor(WorldContext context, const input::ActionSta
                 read.setButton(action, false, false, false);
                 read.setAxis(action, 0.0f);
             }
+        }
+        return read;
+    }
+    case WorldContext::Edit: {
+        // The arrow keys are bound to walking and to the steps: in Edit a held arrow steps, it does not walk.
+        input::ActionState read = actionsFor(WorldContext::FreeRoam, actions);
+        const bool arrowHeld = std::any_of(std::begin(kArrows), std::end(kArrows),
+                                           [&](Action action) { return actions.held(action); });
+        if (arrowHeld) {
+            read.setAxis(Action::MoveForward, 0.0f);
+            read.setAxis(Action::MoveRight, 0.0f);
         }
         return read;
     }
@@ -239,6 +263,7 @@ WorldBack WorldInteraction::backLevel() const noexcept {
     case WorldState::FreeRoam:
     case WorldState::Launching:
     case WorldState::Returning:
+    case WorldState::Edit:
         break;
     }
     return WorldBack::Shell;
@@ -253,6 +278,7 @@ world::PickId WorldInteraction::highlighted() const noexcept {
     case WorldState::Inspect:
     case WorldState::Launching:
     case WorldState::Returning:
+    case WorldState::Edit:
         break;
     }
     return world::kNoPick;
@@ -314,6 +340,7 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
                 break;
             case WorldState::Launching:
             case WorldState::Returning:
+            case WorldState::Edit:
                 break;
             }
         }
@@ -467,6 +494,15 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
         clearNotice();
         return;
     }
+    if (card == CardAction::Move) {
+        // I4b step 3: "Sposta": the application enters the editor with the item held (enterEdit()).
+        if (roomItem(m_focused)) {
+            result.editMove = m_focused;
+        } else {
+            toFreeRoam(InteractionNotice::ItemUnavailable);
+        }
+        return;
+    }
     if (card == CardAction::Media || actions.pressed(Action::UiMedia)) {
         result.showMedia = true;
     } else if (card == CardAction::Info || actions.pressed(Action::UiInfo)) {
@@ -534,6 +570,38 @@ void WorldInteraction::finishReturn() {
     } else {
         clearNotice();
     }
+}
+
+bool WorldInteraction::enterEdit() {
+    if (m_state == WorldState::Launching || m_state == WorldState::Returning || m_state == WorldState::Edit) {
+        return false;
+    }
+    m_state = WorldState::Edit;
+    m_focused = world::kNoPick;
+    m_hover.reset();
+    m_dwell = 0.0f;
+    m_dwellPulls = true;
+    m_lift.jumpTo(0.0f);
+    if (m_walker.animating()) {
+        m_walker.jumpTo(m_walker.pose());
+        m_walkerPlaced = true;
+    }
+    // Every item back in its slot at once: the editor draws what it holds itself.
+    m_pulls.clear();
+    m_pulledView.clear();
+    m_interactSkips = false;
+    clearNotice();
+    return true;
+}
+
+void WorldInteraction::leaveEdit() {
+    if (m_state != WorldState::Edit) {
+        return;
+    }
+    m_state = WorldState::FreeRoam;
+    m_hover.reset();
+    m_dwell = 0.0f;
+    m_dwellPulls = true;
 }
 
 void WorldInteraction::leaveFocusNow() {

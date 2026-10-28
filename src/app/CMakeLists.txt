@@ -46,6 +46,8 @@ add_library(rv_app_cli STATIC
     src/world_focus.cpp
     src/world_inspect.cpp
     src/world_interaction.cpp
+    src/world_edit_interaction.cpp
+    src/world_edit_room.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
@@ -77,6 +79,7 @@ add_library(rv_app_catalog STATIC
     src/world_build.cpp
     src/world_live_plan.cpp
     src/world_reconcile.cpp
+    src/world_edit_draft.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)

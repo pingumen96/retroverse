@@ -20,6 +20,11 @@
 // | Launching | Avvia                                                    | launchEnded(): Returning                      |
 // | Returning | launchEnded()                                            | the next update: Inspect of the same item     |
 // |           |                                                          | (FreeRoam when it left the room)              |
+// | Edit      | enterEdit() (I4b step 3: the directory's "Modifica       | leaveEdit(): FreeRoam                         |
+// |           | stanza", the card's "Sposta")                            |                                               |
+//
+// In Edit (ADR-0015 §4) the interaction reads nothing and drives nothing: the editor (world_edit_interaction.hpp) has
+// the frame's actions in the Edit context, the walker walks and looks as in FreeRoam.
 //
 // A failed transition (an item the room no longer has, a refused launch) leaves a usable state and a notice() for the
 // card. The timings (ADR-0012 §3, §4, §8) are InteractionTimings; each transition the player starts is skippable with
@@ -46,9 +51,9 @@ namespace rv::app {
 
 /// The world's interaction states (ADR-0012 §1; specification §8.3's OnShelf, Focused, HeldForInspection, Launching,
 /// Returning).
-enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Returning };
+enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Returning, Edit };
 
-/// "free roam", "focus", "inspect", "launching", "returning".
+/// "free roam", "focus", "inspect", "launching", "returning", "edit".
 [[nodiscard]] std::string_view toString(WorldState state) noexcept;
 
 /// Who reads the world's actions in each state, inside the action map's World context (input_context.hpp: the product
@@ -64,10 +69,14 @@ enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Retu
 ///    which is both confirm and ui_activate, presses the focused button), interact and ui_activate (skip the lift).
 ///    Neither QuickCatalog nor Back: the pad's north button is Vedi media here, the quick catalog elsewhere.
 ///  - Suspended (Launching, Returning): nothing; A1's game-session panel has the input meanwhile.
+///  - Edit (I4b step 3, ADR-0015 §4: the editor's): the walking and look actions and Sprint (the walker walks and looks
+///    as in FreeRoam), interact (pick up, drop), Back, confirm (the editor's menu: Enter, the pad's Start), edit_pin,
+///    the arrows and the D-pad (steps between slots, the menu's focus) and ui_activate (the menu's press). Neither
+///    QuickCatalog nor Map: the catalog and the directory stay closed while editing.
 /// ToggleDevUI, ReloadShaders and Screenshot are read in every context (isGlobalAction).
-enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended };
+enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended, Edit };
 
-/// "free roam", "focus", "inspect", "suspended".
+/// "free roam", "focus", "inspect", "suspended", "edit".
 [[nodiscard]] std::string_view toString(WorldContext context) noexcept;
 
 [[nodiscard]] constexpr WorldContext worldContextFor(WorldState state) noexcept {
@@ -81,6 +90,8 @@ enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended };
     case WorldState::Launching:
     case WorldState::Returning:
         return WorldContext::Suspended;
+    case WorldState::Edit:
+        return WorldContext::Edit;
     }
     return WorldContext::Suspended;
 }
@@ -93,7 +104,8 @@ enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended };
 
 /// What the walker (scene::FirstPersonController) is given in `context`: everything FreeRoam reads; in Focus the look
 /// actions alone (the feet stay, the eyes move the pick); nothing in Inspect (the look actions turn the item) or while
-/// suspended.
+/// suspended; in Edit what FreeRoam gives, the walking released while an arrow or a D-pad direction is held (the arrow
+/// keys walk and step at once otherwise: in Edit they step).
 [[nodiscard]] input::ActionState walkerActionsFor(WorldContext context, const input::ActionState& actions) noexcept;
 
 /// Where the pick ray starts (ADR-0012 §2).
@@ -216,10 +228,11 @@ public:
 
 /// A button of the inspected item's card pressed (I3 step 14a, ADR-0012 §5: the card's buttons have the focus, so Enter
 /// and the pad's south button press the focused one and a click the one clicked; the app's WorldCard turns them into
-/// this entry). Launch is Avvia, Media Vedi media, Info Informazioni, Back Indietro (ui_back's Back levels).
-enum class CardAction : std::uint8_t { Launch, Media, Info, Back };
+/// this entry). Launch is Avvia, Media Vedi media, Info Informazioni, Back Indietro (ui_back's Back levels); Move is
+/// "Sposta" (I4b step 3, ADR-0015 §4: the editor entered with the item held).
+enum class CardAction : std::uint8_t { Launch, Media, Info, Back, Move };
 
-/// "launch", "media", "info", "back".
+/// "launch", "media", "info", "back", "move".
 [[nodiscard]] std::string_view toString(CardAction action) noexcept;
 
 /// One frame as the interaction sees it.
@@ -265,6 +278,9 @@ struct InteractionResult {
     /// The walker's pose for this frame while an ease or a restore drives it (the app places the walker and the camera
     /// there, and the walker gets no actions); nothing while the player drives it.
     std::optional<scene::WalkerPose> walker;
+    /// I4b step 3: "Sposta" on the inspected item's card: the editor is to be entered with this item held (the
+    /// application calls enterEdit()); the state stays Inspect until it does.
+    std::optional<world::PickId> editMove;
 };
 
 /// An item off its static pose: pulled out of its row (spine-out) or tilted (face-out), by `progress`, eased, from 0
@@ -342,6 +358,13 @@ public:
 
     /// Turns every animation instant (and finishes those running), or back.
     void setReduceMotion(bool on);
+
+    /// I4b step 3 (ADR-0015 §4): the state Edit from FreeRoam, Focus or Inspect, the interaction letting go of
+    /// everything at once (nothing hovered, focused, pulled or lifted; the walker's ease stopped where it is; no notice).
+    /// False, changing nothing, while launching or returning (or in Edit already).
+    bool enterEdit();
+    /// Edit left for FreeRoam; nothing in other states.
+    void leaveEdit();
 
     [[nodiscard]] WorldState state() const noexcept { return m_state; }
     [[nodiscard]] WorldContext context() const noexcept { return worldContextFor(m_state); }
