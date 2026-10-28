@@ -133,7 +133,8 @@ AppRun runCommand(const std::filesystem::path& executable, const std::filesystem
     request.stdoutFile = run.outputFile;
     request.stderrFile = run.outputFile;
     // Each configuration must read its own assets: the source tree, or the copy deployed next to a Release executable.
-    request.environment = {{"RV_ASSET_ROOT", std::nullopt}};
+    // RV_AUDIO=null whatever the caller's environment: a direct run of the smoke executable never opens the device.
+    request.environment = {{"RV_ASSET_ROOT", std::nullopt}, {"RV_AUDIO", "null"}};
     request.timeout = kRunTimeout;
     const auto outcome = test::runChild(request);
     if (!outcome) {

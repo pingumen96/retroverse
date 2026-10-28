@@ -182,9 +182,10 @@ StartedApp::StartedApp(const std::filesystem::path& caseDir, std::string_view na
     REQUIRE(commandLine.has_value());
     auto wideCommandLine = core::utf8ToWide(*commandLine);
     REQUIRE(wideCommandLine.has_value());
-    // Each configuration reads its own assets, as runCommand() runs them.
+    // Each configuration reads its own assets, as runCommand() runs them; RV_AUDIO=null, so that a direct run of the
+    // smoke executable never opens the audio device.
     std::wstring environment;
-    const std::vector<launcher::EnvironmentOverride> overrides{{"RV_ASSET_ROOT", std::nullopt}};
+    const std::vector<launcher::EnvironmentOverride> overrides{{"RV_ASSET_ROOT", std::nullopt}, {"RV_AUDIO", "null"}};
     for (const launcher::EnvironmentVariable& variable :
          launcher::mergeEnvironment(platform_win::currentEnvironment(), overrides)) {
         const auto entry = core::utf8ToWide(variable.name + "=" + variable.value);

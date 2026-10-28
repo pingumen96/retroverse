@@ -59,7 +59,8 @@ struct AppRun {
 };
 
 /// Runs `executable` in `caseDir` with `arguments` exactly, its output in <caseDir>/<name>.log, without RV_ASSET_ROOT
-/// in its environment (so that each configuration reads its own assets), terminated after kRunTimeout. REQUIREs that
+/// in its environment (so that each configuration reads its own assets) and with RV_AUDIO=null (so that no run can
+/// open the audio device, even outside the test presets), terminated after kRunTimeout. REQUIREs that
 /// the process could be started and did not time out. The run has no report.
 [[nodiscard]] AppRun runCommand(const std::filesystem::path& executable, const std::filesystem::path& caseDir,
                                 std::string_view name, std::vector<std::string> arguments);
