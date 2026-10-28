@@ -78,7 +78,8 @@ void ScreenVerdicts::run(std::stop_token stop) {
             m_writing = false;
             if (!merged) {
                 ++m_record.writeFailures;
-                spdlog::warn("Video verdicts: {} verdict(s) not written: {}", changes.size(), merged.error().toString());
+                spdlog::warn("Video verdicts: {} verdict(s) not written: {}", changes.size(),
+                             merged.error().toString());
             } else {
                 m_record.written += changes.size();
                 for (media::VideoVerdict& change : changes) {

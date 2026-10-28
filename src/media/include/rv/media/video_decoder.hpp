@@ -47,8 +47,8 @@ enum class DecodeFailure : std::uint8_t {
 [[nodiscard]] ErrorCode errorCodeFor(DecodeFailure failure) noexcept;
 
 /// A first pass from the start that ends before this share of the video stream's own duration, less
-/// kTruncatedPassSlackSeconds, fails as Truncated (ADR-0004 point 10); the check of a clip's sample applies the same rule
-/// to its last frame (video_check.hpp).
+/// kTruncatedPassSlackSeconds, fails as Truncated (ADR-0004 point 10); the check of a clip's sample applies the same
+/// rule to its last frame (video_check.hpp).
 inline constexpr double kTruncatedPassRatio = 0.9;
 inline constexpr double kTruncatedPassSlackSeconds = 0.5;
 
