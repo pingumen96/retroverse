@@ -97,6 +97,9 @@ core::ArgParser makeParser() {
         .option("video-freeze-pts", "seconds",
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens.")
+        .option("max-decoders", "1|2",
+                "Video decoders the screens share at most (video.json's maxDecoders by default: 2, the Balanced "
+                "profile; 1 is the Low profile's): the screens beyond it show their stills.")
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
                                         "instead of BC1, as without the S3TC extensions (the log names the format "
                                         "and why).")
@@ -291,6 +294,22 @@ Status applyVideoFreezePts(const core::ParsedArgs& args, CommandLineOptions& opt
                          "--video-freeze-pts=" + args.value("video-freeze-pts").value_or(""));
     }
     options.videoFreezePtsSeconds = *seconds;
+    return ok();
+}
+
+/// --max-decoders <1|2>, the screens' decoder budget.
+Status applyMaxDecoders(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("max-decoders")) {
+        return ok();
+    }
+    auto decoders = args.intValue("max-decoders", 0);
+    if (!decoders) {
+        return propagate(decoders.error());
+    }
+    if (*decoders < 1 || *decoders > 2) {
+        return makeError(ErrorCode::OutOfRange, "must be 1 or 2", fmt::format("--max-decoders={}", *decoders));
+    }
+    options.maxDecoders = *decoders;
     return ok();
 }
 
@@ -540,6 +559,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     if (auto freeze = applyVideoFreezePts(*args, options); !freeze) {
         return propagate(freeze.error());
+    }
+    if (auto decoders = applyMaxDecoders(*args, options); !decoders) {
+        return propagate(decoders.error());
     }
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");

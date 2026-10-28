@@ -632,6 +632,24 @@ TEST_CASE("app/command_line: --video-freeze-pts holds the hero CRT's frame of a 
     CHECK(rv::app::commandLineHelp().find("Not implemented yet (I3 step 11)") == std::string::npos);
 }
 
+TEST_CASE("app/command_line: --max-decoders sets the screens' decoder budget, 1 or 2 (I5 step 2)",
+          "[app][command_line]") {
+    CHECK_FALSE(parse({})->maxDecoders.has_value());
+    CHECK(parse({"--max-decoders", "1"})->maxDecoders == 1);
+    CHECK(parse({"--max-decoders=2"})->maxDecoders == 2);
+    for (const char* value : {"0", "3"}) {
+        INFO(value);
+        const auto refused = parse({"--max-decoders", value});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().code == ErrorCode::OutOfRange);
+        CHECK(refused.error().context.starts_with("--max-decoders="));
+    }
+    const auto notANumber = parse({"--max-decoders", "two"});
+    REQUIRE_FALSE(notANumber.has_value());
+    CHECK(notANumber.error().code == ErrorCode::ParseError);
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--max-decoders"));
+}
+
 TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arrays uncompressed (I3 step 6)",
           "[app][command_line]") {
     const auto plain = parse({});

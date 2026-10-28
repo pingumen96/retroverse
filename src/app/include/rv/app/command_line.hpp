@@ -149,6 +149,9 @@ struct CommandLineOptions {
     /// frame, for goldens (ADR-0012 §7; I3 step 11). In [0, kMaxVideoFreezePtsSeconds].
     std::optional<double> videoFreezePtsSeconds;
     static constexpr double kMaxVideoFreezePtsSeconds = 86400.0;
+    /// --max-decoders <1|2>: the screens' decoder budget, over video.json's maxDecoders (I5 step 2, ADR-0016 §2: 2 in
+    /// Balanced, 1 in Low). None: video.json's.
+    std::optional<int> maxDecoders;
     /// --no-texture-compression: the collection's texture arrays in RGBA8 at half the resolution instead of BC1, the
     /// fallback without the S3TC extensions (ADR-0011 §4; implemented by I3 step 6: gl::chooseCollectionArrayFormat,
     /// SceneGraphics::collectionArrayFormat).
