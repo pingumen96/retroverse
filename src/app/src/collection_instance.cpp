@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <set>
@@ -100,6 +101,11 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     // The front's layers: the family's (I6 step 6: the cabinets' screens through a picture tube), else the theme's label.
     const std::string frontMaterial = family.labelMaterial.empty() ? roleMaterial("label") : family.labelMaterial;
     instance->m_labelMaterials = {frontMaterial, roleMaterial("spine")};
+    // I5 step 4: a family whose fronts are unlit screens of their own (the arcade's cabinets) may play clips on them.
+    instance->m_frontMaterialName = frontMaterial;
+    instance->m_screenItems = !family.labelMaterial.empty() &&
+                              library.getOrFallback(frontMaterial).shading == assets::ShadingModel::Unlit;
+    instance->m_screenSize = glm::vec2(family.itemSize.x, family.itemSize.y);
 
     gl::CollectionArrays::Desc desc;
     desc.format = graphics.collectionArrayFormat();
@@ -284,11 +290,12 @@ Status CollectionInstance::setItems(const world::CollectionLayout& layout, Scene
             attributes.flags |= scene::instance_flags::kHighlighted;
             hoveredStays = true;
         }
-        // I3 step 13a's hidden reasons of an item that stood (pulled out, its front shown by the hero texture) carry
-        // over to its new records (I3 step 15b's in-place update).
+        // I3 step 13a's hidden reasons of an item that stood (pulled out, its front shown by the hero texture; I5 step
+        // 4: by a clip) carry over to its new records (I3 step 15b's in-place update).
         if (const auto stood = m_byPick.find(placed.pickId); stood != m_byPick.end()) {
             entry.pulled = m_items[stood->second].pulled;
             entry.heroFront = m_items[stood->second].heroFront;
+            entry.videoFront = m_items[stood->second].videoFront;
         }
         for (std::size_t part = 0; part < kPartRoles.size(); ++part) {
             if (!m_partMeshes[part]) {
@@ -306,7 +313,7 @@ Status CollectionInstance::setItems(const world::CollectionLayout& layout, Scene
             }
             scene::InstanceAttributes recordAttributes = attributes;
             const bool frontPart = part == static_cast<std::size_t>(Part::Front);
-            if (entry.pulled || (entry.heroFront && frontPart)) {
+            if (entry.pulled || ((entry.heroFront || entry.videoFront) && frontPart)) {
                 recordAttributes.flags |= scene::instance_flags::kHidden;
             }
             records.push_back(scene::StaticInstance{*m_partMeshes[part], material, materials.material(material).shader,
@@ -420,7 +427,7 @@ Status CollectionInstance::writeHidden(std::size_t item) {
         if (!source) {
             continue;
         }
-        const bool hidden = entry.pulled || (entry.heroFront && source == entry.front);
+        const bool hidden = entry.pulled || ((entry.heroFront || entry.videoFront) && source == entry.front);
         scene::InstanceAttributes attributes = m_attributes[*source];
         if (hidden) {
             attributes.flags |= scene::instance_flags::kHidden;
@@ -448,6 +455,42 @@ Expected<scene::RenderItem> CollectionInstance::frontRenderItem(std::size_t item
     render.attributes = m_attributes[*m_items[item].front];
     render.attributes.flags &= ~scene::instance_flags::kHidden;
     return render;
+}
+
+Expected<std::vector<scene::MaterialHandle>> CollectionInstance::videoMaterials(SceneGraphics& graphics,
+                                                                              std::size_t count,
+                                                                              int uniformBufferOffsetAlignment) {
+    if (!m_screenItems || !m_heroBase.valid()) {
+        return std::vector<scene::MaterialHandle>{};
+    }
+    if (m_videoMaterials.size() < count) {
+        // The label's picture tube with a base colour texture of its own (white, as the hero front's), which the screen
+        // service overrides with its slot's picture; registered after everything else, so that no handle moves.
+        gl::MaterialRegistry& materials = graphics.materials();
+        const assets::MaterialDesc& labelDesc = graphics.materialLibrary().getOrFallback(m_frontMaterialName);
+        gl::MaterialTextures textures = gl::resolveMaterialTextures(labelDesc, graphics.textures());
+        textures[static_cast<std::size_t>(gl::MaterialTextureSlot::BaseColor)] = &m_heroBase;
+        for (std::size_t index = m_videoMaterials.size(); index < count; ++index) {
+            m_videoMaterials.push_back(materials.add(fmt::format("{}/video[{}]", m_keyPrefix, index),
+                                                     "collection video front", labelDesc, textures));
+        }
+        if (Status uploaded = materials.upload(uniformBufferOffsetAlignment, "MaterialUniforms"); !uploaded) {
+            return propagate(uploaded.error());
+        }
+    }
+    return std::vector<scene::MaterialHandle>(m_videoMaterials.begin(),
+                                              m_videoMaterials.begin() + static_cast<std::ptrdiff_t>(count));
+}
+
+Status CollectionInstance::setVideoFront(std::size_t item, std::optional<scene::MaterialHandle> material) {
+    if (item >= m_items.size() || !m_items[item].front) {
+        return makeError(ErrorCode::InvalidArgument, "no front of that item", std::to_string(item));
+    }
+    if (m_items[item].videoFront == material) {
+        return ok();
+    }
+    m_items[item].videoFront = material;
+    return writeHidden(item);
 }
 
 std::optional<std::size_t> CollectionInstance::itemOfKey(const std::string& key) const {
@@ -535,7 +578,7 @@ std::vector<world::PickId> CollectionInstance::hiddenItems() const {
     for (const auto& [pickId, index] : m_byPick) {
         const Item& entry = m_items[index];
         for (const std::optional<std::size_t>& source : {entry.shell, entry.front, entry.spine}) {
-            const bool heroShown = entry.heroFront && source == entry.front;
+            const bool heroShown = (entry.heroFront || entry.videoFront) && source == entry.front;
             if (source && !heroShown && (m_attributes[*source].flags & scene::instance_flags::kHidden) != 0) {
                 hidden.push_back(pickId);
                 break;
@@ -573,7 +616,10 @@ void CollectionInstance::appendRenderItems(world::PickId pickId, const glm::mat4
         const scene::StaticInstance& part = m_sources[*source];
         scene::InstanceAttributes attributes = m_attributes[*source];
         attributes.flags &= ~scene::instance_flags::kHidden;
-        if (entry.heroFront && source == entry.front) {
+        if (entry.videoFront && source == entry.front) {
+            // I5 step 4: a cabinet's clip plays on its screen in the hand (the preview linked to its object).
+            out.push_back(scene::RenderItem{part.mesh, *entry.videoFront, m_heroShader, model, false, attributes});
+        } else if (entry.heroFront && source == entry.front) {
             // The hero texture's front (I3 step 12) travels with the pulled item.
             out.push_back(scene::RenderItem{part.mesh, m_heroMaterial, m_heroShader, model, false, attributes});
         } else {

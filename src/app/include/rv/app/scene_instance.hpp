@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
+
 #include <rv/assets/material_library.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -137,6 +139,9 @@ public:
     /// Object-local bounds of what each object draws (scene::SceneObjectGeometry::bounds), in the order of the scene
     /// description's objects.
     [[nodiscard]] std::span<const core::Aabb> objectBounds() const noexcept { return m_objectBounds; }
+    /// The size (width, height; meters) of the first ScreenSurface socket of the description's object `object` (I5 step
+    /// 4: the screen's aspect, which a clip of another keeps within: ADR-0016 §7); zero without one.
+    [[nodiscard]] glm::vec2 screenSurfaceSize(std::size_t object) const noexcept;
 
     /// The scene's lights as described (linear colors): the source of lights(). Edited in place by the developer
     /// overlay, then applyLighting().

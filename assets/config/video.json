@@ -39,6 +39,8 @@
     "volume": 1,
     "crtPreset": ""
   },
+  // An arcade cabinet plays its own game's clip, looping: "enabled" is attract (the nearest cabinet facing the eye within
+  // 3 m), "showOnFocus" the focused or inspected cabinet; its playlist and previewDuration are not used.
   "cabinet": {
     "enabled": true,
     "playlist": "shuffle",

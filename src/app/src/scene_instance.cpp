@@ -448,6 +448,19 @@ SceneInstance::ObjectRecord SceneInstance::recordOf(const scene::SceneObjectGeom
     return ObjectRecord{object.id, object.bounds, object.instances, object.sockets, 0};
 }
 
+glm::vec2 SceneInstance::screenSurfaceSize(std::size_t object) const noexcept {
+    if (object >= m_objects.size()) {
+        return glm::vec2(0.0f);
+    }
+    for (const geometry::Socket& socket : m_objects[object].sockets) {
+        if (socket.kind == geometry::SocketKind::ScreenSurface) {
+            const glm::vec3 size = geometry::socketSize(socket);
+            return glm::vec2(size.x, size.y);
+        }
+    }
+    return glm::vec2(0.0f);
+}
+
 void SceneInstance::rebuildObjectLines() const {
     if (!m_linesStale) {
         return;

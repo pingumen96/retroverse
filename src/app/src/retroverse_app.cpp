@@ -674,7 +674,8 @@ struct RetroverseApp::State {
     }
 
     /// The screens' frame (`minimized`: every screen out of view). The hero CRT follows the game selected in the quick
-    /// catalog while it is open, else the item in the world's Focus or Inspect (I3 step 13b), after its dwell.
+    /// catalog while it is open, else the item in the world's Focus or Inspect (I3 step 13b), after its dwell. I5 step 4:
+    /// the arcade cabinets asking for their clips, and those showing them drawn by the world.
     void updateScreens(std::uint64_t frame, bool minimized) {
         if (!screen) {
             return;
@@ -682,10 +683,16 @@ struct RetroverseApp::State {
         std::optional<std::string> selected = product ? product->selectedGameId() : std::optional<std::string>();
         if (world) {
             selected = world->screenSelection(selected);
+            auto [cabinets, cabinetPool] =
+                world->cabinetScreens(camera, simulatedSeconds, screen->slotCount(), video ? *video : VideoSettings{});
+            screen->setCabinets(std::move(cabinets), std::move(cabinetPool));
         }
         screen->update(frame, simulatedSeconds, camera,
                        selected ? std::optional<std::string_view>(*selected) : std::nullopt, minimized,
                        world ? world->eyeInScreenRoom() : true);
+        if (world) {
+            world->showCabinets(screen->cabinetsShown());
+        }
     }
 
     /// video.json (the shipped defaults with the user's over them), read at its first use.

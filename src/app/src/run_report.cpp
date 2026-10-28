@@ -1787,13 +1787,26 @@ Json videoToJson(const VideoRecord& video) {
                    {"picture", screen.picture},
                    {"playing", screen.playing},
                    {"textureId", screen.textureId},
-                   {"visible", screen.visible}};
+                   {"visible", screen.visible},
+                   {"pictureRect", screen.pictureRect},
+                   {"heldFrame", screen.heldFrame}};
         if (screen.slot) {
             entry["slot"] = *screen.slot;
         }
         screens.push_back(std::move(entry));
     }
     json["screens"] = std::move(screens);
+    Json cabinetEvents = Json::array();
+    for (const VideoCabinetEventRecord& event : video.cabinetEvents) {
+        cabinetEvents.push_back(Json{{"frame", event.frame},
+                                     {"atSeconds", event.atSeconds},
+                                     {"screen", event.screen},
+                                     {"gameId", event.gameId},
+                                     {"screenClass", event.screenClass},
+                                     {"picture", event.picture}});
+    }
+    json["cabinetEvents"] = std::move(cabinetEvents);
+    json["heldFrameShows"] = video.heldFrameShows;
     Json events = Json::array();
     for (const VideoSlotEventRecord& event : video.slotEvents) {
         events.push_back(Json{{"frame", event.frame},
@@ -2060,8 +2073,24 @@ VideoRecord readVideo(FieldReader& fields) {
         screen.playing = entry.boolean("playing");
         screen.textureId = entry.count("textureId");
         screen.visible = entry.boolean("visible");
+        // I5 step 4's (absent from earlier reports).
+        if (entry.has("pictureRect")) {
+            screen.pictureRect = entry.numberArray("pictureRect");
+        }
+        screen.heldFrame = entry.has("heldFrame") && entry.boolean("heldFrame");
         video.screens.push_back(std::move(screen));
     }
+    for (FieldReader& entry : fields.optionalObjectArray("cabinetEvents")) {
+        VideoCabinetEventRecord event;
+        event.frame = entry.count("frame");
+        event.atSeconds = entry.number("atSeconds");
+        event.screen = entry.string("screen");
+        event.gameId = entry.string("gameId");
+        event.screenClass = entry.string("screenClass");
+        event.picture = entry.string("picture");
+        video.cabinetEvents.push_back(std::move(event));
+    }
+    video.heldFrameShows = fields.optionalCount("heldFrameShows").value_or(0);
     for (FieldReader& entry : fields.optionalObjectArray("slotEvents")) {
         VideoSlotEventRecord event;
         event.frame = entry.count("frame");

@@ -1180,7 +1180,11 @@ struct VideoShownRecord {
 /// A screen of the service at the end of the run (I5 step 2, ADR-0016 §2): its object id, its kind
 /// (app::toString(ScreenKind)) and class (app::toString(ScreenClass)), the game and the picture it showed, the decoder
 /// slot showing its clip or reserved for it (none without), whether that slot played its clip, the GL texture its
-/// material showed (0: its own pattern; screens sharing a slot show one texture) and whether it was in view.
+/// material showed (0: its own pattern; screens sharing a slot show one texture) and whether it was in view. Since I5
+/// step 4: the arcade cabinets playing at the end too (kind "cabinet", their pooled video material's texture); the
+/// rectangle of its screen the picture filled (x, y, width, height in its texture coordinates: ADR-0016 §7's letterbox
+/// or pillarbox; empty for the whole screen); whether it showed the frame it kept when its slot was taken (ADR-0016 §6:
+/// with one decoder, the hero cabinet's paused frame while a focused cabinet plays).
 struct VideoScreenRecord {
     std::string screen;
     std::string kind;
@@ -1191,8 +1195,25 @@ struct VideoScreenRecord {
     bool playing = false;
     std::uint64_t textureId = 0;
     bool visible = false;
+    std::vector<double> pictureRect;
+    bool heldFrame = false;
 
     bool operator==(const VideoScreenRecord&) const = default;
+};
+
+/// An arcade cabinet's screen that began or ended to show its clip (I5 step 4, ADR-0016 §6): the frame and the run's
+/// simulated seconds, the cabinet's screen (app::cabinetScreenId()), its game, its class then ("focus", "direct",
+/// "ambient") and what it shows from that frame: "video" (its clip, drawn on the dynamic path with a pooled video
+/// material) or "cover" (its item's own front again).
+struct VideoCabinetEventRecord {
+    std::uint64_t frame = 0;
+    double atSeconds = 0.0;
+    std::string screen;
+    std::string gameId;
+    std::string screenClass;
+    std::string picture;
+
+    bool operator==(const VideoCabinetEventRecord&) const = default;
 };
 
 /// What the scheduler did to a decoder slot (I5 step 2): the frame and the run's simulated seconds, the slot, the
@@ -1332,6 +1353,10 @@ struct VideoRecord {
     std::vector<VideoBudgetDropRecord> budgetDrops;
     /// The slots' events after the first 512, not listed (I5 step 2's review).
     std::uint64_t slotEventsDropped = 0;
+    /// The arcade cabinets' screens (I5 step 4): each start and end of a clip shown, in order (the first 512), and the
+    /// frames a bound screen showed the frame it kept when its slot was taken.
+    std::vector<VideoCabinetEventRecord> cabinetEvents;
+    std::uint64_t heldFrameShows = 0;
     /// The clips' verdicts (I5 step 7).
     VideoVerdictsRecord verdicts;
 

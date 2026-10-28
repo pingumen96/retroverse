@@ -116,6 +116,7 @@ add_library(rv_app STATIC
     src/screen_verdicts.cpp
     src/self_check_canvas.cpp
     src/srgb_self_check.cpp
+    src/world_cabinets.cpp
     src/world_card.cpp
     src/world_hover.cpp
     src/world_inspection.cpp

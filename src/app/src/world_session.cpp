@@ -953,13 +953,20 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
     m_interaction->inspection().setHeroFront(heroPick != world::kNoPick &&
                                              heroPick == m_interaction->interaction().focused());
     const std::span<const scene::RenderItem> items = m_interaction->viewItems(sceneItems, camera);
-    // The hero texture's front at the item's static pose; a pulled hero item's front travels with its dynamic copy.
+    // The hero texture's front at the item's static pose; a pulled hero item's front travels with its dynamic copy. I5
+    // step 4: a cabinet showing its clip draws its front with its video material instead (world_cabinets.cpp).
     const bool heroPulled = heroInActive && m_interaction->isPulled(heroPick);
-    if (m_dynamicItems.empty() || heroPulled) {
+    const bool heroVideo = m_heroShown && m_rooms[m_heroShown->room].collection &&
+                           m_rooms[m_heroShown->room].collection->videoFront(m_heroShown->item).has_value();
+    const bool heroFront = !m_dynamicItems.empty() && !heroPulled && !heroVideo;
+    if (!heroFront && m_cabinetFronts.empty()) {
         return items;
     }
     m_viewItems.assign(items.begin(), items.end());
-    m_viewItems.insert(m_viewItems.end(), m_dynamicItems.begin(), m_dynamicItems.end());
+    if (heroFront) {
+        m_viewItems.insert(m_viewItems.end(), m_dynamicItems.begin(), m_dynamicItems.end());
+    }
+    appendCabinetFronts(m_viewItems);
     return m_viewItems;
 }
 
@@ -1112,6 +1119,7 @@ bool WorldSession::waits() const {
 }
 
 void WorldSession::dropCollection() {
+    dropCabinetFronts(); // I5 step 4: the cabinets' fronts go with their collections
     m_coverPhasePending = false;
     m_dynamicItems.clear();
     m_heroItem.reset();

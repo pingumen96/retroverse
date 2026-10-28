@@ -27,7 +27,9 @@
 // Per room ("rooms.<room id>.<kind>"): the same keys, each optional, and "games" (the explicit mode's GameIds); per
 // screen of a room ("rooms.<room id>.screens.<screen's object id>", I5 step 2) the same again, over its kind's. Step 1
 // uses "enabled", the hero's keys and the rooms'; step 2 "maxDecoders", "maxRows", "proximityMeters", the secondary
-// screens' keys and the screens'; the others are read and checked for the steps that follow.
+// screens' keys and the screens'; step 4 the cabinets' "enabled" (attract), "showOnFocus" (the focused or inspected
+// cabinet plays) and "volume" (a cabinet loops its own game's clip: no playlist, no previewDuration); the others are
+// read and checked for the steps that follow.
 
 #include <cstdint>
 #include <filesystem>

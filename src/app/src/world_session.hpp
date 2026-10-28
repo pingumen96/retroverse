@@ -101,6 +101,10 @@
 #include <rv/world/pick_index.hpp>
 #include <rv/world/where_is.hpp>
 
+#include <rv/app/cabinet_screens.hpp>
+#include <rv/app/video_settings.hpp>
+
+#include "screen_service.hpp"
 #include "world_card.hpp"
 #include "world_edit.hpp"
 #include "world_hover.hpp"
@@ -296,6 +300,21 @@ public:
     /// The eye is in the room whose screens are bound (I5 step 5: in a hall, the last room's screens are silent); true
     /// without areas or before any room is bound.
     [[nodiscard]] bool eyeInScreenRoom() const;
+
+    // --- I5 step 4: the arcade cabinets playing their clips (world_cabinets.cpp; ADR-0016 §6) -----------------------
+
+    /// The cabinets that ask for their clips on this frame, seen by `camera` at the run's time `timeSeconds`
+    /// (app::chooseCabinets: the focused or inspected one, else the attract one, none in the editor), with their room's
+    /// pool of video materials (`slots` of them, made at the first ask); none outside the bound room of the interaction,
+    /// or in a room whose items are no screens. `video`: video.json's cabinet keys.
+    [[nodiscard]] std::pair<std::vector<CabinetScreen>, CabinetPool> cabinetScreens(const scene::Camera& camera,
+                                                                                    double timeSeconds,
+                                                                                    std::size_t slots,
+                                                                                    const VideoSettings& video);
+    /// After the screens' frame (ScreenService::cabinetsShown()): the cabinets whose screens show their clips have
+    /// their fronts drawn with their pooled materials on the dynamic path (their static fronts hidden), the others their
+    /// covers again.
+    void showCabinets(std::span<const CabinetShown> shown);
 
     // --- I4b step 3: the editor (world_edit.cpp; ADR-0015 §4) -----------------------------------------------------
 
@@ -700,6 +719,22 @@ private:
     std::unique_ptr<WorldEditState> m_edit;
     std::uint64_t m_editSessions = 0;
     bool m_editBarShown = false;
+
+    // I5 step 4 (world_cabinets.cpp).
+    /// A cabinet's front showing its clip: its room (an index into m_rooms), its item's pick id and the pooled material.
+    struct CabinetFront {
+        std::size_t room = 0;
+        world::PickId pick = world::kNoPick;
+        scene::MaterialHandle material;
+    };
+    /// Attract's choice; the cabinets asked for on this frame (by screen id: their room and pick); the fronts showing.
+    CabinetAttract m_cabinetAttract;
+    std::map<std::string, std::pair<std::size_t, world::PickId>, std::less<>> m_cabinetRequests;
+    std::vector<CabinetFront> m_cabinetFronts;
+    /// The cabinets' fronts drawn by the dynamic path this frame (those not pulled out: a pulled one's copy carries it).
+    void appendCabinetFronts(std::vector<scene::RenderItem>& items) const;
+    /// Every cabinet's own front again (before the collections go, or when none plays).
+    void dropCabinetFronts();
 };
 
 /// The placements per section of `build`'s floor and the unplaced games per reason of its plan, into `record`
