@@ -215,7 +215,8 @@ build/rvdata`).
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
   room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render
-  loop, the previous screen's colour bars back): one 480-row decoder, never two decoder threads. It plays the selected
+  loop, the previous screen's colour bars back): one 480-row decoder, never two decoder threads (since I5 step 2 the
+  scheduler's slots, below). It plays the selected
   game's clip
   (the quick catalog's selection when the game stands in the eye's room, or the room's item focused or inspected,
   after a 300 ms dwell; before any, the most recently played placed game with a video, else the first featured one;
@@ -248,6 +249,31 @@ build/rvdata`).
   `m0_testroom`. The report's `video` section adds `playlistMode`, `playlistRoom`, `previewSeconds`, `playlistOrder`
   (the current cycle), `origin` (`start`, `playlist`, `selection`), `played` and `shown` (each game played and each
   picture shown, with the run's simulated seconds, the first 512), `heldFrames` and `idleFramesWithGame`.
+- The decoder scheduler (I5 step 2, ADR-0016 §2, `docs/i5/step-2.md`): every `crt` of the room with a picture on its
+  screen is a screen, the hero first (the first `crt`, or the arcade's hero cabinet), the others secondaries (in a
+  scene with areas, those in the hero's area); a secondary plays its own playlist (`secondary`'s keys, seeded by its
+  object id, no start choice). `app::ScreenScheduler` gives the clips the budget's decoder slots: `--max-decoders 1|2`,
+  else `video.json`'s `maxDecoders` (2). Screens asking for one clip share its slot and texture; clips rank by being in
+  view, then their class (`direct`, `focus`: the selected game's screen, `room`: the hero, `ambient`: secondaries
+  within `proximityMeters`, 0.5 m hysteresis), their nearest screen and its id; a screen without a slot shows its
+  still (its title card last). A slot whose screens all leave the view pauses on that frame and stops after 10 s (its
+  clip reopens where it stopped), or sooner when a request in view needs it (out of view, a clip takes only a free slot,
+  opening paused); a slot changes hands at most once a second
+  unless `focus` or `direct` asks; a clip no screen wants stops at once, and a screen switching clips waits for its own
+  slot's thread (one thread per screen, as in I5 step 1). Late plus dropped frames over 5% for 4 s drop the budget to 1
+  for 30 s. World screens decode at `video.json`'s `maxRows` (480); one render frame uploads at most 4 MiB of video,
+  the longest pending frame first. `rooms.<room id>.screens.<screen's object id>` takes a kind's keys for one screen
+  (the smoke scene `tests/smoke/scenes/screens_four.json`, room `screens_four`, gives each of its four CRTs one game).
+  The report's `video` adds `maxDecoders` (the budget), `maxOpenDecoders`, `handOvers`, `maxUploadBytes` (the most in one
+  frame), `deferredUploads`, `oversizeUploads` (a single frame over 4 MiB), `screens` (each screen at the end: `screen`,
+  `kind`, `screenClass`, `gameId`, `picture`, `slot`, `playing`, `textureId`, the GL texture its material shows, equal
+  on screens sharing a slot, `visible`), `slotEvents` (`frame`, `atSeconds`, `slot`, `action` open, stop, pause or
+  resume, `gameId`, `reason`: wanted, unwanted, needed, out-of-view, in-view, budget, launch, unbind, shutdown,
+  `screens`; the first 512) and `budgetDrops`; `maxDecoderThreads` and `decodersStarted` count the whole service. The
+  process runs at `ABOVE_NORMAL_PRIORITY_CLASS` while it renders and is not minimized, `NORMAL_PRIORITY_CLASS` while
+  minimized, from just before an emulator starts until the first frame after the return, and at the exit: the
+  report's `processPriority.changes` (`frame`, `priority` read back: `above-normal`, `normal`, `other`; `reason`:
+  rendering, minimized, launch, exit; `applied`).
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every
