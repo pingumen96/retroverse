@@ -23,7 +23,16 @@
 // |           | Down move the focus, interact or ui_activate (Enter) presses           | Start or Continua: Browse     |
 // | Saving    | the draft saved (input waits)                                          | saved(): Exit, or Browse with |
 // |           |                                                                        | the refusal's reasons         |
+// | Moving    | (I4b step 4) a fixture held: it follows the reticle's floor point (a   | interact: an operation (Busy) |
+// |           | hung decoration its wall point) on the room's grid (setPlacer()),      | or Browse (put back where it  |
+// |           | edit_rotate_left/right turn it (a quarter turn, decoration 15          | stood); Back: Browse; confirm:|
+// |           | degrees), the D-pad nudges it by a grid step along the room's axis     | Menu                          |
+// |           | nearest the view's (a hung decoration along its wall) until the player |                               |
+// |           | looks or walks; each new place is judged (probe) and its verdict shown |                               |
 //
+// In Browse, interact on a movable fixture (the reticle on it where no game or slot is: EditFrame::fixture) picks it up
+// (Moving), unless it cannot move (a room kept as an older template made it: the refusal named, nothing held). Where it
+// is held from the reticle's floor point is kept (its grab offset), so that it does not jump to the reticle.
 // The hover over the room's targets follows world::HoverTracker's stability rules (ADR-0012 §2); a D-pad step targets
 // its slot exactly and eases the walker to its pose (InteractionTimings::focusEase, instant under reduceMotion), until
 // the player looks or walks again. Back takes the shell's levels first (worldBackAction()): a popup, a panel; the
@@ -34,6 +43,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+
+#include <glm/glm.hpp>
 
 #include <rv/app/back_action.hpp>
 #include <rv/app/world_edit_room.hpp>
@@ -41,6 +53,8 @@
 #include <rv/app/world_interaction.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/core/aabb.hpp>
+#include <rv/scene/collision.hpp>
 #include <rv/scene/pose_animator.hpp>
 #include <rv/scene/viewpoint.hpp>
 #include <rv/world/pick_index.hpp>
@@ -48,9 +62,9 @@
 
 namespace rv::app {
 
-enum class EditMode : std::uint8_t { Preparing, Browse, Holding, Busy, Menu, Saving };
+enum class EditMode : std::uint8_t { Preparing, Browse, Holding, Busy, Menu, Saving, Moving };
 
-/// "preparing", "browse", "holding", "busy", "menu", "saving".
+/// "preparing", "browse", "holding", "busy", "menu", "saving", "moving".
 [[nodiscard]] std::string_view toString(EditMode mode) noexcept;
 
 /// The menu's buttons, top to bottom (ADR-0015 §4).
@@ -59,12 +73,21 @@ enum class EditMenuButton : std::uint8_t { Save, Undo, Discard, Continue };
 /// "save", "undo", "discard", "continue".
 [[nodiscard]] std::string_view toString(EditMenuButton button) noexcept;
 
+/// The refusal of a held fixture's place that the walker stands in (I4b step 4's review: dropped there it would wedge
+/// the walker between it and the walls): the interaction's own rule, never the draft's.
+inline constexpr std::string_view kFixtureOnWalker = "fixture-on-walker";
+
+/// Whether a box (the scene's frame) blocks the walker's capsule standing at `feet`: it overlaps the capsule's height
+/// (above a floor covering's few centimetres) and comes within its radius on the floor.
+[[nodiscard]] bool boxOnWalker(const core::Aabb& box, const glm::vec3& feet,
+                               const scene::Capsule& capsule = {}) noexcept;
+
 /// One frame as the editor sees it.
 struct EditFrame {
     /// The frame's actions as resolved (before any context), or nullptr while the product UI has the input.
     const input::ActionState* actions = nullptr;
     float deltaSeconds = 0.0f;
-    /// The walker's pose as the frame starts.
+    /// The walker's pose as the frame starts (its feet, the scene's frame: a held fixture's place over them is refused).
     scene::WalkerPose walker;
     /// The frame's ray against EditRoom::index() with hovered() as the current hover; nothing without a ray or room.
     std::optional<world::HoverSample> hover;
@@ -74,7 +97,39 @@ struct EditFrame {
     FocusViewer viewer;
     /// The eye is in the edited room: outside it the D-pad steps nothing (the app samples no target there either).
     bool inRoom = true;
+    /// I4b step 4: the movable fixture the ray reaches where no game or slot is (EditRoom::fixtureAt()), if any.
+    std::optional<world::FixtureId> fixture;
+    /// Where the reticle aims, in the room's frame (millimetres; the yaw unused): the floor under it (EditRoom::
+    /// floorAim()) and the wall (wallAim()); nothing when it meets neither.
+    std::optional<world::FixtureTransform> floorAim;
+    std::optional<world::FixtureTransform> wallAim;
+    /// The view's forward on the floor in the room's frame (x, z; EditRoom::roomDirection()), for the D-pad's nudges.
+    glm::vec2 roomForward{0.0f, -1.0f};
 };
+
+/// A fixture held (Moving): where it stood, where it would stand now (snapped by the placer), how it is held.
+struct HeldFixture {
+    world::FixtureId id;
+    world::FixtureRole role = world::FixtureRole::Decoration;
+    /// A decoration hung on a wall: it slides along the walls only, the wall turning it.
+    bool hung = false;
+    world::FixtureTransform from;
+    world::FixtureTransform place;
+    /// The pivot's offset from the floor point under the reticle when it was picked up (a hung decoration's: from the
+    /// wall point; millimetres, room's frame).
+    std::int64_t offsetXMm = 0;
+    std::int64_t offsetZMm = 0;
+    /// The yaw asked (the turns so far), which the placer rounds to the fixture's step.
+    std::int32_t yawCdeg = 0;
+
+    /// It stands elsewhere than where it was picked up.
+    [[nodiscard]] bool moved() const noexcept { return place != from; }
+};
+
+/// Snaps a wanted place of a fixture to the nearest its edit's own rules accept (world::snapFixture() on the draft);
+/// nothing when the fixture cannot move.
+using FixturePlacer =
+    std::function<std::optional<world::FixtureTransform>(const world::FixtureId&, const world::FixtureTransform&)>;
 
 /// What the session does after a frame.
 struct EditFrameResult {
@@ -91,6 +146,11 @@ struct EditFrameResult {
     bool exit = false;
     /// The walker's pose this frame while a step's ease drives it.
     std::optional<scene::WalkerPose> walker;
+    /// I4b step 4: an operation to judge ahead on a copy of the draft (a held fixture's new place: setVerdict() then
+    /// says what it found; a held game's move or swap onto the slot targeted: its drop there shows what the probe
+    /// made); the rule a fixture the player tried to pick up is kept by ("": none).
+    std::optional<world::EditOperation> probe;
+    std::string refused;
 };
 
 class EditInteraction {
@@ -108,6 +168,13 @@ public:
     /// overrides of the draft: edit_pin pins an unpinned game, unpins a pinned one).
     void setPending(std::size_t operations) noexcept { m_pending = operations; }
     void setPinned(std::function<bool(const catalog::GameId&)> pinned) { m_pinned = std::move(pinned); }
+    /// I4b step 4: how a held fixture's wanted place is snapped (world::snapFixture() on the draft), and whether a
+    /// fixture is pinned (the bar's "Fissato").
+    void setPlacer(FixturePlacer placer) { m_placer = std::move(placer); }
+    void setFixturePinned(std::function<bool(const world::FixtureId&)> pinned) { m_fixturePinned = std::move(pinned); }
+    /// The verdict on a held fixture's place (`refusal`: the rule that refuses it, "" none), from the probe the frame
+    /// asked: kept when it is about the fixture held and the place it stands at now.
+    void setVerdict(const world::EditOperation& probe, std::string refusal);
 
     /// One frame: Back, then the mode's actions, then the hover and the step's ease.
     [[nodiscard]] EditFrameResult update(const EditFrame& frame);
@@ -135,11 +202,23 @@ public:
     [[nodiscard]] EditMenuButton menuFocus() const noexcept { return m_menuFocus; }
     /// The game held is pinned now (for the bar).
     [[nodiscard]] bool targetPinned() const;
+    /// I4b step 4: the fixture held (Moving, and Busy over its drop).
+    [[nodiscard]] const std::optional<HeldFixture>& heldFixture() const noexcept { return m_fixture; }
+    /// The verdict on where the held fixture stands now: nothing while it is judged, "" when it may drop there, else
+    /// the rule that refuses it (kFixtureOnWalker at once where the walker stands, whatever the probe said).
+    [[nodiscard]] std::optional<std::string> verdict() const;
 
 private:
-    void readBrowse(const input::ActionState& actions, EditFrameResult& result);
+    void readBrowse(const input::ActionState& actions, const EditFrame& frame, EditFrameResult& result);
     void readHolding(const input::ActionState& actions, EditFrameResult& result);
     void readMenu(const input::ActionState& actions, EditFrameResult& result);
+    /// I4b step 4: Browse's pick-up of a fixture; Moving's turns, nudges, aim, drop and probe.
+    bool pickUpFixture(const input::ActionState& actions, const EditFrame& frame, EditFrameResult& result);
+    void readMoving(const input::ActionState& actions, const EditFrame& frame, bool looked, EditFrameResult& result);
+    /// The fixture held placed where `wanted` snaps to (nothing changes when the placer refuses it).
+    void placeFixture(const world::FixtureTransform& wanted);
+    /// The held fixture stands where it moved to over the walker's capsule (the frame's walker).
+    [[nodiscard]] bool heldOnWalker() const;
     void back(const BackState& shell, EditFrameResult& result);
     void openMenu();
     void step(const input::ActionState& actions, const EditFrame& frame);
@@ -164,6 +243,16 @@ private:
     scene::PoseAnimator<scene::WalkerPose> m_walker;
     scene::WalkerPose m_walkerNow;
     bool m_walkerPlaced = false;
+    /// I4b step 4: the fixture held, its placer, the place last asked to be judged and the verdict on a place.
+    std::optional<HeldFixture> m_fixture;
+    FixturePlacer m_placer;
+    std::function<bool(const world::FixtureId&)> m_fixturePinned;
+    std::optional<world::FixtureTransform> m_probed;
+    std::optional<std::pair<world::FixtureTransform, std::string>> m_verdict;
+    /// The held fixture was nudged by the D-pad: the reticle takes it again once the player looks or walks.
+    bool m_nudged = false;
+    /// The slot a held game's probe was asked for last.
+    world::PickId m_probedPick = world::kNoPick;
 };
 
 } // namespace rv::app

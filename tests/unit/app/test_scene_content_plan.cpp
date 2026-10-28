@@ -153,6 +153,42 @@ TEST_CASE("app/scene_content_plan: one material per name, one instance per objec
     CHECK(picture.patternSize == glm::ivec2(0));
 }
 
+TEST_CASE("app/scene_content_plan: the registry's key of an instance names its picture and material",
+          "[app][scene_content_plan]") {
+    // The same object id and role planned twice (a scene, then its object rebuilt in place: I4b step 4) with another
+    // picture or material: the plan's keys are equal, the registry's are not, so the rebuilt object never draws with
+    // the picture registered before it.
+    const auto planOf = [](TextureSource picture, std::string materialName) {
+        ScenePart part = quadPart("picture", material(std::move(materialName)), 0.5f, 0.7f);
+        part.texture = std::move(picture);
+        SceneGeometry geometry;
+        geometry.objects.push_back(object("room:snes/dressing:picture:fx:w01", {part}));
+        return rv::app::planSceneContent(geometry);
+    };
+    const SceneContentPlan first = planOf(cover("PIXEL PILOTS"), "MAT_Paper_Print");
+    const SceneContentPlan again = planOf(cover("PIXEL PILOTS"), "MAT_Paper_Print");
+    const SceneContentPlan otherTitle = planOf(cover("STAR CORSAIR"), "MAT_Paper_Print");
+    const SceneContentPlan otherMaterial = planOf(cover("PIXEL PILOTS"), "MAT_Label_Print");
+    TextureSource file;
+    file.kind = TextureSource::Kind::File;
+    file.path = "textures/poster.png";
+    const SceneContentPlan picture = planOf(file, "MAT_Paper_Print");
+    for (const SceneContentPlan* plan : {&first, &again, &otherTitle, &otherMaterial, &picture}) {
+        REQUIRE(plan->materials.size() == 1);
+    }
+    CHECK(first.materials.front().key == otherTitle.materials.front().key);
+    const std::string key = rv::app::registryKeyOf(first.materials.front());
+    CHECK(key.starts_with(first.materials.front().key + "#"));
+    CHECK(rv::app::registryKeyOf(again.materials.front()) == key);
+    CHECK(rv::app::registryKeyOf(otherTitle.materials.front()) != key);
+    CHECK(rv::app::registryKeyOf(otherMaterial.materials.front()) != key);
+    CHECK(rv::app::registryKeyOf(picture.materials.front()) != key);
+    // A shared material keeps its name.
+    PlannedMaterial shared;
+    shared.key = "MAT_Wood_Oak";
+    CHECK(rv::app::registryKeyOf(shared) == "MAT_Wood_Oak");
+}
+
 TEST_CASE("app/scene_content_plan: pattern pictures take the aspect ratio of their surface as drawn",
           "[app][scene_content_plan]") {
     // Two 0.5 x 0.7 m posters with the same cover; one is scaled twice as wide, one is turned and moved.

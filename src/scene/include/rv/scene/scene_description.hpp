@@ -197,6 +197,8 @@ struct TextureSource {
     std::uint32_t seed = 0;
     /// Kind::Procedural: "<surface>/<map>" of the surface catalog (assets::parseProceduralTextureName).
     std::string procedural;
+
+    bool operator==(const TextureSource&) const = default;
 };
 
 /// One entry of "areas": a part of the scene that holds its own lights (a room extended through its doorway passage, a
@@ -257,6 +259,9 @@ struct SceneObject {
     bool castsShadows = true;
     /// The application derives collider boxes from the built geometry (per wall for a room shell).
     bool collides = true;
+
+    /// The same description (I4b step 4: an object a room's rebuilt static part leaves as it was keeps what it drew).
+    bool operator==(const SceneObject&) const = default;
 
     /// Every instance transform: `instances`, or `transform` alone when there is no grid.
     [[nodiscard]] std::span<const glm::mat4> instanceTransforms() const noexcept;

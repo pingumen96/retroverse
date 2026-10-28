@@ -4,6 +4,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -77,7 +78,12 @@ public:
     /// its world box, Aabb::transformed(transform), which also blocks some free space around it. Ignored when `box`
     /// is empty or not finite, or when the placed box is not finite.
     void addBox(const core::Aabb& box, const glm::mat4& transform, std::string tag = {});
+    /// Adds a collider as it is (another world's: I4b step 4 keeps the colliders of the objects a room's rebuilt
+    /// static part leaves as they were).
+    void addCollider(ColliderBox collider) { m_boxes.push_back(std::move(collider)); }
     void clear() noexcept;
+    /// The colliders taken out, the world left empty.
+    [[nodiscard]] std::vector<ColliderBox> release() noexcept { return std::exchange(m_boxes, {}); }
     [[nodiscard]] std::span<const ColliderBox> boxes() const noexcept { return m_boxes; }
 
     /// True when the capsule standing at `feet` penetrates any collider by more than kContactTolerance.

@@ -506,6 +506,7 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
         }
         fixtureOccluders(layout.occluders, *fixture, *prefab);
     }
+    const std::size_t beforeDressing = layout.occluders.size();
     for (const DressedLevel& dressed : plan.dressing) {
         if (dressed.level.fixture().room() != roomId) {
             continue;
@@ -533,6 +534,8 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
                                                                            glm::vec3(half.x, (*placed)->size.y, half.z))));
         }
     }
+
+    layout.dressingOccluders = layout.occluders.size() - beforeDressing;
 
     // Navigation: the fixtures with slots, by wall (left to right as one faces it), the free-standing ones alone.
     std::map<SlotId, PickId> itemAt;

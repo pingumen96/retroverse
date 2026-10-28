@@ -388,15 +388,18 @@ SceneGeometry buildSceneGeometry(const SceneDescription& scene, const assets::Ma
     return geometry;
 }
 
+void addObjectColliders(CollisionWorld& world, const SceneObjectGeometry& object) {
+    for (std::size_t instance = 0; instance < object.instances.size(); ++instance) {
+        for (std::size_t index = 0; index < object.colliders.size(); ++index) {
+            world.addBox(object.colliders[index].box, object.instances[instance], colliderTag(object, instance, index));
+        }
+    }
+}
+
 CollisionWorld buildCollisionWorld(const SceneGeometry& geometry) {
     CollisionWorld world;
     for (const SceneObjectGeometry& object : geometry.objects) {
-        for (std::size_t instance = 0; instance < object.instances.size(); ++instance) {
-            for (std::size_t index = 0; index < object.colliders.size(); ++index) {
-                world.addBox(object.colliders[index].box, object.instances[instance],
-                             colliderTag(object, instance, index));
-            }
-        }
+        addObjectColliders(world, object);
     }
     return world;
 }

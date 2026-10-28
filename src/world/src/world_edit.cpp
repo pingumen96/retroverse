@@ -1027,6 +1027,34 @@ std::optional<FixtureTransform> fixtureHome(const EditedWorld& world, const Fixt
     return FixtureTransform{context.home.xMm, context.home.zMm, context.home.yawCdeg};
 }
 
+std::vector<EditableFixture> editableFixtures(const WorldPlan& plan, const RoomId& room, const EditData& data) {
+    std::vector<EditableFixture> fixtures;
+    if (!data.rooms.contains(room)) {
+        return fixtures;
+    }
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room || !detail::isMovableRole(fixture.role)) {
+            continue;
+        }
+        EditableFixture editable;
+        editable.id = fixture.id;
+        editable.role = fixture.role;
+        editable.kind = fixture.prefab.kind;
+        editable.hung = detail::isHungDecoration(fixture);
+        editable.at = FixtureTransform{fixture.xMm, fixture.zMm, fixture.yawCdeg};
+        editable.box = fixtureBox(fixture);
+        FixtureContext context;
+        auto refused = findFixtureContext(plan, data, fixture.id, context);
+        if (!refused) {
+            editable.refusal = std::string(edit_rule::kFixtureUnknown);
+        } else if (*refused && (*refused)->refused) {
+            editable.refusal = (*refused)->refused->rule;
+        }
+        fixtures.push_back(std::move(editable));
+    }
+    return fixtures;
+}
+
 std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const FixtureId& fixture,
                                             const FixtureTransform& wanted, const EditData& data) {
     FixtureContext context;
@@ -1105,7 +1133,8 @@ std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const Fixt
 }
 
 Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_view storedDigest,
-                                        const EditedWorld& edited, std::span<const EditResult> results) {
+                                        const EditedWorld& edited, std::span<const EditResult> results,
+                                        bool digestAfter) {
     GenerationResult result;
     result.plan = edited.plan;
     sortPlan(result.plan);
@@ -1133,11 +1162,13 @@ Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_vie
                           result.plan.placements.end(), std::back_inserter(kept));
     changes.kept = kept.size();
     changes.digestBefore = std::string(storedDigest);
-    auto after = planDigest(result.plan);
-    if (!after) {
-        return propagate(after.error());
+    if (digestAfter) {
+        auto after = planDigest(result.plan);
+        if (!after) {
+            return propagate(after.error());
+        }
+        changes.digestAfter = std::move(*after);
     }
-    changes.digestAfter = std::move(*after);
     for (const auto& [floor, validation] : floors) {
         result.validation.findings.insert(result.validation.findings.end(), validation->findings.begin(),
                                           validation->findings.end());

@@ -141,5 +141,7 @@ struct SceneGeometry {
 /// for objects with several instances, then "/<collider name>" for named colliders or "#<index>" for unnamed ones of
 /// objects with several, e.g. "shelf_main", "room/north", "boxes_walnut[17]".
 [[nodiscard]] CollisionWorld buildCollisionWorld(const SceneGeometry& geometry);
+/// The colliders of `object` added to `world` as buildCollisionWorld() adds them (it adds every object's in turn).
+void addObjectColliders(CollisionWorld& world, const SceneObjectGeometry& object);
 
 } // namespace rv::scene

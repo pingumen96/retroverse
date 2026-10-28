@@ -188,6 +188,12 @@ struct SaveReport {
 [[nodiscard]] Expected<SaveReport> savePlan(const WorldLock& lock, const GenerationResult& result,
                                             const SaveOptions& options = {});
 
+namespace detail {
+/// savePlan() of `result` whose text writePlan() made already (`text`): commitWorld() serialises the plan once.
+[[nodiscard]] Expected<SaveReport> savePlanText(const WorldLock& lock, const GenerationResult& result,
+                                                const std::string& text, const SaveOptions& options);
+} // namespace detail
+
 /// What saveOverrides() did.
 struct OverridesSaveReport {
     /// False when the folder held that text already, or held no file and the overrides are empty: nothing written.

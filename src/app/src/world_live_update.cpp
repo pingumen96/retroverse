@@ -61,6 +61,14 @@ void WorldSession::startLiveFlow(ProductUi& product) {
 
 void WorldSession::keepShown(const WorldBuild& build) {
     m_shown = shownFloorOf(build);
+    if (m_edit) {
+        // I4b step 4: while an edit session shows its drafts (the floor, its rooms and games as they were, only places
+        // changed), the plan's derived state waits for its end (endEdit(): nothing reads it meanwhile, the directory,
+        // the quick catalog and rides waiting too), so that an edit shows within ADR-0015 §9's 0.25 s on a large
+        // building.
+        m_edit->planStatePending = true;
+        return;
+    }
     // I4 step 7b: the plan for the rides, the floor's elevator, arrival and doorways, the floors' record.
     keepPlan(build);
     // The card's other versions of each title (I3 step 14a), from the plan shown.

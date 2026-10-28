@@ -79,6 +79,7 @@ RunReport fullReport() {
     areas.last = rv::app::SceneLightingSample{200, "room:snes", 1.5, 0.3, 0.22, 2, 1, 1.25};
     areas.samples = {{0, "hall:gen4", 1.5, 0.45, 0.15, 16, 0, 16.0}, {171, "room:snes", 1.5, 0.4, 0.17, 16, 4, 14.5}};
     report.sceneAreas = areas;
+    report.sceneContents = rv::app::SceneContentsRecord{412, 1290, 57};
     return report;
 }
 
@@ -172,6 +173,7 @@ TEST_CASE("app/run_report: a full report reads back field for field", "[app][run
     CHECK(parsed->screenshot == report.screenshot);
     CHECK(parsed->selfCheck == report.selfCheck);
     CHECK(parsed->sceneAreas == report.sceneAreas);
+    CHECK(parsed->sceneContents == report.sceneContents);
     // The final pose reads back bit for bit, so that --spawn of it reproduces the view.
     CHECK(parsed->finalCamera == report.finalCamera);
 }
@@ -188,7 +190,7 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     const nlohmann::json json = nlohmann::json::parse(text);
     for (const char* key :
          {"failure", "context", "debugMessages", "glSelfTest", "lastView", "screenshot", "finalCamera", "selfCheck",
-          "sceneAreas"}) {
+          "sceneAreas", "sceneContents"}) {
         CAPTURE(key);
         CHECK_FALSE(json.contains(key));
     }
@@ -210,6 +212,7 @@ TEST_CASE("app/run_report: optional parts are left out and read back as absent",
     CHECK_FALSE(parsed->finalCamera.has_value());
     CHECK_FALSE(parsed->selfCheck.has_value());
     CHECK_FALSE(parsed->sceneAreas.has_value());
+    CHECK_FALSE(parsed->sceneContents.has_value());
 }
 
 TEST_CASE("app/run_report: unknown keys are ignored, a newer writer may add some", "[app][run_report]") {
@@ -384,7 +387,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         move.op = "move";
         move.operation = "move g000000000000b002 to room:snes/fx:dc02/s:0.0";
         move.rebuild = "no-rebuild";
-        move.path = "in-place";
+        move.path = "room";
         move.editMs = 12.25;
         move.shownMs = 40.5;
         rv::app::EditOperationRecord swap;
@@ -406,6 +409,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         edit.saveMs = 95.0;
         edit.backMs = 140.25;
         edit.liveUpdateDeferred = true;
+        edit.probes = 7; // I4b step 4
         rv::app::WorldEditRecord open;
         open.room = "area:arcade";
         open.via = "card";

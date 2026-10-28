@@ -27,6 +27,8 @@
 
 #include <rv/app/world_build.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/scene/light.hpp>
+#include <rv/scene/scene_description.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/world_edit.hpp>
 #include <rv/world/world_plan.hpp>
@@ -113,6 +115,11 @@ struct EditSaveOutcome {
     world::EditedWorld saved;
     std::string planDigest;
     double milliseconds = 0.0;
+    /// Its parts (milliseconds; I4b step 4's review): the lock taken and the plan and overrides read, the result made
+    /// (the replay, world::editedResult()), the commit (world::commitWorld(): the snapshot and the writes).
+    double readMs = 0.0;
+    double resultMs = 0.0;
+    double commitMs = 0.0;
 };
 
 /// The draft saved (see the file comment): the world lock taken (an interrupted action rolled back first), the plan
@@ -127,6 +134,22 @@ struct EditSaveOutcome {
 /// Errors: those of the readers.
 [[nodiscard]] Expected<world::EditData> prepareEditData(const WorldPaths& paths, const world::WorldPlan& plan,
                                                         std::string_view floor);
+
+/// A room's static part rebuilt alone (I4b step 4, ADR-0015 §4 as amended): its scene objects and lights as the floor's
+/// scene holds them in the scene's frame (world::roomFloorScene() moved as buildFloor() moves the floor), and the
+/// dressed spans it left bare.
+struct RoomStaticPart {
+    world::RoomId room;
+    std::vector<scene::SceneObject> objects;
+    std::vector<scene::Light> lights;
+    std::vector<world::UndressedSpan> undressed;
+};
+
+/// `room`'s static part in `plan` on `shown`'s floor (its scene data the one `shown` keeps for it, its frame
+/// `shown`'s). Errors: NotFound for a room `shown` lacks or keeps no scene data of; those of world::roomFloorScene()
+/// and of the scene's parser.
+[[nodiscard]] Expected<RoomStaticPart> roomStaticPart(const WorldBuild& shown, const world::WorldPlan& plan,
+                                                      const world::RoomId& room);
 
 /// `shown`'s floor with the collections of `rooms` laid out again from `plan` (an edited plan whose static part is
 /// `shown`'s: only placements moved, world::RebuildLevel::NoRebuild): each room's layout from its scene data and the

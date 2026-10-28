@@ -578,3 +578,23 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 - **A clickable bar (I4b step 3):** the editor's bar (`edit_bar.rml`) and its menu take no pointer input (pad and
   keyboard only), and the hover's title label does not show in the editor (the bar names the target). Clicks on the
   menu's buttons and on the bar's actions would follow the directory's and the card's (`docs/i4b/step-3.md`).
+- **Furniture from the D-pad (I4b step 4):** a fixture is targeted by the reticle only, where no game or slot is (a
+  shelf full of games by its frame, side or plinth); the D-pad's steps reach games and slots. A step that also reaches
+  the room's movable fixtures (by wall, then the free-standing ones) would let a pad pick furniture without aiming
+  (`docs/i4b/step-4.md`).
+- **The wall-washers while a fixture is held (I4b step 4):** a held lamp's light follows it (since the step's review),
+  but the room's wall-washers are placed again only at the drop (the room's static part rebuilt). Placing them again
+  for each probed place (rv_world's lights of the probe's room, the scene's lights replaced in place) would preview the
+  wall's light too.
+- **The scene digest of a floor edited room by room (I4b step 4):** after a session whose static part changed, the
+  floor shown keeps a synthetic scene digest, so the next live update after a refresh commits the floor once (2 s on
+  the real computer floor, the walker kept); building the saved floor for its exact digest took 1.6 s, over Salva's 3 s.
+  Digests per room (the floor's digest a digest of its rooms' and its hall's) would keep it exact at a room's cost.
+- **Salva on a large building (I4b step 4):** 0.95 s on the real computer floor since the step's review (was 2.9 s),
+  the commit's 0.86 s most of it: the plan of 19,985 placements serialised once (0.45 to 0.5 s), snapshotted (0.14 s)
+  and written with its backup (0.2 s). A faster plan writer, or a snapshot that moves the files it replaces instead of
+  copying them, would halve it.
+- **Registries after many moves (I4b step 4):** a room's static part rebuilt alone registers the meshes and materials of
+  the objects that changed; the old ones stay registered (unused), across sessions, until the floor is committed again
+  (a ride, a building's result, a refresh's commit). Sessions that move furniture for long grow them a little;
+  releasing unused entries needs reference counts in the registries.

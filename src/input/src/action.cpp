@@ -40,6 +40,8 @@ constexpr std::array<std::string_view, kActionCount> kNames = {
     "ui_filter_next",
     "toggle_mute",
     "edit_pin",
+    "edit_rotate_left",
+    "edit_rotate_right",
 };
 // Fails to compile when an Action is added without a name.
 static_assert(!kNames.back().empty(), "every Action needs a name in kNames");

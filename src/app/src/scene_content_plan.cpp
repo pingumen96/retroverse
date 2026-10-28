@@ -1,8 +1,10 @@
 #include <rv/app/scene_content_plan.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <map>
+#include <string_view>
 #include <utility>
 
 #include <fmt/format.h>
@@ -75,6 +77,29 @@ glm::ivec2 patternSizeFor(const geometry::MeshData& mesh, const glm::mat4& model
     const float aspect = metersPerUnit.y > 0.0f ? metersPerUnit.x / metersPerUnit.y : 1.0f;
     return assets::patternSizeForAspect(aspect,
                                         assets::patternLongSideFor(std::max(metersPerUnit.x, metersPerUnit.y)));
+}
+
+std::string registryKeyOf(const PlannedMaterial& planned) {
+    if (!planned.picture) {
+        return planned.key;
+    }
+    // FNV-1a (64-bit) over the fields that make the instance's look, each followed by a separator.
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto add = [&hash](std::string_view text) {
+        for (const char c : text) {
+            hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ULL;
+        }
+        hash = (hash ^ 0xFFu) * 1099511628211ULL;
+    };
+    const scene::TextureSource& picture = *planned.picture;
+    add(planned.material.name);
+    add(std::to_string(static_cast<int>(picture.kind)));
+    add(picture.path);
+    add(picture.pattern);
+    add(picture.title);
+    add(std::to_string(picture.seed));
+    add(picture.procedural);
+    return fmt::format("{}#{:016x}", planned.key, hash);
 }
 
 std::size_t SceneContentPlan::pictureMaterialCount() const noexcept {

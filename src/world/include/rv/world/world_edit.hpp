@@ -225,6 +225,30 @@ struct EditResult {
 [[nodiscard]] std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const FixtureId& fixture,
                                                          const FixtureTransform& wanted, const EditData& data);
 
+/// A fixture of a room the editor may pick up and move (I4b step 4, ADR-0015 §4): a side-wall module, a display fixture
+/// or a decoration (the hero corner and the hero-wall modules are fixed).
+struct EditableFixture {
+    FixtureId id;
+    FixtureRole role = FixtureRole::Decoration;
+    /// Its prefab's kind ("shelf", "poster_frame", "floor_lamp", ...), for the editor's words.
+    std::string kind;
+    /// A decoration hung on a wall (a poster): it slides along the walls only (snapFixture()).
+    bool hung = false;
+    /// Where it stands, and its box there (fixtureBox()).
+    FixtureTransform at;
+    FixtureBox box;
+    /// Why it cannot move ("" when it can): the edit rule an edit of it would be refused by (edit_rule::
+    /// kFixtureInKeptRoom, kFixtureUnknown).
+    std::string refusal;
+
+    bool operator==(const EditableFixture&) const = default;
+};
+
+/// The movable fixtures of `room` in `plan` (side-wall modules, display fixtures, decoration; each with the refusal of
+/// one that cannot move), in the plan's order. Nothing for a room `data` lacks.
+[[nodiscard]] std::vector<EditableFixture> editableFixtures(const WorldPlan& plan, const RoomId& room,
+                                                            const EditData& data);
+
 /// A session of edits applied in order, all or nothing (a CLI script, the editor's draft replayed on save).
 struct EditSession {
     /// One result per operation applied, the refused one last.
@@ -245,9 +269,11 @@ struct EditSession {
 /// What commitWorld() saves for a session (world_snapshots.hpp): `edited`'s plan sorted, a change report (Updated; the
 /// session's highest rebuild level; the placements kept as they were in `stored`; the fixtures moved; the digests,
 /// before `storedDigest`, after the plan's) and the validation of the floors the session edited (each one's last).
-/// Errors: those of the plan's digest.
+/// `digestAfter` false leaves the change report's digest after empty (the editor's save takes the plan's digest from
+/// commitWorld(), which serialises the plan anyway). Errors: those of the plan's digest.
 [[nodiscard]] Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_view storedDigest,
-                                                      const EditedWorld& edited, std::span<const EditResult> results);
+                                                      const EditedWorld& edited, std::span<const EditResult> results,
+                                                      bool digestAfter = true);
 
 /// The edit script's format (`worldplan edit --script`; formatted JSON with comments):
 ///   {"schemaVersion": 1, "operations": [

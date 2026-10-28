@@ -433,8 +433,11 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
         {pad(GamepadButton::West), {Action::UiInfo, Action::EditPin}},
         {keys({Key::P}), {Action::EditPin}},
         {pad(GamepadButton::DpadDown), {Action::UiDown}},
-        {pad(GamepadButton::LeftShoulder), {Action::UiFilterPrevious}},
-        {pad(GamepadButton::RightShoulder), {Action::UiFilterNext}},
+        // I4b step 4: the shoulders also turn the editor's held fixture (read in the editor's context only).
+        {pad(GamepadButton::LeftShoulder), {Action::UiFilterPrevious, Action::EditRotateLeft}},
+        {pad(GamepadButton::RightShoulder), {Action::UiFilterNext, Action::EditRotateRight}},
+        {keys({Key::Q}), {Action::EditRotateLeft}},
+        {keys({Key::R}), {Action::EditRotateRight}},
         {pad(GamepadButton::Start), {Action::Confirm, Action::Menu}},
         {pad(GamepadButton::Back), {Action::Map}},
         {pad(GamepadButton::Guide), {}},

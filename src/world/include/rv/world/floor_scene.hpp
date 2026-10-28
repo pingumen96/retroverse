@@ -106,6 +106,21 @@ struct FloorSceneBuild {
     std::vector<UndressedSpan> undressed;
 };
 
+/// One room's part of its floor's scene (I4b step 4: the editor rebuilds a room's static part alone): its objects and
+/// lights as toFloorSceneFile() writes them into the floor's scene file (ids prefixed with the room's, the doorway's
+/// stop left out, moved onto the floor by its placement, its lights in its area), in that order, the dressed spans it
+/// left bare and its scene's environment (every room's holds the floor's profile).
+struct RoomFloorScene {
+    nlohmann::json objects;
+    nlohmann::json lights;
+    std::vector<UndressedSpan> undressed;
+    nlohmann::json environment;
+};
+
+/// `room`'s part of its floor's scene (see RoomFloorScene). Errors: NotFound for a room the plan lacks; those of
+/// toSceneFile().
+[[nodiscard]] Expected<RoomFloorScene> roomFloorScene(const WorldPlan& plan, const RoomId& room, const SceneData& data);
+
 /// The scene file of `floor` of `plan` (see the file comment). Errors: NotFound for a floor the plan does not list or
 /// a room whose data `data` lacks; those of toSceneFile() for each room.
 [[nodiscard]] Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_view floor,

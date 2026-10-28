@@ -1,5 +1,6 @@
 #include <rv/app/world_edit_interaction.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
@@ -62,6 +63,8 @@ std::string_view toString(EditMode mode) noexcept {
         return "menu";
     case EditMode::Saving:
         return "saving";
+    case EditMode::Moving:
+        return "moving";
     }
     return "unknown";
 }
@@ -121,6 +124,11 @@ void EditInteraction::end() {
         m_walker.jumpTo(m_walker.pose());
     }
     m_walkerPlaced = false;
+    m_probedPick = world::kNoPick;
+    m_fixture.reset();
+    m_probed.reset();
+    m_verdict.reset();
+    m_nudged = false;
 }
 
 void EditInteraction::setReduceMotion(bool on) {
@@ -149,9 +157,16 @@ void EditInteraction::setRoom(const EditRoom* room) {
             }
         }
     }
+    // The fixture held where it stands now (a drop being shown keeps it until applied()).
+    if (m_fixture && m_room->fixture(m_fixture->id) == nullptr) {
+        m_fixture.reset();
+        if (m_mode == EditMode::Moving) {
+            m_mode = EditMode::Browse;
+        }
+    }
     // The target follows its slot: a pick id is the slot's, so a move leaves it on the slot the game went to.
     if (m_target) {
-        m_target = m_room->target(m_target->pick);
+        m_target = m_target->fixture ? m_room->fixtureTarget(*m_target->fixture) : m_room->target(m_target->pick);
         if (!m_target) {
             m_stepped = false;
         }
@@ -162,7 +177,53 @@ void EditInteraction::setRoom(const EditRoom* room) {
 }
 
 bool EditInteraction::targetPinned() const {
+    if (m_target && m_target->fixture) {
+        return m_fixturePinned && m_fixturePinned(*m_target->fixture);
+    }
     return m_target && m_target->game && m_pinned && m_pinned(*m_target->game);
+}
+
+bool boxOnWalker(const core::Aabb& box, const glm::vec3& feet, const scene::Capsule& capsule) noexcept {
+    // A floor covering (a rug) lies under the feet: only what rises above a few centimetres blocks.
+    constexpr float kFloorCovering = 0.05f;
+    if (box.isEmpty() || !(box.max.y > feet.y + kFloorCovering) || !(box.min.y < feet.y + capsule.height)) {
+        return false;
+    }
+    const float dx = std::max({box.min.x - feet.x, feet.x - box.max.x, 0.0f});
+    const float dz = std::max({box.min.z - feet.z, feet.z - box.max.z, 0.0f});
+    return dx * dx + dz * dz < capsule.radius * capsule.radius;
+}
+
+bool EditInteraction::heldOnWalker() const {
+    if (!m_fixture || !m_fixture->moved() || m_room == nullptr) {
+        return false;
+    }
+    const std::optional<core::Aabb> box = m_room->fixtureBoxAt(m_fixture->id, m_fixture->place);
+    return box && boxOnWalker(*box, m_walkerNow.feet);
+}
+
+std::optional<std::string> EditInteraction::verdict() const {
+    if (!m_fixture) {
+        return std::nullopt;
+    }
+    if (!m_fixture->moved()) {
+        return std::string(); // where it stood
+    }
+    if (heldOnWalker()) {
+        return std::string(kFixtureOnWalker);
+    }
+    if (m_verdict && m_verdict->first == m_fixture->place) {
+        return m_verdict->second;
+    }
+    return std::nullopt;
+}
+
+void EditInteraction::setVerdict(const world::EditOperation& probe, std::string refusal) {
+    if (!m_fixture || probe.kind != world::EditKind::MoveFixture || probe.fixture != m_fixture->id) {
+        return;
+    }
+    const world::FixtureTransform place{probe.xMm, probe.zMm, probe.yawCdeg.value_or(m_fixture->place.yawCdeg)};
+    m_verdict = std::pair(place, std::move(refusal));
 }
 
 EditFrameResult EditInteraction::update(const EditFrame& frame) {
@@ -180,7 +241,7 @@ EditFrameResult EditInteraction::update(const EditFrame& frame) {
         if (m_mode == before && !result.shellBack) {
             switch (m_mode) {
             case EditMode::Browse:
-                readBrowse(actions, result);
+                readBrowse(actions, frame, result);
                 if (m_mode == EditMode::Browse && !result.apply) {
                     step(actions, frame);
                 }
@@ -194,6 +255,9 @@ EditFrameResult EditInteraction::update(const EditFrame& frame) {
             case EditMode::Menu:
                 readMenu(actions, result);
                 break;
+            case EditMode::Moving:
+                readMoving(actions, frame, looked, result);
+                break;
             case EditMode::Preparing:
             case EditMode::Busy:
             case EditMode::Saving:
@@ -203,6 +267,16 @@ EditFrameResult EditInteraction::update(const EditFrame& frame) {
     }
     if (m_mode == EditMode::Browse || m_mode == EditMode::Holding) {
         track(frame, looked);
+    }
+    // I4b step 4: where a held game would go is judged ahead (a probe), so that its drop there shows what the probe
+    // made instead of applying the operation again.
+    if (m_mode == EditMode::Holding && m_held && m_target && m_target->pick != m_heldFrom &&
+        m_target->pick != m_probedPick && !result.apply) {
+        result.probe = m_target->game ? world::EditOperation::swap(*m_held, *m_target->game)
+                                      : world::EditOperation::move(*m_held, m_target->slot);
+        m_probedPick = m_target->pick;
+    } else if (m_mode != EditMode::Holding && m_mode != EditMode::Busy) {
+        m_probedPick = world::kNoPick;
     }
     const bool easing = m_walker.animating();
     m_walker.advance(dt);
@@ -227,6 +301,11 @@ void EditInteraction::back(const BackState& shell, EditFrameResult& result) {
         m_heldFrom = world::kNoPick;
         m_mode = EditMode::Browse;
         return;
+    case EditMode::Moving:
+        // Put back where it stood: it never left in the draft.
+        m_fixture.reset();
+        m_mode = EditMode::Browse;
+        return;
     case EditMode::Menu:
         m_mode = EditMode::Browse; // Continua
         return;
@@ -249,13 +328,25 @@ void EditInteraction::back(const BackState& shell, EditFrameResult& result) {
 void EditInteraction::openMenu() {
     m_held.reset();
     m_heldFrom = world::kNoPick;
+    m_fixture.reset();
     m_menuFocus = EditMenuButton::Save;
     m_mode = EditMode::Menu;
 }
 
-void EditInteraction::readBrowse(const input::ActionState& actions, EditFrameResult& result) {
+void EditInteraction::readBrowse(const input::ActionState& actions, const EditFrame& frame, EditFrameResult& result) {
     if (actions.pressed(Action::Confirm)) {
         openMenu();
+        return;
+    }
+    if (m_target && m_target->fixture) {
+        if (pickUpFixture(actions, frame, result)) {
+            return;
+        }
+        if (actions.pressed(Action::EditPin)) {
+            result.apply = targetPinned() ? world::EditOperation::unpinFixture(*m_target->fixture)
+                                          : world::EditOperation::pinFixture(*m_target->fixture);
+            m_mode = EditMode::Busy;
+        }
         return;
     }
     if (!m_target || !m_target->game) {
@@ -271,6 +362,150 @@ void EditInteraction::readBrowse(const input::ActionState& actions, EditFrameRes
         result.apply = targetPinned() ? world::EditOperation::unpin(*m_target->game)
                                       : world::EditOperation::pin(*m_target->game);
         m_mode = EditMode::Busy;
+    }
+}
+
+bool EditInteraction::pickUpFixture(const input::ActionState& actions, const EditFrame& frame,
+                                    EditFrameResult& result) {
+    if (!actions.pressed(Action::Interact) || m_room == nullptr || !m_target || !m_target->fixture) {
+        return false;
+    }
+    const world::EditableFixture* fixture = m_room->fixture(*m_target->fixture);
+    if (fixture == nullptr) {
+        return false;
+    }
+    if (!fixture->refusal.empty()) {
+        // It cannot move (a room kept as an older template made it): the bar names why, nothing held.
+        result.refused = fixture->refusal;
+        return true;
+    }
+    HeldFixture held;
+    held.id = fixture->id;
+    held.role = fixture->role;
+    held.hung = fixture->hung;
+    held.from = fixture->at;
+    held.place = fixture->at;
+    held.yawCdeg = fixture->at.yawCdeg;
+    // Held where the reticle took it: its pivot's offset from the floor point under the reticle (a hung decoration's
+    // from the wall point), so that it does not jump to the reticle.
+    if (const std::optional<world::FixtureTransform>& aim = held.hung ? frame.wallAim : frame.floorAim) {
+        held.offsetXMm = fixture->at.xMm - aim->xMm;
+        held.offsetZMm = fixture->at.zMm - aim->zMm;
+    }
+    m_fixture = held;
+    m_probed = held.place;
+    m_verdict = std::pair(held.place, std::string());
+    m_nudged = false;
+    m_target.reset();
+    m_hover.reset();
+    m_stepped = false;
+    m_mode = EditMode::Moving;
+    return true;
+}
+
+void EditInteraction::placeFixture(const world::FixtureTransform& wanted) {
+    if (!m_fixture) {
+        return;
+    }
+    if (!m_placer) {
+        m_fixture->place = wanted;
+        return;
+    }
+    if (const std::optional<world::FixtureTransform> snapped = m_placer(m_fixture->id, wanted)) {
+        m_fixture->place = *snapped;
+    }
+}
+
+void EditInteraction::readMoving(const input::ActionState& actions, const EditFrame& frame, bool looked,
+                                 EditFrameResult& result) {
+    if (!m_fixture) {
+        m_mode = EditMode::Browse;
+        return;
+    }
+    if (actions.pressed(Action::Confirm)) {
+        openMenu();
+        return;
+    }
+    // Dropped where it shows: an operation, or put back where it stood.
+    if (actions.pressed(Action::Interact)) {
+        if (!m_fixture->moved()) {
+            m_fixture.reset();
+            m_mode = EditMode::Browse;
+            return;
+        }
+        if (heldOnWalker()) {
+            // Dropped onto the walker: refused at once, still in the hand (the bar names why).
+            result.refused = std::string(kFixtureOnWalker);
+            return;
+        }
+        const world::FixtureTransform& place = m_fixture->place;
+        result.apply = world::EditOperation::moveFixture(m_fixture->id, place.xMm, place.zMm, place.yawCdeg);
+        m_mode = EditMode::Busy;
+        return;
+    }
+    HeldFixture& held = *m_fixture;
+    // Turned: a quarter turn (decoration by 15 degrees) about its pivot; a hung decoration's wall turns it.
+    if (!held.hung) {
+        const std::int32_t step =
+            held.role == world::FixtureRole::Decoration ? world::kDecorationTurnCdeg : world::kFixtureTurnCdeg;
+        const int turns =
+            (actions.pressed(Action::EditRotateLeft) ? 1 : 0) - (actions.pressed(Action::EditRotateRight) ? 1 : 0);
+        if (turns != 0) {
+            held.yawCdeg = ((held.place.yawCdeg + turns * step) % 36000 + 36000) % 36000;
+            placeFixture(world::FixtureTransform{held.place.xMm, held.place.zMm, held.yawCdeg});
+        }
+    }
+    // Nudged a grid step along the room's axis nearest the view's (forward, right); a hung decoration along its wall.
+    if (const std::optional<world::StepDirection> direction = stepPressed(actions)) {
+        const glm::vec2 view = frame.roomForward;
+        const bool alongX = std::abs(view.x) > std::abs(view.y);
+        const glm::ivec2 forward =
+            alongX ? glm::ivec2(view.x > 0.0f ? 1 : -1, 0) : glm::ivec2(0, view.y > 0.0f ? 1 : -1);
+        const glm::ivec2 right(-forward.y, forward.x);
+        glm::ivec2 step(0);
+        switch (*direction) {
+        case world::StepDirection::Up:
+            step = forward;
+            break;
+        case world::StepDirection::Down:
+            step = -forward;
+            break;
+        case world::StepDirection::Right:
+            step = right;
+            break;
+        case world::StepDirection::Left:
+            step = -right;
+            break;
+        }
+        if (held.hung) {
+            // Along its wall only: the north and south walls run along x, the west and east along z.
+            const bool wallAlongX = held.place.yawCdeg % 18000 == 0;
+            step = wallAlongX ? glm::ivec2(step.x, 0) : glm::ivec2(0, step.y);
+        }
+        if (step != glm::ivec2(0)) {
+            placeFixture(world::FixtureTransform{held.place.xMm + step.x * world::kEditGridMm,
+                                                 held.place.zMm + step.y * world::kEditGridMm, held.yawCdeg});
+            m_nudged = true;
+        }
+    } else if (looked) {
+        m_nudged = false;
+    }
+    // Following the reticle: the floor point under it (kept where it was picked up from), a hung decoration's wall.
+    if (!m_nudged) {
+        if (held.hung && frame.wallAim) {
+            placeFixture(world::FixtureTransform{frame.wallAim->xMm + held.offsetXMm,
+                                                 frame.wallAim->zMm + held.offsetZMm, held.place.yawCdeg});
+        } else if (!held.hung && frame.floorAim) {
+            placeFixture(world::FixtureTransform{frame.floorAim->xMm + held.offsetXMm,
+                                                 frame.floorAim->zMm + held.offsetZMm, held.yawCdeg});
+        }
+    }
+    // A new place is judged (the verdict comes back with setVerdict()).
+    if (held.moved() && m_probed != held.place) {
+        m_probed = held.place;
+        result.probe = world::EditOperation::moveFixture(held.id, held.place.xMm, held.place.zMm, held.place.yawCdeg);
+    } else if (!held.moved()) {
+        m_probed = held.place;
     }
 }
 
@@ -395,7 +630,14 @@ void EditInteraction::track(const EditFrame& frame, bool looked) {
     }
     const world::PickId before = m_hover.hovered();
     const world::PickId after = m_hover.update(*frame.hover);
-    if (after == before && m_target && m_target->pick == after) {
+    // I4b step 4: where no game or slot is, a movable fixture (browsing only: a held game drops into slots).
+    if (after == world::kNoPick && m_mode == EditMode::Browse && frame.fixture) {
+        if (!m_target || m_target->fixture != frame.fixture) {
+            m_target = m_room->fixtureTarget(*frame.fixture);
+        }
+        return;
+    }
+    if (after == before && m_target && !m_target->fixture && m_target->pick == after) {
         return;
     }
     m_target = after != world::kNoPick ? m_room->target(after) : std::nullopt;
@@ -406,6 +648,16 @@ void EditInteraction::track(const EditFrame& frame, bool looked) {
 
 void EditInteraction::applied(bool accepted) {
     if (m_mode != EditMode::Busy) {
+        return;
+    }
+    if (m_fixture) {
+        // A fixture dropped: put down, or still in the hand where the refusal found it (the bar naming the rule).
+        if (accepted) {
+            m_fixture.reset();
+            m_mode = EditMode::Browse;
+        } else {
+            m_mode = EditMode::Moving;
+        }
         return;
     }
     if (accepted || !m_held) {

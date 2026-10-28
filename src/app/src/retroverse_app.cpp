@@ -921,6 +921,56 @@ struct RetroverseApp::State {
             const scene::FirstPersonController& walker = freeRoam->controller();
             return scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
         };
+        // I4b step 4: a room's static part rebuilt alone in place (the walker where it stands), and a held fixture's
+        // render items.
+        host.replaceObjects = [this](const SceneObjectsChange& change) -> bool {
+            if (!scene) {
+                return false;
+            }
+            auto replaced = scene->replaceObjects(description, change, graphics->materialLibrary(), loadModel,
+                                                  graphics->resources());
+            if (!replaced) {
+                spdlog::error("World: the objects of {} cannot be replaced: {}", change.prefix,
+                              replaced.error().toString());
+                if (replaced.error().code == ErrorCode::InvalidArgument) {
+                    return false; // nothing changed
+                }
+            }
+            freeRoam->setCollision(scene->collisionWorld());
+            shownDebugLines = DebugLineSelection{};
+            if (Status shown = syncDebugLines(); !shown) {
+                spdlog::error("Debug lines unavailable: {}", shown.error().toString());
+            }
+            return true;
+        };
+        host.sceneItemsOf = [this](const std::function<bool(std::string_view)>& match) {
+            return scene ? scene->itemsOf(match) : std::vector<std::size_t>{};
+        };
+        // I4b step 4's review: a held lamp's light follows it (the scene's lights moved in place, packed again).
+        host.sceneLightsOf = [this](const std::function<bool(std::string_view)>& match) {
+            std::vector<std::pair<std::size_t, scene::Light>> lights;
+            if (scene) {
+                const std::span<const scene::Light> all = std::as_const(*scene).sceneLights();
+                for (std::size_t index = 0; index < all.size(); ++index) {
+                    if (match(all[index].name)) {
+                        lights.emplace_back(index, all[index]);
+                    }
+                }
+            }
+            return lights;
+        };
+        host.setSceneLights = [this](std::span<const std::pair<std::size_t, scene::Light>> lights) {
+            if (!scene) {
+                return;
+            }
+            const std::span<scene::Light> all = scene->sceneLights();
+            for (const auto& [index, light] : lights) {
+                if (index < all.size() && all[index].name == light.name) {
+                    all[index] = light;
+                }
+            }
+            scene->applyLighting();
+        };
         // I4 step 6b: the CRT of the room that holds the eye, bound once the eye stayed there (never joining the
         // previous clip's decoder on the render loop).
         host.bindScreen = [this, &context](const std::string& prefix, std::vector<ScreenGame> games) -> bool {
@@ -1795,6 +1845,12 @@ void RetroverseApp::onShutdown(AppContext& context) {
         }
         context.report().finalCamera = m_state->freeRoam->pose();
         context.report().sceneAreas = m_state->sceneAreasRecord();
+        if (m_state->scene) {
+            context.report().sceneContents =
+                SceneContentsRecord{m_state->scene->objectBounds().size(),
+                                    m_state->scene->collisionWorld().boxes().size(),
+                                    std::as_const(*m_state->scene).sceneLights().size()};
+        }
         m_state->graphics->finishRun(context);
     }
     m_state.reset();

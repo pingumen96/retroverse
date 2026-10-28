@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <glm/vec3.hpp>
 
@@ -29,6 +30,10 @@ public:
     /// world, the walker at its camera or at `spawn`, as the constructor places it; the walker's settings are kept.
     void resetScene(const scene::SceneDescription& scene, scene::CollisionWorld collision,
                     const std::optional<SpawnPoint>& spawn = std::nullopt);
+
+    /// The scene's collision world after a part of it was rebuilt (I4b step 4: a room's static part), the walker where
+    /// it stands.
+    void setCollision(scene::CollisionWorld collision) noexcept { m_collision = std::move(collision); }
 
     /// Advances the walker by one frame of `deltaSeconds` and writes the camera pose.
     void update(const input::ActionState& actions, float deltaSeconds, scene::Camera& camera);

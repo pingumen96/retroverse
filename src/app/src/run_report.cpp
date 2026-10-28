@@ -991,7 +991,8 @@ Json editsToJson(const std::vector<WorldEditRecord>& edits) {
                      {"saveRefused", edit.saveRefused},
                      {"snapshot", edit.snapshot},
                      {"planDigest", edit.planDigest},
-                     {"liveUpdateDeferred", edit.liveUpdateDeferred}};
+                     {"liveUpdateDeferred", edit.liveUpdateDeferred},
+                     {"probes", edit.probes}};
         if (edit.readyFrame) {
             session["readyFrame"] = *edit.readyFrame;
         }
@@ -1042,6 +1043,7 @@ std::vector<WorldEditRecord> readEdits(FieldReader& fields) {
         edit.saveMs = session.optionalNumber("saveMs");
         edit.backMs = session.optionalNumber("backMs");
         edit.liveUpdateDeferred = session.boolean("liveUpdateDeferred");
+        edit.probes = session.optionalCount("probes").value_or(0);
         edits.push_back(std::move(edit));
     }
     return edits;
@@ -2482,6 +2484,11 @@ std::string formatRunReport(const RunReport& report) {
                                  {"passed", report.selfCheck->passed},
                                  {"summary", report.selfCheck->summary}};
     }
+    if (report.sceneContents) {
+        json["sceneContents"] = Json{{"objects", report.sceneContents->objects},
+                                     {"colliders", report.sceneContents->colliders},
+                                     {"lights", report.sceneContents->lights}};
+    }
     if (report.sceneAreas) {
         Json changes = Json::array();
         for (const SceneAreaChange& change : report.sceneAreas->changes) {
@@ -2653,6 +2660,13 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
             record.samples.push_back(readSample(sample));
         }
         report.sceneAreas = std::move(record);
+    }
+    if (auto contents = fields.optionalObject("sceneContents")) {
+        SceneContentsRecord record;
+        record.objects = static_cast<std::size_t>(contents->count("objects", kMaxSize));
+        record.colliders = static_cast<std::size_t>(contents->count("colliders", kMaxSize));
+        record.lights = static_cast<std::size_t>(contents->count("lights", kMaxSize));
+        report.sceneContents = record;
     }
     if (auto catalog = fields.optionalObject("catalog")) {
         report.catalog = readCatalog(*catalog);

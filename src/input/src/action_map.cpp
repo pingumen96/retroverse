@@ -328,6 +328,11 @@ ActionMap ActionMap::defaults() {
     // context only: the west button is Informazioni elsewhere).
     map.bind(Action::EditPin, KeyBinding{Key::P, 1.0f});
     map.bind(Action::EditPin, GamepadButtonBinding{GamepadButton::West, 1.0f});
+    // I4b step 4: Q and R, or the shoulders, turn a held fixture (the shoulders are the UI's filters elsewhere).
+    map.bind(Action::EditRotateLeft, KeyBinding{Key::Q, 1.0f});
+    map.bind(Action::EditRotateLeft, GamepadButtonBinding{GamepadButton::LeftShoulder, 1.0f});
+    map.bind(Action::EditRotateRight, KeyBinding{Key::R, 1.0f});
+    map.bind(Action::EditRotateRight, GamepadButtonBinding{GamepadButton::RightShoulder, 1.0f});
 
     return map;
 }

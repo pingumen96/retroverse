@@ -5,7 +5,7 @@
 //   frame 48   ui_activate: the editor begins in room:snes (its data read on the pool; lockstep waits)
 //   frame 70   interact: A picked up (the reticle on it)
 //   frame 80   ui_left: the free slot left of A targeted, the walker eased in front of it
-//   frame 110  interact: A moved there (the dressing gives way: the floor built again from the draft)
+//   frame 110  interact: A moved there (the dressing gives way: the room's static part rebuilt alone)
 //   frame 130  ui_right: A's old slot (dressed now)  frame 160  ui_right: game B
 //   frame 190  interact: B picked up                 frame 200  ui_up: game C on the level above
 //   frame 230  interact: B and C swapped (laid out again in place)

@@ -799,7 +799,8 @@ Expected<CommitReport> commitWorldStoppingAt(const WorldLock& lock, const WorldA
     if (stop == TransactionStop::BetweenWrites) {
         return propagate(stopped());
     }
-    auto savedPlan = savePlan(lock, result, options);
+    // The plan's text made above (savePlan() would serialise it again: on a large plan the commit's longest part).
+    auto savedPlan = detail::savePlanText(lock, result, *planText, options);
     if (!savedPlan) {
         return rollBackAfter<CommitReport>(files, savedPlan.error());
     }
