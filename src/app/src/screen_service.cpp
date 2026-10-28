@@ -336,6 +336,8 @@ struct ScreenService::Impl {
     bool reopenPending = false;
     std::uint64_t frameIndex = 0;
     double now = 0.0;
+    /// This frame's window is minimized (every screen out of view).
+    bool minimized = false;
     bool budgetErrorLogged = false;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
@@ -455,7 +457,7 @@ struct ScreenService::Impl {
             return;
         }
         // A clip stopped while still asked for opens again where it was.
-        if (reason == "out-of-view" || reason == "needed" || reason == "budget") {
+        if (reason == "out-of-view" || reason == "minimized" || reason == "needed" || reason == "budget") {
             if (const std::optional<double> position = clipPosition(slot)) {
                 resumeAt[slot.clip] = *position;
             }
@@ -564,9 +566,12 @@ struct ScreenService::Impl {
     void applyCommands(const std::vector<SlotCommand>& commands) {
         for (const SlotCommand& command : commands) {
             Slot& slot = slots[command.slot];
+            // While the window is minimized every screen is out of view: its pauses and stops are the window's.
+            const std::string reason =
+                minimized && command.reason == "out-of-view" ? std::string("minimized") : command.reason;
             switch (command.action) {
             case SlotAction::Stop:
-                stopSlot(command.slot, command.reason);
+                stopSlot(command.slot, reason);
                 break;
             case SlotAction::Open:
                 openSlot(command.slot, command.clip);
@@ -578,8 +583,7 @@ struct ScreenService::Impl {
                     slot.paused = true;
                     ++counters.pauses;
                 }
-                recordEvent(command.slot, SlotAction::Pause, slot.gameId, command.reason,
-                            screenIds(requesters(slot.clip)));
+                recordEvent(command.slot, SlotAction::Pause, slot.gameId, reason, screenIds(requesters(slot.clip)));
                 break;
             case SlotAction::Resume:
                 if (slot.playback && !slot.draining && !options.freezePtsSeconds && slot.paused) {
@@ -1024,9 +1028,10 @@ struct ScreenService::Impl {
     }
 
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimized) {
+                std::optional<std::string_view> hovered, bool minimizedWindow) {
         frameIndex = frame;
         now = nowSeconds;
+        minimized = minimizedWindow;
         if (phase == ScreenPhase::Quit) {
             return;
         }
@@ -1039,7 +1044,7 @@ struct ScreenService::Impl {
         const scene::Frustum frustum = camera.frustum();
         for (const std::unique_ptr<ScreenState>& screen : screens) {
             screen->policy.hover(hovered, now);
-            screen->visible = !minimized && frustum.intersects(screen->binding.bounds);
+            screen->visible = !minimizedWindow && frustum.intersects(screen->binding.bounds);
             screen->policy.setVisible(screen->visible);
             screen->policy.tick(now);
             followTarget(*screen);

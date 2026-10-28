@@ -289,6 +289,60 @@ TEST_CASE("screens: --max-decoders 1 plays the hero's clip alone, the others on 
     static_cast<void>(requireScreenshot(run, shot, kShotSize));
 }
 
+TEST_CASE("screens: minimized, the process goes back to normal and the slots pause at once and stop after 10 s",
+          "[gpu][video][screens]") {
+    const std::filesystem::path dir = freshCaseDir("screens/minimized");
+    const std::filesystem::path catalog = writeRoom(dir);
+    // After frame 30 the host takes the interactive run's minimized branch for 11 s (waits of 0.1 s counted under
+    // --fixed-dt): no frame renders meanwhile, the window stays hidden and untouched.
+    constexpr std::uint64_t kMinimized = 30;
+    const AppRun run = runScreens(dir, "minimized", catalog, 90, {"--simulate-minimized", "30:11"});
+    const rv::app::VideoRecord& video = requireScreens(run, 2);
+    INFO(run.describe());
+    CHECK(run.report->framesRendered == 90u);
+    // Both slots (A on crt_a and crt_b, B on crt_c) paused on the first wait, stopped 10 s later, reopened after.
+    for (const std::string_view game : {kGameA, kGameB}) {
+        INFO("game " << game);
+        const auto pauses = eventsOf(video, "pause", game);
+        REQUIRE(pauses.size() == 1);
+        CHECK(pauses.front().frame == kMinimized);
+        CHECK(pauses.front().reason == "minimized");
+        const auto stops = eventsOf(video, "stop", game);
+        REQUIRE(stops.size() == 2); // minimized, then at the exit
+        CHECK(stops.front().reason == "minimized");
+        CHECK(stops.front().frame == kMinimized);
+        CHECK(stops.back().reason == "shutdown");
+        const double paused = stops.front().atSeconds - pauses.front().atSeconds;
+        INFO("stopped " << paused << " s after the pause");
+        CHECK(paused >= 10.0 - 1e-6);
+        CHECK(paused < 10.1 + 1e-6);
+        const auto opens = eventsOf(video, "open", game);
+        REQUIRE(opens.size() == 2);
+        CHECK(opens.back().frame >= kMinimized);
+        CHECK(opens.back().atSeconds > stops.front().atSeconds);
+    }
+    for (const std::string_view id : {"crt_a", "crt_b", "crt_c"}) {
+        INFO(id);
+        CHECK(screenOf(video, id).playing);
+        CHECK(screenOf(video, id).visible);
+    }
+    // The priority: above normal while rendering, normal while minimized, above normal again, normal at the exit.
+    REQUIRE(run.report->processPriority.has_value());
+    const std::vector<rv::app::PriorityChangeRecord>& changes = run.report->processPriority->changes;
+    REQUIRE(changes.size() == 4);
+    CHECK(changes[0].priority == "above-normal");
+    CHECK(changes[1].priority == "normal");
+    CHECK(changes[1].reason == "minimized");
+    CHECK(changes[1].frame == kMinimized);
+    CHECK(changes[2].priority == "above-normal");
+    CHECK(changes[2].reason == "rendering");
+    CHECK(changes[2].frame == kMinimized);
+    CHECK(changes[3].reason == "exit");
+    for (const rv::app::PriorityChangeRecord& change : changes) {
+        CHECK(change.applied);
+    }
+}
+
 TEST_CASE("screens: two 720p clips due together never upload more than 4 MiB in a frame", "[gpu][video][screens]") {
     const std::filesystem::path dir = freshCaseDir("screens/uploads");
     // 60 fps: both clips have a new frame due on every render frame; 720 rows (video.json's maxRows): 3.5 MiB each.

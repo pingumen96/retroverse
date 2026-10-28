@@ -72,6 +72,7 @@ public:
     void onUpdate(AppContext& context, double deltaSeconds) override;
     void onRender(AppContext& context) override;
     void onIdle(AppContext& context) override;
+    void onMinimized(AppContext& context, double elapsedSeconds) override;
     void onShutdown(AppContext& context) override;
 
 private:

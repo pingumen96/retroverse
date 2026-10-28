@@ -510,6 +510,8 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
     double nextTitleRefresh = kTitleRefreshSeconds;
     // The end of the previous frame (its swap), from which the next frame's time is measured; none before the first.
     std::optional<Clock::time_point> previousFrameEnd;
+    // The waits --simulate-minimized has counted so far.
+    double simulatedMinimizedSeconds = 0.0;
 
     while (!context.m_quitRequested) {
         events.poll([&](const SDL_Event& event) {
@@ -539,10 +541,27 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
             }
         }
         // Nothing is visible while minimized: an interactive run sleeps until something happens instead of spinning on
-        // an unthrottled swap. A frame-limited run keeps rendering (presenting to a minimized window is harmless), so
-        // that it always reaches its limit and exits.
-        if (!m_options.frameLimit && window.isMinimized()) {
-            events.waitForEvents(kMinimizedWait);
+        // an unthrottled swap, and the logic follows the time waited (onMinimized). A frame-limited run keeps rendering
+        // (presenting to a minimized window is harmless), so that it always reaches its limit and exits; with
+        // --simulate-minimized it takes this branch after its frame for its seconds (a --fixed-dt run's waits count
+        // kMinimizedWait each without waiting, so that it stays reproducible).
+        const bool simulatedMinimized = m_options.simulateMinimized &&
+                                        context.m_frameIndex == m_options.simulateMinimized->frame &&
+                                        simulatedMinimizedSeconds < m_options.simulateMinimized->seconds;
+        if ((!m_options.frameLimit && window.isMinimized()) || simulatedMinimized) {
+            const Clock::time_point waitStart = Clock::now();
+            const bool countedWait = simulatedMinimized && m_options.fixedDeltaSeconds.has_value();
+            events.waitForEvents(countedWait ? std::chrono::milliseconds(0) : kMinimizedWait);
+            const double waited = countedWait ? std::chrono::duration<double>(kMinimizedWait).count()
+                                              : std::chrono::duration<double>(Clock::now() - waitStart).count();
+            if (simulatedMinimized) {
+                if (simulatedMinimizedSeconds == 0.0) {
+                    spdlog::info("Frame {}: minimized for {:g} s (--simulate-minimized)", context.m_frameIndex,
+                                 m_options.simulateMinimized->seconds);
+                }
+                simulatedMinimizedSeconds += waited;
+            }
+            logic.onMinimized(context, waited);
             if (previousFrameEnd) {
                 previousFrameEnd = Clock::now(); // nor is this wait
             }

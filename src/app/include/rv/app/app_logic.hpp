@@ -119,8 +119,10 @@ private:
 
 /// Application behavior driven by AppHost. Call order: onInit once; then per frame onEvent for each pending event,
 /// onUpdate, onRender (followed by the buffer swap); while the logic keeps the host idle (AppContext::setIdle), onEvent
-/// for each pending event and onIdle after each wait, instead of the frames; finally onShutdown exactly once, also when
-/// onInit failed or an exception ended the run (the quit hook of a logic that idles: the host may stop while it does).
+/// for each pending event and onIdle after each wait, instead of the frames; while an interactive run's window is
+/// minimized (or --simulate-minimized), onEvent and onMinimized after each wait instead; finally onShutdown exactly
+/// once, also when onInit failed or an exception ended the run (the quit hook of a logic that idles: the host may stop
+/// while it does).
 /// The OpenGL context is current in every callback and destroyed only after onShutdown, which must release every GPU
 /// resource the logic owns.
 class IAppLogic {
@@ -142,6 +144,10 @@ public:
     /// every wait (an event, the wake callback, AppHost::kIdleWait passing). Clearing the idle mode here makes the host
     /// render the next frame at once.
     virtual void onIdle(AppContext& /*context*/) {}
+    /// While the window is minimized and no frame renders (an interactive run; a frame-limited one renders on unless
+    /// --simulate-minimized): after each of the host's waits, `elapsedSeconds` its length (I5 step 2's review: the
+    /// screens' decoders pause and stop, the priority goes back to normal). Not while the host idles.
+    virtual void onMinimized(AppContext& /*context*/, double /*elapsedSeconds*/) {}
     virtual void onShutdown(AppContext& /*context*/) {}
 };
 

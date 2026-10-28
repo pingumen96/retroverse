@@ -138,8 +138,10 @@ public:
     [[nodiscard]] std::string screenId() const;
 
     /// One frame (`frame`, at `nowSeconds`: the run's simulated time) seen by `camera`: the item focused or inspected
-    /// (`hovered`, its catalog id), the window `minimized` (every screen out of view); the scheduler's decisions
-    /// carried out, the frames uploaded, the stills loaded, the screens' texture overrides set to what they show.
+    /// (`hovered`, its catalog id), the window `minimized` (every screen out of view: the slots pause, and stop after
+    /// kScreenStopAfterSeconds, reason "minimized"); the scheduler's decisions carried out, the frames uploaded, the
+    /// stills loaded, the screens' texture overrides set to what they show. An interactive run calls it while minimized
+    /// too, after each of the host's waits (IAppLogic::onMinimized), with the waits' time.
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
                 std::optional<std::string_view> hovered, bool minimized = false);
 

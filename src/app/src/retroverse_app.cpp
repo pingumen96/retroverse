@@ -659,6 +659,20 @@ struct RetroverseApp::State {
         freeRoam->update(input::ActionState{}, 0.0f, camera);
     }
 
+    /// The screens' frame (`minimized`: every screen out of view). The hero CRT follows the game selected in the quick
+    /// catalog while it is open, else the item in the world's Focus or Inspect (I3 step 13b), after its dwell.
+    void updateScreens(std::uint64_t frame, bool minimized) {
+        if (!screen) {
+            return;
+        }
+        std::optional<std::string> selected = product ? product->selectedGameId() : std::optional<std::string>();
+        if (world) {
+            selected = world->screenSelection(selected);
+        }
+        screen->update(frame, simulatedSeconds, camera,
+                       selected ? std::optional<std::string_view>(*selected) : std::nullopt, minimized);
+    }
+
     /// Sets the process priority when it changes (I5 step 2): `choice` at `frame`, read back and recorded.
     void setPriority(std::uint64_t frame, const PriorityChoice& choice) {
         if (aboveNormal == choice.aboveNormal) {
@@ -1516,18 +1530,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }
-    if (state.screen) {
-        // The hero CRT follows the game selected in the quick catalog while it is open, else the item in the world's
-        // Focus or Inspect (I3 step 13b), after its dwell.
-        std::optional<std::string> selected =
-            state.product ? state.product->selectedGameId() : std::optional<std::string>();
-        if (state.world) {
-            selected = state.world->screenSelection(selected);
-        }
-        state.screen->update(frame, state.simulatedSeconds, state.camera,
-                             selected ? std::optional<std::string_view>(*selected) : std::nullopt,
-                             context.window().isMinimized());
-    }
+    state.updateScreens(frame, context.window().isMinimized());
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
     state.graphics->pollShaderReload();
@@ -1573,6 +1576,19 @@ void RetroverseApp::onIdle(AppContext& context) {
         // Frames resume: whatever the wait dropped (the release of the button that launched among them) is released.
         state.input->releaseAll();
     }
+}
+
+void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
+    if (!m_state) {
+        return;
+    }
+    // No frame renders while minimized (I5 step 2's review): the time waited passes, the priority is normal, and the
+    // screens' decoders pause at once and stop after kScreenStopAfterSeconds ("minimized").
+    State& state = *m_state;
+    state.simulatedSeconds += elapsedSeconds;
+    state.setPriority(context.frameIndex(),
+                      processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
+    state.updateScreens(context.frameIndex(), true);
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {

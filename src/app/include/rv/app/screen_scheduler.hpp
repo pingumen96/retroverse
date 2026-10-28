@@ -123,7 +123,8 @@ enum class SlotAction : std::uint8_t {
 
 /// Why a slot stopped (SlotCommand::reason): "unwanted" (no screen asks for its clip), "needed" (another request took
 /// it), "out-of-view" (kScreenStopAfterSeconds out of view), "budget" (the late-frame drop), and the service's own:
-/// "launch", "unbind", "shutdown".
+/// "launch", "unbind", "shutdown", and "minimized" (its name for a pause, or a stop out of view, while the window is
+/// minimized).
 struct SlotCommand {
     SlotAction action = SlotAction::Open;
     std::size_t slot = 0;
