@@ -115,6 +115,11 @@ struct EditSaveOutcome {
     world::EditedWorld saved;
     std::string planDigest;
     double milliseconds = 0.0;
+    /// Its parts (milliseconds; I4b step 4's review): the lock taken and the plan and overrides read, the result made
+    /// (the replay, world::editedResult()), the commit (world::commitWorld(): the snapshot and the writes).
+    double readMs = 0.0;
+    double resultMs = 0.0;
+    double commitMs = 0.0;
 };
 
 /// The draft saved (see the file comment): the world lock taken (an interrupted action rolled back first), the plan

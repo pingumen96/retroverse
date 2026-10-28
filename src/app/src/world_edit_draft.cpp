@@ -9,6 +9,8 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <rv/core/file_io.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/scene/instance_data.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/floor_scene.hpp>
@@ -130,7 +132,16 @@ Expected<EditSaveOutcome> saveDraft(const EditDraft& draft, const EditSaveOption
         spdlog::warn("Editor: an interrupted action was rolled back first: the snapshot {} restored",
                      *lock->rolledBack());
     }
-    StoredWorldPlan stored = readWorldPlan(options.paths, options.library);
+    // The plan as stored: when its text is still the one the session began from (its digest the base's), the base's plan,
+    // which was read from it (parsing it again costs about 0.4 s on the reference library's 19,985 placements); else
+    // read again.
+    StoredWorldPlan stored;
+    if (auto text = core::readTextFile(files.plan); text && core::sha256Hex(*text) == draft.base().planDigest) {
+        stored.library = options.library;
+        stored.stored = world::StoredPlan{draft.base().world.plan, draft.base().planDigest};
+    } else {
+        stored = readWorldPlan(options.paths, options.library);
+    }
     if (stored.error) {
         return propagate(*stored.error);
     }
@@ -143,6 +154,8 @@ Expected<EditSaveOutcome> saveDraft(const EditDraft& draft, const EditSaveOption
     }
 
     EditSaveOutcome outcome;
+    outcome.readMs = millisecondsSince(start);
+    Clock::time_point part = Clock::now();
     const std::vector<world::EditOperation> operations = draft.operations();
     std::vector<world::EditResult> results;
     world::EditedWorld edited;
@@ -194,10 +207,14 @@ Expected<EditSaveOutcome> saveDraft(const EditDraft& draft, const EditSaveOption
         }
         results = std::move(session->results);
     }
-    auto result = world::editedResult(stored.stored->plan, stored.stored->digest, edited, results);
+    // The plan's digest after is the commit's (it serialises the plan once: serialising it costs about 0.45 s on the
+    // reference library's 19,985 placements).
+    auto result = world::editedResult(stored.stored->plan, stored.stored->digest, edited, results, false);
     if (!result) {
         return propagate(result.error());
     }
+    outcome.resultMs = millisecondsSince(part);
+    part = Clock::now();
     world::SaveOptions save;
     save.writer = options.writer;
     auto commit =
@@ -205,17 +222,19 @@ Expected<EditSaveOutcome> saveDraft(const EditDraft& draft, const EditSaveOption
     if (!commit) {
         return propagate(commit.error());
     }
+    outcome.commitMs = millisecondsSince(part);
+    part = Clock::now();
     outcome.written = commit->written;
     if (commit->snapshot) {
         outcome.snapshot = commit->snapshot->name;
     }
-    auto digest = world::planDigest(result->plan);
-    if (!digest) {
-        return propagate(digest.error());
-    }
-    outcome.planDigest = std::move(*digest);
+    // The digest of the plan's text saved (or found there already): planDigest() of the plan.
+    outcome.planDigest = commit->plan.digest;
     outcome.saved = world::EditedWorld{result->plan, edited.overrides};
+    const double digestMs = millisecondsSince(part);
     outcome.milliseconds = millisecondsSince(start);
+    spdlog::info("Editor: saved in {:.0f} ms: read {:.0f} ms, result {:.0f} ms, commit {:.0f} ms, digest {:.0f} ms",
+                 outcome.milliseconds, outcome.readMs, outcome.resultMs, outcome.commitMs, digestMs);
     return outcome;
 }
 
