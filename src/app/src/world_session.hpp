@@ -736,8 +736,13 @@ private:
     CabinetAttract m_cabinetAttract;
     std::map<std::string, std::pair<std::size_t, world::PickId>, std::less<>> m_cabinetRequests;
     std::vector<CabinetFront> m_cabinetFronts;
+    /// The frame whose cabinet fronts checkCabinetFronts() looked at last.
+    std::optional<std::uint64_t> m_cabinetsCheckedFrame;
     /// The cabinets' fronts drawn by the dynamic path this frame (those not pulled out: a pulled one's copy carries it).
     void appendCabinetFronts(std::vector<scene::RenderItem>& items) const;
+    /// Once a frame: a cabinet's clip drawn while its static front is drawn too, or its item gone, is counted
+    /// (WorldRecord::cabinetCoverBeneathFrames: 0).
+    void checkCabinetFronts();
     /// Every cabinet's own front again (before the collections go, or when none plays).
     void dropCabinetFronts();
 };

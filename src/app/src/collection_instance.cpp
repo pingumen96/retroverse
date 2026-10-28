@@ -20,6 +20,7 @@
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/scene/instance_clusters.hpp>
+#include <rv/world/generation.hpp>
 
 namespace rv::app {
 namespace {
@@ -101,11 +102,16 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     // The front's layers: the family's (I6 step 6: the cabinets' screens through a picture tube), else the theme's label.
     const std::string frontMaterial = family.labelMaterial.empty() ? roleMaterial("label") : family.labelMaterial;
     instance->m_labelMaterials = {frontMaterial, roleMaterial("spine")};
-    // I5 step 4: a family whose fronts are unlit screens of their own (the arcade's cabinets) may play clips on them.
+    // I5 step 4: the arcade's cabinets (named by their family, not by their front's material) play clips on their
+    // screens, the item's label quad (its "Label" socket: the family's labelWidth and labelHeight).
     instance->m_frontMaterialName = frontMaterial;
-    instance->m_screenItems = !family.labelMaterial.empty() &&
-                              library.getOrFallback(frontMaterial).shading == assets::ShadingModel::Unlit;
-    instance->m_screenSize = glm::vec2(family.itemSize.x, family.itemSize.y);
+    instance->m_screenItems = family.mediaFamily == world::kArcadeRoomFamily;
+    if (const geometry::Socket* label = geometry::findSocket(prefab.sockets, "Label")) {
+        const glm::vec3 size = label->bounds.max - label->bounds.min;
+        instance->m_screenSize = glm::vec2(size.x, size.y);
+    } else {
+        instance->m_screenSize = glm::vec2(family.itemSize.x, family.itemSize.y);
+    }
 
     gl::CollectionArrays::Desc desc;
     desc.format = graphics.collectionArrayFormat();
@@ -465,7 +471,7 @@ Expected<std::vector<scene::MaterialHandle>> CollectionInstance::videoMaterials(
     }
     if (m_videoMaterials.size() < count) {
         // The label's picture tube with a base colour texture of its own (white, as the hero front's), which the screen
-        // service overrides with its slot's picture; registered after everything else, so that no handle moves.
+        // service overrides with its slot's picture; appended to the registry: no handle moves.
         gl::MaterialRegistry& materials = graphics.materials();
         const assets::MaterialDesc& labelDesc = graphics.materialLibrary().getOrFallback(m_frontMaterialName);
         gl::MaterialTextures textures = gl::resolveMaterialTextures(labelDesc, graphics.textures());
@@ -586,6 +592,13 @@ std::vector<world::PickId> CollectionInstance::hiddenItems() const {
         }
     }
     return hidden;
+}
+
+bool CollectionInstance::frontDrawn(std::size_t item) const {
+    if (item >= m_items.size() || !m_items[item].front) {
+        return false;
+    }
+    return (m_attributes[*m_items[item].front].flags & scene::instance_flags::kHidden) == 0;
 }
 
 bool CollectionInstance::staticDrawn(world::PickId pickId) const {

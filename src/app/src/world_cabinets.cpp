@@ -165,6 +165,25 @@ void WorldSession::appendCabinetFronts(std::vector<scene::RenderItem>& items) co
     }
 }
 
+void WorldSession::checkCabinetFronts() {
+    const std::uint64_t frame = m_context.frameIndex();
+    if (m_cabinetFronts.empty() || m_cabinetsCheckedFrame == frame) {
+        return;
+    }
+    m_cabinetsCheckedFrame = frame;
+    ++m_record.cabinetClipFrames;
+    const bool beneath = std::any_of(m_cabinetFronts.begin(), m_cabinetFronts.end(), [&](const CabinetFront& front) {
+        const CollectionInstance* collection =
+            front.room < m_rooms.size() ? m_rooms[front.room].collection.get() : nullptr;
+        const std::optional<std::size_t> item =
+            collection != nullptr ? collection->itemOfPick(front.pick) : std::nullopt;
+        return !item || collection->frontDrawn(*item);
+    });
+    if (beneath) {
+        ++m_record.cabinetCoverBeneathFrames;
+    }
+}
+
 void WorldSession::dropCabinetFronts() {
     for (const CabinetFront& front : m_cabinetFronts) {
         if (front.room >= m_rooms.size() || !m_rooms[front.room].collection) {

@@ -966,6 +966,7 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
     if (heroFront) {
         m_viewItems.insert(m_viewItems.end(), m_dynamicItems.begin(), m_dynamicItems.end());
     }
+    checkCabinetFronts();
     appendCabinetFronts(m_viewItems);
     return m_viewItems;
 }
