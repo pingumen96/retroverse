@@ -33,6 +33,7 @@ add_library(rv_app_cli STATIC
     src/model_viewer.cpp
     src/overlay_policy.cpp
     src/playlist.cpp
+    src/process_priority.cpp
     src/room_items.cpp
     src/run_report.cpp
     src/scene_content_plan.cpp

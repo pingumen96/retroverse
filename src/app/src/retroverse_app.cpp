@@ -29,6 +29,7 @@
 #include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
+#include <rv/app/process_priority.hpp>
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/self_check.hpp>
@@ -49,6 +50,7 @@
 #include <rv/input/input_script.hpp>
 #include <rv/launcher/emulator_profile.hpp>
 #include <rv/platform/graphics_window.hpp>
+#include <rv/platform_win/process_priority.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/gl_device.hpp>
@@ -427,10 +429,14 @@ struct RetroverseApp::State {
     /// The light of the first view and of every frame while it eased, and of the last view (I6 step 1).
     std::vector<SceneLightingSample> lightingSamples;
     SceneLightingSample lastLighting;
-    /// The hero CRT's screen service (I3 step 11): its one video decoder and the pictures of its fallback chain on the
-    /// scene's first CRT; none without a CRT (the model viewer). Destroyed before the graphics, whose material registry
-    /// shows its pictures.
+    /// The screens' service (I3 step 11; since I5 step 2 every CRT of the room, the hero first, sharing the decoder
+    /// scheduler's slots): their decoders and the pictures of their fallback chains; none without a CRT (the model
+    /// viewer). Destroyed before the graphics, whose material registry shows its pictures.
     std::unique_ptr<ScreenService> screen;
+    /// The process priority (I5 step 2, ADR-0016 §2): above normal while the view renders, normal while minimized and
+    /// during a game; each change for the run report.
+    std::optional<bool> aboveNormal;
+    ProcessPriorityRecord priority;
     /// The app's worker pool (ADR-0011 §6: the room's generation and its covers) and the generated room (I3 step 10b),
     /// in room mode only. The pool outlives the session, whose destructor cancels its jobs; the session (its collection
     /// on the GPU) goes before the graphics.
@@ -653,9 +659,28 @@ struct RetroverseApp::State {
         freeRoam->update(input::ActionState{}, 0.0f, camera);
     }
 
-    /// The hero CRT's service on the scene's first CRT (`heroScreenPrefix`: the first whose object id starts with it,
-    /// none for an empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has one (not in the
-    /// model viewer); the run's service, kept unbound across a scene shown in place of another, is bound to it instead
+    /// Sets the process priority when it changes (I5 step 2): `choice` at `frame`, read back and recorded.
+    void setPriority(std::uint64_t frame, const PriorityChoice& choice) {
+        if (aboveNormal == choice.aboveNormal) {
+            return;
+        }
+        aboveNormal = choice.aboveNormal;
+        const Status set = platform_win::setProcessPriority(choice.aboveNormal ? platform_win::ProcessPriority::AboveNormal
+                                                                               : platform_win::ProcessPriority::Normal);
+        const platform_win::ProcessPriority now = platform_win::currentProcessPriority();
+        if (!set) {
+            spdlog::warn("Frame {}: the process priority stays {} ({})", frame, platform_win::toString(now),
+                         set.error().toString());
+        } else {
+            spdlog::info("Frame {}: process priority {} ({})", frame, platform_win::toString(now), choice.reason);
+        }
+        priority.changes.push_back(PriorityChangeRecord{frame, std::string(platform_win::toString(now)),
+                                                        std::string(choice.reason), set.has_value()});
+    }
+
+    /// The screens' service on the scene's CRTs (`heroScreenPrefix`: those whose object ids start with it, none for an
+    /// empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has any (not in the model viewer);
+    /// the run's service, kept unbound across a scene shown in place of another, is bound to them instead
     /// (VideoRecord::binds).
     void createScreen(const AppContext& context, std::vector<ScreenGame> games,
                       const std::optional<std::string>& heroScreenPrefix = std::nullopt) {
@@ -663,19 +688,21 @@ struct RetroverseApp::State {
         if (options.model) {
             return;
         }
-        if (std::optional<HeroScreen> hero =
-                findHeroScreen(description, *scene, graphics->materials(), heroScreenPrefix)) {
+        if (std::vector<ScreenBinding> screens =
+                findScreens(description, *scene, graphics->materials(), heroScreenPrefix);
+            !screens.empty()) {
             if (screen) {
-                screen->bind(std::move(*hero), std::move(games), context.frameIndex());
+                screen->bind(std::move(screens), std::move(games), context.frameIndex());
                 return;
             }
             ScreenServiceOptions screenOptions;
             screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
             screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
-            // I5 step 1: the rooms' playlists and the title cards' fonts.
+            // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget.
             screenOptions.video = videoSettingsOf(context.paths());
+            screenOptions.maxDecoders = options.maxDecoders;
             screenOptions.assetRoot = context.paths().assetRoot();
-            screen = std::make_unique<ScreenService>(std::move(*hero), graphics->materials(), std::move(games),
+            screen = std::make_unique<ScreenService>(std::move(screens), graphics->materials(), std::move(games),
                                                      screenOptions);
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {
             spdlog::info("Scene '{}': no hero CRT bound yet (the CRT of the room that holds the eye, once it stays in "
@@ -735,12 +762,12 @@ struct RetroverseApp::State {
             if (!scene || context.options().model) {
                 return false;
             }
-            std::optional<HeroScreen> hero = findHeroScreen(description, *scene, graphics->materials(), prefix);
-            if (!hero) {
+            std::vector<ScreenBinding> screens = findScreens(description, *scene, graphics->materials(), prefix);
+            if (screens.empty()) {
                 return false;
             }
             if (screen) {
-                screen->bind(std::move(*hero), std::move(games), context.frameIndex());
+                screen->bind(std::move(screens), std::move(games), context.frameIndex());
             } else {
                 createScreen(context, std::move(games), prefix);
             }
@@ -1229,12 +1256,14 @@ Status RetroverseApp::onInit(AppContext& context) {
             return propagate(std::move(error));
         }
         state->product = std::move(*product);
-        // The hero CRT's decoder stops and is waited for before a launch, and opens again after it (ADR-0012 §6).
+        // The screens' decoders stop and are waited for before a launch, and open again after it (ADR-0012 §6); the
+        // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
-        hooks.starting = [raw] {
+        hooks.starting = [raw, &context] {
             if (raw->screen) {
                 raw->screen->launchStarting();
             }
+            raw->setPriority(context.frameIndex(), processPriorityFor(false, true));
         };
         hooks.ended = [raw] {
             if (raw->screen) {
@@ -1340,6 +1369,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
     state.stepSeconds = deltaSeconds;
+    // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game.
+    state.setPriority(frame, processPriorityFor(context.window().isMinimized(),
+                                                state.product != nullptr && state.product->launchActive()));
     const input::ActionState actions = state.input->update(frame);
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
@@ -1491,8 +1523,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         if (state.world) {
             selected = state.world->screenSelection(selected);
         }
-        state.screen->update(state.simulatedSeconds, state.camera,
-                             selected ? std::optional<std::string_view>(*selected) : std::nullopt);
+        state.screen->update(frame, state.simulatedSeconds, state.camera,
+                             selected ? std::optional<std::string_view>(*selected) : std::nullopt,
+                             context.window().isMinimized());
     }
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
@@ -1559,6 +1592,9 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->screen->shutdown();
             m_state->screen->record(context.report().video);
         }
+        // Normal again for whatever runs after Retroverse in the same console.
+        m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});
+        context.report().processPriority = m_state->priority;
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }
