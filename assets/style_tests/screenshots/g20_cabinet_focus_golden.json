@@ -1,0 +1,61 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "e58a13de9116d99e268f1af885397bb2e563698d",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, then in Focus after Indietro, lowered to its pulled-out pose: its generated 4:3 clip held at 1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G20",
+  "image": {
+    "file": "g20_cabinet_focus_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "66dc16b9db59a70d3b14fc3fdc5f7d8feb97b34409552309ccfc7fc2c7cfd8ed",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/building",
+      "path": "tests/fixtures/esde/building",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
+    },
+    "inputScript": {
+      "file": "tests/input_scripts/golden_g20_cabinet_focus.json",
+      "sha256": "fdb23078f54f9c0c8c5b9ce5fc31195eca35c6f221866e9c00f1d43311209e18"
+    },
+    "plan": {
+      "digest": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "fileSha256": "48e97fd0990e468e2de3fa8a0c67f30e3f86c416ddca80cf3db36478d28a8daa",
+      "items": 15,
+      "placements": 159
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "4a1217897ee893d8a75c6004c2827144acb48ab2c3c9c42197a0260ff77d100b"
+    }
+  },
+  "renderedOn": "2026-10-28",
+  "run": {
+    "capturedFrame": 99,
+    "frames": 100,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G20:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/building into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room area:arcade --exit-after-frames --frames 100 --fixed-dt 0.016667 --screenshot <case>/g20.png --screenshot-size 1920x1080 --spawn 1.06218672,0,-3.85489845,-1.0906117,-31.1164818 --input-script tests/input_scripts/golden_g20_cabinet_focus.json --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--start-room area:arcade --spawn at the cabinet's Focus pose (app::focusPoseFor, the 16:9 window), tests/input_scripts/golden_g20_cabinet_focus.json"
+}

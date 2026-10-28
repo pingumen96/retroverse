@@ -1,0 +1,15 @@
+// I5 step 4, golden G20 (ADR-0016 §6: a cabinet playing in Focus): the building fixture's arcade room, the walker at the
+// Focus pose of the cabinet whose game has the fixture's mame clip (--spawn), the reticle on its screen; it never moves.
+//   frame 40   interact: the face-out screen is inspected at once, lifted into the hand (frames 40-58), its clip playing
+//              on it (direct), held at 1.0 s (--video-freeze-pts), its card beside it
+//   frame 70   ui_back (Indietro): Focus on the same cabinet, lowered to its pulled-out pose in 200 ms, the clip still
+//              on its screen (focus), letterboxed (a 4:3 clip on the cabinet's portrait screen)
+// tests/smoke/test_golden_room.cpp ("golden/G20") takes the screenshot at the end (frame 99) and compares it with
+// assets/style_tests/screenshots/g20_cabinet_focus_golden.png.
+//   retroverse --start-room area:arcade --spawn <the cabinet's Focus pose> --input-script
+//     tests/input_scripts/golden_g20_cabinet_focus.json --video-freeze-pts 1 --exit-after-frames --frames 100
+//     --fixed-dt 0.016667 --hidden --data-dir <a data directory with the building fixture imported>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"ui_back": 1}}
+]
