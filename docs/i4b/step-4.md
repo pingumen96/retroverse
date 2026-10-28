@@ -84,8 +84,8 @@ loaded the machine took up to 0.42 s for a move and 3.4 s for a save; the figure
 
 | Edit | Room | Path | Job | Shown | Acceptable (ADR-0015 §9) |
 |---|---|---|---|---|---|
-| A poster slid, a cabinet moved | building's area:arcade (ground floor, the hub) | the room's static part alone | 6 to 7 ms | 15 to 21 ms | 0.25 s |
-| A move into a dressed slot (step 3's) | building's room:snes (gen4) | the same (was the floor: 85 to 88 ms) | 7.5 ms | 15 to 18 ms | 0.25 s |
+| A poster slid, a cabinet moved | building's area:arcade (ground floor, the hub) | the room's static part alone | 4 to 7 ms | 15 to 21 ms | 0.25 s |
+| A move into a dressed slot (step 3's) | building's room:snes (gen4) | the same (was the floor: 85 to 88 ms) | 5 to 7.5 ms | 15 to 18 ms | 0.25 s |
 | A module moved | overflow's amiga room, 1,561 big boxes (computer floor) | the same | 15 to 21 ms | 62 to 85 ms | 0.25 s |
 | A move into a dressed slot | the real library's area:shared:computer (computer floor, 5,314 placed, 19,985 in the building) | the same (was the floor: 2,046 ms) | 32 ms | 153 ms | 0.25 s |
 | A module moved | the real library's room:amstradcpc, 1,646 placed (computer floor) | the same | 39 ms | 159 ms | 0.25 s |
@@ -95,7 +95,7 @@ built, the room's others kept); the rest of the main thread's share is the room'
 cover loader started again (step 3's). Before the probe's world was reused and the plan's state deferred, the real
 library's rows were 398 ms (the dressed slot) and 495 ms (the module): `applyEdit()` 150 to 180 ms on the pool,
 the plan's derived state 117 ms on the main thread. A drop before its probe answers still applies the operation (on the
-real floor about 0.15 s more). Salva: 66 ms in the arcade room (the room back 109 ms after it), 131 to 220 ms in the
+real floor about 0.15 s more). Salva: 56 to 66 ms in the arcade room (the room back 57 to 109 ms after it), 131 to 220 ms in the
 amiga room (215 to 307 ms), 2.74 s on the real computer floor (the room back 2.80 s: reading, snapshotting and writing
 a plan of 19,985 placements, the pool shared with the cover loader); acceptable 3 s warm. Esci senza salvare's room back:
 125 ms on the real floor. Debug is about ten times slower (the arcade's moves 143 to 146 ms, its save 671 ms).
