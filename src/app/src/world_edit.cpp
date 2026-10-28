@@ -446,9 +446,9 @@ void WorldSession::requestEditOperation(const world::EditOperation& operation) {
     const world::PinProvenance provenance{world::PinOrigin::Editor, core::utcNow()};
     const std::string digest = fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
     const std::string sceneDigest = fmt::format("edit-scene:{}:{}", edit.session, edit.shownCount);
-    // A fixture dropped where its last probe judged it, on the same draft (the one taken when it was picked up: the
-    // draft does not change while it is held): the probe's edited world (applyEdit() of the same operation on the same
-    // world) is shown, not applied again.
+    // A fixture or a game dropped where its last probe judged it, on the same draft (the probes' copy of it, taken again
+    // whenever the draft changes): the probe's edited world (applyEdit() of the same operation on the same world) is
+    // shown, not applied again.
     std::optional<EditProbeAnswer> probed;
     if (edit.lastProbe && edit.lastProbe->operation == operation && edit.lastProbe->world && edit.lastProbe->result &&
         edit.lastProbe->base && edit.lastProbe->base == edit.probeWorld) {
