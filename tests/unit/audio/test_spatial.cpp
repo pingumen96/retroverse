@@ -3,6 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <vector>
@@ -71,13 +72,18 @@ TEST_CASE("audio/spatial: the pan from the azimuth, equal power, at most 0.6 eit
     for (double pan = -1.0; pan <= 1.0; pan += 0.1) {
         const StereoGains gains = equalPowerGains(pan);
         INFO("pan " << pan);
-        CHECK(gains.left * gains.left + gains.right * gains.right == Approx(2.0));
+        // The equal-power ratio, the louder side at unity: no channel above 1.
+        const double angle = (pan + 1.0) * std::numbers::pi / 4.0;
+        CHECK(std::max(gains.left, gains.right) == 1.0);
+        CHECK(gains.left * std::sin(angle) == Approx(gains.right * std::cos(angle)).margin(1e-12));
         CHECK(gains.left >= 0.0);
         CHECK(gains.right >= 0.0);
     }
     const StereoGains right = equalPowerGains(0.6);
-    CHECK(right.right > right.left);
-    CHECK(right.left == Approx(std::cos(0.4 * std::numbers::pi) * std::numbers::sqrt2));
+    CHECK(right.right == 1.0);
+    CHECK(right.left == Approx(std::cos(0.4 * std::numbers::pi) / std::sin(0.4 * std::numbers::pi)));
+    CHECK(equalPowerGains(-0.6).left == 1.0);
+    CHECK(equalPowerGains(-0.6).right == Approx(right.left));
     CHECK(equalPowerGains(1.0).left == Approx(0.0).margin(1e-12));
     CHECK(decibelsFromGain(gainFromDecibels(kDuckDecibels)) == Approx(-9.0));
     CHECK(gainFromDecibels(kDuckDecibels) == Approx(0.35481).margin(1e-5));

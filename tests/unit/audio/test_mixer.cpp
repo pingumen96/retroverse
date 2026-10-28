@@ -12,6 +12,7 @@
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <rv/audio/analysis.hpp>
@@ -283,6 +284,27 @@ TEST_CASE("audio/mixer: the cross-fade, the pause's fade, the duck and the mute"
     CHECK(mixer.sourceGain(second) == 0.0);
     CHECK(peakOf(std::span<const float>(paused).subspan(1440 * 2)) == 0.0f);
     CHECK(peakOf(std::span<const float>(paused).subspan(0, 240 * 2)) > 0.1f); // still sounding as the fade begins
+}
+
+TEST_CASE("audio/mixer: a source near full scale panned 0.6 either side never reaches full scale", "[audio][mixer]") {
+    for (const double pan : {-0.6, 0.6}) {
+        INFO("pan " << pan);
+        Mixer mixer;
+        Feeder feeder;
+        feeder.amplitude = 0.98;
+        const SourceId source = mixer.addSource();
+        mixer.setRing(source, feeder.ring);
+        mixer.setControl(source, SourceControl{1.0, pan, true});
+        mixer.setClock(source, clockAt(0.0, 0.0));
+        const std::vector<float> out = renderBlocks(mixer, {&feeder}, 60, 0.0, [](double t) { return t; });
+        const std::span<const float> settled = std::span<const float>(out).subspan(30 * kBlock * 2);
+        CHECK(peakOf(settled) < 1.0f);
+        CHECK(peakOf(settled) > 0.97f); // the louder side at unity
+        const std::vector<float> louder = channelOf(settled, 2, pan > 0.0 ? 1 : 0);
+        const std::vector<float> quieter = channelOf(settled, 2, pan > 0.0 ? 0 : 1);
+        CHECK(peakOf(louder) > 0.97f);
+        CHECK(peakOf(quieter) == Approx(0.98 * std::tan(0.1 * std::numbers::pi)).epsilon(0.01));
+    }
 }
 
 TEST_CASE("audio/mixer: an empty ring gives silence and counts its frames", "[audio][mixer]") {

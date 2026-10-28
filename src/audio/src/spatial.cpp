@@ -30,7 +30,12 @@ StereoGains equalPowerGains(double pan) noexcept {
         return StereoGains{1.0, 1.0}; // exactly unity: a centred source's samples pass unchanged
     }
     const double angle = (std::clamp(pan, -1.0, 1.0) + 1.0) * std::numbers::pi / 4.0;
-    return StereoGains{std::cos(angle) * std::numbers::sqrt2, std::sin(angle) * std::numbers::sqrt2};
+    const double left = std::cos(angle);
+    const double right = std::sin(angle);
+    // The louder side at unity, the quieter one at the equal-power ratio: no channel is ever raised, so a source near
+    // full scale cannot clip by its pan.
+    const double louder = std::max(left, right);
+    return StereoGains{left >= right ? 1.0 : left / louder, right >= left ? 1.0 : right / louder};
 }
 
 double decibelsFromGain(double gain) noexcept {

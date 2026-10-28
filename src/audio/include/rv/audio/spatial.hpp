@@ -19,8 +19,10 @@ inline constexpr double kDuckDecibels = -9.0;
 /// in front.
 [[nodiscard]] double panForAzimuth(double azimuthRadians) noexcept;
 
-/// The left and right gains of an equal-power pan: cos and sin of (pan + 1) * pi / 4, scaled by sqrt(2) so that the
-/// centre is unity on both channels; left^2 + right^2 is 2 for every pan.
+/// The left and right gains of an equal-power pan, cos and sin of (pan + 1) * pi / 4, scaled so that neither exceeds 1:
+/// the louder side is unity and the quieter one follows the equal-power ratio (tan or cot of the angle). The centre is
+/// exactly unity on both channels, so a centred source passes bit for bit, and no pan raises a channel above its
+/// source (a source near full scale never clips by its pan).
 struct StereoGains {
     double left = 1.0;
     double right = 1.0;
