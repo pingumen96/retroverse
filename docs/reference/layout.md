@@ -7,10 +7,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
 - Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene`, `media` (FFmpeg only inside its sources),
   `audio` (I5 step 5, ADR-0016 §9: the clips' sound on `core` alone, miniaudio private to `miniaudio_impl.cpp` and
   `audio_engine.cpp`; never FFmpeg, `media`, RmlUi, SQLite or pugixml, nor `media` it: `RV_AUDIO_FORBIDDEN_LINKS` in
-  `cmake/LayerRules.cmake`; `audio_ring.hpp` the bounded timestamped ring between a decoder's thread and the mixer,
-  `spatial.hpp` the gain table and the equal-power pan, `audio_sync.hpp` the sync's decisions, `mixer.hpp` the sources,
-  fades, duck and mute, `audio_engine.hpp` the device, null and off outputs and the capture, `wav_file.hpp` and
-  `analysis.hpp` the tests' WAV files and tone analysis), `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `catalog` (I2,
+  `cmake/LayerRules.cmake`, proven by `unit.cmake/layer_rules`; `rv_audio_model`, without miniaudio, holds
+  `audio_output.hpp` the outputs' names and `spatial.hpp` the gain table and the equal-power pan, and `rv_audio` the
+  rest: `audio_ring.hpp` the bounded timestamped ring between a decoder's thread and the mixer, `audio_sync.hpp` the
+  sync's decisions, `mixer.hpp` the sources, fades, duck and mute, `audio_engine.hpp` the device, null and off outputs,
+  the device's retries and the capture, `wav_file.hpp` and `analysis.hpp` the tests' WAV files and tone analysis),
+  `launcher` (GPU-free; `rv_forbid_link` fails the configure if they reach SDL3, glad or ImGui) -> `catalog` (I2,
   ADR-0008: the catalog's domain and ports, on `launcher`; never SQLite, pugixml or the Windows-only targets) -> `esde`
   (the ES-DE adapter, pugixml private behind `src/esde/src/xml.hpp`), `catalog_db` (the SQLite store, SQLite private),
   `world` (I3, ADR-0010: the world generator, GPU-free, on `core`, `geometry`, `assets`, `scene` and `catalog`; never
@@ -46,7 +48,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
   defaults `assets/config/video.json`); since I5 step 2 `screen_scheduler.hpp` (the decoder scheduler) and
   `process_priority.hpp` (which priority class a frame wants); since I5 step 5 `audio_policy.hpp` (the run's audio
-  output, the audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio`). `rv_media`'s
+  output, the audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio_model`). `rv_media`'s
   `audio_sink.hpp` (I5 step 5) is where a decoder puts its clip's sound, decoded on its thread and resampled by
   swresample; `rv_app`'s `screen_service.cpp` connects it to a slot's `audio::AudioRing` (`RingSink`). `rv_app_catalog`
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's

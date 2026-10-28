@@ -11,9 +11,10 @@
 # (third-party targets such as ${RV_SQLITE_LIBRARIES} or first-party ones such as rv_esde): the catalog domain may not
 # reach SQLite, pugixml or the Windows-only targets, each adapter may not reach the other's library (ADR-0008 §2), the
 # world generator may not reach RmlUi, SQLite, pugixml, the video decoder or the ES-DE, database and Windows modules
-# (ADR-0010 §1, src/world/forbidden_links.cmake), the mixer (rv_audio) may not reach FFmpeg, the video decoder, RmlUi,
-# SQLite or pugixml, and the video decoder (rv_media) may not reach the mixer (ADR-0016 §9).
-# tests/cmake/test_layer_rules.cmake proves that a forbidden link fails the configure. Aliases match the targets they name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
+# (ADR-0010 §1, src/world/forbidden_links.cmake), the mixer (rv_audio, and rv_audio_model) may not reach FFmpeg, the
+# video decoder, RmlUi, SQLite or pugixml, and the video decoder (rv_media) may not reach the mixer (ADR-0016 §9).
+# tests/cmake/test_layer_rules.cmake proves that a forbidden link fails the configure. Aliases match the targets they
+# name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
 
 set(RV_GPU_LIBRARIES
     SDL3::SDL3

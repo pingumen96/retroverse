@@ -85,7 +85,8 @@ screenshots: `docs/reference/visual-verification.md`.
 - `src/<module>/include/rv/<module>/*.hpp` public headers, `src/<module>/src/*.cpp`, an explicit source list in
   `src/<module>/CMakeLists.txt`; include as `#include <rv/<module>/<file>.hpp>`.
 - Dependency order: `core` -> `geometry` -> `input` -> `assets` -> `scene`, `media` (FFmpeg only inside), `audio`
-  (miniaudio only inside, never `media`), `launcher` (GPU-free) -> `catalog` (domain and ports) -> `esde` (pugixml private), `catalog_db` (SQLite private),
+  (miniaudio only inside, never `media`), `launcher` (GPU-free) -> `catalog` (domain and ports) -> `esde` (pugixml
+  private), `catalog_db` (SQLite private),
   `world` (the generator, GPU-free), `platform_win` -> `platform` (SDL3) -> `render` (OpenGL through glad, no SDL)
   -> `devui` (Dear ImGui, developer builds), `ui` (RmlUi) -> `app` (composition root) -> `retroverse.exe`. Forbidden
   links are enforced at configure time (`cmake/LayerRules.cmake`, `rv_forbid_link`); GPU-free parts of the app live in
