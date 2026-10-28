@@ -53,6 +53,7 @@ struct EditBarPanel::Impl {
         constructor.Bind("device", &device);
         constructor.Bind("fixtureKind", &fixtureKind);
         constructor.Bind("fixtureHung", &fixtureHung);
+        constructor.Bind("fixtureLocked", &fixtureLocked);
         constructor.Bind("placeMoved", &placeMoved);
         constructor.Bind("verdict", &verdict);
         handle = constructor.GetModelHandle();
@@ -91,6 +92,7 @@ struct EditBarPanel::Impl {
         device = Rml::String(value.device);
         fixtureKind = Rml::String(value.fixtureKind);
         fixtureHung = value.fixtureHung;
+        fixtureLocked = value.fixtureLocked;
         placeMoved = value.placeMoved;
         verdict = Rml::String(value.verdict);
         handle.DirtyAllVariables();
@@ -122,6 +124,7 @@ struct EditBarPanel::Impl {
     Rml::String device;
     Rml::String fixtureKind;
     bool fixtureHung = false;
+    bool fixtureLocked = false;
     bool placeMoved = false;
     Rml::String verdict;
 };

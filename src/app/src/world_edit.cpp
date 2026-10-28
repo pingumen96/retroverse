@@ -586,17 +586,24 @@ void WorldSession::followEdit(ProductUi& product) {
         const std::string fullName = product.catalog().systemFullName(edit.room.system());
         bar.roomTitle = fullName.empty() ? edit.room.system().str() : fullName;
     }
-    const auto fixtureKind = [&](const world::FixtureId& id) {
+    const auto fixtureKind = [&](const world::FixtureId& id) -> const world::EditableFixture* {
         const world::EditableFixture* fixture = edit.editRoom ? edit.editRoom->fixture(id) : nullptr;
         if (fixture != nullptr) {
-            bar.fixtureKind = std::string(edit_bar::fixtureKindOf(world::toString(fixture->role), fixture->kind));
+            bar.fixtureKind = std::string(edit_bar::fixtureKindOf(fixture->kind));
             bar.fixtureHung = fixture->hung;
         }
+        return fixture;
     };
+    const world::EditableFixture* lockedTarget = nullptr;
     if (const std::optional<EditTarget>& target = edit.interaction.target(); target && target->fixture) {
         bar.target = "fixture";
         bar.targetPinned = edit.interaction.targetPinned();
-        fixtureKind(*target->fixture);
+        if (const world::EditableFixture* fixture = fixtureKind(*target->fixture);
+            fixture != nullptr && !fixture->refusal.empty()) {
+            // It cannot move (a kept room's): why, at once, instead of "Prendi".
+            bar.fixtureLocked = true;
+            lockedTarget = fixture;
+        }
     } else if (target) {
         bar.target = target->game ? "game" : (target->dressed ? "dressed" : "slot");
         bar.targetFaceOut = target->faceOut;
@@ -622,6 +629,9 @@ void WorldSession::followEdit(ProductUi& product) {
     bar.ending = edit.ending;
     bar.pending = edit.draft ? static_cast<std::uint32_t>(edit.draft->size()) : 0;
     bar.refusal = edit.refusal;
+    if (lockedTarget != nullptr) {
+        bar.refusal = lockedTarget->refusal;
+    }
     if (const std::optional<HeldFixture>& held = edit.interaction.heldFixture()) {
         fixtureKind(held->id);
         bar.placeMoved = held->moved();
@@ -1009,6 +1019,18 @@ void WorldSession::bindEditRoom() {
     if (edit.shown->plan) {
         if (edit.draft && edit.draft->data()) {
             fixtures = world::editableFixtures(*edit.shown->plan, edit.room, *edit.draft->data());
+        }
+        // Each named by what it is drawn as (a pack's variant of a decoration: the bar's words).
+        if (!room->sceneData.roomTemplate.id.empty()) {
+            if (auto drawn = world::drawnFixtures(*edit.shown->plan, edit.room, room->sceneData)) {
+                for (const world::Fixture& shown : *drawn) {
+                    for (world::EditableFixture& fixture : fixtures) {
+                        if (shown.id == fixture.id) {
+                            fixture.kind = shown.prefab.kind;
+                        }
+                    }
+                }
+            }
         }
         fixed = fixedFixtureBoxes(*edit.shown->plan, edit.room);
         for (const world::Room& planned : edit.shown->plan->rooms) {

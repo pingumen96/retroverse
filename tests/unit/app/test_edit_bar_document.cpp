@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -82,6 +83,31 @@ TEST_CASE("app/edit_bar_document: the ids, the data model, every mode, refusal a
     CHECK(contains(rcss, "#" + std::string(eb::kMenuId) + " {"));
     CHECK(contains(rcss, "position: absolute;"));
     CHECK_FALSE(contains(rcss, "transition:"));
+}
+
+TEST_CASE("app/edit_bar_document: every piece of furniture named, held and targeted", "[app][documents]") {
+    const std::string rml = readAsset(eb::kDocumentPath);
+    // Each kind the bar names has its noun twice: the target's title and the held one's "Stai spostando: ...".
+    for (const std::string_view kind : eb::kFixtureKinds) {
+        INFO(kind);
+        const std::string binding = "data-if=\"fixtureKind == '" + std::string(kind) + "'\"";
+        const std::size_t first = rml.find(binding);
+        REQUIRE(first != std::string::npos);
+        CHECK(rml.find(binding, first + 1) != std::string::npos);
+    }
+    CHECK(contains(rml, "Stai spostando:"));
+    // Every prefab kind's name is one the document words; another kind is "furniture" ("un arredo").
+    for (const auto& [prefab, name] : eb::kFixtureKindNames) {
+        INFO(prefab);
+        CHECK(eb::fixtureKindOf(prefab) == name);
+        CHECK(std::find(eb::kFixtureKinds.begin(), eb::kFixtureKinds.end(), name) != eb::kFixtureKinds.end());
+    }
+    CHECK(eb::fixtureKindOf("banker_lamp") == "table-lamp");
+    CHECK(eb::fixtureKindOf("crt") == "furniture");
+    CHECK(eb::kFixtureKinds.back() == "furniture");
+    // A fixture that cannot move names why at once, without "Prendi".
+    CHECK(contains(rml, "!fixtureLocked && !fixtureHung"));
+    CHECK(contains(rml, "target != 'dressed' && !fixtureLocked\"><span class=\"key pad-a\""));
 }
 
 TEST_CASE("app/edit_bar_document: the directory's \"Modifica stanza\"", "[app][documents]") {

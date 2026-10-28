@@ -10,8 +10,10 @@
 		tests/unit/app/test_edit_bar_document.cpp).
 		mode: preparing, browse, holding, busy, menu, saving, moving (I4b step 4: a piece of furniture held). target: ''
 		(nothing), game, slot (an empty slot), dressed (an empty slot with decoration), fixture (a piece of furniture:
-		fixtureKind module, display, poster, lamp, rug, decoration; fixtureHung: on a wall). Moving: placeMoved (it stands
-		elsewhere than where it was taken), verdict checking, ok, refused (refusal names the rule). device: pad, keys.
+		fixtureKind shelf, cabinet, wall-shelf, display-case, showcase, sideboard, poster, floor-lamp, table-lamp, rug,
+		plant, sofa, armchair, desk, stool, beanbag, chair, furniture, by what it is drawn as; fixtureHung: on a wall;
+		fixtureLocked: it cannot move, refusal names why at once). Moving: placeMoved (it stands elsewhere than where it
+		was taken), verdict checking, ok, refused (refusal names the rule). device: pad, keys.
 		refusal: an edit rule's or a validation rule's name ('' none);
 		refusalKnown: the rules worded below, another rule reads in general. Every string is written here (CLAUDE.md):
 		the panel binds titles, counts and keys. It takes no input: the world reads the editor's actions and passes the
@@ -52,8 +54,8 @@
 			<p data-if="mode == 'saving' && ending == 'discard'" class="quiet">La stanza torna com'era...</p>
 			<p data-if="mode == 'menu'" class="quiet">Scegli cosa fare delle modifiche.</p>
 
-			<p data-if="mode == 'browse' && target == ''" class="quiet">Punta un gioco o un mobile per prenderlo e spostarlo.</p>
-			<p data-if="mode == 'browse' && target == 'fixture'"><span class="title" data-if="fixtureKind == 'module'">Mobile</span><span class="title" data-if="fixtureKind == 'display'">Vetrina</span><span class="title" data-if="fixtureKind == 'poster'">Poster</span><span class="title" data-if="fixtureKind == 'lamp'">Lampada</span><span class="title" data-if="fixtureKind == 'rug'">Tappeto</span><span class="title" data-if="fixtureKind == 'decoration'">Decorazione</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="quiet" data-if="!fixtureHung"> · prendilo per spostarlo e ruotarlo.</span><span class="quiet" data-if="fixtureHung"> · prendilo per farlo scorrere lungo le pareti.</span></p>
+			<p data-if="mode == 'browse' && target == ''" class="quiet">Punta un gioco o un arredo per prenderlo e spostarlo.</p>
+			<p data-if="mode == 'browse' && target == 'fixture'"><span class="title" data-if="fixtureKind == 'shelf'">Scaffale</span><span class="title" data-if="fixtureKind == 'cabinet'">Cabinato</span><span class="title" data-if="fixtureKind == 'wall-shelf'">Mensola</span><span class="title" data-if="fixtureKind == 'display-case'">Vetrina</span><span class="title" data-if="fixtureKind == 'showcase'">Teca</span><span class="title" data-if="fixtureKind == 'sideboard'">Credenza</span><span class="title" data-if="fixtureKind == 'poster'">Poster</span><span class="title" data-if="fixtureKind == 'floor-lamp'">Lampada a stelo</span><span class="title" data-if="fixtureKind == 'table-lamp'">Lampada da tavolo</span><span class="title" data-if="fixtureKind == 'rug'">Tappeto</span><span class="title" data-if="fixtureKind == 'plant'">Pianta</span><span class="title" data-if="fixtureKind == 'sofa'">Divano</span><span class="title" data-if="fixtureKind == 'armchair'">Poltrona</span><span class="title" data-if="fixtureKind == 'desk'">Scrivania</span><span class="title" data-if="fixtureKind == 'stool'">Sgabello</span><span class="title" data-if="fixtureKind == 'beanbag'">Pouf</span><span class="title" data-if="fixtureKind == 'chair'">Sedia</span><span class="title" data-if="fixtureKind == 'furniture'">Arredo</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="quiet" data-if="!fixtureLocked && !fixtureHung"> · si può spostare e ruotare.</span><span class="quiet" data-if="!fixtureLocked && fixtureHung"> · scorre lungo le pareti.</span></p>
 			<p data-if="mode == 'browse' && target == 'game'"><span class="title">{{ targetTitle }}</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="tag" data-if="targetFaceOut">In vetrina</span></p>
 			<p data-if="mode == 'browse' && targetFree" class="quiet">Spazio libero: prendi un gioco per posarlo qui.</p>
 
@@ -65,8 +67,8 @@
 			<p data-if="mode == 'holding' && !targetOwn && target == 'dressed'" class="aim">Posalo qui: la decorazione fa spazio.</p>
 			<p data-if="mode == 'holding' && !targetOwn && target == 'game'" class="aim">Scambialo con {{ targetTitle }}<span class="tag pinned" data-if="targetPinned">Fissato</span></p>
 
-			<p data-if="mode == 'moving'"><span class="label">Sposti:</span><span class="title" data-if="fixtureKind == 'module'">un mobile</span><span class="title" data-if="fixtureKind == 'display'">una vetrina</span><span class="title" data-if="fixtureKind == 'poster'">un poster</span><span class="title" data-if="fixtureKind == 'lamp'">una lampada</span><span class="title" data-if="fixtureKind == 'rug'">un tappeto</span><span class="title" data-if="fixtureKind == 'decoration'">una decorazione</span></p>
-			<p data-if="mode == 'moving' && !placeMoved" class="quiet">Il suo posto: posalo per lasciarlo com'era.</p>
+			<p data-if="mode == 'moving'"><span class="label">Stai spostando:</span><span class="title" data-if="fixtureKind == 'shelf'">uno scaffale</span><span class="title" data-if="fixtureKind == 'cabinet'">un cabinato</span><span class="title" data-if="fixtureKind == 'wall-shelf'">una mensola</span><span class="title" data-if="fixtureKind == 'display-case'">una vetrina</span><span class="title" data-if="fixtureKind == 'showcase'">una teca</span><span class="title" data-if="fixtureKind == 'sideboard'">una credenza</span><span class="title" data-if="fixtureKind == 'poster'">un poster</span><span class="title" data-if="fixtureKind == 'floor-lamp'">una lampada a stelo</span><span class="title" data-if="fixtureKind == 'table-lamp'">una lampada da tavolo</span><span class="title" data-if="fixtureKind == 'rug'">un tappeto</span><span class="title" data-if="fixtureKind == 'plant'">una pianta</span><span class="title" data-if="fixtureKind == 'sofa'">un divano</span><span class="title" data-if="fixtureKind == 'armchair'">una poltrona</span><span class="title" data-if="fixtureKind == 'desk'">una scrivania</span><span class="title" data-if="fixtureKind == 'stool'">uno sgabello</span><span class="title" data-if="fixtureKind == 'beanbag'">un pouf</span><span class="title" data-if="fixtureKind == 'chair'">una sedia</span><span class="title" data-if="fixtureKind == 'furniture'">un arredo</span></p>
+			<p data-if="mode == 'moving' && !placeMoved" class="quiet">Al posto di prima: qui non cambia nulla.</p>
 			<p data-if="mode == 'moving' && placeMoved && verdict == 'checking'" class="quiet">Verifica del posto...</p>
 			<p data-if="mode == 'moving' && placeMoved && verdict == 'ok'" class="aim">Si può posare qui.</p>
 			<p data-if="mode == 'moving' && placeMoved && verdict == 'refused'" class="quiet">Qui non si può posare.</p>
@@ -81,23 +83,23 @@
 			<p data-if="refusal == 'same-game'">È lo stesso gioco.</p>
 			<p data-if="refusal == 'game-unknown'">Il gioco non è più nella stanza.</p>
 			<p data-if="refusal == 'slot-unknown'">Quello spazio non c'è più.</p>
-			<p data-if="refusal == 'pin-broken'">Un gioco fissato non sarebbe più al suo posto.</p>
+			<p data-if="refusal == 'pin-broken'">Un gioco o un arredo fissato non resterebbe al suo posto.</p>
 			<p data-if="refusal == 'failed'">La modifica non è riuscita: il registro di Retroverse dice perché.</p>
 			<p data-if="refusal == 'save-failed'">Le modifiche non sono state salvate: il registro di Retroverse dice perché.</p>
-			<p data-if="refusal == 'footprints-overlap'">Lì c'è già un altro mobile.</p>
-			<p data-if="refusal == 'doorway-clearance'">Bloccherebbe il passaggio della porta.</p>
+			<p data-if="refusal == 'footprints-overlap'">Si sovrapporrebbe a un altro arredo.</p>
+			<p data-if="refusal == 'doorway-clearance'">Starebbe nello spazio da lasciare libero davanti alla porta.</p>
 			<p data-if="refusal == 'door-reserved'">Quel tratto di parete è riservato a una porta.</p>
 			<p data-if="refusal == 'fixture-outside-room'">Uscirebbe dalla stanza.</p>
-			<p data-if="refusal == 'unreachable'">Un mobile, una vetrina o la TV non si raggiungerebbero più: serve un passaggio libero di 1,2 m.</p>
-			<p data-if="refusal == 'doorway-blocked'">Bloccherebbe l'ingresso della stanza.</p>
-			<p data-if="refusal == 'floor-unreachable'">Una stanza del piano non si raggiungerebbe più dall'ascensore.</p>
-			<p data-if="refusal == 'decoration-off-wall'">Una decorazione appesa resta su una parete.</p>
-			<p data-if="refusal == 'wall-mount'">Una decorazione appesa resta su una parete, rivolta verso la stanza.</p>
-			<p data-if="refusal == 'off-grid'">Si sposta solo sulla griglia di 10 cm della stanza.</p>
-			<p data-if="refusal == 'turn-step'">Si ruota solo di un quarto di giro (le decorazioni di 15 gradi).</p>
-			<p data-if="refusal == 'fixture-fixed'">Questo mobile resta al suo posto: si spostano i moduli laterali, le vetrine e le decorazioni.</p>
-			<p data-if="refusal == 'fixture-in-kept-room'">La stanza segue un modello precedente: i suoi mobili si spostano dopo «Rigenera stanza».</p>
-			<p data-if="refusal == 'fixture-unknown'">Il mobile non è più nella stanza.</p>
+			<p data-if="refusal == 'unreachable'">Un mobile, una vetrina o la TV non si potrebbero più raggiungere: serve un passaggio libero largo 1,2 m.</p>
+			<p data-if="refusal == 'doorway-blocked'">Non lascerebbe spazio per entrare nella stanza.</p>
+			<p data-if="refusal == 'floor-unreachable'">Una stanza del piano non si potrebbe più raggiungere dall'ascensore.</p>
+			<p data-if="refusal == 'decoration-off-wall'">Una decorazione appesa deve restare su una parete.</p>
+			<p data-if="refusal == 'wall-mount'">Una decorazione appesa deve aderire a una parete, rivolta verso la stanza.</p>
+			<p data-if="refusal == 'off-grid'">Si sposta solo a passi di 10 cm sulla griglia della stanza.</p>
+			<p data-if="refusal == 'turn-step'">Ruota solo di un quarto di giro alla volta (le decorazioni di 15 gradi).</p>
+			<p data-if="refusal == 'fixture-fixed'">Questo arredo resta al suo posto: si spostano solo i mobili delle pareti laterali, le vetrine e le decorazioni.</p>
+			<p data-if="refusal == 'fixture-in-kept-room'">La stanza segue un modello precedente: i suoi arredi si potranno spostare dopo «Rigenera stanza».</p>
+			<p data-if="refusal == 'fixture-unknown'">Questo arredo non è più nella stanza.</p>
 			<p data-if="refusal == 'lights-over-limit'">La stanza avrebbe troppe luci.</p>
 			<p data-if="refusal == 'fixture-on-walker'">Ci sei tu: fatti da parte e posalo.</p>
 			<p data-if="!refusalKnown">La modifica non rispetta le regole della stanza.</p>
@@ -105,9 +107,9 @@
 
 		<!-- The actions, with the glyphs of the device used last. -->
 		<div class="hints" data-if="mode == 'browse' || mode == 'holding'">
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
 			<span class="hint" data-if="mode == 'holding' && targetOwn"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
 			<span class="hint" data-if="mode == 'holding' && !targetOwn && targetFree"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
 			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Scambia</span>
