@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -161,8 +162,9 @@ struct BudgetDrop {
 ///    its nearest screen, then the smallest screen id.
 ///  - Ambient requests count within proximityMeters of the eye, and stop counting only beyond it plus
 ///    kAmbientHysteresisMeters.
-///  - The budget's best-ranked clips have slots. A clip out of view never takes a slot; one that has a slot keeps it,
-///    paused, until kScreenStopAfterSeconds out of view or until a request in view needs it.
+///  - The budget's best-ranked clips have slots. A clip out of view keeps a slot it has, paused, and takes only a free
+///    one (never one another clip holds), until kScreenStopAfterSeconds out of view (counted from when its last screen
+///    left the view) or until a request in view needs it.
 ///  - A slot changes hands (a request takes it from a clip still asked for) at most once every kSlotHandOverSeconds
 ///    unless the request taking it is `direct` or `focus`. A clip no screen asks for any more stops at once.
 ///  - A stopped slot drains: it opens its next clip only once the service reports its thread ended, so that there are
@@ -215,6 +217,8 @@ private:
     std::vector<SlotStats> m_stats;
     /// The ambient screens counting now (the hysteresis), by id, sorted.
     std::vector<std::string> m_ambientIn;
+    /// Since when each clip asked for has had every screen out of view (none for a clip in view).
+    std::map<std::string, double, std::less<>> m_hiddenSince;
     std::optional<double> m_dropUntil;
     std::vector<BudgetDrop> m_drops;
     std::uint64_t m_handOvers = 0;

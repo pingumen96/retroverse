@@ -249,6 +249,21 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         std::sort(demand.screens.begin(), demand.screens.end());
     }
 
+    // Since when each clip has been out of view (its stop after kScreenStopAfterSeconds counts from there).
+    std::map<std::string, double, std::less<>> hiddenSince;
+    for (const Demand& demand : demands) {
+        if (!demand.visible) {
+            const auto previous = m_hiddenSince.find(demand.clip);
+            hiddenSince.emplace(demand.clip, previous != m_hiddenSince.end() ? previous->second : nowSeconds);
+        }
+    }
+    m_hiddenSince = std::move(hiddenSince);
+    const auto hiddenTooLong = [&](const std::string& clip) {
+        const auto hidden = m_hiddenSince.find(clip);
+        return hidden != m_hiddenSince.end() &&
+               nowSeconds - hidden->second + kTimeTolerance >= kScreenStopAfterSeconds;
+    };
+
     const auto demandIndex = [&](const std::string& clip) -> std::optional<std::size_t> {
         if (clip.empty()) {
             return std::nullopt;
@@ -281,23 +296,16 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         }
     }
 
-    // The budget's best clips. Out of view, a clip only keeps a slot it plays on, until kScreenStopAfterSeconds.
+    // The budget's best clips. Out of view, a clip keeps its slot or takes a free one (below), until
+    // kScreenStopAfterSeconds.
     std::vector<std::size_t> desired;
     for (std::size_t index = 0; index < demands.size() && desired.size() < budget; ++index) {
         const Demand& demand = demands[index];
-        if (!demand.visible) {
-            const std::optional<std::size_t> held = holder(demand.clip);
-            if (!held) {
-                continue;
+        if (!demand.visible && hiddenTooLong(demand.clip)) {
+            if (const std::optional<std::size_t> held = holder(demand.clip); held && m_slots[*held].next == demand.clip) {
+                m_slots[*held].next.clear(); // a reservation out of view too long: given up
             }
-            ScreenSlot& slot = m_slots[*held];
-            if (slot.state != SlotState::Open || slot.clip != demand.clip) {
-                slot.next.clear(); // a reservation for a clip gone out of view: given up
-                continue;
-            }
-            if (slot.hiddenSince && nowSeconds - *slot.hiddenSince + kTimeTolerance >= kScreenStopAfterSeconds) {
-                continue;
-            }
+            continue;
         }
         desired.push_back(index);
     }
@@ -309,8 +317,7 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
     // Out of view for kScreenStopAfterSeconds: stopped, the screens on their stills.
     for (std::size_t index = 0; index < m_slots.size(); ++index) {
         const ScreenSlot& slot = m_slots[index];
-        if (slot.state == SlotState::Open && slot.hiddenSince &&
-            nowSeconds - *slot.hiddenSince + kTimeTolerance >= kScreenStopAfterSeconds) {
+        if (slot.state == SlotState::Open && hiddenTooLong(slot.clip)) {
             stop(index, "out-of-view", stops);
         }
     }
@@ -371,8 +378,8 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
                     victimRank = rank;
                 }
             }
-            if (!victim) {
-                continue;
+            if (!victim || !demand.visible) {
+                continue; // out of view, a clip never takes a slot another clip holds
             }
             const bool urgent = demand.screenClass == ScreenClass::Direct || demand.screenClass == ScreenClass::Focus;
             if (!urgent && nowSeconds - m_slots[*victim].since + kTimeTolerance < kSlotHandOverSeconds) {
@@ -412,7 +419,8 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         const bool visible = demand && demands[*demand].visible;
         if (!visible && !slot.paused) {
             slot.paused = true;
-            slot.hiddenSince = nowSeconds;
+            const auto hidden = m_hiddenSince.find(slot.clip);
+            slot.hiddenSince = hidden != m_hiddenSince.end() ? hidden->second : nowSeconds;
             others.push_back(SlotCommand{SlotAction::Pause, index, slot.clip, "out-of-view"});
         } else if (visible && slot.paused) {
             slot.paused = false;

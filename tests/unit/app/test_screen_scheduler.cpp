@@ -453,3 +453,31 @@ TEST_CASE("app/screen_scheduler: a screen switching clips waits for its own slot
     CHECK(maxThreads == 1);
     CHECK(scheduler.slots()[1].state == SlotState::Free);
 }
+
+TEST_CASE("app/screen_scheduler: a clip out of view opens paused in a free slot, never taking a held one",
+          "[app][screen_scheduler]") {
+    // The hero's selection while its screen is out of view (an item inspected close up): its clip opens paused, ready.
+    ScreenScheduler scheduler;
+    Decoders decoders(2, 0);
+    double now = 0.0;
+    ScheduleResult result =
+        scheduler.update(now, std::vector{request("hero", ScreenClass::Focus, "a", 3.0, false)}, decoders.feedback());
+    CHECK(result.commands == std::vector<SlotCommand>{{SlotAction::Open, 0, "a", "wanted"},
+                                                      {SlotAction::Pause, 0, "a", "out-of-view"}});
+    decoders.apply(result);
+    // With every slot held by clips in view, a clip out of view gets none.
+    ScreenScheduler full(ScreenSchedulerSettings{.maxDecoders = 1});
+    Decoders one(1, 0);
+    run(full, one, {request("tv", ScreenClass::Ambient, "x", 2.0)}, now, 3);
+    result = full.update(now, std::vector{request("tv", ScreenClass::Ambient, "x", 2.0),
+                                          request("hero", ScreenClass::Room, "y", 3.0, false)},
+                         one.feedback());
+    CHECK(result.commands.empty());
+    CHECK(result.screens[1] == ScreenAssignment{});
+    // Out of view for 10 s: stopped, and it takes no slot again until a screen of it is back in view.
+    now = 1.0;
+    result = run(scheduler, decoders, std::vector{request("hero", ScreenClass::Focus, "a", 3.0, false)}, now,
+                 static_cast<int>(10.0 / kFrame) + 2);
+    CHECK(scheduler.openSlots() == 0);
+    CHECK(result.screens.front() == ScreenAssignment{});
+}
