@@ -50,11 +50,6 @@ constexpr std::array<ValidationRule, 11> kEditRules{{
      "A decoration hung on a wall stays on a wall: its back on a wall's face (within 100 mm), facing into the room."},
 }};
 
-/// Whether `fixture` moves and pins in the editor (ADR-0015 §4).
-bool isMovable(FixtureRole role) noexcept {
-    return role == FixtureRole::SideModule || role == FixtureRole::Display || role == FixtureRole::Decoration;
-}
-
 /// A decoration hung on a wall (a poster): it stands above the floor.
 bool isHung(const Fixture& fixture) noexcept {
     return fixture.role == FixtureRole::Decoration && fixture.yMm > 0;
@@ -247,7 +242,8 @@ private:
         if (props.empty()) {
             return false;
         }
-        m_plan.dressing.push_back({slot.levelId(), slot.index(), 1, detail::dressingProp(room->seed, slot.levelId(), props)});
+        m_plan.dressing.push_back(
+            {slot.levelId(), slot.index(), 1, detail::dressingProp(room->seed, slot.levelId(), props)});
         return true;
     }
 
@@ -387,7 +383,7 @@ private:
             return std::optional(
                 refusal(edit_rule::kFixtureUnknown, id.toString(), "the plan holds no such fixture"));
         }
-        if (!isMovable(context.fixture->role)) {
+        if (!detail::isMovableRole(context.fixture->role)) {
             return std::optional(refusal(
                 edit_rule::kFixtureFixed, id.toString(),
                 fmt::format("a {} fixture is fixed: only side-wall modules, display fixtures and decoration move",
@@ -546,18 +542,18 @@ private:
         std::erase_if(m_plan.lights, [&](const PlanLight& light) {
             return light.id.room() == room.id && light.role == LightRole::WallWasher;
         });
-        std::set<FixtureId> moved;
-        for (const FixturePin& pin : m_world.overrides.fixturePins) {
-            if (pin.transform && pin.fixture.room() == room.id) {
-                moved.insert(pin.fixture);
-            }
-        }
         const detail::LayoutInput input = layoutInput(context);
         const std::vector<const Fixture*> modules = modulesOf(room, context.data->roomTemplate);
+        // Every module is judged where it stands (moved: elsewhere than its home, pinned or not).
+        std::set<FixtureId> moved;
+        for (const Fixture* module : modules) {
+            moved.insert(module->id);
+        }
         const detail::ModulesOnWalls onWalls = detail::modulesOnWalls(input, room, modules, moved);
         const std::size_t limit = std::min(context.data->roomTemplate.lightLimit, kMaxSceneLights);
-        const auto others = static_cast<std::size_t>(std::count_if(
-            m_plan.lights.begin(), m_plan.lights.end(), [&](const PlanLight& light) { return light.id.room() == room.id; }));
+        const auto others = static_cast<std::size_t>(
+            std::count_if(m_plan.lights.begin(), m_plan.lights.end(),
+                          [&](const PlanLight& light) { return light.id.room() == room.id; }));
         const std::size_t budget = limit - std::min(limit, others);
         for (const PlanLight& light : detail::wallWasherLights(input, onWalls.modules, budget)) {
             m_plan.lights.push_back(light);

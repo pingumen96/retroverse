@@ -234,10 +234,18 @@ private:
 
     void refuse(std::string change) { m_refused.push_back(std::move(change)); }
 
-    /// The sockets whose fixtures are pinned and stand in the plan: a module never replaces them; a growth that would
-    /// move one pinned in its socket of the south wall is not taken; one pinned where the user put it (a transform,
-    /// I4b step 2) is never moved by growth.
+    /// The fixtures the user moved, held where they stand: those standing elsewhere than their home (I4b step 2:
+    /// pinned or not, so that an unpin leaves a fixture where it stands) and those pinned at a transform; growth never
+    /// moves them (a poster hung on the south wall excepted: it follows its wall) and a module never replaces them. The
+    /// sockets whose fixtures are pinned and stand in the plan: a module never replaces them; a growth that would move
+    /// one pinned in its socket of the south wall is not taken.
     void protectPinnedFixtures() {
+        for (const Fixture& fixture : m_plan.fixtures) {
+            if (detail::standsMoved(*m_layoutInput, fixture)) {
+                m_held.insert(fixture.id);
+                m_heldSockets.insert(fixture.id.socket());
+            }
+        }
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
             const bool stands = std::any_of(m_plan.fixtures.begin(), m_plan.fixtures.end(),
                                             [&](const Fixture& fixture) { return fixture.id == pin.fixture; });
@@ -246,7 +254,7 @@ private:
                 if (pin.transform) {
                     m_held.insert(pin.fixture);
                     m_heldSockets.insert(pin.fixture.socket());
-                } else {
+                } else if (!m_held.contains(pin.fixture)) {
                     m_socketPinned.insert(pin.fixture.socket());
                 }
             }
@@ -588,6 +596,11 @@ private:
                 // Reported once: the report's lists are made unique.
                 refuse("socket " + socketId +
                        ": a side-wall module would replace a pinned fixture; it went to the next socket");
+                continue;
+            }
+            if (m_heldSockets.contains(socketId)) {
+                refuse("socket " + socketId +
+                       ": a side-wall module would replace the fixture moved out of it; it went to the next socket");
                 continue;
             }
             auto module = detail::sideModuleIn(*m_layoutInput, *socket);

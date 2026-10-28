@@ -105,15 +105,23 @@ struct SocketPose {
 /// edge, centred across its width (a fixture's place in its socket, its "home", I4b step 2).
 [[nodiscard]] SocketPose poseInSocket(const LayoutInput& input, const TemplateSocket& socket, const PrefabInfo& info);
 
+/// Whether a fixture of `role` moves in the editor (ADR-0015 §4): side-wall modules, display fixtures and decoration.
+[[nodiscard]] bool isMovableRole(FixtureRole role) noexcept;
+
+/// Whether `fixture` (of `input`'s room) stands elsewhere than its home, poseInSocket() at `input.counts.growthSteps`:
+/// one the user moved, pinned or not (I4b step 2). A fixture of a fixed role, of a socket the template lacks or of a
+/// prefab the catalog lacks never counts as moved.
+[[nodiscard]] bool standsMoved(const LayoutInput& input, const Fixture& fixture);
+
 /// The light of the lamp `lamp` (its prefab `info`, which has a light source) named `id`, as layOutRoom() places a
 /// lamp's light: at the prefab's light source, turned with the fixture a quarter turn at a time.
 [[nodiscard]] PlanLight lampLightOf(const Fixture& lamp, const PrefabInfo& info, FixtureId id);
 
 /// The collection modules of a room as the wall-washers see them (wallWasherLights()): each in its template socket,
-/// but a module of `moved` (those the user moved: pinned at a transform, I4b step 2) that stands elsewhere than its
-/// socket puts it, in a socket made where it stands: its back edge's middle, its yaw, its width and depth, on the wall
-/// its back stands against (within kMaxWallGapMm of the wall's interior face, facing into the room), else on none (a
-/// run of its own). A room without moved modules is lit exactly as before. `made` owns the sockets made.
+/// but a module of `moved` (those that may stand elsewhere: the editor passes every module, the update those it holds)
+/// that stands elsewhere than its socket puts it (I4b step 2), in a socket made where it stands: its back edge's
+/// middle, its yaw, its width and depth, on the wall its back stands against (within kMaxWallGapMm of the wall's
+/// interior face, facing into the room), else on none (a run of its own). A room without moved modules is lit exactly as before. `made` owns the sockets made.
 struct ModulesOnWalls {
     std::vector<ModuleOnWall> modules;
     std::vector<std::unique_ptr<TemplateSocket>> made;

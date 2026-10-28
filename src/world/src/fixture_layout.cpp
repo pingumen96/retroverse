@@ -633,6 +633,22 @@ SocketPose poseInSocket(const LayoutInput& input, const TemplateSocket& socket, 
     return {pivot.xMm, pivot.zMm, static_cast<std::int32_t>(((where.yawCdeg % 36000) + 36000) % 36000)};
 }
 
+bool isMovableRole(FixtureRole role) noexcept {
+    return role == FixtureRole::SideModule || role == FixtureRole::Display || role == FixtureRole::Decoration;
+}
+
+bool standsMoved(const LayoutInput& input, const Fixture& fixture) {
+    if (!isMovableRole(fixture.role)) {
+        return false;
+    }
+    const TemplateSocket* socket = input.roomTemplate.socket(fixture.id.socket());
+    const PrefabInfo* info = input.prefabs.find(fixture.prefab);
+    if (socket == nullptr || info == nullptr) {
+        return false;
+    }
+    return poseInSocket(input, *socket, *info) != SocketPose{fixture.xMm, fixture.zMm, fixture.yawCdeg};
+}
+
 PlanLight lampLightOf(const Fixture& lamp, const PrefabInfo& info, FixtureId id) {
     PlacedFixture placed;
     placed.fixture = lamp;

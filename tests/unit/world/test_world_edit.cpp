@@ -770,6 +770,105 @@ TEST_CASE("world/edit: a fixture moved by the user is never moved by the room's 
     CHECK_FALSE(refused.changes.needsConfirmation.empty());
 }
 
+TEST_CASE("world/edit: a fixture moved then unpinned is still held where it stands by growth", "[world][edit]") {
+    // A room with decoration on the south wall (a decoration socket the density chose).
+    std::optional<Fresh> found;
+    Fixture south;
+    for (std::uint64_t seed = 1; seed < 40 && !found; ++seed) {
+        Fresh fresh = freshRoom(60, seed);
+        const Fixture* onSouth = findFixture(fresh.world.plan, FixtureRole::Decoration, [](const Fixture& fixture) {
+            const auto* socket = socketOf(fixture);
+            return socket != nullptr && socket->wall == rv::world::Wall::South && fixture.yMm == 0;
+        });
+        if (onSouth != nullptr) {
+            south = *onSouth;
+            found = std::move(fresh);
+        }
+    }
+    REQUIRE(found.has_value());
+    const EditData data = snesEditData();
+    EditedWorld& world = found->world;
+    bool moved = false;
+    for (const std::int64_t step : {100, -100, 200, -200}) {
+        EditedWorld trial = world;
+        if (!edit(trial, EditOperation::moveFixture(south.id, south.xMm + step, south.zMm), data).refused) {
+            world = trial;
+            moved = true;
+            break;
+        }
+    }
+    REQUIRE(moved);
+    REQUIRE(edit(world, EditOperation::unpinFixture(south.id), data).changed);
+    REQUIRE(world.overrides.empty());
+    const Fixture placed = *fixtureOf(world.plan, south.id.toString());
+    CHECK(placed.xMm != south.xMm);
+
+    RoomSelection more = found->selection;
+    rv::core::Random random(rv::core::deriveSeed("edit-growth", 1));
+    std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(more);
+    for (int i = 0; i < 6000; ++i) {
+        rv::test::world::addTitle(more, random, taken);
+    }
+    const GenerationResult update = updated(world, more);
+    REQUIRE(update.plan.rooms.front().growthSteps > world.plan.rooms.front().growthSteps);
+    // No pin, yet it stands where the user left it: "moved" follows where a fixture stands, not its pin.
+    const Fixture* stays = fixtureOf(update.plan, south.id.toString());
+    REQUIRE(stays != nullptr);
+    CHECK(stays->xMm == placed.xMm);
+    CHECK(stays->zMm == placed.zMm);
+    INFO((update.validation.findings.empty() ? std::string()
+                                             : update.validation.findings.front().rule + " " +
+                                                   update.validation.findings.front().message));
+    CHECK(update.validation.passed());
+    CHECK(updateRoom(update.plan, more, kWorldSeed, world.overrides).plan == update.plan);
+}
+
+TEST_CASE("world/edit: the wall-washers follow where modules stand, pinned or not", "[world][edit]") {
+    // A room whose west wall holds modules in w01 and w03 (1,200 titles fill the side-wall sockets past w03).
+    const Fresh found = freshRoom(1200, 17);
+    for (const std::string_view socket : {"room:snes/fx:w01", "room:snes/fx:w03"}) {
+        const Fixture* module = fixtureOf(found.world.plan, socket);
+        REQUIRE(module != nullptr);
+        REQUIRE(module->role == FixtureRole::SideModule);
+    }
+    const EditData data = snesEditData();
+    // Each module stood out into the room, facing it as before (the first place the rules accept).
+    const auto standOut = [&](EditedWorld& world, std::string_view id) {
+        const Fixture module = *fixtureOf(world.plan, id);
+        for (const std::int64_t out : {1000, 1200, 800, 1400}) {
+            for (const std::int64_t along : {0, 100, -100}) {
+                EditedWorld trial = world;
+                if (!edit(trial, EditOperation::moveFixture(module.id, module.xMm + out, module.zMm + along), data)
+                         .refused) {
+                    world = trial;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    EditedWorld pinned = found.world;
+    REQUIRE(standOut(pinned, "room:snes/fx:w03"));
+    EditedWorld unpinned = pinned;
+    REQUIRE(edit(unpinned, EditOperation::unpinFixture(*FixtureId::parse("room:snes/fx:w03")), data).changed);
+    CHECK(unpinned.plan.lights == pinned.plan.lights);
+    REQUIRE(standOut(pinned, "room:snes/fx:w01"));
+    REQUIRE(standOut(unpinned, "room:snes/fx:w01"));
+    CHECK(fixtureOf(unpinned.plan, "room:snes/fx:w01")->xMm == fixtureOf(pinned.plan, "room:snes/fx:w01")->xMm);
+    // The washers placed again for w01 see w03 where it stands, with its pin or without: none aims at its socket.
+    CHECK(unpinned.plan.lights == pinned.plan.lights);
+    const rv::world::TemplateSocket& w03 = *snesData().roomTemplate.socket("w03");
+    for (const rv::world::PlanLight& light : unpinned.plan.lights) {
+        if (light.role != rv::world::LightRole::WallWasher || light.targetXMm > w03.xMm + 500) {
+            continue;
+        }
+        INFO(light.id.toString() << " aims at z " << light.targetZMm << ", span " << light.spanMm);
+        const std::int64_t from = light.targetZMm - light.spanMm / 2;
+        const std::int64_t to = light.targetZMm + light.spanMm / 2;
+        CHECK((to <= w03.zMm - 450 || from >= w03.zMm + 450));
+    }
+}
+
 TEST_CASE("world/edit: random edit sessions keep the plan valid, every manual change pinned, the update writing "
           "nothing",
           "[world][edit][property]") {
