@@ -67,6 +67,9 @@ void Mixer::setRing(SourceId id, std::shared_ptr<AudioRing> ring) {
 }
 
 void Mixer::installRing(Source& source, std::shared_ptr<AudioRing> ring, const SourceClock& clock) {
+    // The old ring is kept aside, not freed here: render() installs a pending ring on the device's thread, and the
+    // main thread lets the old one go (setControl()).
+    source.retiredRing = std::move(source.ring);
     source.ring = std::move(ring);
     source.ringPending = false;
     source.pendingRing.reset();
@@ -93,15 +96,20 @@ void Mixer::retarget(Source& source) {
 }
 
 void Mixer::setControl(SourceId id, const SourceControl& control) {
-    const std::scoped_lock lock(m_mutex);
-    if (id < m_sources.size()) {
-        Source& source = m_sources[id];
-        source.control = control;
-        source.control.gain = std::isfinite(control.gain) ? std::max(0.0, control.gain) : 0.0;
-        source.control.pan = std::isfinite(control.pan) ? std::clamp(control.pan, -1.0, 1.0) : 0.0;
-        retarget(source);
-        source.pan.target = source.control.pan;
+    std::shared_ptr<AudioRing> retired;
+    {
+        const std::scoped_lock lock(m_mutex);
+        if (id < m_sources.size()) {
+            Source& source = m_sources[id];
+            source.control = control;
+            source.control.gain = std::isfinite(control.gain) ? std::max(0.0, control.gain) : 0.0;
+            source.control.pan = std::isfinite(control.pan) ? std::clamp(control.pan, -1.0, 1.0) : 0.0;
+            retarget(source);
+            source.pan.target = source.control.pan;
+            retired = std::move(source.retiredRing);
+        }
     }
+    // A ring the source no longer reads is freed here, on the main thread and outside the lock.
 }
 
 void Mixer::setClock(SourceId id, const SourceClock& clock) {

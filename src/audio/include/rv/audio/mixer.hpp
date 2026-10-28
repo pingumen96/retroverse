@@ -151,6 +151,8 @@ private:
         bool ringPending = false;
         std::shared_ptr<AudioRing> pendingRing;
         SourceClock pendingClock;
+        /// The ring a source stopped reading, freed by the next setControl() (never on the device's thread).
+        std::shared_ptr<AudioRing> retiredRing;
     };
 
     /// Renders the source into m_scratch; false when it gave nothing (silent, no picture yet, nothing decoded).
