@@ -2,7 +2,8 @@
 # contract shows only from outside the process.
 #   unit.cmake/copy_assets  cmake/CopyAssets.cmake mirrors an asset tree (the Release asset deployment)
 #   unit.cmake/cli_process  retroverse-cli as a process: exit codes, results on stdout, usage errors and logs on stderr
-#   unit.cmake/layer_rules  cmake/LayerRules.cmake fails the configure when rv_world reaches a forbidden library
+#   unit.cmake/layer_rules  cmake/LayerRules.cmake fails the configure when rv_world or rv_audio reaches a forbidden
+#                           library
 
 add_test(NAME "unit.cmake/copy_assets: the Release asset deployment mirrors the source tree"
     COMMAND "${CMAKE_COMMAND}"
@@ -13,7 +14,7 @@ set_tests_properties("unit.cmake/copy_assets: the Release asset deployment mirro
     PROPERTIES LABELS unit)
 
 # Each case configures a small project without languages with this build's generator.
-set(layer_rules_test "unit.cmake/layer_rules: rv_world reaching a forbidden library fails the configure")
+set(layer_rules_test "unit.cmake/layer_rules: rv_world or rv_audio reaching a forbidden library fails the configure")
 add_test(NAME "${layer_rules_test}"
     COMMAND "${CMAKE_COMMAND}"
         "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
