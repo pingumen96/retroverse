@@ -399,13 +399,15 @@ TEST_CASE("cabinets: attract plays the nearest cabinet facing the eye after 1 s 
     const rv::world::CollectionItem& item = featuredCabinet(first.shown, first.heroGame);
     const std::string screen = rv::app::cabinetScreenId(kRoom, item.pickId);
     const Viewpoint view = viewpointOf(item, first.shown.scene.camera);
-    // F12 at frame 120 (attract playing); frame 150 a half turn (the cabinet out of view); the run ends at 170.
+    // F12 at frame 120 (attract playing); frames 130 to 159 a step back (it plays on: the hysteresis), F12 at 170;
+    // frame 180 a half turn (the cabinet out of view); the run ends at 200.
     const float halfTurn = 3.14159265f / kRadiansPerPixel;
-    const fs::path script =
-        writeScript(building, "attract.json",
-                    Json::array({step(120, 120, {{"screenshot", 1}}), step(150, 150, {{"look_delta_x", halfTurn}})}));
+    const fs::path script = writeScript(
+        building, "attract.json",
+        Json::array({step(120, 120, {{"screenshot", 1}}), step(130, 159, {{"move_forward", -1.0}}),
+                     step(170, 170, {{"screenshot", 1}}), step(180, 180, {{"look_delta_x", halfTurn}})}));
     const AppRun run =
-        runArcade(building, "attract", 170, {"--spawn", spawnArgument(view.spawn), "--input-script", arg(script)});
+        runArcade(building, "attract", 200, {"--spawn", spawnArgument(view.spawn), "--input-script", arg(script)});
     const rv::app::VideoRecord& video = requireArcade(run, 2);
     INFO(run.describe());
     const std::vector<rv::app::VideoCabinetEventRecord> events = cabinetEvents(video, screen);
@@ -417,7 +419,7 @@ TEST_CASE("cabinets: attract plays the nearest cabinet facing the eye after 1 s 
     CHECK(events[0].frame >= static_cast<std::uint64_t>(kDwellFrames));
     CHECK(events[0].frame <= static_cast<std::uint64_t>(kDwellFrames + 30));
     CHECK(events[1].picture == "cover");
-    CHECK(events[1].frame == 150u);
+    CHECK(events[1].frame == 180u);
     // No other cabinet played; the open came at the dwell's end.
     CHECK(video.cabinetEvents.size() == 2);
     const auto opens = slotEvents(video, "open", item.game.toString());
@@ -425,7 +427,7 @@ TEST_CASE("cabinets: attract plays the nearest cabinet facing the eye after 1 s 
     CHECK(opens.front().frame == static_cast<std::uint64_t>(kDwellFrames));
     requireHeroUnselected(video);
     const std::vector<fs::path> shots = takenScreenshots(building);
-    REQUIRE(shots.size() == 1);
+    REQUIRE(shots.size() == 2);
     const rv::assets::ImageData shot = readShot(shots.front());
     const std::optional<glm::ivec2> face = projectToPixel(view.camera, kShotSize, view.face);
     REQUIRE(face.has_value());
