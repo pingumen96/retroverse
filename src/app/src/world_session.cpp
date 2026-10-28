@@ -152,6 +152,14 @@ WorldSession::~WorldSession() {
         const std::lock_guard lock(m_showcaseBox->mutex);
         m_showcaseBox->wake = nullptr;
     }
+    // I4b step 3: an edit session's job is cancelled too and wakes nothing (its box, shared, takes a late answer).
+    if (m_edit) {
+        m_pool.cancel(m_edit->generation);
+        if (m_edit->box) {
+            const std::lock_guard lock(m_edit->box->mutex);
+            m_edit->box->wake = nullptr;
+        }
+    }
     m_showcaseLoader.reset();
     m_showcase.reset();
     m_interaction.reset();
