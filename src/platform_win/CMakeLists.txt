@@ -1,10 +1,11 @@
 # rv_platform_win: the Windows side that needs no SDL (ADR-0008 §2), GPU-free: the system probe (Win32SystemProbe,
 # rv_core's ISystemProbe: registry values, key existence and sub-keys of HKCU and HKLM, files and wildcards, the home,
 # System32 and Windows folders, PATH) and the Win32 process runner (Win32ProcessRunner: job object, completion port,
-# watcher thread), with the Win32 helpers they share with rv_platform's window hand-over (win32_util.hpp).
-# retroverse-cli and rv_tests use them without SDL.
+# watcher thread) and the process's priority class (I5 step 2, ADR-0016 §2), with the Win32 helpers they share with
+# rv_platform's window hand-over (win32_util.hpp). retroverse-cli and rv_tests use them without SDL.
 
 add_library(rv_platform_win STATIC
+    src/process_priority.cpp
     src/system_probe.cpp
     src/win32_process_runner.cpp
     src/win32_util.cpp
