@@ -8,8 +8,11 @@
 		Continua. Bound to the data model "edit_bar" of rv::app::EditBarPanel (src/app/src/edit_bar_panel.cpp), which
 		also names the ids below: keep them in step (src/app/include/rv/app/edit_bar_ui.hpp,
 		tests/unit/app/test_edit_bar_document.cpp).
-		mode: preparing, browse, holding, busy, menu, saving. target: '' (nothing), game, slot (an empty slot), dressed
-		(an empty slot with decoration). device: pad, keys. refusal: an edit rule's or a validation rule's name ('' none);
+		mode: preparing, browse, holding, busy, menu, saving, moving (I4b step 4: a piece of furniture held). target: ''
+		(nothing), game, slot (an empty slot), dressed (an empty slot with decoration), fixture (a piece of furniture:
+		fixtureKind module, display, poster, lamp, rug, decoration; fixtureHung: on a wall). Moving: placeMoved (it stands
+		elsewhere than where it was taken), verdict checking, ok, refused (refusal names the rule). device: pad, keys.
+		refusal: an edit rule's or a validation rule's name ('' none);
 		refusalKnown: the rules worded below, another rule reads in general. Every string is written here (CLAUDE.md):
 		the panel binds titles, counts and keys. It takes no input: the world reads the editor's actions and passes the
 		menu's focus.
@@ -49,7 +52,8 @@
 			<p data-if="mode == 'saving' && ending == 'discard'" class="quiet">La stanza torna com'era...</p>
 			<p data-if="mode == 'menu'" class="quiet">Scegli cosa fare delle modifiche.</p>
 
-			<p data-if="mode == 'browse' && target == ''" class="quiet">Punta un gioco per prenderlo e spostarlo.</p>
+			<p data-if="mode == 'browse' && target == ''" class="quiet">Punta un gioco o un mobile per prenderlo e spostarlo.</p>
+			<p data-if="mode == 'browse' && target == 'fixture'"><span class="title" data-if="fixtureKind == 'module'">Mobile</span><span class="title" data-if="fixtureKind == 'display'">Vetrina</span><span class="title" data-if="fixtureKind == 'poster'">Poster</span><span class="title" data-if="fixtureKind == 'lamp'">Lampada</span><span class="title" data-if="fixtureKind == 'rug'">Tappeto</span><span class="title" data-if="fixtureKind == 'decoration'">Decorazione</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="quiet" data-if="!fixtureHung"> · prendilo per spostarlo e ruotarlo.</span><span class="quiet" data-if="fixtureHung"> · prendilo per farlo scorrere lungo le pareti.</span></p>
 			<p data-if="mode == 'browse' && target == 'game'"><span class="title">{{ targetTitle }}</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="tag" data-if="targetFaceOut">In vetrina</span></p>
 			<p data-if="mode == 'browse' && targetFree" class="quiet">Spazio libero: prendi un gioco per posarlo qui.</p>
 
@@ -60,6 +64,12 @@
 			<p data-if="mode == 'holding' && !targetOwn && target == 'slot' && !targetFaceOut" class="aim">Posalo qui, sullo scaffale.</p>
 			<p data-if="mode == 'holding' && !targetOwn && target == 'dressed'" class="aim">Posalo qui: la decorazione fa spazio.</p>
 			<p data-if="mode == 'holding' && !targetOwn && target == 'game'" class="aim">Scambialo con {{ targetTitle }}<span class="tag pinned" data-if="targetPinned">Fissato</span></p>
+
+			<p data-if="mode == 'moving'"><span class="label">Sposti:</span><span class="title" data-if="fixtureKind == 'module'">un mobile</span><span class="title" data-if="fixtureKind == 'display'">una vetrina</span><span class="title" data-if="fixtureKind == 'poster'">un poster</span><span class="title" data-if="fixtureKind == 'lamp'">una lampada</span><span class="title" data-if="fixtureKind == 'rug'">un tappeto</span><span class="title" data-if="fixtureKind == 'decoration'">una decorazione</span></p>
+			<p data-if="mode == 'moving' && !placeMoved" class="quiet">Il suo posto: posalo per lasciarlo com'era.</p>
+			<p data-if="mode == 'moving' && placeMoved && verdict == 'checking'" class="quiet">Verifica del posto...</p>
+			<p data-if="mode == 'moving' && placeMoved && verdict == 'ok'" class="aim">Si può posare qui.</p>
+			<p data-if="mode == 'moving' && placeMoved && verdict == 'refused'" class="quiet">Qui non si può posare.</p>
 		</div>
 
 		<!-- The last refusal: why the change was not made (nothing changed). -->
@@ -74,14 +84,29 @@
 			<p data-if="refusal == 'pin-broken'">Un gioco fissato non sarebbe più al suo posto.</p>
 			<p data-if="refusal == 'failed'">La modifica non è riuscita: il registro di Retroverse dice perché.</p>
 			<p data-if="refusal == 'save-failed'">Le modifiche non sono state salvate: il registro di Retroverse dice perché.</p>
+			<p data-if="refusal == 'footprints-overlap'">Lì c'è già un altro mobile.</p>
+			<p data-if="refusal == 'doorway-clearance'">Bloccherebbe il passaggio della porta.</p>
+			<p data-if="refusal == 'door-reserved'">Quel tratto di parete è riservato a una porta.</p>
+			<p data-if="refusal == 'fixture-outside-room'">Uscirebbe dalla stanza.</p>
+			<p data-if="refusal == 'unreachable'">Un mobile, una vetrina o la TV non si raggiungerebbero più: serve un passaggio libero di 1,2 m.</p>
+			<p data-if="refusal == 'doorway-blocked'">Bloccherebbe l'ingresso della stanza.</p>
+			<p data-if="refusal == 'floor-unreachable'">Una stanza del piano non si raggiungerebbe più dall'ascensore.</p>
+			<p data-if="refusal == 'decoration-off-wall'">Una decorazione appesa resta su una parete.</p>
+			<p data-if="refusal == 'wall-mount'">Una decorazione appesa resta su una parete, rivolta verso la stanza.</p>
+			<p data-if="refusal == 'off-grid'">Si sposta solo sulla griglia di 10 cm della stanza.</p>
+			<p data-if="refusal == 'turn-step'">Si ruota solo di un quarto di giro (le decorazioni di 15 gradi).</p>
+			<p data-if="refusal == 'fixture-fixed'">Questo mobile resta al suo posto: si spostano i moduli laterali, le vetrine e le decorazioni.</p>
+			<p data-if="refusal == 'fixture-in-kept-room'">La stanza segue un modello precedente: i suoi mobili si spostano dopo «Rigenera stanza».</p>
+			<p data-if="refusal == 'fixture-unknown'">Il mobile non è più nella stanza.</p>
+			<p data-if="refusal == 'lights-over-limit'">La stanza avrebbe troppe luci.</p>
 			<p data-if="!refusalKnown">La modifica non rispetta le regole della stanza.</p>
 		</div>
 
 		<!-- The actions, with the glyphs of the device used last. -->
 		<div class="hints" data-if="mode == 'browse' || mode == 'holding'">
-			<span class="hint" data-if="mode == 'browse' && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
-			<span class="hint" data-if="mode == 'browse' && target == 'game' && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
-			<span class="hint" data-if="mode == 'browse' && target == 'game' && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
 			<span class="hint" data-if="mode == 'holding' && targetOwn"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
 			<span class="hint" data-if="mode == 'holding' && !targetOwn && targetFree"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
 			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Scambia</span>
@@ -90,6 +115,14 @@
 			<span class="hint" data-if="mode == 'browse' && pending == 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Esci</span>
 			<span class="hint" data-if="mode == 'browse' && pending > 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Menu</span>
 			<span class="hint" data-if="mode == 'holding' || pending == 0"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
+		</div>
+		<div class="hints" data-if="mode == 'moving'">
+			<span class="hint" data-if="placeMoved"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
+			<span class="hint" data-if="!placeMoved"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
+			<span class="hint" data-if="!fixtureHung"><span class="key wide" data-if="device == 'pad'">LB RB</span><span class="key wide" data-if="device == 'keys'">Q R</span>Ruota</span>
+			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Sposta di 10 cm</span>
+			<span class="hint"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Rimetti a posto</span>
+			<span class="hint"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
 		</div>
 		<div class="hints" data-if="mode == 'menu'">
 			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Scegli</span>

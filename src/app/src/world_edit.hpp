@@ -19,6 +19,13 @@
 //
 // Lockstep runs (--fixed-dt) wait for a job between frames (WorldSession::waits()), so a scripted session shows each
 // edit on the frame after the one that asked it. Live updates (a refresh's building job) wait for the session's end.
+//
+// I4b step 4 (furniture): a fixture held (EditMode::Moving) is drawn where it would stand (its scene items and games
+// left out of their places, drawn moved and outlined, warm white where it may drop, red otherwise); each new place is
+// judged by a probe on the pool (applyEdit() on a copy of the draft: its own job box, beside the session's job). An
+// edit whose static part changed (a fixture moved, dressing giving way) rebuilds the edited room's static part alone
+// (roomStaticPart(): its scene objects, dressing, wall-washers, lamps' lights and colliders, in place on the floor
+// shown through the host's replaceObjects()), then lays its collection out again in place: never the whole floor.
 
 #include <chrono>
 #include <cstdint>
@@ -87,6 +94,10 @@ struct EditJobAnswer {
     /// all the same).
     std::optional<EditSaveOutcome> saved;
     std::string displayError;
+    /// I4b step 4: the rooms whose static part is rebuilt alone (with `build` the shown floor's collections laid out
+    /// again); a save's floor's scene digest computed for a session whose static part changed ("" none).
+    std::vector<RoomStaticPart> statics;
+    std::string sceneDigest;
     /// The job's own time (milliseconds).
     double milliseconds = 0.0;
 };
@@ -101,6 +112,22 @@ struct EditJobBox {
 
 /// What the job in flight is for.
 enum class EditJob : std::uint8_t { None, Prepare, Operation, Undo, Save, Discard };
+
+/// A held fixture's place judged (I4b step 4): the probe and the rule that refuses it ("" none; "failed": it could not
+/// be judged).
+struct EditProbeAnswer {
+    world::EditOperation operation;
+    std::string refusal;
+    double milliseconds = 0.0;
+};
+
+/// Where the probes post (as EditJobBox).
+struct EditProbeBox {
+    std::mutex mutex;
+    std::optional<EditProbeAnswer> answer;
+    std::uint64_t generation = 0;
+    std::function<void()> wake;
+};
 
 /// An edit session (see the file comment).
 struct WorldEditState {
@@ -137,9 +164,24 @@ struct WorldEditState {
     std::string refusal;
     bool saveRefused = false;
     std::string ending;
-    /// The collection's flags the editor set: the held item's static records hidden, the outlined target.
-    world::PickId hidden = world::kNoPick;
+    /// The collection's flags the editor set: the held items' static records hidden (a game, or a held fixture's
+    /// games), the outlined target.
+    std::vector<world::PickId> hidden;
     world::PickId outlined = world::kNoPick;
+    /// I4b step 4: the floor's scene digest when the session began (the stored plan's static part), and whether a
+    /// rebuilt static part shows since (a synthetic digest then; Salva computes the saved floor's).
+    std::string baseSceneDigest;
+    bool sceneChanged = false;
+    /// The probes: their box and generation, the one in flight, the next asked meanwhile, the draft they judge.
+    std::shared_ptr<EditProbeBox> probeBox;
+    core::JobGeneration probeGeneration;
+    std::optional<world::EditOperation> probing;
+    std::optional<world::EditOperation> probeNext;
+    std::shared_ptr<const world::EditedWorld> probeWorld;
+    /// The fixture drawn held: its id, the scene's render items of it (left out of the view), its games, its move.
+    std::optional<world::FixtureId> heldFixture;
+    std::vector<std::size_t> heldSceneItems;
+    std::vector<world::PickId> heldGames;
     /// The device used last (the bar's glyphs).
     input::DeviceKind device = input::DeviceKind::KeyboardMouse;
     /// The session's record (also pushed into the run report's world.edits at its end, or the run's).

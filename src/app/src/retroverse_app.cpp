@@ -921,6 +921,31 @@ struct RetroverseApp::State {
             const scene::FirstPersonController& walker = freeRoam->controller();
             return scene::WalkerPose{walker.feetPosition(), walker.yaw(), walker.pitch()};
         };
+        // I4b step 4: a room's static part rebuilt alone in place (the walker where it stands), and a held fixture's
+        // render items.
+        host.replaceObjects = [this](const SceneObjectsChange& change) -> bool {
+            if (!scene) {
+                return false;
+            }
+            auto replaced = scene->replaceObjects(description, change, graphics->materialLibrary(), loadModel,
+                                                  graphics->resources());
+            if (!replaced) {
+                spdlog::error("World: the objects of {} cannot be replaced: {}", change.prefix,
+                              replaced.error().toString());
+                if (replaced.error().code == ErrorCode::InvalidArgument) {
+                    return false; // nothing changed
+                }
+            }
+            freeRoam->setCollision(scene->collisionWorld());
+            shownDebugLines = DebugLineSelection{};
+            if (Status shown = syncDebugLines(); !shown) {
+                spdlog::error("Debug lines unavailable: {}", shown.error().toString());
+            }
+            return true;
+        };
+        host.sceneItemsOf = [this](const std::function<bool(std::string_view)>& match) {
+            return scene ? scene->itemsOf(match) : std::vector<std::size_t>{};
+        };
         // I4 step 6b: the CRT of the room that holds the eye, bound once the eye stayed there (never joining the
         // previous clip's decoder on the render loop).
         host.bindScreen = [this, &context](const std::string& prefix, std::vector<ScreenGame> games) -> bool {

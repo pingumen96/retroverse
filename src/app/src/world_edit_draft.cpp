@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <rv/scene/instance_data.hpp>
@@ -245,6 +246,39 @@ Expected<world::EditData> prepareEditData(const WorldPaths& paths, const world::
         data.rooms.emplace(room.id, std::make_shared<const world::WorldData>(std::move(*loaded)));
     }
     return data;
+}
+
+Expected<RoomStaticPart> roomStaticPart(const WorldBuild& shown, const world::WorldPlan& plan,
+                                        const world::RoomId& room) {
+    const RoomCollection* collection = shown.findRoom(room);
+    if (collection == nullptr || collection->sceneData.roomTemplate.id.empty()) {
+        return makeError(ErrorCode::NotFound, "the floor shown keeps no scene data of the room", room.toString());
+    }
+    auto part = world::roomFloorScene(plan, room, collection->sceneData);
+    if (!part) {
+        return propagate(part.error());
+    }
+    // A scene file of the room's part alone, read back as the floor's is (its lights name its area).
+    nlohmann::json area{
+        {"id", room.toString()},
+        {"boxes", nlohmann::json::array({nlohmann::json{{"min", {0.0, 0.0, 0.0}}, {"max", {1.0, 1.0, 1.0}}}})}};
+    nlohmann::json file{{"schemaVersion", scene::kSceneSchemaVersion},
+                        {"name", "edit:" + room.toString()},
+                        {"lights", std::move(part->lights)},
+                        {"objects", std::move(part->objects)},
+                        {"areas", nlohmann::json::array({std::move(area)})}};
+    // In the scene's frame as buildFloor() moves the floor: the start room's on its own floor.
+    if (shown.startRoom) {
+        if (const RoomCollection* start = shown.findRoom(*shown.startRoom)) {
+            moveSceneFileToRoom(file, start->placement);
+        }
+    }
+    auto description = scene::parseSceneDescription(file, "edit:" + room.toString());
+    if (!description) {
+        return propagate(description.error());
+    }
+    return RoomStaticPart{room, std::move(description->objects), std::move(description->lights),
+                          std::move(part->undressed)};
 }
 
 Expected<WorldBuild> editedRoomCollections(const WorldBuild& shown, const world::WorldPlan& plan,

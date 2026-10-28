@@ -51,6 +51,10 @@ struct EditBarPanel::Impl {
         constructor.Bind("saveRefused", &saveRefused);
         constructor.Bind("menuFocus", &menuFocus);
         constructor.Bind("device", &device);
+        constructor.Bind("fixtureKind", &fixtureKind);
+        constructor.Bind("fixtureHung", &fixtureHung);
+        constructor.Bind("placeMoved", &placeMoved);
+        constructor.Bind("verdict", &verdict);
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -85,6 +89,10 @@ struct EditBarPanel::Impl {
         saveRefused = value.saveRefused;
         menuFocus = Rml::String(value.menuFocus);
         device = Rml::String(value.device);
+        fixtureKind = Rml::String(value.fixtureKind);
+        fixtureHung = value.fixtureHung;
+        placeMoved = value.placeMoved;
+        verdict = Rml::String(value.verdict);
         handle.DirtyAllVariables();
     }
 
@@ -112,6 +120,10 @@ struct EditBarPanel::Impl {
     bool saveRefused = false;
     Rml::String menuFocus;
     Rml::String device;
+    Rml::String fixtureKind;
+    bool fixtureHung = false;
+    bool placeMoved = false;
+    Rml::String verdict;
 };
 
 EditBarPanel::EditBarPanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}

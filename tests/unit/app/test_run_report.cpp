@@ -384,7 +384,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         move.op = "move";
         move.operation = "move g000000000000b002 to room:snes/fx:dc02/s:0.0";
         move.rebuild = "no-rebuild";
-        move.path = "in-place";
+        move.path = "room";
         move.editMs = 12.25;
         move.shownMs = 40.5;
         rv::app::EditOperationRecord swap;
@@ -406,6 +406,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         edit.saveMs = 95.0;
         edit.backMs = 140.25;
         edit.liveUpdateDeferred = true;
+        edit.probes = 7; // I4b step 4
         rv::app::WorldEditRecord open;
         open.room = "area:arcade";
         open.via = "card";

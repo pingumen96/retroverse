@@ -1,16 +1,16 @@
 // The editor in the app (I4b step 3; ADR-0015 §4, §6): the building fixture's room:snes (tests/fixtures/esde/building,
 // planned with retroverse-cli), retroverse.exe --start-room room:snes, lockstep (--fixed-dt), hidden, driven by
-// tests/input_scripts/world_edit_session.json from the Focus pose of a display case's game A whose left neighbour slot is
-// free: the directory's "Modifica stanza", A picked up and moved into the free slot (its dressing giving way: the floor
-// built again from the draft), A's old slot then a game B targeted with the D-pad, B picked up and swapped with the game
-// C above it (laid out again in place), the menu, Salva. The run report's world.edits record the session; the stored plan
-// holds A in the free slot and B and C swapped, the overrides their three pins (origin editor), the snapshot of the
-// action "edit" is there; a restart finds the plan as saved (nothing written). A session discarded with "Esci senza
-// salvare" (world_edit_discard.json) leaves the plan's SHA-256 unchanged and shows the stored plan again. "Sposta" on
-// the card of a cartridge of the room's shelf takes it into the editor; the walker carries it across the room and the
-// reticle drops it into a display case's free slot; Salva (a script the test writes: the walk and the looks that reach
-// the slot depend on the plan). Screenshots of the bar: a game in the hand over the free slot, the menu
-// (build/smoke/world_edit/session/*.png).
+// tests/input_scripts/world_edit_session.json from the Focus pose of a display case's game A whose left neighbour slot
+// is free: the directory's "Modifica stanza", A picked up and moved into the free slot (its dressing giving way: the
+// room's static part rebuilt alone, I4b step 4), A's old slot then a game B targeted with the D-pad, B picked up and
+// swapped with the game C above it (laid out again in place), the menu, Salva. The run report's world.edits record the
+// session; the stored plan holds A in the free slot and B and C swapped, the overrides their three pins (origin
+// editor), the snapshot of the action "edit" is there; a restart finds the plan as saved (nothing written). A session
+// discarded with "Esci senza salvare" (world_edit_discard.json) leaves the plan's SHA-256 unchanged and shows the
+// stored plan again. "Sposta" on the card of a cartridge of the room's shelf takes it into the editor; the walker
+// carries it across the room and the reticle drops it into a display case's free slot; Salva (a script the test writes:
+// the walk and the looks that reach the slot depend on the plan). Screenshots of the bar: a game in the hand over the
+// free slot, the menu (build/smoke/world_edit/session/*.png).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -353,9 +353,9 @@ TEST_CASE("world_edit: a scripted session moves a cartridge into a display case'
     CHECK(move.op == "move");
     CHECK(move.operation == "move " + targets.a.game.toString() + " to " + targets.free.slot.toString());
     CHECK(move.refused.empty());
-    // A dressed slot: the dressing gives way, the floor built again from the draft.
+    // A dressed slot: the dressing gives way, the room's static part rebuilt alone (I4b step 4).
     CHECK(move.rebuild == "local-reflow");
-    CHECK(move.path == "floor");
+    CHECK(move.path == "room");
     CHECK(move.shownFrame.has_value());
     const rv::app::EditOperationRecord& swap = edit.operations[1];
     CHECK(swap.op == "swap");
@@ -415,7 +415,7 @@ TEST_CASE("world_edit: a session left with \"Esci senza salvare\" leaves the pla
     CHECK_FALSE(edit.written);
     CHECK(edit.snapshot.empty());
     REQUIRE(edit.operations.size() == 1);
-    CHECK(edit.operations.front().path == "floor");
+    CHECK(edit.operations.front().path == "room");
     REQUIRE(edit.backMs.has_value());
     CHECK(building.plan().digest == before);
     const rv::world::WorldFiles files = worldFilesOf(building);
@@ -557,7 +557,7 @@ TEST_CASE("world_edit: an edit's display time in a room of 1,561 big boxes", "[.
     CHECK(edit.operations.size() == 3);
 }
 
-// ADR-0015 §9's row for a move into a dressed slot (the floor built again from the draft: I4b step 3's review), on the
+// ADR-0015 §9's row for a move into a dressed slot (the room's static part rebuilt alone since I4b step 4), on the
 // real library's computer floor, measured by hand in Release (hidden: [.real-library]): only through
 // scripts/real-library.ps1 (ES-DE closed, read-only snapshots of the library before and after), its -Measure script
 // running rv_smoke_tests.exe "[real-library][edit]" with the RV_REAL_* variables set. The whole library is imported
@@ -709,7 +709,7 @@ TEST_CASE("world_edit: a move into a dressed slot on the real library's computer
                        << " ms after the request; Esci senza salvare's room back in " << edit.backMs.value_or(-1.0)
                        << " ms");
     CHECK(move.refused.empty());
-    CHECK(move.path == "floor");
+    CHECK(move.path == "room");
     CHECK(edit.end == "discarded");
     CHECK_FALSE(edit.written);
     auto after = rv::world::readStoredPlan(

@@ -82,6 +82,7 @@
 #include <rv/app/game_screens.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/run_report.hpp>
+#include <rv/app/scene_instance.hpp>
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_room.hpp>
 #include <rv/app/world_build.hpp>
@@ -157,6 +158,13 @@ public:
         /// the view's camera with it (a teleport on the floor shown); and the walker's pose now.
         std::function<void(const scene::CameraSetup& camera)> teleport;
         std::function<scene::WalkerPose()> walker;
+        /// I4b step 4: replaces the scene's objects and lights of a room with its static part rebuilt alone
+        /// (SceneInstance::replaceObjects(): the collision world and the lights following, the walker where it stands);
+        /// false when it could not (logged).
+        std::function<bool(const SceneObjectsChange& change)> replaceObjects;
+        /// I4b step 4: the indices of the scene's render items of the objects whose ids `match` accepts (a fixture the
+        /// editor holds leaves its place).
+        std::function<std::vector<std::size_t>(const std::function<bool(std::string_view id)>& match)> sceneItemsOf;
     };
 
     struct Options {
@@ -198,8 +206,12 @@ public:
     /// hand in front of `camera`, I3 step 13b), the hero texture's front of an item in its slot (dynamicItems()).
     [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,
                                                                const scene::Camera& camera);
-    /// The inspection's dimming of the frame's view (I3 step 13b: WorldInspection::apply).
-    void applyInspection(gl::RenderView& view) { m_interaction->applyInspection(view); }
+    /// The inspection's dimming of the frame's view (I3 step 13b: WorldInspection::apply); the editor's outline colour
+    /// (I4b step 4: red over a held fixture's refused place).
+    void applyInspection(gl::RenderView& view) {
+        m_interaction->applyInspection(view);
+        applyEditOutline(view);
+    }
     /// The game the hero CRT follows (I3 step 13b, screenSelection()): `catalogSelection` (the quick catalog's, while
     /// it is open), else the item in Focus or Inspect.
     [[nodiscard]] std::optional<std::string> screenSelection(const std::optional<std::string>& catalogSelection) const;
@@ -300,7 +312,7 @@ private:
     void takeEditAnswer(EditJobAnswer answer);
     void requestEditOperation(const world::EditOperation& operation);
     void requestEditDisplay(EditJob job, world::EditedWorld world, std::string digest, world::RebuildLevel rebuild,
-                            std::vector<world::RoomId> rooms);
+                            std::vector<world::RoomId> rooms, std::string sceneDigest);
     void requestEditSave();
     /// Submits `work` as the session's one job (its answer into the session's box, the host woken).
     void submitEditJob(EditJob job, std::function<EditJobAnswer(const core::JobContext&)> work);
@@ -309,7 +321,7 @@ private:
     /// `build` shown for the session (`fullFloor`: its own scene, else the shown one's with its rooms laid out again):
     /// applied in place room by room when the static part is the same, else the floor committed again. False when it
     /// could not be shown.
-    [[nodiscard]] bool showEditBuild(WorldBuild& build, bool fullFloor);
+    [[nodiscard]] bool showEditBuild(WorldBuild& build, bool fullFloor, std::span<const RoomStaticPart> statics = {});
     /// The edited room's targets from the session's floor shown.
     void bindEditRoom();
     /// The held item's static records hidden, the target outlined (every frame), or both cleared.
@@ -324,6 +336,16 @@ private:
     void editFrameRendered();
     /// A lockstep run waits for the session's job.
     [[nodiscard]] bool editWaits() const noexcept;
+    /// I4b step 4: a held fixture's place judged on the pool (the latest asked waits for the one in flight), its answer
+    /// given to the interaction; the held fixture's scene items and games left out of their places (or given back).
+    void requestEditProbe(const world::EditOperation& probe);
+    void followEditProbe();
+    void syncHeldFixture();
+    /// The view's items of a held fixture: drawn where it would stand, outlined.
+    void appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection);
+    /// The outline's colour of the frame (the inspection's dimming's view too): red over a held fixture's refused
+    /// place.
+    void applyEditOutline(gl::RenderView& view) const;
     /// The collection of the edited room, if shown.
     [[nodiscard]] CollectionInstance* editCollection() const;
 
