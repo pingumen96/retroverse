@@ -143,6 +143,14 @@ public:
     /// The override of `slot` of `handle` (0 for none, or an unknown handle).
     [[nodiscard]] GLuint textureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot) const noexcept;
 
+    /// The part of the screen `handle` draws its picture in (I5 step 4, ADR-0016 §7: a clip letterboxed or pillarboxed,
+    /// MaterialUniforms::pictureRect with material_flags::kPictureRect): `rect` is its corner and size in the screen's
+    /// texture coordinates; none, or the whole screen (0, 0, 1, 1), clears the flag, so that the material's block is
+    /// again exactly what it was registered with. The block is rewritten only when it changes (an uploaded one at once,
+    /// the others with the next upload()). Errors: InvalidArgument for an unknown handle or a rectangle that is not
+    /// finite or has no area, and the errors of Buffer::update.
+    [[nodiscard]] Status setPictureRect(scene::MaterialHandle handle, std::optional<glm::vec4> rect);
+
     /// Binds the uniform block of `handle` to UniformBinding::Material and its textures (or their overrides) and
     /// samplers to the texture units 0..kMaterialTextureSlotCount-1, and a layered material's array to
     /// CollectionTextureUnit::LayeredBaseColor. Does nothing for a handle outside the uploaded materials.

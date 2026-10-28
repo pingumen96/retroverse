@@ -88,6 +88,13 @@ public:
     /// image, OutOfRange for a side above GL_MAX_TEXTURE_SIZE, GraphicsError when the storage cannot be allocated.
     [[nodiscard]] static Expected<Texture2D> create(const assets::ImageData& image, const TextureDesc& desc,
                                                     std::string_view debugName);
+    /// A copy of the base level of `source`, an immutable texture of `size` texels in the internal format `desc`'s
+    /// colour space gives (GL_SRGB8_ALPHA8 or GL_RGBA8), made on the GPU (glCopyImageSubData): one level whatever
+    /// desc.mipmaps says. I5 step 4: the frame a screen keeps when its decoder slot is taken (a VideoTexture's picture).
+    /// Errors: InvalidArgument for no source or an empty size, OutOfRange beyond GL_MAX_TEXTURE_SIZE, GraphicsError when
+    /// the storage cannot be allocated.
+    [[nodiscard]] static Expected<Texture2D> copyOf(GLuint source, glm::ivec2 size, const TextureDesc& desc,
+                                                    std::string_view debugName);
 
     [[nodiscard]] GLuint id() const noexcept { return m_texture.id(); }
     [[nodiscard]] bool valid() const noexcept { return m_texture.valid(); }

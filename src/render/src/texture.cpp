@@ -156,4 +156,50 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     return result;
 }
 
+Expected<Texture2D> Texture2D::copyOf(GLuint source, glm::ivec2 size, const TextureDesc& desc,
+                                      std::string_view debugName) {
+    std::string name(debugName);
+    if (source == 0 || size.x <= 0 || size.y <= 0) {
+        return makeError(ErrorCode::InvalidArgument, "no texture or an empty size to copy", name);
+    }
+    GLint maxSize = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+    if (size.x > maxSize || size.y > maxSize) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("{}x{} exceeds the largest texture side, {}", size.x, size.y, maxSize), name);
+    }
+    GLuint id = 0;
+    glCreateTextures(GL_TEXTURE_2D, 1, &id);
+    TextureObject texture(id);
+    if (id == 0) {
+        return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", name);
+    }
+    glTextureStorage2D(id, 1, internalFormat(desc.colorSpace), size.x, size.y);
+    GLint immutable = GL_FALSE;
+    glGetTextureParameteriv(id, GL_TEXTURE_IMMUTABLE_FORMAT, &immutable);
+    if (immutable == GL_FALSE) {
+        return makeError(ErrorCode::GraphicsError, fmt::format("could not allocate a {}x{} texture", size.x, size.y),
+                         name);
+    }
+    glCopyImageSubData(source, GL_TEXTURE_2D, 0, 0, 0, 0, id, GL_TEXTURE_2D, 0, 0, 0, 0, size.x, size.y, 1);
+    const GLint wrap = detail::wrapMode(desc.sampling.wrap);
+    glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap);
+    glTextureParameteri(id, GL_TEXTURE_WRAP_T, wrap);
+    glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, detail::minFilter(desc.sampling.filter, false));
+    glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, detail::magFilter(desc.sampling.filter));
+    detail::setObjectLabel(GL_TEXTURE, id, name);
+
+    TextureDesc kept = desc;
+    kept.mipmaps = false;
+    Texture2D result;
+    result.m_texture = std::move(texture);
+    result.m_size = size;
+    result.m_levels = 1;
+    result.m_bytes = textureBytes(GpuFormat::Rgba8, size, 1);
+    result.m_desc = kept;
+    result.m_memory = GpuMemoryAllocation(kept.memoryKind, result.m_bytes);
+    result.m_debugName = std::move(name);
+    return result;
+}
+
 } // namespace rv::gl

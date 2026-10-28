@@ -171,6 +171,10 @@ inline constexpr std::uint32_t kLayeredBaseColor = 1u << 9;
 /// With kLayeredBaseColor: the layer is the record's spine layer (InstanceAttributes::spineLayer), else its front
 /// layer (InstanceAttributes::frontLayer).
 inline constexpr std::uint32_t kSpineLayer = 1u << 10;
+/// A screen whose picture fills only part of it (I5 step 4, ADR-0016 §7: a clip letterboxed or pillarboxed in the tube's
+/// black, never stretched): the base color is sampled across MaterialUniforms::pictureRect, black outside it. Unset, the
+/// picture fills the screen and the shaders do exactly what they did before (a 4:3 clip on a 4:3 screen).
+inline constexpr std::uint32_t kPictureRect = 1u << 11;
 
 /// Flag of the texture in `slot`.
 [[nodiscard]] constexpr std::uint32_t textureBit(MaterialTextureSlot slot) noexcept {
@@ -181,7 +185,8 @@ inline constexpr std::uint32_t kSpineLayer = 1u << 10;
 /// Per-material parameters at UniformBinding::Material: block `MaterialUniforms` of common/material.glsl. Built from
 /// an assets::MaterialDesc by rv::gl::makeMaterialUniforms (material_uniforms.hpp). Colors are linear. The crt* fields
 /// describe the picture-tube look of an unlit screen (material_flags::kCrtScreen, assets::CrtEffect: common/crt.glsl);
-/// they are zero for every other material.
+/// they are zero for every other material. `pictureRect` (I5 step 4) is the part of a screen its picture fills, read
+/// with material_flags::kPictureRect only.
 struct MaterialUniforms {
     glm::vec4 baseColorFactor{1.0f};
     glm::vec3 emissive{0.0f}; ///< emissive factor * emissive strength (PBR)
@@ -200,6 +205,9 @@ struct MaterialUniforms {
     float crtVignette = 0.0f;
     float crtGlassReflection = 0.0f;
     float padding[3] = {0.0f, 0.0f, 0.0f};
+    /// The picture's rectangle on the screen, in its texture coordinates (uv (0, 0) top-left): its corner (x, y) and
+    /// its size (z, w); (0, 0, 1, 1) fills the screen.
+    glm::vec4 pictureRect{0.0f, 0.0f, 1.0f, 1.0f};
 };
 
 static_assert(offsetof(MaterialUniforms, baseColorFactor) == 0);
@@ -218,7 +226,8 @@ static_assert(offsetof(MaterialUniforms, crtMaskStrength) == 68);
 static_assert(offsetof(MaterialUniforms, crtCurvature) == 72);
 static_assert(offsetof(MaterialUniforms, crtVignette) == 76);
 static_assert(offsetof(MaterialUniforms, crtGlassReflection) == 80);
-static_assert(sizeof(MaterialUniforms) == 96, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(MaterialUniforms, pictureRect) == 96);
+static_assert(sizeof(MaterialUniforms) == 112, "std140 block sizes are multiples of 16 bytes");
 
 /// Fragment outputs of the scene shaders (`layout(location = N) out` in common/scene_output.glsl), written into the
 /// color attachments of the HDR scene target with the same numbers (gl::ViewTargets::hdr()).

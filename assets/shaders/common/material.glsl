@@ -21,6 +21,9 @@ layout(std140, binding = 2) uniform MaterialUniforms {
     float uCrtCurvature;         // [0, 0.5]
     float uCrtVignette;          // [0, 1]
     float uCrtGlassReflection;   // [0, 1]
+    // The part of a screen its picture fills (I5 step 4), with RV_MATERIAL_PICTURE_RECT: its corner (xy) and size (zw)
+    // in the screen's texture coordinates; black around it (a letterbox or a pillarbox, never a stretch).
+    vec4 uPictureRect;
 };
 
 // Bits of uMaterialFlags. Texture bits mark the slots that hold a material texture; the others hold neutral defaults
@@ -38,6 +41,8 @@ const uint RV_MATERIAL_CRT_SCREEN = 256u;
 // with RV_MATERIAL_SPINE_LAYER, else its front layer (materialInstanceBaseColor).
 const uint RV_MATERIAL_LAYERED_BASE_COLOR = 512u;
 const uint RV_MATERIAL_SPINE_LAYER = 1024u;
+// The picture fills uPictureRect of the screen, black around it (materialPictureUv, materialPictureCoverage).
+const uint RV_MATERIAL_PICTURE_RECT = 2048u;
 
 layout(binding = 0) uniform sampler2D uBaseColorTexture;         // sRGB, multiplies uBaseColorFactor
 layout(binding = 1) uniform sampler2D uMetallicRoughnessTexture; // linear: G scales roughness, B scales metallic
@@ -89,6 +94,20 @@ void materialAlphaTest(float alpha) {
     if (materialHas(RV_MATERIAL_ALPHA_MASK) && alpha < uAlphaCutoff) {
         discard;
     }
+}
+
+// The picture's texture coordinates at the screen's `uv` with RV_MATERIAL_PICTURE_RECT: uPictureRect mapped onto [0, 1].
+vec2 materialPictureUv(vec2 uv) {
+    return (uv - uPictureRect.xy) / uPictureRect.zw;
+}
+
+// How much of the pixel at the screen's `uv` the picture of uPictureRect covers (anti-aliased over a pixel): 1 inside,
+// 0 in the bars around it. Uses derivatives: call it in uniform control flow, before any discard.
+float materialPictureCoverage(vec2 uv) {
+    vec2 pixel = max(fwidth(uv), vec2(1e-6));
+    vec2 low = clamp((uv - uPictureRect.xy) / pixel + 0.5, 0.0, 1.0);
+    vec2 high = clamp((uPictureRect.xy + uPictureRect.zw - uv) / pixel + 0.5, 0.0, 1.0);
+    return low.x * low.y * high.x * high.y;
 }
 
 float materialOutputAlpha(float alpha) {
