@@ -62,7 +62,8 @@ build/rvdata`).
   `edits` (I4b step 3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
   `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
   `in-place`, `floor` or `none`, `editMs`, `shownFrame`, `shownMs`; `undone`, `menus`, `end` `saved`, `discarded`,
-  `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused`, `snapshot`, `planDigest`,
+  `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
+  `snapshot`, `planDigest` (the plan shown at the end),
   `saveMs`, `backMs`, `liveUpdateDeferred`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
   `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
@@ -421,7 +422,8 @@ build/rvdata`).
   destination floor's (the start room's on its own floor): `--spawn` applies to the start only.
 - The editor (I4b step 3, `docs/i4b/step-3.md`; ADR-0015 §4): while the walker is in a room with games (no floor on
   its way, no ride, no launch), the directory shows "Modifica stanza" above its floors (Up from the first floor, then
-  Enter or A): the world's state `Edit` (the bar at the bottom names the room, the game or empty slot the reticle rests
+  Enter or A), and the card of a game of that room in Inspect shows "Sposta" below its buttons (the game then in the
+  hand): the world's state `Edit` (the bar at the bottom names the room, the game or empty slot the reticle rests
   on, the pending changes and the keys of the device used last). The walker walks and looks; the arrows and the D-pad
   step over every slot, empty ones included, the walker eased in front of it (the arrow keys step instead of walking).
   E (A) picks up the game targeted, held smaller in the hand, its slot empty; on an empty slot it puts it there (where
@@ -429,14 +431,14 @@ build/rvdata`).
   another game it swaps the two (the room's collection laid out again in place), on its own slot it puts it back; Esc
   (B) puts it back; P (the pad's X) pins or unpins the game targeted in place. Every move and swap pins its games
   (`overrides.json`, origin `editor`). Each edit is applied on the pool to a draft of the plan and validated; a refusal
-  ("Quello spazio è già occupato", ...) leaves the game in the hand. Enter or Start opens the menu (Esc with pending
-  changes too): Salva (the session's operations saved under the world lock behind a snapshot, action `edit`, which
+  ("Quello spazio è già occupato", ...) leaves the game in the hand. The reticle and the D-pad target only while the eye
+  is in the edited room. Enter or Start opens the menu (Esc with pending changes too; Start again closes it, the walker
+  stands still while it is open): Salva (the session's operations saved under the world lock behind a snapshot, action `edit`, which
   `retroverse-cli worldplan undo` undoes; replayed onto the stored plan if it changed meanwhile, refused with nothing
   written when one no longer applies), Annulla ultima azione (the draft's last), Esci senza salvare (the room as stored
   again), Continua. Esc with nothing pending leaves the editor. The quick catalog, the directory and rides wait, and a
   refreshed catalog's live update waits for the session's end. `overrides.json` that cannot be read (written by a newer
   Retroverse) edits nothing: the world's notice `edit-unavailable`. Lockstep runs wait between frames for each edit.
-  "Sposta" on the card is wired but not shown yet (it would change golden G07, see the step note).
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase

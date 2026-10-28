@@ -565,3 +565,16 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   result built again for the floor shown after a ride (`retargetResult()`) with its wait for a launch's end, have no
   GPU case: a lockstep run reconciles at its second frame and waits for both jobs. The routing's unit tests cover
   them (`docs/i4/step-7b.md`).
+
+## Follow-ups from I4b
+
+### The editor
+
+- **The in-place apply in very large rooms (I4b step 3):** a game's move or swap shown in place lays the room's
+  collection out again on the main thread, the cover loader adopting the floor's pictures and the plan state copied:
+  about 80 ms per edit in a room of 1,561 big boxes (Release), one long frame per user action. Applying only the
+  edited room's loader items and sharing the plan state instead of copying it would narrow it
+  (`docs/i4b/step-3.md`).
+- **A clickable bar (I4b step 3):** the editor's bar (`edit_bar.rml`) and its menu take no pointer input (pad and
+  keyboard only), and the hover's title label does not show in the editor (the bar names the target). Clicks on the
+  menu's buttons and on the bar's actions would follow the directory's and the card's (`docs/i4b/step-3.md`).

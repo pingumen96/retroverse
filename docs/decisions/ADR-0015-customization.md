@@ -140,6 +140,15 @@ A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad a
   as during a game.
 - **The command line** offers the same operations (§8), so tests and scripts edit without a window.
 
+*Amended on 2026-10-28 (I4b step 3's review):* a session edits the collection room that holds the walker when it begins
+("Modifica stanza", or "Sposta" on the card of a game of that room); another room needs a new session. A game's move or
+swap is shown by laying the room's collection out again in place. A move into a slot that a dressed level covers makes
+the dressing give way by building the resident floor again from the draft, until the room's static part can be rebuilt
+alone (I4b step 4, which also needs it for fixture moves); until then such an edit may exceed §9's 0.25 s on a large
+floor (2.0 s from the request to the frame that shows it on the reference library's computer floor, 5,314
+placements: the floor's job 1.4 s), and step 4 brings it within. The floor's live update does not start during a
+session: a refresh that ends during one starts it when the session ends.
+
 ### 5. Explicit regeneration with an impact preview
 
 - **Scopes.**
