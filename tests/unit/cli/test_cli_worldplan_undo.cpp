@@ -2,9 +2,10 @@
 // fixture's plan generated, a hand-written schema-1 overrides.json beside it, the explicit regeneration (generate
 // --replace) saved behind a snapshot (the overrides rewritten in schema 2), listed, undone with --dry-run (nothing
 // written) and then for real (the plan, its sidecar and the schema-1 overrides back byte for byte, an update moving
-// nothing, writing once the inputDigest that the hand-written pin joins since I4b step 2), the undo itself never undone; a snapshot missing a file, a damaged folder and a journal the lock
-// cannot roll back each refused (exit 3) and listed. And the overflow fixture's building (I4b step 0): more titles than
-// the big-box room and the arcade room hold, unplaced for capacity until generator 1.5's expansion rooms (step 7).
+// nothing, writing once the inputDigest that the hand-written pin joins since I4b step 2), the undo itself never
+// undone; a snapshot missing a file, a damaged folder and a journal the lock cannot roll back each refused (exit 3) and
+// listed. And the overflow fixture's building (I4b step 0): more titles than the big-box room and the arcade room hold,
+// unplaced for capacity until generator 1.5's expansion rooms (step 7).
 
 #include <catch2/catch_test_macros.hpp>
 
