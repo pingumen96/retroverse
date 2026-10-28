@@ -1482,7 +1482,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     } else if (riding) {
         state.freeRoam->update(input::ActionState{}, static_cast<float>(deltaSeconds), state.camera);
     } else if (state.world) {
-        state.freeRoam->update(walkerActionsFor(worldContext, actionsFor(inputContext, actions)),
+        // I4b step 3: the world's context sees the arrows too (the editor's walker does not walk while one steps).
+        state.freeRoam->update(walkerActionsFor(worldContext, inputContext == InputContext::World
+                                                                  ? actions
+                                                                  : actionsFor(inputContext, actions)),
                                static_cast<float>(deltaSeconds), state.camera);
     } else {
         state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);

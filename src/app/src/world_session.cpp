@@ -252,6 +252,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
+    followEdit(product); // I4b step 3
 }
 
 std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) const {
@@ -907,6 +908,9 @@ void WorldSession::finishCommit(const WorldBuild& build, Clock::time_point start
 }
 
 InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
+    if (m_edit) {
+        return editFrame(frame); // I4b step 3: the editor reads the frame instead (world_edit.cpp)
+    }
     // The interaction works in the room that holds the eye (ADR-0013 §9: a pick index per room; none in a hall).
     if (!m_rooms.empty()) {
         const std::optional<std::size_t> eye = eyeRoom();
@@ -922,6 +926,9 @@ InteractionResult WorldSession::interact(const WorldHover::Frame& frame) {
 
 std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene::RenderItem> sceneItems,
                                                            const scene::Camera& camera) {
+    if (m_edit) {
+        return editViewItems(sceneItems, camera); // I4b step 3
+    }
     // The held item's front shows the hero texture when it is the hero item shown (I3 step 13b's record).
     CollectionInstance* active = activeCollection();
     const bool heroInActive =
@@ -999,6 +1006,14 @@ void WorldSession::beforeInteraction(ProductUi& product, const scene::WalkerPose
 void WorldSession::afterInteraction(const InteractionResult& result, ProductUi& product,
                                     const scene::WalkerPose& walker) {
     m_launch.afterInteraction(result, product, *m_interaction, walker, m_context.frameIndex());
+    // I4b step 3: "Sposta" on the card: the editor with the item held.
+    if (result.editMove && !m_edit) {
+        const world::CollectionItem* item = m_interaction->item(*result.editMove);
+        const std::optional<world::RoomId> room = m_interaction->activeRoomId();
+        if (item != nullptr && room) {
+            beginEdit(product, *room, "card", item->game);
+        }
+    }
 }
 
 std::optional<WorldLabelContent> WorldSession::label(const scene::Camera& camera, glm::ivec2 viewSize) {
@@ -1027,6 +1042,7 @@ void WorldSession::frameRendered() {
     }
     m_waitSince.reset();
     m_nextFrame = m_context.frameIndex() + 1;
+    editFrameRendered(); // I4b step 3
     if (std::exchange(m_previewAwaitingFrame, false) && m_record.preview) {
         // The stored plan's floor as its first frame showed it (I3 step 10c); the building's result may come now.
         std::uint64_t fronts = 0;
@@ -1058,7 +1074,8 @@ bool WorldSession::waits() const {
     const bool flowPending =
         m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
-                         ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled();
+                         ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled() ||
+                         editWaits();
     if (!pending) {
         return false;
     }
@@ -1117,6 +1134,9 @@ std::vector<RoomUpdateRecord> WorldSession::roomRecords(const LiveUpdatePlan& pl
 
 void WorldSession::record(RunReport& report) const {
     WorldRecord world = m_record;
+    if (m_edit) {
+        world.edits.push_back(m_edit->record); // I4b step 3: a session still open at the run's end
+    }
     world.state = m_state;
     world.screenRoom = m_screenRooms.bound().value_or(std::string());
     // The room that holds the eye at the end (I4 step 5a), "" in a hall or before a floor showed.

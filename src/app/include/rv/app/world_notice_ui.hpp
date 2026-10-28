@@ -45,11 +45,14 @@ inline constexpr std::string_view kRoomUnreachable = "room-unreachable";
 /// families' successors (standing on their side, the spine out; since I6 step 6 the arcade room's cases to its
 /// cabinets' screens): shown over the floor for kShownSeconds, once (the next update migrates nothing).
 inline constexpr std::string_view kRoomsMigrated = "rooms-migrated";
+/// I4b step 3 (ADR-0015 §2, §4): the editor cannot edit the room now (overrides.json written by a newer Retroverse, the
+/// world's data or lock out of reach, the room not ready): nothing is edited. Shown for kShownSeconds.
+inline constexpr std::string_view kEditUnavailable = "edit-unavailable";
 
 /// Every key with a sentence of its own.
-inline constexpr std::array<std::string_view, 10> kNotices{kGenerating,       kNoCatalog,    kNoGames, kMediaUnknown,
+inline constexpr std::array<std::string_view, 11> kNotices{kGenerating,       kNoCatalog,    kNoGames, kMediaUnknown,
                                                            kMediaUnknownKept, kRegeneration, kRefused, kFailed,
-                                                           kRoomUnreachable,  kRoomsMigrated};
+                                                           kRoomUnreachable,  kRoomsMigrated, kEditUnavailable};
 /// The catalog states kNoCatalog has a sentence for (CatalogState but Ready and Opening).
 inline constexpr std::array<std::string_view, 5> kCatalogStates{"no-library", "no-database", "data-directory",
                                                                 "library-mismatch", "unavailable"};

@@ -140,6 +140,27 @@ void WorldHover::clear() {
     syncAnimationPhase(false);
 }
 
+bool WorldHover::enterEdit() {
+    if (!m_interaction.enterEdit()) {
+        return false;
+    }
+    syncCollection();
+    syncAnimationPhase(false);
+    addEvent("edit", world::kNoPick, std::string(toString(m_interaction.state())));
+    m_lastState = m_interaction.state();
+    m_lastFocused = world::kNoPick;
+    m_lastHovered = world::kNoPick;
+    m_lastPulled.clear();
+    return true;
+}
+
+void WorldHover::leaveEdit() {
+    m_interaction.leaveEdit();
+    syncCollection();
+    addEvent("edit-end", world::kNoPick, std::string(toString(m_interaction.state())));
+    m_lastState = m_interaction.state();
+}
+
 InteractionResult WorldHover::update(const Frame& frame) {
     // The room that holds the eye, once the room the interaction is in let go of its items.
     if (m_wanted != m_active) {

@@ -99,6 +99,11 @@ public:
     }
     /// The collections go (before the application replaces the scene): no room, nothing pulled.
     void clear();
+    /// I4b step 3 (ADR-0015 §4): the state Edit (WorldInteraction::enterEdit()), the room's records synced (every item
+    /// back in its slot, none outlined: the editor marks its own); false when the interaction cannot enter it now. And
+    /// back to free roam.
+    bool enterEdit();
+    void leaveEdit();
 
     /// One frame (WorldInteraction::update over the room), its flags written to the collection. The result asks the
     /// application for a shell Back level, the quick catalog and the walker's pose of an ease.

@@ -816,6 +816,61 @@ struct ShowcaseRecord {
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
+/// I4b step 3: one operation of an edit session (ADR-0015 §4), as the editor asked it.
+struct EditOperationRecord {
+    /// The frame the player asked it in, and the frame it showed in (none: refused, or not shown by the run's end).
+    std::uint64_t frame = 0;
+    std::optional<std::uint64_t> shownFrame;
+    /// world::toString(EditKind) and world::editText().
+    std::string op;
+    std::string operation;
+    /// The refusal's rule ("" applied), and "" or the edit's rebuild level ("no-rebuild", "local-reflow").
+    std::string refused;
+    std::string rebuild;
+    /// How it showed: "in-place" (the room's collection laid out again and applied in place), "floor" (the floor built
+    /// again from the draft: its static part changed), "none" (pins only, or refused).
+    std::string path;
+    /// Milliseconds: the draft's applyEdit() and the room's layout on the pool; from the request to the frame it
+    /// showed (ADR-0015 §9's 0.25 s).
+    std::optional<double> editMs;
+    std::optional<double> shownMs;
+
+    bool operator==(const EditOperationRecord&) const = default;
+};
+
+/// I4b step 3: one edit session (ADR-0015 §4).
+struct WorldEditRecord {
+    /// The room edited, how the session was entered ("directory", "card") and on which frame; the game "Sposta" held.
+    std::string room;
+    std::string via;
+    std::uint64_t enterFrame = 0;
+    std::string heldAtStart;
+    /// The room's data read and the session ready (milliseconds after the request), or why it could not start.
+    std::optional<std::uint64_t> readyFrame;
+    std::optional<double> prepareMs;
+    std::string failed;
+    std::vector<EditOperationRecord> operations;
+    /// "Annulla ultima azione" taken, and the menu's openings.
+    std::uint64_t undone = 0;
+    std::uint64_t menus = 0;
+    /// How it ended ("saved", "discarded", "exited": nothing pending; "" still open at the run's end) and on which frame;
+    /// the save: written, replayed over a changed plan, refused (its rule), the snapshot, the plan's digest after it,
+    /// its time and the time until the room showed again (ADR-0015 §9's 3 s).
+    std::string end;
+    std::optional<std::uint64_t> endFrame;
+    bool written = false;
+    bool replayed = false;
+    std::string saveRefused;
+    std::string snapshot;
+    std::string planDigest;
+    std::optional<double> saveMs;
+    std::optional<double> backMs;
+    /// Live updates (a refresh's building result) that waited for the session's end.
+    std::uint64_t deferredUpdates = 0;
+
+    bool operator==(const WorldEditRecord&) const = default;
+};
+
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -925,6 +980,8 @@ struct WorldRecord {
     /// I6 step 5: the frames the hub's directory totem's prompt showed, its favourites showcase.
     std::uint64_t totemPromptFrames = 0;
     ShowcaseRecord showcase;
+    /// I4b step 3: the editor's sessions, in order.
+    std::vector<WorldEditRecord> edits;
 
     bool operator==(const WorldRecord&) const = default;
 };

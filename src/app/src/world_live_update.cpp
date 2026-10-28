@@ -34,6 +34,14 @@ void WorldSession::startLiveFlow(ProductUi& product) {
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return;
     }
+    // I4b step 3 (ADR-0015 §4): updates wait for an edit session's end.
+    if (m_edit) {
+        if (m_edit->record.deferredUpdates == 0) {
+            spdlog::info("Frame {}: the floor's live update waits for the edit session's end", m_context.frameIndex());
+        }
+        m_edit->record.deferredUpdates = 1;
+        return;
+    }
     m_liveRequested = false;
     WorldFlow::Options flow;
     flow.paths = m_options.paths;

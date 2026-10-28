@@ -120,6 +120,8 @@ add_library(rv_app STATIC
     src/world_session.cpp
     src/world_showcase.cpp
     src/world_start.cpp
+    src/edit_bar_panel.cpp
+    src/world_edit.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)

@@ -154,8 +154,11 @@ struct LiveUpdatePlan {
     [[nodiscard]] const RoomUpdate* find(const world::RoomId& room) const noexcept;
 };
 
-/// What to do with `build` while `shown` shows (see the file comment).
-[[nodiscard]] LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build);
+/// What to do with `build` while `shown` shows (see the file comment). `movesInPlace` (I4b step 3, the editor: a game
+/// moved or swapped, ADR-0015 §4's "texture swap"): items at another pick id or transform are applied in place too
+/// (Items) when the static part is the same, instead of committing the floor again.
+[[nodiscard]] LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build,
+                                            bool movesInPlace = false);
 
 /// How a floor committed again moves what stands in an area (ADR-0013 §7): from the area's frame in the floor shown to
 /// its frame in the build, in the scene's frame (a translation, and a half turn when the frames are turned apart).

@@ -958,6 +958,95 @@ std::optional<WalkerKeptRecord> readWalker(FieldReader& fields) {
     return record;
 }
 
+/// I4b step 3: the editor's sessions (world.edits).
+Json editsToJson(const std::vector<WorldEditRecord>& edits) {
+    Json sessions = Json::array();
+    for (const WorldEditRecord& edit : edits) {
+        Json operations = Json::array();
+        for (const EditOperationRecord& operation : edit.operations) {
+            Json record{{"frame", operation.frame},
+                        {"op", operation.op},
+                        {"operation", operation.operation},
+                        {"refused", operation.refused},
+                        {"rebuild", operation.rebuild},
+                        {"path", operation.path}};
+            if (operation.shownFrame) {
+                record["shownFrame"] = *operation.shownFrame;
+            }
+            putOptional(record, "editMs", operation.editMs);
+            putOptional(record, "shownMs", operation.shownMs);
+            operations.push_back(std::move(record));
+        }
+        Json session{{"room", edit.room},
+                     {"via", edit.via},
+                     {"enterFrame", edit.enterFrame},
+                     {"heldAtStart", edit.heldAtStart},
+                     {"failed", edit.failed},
+                     {"operations", std::move(operations)},
+                     {"undone", edit.undone},
+                     {"menus", edit.menus},
+                     {"end", edit.end},
+                     {"written", edit.written},
+                     {"replayed", edit.replayed},
+                     {"saveRefused", edit.saveRefused},
+                     {"snapshot", edit.snapshot},
+                     {"planDigest", edit.planDigest},
+                     {"deferredUpdates", edit.deferredUpdates}};
+        if (edit.readyFrame) {
+            session["readyFrame"] = *edit.readyFrame;
+        }
+        if (edit.endFrame) {
+            session["endFrame"] = *edit.endFrame;
+        }
+        putOptional(session, "prepareMs", edit.prepareMs);
+        putOptional(session, "saveMs", edit.saveMs);
+        putOptional(session, "backMs", edit.backMs);
+        sessions.push_back(std::move(session));
+    }
+    return sessions;
+}
+
+std::vector<WorldEditRecord> readEdits(FieldReader& fields) {
+    std::vector<WorldEditRecord> edits;
+    for (FieldReader& session : fields.optionalObjectArray("edits")) {
+        WorldEditRecord edit;
+        edit.room = session.string("room");
+        edit.via = session.string("via");
+        edit.enterFrame = session.count("enterFrame");
+        edit.heldAtStart = session.string("heldAtStart");
+        edit.readyFrame = session.optionalCount("readyFrame");
+        edit.prepareMs = session.optionalNumber("prepareMs");
+        edit.failed = session.string("failed");
+        for (FieldReader& operation : session.optionalObjectArray("operations")) {
+            EditOperationRecord record;
+            record.frame = operation.count("frame");
+            record.shownFrame = operation.optionalCount("shownFrame");
+            record.op = operation.string("op");
+            record.operation = operation.string("operation");
+            record.refused = operation.string("refused");
+            record.rebuild = operation.string("rebuild");
+            record.path = operation.string("path");
+            record.editMs = operation.optionalNumber("editMs");
+            record.shownMs = operation.optionalNumber("shownMs");
+            edit.operations.push_back(std::move(record));
+        }
+        edit.undone = session.count("undone");
+        edit.menus = session.count("menus");
+        edit.end = session.string("end");
+        edit.endFrame = session.optionalCount("endFrame");
+        edit.written = session.boolean("written");
+        edit.replayed = session.boolean("replayed");
+        edit.saveRefused = session.string("saveRefused");
+        edit.snapshot = session.string("snapshot");
+        edit.planDigest = session.string("planDigest");
+        edit.saveMs = session.optionalNumber("saveMs");
+        edit.backMs = session.optionalNumber("backMs");
+        edit.deferredUpdates = session.count("deferredUpdates");
+        edits.push_back(std::move(edit));
+    }
+    return edits;
+}
+
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
     if (!world.bound) {
@@ -1191,6 +1280,9 @@ Json worldToJson(const WorldRecord& world) {
                                 {"lastCard", world.showcase.lastCard},
                                 {"hovered", world.showcase.hovered},
                                 {"frontsResident", world.showcase.frontsResident}};
+    }
+    if (!world.edits.empty()) {
+        json["edits"] = editsToJson(world.edits);
     }
     return json;
 }
@@ -1429,6 +1521,7 @@ WorldRecord readWorld(FieldReader& fields) {
         world.showcase.hovered = showcase->string("hovered");
         world.showcase.frontsResident = showcase->count("frontsResident");
     }
+    world.edits = readEdits(fields);
     return world;
 }
 

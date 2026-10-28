@@ -99,6 +99,7 @@
 #include <rv/world/where_is.hpp>
 
 #include "world_card.hpp"
+#include "world_edit.hpp"
 #include "world_hover.hpp"
 #include "world_launch.hpp"
 #include "world_notice_panel.hpp"
@@ -272,7 +273,52 @@ public:
     /// the frames it shows are counted.
     void elevatorPrompt(ProductUi& product, std::optional<std::string> key, bool totem = false);
 
+    // --- I4b step 3: the editor (world_edit.cpp; ADR-0015 §4) -----------------------------------------------------
+
+    /// An edit session runs (the state Edit): the directory, the quick catalog, rides and live updates wait.
+    [[nodiscard]] bool editing() const noexcept { return m_edit != nullptr; }
+
 private:
+    // I4b step 3 (world_edit.cpp).
+    /// The room the editor can edit now ("Modifica stanza": the room that holds the eye, with its collection, while no
+    /// floor is on its way, no ride, no launch, no session), if any.
+    [[nodiscard]] std::optional<std::string> editableRoom(const ProductUi& product) const;
+    /// A session begins in `room` (`via` "directory" or "card"; `held` the game "Sposta" took), or is refused with the
+    /// world's notice.
+    void beginEdit(ProductUi& product, const world::RoomId& room, std::string_view via,
+                   std::optional<catalog::GameId> held);
+    /// The editor's frame in place of the interaction's (interact()).
+    [[nodiscard]] InteractionResult editFrame(const WorldHover::Frame& frame);
+    /// Every update: a job's answer taken, the bar shown (hidden once no session runs).
+    void followEdit(ProductUi& product);
+    void takeEditAnswer(EditJobAnswer answer);
+    void requestEditOperation(const world::EditOperation& operation);
+    void requestEditDisplay(EditJob job, world::EditedWorld world, std::string digest, world::RebuildLevel rebuild,
+                            std::vector<world::RoomId> rooms);
+    void requestEditSave();
+    /// Submits `work` as the session's one job (its answer into the session's box, the host woken).
+    void submitEditJob(EditJob job, std::function<EditJobAnswer(const core::JobContext&)> work);
+    /// `build` shown for the session (`fullFloor`: its own scene, else the shown one's with its rooms laid out again):
+    /// applied in place room by room when the static part is the same, else the floor committed again. False when it
+    /// could not be shown.
+    [[nodiscard]] bool showEditBuild(WorldBuild& build, bool fullFloor);
+    /// The edited room's targets from the session's floor shown.
+    void bindEditRoom();
+    /// The held item's static records hidden, the target outlined (every frame), or both cleared.
+    void syncEditFlags();
+    void clearEditFlags();
+    /// The session ends (`end`: "saved", "discarded", "exited", "failed"), its record kept.
+    void endEdit(std::string_view end);
+    /// The view's items in Edit: the held game in the hand, smaller, and where it would stand in an empty slot.
+    [[nodiscard]] std::span<const scene::RenderItem> editViewItems(std::span<const scene::RenderItem> sceneItems,
+                                                                   const scene::Camera& camera);
+    /// A frame was rendered: the time an edit took to show.
+    void editFrameRendered();
+    /// A lockstep run waits for the session's job.
+    [[nodiscard]] bool editWaits() const noexcept;
+    /// The collection of the edited room, if shown.
+    [[nodiscard]] CollectionInstance* editCollection() const;
+
     using Clock = std::chrono::steady_clock;
 
     /// What the floor-build jobs of rides read (I4 step 7b): the plan shown, its digest and library, the media roots
@@ -598,6 +644,12 @@ private:
     /// frame on, whether the swap came in a frame or in a lockstep wait (the same frames on every run).
     std::uint64_t m_updates = 0;
     std::uint64_t m_swapUpdate = 0;
+
+    /// I4b step 3: the edit session (none outside the editor), the sessions so far, whether the bar shows, the live
+    /// updates deferred by a session.
+    std::unique_ptr<WorldEditState> m_edit;
+    std::uint64_t m_editSessions = 0;
+    bool m_editBarShown = false;
 };
 
 /// The placements per section of `build`'s floor and the unplaced games per reason of its plan, into `record`
