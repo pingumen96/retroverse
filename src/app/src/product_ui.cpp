@@ -38,6 +38,7 @@
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
 
+#include "edit_bar_panel.hpp"
 #include "elevator_prompt_panel.hpp"
 #include "game_screens_panel.hpp"
 #include "game_session_panel.hpp"
@@ -179,10 +180,14 @@ struct ProductUi::Impl {
     std::unique_ptr<ElevatorPromptPanel> prompt;
     std::optional<std::string> wantedPrompt;
     bool wantedTotem = false;
+    /// I4b step 3: the editor's bar and what the world wants it to show.
+    std::unique_ptr<EditBarPanel> editBar;
+    std::optional<EditBarContent> wantedEditBar;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
-               (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible());
+               (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
+               (editBar && editBar->visible());
     }
 
     /// The media viewer or Informazioni shows (I3 step 14b).
@@ -230,6 +235,18 @@ struct ProductUi::Impl {
         }
     }
 
+    /// I4b step 3: the editor's bar likewise.
+    void syncEditBar() {
+        if (!editBar) {
+            return;
+        }
+        if (!wantedEditBar || overWorld()) {
+            editBar->hide();
+        } else {
+            editBar->show(*wantedEditBar);
+        }
+    }
+
     /// The elevator's prompt likewise (I4 step 7b).
     void syncPrompt() {
         if (!prompt) {
@@ -271,6 +288,7 @@ struct ProductUi::Impl {
         case ui::DirectoryCommandKind::ChooseFloor:
         case ui::DirectoryCommandKind::ChooseRoom:
         case ui::DirectoryCommandKind::ShowInRoom:
+        case ui::DirectoryCommandKind::EditRoom:
             directoryCommands.push_back(*command);
             break;
         }
@@ -804,6 +822,11 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     } else {
         spdlog::error("World card unavailable: {}", card.error().toString());
     }
+    if (auto editBar = EditBarPanel::create(*s.view)) {
+        s.editBar = std::move(*editBar);
+    } else {
+        spdlog::error("The editor's bar unavailable: {}", editBar.error().toString());
+    }
     // The media viewer and Informazioni (I3 step 14b), loaded after the other documents: over them when shown.
     if (auto screens = GameScreensPanel::create(*s.view, *s.system, paths.configDir() / esde::kLibraryFileName,
                                                 context.wakeCallback())) {
@@ -1053,6 +1076,10 @@ void ProductUi::setWorldNotice(WorldNoticeContent content) {
     m_impl->wantedNotice = std::move(content);
 }
 
+void ProductUi::setEditBar(std::optional<EditBarContent> content) {
+    m_impl->wantedEditBar = std::move(content);
+}
+
 void ProductUi::setWorldLabel(std::optional<WorldLabelContent> content) {
     m_impl->wantedLabel = std::move(content);
 }
@@ -1187,6 +1214,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncLabel();
     s.syncCard();
     s.syncPrompt();
+    s.syncEditBar();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
