@@ -209,6 +209,10 @@ private:
 
 } // namespace
 
+bool isUnreadableText(ErrorCode code) noexcept {
+    return code == ErrorCode::ParseError || code == ErrorCode::ValidationFailed;
+}
+
 std::string_view toString(VerdictSource source) noexcept {
     return source == VerdictSource::Play ? "play" : "check";
 }
@@ -347,8 +351,11 @@ std::filesystem::path videoVerdictsFile(const std::filesystem::path& cacheDir) {
     return cacheDir / "media" / "videos.json";
 }
 
-Expected<VideoVerdicts> readVideoVerdicts(const std::filesystem::path& file) {
-    auto text = core::readTextFile(file);
+namespace {
+
+/// The file read, the lock held by the caller.
+Expected<VideoVerdicts> readHeld(const std::filesystem::path& file) {
+    auto text = core::readFileShared(file, core::kDefaultTextLimitBytes);
     if (!text) {
         if (text.error().code == ErrorCode::NotFound) {
             return VideoVerdicts{};
@@ -358,18 +365,43 @@ Expected<VideoVerdicts> readVideoVerdicts(const std::filesystem::path& file) {
     return VideoVerdicts::parse(*text, core::pathToUtf8Lossy(file));
 }
 
-Expected<VideoVerdicts> updateVideoVerdicts(const std::filesystem::path& file, std::span<const VideoVerdict> changes,
-                                            std::span<const std::string> removals, std::chrono::milliseconds lockWait) {
-    const FileLock lock(file, lockWait);
+/// The lock of `file` had, or why not.
+Status lockHeld(const FileLock& lock, const std::filesystem::path& file) {
     if (lock.created() && !lock.held()) {
         return makeError(ErrorCode::Conflict, "another process writes the clips' verdicts",
                          core::pathToUtf8Lossy(file));
     }
     if (!lock.created()) {
-        spdlog::warn("Video verdicts: no lock for {}; written without one", core::pathToUtf8Lossy(file));
+        spdlog::warn("Video verdicts: no lock for {}; used without one", core::pathToUtf8Lossy(file));
     }
-    auto verdicts = readVideoVerdicts(file);
+    return ok();
+}
+
+} // namespace
+
+Expected<VideoVerdicts> readVideoVerdicts(const std::filesystem::path& file, std::chrono::milliseconds lockWait) {
+    // Under the writers' lock: a writer's replace (a rename over the file) fails while another program holds it open,
+    // even for a read that shares everything.
+    const FileLock lock(file, lockWait);
+    if (const Status held = lockHeld(lock, file); !held) {
+        return propagate(held.error());
+    }
+    return readHeld(file);
+}
+
+Expected<VideoVerdicts> updateVideoVerdicts(const std::filesystem::path& file, std::span<const VideoVerdict> changes,
+                                            std::span<const std::string> removals, std::chrono::milliseconds lockWait) {
+    const FileLock lock(file, lockWait);
+    if (const Status held = lockHeld(lock, file); !held) {
+        return propagate(held.error());
+    }
+    auto verdicts = readHeld(file);
     if (!verdicts) {
+        // Only a text that is not the verdicts' is replaced; a file that could not be read (held, a device error, too
+        // large) keeps its verdicts, and this write waits for the next one.
+        if (!isUnreadableText(verdicts.error().code)) {
+            return propagate(verdicts.error());
+        }
         spdlog::warn("Video verdicts: {} is replaced ({})", core::pathToUtf8Lossy(file), verdicts.error().toString());
         verdicts = VideoVerdicts{};
     }

@@ -18,6 +18,12 @@
 // "corrupt-data", "truncated", "decoder-error"); "modified" the last write time in FILETIME ticks; "durationMs",
 // "width", "height", "audioSampleRate" and "codec" what the decoder found (0 and "" when it found nothing); "source"
 // "check" (the CLI's sample) or "play" (the app). The verdicts are sorted by their folded paths.
+//
+// A verdict lasts until its file changes (another size or last write time). Deleting the file forgets every verdict
+// (each clip is checked or played again); `retroverse-cli media --check-videos --recheck-failures` checks the clips
+// with a failure verdict again. The version names the verdicts' meaning as well as their form: a change of the decoder
+// that may judge a clip otherwise (an FFmpeg upgrade, a threshold of ADR-0004) raises kVideoVerdictsVersion, and a file
+// of another version is replaced by the next write (every clip checked again).
 
 #include <rv/core/expected.hpp>
 #include <rv/core/file_io.hpp>
@@ -128,14 +134,23 @@ private:
 /// <cache dir>/media/videos.json.
 [[nodiscard]] std::filesystem::path videoVerdictsFile(const std::filesystem::path& cacheDir);
 
-/// Reads the verdicts file; a file that does not exist gives none. Errors: those of reading it, and of parse().
-[[nodiscard]] Expected<VideoVerdicts> readVideoVerdicts(const std::filesystem::path& file);
+/// Reads the verdicts file under the lock its writers share (updateVideoVerdicts()), waiting at most `lockWait` for
+/// it: a writer's atomic replace (a rename over the file) fails while another program holds the file open, whatever
+/// that program shares. A file that does not exist gives none. Errors: Conflict when the lock is not had in time, those
+/// of reading the file (core::readFileShared's), and of parse() (ParseError, ValidationFailed: isUnreadableText()).
+[[nodiscard]] Expected<VideoVerdicts> readVideoVerdicts(const std::filesystem::path& file,
+                                                        std::chrono::milliseconds lockWait = std::chrono::seconds(10));
+
+/// True for the errors of a verdicts file whose text is not the verdicts' (ParseError, ValidationFailed): the file was
+/// read, and the next write replaces it. Any other error of reading it leaves it as it is.
+[[nodiscard]] bool isUnreadableText(ErrorCode code) noexcept;
 
 /// Merges `changes` (each replacing the verdict of its path) and `removals` (paths whose verdicts go) into the file as
 /// it is now, and writes it atomically (core::writeTextFileAtomic), under a lock the processes share (a named mutex of
-/// the file's path) so that the app and the CLI never drop each other's verdicts; a file that cannot be read or parsed
-/// is replaced (logged). Returns what was written. Errors: Conflict when the lock is not had within `lockWait`, those
-/// of set() for a malformed change, those of writing the file.
+/// the file's path) so that the app and the CLI never drop each other's verdicts. A file whose text is not the
+/// verdicts' (isUnreadableText()) is replaced (logged); a file that cannot be read is left as it is and nothing is
+/// written. Returns what was written. Errors: Conflict when the lock is not had within `lockWait`, those of reading the
+/// file (not its parse), those of set() for a malformed change, those of writing the file.
 [[nodiscard]] Expected<VideoVerdicts>
 updateVideoVerdicts(const std::filesystem::path& file, std::span<const VideoVerdict> changes,
                     std::span<const std::string> removals = {},

@@ -9,7 +9,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <windows.h>
+
+#include <atomic>
+#include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 
 using rv::media::DecodeFailure;
@@ -212,6 +217,70 @@ TEST_CASE("media/video_verdicts: the file, merged by two writers", "[media][vide
     // A malformed change writes nothing.
     CHECK_FALSE(rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("../e.mp4")}).has_value());
     CHECK(rv::media::readVideoVerdicts(file).value().size() == 1);
+}
+
+TEST_CASE("media/video_verdicts: readers and writers take turns; a file that cannot be read keeps its verdicts",
+          "[media][video_verdicts]") {
+    const rv::test::TempDir dir("video-verdicts-io");
+    const std::filesystem::path file = rv::media::videoVerdictsFile(dir.file("cache"));
+    REQUIRE(rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("snes/videos/a.mp4")}).has_value());
+
+    // A reader (the app's startup read, the CLI's first read) and a writer at once: a replace over a file another
+    // reader holds open would fail, so readers take the writers' lock too. Every read and every write succeeds.
+    {
+        std::atomic<int> writeFailures{0};
+        std::thread writer([&] {
+            for (int index = 0; index < 150; ++index) {
+                VideoVerdict next = verdict("snes/videos/w" + std::to_string(index % 10) + ".mp4");
+                next.file.size = static_cast<std::uint64_t>(1000 + index);
+                if (!rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{next})) {
+                    ++writeFailures;
+                }
+            }
+        });
+        int readFailures = 0;
+        for (int index = 0; index < 150; ++index) {
+            if (!rv::media::readVideoVerdicts(file)) {
+                ++readFailures;
+            }
+        }
+        writer.join();
+        CHECK(writeFailures.load() == 0);
+        CHECK(readFailures == 0);
+    }
+    REQUIRE(rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("snes/videos/b.mp4")}).has_value());
+    CHECK(rv::media::readVideoVerdicts(file).value().size() == 12);
+    const std::string two = rv::core::readTextFile(file).value();
+
+    // Held by another program that shares nothing: the read fails (no parse error), and the write leaves the file and
+    // its verdicts as they are.
+    {
+        const HANDLE held =
+            CreateFileW(file.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        REQUIRE(held != INVALID_HANDLE_VALUE);
+        const auto read = rv::media::readVideoVerdicts(file);
+        REQUIRE_FALSE(read.has_value());
+        CHECK_FALSE(rv::media::isUnreadableText(read.error().code));
+        const auto refused =
+            rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("snes/videos/c.mp4")});
+        CloseHandle(held);
+        REQUIRE_FALSE(refused.has_value());
+    }
+    CHECK(rv::core::readTextFile(file).value() == two);
+
+    // Larger than a verdicts file may be: refused unread, the file left as it is.
+    const std::string large(static_cast<std::size_t>(rv::core::kDefaultTextLimitBytes) + 1, ' ');
+    REQUIRE(rv::core::writeTextFileAtomic(file, large));
+    const auto oversize = rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("snes/videos/c.mp4")});
+    REQUIRE_FALSE(oversize.has_value());
+    CHECK(oversize.error().code == rv::ErrorCode::OutOfRange);
+    CHECK(std::filesystem::file_size(file) == large.size());
+
+    // A folder in its place: nothing written.
+    std::filesystem::remove(file);
+    std::filesystem::create_directories(file);
+    CHECK_FALSE(rv::media::updateVideoVerdicts(file, std::vector<VideoVerdict>{verdict("snes/videos/c.mp4")}));
+    CHECK(std::filesystem::is_directory(file));
 }
 
 TEST_CASE("media/video_verdicts: what the decoder found describes the verdict", "[media][video_verdicts]") {
