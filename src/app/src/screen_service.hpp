@@ -113,8 +113,9 @@ struct ScreenServiceOptions {
     /// --video-freeze-pts: every clip opens paused, seeks to this time and holds that frame (the frame is waited for
     /// before the frame that shows it goes on, at most kFreezeWait), for goldens.
     std::optional<double> freezePtsSeconds;
-    /// --fixed-dt (lockstep runs): a still picture being loaded is waited for (at most kStillWait), so that scripted
-    /// runs show the same picture on the same frame.
+    /// --fixed-dt (lockstep runs): a still picture being loaded is waited for (at most kStillWait), and so is the first
+    /// frame of a clip a slot opened for a screen in view (at most kFirstFrameWait, NFR-06's 2 s), so that scripted runs
+    /// show the same picture on the same frame.
     bool lockstep = false;
     /// video.json (I5 step 1, ADR-0016 §4): clips at all, each room's and screen's settings (its playlist,
     /// previewDuration, showOnFocus, the explicit games); since step 2 the budget, the rows and proximityMeters.

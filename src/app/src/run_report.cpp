@@ -1286,6 +1286,8 @@ Json worldToJson(const WorldRecord& world) {
     if (!world.edits.empty()) {
         json["edits"] = editsToJson(world.edits);
     }
+    json["cabinetClipFrames"] = world.cabinetClipFrames;
+    json["cabinetCoverBeneathFrames"] = world.cabinetCoverBeneathFrames;
     return json;
 }
 
@@ -1524,6 +1526,9 @@ WorldRecord readWorld(FieldReader& fields) {
         world.showcase.frontsResident = showcase->count("frontsResident");
     }
     world.edits = readEdits(fields);
+    // I5 step 4's review (absent from earlier reports).
+    world.cabinetClipFrames = fields.optionalCount("cabinetClipFrames").value_or(0);
+    world.cabinetCoverBeneathFrames = fields.optionalCount("cabinetCoverBeneathFrames").value_or(0);
     return world;
 }
 
@@ -1806,16 +1811,24 @@ Json videoToJson(const VideoRecord& video) {
                                      {"picture", event.picture}});
     }
     json["cabinetEvents"] = std::move(cabinetEvents);
+    json["cabinetEventsDropped"] = video.cabinetEventsDropped;
     json["heldFrameShows"] = video.heldFrameShows;
+    json["firstFrameWaits"] = video.firstFrameWaits;
+    json["firstFrameWaitMaxMs"] = video.firstFrameWaitMaxMs;
+    json["firstFrameWaitTimeouts"] = video.firstFrameWaitTimeouts;
     Json events = Json::array();
     for (const VideoSlotEventRecord& event : video.slotEvents) {
-        events.push_back(Json{{"frame", event.frame},
-                              {"atSeconds", event.atSeconds},
-                              {"slot", event.slot},
-                              {"action", event.action},
-                              {"gameId", event.gameId},
-                              {"reason", event.reason},
-                              {"screens", event.screens}});
+        Json entry{{"frame", event.frame},
+                   {"atSeconds", event.atSeconds},
+                   {"slot", event.slot},
+                   {"action", event.action},
+                   {"gameId", event.gameId},
+                   {"reason", event.reason},
+                   {"screens", event.screens}};
+        if (event.fromSeconds) {
+            entry["fromSeconds"] = *event.fromSeconds;
+        }
+        events.push_back(std::move(entry));
     }
     json["slotEvents"] = std::move(events);
     Json drops = Json::array();
@@ -2090,7 +2103,12 @@ VideoRecord readVideo(FieldReader& fields) {
         event.picture = entry.string("picture");
         video.cabinetEvents.push_back(std::move(event));
     }
+    video.cabinetEventsDropped = fields.optionalCount("cabinetEventsDropped").value_or(0);
     video.heldFrameShows = fields.optionalCount("heldFrameShows").value_or(0);
+    // I5 step 4's review (absent from earlier reports).
+    video.firstFrameWaits = fields.optionalCount("firstFrameWaits").value_or(0);
+    video.firstFrameWaitMaxMs = fields.optionalNumber("firstFrameWaitMaxMs").value_or(0.0);
+    video.firstFrameWaitTimeouts = fields.optionalCount("firstFrameWaitTimeouts").value_or(0);
     for (FieldReader& entry : fields.optionalObjectArray("slotEvents")) {
         VideoSlotEventRecord event;
         event.frame = entry.count("frame");
@@ -2100,6 +2118,7 @@ VideoRecord readVideo(FieldReader& fields) {
         event.gameId = entry.string("gameId");
         event.reason = entry.string("reason");
         event.screens = entry.stringArray("screens");
+        event.fromSeconds = entry.optionalNumber("fromSeconds");
         video.slotEvents.push_back(std::move(event));
     }
     for (FieldReader& entry : fields.optionalObjectArray("budgetDrops")) {

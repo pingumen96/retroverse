@@ -59,6 +59,10 @@ constexpr std::size_t kMaxTimelineEntries = 512;
 /// the picture, so that its null mix is the same on every run.
 constexpr std::chrono::milliseconds kAudioWait{100};
 constexpr double kAudioLeadSeconds = 0.04;
+/// A lockstep run's frame waits (at most this long: NFR-06's 2 s from a selection to its first frame) for the first
+/// frame of a clip a slot opened for a screen in view, so that the frame it shows on does not depend on the decoder
+/// thread's pace (I5 step 4's review).
+constexpr std::chrono::seconds kFirstFrameWait{2};
 /// An inspected cabinet's screen is held in the hand: this far from the eye (its sound's distance, its rank's).
 constexpr double kInHandMeters = 0.5;
 
@@ -344,6 +348,8 @@ struct ScreenService::Impl {
         std::optional<double> firstUploadAt;
         double lastUploadAt = 0.0;
         bool frozenShown = false;
+        /// A lockstep run waited for its first frame already (once per opening: a wait that ran out is not repeated).
+        bool firstFrameWaited = false;
 
         /// The frame waiting for its upload (VideoPlayback::update()'s), and the render frame it began to wait.
         const media::VideoFrame* pending = nullptr;
@@ -551,11 +557,11 @@ struct ScreenService::Impl {
     }
 
     void recordEvent(std::size_t slot, SlotAction action, std::string gameId, std::string reason,
-                     std::vector<std::string> shownOn) {
+                     std::vector<std::string> shownOn, std::optional<double> fromSeconds = std::nullopt) {
         if (counters.slotEvents.size() < kMaxTimelineEntries) {
             counters.slotEvents.push_back(VideoSlotEventRecord{frameIndex, now, slot, std::string(toString(action)),
                                                                std::move(gameId), std::move(reason),
-                                                               std::move(shownOn)});
+                                                               std::move(shownOn), fromSeconds});
         } else {
             ++counters.slotEventsDropped;
         }
@@ -701,6 +707,7 @@ struct ScreenService::Impl {
         slot.lastPts.reset();
         slot.firstUploadAt.reset();
         slot.frozenShown = false;
+        slot.firstFrameWaited = false;
         slot.pending = nullptr;
         slot.pendingSince.reset();
         slot.media = first.policy.targetMedia();
@@ -732,7 +739,8 @@ struct ScreenService::Impl {
         } else if (resume) {
             slot.playback->seek(*resume);
         }
-        recordEvent(index, SlotAction::Open, slot.gameId, "wanted", screenIds(on));
+        recordEvent(index, SlotAction::Open, slot.gameId, "wanted", screenIds(on),
+                    options.freezePtsSeconds ? options.freezePtsSeconds : resume);
         spdlog::info("Video slot {}: the video of game {} opens on {} screen(s){}", index, slot.gameId, on.size(),
                      options.freezePtsSeconds
                          ? fmt::format(", held at {:g} s (--video-freeze-pts)", *options.freezePtsSeconds)
@@ -889,6 +897,37 @@ struct ScreenService::Impl {
         return true;
     }
 
+    /// A lockstep run (not frozen: that run waits for its own frame): the first frame of a clip a slot opened for a
+    /// screen in view is waited for, at most kFirstFrameWait, once per opening, so that it shows on the frame the slot
+    /// opened whatever the decoder thread's pace (the waits recorded: VideoRecord::firstFrameWaits).
+    void awaitFirstFrame(Slot& slot) {
+        if (!options.lockstep || options.freezePtsSeconds || slot.firstFrameWaited || slot.frameShown ||
+            slot.pending != nullptr || slot.paused || slot.textureFailed || slot.playback->failed()) {
+            return;
+        }
+        const std::vector<ScreenState*> on = requesters(slot.clip);
+        if (std::none_of(on.begin(), on.end(), [](const ScreenState* screen) { return screen->visible; })) {
+            return;
+        }
+        slot.firstFrameWaited = true;
+        const Clock::time_point start = Clock::now();
+        const Clock::time_point deadline = start + kFirstFrameWait;
+        while (slot.pending == nullptr && !slot.playback->failed() && Clock::now() < deadline) {
+            std::this_thread::sleep_for(kPollInterval);
+            slot.pending = slot.playback->update(now).frame;
+        }
+        const double waited = millisecondsSince(start);
+        ++counters.firstFrameWaits;
+        counters.firstFrameWaitMaxMs = std::max(counters.firstFrameWaitMaxMs, waited);
+        if (slot.pending != nullptr) {
+            slot.pendingSince = frameIndex;
+        } else if (!slot.playback->failed()) {
+            ++counters.firstFrameWaitTimeouts;
+            spdlog::warn("Video: the first frame of game {}'s clip did not arrive within {} s (lockstep)", slot.gameId,
+                         kFirstFrameWait.count());
+        }
+    }
+
     /// Takes each open slot's frame of this time, then uploads them within kMaxVideoUploadBytesPerFrame, the longest
     /// pending first (ADR-0016 §2); a frame left over waits for the next render frame (or is superseded).
     void pumpSlots() {
@@ -924,6 +963,7 @@ struct ScreenService::Impl {
             if (slots[index].pending != nullptr) {
                 order.push_back(index);
             }
+            awaitFirstFrame(slot);
         }
         std::stable_sort(order.begin(), order.end(), [this](std::size_t a, std::size_t b) {
             return slots[a].pendingSince.value_or(frameIndex) < slots[b].pendingSince.value_or(frameIndex);
@@ -1637,6 +1677,8 @@ struct ScreenService::Impl {
             pendingCabinetEvents.push_back(std::move(event));
         } else if (counters.cabinetEvents.size() < kMaxTimelineEntries) {
             counters.cabinetEvents.push_back(std::move(event));
+        } else {
+            ++counters.cabinetEventsDropped;
         }
         spdlog::info("{}: {} of game {}", nameOf(cabinet), picture == "video" ? "its clip shows" : "its cover again",
                      cabinet.policy.targetId());
@@ -1649,6 +1691,8 @@ struct ScreenService::Impl {
             event.atSeconds = now;
             if (counters.cabinetEvents.size() < kMaxTimelineEntries) {
                 counters.cabinetEvents.push_back(std::move(event));
+            } else {
+                ++counters.cabinetEventsDropped;
             }
         }
         pendingCabinetEvents.clear();

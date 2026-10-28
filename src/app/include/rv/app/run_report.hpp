@@ -985,6 +985,10 @@ struct WorldRecord {
     ShowcaseRecord showcase;
     /// I4b step 3: the editor's sessions, in order.
     std::vector<WorldEditRecord> edits;
+    /// I5 step 4's review: the frames that drew a cabinet's clip on the dynamic path, and those among them in which
+    /// such a cabinet's static front (its cover) was drawn too, or its item was gone: 0.
+    std::uint64_t cabinetClipFrames = 0;
+    std::uint64_t cabinetCoverBeneathFrames = 0;
 
     bool operator==(const WorldRecord&) const = default;
 };
@@ -1181,10 +1185,11 @@ struct VideoShownRecord {
 /// (app::toString(ScreenKind)) and class (app::toString(ScreenClass)), the game and the picture it showed, the decoder
 /// slot showing its clip or reserved for it (none without), whether that slot played its clip, the GL texture its
 /// material showed (0: its own pattern; screens sharing a slot show one texture) and whether it was in view. Since I5
-/// step 4: the arcade cabinets playing at the end too (kind "cabinet", their pooled video material's texture); the
+/// step 4: the arcade cabinets asking for their clips at the end too (kind "cabinet"; picture "video" with the texture
+/// their pooled video material showed while their clip shows, else "cover" with 0: their item's own front); the
 /// rectangle of its screen the picture filled (x, y, width, height in its texture coordinates: ADR-0016 §7's letterbox
 /// or pillarbox; empty for the whole screen); whether it showed the frame it kept when its slot was taken (ADR-0016 §6:
-/// with one decoder, the hero cabinet's paused frame while a focused cabinet plays).
+/// with one decoder, the hero cabinet's paused frame while a focused cabinet plays; a cabinet never keeps one).
 struct VideoScreenRecord {
     std::string screen;
     std::string kind;
@@ -1219,7 +1224,8 @@ struct VideoCabinetEventRecord {
 /// What the scheduler did to a decoder slot (I5 step 2): the frame and the run's simulated seconds, the slot, the
 /// action (app::toString(SlotAction): "open", "stop", "pause", "resume"), the game whose clip it was, why (a
 /// SlotCommand's reason: "wanted", "unwanted", "needed", "out-of-view", "in-view", "budget", "launch", "unbind",
-/// "shutdown") and the screens showing it then.
+/// "shutdown") and the screens showing it then; since I5 step 4's review an open's position in its clip (seconds: where
+/// it stopped, a launch's position, --video-freeze-pts; absent from its start).
 struct VideoSlotEventRecord {
     std::uint64_t frame = 0;
     double atSeconds = 0.0;
@@ -1228,6 +1234,7 @@ struct VideoSlotEventRecord {
     std::string gameId;
     std::string reason;
     std::vector<std::string> screens;
+    std::optional<double> fromSeconds;
 
     bool operator==(const VideoSlotEventRecord&) const = default;
 };
@@ -1353,10 +1360,16 @@ struct VideoRecord {
     std::vector<VideoBudgetDropRecord> budgetDrops;
     /// The slots' events after the first 512, not listed (I5 step 2's review).
     std::uint64_t slotEventsDropped = 0;
-    /// The arcade cabinets' screens (I5 step 4): each start and end of a clip shown, in order (the first 512), and the
-    /// frames a bound screen showed the frame it kept when its slot was taken.
+    /// The arcade cabinets' screens (I5 step 4): each start and end of a clip shown, in order (the first 512), those
+    /// after them (not listed), and the frames a bound screen showed the frame it kept when its slot was taken.
     std::vector<VideoCabinetEventRecord> cabinetEvents;
+    std::uint64_t cabinetEventsDropped = 0;
     std::uint64_t heldFrameShows = 0;
+    /// Lockstep runs (I5 step 4's review): the waits for the first frame of a clip a slot opened for a screen in view
+    /// (at most 2 s, NFR-06's), the longest of them (wall-clock milliseconds) and those that ran out.
+    std::uint64_t firstFrameWaits = 0;
+    double firstFrameWaitMaxMs = 0.0;
+    std::uint64_t firstFrameWaitTimeouts = 0;
     /// The clips' verdicts (I5 step 7).
     VideoVerdictsRecord verdicts;
 
