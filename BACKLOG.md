@@ -191,10 +191,10 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
 - **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
   stand. The hour-long soak found the private bytes growing: see the next item.
-- **Memory per clip opened (I5 step 7's soak):** a Release app grows about 150 KiB per decoder it opens (not
-  `rv_media` alone, not a Debug app); trace the allocations around a slot's open and release. Also bound the run
-  report's per-frame samples (frame times, GPU passes, CPU sections: about 75 bytes a frame for the whole run) with a
-  reservoir or a histogram in interactive runs.
+- **Memory per clip opened (I5 step 7's soak):** done in I5 step 7's review (`docs/i5/step-7.md`, "Review"): every
+  thread that ended while the process presented OpenGL frames cost 36 to 73 KiB in the graphics driver, and a clip
+  started a thread; the decoders now run on worker threads that live on. The run report's per-frame samples (about
+  80 bytes a frame) are kept exactly for 65,536 samples, then in a histogram within 1%.
 
 ### Product UI
 

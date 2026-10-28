@@ -35,7 +35,8 @@ tools).
   the build's executables hidden and read their run reports and screenshots), `rv_fake_emulator.exe`.
 - One Catch2 test: `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"`. Hidden cases: `[.bench]` (benchmarks, by hand
   in Release, informative), `[.real-library]` (only through `scripts/real-library.ps1`), `[.desktop]` (take over the
-  screen; only `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`).
+  screen; only `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`), `[.soak]` (the screens' hour and the threads'
+  memory: by hand in Release, informative).
 - Golden files (plans, scenes, selections, screenshots) are compared exactly and rewritten only with
   `RV_UPDATE_GOLDEN=1` (the test then fails, so a rewrite never passes unnoticed).
 - The first configure of a fresh worktree restores vcpkg packages from the local binary cache (a few minutes).

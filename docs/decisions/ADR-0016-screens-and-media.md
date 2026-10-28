@@ -245,6 +245,33 @@ slot shows its cover, as today; its still is the cover.
 - **No "Scarica anteprima"** (specification §9.3): there is no scraper (ADR-0003). I7's media coverage report reads
   the verdicts.
 
+*Amended on 2026-10-28 (I5 step 7's review):*
+- **What a verdict holds:** the video stream's duration in milliseconds, its coded size, the first audio stream's rate,
+  the codec, the decode errors and damaged frames counted, and its source (`check` or `play`). Its file's time is the
+  last write time in FILETIME ticks as the folder lists it; paths are compared folded, as the file system compares
+  names. The format is version 1, documented in `video_verdicts.hpp`.
+- **What the check decodes:** the first 2 s, 1 s from the middle and the last second, each clip within 60 s. A stream
+  that ends after either seek is held to ADR-0004's truncation rule (90% of the video stream's own duration, less
+  0.5 s), so a clip cut before or after its middle fails as `truncated`. A clip that declares at most 7 s is decoded
+  whole, under the decoder's own first-pass rule.
+- **What the CLI checks:** the files of ES-DE's video extensions in each system's videos folder, not the catalog's
+  games. It removes the verdicts of clips gone from a folder listed whole. `--recheck-failures` checks the clips with
+  a failure verdict again. A merge that fails keeps its verdicts for the next one.
+- **What gives no verdict:** a missing file, a file the system could not open, read or seek (the decoder's new
+  `ReadError`: access denied, a sharing violation, a device error), and the app's own texture failure; the CLI lists
+  such a clip as not checked. A clip is playable only after a clean first pass from its start. The app keeps only the
+  failures, and of the playable clips their keys and files' facts; it looks at a failure's file (size and time) on its
+  verdicts thread, once per clip and run, the clip left out meanwhile.
+- **When "never opened" holds:** from the first frame in lockstep runs. An interactive run that reads its verdicts
+  after its first room is bound may open a known-bad clip once.
+- **Two writers** read, merge and write under a named mutex of the file's path, and readers take it too (a rename over
+  a file another program holds open fails). The app waits at most 2 s and counts a missed batch in `writeFailures`;
+  the CLI waits 10 s and retries a missed batch at its next merge. A file that cannot be read is never replaced, only a
+  text that is not the verdicts' (or of another version).
+- **How long a verdict lasts:** until its file changes. Deleting the file forgets every verdict, and
+  `--recheck-failures` the failures; an FFmpeg upgrade (or a change of ADR-0004's thresholds) raises the format's
+  version, which replaces the file.
+
 ### 9. Audio
 
 - **The module.** A new module, `rv_audio`, GPU-free, depends on `rv_core` only.
@@ -368,6 +395,26 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **ADR-0004.**
   - **Point 4:** world screens decode at 480 rows in both profiles, the viewer at 720 in Balanced.
   - **Point 2:** the clip's audio is decoded on its decoder's thread.
+  - *Amended on 2026-10-28 (I5 step 7's review):* **point 2's thread** is a worker the process keeps: a decoder runs
+    on an idle worker, or on a new one when none is idle, and the worker takes the next decoder once its own has ended.
+    There are as many workers as decoders ever ran at once; `stop()` still never waits, and `threadRunning()` and
+    `waitForStoppedDecoders()` follow the decoder's run on its worker.
+  - *Amended on 2026-10-28 (I5 step 7's review):* **point 5's buffers.** A frame's buffer extends 256 bytes
+    (64 pixels) past its last row. swscale's SIMD converters write whole blocks past a row that is no whole number of
+    them: a 140 x 96 clip corrupted the heap. A row's overrun lands in the next row, written after it. This holds for
+    one-threaded swscale filling rows top to bottom; any buffer swscale writes into, the zero-copy PBO contingency
+    included, needs the same padding.
+  - *Amended on 2026-10-28 (I5 step 7's review):* **point 5's "the hour-long soak settles the rest".** The soak (a
+    Release app, four screens switching clips every 4 s at about 165 frames a second) grew about 110 MiB an hour, from
+    two causes. A thread per clip: every thread that ended while the process presented OpenGL frames cost 36 to 73 KiB
+    in the graphics driver (`tests/platform/test_thread_soak.cpp`; nothing with an idle context, nothing for a thread
+    that lives on), so the decoders run on workers (point 2's amendment). And the run report's per-frame samples, about
+    80 bytes a frame, now exact for 65,536 samples and a histogram within 1% after them. After both, 15 minutes of the
+    same soak (294 decoders, 150,000 frames) held the private bytes at 258.0 MiB (minutes 1 to 3) and 258.7 MiB (the
+    last 2), against +9.0 MiB in under 7 minutes before; handles and threads stay flat. Gate M4 requires the soak's
+    growth explained and bounded.
+  - *Amended on 2026-10-28 (I5 step 7's review):* **the open risk "Edge content".** The thresholds stand on the whole
+    library: 32,809 clips, 32,806 playable, no near miss; 2 `invalid-file`, 1 `corrupt-data`.
   - **The open risk "Audio":** the render clock stays the master and audio follows it (§9).
   - **Budgets:** staggering by bytes (4 MiB per frame); dropping to one decoder on late frames.
 - **ADR-0012.**
