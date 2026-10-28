@@ -213,7 +213,31 @@ struct InterruptedAction {
 /// snapshot it names, that snapshot's record and files), writing nothing.
 [[nodiscard]] std::optional<InterruptedAction> checkInterruptedAction(const WorldFiles& files);
 
+/// The plan's and the overrides' texts as one reading without the world's lock saw them together (a dry run, the app's
+/// preview: ADR-0015 §5), writing nothing, not even world.lock.
+struct UnlockedWorldRead {
+    /// The plan file's text and its SHA-256 (readStoredPlan()'s digest).
+    std::string plan;
+    std::string planDigest;
+    /// overrides.json's text; nothing when there is no file (no pin).
+    std::optional<std::string> overrides;
+};
+
+/// Reads the plan and the overrides without the lock, as a writer may be committing an action meanwhile: each file
+/// opened for reading only with full sharing (core::readFileShared(): a writer's atomic rename over it never fails
+/// because of the reader), the journal checked first (an action in progress or interrupted: the files may disagree),
+/// then the plan, then the overrides, then the journal again and the plan's digest read again: when either changed
+/// (a writer committed or began meanwhile), the reading starts over once. Errors: NotFound when there is no plan;
+/// Conflict when a journal is there ("an action is in progress or was interrupted") or when the world changed during
+/// both readings (busy); those of readFileShared() otherwise.
+[[nodiscard]] Expected<UnlockedWorldRead> readWorldUnlocked(const WorldFiles& files);
+
 namespace detail {
+
+/// readWorldUnlocked(), calling `afterReads(attempt)` (0, then 1) once both files are read and before they are
+/// checked again (tests of the re-check: a writer committing between the reads).
+[[nodiscard]] Expected<UnlockedWorldRead> readWorldUnlockedWith(const WorldFiles& files,
+                                                                const std::function<void(std::size_t)>& afterReads);
 
 /// Where commitWorld() or undoLastAction() stops, as a process ended at that point would (tests of the rollback).
 enum class TransactionStop : std::uint8_t {
