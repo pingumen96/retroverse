@@ -706,6 +706,9 @@ struct RetroverseApp::State {
             resolveAudioOutput(options.audio, environment != nullptr ? std::optional<std::string_view>(environment)
                                                                      : std::nullopt,
                                options.frameLimit.has_value());
+        if (!choice.warning.empty()) {
+            spdlog::warn("Audio: {}", choice.warning);
+        }
         if (settings.audio.mode == AudioMode::Off && choice.output != audio::AudioOutput::Off) {
             choice = AudioOutputChoice{audio::AudioOutput::Off, "video.json"};
         }

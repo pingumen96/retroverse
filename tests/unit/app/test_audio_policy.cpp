@@ -36,8 +36,14 @@ TEST_CASE("app/audio_policy: RV_AUDIO forces null or off; then --audio; then nul
         {AudioOutput::Null, "off", true, AudioOutput::Off, "RV_AUDIO"},
         // RV_AUDIO never raises the output to a device, and other values are ignored.
         {std::nullopt, "device", true, AudioOutput::Null, "frame-limited"},
+        {std::nullopt, "DEVICE", true, AudioOutput::Null, "frame-limited"},
         {std::nullopt, "loud", false, AudioOutput::Device, "interactive"},
         {std::nullopt, "", false, AudioOutput::Device, "interactive"},
+        {std::nullopt, "   ", false, AudioOutput::Device, "interactive"},
+        // Blanks and case do not matter.
+        {AudioOutput::Device, " Null ", false, AudioOutput::Null, "RV_AUDIO"},
+        {std::nullopt, "OFF\n", false, AudioOutput::Off, "RV_AUDIO"},
+        {AudioOutput::Device, "\tnUlL", false, AudioOutput::Null, "RV_AUDIO"},
     };
     for (const Row& row : table) {
         INFO("--audio " << (row.commandLine ? rv::audio::toString(*row.commandLine) : "-") << ", RV_AUDIO "
@@ -47,6 +53,14 @@ TEST_CASE("app/audio_policy: RV_AUDIO forces null or off; then --audio; then nul
         CHECK(choice.output == row.output);
         CHECK(choice.reason == row.reason);
     }
+    // An ignored value is named in a warning (the app logs it once); a used, unset or blank one is not.
+    CHECK(rv::app::resolveAudioOutput(std::nullopt, "loud", false).warning ==
+          "RV_AUDIO='loud' is ignored: it forces only null or off");
+    CHECK(rv::app::resolveAudioOutput(std::nullopt, " Device", false).warning ==
+          "RV_AUDIO=device is ignored: it forces only null or off");
+    CHECK(rv::app::resolveAudioOutput(std::nullopt, "null", false).warning.empty());
+    CHECK(rv::app::resolveAudioOutput(std::nullopt, " ", false).warning.empty());
+    CHECK(rv::app::resolveAudioOutput(std::nullopt, std::nullopt, false).warning.empty());
     CHECK(rv::audio::audioOutputFromName("device") == AudioOutput::Device);
     CHECK_FALSE(rv::audio::audioOutputFromName("Device"));
     CHECK(rv::audio::toString(AudioOutput::Off) == "off");

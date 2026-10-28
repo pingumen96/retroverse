@@ -25,11 +25,14 @@ inline constexpr double kAudioLevelSampleSeconds = 0.25;
 struct AudioOutputChoice {
     audio::AudioOutput output = audio::AudioOutput::Null;
     std::string reason;
+    /// Why RV_AUDIO was ignored ("" when it was used, unset or empty): the caller logs it once.
+    std::string warning;
 };
 
-/// The run's output: RV_AUDIO's "null" or "off" (`environment`) forces it, whatever the command line asks (the test
-/// presets and scripts/real-library.ps1 set RV_AUDIO=null, so that no test can play sound on the user's machine; any
-/// other value is ignored); else --audio (`commandLine`); else null for a frame-limited run, the device otherwise.
+/// The run's output: RV_AUDIO's "null" or "off" (`environment`, its blanks trimmed, any case) forces it, whatever the
+/// command line asks (the test presets and scripts/real-library.ps1 set RV_AUDIO=null, so that no test can play sound
+/// on the user's machine; "device" and any other value are ignored with a warning); else --audio (`commandLine`); else
+/// null for a frame-limited run, the device otherwise.
 [[nodiscard]] AudioOutputChoice resolveAudioOutput(std::optional<audio::AudioOutput> commandLine,
                                                    std::optional<std::string_view> environment, bool frameLimited);
 

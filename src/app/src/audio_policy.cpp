@@ -1,26 +1,37 @@
 #include <rv/app/audio_policy.hpp>
 
 #include <rv/audio/spatial.hpp>
+#include <rv/core/text.hpp>
+
+#include <fmt/format.h>
 
 #include <cmath>
+#include <utility>
 
 namespace rv::app {
 
 AudioOutputChoice resolveAudioOutput(std::optional<audio::AudioOutput> commandLine,
                                      std::optional<std::string_view> environment, bool frameLimited) {
+    std::string warning;
     if (environment) {
-        if (const std::optional<audio::AudioOutput> forced = audio::audioOutputFromName(*environment);
-            forced && *forced != audio::AudioOutput::Device) {
-            return AudioOutputChoice{*forced, "RV_AUDIO"};
+        const std::string name = core::toLowerAscii(core::trim(*environment));
+        const std::optional<audio::AudioOutput> forced = audio::audioOutputFromName(name);
+        if (forced && *forced != audio::AudioOutput::Device) {
+            return AudioOutputChoice{*forced, "RV_AUDIO", {}};
+        }
+        if (forced) {
+            warning = "RV_AUDIO=device is ignored: it forces only null or off";
+        } else if (!name.empty()) {
+            warning = fmt::format("RV_AUDIO='{}' is ignored: it forces only null or off", *environment);
         }
     }
     if (commandLine) {
-        return AudioOutputChoice{*commandLine, "--audio"};
+        return AudioOutputChoice{*commandLine, "--audio", std::move(warning)};
     }
     if (frameLimited) {
-        return AudioOutputChoice{audio::AudioOutput::Null, "frame-limited"};
+        return AudioOutputChoice{audio::AudioOutput::Null, "frame-limited", std::move(warning)};
     }
-    return AudioOutputChoice{audio::AudioOutput::Device, "interactive"};
+    return AudioOutputChoice{audio::AudioOutput::Device, "interactive", std::move(warning)};
 }
 
 std::optional<std::size_t> chooseAudible(std::span<const AudibleCandidate> candidates, double proximityMeters,
