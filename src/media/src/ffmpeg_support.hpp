@@ -13,6 +13,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/pixdesc.h>
+#include <libswresample/swresample.h>
 #include <libswscale/swscale.h>
 }
 
@@ -43,6 +44,11 @@ struct SwsDeleter {
     void operator()(SwsContext* context) const noexcept { sws_freeContext(context); }
 };
 using SwsPtr = std::unique_ptr<SwsContext, SwsDeleter>;
+
+struct SwrDeleter {
+    void operator()(SwrContext* context) const noexcept { swr_free(&context); }
+};
+using SwrPtr = std::unique_ptr<SwrContext, SwrDeleter>;
 
 struct DictionaryDeleter {
     void operator()(AVDictionary* dictionary) const noexcept { av_dict_free(&dictionary); }

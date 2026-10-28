@@ -10,6 +10,7 @@
 #include <thread>
 
 #include <rv/core/expected.hpp>
+#include <rv/media/audio_sink.hpp>
 #include <rv/media/frame_queue.hpp>
 #include <rv/media/sample_stats.hpp>
 #include <rv/media/video_frame.hpp>
@@ -77,6 +78,14 @@ struct DecoderSettings {
     std::size_t timingCapacity = 8192;
     /// Name in logs and of the thread; the file name when empty.
     std::string name;
+    /// The sound (I5 step 5, ADR-0016 §9): the clip's first audio stream is decoded on the decoder's thread, resampled
+    /// to audioSampleRate stereo float and written to the sink. None: the audio packets are discarded undecoded.
+    std::shared_ptr<AudioSink> audioSink;
+    /// The sink's rate (8000..192000).
+    int audioSampleRate = 48000;
+    /// Whether the sound is decoded from the start (VideoDecoder::setAudioEnabled() changes it): a decoder whose sound
+    /// nobody hears discards its audio packets, so that it costs no audio decoding.
+    bool audioEnabled = true;
 };
 
 /// What the decoder found in the file, known once it is open.
@@ -91,6 +100,12 @@ struct StreamInfo {
     double durationSeconds = 0.0; ///< of the video stream (or the container), 0 when unknown
     std::int64_t bitRate = 0;     ///< bits per second, 0 when unknown
     int decoderThreads = 1;
+    /// The first audio stream (the one decoded with a sink): its codec, rate and channels; "" and 0 without one.
+    std::string audioCodec;
+    int audioSampleRate = 0;
+    int audioChannels = 0;
+    /// A sink was given and the stream's decoder opened: its sound reaches the sink.
+    bool audioDecoded = false;
 };
 
 /// Counters of a decoder (VideoDecoder::stats()).
@@ -117,6 +132,11 @@ struct DecoderStats {
     SampleSummary decodeMilliseconds;
     /// Per frame: conversion to RGBA8 (sws_scale), milliseconds.
     SampleSummary convertMilliseconds;
+    /// The sound: frames written to the sink (at its rate), audio packets discarded undecoded (no sink, or the sound
+    /// disabled), audio packets or frames that failed (never a failure of the clip: its sound is skipped).
+    std::uint64_t audioFramesWritten = 0;
+    std::uint64_t audioPacketsDiscarded = 0;
+    std::uint64_t audioDecodeErrors = 0;
 };
 
 /// Decodes the video stream of one file on its own thread (specification §9.4, §15.3): FFmpeg demuxing
@@ -183,6 +203,10 @@ public:
     /// the queue, and so does the frame a seek made while paused aims at (the paused picture follows the seek).
     void pause();
     void resume();
+    /// Decodes the sound into the sink from the next audio packet on, or discards the audio packets undecoded (the
+    /// decoder's audio state starts again at the next enable: a discontinuity). Cheap; any thread.
+    void setAudioEnabled(bool enabled) noexcept;
+    [[nodiscard]] bool audioEnabled() const noexcept;
     /// Continues from `seconds` into the clip (clamped to >= 0). Returns the generation the frames after the seek carry
     /// (FrameTiming::generation, generation()). Takes effect at once, without waiting for the thread: the queued frames
     /// of the old position go back to the pool now (on the caller's thread, the consumer's), and a thread waiting for
