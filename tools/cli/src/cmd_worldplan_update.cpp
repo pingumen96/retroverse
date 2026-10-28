@@ -286,6 +286,9 @@ ExitCode runWorldPlanUpdate(CommandContext& context, std::span<const std::string
     // ADR-0014 §1; the update records it).
     std::vector<world::WorldData> rooms;
     for (const world::Room& room : previous->plan.rooms) {
+        if (room.id.isExpansion()) {
+            continue; // an expansion reads its head's data (ADR-0015 §7)
+        }
         const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
         const auto tags = selected.platformTags.find(system);
         auto data = world::loadRoomData(context.paths.assetRoot(), room,

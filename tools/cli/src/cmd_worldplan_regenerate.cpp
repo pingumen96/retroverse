@@ -248,7 +248,8 @@ ExitCode runWorldPlanRegenerate(CommandContext& context, std::span<const std::st
         required = room->sections;
     } else if (floorOption) {
         for (const world::Room& room : previous.rooms) {
-            if (room.floor == *floorOption) {
+            // A chain's expansions hold their head's sections (ADR-0015 §7): each system once.
+            if (room.floor == *floorOption && !room.id.isExpansion()) {
                 required.insert(required.end(), room.sections.begin(), room.sections.end());
             }
         }
