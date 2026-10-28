@@ -111,6 +111,43 @@ TEST_CASE("app/video_settings: the user's file overrides key by key, a room's ke
     CHECK(text->starts_with("{\n  // comments are allowed"));
 }
 
+TEST_CASE("app/video_settings: a screen's keys over its kind's in its room (I5 step 2)", "[app][video_settings]") {
+    const rv::test::TempDir dir("rv-video-settings");
+    writeUser(dir, R"({
+  "secondary": {"previewDuration": 12},
+  "rooms": {
+    "screens_four": {"secondary": {"playlist": "sequential"},
+                     "screens": {"crt_c": {"playlist": "explicit", "games": ["g000000000000f002"]},
+                                 "crt_a": {"showOnFocus": false}}}
+  }
+})");
+    auto loaded = rv::app::loadVideoSettings(assetRoot(), dir.path());
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->issues.empty());
+    const VideoSettings& settings = loaded->settings;
+    const rv::app::ScreenSettings c = settings.screen(ScreenKind::Secondary, "screens_four", "crt_c");
+    CHECK(c.playlist == PlaylistMode::Explicit);
+    CHECK(c.games == std::vector<std::string>{"g000000000000f002"});
+    CHECK(c.previewSeconds == 12.0); // the kind's
+    const rv::app::ScreenSettings d = settings.screen(ScreenKind::Secondary, "screens_four", "crt_d");
+    CHECK(d == settings.screen(ScreenKind::Secondary, "screens_four"));
+    CHECK(d.playlist == PlaylistMode::Sequential); // the room's
+    CHECK_FALSE(settings.screen(ScreenKind::Hero, "screens_four", "crt_a").showOnFocus);
+    CHECK(settings.screen(ScreenKind::Secondary, "room:snes", "crt_c") == settings.secondary);
+
+    // A screen's keys are checked as a room's are.
+    for (const char* text : {R"({"rooms": {"screens_four": {"screens": []}}})",
+                             R"({"rooms": {"screens_four": {"screens": {"crt_c": {"loop": true}}}}})",
+                             R"({"rooms": {"screens_four": {"screens": {"crt_c": {"previewDuration": 0}}}}})"}) {
+        INFO(text);
+        writeUser(dir, text);
+        auto refused = rv::app::loadVideoSettings(assetRoot(), dir.path());
+        REQUIRE(refused.has_value());
+        REQUIRE(refused->issues.size() == 1);
+        CHECK(refused->issues.front().message.find("/rooms/screens_four/screens") != std::string::npos);
+    }
+}
+
 TEST_CASE("app/video_settings: a user file that does not load is left out whole", "[app][video_settings]") {
     const rv::test::TempDir dir("rv-video-settings");
     struct Case {

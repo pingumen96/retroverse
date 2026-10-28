@@ -258,6 +258,16 @@ ScreenSettings VideoSettings::screen(ScreenKind kind, std::string_view roomId) c
     return overrides ? resolved(base, *overrides) : base;
 }
 
+ScreenSettings VideoSettings::screen(ScreenKind kind, std::string_view roomId, std::string_view screenId) const {
+    ScreenSettings settings = screen(kind, roomId);
+    const auto room = rooms.find(roomId);
+    if (room == rooms.end()) {
+        return settings;
+    }
+    const auto own = room->second.screens.find(screenId);
+    return own != room->second.screens.end() ? resolved(std::move(settings), own->second) : settings;
+}
+
 Expected<VideoSettings> parseVideoSettings(const Json& document, std::string_view context) {
     std::optional<Error> error;
     Reader reader(document, "", context, error,
@@ -315,13 +325,28 @@ Expected<VideoSettings> parseVideoSettings(const Json& document, std::string_vie
                     reader.fail(ErrorCode::ValidationFailed, pointer, "expected a room id");
                     continue;
                 }
-                Reader roomReader(room, pointer, context, error, {"hero", "secondary", "cabinet"});
+                Reader roomReader(room, pointer, context, error, {"hero", "secondary", "cabinet", "screens"});
                 RoomVideoOverrides overrides;
                 const std::pair<std::string_view, std::optional<ScreenOverrides>*> roomKinds[] = {
                     {"hero", &overrides.hero}, {"secondary", &overrides.secondary}, {"cabinet", &overrides.cabinet}};
                 for (const auto& [key, target] : roomKinds) {
                     if (const Json* object = roomReader.value(key, false)) {
                         *target = readScreen(*object, pointer + "/" + std::string(key), context, error, false, true);
+                    }
+                }
+                if (const Json* screens = roomReader.value("screens", false)) {
+                    if (!screens->is_object()) {
+                        roomReader.fail(ErrorCode::ParseError, pointer + "/screens", "expected an object of screen ids");
+                    } else {
+                        for (const auto& [screenId, keys] : screens->items()) {
+                            const std::string screenPointer = pointer + "/screens/" + screenId;
+                            if (screenId.empty() || !core::isValidUtf8(screenId)) {
+                                roomReader.fail(ErrorCode::ValidationFailed, screenPointer, "expected a screen id");
+                                continue;
+                            }
+                            overrides.screens.emplace(screenId,
+                                                      readScreen(keys, screenPointer, context, error, false, true));
+                        }
                     }
                 }
                 settings.rooms.emplace(roomId, std::move(overrides));

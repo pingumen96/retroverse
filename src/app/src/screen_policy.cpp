@@ -149,6 +149,13 @@ std::optional<std::size_t> ScreenPolicy::startIndex() const {
 }
 
 void ScreenPolicy::startChoice() {
+    if (m_settings.autoplay && !m_settings.startChoice) {
+        // A screen without a start choice (a secondary TV) begins with its playlist.
+        if (std::optional<std::string> first = m_playlist.next()) {
+            retarget(std::move(*first), ScreenOrigin::Playlist);
+            return;
+        }
+    }
     const std::optional<std::size_t> start = startIndex();
     if (start) {
         retarget(m_games[*start].id, ScreenOrigin::Start);
@@ -160,6 +167,11 @@ void ScreenPolicy::startChoice() {
 void ScreenPolicy::setGames(std::vector<ScreenGame> games) {
     m_games = std::move(games);
     m_playlist = Playlist(m_games, m_settings.playlist, m_failed);
+    if (!m_selected && m_origin != ScreenOrigin::Playlist && !m_settings.startChoice && m_settings.autoplay &&
+        m_playlist.size() > 0) {
+        startChoice(); // clips came to a screen that begins with its playlist
+        return;
+    }
     if (!m_selected && m_origin != ScreenOrigin::Playlist) {
         const std::optional<std::size_t> start = startIndex();
         std::string id = start ? m_games[*start].id : std::string();
@@ -369,7 +381,7 @@ std::optional<ScreenPicture> ScreenPolicy::wantedStill() const noexcept {
     }
     // The card stands for a clip that does not play: never drawn over the wait for a clip's first frame (the previous
     // picture stays up meanwhile).
-    if (m_chain[m_chainIndex] == ScreenPicture::TitleCard && hasVideo()) {
+    if (m_chain[m_chainIndex] == ScreenPicture::TitleCard && hasVideo() && !m_noSlot) {
         return std::nullopt;
     }
     return m_chain[m_chainIndex];
