@@ -189,6 +189,10 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **No colour bars between two clips:** done in I5 step 1 (`docs/i5/step-1.md`): the previous picture stays up until
   the next game's still or first frame, and the building's screens show `standby`, not the bars.
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
+- **Cabinets and aspect (I5 step 4, `docs/i5/step-4.md`):** the quick catalog's selection of an arcade game plays
+  nothing (the hero cabinet never follows a selection): its cabinet could play it when it stands in the eye's room; a
+  256 x 224 clip (8:7, a console's frame stored with square pixels) is pillarboxed on a 4:3 tube, where a television
+  stretched it (a per-system pixel aspect would need data we lack).
 - **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
   stand. The hour-long soak found the private bytes growing: see the next item.
 - **Memory per clip opened (I5 step 7's soak):** done in I5 step 7's review (`docs/i5/step-7.md`, "Review"): every
@@ -521,8 +525,8 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   for capacity (a second arcade room, a back room of cases or cabinets of two games, ADR-0014 §6 amended); the
   cabinets are slim (0.4 m deep, to fit the template's sockets: an arcade template with deeper sockets, a cabinet with
   a stool before each); a cabinet's marquee shows a generic word, not its game's title or marquee art (a marquee
-  layer per item in the collection's arrays); the screens show the cover, never the game's screenshot or a clip (one
-  decoder: ADR-0004, I5); empty cabinets of the reserve ask for a coin; the handheld rooms stay calmer than concept
+  layer per item in the collection's arrays); the screens show the cover, never the game's screenshot (their clips
+  play since I5 step 4, `docs/i5/step-4.md`); empty cabinets of the reserve ask for a coin; the handheld rooms stay calmer than concept
   panel 6 (its colour comes from coloured boxes and a brand neon; our handheld cartridges are small and dark), the
   counters' handhelds seen from the aisle only. After the step's review (`docs/i6/step-6.md`, "Review"): the arcade's
   colour share stays at about 18% from its doorway against the panel's 31% (the panel's screens show full-colour

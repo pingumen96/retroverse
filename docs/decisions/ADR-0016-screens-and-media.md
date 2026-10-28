@@ -197,6 +197,29 @@ Which cabinet plays:
 With one decoder, a focused cabinet takes the slot and the hero cabinet keeps its paused frame. A cabinet without a
 slot shows its cover, as today; its still is the cover.
 
+*Amended on 2026-10-28 (I5 step 4):*
+- **Attract's terms.** "Facing the eye" is the direction from the screen's centre to the eye within 60 degrees of the
+  screen's normal. The cabinet playing keeps attract to 3.5 m and 70 degrees (a hysteresis, so walking along a row does
+  not flip it at the limit), and while another's 1 s dwell runs; it stops at once when it no longer qualifies (out of
+  view, turned away, walked away). Attract plays only in free roam: Focus, Inspect and the editor reset its dwell.
+- **The classes.** Focus asks `focus`; Inspect, and a launch from it until the return, ask `direct`, so that the
+  inspected cabinet's clip position is kept for the return. A cabinet loops its own game's clip: `video.json`'s
+  `cabinet.enabled` is attract and `showOnFocus` the focused cabinet; its `playlist` and `previewDuration` are unused. A
+  clip that fails on a cabinet leaves that cabinet on its cover for the rest of the run.
+- **The pool.** The cabinets' collection makes its video materials (the label's `MAT_Screen_Arcade` with a base colour
+  texture of its own) the first time one plays, as many as the decoder slots: slot i's picture on material i.
+  Registered after everything else, they move no handle.
+- **"Never follows the selection"** holds for the quick catalog's selection too: the arcade's hero cabinet never takes
+  one (`ScreenBinding::followsSelection`).
+- **While the room editor runs** (ADR-0015 §4's session) no cabinet plays, attract and focus alike: its fixtures are
+  held, moved and have their room's static part rebuilt. Every cabinet shows its cover from the frame the session
+  begins; after it, attract starts again from its dwell. A cabinet's clip follows its item by pick id, so a collection
+  laid out again in place keeps it; a collection dropped (a floor committed again, a ride) lets every one go.
+- **The paused frame** is a GPU copy of the slot's picture that every bound screen (the hero, a secondary) keeps when
+  its slot is taken from a clip it still wants (`needed`, `budget`), shown until that clip has a slot again, in place of
+  its still (§2's "a screen without a slot shows its still" stays for the other cases: a stop out of view, a clip never
+  opened).
+
 ### 7. The picture's aspect and CRT presets
 
 - **Aspect** (style §15.2). Each screen material instance gains a picture rectangle (`MaterialUniforms`, a `vec4`), set
@@ -219,6 +242,15 @@ slot shows its cover, as today; its still is the cover.
   A preset is a look: it moves nothing.
 - **Phosphor persistence** needs the previous frame, and is not built (BACKLOG). The "light bloom" is the scene's bloom
   on the emissive screen.
+
+*Amended on 2026-10-28 (I5 step 4):* the aspect is the clip's frame as decoded (square pixels: the stream's sample
+aspect applied) against its screen's `ScreenSurface` (a cabinet's: its family's item). A clip within 2% of its screen's
+aspect fills it (an encoder's crop such as 640 x 478 or 584 x 446 shows no hairline bars); beyond, it keeps its own (a
+256 x 224 clip, 8:7, is pillarboxed on a 4:3 tube). The rectangle (`MaterialUniforms::pictureRect`, a `vec4` after the
+CRT fields: the block grows from 96 to 112 bytes) is read only under a new flag (`kPictureRect`), set only while a clip
+of another aspect shows, so that a 4:3 clip on a 4:3 tube draws exactly as before; a still (fitted to 4:3) and a
+screen's own pattern fill their screen. The bars are the tube's black: the picture's coverage is anti-aliased over a
+pixel, and the tube's scanlines, mask, vignette and rounded edge stay the screen's.
 
 ### 8. Fallbacks and missing media
 
