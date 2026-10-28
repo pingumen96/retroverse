@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
+#include <span>
 #include <tuple>
 #include <utility>
 
@@ -41,15 +43,22 @@ public:
     Allocation run() {
         const CollectionCounts& counts = m_input.counts;
         const std::span<const RoomTitle> titles = m_input.titles;
+        placeReserved();
         fillFaceOut(m_input.layout.displays, titles.subspan(0, counts.featured));
         fillFaceOut(m_input.layout.bandModules, titles.subspan(counts.featured, counts.band));
         fillSpine(titles.subspan(counts.featured + counts.band, counts.spine));
         // What no title took: dressed whole (the levels of another item's slots, the face-out levels of modules outside
-        // the band).
+        // the band); a level holding a pinned game around it.
         for (std::size_t fixture = 0; fixture < m_input.layout.fixtures.size(); ++fixture) {
             const PlacedFixture& placed = m_input.layout.fixtures[fixture];
             for (std::size_t level = 0; level < placed.fixture.levels.size(); ++level) {
-                if (!isHandled({fixture, level})) {
+                if (isHandled({fixture, level})) {
+                    continue;
+                }
+                if (occupiedOf({fixture, level}) != nullptr) {
+                    m_handled.push_back({fixture, level});
+                    dressFree({fixture, level});
+                } else {
                     dress({fixture, level}, 0);
                 }
             }
@@ -58,6 +67,82 @@ public:
     }
 
 private:
+    /// The pinned games stand in their slots first (I4b step 5); their levels' occupancy is kept.
+    void placeReserved() {
+        if (m_input.reserved == nullptr) {
+            return;
+        }
+        std::map<FixtureId, std::size_t> fixtures;
+        for (std::size_t i = 0; i < m_input.layout.fixtures.size(); ++i) {
+            fixtures.emplace(m_input.layout.fixtures[i].fixture.id, i);
+        }
+        for (const auto& [slot, game] : *m_input.reserved) {
+            const auto fixture = fixtures.find(slot.fixture());
+            if (fixture == fixtures.end()) {
+                continue;
+            }
+            const std::vector<FixtureLevel>& levels = m_input.layout.fixtures[fixture->second].fixture.levels;
+            for (std::size_t level = 0; level < levels.size(); ++level) {
+                if (levels[level].level != slot.level() || slot.index() >= levels[level].slots) {
+                    continue;
+                }
+                std::vector<bool>& occupied = m_occupied[{fixture->second, level}];
+                occupied.resize(levels[level].slots, false);
+                occupied[slot.index()] = true;
+                ++m_reservedCount[{fixture->second, level}];
+                Placement placement;
+                placement.slot = slot;
+                placement.game = game;
+                setPlacementOffset(placement, m_input.roomSeed, m_input.family.id, isFaceOut(levels[level].section));
+                m_result.placements.push_back(placement);
+            }
+        }
+    }
+
+    /// The occupancy of a level that holds a pinned game, or null.
+    std::vector<bool>* occupiedOf(const LevelRef& ref) {
+        const auto found = m_occupied.find({ref.fixture, ref.level});
+        return found != m_occupied.end() ? &found->second : nullptr;
+    }
+    std::uint64_t reservedIn(const LevelRef& ref) const {
+        const auto found = m_reservedCount.find({ref.fixture, ref.level});
+        return found != m_reservedCount.end() ? found->second : 0;
+    }
+
+    /// Each run of a level's free slots holds the level's prop.
+    void dressFree(const LevelRef& ref) {
+        const std::vector<bool>& occupied = *occupiedOf(ref);
+        const auto size = static_cast<std::uint32_t>(occupied.size());
+        for (std::uint32_t first = 0; first < size;) {
+            if (occupied[first]) {
+                ++first;
+                continue;
+            }
+            std::uint32_t end = first;
+            while (end < size && !occupied[end]) {
+                ++end;
+            }
+            dressSpan(ref, first, end - first);
+            first = end;
+        }
+    }
+
+    /// Titles in a level's free slots from the left (a level holding a pinned game), at most `count`; how many.
+    std::size_t placeAround(const LevelRef& ref, std::span<const RoomTitle* const> titles, std::uint64_t count,
+                            bool faceOut) {
+        std::vector<bool>& occupied = *occupiedOf(ref);
+        const auto size = static_cast<std::uint32_t>(occupied.size());
+        std::size_t placed = 0;
+        for (std::uint32_t index = 0; index < size && placed < count && placed < titles.size(); ++index) {
+            if (!occupied[index]) {
+                place(ref, index, *titles[placed], faceOut);
+                occupied[index] = true;
+                ++placed;
+            }
+        }
+        return placed;
+    }
+
     const FixtureLevel& levelOf(const LevelRef& ref) const {
         return m_input.layout.fixtures[ref.fixture].fixture.levels[ref.level];
     }
@@ -138,6 +223,14 @@ private:
         std::size_t next = 0;
         for (const std::size_t fixture : fixtures) {
             for (const LevelRef& ref : readingOrder(fixture, LevelFacing::FaceOut)) {
+                if (occupiedOf(ref) != nullptr) {
+                    // A level holding a pinned game: the titles take its other slots from the left, the rest dressed.
+                    next += placeAround(ref, std::span<const RoomTitle* const>(sorted).subspan(next),
+                                        sorted.size() - next, true);
+                    m_handled.push_back(ref);
+                    dressFree(ref);
+                    continue;
+                }
                 const std::uint32_t slots = levelOf(ref).slots;
                 const auto count =
                     static_cast<std::uint32_t>(std::min<std::size_t>(slots, sorted.size() - next));
@@ -156,6 +249,9 @@ private:
                 dressSpan(ref, 0, first);
                 dressSpan(ref, first + count, slots - first - count);
             }
+        }
+        for (; next < sorted.size(); ++next) {
+            m_result.overflow.push_back(sorted[next]->game);
         }
     }
 
@@ -184,15 +280,22 @@ private:
         }
         const auto permille = static_cast<std::uint64_t>(std::max<std::int64_t>(0, m_input.reservePermille));
         std::vector<std::uint64_t> quotas;
+        std::vector<std::uint64_t> pinned;
         std::uint64_t largest = 0;
         for (const LevelRef& ref : fill) {
             quotas.push_back(levelOf(ref).slots * 1000 / (1000 + permille));
+            pinned.push_back(reservedIn(ref));
             largest = std::max<std::uint64_t>(largest, levelOf(ref).slots);
         }
+        // A level's titles within its quota (raised by `rise`, never past its slots), its pinned games counted in it.
+        const auto capOf = [&](std::size_t i, std::uint64_t rise) {
+            const std::uint64_t cap = std::min<std::uint64_t>(quotas[i] + rise, levelOf(fill[i]).slots);
+            return cap - std::min(cap, pinned[i]);
+        };
         const auto capacity = [&](std::uint64_t rise) {
             std::uint64_t total = 0;
             for (std::size_t i = 0; i < fill.size(); ++i) {
-                total += std::min<std::uint64_t>(quotas[i] + rise, levelOf(fill[i]).slots);
+                total += capOf(i, rise);
             }
             return total;
         };
@@ -209,9 +312,7 @@ private:
             while (end < fill.size() && roundOf[end] == roundOf[first]) {
                 ++end;
             }
-            const auto cap = [&](std::size_t i) {
-                return std::min(quotas[i] + rise, std::uint64_t{levelOf(fill[i]).slots});
-            };
+            const auto cap = [&](std::size_t i) { return capOf(i, rise); };
             bool more = true;
             while (remaining > 0 && more) {
                 more = false;
@@ -236,22 +337,34 @@ private:
                         count = taken[i];
                     }
                 }
+                if (occupiedOf(ref) != nullptr) {
+                    // A level holding a pinned game: the titles take its other slots from the left; never dressed.
+                    next += placeAround(ref, std::span<const RoomTitle* const>(sorted).subspan(next), count, false);
+                    m_handled.push_back(ref);
+                    continue;
+                }
                 if (count == 0) {
                     dress(ref, 0);
                     continue;
                 }
-                for (std::uint32_t index = 0; index < count; ++index) {
+                for (std::uint32_t index = 0; index < count && next < sorted.size(); ++index) {
                     place(ref, index, *sorted[next++], false);
                 }
                 // Its last slots stay free: the reserve, where new titles go (ADR-0010 §10).
                 m_handled.push_back(ref);
             }
         }
+        for (; next < sorted.size(); ++next) {
+            m_result.overflow.push_back(sorted[next]->game);
+        }
     }
 
     const AllocationInput& m_input;
     Allocation m_result;
     std::vector<LevelRef> m_handled;
+    /// The levels holding a pinned game (by fixture and level index): their slots' occupancy and their pinned games.
+    std::map<std::pair<std::size_t, std::size_t>, std::vector<bool>> m_occupied;
+    std::map<std::pair<std::size_t, std::size_t>, std::uint64_t> m_reservedCount;
 };
 
 } // namespace

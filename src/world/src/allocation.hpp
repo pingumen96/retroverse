@@ -64,11 +64,19 @@ struct AllocationInput {
     std::span<const PrefabRef> shelfDressing;
     /// A shared or arcade room's sections; null for a console room.
     const SectionIndex* sections = nullptr;
+    /// A regeneration's pinned games, by slot (I4b step 5, ADR-0015 §3): each stands in its slot (a slot of the
+    /// layout's, of a level of the family's items) before the titles are allocated, and the titles (which never hold a
+    /// pinned game) skip those slots: a face-out level fills its other slots from the left, its free ones dressed; a
+    /// spine-out level's quota counts its pinned games, and a level holding any game is never dressed. Null: none.
+    const std::map<SlotId, catalog::GameId>* reserved = nullptr;
 };
 
 struct Allocation {
     std::vector<Placement> placements;
     std::vector<DressedLevel> dressing;
+    /// The titles no slot was left for (only with reserved slots: the counts fit the titles otherwise), in their
+    /// order; the caller unplaces them for capacity.
+    std::vector<catalog::GameId> overflow;
 };
 
 [[nodiscard]] Allocation allocate(const AllocationInput& input);

@@ -11,6 +11,8 @@
 #include <rv/world/seeds.hpp>
 #include <rv/world/world_config.hpp>
 
+#include "fixture_geometry.hpp"
+
 namespace rv::world::detail {
 namespace {
 
@@ -193,6 +195,9 @@ public:
         room.mediaFamily = m_input.family.id;
         room.themePack = m_input.platform.themePack;
 
+        if (Status status = preparePins(); !status) {
+            return propagate(status.error());
+        }
         if (Status status = placeHeroCorner(); !status) {
             return propagate(status.error());
         }
@@ -209,6 +214,66 @@ public:
     }
 
 private:
+    /// The pinned fixture of `socketId`, or null.
+    const PinnedFixture* pinOf(const std::string& socketId) const {
+        if (m_input.pins == nullptr) {
+            return nullptr;
+        }
+        const auto found = m_input.pins->fixtures.find(socketId);
+        return found != m_input.pins->fixtures.end() ? &found->second : nullptr;
+    }
+
+    /// The pinned fixtures standing at a transform, made first (ADR-0015 §3: before the layout fills the other
+    /// sockets), so that a socket whose fixture would overlap one of them takes none.
+    Status preparePins() {
+        if (m_input.pins == nullptr) {
+            return ok();
+        }
+        for (const auto& [socketId, pin] : m_input.pins->fixtures) {
+            if (!pin.transform) {
+                continue;
+            }
+            const TemplateSocket* where = socket(socketId);
+            if (where == nullptr) {
+                continue;
+            }
+            auto info = prefab(pinnedPrefab(*where, pin));
+            if (!info) {
+                return propagate(info.error());
+            }
+            m_movedPins.push_back(pinnedFixture(*where, pin, **info).fixture);
+        }
+        return ok();
+    }
+
+    /// The prefab a pinned fixture stands as: its own, else the template's for its socket.
+    PrefabRef pinnedPrefab(const TemplateSocket& where, const PinnedFixture& pin) const {
+        if (pin.prefab) {
+            return *pin.prefab;
+        }
+        if (pin.role == FixtureRole::Display && where.prefab) {
+            return *where.prefab;
+        }
+        return m_template.sideModule;
+    }
+
+    /// A pinned fixture as it stands: at its transform, else in its socket.
+    PlacedFixture pinnedFixture(const TemplateSocket& where, const PinnedFixture& pin, const PrefabInfo& info) const {
+        if (pin.transform) {
+            return makeFixture(m_input, fixtureId(where.id), pin.role, info, {pin.transform->xMm, pin.transform->zMm},
+                               pin.liftMm, pin.transform->yawCdeg);
+        }
+        return fixtureInSocket(m_input, where, info, pin.role, pin.liftMm);
+    }
+
+    /// Whether `candidate` (a fixture for the socket `socketId`) would overlap a pinned fixture standing at its
+    /// transform in another socket.
+    bool overlapsMovedPin(const Fixture& candidate, const std::string& socketId) const {
+        return std::any_of(m_movedPins.begin(), m_movedPins.end(), [&](const Fixture& moved) {
+            return moved.id.socket() != socketId && fixturesOverlap(candidate, moved);
+        });
+    }
+
     const TemplateSocket* socket(const std::string& id) const { return m_template.socket(id); }
 
     Frame frame(const TemplateSocket& socket) const { return frameOf(m_template, socket, m_input.counts.growthSteps); }
@@ -280,22 +345,50 @@ private:
                 continue;
             }
             const bool isHero = candidate->kind == SocketKind::HeroModule;
-            if (!isHero && sideModules == m_input.counts.sideModules) {
+            // A regeneration's pins (I4b step 5): a pinned decoration keeps its side-wall socket, a pinned module or
+            // a pinned game's slot always takes its module, and a socket a moved pinned fixture overlaps takes none.
+            const PinnedFixture* pin = isHero ? nullptr : pinOf(candidate->id);
+            if (pin != nullptr && pin->role == FixtureRole::Decoration) {
                 m_unneededSideSockets.push_back(candidate);
                 continue;
             }
-            const PrefabInfo& info = isHero ? **hero : **side;
-            if (!fitsSocket(info, *candidate)) {
+            const bool required = !isHero && m_input.pins != nullptr &&
+                                  (m_input.pins->moduleSockets.contains(candidate->id) ||
+                                   (pin != nullptr && pin->role == FixtureRole::SideModule));
+            if (!isHero && !required && sideModules >= m_input.counts.sideModules) {
+                m_unneededSideSockets.push_back(candidate);
+                continue;
+            }
+            const PrefabInfo* info = isHero ? *hero : *side;
+            if (pin != nullptr && pin->prefab) {
+                auto pinned = prefab(*pin->prefab);
+                if (!pinned) {
+                    return propagate(pinned.error());
+                }
+                info = *pinned;
+            }
+            if (!fitsSocket(*info, *candidate)) {
                 return makeError(ErrorCode::ValidationFailed,
-                                 "module " + info.ref.manifest + " (" + std::to_string(info.widthMm()) + " x " +
-                                     std::to_string(info.depthMm()) + " mm) does not fit socket " + candidate->id,
+                                 "module " + info->ref.manifest + " (" + std::to_string(info->widthMm()) + " x " +
+                                     std::to_string(info->depthMm()) + " mm) does not fit socket " + candidate->id,
                                  m_template.id);
+            }
+            if (!isHero && !required && !m_movedPins.empty() &&
+                overlapsMovedPin(fixtureInSocket(m_input, *candidate, *info, FixtureRole::SideModule, 0).fixture,
+                                 candidate->id)) {
+                continue; // the module goes to the next socket
             }
             if (!isHero) {
                 ++sideModules;
             }
-            m_layout.modules.push_back(
-                addInSocket(*candidate, info, isHero ? FixtureRole::HeroModule : FixtureRole::SideModule, 0));
+            if (pin != nullptr) {
+                m_layout.fixtures.push_back(pinnedFixture(*candidate, *pin, *info));
+                m_layout.modules.push_back(m_layout.fixtures.size() - 1);
+                m_movedModules = m_movedModules || pin->transform.has_value();
+            } else {
+                m_layout.modules.push_back(
+                    addInSocket(*candidate, *info, isHero ? FixtureRole::HeroModule : FixtureRole::SideModule, 0));
+            }
             m_moduleSockets.push_back(candidate);
         }
         for (const std::string& socketId : m_template.heroBand) {
@@ -315,14 +408,21 @@ private:
                 return makeError(ErrorCode::ValidationFailed, "display socket " + socketId + " has no prefab",
                                  m_template.id);
             }
-            auto info = prefab(*display->prefab);
+            const PinnedFixture* pin = pinOf(display->id);
+            const bool pinned = pin != nullptr && pin->role == FixtureRole::Display;
+            auto info = prefab(pinned && pin->prefab ? *pin->prefab : *display->prefab);
             if (!info) {
                 return propagate(info.error());
             }
             if (!fitsSocket(**info, *display)) {
                 return makeError(ErrorCode::ValidationFailed,
-                                 "display " + display->prefab->manifest + " does not fit socket " + display->id,
+                                 "display " + (*info)->ref.manifest + " does not fit socket " + display->id,
                                  m_template.id);
+            }
+            if (pinned) {
+                m_layout.fixtures.push_back(pinnedFixture(*display, *pin, **info));
+                m_layout.displays.push_back(m_layout.fixtures.size() - 1);
+                continue;
             }
             m_layout.displays.push_back(addInSocket(*display, **info, FixtureRole::Display, 0));
         }
@@ -390,6 +490,20 @@ private:
     }
 
     void placeWallWashers() {
+        if (m_movedModules) {
+            // A pinned module standing at its transform is lit where it stands, as the editor lights it (I4b step 2).
+            std::vector<const Fixture*> fixtures;
+            std::set<FixtureId> moved;
+            for (const std::size_t index : m_layout.modules) {
+                fixtures.push_back(&m_layout.fixtures[index].fixture);
+                moved.insert(m_layout.fixtures[index].fixture.id);
+            }
+            const ModulesOnWalls onWalls = modulesOnWalls(m_input, m_layout.room, fixtures, moved);
+            for (const PlanLight& light : wallWasherLights(m_input, onWalls.modules, lightsLeft())) {
+                addLight(light);
+            }
+            return;
+        }
         std::vector<ModuleOnWall> modules;
         for (std::size_t i = 0; i < m_moduleSockets.size(); ++i) {
             modules.push_back({m_moduleSockets[i], m_layout.fixtures[m_layout.modules[i]].fixture.depthMm});
@@ -400,6 +514,10 @@ private:
     }
 
     void decorate(const TemplateSocket& socket) {
+        if (const PinnedFixture* pin = pinOf(socket.id); pin != nullptr && pin->role == FixtureRole::Decoration) {
+            decoratePinned(socket, *pin);
+            return;
+        }
         std::vector<Fixture> placed;
         placed.reserve(m_layout.fixtures.size());
         for (const PlacedFixture& fixture : m_layout.fixtures) {
@@ -409,10 +527,31 @@ private:
         if (!decoration) {
             return;
         }
+        if (!m_movedPins.empty() && overlapsMovedPin(decoration->fixture.fixture, socket.id)) {
+            return; // a pinned fixture moved there stands in its way
+        }
         m_layout.fixtures.push_back(std::move(decoration->fixture));
         if (decoration->light) {
             addLight(*decoration->light);
         }
+    }
+
+    /// A pinned decoration, its prefab the pin's, at its transform or in its socket; a lamp's light while the limit
+    /// allows.
+    void decoratePinned(const TemplateSocket& socket, const PinnedFixture& pin) {
+        const PrefabInfo* info = pin.prefab ? m_input.prefabs.find(*pin.prefab) : nullptr;
+        if (info == nullptr) {
+            return; // the regeneration names only measured prefabs
+        }
+        m_layout.fixtures.push_back(pinnedFixture(socket, pin, *info));
+        if (info->lightSource && lightBudgetLeft()) {
+            addLight(lampLight(m_layout.fixtures.back(), fixtureId(socket.id, "light")));
+        }
+    }
+
+    bool isPinnedDecoration(const TemplateSocket& socket) const {
+        const PinnedFixture* pin = pinOf(socket.id);
+        return pin != nullptr && pin->role == FixtureRole::Decoration;
     }
 
     /// Every side-wall socket no module needs, in the collection's order, then the decoration sockets the density
@@ -446,7 +585,8 @@ private:
             byDraw[i]->chosen = true;
         }
         for (const Candidate& candidate : sockets) {
-            if (candidate.chosen) {
+            // A pinned decoration stands whatever the density draws (I4b step 5).
+            if (candidate.chosen || isPinnedDecoration(*candidate.socket)) {
                 decorate(*candidate.socket);
             }
         }
@@ -461,6 +601,9 @@ private:
     /// The socket of each of m_layout.modules.
     std::vector<const TemplateSocket*> m_moduleSockets;
     std::vector<const TemplateSocket*> m_unneededSideSockets;
+    /// The pinned fixtures standing at a transform (a regeneration's), and whether a module is among them.
+    std::vector<Fixture> m_movedPins;
+    bool m_movedModules = false;
 };
 
 } // namespace
@@ -635,6 +778,10 @@ SocketPose poseInSocket(const LayoutInput& input, const TemplateSocket& socket, 
 
 bool isMovableRole(FixtureRole role) noexcept {
     return role == FixtureRole::SideModule || role == FixtureRole::Display || role == FixtureRole::Decoration;
+}
+
+bool prefabFitsSocket(const PrefabInfo& info, const TemplateSocket& socket) noexcept {
+    return fitsSocket(info, socket);
 }
 
 bool standsMoved(const LayoutInput& input, const Fixture& fixture) {
