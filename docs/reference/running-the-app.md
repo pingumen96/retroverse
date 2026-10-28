@@ -460,6 +460,18 @@ build/rvdata`).
   (every 0.25 s: `distance`, `spatialGain`, `pan`, `gain`), `presented` (with a capture: each frame of the heard clip
   shown, `atSeconds` and `ptsSeconds`), `clips` (each clip heard: `gameId`, `codec`, `sampleRate`, `channels`); the
   lists keep their first 2048 entries.
+- The clips' verdicts (I5 step 7, ADR-0016 §8, `docs/i5/step-7.md`): `<user data>/cache/media/videos.json` (canonical
+  JSON, one verdict per clip: its path under the media root, its file's size and time, `playable` or the decoder's
+  failure, its duration, size, audio rate and codec) is read by the screens' service on a thread of its own when it
+  starts (a `--fixed-dt` run waits for it). A clip with a failure verdict whose file is unchanged is never opened: its
+  game loses its clip before any screen sees it (no decoder, no playlist turn), and its screens show its stills from
+  their first picture; a file of another size or time is opened again. A clip that fails on a screen (but a missing
+  file), or plays through once from its start with no decode error or damaged frame, gives a verdict merged into the
+  file on that thread (the CLI's kept: `retroverse-cli media --check-videos` writes the same file). Only clips under the
+  media root have verdicts (a `--mock-catalog`'s have none). Nothing is ever written under the media root. The report's
+  `video.verdicts`: `loaded` (the file was read: a missing file is no verdict), `entries`, `knownBad` (the games whose
+  clips were left out: `gameId`, `verdict`), `given` (the run's verdicts, one per clip), `written` (those merged into
+  the file), `writeFailures`.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the

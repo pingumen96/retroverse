@@ -50,7 +50,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `process_priority.hpp` (which priority class a frame wants); since I5 step 5 `audio_policy.hpp` (the run's audio
   output, the audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio_model`). `rv_media`'s
   `audio_sink.hpp` (I5 step 5) is where a decoder puts its clip's sound, decoded on its thread and resampled by
-  swresample; `rv_app`'s `screen_service.cpp` connects it to a slot's `audio::AudioRing` (`RingSink`). `rv_app_catalog`
+  swresample; `rv_app`'s `screen_service.cpp` connects it to a slot's `audio::AudioRing` (`RingSink`). Since I5 step 7
+  `rv_media`'s `video_verdicts.hpp` (the clips' verdicts, `cache/media/videos.json`) and `video_check.hpp` (a clip's
+  sample decoded) serve `rv_cli_core`'s `cmd_media_videos.cpp` (`media --check-videos`, now linking `rv_media`) and
+  `rv_app`'s `screen_verdicts.cpp` (the screens' side: known-bad clips left out, verdicts given). `rv_app_catalog`
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's
@@ -147,7 +150,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   and makes empty folders, so that no payload is committed; since I3 step 1c `cover` and `video` payloads,
   `fixture_payloads.hpp`: an original picture with the title, PNG or JPEG, landscape, portrait or a cartridge, or
   truncated or not an image; a 4:3 clip of `media::writeTestVideo`, or empty, truncated, corrupt or of an unsupported
-  codec; a whole generated system, `"collections"`, `fixture_collection.hpp`; and `Fixture::applyOverlay(folder)`, a
+  codec, since I5 step 7 also a sound file or text under a clip's name (`no-video`, `not-a-video`); a whole generated
+  system, `"collections"`, `fixture_collection.hpp`; and `Fixture::applyOverlay(folder)`, a
   materialized folder laid over the root), `writeProgramStub` (`program_stub.hpp`), `runChild`
   (`child_process.hpp`: a program run to completion, its command line built by `launcher::buildCommandLine`, stdout and
   stderr in files of the test's choosing, apart or together, a timeout), `FakeSystemProbe` (`fake_system_probe.hpp`: a
@@ -174,7 +178,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   second releases), their system `snes` with the invented full name "Lumen 16 Home System", their READMEs stating the
   counts the tests assert; for I4 `esde/building` (step 2: nine systems with invented full names over the ground
   floor and four floors, every family's covers, a custom system, an excluded one, `additions/` with a new system); for
-  I4b `esde/overflow` (step 1: 1,700 big boxes and 60 arcade sets, more than their rooms hold); `tests/fixtures/world/`
+  I4b `esde/overflow` (step 1: 1,700 big boxes and 60 arcade sets, more than their rooms hold); for I5
+  `esde/video-verdicts` (step 7: eight SNES games, one clip of each damaged kind and two playable); `tests/fixtures/world/`
   the golden selections, plans and scenes), `tests/fake_emulator` (`rv_fake_emulator`, built with the tests or the
   spikes), `tests/collection_probe` (`rv_collection_probe`, built with
   the tests; its `probe_layout.hpp` shared with the smoke tests), `tests/ui_probe` (`rv_ui_probe`, built with the
