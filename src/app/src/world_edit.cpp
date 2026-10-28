@@ -417,9 +417,11 @@ void WorldSession::requestEditSave() {
             answer.error = saved.error().toString();
             return answer;
         }
-        // Replayed over a changed plan, the plan saved is not the draft shown: its floor is built for the session's end.
+        // Replayed over a changed plan, the plan saved is not the draft shown: its floor is built for the session's end
+        // (a floor that cannot be built leaves the save as it stands: the outcome is the save's, the error the display's).
         if (saved->replayed && !saved->refused) {
             displayInto(answer, context, nullptr, saved->saved.plan, saved->planDigest, world::RebuildLevel::Full, {});
+            answer.displayError = std::exchange(answer.error, std::string());
         }
         answer.saved = std::move(*saved);
         return answer;
@@ -615,10 +617,11 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
         return;
     }
     case EditJobAnswer::Kind::Saved: {
-        if (!answer.error.empty() || !answer.saved) {
+        if (!answer.saved) {
+            // Nothing written (the lock, the files, the commit): the session stays open, the bar saying so.
             spdlog::error("Frame {}: the edit session cannot be saved: {}", frame, answer.error);
-            edit.refusal = "failed";
-            edit.saveRefused = true;
+            edit.refusal = "save-failed";
+            edit.saveRefused = false;
             edit.record.saveRefused = "failed";
             edit.interaction.saved(false);
             return;
@@ -639,13 +642,20 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
         // The plan shown is the one stored now.
         m_record.planDigest = saved.planDigest;
         m_record.planWritten = m_record.planWritten || saved.written;
+        bool shown = false;
         if (answer.build) {
             clearEditFlags();
-            if (!showEditBuild(*answer.build, answer.fullFloor)) {
-                spdlog::error("Frame {}: the saved plan's floor cannot be shown", frame);
+            shown = showEditBuild(*answer.build, answer.fullFloor);
+            if (!shown) {
+                spdlog::error("Frame {}: the saved plan's floor cannot be shown; the draft stays in view", frame);
             }
-        } else if (m_planState) {
-            // The draft shown is the plan saved: the floor shown takes its digest (the next live update compares it).
+        } else if (saved.replayed) {
+            spdlog::error("Frame {}: the saved plan's floor cannot be built ({}); the draft stays in view", frame,
+                          answer.displayError);
+        }
+        if (!shown && m_planState) {
+            // The draft shown is the plan saved (or, when a replay's floor could not be shown, the nearest to it): the
+            // floor shown takes its plan and digest (the next live update compares them).
             m_planState->plan = std::make_shared<const world::WorldPlan>(saved.saved.plan);
             m_planState->digest = saved.planDigest;
             m_planIndex.emplace(*m_planState->plan);

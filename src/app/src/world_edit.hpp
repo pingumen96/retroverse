@@ -66,8 +66,10 @@ struct EditJobAnswer {
     std::optional<world::EditOperation> operation;
     std::optional<world::EditResult> result;
     std::optional<world::EditedWorld> world;
-    /// Saved: what saveDraft() did.
+    /// Saved: what saveDraft() did, and why the floor of a replayed save cannot be shown ("" none: the save stands
+    /// all the same).
     std::optional<EditSaveOutcome> saved;
+    std::string displayError;
     /// The job's own time (milliseconds).
     double milliseconds = 0.0;
 };

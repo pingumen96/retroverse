@@ -73,6 +73,7 @@
 			<p data-if="refusal == 'slot-unknown'">Quello spazio non c'è più.</p>
 			<p data-if="refusal == 'pin-broken'">Un gioco fissato non sarebbe più al suo posto.</p>
 			<p data-if="refusal == 'failed'">La modifica non è riuscita: il registro di Retroverse dice perché.</p>
+			<p data-if="refusal == 'save-failed'">Le modifiche non sono state salvate: il registro di Retroverse dice perché.</p>
 			<p data-if="!refusalKnown">La modifica non rispetta le regole della stanza.</p>
 		</div>
 

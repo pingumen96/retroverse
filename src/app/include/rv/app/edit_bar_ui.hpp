@@ -26,9 +26,11 @@ inline constexpr std::array<std::string_view, 4> kMenuButtonIds{"edit-save", "ed
 /// The modes the bar shows (EditMode's names).
 inline constexpr std::array<std::string_view, 6> kModes{"preparing", "browse", "holding", "busy", "menu", "saving"};
 /// The rules a refusal names in a sentence of its own (world::edit_rule and the validation's rules a game's move can
-/// break); another rule reads "La modifica non rispetta le regole della stanza".
-inline constexpr std::array<std::string_view, 8> kRules{"game-unknown", "slot-taken", "slot-pinned", "other-room",
-                                                        "same-game",    "slot-unknown", "pin-broken", "failed"};
+/// break; "failed": an edit that could not be made, "save-failed": a save that wrote nothing for an error); another rule
+/// reads "La modifica non rispetta le regole della stanza".
+inline constexpr std::array<std::string_view, 9> kRules{"game-unknown", "slot-taken", "slot-pinned",
+                                                        "other-room",   "same-game",  "slot-unknown",
+                                                        "pin-broken",   "failed",     "save-failed"};
 /// The devices whose glyphs the bar shows ("pad": the pad's buttons, "keys": the keyboard's).
 inline constexpr std::array<std::string_view, 2> kDevices{"pad", "keys"};
 
@@ -57,7 +59,7 @@ struct EditBarContent {
     /// The draft's operations.
     std::uint32_t pending = 0;
     /// The last refusal's rule (edit_bar::kRules or another; "" none) and, for a save refused after a replay, whether it
-    /// was the save's ("La stanza è cambiata nel frattempo").
+    /// was the save's ("Il mondo è cambiato nel frattempo"; a save that failed for an error is "save-failed" alone).
     std::string refusal;
     bool saveRefused = false;
     /// The menu's focused button (edit_bar::kMenuButtonIds' order: "save", "undo", "discard", "continue").
