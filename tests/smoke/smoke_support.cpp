@@ -225,9 +225,13 @@ void requireCleanRun(const AppRun& run, const std::optional<std::filesystem::pat
     } else {
         CHECK(report.residency == app::ResidencyRecord{});
     }
-    // I3 step 11: the hero CRT never had two decoder threads, none ran at the end, its video memory is the renderer's.
+    // NFR-07 (I3 step 11; since I5 step 2 the scheduler's budget, ADR-0016 §2): never more decoder threads alive nor
+    // decoders open than the budget (at most 2), none ran at the end, the video memory is the renderer's.
     if (report.video.bound) {
-        CHECK(report.video.maxDecoderThreads <= 1);
+        CHECK(report.video.maxDecoders >= 1);
+        CHECK(report.video.maxDecoders <= 2);
+        CHECK(report.video.maxDecoderThreads <= report.video.maxDecoders);
+        CHECK(report.video.maxOpenDecoders <= report.video.maxDecoders);
         CHECK(report.video.joinedAtExit);
         CHECK(report.video.videoBytes == report.gpuMemory.usage(gl::GpuMemoryKind::Video).bytes);
     } else {

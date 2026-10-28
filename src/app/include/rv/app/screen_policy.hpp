@@ -96,6 +96,9 @@ struct ScreenPlaySettings {
     PlaylistOptions playlist;
     /// --video-freeze-pts: the start choice is held, nothing advances (ADR-0016 §3's frozen runs; selections still play).
     bool frozen = false;
+    /// The hero's start choice (ADR-0012 §7) before the playlist; without (a secondary TV, I5 step 2: ADR-0016 §5), the
+    /// playlist's first game, the start choice's stills only for a room without a clip.
+    bool startChoice = true;
 
     bool operator==(const ScreenPlaySettings&) const = default;
 };
@@ -185,6 +188,13 @@ public:
     void stillReady() noexcept;
     /// wantedStill() cannot be shown (missing, not an image, damaged): the next one is wanted.
     void stillFailed() noexcept;
+    /// The target's clip has no decoder slot now (I5 step 2: the scheduler gave the budget to other clips, or the screen
+    /// is out of view): its stills stand for it, the title card included, until a slot comes.
+    void setNoSlot(bool noSlot) noexcept { m_noSlot = noSlot; }
+    [[nodiscard]] bool noSlot() const noexcept { return m_noSlot; }
+    /// The target's clip stopped without failing (its slot was taken, or stopped out of view): the stills show again,
+    /// and videoShowing() comes again with the reopened clip's first frame.
+    void videoStopped() noexcept { m_videoShowing = false; }
 
     /// A launch starts: the decoder stops, `clipPosition` (seconds into the clip shown, if a video showed) is kept for
     /// the return. Nothing once quit.
@@ -258,6 +268,7 @@ private:
     std::optional<ScreenPicture> m_readyStill;
     bool m_videoShowing = false;
     bool m_videoFailed = false;
+    bool m_noSlot = false;
 
     ScreenPhase m_phase = ScreenPhase::Running;
     std::optional<double> m_launchPosition;

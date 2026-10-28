@@ -1117,8 +1117,56 @@ struct VideoShownRecord {
     bool operator==(const VideoShownRecord&) const = default;
 };
 
+/// A screen of the service at the end of the run (I5 step 2, ADR-0016 §2): its object id, its kind
+/// (app::toString(ScreenKind)) and class (app::toString(ScreenClass)), the game and the picture it showed, the decoder
+/// slot showing its clip or reserved for it (none without), whether that slot played its clip, the GL texture its
+/// material showed (0: its own pattern; screens sharing a slot show one texture) and whether it was in view.
+struct VideoScreenRecord {
+    std::string screen;
+    std::string kind;
+    std::string screenClass;
+    std::string gameId;
+    std::string picture;
+    std::optional<std::uint64_t> slot;
+    bool playing = false;
+    std::uint64_t textureId = 0;
+    bool visible = false;
+
+    bool operator==(const VideoScreenRecord&) const = default;
+};
+
+/// What the scheduler did to a decoder slot (I5 step 2): the frame and the run's simulated seconds, the slot, the
+/// action (app::toString(SlotAction): "open", "stop", "pause", "resume"), the game whose clip it was, why (a
+/// SlotCommand's reason: "wanted", "unwanted", "needed", "out-of-view", "in-view", "budget", "launch", "unbind",
+/// "shutdown") and the screens showing it then.
+struct VideoSlotEventRecord {
+    std::uint64_t frame = 0;
+    double atSeconds = 0.0;
+    std::uint64_t slot = 0;
+    std::string action;
+    std::string gameId;
+    std::string reason;
+    std::vector<std::string> screens;
+
+    bool operator==(const VideoSlotEventRecord&) const = default;
+};
+
+/// A late-frame drop to one decoder (I5 step 2, app::BudgetDrop): when, the slot and game whose frames came late, the
+/// ratio of late and dropped frames over its window, and when the budget came back.
+struct VideoBudgetDropRecord {
+    double atSeconds = 0.0;
+    std::uint64_t slot = 0;
+    std::string gameId;
+    double ratio = 0.0;
+    double untilSeconds = 0.0;
+
+    bool operator==(const VideoBudgetDropRecord&) const = default;
+};
+
 /// The hero CRT's video (I3 step 11, ADR-0012 §7: app::ScreenService): what it showed at the end of the run, the one
-/// decoder, the current clip's first frame and uploads, the fallbacks and the launches.
+/// decoder, the current clip's first frame and uploads, the fallbacks and the launches. Since I5 step 2 the service
+/// holds several screens (the hero first) and slots: the fields below are the hero screen's, the decoder and upload
+/// counts the whole service's, and `screens`, `slotEvents` and `budgetDrops` the scheduler's.
 struct VideoRecord {
     /// A hero CRT was bound (the scene's first `crt` object with a picture on its screen) and its object id; without
     /// one nothing else is recorded.
@@ -1181,8 +1229,44 @@ struct VideoRecord {
     /// app::kMaxHeldPictureSeconds, or nothing left that could show).
     std::uint64_t heldFrames = 0;
     std::uint64_t idleFramesWithGame = 0;
+    /// The scheduler (I5 step 2, ADR-0016 §2): the budget (video.json's maxDecoders, or --max-decoders), the most
+    /// decoders open at once (never above the budget: NFR-07, asserted), the slots taken from a clip still asked for;
+    /// the most video bytes uploaded in one render frame (at most app::kMaxVideoUploadBytesPerFrame unless one frame
+    /// alone is larger), the uploads a frame's budget put off to the next frame, and the frames whose first upload alone
+    /// was over the budget.
+    std::uint64_t maxDecoders = 0;
+    std::uint64_t maxOpenDecoders = 0;
+    std::uint64_t handOvers = 0;
+    std::uint64_t maxUploadBytes = 0;
+    std::uint64_t deferredUploads = 0;
+    std::uint64_t oversizeUploads = 0;
+    /// Every screen bound at the end, the hero first; the slots' events in order (the first 512); the late-frame drops.
+    std::vector<VideoScreenRecord> screens;
+    std::vector<VideoSlotEventRecord> slotEvents;
+    std::vector<VideoBudgetDropRecord> budgetDrops;
+    /// The slots' events after the first 512, not listed (I5 step 2's review).
+    std::uint64_t slotEventsDropped = 0;
 
     bool operator==(const VideoRecord&) const = default;
+};
+
+/// A change of the process's priority class (I5 step 2, ADR-0016 §2): the frame, the priority read back from the
+/// system afterwards (platform_win::toString(ProcessPriority): "above-normal", "normal", "other"), why ("rendering":
+/// the 3D view renders; "minimized"; "launch": before an emulator starts; "exit") and whether the system took it.
+struct PriorityChangeRecord {
+    std::uint64_t frame = 0;
+    std::string priority;
+    std::string reason;
+    bool applied = false;
+
+    bool operator==(const PriorityChangeRecord&) const = default;
+};
+
+/// The process priority over the run (retroverse.exe): each change in order.
+struct ProcessPriorityRecord {
+    std::vector<PriorityChangeRecord> changes;
+
+    bool operator==(const ProcessPriorityRecord&) const = default;
 };
 
 /// The GPU time of one pass of the frames' views (I3 step 17b, FrameTiming::recordGpuPasses): the timer query results
@@ -1402,6 +1486,8 @@ struct RunReport {
     WorldRecord world;
     ResidencyRecord residency;
     VideoRecord video;
+    /// The process priority's changes (I5 step 2); absent in runs that change none (the asset preview).
+    std::optional<ProcessPriorityRecord> processPriority;
     /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
     GameScreensRecord screens;
     /// The directory (I4 step 7b; the product UI), always written ("directory").

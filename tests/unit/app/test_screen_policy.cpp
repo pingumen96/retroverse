@@ -706,3 +706,50 @@ TEST_CASE("app/screen_policy: the previous picture is held only while the next c
     CHECK(slow.hold(true, 5.0, 200.0));
     CHECK(slow.hold(true, 5.9, 200.9));
 }
+
+// --- I5 step 2: secondary screens and the scheduler's slots (ADR-0016 §2, §5) ---------------------------------------
+
+TEST_CASE("app/screen_policy: a screen without a start choice begins with its playlist", "[app][screen][playlist]") {
+    ScreenPlaySettings settings = playlistSettings();
+    settings.startChoice = false;
+    settings.playlist.screenId = "crt_b";
+    ScreenPolicy policy(playlistRoom(), settings);
+    CHECK(policy.origin() == ScreenOrigin::Playlist);
+    REQUIRE_FALSE(policy.playlist().order().empty());
+    CHECK(policy.targetId() == policy.playlist().order().front());
+    // An explicit playlist of one game plays it on (its clip loops), whatever the start choice would be.
+    settings.playlist.mode = rv::app::PlaylistMode::Explicit;
+    settings.playlist.explicitGames = {"g000000000000e003"};
+    ScreenPolicy single(playlistRoom(), settings);
+    CHECK(single.targetId() == "g000000000000e003");
+    CHECK(run(single, 0, 600).empty());
+    // A room without a clip: the start choice's stills, as for the hero.
+    std::vector<ScreenGame> stills{withStills(game("g000000000000e001"), false, false, true)};
+    ScreenPolicy still(stills, settings);
+    CHECK(still.targetId() == "g000000000000e001");
+    CHECK(still.origin() == ScreenOrigin::Start);
+    // Clips that come later start the playlist.
+    still.setGames(playlistRoom());
+    CHECK(still.targetId() == "g000000000000e003");
+    CHECK(still.origin() == ScreenOrigin::Playlist);
+}
+
+TEST_CASE("app/screen_policy: without a slot the stills and the card stand for the clip", "[app][screen][playlist]") {
+    ScreenPolicy policy(playlistRoom(), playlistSettings());
+    CHECK(policy.wantsDecoder());
+    CHECK_FALSE(policy.wantedStill().has_value()); // the card waits for the clip
+    policy.setNoSlot(true);
+    CHECK(policy.wantedStill() == ScreenPicture::TitleCard);
+    policy.stillReady();
+    CHECK(policy.picture() == ScreenPicture::TitleCard);
+    CHECK(policy.wantsDecoder()); // still asking for a slot
+    // A slot comes: the clip replaces the card once its first frame shows.
+    policy.setNoSlot(false);
+    policy.videoShowing();
+    CHECK(policy.picture() == ScreenPicture::Video);
+    // Its slot is taken (or stopped out of view): the card again, the clip not failed.
+    policy.videoStopped();
+    CHECK(policy.picture() == ScreenPicture::TitleCard);
+    CHECK(policy.wantsDecoder());
+    CHECK(policy.hasVideo());
+}

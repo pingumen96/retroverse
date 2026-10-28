@@ -105,6 +105,17 @@ in `rv_app` carries the decisions out: decoders, textures, stills, overrides and
 - **Cheaper uploads are not built.** Converting straight into the mapped PBO, YUV planes and a second context for
   asynchronous copies stay contingencies, in that order, used only if Gate M4's frame rows fail.
 
+*Amended on 2026-10-28 (I5 step 2's review):* while the window is minimized the slots pause at once and, like screens
+out of view, **stop after 10 s** (reason `minimized`), not only pause: the decoders and their threads are freed. An
+interactive run's host renders nothing while minimized but still ticks the screens with the time it waits
+(`IAppLogic::onMinimized`), and sets the normal priority. "Its area holds the eye" means the room bound: in a hall,
+between rooms, the **last room's screens stay bound and may keep asking for video** (paused once out of view, stopped
+10 s later) until the eye enters another room. `video.json`'s **`rooms.<room id>.screens.<object id>`** (§4) takes a
+kind's keys for one screen; it is for tests and hand-made scenes (`tests/smoke/scenes/screens_four.json`): a
+generated room's object ids come from the generator and are not a user-facing name, so users set a room's kinds. During
+a late-frame drop, open plus reserved slots never exceed the budget, and a lockstep run (`--fixed-dt`) does not watch
+late frames unless `--watch-late-frames` asks (its frames are presented on simulated time, decoded on the wall clock).
+
 ### 3. Playlists
 
 `app::Playlist` is GPU-free. It draws its games from the room's items (ADR-0013 §9's items files: the clip, the stills,

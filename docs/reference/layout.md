@@ -11,7 +11,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `world` (I3, ADR-0010: the world generator, GPU-free, on `core`, `geometry`, `assets`, `scene` and `catalog`; never
   RmlUi, SQLite, pugixml, `media`, `esde`, `catalog_db`, `platform_win` or `platform`:
   `src/world/forbidden_links.cmake`, proven by `unit.cmake/layer_rules`), `platform_win` (Windows without SDL, namespace
-  `rv::platform_win`: the system probe `Win32SystemProbe`, the process runner `Win32ProcessRunner`, `win32_util.hpp`; on
+  `rv::platform_win`: the system probe `Win32SystemProbe`, the process runner `Win32ProcessRunner`, `win32_util.hpp`,
+  since I5 step 2 `process_priority.hpp` (the process's priority class); on
   `core` and `launcher`) -> `platform` (SDL3; the window hand-over; links `platform_win`) -> `render` (OpenGL through
   glad; never includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always
   built), `ui` (RmlUi product UI; its GPU-free part `rv_ui_model` is always built) -> `app` (composition root) ->
@@ -38,7 +39,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   (I4 step 7b: the ride's state machine), `directory_data.hpp` (7b: the directory's building and games, where its
   commands lead) and `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its
   title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
-  defaults `assets/config/video.json`). `rv_app_catalog`
+  defaults `assets/config/video.json`); since I5 step 2 `screen_scheduler.hpp` (the decoder scheduler) and
+  `process_priority.hpp` (which priority class a frame wants). `rv_app_catalog`
   holds the room's flow up to its commit: `room_snapshot` and `world_build` (10b; the building job and the floor's
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's

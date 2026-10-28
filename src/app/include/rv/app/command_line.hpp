@@ -27,6 +27,18 @@ inline constexpr std::string_view kDefaultSceneName = "m0_testroom";
 /// Directory of the scenes selected by name, relative to the asset root.
 inline constexpr std::string_view kSceneDirectory = "style_tests/reference_scenes";
 
+/// --simulate-minimized FRAME:SECONDS (tests, I5 step 2's review): after `frame` frames the host takes its minimized
+/// branch for `seconds` of its waits, as an interactive run whose window is minimized, the window left as it is.
+struct SimulatedMinimize {
+    /// Longest simulated span, seconds.
+    static constexpr double kMaxSeconds = 600.0;
+
+    std::uint64_t frame = 0;
+    double seconds = 0.0;
+
+    bool operator==(const SimulatedMinimize&) const = default;
+};
+
 /// Where --spawn places the walker at the start instead of the scene camera (a primitive teleport, plan step 12).
 struct SpawnPoint {
     /// Largest |coordinate| accepted, meters.
@@ -149,6 +161,14 @@ struct CommandLineOptions {
     /// frame, for goldens (ADR-0012 §7; I3 step 11). In [0, kMaxVideoFreezePtsSeconds].
     std::optional<double> videoFreezePtsSeconds;
     static constexpr double kMaxVideoFreezePtsSeconds = 86400.0;
+    /// --max-decoders <1|2>: the screens' decoder budget, over video.json's maxDecoders (I5 step 2, ADR-0016 §2: 2 in
+    /// Balanced, 1 in Low). None: video.json's.
+    std::optional<int> maxDecoders;
+    /// --watch-late-frames (tests, I5 step 2's review): the late-frame drop is watched in a --fixed-dt run too (it is
+    /// off there by default: the frames are presented on simulated time and decoded on the wall clock).
+    bool watchLateFrames = false;
+    /// --simulate-minimized FRAME:SECONDS (tests), frame-limited runs only: SimulatedMinimize.
+    std::optional<SimulatedMinimize> simulateMinimized;
     /// --no-texture-compression: the collection's texture arrays in RGBA8 at half the resolution instead of BC1, the
     /// fallback without the S3TC extensions (ADR-0011 §4; implemented by I3 step 6: gl::chooseCollectionArrayFormat,
     /// SceneGraphics::collectionArrayFormat).

@@ -757,9 +757,27 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     video.binds = {{240, "room:megadrive/fx:hero.crt", 12, 0.75, 1, true},
                    {420, "room:snes/fx:hero.crt", 50, 0.5, 0, false}};
     video.waitsBeforeExit = 2;
+    // I5 step 2: the scheduler's budget, slots, uploads and screens; the process priority's changes.
+    video.maxDecoders = 2;
+    video.maxOpenDecoders = 2;
+    video.handOvers = 1;
+    video.maxUploadBytes = 3686400;
+    video.deferredUploads = 41;
+    video.oversizeUploads = 0;
+    rv::app::VideoScreenRecord shared{"crt_b", "secondary", "ambient", "g000000000000b002", "video", 0, true, 7, true};
+    rv::app::VideoScreenRecord still{"crt_d", "secondary", "ambient", "g000000000000b003", "cover", std::nullopt,
+                                     false, 9, false};
+    video.screens = {shared, still};
+    video.slotEvents = {{3, 0.05, 1, "open", "g000000000000b002", "wanted", {"crt_a", "crt_b"}},
+                        {900, 15.0, 1, "stop", "g000000000000b003", "out-of-view", {}}};
+    video.budgetDrops = {{12.5, 1, "g000000000000b003", 0.075, 42.5}};
+    video.slotEventsDropped = 3;
+    report.processPriority = rv::app::ProcessPriorityRecord{
+        {{1, "above-normal", "rendering", true}, {37, "normal", "launch", true}, {200, "normal", "exit", true}}};
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->video == video);
+    CHECK(parsed->processPriority == report.processPriority);
 
     // Optional values left out read back as absent; a bound record needs its fields.
     video.freezePtsSeconds.reset();

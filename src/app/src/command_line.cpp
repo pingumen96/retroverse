@@ -97,6 +97,16 @@ core::ArgParser makeParser() {
         .option("video-freeze-pts", "seconds",
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens.")
+        .option("max-decoders", "1|2",
+                "Video decoders the screens share at most (video.json's maxDecoders by default: 2, the Balanced "
+                "profile; 1 is the Low profile's): the screens beyond it show their stills.")
+        .flag("watch-late-frames", "For tests: watch the video's late frames (the drop to one decoder) with --fixed-dt "
+                                   "too, where they are not watched by default.")
+        .option("simulate-minimized", "frame:seconds",
+                "For tests, only with --smoke or --exit-after-frames: after this many frames, behave for these "
+                "seconds as an interactive run whose window is minimized (no frame rendered, normal priority, the "
+                "screens' decoders paused, then stopped after 10 s), the window left as it is; with --fixed-dt each "
+                "wait counts 0.1 s without waiting.")
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
                                         "instead of BC1, as without the S3TC extensions (the log names the format "
                                         "and why).")
@@ -291,6 +301,55 @@ Status applyVideoFreezePts(const core::ParsedArgs& args, CommandLineOptions& opt
                          "--video-freeze-pts=" + args.value("video-freeze-pts").value_or(""));
     }
     options.videoFreezePtsSeconds = *seconds;
+    return ok();
+}
+
+/// --max-decoders <1|2>, the screens' decoder budget.
+Status applyMaxDecoders(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("max-decoders")) {
+        return ok();
+    }
+    auto decoders = args.intValue("max-decoders", 0);
+    if (!decoders) {
+        return propagate(decoders.error());
+    }
+    if (*decoders < 1 || *decoders > 2) {
+        return makeError(ErrorCode::OutOfRange, "must be 1 or 2", fmt::format("--max-decoders={}", *decoders));
+    }
+    options.maxDecoders = *decoders;
+    return ok();
+}
+
+/// --simulate-minimized FRAME:SECONDS, in a frame-limited run: FRAME up to the largest frame limit, SECONDS above 0 and
+/// at most SimulatedMinimize::kMaxSeconds.
+Status applySimulateMinimized(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("simulate-minimized")) {
+        return ok();
+    }
+    const std::string text = args.value("simulate-minimized").value_or("");
+    const std::string context = "--simulate-minimized=" + text;
+    if (!options.frameLimit) {
+        return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames", context);
+    }
+    const std::size_t colon = text.find(':');
+    const std::optional<int> frame =
+        colon == std::string::npos ? std::nullopt : parseDecimal(std::string_view(text).substr(0, colon));
+    double seconds = 0.0;
+    bool secondsRead = false;
+    if (colon != std::string::npos) {
+        const std::string_view rest = std::string_view(text).substr(colon + 1);
+        const auto [end, error] = std::from_chars(rest.data(), rest.data() + rest.size(), seconds);
+        secondsRead = error == std::errc() && end == rest.data() + rest.size() && !rest.empty();
+    }
+    if (!frame || !secondsRead) {
+        return makeError(ErrorCode::ParseError, "expected FRAME:SECONDS, e.g. 30:11", context);
+    }
+    if (!std::isfinite(seconds) || seconds <= 0.0 || seconds > SimulatedMinimize::kMaxSeconds) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("the seconds must be above 0 and at most {:g}", SimulatedMinimize::kMaxSeconds),
+                         context);
+    }
+    options.simulateMinimized = SimulatedMinimize{static_cast<std::uint64_t>(*frame), seconds};
     return ok();
 }
 
@@ -541,6 +600,13 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     if (auto freeze = applyVideoFreezePts(*args, options); !freeze) {
         return propagate(freeze.error());
     }
+    if (auto decoders = applyMaxDecoders(*args, options); !decoders) {
+        return propagate(decoders.error());
+    }
+    if (auto minimized = applySimulateMinimized(*args, options); !minimized) {
+        return propagate(minimized.error());
+    }
+    options.watchLateFrames = args->has("watch-late-frames");
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");
     auto startRoom = nonEmptyValue(*args, "start-room");

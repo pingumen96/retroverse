@@ -24,8 +24,10 @@
 // Per screen kind: "enabled" (autoplay: false leaves the screen to selections), "playlist" (playlist.hpp's modes),
 // "previewDuration" (seconds a clip plays before the next, 1 to 3600), "showOnFocus" (the focused or inspected game
 // plays), "volume" (0 to 1), "crtPreset" ("" for the kind's default, else "neutral", "consumer", "arcade", "monitor").
-// Per room ("rooms.<room id>.<kind>"): the same keys, each optional, and "games" (the explicit mode's GameIds). Step 1
-// uses "enabled", the hero's keys and the rooms'; the others are read and checked for the steps that follow.
+// Per room ("rooms.<room id>.<kind>"): the same keys, each optional, and "games" (the explicit mode's GameIds); per
+// screen of a room ("rooms.<room id>.screens.<screen's object id>", I5 step 2) the same again, over its kind's. Step 1
+// uses "enabled", the hero's keys and the rooms'; step 2 "maxDecoders", "maxRows", "proximityMeters", the secondary
+// screens' keys and the screens'; the others are read and checked for the steps that follow.
 
 #include <cstdint>
 #include <filesystem>
@@ -112,6 +114,8 @@ struct RoomVideoOverrides {
     std::optional<ScreenOverrides> hero;
     std::optional<ScreenOverrides> secondary;
     std::optional<ScreenOverrides> cabinet;
+    /// One screen's keys by its object id ("rooms.<room id>.screens.<screen id>", I5 step 2), over its kind's.
+    std::map<std::string, ScreenOverrides, std::less<>> screens;
 
     bool operator==(const RoomVideoOverrides&) const = default;
 };
@@ -140,6 +144,8 @@ struct VideoSettings {
 
     /// The settings of `kind`'s screen in room `roomId`: the kind's, with the room's keys over them.
     [[nodiscard]] ScreenSettings screen(ScreenKind kind, std::string_view roomId) const;
+    /// The same with the keys of screen `screenId` of that room over them (I5 step 2).
+    [[nodiscard]] ScreenSettings screen(ScreenKind kind, std::string_view roomId, std::string_view screenId) const;
 
     bool operator==(const VideoSettings&) const = default;
 };

@@ -4,8 +4,8 @@
 #include <rv/app/scene_instance.hpp>
 #include <rv/assets/collection_labels.hpp>
 #include <rv/assets/cover_fit.hpp>
-#include <rv/assets/text_raster.hpp>
 #include <rv/assets/image_io.hpp>
+#include <rv/assets/text_raster.hpp>
 #include <rv/core/cpu_timers.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/utf8.hpp>
@@ -16,9 +16,11 @@
 #include <rv/render/texture.hpp>
 #include <rv/render/video_texture.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/scene_areas.hpp>
 #include <rv/scene/scene_description.hpp>
 
 #include <fmt/format.h>
+#include <glm/geometric.hpp>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -27,6 +29,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <map>
 #include <mutex>
 #include <set>
 #include <span>
@@ -44,11 +47,11 @@ constexpr std::chrono::seconds kStillWait{5};
 /// Polling interval of those waits and of the stop before a launch.
 constexpr std::chrono::milliseconds kPollInterval{1};
 
-/// The run report's lists of the games played and the pictures shown keep their first entries only.
+/// The run report's lists of the games played, the pictures shown and the slots' events keep their first entries only.
 constexpr std::size_t kMaxTimelineEntries = 512;
 
-/// Decoders of every screen service alive (playing or still ending): never more than one (NFR-07's single decoder of
-/// I3, ADR-0012 §7).
+/// Decoders of every screen service alive (playing or still ending): never more than the budget's slots (NFR-07,
+/// ADR-0016 §2).
 std::atomic<int> g_liveDecoders{0};
 
 /// The decoder's failure as the run report names it, like the error codes: "file-not-found", "corrupt-data".
@@ -60,6 +63,11 @@ std::string failureName(media::DecodeFailure failure) {
 
 double millisecondsSince(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
+
+/// The scheduler's key of a clip: its file.
+std::string clipKey(const std::filesystem::path& path) {
+    return core::pathToUtf8Lossy(path);
 }
 
 /// A still picture decoded and fitted on the worker, for the main thread to upload.
@@ -134,352 +142,692 @@ Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::st
     return std::move(fitted->picture);
 }
 
+/// The material of `object`'s screen picture in `materials` ("<object id>/screen", "@<w>x<h>" for a pattern) with a
+/// base colour texture to override.
+std::optional<scene::MaterialHandle> screenMaterial(const scene::SceneObject& object,
+                                                    const gl::MaterialRegistry& materials) {
+    const std::string key = object.id + "/screen";
+    for (std::uint32_t handle = 0; handle < materials.size(); ++handle) {
+        const gl::GpuMaterial& material = materials.material(scene::MaterialHandle{handle});
+        if (material.key != key && !material.key.starts_with(key + "@")) {
+            continue;
+        }
+        if (material.textureSources[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] == nullptr) {
+            continue;
+        }
+        return scene::MaterialHandle{handle};
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
-ScreenPlaySettings heroPlaySettings(const ScreenServiceOptions& options, std::string_view roomId) {
-    const ScreenSettings hero = options.video.screen(ScreenKind::Hero, roomId);
+ScreenPlaySettings screenPlaySettings(const ScreenServiceOptions& options, const ScreenBinding& screen) {
+    const ScreenSettings own = options.video.screen(screen.kind, screen.roomId, screen.objectId);
     ScreenPlaySettings settings;
-    settings.autoplay = hero.enabled;
-    settings.showOnFocus = hero.showOnFocus;
+    settings.autoplay = own.enabled;
+    settings.showOnFocus = own.showOnFocus;
     settings.clips = options.video.enabled;
-    settings.previewSeconds = hero.previewSeconds;
-    settings.playlist.mode = hero.playlist;
-    settings.playlist.roomId = std::string(roomId);
-    settings.playlist.screenId = std::string(kHeroScreenId);
-    settings.playlist.explicitGames = hero.games;
+    settings.previewSeconds = own.previewSeconds;
+    settings.playlist.mode = own.playlist;
+    settings.playlist.roomId = screen.roomId;
+    // The hero's seeds keep their screen id across scene ids (I5 step 1); a secondary's are its own.
+    settings.playlist.screenId = screen.kind == ScreenKind::Hero ? std::string(kHeroScreenId) : screen.objectId;
+    settings.playlist.explicitGames = own.games;
     settings.frozen = options.freezePtsSeconds.has_value();
+    settings.startChoice = screen.kind == ScreenKind::Hero;
     return settings;
 }
 
-std::optional<HeroScreen> findHeroScreen(const scene::SceneDescription& description, const SceneInstance& instance,
-                                         const gl::MaterialRegistry& materials,
-                                         const std::optional<std::string>& idPrefix) {
+int decoderBudget(const ScreenServiceOptions& options) noexcept {
+    return std::clamp(options.maxDecoders.value_or(options.video.maxDecoders), 1, kMaxScreenDecoders);
+}
+
+std::vector<ScreenBinding> findScreens(const scene::SceneDescription& description, const SceneInstance& instance,
+                                       const gl::MaterialRegistry& materials,
+                                       const std::optional<std::string>& idPrefix) {
+    std::vector<ScreenBinding> screens;
     if (idPrefix && idPrefix->empty()) {
-        return std::nullopt;
+        return screens;
     }
+    const std::string roomId = idPrefix
+                                   ? (idPrefix->ends_with('/') ? idPrefix->substr(0, idPrefix->size() - 1) : *idPrefix)
+                                   : description.name;
+    std::optional<std::size_t> heroArea;
     for (std::size_t index = 0; index < description.objects.size(); ++index) {
         const scene::SceneObject& object = description.objects[index];
-        // The CRT, or the arcade's hero cabinet that stands for it (I6 step 6), with its screen's picture.
-        if (object.source != scene::SceneObject::Source::Prefab ||
-            (object.kind != "crt" && object.kind != "arcade_cabinet") || !object.texturesByRole.contains("screen") ||
-            index >= instance.objectBounds().size()) {
+        // The CRT, or (the hero only) the arcade's hero cabinet that stands for it (I6 step 6), with its screen's
+        // picture.
+        const bool crt = object.kind == "crt";
+        if (object.source != scene::SceneObject::Source::Prefab || !(crt || (screens.empty() && object.kind == "arcade_cabinet")) ||
+            !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
             continue;
         }
         if (idPrefix && !object.id.starts_with(*idPrefix)) {
             continue;
         }
-        // SceneInstance registers the screen's picture instance as "<object id>/screen", "@<w>x<h>" for a pattern.
-        const std::string key = object.id + "/screen";
-        for (std::uint32_t handle = 0; handle < materials.size(); ++handle) {
-            const gl::GpuMaterial& material = materials.material(scene::MaterialHandle{handle});
-            if (material.key != key && !material.key.starts_with(key + "@")) {
-                continue;
-            }
-            if (material.textureSources[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] == nullptr) {
-                continue;
-            }
-            HeroScreen screen;
-            screen.objectId = object.id;
-            screen.roomId = idPrefix ? (idPrefix->ends_with('/') ? idPrefix->substr(0, idPrefix->size() - 1) : *idPrefix)
-                                     : description.name;
-            screen.material = scene::MaterialHandle{handle};
-            const std::span<const glm::mat4> transforms = object.instanceTransforms();
-            screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
-            return screen;
+        const std::optional<scene::MaterialHandle> material = screenMaterial(object, materials);
+        if (!material) {
+            continue;
         }
+        ScreenBinding screen;
+        screen.objectId = object.id;
+        screen.roomId = roomId;
+        screen.material = *material;
+        const std::span<const glm::mat4> transforms = object.instanceTransforms();
+        screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
+        screen.kind = screens.empty() ? ScreenKind::Hero : ScreenKind::Secondary;
+        if (!instance.areas().empty()) {
+            const std::optional<std::size_t> area = scene::areaAt(instance.areas(), screen.bounds.center());
+            if (screens.empty()) {
+                heroArea = area;
+            } else if (area != heroArea) {
+                continue; // a CRT of another area: another room's screen
+            }
+        }
+        screens.push_back(std::move(screen));
     }
-    return std::nullopt;
+    return screens;
 }
 
 struct ScreenService::Impl {
-    Impl(HeroScreen heroScreen, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
-         ScreenServiceOptions serviceOptions)
-        : screen(std::move(heroScreen)), lastScreenId(screen->objectId), materials(registry),
-          policy(std::move(games), heroPlaySettings(serviceOptions, screen->roomId)), options(serviceOptions),
-          pool(core::WorkerPoolOptions{
-              .threads = 1, .capacity = 8, .belowNormalPriority = true, .name = "rv-screen-stills"}),
-          stillSlot(std::make_shared<StillSlot>()), cardFonts(std::make_shared<CardFonts>()) {}
+    /// One screen and what it shows.
+    struct ScreenState {
+        ScreenState(ScreenBinding screenBinding, ScreenPolicy screenPolicy)
+            : binding(std::move(screenBinding)), policy(std::move(screenPolicy)) {}
 
-    /// The screen bound (none between unbind() and bind()), and the last one's id (the record's at the end).
-    std::optional<HeroScreen> screen;
+        ScreenBinding binding;
+        ScreenPolicy policy;
+
+        // Still pictures: the one shown (for the generation it was loaded for) and the load in flight.
+        core::JobGeneration stillJobs;
+        std::shared_ptr<StillSlot> stillSlot = std::make_shared<StillSlot>();
+        std::uint64_t stillToken = 0;
+        bool stillLoading = false;
+        std::optional<ScreenPicture> loadingPicture;
+        gl::Texture2D still;
+        /// The previous target's still, kept on the screen while the new target's picture is not ready (I5 step 1).
+        gl::Texture2D heldStill;
+
+        // What the material shows and the generation the screen follows.
+        GLuint appliedOverride = 0;
+        /// A video shown: the slot whose texture the override is, and the clip it played then (a held video ends
+        /// once that slot opened another screen's clip or its texture changed).
+        std::optional<std::size_t> overrideSlot;
+        std::string overrideClip;
+        ScreenPicture shownPicture = ScreenPicture::IdlePattern;
+        /// The game whose picture is shown (the previous target's while it is held).
+        std::string shownGame;
+        std::uint64_t followedGeneration = 0;
+        bool followed = false;
+        /// The previous picture held while the target's is awaited.
+        PictureHold held;
+
+        // This frame's request and the scheduler's answer (I5 step 2).
+        std::string clip;
+        ScreenClass screenClass = ScreenClass::Room;
+        bool visible = true;
+        double distance = 0.0;
+        ScreenAssignment assignment;
+        /// The policy was told its target's clip shows (videoShowing()), from the slot `lastSlot`.
+        bool videoTold = false;
+        std::optional<std::size_t> lastSlot;
+    };
+
+    /// One decoder slot: its decoder (open, or stopped with its thread still ending) and its texture.
+    struct Slot {
+        std::unique_ptr<media::VideoPlayback> playback;
+        bool draining = false;
+        bool paused = false;
+        /// The clip (its scheduler key) and the game it opened for.
+        std::string clip;
+        std::string gameId;
+        gl::VideoTexture texture;
+        bool textureFailed = false;
+        bool failureHandled = false;
+
+        // The clip playing: when its decoder started, its first frame, its frames and their timestamps.
+        Clock::time_point started;
+        bool frameShown = false;
+        double duration = 0.0;
+        std::optional<double> firstFrameMs;
+        std::uint64_t frames = 0;
+        std::optional<double> firstPts;
+        std::optional<double> lastPts;
+        std::optional<double> firstUploadAt;
+        double lastUploadAt = 0.0;
+        bool frozenShown = false;
+
+        /// The frame waiting for its upload (VideoPlayback::update()'s), and the render frame it began to wait.
+        const media::VideoFrame* pending = nullptr;
+        std::optional<std::uint64_t> pendingSince;
+    };
+
+    Impl(std::vector<ScreenBinding> bindings, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
+         ScreenServiceOptions serviceOptions)
+        : materials(registry), options(std::move(serviceOptions)),
+          scheduler(ScreenSchedulerSettings{decoderBudget(options), options.video.proximityMeters,
+                                            !options.lockstep || options.watchLateFrames}),
+          slots(scheduler.slots().size()),
+          pool(core::WorkerPoolOptions{
+              .threads = 1, .capacity = 16, .belowNormalPriority = true, .name = "rv-screen-stills"}),
+          cardFonts(std::make_shared<CardFonts>()) {
+        for (ScreenBinding& binding : bindings) {
+            ScreenPlaySettings settings = screenPlaySettings(options, binding);
+            screens.push_back(std::make_unique<ScreenState>(std::move(binding), ScreenPolicy(games, settings)));
+        }
+        lastScreenId = screens.empty() ? std::string() : screens.front()->binding.objectId;
+    }
+
+    /// The screens bound, the hero first (none between unbind() and bind()), the policies of screens let go (reused by
+    /// the next bind: the clips that failed stay excluded), and the last hero's id (the record's at the end).
+    std::vector<std::unique_ptr<ScreenState>> screens;
+    std::vector<ScreenPolicy> sparePolicies;
     std::string lastScreenId;
     gl::MaterialRegistry& materials;
-    ScreenPolicy policy;
     ScreenServiceOptions options;
-
-    // The one decoder: the clip playing, or the one whose thread is still ending after a stop (never both at once with
-    // a thread: a new clip opens once `draining` is gone).
-    std::unique_ptr<media::VideoPlayback> playback;
-    std::unique_ptr<media::VideoPlayback> draining;
-    bool playbackPaused = false;
-    gl::VideoTexture videoTexture;
-    bool videoTextureFailed = false;
-
-    // The clip playing: when its decoder started, its first frame, its frames and their timestamps.
-    Clock::time_point clipStarted;
-    bool clipFrameShown = false;
-    double clipDuration = 0.0;
-    std::optional<double> firstFrameMs;
-    std::uint64_t clipFrames = 0;
-    std::optional<double> firstPts;
-    std::optional<double> lastPts;
-    std::optional<double> firstUploadAt;
-    double lastUploadAt = 0.0;
-    bool frozenShown = false;
-
-    // Still pictures: the one shown (for the generation it was loaded for) and the load in flight.
+    ScreenScheduler scheduler;
+    std::vector<Slot> slots;
     core::WorkerPool pool;
-    core::JobGeneration stillJobs;
-    std::shared_ptr<StillSlot> stillSlot;
-    std::uint64_t stillToken = 0;
-    bool stillLoading = false;
-    std::optional<ScreenPicture> loadingPicture;
-    gl::Texture2D still;
-    /// The previous target's still, kept on the screen while the new target's picture is not ready (I5 step 1).
-    gl::Texture2D heldStill;
     std::shared_ptr<CardFonts> cardFonts;
-
-    // What the material shows and the generation the screen follows.
-    GLuint appliedOverride = 0;
-    ScreenPicture shownPicture = ScreenPicture::IdlePattern;
-    /// The game whose picture is shown (the previous target's while it is held).
-    std::string shownGame;
     /// Explicit playlist ids already logged as unknown or without a clip (once per run).
     std::set<std::string, std::less<>> loggedPlaylistIds;
-    std::uint64_t followedGeneration = 0;
-    bool followed = false;
-    /// The previous picture held while the target's is awaited.
-    PictureHold held;
+    /// Positions of clips stopped while still asked for (out of view, needed, the budget): reopened there.
+    std::map<std::string, double, std::less<>> resumeAt;
+    /// The game each clip opened for (the drops' records).
+    std::map<std::string, std::string, std::less<>> clipGames;
+    ScreenPhase phase = ScreenPhase::Running;
     bool reopenPending = false;
+    std::uint64_t frameIndex = 0;
+    double now = 0.0;
+    /// This frame's window is minimized (every screen out of view).
+    bool minimized = false;
+    bool budgetErrorLogged = false;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
     VideoRecord counters;
     std::optional<std::string> endPhase;
     std::optional<std::string> endDecoderState;
 
-    [[nodiscard]] std::string decoderStateName() const {
-        return playback ? std::string(media::toString(playback->decoder().state())) : std::string("none");
+    [[nodiscard]] ScreenState* hero() const noexcept { return screens.empty() ? nullptr : screens.front().get(); }
+    [[nodiscard]] bool isHero(const ScreenState& screen) const noexcept { return hero() == &screen; }
+    /// "Hero CRT" or "Screen '<id>'", for the log.
+    [[nodiscard]] std::string nameOf(const ScreenState& screen) const {
+        return isHero(screen) ? std::string("Hero CRT") : fmt::format("Screen '{}'", screen.binding.objectId);
     }
 
-    // --- decoder -----------------------------------------------------------------------------------------------
+    /// The slot playing the hero's clip now, else none.
+    [[nodiscard]] const Slot* heroPlayingSlot() const noexcept {
+        const ScreenState* screen = hero();
+        if (screen == nullptr || !screen->assignment.playing || !screen->assignment.slot) {
+            return nullptr;
+        }
+        return &slots[*screen->assignment.slot];
+    }
+    /// The slot of the hero's last clip (its figures for the report): the one it played on, else the one assigned.
+    [[nodiscard]] const Slot* heroClipSlot() const noexcept {
+        const ScreenState* screen = hero();
+        if (screen == nullptr) {
+            return nullptr;
+        }
+        if (screen->lastSlot) {
+            return &slots[*screen->lastSlot];
+        }
+        return screen->assignment.slot ? &slots[*screen->assignment.slot] : nullptr;
+    }
 
-    void releaseDecoder(std::unique_ptr<media::VideoPlayback>& slot) {
-        if (slot) {
-            slot.reset();
+    [[nodiscard]] std::string decoderStateName() const {
+        const Slot* slot = heroPlayingSlot();
+        return slot != nullptr && slot->playback && !slot->draining
+                   ? std::string(media::toString(slot->playback->decoder().state()))
+                   : std::string("none");
+    }
+
+    // --- decoders ------------------------------------------------------------------------------------------------
+
+    void releaseDecoder(Slot& slot) {
+        if (slot.playback) {
+            slot.playback.reset();
             g_liveDecoders.fetch_sub(1, std::memory_order_relaxed);
         }
+        slot.draining = false;
+        slot.paused = false;
+        slot.pending = nullptr;
+        slot.pendingSince.reset();
     }
 
-    /// Stops the clip playing: its decoder ends on its own thread, waited for by reapDraining() (or the launch's stop).
-    void stopPlayback() {
-        if (!playback) {
-            return;
-        }
-        // A decoder opens only once the previous one's thread ended (openDecoder), so nothing drains now.
-        assert(!draining);
-        playback->decoder().stop();
-        releaseDecoder(draining);
-        draining = std::move(playback);
-        clipFrameShown = false;
-    }
-
-    /// Forgets a stopped decoder once its thread ended.
-    void reapDraining() {
-        if (draining && !draining->decoder().threadRunning()) {
-            releaseDecoder(draining);
+    /// Forgets the stopped decoders whose threads ended.
+    void reapDrained() {
+        for (Slot& slot : slots) {
+            if (slot.draining && slot.playback && !slot.playback->decoder().threadRunning()) {
+                releaseDecoder(slot);
+            }
         }
     }
 
     [[nodiscard]] std::uint64_t decoderThreads() const {
-        std::uint64_t threads = 0;
-        for (const auto* slot : {&playback, &draining}) {
-            if (*slot && (*slot)->decoder().threadRunning()) {
-                ++threads;
+        return static_cast<std::uint64_t>(std::count_if(slots.begin(), slots.end(), [](const Slot& slot) {
+            return slot.playback && slot.playback->decoder().threadRunning();
+        }));
+    }
+
+    /// Seconds into the clip of `slot` shown (timestamps keep growing across loops: taken modulo its duration).
+    [[nodiscard]] static std::optional<double> clipPosition(const Slot& slot) {
+        if (!slot.frameShown || !slot.lastPts) {
+            return std::nullopt;
+        }
+        return slot.duration > 0.0 ? std::fmod(*slot.lastPts, slot.duration) : *slot.lastPts;
+    }
+
+    /// The screens asking for `clip` this frame, in their order.
+    [[nodiscard]] std::vector<ScreenState*> requesters(std::string_view clip) const {
+        std::vector<ScreenState*> found;
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            if (!clip.empty() && screen->clip == clip) {
+                found.push_back(screen.get());
             }
         }
-        return threads;
+        return found;
     }
 
-    void addFallback(ScreenPicture picture, std::string reason) {
-        spdlog::warn("Hero CRT: the {} of game {} cannot be shown ({}); the next picture of the chain is shown",
-                     toString(picture), policy.targetId(), reason);
+    void addFallback(ScreenState& screen, ScreenPicture picture, std::string reason) {
+        spdlog::warn("{}: the {} of game {} cannot be shown ({}); the next picture of the chain is shown",
+                     nameOf(screen), toString(picture), screen.policy.targetId(), reason);
         counters.fallbacks.push_back(
-            VideoFallbackRecord{policy.targetId(), std::string(toString(picture)), std::move(reason)});
+            VideoFallbackRecord{screen.policy.targetId(), std::string(toString(picture)), std::move(reason)});
     }
 
-    void openDecoder(double nowSeconds) {
-        if (draining || playback) {
-            return; // the previous clip's thread is still ending: never two decoders
+    void recordEvent(std::size_t slot, SlotAction action, std::string gameId, std::string reason,
+                     std::vector<std::string> shownOn) {
+        if (counters.slotEvents.size() < kMaxTimelineEntries) {
+            counters.slotEvents.push_back(VideoSlotEventRecord{frameIndex, now, slot, std::string(toString(action)),
+                                                               std::move(gameId), std::move(reason),
+                                                               std::move(shownOn)});
+        } else {
+            ++counters.slotEventsDropped;
         }
-        if (g_liveDecoders.load(std::memory_order_relaxed) != 0) {
-            // Another screen service holds the one decoder (none does in I3): refused, never two.
-            assert(false && "never two video decoders");
-            spdlog::error("Hero CRT: a second video decoder was refused (one decoder at a time)");
-            policy.videoFailed();
+    }
+
+    [[nodiscard]] std::vector<std::string> screenIds(const std::vector<ScreenState*>& on) const {
+        std::vector<std::string> ids;
+        for (const ScreenState* screen : on) {
+            ids.push_back(screen->binding.objectId);
+        }
+        return ids;
+    }
+
+    /// Stops the decoder of `index` (its thread ends on its own: the slot drains until the scheduler sees it ended).
+    void stopSlot(std::size_t index, std::string_view reason) {
+        Slot& slot = slots[index];
+        if (!slot.playback || slot.draining) {
             return;
         }
+        // A clip stopped while still asked for opens again where it was.
+        if (reason == "out-of-view" || reason == "minimized" || reason == "needed" || reason == "budget") {
+            if (const std::optional<double> position = clipPosition(slot)) {
+                resumeAt[slot.clip] = *position;
+            }
+        }
+        slot.playback->decoder().stop();
+        slot.draining = true;
+        slot.paused = false;
+        slot.pending = nullptr;
+        slot.pendingSince.reset();
+        slot.frameShown = false;
+        recordEvent(index, SlotAction::Stop, slot.gameId, std::string(reason), screenIds(requesters(slot.clip)));
+        spdlog::info("Video slot {}: the clip of game {} stops ({})", index, slot.gameId, reason);
+    }
+
+    void openSlot(std::size_t index, const std::string& clip) {
+        Slot& slot = slots[index];
+        const std::vector<ScreenState*> on = requesters(clip);
+        if (slot.playback) {
+            // The scheduler opens only a slot whose thread ended (feedback): forget the stopped decoder.
+            assert(!slot.playback->decoder().threadRunning() && "a slot reopened before its thread ended");
+            releaseDecoder(slot);
+        }
+        if (on.empty()) {
+            scheduler.openFailed(index);
+            return;
+        }
+        if (g_liveDecoders.load(std::memory_order_relaxed) >= scheduler.settings().maxDecoders) {
+            // NFR-07: never more decoders alive than the budget's slots (another service holds them: none does).
+            assert(false && "never more video decoders than the budget");
+            spdlog::error("Video slot {}: a decoder over the budget of {} was refused", index,
+                          scheduler.settings().maxDecoders);
+            scheduler.openFailed(index);
+            return;
+        }
+        ScreenState& first = *on.front();
         media::DecoderSettings settings;
-        settings.maxHeight = kMaxVideoRows;
+        settings.maxHeight = options.video.maxRows;
         settings.loop = true;
         settings.startPaused = options.freezePtsSeconds.has_value();
-        settings.name = "hero-crt";
-        auto decoder = media::VideoDecoder::start(policy.targetMedia().video, std::move(settings));
+        settings.name = fmt::format("screen-{}", index);
+        auto decoder = media::VideoDecoder::start(first.policy.targetMedia().video, std::move(settings));
         if (!decoder) {
-            addFallback(ScreenPicture::Video, std::string(toString(decoder.error().code)));
-            policy.videoFailed();
+            for (ScreenState* screen : on) {
+                addFallback(*screen, ScreenPicture::Video, std::string(toString(decoder.error().code)));
+                screen->policy.videoFailed();
+            }
+            scheduler.openFailed(index);
             return;
         }
         g_liveDecoders.fetch_add(1, std::memory_order_relaxed);
         ++counters.decodersStarted;
-        playback = std::make_unique<media::VideoPlayback>(std::move(*decoder));
-        playbackPaused = false;
-        clipStarted = Clock::now();
-        clipFrameShown = false;
-        clipDuration = 0.0;
-        firstFrameMs.reset();
-        clipFrames = 0;
-        firstPts.reset();
-        lastPts.reset();
-        firstUploadAt.reset();
-        frozenShown = false;
-        const std::optional<double> resume = policy.takeResumePosition();
-        if (std::exchange(reopenPending, false) && !counters.launches.empty()) {
+        slot.playback = std::make_unique<media::VideoPlayback>(std::move(*decoder));
+        slot.draining = false;
+        slot.paused = false;
+        slot.clip = clip;
+        slot.gameId = first.policy.targetId();
+        clipGames[clip] = slot.gameId;
+        slot.textureFailed = false;
+        slot.failureHandled = false;
+        slot.started = Clock::now();
+        slot.frameShown = false;
+        slot.duration = 0.0;
+        slot.firstFrameMs.reset();
+        slot.frames = 0;
+        slot.firstPts.reset();
+        slot.lastPts.reset();
+        slot.firstUploadAt.reset();
+        slot.frozenShown = false;
+        slot.pending = nullptr;
+        slot.pendingSince.reset();
+        // Where it opens: a launch's position (its screens' policies), else one kept when it stopped.
+        std::optional<double> resume;
+        for (ScreenState* screen : on) {
+            if (const std::optional<double> position = screen->policy.takeResumePosition(); position && !resume) {
+                resume = position;
+            }
+        }
+        if (!resume) {
+            if (const auto kept = resumeAt.find(clip); kept != resumeAt.end()) {
+                resume = kept->second;
+                resumeAt.erase(kept);
+            }
+        }
+        const bool heroOn = std::find(on.begin(), on.end(), hero()) != on.end();
+        if (reopenPending && heroOn && !counters.launches.empty()) {
+            reopenPending = false;
             counters.launches.back().reopened = true;
             counters.launches.back().reopenedAtSeconds = resume;
         }
         if (options.freezePtsSeconds) {
-            playback->pause(nowSeconds);
-            playback->seek(*options.freezePtsSeconds);
-            playbackPaused = true;
+            slot.playback->pause(now);
+            slot.playback->seek(*options.freezePtsSeconds);
+            slot.paused = true;
         } else if (resume) {
-            playback->seek(*resume);
+            slot.playback->seek(*resume);
         }
-        spdlog::info("Hero CRT: the video of game {} opens{}", policy.targetId(),
+        recordEvent(index, SlotAction::Open, slot.gameId, "wanted", screenIds(on));
+        spdlog::info("Video slot {}: the video of game {} opens on {} screen(s){}", index, slot.gameId, on.size(),
                      options.freezePtsSeconds
                          ? fmt::format(", held at {:g} s (--video-freeze-pts)", *options.freezePtsSeconds)
-                     : resume ? fmt::format(" at {:.3f} s, where it stopped for the launch", *resume)
+                     : resume ? fmt::format(" at {:.3f} s, where it stopped", *resume)
                               : std::string());
-        spdlog::debug("Hero CRT: video file {}", core::pathToUtf8Lossy(policy.targetMedia().video));
+        spdlog::debug("Video slot {}: video file {}", index, core::pathToUtf8Lossy(first.policy.targetMedia().video));
     }
 
-    void upload(const media::VideoFrame& frame, double nowSeconds) {
-        const glm::ivec2 size(frame.width(), frame.height());
-        // The texture and its ring are made once, outside the section: it times the uploads (the budget's p99).
-        if (!videoTexture.valid()) {
-            auto created = gl::VideoTexture::create(size, "HeroCrt.Video");
-            if (!created) {
-                spdlog::error("Hero CRT: no video texture: {}", created.error().toString());
-                videoTextureFailed = true;
-                return;
+    void applyCommands(const std::vector<SlotCommand>& commands) {
+        for (const SlotCommand& command : commands) {
+            Slot& slot = slots[command.slot];
+            // While the window is minimized every screen is out of view: its pauses and stops are the window's.
+            const std::string reason =
+                minimized && command.reason == "out-of-view" ? std::string("minimized") : command.reason;
+            switch (command.action) {
+            case SlotAction::Stop:
+                stopSlot(command.slot, reason);
+                break;
+            case SlotAction::Open:
+                openSlot(command.slot, command.clip);
+                break;
+            case SlotAction::Pause:
+                // Every screen showing it left the view: the frame kept. A frozen run's clips stay paused anyway.
+                if (slot.playback && !slot.draining && !options.freezePtsSeconds && !slot.paused) {
+                    slot.playback->pause(now);
+                    slot.paused = true;
+                    ++counters.pauses;
+                }
+                recordEvent(command.slot, SlotAction::Pause, slot.gameId, reason, screenIds(requesters(slot.clip)));
+                break;
+            case SlotAction::Resume:
+                if (slot.playback && !slot.draining && !options.freezePtsSeconds && slot.paused) {
+                    slot.playback->resume(now);
+                    slot.paused = false;
+                }
+                recordEvent(command.slot, SlotAction::Resume, slot.gameId, command.reason,
+                            screenIds(requesters(slot.clip)));
+                break;
             }
-            videoTexture = std::move(*created);
+        }
+    }
+
+    /// The scheduler's frame: the slots' feedback, the screens' requests, its commands carried out.
+    void schedule() {
+        reapDrained();
+        std::vector<SlotFeedback> feedback(slots.size());
+        for (std::size_t index = 0; index < slots.size(); ++index) {
+            const Slot& slot = slots[index];
+            feedback[index].threadRunning = slot.playback && slot.playback->decoder().threadRunning();
+            if (slot.playback && !slot.draining) {
+                const media::PresentationStats& stats = slot.playback->clock().stats();
+                feedback[index].presented = stats.presented;
+                feedback[index].late = stats.late;
+                feedback[index].dropped = stats.dropped;
+            }
+        }
+        std::vector<ScreenRequest> requests;
+        requests.reserve(screens.size());
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            // The hero's own slot is the hero's, whichever room's: a room changed reopens on it (one thread).
+            requests.push_back(ScreenRequest{screen->binding.objectId, screen->screenClass, screen->clip,
+                                             screen->distance, screen->visible,
+                                             isHero(*screen) ? std::string(kHeroScreenId) : std::string()});
+        }
+        const std::size_t drops = scheduler.drops().size();
+        const ScheduleResult result = scheduler.update(now, requests, feedback);
+        for (std::size_t index = drops; index < scheduler.drops().size(); ++index) {
+            const BudgetDrop& drop = scheduler.drops()[index];
+            spdlog::warn("Video: {:.1f}% of slot {}'s frames came late over {:g} s: one decoder for {:g} s",
+                         100.0 * drop.ratio, drop.slot, kLateWindowSeconds, kLateDropSeconds);
+        }
+        applyCommands(result.commands);
+        for (std::size_t index = 0; index < screens.size(); ++index) {
+            screens[index]->assignment = result.screens[index];
+        }
+        // NFR-07 (ADR-0016 §2): never more decoders open than the budget, nor more alive than its slots.
+        const std::size_t open = scheduler.openSlots();
+        counters.maxOpenDecoders = std::max<std::uint64_t>(counters.maxOpenDecoders, open);
+        const int live = g_liveDecoders.load(std::memory_order_relaxed);
+        if ((open > static_cast<std::size_t>(scheduler.budget(now)) || live > scheduler.settings().maxDecoders) &&
+            !budgetErrorLogged) {
+            assert(false && "more video decoders than the budget");
+            spdlog::error("Video: {} decoder(s) open and {} alive over the budget of {}", open, live,
+                          scheduler.budget(now));
+            budgetErrorLogged = true;
+        }
+    }
+
+    // --- frames --------------------------------------------------------------------------------------------------
+
+    /// Uploads the pending frame of `index`; false when it stays pending (the ring busy) or failed.
+    bool upload(std::size_t index) {
+        Slot& slot = slots[index];
+        const media::VideoFrame& frame = *slot.pending;
+        const glm::ivec2 size(frame.width(), frame.height());
+        // The texture and its ring are made once, outside the section: it times the uploads.
+        if (!slot.texture.valid()) {
+            auto created = gl::VideoTexture::create(size, fmt::format("Screen.Video{}", index));
+            if (!created) {
+                spdlog::error("Video slot {}: no video texture: {}", index, created.error().toString());
+                slot.textureFailed = true;
+                return false;
+            }
+            slot.texture = std::move(*created);
         }
         Expected<gl::VideoUpload> uploaded = gl::VideoUpload::RingBusy;
         {
             const core::CpuSectionScope timing(core::cpu_section::kVideoUpload);
-            uploaded = videoTexture.upload(frame.bytes(), size, frame.strideBytes());
+            uploaded = slot.texture.upload(frame.bytes(), size, frame.strideBytes());
         }
         if (!uploaded) {
-            spdlog::error("Hero CRT: a video frame was not uploaded: {}", uploaded.error().toString());
-            playback->releaseFrame();
-            return;
+            spdlog::error("Video slot {}: a video frame was not uploaded: {}", index, uploaded.error().toString());
+            slot.playback->releaseFrame();
+            slot.pending = nullptr;
+            slot.pendingSince.reset();
+            return false;
         }
         if (*uploaded == gl::VideoUpload::RingBusy) {
             ++counters.ringBusy; // kept pending: retried at the next frame
-            return;
+            return false;
         }
-        playback->releaseFrame();
+        slot.playback->releaseFrame();
+        slot.pending = nullptr;
+        slot.pendingSince.reset();
         ++counters.framesUploaded;
-        ++clipFrames;
-        if (const std::optional<media::FrameTiming>& timing = playback->clock().current()) {
-            if (!firstPts) {
-                firstPts = timing->ptsSeconds;
+        ++slot.frames;
+        if (const std::optional<media::FrameTiming>& timing = slot.playback->clock().current()) {
+            if (!slot.firstPts) {
+                slot.firstPts = timing->ptsSeconds;
             }
-            lastPts = timing->ptsSeconds;
+            slot.lastPts = timing->ptsSeconds;
         }
-        if (!firstUploadAt) {
-            firstUploadAt = nowSeconds;
+        if (!slot.firstUploadAt) {
+            slot.firstUploadAt = now;
         }
-        lastUploadAt = nowSeconds;
+        slot.lastUploadAt = now;
         if (options.freezePtsSeconds) {
-            frozenShown = true;
+            slot.frozenShown = true;
         }
-        if (!clipFrameShown) {
-            clipFrameShown = true;
-            firstFrameMs = millisecondsSince(clipStarted);
-            if (const std::optional<media::StreamInfo> info = playback->decoder().streamInfo()) {
-                clipDuration = info->durationSeconds;
+        if (!slot.frameShown) {
+            slot.frameShown = true;
+            slot.firstFrameMs = millisecondsSince(slot.started);
+            if (const std::optional<media::StreamInfo> info = slot.playback->decoder().streamInfo()) {
+                slot.duration = info->durationSeconds;
             }
-            policy.videoShowing();
-            policy.clipDuration(clipDuration);
-            spdlog::info("Hero CRT: the first frame of game {}'s video after {:.1f} ms", policy.targetId(),
-                         *firstFrameMs);
+            spdlog::info("Video slot {}: the first frame of game {}'s video after {:.1f} ms", index, slot.gameId,
+                         *slot.firstFrameMs);
         }
+        return true;
     }
 
-    /// The playback's frame of `nowSeconds`, uploaded when it changed.
-    void pump(double nowSeconds) {
-        const media::PlaybackUpdate update = playback->update(nowSeconds);
-        if (update.frame != nullptr && !videoTextureFailed) {
-            upload(*update.frame, nowSeconds);
-        } else if (update.frame != nullptr) {
-            playback->releaseFrame();
-        }
-    }
-
-    void updatePlayback(double nowSeconds) {
-        if (!options.freezePtsSeconds) {
-            const bool wantPaused = policy.decoderPaused();
-            if (wantPaused != playbackPaused) {
-                if (wantPaused) {
-                    playback->pause(nowSeconds);
-                    ++counters.pauses;
-                } else {
-                    playback->resume(nowSeconds);
+    /// Takes each open slot's frame of this time, then uploads them within kMaxVideoUploadBytesPerFrame, the longest
+    /// pending first (ADR-0016 §2); a frame left over waits for the next render frame (or is superseded).
+    void pumpSlots() {
+        for (Slot& slot : slots) {
+            if (!slot.playback || slot.draining) {
+                continue;
+            }
+            const media::PlaybackUpdate update = slot.playback->update(now);
+            slot.pending = update.frame;
+            if (slot.pending == nullptr) {
+                slot.pendingSince.reset();
+            } else if (!slot.pendingSince) {
+                slot.pendingSince = frameIndex;
+            }
+            if (options.freezePtsSeconds && !slot.frozenShown && slot.pending == nullptr && !slot.textureFailed) {
+                // The frame at the frozen time is what the screenshots show: it is waited for (the decoder delivers
+                // it a few milliseconds after the seek).
+                const Clock::time_point deadline = Clock::now() + kFreezeWait;
+                while (slot.pending == nullptr && !slot.playback->failed() && Clock::now() < deadline) {
+                    std::this_thread::sleep_for(kPollInterval);
+                    slot.pending = slot.playback->update(now).frame;
                 }
-                playbackPaused = wantPaused;
+                if (slot.pending != nullptr) {
+                    slot.pendingSince = frameIndex;
+                } else if (!slot.playback->failed()) {
+                    spdlog::warn("Video: the frame of game {} at {:g} s did not arrive within {} s", slot.gameId,
+                                 *options.freezePtsSeconds, kFreezeWait.count());
+                }
             }
         }
-        pump(nowSeconds);
-        if (options.freezePtsSeconds && !frozenShown && !videoTextureFailed) {
-            // The frame at the frozen time is what the screenshots show: it is waited for (the decoder delivers it a
-            // few milliseconds after the seek).
-            const Clock::time_point deadline = Clock::now() + kFreezeWait;
-            while (!frozenShown && !playback->failed() && !videoTextureFailed && Clock::now() < deadline) {
-                std::this_thread::sleep_for(kPollInterval);
-                pump(nowSeconds);
-            }
-            if (!frozenShown && !playback->failed()) {
-                spdlog::warn("Hero CRT: the frame at {:g} s did not arrive within {} s", *options.freezePtsSeconds,
-                             kFreezeWait.count());
+        std::vector<std::size_t> order;
+        for (std::size_t index = 0; index < slots.size(); ++index) {
+            if (slots[index].pending != nullptr) {
+                order.push_back(index);
             }
         }
-        if (playback->failed() || videoTextureFailed) {
-            const media::DecodeFailure failure = playback->decoder().failure();
-            addFallback(ScreenPicture::Video,
-                        videoTextureFailed ? std::string(toString(ErrorCode::GraphicsError)) : failureName(failure));
-            policy.videoFailed();
-            stopPlayback();
+        std::stable_sort(order.begin(), order.end(), [this](std::size_t a, std::size_t b) {
+            return slots[a].pendingSince.value_or(frameIndex) < slots[b].pendingSince.value_or(frameIndex);
+        });
+        std::size_t bytes = 0;
+        for (const std::size_t index : order) {
+            Slot& slot = slots[index];
+            if (slot.textureFailed) {
+                slot.playback->releaseFrame();
+                slot.pending = nullptr;
+                continue;
+            }
+            const std::size_t frameBytes = static_cast<std::size_t>(slot.pending->width()) *
+                                           static_cast<std::size_t>(slot.pending->height()) * 4u;
+            if (bytes > 0 && bytes + frameBytes > kMaxVideoUploadBytesPerFrame) {
+                ++counters.deferredUploads; // pending until the next frame
+                continue;
+            }
+            if (upload(index)) {
+                bytes += frameBytes;
+            }
+        }
+        counters.maxUploadBytes = std::max<std::uint64_t>(counters.maxUploadBytes, bytes);
+        if (bytes > kMaxVideoUploadBytesPerFrame) {
+            ++counters.oversizeUploads; // one frame alone larger than the budget
         }
     }
 
-    // --- stills ------------------------------------------------------------------------------------------------
+    /// A slot whose decoder failed (or whose texture could not be made): its screens go to their stills, and the clip
+    /// leaves their playlists; the scheduler stops it at the next frame (no screen asks for it any more).
+    void checkFailures() {
+        for (Slot& slot : slots) {
+            if (!slot.playback || slot.draining || slot.failureHandled ||
+                !(slot.playback->failed() || slot.textureFailed)) {
+                continue;
+            }
+            slot.failureHandled = true;
+            const std::string reason = slot.textureFailed ? std::string(toString(ErrorCode::GraphicsError))
+                                                          : failureName(slot.playback->decoder().failure());
+            for (ScreenState* screen : requesters(slot.clip)) {
+                addFallback(*screen, ScreenPicture::Video, reason);
+                screen->policy.videoFailed();
+            }
+        }
+    }
 
-    void requestStill() {
-        if (stillLoading) {
+    /// Tells the screen's policy whether its clip shows (its slot's first frame came) or no longer does, and whether
+    /// it has a slot at all.
+    void followSlot(ScreenState& screen) {
+        const ScreenAssignment& assignment = screen.assignment;
+        const Slot* slot = assignment.playing && assignment.slot ? &slots[*assignment.slot] : nullptr;
+        const bool playing = slot != nullptr && slot->playback && !slot->draining && slot->clip == screen.clip;
+        if (playing && slot->frameShown && !screen.videoTold) {
+            screen.policy.videoShowing();
+            screen.policy.clipDuration(slot->duration);
+            screen.videoTold = true;
+            screen.lastSlot = assignment.slot;
+        } else if (!playing && screen.videoTold) {
+            screen.policy.videoStopped(); // its still again until the clip reopens
+            screen.videoTold = false;
+        }
+        screen.policy.setNoSlot(screen.policy.wantsDecoder() && !assignment.playing && !assignment.waiting);
+    }
+
+    // --- stills --------------------------------------------------------------------------------------------------
+
+    void requestStill(ScreenState& screen) {
+        if (screen.stillLoading) {
             return;
         }
-        const std::optional<ScreenPicture> wanted = policy.wantedStill();
+        const std::optional<ScreenPicture> wanted = screen.policy.wantedStill();
         if (!wanted) {
             return;
         }
-        const std::filesystem::path* file = mediaPath(policy.targetMedia(), *wanted);
+        const std::filesystem::path* file = mediaPath(screen.policy.targetMedia(), *wanted);
         const std::filesystem::path path = file != nullptr ? *file : std::filesystem::path();
         const bool card = *wanted == ScreenPicture::TitleCard;
-        const std::uint64_t token = ++stillToken;
-        const std::string context = fmt::format("{} of game {}", toString(*wanted), policy.targetId());
-        auto job = [slot = stillSlot, token, path, context, card, fonts = cardFonts, assetRoot = options.assetRoot,
-                    title = policy.targetCard()](const core::JobContext& job) {
+        const std::uint64_t token = ++screen.stillToken;
+        const std::string context = fmt::format("{} of game {}", toString(*wanted), screen.policy.targetId());
+        auto job = [slot = screen.stillSlot, token, path, context, card, fonts = cardFonts,
+                    assetRoot = options.assetRoot, title = screen.policy.targetCard()](const core::JobContext& job) {
             StillResult result{token, assets::ImageData{}};
             if (job.cancelled()) {
                 result.picture = makeError(ErrorCode::Cancelled, "cancelled", context);
@@ -492,344 +840,416 @@ struct ScreenService::Impl {
             slot->result = std::move(result);
         };
         core::JobOptions jobOptions;
-        jobOptions.generation = &stillJobs;
+        jobOptions.generation = &screen.stillJobs;
         if (auto submitted = pool.submit(std::move(job), jobOptions); !submitted) {
-            addFallback(*wanted, std::string(toString(submitted.error().code)));
-            policy.stillFailed();
+            addFallback(screen, *wanted, std::string(toString(submitted.error().code)));
+            screen.policy.stillFailed();
             return;
         }
-        stillLoading = true;
-        loadingPicture = wanted;
+        screen.stillLoading = true;
+        screen.loadingPicture = wanted;
     }
 
     /// The result of the load in flight, if it arrived (a stale one is dropped).
-    std::optional<StillResult> takeStill() {
-        const std::scoped_lock lock(stillSlot->mutex);
-        if (!stillSlot->result) {
+    static std::optional<StillResult> takeStill(ScreenState& screen) {
+        const std::scoped_lock lock(screen.stillSlot->mutex);
+        if (!screen.stillSlot->result) {
             return std::nullopt;
         }
-        std::optional<StillResult> result = std::exchange(stillSlot->result, std::nullopt);
-        if (result->token != stillToken) {
+        std::optional<StillResult> result = std::exchange(screen.stillSlot->result, std::nullopt);
+        if (result->token != screen.stillToken) {
             return std::nullopt;
         }
         return result;
     }
 
-    void updateStills() {
+    void updateStills(ScreenState& screen) {
         // A failed still asks for the next one at once: a chain of missing files falls through within the frame.
         for (int guard = 0; guard < 4; ++guard) {
-            requestStill();
-            if (!stillLoading) {
+            requestStill(screen);
+            if (!screen.stillLoading) {
                 return;
             }
-            std::optional<StillResult> result = takeStill();
+            std::optional<StillResult> result = takeStill(screen);
             if (!result && options.lockstep) {
                 const Clock::time_point deadline = Clock::now() + kStillWait;
                 while (!result && Clock::now() < deadline) {
                     std::this_thread::sleep_for(kPollInterval);
-                    result = takeStill();
+                    result = takeStill(screen);
                 }
             }
             if (!result) {
                 return;
             }
-            stillLoading = false;
-            const ScreenPicture picture = loadingPicture.value_or(ScreenPicture::Cover);
+            screen.stillLoading = false;
+            const ScreenPicture picture = screen.loadingPicture.value_or(ScreenPicture::Cover);
             if (result->picture) {
                 gl::TextureDesc desc;
                 desc.colorSpace = gl::ColorSpace::Srgb;
                 desc.mipmaps = true;
                 desc.sampling.wrap = gl::TextureWrap::ClampToEdge;
                 desc.memoryKind = gl::GpuMemoryKind::HeroTextures;
-                auto texture = gl::Texture2D::create(*result->picture, desc, "HeroCrt.Still");
+                auto texture = gl::Texture2D::create(*result->picture, desc, "Screen.Still");
                 if (texture) {
-                    still = std::move(*texture);
-                    policy.stillReady();
+                    screen.still = std::move(*texture);
+                    screen.policy.stillReady();
                     return;
                 }
-                addFallback(picture, std::string(toString(texture.error().code)));
+                addFallback(screen, picture, std::string(toString(texture.error().code)));
             } else {
-                spdlog::debug("Hero CRT: {}", result->picture.error().toString());
-                addFallback(picture, std::string(toString(result->picture.error().code)));
+                spdlog::debug("{}: {}", nameOf(screen), result->picture.error().toString());
+                addFallback(screen, picture, std::string(toString(result->picture.error().code)));
             }
-            policy.stillFailed();
+            screen.policy.stillFailed();
         }
     }
 
-    // --- the screen ----------------------------------------------------------------------------------------------
+    // --- the screens ---------------------------------------------------------------------------------------------
 
-    /// A new target: the previous clip stops, the new one's first still loads; the picture shown stays up until the
-    /// new one's is ready (its still, or its first frame into the video texture, which holds the previous clip's last
-    /// frame meanwhile).
-    void followTarget(double nowSeconds) {
-        if (followed && policy.targetGeneration() == followedGeneration) {
+    /// A new target: its first still loads; the picture shown stays up until the new one's is ready (its still, or
+    /// its first frame in its slot's texture). Its previous clip stops through the scheduler (no screen asks for it).
+    void followTarget(ScreenState& screen) {
+        ScreenPolicy& policy = screen.policy;
+        if (screen.followed && policy.targetGeneration() == screen.followedGeneration) {
             return;
         }
-        followed = true;
-        followedGeneration = policy.targetGeneration();
-        if (!policy.targetId().empty()) {
+        screen.followed = true;
+        screen.followedGeneration = policy.targetGeneration();
+        if (isHero(screen) && !policy.targetId().empty()) {
             ++counters.targets;
             if (counters.played.size() < kMaxTimelineEntries) {
                 counters.played.push_back(
-                    VideoPlayedRecord{nowSeconds, policy.targetId(), std::string(toString(policy.origin()))});
+                    VideoPlayedRecord{now, policy.targetId(), std::string(toString(policy.origin()))});
             }
         }
-        stopPlayback();
-        pool.cancel(stillJobs);
-        ++stillToken; // a result of the previous target is dropped
-        stillLoading = false;
-        loadingPicture.reset();
-        if (still.valid() && appliedOverride == still.id()) {
-            heldStill = std::move(still); // on the screen until the new target's picture is ready
+        pool.cancel(screen.stillJobs);
+        ++screen.stillToken; // a result of the previous target is dropped
+        screen.stillLoading = false;
+        screen.loadingPicture.reset();
+        if (screen.still.valid() && screen.appliedOverride == screen.still.id()) {
+            screen.heldStill = std::move(screen.still); // on the screen until the new target's picture is ready
         }
-        still = gl::Texture2D();
+        screen.still = gl::Texture2D();
+        screen.videoTold = false;
         if (policy.targetId().empty()) {
-            spdlog::info("Hero CRT: no game to show, the idle pattern");
+            spdlog::info("{}: no game to show, the idle pattern", nameOf(screen));
         } else {
-            spdlog::info("Hero CRT: game {} ({})", policy.targetId(),
+            spdlog::info("{}: game {} ({})", nameOf(screen), policy.targetId(),
                          policy.origin() == ScreenOrigin::Selection ? "selected"
                          : policy.origin() == ScreenOrigin::Playlist
                              ? fmt::format("the {} playlist's", toString(policy.playlist().mode()))
                              : std::string("the start choice"));
             if (!policy.targetMedia().video.empty() && !isPlayableVideoFile(policy.targetMedia().video)) {
-                addFallback(ScreenPicture::Video, "not-playable");
+                addFallback(screen, ScreenPicture::Video, "not-playable");
             }
         }
     }
 
-    void applyPicture(double nowSeconds) {
+    void applyPicture(ScreenState& screen) {
+        const ScreenPolicy& policy = screen.policy;
         const ScreenPicture picture = policy.picture();
-        if (!screen) {
-            return;
-        }
+        const bool heroScreen = isHero(screen);
         if (picture == ScreenPicture::IdlePattern && !policy.targetId().empty()) {
             // Between two games the previous picture stays while the new one can still come, at most
             // kMaxHeldPictureSeconds; then (or when nothing can come) the screen's own pattern.
             const bool arriving = policy.wantsDecoder() || policy.wantedStill().has_value();
             const double wallSeconds = std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
-            if (appliedOverride != 0 && held.hold(arriving, nowSeconds, wallSeconds)) {
-                ++counters.heldFrames;
+            if (screen.appliedOverride != 0 && heldPictureThere(screen) &&
+                screen.held.hold(arriving, now, wallSeconds)) {
+                if (heroScreen) {
+                    ++counters.heldFrames;
+                }
                 return;
             }
-            ++counters.idleFramesWithGame; // nothing shown yet since the screen was bound, or the hold ran out
+            if (heroScreen) {
+                ++counters.idleFramesWithGame; // nothing shown yet since the screen was bound, or the hold ran out
+            }
         } else {
-            held.reset();
+            screen.held.reset();
         }
         GLuint texture = 0;
-        if (picture == ScreenPicture::Video) {
-            texture = videoTexture.textureId();
-        } else if (picture != ScreenPicture::IdlePattern) {
-            texture = still.id();
+        if (picture == ScreenPicture::Video && screen.lastSlot) {
+            texture = slots[*screen.lastSlot].texture.textureId();
+        } else if (picture != ScreenPicture::IdlePattern && picture != ScreenPicture::Video) {
+            texture = screen.still.id();
         }
-        if (picture != shownPicture || policy.targetId() != shownGame) {
-            if (counters.shown.size() < kMaxTimelineEntries) {
-                counters.shown.push_back(VideoShownRecord{nowSeconds, policy.targetId(), std::string(toString(picture))});
+        if (picture != screen.shownPicture || policy.targetId() != screen.shownGame) {
+            if (heroScreen && counters.shown.size() < kMaxTimelineEntries) {
+                counters.shown.push_back(VideoShownRecord{now, policy.targetId(), std::string(toString(picture))});
             }
-            shownGame = policy.targetId();
+            screen.shownGame = policy.targetId();
         }
-        if (texture == appliedOverride && picture == shownPicture) {
-            releaseHeldStill();
+        if (texture == screen.appliedOverride && picture == screen.shownPicture) {
+            releaseHeldStill(screen);
             return;
         }
-        if (auto set = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, texture);
+        if (auto set =
+                materials.setTextureOverride(screen.binding.material, gl::MaterialTextureSlot::BaseColor, texture);
             !set) {
-            spdlog::error("Hero CRT: the screen's picture cannot be set: {}", set.error().toString());
+            spdlog::error("{}: the screen's picture cannot be set: {}", nameOf(screen), set.error().toString());
             return;
         }
-        if (picture != shownPicture) {
-            spdlog::info("Hero CRT shows {}{}", toString(picture),
+        if (picture != screen.shownPicture) {
+            spdlog::info("{} shows {}{}", nameOf(screen), toString(picture),
                          policy.targetId().empty() ? std::string() : " of game " + policy.targetId());
         }
-        appliedOverride = texture;
-        shownPicture = picture;
-        releaseHeldStill();
+        screen.appliedOverride = texture;
+        screen.shownPicture = picture;
+        screen.overrideSlot.reset();
+        screen.overrideClip.clear();
+        if (picture == ScreenPicture::Video && screen.lastSlot) {
+            screen.overrideSlot = screen.lastSlot;
+            screen.overrideClip = slots[*screen.lastSlot].clip;
+        }
+        releaseHeldStill(screen);
+    }
+
+    /// The picture the screen holds is still what it showed: a still is its own (heldStill); a video is its slot's
+    /// texture while the slot keeps that texture and does not play another screen's clip (it would show that game; a
+    /// reallocated texture is gone). The slot reopened for one of this screen's own clips keeps the hold.
+    [[nodiscard]] bool heldPictureThere(const ScreenState& screen) const {
+        if (!screen.overrideSlot) {
+            return true;
+        }
+        const Slot& slot = slots[*screen.overrideSlot];
+        if (slot.texture.textureId() != screen.appliedOverride) {
+            return false;
+        }
+        if (slot.clip == screen.overrideClip || slot.clip == screen.clip) {
+            return true;
+        }
+        const std::vector<ScreenState*> on = requesters(slot.clip);
+        return on.empty();
     }
 
     /// The held still goes once the screen no longer shows it.
-    void releaseHeldStill() {
-        if (heldStill.valid() && heldStill.id() != appliedOverride) {
-            heldStill = gl::Texture2D();
+    static void releaseHeldStill(ScreenState& screen) {
+        if (screen.heldStill.valid() && screen.heldStill.id() != screen.appliedOverride) {
+            screen.heldStill = gl::Texture2D();
         }
     }
 
     /// Logs the playlist the screen plays, and the explicit ids it skips (each once in the run).
-    void logPlaylist() {
+    void logPlaylist(const ScreenState& screen) {
+        const ScreenPolicy& policy = screen.policy;
         const Playlist& playlist = policy.playlist();
-        spdlog::info("Hero CRT: the {} playlist of {} ({} game(s) with a clip), {:g} s a game{}",
+        spdlog::info("{}: the {} playlist of {} ({} game(s) with a clip), {:g} s a game{}", nameOf(screen),
                      toString(playlist.mode()), policy.settings().playlist.roomId, playlist.size(),
                      policy.settings().previewSeconds, policy.settings().autoplay ? "" : " (autoplay off)");
         for (const std::string& id : playlist.unknownIds()) {
             if (loggedPlaylistIds.insert(id).second) {
-                spdlog::warn("Hero CRT: video.json's explicit playlist of {} names {}, which the room does not have: "
+                spdlog::warn("{}: video.json's explicit playlist of {} names {}, which the room does not have: "
                              "skipped",
-                             policy.settings().playlist.roomId, id);
+                             nameOf(screen), policy.settings().playlist.roomId, id);
             }
         }
         for (const std::string& id : playlist.unplayableIds()) {
             if (loggedPlaylistIds.insert(id).second) {
-                spdlog::warn("Hero CRT: video.json's explicit playlist of {} names {}, which has no clip to play: "
-                             "skipped",
-                             policy.settings().playlist.roomId, id);
+                spdlog::warn("{}: video.json's explicit playlist of {} names {}, which has no clip to play: skipped",
+                             nameOf(screen), policy.settings().playlist.roomId, id);
             }
         }
     }
 
-    void update(double nowSeconds, const scene::Camera& camera, std::optional<std::string_view> hovered) {
-        if (policy.phase() == ScreenPhase::Quit) {
+    [[nodiscard]] static ScreenClass classOf(const ScreenState& screen) noexcept {
+        if (screen.policy.selected()) {
+            return ScreenClass::Focus;
+        }
+        return screen.binding.kind == ScreenKind::Hero ? ScreenClass::Room : ScreenClass::Ambient;
+    }
+
+    void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
+                std::optional<std::string_view> hovered, bool minimizedWindow) {
+        frameIndex = frame;
+        now = nowSeconds;
+        minimized = minimizedWindow;
+        if (phase == ScreenPhase::Quit) {
             return;
         }
-        if (!screen) {
-            // Unbound (a floor being committed again): the previous clip's thread ends on its own meanwhile.
-            reapDraining();
+        if (screens.empty()) {
+            // Unbound (a floor being committed again): the previous clips' threads end on their own meanwhile.
+            reapDrained();
             counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
             return;
         }
-        policy.hover(hovered, nowSeconds);
-        const bool visible = camera.frustum().intersects(screen->bounds);
-        policy.setVisible(visible);
-        policy.tick(nowSeconds);
-        followTarget(nowSeconds);
-        reapDraining();
-        if (policy.wantsDecoder() && !playback) {
-            openDecoder(nowSeconds);
+        const scene::Frustum frustum = camera.frustum();
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            screen->policy.hover(hovered, now);
+            screen->visible = !minimizedWindow && frustum.intersects(screen->binding.bounds);
+            screen->policy.setVisible(screen->visible);
+            screen->policy.tick(now);
+            followTarget(*screen);
+            screen->screenClass = classOf(*screen);
+            screen->distance = glm::distance(camera.position(), screen->binding.bounds.center());
+            screen->clip = screen->policy.wantsDecoder() ? clipKey(screen->policy.targetMedia().video) : std::string();
         }
-        if (playback) {
-            updatePlayback(nowSeconds);
+        schedule();
+        pumpSlots();
+        checkFailures();
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            followSlot(*screen);
+            updateStills(*screen);
+            applyPicture(*screen);
         }
-        updateStills();
-        applyPicture(nowSeconds);
         counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
     }
 
-    /// Seconds into the clip shown (timestamps keep growing across loops: taken modulo its duration).
-    [[nodiscard]] std::optional<double> clipPosition() const {
-        if (!clipFrameShown || !lastPts) {
-            return std::nullopt;
+    void launchStarting() {
+        if (phase != ScreenPhase::Running) {
+            return;
         }
-        return clipDuration > 0.0 ? std::fmod(*lastPts, clipDuration) : *lastPts;
-    }
-
-    /// Stops the decoder and waits for its thread, at most kScreenStopBoundSeconds.
-    VideoLaunchRecord stopAndJoin() {
         VideoLaunchRecord stop;
-        stop.decoderRan = playback != nullptr || draining != nullptr;
-        stop.positionSeconds = clipPosition();
-        stopPlayback();
+        stop.decoderRan = std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
+        // Each screen keeps its clip's position for the return.
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            std::optional<double> position;
+            if (screen->videoTold && screen->lastSlot) {
+                const Slot& slot = slots[*screen->lastSlot];
+                if (slot.playback && !slot.draining && slot.clip == screen->clip) {
+                    position = clipPosition(slot);
+                }
+            }
+            screen->policy.launchStarting(position);
+            if (isHero(*screen)) {
+                stop.positionSeconds = position;
+            }
+        }
+        for (const SlotCommand& command : scheduler.stopAll("launch")) {
+            stopSlot(command.slot, command.reason);
+        }
         const Clock::time_point start = Clock::now();
         const auto bound = std::chrono::duration<double>(kScreenStopBoundSeconds);
-        while (draining && draining->decoder().threadRunning() && Clock::now() - start < bound) {
+        while (decoderThreads() > 0 && Clock::now() - start < bound) {
             std::this_thread::sleep_for(kPollInterval);
         }
         stop.stopMs = stop.decoderRan ? millisecondsSince(start) : 0.0;
         stop.threadsRunning = decoderThreads();
-        reapDraining();
-        return stop;
-    }
-
-    void launchStarting() {
-        if (policy.phase() != ScreenPhase::Running) {
-            return;
-        }
-        VideoLaunchRecord stop = stopAndJoin();
-        policy.launchStarting(stop.positionSeconds);
+        reapDrained();
+        phase = ScreenPhase::Launched;
         if (stop.threadsRunning > 0) {
-            spdlog::warn("Hero CRT: the video decoder's thread did not end within {:g} s; the launch goes on (it ends "
-                         "on its own)",
-                         kScreenStopBoundSeconds);
+            spdlog::warn("Video: {} decoder thread(s) did not end within {:g} s; the launch goes on (they end on their "
+                         "own)",
+                         stop.threadsRunning, kScreenStopBoundSeconds);
         } else if (stop.decoderRan) {
-            spdlog::info("Hero CRT: the video decoder stopped for the launch in {:.1f} ms", stop.stopMs);
+            spdlog::info("Video: the decoders stopped for the launch in {:.1f} ms", stop.stopMs);
         }
         counters.launches.push_back(stop);
     }
 
     void launchEnded() {
-        if (policy.phase() != ScreenPhase::Launched) {
+        if (phase != ScreenPhase::Launched) {
             return;
         }
-        policy.launchEnded();
+        phase = ScreenPhase::Running;
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            screen->policy.launchEnded();
+        }
         reopenPending = true;
     }
 
-    /// Lets go of the screen: the clip stops (never waited for), the still goes, the override cleared when asked.
+    /// Lets go of the screens: the clips stop (never waited for), the stills go, the overrides cleared when asked.
     void unbind(bool clearOverride) {
-        stopPlayback();
-        pool.cancel(stillJobs);
-        ++stillToken; // a still on its way is dropped
-        stillLoading = false;
-        loadingPicture.reset();
-        still = gl::Texture2D();
-        heldStill = gl::Texture2D();
-        held.reset();
-        shownGame.clear();
-        if (clearOverride && screen && appliedOverride != 0) {
-            if (auto cleared = materials.setTextureOverride(screen->material, gl::MaterialTextureSlot::BaseColor, 0);
-                !cleared) {
-                spdlog::error("Hero CRT: the screen's picture cannot be cleared: {}", cleared.error().toString());
-            }
+        for (const SlotCommand& command : scheduler.stopAll("unbind")) {
+            stopSlot(command.slot, command.reason);
         }
-        appliedOverride = 0;
-        shownPicture = ScreenPicture::IdlePattern;
-        if (screen) {
-            spdlog::info("Hero CRT: the screen of '{}' let go{}", screen->objectId,
+        resumeAt.clear();
+        const bool draining = std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.draining; });
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            pool.cancel(screen->stillJobs);
+            if (clearOverride && screen->appliedOverride != 0) {
+                if (auto cleared =
+                        materials.setTextureOverride(screen->binding.material, gl::MaterialTextureSlot::BaseColor, 0);
+                    !cleared) {
+                    spdlog::error("{}: the screen's picture cannot be cleared: {}", nameOf(*screen),
+                                  cleared.error().toString());
+                }
+            }
+            spdlog::info("{}: the screen of '{}' let go{}", nameOf(*screen), screen->binding.objectId,
                          draining ? "; its clip's decoder ends on its own" : "");
         }
-        screen.reset();
+        sparePolicies.clear();
+        for (std::unique_ptr<ScreenState>& screen : screens) {
+            sparePolicies.push_back(std::move(screen->policy));
+        }
+        screens.clear();
     }
 
-    void bind(HeroScreen next, std::vector<ScreenGame> games, std::uint64_t frame) {
+    void bind(std::vector<ScreenBinding> bindings, std::vector<ScreenGame> games, std::uint64_t frame) {
         const Clock::time_point start = Clock::now();
-        // A clip open on the screen let go (playing, or paused out of view): stopped below, never waited for.
-        const bool clipStopped = playback != nullptr;
-        if (screen) {
+        // A clip open on the screens let go (playing, or paused out of view): stopped below, never waited for.
+        const bool clipStopped =
+            std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback && !slot.draining; });
+        if (!screens.empty()) {
             unbind(true);
         }
-        screen = std::move(next);
-        lastScreenId = screen->objectId;
-        policy.restart(std::move(games), heroPlaySettings(options, screen->roomId));
-        logPlaylist();
-        followed = false; // the new target is followed at the next update
-        reapDraining();
+        for (std::size_t index = 0; index < bindings.size(); ++index) {
+            ScreenBinding& binding = bindings[index];
+            ScreenPlaySettings settings = screenPlaySettings(options, binding);
+            // A policy let go is reused (its phase and the clips that failed kept), its choice made afresh.
+            ScreenPolicy policy = index < sparePolicies.size() ? std::move(sparePolicies[index]) : ScreenPolicy();
+            policy.restart(games, std::move(settings));
+            screens.push_back(std::make_unique<ScreenState>(std::move(binding), std::move(policy)));
+            logPlaylist(*screens.back());
+        }
+        sparePolicies.clear();
+        reapDrained();
+        if (ScreenState* first = hero()) {
+            lastScreenId = first->binding.objectId;
+        }
         VideoBindRecord record;
         record.frame = frame;
-        record.screen = screen->objectId;
-        record.games = policy.games().size();
+        record.screen = lastScreenId;
+        record.games = hero() != nullptr ? hero()->policy.games().size() : 0;
         record.bindMs = millisecondsSince(start);
         record.threadsRunning = decoderThreads();
         record.clipStopped = clipStopped;
-        spdlog::info("Hero CRT: bound to the screen of '{}' with {} game(s) in {:.2f} ms ({}{} decoder thread(s) "
+        spdlog::info("Video: bound to the {} screen(s) of '{}' with {} game(s) in {:.2f} ms ({}{} decoder thread(s) "
                      "ending)",
-                     record.screen, record.games, record.bindMs, clipStopped ? "its clip stopped, " : "",
-                     record.threadsRunning);
+                     screens.size(), record.screen, record.games, record.bindMs,
+                     clipStopped ? "its clips stopped, " : "", record.threadsRunning);
         counters.binds.push_back(std::move(record));
     }
 
     void shutdown() {
-        if (policy.phase() == ScreenPhase::Quit && !playback && !draining) {
+        const bool decoders =
+            std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
+        if (phase == ScreenPhase::Quit && !decoders) {
             return;
         }
         // What the run ended with, for the report: the phase (launched when quitting during a game) and the decoder.
-        endPhase = std::string(toString(policy.phase()));
-        endDecoderState = decoderStateName();
-        policy.quit();
-        stopPlayback();
+        if (!endPhase) {
+            endPhase = std::string(toString(phase));
+            endDecoderState = decoderStateName();
+        }
+        phase = ScreenPhase::Quit;
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            screen->policy.quit();
+        }
+        for (const SlotCommand& command : scheduler.stopAll("shutdown")) {
+            stopSlot(command.slot, command.reason);
+        }
         // Every stopped decoder's thread (ADR-0004: at shutdown, never from the render loop): the waits made before
         // this one, which the report shows to be none.
         counters.waitsBeforeExit = media::stoppedDecoderWaits();
         media::waitForStoppedDecoders();
-        reapDraining();
+        reapDrained();
         counters.joinedAtExit = decoderThreads() == 0;
         pool.shutdown();
     }
 };
 
-ScreenService::ScreenService(HeroScreen screen, gl::MaterialRegistry& materials, std::vector<ScreenGame> games,
-                             ScreenServiceOptions options)
-    : m_impl(std::make_unique<Impl>(std::move(screen), materials, std::move(games), options)) {
-    spdlog::info("Hero CRT: the screen of '{}', {} game(s) with media{}", m_impl->screen->objectId,
-                 m_impl->policy.games().size(),
-                 options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *options.freezePtsSeconds)
-                                          : std::string());
-    m_impl->logPlaylist();
+ScreenService::ScreenService(std::vector<ScreenBinding> screens, gl::MaterialRegistry& materials,
+                             std::vector<ScreenGame> games, ScreenServiceOptions options)
+    : m_impl(std::make_unique<Impl>(std::move(screens), materials, std::move(games), std::move(options))) {
+    const Impl& s = *m_impl;
+    spdlog::info("Video: {} screen(s) from '{}', {} game(s) with media, {} decoder(s) at most{}", s.screens.size(),
+                 s.lastScreenId, s.hero() != nullptr ? s.hero()->policy.games().size() : 0,
+                 s.scheduler.settings().maxDecoders,
+                 s.options.freezePtsSeconds ? fmt::format(", videos held at {:g} s", *s.options.freezePtsSeconds)
+                                            : std::string());
+    for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
+        m_impl->logPlaylist(*screen);
+    }
 }
 
 ScreenService::~ScreenService() {
@@ -837,37 +1257,44 @@ ScreenService::~ScreenService() {
         return;
     }
     m_impl->shutdown();
-    // The textures go with the service: the material draws its own picture again.
-    if (m_impl->appliedOverride != 0 && m_impl->screen) {
-        static_cast<void>(
-            m_impl->materials.setTextureOverride(m_impl->screen->material, gl::MaterialTextureSlot::BaseColor, 0));
+    // The textures go with the service: the materials draw their own pictures again.
+    for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
+        if (screen->appliedOverride != 0) {
+            static_cast<void>(m_impl->materials.setTextureOverride(screen->binding.material,
+                                                                   gl::MaterialTextureSlot::BaseColor, 0));
+        }
     }
-    m_impl->releaseDecoder(m_impl->playback);
-    m_impl->releaseDecoder(m_impl->draining);
+    for (Impl::Slot& slot : m_impl->slots) {
+        m_impl->releaseDecoder(slot);
+    }
 }
 
 void ScreenService::setGames(std::vector<ScreenGame> games) {
-    m_impl->policy.setGames(std::move(games));
+    for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
+        screen->policy.setGames(games);
+    }
 }
 
 void ScreenService::unbind(bool clearOverride) {
     m_impl->unbind(clearOverride);
 }
 
-void ScreenService::bind(HeroScreen screen, std::vector<ScreenGame> games, std::uint64_t frame) {
-    m_impl->bind(std::move(screen), std::move(games), frame);
+void ScreenService::bind(std::vector<ScreenBinding> screens, std::vector<ScreenGame> games, std::uint64_t frame) {
+    m_impl->bind(std::move(screens), std::move(games), frame);
 }
 
 bool ScreenService::bound() const noexcept {
-    return m_impl->screen.has_value();
+    return !m_impl->screens.empty();
 }
 
 std::string ScreenService::screenId() const {
-    return m_impl->screen ? m_impl->screen->objectId : std::string();
+    const Impl::ScreenState* hero = m_impl->hero();
+    return hero != nullptr ? hero->binding.objectId : std::string();
 }
 
-void ScreenService::update(double nowSeconds, const scene::Camera& camera, std::optional<std::string_view> hovered) {
-    m_impl->update(nowSeconds, camera, hovered);
+void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
+                           std::optional<std::string_view> hovered, bool minimized) {
+    m_impl->update(frame, nowSeconds, camera, hovered, minimized);
 }
 
 void ScreenService::launchStarting() {
@@ -886,48 +1313,97 @@ void ScreenService::record(VideoRecord& record) const {
     const Impl& s = *m_impl;
     record = s.counters;
     record.bound = true;
-    record.screen = s.screen ? s.screen->objectId : s.lastScreenId;
-    record.gameId = s.policy.targetId();
-    record.picture = std::string(toString(s.shownPicture));
-    record.phase = s.endPhase.value_or(std::string(toString(s.policy.phase())));
+    const Impl::ScreenState* hero = s.hero();
+    record.screen = hero != nullptr ? hero->binding.objectId : s.lastScreenId;
+    record.phase = s.endPhase.value_or(std::string(toString(s.phase)));
     record.decoderState = s.endDecoderState.value_or(s.decoderStateName());
     record.freezePtsSeconds = s.options.freezePtsSeconds;
-    record.frozenFrameShown = s.frozenShown;
-    record.selections = s.policy.selections();
-    record.firstFrameMs = s.firstFrameMs;
-    record.clipFramesUploaded = s.clipFrames;
-    record.firstPtsSeconds = s.firstPts;
-    record.lastPtsSeconds = s.lastPts;
-    record.clipUploadSeconds = s.firstUploadAt ? s.lastUploadAt - *s.firstUploadAt : 0.0;
-    record.videoBytes = s.videoTexture.valid() ? s.videoTexture.gpuBytes() : 0;
-    record.stillBytes = (s.still.valid() ? s.still.estimatedBytes() : 0) +
-                        (s.heldStill.valid() ? s.heldStill.estimatedBytes() : 0);
-    record.playlistMode = std::string(toString(s.policy.playlist().mode()));
-    record.playlistRoom = s.policy.settings().playlist.roomId;
-    record.previewSeconds = s.policy.settings().previewSeconds;
-    record.playlistOrder = s.policy.playlist().order();
-    record.origin = std::string(toString(s.policy.origin()));
+    if (hero != nullptr) {
+        record.gameId = hero->policy.targetId();
+        record.picture = std::string(toString(hero->shownPicture));
+        record.selections = hero->policy.selections();
+        record.playlistMode = std::string(toString(hero->policy.playlist().mode()));
+        record.playlistRoom = hero->policy.settings().playlist.roomId;
+        record.previewSeconds = hero->policy.settings().previewSeconds;
+        record.playlistOrder = hero->policy.playlist().order();
+        record.origin = std::string(toString(hero->policy.origin()));
+    } else {
+        record.picture = std::string(toString(ScreenPicture::IdlePattern));
+    }
+    if (const Impl::Slot* slot = s.heroClipSlot()) {
+        record.frozenFrameShown = slot->frozenShown;
+        record.firstFrameMs = slot->firstFrameMs;
+        record.clipFramesUploaded = slot->frames;
+        record.firstPtsSeconds = slot->firstPts;
+        record.lastPtsSeconds = slot->lastPts;
+        record.clipUploadSeconds = slot->firstUploadAt ? slot->lastUploadAt - *slot->firstUploadAt : 0.0;
+    }
+    record.videoBytes = 0;
+    for (const Impl::Slot& slot : s.slots) {
+        record.videoBytes += slot.texture.valid() ? slot.texture.gpuBytes() : 0;
+    }
+    record.stillBytes = 0;
+    for (const std::unique_ptr<Impl::ScreenState>& screen : s.screens) {
+        record.stillBytes += (screen->still.valid() ? screen->still.estimatedBytes() : 0) +
+                             (screen->heldStill.valid() ? screen->heldStill.estimatedBytes() : 0);
+        VideoScreenRecord entry;
+        entry.screen = screen->binding.objectId;
+        entry.kind = std::string(toString(screen->binding.kind));
+        entry.screenClass = std::string(toString(screen->screenClass));
+        entry.gameId = screen->policy.targetId();
+        entry.picture = std::string(toString(screen->shownPicture));
+        if (screen->assignment.slot) {
+            entry.slot = *screen->assignment.slot;
+        }
+        entry.playing = screen->assignment.playing;
+        entry.textureId = screen->appliedOverride;
+        entry.visible = screen->visible;
+        record.screens.push_back(std::move(entry));
+    }
+    record.maxDecoders = static_cast<std::uint64_t>(s.scheduler.settings().maxDecoders);
+    record.handOvers = s.scheduler.handOvers();
+    for (const BudgetDrop& drop : s.scheduler.drops()) {
+        const auto game = s.clipGames.find(drop.clip);
+        record.budgetDrops.push_back(VideoBudgetDropRecord{
+            drop.atSeconds, drop.slot, game != s.clipGames.end() ? game->second : std::string(), drop.ratio,
+            drop.untilSeconds});
+    }
 }
 
 std::vector<std::string> ScreenService::statusLines() const {
     const Impl& s = *m_impl;
     std::vector<std::string> lines;
-    lines.push_back(fmt::format("Hero CRT '{}': {}{}", s.screen ? s.screen->objectId : std::string("(none)"),
-                                toString(s.shownPicture),
-                                s.policy.targetId().empty() ? std::string() : " of " + s.policy.targetId()));
-    lines.push_back(fmt::format("Decoder: {}{}, {} thread(s); {} started, at most {} at once", s.decoderStateName(),
-                                s.policy.visible() ? "" : " (out of view)", s.decoderThreads(),
-                                s.counters.decodersStarted, s.counters.maxDecoderThreads));
-    lines.push_back(fmt::format("Frames uploaded: {} ({} of the clip, ring busy {}); first frame {}",
-                                s.counters.framesUploaded, s.clipFrames, s.counters.ringBusy,
-                                s.firstFrameMs ? fmt::format("{:.1f} ms", *s.firstFrameMs) : std::string("-")));
-    if (s.lastPts) {
-        lines.push_back(fmt::format("Clip time: {:.3f} s", *s.lastPts));
+    lines.push_back(fmt::format("Screens: {}; decoders: {} open of {} (budget {}), {} thread(s); {} started, at most {} "
+                                "at once",
+                                s.screens.size(), s.scheduler.openSlots(), s.slots.size(), s.scheduler.budget(s.now),
+                                s.decoderThreads(), s.counters.decodersStarted, s.counters.maxOpenDecoders));
+    for (const std::unique_ptr<Impl::ScreenState>& screen : s.screens) {
+        lines.push_back(fmt::format(
+            "{} '{}': {}{}{}{}", s.isHero(*screen) ? "Hero" : "Screen", screen->binding.objectId,
+            toString(screen->shownPicture),
+            screen->policy.targetId().empty() ? std::string() : " of " + screen->policy.targetId(),
+            screen->assignment.slot ? fmt::format(", slot {}{}", *screen->assignment.slot,
+                                                  screen->assignment.waiting ? " (waiting)" : "")
+                                    : std::string(", no slot"),
+            screen->visible ? "" : " (out of view)"));
     }
-    lines.push_back(fmt::format("Playlist: {} of {} ({} game(s), cycle {}), {} ({:.1f} s played)",
-                                toString(s.policy.playlist().mode()), s.policy.settings().playlist.roomId,
-                                s.policy.playlist().size(), s.policy.playlist().cycle(), toString(s.policy.origin()),
-                                s.policy.targetSeconds()));
+    for (std::size_t index = 0; index < s.slots.size(); ++index) {
+        const Impl::Slot& slot = s.slots[index];
+        lines.push_back(fmt::format(
+            "Slot {}: {}{}{}", index, toString(s.scheduler.slots()[index].state),
+            slot.playback ? fmt::format(", game {}, {}", slot.gameId, media::toString(slot.playback->decoder().state()))
+                          : std::string(),
+            slot.lastPts ? fmt::format(", {:.3f} s, {} frame(s)", *slot.lastPts, slot.frames) : std::string()));
+    }
+    lines.push_back(fmt::format("Uploads: {} frame(s), at most {} bytes in a frame, {} deferred, ring busy {}",
+                                s.counters.framesUploaded, s.counters.maxUploadBytes, s.counters.deferredUploads,
+                                s.counters.ringBusy));
+    if (const Impl::ScreenState* hero = s.hero()) {
+        lines.push_back(fmt::format("Playlist: {} of {} ({} game(s), cycle {}), {} ({:.1f} s played)",
+                                    toString(hero->policy.playlist().mode()), hero->policy.settings().playlist.roomId,
+                                    hero->policy.playlist().size(), hero->policy.playlist().cycle(),
+                                    toString(hero->policy.origin()), hero->policy.targetSeconds()));
+    }
     lines.push_back(
         fmt::format("Fallbacks: {}; launches: {}", s.counters.fallbacks.size(), s.counters.launches.size()));
     return lines;

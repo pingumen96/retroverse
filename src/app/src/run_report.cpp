@@ -1677,7 +1677,70 @@ Json videoToJson(const VideoRecord& video) {
     json["shown"] = std::move(shown);
     json["heldFrames"] = video.heldFrames;
     json["idleFramesWithGame"] = video.idleFramesWithGame;
+    json["maxDecoders"] = video.maxDecoders;
+    json["maxOpenDecoders"] = video.maxOpenDecoders;
+    json["handOvers"] = video.handOvers;
+    json["maxUploadBytes"] = video.maxUploadBytes;
+    json["deferredUploads"] = video.deferredUploads;
+    json["oversizeUploads"] = video.oversizeUploads;
+    Json screens = Json::array();
+    for (const VideoScreenRecord& screen : video.screens) {
+        Json entry{{"screen", screen.screen},
+                   {"kind", screen.kind},
+                   {"screenClass", screen.screenClass},
+                   {"gameId", screen.gameId},
+                   {"picture", screen.picture},
+                   {"playing", screen.playing},
+                   {"textureId", screen.textureId},
+                   {"visible", screen.visible}};
+        if (screen.slot) {
+            entry["slot"] = *screen.slot;
+        }
+        screens.push_back(std::move(entry));
+    }
+    json["screens"] = std::move(screens);
+    Json events = Json::array();
+    for (const VideoSlotEventRecord& event : video.slotEvents) {
+        events.push_back(Json{{"frame", event.frame},
+                              {"atSeconds", event.atSeconds},
+                              {"slot", event.slot},
+                              {"action", event.action},
+                              {"gameId", event.gameId},
+                              {"reason", event.reason},
+                              {"screens", event.screens}});
+    }
+    json["slotEvents"] = std::move(events);
+    Json drops = Json::array();
+    for (const VideoBudgetDropRecord& drop : video.budgetDrops) {
+        drops.push_back(Json{{"atSeconds", drop.atSeconds},
+                             {"slot", drop.slot},
+                             {"gameId", drop.gameId},
+                             {"ratio", drop.ratio},
+                             {"untilSeconds", drop.untilSeconds}});
+    }
+    json["budgetDrops"] = std::move(drops);
+    json["slotEventsDropped"] = video.slotEventsDropped;
     return json;
+}
+
+Json processPriorityToJson(const ProcessPriorityRecord& priority) {
+    Json changes = Json::array();
+    for (const PriorityChangeRecord& change : priority.changes) {
+        changes.push_back(Json{{"frame", change.frame},
+                               {"priority", change.priority},
+                               {"reason", change.reason},
+                               {"applied", change.applied}});
+    }
+    return Json{{"changes", std::move(changes)}};
+}
+
+ProcessPriorityRecord readProcessPriority(FieldReader& fields) {
+    ProcessPriorityRecord priority;
+    for (FieldReader& change : fields.objectArray("changes")) {
+        priority.changes.push_back(PriorityChangeRecord{change.count("frame"), change.string("priority"),
+                                                        change.string("reason"), change.boolean("applied")});
+    }
+    return priority;
 }
 
 /// What videoToJson() wrote: the empty object, or every field of a bound record.
@@ -1752,6 +1815,43 @@ VideoRecord readVideo(FieldReader& fields) {
     }
     video.heldFrames = fields.optionalCount("heldFrames").value_or(0);
     video.idleFramesWithGame = fields.optionalCount("idleFramesWithGame").value_or(0);
+    // I5 step 2's scheduler (absent from earlier reports).
+    video.maxDecoders = fields.optionalCount("maxDecoders").value_or(0);
+    video.maxOpenDecoders = fields.optionalCount("maxOpenDecoders").value_or(0);
+    video.handOvers = fields.optionalCount("handOvers").value_or(0);
+    video.maxUploadBytes = fields.optionalCount("maxUploadBytes").value_or(0);
+    video.deferredUploads = fields.optionalCount("deferredUploads").value_or(0);
+    video.oversizeUploads = fields.optionalCount("oversizeUploads").value_or(0);
+    for (FieldReader& entry : fields.optionalObjectArray("screens")) {
+        VideoScreenRecord screen;
+        screen.screen = entry.string("screen");
+        screen.kind = entry.string("kind");
+        screen.screenClass = entry.string("screenClass");
+        screen.gameId = entry.string("gameId");
+        screen.picture = entry.string("picture");
+        screen.slot = entry.optionalCount("slot");
+        screen.playing = entry.boolean("playing");
+        screen.textureId = entry.count("textureId");
+        screen.visible = entry.boolean("visible");
+        video.screens.push_back(std::move(screen));
+    }
+    for (FieldReader& entry : fields.optionalObjectArray("slotEvents")) {
+        VideoSlotEventRecord event;
+        event.frame = entry.count("frame");
+        event.atSeconds = entry.number("atSeconds");
+        event.slot = entry.count("slot");
+        event.action = entry.string("action");
+        event.gameId = entry.string("gameId");
+        event.reason = entry.string("reason");
+        event.screens = entry.stringArray("screens");
+        video.slotEvents.push_back(std::move(event));
+    }
+    for (FieldReader& entry : fields.optionalObjectArray("budgetDrops")) {
+        video.budgetDrops.push_back(VideoBudgetDropRecord{entry.number("atSeconds"), entry.count("slot"),
+                                                          entry.string("gameId"), entry.number("ratio"),
+                                                          entry.number("untilSeconds")});
+    }
+    video.slotEventsDropped = fields.optionalCount("slotEventsDropped").value_or(0);
     return video;
 }
 
@@ -2217,6 +2317,9 @@ std::string formatRunReport(const RunReport& report) {
     json["world"] = worldToJson(report.world);
     json["residency"] = residencyToJson(report.residency);
     json["video"] = videoToJson(report.video);
+    if (report.processPriority) {
+        json["processPriority"] = processPriorityToJson(*report.processPriority);
+    }
     json["screens"] = screensToJson(report.screens);
     json["directory"] = directoryToJson(report.directory);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
@@ -2351,6 +2454,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto video = fields.object("video")) {
         report.video = readVideo(*video);
+    }
+    if (auto priority = fields.optionalObject("processPriority")) {
+        report.processPriority = readProcessPriority(*priority);
     }
     if (auto screens = fields.optionalObject("screens")) {
         report.screens = readScreens(*screens);
