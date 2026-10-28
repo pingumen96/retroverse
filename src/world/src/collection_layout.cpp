@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -279,6 +281,23 @@ core::Aabb CollectionItem::worldBounds() const noexcept {
     return slotBox.transformed(slotFrame);
 }
 
+PickTarget FreeSlot::pickTarget() const noexcept {
+    return PickTarget{pickId, cluster, slotFrame, faceTargetBox(slotBox)};
+}
+
+core::Aabb FreeSlot::worldBounds() const noexcept {
+    return slotBox.transformed(slotFrame);
+}
+
+const FreeSlot* CollectionLayout::findFree(PickId id) const noexcept {
+    for (const FreeSlot& free : freeSlots) {
+        if (free.pickId == id) {
+            return &free;
+        }
+    }
+    return nullptr;
+}
+
 const CollectionItem* CollectionLayout::find(PickId id) const noexcept {
     for (const CollectionItem& item : items) {
         if (item.pickId == id) {
@@ -520,6 +539,17 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
     for (const CollectionItem& item : layout.items) {
         itemAt.emplace(item.slot, item.pickId);
     }
+    // The slots the plan's dressing covers (I4b step 3: the free slots say whether they are dressed).
+    std::set<std::pair<LevelId, std::uint32_t>> dressedSlots;
+    for (const DressedLevel& dressed : plan.dressing) {
+        if (dressed.level.fixture().room() != roomId) {
+            continue;
+        }
+        for (std::uint32_t index = dressed.firstSlot; index < dressed.firstSlot + dressed.count; ++index) {
+            dressedSlots.emplace(dressed.level, index);
+        }
+    }
+
     struct NavCandidate {
         float along = 0.0f;
         FixtureId id;
@@ -550,7 +580,37 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
                 }
                 const SlotId slot = *SlotId::make(id, level.level, index);
                 const auto item = itemAt.find(slot);
-                nav.slots.push_back(NavSlot{glm::dot(centre, right), item != itemAt.end() ? item->second : kNoPick});
+                const auto slotPick = slotPickId(data.roomTemplate, slot);
+                const PickId slotId = slotPick ? *slotPick : kNoPick;
+                nav.slots.push_back(
+                    NavSlot{glm::dot(centre, right), item != itemAt.end() ? item->second : kNoPick, slotId});
+                if (item == itemAt.end() && slotId != kNoPick) {
+                    // A free slot (I4b step 3): one an item of the family could stand in, in its level's stance.
+                    const SizeMm size = socketSizeMm(*socket);
+                    std::optional<ItemStance> stance;
+                    if (holds(size, family.faceOut)) {
+                        stance = ItemStance::FaceOut;
+                    } else if (holds(size, family.spineOut)) {
+                        stance = ItemStance::SpineOut;
+                    }
+                    const bool sectionFits =
+                        stance && (isFaceOut(level.section) == (*stance == ItemStance::FaceOut) ||
+                                   family.spineFacing == SpineFacing::Front);
+                    const auto socketIndex = socketIndexOf(id);
+                    if (sectionFits && socketIndex) {
+                        FreeSlot free;
+                        free.pickId = slotId;
+                        free.slot = slot;
+                        free.section = level.section;
+                        free.stance = *stance;
+                        free.cluster =
+                            clusterId(*socketIndex, prefab->generator == "shelf" ? level.level : kWholeFixtureLevel);
+                        free.slotFrame = frame * socket->transform;
+                        free.slotBox = socket->bounds;
+                        free.dressed = dressedSlots.contains({*LevelId::make(id, level.level), index});
+                        layout.freeSlots.push_back(std::move(free));
+                    }
+                }
             }
             if (!nav.slots.empty()) {
                 levels.push_back(std::move(nav));
@@ -594,6 +654,8 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
         run.fixtures.push_back(std::move(candidate.fixture));
         layout.navigation.push_back(std::move(run));
     }
+    std::sort(layout.freeSlots.begin(), layout.freeSlots.end(),
+              [](const FreeSlot& a, const FreeSlot& b) { return a.slot < b.slot; });
     return layout;
 }
 

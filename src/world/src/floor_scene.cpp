@@ -1749,6 +1749,9 @@ CollectionLayout floorCollectionLayout(CollectionLayout layout, const RoomPlacem
         item.slotFrame = toFloor * item.slotFrame;
         item.transform = toFloor * item.transform;
     }
+    for (FreeSlot& free : layout.freeSlots) {
+        free.slotFrame = toFloor * free.slotFrame;
+    }
     for (CollectionCluster& cluster : layout.clusters) {
         cluster.bounds = cluster.bounds.transformed(toFloor);
     }
