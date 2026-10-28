@@ -97,8 +97,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 /// A pass shorter than this share of the declared duration, less kTruncationSlackSeconds, means the file was cut short.
-constexpr double kTruncationRatio = 0.9;
-constexpr double kTruncationSlackSeconds = 0.5;
+constexpr double kTruncationRatio = kTruncatedPassRatio;
+constexpr double kTruncationSlackSeconds = kTruncatedPassSlackSeconds;
 /// Frame duration when neither the frame nor the stream tells one.
 constexpr double kFallbackFrameSeconds = 1.0 / 30.0;
 /// Smallest step between two frames whose timestamps do not increase (broken files).
@@ -638,6 +638,7 @@ bool VideoDecoder::Worker::open() {
     info.outputSize = scaledFrameSize(info.codedSize, m_streamSampleAspect, settings.maxHeight);
     info.frameRate = frameRate;
     info.durationSeconds = m_declaredDuration;
+    info.streamDurationSeconds = m_streamDuration;
     info.bitRate = stream->codecpar->bit_rate > 0 ? stream->codecpar->bit_rate : m_format->bit_rate;
     info.decoderThreads = m_codec->thread_count;
     m_videoStartSeconds = m_timestampsUsable ? detail::toSeconds(m_startTimestamp, m_timeBase) : 0.0;

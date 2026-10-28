@@ -46,6 +46,12 @@ enum class DecodeFailure : std::uint8_t {
 /// Error code of rv::Error that matches a failure (NotFound, ParseError, Unsupported, ...).
 [[nodiscard]] ErrorCode errorCodeFor(DecodeFailure failure) noexcept;
 
+/// A first pass from the start that ends before this share of the video stream's own duration, less
+/// kTruncatedPassSlackSeconds, fails as Truncated (ADR-0004 point 10); the check of a clip's sample applies the same rule
+/// to its last frame (video_check.hpp).
+inline constexpr double kTruncatedPassRatio = 0.9;
+inline constexpr double kTruncatedPassSlackSeconds = 0.5;
+
 /// How a VideoDecoder decodes.
 struct DecoderSettings {
     static constexpr int kDefaultMaxHeight = 720;
@@ -100,6 +106,9 @@ struct StreamInfo {
     double sampleAspect = 1.0;
     double frameRate = 0.0;       ///< frames per second as FFmpeg guesses it, 0 when unknown
     double durationSeconds = 0.0; ///< of the video stream (or the container), 0 when unknown
+    /// The video stream's own duration (its own, or the DURATION tag Matroska writes per track), 0 when it declares
+    /// none: what the truncation rule measures a pass against (I5 step 7: the check of a clip's sample).
+    double streamDurationSeconds = 0.0;
     std::int64_t bitRate = 0;     ///< bits per second, 0 when unknown
     int decoderThreads = 1;
     /// The first audio stream (the one decoded with a sink): its codec, rate and channels; "" and 0 without one.
