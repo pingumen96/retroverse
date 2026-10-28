@@ -99,6 +99,7 @@
 			<p data-if="refusal == 'fixture-in-kept-room'">La stanza segue un modello precedente: i suoi mobili si spostano dopo «Rigenera stanza».</p>
 			<p data-if="refusal == 'fixture-unknown'">Il mobile non è più nella stanza.</p>
 			<p data-if="refusal == 'lights-over-limit'">La stanza avrebbe troppe luci.</p>
+			<p data-if="refusal == 'fixture-on-walker'">Ci sei tu: fatti da parte e posalo.</p>
 			<p data-if="!refusalKnown">La modifica non rispetta le regole della stanza.</p>
 		</div>
 

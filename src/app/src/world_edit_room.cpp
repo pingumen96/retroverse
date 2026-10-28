@@ -208,6 +208,16 @@ std::optional<world::FixtureId> EditRoom::fixtureAt(const core::Ray& ray, float 
     return nearest;
 }
 
+std::optional<core::Aabb> EditRoom::fixtureBoxAt(const world::FixtureId& id,
+                                                   const world::FixtureTransform& place) const noexcept {
+    for (std::size_t index = 0; index < m_fixtures.size(); ++index) {
+        if (m_fixtures[index].id == id) {
+            return m_fixtureBoxes[index].transformed(fixtureMove(m_fixtures[index].at, place, m_frame.toScene));
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<world::FixtureTransform> EditRoom::floorAim(const core::Ray& ray) const noexcept {
     const glm::mat4 toRoom = glm::inverse(m_frame.toScene);
     const glm::vec3 origin = glm::vec3(toRoom * glm::vec4(ray.origin, 1.0f));

@@ -143,6 +143,8 @@ struct Aim {
     std::optional<FixtureTransform> wall;
     glm::vec2 forward{0.0f, -1.0f};
     bool looked = false;
+    /// The walker's feet (the scene's frame: the room's here).
+    glm::vec3 feet{0.0f};
 };
 
 EditFrameResult frame(EditInteraction& editor, std::initializer_list<Action> actions, const Aim& aim) {
@@ -158,6 +160,7 @@ EditFrameResult frame(EditInteraction& editor, std::initializer_list<Action> act
     input.floorAim = aim.floor;
     input.wallAim = aim.wall;
     input.roomForward = aim.forward;
+    input.walker.feet = aim.feet;
     return editor.update(input);
 }
 
@@ -418,6 +421,62 @@ TEST_CASE(
     result = frame(editor, {Action::EditPin}, aim);
     REQUIRE(result.apply.has_value());
     CHECK(*result.apply == EditOperation::unpinFixture(display.id));
+}
+
+TEST_CASE("app/world_edit_furniture: a fixture dropped onto the walker is refused at once", "[app][world_edit]") {
+    // A box blocks the walker's capsule (radius 0.3 m, 1.75 m tall) when it rises above a floor covering's few
+    // centimetres and comes within the radius on the floor.
+    const glm::vec3 feet(0.0f, 0.0f, 0.0f);
+    CHECK(rv::app::boxOnWalker(rv::core::Aabb::fromMinMax({0.25f, 0.0f, -0.5f}, {1.0f, 1.0f, 0.5f}), feet));
+    CHECK_FALSE(rv::app::boxOnWalker(rv::core::Aabb::fromMinMax({0.35f, 0.0f, -0.5f}, {1.0f, 1.0f, 0.5f}), feet));
+    CHECK_FALSE(rv::app::boxOnWalker(rv::core::Aabb::fromMinMax({-1.0f, 0.0f, -1.0f}, {1.0f, 0.01f, 1.0f}), feet));
+    CHECK_FALSE(rv::app::boxOnWalker(rv::core::Aabb::fromMinMax({-1.0f, 1.9f, -1.0f}, {1.0f, 2.5f, 1.0f}), feet));
+
+    const WorldPlan& plan = room40().plan;
+    const auto data = snesEditData();
+    const EditedWorld world{plan, {}};
+    const std::unique_ptr<EditRoom> room = editRoomOf(plan, *data);
+    const Fixture& display = fixtureOf(plan, "room:snes/fx:dc01");
+    const FixtureTransform at = placeOf(display);
+    EditInteraction editor = readyEditor(*room, world, *data);
+    Aim aim;
+    aim.fixture = display.id;
+    aim.feet = glm::vec3(3.0f, 0.0f, 3.0f);
+    static_cast<void>(frame(editor, {}, aim));
+    static_cast<void>(frame(editor, {Action::Interact}, aim));
+    REQUIRE(editor.mode() == EditMode::Moving);
+    aim.fixture.reset();
+    // Nudged three grid steps east (facing north: right is +x); its box there, the walker standing in its middle.
+    for (int step = 0; step < 3; ++step) {
+        static_cast<void>(frame(editor, {Action::UiRight}, aim));
+    }
+    const FixtureTransform place = editor.heldFixture()->place;
+    REQUIRE(place == FixtureTransform{at.xMm + 300, at.zMm, at.yawCdeg});
+    const std::optional<rv::core::Aabb> box = room->fixtureBoxAt(display.id, place);
+    REQUIRE(box.has_value());
+    const std::optional<rv::core::Aabb> before = room->fixtureBoxAt(display.id, at);
+    REQUIRE(before.has_value());
+    CHECK(std::abs(box->center().x - before->center().x - 0.3f) < 1e-4f);
+    CHECK(std::abs(box->center().z - before->center().z) < 1e-4f);
+    // The probe found nothing against the place; away from it the walker leaves the verdict to the probe.
+    editor.setVerdict(EditOperation::moveFixture(display.id, place.xMm, place.zMm, place.yawCdeg), "");
+    static_cast<void>(frame(editor, {}, aim));
+    CHECK(editor.verdict() == std::string());
+    // The walker in its way: refused whatever the probe said, and a drop there is refused at once, still held.
+    aim.feet = glm::vec3(box->center().x, 0.0f, box->max.z + 0.2f);
+    static_cast<void>(frame(editor, {}, aim));
+    CHECK(editor.verdict() == std::string(rv::app::kFixtureOnWalker));
+    EditFrameResult result = frame(editor, {Action::Interact}, aim);
+    CHECK_FALSE(result.apply.has_value());
+    CHECK(result.refused == rv::app::kFixtureOnWalker);
+    CHECK(editor.mode() == EditMode::Moving);
+    REQUIRE(editor.heldFixture().has_value());
+    CHECK(editor.heldFixture()->place == place);
+    // Stepped aside, it drops.
+    aim.feet = glm::vec3(box->center().x, 0.0f, box->max.z + 0.4f);
+    result = frame(editor, {Action::Interact}, aim);
+    REQUIRE(result.apply.has_value());
+    CHECK(*result.apply == EditOperation::moveFixture(display.id, place.xMm, place.zMm, place.yawCdeg));
 }
 
 TEST_CASE("app/world_edit_furniture: decoration turns by 15 degrees, a poster slides along its wall, a kept room's "

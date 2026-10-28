@@ -47,8 +47,9 @@ inline constexpr std::array<std::string_view, 7> kModes{"preparing", "browse", "
                                                         "menu",      "saving", "moving"};
 /// The rules a refusal names in a sentence of its own (world::edit_rule and the validation's rules a game's move or,
 /// I4b step 4, a fixture's move can break; "failed": an edit that could not be made, "save-failed": a save that wrote
-/// nothing for an error); another rule reads "La modifica non rispetta le regole della stanza".
-inline constexpr std::array<std::string_view, 24> kRules{"game-unknown",
+/// nothing for an error; "fixture-on-walker": a held fixture's place over the walker, the interaction's own,
+/// kFixtureOnWalker); another rule reads "La modifica non rispetta le regole della stanza".
+inline constexpr std::array<std::string_view, 25> kRules{"game-unknown",
                                                          "slot-taken",
                                                          "slot-pinned",
                                                          "other-room",
@@ -71,7 +72,8 @@ inline constexpr std::array<std::string_view, 24> kRules{"game-unknown",
                                                          "fixture-fixed",
                                                          "fixture-in-kept-room",
                                                          "fixture-unknown",
-                                                         "lights-over-limit"};
+                                                         "lights-over-limit",
+                                                         "fixture-on-walker"};
 /// The kinds of furniture the bar names (I4b step 4: fixtureKindOf()).
 inline constexpr std::array<std::string_view, 6> kFixtureKinds{"module", "display", "poster",
                                                                "lamp",   "rug",     "decoration"};

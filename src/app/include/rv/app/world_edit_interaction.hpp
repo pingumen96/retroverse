@@ -53,6 +53,8 @@
 #include <rv/app/world_interaction.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/core/aabb.hpp>
+#include <rv/scene/collision.hpp>
 #include <rv/scene/pose_animator.hpp>
 #include <rv/scene/viewpoint.hpp>
 #include <rv/world/pick_index.hpp>
@@ -71,12 +73,21 @@ enum class EditMenuButton : std::uint8_t { Save, Undo, Discard, Continue };
 /// "save", "undo", "discard", "continue".
 [[nodiscard]] std::string_view toString(EditMenuButton button) noexcept;
 
+/// The refusal of a held fixture's place that the walker stands in (I4b step 4's review: dropped there it would wedge
+/// the walker between it and the walls): the interaction's own rule, never the draft's.
+inline constexpr std::string_view kFixtureOnWalker = "fixture-on-walker";
+
+/// Whether a box (the scene's frame) blocks the walker's capsule standing at `feet`: it overlaps the capsule's height
+/// (above a floor covering's few centimetres) and comes within its radius on the floor.
+[[nodiscard]] bool boxOnWalker(const core::Aabb& box, const glm::vec3& feet,
+                               const scene::Capsule& capsule = {}) noexcept;
+
 /// One frame as the editor sees it.
 struct EditFrame {
     /// The frame's actions as resolved (before any context), or nullptr while the product UI has the input.
     const input::ActionState* actions = nullptr;
     float deltaSeconds = 0.0f;
-    /// The walker's pose as the frame starts.
+    /// The walker's pose as the frame starts (its feet, the scene's frame: a held fixture's place over them is refused).
     scene::WalkerPose walker;
     /// The frame's ray against EditRoom::index() with hovered() as the current hover; nothing without a ray or room.
     std::optional<world::HoverSample> hover;
@@ -194,7 +205,7 @@ public:
     /// I4b step 4: the fixture held (Moving, and Busy over its drop).
     [[nodiscard]] const std::optional<HeldFixture>& heldFixture() const noexcept { return m_fixture; }
     /// The verdict on where the held fixture stands now: nothing while it is judged, "" when it may drop there, else
-    /// the rule that refuses it.
+    /// the rule that refuses it (kFixtureOnWalker at once where the walker stands, whatever the probe said).
     [[nodiscard]] std::optional<std::string> verdict() const;
 
 private:
@@ -206,6 +217,8 @@ private:
     void readMoving(const input::ActionState& actions, const EditFrame& frame, bool looked, EditFrameResult& result);
     /// The fixture held placed where `wanted` snaps to (nothing changes when the placer refuses it).
     void placeFixture(const world::FixtureTransform& wanted);
+    /// The held fixture stands where it moved to over the walker's capsule (the frame's walker).
+    [[nodiscard]] bool heldOnWalker() const;
     void back(const BackState& shell, EditFrameResult& result);
     void openMenu();
     void step(const input::ActionState& actions, const EditFrame& frame);

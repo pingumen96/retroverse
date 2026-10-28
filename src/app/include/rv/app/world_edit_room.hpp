@@ -118,6 +118,11 @@ public:
     /// the ray enters a fixed fixture's box before it.
     [[nodiscard]] std::optional<world::FixtureId> fixtureAt(const core::Ray& ray,
                                                             float maxDistance = kFixturePickDistance) const noexcept;
+    /// The box (the scene's frame) of the movable fixture `id` standing at `place` instead of where it stands (its
+    /// box moved as fixtureMove() draws it: conservative for a turn that is not a quarter turn); nothing for a fixture
+    /// the room lacks.
+    [[nodiscard]] std::optional<core::Aabb> fixtureBoxAt(const world::FixtureId& id,
+                                                         const world::FixtureTransform& place) const noexcept;
     /// Where `ray` (the scene's frame) meets the room's floor, in the room's frame (millimetres; the yaw 0), kept
     /// within its interior; nothing when it does not go down to it.
     [[nodiscard]] std::optional<world::FixtureTransform> floorAim(const core::Ray& ray) const noexcept;

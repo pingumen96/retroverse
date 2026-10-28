@@ -1,5 +1,6 @@
 #include <rv/app/world_edit_interaction.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
@@ -182,12 +183,34 @@ bool EditInteraction::targetPinned() const {
     return m_target && m_target->game && m_pinned && m_pinned(*m_target->game);
 }
 
+bool boxOnWalker(const core::Aabb& box, const glm::vec3& feet, const scene::Capsule& capsule) noexcept {
+    // A floor covering (a rug) lies under the feet: only what rises above a few centimetres blocks.
+    constexpr float kFloorCovering = 0.05f;
+    if (box.isEmpty() || !(box.max.y > feet.y + kFloorCovering) || !(box.min.y < feet.y + capsule.height)) {
+        return false;
+    }
+    const float dx = std::max({box.min.x - feet.x, feet.x - box.max.x, 0.0f});
+    const float dz = std::max({box.min.z - feet.z, feet.z - box.max.z, 0.0f});
+    return dx * dx + dz * dz < capsule.radius * capsule.radius;
+}
+
+bool EditInteraction::heldOnWalker() const {
+    if (!m_fixture || !m_fixture->moved() || m_room == nullptr) {
+        return false;
+    }
+    const std::optional<core::Aabb> box = m_room->fixtureBoxAt(m_fixture->id, m_fixture->place);
+    return box && boxOnWalker(*box, m_walkerNow.feet);
+}
+
 std::optional<std::string> EditInteraction::verdict() const {
     if (!m_fixture) {
         return std::nullopt;
     }
     if (!m_fixture->moved()) {
         return std::string(); // where it stood
+    }
+    if (heldOnWalker()) {
+        return std::string(kFixtureOnWalker);
     }
     if (m_verdict && m_verdict->first == m_fixture->place) {
         return m_verdict->second;
@@ -408,6 +431,11 @@ void EditInteraction::readMoving(const input::ActionState& actions, const EditFr
         if (!m_fixture->moved()) {
             m_fixture.reset();
             m_mode = EditMode::Browse;
+            return;
+        }
+        if (heldOnWalker()) {
+            // Dropped onto the walker: refused at once, still in the hand (the bar names why).
+            result.refused = std::string(kFixtureOnWalker);
             return;
         }
         const world::FixtureTransform& place = m_fixture->place;
