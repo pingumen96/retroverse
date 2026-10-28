@@ -121,7 +121,8 @@ struct SocketPose {
 /// but a module of `moved` (those that may stand elsewhere: the editor passes every module, the update those it holds)
 /// that stands elsewhere than its socket puts it (I4b step 2), in a socket made where it stands: its back edge's
 /// middle, its yaw, its width and depth, on the wall its back stands against (within kMaxWallGapMm of the wall's
-/// interior face, facing into the room), else on none (a run of its own). A room without moved modules is lit exactly as before. `made` owns the sockets made.
+/// interior face, facing into the room), else on none (a run of its own). A room without moved modules is lit exactly
+/// as before. `made` owns the sockets made.
 struct ModulesOnWalls {
     std::vector<ModuleOnWall> modules;
     std::vector<std::unique_ptr<TemplateSocket>> made;

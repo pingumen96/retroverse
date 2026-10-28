@@ -228,6 +228,10 @@ struct GenerationResult {
     WorldPlan plan;
     ChangeReport changes;
     ValidationReport validation;
+    /// The overrides an update changed, to be saved with the plan (commitWorld()): a growth moves a pinned poster
+    /// hanging on the south wall with its wall, its pin's transform with it (I4b step 2). Nothing when they did not
+    /// change.
+    std::optional<WorldOverrides> overrides;
 
     bool operator==(const GenerationResult&) const = default;
 };

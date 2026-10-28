@@ -182,6 +182,8 @@ struct RoomUpdate {
     std::vector<LevelId> dressingRemoved;
     std::vector<SlotId> slotsFreed;
     std::vector<std::string> refused;
+    /// The pins at a transform whose fixture followed its wall (a poster on the south wall), with their new transform.
+    std::map<FixtureId, FixtureTransform> pinsFollowed;
     bool grew = false;
 };
 
@@ -654,6 +656,7 @@ private:
                 return false;
             }
         }
+        const Room before = *m_room;
         const std::uint32_t growth = m_room->growthSteps + 1;
         const Footprint interior = interiorFootprint(m_template, growth);
         m_room->growthSteps = growth;
@@ -662,14 +665,28 @@ private:
         m_room->minZMm = interior.minZMm;
         m_room->maxZMm = interior.maxZMm;
         m_layoutInput->counts.growthSteps = growth;
-        // A fixture the user moved stays where it was put, and so does its light (I4b step 2, ADR-0015 §3).
+        // A fixture the user moved stays where it was put, and so does its light (I4b step 2, ADR-0015 §3), but for a
+        // decoration hung on the south wall: it hangs on its wall still (the validation's decoration-off-wall), its pin
+        // following it.
+        std::set<std::string> followed;
         for (Fixture& fixture : m_plan.fixtures) {
-            if (southSockets.contains(fixture.id.socket()) && !m_held.contains(fixture.id)) {
+            if (!m_held.contains(fixture.id)) {
+                if (southSockets.contains(fixture.id.socket())) {
+                    fixture.zMm += m_template.growthStepMm;
+                }
+                continue;
+            }
+            const std::optional<detail::WallMount> mount = detail::wallMountOf(fixture, before);
+            if (detail::isHungDecoration(fixture) && mount && mount->wall == Wall::South &&
+                detail::hangsOnWall(fixture, before)) {
+                followPin(fixture);
                 fixture.zMm += m_template.growthStepMm;
+                followed.insert(fixture.id.socket());
             }
         }
         for (PlanLight& light : m_plan.lights) {
-            if (southSockets.contains(light.id.socket()) && !m_heldSockets.contains(light.id.socket())) {
+            if ((southSockets.contains(light.id.socket()) && !m_heldSockets.contains(light.id.socket())) ||
+                followed.contains(light.id.socket())) {
                 light.zMm += m_template.growthStepMm;
                 light.targetZMm += m_template.growthStepMm;
             }
@@ -693,6 +710,24 @@ private:
         }
         m_grew = true;
         return true;
+    }
+
+    /// `fixture`, about to follow the south wall one growth step: its pin at a transform, when the pin holds it where
+    /// it stands (honoured), follows it.
+    void followPin(const Fixture& fixture) {
+        const FixtureTransform standing{fixture.xMm, fixture.zMm, fixture.yawCdeg};
+        const FixtureTransform next{fixture.xMm, fixture.zMm + m_template.growthStepMm, fixture.yawCdeg};
+        if (const auto earlier = m_pinsFollowed.find(fixture.id); earlier != m_pinsFollowed.end()) {
+            if (earlier->second == standing) {
+                earlier->second = next;
+            }
+            return;
+        }
+        for (const FixturePin& pin : m_input.overrides.fixturePins) {
+            if (pin.fixture == fixture.id && pin.transform == standing) {
+                m_pinsFollowed.emplace(fixture.id, next);
+            }
+        }
     }
 
     /// The wall-washers over the modules as they stand now (a module the user moved where it stands), within the
@@ -723,6 +758,7 @@ private:
         update.dressingRemoved = std::move(m_dressingRemoved);
         update.slotsFreed = std::move(m_slotsFreed);
         update.refused = std::move(m_refused);
+        update.pinsFollowed = std::move(m_pinsFollowed);
         update.grew = m_grew;
         return update;
     }
@@ -744,6 +780,7 @@ private:
     std::set<std::string> m_socketPinned;
     std::set<FixtureId> m_held;
     std::set<std::string> m_heldSockets;
+    std::map<FixtureId, FixtureTransform> m_pinsFollowed;
 
     std::vector<SpineLevel> m_fill;
     std::map<std::pair<FixtureId, std::uint32_t>, std::size_t> m_levelIndex;
@@ -1104,6 +1141,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::vector<SlotId> slotsFreed;
     std::vector<std::string> refused = std::move(migrationRefused);
     std::vector<MigratedRoom> migratedRooms;
+    std::map<FixtureId, FixtureTransform> pinsFollowed;
     bool grew = false;
     bool newItems = false;
     std::set<GameId> placedBefore;
@@ -1223,6 +1261,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         dressingRemoved.insert(dressingRemoved.end(), update->dressingRemoved.begin(), update->dressingRemoved.end());
         slotsFreed.insert(slotsFreed.end(), update->slotsFreed.begin(), update->slotsFreed.end());
         refused.insert(refused.end(), update->refused.begin(), update->refused.end());
+        pinsFollowed.insert(update->pinsFollowed.begin(), update->pinsFollowed.end());
         grew = grew || update->grew;
         replaceRoom(plan, room.id, std::move(update->plan));
     }
@@ -1302,7 +1341,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         templates.push_back(data->roomTemplate);
         datas.push_back(data);
     }
-    const PinCheck pins = checkPins(plan, templates, input.overrides);
+    // A pin that followed its fixture with the wall is rewritten (the caller saves the overrides with the plan).
+    WorldOverrides overrides = input.overrides;
+    bool overridesChanged = false;
+    for (FixturePin& pin : overrides.fixturePins) {
+        if (const auto followed = pinsFollowed.find(pin.fixture); followed != pinsFollowed.end()) {
+            pin.transform = followed->second;
+            overridesChanged = true;
+        }
+    }
+    const PinCheck pins = checkPins(plan, templates, overrides);
     detail::BuildingDigestInput digestInput;
     digestInput.config = input.config;
     digestInput.library = input.library;
@@ -1422,6 +1470,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                                                                              building, pins.honouredOrOrphaned,
                                                                              changes.keptRooms));
     result.plan = std::move(plan);
+    if (overridesChanged) {
+        result.overrides = std::move(overrides);
+    }
     return result;
 }
 
