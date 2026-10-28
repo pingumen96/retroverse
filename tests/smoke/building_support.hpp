@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -29,9 +30,11 @@ struct PlannedBuilding {
     /// console room of its own (world.json's sharedRoomMinTitles 0, when the building's data has that key: I4 step 4's
     /// shared rooms take the systems under its threshold otherwise), so that the fixture's small systems keep their
     /// families' rooms.
-    /// `fixtureName`: the ES-DE fixture planned (tests/fixtures/<name>).
+    /// `fixtureName`: the ES-DE fixture planned (tests/fixtures/<name>). `prepare` (I5 step 7) changes the materialized
+    /// fixture before its import (a variant without some of its clips).
     explicit PlannedBuilding(std::string_view caseName, bool consoleRooms = true,
-                             std::string_view fixtureName = "esde/building");
+                             std::string_view fixtureName = "esde/building",
+                             const std::function<void(const test::Fixture&)>& prepare = {});
 
     /// retroverse-cli --data-dir <data> `arguments`, which must exit 0.
     AppRun cli(std::string_view name, std::vector<std::string> arguments) const;

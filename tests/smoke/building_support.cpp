@@ -21,9 +21,13 @@ fs::path buildAssets() {
 
 } // namespace
 
-PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms, std::string_view fixtureName)
+PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms, std::string_view fixtureName,
+                                 const std::function<void(const test::Fixture&)>& prepare)
     : fixture(test::Fixture::materialize(std::string(fixtureName)).value()), dir(freshCaseDir(caseName)),
       data(dir / "data") {
+    if (prepare) {
+        prepare(fixture);
+    }
     cli("library", {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
     cli("import", {"import"});
     if (consoleRooms) {

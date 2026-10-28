@@ -1,7 +1,9 @@
 # The `video-verdicts` ES-DE fixture
 
 I5 step 7 (ADR-0016 §8): the clips' verdicts. One cartridge system, ES-DE's `snes` with the invented full name
-**Lumen 16 Home System** (as `snes-single`), eight invented games, each with a screenshot and a clip of one kind:
+**Lumen 16 Home System** (as `snes-single`), eight invented games, each with a screenshot and a clip of one kind;
+Ember Quill is a favourite, so that the room features it first (the screen's start choice when it is the room's only
+clip, its still first when no clip plays):
 
 | Game | Clip | Verdict |
 |---|---|---|

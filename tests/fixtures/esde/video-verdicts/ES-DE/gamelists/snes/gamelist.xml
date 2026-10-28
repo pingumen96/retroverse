@@ -39,6 +39,7 @@
 	<game>
 		<path>./Ember Quill (USA).sfc</path>
 		<name>Ember Quill</name>
+		<favorite>true</favorite>
 		<desc>Ember Quill: an invented game of the video-verdicts fixture.</desc>
 		<releasedate>19950305T000000</releasedate>
 		<developer>Paper Owl</developer>
