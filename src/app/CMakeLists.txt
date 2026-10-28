@@ -12,7 +12,7 @@
 # cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c), the room's
 # side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b); since
 # I4 step 7b the elevator ride's state machine and the directory's data and command routing; since I5 step 1 the
-# screens' playlists and video.json.
+# screens' playlists and video.json; since I5 step 2 the decoder scheduler and the process priority's policy.
 # Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
 # reports of the runs they start.
 add_library(rv_app_cli STATIC
@@ -38,6 +38,7 @@ add_library(rv_app_cli STATIC
     src/scene_content_plan.cpp
     src/screen_policy.cpp
     src/screen_room.cpp
+    src/screen_scheduler.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
     src/video_settings.cpp
