@@ -236,6 +236,7 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         const auto stands = placed.find(pin.game);
         if (stands != placed.end() && *stands->second == pin.slot) {
             check.honouredOrOrphaned.gamePins.push_back(pin);
+            check.honoured.gamePins.push_back(pin);
         } else if (!planHoldsSlot(fixtures, pin.slot) || (stands == placed.end() && !unplaced.contains(pin.game))) {
             check.orphaned.push_back(pinText(pin));
             check.honouredOrOrphaned.gamePins.push_back(pin);
@@ -264,6 +265,7 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         };
         if (fixture != fixtures.end() && standsAsPinned(*fixture->second)) {
             check.honouredOrOrphaned.fixturePins.push_back(pin);
+            check.honoured.fixturePins.push_back(pin);
         } else if (roomTemplate == nullptr || roomTemplate->socket(pin.fixture.socket()) == nullptr) {
             check.orphaned.push_back(pinText(pin));
             check.honouredOrOrphaned.fixturePins.push_back(pin);

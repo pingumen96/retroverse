@@ -41,6 +41,7 @@
 #include <rv/world/room_template.hpp>
 #include <rv/world/seeds.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/world/world_snapshots.hpp>
 
 namespace rv::app {
 namespace {
@@ -624,7 +625,20 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
             options.writer = input.writer;
             options.duration = std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::duration<double, std::milli>(build.planMs));
-            if (auto report = world::savePlan(*lock, saved, options)) {
+            // A growth that moved a pinned poster with the south wall rewrote its pin: the plan and the overrides are
+            // saved together behind a snapshot (ADR-0015 §6).
+            const auto save = [&]() -> Expected<world::SaveReport> {
+                if (!result->overrides) {
+                    return world::savePlan(*lock, saved, options);
+                }
+                auto commit = world::commitWorld(*lock, world::WorldAction{"update", "world"}, saved,
+                                                 *result->overrides, options);
+                if (!commit) {
+                    return propagate(commit.error());
+                }
+                return commit->plan;
+            };
+            if (auto report = save()) {
                 build.written = report->written;
                 if (report->metaError) {
                     spdlog::warn("World: the plan's meta sidecar: {}", report->metaError->toString());

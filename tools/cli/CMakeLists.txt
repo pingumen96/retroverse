@@ -1,6 +1,6 @@
 # retroverse-cli (ADR-0008 §2, roadmap I2): the ES-DE catalog of milestone M1 from the command line, without a window:
 # discovery, import, queries, media, emulator profiles, launches and play sessions; since I3 the world's plans
-# (worldplan generate, update, show, check; where-is: ADR-0010; since I4b snapshots and undo, ADR-0015). Results go
+# (worldplan generate, update, show, check; where-is: ADR-0010; since I4b snapshots, undo and edit, ADR-0015). Results go
 # to stdout, or to the file a command's --output names, as UTF-8; logs go to stderr and to
 # <user data>/logs/retroverse-cli.log, never to stdout.
 
@@ -26,6 +26,7 @@ add_library(rv_cli_core STATIC
     src/cmd_where_is.cpp
     src/cmd_worldplan.cpp
     src/cmd_worldplan_check.cpp
+    src/cmd_worldplan_edit.cpp
     src/cmd_worldplan_generate.cpp
     src/cmd_worldplan_show.cpp
     src/cmd_worldplan_snapshots.cpp

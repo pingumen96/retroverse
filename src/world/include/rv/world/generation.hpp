@@ -228,6 +228,10 @@ struct GenerationResult {
     WorldPlan plan;
     ChangeReport changes;
     ValidationReport validation;
+    /// The overrides an update changed, to be saved with the plan (commitWorld()): a growth moves a pinned poster
+    /// hanging on the south wall with its wall, its pin's transform with it (I4b step 2). Nothing when they did not
+    /// change.
+    std::optional<WorldOverrides> overrides;
 
     bool operator==(const GenerationResult&) const = default;
 };
@@ -382,7 +386,9 @@ struct BuildingInput {
 /// that tags decide the digest only when they decide the place), and per room its selection, its template by id and
 /// version, what the plan takes from its platform (its system, media family and console, and the theme pack it
 /// resolves, which Room::themePack records: building.json's floor packs enter only so) and media family, and every
-/// prefab as measured. The overrides are not part of it (they are protected, never applied). The
+/// prefab as measured. The overrides are not part of it: a plan's inputDigest is this digest with the canonical form
+/// of the pins the plan honours joined (ADR-0015 §2, I4b step 2: their SHA-256 XORed in, nothing for no pin, so a plan
+/// of a world without overrides has exactly this digest; generateBuilding(), the update and the edits join it). The
 /// incremental update (incremental.hpp) records the digest of the inputs it read the same way (over the rooms it
 /// updated), so a plan's inputDigest names the inputs of its last generation or update. Errors: InvalidArgument for a
 /// configuration or selection their writers refuse.

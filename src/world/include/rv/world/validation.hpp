@@ -84,6 +84,7 @@ inline constexpr std::string_view kFixtureSocket = "fixture-socket";
 inline constexpr std::string_view kFixtureLevels = "fixture-levels";
 inline constexpr std::string_view kPrefabSlots = "prefab-slots";
 inline constexpr std::string_view kFixtureOutsideRoom = "fixture-outside-room";
+inline constexpr std::string_view kDecorationOffWall = "decoration-off-wall";
 inline constexpr std::string_view kDoorReserved = "door-reserved";
 inline constexpr std::string_view kDoorwayClearance = "doorway-clearance";
 inline constexpr std::string_view kFootprintsOverlap = "footprints-overlap";

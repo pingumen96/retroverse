@@ -18,6 +18,7 @@
 #include <rv/world/floor_layout.hpp>
 #include <rv/world/nav_grid.hpp>
 
+#include "fixture_geometry.hpp"
 #include "layout_score.hpp"
 
 namespace rv::world {
@@ -25,7 +26,7 @@ namespace {
 
 using catalog::GameId;
 
-constexpr std::array<ValidationRule, 37> kRules{{
+constexpr std::array<ValidationRule, 38> kRules{{
     {rule::kRoomUnknown, Severity::Hard,
      "Every fixture and unplaced entry names a room the plan lists (games unplaced for capacity may name the room, or "
      "the shared or arcade room, their full floor did not take)."},
@@ -56,6 +57,8 @@ constexpr std::array<ValidationRule, 37> kRules{{
     {rule::kPrefabSlots, Severity::Hard,
      "The levels of every collection fixture equal its prefab's Slot_<level>_<index> sockets."},
     {rule::kFixtureOutsideRoom, Severity::Hard, "Every fixture lies inside its room, below the ceiling."},
+    {rule::kDecorationOffWall, Severity::Hard,
+     "Every decoration hung above the floor hangs on a wall: its box within 100 mm of a wall's interior face."},
     {rule::kDoorReserved, Severity::Hard, "No fixture stands in or enters a door-reserved socket."},
     {rule::kDoorwayClearance, Severity::Hard, "No fixture enters the doorway's clear area."},
     {rule::kFootprintsOverlap, Severity::Hard, "No two fixtures' boxes overlap (floor coverings excepted)."},
@@ -886,6 +889,20 @@ private:
                                                room.heightMm));
                 }
             }
+            // Judged on its box (a box through a wall is fixture-outside-room's); a kept room as an older template
+            // made it.
+            for (const Fixture* fixture : view.fixtures) {
+                if (!detail::isHungDecoration(*fixture) || isKept(id)) {
+                    continue;
+                }
+                const detail::WallMount nearest = detail::nearestWallOf(*fixture, room);
+                if (nearest.gapHalfMm > 2 * kMaxWallGapMm) {
+                    m_findings.add(rule::kDecorationOffWall, fixture->id.toString(),
+                                   fmt::format("it hangs {} mm in front of the {} wall, the nearest; a hung "
+                                               "decoration stands 0 to {} mm off a wall",
+                                               mmText(nearest.gapHalfMm), toString(nearest.wall), kMaxWallGapMm));
+                }
+            }
             if (view.roomTemplate != nullptr) {
                 const RoomTemplate& roomTemplate = *view.roomTemplate;
                 for (const Fixture* fixture : view.fixtures) {
@@ -1429,6 +1446,54 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseSlotSocket(std::stri
 }
 
 } // namespace
+
+namespace detail {
+
+bool fixturesOverlap(const Fixture& a, const Fixture& b) noexcept {
+    if (isFloorCovering(a) || isFloorCovering(b)) {
+        return false;
+    }
+    return boxOf(a).overlaps(boxOf(b));
+}
+
+bool isHungDecoration(const Fixture& fixture) noexcept {
+    return fixture.role == FixtureRole::Decoration && fixture.yMm > 0;
+}
+
+std::optional<WallMount> wallMountOf(const Fixture& fixture, const Room& room) noexcept {
+    const std::int32_t yaw = ((fixture.yawCdeg % 36'000) + 36'000) % 36'000;
+    if (yaw % 9'000 != 0) {
+        return std::nullopt;
+    }
+    const Box box = boxOf(fixture);
+    switch (yaw) {
+    case 0:
+        return WallMount{Wall::North, box.minZ - 2 * room.minZMm};
+    case 9'000:
+        return WallMount{Wall::West, box.minX - 2 * room.minXMm};
+    case 18'000:
+        return WallMount{Wall::South, 2 * room.maxZMm - box.maxZ};
+    default:
+        return WallMount{Wall::East, 2 * room.maxXMm - box.maxX};
+    }
+}
+
+WallMount nearestWallOf(const Fixture& fixture, const Room& room) noexcept {
+    const Box box = boxOf(fixture);
+    const std::array<WallMount, 4> walls{{{Wall::North, box.minZ - 2 * room.minZMm},
+                                          {Wall::West, box.minX - 2 * room.minXMm},
+                                          {Wall::South, 2 * room.maxZMm - box.maxZ},
+                                          {Wall::East, 2 * room.maxXMm - box.maxX}}};
+    return *std::min_element(walls.begin(), walls.end(),
+                             [](const WallMount& a, const WallMount& b) { return a.gapHalfMm < b.gapHalfMm; });
+}
+
+bool hangsOnWall(const Fixture& fixture, const Room& room) noexcept {
+    const std::optional<WallMount> mount = wallMountOf(fixture, room);
+    return mount && mount->gapHalfMm >= 0 && mount->gapHalfMm <= 2 * kMaxWallGapMm;
+}
+
+} // namespace detail
 
 std::span<const ValidationRule> validationRules() noexcept {
     return kRules;

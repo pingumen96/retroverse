@@ -124,6 +124,9 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   Since I4b step 1 `--replace` over a stored plan is an explicit action: the plan and the overrides (rewritten in
   schema 2) are saved together behind a snapshot ("Snapshot: <name> ('worldplan undo' restores it)", JSON `snapshot`,
   else null), which `worldplan undo` restores; when only the overrides change, "Backup:" says the plan is unchanged.
+  Until I4b step 5 a fresh generation applies no pin: over a world whose edits pinned a game or a moved fixture it
+  breaks `pin-broken` and exits 3, nothing written, with a hint on stderr: remove those pins with `worldplan edit
+  unpin --game <id>` or `unpin-fixture --fixture <id>` (step 5's `worldplan regenerate` honours them).
   Since I4 step 4 (`docs/i4/step-4.md`) every arcade system takes a section of the arcade room `area:arcade` on the
   ground floor, a system with fewer distinct titles over all its games (with a cover or not) than `world.json`'s
   `sharedRoomMinTitles` (default 30) a section of its floor's shared room `area:shared:<floor>`, every other system its
@@ -162,12 +165,15 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `unplacedForCapacity`}, rebuild `full`); a pinned room's refusal is among the confirmations. Since I6 step 5
   (`docs/i6/step-5.md`, ADR-0014 §3) a ground floor room standing at I4's lobby is re-placed once onto the hub's wall,
   its contents unchanged ("Room re-placed: <room>: onto the hub, x <x> z <z> (was x <x> z <z>)"; JSON
-  `changes.replacedRooms` {`room`, `from`, `to`: {`xMm`, `zMm`, `yawHalfTurns`}}, rebuild `full`). It prints the change
-  report. Both exit 0 written or up to date; 1 nothing written (a plan
-  exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate --replace`:
-  another seed, preset or generator major version; the media unknown; no such system in the catalog); 2 usage; 3 the
-  data, catalog, selections or overrides unreadable (a system named that gets no room, an excluded one, included), a
-  hard rule broken, the world locked by another program, a failed write.
+  `changes.replacedRooms` {`room`, `from`, `to`: {`xMm`, `zMm`, `yawHalfTurns`}}, rebuild `full`). Since I4b step 2 a
+  fixture the user moved stays where it stands when its room grows, pinned or not, but for a poster hung on the south
+  wall, which follows its wall: when it is pinned, its pin's transform follows it and `update` saves the plan and
+  `overrides.json` together behind a snapshot (action `update`), which `worldplan undo` restores (with `--plan` only
+  the plan is written, with a warning). It prints the change report. Both exit 0 written or up to date; 1 nothing
+  written (a plan exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate
+  --replace`: another seed, preset or generator major version; the media unknown; no such system in the catalog); 2
+  usage; 3 the data, catalog, selections or overrides unreadable (a system named that gets no room, an excluded one,
+  included), a hard rule broken, the world locked by another program, a failed write.
   `worldplan show [<plan>] [--library <id>] [--placements] [--floor <id>] [--scene <file> [--room <id>]] [--json]`
   summarizes a plan: its floors (order, rooms), each room with its kind, floor, sections, row and place on the floor
   and generator, and the theme pack it is drawn with (resolved on its floor, I6 step 3: "<pack> (recorded <old> until
@@ -219,6 +225,32 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   (no redo)"); 2 usage; 3 the lock held by another program or a journal it cannot roll back (the message names
   `transaction.json`, the snapshot and the repair by hand), a damaged snapshot (its files missing or not those its
   digests name) or any damaged folder (nothing written), a failed read or write.
+  `worldplan edit <operation> [its options] | --script <file.json> [--library <id>] [--dry-run] [--json]` (I4b step 2,
+  ADR-0015 §4, §8, `docs/i4b/step-2.md`) applies the editor's operations (`rv/world/world_edit.hpp`) to the world's
+  plan and overrides, read under the world lock: `move --game <id> --slot <slot>` (a placed game into an empty slot of
+  its room chain, a face-out one too: a dressed span gives way, a face-out slot left is dressed), `swap --game <id>
+  --with <id>`, `pin | unpin --game <id>`, `move-fixture --fixture <id> --x-mm <n> --z-mm <n> [--yaw-cdeg <n>]` (a
+  side-wall module, display fixture or decoration: its pivot on the room's 100 mm grid through its place in its socket,
+  quarter turns, decoration 15 degrees, a hung decoration along the walls only; the hero corner and the hero-wall
+  modules are fixed), `pin-fixture | unpin-fixture --fixture <id>`; `--script` a session of several, all or nothing
+  (`{"schemaVersion": 1, "operations": [{"op": "move", "game": ..., "slot": ...}, {"op": "move-fixture", "fixture":
+  ..., "xMm": ..., "zMm": ..., "yawCdeg": ...}, ...]}`, JSON with comments). Every manual change is pinned (origin
+  `cli`); the session is validated by the hard rules on the floors it edits and saved through `commitWorld()` behind a
+  snapshot (action `edit`, scope the room), which `worldplan undo` restores; the catalog is not read. `--dry-run`
+  applies and validates the operations and writes nothing; it still takes the world lock, which may create
+  `world.lock` and roll back an interrupted action first, as for every writer. A move back home removes the fixture's
+  pin; an operation is refused only for a hard finding it causes (one its floor did not have before). It prints each
+  operation ("Done:" or "Unchanged:"), the pins, the plan's digests and "Snapshot:" (JSON `operations` {`op`,
+  `operation`, `changed`, `summary`, `refused`}, `changed`, `written`, `scope`, `snapshot`, `rebuild`, `digestBefore`,
+  `digestAfter`, `fixturesMoved`, `gamePins`, `fixturePins`, `refused`). Since step 2 the pins a plan honours join its
+  inputDigest (`generate`, `update` and `edit` alike), so an update of an unchanged catalog after an edit writes
+  nothing; a world without overrides keeps its digests. Exit 0 edited, nothing to change, or a dry run that passes;
+  1 an operation refused ("operation <n> (<operation>) refused by <rule>: <subject>: <why>; nothing written", the
+  rule an edit rule such as `slot-taken`, `other-room`, `off-grid`, `turn-step`, `wall-mount`, `fixture-fixed`,
+  `fixture-in-kept-room`, or a validation rule such as `footprints-overlap`, `doorway-clearance`, `door-reserved`,
+  `decoration-off-wall`, `unreachable`), no plan, a plan
+  refused; 2 usage (an unknown operation, an option it does not take or lacks, a malformed id or number, a script that
+  cannot be read); 3 the data or overrides unreadable, the lock held by another program, a failed write.
 - `where-is <gameId> [--plan <file> | --library <id>] [--json]` tells where a game stands in the building's plan
   (floor, room, fixture, slot, face-out or spine-out; JSON `floor`) or why it is not placed, with the version that
   stands for it; exit 1 no plan or a game the plan does not hold, 2 usage, 3 a plan refused.

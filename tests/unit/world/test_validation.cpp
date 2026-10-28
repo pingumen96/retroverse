@@ -91,7 +91,7 @@ std::vector<ValidationFinding> requireOnlyHard(const ValidationReport& report, s
 TEST_CASE("world/validation: the rules are named once each, hard ones first, every name a rule name",
           "[world][validation]") {
     const auto rules = rv::world::validationRules();
-    REQUIRE(rules.size() == 37);
+    REQUIRE(rules.size() == 38);
     std::set<std::string_view> names;
     bool soft = false;
     for (const rv::world::ValidationRule& entry : rules) {
@@ -307,6 +307,24 @@ TEST_CASE("world/validation: footprints, door-reserved sockets and the doorway",
         findings = requireOnlyHard(validate(plan), rule::kFixtureOutsideRoom);
         CHECK_THAT(findings[0].message, ContainsSubstring("from y 2550 to 3250"));
         fixtureOf(plan, "hero", "sign").yMm = 2850;
+        CHECK(validate(plan).passed());
+    }
+    SECTION("decoration-off-wall: a poster in mid-air") {
+        WorldPlan plan = rv::test::validRoomPlan();
+        // w04's poster hangs on the west wall, its back 30 mm off it; up to 100 mm is on the wall.
+        fixtureOf(plan, "w04").xMm += 70;
+        CHECK(validate(plan).passed());
+        fixtureOf(plan, "w04").xMm += 1;
+        auto findings = requireOnlyHard(validate(plan), rule::kDecorationOffWall);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes/fx:w04");
+        CHECK_THAT(findings[0].message, ContainsSubstring("hangs 101 mm in front of the west wall"));
+        fixtureOf(plan, "w04").xMm += 2000;
+        findings = requireOnlyHard(validate(plan), rule::kDecorationOffWall);
+        CHECK_THAT(findings[0].message, ContainsSubstring("2101 mm in front of the west wall"));
+        // A decoration on the floor stands anywhere.
+        plan = rv::test::validRoomPlan();
+        fixtureOf(plan, "w05").xMm += 400;
         CHECK(validate(plan).passed());
     }
     SECTION("door-reserved: a shelf in a door-reserved socket, or a fixture entering one") {

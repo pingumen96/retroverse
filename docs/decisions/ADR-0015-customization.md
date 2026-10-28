@@ -85,6 +85,13 @@ complete room editor.
   layout). A conflict is **never dropped silently**: it stays in `overrides.json`, reported as orphaned at every update
   and shown by the editor, until the user drops it (§5's consent, or unpinning it in the editor).
 
+*Amended on 2026-10-28 (I4b step 2's review):* a fixture counts as user-moved whenever it stands away from its socket's
+pose, pinned or not. A hung decoration whose back is on the south wall moves with that wall when the room grows; its
+pin's transform is rewritten and the update saves the plan and `overrides.json` together (§6, action `update`). A
+fixture moved back to its own socket loses its pin instead of being pinned there, so it does not refuse growth; only
+an explicit pin in a south-wall socket does. A hung decoration off every wall is a hard finding
+(`decoration-off-wall`).
+
 ### 4. The editor (amends ADR-0012 §1)
 
 A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad and keyboard alike. No Dear ImGui.

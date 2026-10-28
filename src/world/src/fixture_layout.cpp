@@ -627,6 +627,103 @@ Section sectionOf(FixtureRole role, LevelFacing facing) noexcept {
     return levelSection(role, facing);
 }
 
+SocketPose poseInSocket(const LayoutInput& input, const TemplateSocket& socket, const PrefabInfo& info) {
+    const Frame where = frameOf(input.roomTemplate, socket, input.counts.growthSteps);
+    const Point pivot = where.toRoom(-(info.minXMm + info.maxXMm) / 2, -info.minZMm);
+    return {pivot.xMm, pivot.zMm, static_cast<std::int32_t>(((where.yawCdeg % 36000) + 36000) % 36000)};
+}
+
+bool isMovableRole(FixtureRole role) noexcept {
+    return role == FixtureRole::SideModule || role == FixtureRole::Display || role == FixtureRole::Decoration;
+}
+
+bool standsMoved(const LayoutInput& input, const Fixture& fixture) {
+    if (!isMovableRole(fixture.role)) {
+        return false;
+    }
+    const TemplateSocket* socket = input.roomTemplate.socket(fixture.id.socket());
+    const PrefabInfo* info = input.prefabs.find(fixture.prefab);
+    if (socket == nullptr || info == nullptr) {
+        return false;
+    }
+    return poseInSocket(input, *socket, *info) != SocketPose{fixture.xMm, fixture.zMm, fixture.yawCdeg};
+}
+
+PlanLight lampLightOf(const Fixture& lamp, const PrefabInfo& info, FixtureId id) {
+    PlacedFixture placed;
+    placed.fixture = lamp;
+    placed.info = &info;
+    return lampLight(placed, std::move(id));
+}
+
+ModulesOnWalls modulesOnWalls(const LayoutInput& input, const Room& room, std::span<const Fixture* const> modules,
+                              const std::set<FixtureId>& moved) {
+    ModulesOnWalls result;
+    const RoomTemplate& roomTemplate = input.roomTemplate;
+    for (const Fixture* module : modules) {
+        const TemplateSocket* socket = roomTemplate.socket(module->id.socket());
+        if (socket == nullptr) {
+            continue;
+        }
+        const PrefabInfo* info = input.prefabs.find(module->prefab);
+        if (info == nullptr || !moved.contains(module->id)) {
+            result.modules.push_back({socket, module->depthMm});
+            continue;
+        }
+        const SocketPose home = poseInSocket(input, *socket, *info);
+        if (home == SocketPose{module->xMm, module->zMm, module->yawCdeg}) {
+            result.modules.push_back({socket, module->depthMm});
+            continue;
+        }
+        // Moved: a socket made where it stands (modules turn a quarter turn at a time), its back edge's middle the
+        // anchor fixtureInSocket() would have stood it from.
+        const std::int32_t yaw = quarterTurn(module->yawCdeg);
+        const Axes axes = axesOf(yaw);
+        const std::int64_t across = -(info->minXMm + info->maxXMm) / 2;
+        const std::int64_t out = -info->minZMm;
+        const Point anchor{module->xMm - axes.rightX * across - axes.frontX * out,
+                           module->zMm - axes.rightZ * across - axes.frontZ * out};
+        Wall wall = Wall::None;
+        std::int64_t gap = -1;
+        switch (yaw) {
+        case 0:
+            wall = Wall::North;
+            gap = anchor.zMm - room.minZMm;
+            break;
+        case 9000:
+            wall = Wall::West;
+            gap = anchor.xMm - room.minXMm;
+            break;
+        case 18000:
+            wall = Wall::South;
+            gap = room.maxZMm - anchor.zMm;
+            break;
+        default:
+            wall = Wall::East;
+            gap = room.maxXMm - anchor.xMm;
+            break;
+        }
+        if (gap < 0 || gap > kMaxWallGapMm) {
+            wall = Wall::None;
+        }
+        auto made = std::make_unique<TemplateSocket>();
+        made->id = socket->id;
+        made->kind = socket->kind;
+        made->wall = wall;
+        made->xMm = anchor.xMm;
+        // A socket of the south wall is moved by the room's growth when it is read (frameOf()): stand it back.
+        made->zMm = anchor.zMm - (wall == Wall::South
+                                      ? roomTemplate.growthStepMm * static_cast<std::int64_t>(input.counts.growthSteps)
+                                      : 0);
+        made->yawCdeg = yaw;
+        made->widthMm = info->widthMm();
+        made->depthMm = info->depthMm();
+        result.modules.push_back({made.get(), module->depthMm});
+        result.made.push_back(std::move(made));
+    }
+    return result;
+}
+
 Expected<RoomLayout> layOutRoom(const LayoutInput& input) {
     return Builder(input).build();
 }
