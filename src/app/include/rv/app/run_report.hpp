@@ -1163,6 +1163,30 @@ struct VideoBudgetDropRecord {
     bool operator==(const VideoBudgetDropRecord&) const = default;
 };
 
+/// A clip's verdict in the run (I5 step 7, ADR-0016 §8): its game and the verdict (media::verdictName: "playable",
+/// "corrupt-data", ...).
+struct VideoVerdictRecord {
+    std::string gameId;
+    std::string verdict;
+
+    bool operator==(const VideoVerdictRecord&) const = default;
+};
+
+/// The clips' verdicts over the run (I5 step 7, ADR-0016 §8: <user data>/cache/media/videos.json): whether the file was
+/// read and its verdicts, the games whose clips were left out as known to fail (never opened: their screens show their
+/// stills), the verdicts the run gave (a clip that failed, or played through once clean) and how many of them reached
+/// the file, and the writes that failed.
+struct VideoVerdictsRecord {
+    bool loaded = false;
+    std::uint64_t entries = 0;
+    std::vector<VideoVerdictRecord> knownBad;
+    std::vector<VideoVerdictRecord> given;
+    std::uint64_t written = 0;
+    std::uint64_t writeFailures = 0;
+
+    bool operator==(const VideoVerdictsRecord&) const = default;
+};
+
 /// The hero CRT's video (I3 step 11, ADR-0012 §7: app::ScreenService): what it showed at the end of the run, the one
 /// decoder, the current clip's first frame and uploads, the fallbacks and the launches. Since I5 step 2 the service
 /// holds several screens (the hero first) and slots: the fields below are the hero screen's, the decoder and upload
@@ -1246,6 +1270,8 @@ struct VideoRecord {
     std::vector<VideoBudgetDropRecord> budgetDrops;
     /// The slots' events after the first 512, not listed (I5 step 2's review).
     std::uint64_t slotEventsDropped = 0;
+    /// The clips' verdicts (I5 step 7).
+    VideoVerdictsRecord verdicts;
 
     bool operator==(const VideoRecord&) const = default;
 };

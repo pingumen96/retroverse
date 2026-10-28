@@ -52,6 +52,7 @@
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
 #include <rv/launcher/emulator_profile.hpp>
+#include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform_win/process_priority.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
@@ -867,6 +868,8 @@ struct RetroverseApp::State {
             screenOptions.maxDecoders = options.maxDecoders;
             screenOptions.watchLateFrames = options.watchLateFrames;
             screenOptions.assetRoot = context.paths().assetRoot();
+            // I5 step 7: the clips' verdicts, in the user data's cache.
+            screenOptions.verdictsFile = media::videoVerdictsFile(context.paths().cacheDir());
             screen = std::make_unique<ScreenService>(std::move(screens), graphics->materials(), std::move(games),
                                                      screenOptions);
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {

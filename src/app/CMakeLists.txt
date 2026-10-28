@@ -107,6 +107,7 @@ add_library(rv_app STATIC
     src/scene_graphics.cpp
     src/scene_instance.cpp
     src/screen_service.cpp
+    src/screen_verdicts.cpp
     src/self_check_canvas.cpp
     src/srgb_self_check.cpp
     src/world_card.cpp

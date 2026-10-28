@@ -1720,6 +1720,19 @@ Json videoToJson(const VideoRecord& video) {
     }
     json["budgetDrops"] = std::move(drops);
     json["slotEventsDropped"] = video.slotEventsDropped;
+    const auto verdictList = [](const std::vector<VideoVerdictRecord>& records) {
+        Json list = Json::array();
+        for (const VideoVerdictRecord& record : records) {
+            list.push_back(Json{{"gameId", record.gameId}, {"verdict", record.verdict}});
+        }
+        return list;
+    };
+    json["verdicts"] = Json{{"loaded", video.verdicts.loaded},
+                            {"entries", video.verdicts.entries},
+                            {"knownBad", verdictList(video.verdicts.knownBad)},
+                            {"given", verdictList(video.verdicts.given)},
+                            {"written", video.verdicts.written},
+                            {"writeFailures", video.verdicts.writeFailures}};
     return json;
 }
 
@@ -1971,6 +1984,18 @@ VideoRecord readVideo(FieldReader& fields) {
                                                           entry.number("untilSeconds")});
     }
     video.slotEventsDropped = fields.optionalCount("slotEventsDropped").value_or(0);
+    if (std::optional<FieldReader> verdicts = fields.optionalObject("verdicts")) {
+        video.verdicts.loaded = verdicts->boolean("loaded");
+        video.verdicts.entries = verdicts->count("entries");
+        for (FieldReader& entry : verdicts->objectArray("knownBad")) {
+            video.verdicts.knownBad.push_back(VideoVerdictRecord{entry.string("gameId"), entry.string("verdict")});
+        }
+        for (FieldReader& entry : verdicts->objectArray("given")) {
+            video.verdicts.given.push_back(VideoVerdictRecord{entry.string("gameId"), entry.string("verdict")});
+        }
+        video.verdicts.written = verdicts->count("written");
+        video.verdicts.writeFailures = verdicts->count("writeFailures");
+    }
     return video;
 }
 
