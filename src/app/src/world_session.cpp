@@ -996,7 +996,15 @@ void WorldSession::showCard(const InteractionResult& result, ProductUi& product)
             others = found->second;
         }
     }
-    m_card.update(interaction, result, item, hero, coverShape, others, product, m_context.frameIndex());
+    // I4b step 3: "Sposta" while the item's room is the one the editor can edit now (ADR-0015 §4: not the showcase, a
+    // hall, during a launch or with a floor on its way).
+    bool movable = false;
+    if (item != nullptr && interaction.state() == WorldState::Inspect) {
+        const std::optional<world::RoomId> room = m_interaction->activeRoomId();
+        const std::optional<std::string> editable = editableRoom(product);
+        movable = room && editable && *editable == room->toString();
+    }
+    m_card.update(interaction, result, item, hero, coverShape, others, movable, product, m_context.frameIndex());
     // Vedi media and Informazioni of the inspected game (I3 step 14b): the product UI's screens, over the card.
     if (item != nullptr && result.showMedia) {
         product.openGameMedia(item->game, item->title, kScreenFromCard);

@@ -64,8 +64,8 @@ std::optional<CardAction> WorldCard::press(const WorldInteraction& interaction, 
 
 void WorldCard::update(const WorldInteraction& interaction, const InteractionResult& result,
                        const world::CollectionItem* item, const gl::Texture2D* hero,
-                       const assets::LabelAspect& coverShape, std::uint32_t otherVersions, ProductUi& product,
-                       std::uint64_t frame) {
+                       const assets::LabelAspect& coverShape, std::uint32_t otherVersions, bool movable,
+                       ProductUi& product, std::uint64_t frame) {
     const std::string game = item != nullptr ? item->game.toString() : std::string();
     // Avvia: Inspect left for the launch (13a's stand-in ends it at once, Returning, I3 step 15a launches).
     const WorldState state = interaction.state();
@@ -110,8 +110,9 @@ void WorldCard::update(const WorldInteraction& interaction, const InteractionRes
         content.coverWidth = coverShape.width;
         content.coverHeight = coverShape.height;
     }
+    content.movable = movable;
     const bool newGame = !m_shown || m_model.gameId() != content.gameId;
-    m_model.show(content.gameId);
+    m_model.show(content.gameId, movable);
     product.setWorldCard(content, m_model.focused());
     if (newGame) {
         addEvent(frame, "shown", content.gameId);

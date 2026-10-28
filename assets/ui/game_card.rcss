@@ -140,6 +140,11 @@ h2 {
 	background-color: #6EAF9340;
 }
 
+/* I4b step 3: "Sposta", a row of its own below the grid. */
+.action.wide {
+	width: 100%;
+}
+
 .action:hover {
 	border-color: #F4EFE659;
 }

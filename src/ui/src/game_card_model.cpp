@@ -12,6 +12,8 @@ std::string_view toString(CardButton button) noexcept {
         return "info";
     case CardButton::Back:
         return "back";
+    case CardButton::Move:
+        return "move";
     }
     return "unknown";
 }
@@ -35,6 +37,8 @@ std::string_view elementIdOf(CardButton button) noexcept {
         return game_card::kInfoId;
     case CardButton::Back:
         return game_card::kBackId;
+    case CardButton::Move:
+        return game_card::kMoveId;
     }
     return game_card::kPlayId;
 }
@@ -59,7 +63,14 @@ CardCoverBox cardCoverBox(std::uint32_t shapeWidth, std::uint32_t shapeHeight) n
     return box;
 }
 
-CardButton stepFocus(CardButton from, NavDirection direction) noexcept {
+CardButton stepFocus(CardButton from, NavDirection direction, bool movable) noexcept {
+    // Sposta, a row of its own below the grid: Up goes back to Informazioni, the other ways stay.
+    if (from == CardButton::Move) {
+        return direction == NavDirection::Up || !movable ? CardButton::Info : CardButton::Move;
+    }
+    if (movable && direction == NavDirection::Down && (from == CardButton::Info || from == CardButton::Back)) {
+        return CardButton::Move;
+    }
     // The grid, row-major: Play (0, 0), Media (1, 0), Info (0, 1), Back (1, 1).
     const auto index = static_cast<int>(from);
     int column = index % 2;
@@ -81,22 +92,26 @@ CardButton stepFocus(CardButton from, NavDirection direction) noexcept {
     return kCardButtons[static_cast<std::size_t>(row * 2 + column)];
 }
 
-void GameCardModel::show(std::string_view gameId) {
+void GameCardModel::show(std::string_view gameId, bool movable) {
     if (!m_shown || gameId != m_gameId) {
         m_focused = CardButton::Play;
+    } else if (!movable && m_focused == CardButton::Move) {
+        m_focused = CardButton::Back;
     }
     m_shown = true;
+    m_movable = movable;
     m_gameId = std::string(gameId);
 }
 
 void GameCardModel::hide() noexcept {
     m_shown = false;
+    m_movable = false;
     m_focused = CardButton::Play;
 }
 
 std::optional<CardButton> GameCardModel::apply(UiCommand command) noexcept {
     if (const std::optional<NavDirection> direction = directionOf(command)) {
-        m_focused = stepFocus(m_focused, *direction);
+        m_focused = stepFocus(m_focused, *direction, m_movable);
         return std::nullopt;
     }
     switch (command) {

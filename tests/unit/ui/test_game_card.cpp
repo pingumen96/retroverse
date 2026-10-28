@@ -71,9 +71,16 @@ TEST_CASE("ui/game_card: the buttons' focus moves within the 2 x 2 grid without 
     CHECK(rv::ui::stepFocus(CardButton::Back, NavDirection::Up) == CardButton::Media);
     CHECK(rv::ui::stepFocus(CardButton::Back, NavDirection::Left) == CardButton::Info);
     CHECK(rv::ui::stepFocus(CardButton::Back, NavDirection::Down) == CardButton::Back);
-    // Every button is reachable from every other in at most two steps.
-    for (const CardButton from : rv::ui::kCardButtons) {
-        for (const CardButton to : rv::ui::kCardButtons) {
+    // Every button of the grid is reachable from every other in at most two steps (Sposta does not show).
+    const CardButton grid[] = {CardButton::Play, CardButton::Media, CardButton::Info, CardButton::Back};
+    for (const NavDirection direction :
+         {NavDirection::Up, NavDirection::Down, NavDirection::Left, NavDirection::Right}) {
+        for (const CardButton from : grid) {
+            CHECK(rv::ui::stepFocus(from, direction) != CardButton::Move);
+        }
+    }
+    for (const CardButton from : grid) {
+        for (const CardButton to : grid) {
             bool reached = from == to;
             for (const NavDirection first :
                  {NavDirection::Up, NavDirection::Down, NavDirection::Left, NavDirection::Right}) {
@@ -88,6 +95,32 @@ TEST_CASE("ui/game_card: the buttons' focus moves within the 2 x 2 grid without 
             CHECK(reached);
         }
     }
+}
+
+TEST_CASE("ui/game_card: \"Sposta\" is a row of its own below the grid while the game's room can be edited",
+          "[ui][game_card]") {
+    // I4b step 3: Down from the second row, Up back to Informazioni, the other ways stay.
+    CHECK(rv::ui::stepFocus(CardButton::Info, NavDirection::Down, true) == CardButton::Move);
+    CHECK(rv::ui::stepFocus(CardButton::Back, NavDirection::Down, true) == CardButton::Move);
+    CHECK(rv::ui::stepFocus(CardButton::Play, NavDirection::Down, true) == CardButton::Info);
+    CHECK(rv::ui::stepFocus(CardButton::Move, NavDirection::Up, true) == CardButton::Info);
+    CHECK(rv::ui::stepFocus(CardButton::Move, NavDirection::Down, true) == CardButton::Move);
+    CHECK(rv::ui::stepFocus(CardButton::Move, NavDirection::Left, true) == CardButton::Move);
+    CHECK(rv::ui::stepFocus(CardButton::Move, NavDirection::Right, true) == CardButton::Move);
+    // The model: Sposta reached and pressed while movable; gone with the focus on it, the focus goes to Indietro.
+    GameCardModel model;
+    model.show("g0000000000000001", true);
+    static_cast<void>(model.apply(UiCommand::Down));
+    static_cast<void>(model.apply(UiCommand::Down));
+    CHECK(model.focused() == CardButton::Move);
+    CHECK(model.apply(UiCommand::Activate) == CardButton::Move);
+    model.show("g0000000000000001", false);
+    CHECK(model.focused() == CardButton::Back);
+    static_cast<void>(model.apply(UiCommand::Down));
+    CHECK(model.focused() == CardButton::Back);
+    // Another game starts on Avvia, movable or not.
+    model.show("g0000000000000002", true);
+    CHECK(model.focused() == CardButton::Play);
 }
 
 TEST_CASE("ui/game_card: the model presses the focused button, its shortcuts and the clicked one", "[ui][game_card]") {
@@ -138,6 +171,8 @@ TEST_CASE("ui/game_card: button names and element ids", "[ui][game_card]") {
     CHECK_FALSE(rv::ui::cardButtonFromName("").has_value());
     CHECK(rv::ui::elementIdOf(CardButton::Play) == gc::kPlayId);
     CHECK(rv::ui::elementIdOf(CardButton::Back) == gc::kBackId);
+    CHECK(rv::ui::toString(CardButton::Move) == "move");
+    CHECK(rv::ui::elementIdOf(CardButton::Move) == gc::kMoveId);
     CHECK(gc::kCoverSource == std::string(gc::kTextureScheme) + std::string(gc::kCoverTexture));
 }
 
@@ -193,7 +228,7 @@ TEST_CASE("ui/game_card: the document has the ids, bindings, buttons and keys it
         CHECK(contains(rml, "data-event-click=\"" + std::string(gc::kPressEvent) + "('" +
                                 std::string(rv::ui::toString(button)) + "')\""));
     }
-    for (const std::string_view word : {">Avvia<", ">Vedi media<", ">Informazioni<", ">Indietro<"}) {
+    for (const std::string_view word : {">Avvia<", ">Vedi media<", ">Informazioni<", ">Indietro<", ">Sposta<"}) {
         INFO(word);
         CHECK(contains(rml, word));
     }
@@ -201,7 +236,7 @@ TEST_CASE("ui/game_card: the document has the ids, bindings, buttons and keys it
     for (const std::string_view binding :
          {"{{ card.title }}", "{{ card.platform }}", "{{ card.year }}", "{{ card.developer }}", "{{ card.genre }}",
           "{{ card.players }}", "{{ card.otherVersions }}", "card.cover", "card.details", "card.unavailable",
-          "card.verified", "card.outcomeKnown", "data-style-width=\"card.coverWidth\"",
+          "card.verified", "card.outcomeKnown", "data-if=\"card.movable\"", "data-style-width=\"card.coverWidth\"",
           "data-style-height=\"card.coverHeight\"", "data-style-margin-left=\"card.coverLeft\"",
           "data-style-margin-top=\"card.coverTop\""}) {
         INFO(binding);
