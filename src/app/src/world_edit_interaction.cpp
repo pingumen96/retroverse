@@ -33,7 +33,9 @@ constexpr std::array<EditMenuButton, 4> kMenuButtons{EditMenuButton::Save, EditM
     return std::isfinite(value) ? value : 0.0f;
 }
 
-/// The player moved the view or the feet this frame (a step's target then gives way to the reticle).
+/// The player moved the view or the feet this frame (a step's target then gives way to the reticle): `actions` as the
+/// walker gets them (walkerActionsFor(WorldContext::Edit, ...)), so that an arrow key, bound to a step and to walking,
+/// steps without giving its own target away the same frame.
 [[nodiscard]] bool movedView(const input::ActionState& actions) noexcept {
     for (const Action action : {Action::LookX, Action::LookY, Action::LookDeltaX, Action::LookDeltaY,
                                 Action::MoveForward, Action::MoveRight}) {
@@ -170,7 +172,7 @@ EditFrameResult EditInteraction::update(const EditFrame& frame) {
     bool looked = false;
     if (frame.actions != nullptr) {
         const input::ActionState actions = actionsFor(WorldContext::Edit, *frame.actions);
-        looked = movedView(actions);
+        looked = movedView(walkerActionsFor(WorldContext::Edit, *frame.actions));
         const EditMode before = m_mode;
         if (actions.pressed(Action::Back)) {
             back(frame.back, result);
@@ -308,8 +310,13 @@ void EditInteraction::readMenu(const input::ActionState& actions, EditFrameResul
         m_menuFocus = kMenuButtons[index + 1];
         return;
     }
-    if (!actions.pressed(Action::Interact) && !actions.pressed(Action::UiActivate) &&
-        !actions.pressed(Action::Confirm)) {
+    // The pad's Start (confirm alone) closes the menu as it opened it: Continua. Enter (confirm and ui_activate at once),
+    // interact and ui_activate press the focused button.
+    if (actions.pressed(Action::Confirm) && !actions.pressed(Action::UiActivate)) {
+        m_mode = EditMode::Browse;
+        return;
+    }
+    if (!actions.pressed(Action::Interact) && !actions.pressed(Action::UiActivate)) {
         return;
     }
     switch (m_menuFocus) {

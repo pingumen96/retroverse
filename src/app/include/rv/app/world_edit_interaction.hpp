@@ -19,8 +19,8 @@
 // |           | slot puts it back                                                      | back); confirm: Menu          |
 // | Busy      | an operation is applied to the draft and shown (input waits)           | applied(): Browse (held on a  |
 // |           |                                                                        | refusal, the bar naming it)   |
-// | Menu      | Salva, Annulla ultima azione, Esci senza salvare, Continua: Up and     | the press's command; Back or  |
-// |           | Down move the focus, interact, ui_activate or confirm presses          | Continua: Browse              |
+// | Menu      | Salva, Annulla ultima azione, Esci senza salvare, Continua: Up and     | the press's command; Back,    |
+// |           | Down move the focus, interact or ui_activate (Enter) presses           | Start or Continua: Browse     |
 // | Saving    | the draft saved (input waits)                                          | saved(): Exit, or Browse with |
 // |           |                                                                        | the refusal's reasons         |
 //

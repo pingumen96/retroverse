@@ -391,6 +391,21 @@ TEST_CASE("app/world_edit: the D-pad steps over every slot, empty ones included,
         static_cast<void>(frame(editor, &look, item));
     }
     CHECK(editor.target()->pick == item);
+
+    // An arrow key is bound to a step and to walking (UiRight and MoveRight at once): it steps, and its own walk axis
+    // does not give the step's target back to the reticle (the walker does not walk while it is held).
+    ActionState arrow = press({Action::UiRight});
+    arrow.setAxis(Action::MoveRight, 1.0f);
+    static_cast<void>(frame(editor, &arrow, item));
+    REQUIRE(editor.target().has_value());
+    CHECK(editor.target()->pick == free);
+    ActionState held;
+    held.setButton(Action::UiRight, true, false, false);
+    held.setAxis(Action::MoveRight, 1.0f);
+    for (int i = 0; i < rv::world::kHoverChangeFrames + 1; ++i) {
+        static_cast<void>(frame(editor, &held, item));
+    }
+    CHECK(editor.target()->pick == free);
 }
 
 TEST_CASE("app/world_edit: the menu, Back's levels, \"Sposta\" with the item held", "[app][world_edit]") {
@@ -449,7 +464,13 @@ TEST_CASE("app/world_edit: the menu, Back's levels, \"Sposta\" with the item hel
     editor.undone();
     CHECK(editor.mode() == EditMode::Browse);
     static_cast<void>(pressOn(editor, {Action::Confirm}, free));
-    result = pressOn(editor, {Action::Confirm}, free); // Enter presses the focused Salva
+    // The pad's Start (confirm alone) closes the menu: Continua, never Salva on a second press.
+    result = pressOn(editor, {Action::Confirm}, free);
+    CHECK_FALSE(result.save);
+    CHECK(editor.mode() == EditMode::Browse);
+    static_cast<void>(pressOn(editor, {Action::Confirm}, free));
+    REQUIRE(editor.mode() == EditMode::Menu);
+    result = pressOn(editor, {Action::Confirm, Action::UiActivate}, free); // Enter presses the focused Salva
     CHECK(result.save);
     CHECK(editor.mode() == EditMode::Saving);
     CHECK_FALSE(pressOn(editor, {Action::Back}, free).exit); // the save runs: input waits
