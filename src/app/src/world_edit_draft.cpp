@@ -46,6 +46,16 @@ using Clock = std::chrono::steady_clock;
     return nullptr;
 }
 
+/// A room's data (world::loadRoomData()) reads its kind, floor, recorded media family, template and first section: the
+/// same in both, the data read for one serves the other.
+[[nodiscard]] bool sameRoomData(const world::Room& a, const world::Room& b) noexcept {
+    const auto first = [](const world::Room& room) {
+        return room.sections.empty() ? std::optional<catalog::SystemName>() : std::optional(room.sections.front());
+    };
+    return a.kind == b.kind && a.floor == b.floor && a.mediaFamily == b.mediaFamily && a.templateId == b.templateId &&
+           first(a) == first(b);
+}
+
 } // namespace
 
 EditDraft::EditDraft(EditBase base, std::shared_ptr<const world::EditData> data)
@@ -140,22 +150,29 @@ Expected<EditSaveOutcome> saveDraft(const EditDraft& draft, const EditSaveOption
         edited = draft.current();
         results = draft.results();
     } else {
-        // Replayed onto the world as it is now (ADR-0015 §4): the data of every room the replay touches.
+        // Replayed onto the world as it is now (ADR-0015 §4): the data of every room the replay touches, read again for
+        // a room the stored plan holds otherwise than the session's base did (another writer regenerated or migrated
+        // it: its family, template, kind, floor or first section).
         outcome.replayed = true;
         world::EditData data = *draft.data();
         for (const world::RoomId& id : world::editRooms(stored.stored->plan, operations)) {
-            if (data.rooms.contains(id)) {
-                continue;
-            }
             const world::Room* room = findRoom(stored.stored->plan, id);
             if (room == nullptr) {
                 continue;
+            }
+            if (data.rooms.contains(id)) {
+                const world::Room* before = findRoom(draft.base().world.plan, id);
+                if (before != nullptr && sameRoomData(*before, *room)) {
+                    continue;
+                }
+                spdlog::info("Editor: the data of {} is read again for the replay (the stored plan holds it otherwise)",
+                             id.toString());
             }
             auto loaded = world::loadRoomData(options.paths.assetRoot, *room);
             if (!loaded) {
                 return propagate(loaded.error());
             }
-            data.rooms.emplace(id, std::make_shared<const world::WorldData>(std::move(*loaded)));
+            data.rooms.insert_or_assign(id, std::make_shared<const world::WorldData>(std::move(*loaded)));
         }
         edited = world::EditedWorld{stored.stored->plan, *overrides};
         auto session = world::applyEdits(edited, operations, data, options.provenance);
