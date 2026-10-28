@@ -40,7 +40,11 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   is not canonical: keys by code point, integers only, top-level arrays one element per line, a final LF),
   `worker_pool.hpp` (`WorkerPool`: `min(6, hardware threads - 3)` threads below normal priority without dynamic
   boosts, bounded (a full queue refuses, never blocks), priorities, `JobGeneration` cancellation, a 2 s shutdown
-  bound), `backups.hpp` (`backUpFile`, the newest 10 by default, named as the database's backups), `cpu_timers.hpp`
+  bound; while `retroverse.exe` runs at `ABOVE_NORMAL_PRIORITY_CLASS`, I5 step 2, a below-normal thread's base
+  priority is 9: below the main thread's 10, above other processes' normal threads' 8; the class is normal again before
+  an emulator starts, so a game never competes with them. They are not lowered further while boosted: every pool would
+  have to follow the class's changes, for a gap that lasts only while Retroverse has the screen), `backups.hpp`
+  (`backUpFile`, the newest 10 by default, named as the database's backups), `cpu_timers.hpp`
   (`CpuTimers`, `mainThreadCpuTimers`, `CpuSectionScope`, `summarizeDurations`, the one nearest-rank percentile rule);
   `file_io.hpp`'s `writeFileAtomic` flushes before a write-through rename (`core::Durability::Unflushed` only for
   derived data checked when read, such as the derived-texture cache); `log.hpp`'s `logLinesSince` reads the in-memory

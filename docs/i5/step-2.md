@@ -32,8 +32,8 @@ points 4 and 9, ADR-0012 §7, ADR-0013 §9).
   - `startChoice` (false for secondaries: their playlist first);
   - `setNoSlot()` (the stills and the card stand for a clip without a slot);
   - `videoStopped()` (the still again after a slot stopped without a failure).
-- **`video.json`**: `rooms.<room id>.screens.<screen id>` takes a kind's keys for one screen. `maxDecoders`, `maxRows`
-  and `proximityMeters` are now used.
+- **`video.json`**: `rooms.<room id>.screens.<screen id>` takes a kind's keys for one screen (tests and hand-made
+  scenes). `maxDecoders`, `maxRows` and `proximityMeters` are now used.
 - **`--max-decoders 1|2`**: the budget over `video.json`'s `maxDecoders`.
 - **The process priority**:
   - `rv_platform_win`'s `setProcessPriority` / `currentProcessPriority`;
@@ -51,15 +51,18 @@ points 4 and 9, ADR-0012 §7, ADR-0013 §9).
 - **A screen switching clips waits for its own slot.** It takes the slot it showed before, even while that slot
   drains, rather than a free one. A single screen keeps one decoder thread and one texture, as in step 1 (the
   test room's runs still report `maxDecoderThreads` 1). A free slot opens at once for a clip none of whose screens had
-  one.
+  one. A screen is known to its slot by its owner: the hero by its role (`hero`), so the next room's hero waits for the
+  last hero's slot (one thread across a room change), a secondary by its object id.
 - **Positions are kept.** A clip stopped while still wanted (`out-of-view`, `needed`, `budget`) reopens where it
   stopped, as after a launch. The screen shows its still meanwhile; the reopened first frame replaces it.
-- **Per-screen keys in `video.json`.** The smoke scene needs screens of one kind playing different games. A user may
-  pin a screen too.
+- **Per-screen keys in `video.json`.** The smoke scene needs screens of one kind playing different games. They are for
+  tests and hand-made scenes: a generated room's object ids are the generator's, not a name for users.
 - **Secondaries are any further `crt` in the room** until step 3's `secondary_tv` piece. No shipped scene or floor has
   one, so no golden changes.
-- **Minimized counts as out of view.** The slots pause, and they stop after 10 s like a screen turned away. This frees
-  the decoders and their CPU, where ADR-0016 says only "pause".
+- **Minimized counts as out of view.** The slots pause, and they stop after 10 s like a screen turned away (reason
+  `minimized`). This frees the decoders and their CPU, where ADR-0016 says only "pause" (amended). An interactive
+  run renders nothing while minimized: after each of its waits the host calls `IAppLogic::onMinimized` with the time
+  waited, which sets the normal priority and ticks the screens.
 - **Visibility is the frustum alone.** The service only holds the screens of the room bound (the eye's, or the last
   one's in a hall), which stands for "its area holds the eye"; I4 step 6b's hall behaviour is kept.
 - **A clip out of view may open, paused, in a free slot** within its 10 s. ADR-0016 only says a screen leaving the
@@ -72,16 +75,19 @@ points 4 and 9, ADR-0012 §7, ADR-0013 §9).
 ## Proofs
 
 - Unit:
-  - `test_screen_scheduler.cpp` (12 cases): the four-CRT table (2 slots, a and b sharing, c without); one decoder; the
+  - `test_screen_scheduler.cpp` (16 cases): the four-CRT table (2 slots, a and b sharing, c without); one decoder; the
     pause on the turn and the stop 10 s later; a request in view taking a paused slot, opened only after its
     thread's 7 more updates; the hand-over rule under swapping distances, and `focus` at once; the hysteresis walk; the
-    late-frame drop at 4 to 8 s and the budget back after 30 s; `stopAll`; a screen switching clips on its own slot; a clip out of view opening paused in a free slot only;
+    late-frame drop at 4 to 8 s and the budget back after 30 s; `stopAll`; a screen switching clips on its own slot;
+    a clip out of view opening paused in a free slot only; (review) a clip coming into view within a drop opening only
+    once the other stopped (`budget`); the next room's hero on the hero's slot; late frames not watched;
   - 40 seeded runs of 3000 frames: open decoders never above the budget, threads never above the slots, every open
-    after its slot's thread ended;
+    after its slot's thread ended; (review) 20 seeded runs of 6000 frames with late frames and the view changing
+    within the drops: open plus reserved slots never above the budget;
   - `test_screen_policy.cpp`: secondaries' playlists and the card without a slot. `test_video_settings.cpp`:
     per-screen keys. `test_command_line.cpp`: `--max-decoders`. `test_run_report.cpp`: the round trip.
     `test_process_priority.cpp` (app and platform_win).
-- GPU (`tests/smoke/test_screens.cpp`, `[screens]`, 5 cases):
+- GPU (`tests/smoke/test_screens.cpp`, `[screens]`, 6 cases; none drops the budget):
   - 3 clips on 4 screens: 2 decoders started, crt_a and crt_b on slot 0 with one texture id, crt_c on slot 1, crt_d on
     its cover;
   - turned 40 degrees at frame 60: crt_c's slot paused at frame 60, stopped `out-of-view` 10.0 s later, never taken by
@@ -92,7 +98,9 @@ points 4 and 9, ADR-0012 §7, ADR-0013 §9).
     put off a frame, none oversize;
   - the fake emulator's game: priority changes above-normal (frame 0, rendering), normal (launch, frame 37, the
     game's start frame), above-normal (rendering, frame 37 again: no frame renders while the game runs, and the log
-    shows the game's 2.5 s between the two), normal (exit), all applied.
+    shows the game's 2.5 s between the two), normal (exit), all applied;
+  - (review) `--simulate-minimized 30:11`: after frame 30, normal (`minimized`), both slots paused on the first wait
+    and stopped `minimized` 10.0 s later, reopened after the restore, above-normal again at frame 30.
 - The step 1 video cases pass unchanged (`maxDecoderThreads` 1 on the single screen). The clean-run checks now hold
   the decoders to the run's budget.
 
@@ -123,7 +131,28 @@ still has one screen.
 
 ## Open issues
 
-- The late-frame drop is proven by the unit tables only: no GPU case forces late frames.
+- The late-frame drop is proven by the unit tables only: no GPU case forces late frames. Lockstep runs do not watch
+  late frames (`--watch-late-frames` turns it on for such a case).
 - The hero's report figures (`firstFrameMs`, `clipFramesUploaded`, ...) are its last slot's. A slot reopened for another
   screen's clip resets them (only with several screens).
-- `slotEvents` keeps its first 512 entries. A long run with playlists on four screens fills it.
+- `slotEvents` keeps its first 512 entries; `slotEventsDropped` counts the rest. A long run with playlists on four
+  screens fills it.
+
+## Review fixes
+
+- During a late-frame drop a clip coming into view took a free slot while another stayed open: two decoders on a
+  budget of 1 (the Debug assertion). Open plus reserved slots now never exceed the budget (`committedSlots()`).
+- An interactive run's minimized window skipped the logic, so the priority stayed above normal and nothing paused:
+  `IAppLogic::onMinimized` and the test-only `--simulate-minimized FRAME:SECONDS`.
+- A room change opened the new hero on the free slot while the old one's thread ended: the hero's owner is its role.
+- A held video picture kept its slot's texture id: the hold ends once that slot plays another screen's clip or its
+  texture changed.
+- The worker pools' below-normal threads run at base 9 while the process is above normal (`conventions.md`).
+
+## Open for later steps
+
+- **Step 3:** `findScreens` binds the `secondary_tv` kind (not any further `crt`) and picks the hero by its role, not
+  by being the first.
+- **Steps 4 and 8:** a per-screen held frame when a slot stops (ADR-0016 §6, §10: the screen keeps its last frame, not
+  its still); rows per request (the viewer's 720-row `direct` beside the world's 480); screens without a scene
+  material of their own (the pooled cabinet materials, the RmlUi viewer's texture).

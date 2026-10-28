@@ -258,22 +258,28 @@ build/rvdata`).
   within `proximityMeters`, 0.5 m hysteresis), their nearest screen and its id; a screen without a slot shows its
   still (its title card last). A slot whose screens all leave the view pauses on that frame and stops after 10 s (its
   clip reopens where it stopped), or sooner when a request in view needs it (out of view, a clip takes only a free slot,
-  opening paused); a slot changes hands at most once a second
-  unless `focus` or `direct` asks; a clip no screen wants stops at once, and a screen switching clips waits for its own
-  slot's thread (one thread per screen, as in I5 step 1). Late plus dropped frames over 5% for 4 s drop the budget to 1
-  for 30 s. World screens decode at `video.json`'s `maxRows` (480); one render frame uploads at most 4 MiB of video,
-  the longest pending frame first. `rooms.<room id>.screens.<screen's object id>` takes a kind's keys for one screen
-  (the smoke scene `tests/smoke/scenes/screens_four.json`, room `screens_four`, gives each of its four CRTs one game).
-  The report's `video` adds `maxDecoders` (the budget), `maxOpenDecoders`, `handOvers`, `maxUploadBytes` (the most in one
-  frame), `deferredUploads`, `oversizeUploads` (a single frame over 4 MiB), `screens` (each screen at the end: `screen`,
-  `kind`, `screenClass`, `gameId`, `picture`, `slot`, `playing`, `textureId`, the GL texture its material shows, equal
-  on screens sharing a slot, `visible`), `slotEvents` (`frame`, `atSeconds`, `slot`, `action` open, stop, pause or
-  resume, `gameId`, `reason`: wanted, unwanted, needed, out-of-view, in-view, budget, launch, unbind, shutdown,
-  `screens`; the first 512) and `budgetDrops`; `maxDecoderThreads` and `decodersStarted` count the whole service. The
-  process runs at `ABOVE_NORMAL_PRIORITY_CLASS` while it renders and is not minimized, `NORMAL_PRIORITY_CLASS` while
-  minimized, from just before an emulator starts until the first frame after the return, and at the exit: the
-  report's `processPriority.changes` (`frame`, `priority` read back: `above-normal`, `normal`, `other`; `reason`:
-  rendering, minimized, launch, exit; `applied`).
+  opening paused); a minimized window counts as every screen out of view (reason `minimized`). A slot changes hands at
+  most once a second unless `focus` or `direct` asks; a clip no screen wants stops at once, and a screen switching
+  clips waits for its own slot's thread (one thread per screen, as in I5 step 1; the next room's hero waits for the
+  last hero's slot). Late plus dropped frames over 5% for 4 s drop the budget to 1 for 30 s (open plus reserved slots
+  never above it); `--fixed-dt` runs do not watch late frames unless `--watch-late-frames` (tests). World screens
+  decode at `video.json`'s `maxRows` (480); one render frame uploads at most 4 MiB of video, the longest pending frame
+  first. `rooms.<room id>.screens.<screen's object id>` takes a kind's keys for one screen, for tests and hand-made
+  scenes (a generated room's object ids are the generator's; the smoke scene `tests/smoke/scenes/screens_four.json`,
+  room `screens_four`, gives each of its four CRTs one game).
+  The report's `video` adds `maxDecoders` (the budget), `maxOpenDecoders`, `handOvers`, `maxUploadBytes` (the most in
+  one frame), `deferredUploads`, `oversizeUploads` (a single frame over 4 MiB), `screens` (each screen at the end:
+  `screen`, `kind`, `screenClass`, `gameId`, `picture`, `slot`, `playing`, `textureId`, the GL texture its material
+  shows, equal on screens sharing a slot, `visible`), `slotEvents` (`frame`, `atSeconds`, `slot`, `action` open, stop,
+  pause or resume, `gameId`, `reason`: wanted, unwanted, needed, out-of-view, in-view, budget, minimized, launch,
+  unbind, shutdown, `screens`; the first 512), `budgetDrops` and `slotEventsDropped` (the events after the first 512);
+  `maxDecoderThreads` and `decodersStarted` count the whole service. The process runs at `ABOVE_NORMAL_PRIORITY_CLASS`
+  while it renders and is not minimized, `NORMAL_PRIORITY_CLASS` while minimized, from just before an emulator starts
+  until the first frame after the return, and at the exit: the report's `processPriority.changes` (`frame`, `priority`
+  read back: `above-normal`, `normal`, `other`; `reason`: rendering, minimized, launch, exit; `applied`). An
+  interactive run renders nothing while minimized, but after each wait (0.1 s) it sets the priority and ticks the
+  screens with the time waited; `--simulate-minimized FRAME:SECONDS` (tests, frame-limited runs) takes that path after
+  FRAME frames for SECONDS, the window untouched, each wait counting 0.1 s without waiting under `--fixed-dt`.
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every
