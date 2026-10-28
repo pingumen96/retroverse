@@ -289,10 +289,18 @@ TEST_CASE("audio: walking away lowers the level as the gain table says", "[gpu][
     INFO("near: " << before.distance << " m, table " << before.spatialGain << ", heard " << heardBefore);
     INFO("far: " << after.distance << " m, table " << after.spatialGain << ", heard " << heardAfter);
     CHECK(after.spatialGain < before.spatialGain);
-    CHECK(rv::audio::decibelsFromGain(heardBefore / before.gain) == Approx(0.0).margin(0.5));
-    CHECK(rv::audio::decibelsFromGain(heardAfter / after.gain) == Approx(0.0).margin(0.5));
+    // The pan's share of the level (both channels' RMS): unity at the centre, lower off it (no channel above unity).
+    const auto panLevel = [](double pan) {
+        const rv::audio::StereoGains gains = rv::audio::equalPowerGains(pan);
+        return std::sqrt((gains.left * gains.left + gains.right * gains.right) / 2.0);
+    };
+    const double expectedBefore = before.gain * panLevel(before.pan);
+    const double expectedAfter = after.gain * panLevel(after.pan);
+    INFO("pans " << before.pan << " and " << after.pan << ": expected " << expectedBefore << " and " << expectedAfter);
+    CHECK(rv::audio::decibelsFromGain(heardBefore / expectedBefore) == Approx(0.0).margin(0.5));
+    CHECK(rv::audio::decibelsFromGain(heardAfter / expectedAfter) == Approx(0.0).margin(0.5));
     CHECK(rv::audio::decibelsFromGain(heardAfter / heardBefore) ==
-          Approx(rv::audio::decibelsFromGain(after.spatialGain / before.spatialGain)).margin(0.5));
+          Approx(rv::audio::decibelsFromGain(expectedAfter / expectedBefore)).margin(0.5));
 }
 
 TEST_CASE("audio: F8 mutes and sounds again; the quick catalog ducks the sound", "[gpu][audio]") {
