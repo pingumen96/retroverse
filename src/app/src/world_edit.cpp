@@ -275,6 +275,10 @@ EditJobContext WorldSession::editJobContext() const {
     return context;
 }
 
+bool WorldSession::editHoldsWalker() const noexcept {
+    return m_edit && (m_edit->interaction.mode() == EditMode::Menu || m_edit->interaction.mode() == EditMode::Saving);
+}
+
 bool WorldSession::editWaits() const noexcept {
     return m_edit && m_edit->job != EditJob::None;
 }

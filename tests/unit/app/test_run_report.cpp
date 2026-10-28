@@ -403,7 +403,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         edit.planDigest = std::string(64, 'a');
         edit.saveMs = 95.0;
         edit.backMs = 140.25;
-        edit.deferredUpdates = 1;
+        edit.liveUpdateDeferred = true;
         rv::app::WorldEditRecord open;
         open.room = "area:arcade";
         open.via = "card";

@@ -865,8 +865,8 @@ struct WorldEditRecord {
     std::string planDigest;
     std::optional<double> saveMs;
     std::optional<double> backMs;
-    /// Live updates (a refresh's building result) that waited for the session's end.
-    std::uint64_t deferredUpdates = 0;
+    /// A live update (a refreshed catalog's building job) waited for the session's end (it starts then).
+    bool liveUpdateDeferred = false;
 
     bool operator==(const WorldEditRecord&) const = default;
 };

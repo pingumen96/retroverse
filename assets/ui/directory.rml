@@ -238,7 +238,7 @@
 	<div id="dir-hints">
 		<div class="hint-bar">
 			<span class="hint" data-if="view == 'floors' && !editFocused"><span class="pad pad-a">A</span>Apri il piano</span>
-			<span class="hint" data-if="editFocused"><span class="pad pad-a">A</span>Modifica la stanza</span>
+			<span class="hint" data-if="editFocused"><span class="pad pad-a">A</span>Modifica stanza</span>
 			<span class="hint" data-if="view == 'rooms'"><span class="pad pad-a">A</span>Vai</span>
 			<span class="hint" data-if="view == 'games'"><span class="pad pad-a">A</span>Apri la scheda</span>
 			<span class="hint" data-if="view == 'card'"><span class="pad pad-a">A</span>Conferma</span>

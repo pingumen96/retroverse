@@ -277,6 +277,8 @@ public:
 
     /// An edit session runs (the state Edit): the directory, the quick catalog, rides and live updates wait.
     [[nodiscard]] bool editing() const noexcept { return m_edit != nullptr; }
+    /// The editor's menu is open, or its command (Salva, Esci senza salvare) runs: the walker neither walks nor looks.
+    [[nodiscard]] bool editHoldsWalker() const noexcept;
 
 private:
     // I4b step 3 (world_edit.cpp).
@@ -647,8 +649,7 @@ private:
     std::uint64_t m_updates = 0;
     std::uint64_t m_swapUpdate = 0;
 
-    /// I4b step 3: the edit session (none outside the editor), the sessions so far, whether the bar shows, the live
-    /// updates deferred by a session.
+    /// I4b step 3: the edit session (none outside the editor), the sessions so far, whether the bar shows.
     std::unique_ptr<WorldEditState> m_edit;
     std::uint64_t m_editSessions = 0;
     bool m_editBarShown = false;

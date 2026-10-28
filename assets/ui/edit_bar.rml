@@ -87,8 +87,9 @@
 			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Scambia</span>
 			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Spazio vicino</span>
 			<span class="hint" data-if="mode == 'holding'"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Rimetti a posto</span>
-			<span class="hint" data-if="mode == 'browse'"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Esci</span>
-			<span class="hint"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
+			<span class="hint" data-if="mode == 'browse' && pending == 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Esci</span>
+			<span class="hint" data-if="mode == 'browse' && pending > 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Menu</span>
+			<span class="hint" data-if="mode == 'holding' || pending == 0"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
 		</div>
 		<div class="hints" data-if="mode == 'menu'">
 			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Scegli</span>

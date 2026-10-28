@@ -63,7 +63,7 @@ build/rvdata`).
   `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
   `in-place`, `floor` or `none`, `editMs`, `shownFrame`, `shownMs`; `undone`, `menus`, `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused`, `snapshot`, `planDigest`,
-  `saveMs`, `backMs`, `deferredUpdates`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
+  `saveMs`, `backMs`, `liveUpdateDeferred`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
   `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
