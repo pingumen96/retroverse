@@ -18,8 +18,9 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <numbers>
+#include <map>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,6 +42,7 @@
 
 #include "building_support.hpp"
 #include "smoke_support.hpp"
+#include "support/scoped_environment.hpp"
 
 using namespace rv::smoke;
 namespace fs = std::filesystem;
@@ -553,4 +555,165 @@ TEST_CASE("world_edit: an edit's display time in a room of 1,561 big boxes", "[.
     }
     CHECK(edit.end == "saved");
     CHECK(edit.operations.size() == 3);
+}
+
+// ADR-0015 §9's row for a move into a dressed slot (the floor built again from the draft: I4b step 3's review), on the
+// real library's computer floor, measured by hand in Release (hidden: [.real-library]): only through
+// scripts/real-library.ps1 (ES-DE closed, read-only snapshots of the library before and after), its -Measure script
+// running rv_smoke_tests.exe "[real-library][edit]" with the RV_REAL_* variables set. The whole library is imported
+// into a data directory under the build tree (build/<preset>/real-library/edit, emptied first), its building generated
+// (retroverse-cli worldplan generate) and shown once (the covers into the cache); then, in the computer floor's room
+// with the most placements that has a game beside a dressed free slot, a session moves that game into the slot and
+// leaves with "Esci senza salvare" (nothing written): the move's job and display times printed.
+TEST_CASE("world_edit: a move into a dressed slot on the real library's computer floor", "[.real-library][edit]") {
+    const auto home = rv::test::environmentVariable(L"RV_REAL_ESDE_HOME");
+    const auto install = rv::test::environmentVariable(L"RV_REAL_ESDE_INSTALL");
+    const auto romRoot = rv::test::environmentVariable(L"RV_REAL_ROM_ROOT");
+    const auto mediaRoot = rv::test::environmentVariable(L"RV_REAL_MEDIA_ROOT");
+    if (!home || !install || !romRoot || !mediaRoot) {
+        SKIP("set RV_REAL_ESDE_HOME, RV_REAL_ESDE_INSTALL, RV_REAL_ROM_ROOT and RV_REAL_MEDIA_ROOT "
+             "(scripts/real-library.ps1 does)");
+    }
+    // Under the build tree, never in the library nor in %TEMP%.
+    const fs::path dir = retroverseExe().parent_path().parent_path() / "real-library" / "edit";
+    std::error_code error;
+    fs::remove_all(dir, error);
+    REQUIRE_FALSE(error);
+    fs::create_directories(dir, error);
+    REQUIRE_FALSE(error);
+    const fs::path data = dir / "data";
+    const auto cli = [&](std::string_view name, std::vector<std::string> arguments) {
+        arguments.insert(arguments.begin(), {"--data-dir", arg(data)});
+        const AppRun run = runCommand(retroverseExe().parent_path() / "retroverse-cli.exe", dir,
+                                      std::string("cli_") + std::string(name), std::move(arguments));
+        INFO(run.describe());
+        REQUIRE(run.exitCode == 0);
+    };
+    cli("library", {"library", "create", "--home", arg(fs::path(*home).parent_path()), "--install", arg(*install),
+                    "--rom-root", arg(*romRoot), "--media-root", arg(*mediaRoot)});
+    cli("import", {"import"});
+    cli("generate", {"worldplan", "generate"});
+    auto stored = rv::world::readStoredPlan(
+        rv::world::worldFiles(data, rv::catalog::LibraryId::parse("esde").value()).plan);
+    REQUIRE(stored.has_value());
+    const rv::world::WorldPlan& plan = stored->plan;
+
+    // The computer floor (else the floor with the most placements), its room with the most placements that has a game
+    // beside a dressed free slot on the same fixture.
+    std::map<std::string, std::size_t> placed;
+    std::map<std::string, std::size_t> floorPlaced;
+    for (const rv::world::Placement& placement : plan.placements) {
+        ++placed[placement.slot.fixture().room().toString()];
+    }
+    for (const rv::world::Room& room : plan.rooms) {
+        floorPlaced[room.floor] += placed[room.id.toString()];
+    }
+    REQUIRE_FALSE(floorPlaced.empty());
+    const std::string floor =
+        floorPlaced.contains("computer")
+            ? std::string("computer")
+            : std::max_element(floorPlaced.begin(), floorPlaced.end(), [](const auto& a, const auto& b) {
+                  return a.second < b.second;
+              })->first;
+    std::vector<const rv::world::Room*> rooms;
+    for (const rv::world::Room& room : plan.rooms) {
+        if (room.floor == floor && placed[room.id.toString()] > 0) {
+            rooms.push_back(&room);
+        }
+    }
+    std::sort(rooms.begin(), rooms.end(), [&](const rv::world::Room* a, const rv::world::Room* b) {
+        return placed[a->id.toString()] > placed[b->id.toString()];
+    });
+    std::optional<rv::app::SpawnPoint> spawn;
+    std::string room;
+    std::string direction;
+    for (const rv::world::Room* candidate : rooms) {
+        auto sceneData = rv::world::loadSceneData(buildAssets(), plan, candidate->id);
+        REQUIRE(sceneData.has_value());
+        auto scene = rv::world::toSceneDescription(plan, candidate->id, *sceneData);
+        REQUIRE(scene.has_value());
+        auto layout = rv::world::collectionLayout(plan, candidate->id, *sceneData, {});
+        REQUIRE(layout.has_value());
+        auto edit = rv::app::EditRoom::build(std::make_shared<const rv::world::CollectionLayout>(*layout));
+        REQUIRE(edit.has_value());
+        for (const rv::world::CollectionItem& item : layout->items) {
+            for (const auto& [step, name] : {std::pair{rv::world::StepDirection::Left, "ui_left"},
+                                             std::pair{rv::world::StepDirection::Right, "ui_right"}}) {
+                const auto next = (*edit)->step(item.pickId, step);
+                const rv::world::FreeSlot* free = next ? (*edit)->freeSlot(*next) : nullptr;
+                if (free == nullptr || !free->dressed || free->slot.fixture() != item.slot.fixture()) {
+                    continue;
+                }
+                rv::app::FocusViewer viewer;
+                viewer.lens = scene->camera.lens;
+                viewer.aspect = kWindowSize.x / kWindowSize.y;
+                const rv::scene::WalkerPose pose = rv::app::focusPoseFor(item, viewer);
+                spawn = rv::app::SpawnPoint{};
+                spawn->feet = pose.feet;
+                spawn->yawDeg = rv::core::radiansToDegrees(pose.yaw);
+                spawn->pitchDeg = rv::core::radiansToDegrees(pose.pitch);
+                direction = name;
+                break;
+            }
+            if (spawn) {
+                break;
+            }
+        }
+        if (spawn) {
+            room = candidate->id.toString();
+            break;
+        }
+    }
+    INFO("a game beside a dressed free slot on floor " << floor);
+    REQUIRE(spawn.has_value());
+
+    // The building shown once (its covers into the cache), then the session: "Modifica stanza", the game picked up,
+    // the step onto the dressed slot, the move, "Esci senza salvare".
+    const AppRun warm = runApp(retroverseExe(), dir, "warm",
+                               {"--start-room", room, "--exit-after-frames", "--frames", "300", "--fixed-dt",
+                                "0.016667", "--spawn", spawnArgument(*spawn)});
+    skipWithoutOpenGl(warm);
+    requireCleanRun(warm);
+    const fs::path script = dir / "world_edit_real.json";
+    {
+        std::ofstream out(script, std::ios::binary);
+        out << "[\n"
+            << R"(  {"fromFrame": 30, "toFrame": 30, "actions": {"map": 1}},)" << "\n"
+            << R"(  {"fromFrame": 36, "toFrame": 36, "actions": {"ui_home": 1}},)" << "\n"
+            << R"(  {"fromFrame": 42, "toFrame": 42, "actions": {"ui_up": 1}},)" << "\n"
+            << R"(  {"fromFrame": 48, "toFrame": 48, "actions": {"ui_activate": 1}},)" << "\n"
+            << R"(  {"fromFrame": 70, "toFrame": 70, "actions": {"interact": 1}},)" << "\n"
+            << R"(  {"fromFrame": 80, "toFrame": 80, "actions": {")" << direction << R"(": 1}},)" << "\n"
+            << R"(  {"fromFrame": 110, "toFrame": 110, "actions": {"interact": 1}},)" << "\n"
+            << R"(  {"fromFrame": 140, "toFrame": 140, "actions": {"confirm": 1}},)" << "\n"
+            << R"(  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_down": 1}},)" << "\n"
+            << R"(  {"fromFrame": 160, "toFrame": 160, "actions": {"ui_down": 1}},)" << "\n"
+            << R"(  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_activate": 1}})" << "\n"
+            << "]\n";
+    }
+    const std::string before = stored->digest;
+    const AppRun run = runApp(retroverseExe(), dir, "session",
+                              {"--start-room", room, "--exit-after-frames", "--frames", "220", "--fixed-dt",
+                               "0.016667", "--spawn", spawnArgument(*spawn), "--input-script", arg(script)});
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->world.edits.size() == 1);
+    const rv::app::WorldEditRecord& edit = run.report->world.edits.front();
+    REQUIRE(edit.operations.size() == 1);
+    const rv::app::EditOperationRecord& move = edit.operations.front();
+    WARN("Real edit: " << room << " (" << placed[room] << " placed) on floor " << floor << " ("
+                       << floorPlaced[floor] << " placed, " << plan.placements.size()
+                       << " in the building): the session ready in " << edit.prepareMs.value_or(-1.0) << " ms; "
+                       << move.operation << ": " << move.rebuild << ", " << move.path << ", the job "
+                       << move.editMs.value_or(-1.0) << " ms, shown " << move.shownMs.value_or(-1.0)
+                       << " ms after the request; Esci senza salvare's room back in " << edit.backMs.value_or(-1.0)
+                       << " ms");
+    CHECK(move.refused.empty());
+    CHECK(move.path == "floor");
+    CHECK(edit.end == "discarded");
+    CHECK_FALSE(edit.written);
+    auto after = rv::world::readStoredPlan(
+        rv::world::worldFiles(data, rv::catalog::LibraryId::parse("esde").value()).plan);
+    REQUIRE(after.has_value());
+    CHECK(after->digest == before);
 }
