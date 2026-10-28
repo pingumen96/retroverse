@@ -319,9 +319,16 @@ private:
     /// What the session's jobs read (the plan state's library and media, the floor, the edited room, its data).
     [[nodiscard]] EditJobContext editJobContext() const;
     /// `build` shown for the session (`fullFloor`: its own scene, else the shown one's with its rooms laid out again):
-    /// applied in place room by room when the static part is the same, else the floor committed again. False when it
-    /// could not be shown.
-    [[nodiscard]] bool showEditBuild(WorldBuild& build, bool fullFloor, std::span<const RoomStaticPart> statics = {});
+    /// applied in place room by room when the static part is the same, else the floor committed again. With
+    /// `statics` (rooms' static parts rebuilt alone), the update is planned before anything changes; when it cannot
+    /// be shown in place once a room's objects were replaced, or needs the floor committed again, the floor of
+    /// `floorPlan` (the plan `build` shows, as stored) is built here and committed, `committedFloor` set: the scene
+    /// never shows a part the session did not adopt. False when it could not be shown (nothing changed).
+    [[nodiscard]] bool showEditBuild(WorldBuild& build, bool fullFloor, std::span<const RoomStaticPart> statics = {},
+                                     const world::WorldPlan* floorPlan = nullptr, bool* committedFloor = nullptr);
+    /// The floor of `plan` (digest `digest`) built on the main thread and committed for the session (showEditBuild()'s
+    /// fallback); false when it cannot be.
+    [[nodiscard]] bool commitEditFloor(const world::WorldPlan* plan, const std::string& digest, bool* committedFloor);
     /// The edited room's targets from the session's floor shown.
     void bindEditRoom();
     /// The held item's static records hidden, the target outlined (every frame), or both cleared.
@@ -341,6 +348,8 @@ private:
     void requestEditProbe(const world::EditOperation& probe);
     void followEditProbe();
     void syncHeldFixture();
+    /// The held fixture let go of: its scene items and games given back.
+    void releaseHeldFixture();
     /// The view's items of a held fixture: drawn where it would stand, outlined.
     void appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection);
     /// The outline's colour of the frame (the inspection's dimming's view too): red over a held fixture's refused

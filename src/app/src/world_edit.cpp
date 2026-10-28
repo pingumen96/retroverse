@@ -161,6 +161,9 @@ void displayInto(EditJobAnswer& answer, const EditJobContext& context, const std
            local == "dressing:picture:" + own;
 }
 
+/// The synthetic scene digest of a floor shown with a room's static part rebuilt alone ("edit-scene:<session>:<n>").
+constexpr std::string_view kEditSceneDigest = "edit-scene:";
+
 /// The outline over a held fixture's refused place (the bar's verdict colour, edit_bar.rcss).
 constexpr std::array<std::uint8_t, 3> kRefusedOutlineSrgb{0xC8, 0x64, 0x5A};
 
@@ -400,7 +403,7 @@ InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
             const std::string digest = toBase ? edit.draft->base().planDigest
                                               : fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
             const std::string sceneDigest =
-                toBase ? edit.baseSceneDigest : fmt::format("edit-scene:{}:{}", edit.session, edit.shownCount);
+                toBase ? edit.baseSceneDigest : fmt::format("{}{}:{}", kEditSceneDigest, edit.session, edit.shownCount);
             requestEditDisplay(EditJob::Undo, edit.draft->previous(), digest, last.rebuild, last.rooms, sceneDigest);
         } else {
             // Nothing to undo: the interaction never waits for an answer that will not come.
@@ -445,7 +448,7 @@ void WorldSession::requestEditOperation(const world::EditOperation& operation) {
     const EditJobContext context = editJobContext();
     const world::PinProvenance provenance{world::PinOrigin::Editor, core::utcNow()};
     const std::string digest = fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
-    const std::string sceneDigest = fmt::format("edit-scene:{}:{}", edit.session, edit.shownCount);
+    const std::string sceneDigest = fmt::format("{}{}:{}", kEditSceneDigest, edit.session, edit.shownCount);
     // A fixture or a game dropped where its last probe judged it, on the same draft (the probes' copy of it, taken again
     // whenever the draft changes): the probe's edited world (applyEdit() of the same operation on the same world) is
     // shown, not applied again.
@@ -651,7 +654,6 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             return;
         }
         edit.draft = std::make_unique<EditDraft>(std::move(*answer.base), std::move(answer.data));
-        edit.baseSceneDigest = answer.build->sceneDigest;
         if (answer.storedChanged) {
             // Another writer changed the plan since the floor was shown: the session edits, and shows, the stored one.
             spdlog::warn("Frame {}: the stored plan is not the one shown; the editor shows it", frame);
@@ -665,11 +667,19 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             }
         } else {
             if (m_shown && answer.build->sceneDigest != m_shown->sceneDigest) {
-                spdlog::warn("Editor: the floor read for the session is not the floor shown (its scene differs)");
+                if (m_shown->sceneDigest.starts_with(kEditSceneDigest)) {
+                    // An earlier session rebuilt a room's static part alone from this plan (the floor shown carries
+                    // the editor's synthetic scene digest): the scene shown is this plan's, the session takes its
+                    // digest, so that its edits are shown in place.
+                    answer.build->sceneDigest = m_shown->sceneDigest;
+                } else {
+                    spdlog::warn("Editor: the floor read for the session is not the floor shown (its scene differs)");
+                }
             }
             edit.shown = templateOf(std::move(*answer.build), edit.room);
             bindEditRoom();
         }
+        edit.baseSceneDigest = edit.shown ? edit.shown->sceneDigest : std::string();
         edit.interaction.ready();
         edit.record.readyFrame = frame;
         edit.record.prepareMs = millisecondsSince(edit.asked);
@@ -751,13 +761,24 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             return;
         }
         clearEditFlags();
-        const bool full = answer.fullFloor;
-        const bool alone = !full && !answer.statics.empty();
-        if (!showEditBuild(*answer.build, full, answer.statics)) {
+        // The plan the answer shows, as stored: what the floor is built from should the rooms rebuilt alone not show in
+        // place (showEditBuild()).
+        const world::WorldPlan* floorPlan = nullptr;
+        if (job == EditJob::Operation && answer.world) {
+            floorPlan = &answer.world->plan;
+        } else if (job == EditJob::Undo && edit.draft && edit.draft->pending()) {
+            floorPlan = &edit.draft->previous().plan;
+        } else if (job == EditJob::Discard && edit.draft) {
+            floorPlan = &edit.draft->base().world.plan;
+        }
+        bool committed = false;
+        if (!showEditBuild(*answer.build, answer.fullFloor, answer.statics, floorPlan, &committed)) {
             spdlog::error("Frame {}: the editor's room cannot be shown", frame);
             notShown();
             return;
         }
+        const bool full = answer.fullFloor || committed;
+        const bool alone = !full && !answer.statics.empty();
         if (job == EditJob::Operation || job == EditJob::Undo) {
             // The draft changes: the probes judged the one before (taken again at the next probe).
             m_pool.cancel(edit.probeGeneration);
@@ -852,42 +873,35 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
     }
 }
 
-bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<const RoomStaticPart> statics) {
+bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<const RoomStaticPart> statics,
+                                 const world::WorldPlan* floorPlan, bool* committedFloor) {
     if (!m_shown || !build.plan) {
         return false;
     }
-    if (!fullFloor && !statics.empty()) {
-        // I4b step 4 (ADR-0015 §4 as amended): each room's static part rebuilt alone, in place on the floor shown (its
-        // scene objects, dressing, wall-washers, lamps' lights and colliders), the walker where it stands; the floor
-        // shown's static part is the build's from then on.
-        if (!m_host.replaceObjects) {
-            return false;
-        }
-        if (m_edit) {
-            // A held fixture's scene items are the old objects': taken again (syncHeldFixture()).
-            m_edit->heldFixture.reset();
-            m_edit->heldSceneItems.clear();
-            m_edit->heldGames.clear();
-        }
-        for (const RoomStaticPart& part : statics) {
-            SceneObjectsChange change;
-            change.prefix = part.room.toString() + "/";
-            change.objects = part.objects;
-            change.lights = part.lights;
-            if (!m_host.replaceObjects(change)) {
-                spdlog::error("Editor: the static part of {} cannot be replaced in the scene", part.room.toString());
-                return false;
-            }
-        }
-        m_shown->sceneDigest = build.sceneDigest;
+    if (m_edit && (fullFloor || !statics.empty())) {
+        // A held fixture's scene items are the scene's before: taken again (syncHeldFixture()) from the scene shown
+        // after.
+        releaseHeldFixture();
     }
     if (!fullFloor && !build.scene) {
-        // The static part is the one shown (only placements moved, or a room's rebuilt alone above): an empty stand-in
+        // The static part is the one shown (only placements moved), or a room's rebuilt alone below: an empty stand-in
         // for the live update's decision.
         build.scene.emplace();
     }
-    LiveUpdatePlan plan = planLiveUpdate(*m_shown, build, true);
-    if (!statics.empty() && plan.kind != LiveUpdateKind::Rebuild && plan.kind != LiveUpdateKind::Kept) {
+    const bool alone = !fullFloor && !statics.empty();
+    LiveUpdatePlan plan;
+    if (alone) {
+        // I4b step 4 (ADR-0015 §4 as amended): each room's static part rebuilt alone, in place on the floor shown (its
+        // scene objects, dressing, wall-washers, lamps' lights and colliders), the walker where it stands. Planned as
+        // the floor will be once the parts are replaced (its scene digest the build's), before anything changes.
+        const std::string shownDigest = std::exchange(m_shown->sceneDigest, build.sceneDigest);
+        plan = planLiveUpdate(*m_shown, build, true);
+        m_shown->sceneDigest = shownDigest;
+        if (plan.kind == LiveUpdateKind::Rebuild || plan.kind == LiveUpdateKind::Kept || !m_host.replaceObjects) {
+            spdlog::warn("Editor: the rooms rebuilt alone cannot be shown in place ({}); the floor is committed again",
+                         m_host.replaceObjects ? plan.reason : std::string("no scene to replace them in"));
+            return commitEditFloor(floorPlan, build.planDigest, committedFloor);
+        }
         // The rebuilt rooms' collections applied again even when their items stand as they did: their occluders and
         // their fixtures' pick targets moved with the furniture.
         plan.kind = LiveUpdateKind::Items;
@@ -899,6 +913,24 @@ bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<co
                 update.kind = RoomUpdateKind::Items;
             }
         }
+        std::size_t replaced = 0;
+        for (const RoomStaticPart& part : statics) {
+            SceneObjectsChange change;
+            change.prefix = part.room.toString() + "/";
+            change.objects = part.objects;
+            change.lights = part.lights;
+            if (!m_host.replaceObjects(change)) {
+                spdlog::error("Editor: the static part of {} cannot be replaced in the scene", part.room.toString());
+                if (replaced == 0) {
+                    return false; // nothing changed
+                }
+                // Some rooms show their new part, others not: the floor of the plan shown, whole.
+                return commitEditFloor(floorPlan, build.planDigest, committedFloor);
+            }
+            ++replaced;
+        }
+    } else {
+        plan = planLiveUpdate(*m_shown, build, true);
     }
     WorldLiveUpdateRecord record;
     bool shown = false;
@@ -921,11 +953,42 @@ bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<co
         break;
     }
     if (!shown) {
+        if (alone) {
+            // The rooms' new parts stand in the scene, their collections not: the floor of the plan shown, whole.
+            return commitEditFloor(floorPlan, build.planDigest, committedFloor);
+        }
         return false;
+    }
+    if (alone) {
+        // The floor shown's static part is the build's from now on (keepShown() took it with the build).
+        m_shown->sceneDigest = build.sceneDigest;
     }
     if (m_edit) {
         m_edit->shown = templateOf(std::move(build), m_edit->room);
         bindEditRoom();
+    }
+    return true;
+}
+
+bool WorldSession::commitEditFloor(const world::WorldPlan* plan, const std::string& digest, bool* committedFloor) {
+    if (plan == nullptr || !m_edit) {
+        spdlog::error("Editor: the floor cannot be committed again (no plan to build it from); the scene may show a "
+                      "room's static part the draft does not hold");
+        return false;
+    }
+    const Clock::time_point start = Clock::now();
+    WorldBuild floor = floorOf(editJobContext(), *plan, digest);
+    if (!floor.plan || !floor.scene) {
+        spdlog::error("Editor: the floor cannot be built again: {}", floor.reason);
+        return false;
+    }
+    if (!showEditBuild(floor, true)) {
+        spdlog::error("Editor: the floor built again cannot be shown");
+        return false;
+    }
+    spdlog::warn("Editor: the floor built again on the main thread and committed ({:.0f} ms)", millisecondsSince(start));
+    if (committedFloor != nullptr) {
+        *committedFloor = true;
     }
     return true;
 }
@@ -1205,9 +1268,8 @@ void WorldSession::syncHeldFixture() {
     if (wanted == edit.heldFixture) {
         return;
     }
+    releaseHeldFixture();
     edit.heldFixture = wanted;
-    edit.heldSceneItems.clear();
-    edit.heldGames.clear();
     if (!wanted) {
         return;
     }
@@ -1231,6 +1293,13 @@ void WorldSession::syncHeldFixture() {
             }
         }
     }
+}
+
+void WorldSession::releaseHeldFixture() {
+    WorldEditState& edit = *m_edit;
+    edit.heldFixture.reset();
+    edit.heldSceneItems.clear();
+    edit.heldGames.clear();
 }
 
 void WorldSession::appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection) {
@@ -1286,6 +1355,7 @@ void WorldSession::endEdit(std::string_view end) {
         return;
     }
     clearEditFlags();
+    releaseHeldFixture();
     WorldEditState& edit = *m_edit;
     m_pool.cancel(edit.generation);
     m_pool.cancel(edit.probeGeneration);
