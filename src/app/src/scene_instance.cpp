@@ -633,11 +633,15 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     m_linesStale = true;
     m_shadowCasterBounds = casterBoundsOf(m_items, resources);
 
-    // The lights: the new ones in place of the first replaced, the area that holds the eye choosing again at once.
+    // The lights: the new ones in place of the first replaced, the area that holds the eye choosing again at once. The
+    // others as the scene holds them (sceneLights(): the developer overlay's edits kept), the description's when the
+    // two no longer match.
     std::vector<scene::Light> lights;
     lights.reserve(description.lights.size() + change.lights.size());
+    const bool matched = m_sceneLights.size() == description.lights.size();
     bool inserted = false;
-    for (scene::Light& light : description.lights) {
+    for (std::size_t index = 0; index < description.lights.size(); ++index) {
+        scene::Light& light = description.lights[index];
         if (light.name.starts_with(change.prefix)) {
             if (!inserted) {
                 lights.insert(lights.end(), change.lights.begin(), change.lights.end());
@@ -645,7 +649,7 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
             }
             continue;
         }
-        lights.push_back(std::move(light));
+        lights.push_back(matched ? m_sceneLights[index] : std::move(light));
     }
     if (!inserted) {
         lights.insert(lights.end(), change.lights.begin(), change.lights.end());

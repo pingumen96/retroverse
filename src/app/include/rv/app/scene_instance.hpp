@@ -107,8 +107,9 @@ public:
     /// one this instance shows (created from, kept in step since), changed in place. A new object equal to a replaced
     /// one of its id keeps what that one drew and collided with; the others are built and registered as create() does
     /// (deduplicated by key); the render items, the collision world, the object bounds and the debug lines follow the
-    /// description's order as create() would make them; the lights are those of the new list, the area that holds the
-    /// eye choosing its lights again at once (as after snapLighting()). Errors: the material blocks cannot be uploaded
+    /// description's order as create() would make them; the lights are those of the new list (the others as
+    /// sceneLights() holds them: the developer overlay's edits of them kept), the area that holds the eye choosing its
+    /// lights again at once (as after snapLighting()). Errors: the material blocks cannot be uploaded
     /// (the content is then the new one, its new materials not drawable until an upload succeeds).
     [[nodiscard]] Expected<SceneObjectsChanged> replaceObjects(scene::SceneDescription& description,
                                                                const SceneObjectsChange& change,
