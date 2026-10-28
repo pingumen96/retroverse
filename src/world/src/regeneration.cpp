@@ -319,13 +319,20 @@ public:
             if (!generation) {
                 return propagate(generation.error());
             }
-            auto finished = finish(std::move(*generation), overrides, honour, invalid);
+            std::set<FixtureId> applied;
+            auto finished = finish(std::move(*generation), overrides, honour, invalid, applied);
             if (!finished) {
                 return propagate(finished.error());
             }
             std::map<FixtureId, std::string> breaking;
             if (!finished->result.validation.passed()) {
-                breaking = breakingPins(finished->result, honour, excluded);
+                std::vector<FixturePin> candidates;
+                for (const FixturePin& pin : honour.fixturePins) {
+                    if (!excluded.contains(pin.fixture)) {
+                        candidates.push_back(pin);
+                    }
+                }
+                breaking = detail::breakingPins(finished->result.validation, candidates, applied);
             }
             if (breaking.empty()) {
                 finished->impact.overridesDropped = sortedUnique(std::move(dropped));
@@ -639,8 +646,9 @@ private:
     }
 
     /// The plan of an attempt finished: sorted, its digest, its validation, its change report and impact.
+    /// `applied`: the scope's fixture pins the plan stands as pinned.
     Expected<Regeneration> finish(ScopeGeneration generation, const WorldOverrides& kept, const WorldOverrides& honour,
-                                  const std::map<FixtureId, std::string>& invalid) {
+                                  const std::map<FixtureId, std::string>& invalid, std::set<FixtureId>& applied) {
         Regeneration regeneration;
         WorldPlan& plan = generation.plan;
         detail::setFloors(plan, m_building);
@@ -686,6 +694,13 @@ private:
             datas.push_back(data);
         }
         const PinCheck pins = checkPins(plan, templates, overrides);
+        for (const FixturePin& pin : pins.honoured.fixturePins) {
+            const bool inScope = std::any_of(honour.fixturePins.begin(), honour.fixturePins.end(),
+                                             [&](const FixturePin& given) { return given.fixture == pin.fixture; });
+            if (inScope) {
+                applied.insert(pin.fixture);
+            }
+        }
 
         // The inputDigest as an update computes it over these selections: the scope's systems with the data of the
         // room each stands in, every other system given a selection with its standing room's.
@@ -872,63 +887,6 @@ private:
         return regeneration;
     }
 
-    /// The pinned fixtures of the scope a hard finding names (as its subject or in its message), by fixture, each with
-    /// why; when the findings name none, every pinned fixture standing as pinned in a room they name. Empty: the hard
-    /// findings are not the pins' (the plan is refused as any).
-    std::map<FixtureId, std::string> breakingPins(const GenerationResult& result, const WorldOverrides& honour,
-                                                  const std::set<FixtureId>& excluded) const {
-        std::map<FixtureId, std::string> breaking;
-        std::vector<const FixturePin*> candidates;
-        for (const FixturePin& pin : honour.fixturePins) {
-            if (!excluded.contains(pin.fixture)) {
-                candidates.push_back(&pin);
-            }
-        }
-        const auto names = [](std::string_view text, const std::string& id) {
-            for (std::size_t at = text.find(id); at != std::string_view::npos; at = text.find(id, at + 1)) {
-                const std::size_t end = at + id.size();
-                const bool bounded = end == text.size() || !(std::isalnum(static_cast<unsigned char>(text[end])) ||
-                                                             text[end] == '-' || text[end] == '.');
-                if (bounded) {
-                    return true;
-                }
-            }
-            return false;
-        };
-        std::set<RoomId> rooms;
-        for (const ValidationFinding& finding : result.validation.findings) {
-            if (finding.severity != Severity::Hard) {
-                continue;
-            }
-            const std::string_view subject = finding.subject;
-            const std::size_t slash = subject.find('/');
-            if (auto room = RoomId::parse(subject.substr(0, slash))) {
-                rooms.insert(*room);
-            }
-            for (const FixturePin* pin : candidates) {
-                const std::string id = pin->fixture.toString();
-                if (names(finding.subject, id) || names(finding.message, id)) {
-                    breaking.emplace(pin->fixture, "it breaks " + finding.rule + ": " + finding.message);
-                }
-            }
-        }
-        if (!breaking.empty()) {
-            return breaking;
-        }
-        for (const ValidationFinding& finding : result.validation.findings) {
-            if (finding.severity != Severity::Hard) {
-                continue;
-            }
-            for (const FixturePin* pin : candidates) {
-                if (rooms.contains(pin->fixture.room())) {
-                    breaking.emplace(pin->fixture, "its room breaks " + finding.rule + " (" + finding.subject +
-                                                       "): " + finding.message);
-                }
-            }
-        }
-        return breaking;
-    }
-
     const RegenerationInput& m_input;
     const BuildingData& m_building;
     const SystemsData& m_systems;
@@ -993,6 +951,9 @@ RegenerationImpact planDifference(const WorldPlan& before, const WorldPlan& afte
             impact.roomsRemoved.push_back(id);
         }
     }
+    // In the plans' order (a plan in memory need not be sorted): sorted, as every list.
+    std::sort(impact.roomsAdded.begin(), impact.roomsAdded.end());
+    std::sort(impact.roomsMoved.begin(), impact.roomsMoved.end());
     // Where each game stands, and whether face-out (its slot's level is featured or band).
     const auto standing = [](const WorldPlan& plan) {
         std::map<FixtureId, const Fixture*> fixtures;
@@ -1061,6 +1022,58 @@ RegenerationImpact planDifference(const WorldPlan& before, const WorldPlan& afte
     std::sort(impact.fixturesMoved.begin(), impact.fixturesMoved.end());
     return impact;
 }
+
+namespace detail {
+
+std::map<FixtureId, std::string> breakingPins(const ValidationReport& report, std::span<const FixturePin> candidates,
+                                              const std::set<FixtureId>& applied) {
+    std::map<FixtureId, std::string> breaking;
+    const auto names = [](std::string_view text, const std::string& id) {
+        for (std::size_t at = text.find(id); at != std::string_view::npos; at = text.find(id, at + 1)) {
+            const std::size_t end = at + id.size();
+            const bool bounded = end == text.size() || !(std::isalnum(static_cast<unsigned char>(text[end])) ||
+                                                         text[end] == '-' || text[end] == '.');
+            if (bounded) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (const ValidationFinding& finding : report.findings) {
+        if (finding.severity != Severity::Hard) {
+            continue;
+        }
+        for (const FixturePin& pin : candidates) {
+            const std::string id = pin.fixture.toString();
+            if (names(finding.subject, id) || names(finding.message, id)) {
+                breaking.emplace(pin.fixture, "it breaks " + finding.rule + ": " + finding.message);
+            }
+        }
+    }
+    if (!breaking.empty()) {
+        return breaking;
+    }
+    // No finding names a pin: the pins standing as pinned in a room a finding is about, each with its room's first.
+    for (const ValidationFinding& finding : report.findings) {
+        if (finding.severity != Severity::Hard) {
+            continue;
+        }
+        const std::string_view subject = finding.subject;
+        const auto room = RoomId::parse(subject.substr(0, subject.find('/')));
+        if (!room) {
+            continue;
+        }
+        for (const FixturePin& pin : candidates) {
+            if (pin.fixture.room() == *room && applied.contains(pin.fixture)) {
+                breaking.emplace(pin.fixture,
+                                 "its room breaks " + finding.rule + " (" + finding.subject + "): " + finding.message);
+            }
+        }
+    }
+    return breaking;
+}
+
+} // namespace detail
 
 RoomDataLoader assetRootLoader(const std::filesystem::path& assetRoot) {
     struct Cache {

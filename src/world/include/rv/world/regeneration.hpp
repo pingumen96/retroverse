@@ -70,6 +70,8 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -254,5 +256,18 @@ struct Regeneration {
 /// regenerates it), and for a room with expansions (I4b step 7); those of `load` and of the layout.
 [[nodiscard]] Expected<Regeneration> regenerate(const RegenerationInput& input, const BuildingData& building,
                                                 const SystemsData& systems, const RoomDataLoader& load);
+
+namespace detail {
+
+/// The pinned fixtures among `candidates` that the hard findings of `report` break (the regeneration then generates
+/// the scope again without them, each an `invalid` conflict), by fixture, each with why: those a hard finding names (as
+/// its subject or in its message); when the findings name none, the pins of `applied` (those the plan stands as
+/// pinned) in a room that a hard finding's subject is or is in (a fixture, a slot), each with that room's first such
+/// finding. Empty: the hard findings are not the pins' (the plan is refused as any). Public for its tests.
+[[nodiscard]] std::map<FixtureId, std::string> breakingPins(const ValidationReport& report,
+                                                            std::span<const FixturePin> candidates,
+                                                            const std::set<FixtureId>& applied);
+
+} // namespace detail
 
 } // namespace rv::world

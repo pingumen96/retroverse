@@ -1113,6 +1113,71 @@ TEST_CASE("world/regeneration: random edit sessions then a changed catalog: no o
     }
 }
 
+TEST_CASE("world/regeneration: the plans' difference lists its rooms sorted, whatever order the plans hold them in",
+          "[world][regeneration]") {
+    const auto room = [](std::string_view id, std::string floor) {
+        rv::world::Room made;
+        made.id = *RoomId::parse(id);
+        made.floor = std::move(floor);
+        return made;
+    };
+    WorldPlan before;
+    before.rooms = {room("room:snes", "gen4"), room("room:gb", "handheld"), room("room:amiga", "computers")};
+    WorldPlan after;
+    after.rooms = {room("room:snes", "gen3"), room("room:psx", "gen5"), room("room:gb", "gen4"),
+                   room("room:amiga", "computers"), room("room:mame", "ground")};
+    const rv::world::RegenerationImpact impact = rv::world::planDifference(before, after);
+    CHECK(impact.roomsAdded == std::vector<RoomId>{*RoomId::parse("room:mame"), *RoomId::parse("room:psx")});
+    CHECK(impact.roomsMoved == std::vector<RoomId>{*RoomId::parse("room:gb"), *RoomId::parse("room:snes")});
+    CHECK(impact.roomsRemoved.empty());
+    CHECK(rv::world::planDifference(after, before).roomsRemoved ==
+          std::vector<RoomId>{*RoomId::parse("room:mame"), *RoomId::parse("room:psx")});
+}
+
+TEST_CASE("world/regeneration: the pins an invalid layout blames: those named, else those applied in the finding's "
+          "room, with that room's finding",
+          "[world][regeneration]") {
+    const auto pin = [](std::string_view fixture) {
+        rv::world::FixturePin made;
+        made.fixture = *FixtureId::parse(fixture);
+        made.transform = rv::world::FixtureTransform{100, 200, 0};
+        return made;
+    };
+    const auto hard = [](std::string rule, std::string subject, std::string message) {
+        return rv::world::ValidationFinding{std::move(rule), rv::world::Severity::Hard, std::move(subject),
+                                            std::move(message)};
+    };
+    const std::vector<rv::world::FixturePin> candidates{pin("room:gb/fx:dc01"), pin("room:snes/fx:dc01"),
+                                                        pin("room:snes/fx:dc02"), pin("room:snes/fx:w03")};
+    const std::set<FixtureId> applied{*FixtureId::parse("room:gb/fx:dc01"), *FixtureId::parse("room:snes/fx:dc02"),
+                                      *FixtureId::parse("room:snes/fx:w03")};
+    rv::world::ValidationReport report;
+    // A finding naming a pin blames it alone (dc01 named, not dc010).
+    report.findings = {hard("footprints-overlap", "room:snes/fx:dc010", "it overlaps room:snes/fx:dc01"),
+                       hard("unreachable", "room:snes/fx:w05/s:1.2", "no path")};
+    auto blamed = rv::world::detail::breakingPins(report, candidates, applied);
+    REQUIRE(blamed.size() == 1);
+    CHECK(blamed.begin()->first == *FixtureId::parse("room:snes/fx:dc01"));
+    CHECK(blamed.begin()->second == "it breaks footprints-overlap: it overlaps room:snes/fx:dc01");
+    // None named: the applied pins of the rooms the findings are about, each with its own room's finding; a pin not
+    // applied (room:snes/fx:dc01) and a room no finding is about (room:gb) are not blamed; a soft finding, or one
+    // whose subject is no room's, blames nothing.
+    report.findings = {
+        rv::world::ValidationFinding{"socket-bare", rv::world::Severity::Soft, "room:gb/fx:w01", "bare"},
+        hard("game-twice", "g0123456789abcdef", "placed twice"),
+        hard("unreachable", "room:snes/fx:w05/s:1.2", "no path to the slot"),
+        hard("doorway-blocked", "room:psx", "the doorway is blocked")};
+    blamed = rv::world::detail::breakingPins(report, candidates, applied);
+    CHECK(blamed == std::map<FixtureId, std::string>{
+                        {*FixtureId::parse("room:snes/fx:dc02"),
+                         "its room breaks unreachable (room:snes/fx:w05/s:1.2): no path to the slot"},
+                        {*FixtureId::parse("room:snes/fx:w03"),
+                         "its room breaks unreachable (room:snes/fx:w05/s:1.2): no path to the slot"}});
+    // Only rooms without applied pins: nothing blamed (the plan is refused as any).
+    report.findings = {hard("doorway-blocked", "room:psx", "the doorway is blocked")};
+    CHECK(rv::world::detail::breakingPins(report, candidates, applied).empty());
+}
+
 TEST_CASE("world/regeneration: refusals", "[world][regeneration]") {
     SnesWorld world = snesWorld(60, 51);
     rv::world::RegenerationInput input;
