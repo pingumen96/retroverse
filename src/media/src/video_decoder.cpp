@@ -1211,16 +1211,17 @@ void VideoDecoder::Worker::emitAudio(const AVFrame& frame) {
         return;
     }
     const auto frames = static_cast<std::size_t>(converted);
-    std::span<const float> stereo(m_audioConverted.data(), frames * 2);
+    // Mono holds one float a frame: the stereo span is made once both channels are there.
+    const float* stereo = m_audioConverted.data();
     if (m_audioOutChannels == 1) {
         m_audioStereo.resize(frames * 2);
         for (std::size_t index = 0; index < frames; ++index) {
             m_audioStereo[index * 2] = m_audioConverted[index];
             m_audioStereo[index * 2 + 1] = m_audioConverted[index];
         }
-        stereo = std::span<const float>(m_audioStereo.data(), frames * 2);
+        stereo = m_audioStereo.data();
     }
-    m_shared.settings.audioSink->write(stereo, pts - delay, m_generation);
+    m_shared.settings.audioSink->write(std::span<const float>(stereo, frames * 2), pts - delay, m_generation);
     m_shared.audioFramesWritten.fetch_add(frames, std::memory_order_relaxed);
 }
 
