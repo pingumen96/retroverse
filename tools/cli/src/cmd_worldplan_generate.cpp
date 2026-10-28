@@ -14,8 +14,10 @@
 // fresh plan that does not honour a pin is refused), and world::generateBuilding, whose plan is validated
 // (world::validatePlan): a plan that breaks a hard rule is never written (exit 3, its findings on stderr). The plan is
 // saved as the world's plan under the world lock (rv/world/world_store.hpp, I3 step 9), never over an existing one
-// unless --replace asks for the explicit regeneration of the whole building (the face-out sets chosen again, the
-// previous plan kept in backups/ first); or written to the file --plan names. Its summary goes to stdout or --output.
+// unless --replace asks for the explicit regeneration of the whole building: since I4b step 5 world::regenerate() of
+// the world (`worldplan regenerate --world`: the face-out sets chosen again, the overrides honoured, those it cannot
+// honour kept and reported), saved with the overrides behind a snapshot; or written to the file --plan names. Its
+// summary goes to stdout or --output.
 
 #include <algorithm>
 #include <chrono>
@@ -44,6 +46,7 @@
 #include <rv/world/generation.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/regeneration.hpp>
 #include <rv/world/validation.hpp>
 #include <rv/world/world_config.hpp>
 #include <rv/world/world_snapshots.hpp>
@@ -53,6 +56,7 @@
 #include "commands.hpp"
 #include "esde_text.hpp"
 #include "world_plan_text.hpp"
+#include "world_regeneration_text.hpp"
 #include "world_selection.hpp"
 
 namespace rv::cli {
@@ -89,9 +93,10 @@ constexpr std::string_view kUsage =
     "                      library id).\n"
     "  --library <id>      The library the plan belongs to (default: the one library.json records; with the catalog's\n"
     "                      selections it must be that one).\n"
-    "  --replace           Regenerate the whole building over the world's existing plan: the explicit regeneration,\n"
-    "                      which chooses the face-out titles again; the previous plan is first kept in the world's\n"
-    "                      backups/ folder (the last 10).\n"
+    "  --replace           Regenerate the whole building over the world's existing plan: the explicit regeneration\n"
+    "                      ('worldplan regenerate --world'), which chooses the face-out titles again and keeps the\n"
+    "                      pins of overrides.json (those it cannot honour reported); the plan and the overrides are\n"
+    "                      first kept in a snapshot, which 'worldplan undo' restores.\n"
     "  --plan <file>       Write the plan to this file instead (replaced when it exists; no backup).\n"
     "  --json              Write the summary as JSON.\n"
     "  --output <file>     Write the summary to this file (UTF-8) instead of stdout.\n"
@@ -259,6 +264,15 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     if (!overrides) {
         return failure(context, "the world's overrides", overrides.error());
     }
+    // --replace over a stored plan this program reads is the world's explicit regeneration (ADR-0015 §5, I4b step 5:
+    // `worldplan regenerate --world`): the overrides honoured, those it cannot honour kept and reported. A plan it
+    // cannot read (edited by hand, newer) is replaced by a fresh one, which applies no pin.
+    std::optional<PlanFile> previous;
+    if (replace && stored) {
+        if (auto read = readPlanFile(context.paths, files.plan)) {
+            previous = std::move(*read);
+        }
+    }
 
     const auto started = std::chrono::steady_clock::now();
     world::BuildingInput input;
@@ -267,7 +281,31 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     input.platformTags = std::move(selected.platformTags);
     input.config = std::move(*config);
     input.overrides = std::move(*overrides);
-    auto result = world::generateBuilding(input, info->building, info->systems, *rooms);
+    Expected<world::GenerationResult> result = makeError(ErrorCode::InvalidArgument, "not generated", "generate");
+    world::WorldOverrides overridesToSave = input.overrides;
+    std::vector<world::OverrideConflict> conflicts;
+    if (previous) {
+        world::RegenerationInput regeneration;
+        regeneration.scope = world::RegenerationScope::ofWorld();
+        regeneration.library = input.library;
+        regeneration.selections = input.selections;
+        regeneration.platformTags = input.platformTags;
+        regeneration.config = input.config;
+        regeneration.overrides = input.overrides;
+        regeneration.previous = previous->plan;
+        regeneration.previousDigest = previous->digest;
+        auto regenerated =
+            world::regenerate(regeneration, info->building, info->systems,
+                              preloadedLoader(context.paths.assetRoot(), *rooms, input.platformTags));
+        if (!regenerated) {
+            return failure(context, "regeneration", regenerated.error());
+        }
+        overridesToSave = std::move(regenerated->overrides);
+        conflicts = std::move(regenerated->impact.conflicts);
+        result = std::move(regenerated->result);
+    } else {
+        result = world::generateBuilding(input, info->building, info->systems, *rooms);
+    }
     if (!result) {
         return failure(context, "generation", result.error());
     }
@@ -275,22 +313,29 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started);
     const world::ValidationReport& validation = result->validation;
     const std::size_t hard = reportFindings(context, kName, validation);
-    for (const std::string& pin : result->changes.needsConfirmation) {
-        context.err.writeLine(fmt::format("{}: not honoured: {}", kName, pin));
+    if (previous) {
+        for (const world::OverrideConflict& conflict : conflicts) {
+            context.err.writeLine(fmt::format("{}: not honoured, kept in overrides.json: {}", kName,
+                                              conflictText(conflict)));
+        }
+    } else {
+        for (const std::string& pin : result->changes.needsConfirmation) {
+            context.err.writeLine(fmt::format("{}: not honoured: {}", kName, pin));
+        }
     }
     if (hard > 0) {
         context.err.writeLine(fmt::format("{}: the plan breaks {} hard rule{} of the validation: nothing written",
                                           kName, hard, hard == 1 ? "" : "s"));
-        // A fresh generation applies no pin yet (I4b step 5): the pins of earlier edits break it.
+        // A fresh generation without a stored plan applies no pin: the pins of earlier edits break it.
         const bool pinsBroken =
             std::any_of(validation.findings.begin(), validation.findings.end(), [](const world::ValidationFinding& f) {
                 return f.rule == world::rule::kPinBroken;
             });
         if (pinsBroken) {
             context.err.writeLine(fmt::format(
-                "{}: a fresh generation does not apply the world's pins yet: remove those it breaks with "
-                "'worldplan edit unpin --game <id>' or 'worldplan edit unpin-fixture --fixture <id>' (the "
-                "regeneration of I4b step 5, 'worldplan regenerate', will honour them)",
+                "{}: a fresh generation applies no pin (only a regeneration of a stored plan honours them): remove "
+                "those it breaks with 'worldplan edit unpin --game <id>' or 'worldplan edit unpin-fixture --fixture "
+                "<id>'",
                 kName));
         }
         return ExitCode::RuntimeFailure;
@@ -319,7 +364,7 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
         std::optional<world::CommitReport> committed;
         if (replace && stored) {
             auto commit = world::commitWorld(*lock, world::WorldAction{"regenerate", "world"}, *result,
-                                             input.overrides, options);
+                                             overridesToSave, options);
             if (!commit) {
                 return failure(context, "the plan", commit.error());
             }

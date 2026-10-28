@@ -10,6 +10,8 @@
 //   worldplan snapshots the world's snapshots of the plan and the overrides (cmd_worldplan_snapshots.cpp, I4b step 1)
 //   worldplan undo      the last explicit action undone from its snapshot (cmd_worldplan_undo.cpp, I4b step 1)
 //   worldplan edit      the editor's operations on the plan and the overrides (cmd_worldplan_edit.cpp, I4b step 2)
+//   worldplan regenerate a room, a floor or the building regenerated, honouring the overrides, after its impact
+//                       (cmd_worldplan_regenerate.cpp, I4b step 5)
 // This file only dispatches: the arguments after a subcommand's name are its own.
 
 #include <array>
@@ -40,6 +42,8 @@ constexpr std::string_view kUsage =
     "  snapshots List the world's snapshots of the plan and the overrides.\n"
     "  undo      Undo the last explicit action (a regeneration, an edit) from its snapshot.\n"
     "  edit      Move, swap and pin games, move and pin furniture, as the app's editor does.\n"
+    "  regenerate\n"
+    "            Regenerate a room, a floor or the building, keeping the pins, after an impact summary.\n"
     "\n"
     "Run 'retroverse-cli worldplan <subcommand> --help' for its options.\n"
     "\n"
@@ -53,7 +57,7 @@ struct Subcommand {
     SubcommandFunction run = nullptr;
 };
 
-constexpr std::array<Subcommand, 7> kSubcommands{{
+constexpr std::array<Subcommand, 8> kSubcommands{{
     {"generate", runWorldPlanGenerate},
     {"update", runWorldPlanUpdate},
     {"show", runWorldPlanShow},
@@ -61,6 +65,7 @@ constexpr std::array<Subcommand, 7> kSubcommands{{
     {"snapshots", runWorldPlanSnapshots},
     {"undo", runWorldPlanUndo},
     {"edit", runWorldPlanEdit},
+    {"regenerate", runWorldPlanRegenerate},
 }};
 
 } // namespace
