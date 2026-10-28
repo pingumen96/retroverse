@@ -100,7 +100,8 @@ build/rvdata`).
   `gpuMilliseconds.outline`, only when the view has them; since I4 step 3, for a scene with areas, `sceneAreas`
   (`areas`, the `area` that held the eye at the last view, the `lights` selected for it by name and its `keyLight`,
   and `changes`, the area at the first view and each change with its frame; since I6 step 1 `packed`, `last` and
-  `samples`, see `--scene`). Phases opened by the code: `refresh`,
+  `samples`, see `--scene`); since I4b step 4's review `sceneContents` (the scene's `objects`, the `colliders` of its
+  collision world and its `lights` at the end). Phases opened by the code: `refresh`,
   `coverLoad`, `animation`, `screenBind`, `elevator` (each ride, I4 step 7b: its frames behind the fade are exempt from
   the limits), and by input scripts, `benchmark` for one. Frame-limited runs log the frame times (with the GPU passes),
   phases, CPU sections and GPU memory at the end. Read it instead of the log in scripts and tests.

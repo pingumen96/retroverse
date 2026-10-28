@@ -1845,6 +1845,12 @@ void RetroverseApp::onShutdown(AppContext& context) {
         }
         context.report().finalCamera = m_state->freeRoam->pose();
         context.report().sceneAreas = m_state->sceneAreasRecord();
+        if (m_state->scene) {
+            context.report().sceneContents =
+                SceneContentsRecord{m_state->scene->objectBounds().size(),
+                                    m_state->scene->collisionWorld().boxes().size(),
+                                    std::as_const(*m_state->scene).sceneLights().size()};
+        }
         m_state->graphics->finishRun(context);
     }
     m_state.reset();

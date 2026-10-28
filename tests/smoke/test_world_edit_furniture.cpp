@@ -6,8 +6,10 @@
 // rebuilt alone); the view turned onto the module, the module picked up, nudged on the grid to a place it may drop
 // (outlined warm white), then further to one a rule refuses, dropped there (refused: the bar names the rule, the
 // outline red), nudged back and dropped (the room's static part rebuilt alone: its scene objects, dressing,
-// wall-washers and colliders), the menu, Salva; then the walker walks into the module where it stands now and stops
-// against it (its colliders moved with it). The stored plan holds both where they were put, pinned by the editor; a
+// wall-washers and colliders), the menu, Salva; in a run of its own the walker walks into the module right after that
+// drop, in the same session (the colliders replaced in place: FreeRoam::setCollision()), and stops against it; after the
+// save a start on the saved plan walks into it too, and holds the objects, collider boxes and lights the session's scene
+// held (the run report's sceneContents). The stored plan holds both where they were put, pinned by the editor; a
 // restart writes nothing. Screenshots: holding the module where it may drop, the refused drop with the bar's rule, the
 // room after the save (build/smoke/world_edit_furniture/*.png).
 //
@@ -174,9 +176,11 @@ struct FurnitureSession {
     rv::world::FixtureTransform modulePlace;
     rv::world::FixtureBox moduleBox;
     /// After the save, a start where the walker stood, facing the middle of the module where it stands now, and the walk
-    /// into it.
+    /// into it; in the session itself (before Salva), the turn from the view onto the module to that heading (mouse
+    /// pixels).
     rv::app::SpawnPoint walkSpawn;
     int walkFrames = 0;
+    glm::vec2 toWalk{0.0f};
 };
 
 /// What the session holds: the poster first (else the walker looks at the module from the start), the refused drop.
@@ -372,6 +376,7 @@ FurnitureSession planSession(const fs::path& data, const rv::world::WorldPlan& p
                             continue;
                         }
                         const glm::vec2 heading(lookAlong(glm::normalize(middle - eye)).x, 0.0f);
+                        session.toWalk = turnPixels(moduleLook, heading);
                         session.walkSpawn.feet = feet;
                         session.walkSpawn.yawDeg = rv::core::radiansToDegrees(heading.x);
                         session.walkSpawn.pitchDeg = 0.0f;
@@ -475,7 +480,9 @@ struct SessionScript {
     int frames = 0;
 };
 
-SessionScript writeScript(const fs::path& file, const FurnitureSession& session) {
+/// The session's script (see the file comment); with `walkBeforeSave`, after the good drop the walker turns towards the
+/// module where it stands now and walks into it, and the run ends there (no Salva).
+SessionScript writeScript(const fs::path& file, const FurnitureSession& session, bool walkBeforeSave = false) {
     SessionScript script;
     std::ofstream out(file, std::ios::binary);
     int frame = 0;
@@ -530,6 +537,18 @@ SessionScript writeScript(const fs::path& file, const FurnitureSession& session)
     frame += 10;
     script.goodDrop = frame;
     at(frame, R"("interact": 1)");
+    if (walkBeforeSave) {
+        // Turned towards the module's middle, then straight on into it (the scene's colliders replaced in place).
+        frame += 20;
+        out << "  {\"fromFrame\": " << frame << ", \"toFrame\": " << frame
+            << ", \"actions\": {\"look_delta_x\": " << session.toWalk.x << ", \"look_delta_y\": " << session.toWalk.y
+            << "}},\n";
+        script.walk = frame + 10;
+        out << "  {\"fromFrame\": " << script.walk << ", \"toFrame\": " << script.walk + session.walkFrames
+            << ", \"actions\": {\"move_forward\": 1}}\n]\n";
+        script.frames = script.walk + session.walkFrames + 10;
+        return script;
+    }
     // The menu, Salva.
     frame += 20;
     at(frame, R"("confirm": 1)");
@@ -619,6 +638,41 @@ TEST_CASE("world_edit: a poster and a side-wall module moved and saved, a refuse
     }
     CHECK(building.plan().digest == before.digest);
 
+    // The module walked into in the same session, before Salva: the room's static part replaced in place (its colliders
+    // moved over to the walker's collision world) stops the walker against the module where it stands now.
+    const auto gapToModule = [&](const glm::vec3& feet) {
+        const auto metres = [](std::int64_t millimetres) {
+            return static_cast<float>(millimetres) / 1000.0f;
+        };
+        const float dx =
+            std::max({metres(session.moduleBox.minXMm) - feet.x, feet.x - metres(session.moduleBox.maxXMm), 0.0f});
+        const float dz =
+            std::max({metres(session.moduleBox.minZMm) - feet.z, feet.z - metres(session.moduleBox.maxZMm), 0.0f});
+        return std::sqrt(dx * dx + dz * dz);
+    };
+    {
+        const fs::path walkInFile = building.dir / "world_edit_furniture_walk_in_session.json";
+        const SessionScript walkIn = writeScript(walkInFile, session, true);
+        const AppRun walkInRun = runApp(retroverseExe(), building.dir, "walk_in_session",
+                                        sessionArguments(session, walkIn.frames, walkInFile, std::nullopt));
+        requireCleanRun(walkInRun);
+        INFO(walkInRun.describe());
+        REQUIRE(walkInRun.report->world.edits.size() == 1);
+        const rv::app::WorldEditRecord& open = walkInRun.report->world.edits.front();
+        CHECK(open.end.empty());
+        REQUIRE_FALSE(open.operations.empty());
+        CHECK(open.operations.back().refused.empty());
+        CHECK(open.operations.back().path == "room");
+        REQUIRE(walkInRun.report->finalCamera.has_value());
+        const glm::vec3 feet = walkInRun.report->finalCamera->feet;
+        const float gap = gapToModule(feet);
+        INFO("in the session, the walker's feet at " << feet.x << ", " << feet.z << ": " << gap
+                                                      << " m from the module's box");
+        CHECK(gap >= kRadius - 0.06f);
+        CHECK(gap <= kRadius + 0.15f);
+    }
+    CHECK(building.plan().digest == before.digest);
+
     // The whole session, saved: the room just after the save.
     const fs::path end = building.dir / "saved.png";
     const AppRun run =
@@ -693,17 +747,22 @@ TEST_CASE("world_edit: a poster and a side-wall module moved and saved, a refuse
     CHECK(walkRun.report->world.edits.empty());
     REQUIRE(walkRun.report->finalCamera.has_value());
     const glm::vec3 feet = walkRun.report->finalCamera->feet;
-    const auto metres = [](std::int64_t millimetres) {
-        return static_cast<float>(millimetres) / 1000.0f;
-    };
-    const float dx =
-        std::max({metres(session.moduleBox.minXMm) - feet.x, feet.x - metres(session.moduleBox.maxXMm), 0.0f});
-    const float dz =
-        std::max({metres(session.moduleBox.minZMm) - feet.z, feet.z - metres(session.moduleBox.maxZMm), 0.0f});
-    const float gap = std::sqrt(dx * dx + dz * dz);
+    const float gap = gapToModule(feet);
     INFO("the walker's feet at " << feet.x << ", " << feet.z << ": " << gap << " m from the module's box");
     CHECK(gap >= kRadius - 0.06f);
     CHECK(gap <= kRadius + 0.15f);
+
+    // The scene the session left (its room's static part replaced in place twice, then saved) holds what a fresh start
+    // on the saved plan holds: the same objects, collider boxes and lights.
+    REQUIRE(run.report->sceneContents.has_value());
+    REQUIRE(walkRun.report->sceneContents.has_value());
+    UNSCOPED_INFO("after the session: " << run.report->sceneContents->objects << " objects, "
+                                        << run.report->sceneContents->colliders << " collider boxes, "
+                                        << run.report->sceneContents->lights << " lights; a fresh start: "
+                                        << walkRun.report->sceneContents->objects << ", "
+                                        << walkRun.report->sceneContents->colliders << ", "
+                                        << walkRun.report->sceneContents->lights);
+    CHECK(run.report->sceneContents == walkRun.report->sceneContents);
 }
 
 // ADR-0015 §9's rows for a fixture moved and the save (the room's static part rebuilt alone: I4b step 4), on the real

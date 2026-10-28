@@ -1562,6 +1562,16 @@ struct SceneAreasRecord {
     bool operator==(const SceneAreasRecord&) const = default;
 };
 
+/// What the scene shown holds at the run's end (I4b step 4's review): its objects, the boxes of its collision world and
+/// its lights (SceneInstance's): a room's static part replaced in place holds what a fresh start on the same plan holds.
+struct SceneContentsRecord {
+    std::size_t objects = 0;
+    std::size_t colliders = 0;
+    std::size_t lights = 0;
+
+    bool operator==(const SceneContentsRecord&) const = default;
+};
+
 /// What a run of an application built on AppHost did (retroverse.exe, retroverse-asset-preview), written as JSON by
 /// --run-report <file.json> when the run ends, whether it succeeded or failed (formatRunReport). Only the host writes
 /// it: a command line that does not parse, --help, --version and --write-fixture end before the host starts and write
@@ -1629,6 +1639,8 @@ struct RunReport {
     std::optional<SelfCheckRecord> selfCheck;
     /// The areas of the scene shown (retroverse.exe; absent for a scene without areas).
     std::optional<SceneAreasRecord> sceneAreas;
+    /// What the scene shown holds at the end (retroverse.exe; absent without a scene).
+    std::optional<SceneContentsRecord> sceneContents;
     /// The quick catalog; absent in runs without the product UI (the model viewer).
     std::optional<CatalogRecord> catalog;
     /// The launches from the quick catalog, in order.

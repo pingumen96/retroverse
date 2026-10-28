@@ -2484,6 +2484,11 @@ std::string formatRunReport(const RunReport& report) {
                                  {"passed", report.selfCheck->passed},
                                  {"summary", report.selfCheck->summary}};
     }
+    if (report.sceneContents) {
+        json["sceneContents"] = Json{{"objects", report.sceneContents->objects},
+                                     {"colliders", report.sceneContents->colliders},
+                                     {"lights", report.sceneContents->lights}};
+    }
     if (report.sceneAreas) {
         Json changes = Json::array();
         for (const SceneAreaChange& change : report.sceneAreas->changes) {
@@ -2655,6 +2660,13 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
             record.samples.push_back(readSample(sample));
         }
         report.sceneAreas = std::move(record);
+    }
+    if (auto contents = fields.optionalObject("sceneContents")) {
+        SceneContentsRecord record;
+        record.objects = static_cast<std::size_t>(contents->count("objects", kMaxSize));
+        record.colliders = static_cast<std::size_t>(contents->count("colliders", kMaxSize));
+        record.lights = static_cast<std::size_t>(contents->count("lights", kMaxSize));
+        report.sceneContents = record;
     }
     if (auto catalog = fields.optionalObject("catalog")) {
         report.catalog = readCatalog(*catalog);
