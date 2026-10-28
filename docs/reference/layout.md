@@ -97,7 +97,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `checkInterruptedAction`); `world_edit.hpp` (I4b step 2: the editor's operations, `applyEdit` / `applyEdits`,
   `editRooms`, `editedResult`, the edit script; `editableFixtures`, I4b step 4); `regeneration.hpp` (I4b step 5: `regenerate` of a room, a floor or
   the world honouring the overrides, the conflicts, `planDifference`, the impact, `assetRootLoader`; the private
-  `pinned_room.cpp`, a room generated around its pins); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
+  `pinned_room.cpp`, a room generated around its pins; since I4b step 7 a room's chain regenerated whole); the expansion
+  rooms of generator 1.5 (I4b step 7: `RoomId::inChain` in `ids.hpp`; the chains' private parts in
+  `generation_parts.hpp` and `generation.cpp`: `roomTitleLimit`, `chainShares`, `placeExpansions`, `generateChain`; the
+  update's chain-wide `Updater` in `incremental.cpp`; the `expansion-chain` rule); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
   `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light

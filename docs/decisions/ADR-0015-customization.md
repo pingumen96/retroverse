@@ -236,6 +236,19 @@ walker kept.
   items files; teleport, "Mostra nella stanza" and where-is reach any room of a chain; an expansion's CRT plays its
   own games (ADR-0013 §9, unchanged). A door between a head and an expansion that stand side by side is not built.
 
+*Amended on 2026-10-28 (I4b step 7):* "never reused" means that the number of a standing room of a chain is never
+given to another room: a regeneration that needs fewer rooms drops the highest numbers, and a later expansion takes the
+next number after the chain's highest standing one, which may be a number dropped before (a plan keeps no record of
+the rooms it no longer holds; the pins that named such a room are kept as `room-gone` conflicts). Every unplaced entry
+of a chain names its head, not only those for capacity. A fresh generation places a building's expansions once every
+system entered, room after room in the entry order, so the heads stand where generator 1.4 stood them. The migration's
+additions follow the update's rules, so a head at its limit gives them its free slots (its reserve) before the chain
+takes an expansion; it runs once, at the first update by generator 1.5 of a chain an earlier generator made, and since
+then a title unplaced for capacity stays so until a regeneration (as an update's own capacity entries always did, so
+that an update of an unchanged catalog writes nothing). An update gives a module, then a growth step, to the chain's
+first room that takes one, and creates an expansion only when every room of the chain stands at its template's limit
+(a growth a pin refuses leaves the titles unplaced for capacity, §3).
+
 ### 8. Command line
 
 - `worldplan edit move --game <id> --slot <slot>`, `swap --game <id> --with <id>`, `pin | unpin --game <id>`,
