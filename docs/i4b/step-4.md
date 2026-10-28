@@ -216,7 +216,9 @@ differences among 542,120 entries in each of three runs):
 
 The commit's 861 ms: the plan serialised 490 ms, compared 9 ms, snapshotted 144 ms, `overrides.json` 10 ms, the plan
 and its backup written 207 ms. The module's move on the same floor showed in 147 to 153 ms (the job 38 ms); the session
-was ready in 1.5 s.
+was ready in 1.5 s. In the building fixture's arcade room (the GPU case, Release) the poster's and the cabinet's moves
+show in 13 to 20 ms (the jobs 4 to 5 ms) and Salva takes 55 ms, the room back 56 ms after it; the Release run of the
+whole suite (2,235 tests, 135 GPU, G01 to G18 compared) passed, no golden changed.
 
 ## For step 6
 
