@@ -214,10 +214,10 @@ TEST_CASE("cli/run: the I3 commands: worldplan's subcommands and where-is answer
     CHECK(none.code == ExitCode::UsageError);
     CHECK(none.out.empty());
     CHECK(contains(none.err, "Usage: retroverse-cli [global options] worldplan <subcommand>"));
-    const RunResult unknown = runCli({"--data-dir", data, "worldplan", "regenerate"}, environment);
+    const RunResult unknown = runCli({"--data-dir", data, "worldplan", "reshuffle"}, environment);
     CHECK(unknown.code == ExitCode::UsageError);
     CHECK(unknown.out.empty());
-    CHECK(contains(unknown.err, "retroverse-cli worldplan: unknown subcommand 'regenerate'"));
+    CHECK(contains(unknown.err, "retroverse-cli worldplan: unknown subcommand 'reshuffle'"));
     const RunResult option = runCli({"--data-dir", data, "worldplan", std::string(kUnknownOption)}, environment);
     CHECK(option.code == ExitCode::UsageError);
     CHECK(contains(option.err, fmt::format("retroverse-cli worldplan: unknown option '{}'", kUnknownOption)));
