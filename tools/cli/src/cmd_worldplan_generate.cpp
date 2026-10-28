@@ -44,6 +44,7 @@
 #include <rv/world/generation.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/validation.hpp>
 #include <rv/world/world_config.hpp>
 #include <rv/world/world_snapshots.hpp>
 #include <rv/world/world_store.hpp>
@@ -280,6 +281,18 @@ ExitCode runWorldPlanGenerate(CommandContext& context, std::span<const std::stri
     if (hard > 0) {
         context.err.writeLine(fmt::format("{}: the plan breaks {} hard rule{} of the validation: nothing written",
                                           kName, hard, hard == 1 ? "" : "s"));
+        // A fresh generation applies no pin yet (I4b step 5): the pins of earlier edits break it.
+        const bool pinsBroken =
+            std::any_of(validation.findings.begin(), validation.findings.end(), [](const world::ValidationFinding& f) {
+                return f.rule == world::rule::kPinBroken;
+            });
+        if (pinsBroken) {
+            context.err.writeLine(fmt::format(
+                "{}: a fresh generation does not apply the world's pins yet: remove those it breaks with "
+                "'worldplan edit unpin --game <id>' or 'worldplan edit unpin-fixture --fixture <id>' (the "
+                "regeneration of I4b step 5, 'worldplan regenerate', will honour them)",
+                kName));
+        }
         return ExitCode::RuntimeFailure;
     }
 
