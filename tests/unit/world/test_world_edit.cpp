@@ -60,9 +60,9 @@ std::shared_ptr<const rv::world::WorldData> unowned(const rv::world::WorldData& 
 }
 
 /// The edit data of a plan whose rooms all stand on the shipped data of the SNES room's floor.
-EditData snesEditData() {
+EditData snesEditData(std::uint64_t worldSeed = kWorldSeed) {
     EditData data;
-    data.config = rv::test::world::roomConfig(kWorldSeed);
+    data.config = rv::test::world::roomConfig(worldSeed);
     data.building = snesData().building;
     data.rooms.emplace(*rv::world::RoomId::forSystem(rv::test::world::snes()), unowned(snesData()));
     return data;
@@ -586,6 +586,49 @@ TEST_CASE("world/edit: fixtures moved on the grid and turned, pinned where put; 
     }
 }
 
+TEST_CASE("world/edit: an edit is refused only for a hard finding it causes", "[world][edit]") {
+    Fresh fresh = freshRoom(80, 57);
+    const EditData data = snesEditData();
+    EditedWorld& world = fresh.world;
+    // A plan written by hand with a hard finding: a decoration of the west wall pushed through it.
+    const Fixture* standing = findFixture(world.plan, FixtureRole::Decoration, [](const Fixture& fixture) {
+        const auto* socket = socketOf(fixture);
+        return fixture.yMm == 0 && socket != nullptr && socket->wall == rv::world::Wall::West;
+    });
+    REQUIRE(standing != nullptr);
+    const Fixture broken = *standing;
+    for (Fixture& fixture : world.plan.fixtures) {
+        if (fixture.id == broken.id) {
+            fixture.xMm -= 1000;
+        }
+    }
+    const std::vector<Placement> spine = placementsIn(world.plan, rv::world::Section::Spine);
+    const std::vector<SlotId> free = freeSlots(world.plan, rv::world::Section::Spine, false);
+    REQUIRE(spine.size() > 1);
+    REQUIRE(free.size() > 1);
+
+    // A game moved elsewhere on the floor is not refused for it; the validation still reports it.
+    const EditResult moved = edit(world, EditOperation::move(spine[0].game, free[0]), data);
+    INFO((moved.refused ? moved.refused->rule + " " + moved.refused->message : std::string("applied")));
+    REQUIRE_FALSE(moved.refused);
+    CHECK_FALSE(moved.validation.passed());
+    // A session too (the floor's findings before it read once).
+    const std::vector<EditOperation> session{EditOperation::move(spine[1].game, free[1]),
+                                             EditOperation::pin(spine[0].game)};
+    auto applied = rv::world::applyEdits(world, session, data, kProvenance);
+    REQUIRE(applied.has_value());
+    CHECK_FALSE(applied->refusedAt.has_value());
+    // An edit that causes a hard finding of its own is still refused by it.
+    const Fixture display = *fixtureOf(world.plan, "room:snes/fx:dc01");
+    const std::int64_t toDoorway = ((world.plan.rooms.front().maxZMm - 700 - display.zMm) / 100) * 100;
+    requireRefused(world, EditOperation::moveFixture(display.id, display.xMm + 1000, display.zMm + toDoorway, 0),
+                   data, rv::world::rule::kDoorwayClearance);
+    // The fixture at fault put back home: the floor passes again, its pin removed.
+    const EditResult repaired = edit(world, EditOperation::moveFixture(broken.id, broken.xMm, broken.zMm), data);
+    REQUIRE_FALSE(repaired.refused);
+    CHECK(repaired.validation.passed());
+}
+
 TEST_CASE("world/edit: a hung decoration slides along the walls only", "[world][edit]") {
     // A room whose decoration includes a poster (the decoration is drawn from each socket's seed).
     std::optional<Fresh> found;
@@ -828,6 +871,217 @@ TEST_CASE("world/edit: a south-wall fixture moved back home is unpinned and move
     CHECK(after->xMm == south.xMm);
     CHECK(after->zMm == south.zMm + static_cast<std::int64_t>(steps) * snesData().roomTemplate.growthStepMm);
     CHECK(update.validation.passed());
+}
+
+namespace {
+
+/// A fresh room of `titles` titles whose decoration includes a poster that `accept` takes, the world's seed varied
+/// (each socket's decoration is drawn from the room's seed), with that poster and that seed.
+struct PosterRoom {
+    Fresh fresh;
+    Fixture poster;
+    std::uint64_t worldSeed = 0;
+};
+template <class Accept>
+std::optional<PosterRoom> roomWithPoster(std::size_t titles, Accept&& accept) {
+    for (std::uint64_t worldSeed = kWorldSeed; worldSeed < kWorldSeed + 200; ++worldSeed) {
+        PosterRoom room;
+        room.worldSeed = worldSeed;
+        room.fresh.selection = makeSelection(titles, 1);
+        room.fresh.generated = generateSelection(room.fresh.selection, worldSeed);
+        REQUIRE(room.fresh.generated.validation.passed());
+        room.fresh.world = EditedWorld{room.fresh.generated.plan, {}};
+        const Fixture* poster =
+            findFixture(room.fresh.world.plan, FixtureRole::Decoration, [&](const Fixture& fixture) {
+                return fixture.yMm > 0 && socketOf(fixture) != nullptr && accept(*socketOf(fixture));
+            });
+        if (poster != nullptr) {
+            room.poster = *poster;
+            return room;
+        }
+    }
+    return std::nullopt;
+}
+
+/// `selection` with `count` titles more (seeded by `name`).
+RoomSelection withMore(RoomSelection selection, std::string_view name, int count) {
+    rv::core::Random random(rv::core::deriveSeed(name, 1));
+    std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(selection);
+    for (int i = 0; i < count; ++i) {
+        rv::test::world::addTitle(selection, random, taken);
+    }
+    return selection;
+}
+
+/// The poster moved by `update` follows the south wall: grown `steps` times, it stands `steps` growth steps south of
+/// `placed`, its pin rewritten in the update's overrides to where it stands, every pin honoured, the plan valid.
+void requireFollowedWall(const EditedWorld& world, const GenerationResult& update, const Fixture& placed) {
+    const std::uint32_t steps = update.plan.rooms.front().growthSteps - world.plan.rooms.front().growthSteps;
+    REQUIRE(steps > 0);
+    const std::int64_t shift = static_cast<std::int64_t>(steps) * snesData().roomTemplate.growthStepMm;
+    const Fixture* after = fixtureOf(update.plan, placed.id.toString());
+    REQUIRE(after != nullptr);
+    CHECK(after->xMm == placed.xMm);
+    CHECK(after->zMm == placed.zMm + shift);
+    CHECK(after->yawCdeg == placed.yawCdeg);
+    REQUIRE(update.overrides.has_value());
+    REQUIRE(update.overrides->fixturePins.size() == 1);
+    const rv::world::FixturePin& pin = update.overrides->fixturePins.front();
+    CHECK(pin.transform == rv::world::FixtureTransform{placed.xMm, placed.zMm + shift, placed.yawCdeg});
+    CHECK(pin.provenance == kProvenance);
+    requirePinsHonoured(EditedWorld{update.plan, *update.overrides});
+    INFO((update.validation.findings.empty() ? std::string()
+                                             : update.validation.findings.front().rule + " " +
+                                                   update.validation.findings.front().message));
+    CHECK(update.validation.passed());
+    // No growth refused (the socket a poster left takes no module: that is reported).
+    for (const std::string& line : update.changes.needsConfirmation) {
+        INFO(line);
+        CHECK(line.rfind("growth:", 0) != 0);
+    }
+}
+
+} // namespace
+
+TEST_CASE("world/edit: a fixture's home and the place snapped to its grid", "[world][edit]") {
+    auto found = roomWithPoster(40, [](const rv::world::TemplateSocket& socket) {
+        return socket.kind == rv::world::SocketKind::SideWall && socket.wall == rv::world::Wall::West;
+    });
+    REQUIRE(found.has_value());
+    EditedWorld& world = found->fresh.world;
+    const Fixture poster = found->poster;
+    const EditData data = snesEditData(found->worldSeed);
+    const rv::world::Room room = world.plan.rooms.front();
+    const Fixture display = *fixtureOf(world.plan, "room:snes/fx:dc01");
+    using rv::world::FixtureTransform;
+
+    // At home a fixture stands where the layout stood it; fixed or unknown fixtures have none.
+    CHECK(rv::world::fixtureHome(world, display.id, data) ==
+          FixtureTransform{display.xMm, display.zMm, display.yawCdeg});
+    const Fixture* hero = findFixture(world.plan, FixtureRole::HeroModule, [](const Fixture&) { return true; });
+    CHECK_FALSE(rv::world::fixtureHome(world, hero->id, data).has_value());
+    CHECK_FALSE(rv::world::fixtureHome(world, *FixtureId::make(room.id, "nowhere"), data).has_value());
+    CHECK_FALSE(rv::world::snapFixture(world, hero->id, {0, 0, 0}, data).has_value());
+
+    // A display case: the yaw to a quarter turn, x and z to the grid through its home.
+    const auto snapped = rv::world::snapFixture(world, display.id, {display.xMm + 149, display.zMm - 51, 8000}, data);
+    CHECK(snapped == FixtureTransform{display.xMm + 100, display.zMm - 100, 9000});
+    CHECK(rv::world::snapFixture(world, display.id, {display.xMm - 250, display.zMm + 250, 35000}, data) ==
+          FixtureTransform{display.xMm - 300, display.zMm + 300, 0});
+    // Moved, its home stays.
+    REQUIRE_FALSE(
+        edit(world, EditOperation::moveFixture(display.id, snapped->xMm, snapped->zMm, snapped->yawCdeg), data).refused);
+    CHECK(rv::world::fixtureHome(world, display.id, data) ==
+          FixtureTransform{display.xMm, display.zMm, display.yawCdeg});
+
+    // A poster along its own wall: on the grid through its home, its back where it was.
+    CHECK(rv::world::snapFixture(world, poster.id, {poster.xMm + 700, poster.zMm + 130, 4500}, data) ==
+          FixtureTransform{poster.xMm, poster.zMm + 100, poster.yawCdeg});
+    // Near the south wall: onto it, facing north, its back as far off it as at home (30 mm), its x on the grid; the
+    // edit's own rules accept the place.
+    const auto onSouth = rv::world::snapFixture(world, poster.id, {poster.xMm + 1240, room.maxZMm - 300, 0}, data);
+    REQUIRE(onSouth.has_value());
+    CHECK(*onSouth == FixtureTransform{poster.xMm + 1200, room.maxZMm - 30, 18000});
+    for (const auto& wanted : {FixtureTransform{room.maxXMm - 10, 0, 0}, FixtureTransform{0, room.minZMm + 5, 0},
+                               FixtureTransform{-20000, -20000, 0}}) {
+        const auto place = rv::world::snapFixture(world, poster.id, wanted, data);
+        REQUIRE(place.has_value());
+        EditedWorld trial = world;
+        const EditResult result =
+            edit(trial, EditOperation::moveFixture(poster.id, place->xMm, place->zMm, place->yawCdeg), data);
+        INFO(place->xMm << " " << place->zMm << " " << place->yawCdeg << ": "
+                        << (result.refused ? result.refused->rule + " " + result.refused->message : "accepted"));
+        if (result.refused) {
+            for (const rv::world::ValidationRule& own : rv::world::editRules()) {
+                CHECK(result.refused->rule != own.name);
+            }
+            CHECK(result.refused->rule != rv::world::rule::kFixtureOutsideRoom);
+        }
+    }
+}
+
+TEST_CASE("world/edit: a poster moved along or onto the south wall follows it when the room grows, its pin too",
+          "[world][edit]") {
+    SECTION("slid along the south wall from dec-sw or dec-se") {
+        auto found = roomWithPoster(60, [](const rv::world::TemplateSocket& socket) {
+            return socket.id == "dec-sw" || socket.id == "dec-se";
+        });
+        REQUIRE(found.has_value());
+        Fresh& fresh = found->fresh;
+        const Fixture poster = found->poster;
+        const std::uint64_t seed = found->worldSeed;
+        const EditData data = snesEditData(seed);
+        bool slid = false;
+        for (const std::int64_t step : {100, -100, 200, -200, 300, -300}) {
+            EditedWorld trial = fresh.world;
+            if (!edit(trial, EditOperation::moveFixture(poster.id, poster.xMm + step, poster.zMm), data).refused) {
+                fresh.world = trial;
+                slid = true;
+                break;
+            }
+        }
+        REQUIRE(slid);
+        const Fixture placed = *fixtureOf(fresh.world.plan, poster.id.toString());
+        const GenerationResult update =
+            updateRoom(fresh.world.plan, withMore(fresh.selection, "edit-poster", 6000), seed, fresh.world.overrides);
+        requireFollowedWall(fresh.world, update, placed);
+        // With its pin rewritten, the next update of the same selection writes nothing.
+        const GenerationResult again =
+            updateRoom(update.plan, withMore(fresh.selection, "edit-poster", 6000), seed, *update.overrides);
+        CHECK(again.plan == update.plan);
+        CHECK_FALSE(again.overrides.has_value());
+    }
+    SECTION("moved onto the south wall from a side wall") {
+        auto found = roomWithPoster(60, [](const rv::world::TemplateSocket& socket) {
+            return socket.kind == rv::world::SocketKind::SideWall && socket.wall == rv::world::Wall::West;
+        });
+        REQUIRE(found.has_value());
+        Fresh& fresh = found->fresh;
+        const Fixture poster = found->poster;
+        const std::uint64_t seed = found->worldSeed;
+        const EditData data = snesEditData(seed);
+        const rv::world::Room& room = fresh.world.plan.rooms.front();
+        // Its back 30 mm off the south wall (as on its socket), along the wall on the grid through its home's x.
+        bool moved = false;
+        std::string refusals;
+        for (const std::int64_t x : {600, 700, 800, 500, 900}) {
+            EditedWorld trial = fresh.world;
+            const EditResult result = edit(
+                trial, EditOperation::moveFixture(poster.id, poster.xMm + x, room.maxZMm - 30, 18000), data);
+            if (!result.refused) {
+                fresh.world = trial;
+                moved = true;
+                break;
+            }
+            refusals += result.refused->rule + ": " + result.refused->message + "\n";
+        }
+        INFO(refusals);
+        REQUIRE(moved);
+        const Fixture placed = *fixtureOf(fresh.world.plan, poster.id.toString());
+        const GenerationResult update =
+            updateRoom(fresh.world.plan, withMore(fresh.selection, "edit-poster", 6000), seed, fresh.world.overrides);
+        requireFollowedWall(fresh.world, update, placed);
+    }
+    SECTION("a poster left in mid-air is a hard finding") {
+        auto found = roomWithPoster(60, [](const rv::world::TemplateSocket& socket) {
+            return socket.id == "dec-sw" || socket.id == "dec-se";
+        });
+        REQUIRE(found.has_value());
+        Fresh& fresh = found->fresh;
+        const Fixture poster = found->poster;
+        const std::uint64_t seed = found->worldSeed;
+        WorldPlan plan = fresh.world.plan;
+        for (Fixture& fixture : plan.fixtures) {
+            if (fixture.id == poster.id) {
+                fixture.zMm -= 2000;
+            }
+        }
+        // The update judges the plan it keeps (a plan written by hand): the poster held where it stands, refused.
+        const rv::world::ValidationReport report = updateRoom(plan, fresh.selection, seed, {}).validation;
+        CHECK(std::any_of(report.findings.begin(), report.findings.end(), [&](const auto& finding) {
+            return finding.rule == rv::world::rule::kDecorationOffWall && finding.subject == poster.id.toString();
+        }));
+    }
 }
 
 TEST_CASE("world/edit: a fixture moved then unpinned is still held where it stands by growth", "[world][edit]") {

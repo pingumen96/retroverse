@@ -4,8 +4,8 @@
 // 4) and `retroverse-cli worldplan edit` apply, each a pure change of a plan and its overrides together, validated at
 // once by the hard rules. The plan is the truth: an edit changes it (a placement's slot, a fixture's place); the
 // overrides record what the user decided, so that a regeneration honours it (I4b step 5). Every manual change is pinned
-// (style §13.4): a game moved or swapped is pinned in its new slot, a fixture moved is pinned where it was put (a fixture
-// put back home stands where the layout stands it: its pin is removed).
+// (style §13.4): a game moved or swapped is pinned in its new slot, a fixture moved is pinned where it was put (a
+// fixture put back home stands where the layout stands it: its pin is removed).
 //
 // The operations:
 //   - move: a placed game into an empty slot of its room chain (its room and its expansions, ADR-0015 §7), a face-out
@@ -28,9 +28,10 @@
 //   - pin-fixture, unpin-fixture: a movable fixture pinned where it stands (in its socket when at home, else at its
 //     transform), or its pin removed (the fixture left where it stands).
 // An edit is refused, the world unchanged, when it names what the plan lacks, breaks a rule of its own (edit_rule) or
-// leaves a hard finding of the validation (validation.hpp) on the floor it edits: an overlap, a doorway's clearance or
-// a door-reserved socket entered, a fixture outside its room, a module, display fixture or the hero TV that cannot be
-// walked to through the 1.2 m clear width, a floor whose rooms cannot be walked to from the elevator.
+// causes a hard finding of the validation (validation.hpp) on the floor it edits, one the floor did not have before
+// it: an overlap, a doorway's clearance or a door-reserved socket entered, a fixture outside its room, a poster off its
+// wall, a module, display fixture or the hero TV that cannot be walked to through the 1.2 m clear width, a floor whose
+// rooms cannot be walked to from the elevator.
 //
 // The plan's inputDigest joins the canonical form of the pins it honours (ADR-0015 §2): an edit replaces the honoured
 // pins' term of the digest (generation_parts.hpp: the SHA-256 of their canonical form XORed into the inputs' digest),
@@ -207,6 +208,22 @@ struct EditResult {
 /// plan without its digest's form; those of the digest.
 [[nodiscard]] Expected<EditResult> applyEdit(EditedWorld& world, const EditOperation& operation, const EditData& data,
                                              const PinProvenance& provenance);
+
+/// Where a fresh layout stands the movable fixture `fixture` of `world`'s plan in its socket at its room's growth: its
+/// "home", through which its 100 mm grid runs (ADR-0015 §4), for the editor to snap to (I4b step 4). Nothing for a
+/// fixture the plan lacks, a fixed one (the hero corner, the hero-wall modules), one of a room kept as an older
+/// template made it, of a socket or prefab its room's data lacks, or of a room `data` lacks.
+[[nodiscard]] std::optional<FixtureTransform> fixtureHome(const EditedWorld& world, const FixtureId& fixture,
+                                                         const EditData& data);
+
+/// The place nearest to `wanted` that the edit's own rules accept for the movable fixture `fixture` (edit_rule::
+/// kTurnStep, kOffGrid, kWallMount): its yaw rounded to its turn step (a quarter turn, decoration 15 degrees), x and z
+/// to the grid through its home. A decoration hung on a wall (a poster) goes onto the wall nearest to `wanted`'s point,
+/// facing into the room from it (`wanted`'s yaw is not read), its back as far off it as at home, along it on the grid
+/// and within the wall's length. The validation may still refuse the place (an overlap, a doorway): applyEdit() judges
+/// it. Nothing as for fixtureHome().
+[[nodiscard]] std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const FixtureId& fixture,
+                                                         const FixtureTransform& wanted, const EditData& data);
 
 /// A session of edits applied in order, all or nothing (a CLI script, the editor's draft replayed on save).
 struct EditSession {

@@ -17,6 +17,7 @@
 
 #include "allocation.hpp"
 #include "data_reader.hpp"
+#include "fixture_geometry.hpp"
 #include "fixture_layout.hpp"
 #include "generation_parts.hpp"
 
@@ -50,11 +51,6 @@ constexpr std::array<ValidationRule, 11> kEditRules{{
      "A decoration hung on a wall stays on a wall: its back on a wall's face (within 100 mm), facing into the room."},
 }};
 
-/// A decoration hung on a wall (a poster): it stands above the floor.
-bool isHung(const Fixture& fixture) noexcept {
-    return fixture.role == FixtureRole::Decoration && fixture.yMm > 0;
-}
-
 std::string transformText(std::int64_t xMm, std::int64_t zMm, std::int32_t yawCdeg) {
     return fmt::format("x {} z {} mm, yaw {} cdeg", xMm, zMm, yawCdeg);
 }
@@ -63,6 +59,155 @@ std::string transformText(std::int64_t xMm, std::int64_t zMm, std::int32_t yawCd
 WorldOverrides honouredPins(const WorldPlan& plan, const WorldOverrides& overrides) {
     return checkPins(plan, {}, overrides).honoured;
 }
+
+EditResult refusalOf(std::string_view rule, std::string subject, std::string message) {
+    EditResult result;
+    result.refused = EditRefusal{std::string(rule), std::move(subject), std::move(message)};
+    return result;
+}
+
+// --- Fixtures (what an edit and the editor's snapping read) ----------------------------------------------------------
+
+/// What a movable fixture's edit reads: its room, its data, its socket, its prefab, its place in its socket.
+struct FixtureContext {
+    const Fixture* fixture = nullptr;
+    const Room* room = nullptr;
+    const WorldData* data = nullptr;
+    const TemplateSocket* socket = nullptr;
+    const PrefabInfo* info = nullptr;
+    detail::SocketPose home;
+};
+
+detail::LayoutInput layoutInputOf(const FixtureContext& context, const EditData& data) {
+    detail::LayoutInput input{context.data->roomTemplate,
+                              context.data->platform,
+                              context.data->mediaFamily,
+                              context.data->prefabs,
+                              context.room->id,
+                              context.room->seed,
+                              {},
+                              data.config.decorationDensityPermille};
+    input.counts.growthSteps = context.room->growthSteps;
+    return input;
+}
+
+/// The context of the fixture `id` of `plan`, or why it cannot be edited (`refused`), or an error (InvalidArgument:
+/// `data` lacks its room).
+Expected<std::optional<EditResult>> findFixtureContext(const WorldPlan& plan, const EditData& data, const FixtureId& id,
+                                                       FixtureContext& context) {
+    const auto fixture = std::find_if(plan.fixtures.begin(), plan.fixtures.end(),
+                                      [&](const Fixture& candidate) { return candidate.id == id; });
+    context.fixture = fixture != plan.fixtures.end() ? &*fixture : nullptr;
+    if (context.fixture == nullptr) {
+        return std::optional(
+            refusalOf(edit_rule::kFixtureUnknown, id.toString(), "the plan holds no such fixture"));
+    }
+    if (!detail::isMovableRole(context.fixture->role)) {
+        return std::optional(refusalOf(
+            edit_rule::kFixtureFixed, id.toString(),
+            fmt::format("a {} fixture is fixed: only side-wall modules, display fixtures and decoration move",
+                        toString(context.fixture->role))));
+    }
+    const auto room = std::find_if(plan.rooms.begin(), plan.rooms.end(),
+                                   [&](const Room& candidate) { return candidate.id == id.room(); });
+    context.room = room != plan.rooms.end() ? &*room : nullptr;
+    if (context.room == nullptr) {
+        return std::optional(
+            refusalOf(edit_rule::kFixtureUnknown, id.toString(), "the plan does not hold the fixture's room"));
+    }
+    const auto found = data.rooms.find(context.room->id);
+    if (found == data.rooms.end() || found->second == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "the edit's data lacks the room " + context.room->id.toString(),
+                         "applyEdit");
+    }
+    context.data = found->second.get();
+    if (std::string reason = roomKeepReason(plan, *context.room, *context.data); !reason.empty()) {
+        return std::optional(refusalOf(rule::kRoomKept, context.room->id.toString(),
+                                     "the room is kept as an older template made it until a regeneration: " +
+                                         reason));
+    }
+    context.socket = context.data->roomTemplate.socket(id.socket());
+    context.info = context.data->prefabs.find(context.fixture->prefab);
+    if (context.socket == nullptr || context.info == nullptr) {
+        return std::optional(refusalOf(edit_rule::kFixtureUnknown, id.toString(),
+                                     context.socket == nullptr
+                                         ? "the room's template has no socket " + id.socket()
+                                         : "the fixture's prefab " + context.fixture->prefab.manifest +
+                                               " is not among the room's measured prefabs"));
+    }
+    context.home = detail::poseInSocket(layoutInputOf(context, data), *context.socket, *context.info);
+    return std::optional<EditResult>();
+}
+
+/// The transform a fixture standing at `pose` is pinned with: none at its home.
+static std::optional<FixtureTransform> pinnedTransform(const FixtureContext& context,
+                                                       const detail::SocketPose& pose) {
+    if (pose == context.home) {
+        return std::nullopt;
+    }
+    return FixtureTransform{pose.xMm, pose.zMm, pose.yawCdeg};
+}
+
+/// The fixture's place checked against the edit's rules (grid, turn, wall); a refusal or nothing.
+std::optional<EditResult> checkPlace(const FixtureContext& context, const detail::SocketPose& pose) {
+    const Fixture& fixture = *context.fixture;
+    const std::string subject = fixture.id.toString();
+    if (pose.yawCdeg < 0 || pose.yawCdeg >= 36000) {
+        return refusalOf(edit_rule::kTurnStep, subject,
+                       fmt::format("the yaw {} cdeg is not from 0 to 35999", pose.yawCdeg));
+    }
+    const std::int32_t step = fixture.role == FixtureRole::Decoration ? kDecorationTurnCdeg : kFixtureTurnCdeg;
+    if (pose.yawCdeg % step != 0) {
+        return refusalOf(edit_rule::kTurnStep, subject,
+                       fmt::format("the yaw {} cdeg is not a multiple of {} cdeg: a {} turns by {} degrees",
+                                   pose.yawCdeg, step, toString(fixture.role), step / 100));
+    }
+    if (std::abs(pose.xMm) > kMaxFixtureOffsetMm || std::abs(pose.zMm) > kMaxFixtureOffsetMm) {
+        return refusalOf(rule::kFixtureOutsideRoom, subject,
+                       fmt::format("x {} z {} mm lies outside the room", pose.xMm, pose.zMm));
+    }
+    const auto offGrid = [&](std::int64_t value, std::int64_t home) { return (value - home) % kEditGridMm != 0; };
+    if (!detail::isHungDecoration(fixture)) {
+        if (offGrid(pose.xMm, context.home.xMm) || offGrid(pose.zMm, context.home.zMm)) {
+            return refusalOf(edit_rule::kOffGrid, subject,
+                           fmt::format("x {} z {} mm is off the room's {} mm grid through the fixture's place in "
+                                       "its socket (x {} z {} mm)",
+                                       pose.xMm, pose.zMm, kEditGridMm, context.home.xMm, context.home.zMm));
+        }
+        return std::nullopt;
+    }
+    // A hung decoration: its back on the wall it faces into the room from, along that wall on the grid.
+    if (pose.yawCdeg % kFixtureTurnCdeg != 0) {
+        return refusalOf(edit_rule::kWallMount, subject,
+                       fmt::format("a decoration hung on a wall faces into the room from it: yaw 0, 9000, 18000 or "
+                                   "27000 cdeg, not {}",
+                                   pose.yawCdeg));
+    }
+    // The validation's rule (decoration-off-wall), judged on the fixture where it would stand.
+    Fixture placed = fixture;
+    placed.xMm = pose.xMm;
+    placed.zMm = pose.zMm;
+    placed.yawCdeg = pose.yawCdeg;
+    const detail::WallMount mount = *detail::wallMountOf(placed, *context.room);
+    const bool alongX = mount.wall == Wall::North || mount.wall == Wall::South;
+    const std::string_view wall = toString(mount.wall);
+    if (!detail::hangsOnWall(placed, *context.room)) {
+        return refusalOf(edit_rule::kWallMount, subject,
+                       fmt::format("its back stands {} mm from the {} wall it faces away from; a hung "
+                                   "decoration's back stands on a wall, 0 to {} mm off it",
+                                   static_cast<double>(mount.gapHalfMm) / 2.0, wall, kMaxWallGapMm));
+    }
+    const bool off = alongX ? offGrid(pose.xMm, context.home.xMm) : offGrid(pose.zMm, context.home.zMm);
+    if (off) {
+        return refusalOf(edit_rule::kOffGrid, subject,
+                       fmt::format("{} {} mm along the {} wall is off the room's {} mm grid through the fixture's "
+                                   "place in its socket ({} {} mm)",
+                                   alongX ? "x" : "z", alongX ? pose.xMm : pose.zMm, wall, kEditGridMm,
+                                   alongX ? "x" : "z", alongX ? context.home.xMm : context.home.zMm));
+    }
+    return std::nullopt;
+}
+
 
 /// One edit applied to a world (a copy: applyEdit() keeps it only when the edit passes).
 class Editor {
@@ -92,9 +237,7 @@ public:
 
 private:
     static EditResult refusal(std::string_view rule, std::string subject, std::string message) {
-        EditResult result;
-        result.refused = EditRefusal{std::string(rule), std::move(subject), std::move(message)};
-        return result;
+        return refusalOf(rule, std::move(subject), std::move(message));
     }
 
     static EditResult unchanged(std::string summary) {
@@ -376,156 +519,6 @@ private:
 
     // --- Fixtures ---------------------------------------------------------------------------------------------------
 
-    /// What a movable fixture's edit reads: its room, its data, its socket, its prefab, its place in its socket.
-    struct FixtureContext {
-        Fixture* fixture = nullptr;
-        const Room* room = nullptr;
-        const WorldData* data = nullptr;
-        const TemplateSocket* socket = nullptr;
-        const PrefabInfo* info = nullptr;
-        detail::SocketPose home;
-    };
-
-    /// The fixture's context, or why it cannot be edited (`refused`), or an error.
-    Expected<std::optional<EditResult>> fixtureContext(const FixtureId& id, FixtureContext& context) {
-        context.fixture = fixtureOf(id);
-        if (context.fixture == nullptr) {
-            return std::optional(
-                refusal(edit_rule::kFixtureUnknown, id.toString(), "the plan holds no such fixture"));
-        }
-        if (!detail::isMovableRole(context.fixture->role)) {
-            return std::optional(refusal(
-                edit_rule::kFixtureFixed, id.toString(),
-                fmt::format("a {} fixture is fixed: only side-wall modules, display fixtures and decoration move",
-                            toString(context.fixture->role))));
-        }
-        context.room = roomOf(id.room());
-        if (context.room == nullptr) {
-            return std::optional(
-                refusal(edit_rule::kFixtureUnknown, id.toString(), "the plan does not hold the fixture's room"));
-        }
-        auto data = dataOf(context.room->id);
-        if (!data) {
-            return propagate(data.error());
-        }
-        context.data = *data;
-        if (std::string reason = roomKeepReason(m_plan, *context.room, *context.data); !reason.empty()) {
-            return std::optional(refusal(rule::kRoomKept, context.room->id.toString(),
-                                         "the room is kept as an older template made it until a regeneration: " +
-                                             reason));
-        }
-        context.socket = context.data->roomTemplate.socket(id.socket());
-        context.info = context.data->prefabs.find(context.fixture->prefab);
-        if (context.socket == nullptr || context.info == nullptr) {
-            return std::optional(refusal(edit_rule::kFixtureUnknown, id.toString(),
-                                         context.socket == nullptr
-                                             ? "the room's template has no socket " + id.socket()
-                                             : "the fixture's prefab " + context.fixture->prefab.manifest +
-                                                   " is not among the room's measured prefabs"));
-        }
-        context.home = detail::poseInSocket(layoutInput(context), *context.socket, *context.info);
-        return std::optional<EditResult>();
-    }
-
-    detail::LayoutInput layoutInput(const FixtureContext& context) const {
-        detail::LayoutInput input{context.data->roomTemplate,
-                                  context.data->platform,
-                                  context.data->mediaFamily,
-                                  context.data->prefabs,
-                                  context.room->id,
-                                  context.room->seed,
-                                  {},
-                                  m_data.config.decorationDensityPermille};
-        input.counts.growthSteps = context.room->growthSteps;
-        return input;
-    }
-
-    /// The transform a fixture standing at `pose` is pinned with: none at its home (pinned in its socket).
-    static std::optional<FixtureTransform> pinnedTransform(const FixtureContext& context,
-                                                           const detail::SocketPose& pose) {
-        if (pose == context.home) {
-            return std::nullopt;
-        }
-        return FixtureTransform{pose.xMm, pose.zMm, pose.yawCdeg};
-    }
-
-    /// The fixture's place checked against the edit's rules (grid, turn, wall); a refusal or nothing.
-    static std::optional<EditResult> checkPlace(const FixtureContext& context, const detail::SocketPose& pose) {
-        const Fixture& fixture = *context.fixture;
-        const std::string subject = fixture.id.toString();
-        if (pose.yawCdeg < 0 || pose.yawCdeg >= 36000) {
-            return refusal(edit_rule::kTurnStep, subject,
-                           fmt::format("the yaw {} cdeg is not from 0 to 35999", pose.yawCdeg));
-        }
-        const std::int32_t step = fixture.role == FixtureRole::Decoration ? kDecorationTurnCdeg : kFixtureTurnCdeg;
-        if (pose.yawCdeg % step != 0) {
-            return refusal(edit_rule::kTurnStep, subject,
-                           fmt::format("the yaw {} cdeg is not a multiple of {} cdeg: a {} turns by {} degrees",
-                                       pose.yawCdeg, step, toString(fixture.role), step / 100));
-        }
-        if (std::abs(pose.xMm) > kMaxFixtureOffsetMm || std::abs(pose.zMm) > kMaxFixtureOffsetMm) {
-            return refusal(rule::kFixtureOutsideRoom, subject,
-                           fmt::format("x {} z {} mm lies outside the room", pose.xMm, pose.zMm));
-        }
-        const auto offGrid = [&](std::int64_t value, std::int64_t home) { return (value - home) % kEditGridMm != 0; };
-        if (!isHung(fixture)) {
-            if (offGrid(pose.xMm, context.home.xMm) || offGrid(pose.zMm, context.home.zMm)) {
-                return refusal(edit_rule::kOffGrid, subject,
-                               fmt::format("x {} z {} mm is off the room's {} mm grid through the fixture's place in "
-                                           "its socket (x {} z {} mm)",
-                                           pose.xMm, pose.zMm, kEditGridMm, context.home.xMm, context.home.zMm));
-            }
-            return std::nullopt;
-        }
-        // A hung decoration: its back on the wall it faces into the room from, along that wall on the grid.
-        if (pose.yawCdeg % kFixtureTurnCdeg != 0) {
-            return refusal(edit_rule::kWallMount, subject,
-                           fmt::format("a decoration hung on a wall faces into the room from it: yaw 0, 9000, 18000 or "
-                                       "27000 cdeg, not {}",
-                                       pose.yawCdeg));
-        }
-        const Room& room = *context.room;
-        const std::int64_t back = context.info->minZMm; // the back's offset along the front from the pivot
-        std::int64_t gap = 0;
-        bool alongX = true;
-        std::string_view wall;
-        switch (pose.yawCdeg) {
-        case 0:
-            gap = pose.zMm + back - room.minZMm;
-            wall = "north";
-            break;
-        case 9000:
-            gap = pose.xMm + back - room.minXMm;
-            alongX = false;
-            wall = "west";
-            break;
-        case 18000:
-            gap = room.maxZMm - (pose.zMm - back);
-            wall = "south";
-            break;
-        default:
-            gap = room.maxXMm - (pose.xMm - back);
-            alongX = false;
-            wall = "east";
-            break;
-        }
-        if (gap < 0 || gap > kMaxWallGapMm) {
-            return refusal(edit_rule::kWallMount, subject,
-                           fmt::format("its back stands {} mm from the {} wall it faces away from; a hung decoration's "
-                                       "back stands on a wall, 0 to {} mm off it",
-                                       gap, wall, kMaxWallGapMm));
-        }
-        const bool off = alongX ? offGrid(pose.xMm, context.home.xMm) : offGrid(pose.zMm, context.home.zMm);
-        if (off) {
-            return refusal(edit_rule::kOffGrid, subject,
-                           fmt::format("{} {} mm along the {} wall is off the room's {} mm grid through the fixture's "
-                                       "place in its socket ({} {} mm)",
-                                       alongX ? "x" : "z", alongX ? pose.xMm : pose.zMm, wall, kEditGridMm,
-                                       alongX ? "x" : "z", alongX ? context.home.xMm : context.home.zMm));
-        }
-        return std::nullopt;
-    }
-
     /// The modules of `room` in the collection's order (the update's modulesInOrder()).
     std::vector<const Fixture*> modulesOf(const Room& room, const RoomTemplate& roomTemplate) const {
         std::vector<const Fixture*> modules;
@@ -552,7 +545,7 @@ private:
         std::erase_if(m_plan.lights, [&](const PlanLight& light) {
             return light.id.room() == room.id && light.role == LightRole::WallWasher;
         });
-        const detail::LayoutInput input = layoutInput(context);
+        const detail::LayoutInput input = layoutInputOf(context, m_data);
         const std::vector<const Fixture*> modules = modulesOf(room, context.data->roomTemplate);
         // Every module is judged where it stands (moved: elsewhere than its home, pinned or not).
         std::set<FixtureId> moved;
@@ -572,14 +565,14 @@ private:
 
     Expected<EditResult> moveFixture(const EditOperation& operation) {
         FixtureContext context;
-        auto refused = fixtureContext(operation.fixture, context);
+        auto refused = findFixtureContext(m_plan, m_data, operation.fixture, context);
         if (!refused) {
             return propagate(refused.error());
         }
         if (*refused) {
             return std::move(**refused);
         }
-        Fixture& fixture = *context.fixture;
+        Fixture& fixture = *fixtureOf(operation.fixture);
         const detail::SocketPose pose{operation.xMm, operation.zMm, operation.yawCdeg.value_or(fixture.yawCdeg)};
         if (auto broken = checkPlace(context, pose)) {
             return std::move(*broken);
@@ -638,7 +631,7 @@ private:
 
     Expected<EditResult> pinFixture(const FixtureId& id) {
         FixtureContext context;
-        auto refused = fixtureContext(id, context);
+        auto refused = findFixtureContext(m_plan, m_data, id, context);
         if (!refused) {
             return propagate(refused.error());
         }
@@ -776,6 +769,106 @@ Json operationJson(const EditOperation& operation) {
     return json;
 }
 
+/// The hard findings of each floor before the edit at hand, by floor.
+using FloorFindings = std::map<std::string, std::vector<ValidationFinding>>;
+
+std::vector<ValidationFinding> hardFindings(const ValidationReport& report) {
+    std::vector<ValidationFinding> hard;
+    std::copy_if(report.findings.begin(), report.findings.end(), std::back_inserter(hard),
+                 [](const ValidationFinding& finding) { return finding.severity == Severity::Hard; });
+    return hard;
+}
+
+/// applyEdit() with the floors' findings before it (`before`, filled as floors are judged; an edit applied leaves its
+/// floor's findings there for the next): an edit is refused only for a hard finding it caused, one the floor did not
+/// have before it (a pre-existing finding elsewhere on the floor, a plan written by hand, blocks nothing).
+Expected<EditResult> applyOne(EditedWorld& world, const EditOperation& operation, const EditData& data,
+                              const PinProvenance& provenance, FloorFindings& before) {
+    EditedWorld edited = world;
+    auto applied = Editor(edited, data, provenance).run(operation);
+    if (!applied) {
+        return propagate(applied.error());
+    }
+    EditResult result = std::move(*applied);
+    if (result.refused || !result.changed) {
+        return result;
+    }
+    sortPlan(edited.plan);
+    // The plan's elements changed: the floor of the rooms changed is judged by the hard rules (game moves stay within
+    // a chain, whose rooms share a floor).
+    if (!result.rooms.empty()) {
+        std::sort(result.rooms.begin(), result.rooms.end());
+        result.rooms.erase(std::unique(result.rooms.begin(), result.rooms.end()), result.rooms.end());
+        const std::optional<std::string> floor = floorOf(edited.plan, result.rooms.front());
+        if (floor) {
+            auto validation = validateFloor(edited, *floor, data);
+            if (!validation) {
+                return propagate(validation.error());
+            }
+            std::vector<ValidationFinding> after = hardFindings(*validation);
+            // The findings the edit caused: those after it that the floor did not have before (each once).
+            std::vector<ValidationFinding> caused;
+            if (!after.empty()) {
+                auto known = before.find(*floor);
+                if (known == before.end()) {
+                    auto previous = validateFloor(world, *floor, data);
+                    if (!previous) {
+                        return propagate(previous.error());
+                    }
+                    known = before.emplace(*floor, hardFindings(*previous)).first;
+                }
+                std::vector<ValidationFinding> left = known->second;
+                for (const ValidationFinding& finding : after) {
+                    const auto there = std::find(left.begin(), left.end(), finding);
+                    if (there != left.end()) {
+                        left.erase(there);
+                    } else {
+                        caused.push_back(finding);
+                    }
+                }
+            }
+            // The refusal names the first finding caused about what the edit moved (a fixture moved into a doorway
+            // also leaves the floor's hall unreachable, a rule that runs earlier), else the first finding caused.
+            std::set<std::string> subjects;
+            for (const FixtureId& fixture : result.fixturesMoved) {
+                subjects.insert(fixture.toString());
+            }
+            const ValidationFinding* first = nullptr;
+            for (const ValidationFinding& finding : caused) {
+                if (first == nullptr || (subjects.contains(finding.subject) && !subjects.contains(first->subject))) {
+                    first = &finding;
+                }
+            }
+            if (first != nullptr) {
+                EditResult refused;
+                refused.refused = EditRefusal{first->rule, first->subject, first->message};
+                refused.floor = *floor;
+                refused.validation = std::move(*validation);
+                return refused;
+            }
+            before[*floor] = std::move(after);
+            result.floor = *floor;
+            result.validation = std::move(*validation);
+        }
+    }
+    // The honoured pins' term of the inputDigest replaced (ADR-0015 §2).
+    auto digestBefore = detail::overridesDigestTerm(honouredPins(world.plan, world.overrides));
+    auto digestAfter = detail::overridesDigestTerm(honouredPins(edited.plan, edited.overrides));
+    if (!digestBefore || !digestAfter) {
+        return propagate((!digestBefore ? digestBefore : digestAfter).error());
+    }
+    auto digest = detail::joinDigestTerm(edited.plan.inputDigest, *digestBefore);
+    if (digest) {
+        digest = detail::joinDigestTerm(*digest, *digestAfter);
+    }
+    if (!digest) {
+        return propagate(digest.error());
+    }
+    edited.plan.inputDigest = std::move(*digest);
+    world = std::move(edited);
+    return result;
+}
+
 } // namespace
 
 EditOperation EditOperation::move(const GameId& game, const SlotId& slot) {
@@ -859,77 +952,18 @@ std::span<const ValidationRule> editRules() noexcept {
 
 Expected<EditResult> applyEdit(EditedWorld& world, const EditOperation& operation, const EditData& data,
                                const PinProvenance& provenance) {
-    EditedWorld edited = world;
-    auto applied = Editor(edited, data, provenance).run(operation);
-    if (!applied) {
-        return propagate(applied.error());
-    }
-    EditResult result = std::move(*applied);
-    if (result.refused || !result.changed) {
-        return result;
-    }
-    sortPlan(edited.plan);
-    // The plan's elements changed: the floor of the rooms changed is judged by the hard rules (game moves stay within
-    // a chain, whose rooms share a floor).
-    if (!result.rooms.empty()) {
-        std::sort(result.rooms.begin(), result.rooms.end());
-        result.rooms.erase(std::unique(result.rooms.begin(), result.rooms.end()), result.rooms.end());
-        const std::optional<std::string> floor = floorOf(edited.plan, result.rooms.front());
-        if (floor) {
-            auto validation = validateFloor(edited, *floor, data);
-            if (!validation) {
-                return propagate(validation.error());
-            }
-            // The refusal names the first hard finding about what the edit moved (a fixture moved into a doorway
-            // also leaves the floor's hall unreachable, a rule that runs earlier), else the first hard finding.
-            std::set<std::string> subjects;
-            for (const FixtureId& fixture : result.fixturesMoved) {
-                subjects.insert(fixture.toString());
-            }
-            const ValidationFinding* first = nullptr;
-            for (const ValidationFinding& finding : validation->findings) {
-                if (finding.severity != Severity::Hard) {
-                    continue;
-                }
-                if (first == nullptr || (subjects.contains(finding.subject) && !subjects.contains(first->subject))) {
-                    first = &finding;
-                }
-            }
-            if (first != nullptr) {
-                EditResult refused;
-                refused.refused = EditRefusal{first->rule, first->subject, first->message};
-                refused.floor = *floor;
-                refused.validation = std::move(*validation);
-                return refused;
-            }
-            result.floor = *floor;
-            result.validation = std::move(*validation);
-        }
-    }
-    // The honoured pins' term of the inputDigest replaced (ADR-0015 §2).
-    auto before = detail::overridesDigestTerm(honouredPins(world.plan, world.overrides));
-    auto after = detail::overridesDigestTerm(honouredPins(edited.plan, edited.overrides));
-    if (!before || !after) {
-        return propagate((!before ? before : after).error());
-    }
-    auto digest = detail::joinDigestTerm(edited.plan.inputDigest, *before);
-    if (digest) {
-        digest = detail::joinDigestTerm(*digest, *after);
-    }
-    if (!digest) {
-        return propagate(digest.error());
-    }
-    edited.plan.inputDigest = std::move(*digest);
-    world = std::move(edited);
-    return result;
+    FloorFindings before;
+    return applyOne(world, operation, data, provenance, before);
 }
 
 Expected<EditSession> applyEdits(EditedWorld& world, std::span<const EditOperation> operations, const EditData& data,
                                  const PinProvenance& provenance) {
     EditedWorld edited = world;
     EditSession session;
+    // Each floor validated before the session once at most, then its last edit's findings.
+    FloorFindings before;
     for (std::size_t i = 0; i < operations.size(); ++i) {
-        auto result = applyEdit(edited, operations[i], data, provenance);
+        auto result = applyOne(edited, operations[i], data, provenance, before);
         if (!result) {
             return propagate(result.error());
         }
@@ -981,6 +1015,92 @@ std::vector<RoomId> editRooms(const WorldPlan& plan, std::span<const EditOperati
     }
     std::sort(rooms.begin(), rooms.end());
     return rooms;
+}
+
+std::optional<FixtureTransform> fixtureHome(const EditedWorld& world, const FixtureId& fixture, const EditData& data) {
+    FixtureContext context;
+    auto refused = findFixtureContext(world.plan, data, fixture, context);
+    if (!refused || *refused) {
+        return std::nullopt;
+    }
+    return FixtureTransform{context.home.xMm, context.home.zMm, context.home.yawCdeg};
+}
+
+std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const FixtureId& fixture,
+                                            const FixtureTransform& wanted, const EditData& data) {
+    FixtureContext context;
+    auto refused = findFixtureContext(world.plan, data, fixture, context);
+    if (!refused || *refused) {
+        return std::nullopt;
+    }
+    const Fixture& standing = *context.fixture;
+    const detail::SocketPose& home = context.home;
+    const auto onGrid = [](std::int64_t value, std::int64_t through) {
+        const std::int64_t offset = value - through;
+        const std::int64_t steps =
+            offset >= 0 ? (offset + kEditGridMm / 2) / kEditGridMm : -((-offset + kEditGridMm / 2) / kEditGridMm);
+        return through + steps * kEditGridMm;
+    };
+    const auto turned = [](std::int32_t yaw, std::int32_t step) {
+        const std::int32_t normal = ((yaw % 36000) + 36000) % 36000;
+        return (normal + step / 2) / step * step % 36000;
+    };
+    if (!detail::isHungDecoration(standing)) {
+        const std::int32_t step =
+            standing.role == FixtureRole::Decoration ? kDecorationTurnCdeg : kFixtureTurnCdeg;
+        return FixtureTransform{onGrid(wanted.xMm, home.xMm), onGrid(wanted.zMm, home.zMm),
+                                turned(wanted.yawCdeg, step)};
+    }
+    // A poster: onto the nearest wall (north, west, south, east on a tie), facing into the room.
+    const Room& room = *context.room;
+    const std::array<std::pair<std::int64_t, std::int32_t>, 4> walls{{{wanted.zMm - room.minZMm, 0},
+                                                                     {wanted.xMm - room.minXMm, 9000},
+                                                                     {room.maxZMm - wanted.zMm, 18000},
+                                                                     {room.maxXMm - wanted.xMm, 27000}}};
+    const auto nearest = std::min_element(walls.begin(), walls.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+    const std::int32_t yaw = nearest->second;
+    const bool alongX = yaw == 0 || yaw == 18000;
+    // Along the wall on the grid through its home, its width within the wall's length.
+    const std::int64_t half = (standing.widthMm + 1) / 2;
+    const std::int64_t low = (alongX ? room.minXMm : room.minZMm) + half;
+    const std::int64_t high = (alongX ? room.maxXMm : room.maxZMm) - half;
+    std::int64_t along = onGrid(alongX ? wanted.xMm : wanted.zMm, alongX ? home.xMm : home.zMm);
+    while (along < low && along + kEditGridMm <= high) {
+        along += kEditGridMm;
+    }
+    while (along > high && along - kEditGridMm >= low) {
+        along -= kEditGridMm;
+    }
+    // Across it: the pivot on the wall's face, then moved into the room by the gap its back keeps at home.
+    Fixture placed = standing;
+    placed.yawCdeg = yaw;
+    placed.xMm = alongX ? along : (yaw == 9000 ? room.minXMm : room.maxXMm);
+    placed.zMm = alongX ? (yaw == 0 ? room.minZMm : room.maxZMm) : along;
+    Fixture atHome = standing;
+    atHome.xMm = home.xMm;
+    atHome.zMm = home.zMm;
+    atHome.yawCdeg = home.yawCdeg;
+    const std::optional<detail::WallMount> homeMount = detail::wallMountOf(atHome, room);
+    const std::int64_t keep =
+        std::clamp<std::int64_t>(homeMount ? homeMount->gapHalfMm : 0, 0, 2 * kMaxWallGapMm);
+    const std::int64_t inward = (keep - detail::wallMountOf(placed, room)->gapHalfMm) / 2;
+    switch (yaw) {
+    case 0:
+        placed.zMm += inward;
+        break;
+    case 9000:
+        placed.xMm += inward;
+        break;
+    case 18000:
+        placed.zMm -= inward;
+        break;
+    default:
+        placed.xMm -= inward;
+        break;
+    }
+    return FixtureTransform{placed.xMm, placed.zMm, placed.yawCdeg};
 }
 
 Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_view storedDigest,
