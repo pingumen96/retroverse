@@ -24,6 +24,7 @@ copies the DLL (Debug builds: the debug variant) next to each executable that lo
 | fastgltf | 0.9.1 | default | MIT | DLL `fastgltf.dll` | `rv_assets` (glTF) | yes |
 | glm | 1.0.3 | default | MIT (or the Happy Bunny License) | static `glm.lib` and headers | `rv_core` and up | yes |
 | imgui | 1.92.9 | `docking-experimental`, `opengl3-binding`, `sdl3-binding` | MIT | static `imgui.lib` | `rv_devui`: developer builds only, not in Release | yes, if a developer build is distributed |
+| miniaudio | 0.11.25 | default (header only) | Unlicense or MIT-0 | header-only, compiled into `rv_audio` (`miniaudio_impl.cpp`: device I/O only, on WASAPI and miniaudio's null backend) | `rv_audio` (I5 step 5, ADR-0016 §9: the clips' sound) | no (neither license asks for one) |
 | nlohmann-json | 3.12.0#2 | default | MIT | header-only | `rv_core` (JSON) | yes |
 | pugixml | 1.16 | none | MIT | DLL `pugixml.dll` | `rv_esde`, private (ES-DE's XML, ADR-0008) | yes |
 | sdl3 | 3.4.18 | default features off | Zlib; bundled code: BSD-3-Clause (hidapi), MIT or public domain (stb_image), Apache-2.0 (one OpenGL ES header) | DLL `SDL3.dll` | `rv_platform` and the GPU-side modules above it | yes: hidapi's BSD notice (SDL's Zlib license needs none) |

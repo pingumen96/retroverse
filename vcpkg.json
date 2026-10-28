@@ -17,6 +17,7 @@
         "sdl3-binding"
       ]
     },
+    "miniaudio",
     "nlohmann-json",
     "pugixml",
     {
