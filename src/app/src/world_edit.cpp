@@ -879,9 +879,9 @@ bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<co
         return false;
     }
     if (m_edit && (fullFloor || !statics.empty())) {
-        // A held fixture's scene items are the scene's before: taken again (syncHeldFixture()) from the scene shown
-        // after.
-        releaseHeldFixture();
+        // A held fixture's scene items and lights are the scene's before: its lights put back, all taken again
+        // (syncHeldFixture()) from the scene shown after.
+        releaseHeldFixture(true);
     }
     if (!fullFloor && !build.scene) {
         // The static part is the one shown (only placements moved), or a room's rebuilt alone below: an empty stand-in
@@ -1266,9 +1266,10 @@ void WorldSession::syncHeldFixture() {
     const std::optional<HeldFixture>& held = edit.interaction.heldFixture();
     const std::optional<world::FixtureId> wanted = held ? std::optional<world::FixtureId>(held->id) : std::nullopt;
     if (wanted == edit.heldFixture) {
+        moveHeldLights();
         return;
     }
-    releaseHeldFixture();
+    releaseHeldFixture(true);
     edit.heldFixture = wanted;
     if (!wanted) {
         return;
@@ -1293,13 +1294,45 @@ void WorldSession::syncHeldFixture() {
             }
         }
     }
+    // Its lights (a lamp's bulb: "<room>/fx:<socket>.light"), which follow it while it is held; the room's wall-washers
+    // are placed again at the drop.
+    if (m_host.sceneLightsOf) {
+        edit.heldLights =
+            m_host.sceneLightsOf([id = *wanted](std::string_view light) { return objectOfFixture(light, id); });
+    }
+    moveHeldLights();
 }
 
-void WorldSession::releaseHeldFixture() {
+void WorldSession::releaseHeldFixture(bool restore) {
     WorldEditState& edit = *m_edit;
+    if (restore && edit.heldLightsAt && !edit.heldLights.empty() && m_host.setSceneLights) {
+        m_host.setSceneLights(edit.heldLights);
+    }
     edit.heldFixture.reset();
     edit.heldSceneItems.clear();
     edit.heldGames.clear();
+    edit.heldLights.clear();
+    edit.heldLightsAt.reset();
+}
+
+void WorldSession::moveHeldLights() {
+    WorldEditState& edit = *m_edit;
+    const std::optional<HeldFixture>& held = edit.interaction.heldFixture();
+    if (!held || edit.heldLights.empty() || !edit.editRoom || !m_host.setSceneLights ||
+        edit.heldLightsAt == held->place) {
+        return;
+    }
+    const glm::mat4 move = fixtureMove(held->from, held->place, edit.editRoom->frame().toScene);
+    std::vector<std::pair<std::size_t, scene::Light>> moved = edit.heldLights;
+    for (auto& [index, light] : moved) {
+        light.position = glm::vec3(move * glm::vec4(light.position, 1.0f));
+        const glm::vec3 direction = glm::vec3(move * glm::vec4(light.direction, 0.0f));
+        if (glm::length(direction) > 0.0f) {
+            light.direction = glm::normalize(direction);
+        }
+    }
+    m_host.setSceneLights(moved);
+    edit.heldLightsAt = held->place;
 }
 
 void WorldSession::appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection) {
@@ -1355,7 +1388,7 @@ void WorldSession::endEdit(std::string_view end) {
         return;
     }
     clearEditFlags();
-    releaseHeldFixture();
+    releaseHeldFixture(true);
     WorldEditState& edit = *m_edit;
     m_pool.cancel(edit.generation);
     m_pool.cancel(edit.probeGeneration);

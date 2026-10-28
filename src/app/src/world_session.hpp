@@ -74,6 +74,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <rv/app/cover_requests.hpp>
@@ -94,6 +95,7 @@
 #include <rv/render/static_instance_group.hpp>
 #include <rv/render/texture_array_layout.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/light.hpp>
 #include <rv/scene/render_item.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/world/pick_index.hpp>
@@ -165,6 +167,12 @@ public:
         /// I4b step 4: the indices of the scene's render items of the objects whose ids `match` accepts (a fixture the
         /// editor holds leaves its place).
         std::function<std::vector<std::size_t>(const std::function<bool(std::string_view id)>& match)> sceneItemsOf;
+        /// I4b step 4's review: the scene's lights whose names `match` accepts, with their indices into the scene's
+        /// lights; and lights set at their indices, the scene's lighting packed again (a held lamp's light follows it).
+        std::function<std::vector<std::pair<std::size_t, scene::Light>>(
+            const std::function<bool(std::string_view name)>& match)>
+            sceneLightsOf;
+        std::function<void(std::span<const std::pair<std::size_t, scene::Light>> lights)> setSceneLights;
     };
 
     struct Options {
@@ -348,8 +356,12 @@ private:
     void requestEditProbe(const world::EditOperation& probe);
     void followEditProbe();
     void syncHeldFixture();
-    /// The held fixture let go of: its scene items and games given back.
-    void releaseHeldFixture();
+    /// The held fixture let go of: its scene items and games given back, its lights put back where they stood (none
+    /// when the scene is about to be replaced: `restore` false).
+    void releaseHeldFixture(bool restore);
+    /// A held lamp's light where the lamp would stand (ADR-0015 §4: it follows the lamp; the scene's lights moved in
+    /// place, no object rebuilt), once per new place.
+    void moveHeldLights();
     /// The view's items of a held fixture: drawn where it would stand, outlined.
     void appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection);
     /// The outline's colour of the frame (the inspection's dimming's view too): red over a held fixture's refused

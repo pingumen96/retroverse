@@ -45,6 +45,7 @@
 #include <rv/app/world_edit_interaction.hpp>
 #include <rv/app/world_edit_room.hpp>
 #include <rv/core/worker_pool.hpp>
+#include <rv/scene/light.hpp>
 #include <rv/world/media_family.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/world_edit.hpp>
@@ -190,6 +191,10 @@ struct WorldEditState {
     std::optional<world::FixtureId> heldFixture;
     std::vector<std::size_t> heldSceneItems;
     std::vector<world::PickId> heldGames;
+    /// Its lights (a lamp's) as they stood, by their indices into the scene's lights, and the place they were moved to
+    /// last (moveHeldLights()).
+    std::vector<std::pair<std::size_t, scene::Light>> heldLights;
+    std::optional<world::FixtureTransform> heldLightsAt;
     /// The device used last (the bar's glyphs).
     input::DeviceKind device = input::DeviceKind::KeyboardMouse;
     /// The session's record (also pushed into the run report's world.edits at its end, or the run's).

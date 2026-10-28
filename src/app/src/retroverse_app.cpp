@@ -946,6 +946,31 @@ struct RetroverseApp::State {
         host.sceneItemsOf = [this](const std::function<bool(std::string_view)>& match) {
             return scene ? scene->itemsOf(match) : std::vector<std::size_t>{};
         };
+        // I4b step 4's review: a held lamp's light follows it (the scene's lights moved in place, packed again).
+        host.sceneLightsOf = [this](const std::function<bool(std::string_view)>& match) {
+            std::vector<std::pair<std::size_t, scene::Light>> lights;
+            if (scene) {
+                const std::span<const scene::Light> all = std::as_const(*scene).sceneLights();
+                for (std::size_t index = 0; index < all.size(); ++index) {
+                    if (match(all[index].name)) {
+                        lights.emplace_back(index, all[index]);
+                    }
+                }
+            }
+            return lights;
+        };
+        host.setSceneLights = [this](std::span<const std::pair<std::size_t, scene::Light>> lights) {
+            if (!scene) {
+                return;
+            }
+            const std::span<scene::Light> all = scene->sceneLights();
+            for (const auto& [index, light] : lights) {
+                if (index < all.size() && all[index].name == light.name) {
+                    all[index] = light;
+                }
+            }
+            scene->applyLighting();
+        };
         // I4 step 6b: the CRT of the room that holds the eye, bound once the eye stayed there (never joining the
         // previous clip's decoder on the render loop).
         host.bindScreen = [this, &context](const std::string& prefix, std::vector<ScreenGame> games) -> bool {
