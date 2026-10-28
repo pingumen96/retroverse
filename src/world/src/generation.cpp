@@ -463,7 +463,13 @@ ValidationContext buildingValidationContext(const WorldPlan& plan, const WorldCo
 }
 
 Expected<WorldPlan> generateRoomContent(const RoomSelection& selection, const WorldConfig& config,
-                                        std::uint64_t worldSeed, const WorldData& data, const SectionIndex* sections) {
+                                        std::uint64_t worldSeed, const WorldData& data, const SectionIndex* sections,
+                                        const RoomPins* pins, RoomPinOutcome* outcome) {
+    if (pins != nullptr && !pins->empty()) {
+        RoomPinOutcome ignored;
+        return generatePinnedRoom(selection, config, worldSeed, data, sections, *pins,
+                                  outcome != nullptr ? *outcome : ignored);
+    }
     auto capacity = collectionCapacity(data.roomTemplate, data.prefabs, data.mediaFamily);
     if (!capacity) {
         return propagate(capacity.error());
@@ -626,7 +632,7 @@ Expected<BuildingEntry> enterBuilding(std::vector<BuildingRoom> stored, std::vec
 }
 
 Expected<WorldPlan> generateEnteredRoom(const BuildingRoom& room, const WorldConfig& config, std::uint64_t worldSeed,
-                                        const BuildingData& building) {
+                                        const BuildingData& building, const RoomPins* pins, RoomPinOutcome* outcome) {
     std::vector<catalog::SystemName> sections;
     std::vector<const RoomSelection*> selections;
     for (const EnteringSystem* system : room.entered) {
@@ -635,11 +641,11 @@ Expected<WorldPlan> generateEnteredRoom(const BuildingRoom& room, const WorldCon
     }
     Expected<WorldPlan> content = makeError(ErrorCode::InvalidArgument, "a room without a section", "generate");
     if (room.kind == RoomKind::Console && selections.size() == 1) {
-        content = generateRoomContent(*selections.front(), config, worldSeed, *room.data);
+        content = generateRoomContent(*selections.front(), config, worldSeed, *room.data, nullptr, pins, outcome);
     } else {
         SectionIndex index;
         const RoomSelection merged = sectionsSelection(room.id, sections, selections, index);
-        content = generateRoomContent(merged, config, worldSeed, *room.data, &index);
+        content = generateRoomContent(merged, config, worldSeed, *room.data, &index, pins, outcome);
     }
     if (!content) {
         return propagate(content.error());

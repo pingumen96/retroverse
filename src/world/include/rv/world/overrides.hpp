@@ -26,8 +26,9 @@
 // names a game, slot, fixture or socket that no longer exists is reported as orphaned, and a pin the plan does not
 // honour is reported (ADR-0010 §10). Since I4b step 2 the editor's operations (world_edit.hpp) make pins as they change
 // the plan, an update leaves a fixture pinned at a transform where it stands (never moved by growth, the sockets it
-// overlaps skipped), and the pins a plan honours join its inputDigest (ADR-0015 §2); the regeneration that applies them
-// is step 5's.
+// overlaps skipped), and the pins a plan honours join its inputDigest (ADR-0015 §2). Since I4b step 5 the explicit
+// regeneration applies them (regeneration.hpp's regenerate(): pinned fixtures first, pinned games reserved), and a pin
+// it cannot honour is a conflict it keeps; a fresh generation without a stored plan still applies none.
 
 #include <cstdint>
 #include <filesystem>

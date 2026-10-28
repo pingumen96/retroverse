@@ -27,8 +27,10 @@ add_library(rv_world STATIC
     src/nav_grid.cpp
     src/overrides.cpp
     src/pick_index.cpp
+    src/pinned_room.cpp
     src/plan_json.cpp
     src/platform_manifest.cpp
+    src/regeneration.cpp
     src/room_selection.cpp
     src/room_look.cpp
     src/room_template.cpp
