@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -110,19 +111,13 @@ void logAmbientOcclusion(std::string_view scene, const scene::SsaoSetup& ssao) {
     }
 }
 
-} // namespace
-
-Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& description,
-                                              const assets::MaterialLibrary& library,
-                                              const scene::ModelLoader& loadModel, const SceneResources& resources) {
-    const scene::SceneGeometry geometry = scene::buildSceneGeometry(description, library, loadModel);
-    const SceneContentPlan plan = planSceneContent(geometry);
-
-    SceneInstance instance;
-    instance.m_name = description.name;
-
-    // One upload per distinct mesh; a mesh that cannot be uploaded leaves its parts undrawn.
-    const std::size_t meshesBefore = resources.meshes.size();
+/// Registers `plan`'s meshes and materials (deduplicated by key) and appends its render items to `items`, with the
+/// object (an index into `geometry`'s objects) and whether it is a model's of each in `objects` and `models`: the
+/// prefabs' and primitives' items first in object order, then the models' (one gl::GpuModel per distinct model). Parts
+/// whose mesh cannot be uploaded are logged and left out.
+void appendContent(const scene::SceneGeometry& geometry, const SceneContentPlan& plan, const SceneResources& resources,
+                   std::vector<scene::RenderItem>& items, std::vector<std::uint32_t>& objects,
+                   std::vector<bool>& models) {
     std::vector<std::optional<scene::MeshHandle>> meshes(plan.meshes.size());
     for (std::size_t index = 0; index < plan.meshes.size(); ++index) {
         const PlannedMesh& planned = plan.meshes[index];
@@ -134,8 +129,6 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                           handle.error().toString());
         }
     }
-
-    const std::size_t materialsBefore = resources.materials.size();
     std::vector<scene::MaterialHandle> materials;
     materials.reserve(plan.materials.size());
     for (const PlannedMaterial& planned : plan.materials) {
@@ -145,38 +138,37 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         }
         materials.push_back(resources.materials.add(planned.key, planned.label, planned.material, slots));
     }
-
-    instance.m_items.reserve(plan.items.size());
+    items.reserve(items.size() + plan.items.size());
     for (const PlannedItem& item : plan.items) {
         if (meshes[item.mesh]) {
             const scene::MaterialHandle material = materials[item.material];
-            instance.m_items.push_back(scene::RenderItem{*meshes[item.mesh], material,
-                                                         resources.materials.material(material).shader, item.model,
-                                                         item.castsShadow});
+            items.push_back(scene::RenderItem{*meshes[item.mesh], material,
+                                              resources.materials.material(material).shader, item.model,
+                                              item.castsShadow});
+            objects.push_back(static_cast<std::uint32_t>(item.object));
+            models.push_back(false);
         }
     }
     // One GpuModel per distinct model; each model instance adds the model's primitives.
-    std::map<std::string, gl::GpuModel, std::less<>> models;
+    std::map<std::string, gl::GpuModel, std::less<>> gpuModels;
     for (const PlannedModelInstance& planned : plan.modelInstances) {
         const scene::SceneObjectGeometry& object = geometry.objects[planned.object];
-        auto model = models.find(object.modelPath);
-        if (model == models.end()) {
+        auto model = gpuModels.find(object.modelPath);
+        if (model == gpuModels.end()) {
             model =
-                models
+                gpuModels
                     .emplace(object.modelPath, gl::GpuModel::create(object.modelPath, *object.model, resources.meshes,
                                                                     resources.materials, resources.textures))
                     .first;
         }
-        model->second.appendRenderItems(planned.model, planned.castsShadow, instance.m_items);
+        model->second.appendRenderItems(planned.model, planned.castsShadow, items);
+        objects.resize(items.size(), static_cast<std::uint32_t>(planned.object));
+        models.resize(items.size(), true);
     }
-    if (resources.materials.size() > 0) {
-        if (auto uploaded = resources.materials.upload(resources.uniformBufferOffsetAlignment, "MaterialUniforms");
-            !uploaded) {
-            return propagate(uploaded.error());
-        }
-    }
+}
 
-    // What the shadow pass draws (gl::SceneRenderer plans it like this): blended items cast no shadow.
+/// The world bounds of what the shadow pass draws (gl::SceneRenderer plans it like this): blended items cast no shadow.
+[[nodiscard]] core::Aabb casterBoundsOf(std::span<const scene::RenderItem> items, const SceneResources& resources) {
     scene::PlanOptions casters;
     casters.localBounds = [&resources](scene::MeshHandle mesh) {
         return resources.meshes.bounds(mesh);
@@ -184,7 +176,31 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
     casters.passOf = [&resources](scene::MaterialHandle material) {
         return resources.materials.pass(material);
     };
-    instance.m_shadowCasterBounds = scene::shadowCasterBounds(instance.m_items, casters);
+    return scene::shadowCasterBounds(items, casters);
+}
+
+} // namespace
+
+Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& description,
+                                              const assets::MaterialLibrary& library,
+                                              const scene::ModelLoader& loadModel, const SceneResources& resources) {
+    const scene::SceneGeometry geometry = scene::buildSceneGeometry(description, library, loadModel);
+    const SceneContentPlan plan = planSceneContent(geometry);
+
+    SceneInstance instance;
+    instance.m_name = description.name;
+
+    // One upload per distinct mesh (a mesh that cannot be uploaded leaves its parts undrawn), the materials, the items.
+    const std::size_t meshesBefore = resources.meshes.size();
+    const std::size_t materialsBefore = resources.materials.size();
+    appendContent(geometry, plan, resources, instance.m_items, instance.m_itemObjects, instance.m_itemModels);
+    if (resources.materials.size() > 0) {
+        if (auto uploaded = resources.materials.upload(resources.uniformBufferOffsetAlignment, "MaterialUniforms");
+            !uploaded) {
+            return propagate(uploaded.error());
+        }
+    }
+    instance.m_shadowCasterBounds = casterBoundsOf(instance.m_items, resources);
 
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
@@ -216,7 +232,14 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                          instance.m_shadowCasterBounds);
     }
     logAmbientOcclusion(description.name, instance.m_environment.ssao);
-    instance.m_collision = scene::buildCollisionWorld(geometry);
+    // The collision world as scene::buildCollisionWorld() makes it, each object's colliders kept (replaceObjects()).
+    instance.m_objects.reserve(geometry.objects.size());
+    for (const scene::SceneObjectGeometry& object : geometry.objects) {
+        instance.m_objects.push_back(recordOf(object));
+        for (const scene::ColliderBox& collider : instance.m_objects.back().colliders) {
+            instance.m_collision.addCollider(collider);
+        }
+    }
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
     instance.m_objectBounds.reserve(geometry.objects.size());
@@ -416,6 +439,225 @@ bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward, fl
                       m_lights.punctualLightCount);
     }
     return areaChanged;
+}
+
+SceneInstance::ObjectRecord SceneInstance::recordOf(const scene::SceneObjectGeometry& object) {
+    ObjectRecord record{object.id, object.bounds, object.instances, object.sockets, {}};
+    scene::CollisionWorld own;
+    scene::addObjectColliders(own, object);
+    record.colliders.assign(own.boxes().begin(), own.boxes().end());
+    return record;
+}
+
+void SceneInstance::rebuildObjectLines() {
+    scene::SceneGeometry lines;
+    lines.objects.reserve(m_objects.size());
+    m_objectBounds.clear();
+    m_objectBounds.reserve(m_objects.size());
+    for (const ObjectRecord& record : m_objects) {
+        scene::SceneObjectGeometry object;
+        object.id = record.id;
+        object.bounds = record.bounds;
+        object.instances = record.instances;
+        object.sockets = record.sockets;
+        lines.objects.push_back(std::move(object));
+        m_objectBounds.push_back(record.bounds);
+    }
+    m_boundsLines = scene::DebugLines{};
+    m_socketLines = scene::DebugLines{};
+    scene::addSceneBoundsLines(lines, m_boundsLines);
+    scene::addSceneSocketLines(lines, m_socketLines);
+}
+
+std::vector<std::size_t> SceneInstance::itemsOf(const std::function<bool(std::string_view id)>& match) const {
+    std::vector<std::size_t> items;
+    std::vector<std::optional<bool>> matched(m_objects.size());
+    for (std::size_t index = 0; index < m_items.size() && index < m_itemObjects.size(); ++index) {
+        const std::uint32_t object = m_itemObjects[index];
+        if (object >= m_objects.size()) {
+            continue;
+        }
+        if (!matched[object]) {
+            matched[object] = match(m_objects[object].id);
+        }
+        if (*matched[object]) {
+            items.push_back(index);
+        }
+    }
+    return items;
+}
+
+Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescription& description,
+                                                            const SceneObjectsChange& change,
+                                                            const assets::MaterialLibrary& library,
+                                                            const scene::ModelLoader& loadModel,
+                                                            const SceneResources& resources) {
+    if (change.prefix.empty()) {
+        return makeError(ErrorCode::InvalidArgument, "objects are replaced by an id prefix", "replaceObjects");
+    }
+    if (description.objects.size() != m_objects.size() || m_itemObjects.size() != m_items.size()) {
+        return makeError(ErrorCode::InvalidArgument, "the description is not the one the scene shows",
+                         description.name);
+    }
+    const auto replaced = [&](std::string_view id) {
+        return id.starts_with(change.prefix);
+    };
+    const std::size_t count = description.objects.size();
+
+    // The objects replaced, by id, and where the new ones go.
+    std::map<std::string, std::size_t, std::less<>> old;
+    std::optional<std::size_t> first;
+    std::size_t replacedCount = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (replaced(description.objects[index].id)) {
+            old.emplace(description.objects[index].id, index);
+            ++replacedCount;
+            if (!first) {
+                first = index;
+            }
+        }
+    }
+    // A new object equal to the old one of its id keeps its content; the others are built.
+    SceneObjectsChanged changed;
+    std::vector<std::optional<std::size_t>> keptFrom(change.objects.size());
+    std::vector<std::size_t> freshOf(change.objects.size(), 0);
+    scene::SceneDescription fresh;
+    fresh.name = description.name;
+    std::set<std::size_t> keptOld;
+    for (std::size_t index = 0; index < change.objects.size(); ++index) {
+        const scene::SceneObject& object = change.objects[index];
+        const auto found = old.find(object.id);
+        if (found != old.end() && !keptOld.contains(found->second) && description.objects[found->second] == object) {
+            keptFrom[index] = found->second;
+            keptOld.insert(found->second);
+            ++changed.kept;
+        } else {
+            freshOf[index] = fresh.objects.size();
+            fresh.objects.push_back(object);
+        }
+    }
+    changed.built = fresh.objects.size();
+    changed.removed = replacedCount - keptOld.size();
+
+    const scene::SceneGeometry geometry = scene::buildSceneGeometry(fresh, library, loadModel);
+    const SceneContentPlan plan = planSceneContent(geometry);
+    std::vector<scene::RenderItem> freshItems;
+    std::vector<std::uint32_t> freshObjects;
+    std::vector<bool> freshModels;
+    appendContent(geometry, plan, resources, freshItems, freshObjects, freshModels);
+
+    // The objects in their new order: the others before the first replaced, the new ones, the others after it.
+    struct Entry {
+        bool fresh = false;
+        std::size_t index = 0; // into the old objects, or into `geometry`'s
+    };
+    std::vector<Entry> order;
+    order.reserve(count - replacedCount + change.objects.size());
+    const std::size_t insertAt = first.value_or(count);
+    for (std::size_t index = 0; index < insertAt; ++index) {
+        order.push_back(Entry{false, index}); // none replaced before the first
+    }
+    for (std::size_t index = 0; index < change.objects.size(); ++index) {
+        order.push_back(keptFrom[index] ? Entry{false, *keptFrom[index]} : Entry{true, freshOf[index]});
+    }
+    for (std::size_t index = insertAt; index < count; ++index) {
+        if (!replaced(description.objects[index].id)) {
+            order.push_back(Entry{false, index});
+        }
+    }
+
+    // The render items in create()'s order: every object's prefab and primitive items, then every object's model items.
+    std::vector<std::vector<std::size_t>> oldItems(2 * count);
+    for (std::size_t index = 0; index < m_items.size(); ++index) {
+        oldItems[2 * m_itemObjects[index] + (m_itemModels[index] ? 1 : 0)].push_back(index);
+    }
+    std::vector<std::vector<std::size_t>> newItems(2 * geometry.objects.size());
+    for (std::size_t index = 0; index < freshItems.size(); ++index) {
+        newItems[2 * freshObjects[index] + (freshModels[index] ? 1 : 0)].push_back(index);
+    }
+    std::vector<scene::RenderItem> items;
+    std::vector<std::uint32_t> itemObjects;
+    std::vector<bool> itemModels;
+    items.reserve(m_items.size() + freshItems.size());
+    itemObjects.reserve(items.capacity());
+    for (const std::size_t model : {std::size_t{0}, std::size_t{1}}) {
+        for (std::size_t position = 0; position < order.size(); ++position) {
+            const Entry& entry = order[position];
+            const std::vector<std::size_t>& from =
+                entry.fresh ? newItems[2 * entry.index + model] : oldItems[2 * entry.index + model];
+            for (const std::size_t item : from) {
+                items.push_back(entry.fresh ? freshItems[item] : m_items[item]);
+                itemObjects.push_back(static_cast<std::uint32_t>(position));
+                itemModels.push_back(model == 1);
+            }
+        }
+    }
+
+    // The objects' records, the collision world in their order, the description's objects.
+    std::vector<ObjectRecord> records;
+    records.reserve(order.size());
+    std::vector<scene::SceneObject> objects;
+    objects.reserve(order.size());
+    scene::CollisionWorld collision;
+    for (const Entry& entry : order) {
+        if (entry.fresh) {
+            records.push_back(recordOf(geometry.objects[entry.index]));
+            objects.push_back(fresh.objects[entry.index]);
+        } else {
+            records.push_back(std::move(m_objects[entry.index]));
+            objects.push_back(std::move(description.objects[entry.index]));
+        }
+        for (const scene::ColliderBox& collider : records.back().colliders) {
+            collision.addCollider(collider);
+        }
+    }
+    description.objects = std::move(objects);
+    m_objects = std::move(records);
+    m_items = std::move(items);
+    m_itemObjects = std::move(itemObjects);
+    m_itemModels = std::move(itemModels);
+    m_collision = std::move(collision);
+    rebuildObjectLines();
+    m_shadowCasterBounds = casterBoundsOf(m_items, resources);
+
+    // The lights: the new ones in place of the first replaced, the area that holds the eye choosing again at once.
+    std::vector<scene::Light> lights;
+    lights.reserve(description.lights.size() + change.lights.size());
+    bool inserted = false;
+    for (scene::Light& light : description.lights) {
+        if (light.name.starts_with(change.prefix)) {
+            if (!inserted) {
+                lights.insert(lights.end(), change.lights.begin(), change.lights.end());
+                inserted = true;
+            }
+            continue;
+        }
+        lights.push_back(std::move(light));
+    }
+    if (!inserted) {
+        lights.insert(lights.end(), change.lights.begin(), change.lights.end());
+    }
+    description.lights = std::move(lights);
+    m_sceneLights = description.lights;
+    if (!m_areas.empty()) {
+        m_areaLighting = scene::AreaLighting(m_areas, m_sceneLights, m_eye, gl::kMaxPunctualLights);
+        m_shadowSource.reset();
+        m_shadowProgress = 0.0f;
+        m_snapNext = true;
+    }
+    applyLighting();
+
+    if (resources.materials.size() > 0) {
+        if (auto uploaded = resources.materials.upload(resources.uniformBufferOffsetAlignment, "MaterialUniforms");
+            !uploaded) {
+            return propagate(uploaded.error());
+        }
+    }
+    spdlog::info("Scene '{}': the objects of {} replaced: {} kept, {} built, {} gone; {} render item(s), {} collider "
+                 "box(es), {} light(s)",
+                 m_name, change.prefix, changed.kept, changed.built, changed.removed, m_items.size(),
+                 m_collision.boxes().size(), m_sceneLights.size());
+    return changed;
 }
 
 } // namespace rv::app

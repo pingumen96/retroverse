@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -11,6 +12,7 @@
 #include <rv/assets/material_library.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/geometry/socket.hpp>
 #include <rv/render/light_packing.hpp>
 #include <rv/render/uniform_blocks.hpp>
 #include <rv/scene/collision.hpp>
@@ -35,6 +37,23 @@ struct SceneResources {
     gl::TextureCache& textures;
     /// GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT (GLCapabilities), for the material blocks.
     int uniformBufferOffsetAlignment = 256;
+};
+
+/// What SceneInstance::replaceObjects() changes.
+struct SceneObjectsChange {
+    /// The objects and lights replaced: those whose id (a light's name) starts with it ("room:snes/").
+    std::string prefix;
+    /// Their replacements, in order: they take the place of the first object (light) replaced, else go last.
+    std::vector<scene::SceneObject> objects;
+    std::vector<scene::Light> lights;
+};
+
+/// What SceneInstance::replaceObjects() did: the new objects equal to one replaced (kept: their content as it was),
+/// those built, and the old ones gone.
+struct SceneObjectsChanged {
+    std::size_t kept = 0;
+    std::size_t built = 0;
+    std::size_t removed = 0;
 };
 
 /// A scene description turned into drawable content: the reusable step between a scene file (or the model viewer) and
@@ -71,6 +90,9 @@ struct SceneResources {
 ///  - Debug lines: the bounds of every object instance (scene::addSceneBoundsLines) and the axes of its sockets
 ///    (scene::addSceneSocketLines), kept apart so that each kind can be shown on its own.
 ///  - Objects: the local bounds of every object, for placing a viewer in front of one (the overlay's "go to").
+///  - Objects replaced (I4b step 4, ADR-0015 §4: the editor rebuilds a room's static part alone): replaceObjects() puts
+///    new objects and lights in place of those of an id prefix, building only what changed, the render items, the
+///    collision world, the bounds, the debug lines and the packed lights following in the description's order.
 /// Main thread only.
 class SceneInstance {
 public:
@@ -80,6 +102,22 @@ public:
                                                         const assets::MaterialLibrary& library,
                                                         const scene::ModelLoader& loadModel,
                                                         const SceneResources& resources);
+
+    /// `description`'s objects and lights of `change.prefix` replaced by `change`'s (I4b step 4): `description` is the
+    /// one this instance shows (created from, kept in step since), changed in place. A new object equal to a replaced
+    /// one of its id keeps what that one drew and collided with; the others are built and registered as create() does
+    /// (deduplicated by key); the render items, the collision world, the object bounds and the debug lines follow the
+    /// description's order as create() would make them; the lights are those of the new list, the area that holds the
+    /// eye choosing its lights again at once (as after snapLighting()). Errors: the material blocks cannot be uploaded
+    /// (the content is then the new one, its new materials not drawable until an upload succeeds).
+    [[nodiscard]] Expected<SceneObjectsChanged> replaceObjects(scene::SceneDescription& description,
+                                                               const SceneObjectsChange& change,
+                                                               const assets::MaterialLibrary& library,
+                                                               const scene::ModelLoader& loadModel,
+                                                               const SceneResources& resources);
+    /// The indices into renderItems() of the items drawn for the objects whose ids `match` accepts (I4b step 4: a
+    /// fixture held by the editor leaves its place), in order.
+    [[nodiscard]] std::vector<std::size_t> itemsOf(const std::function<bool(std::string_view id)>& match) const;
 
     [[nodiscard]] const std::string& name() const noexcept { return m_name; }
     [[nodiscard]] std::span<const scene::RenderItem> renderItems() const noexcept { return m_items; }
@@ -167,6 +205,19 @@ private:
     void packLighting();
     /// The environment of the area that holds the eye: its terms over environment().
     [[nodiscard]] scene::EnvironmentSetup areaEnvironment() const;
+    /// What each object of the description drew and collided with (I4b step 4: replaceObjects() keeps an unchanged
+    /// object's): its id, its local bounds, instances and sockets (the debug lines), its colliders in the collision
+    /// world.
+    struct ObjectRecord {
+        std::string id;
+        core::Aabb bounds;
+        std::vector<glm::mat4> instances;
+        std::vector<geometry::Socket> sockets;
+        std::vector<scene::ColliderBox> colliders;
+    };
+    [[nodiscard]] static ObjectRecord recordOf(const scene::SceneObjectGeometry& object);
+    /// The debug lines and the object bounds made again from m_objects.
+    void rebuildObjectLines();
     /// Takes an edit of environment()'s area terms (the developer overlay's) into the area it showed them for, then
     /// shows the eye's area's there; true when the eye's area's terms changed.
     bool takeEnvironmentEdit();
@@ -204,6 +255,11 @@ private:
     glm::vec3 m_eye{0.0f};
     glm::vec3 m_forward{0.0f};
     scene::CollisionWorld m_collision;
+    /// Per description object (I4b step 4), and the object of each render item and whether it is a model's (create()
+    /// lists the prefabs' and primitives' items first, in object order, then the models').
+    std::vector<ObjectRecord> m_objects;
+    std::vector<std::uint32_t> m_itemObjects;
+    std::vector<bool> m_itemModels;
     scene::DebugLines m_boundsLines;
     scene::DebugLines m_socketLines;
     std::vector<core::Aabb> m_objectBounds;
