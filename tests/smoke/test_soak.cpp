@@ -2,8 +2,9 @@
 // tests/smoke/scenes/screens_four.json's four CRTs playing generated clips of a mock catalog in real time (no fixed
 // step, as fast as the hidden window presents), each screen's shuffle playlist moving on every 4 s, so that the two
 // decoder slots open and close a clip about every two seconds for the whole run; one clip is cut short and fails each
-// time it plays. The process's private bytes are sampled every 10 s from outside (GetProcessMemoryInfo) into
-// <case>/memory.csv, and the window is closed after RV_SOAK_SECONDS (3600 by default). Hidden ([.soak]) and
+// time it plays. The process's private bytes, handles and threads are sampled every 10 s from outside
+// (GetProcessMemoryInfo, GetProcessHandleCount, a thread snapshot) into <case>/memory.csv, and the window is closed
+// after RV_SOAK_SECONDS (3600 by default). Hidden ([.soak]) and
 // informative: run it by hand in Release,
 //   build/msvc-x64-release/bin/rv_smoke_tests.exe "[soak]"
 // (the app runs with RV_AUDIO=null whatever the environment). Its verdict: after the first 5 minutes, the private bytes
@@ -26,6 +27,7 @@
 #include <windows.h>
 
 #include <psapi.h>
+#include <tlhelp32.h>
 
 #include <algorithm>
 #include <chrono>
@@ -50,7 +52,26 @@ struct Sample {
     double seconds = 0.0;
     std::uint64_t privateBytes = 0;
     std::uint64_t workingSet = 0;
+    /// Kernel handles open, and threads alive (a thread started per clip and never reused would show in neither: it
+    /// is gone by the next sample, which is why the decoders' starts are reported too).
+    std::uint64_t handles = 0;
+    std::uint64_t threads = 0;
 };
+
+std::uint64_t threadsOf(std::uint32_t processId) {
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    std::uint64_t count = 0;
+    THREADENTRY32 entry{};
+    entry.dwSize = sizeof(entry);
+    for (BOOL more = Thread32First(snapshot, &entry); more != FALSE; more = Thread32Next(snapshot, &entry)) {
+        count += entry.th32OwnerProcessID == processId ? 1 : 0;
+    }
+    CloseHandle(snapshot);
+    return count;
+}
 
 std::optional<Sample> sampleOf(std::uint32_t processId, double seconds) {
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, processId);
@@ -60,11 +81,13 @@ std::optional<Sample> sampleOf(std::uint32_t processId, double seconds) {
     PROCESS_MEMORY_COUNTERS_EX counters{};
     const BOOL read = GetProcessMemoryInfo(process, reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
                                            sizeof(counters));
+    DWORD handles = 0;
+    GetProcessHandleCount(process, &handles);
     CloseHandle(process);
     if (read == FALSE) {
         return std::nullopt;
     }
-    return Sample{seconds, counters.PrivateUsage, counters.WorkingSetSize};
+    return Sample{seconds, counters.PrivateUsage, counters.WorkingSetSize, handles, threadsOf(processId)};
 }
 
 double meanPrivate(const std::vector<Sample>& samples, double from, double to) {
@@ -153,9 +176,14 @@ TEST_CASE("soak: an hour of four screens playing and switching clips, the privat
     REQUIRE(run.report);
     const rv::app::VideoRecord& video = run.report->video;
 
-    std::string csv = "seconds,private_bytes,working_set\n";
+    std::string csv = "seconds,private_bytes,working_set,handles,threads\n";
+    std::uint64_t maxThreads = 0;
+    std::uint64_t maxHandles = 0;
     for (const Sample& sample : samples) {
-        csv += fmt::format("{:.1f},{},{}\n", sample.seconds, sample.privateBytes, sample.workingSet);
+        csv += fmt::format("{:.1f},{},{},{},{}\n", sample.seconds, sample.privateBytes, sample.workingSet,
+                           sample.handles, sample.threads);
+        maxThreads = std::max(maxThreads, sample.threads);
+        maxHandles = std::max(maxHandles, sample.handles);
     }
     REQUIRE(rv::core::writeTextFileAtomic(dir / "memory.csv", csv).has_value());
     const double warm = meanPrivate(samples, 300.0, 600.0);
@@ -165,11 +193,11 @@ TEST_CASE("soak: an hour of four screens playing and switching clips, the privat
         peak = std::max(peak, static_cast<double>(sample.privateBytes));
     }
     std::cout << fmt::format("Soak: {:.0f} s, {} samples; private bytes {:.1f} MiB (minutes 5-10) -> {:.1f} MiB (last 5 "
-                             "minutes), {:+.1f} MiB, peak {:.1f} MiB; {} decoders started, at most {} open, {} "
-                             "fallback(s), frames {}\n",
+                             "minutes), {:+.1f} MiB, peak {:.1f} MiB; at most {} threads and {} handles; {} decoders "
+                             "started, at most {} open, {} fallback(s), frames {}\n",
                              soakSeconds, samples.size(), warm / kMiB, last / kMiB, (last - warm) / kMiB, peak / kMiB,
-                             video.decodersStarted, video.maxOpenDecoders, video.fallbacks.size(),
-                             run.report->framesRendered);
+                             maxThreads, maxHandles, video.decodersStarted, video.maxOpenDecoders,
+                             video.fallbacks.size(), run.report->framesRendered);
     CHECK(video.maxOpenDecoders <= 2);
     CHECK(video.maxDecoderThreads <= 2);
     CHECK(video.joinedAtExit);

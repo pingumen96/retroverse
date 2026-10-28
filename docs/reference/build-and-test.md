@@ -126,8 +126,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   frame p99 at most 33.3 ms and p50 at most 16.7 ms in Release, the acceptable limits of `docs/roadmap.md`; the GPU
   passes printed). The hidden `[.soak]` case (I5 step 7, `test_soak.cpp`, informative): `rv_smoke_tests.exe "[soak]"`
   in Release plays `screens_four`'s four CRTs for an hour in real time (`RV_SOAK_SECONDS` to shorten it), each
-  playlist moving on every 4 s, and samples the app's private bytes every 10 s into `smoke/soak/memory.csv`; after the
-  first 5 minutes they must grow by less than 32 MiB. Every clean run is also
+  playlist moving on every 4 s, and samples the app's private bytes, handles and threads every 10 s into
+  `smoke/soak/memory.csv`; after the first 5 minutes the private bytes must grow by less than 32 MiB. The hidden
+  `[.soak]` case of `rv_platform_tests` (`tests/platform/test_thread_soak.cpp`, I5 step 7's review, informative) prints
+  the private bytes a thread started and joined costs without a GL context, with an idle one, and with one presenting
+  frames meanwhile (`RV_SOAK_GL_DEBUG=1` a debug context), against the same work on one thread that lives on. Every
+  clean run is also
   checked for the run report's I3 sections (the GPU memory adding up, at most one decoder thread, joined at exit).
   Every case of `rv_smoke_tests` (the gpu cases and the desktop one) runs with `RV_LAUNCH_ALLOWLIST` naming the build's
   `rv_fake_emulator.exe` (ctest `ENVIRONMENT`; the launch tests set it themselves when run outside ctest). A case is
