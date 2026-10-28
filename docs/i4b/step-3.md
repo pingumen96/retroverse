@@ -183,3 +183,7 @@ Two reviews of the step; what changed:
   rule's sentence), `edit_rotate_left` and `edit_rotate_right` still to add to the Edit context.
 - **The targets:** `EditRoom` indexes the room's items and free slots; fixtures need their own pick targets (the
   layout's occluders are boxes without ids) and a floor point under the reticle on the 100 mm grid.
+- **Dressed free slots from a distance.** A free slot that a dressed level covers cannot be targeted with the reticle
+  from afar (the dressing occludes it); it can be picked from its own focus pose and with the D-pad. Found while
+  writing the card case; when step 4 rebuilds the room's static part, let a held game's ray pass the dressing that
+  would give way.
