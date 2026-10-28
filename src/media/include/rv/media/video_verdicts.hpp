@@ -55,8 +55,8 @@ enum class VerdictSource : std::uint8_t {
 /// "playable" for DecodeFailure::None, else the failure's name with dashes ("corrupt-data"), as the run report names
 /// the decoders' failures.
 [[nodiscard]] std::string verdictName(DecodeFailure failure);
-/// The failure a verdict names (None for "playable"); nothing for another text, "file-not-found" included (a missing
-/// file has no verdict).
+/// The failure a verdict names (None for "playable"); nothing for another text, "file-not-found" and "read-error"
+/// included (a missing file, or one the system could not read, has no verdict).
 [[nodiscard]] std::optional<DecodeFailure> parseVerdictName(std::string_view name);
 
 /// One clip's verdict.
@@ -104,7 +104,8 @@ public:
     /// checked again).
     [[nodiscard]] const VideoVerdict* findCurrent(std::string_view path, const VideoFileFacts& facts) const;
     /// Sets the verdict of its path, replacing the one it had. Errors: InvalidArgument for an empty or malformed path
-    /// (not UTF-8, "\" in it, an empty, "." or ".." element) or a FileNotFound failure (a missing file has none).
+    /// (not UTF-8, "\" in it, an empty, "." or ".." element) or a FileNotFound or ReadError failure (a missing file,
+    /// or one the system could not read, has none: the cause is not the clip's).
     Status set(VideoVerdict verdict);
     /// Removes the verdict of `path`; false when it had none.
     bool erase(std::string_view path);

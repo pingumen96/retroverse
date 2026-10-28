@@ -63,6 +63,7 @@ TEST_CASE("media/video_verdicts: verdict names", "[media][video_verdicts]") {
         CHECK(rv::media::parseVerdictName(rv::media::verdictName(failure)) == failure);
     }
     CHECK_FALSE(rv::media::parseVerdictName("file-not-found")); // a missing file has no verdict
+    CHECK_FALSE(rv::media::parseVerdictName("read-error"));     // nor one the system could not read
     CHECK_FALSE(rv::media::parseVerdictName("Playable"));
     CHECK(rv::media::toString(VerdictSource::Check) == "check");
     CHECK(rv::media::toString(VerdictSource::Play) == "play");
@@ -108,6 +109,7 @@ TEST_CASE("media/video_verdicts: keyed by the path as the file system compares i
         CHECK(verdicts.find(path) == nullptr);
     }
     CHECK_FALSE(verdicts.set(verdict("snes/videos/c.mp4", DecodeFailure::FileNotFound)));
+    CHECK_FALSE(verdicts.set(verdict("snes/videos/c.mp4", DecodeFailure::ReadError)));
 }
 
 TEST_CASE("media/video_verdicts: the canonical text reads back byte for byte", "[media][video_verdicts]") {

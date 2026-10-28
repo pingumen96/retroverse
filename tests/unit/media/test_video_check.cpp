@@ -1,15 +1,19 @@
 // The check of a clip's sample (I5 step 7, ADR-0016 §8: what `retroverse-cli media --check-videos` runs on each clip):
 // every damaged kind of SC-08 gets the decoder's verdict, a short clip is decoded whole, a long one only at its head,
-// middle and end, and a long clip cut short whose index is intact fails as truncated without being decoded whole.
+// middle and end, a long clip cut short whose index is intact fails as truncated without being decoded whole, and a
+// file the system cannot read is no verdict.
 
 #include "media_test_support.hpp"
 
 #include <rv/core/utf8.hpp>
 #include <rv/media/test_video.hpp>
 #include <rv/media/video_check.hpp>
+#include <rv/media/video_verdicts.hpp>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include <windows.h>
 
 #include <atomic>
 #include <chrono>
@@ -96,6 +100,27 @@ TEST_CASE("media/video_check: a long clip cut short fails as truncated without b
     CHECK(result.failure == DecodeFailure::Truncated);
     CHECK_FALSE(result.whole);
     CHECK(result.frames < 100);
+}
+
+TEST_CASE("media/video_check: a file the system cannot read gives a read error, never a verdict of the clip",
+          "[media][video_check]") {
+    const MediaTestDir dir;
+    const auto clip = writeClip(dir, "held.mp4", smallClip(160, 120, 10, 30));
+    // Another program holds it open and shares nothing: the open fails with a sharing violation.
+    const HANDLE held =
+        CreateFileW(clip.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    REQUIRE(held != INVALID_HANDLE_VALUE);
+    const VideoCheckResult result = rv::media::checkVideo(clip);
+    CloseHandle(held);
+    INFO(result.detail);
+    CHECK(result.completed);
+    CHECK(result.failure == DecodeFailure::ReadError);
+    rv::media::VideoVerdict verdict;
+    verdict.path = "snes/videos/held.mp4";
+    verdict.failure = result.failure;
+    CHECK_FALSE(rv::media::VideoVerdicts{}.set(verdict));
+    // Released, the same file checks playable.
+    CHECK(checked(clip).failure == DecodeFailure::None);
 }
 
 TEST_CASE("media/video_check: a check cancelled or out of time gives no verdict", "[media][video_check]") {

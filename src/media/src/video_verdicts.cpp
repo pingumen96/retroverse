@@ -318,8 +318,8 @@ Status VideoVerdicts::set(VideoVerdict verdict) {
     if (const Status checked = checkPath(verdict.path); !checked) {
         return checked;
     }
-    if (verdict.failure == DecodeFailure::FileNotFound) {
-        return makeError(ErrorCode::InvalidArgument, "a missing file has no verdict", verdict.path);
+    if (verdict.failure == DecodeFailure::FileNotFound || verdict.failure == DecodeFailure::ReadError) {
+        return makeError(ErrorCode::InvalidArgument, "a missing or unreadable file has no verdict", verdict.path);
     }
     auto key = verdictKey(verdict.path);
     if (!key) {

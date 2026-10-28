@@ -39,6 +39,9 @@ enum class DecodeFailure : std::uint8_t {
     CorruptData,      ///< too many packets failed to demux or decode (DecoderSettings), or no frame decodes at all
     Truncated,        ///< the file ends in the middle of the stream (cut short, still being written)
     DecoderError,     ///< FFmpeg failed otherwise (out of memory, a conversion that cannot be set up)
+    /// The system could not open or read the file (access denied, a sharing violation, a device error, a drive gone):
+    /// the cause is not the clip's content and may pass, so it is never a verdict of the clip (video_verdicts.hpp).
+    ReadError,
 };
 
 [[nodiscard]] std::string_view toString(DecodeFailure failure) noexcept;

@@ -69,6 +69,8 @@ std::string_view toString(DecodeFailure failure) noexcept {
         return "truncated";
     case DecodeFailure::DecoderError:
         return "decoder error";
+    case DecodeFailure::ReadError:
+        return "read error";
     }
     return "unknown";
 }
@@ -87,6 +89,7 @@ ErrorCode errorCodeFor(DecodeFailure failure) noexcept {
     case DecodeFailure::UnsupportedCodec:
         return ErrorCode::Unsupported;
     case DecodeFailure::DecoderError:
+    case DecodeFailure::ReadError:
         return ErrorCode::IoError;
     }
     return ErrorCode::Unknown;
@@ -192,6 +195,15 @@ double taggedDurationSeconds(const AVStream& stream) noexcept {
         return 0.0;
     }
     return static_cast<double>(microseconds) * 1e-6;
+}
+
+/// True for the errors the system gives when it cannot open or read a file (FFmpeg's file protocol passes errno on):
+/// access denied or a sharing violation, a device error, a busy or missing device, too many open files, a timeout.
+/// Never a fault of the file's content, which FFmpeg reports with codes of its own (AVERROR_INVALIDDATA, ...).
+bool isSystemReadError(int code) noexcept {
+    return code == AVERROR(EACCES) || code == AVERROR(EPERM) || code == AVERROR(EIO) || code == AVERROR(EBUSY) ||
+           code == AVERROR(ENXIO) || code == AVERROR(ENODEV) || code == AVERROR(EMFILE) || code == AVERROR(ENFILE) ||
+           code == AVERROR(ETIMEDOUT);
 }
 
 std::wstring threadDescription(const std::string& name) {
@@ -371,6 +383,10 @@ private:
     }
     [[nodiscard]] bool ensureConverter(const AVFrame& frame);
     void resetPass(bool fromStart) noexcept;
+    /// The system's error behind the latest open, read or seek: `result` itself when it is one (isSystemReadError),
+    /// else the error the file's I/O context recorded (a read the system failed, whatever the demuxer made of it); 0
+    /// when neither is.
+    [[nodiscard]] int systemReadError(int result) const noexcept;
     /// Finds the first audio stream and, with a sink, opens its decoder (a failure leaves the clip silent).
     void openAudio(StreamInfo& info);
     /// An audio packet: decoded into the sink while the sound is enabled, discarded otherwise.
@@ -508,7 +524,11 @@ bool VideoDecoder::Worker::open() {
     const std::filesystem::path& path = m_shared.path;
     std::error_code ec;
     const std::filesystem::file_status status = std::filesystem::status(path, ec);
-    if (ec || !std::filesystem::exists(status)) {
+    if (ec && status.type() != std::filesystem::file_type::not_found) {
+        fail(DecodeFailure::ReadError, fmt::format("cannot look at the file: {}", ec.message()));
+        return false;
+    }
+    if (!std::filesystem::exists(status)) {
         fail(DecodeFailure::FileNotFound, "no such file");
         return false;
     }
@@ -538,7 +558,9 @@ bool VideoDecoder::Worker::open() {
         if (m_stop.stop_requested()) {
             return false;
         }
-        fail(result == AVERROR(ENOENT) ? DecodeFailure::FileNotFound : DecodeFailure::InvalidFile,
+        fail(result == AVERROR(ENOENT)   ? DecodeFailure::FileNotFound
+             : isSystemReadError(result) ? DecodeFailure::ReadError
+                                         : DecodeFailure::InvalidFile,
              fmt::format("cannot open the file: {}", detail::errorText(result)));
         return false;
     }
@@ -548,7 +570,9 @@ bool VideoDecoder::Worker::open() {
         if (m_stop.stop_requested()) {
             return false;
         }
-        fail(DecodeFailure::InvalidFile, fmt::format("cannot read the streams: {}", detail::errorText(result)));
+        const int readError = systemReadError(result);
+        fail(readError < 0 ? DecodeFailure::ReadError : DecodeFailure::InvalidFile,
+             fmt::format("cannot read the streams: {}", detail::errorText(readError < 0 ? readError : result)));
         return false;
     }
 
@@ -658,6 +682,14 @@ bool VideoDecoder::Worker::open() {
     return true;
 }
 
+int VideoDecoder::Worker::systemReadError(int result) const noexcept {
+    if (isSystemReadError(result)) {
+        return result;
+    }
+    const int recorded = m_format && m_format->pb != nullptr ? m_format->pb->error : 0;
+    return isSystemReadError(recorded) ? recorded : 0;
+}
+
 void VideoDecoder::Worker::resetPass(bool fromStart) noexcept {
     m_passStart.reset();
     m_passEnd = 0.0;
@@ -722,12 +754,20 @@ void VideoDecoder::Worker::decodeLoop() {
 
 bool VideoDecoder::Worker::step() {
     const int result = av_read_frame(m_format.get(), m_packet.get());
-    if (result == AVERROR_EOF) {
-        return endOfStream();
-    }
     if (result == AVERROR_EXIT || m_stop.stop_requested()) {
         av_packet_unref(m_packet.get());
         return false;
+    }
+    if (result < 0 && result != AVERROR(EAGAIN)) {
+        // The system failed a read (the file's own end is no error): no fault of the clip, and no end of its stream (a
+        // failed read also sets the end-of-file flag, which would read as a file cut short).
+        if (const int readError = systemReadError(result); readError < 0) {
+            fail(DecodeFailure::ReadError, fmt::format("cannot read the file: {}", detail::errorText(readError)));
+            return false;
+        }
+    }
+    if (result == AVERROR_EOF) {
+        return endOfStream();
     }
     if (result == AVERROR(EAGAIN)) {
         return true;
@@ -1037,8 +1077,10 @@ bool VideoDecoder::Worker::seekTo(double seconds) {
     }
     if (result < 0) {
         if (!m_stop.stop_requested()) {
-            fail(DecodeFailure::DecoderError,
-                 fmt::format("cannot seek to {:.3f} s: {}", seconds, detail::errorText(result)));
+            const int readError = systemReadError(result);
+            fail(readError < 0 ? DecodeFailure::ReadError : DecodeFailure::DecoderError,
+                 fmt::format("cannot seek to {:.3f} s: {}", seconds,
+                             detail::errorText(readError < 0 ? readError : result)));
         }
         return false;
     }
