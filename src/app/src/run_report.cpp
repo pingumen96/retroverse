@@ -1743,6 +1743,125 @@ ProcessPriorityRecord readProcessPriority(FieldReader& fields) {
     return priority;
 }
 
+Json audioToJson(const AudioRecord& audio) {
+    Json json;
+    json["device"] = audio.device;
+    json["reason"] = audio.reason;
+    json["deviceName"] = audio.deviceName;
+    json["sampleRate"] = audio.sampleRate;
+    json["mutedAtStart"] = audio.mutedAtStart;
+    json["muted"] = audio.muted;
+    json["muteToggles"] = audio.muteToggles;
+    json["duckedFrames"] = audio.duckedFrames;
+    json["duckChanges"] = audio.duckChanges;
+    json["blocks"] = audio.blocks;
+    json["framesMixed"] = audio.framesMixed;
+    if (audio.capture) {
+        json["capture"] = core::pathToGenericUtf8(*audio.capture);
+    }
+    if (audio.captureStartSeconds) {
+        json["captureStartSeconds"] = *audio.captureStartSeconds;
+    }
+    json["sync"] = Json{{"blocks", audio.syncBlocks},
+                        {"resyncs", audio.resyncs},
+                        {"corrections", audio.corrections},
+                        {"underrunFrames", audio.underrunFrames},
+                        {"overflowFrames", audio.overflowFrames},
+                        {"p50Milliseconds", audio.syncP50Milliseconds},
+                        {"p95Milliseconds", audio.syncP95Milliseconds},
+                        {"maxMilliseconds", audio.syncMaxMilliseconds}};
+    json["suspends"] = audio.suspends;
+    json["deviceStops"] = audio.deviceStops;
+    json["deviceStarts"] = audio.deviceStarts;
+    json["deviceFailures"] = audio.deviceFailures;
+    json["deviceLosses"] = audio.deviceLosses;
+    json["deviceRecoveries"] = audio.deviceRecoveries;
+    Json audible = Json::array();
+    for (const AudioAudibleRecord& change : audio.audible) {
+        audible.push_back(Json{{"frame", change.frame},
+                               {"atSeconds", change.atSeconds},
+                               {"screen", change.screen},
+                               {"gameId", change.gameId}});
+    }
+    json["audible"] = std::move(audible);
+    Json levels = Json::array();
+    for (const AudioLevelRecord& level : audio.levels) {
+        levels.push_back(Json{{"atSeconds", level.atSeconds},
+                              {"screen", level.screen},
+                              {"distance", level.distance},
+                              {"spatialGain", level.spatialGain},
+                              {"pan", level.pan},
+                              {"gain", level.gain}});
+    }
+    json["levels"] = std::move(levels);
+    Json presented = Json::array();
+    for (const AudioPresentedRecord& frame : audio.presented) {
+        presented.push_back(Json{{"atSeconds", frame.atSeconds}, {"ptsSeconds", frame.ptsSeconds}});
+    }
+    json["presented"] = std::move(presented);
+    Json clips = Json::array();
+    for (const AudioClipRecord& clip : audio.clips) {
+        clips.push_back(Json{{"gameId", clip.gameId},
+                             {"codec", clip.codec},
+                             {"sampleRate", clip.sampleRate},
+                             {"channels", clip.channels}});
+    }
+    json["clips"] = std::move(clips);
+    return json;
+}
+
+AudioRecord readAudio(FieldReader& fields) {
+    AudioRecord audio;
+    audio.device = fields.string("device");
+    audio.reason = fields.string("reason");
+    audio.deviceName = fields.string("deviceName");
+    audio.sampleRate = fields.count("sampleRate");
+    audio.mutedAtStart = fields.boolean("mutedAtStart");
+    audio.muted = fields.boolean("muted");
+    audio.muteToggles = fields.count("muteToggles");
+    audio.duckedFrames = fields.count("duckedFrames");
+    audio.duckChanges = fields.count("duckChanges");
+    audio.blocks = fields.count("blocks");
+    audio.framesMixed = fields.count("framesMixed");
+    if (const std::optional<std::string> capture = fields.optionalString("capture")) {
+        audio.capture = core::pathFromUtf8(*capture);
+    }
+    audio.captureStartSeconds = fields.optionalNumber("captureStartSeconds");
+    if (auto sync = fields.object("sync")) {
+        audio.syncBlocks = sync->count("blocks");
+        audio.resyncs = sync->count("resyncs");
+        audio.corrections = sync->count("corrections");
+        audio.underrunFrames = sync->count("underrunFrames");
+        audio.overflowFrames = sync->count("overflowFrames");
+        audio.syncP50Milliseconds = sync->number("p50Milliseconds");
+        audio.syncP95Milliseconds = sync->number("p95Milliseconds");
+        audio.syncMaxMilliseconds = sync->number("maxMilliseconds");
+    }
+    audio.suspends = fields.count("suspends");
+    audio.deviceStops = fields.count("deviceStops");
+    audio.deviceStarts = fields.count("deviceStarts");
+    audio.deviceFailures = fields.count("deviceFailures");
+    audio.deviceLosses = fields.count("deviceLosses");
+    audio.deviceRecoveries = fields.count("deviceRecoveries");
+    for (FieldReader& change : fields.objectArray("audible")) {
+        audio.audible.push_back(AudioAudibleRecord{change.count("frame"), change.number("atSeconds"),
+                                                   change.string("screen"), change.string("gameId")});
+    }
+    for (FieldReader& level : fields.objectArray("levels")) {
+        audio.levels.push_back(AudioLevelRecord{level.number("atSeconds"), level.string("screen"),
+                                                level.number("distance"), level.number("spatialGain"),
+                                                level.number("pan"), level.number("gain")});
+    }
+    for (FieldReader& frame : fields.objectArray("presented")) {
+        audio.presented.push_back(AudioPresentedRecord{frame.number("atSeconds"), frame.number("ptsSeconds")});
+    }
+    for (FieldReader& clip : fields.objectArray("clips")) {
+        audio.clips.push_back(AudioClipRecord{clip.string("gameId"), clip.string("codec"), clip.count("sampleRate"),
+                                              clip.count("channels")});
+    }
+    return audio;
+}
+
 /// What videoToJson() wrote: the empty object, or every field of a bound record.
 VideoRecord readVideo(FieldReader& fields) {
     VideoRecord video;
@@ -2334,6 +2453,9 @@ std::string formatRunReport(const RunReport& report) {
     }
     json["cpuSections"] = std::move(sections);
     json["gpuMemory"] = gpuMemoryToJson(report.gpuMemory);
+    if (report.audio) {
+        json["audio"] = audioToJson(*report.audio);
+    }
     return json.dump(2) + "\n";
 }
 
@@ -2477,6 +2599,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto memory = fields.object("gpuMemory")) {
         report.gpuMemory = readGpuMemory(*memory);
+    }
+    if (auto audio = fields.optionalObject("audio")) {
+        report.audio = readAudio(*audio);
     }
     if (error) {
         return propagate(std::move(*error));

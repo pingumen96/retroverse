@@ -221,6 +221,8 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::UiInfo, {padButton(GamepadButton::West)}},
         {Action::UiFilterPrevious, {padButton(GamepadButton::LeftShoulder)}},
         {Action::UiFilterNext, {padButton(GamepadButton::RightShoulder)}},
+        // The clips' sound (I5 step 5): F8, no pad button.
+        {Action::ToggleMute, {key(Key::F8)}},
     };
     REQUIRE(expected.size() == rv::input::kActionCount);
 

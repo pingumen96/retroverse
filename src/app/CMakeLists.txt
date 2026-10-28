@@ -12,10 +12,12 @@
 # cache and the world notice's keys (step 10b), the room's items kept for the persisted start (step 10c), the room's
 # side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b); since
 # I4 step 7b the elevator ride's state machine and the directory's data and command routing; since I5 step 1 the
-# screens' playlists and video.json; since I5 step 2 the decoder scheduler and the process priority's policy.
+# screens' playlists and video.json; since I5 step 2 the decoder scheduler and the process priority's policy; since I5
+# step 5 the sound's policy (the output, the audible screen, its gain and pan, the duck).
 # Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
 # reports of the runs they start.
 add_library(rv_app_cli STATIC
+    src/audio_policy.cpp
     src/back_action.cpp
     src/collection_layers.cpp
     src/command_line.cpp
@@ -51,8 +53,9 @@ add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
 target_include_directories(rv_app_cli PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # rv_world (I3): the world's plans, picking and the interaction states of the generated room (ADR-0010, ADR-0012).
+# rv_audio_model (I5 step 5): the outputs' names and the spatial rules, without the engine or miniaudio.
 target_link_libraries(rv_app_cli PUBLIC
-    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms rv_world)
+    rv_core rv_geometry rv_input rv_assets rv_scene rv_launcher rv_ui_model rv_render_uniforms rv_world rv_audio_model)
 rv_forbid_link(rv_app_cli)
 
 # GPU-free part of the application layer over the ES-DE catalog (I2 step 13): the catalog worker (the database's writer
@@ -124,7 +127,7 @@ target_include_directories(rv_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # rv_ui: the product UI (RmlUi); rv_launcher and rv_platform_win: launches from the quick catalog (plans, sessions, the
 # Win32 process runner and system probe); rv_devui_model: the mouse's hand-over between the scene and the layers over it
 # (GPU-free, in every build); rv_media: the hero CRT's video decoder (I3, ADR-0012 §7); rv_world: the generated room
-# (I3, ADR-0010).
+# (I3, ADR-0010); rv_audio: the clips' sound (I5 step 5, ADR-0016 §9), connected to rv_media's decoders here.
 target_link_libraries(rv_app PUBLIC
     rv_app_cli
     rv_app_catalog
@@ -140,6 +143,7 @@ target_link_libraries(rv_app PUBLIC
     rv_ui
     rv_devui_model
     rv_media
+    rv_audio
     rv_world)
 
 if(RV_DEV_UI)

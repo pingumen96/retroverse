@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <system_error>
@@ -28,9 +29,19 @@ constexpr int kMinTestVideoSide = 16;
 constexpr int kMaxTestVideoSide = 4096;
 constexpr int kMaxTestVideoFrames = 36000;
 constexpr double kMaxTestAudioSeconds = 600.0;
-/// Silent audio of the clips: 16-bit mono PCM at this rate, in packets of a tenth of a second.
-constexpr int kAudioSampleRate = 16000;
-constexpr int kAudioPacketSamples = kAudioSampleRate / 10;
+
+/// The beep `seconds` falls in, as the seconds since its start; none outside the beeps (always the clip's time for a
+/// continuous tone).
+std::optional<double> beepPhase(const TestVideoSpec& spec, double seconds) noexcept {
+    if (spec.beepPeriodSeconds <= 0.0) {
+        return seconds;
+    }
+    if (seconds < spec.beepFirstSeconds) {
+        return std::nullopt;
+    }
+    const double since = std::fmod(seconds - spec.beepFirstSeconds, spec.beepPeriodSeconds);
+    return since < spec.beepSeconds ? std::optional<double>(since) : std::nullopt;
+}
 
 // --- The frame counter: kFrameCounterBits blocks, most significant first, in a row along the top
 // ------------------------
@@ -122,6 +133,9 @@ int bounce(int value, int span) noexcept {
 void drawTestFrame(Canvas& canvas, const TestVideoSpec& spec, int frameIndex) {
     const int width = canvas.width();
     const int height = canvas.height();
+    const bool flash =
+        spec.beepPeriodSeconds > 0.0 &&
+        beepPhase(spec, static_cast<double>(frameIndex) / static_cast<double>(spec.frameRate)).has_value();
     // Background bars, scrolling one bar width every two seconds.
     const int barCount = static_cast<int>(kBarColors.size());
     const int barWidth = std::max(1, width / barCount);
@@ -138,6 +152,9 @@ void drawTestFrame(Canvas& canvas, const TestVideoSpec& spec, int frameIndex) {
     const int boxX = bounce(frameIndex * std::max(1, width / 90), width - box);
     const int boxY = height / 3 + bounce(frameIndex * std::max(1, height / 120), height / 3 - box / 2);
     canvas.fill(boxX, boxY, boxX + box, boxY + box, Rgb{240, 240, 240});
+    if (flash) {
+        canvas.fill(0, 0, width, height, Rgb{255, 255, 255}); // the beep's flash
+    }
 
     // The counter blocks on a dark band.
     const double block = counterBlockSide(width);
@@ -203,26 +220,48 @@ Status encodeAndWrite(AVCodecContext& encoder, AVFormatContext& output, const AV
     }
 }
 
-/// The silent audio stream of a clip: packets of zeros written up to a time, interleaved with the video by the muxer.
-class SilentAudio {
+/// The audio stream of a clip (16-bit PCM: silence, a tone or beeps): packets of a tenth of a second written up to a
+/// time, interleaved with the video by the muxer.
+class TestAudio {
 public:
-    SilentAudio(AVStream& stream, std::int64_t totalSamples) noexcept : m_stream(stream), m_total(totalSamples) {}
+    TestAudio(AVStream& stream, const TestVideoSpec& spec, std::int64_t totalSamples) noexcept
+        : m_stream(stream), m_spec(spec), m_total(totalSamples) {}
 
     /// Writes the packets that start before `seconds` (all of them for infinity).
     Status writeUntil(AVFormatContext& output, AVPacket& packet, double seconds, const std::filesystem::path& path) {
-        while (m_written < m_total && static_cast<double>(m_written) / kAudioSampleRate < seconds) {
-            const auto samples = static_cast<int>(std::min<std::int64_t>(kAudioPacketSamples, m_total - m_written));
-            int result = av_new_packet(&packet, samples * 2);
+        const int rate = m_spec.audioSampleRate;
+        const int channels = m_spec.audioChannels;
+        const int packetSamples = std::max(1, rate / 10);
+        while (m_written < m_total && static_cast<double>(m_written) / rate < seconds) {
+            const auto samples = static_cast<int>(std::min<std::int64_t>(packetSamples, m_total - m_written));
+            int result = av_new_packet(&packet, samples * 2 * channels);
             if (result < 0) {
                 return ffmpegError("cannot allocate an audio packet", result, path);
             }
-            std::memset(packet.data, 0, static_cast<std::size_t>(samples) * 2u);
+            for (int index = 0; index < samples; ++index) {
+                const double time = static_cast<double>(m_written + index) / static_cast<double>(rate);
+                double value = 0.0;
+                if (m_spec.toneHz > 0.0) {
+                    if (const std::optional<double> phase = beepPhase(m_spec, time)) {
+                        value = m_spec.toneAmplitude * std::sin(2.0 * std::numbers::pi * m_spec.toneHz * *phase);
+                    }
+                }
+                const auto pcm = static_cast<std::int16_t>(std::clamp(std::lround(value * 32767.0), -32768L, 32767L));
+                const auto bits = static_cast<std::uint16_t>(pcm);
+                for (int channel = 0; channel < channels; ++channel) {
+                    const std::size_t at = (static_cast<std::size_t>(index) * static_cast<std::size_t>(channels) +
+                                            static_cast<std::size_t>(channel)) *
+                                           2u;
+                    packet.data[at] = static_cast<std::uint8_t>(bits & 0xFFu);
+                    packet.data[at + 1] = static_cast<std::uint8_t>(bits >> 8);
+                }
+            }
             packet.pts = m_written;
             packet.dts = m_written;
             packet.duration = samples;
             packet.stream_index = m_stream.index;
             packet.flags |= AV_PKT_FLAG_KEY;
-            av_packet_rescale_ts(&packet, AVRational{1, kAudioSampleRate}, m_stream.time_base);
+            av_packet_rescale_ts(&packet, AVRational{1, rate}, m_stream.time_base);
             result = av_interleaved_write_frame(&output, &packet); // takes the packet's data
             if (result < 0) {
                 return ffmpegError("cannot write an audio packet", result, path);
@@ -234,12 +273,13 @@ public:
 
 private:
     AVStream& m_stream;
+    const TestVideoSpec& m_spec;
     std::int64_t m_total;
     std::int64_t m_written = 0;
 };
 
-/// Adds the silent 16-bit mono PCM stream of `seconds` to `output`.
-Expected<SilentAudio> addSilentAudio(AVFormatContext& output, double seconds, const std::filesystem::path& path) {
+/// Adds the 16-bit PCM stream of `spec` to `output`.
+Expected<TestAudio> addTestAudio(AVFormatContext& output, const TestVideoSpec& spec, const std::filesystem::path& path) {
     AVStream* stream = avformat_new_stream(&output, nullptr);
     if (stream == nullptr) {
         return makeError(ErrorCode::IoError, "out of memory", core::pathToUtf8(path));
@@ -248,13 +288,13 @@ Expected<SilentAudio> addSilentAudio(AVFormatContext& output, double seconds, co
     parameters.codec_type = AVMEDIA_TYPE_AUDIO;
     parameters.codec_id = AV_CODEC_ID_PCM_S16LE;
     parameters.format = AV_SAMPLE_FMT_S16;
-    parameters.sample_rate = kAudioSampleRate;
-    av_channel_layout_default(&parameters.ch_layout, 1);
+    parameters.sample_rate = spec.audioSampleRate;
+    av_channel_layout_default(&parameters.ch_layout, spec.audioChannels);
     parameters.bits_per_coded_sample = 16;
-    parameters.block_align = 2;
-    parameters.bit_rate = static_cast<std::int64_t>(kAudioSampleRate) * 16;
-    stream->time_base = AVRational{1, kAudioSampleRate};
-    return SilentAudio(*stream, std::llround(seconds * kAudioSampleRate));
+    parameters.block_align = 2 * spec.audioChannels;
+    parameters.bit_rate = static_cast<std::int64_t>(spec.audioSampleRate) * 16 * spec.audioChannels;
+    stream->time_base = AVRational{1, spec.audioSampleRate};
+    return TestAudio(*stream, spec, std::llround(spec.audioSeconds * spec.audioSampleRate));
 }
 
 struct ContainerChoice {
@@ -338,9 +378,9 @@ Status writeTestVideoUnchecked(const std::filesystem::path& path, const TestVide
     }
     stream->time_base = encoder->time_base;
     stream->avg_frame_rate = encoder->framerate;
-    std::optional<SilentAudio> audio;
+    std::optional<TestAudio> audio;
     if (spec.audioSeconds > 0.0) {
-        auto added = addSilentAudio(*output, spec.audioSeconds, path);
+        auto added = addTestAudio(*output, spec, path);
         if (!added) {
             return propagate(added.error());
         }
@@ -425,6 +465,17 @@ Expected<std::vector<std::byte>> readFile(const std::filesystem::path& path) {
 
 } // namespace
 
+std::vector<double> testBeepTimes(const TestVideoSpec& spec) {
+    std::vector<double> times;
+    if (spec.beepPeriodSeconds <= 0.0) {
+        return times;
+    }
+    for (double at = spec.beepFirstSeconds; at < spec.durationSeconds; at += spec.beepPeriodSeconds) {
+        times.push_back(at);
+    }
+    return times;
+}
+
 std::string_view toString(TestVideoCodec codec) noexcept {
     return codec == TestVideoCodec::Mjpeg ? "mjpeg" : "mpeg4";
 }
@@ -455,6 +506,17 @@ Status writeTestVideo(const std::filesystem::path& path, const TestVideoSpec& sp
     if (!std::isfinite(spec.audioSeconds) || spec.audioSeconds < 0.0 || spec.audioSeconds > kMaxTestAudioSeconds) {
         return makeError(ErrorCode::InvalidArgument,
                          fmt::format("audio of {} s is outside [0, {}] s", spec.audioSeconds, kMaxTestAudioSeconds),
+                         context);
+    }
+    if (spec.audioSampleRate < 8000 || spec.audioSampleRate > 192000 || spec.audioChannels < 1 ||
+        spec.audioChannels > 2 || !std::isfinite(spec.toneHz) || spec.toneHz < 0.0 ||
+        spec.toneHz * 2.0 >= spec.audioSampleRate || !std::isfinite(spec.toneAmplitude) || spec.toneAmplitude < 0.0 ||
+        spec.toneAmplitude > 1.0 || !std::isfinite(spec.beepPeriodSeconds) || spec.beepPeriodSeconds < 0.0 ||
+        !std::isfinite(spec.beepFirstSeconds) || spec.beepFirstSeconds < 0.0 || !std::isfinite(spec.beepSeconds) ||
+        spec.beepSeconds < 0.0 || (spec.beepPeriodSeconds > 0.0 && spec.beepSeconds >= spec.beepPeriodSeconds)) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "the audio's rate (8000..192000), channels (1, 2), tone (below half the rate, amplitude 0..1) "
+                         "or beeps (each shorter than their period) are out of range",
                          context);
     }
     const std::optional<ContainerChoice> container = containerFor(path);

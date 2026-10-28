@@ -174,8 +174,9 @@ Each of these was decided on the user's behalf. The ADR records the decision; he
 - **Sound on the user's machine.** `RV_AUDIO=null` in the presets, null by default in frame-limited runs, and an
   assertion in every smoke case. Operating-system audio sessions are not watched (a possible extension of
   `focus_watch.py`).
-- **The emulator's audio after a launch.** The device stops before the hand-over. Exclusive-mode emulators are checked
-  by hand with RetroArch, isolated, at step 5.
+- **The emulator's audio after a launch.** The device stops before the hand-over. Exclusive-mode emulators were not
+  checked by hand at step 5 (no automated run may open the device or start a real emulator): the check moves to the
+  user's listening (`docs/i5/step-5.md`, "What the user should listen for").
 - **Above-normal priority while rendering** could compete with the user's other programs. It is dropped while
   minimized and during games, and the report records it.
 - **Shared files with I4b** (above). The steps that collide wait for I4b's matching merges.

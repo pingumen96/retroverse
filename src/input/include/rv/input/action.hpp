@@ -56,6 +56,7 @@ enum class Action : std::uint16_t {
     UiInfo,           ///< X: "Informazioni"
     UiFilterPrevious, ///< left shoulder: the previous filter
     UiFilterNext,     ///< right shoulder: the next filter
+    ToggleMute,       ///< F8: mute the clips' sound, or sound them again (I5 step 5; no pad button: I7 remaps it)
     Count
 };
 

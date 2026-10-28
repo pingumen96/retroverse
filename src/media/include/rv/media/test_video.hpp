@@ -43,10 +43,25 @@ struct TestVideoSpec {
     int keyFrameInterval = 30;
     /// B-frames between reference frames (MPEG-4): decoding then reorders, so timestamps come from the decoder.
     int bFrames = 2;
-    /// Seconds of silent 16-bit mono PCM audio muxed beside the video (0..600, 0: no audio stream; .mkv and .avi
-    /// only). Longer than the video, it makes the container's duration exceed the video stream's.
+    /// Seconds of 16-bit PCM audio muxed beside the video (0..600, 0: no audio stream; .mkv and .avi only), silent
+    /// unless toneHz is set. Longer than the video, it makes the container's duration exceed the video stream's.
     double audioSeconds = 0.0;
+    /// The audio stream's rate (8000..192000) and channels (1 or 2).
+    int audioSampleRate = 16000;
+    int audioChannels = 1;
+    /// A sine tone of this frequency (0: silence) and peak amplitude (0..1), in every channel.
+    double toneHz = 0.0;
+    double toneAmplitude = 0.5;
+    /// Beeps (I5 step 5's sync tests): with a period above 0 the tone sounds only for beepSeconds from beepFirstSeconds,
+    /// then every beepPeriodSeconds, each beep starting at phase 0, and every video frame whose time falls in a beep
+    /// is flashed (white but for the counter band): a clip's beeps and flashes at the same media times.
+    double beepPeriodSeconds = 0.0;
+    double beepFirstSeconds = 0.0;
+    double beepSeconds = 0.0;
 };
+
+/// The media times at which `spec`'s beeps (and flashes) start, up to its video's duration.
+[[nodiscard]] std::vector<double> testBeepTimes(const TestVideoSpec& spec);
 
 /// Writes a clip whose frames show a moving pattern, the frame number in large digits (the font of
 /// rv::assets::makeSignLettering) and the same number as a row of kFrameCounterBits black or white blocks along the top

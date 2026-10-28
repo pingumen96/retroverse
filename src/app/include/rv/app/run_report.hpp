@@ -1269,6 +1269,99 @@ struct ProcessPriorityRecord {
     bool operator==(const ProcessPriorityRecord&) const = default;
 };
 
+/// A change of the audible screen (I5 step 5, ADR-0016 §9): the frame, the run's simulated time, the screen (""
+/// none: silence) and the game it plays.
+struct AudioAudibleRecord {
+    std::uint64_t frame = 0;
+    double atSeconds = 0.0;
+    std::string screen;
+    std::string gameId;
+
+    bool operator==(const AudioAudibleRecord&) const = default;
+};
+
+/// The audible screen's sound, sampled every kAudioLevelSampleSeconds of the run: its distance, its spatial gain and pan
+/// (audio::spatialGain, panForAzimuth) and the source's whole gain (its volume and bus times the spatial gain).
+struct AudioLevelRecord {
+    double atSeconds = 0.0;
+    std::string screen;
+    double distance = 0.0;
+    double spatialGain = 0.0;
+    double pan = 0.0;
+    double gain = 0.0;
+
+    bool operator==(const AudioLevelRecord&) const = default;
+};
+
+/// A frame of the audible clip uploaded, in runs that capture the mix (--audio-capture): the run's simulated time it
+/// showed at and its time in the clip, so that the capture's sound can be set against the picture.
+struct AudioPresentedRecord {
+    double atSeconds = 0.0;
+    double ptsSeconds = 0.0;
+
+    bool operator==(const AudioPresentedRecord&) const = default;
+};
+
+/// A clip whose sound was decoded: its game and its audio stream (codec, rate, channels; 0 without one).
+struct AudioClipRecord {
+    std::string gameId;
+    std::string codec;
+    std::uint64_t sampleRate = 0;
+    std::uint64_t channels = 0;
+
+    bool operator==(const AudioClipRecord&) const = default;
+};
+
+/// The clips' sound over the run (I5 step 5, ADR-0016 §9; retroverse.exe). `device`: the output used ("device", "null",
+/// "off": every smoke test asserts null or off), `reason`: why (app::resolveAudioOutput's: "RV_AUDIO", "--audio",
+/// "frame-limited", "interactive"; "device-failed" when the device did not open and the null output took over).
+struct AudioRecord {
+    std::string device;
+    std::string reason;
+    /// The endpoint's name (a device only).
+    std::string deviceName;
+    std::uint64_t sampleRate = 0;
+    bool mutedAtStart = false;
+    bool muted = false;
+    std::uint64_t muteToggles = 0;
+    /// Frames rendered while the sound was ducked (the card, the directory, the quick catalog), and the duck's changes.
+    std::uint64_t duckedFrames = 0;
+    std::uint64_t duckChanges = 0;
+    /// The mix: blocks (pulls or callbacks) and frames rendered.
+    std::uint64_t blocks = 0;
+    std::uint64_t framesMixed = 0;
+    /// The null output's capture (--audio-capture) and the run's time of its first frame.
+    std::optional<std::filesystem::path> capture;
+    std::optional<double> captureStartSeconds;
+    /// The sync (audio::SyncSummary): blocks measured while a source was audible, resyncs in play, blocks corrected,
+    /// frames the rings could not give, frames they could not keep (overflow), the error's p50, p95 and largest.
+    std::uint64_t syncBlocks = 0;
+    std::uint64_t resyncs = 0;
+    std::uint64_t corrections = 0;
+    std::uint64_t underrunFrames = 0;
+    std::uint64_t overflowFrames = 0;
+    double syncP50Milliseconds = 0.0;
+    double syncP95Milliseconds = 0.0;
+    double syncMaxMilliseconds = 0.0;
+    /// Launches: the output suspended and resumed around each, and the device's stops and starts.
+    std::uint64_t suspends = 0;
+    std::uint64_t deviceStops = 0;
+    std::uint64_t deviceStarts = 0;
+    /// The device's trouble (audio::AudioEngineStats): starts that failed (after a launch, or a retry), stops it made
+    /// by itself, and retries that brought it back (every 2 s while not suspended).
+    std::uint64_t deviceFailures = 0;
+    std::uint64_t deviceLosses = 0;
+    std::uint64_t deviceRecoveries = 0;
+    /// Each change of the audible screen, the levels sampled, the audible clip's frames (with a capture), the clips
+    /// whose sound was decoded: the first kMaxAudioTimelineEntries of each.
+    std::vector<AudioAudibleRecord> audible;
+    std::vector<AudioLevelRecord> levels;
+    std::vector<AudioPresentedRecord> presented;
+    std::vector<AudioClipRecord> clips;
+
+    bool operator==(const AudioRecord&) const = default;
+};
+
 /// The GPU time of one pass of the frames' views (I3 step 17b, FrameTiming::recordGpuPasses): the timer query results
 /// each frame's last view reported (gl::FrameStats; they arrive a frame or two late), over the frames past the run's
 /// warm-up that had one. Names, in this order: "shadow", "depth", "ssao", "scene", "post", "outline" and "total" (the
@@ -1498,6 +1591,9 @@ struct RunReport {
     std::vector<PhaseRecord> phases;
     std::vector<CpuSectionRecord> cpuSections;
     GpuMemoryRecord gpuMemory;
+    /// The clips' sound (I5 step 5, ADR-0016 §9; "audio", written last): absent in runs without the application's
+    /// sound (the asset preview).
+    std::optional<AudioRecord> audio;
 };
 
 /// The report as JSON text (two-space indented, keys in the order of RunReport, absent optionals left out, paths

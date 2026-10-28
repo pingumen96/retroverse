@@ -733,3 +733,38 @@ TEST_CASE("app/command_line: --start-room starts in a room of the building (I4 s
     CHECK_FALSE(helpListsOption(rv::app::commandLineHelp(), "--room-system"));
     CHECK_FALSE(parse({"--smoke", "--room-system", "psx"}).has_value());
 }
+
+TEST_CASE("app/command_line: --audio, --mute and --audio-capture (I5 step 5)", "[app][command_line]") {
+    const auto plain = parse({});
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->audio.has_value());
+    CHECK_FALSE(plain->mute);
+    CHECK_FALSE(plain->audioCapture.has_value());
+    CHECK(parse({"--audio", "device"})->audio == rv::audio::AudioOutput::Device);
+    CHECK(parse({"--audio=null"})->audio == rv::audio::AudioOutput::Null);
+    CHECK(parse({"--audio", "off"})->audio == rv::audio::AudioOutput::Off);
+    CHECK(parse({"--mute"})->mute);
+    const auto bad = parse({"--audio", "speakers"});
+    REQUIRE_FALSE(bad.has_value());
+    CHECK(bad.error().code == ErrorCode::InvalidArgument);
+    CHECK(bad.error().context == "--audio=speakers");
+    // The capture: frame-limited runs, a .wav file, the null output's mix.
+    const auto capture = parse({"--smoke", "--audio-capture", "mix.wav"});
+    REQUIRE(capture.has_value());
+    CHECK(capture->audioCapture == std::filesystem::path("mix.wav"));
+    CHECK(parse({"--smoke", "--audio", "null", "--audio-capture", "mix.WAV"}).has_value());
+    for (const std::vector<std::string>& refused :
+         {std::vector<std::string>{"--audio-capture", "mix.wav"},
+          std::vector<std::string>{"--smoke", "--audio-capture", "mix.flac"},
+          std::vector<std::string>{"--smoke", "--audio", "device", "--audio-capture", "mix.wav"},
+          std::vector<std::string>{"--smoke", "--audio", "off", "--audio-capture", "mix.wav"}}) {
+        INFO(refused.back() << " " << refused.size());
+        const auto result = parse(refused);
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error().code == ErrorCode::InvalidArgument);
+        CHECK(result.error().context.starts_with("--audio-capture="));
+    }
+    for (const char* option : {"--audio", "--mute", "--audio-capture"}) {
+        CHECK(helpListsOption(rv::app::commandLineHelp(), option));
+    }
+}

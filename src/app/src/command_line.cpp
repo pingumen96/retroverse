@@ -114,7 +114,15 @@ core::ArgParser makeParser() {
                 "Start in this room of the building (its id: room:snes, area:arcade, ...) at its doorway camera, on "
                 "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
                 "that room's frame. The run exits 2 when the building's plan lacks the room. Not with --scene, "
-                "--model or --mock-catalog.");
+                "--model or --mock-catalog.")
+        .option("audio", "device|null|off",
+                "Where the clips' sound goes: the default audio device (the default of interactive runs), null (mixed "
+                "and thrown away, never touching the system's audio: the default of frame-limited runs) or off (no "
+                "sound decoded at all). The environment variable RV_AUDIO=null or off overrides it.")
+        .flag("mute", "Start with the sound muted (F8 toggles it).")
+        .option("audio-capture", "wav",
+                "For tests, only with --smoke or --exit-after-frames and the null output: write the run's mix to this "
+                "WAV file (32-bit float, 48 kHz stereo) at the end.");
     return parser;
 }
 
@@ -350,6 +358,39 @@ Status applySimulateMinimized(const core::ParsedArgs& args, CommandLineOptions& 
                          context);
     }
     options.simulateMinimized = SimulatedMinimize{static_cast<std::uint64_t>(*frame), seconds};
+    return ok();
+}
+
+/// --audio, --mute and --audio-capture (I5 step 5).
+Status applyAudio(const core::ParsedArgs& args, CommandLineOptions& options) {
+    options.mute = args.has("mute");
+    if (args.has("audio")) {
+        const std::string text = args.value("audio").value_or("");
+        const std::optional<audio::AudioOutput> output = audio::audioOutputFromName(text);
+        if (!output) {
+            return makeError(ErrorCode::InvalidArgument, "expected device, null or off", "--audio=" + text);
+        }
+        options.audio = *output;
+    }
+    auto capture = pathValue(args, "audio-capture");
+    if (!capture) {
+        return propagate(capture.error());
+    }
+    if (*capture) {
+        const std::string context = "--audio-capture=" + core::pathToUtf8(**capture);
+        if (!options.frameLimit) {
+            return makeError(ErrorCode::InvalidArgument, "only valid with --smoke or --exit-after-frames", context);
+        }
+        if (!core::equalsIgnoreCaseAscii(core::pathToUtf8((*capture)->extension()), ".wav")) {
+            return makeError(ErrorCode::InvalidArgument, "the capture is a WAV file: use the .wav extension", context);
+        }
+        if (options.audio && *options.audio != audio::AudioOutput::Null) {
+            return makeError(ErrorCode::InvalidArgument, "the capture is the null output's mix: not with --audio " +
+                                                             std::string(audio::toString(*options.audio)),
+                             context);
+        }
+        options.audioCapture = std::move(*capture);
+    }
     return ok();
 }
 
@@ -605,6 +646,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     if (auto minimized = applySimulateMinimized(*args, options); !minimized) {
         return propagate(minimized.error());
+    }
+    if (auto audio = applyAudio(*args, options); !audio) {
+        return propagate(audio.error());
     }
     options.watchLateFrames = args->has("watch-late-frames");
     options.refreshLibrary = args->has("refresh-library");

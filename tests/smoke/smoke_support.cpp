@@ -133,7 +133,8 @@ AppRun runCommand(const std::filesystem::path& executable, const std::filesystem
     request.stdoutFile = run.outputFile;
     request.stderrFile = run.outputFile;
     // Each configuration must read its own assets: the source tree, or the copy deployed next to a Release executable.
-    request.environment = {{"RV_ASSET_ROOT", std::nullopt}};
+    // RV_AUDIO=null whatever the caller's environment: a direct run of the smoke executable never opens the device.
+    request.environment = {{"RV_ASSET_ROOT", std::nullopt}, {"RV_AUDIO", "null"}};
     request.timeout = kRunTimeout;
     const auto outcome = test::runChild(request);
     if (!outcome) {
@@ -159,7 +160,21 @@ AppRun runApp(const std::filesystem::path& executable, const std::filesystem::pa
     } else {
         run.reportError = report.error().toString();
     }
+    checkAudioOutput(run, executable == retroverseExe());
     return run;
+}
+
+void checkAudioOutput(const AppRun& run, bool retroverse) {
+    // I5 step 5 (ADR-0016 §9): no test plays sound on the user's machine. Every retroverse.exe run that ended normally
+    // reports its audio output, the null output or none (RV_AUDIO=null in the test presets, null by default in
+    // frame-limited runs).
+    INFO(run.describe());
+    if (run.report && run.report->audio) {
+        CHECK((run.report->audio->device == "null" || run.report->audio->device == "off"));
+    }
+    if (retroverse && run.report && run.exitCode == 0) {
+        CHECK(run.report->audio.has_value());
+    }
 }
 
 void skipWithoutOpenGl(const AppRun& run) {

@@ -321,6 +321,8 @@ ActionMap ActionMap::defaults() {
     map.bind(Action::UiInfo, GamepadButtonBinding{GamepadButton::West, 1.0f});
     map.bind(Action::UiFilterPrevious, GamepadButtonBinding{GamepadButton::LeftShoulder, 1.0f});
     map.bind(Action::UiFilterNext, GamepadButtonBinding{GamepadButton::RightShoulder, 1.0f});
+    // The clips' sound (I5 step 5, ADR-0016 §9): F8 mutes; no pad button until I7's remapping.
+    map.bind(Action::ToggleMute, KeyBinding{Key::F8, 1.0f});
 
     return map;
 }

@@ -11,6 +11,8 @@
 #include <iterator>
 #include <limits>
 #include <mutex>
+#include <optional>
+#include <span>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -294,6 +296,11 @@ struct VideoDecoder::Shared {
     std::atomic<std::uint64_t> seeks{0};
     std::atomic<std::uint64_t> frameAllocations{0};
     std::atomic<std::int64_t> queueWaitNanoseconds{0};
+    /// The sound (DecoderSettings::audioEnabled, setAudioEnabled()) and its counters.
+    std::atomic<bool> audioEnabled{true};
+    std::atomic<std::uint64_t> audioFramesWritten{0};
+    std::atomic<std::uint64_t> audioPacketsDiscarded{0};
+    std::atomic<std::uint64_t> audioDecodeErrors{0};
     /// start() time, and the delays from it to the stream being open and to the first frame queued (-1: not yet).
     const Clock::time_point started = Clock::now();
     std::atomic<std::int64_t> openNanoseconds{-1};
@@ -364,6 +371,23 @@ private:
     }
     [[nodiscard]] bool ensureConverter(const AVFrame& frame);
     void resetPass(bool fromStart) noexcept;
+    /// Finds the first audio stream and, with a sink, opens its decoder (a failure leaves the clip silent).
+    void openAudio(StreamInfo& info);
+    /// An audio packet: decoded into the sink while the sound is enabled, discarded otherwise.
+    void audioPacket(const AVPacket& packet);
+    /// Converts a decoded audio frame to the sink's rate, stereo float, and writes it.
+    void emitAudio(const AVFrame& frame);
+    /// The end of a pass: the frames the audio decoder still holds, then the resampler's tail, written.
+    void drainAudio();
+    /// Writes `frames` converted frames (m_audioOutChannels each) whose first shows at `ptsSeconds`, up-mixed to stereo
+    /// and trimmed at the picture's end (audioEndSeconds), so that every loop starts in sync.
+    void writeAudio(const float* converted, std::size_t frames, double ptsSeconds);
+    /// The end of the picture on the pass's timeline (relative to the video stream's start): the last pass's end once
+    /// one ended, else the video stream's declared duration (or the frames shown so far when longer); none when unknown.
+    [[nodiscard]] std::optional<double> audioEndSeconds() const noexcept;
+    /// A discontinuity of the sound (a seek, a loop, the sound enabled again): the audio decoder flushed, the
+    /// resampler's buffered samples dropped.
+    void resetAudio() noexcept;
     void fail(DecodeFailure failure, std::string message);
 
     Shared& m_shared;
@@ -422,6 +446,29 @@ private:
     bool m_truncatedRead = false;
     bool m_ended = false;
     Clock::duration m_decodeTime{0};
+
+    // The sound.
+    int m_audioIndex = -1;
+    detail::CodecContextPtr m_audioCodec;
+    detail::FramePtr m_audioFrame;
+    detail::SwrPtr m_swr;
+    AVRational m_audioTimeBase{0, 1};
+    /// The video stream's start, seconds: the origin of the audio's timestamps too (the streams' common clock).
+    double m_videoStartSeconds = 0.0;
+    int m_swrFormat = -1;
+    int m_swrRate = 0;
+    int m_swrChannels = 0;
+    int m_audioOutChannels = 2;
+    bool m_audioWasEnabled = false;
+    /// After a seek: audio frames ending before the target are dropped.
+    std::optional<double> m_audioSeekTarget;
+    /// The time of the next converted frame (the resampler's tail follows the last frame written).
+    std::optional<double> m_audioNextPts;
+    /// The picture's end (relative to the video stream's start) as the last pass that reached the end of the stream
+    /// showed it: a longer sound is trimmed there.
+    std::optional<double> m_videoEnd;
+    std::vector<float> m_audioConverted;
+    std::vector<float> m_audioStereo;
 };
 
 void VideoDecoder::Worker::run() noexcept {
@@ -593,6 +640,8 @@ bool VideoDecoder::Worker::open() {
     info.durationSeconds = m_declaredDuration;
     info.bitRate = stream->codecpar->bit_rate > 0 ? stream->codecpar->bit_rate : m_format->bit_rate;
     info.decoderThreads = m_codec->thread_count;
+    m_videoStartSeconds = m_timestampsUsable ? detail::toSeconds(m_startTimestamp, m_timeBase) : 0.0;
+    openAudio(info);
     spdlog::info("Video '{}': {} {}x{} {} (sample aspect {:.3f}), {:.3f} fps, {:.2f} s, {} kb/s, container {}; frames "
                  "{}x{} RGBA, {} decoder thread(s), queue of {}",
                  settings.name, info.codec, info.codedSize.width, info.codedSize.height, info.pixelFormat,
@@ -694,6 +743,11 @@ bool VideoDecoder::Worker::step() {
         return decodeError(result, "read");
     }
     m_shared.packetsRead.fetch_add(1, std::memory_order_relaxed);
+    if (m_packet->stream_index == m_audioIndex) {
+        audioPacket(*m_packet);
+        av_packet_unref(m_packet.get());
+        return true;
+    }
     if (m_packet->stream_index != m_streamIndex) {
         av_packet_unref(m_packet.get());
         return true;
@@ -921,6 +975,11 @@ bool VideoDecoder::Worker::endOfStream() {
     if (!sendPacket(nullptr)) {
         return false;
     }
+    if (m_passFrames > 0) {
+        m_videoEnd = m_passEnd; // every frame of the pass shown: the picture ends here, on every pass
+    }
+    // Then the sound's last frames, up to the picture's end.
+    drainAudio();
     return endOfPass();
 }
 
@@ -961,6 +1020,7 @@ bool VideoDecoder::Worker::endOfPass() {
     if (!seekTo(0.0)) {
         return false;
     }
+    resetAudio();
     resetPass(true);
     return true;
 }
@@ -999,6 +1059,8 @@ bool VideoDecoder::Worker::applySeek(const SeekRequest& request) {
     m_loopOffset = 0.0;
     m_lastPts = -std::numeric_limits<double>::infinity();
     m_seekTarget = target;
+    resetAudio();
+    m_audioSeekTarget = target;
     m_ended = false;
     m_seekFramePending = true;
     resetPass(target <= 0.0);
@@ -1006,6 +1068,233 @@ bool VideoDecoder::Worker::applySeek(const SeekRequest& request) {
     m_shared.setState(DecoderState::Playing);
     spdlog::debug("Video '{}': seek to {:.3f} s (generation {})", m_shared.settings.name, target, m_generation);
     return true;
+}
+
+// --- The sound
+// ---------------------------------------------------------------------------------------------------------
+
+void VideoDecoder::Worker::openAudio(StreamInfo& info) {
+    const AVCodec* decoder = nullptr;
+    const int index = av_find_best_stream(m_format.get(), AVMEDIA_TYPE_AUDIO, -1, m_streamIndex, &decoder, 0);
+    if (index < 0) {
+        return;
+    }
+    const AVStream* stream = m_format->streams[index];
+    const AVCodecParameters& parameters = *stream->codecpar;
+    const char* codecName = avcodec_get_name(parameters.codec_id);
+    info.audioCodec = codecName != nullptr ? codecName : "";
+    info.audioSampleRate = parameters.sample_rate;
+    info.audioChannels = parameters.ch_layout.nb_channels;
+    m_audioIndex = index; // its packets are discarded without a sink
+    if (!m_shared.settings.audioSink) {
+        return;
+    }
+    if (decoder == nullptr) {
+        spdlog::info("Video '{}': no decoder for the {} sound in this build; the clip plays silent",
+                     m_shared.settings.name, info.audioCodec);
+        return;
+    }
+    detail::CodecContextPtr codec(avcodec_alloc_context3(decoder));
+    detail::FramePtr frame(av_frame_alloc());
+    if (!codec || !frame || avcodec_parameters_to_context(codec.get(), &parameters) < 0) {
+        spdlog::info("Video '{}': the sound's decoder cannot be set up; the clip plays silent", m_shared.settings.name);
+        return;
+    }
+    codec->thread_count = 1;
+    codec->pkt_timebase = stream->time_base;
+    if (const int result = avcodec_open2(codec.get(), decoder, nullptr); result < 0) {
+        spdlog::info("Video '{}': the {} sound cannot be decoded ({}); the clip plays silent", m_shared.settings.name,
+                     decoder->name, detail::errorText(result));
+        return;
+    }
+    m_audioCodec = std::move(codec);
+    m_audioFrame = std::move(frame);
+    m_audioTimeBase = stream->time_base;
+    info.audioDecoded = true;
+    spdlog::info("Video '{}': sound {} {} Hz, {} channel(s), resampled to {} Hz stereo", m_shared.settings.name,
+                 info.audioCodec, info.audioSampleRate, info.audioChannels, m_shared.settings.audioSampleRate);
+}
+
+void VideoDecoder::Worker::resetAudio() noexcept {
+    if (m_audioCodec) {
+        avcodec_flush_buffers(m_audioCodec.get());
+    }
+    m_swr.reset();
+    m_swrFormat = -1;
+    m_audioSeekTarget.reset();
+    m_audioNextPts.reset();
+}
+
+std::optional<double> VideoDecoder::Worker::audioEndSeconds() const noexcept {
+    if (m_videoEnd) {
+        return m_videoEnd;
+    }
+    if (m_streamDuration > 0.0) {
+        return std::max(m_streamDuration, m_passEnd);
+    }
+    return std::nullopt; // the first pass of a stream without a duration: known at its end only
+}
+
+void VideoDecoder::Worker::drainAudio() {
+    if (!m_audioCodec || !m_audioWasEnabled || !m_shared.audioEnabled.load(std::memory_order_relaxed) ||
+        seekPending()) {
+        return;
+    }
+    if (avcodec_send_packet(m_audioCodec.get(), nullptr) >= 0) {
+        for (;;) {
+            const int result = avcodec_receive_frame(m_audioCodec.get(), m_audioFrame.get());
+            if (result < 0) {
+                break; // AVERROR_EOF: drained
+            }
+            emitAudio(*m_audioFrame);
+            av_frame_unref(m_audioFrame.get());
+        }
+    }
+    if (!m_swr || !m_audioNextPts) {
+        return;
+    }
+    const int capacity = swr_get_out_samples(m_swr.get(), 0);
+    if (capacity <= 0) {
+        return;
+    }
+    m_audioConverted.resize(static_cast<std::size_t>(capacity) * static_cast<std::size_t>(m_audioOutChannels));
+    std::uint8_t* out = reinterpret_cast<std::uint8_t*>(m_audioConverted.data());
+    const int flushed = swr_convert(m_swr.get(), &out, capacity, nullptr, 0);
+    if (flushed > 0) {
+        writeAudio(m_audioConverted.data(), static_cast<std::size_t>(flushed), *m_audioNextPts);
+    }
+}
+
+void VideoDecoder::Worker::audioPacket(const AVPacket& packet) {
+    const bool enabled = m_shared.audioEnabled.load(std::memory_order_relaxed) && m_audioCodec;
+    if (!enabled) {
+        m_audioWasEnabled = false;
+        m_shared.audioPacketsDiscarded.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    if (!m_audioWasEnabled) {
+        resetAudio(); // the sound starts again here: nothing of before is kept
+        m_audioWasEnabled = true;
+    }
+    if (seekPending()) {
+        return; // of the position a newer seek leaves
+    }
+    int result = avcodec_send_packet(m_audioCodec.get(), &packet);
+    if (result < 0 && result != AVERROR(EAGAIN)) {
+        m_shared.audioDecodeErrors.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    for (;;) {
+        result = avcodec_receive_frame(m_audioCodec.get(), m_audioFrame.get());
+        if (result == AVERROR(EAGAIN) || result == AVERROR_EOF) {
+            return;
+        }
+        if (result < 0) {
+            m_shared.audioDecodeErrors.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        emitAudio(*m_audioFrame);
+        av_frame_unref(m_audioFrame.get());
+    }
+}
+
+void VideoDecoder::Worker::emitAudio(const AVFrame& frame) {
+    const int inRate = frame.sample_rate;
+    const int inChannels = frame.ch_layout.nb_channels;
+    if (inRate <= 0 || inChannels <= 0 || frame.nb_samples <= 0) {
+        return;
+    }
+    std::int64_t timestamp = frame.best_effort_timestamp;
+    if (timestamp == AV_NOPTS_VALUE) {
+        timestamp = frame.pts;
+    }
+    if (timestamp == AV_NOPTS_VALUE || m_audioTimeBase.num <= 0 || m_audioTimeBase.den <= 0) {
+        return; // no time: it could not follow the picture
+    }
+    // The streams share the file's clock: the audio's time from the video stream's start, plus the loops.
+    const double pts = m_loopOffset + detail::toSeconds(timestamp, m_audioTimeBase) - m_videoStartSeconds;
+    const double duration = static_cast<double>(frame.nb_samples) / static_cast<double>(inRate);
+    if (m_audioSeekTarget) {
+        if (pts + duration <= *m_audioSeekTarget) {
+            return; // decoded from before the seek's target
+        }
+        m_audioSeekTarget.reset();
+    }
+    const int outRate = m_shared.settings.audioSampleRate;
+    if (!m_swr || frame.format != m_swrFormat || inRate != m_swrRate || inChannels != m_swrChannels) {
+        AVChannelLayout inLayout{};
+        if (frame.ch_layout.order == AV_CHANNEL_ORDER_UNSPEC) {
+            av_channel_layout_default(&inLayout, inChannels);
+        } else if (av_channel_layout_copy(&inLayout, &frame.ch_layout) < 0) {
+            return;
+        }
+        // Mono stays mono (copied to both channels below, at its level); anything else becomes stereo.
+        m_audioOutChannels = inChannels == 1 ? 1 : 2;
+        AVChannelLayout outLayout{};
+        av_channel_layout_default(&outLayout, m_audioOutChannels);
+        SwrContext* raw = nullptr;
+        int result = swr_alloc_set_opts2(&raw, &outLayout, AV_SAMPLE_FMT_FLT, outRate, &inLayout,
+                                         static_cast<AVSampleFormat>(frame.format), inRate, 0, nullptr);
+        av_channel_layout_uninit(&inLayout);
+        av_channel_layout_uninit(&outLayout);
+        detail::SwrPtr swr(raw);
+        if (result >= 0) {
+            result = swr_init(swr.get());
+        }
+        if (result < 0) {
+            m_shared.audioDecodeErrors.fetch_add(1, std::memory_order_relaxed);
+            spdlog::debug("Video '{}': the sound cannot be resampled: {}", m_shared.settings.name,
+                          detail::errorText(result));
+            return;
+        }
+        m_swr = std::move(swr);
+        m_swrFormat = frame.format;
+        m_swrRate = inRate;
+        m_swrChannels = inChannels;
+    }
+    // The resampler holds a few samples of its filter: the first sample out was put in that much earlier, so its time
+    // is the frame's less that delay.
+    const double delay = static_cast<double>(swr_get_delay(m_swr.get(), outRate)) / static_cast<double>(outRate);
+    const int capacity = swr_get_out_samples(m_swr.get(), frame.nb_samples);
+    if (capacity <= 0) {
+        return;
+    }
+    m_audioConverted.resize(static_cast<std::size_t>(capacity) * static_cast<std::size_t>(m_audioOutChannels));
+    std::uint8_t* out = reinterpret_cast<std::uint8_t*>(m_audioConverted.data());
+    const int converted = swr_convert(m_swr.get(), &out, capacity,
+                                      const_cast<const std::uint8_t**>(frame.extended_data), frame.nb_samples);
+    if (converted <= 0) {
+        if (converted < 0) {
+            m_shared.audioDecodeErrors.fetch_add(1, std::memory_order_relaxed);
+        }
+        return;
+    }
+    writeAudio(m_audioConverted.data(), static_cast<std::size_t>(converted), pts - delay);
+}
+
+void VideoDecoder::Worker::writeAudio(const float* converted, std::size_t frames, double ptsSeconds) {
+    const double rate = static_cast<double>(m_shared.settings.audioSampleRate);
+    m_audioNextPts = ptsSeconds + static_cast<double>(frames) / rate;
+    // A sound longer than its picture stops at the picture's end: the next loop's sound starts there.
+    if (const std::optional<double> end = audioEndSeconds()) {
+        const double room = (m_loopOffset + *end - ptsSeconds) * rate;
+        const double kept = std::floor(room + 1e-6);
+        if (kept <= 0.0) {
+            return;
+        }
+        frames = std::min(frames, static_cast<std::size_t>(kept));
+    }
+    const float* stereo = converted;
+    if (m_audioOutChannels == 1) {
+        m_audioStereo.resize(frames * 2);
+        for (std::size_t index = 0; index < frames; ++index) {
+            m_audioStereo[index * 2] = converted[index];
+            m_audioStereo[index * 2 + 1] = converted[index];
+        }
+        stereo = m_audioStereo.data();
+    }
+    m_shared.settings.audioSink->write(std::span<const float>(stereo, frames * 2), ptsSeconds, m_generation);
+    m_shared.audioFramesWritten.fetch_add(frames, std::memory_order_relaxed);
 }
 
 // --- VideoDecoder
@@ -1050,6 +1339,10 @@ Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::pat
                                      settings.corruptErrorWindow, settings.corruptErrorThreshold),
                          context);
     }
+    if (settings.audioSampleRate < 8000 || settings.audioSampleRate > 192000) {
+        return makeError(ErrorCode::InvalidArgument,
+                         fmt::format("audioSampleRate {} is outside [8000, 192000]", settings.audioSampleRate), context);
+    }
     if (settings.name.empty()) {
         settings.name = core::pathToUtf8(path.filename());
     }
@@ -1057,6 +1350,7 @@ Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::pat
 
     auto shared = std::make_shared<Shared>(std::move(path), std::move(settings));
     shared->paused.store(shared->settings.startPaused);
+    shared->audioEnabled.store(shared->settings.audioEnabled);
     std::unique_ptr<VideoDecoder> decoder(new VideoDecoder(shared));
     try {
         decoder->m_thread = std::jthread([shared](std::stop_token stop) { Worker(*shared, std::move(stop)).run(); });
@@ -1144,6 +1438,9 @@ DecoderStats VideoDecoder::stats() const {
     stats.queueWaitSeconds = static_cast<double>(shared.queueWaitNanoseconds.load(std::memory_order_relaxed)) * 1e-9;
     stats.openMilliseconds = toMilliseconds(shared.openNanoseconds.load(std::memory_order_relaxed));
     stats.firstFrameMilliseconds = toMilliseconds(shared.firstFrameNanoseconds.load(std::memory_order_relaxed));
+    stats.audioFramesWritten = shared.audioFramesWritten.load(std::memory_order_relaxed);
+    stats.audioPacketsDiscarded = shared.audioPacketsDiscarded.load(std::memory_order_relaxed);
+    stats.audioDecodeErrors = shared.audioDecodeErrors.load(std::memory_order_relaxed);
     const std::lock_guard lock(shared.timingMutex);
     stats.decodeMilliseconds = shared.decodeTimes.summary();
     stats.convertMilliseconds = shared.convertTimes.summary();
@@ -1173,6 +1470,14 @@ const DecoderSettings& VideoDecoder::settings() const noexcept {
 void VideoDecoder::pause() {
     const std::lock_guard lock(m_shared->controlMutex);
     m_shared->paused.store(true);
+}
+
+void VideoDecoder::setAudioEnabled(bool enabled) noexcept {
+    m_shared->audioEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool VideoDecoder::audioEnabled() const noexcept {
+    return m_shared->audioEnabled.load(std::memory_order_relaxed);
 }
 
 void VideoDecoder::resume() {

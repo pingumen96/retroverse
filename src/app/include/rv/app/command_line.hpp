@@ -13,6 +13,7 @@
 #include <spdlog/common.h>
 
 #include <rv/app/self_check.hpp>
+#include <rv/audio/audio_output.hpp>
 #include <rv/core/expected.hpp>
 
 namespace rv::core {
@@ -177,6 +178,14 @@ struct CommandLineOptions {
     /// on its floor; --spawn, the input scripts' poses and the run report's walker poses in its frame), a valid room id
     /// ("room:snes", "area:arcade", ...). Empty: the ground floor's lobby. Only in the generated building's runs.
     std::string startRoom;
+    /// --audio device|null|off (I5 step 5, ADR-0016 §9): where the clips' sound goes. None: null in frame-limited runs,
+    /// the device otherwise; RV_AUDIO=null or off forces its value over both (resolveAudioOutput).
+    std::optional<audio::AudioOutput> audio;
+    /// --mute: the run starts muted (toggle_mute, F8, sounds it again).
+    bool mute = false;
+    /// --audio-capture <wav> (tests), frame-limited runs only: the null output's mix written to this 32-bit float WAV
+    /// at the end of the run (the offline mix the GPU tests analyse).
+    std::optional<std::filesystem::path> audioCapture;
 };
 
 /// Why `options` cannot run yet: the first option it sets that this build parses but does not implement yet, refused

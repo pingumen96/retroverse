@@ -272,6 +272,10 @@ public:
     /// the frames it shows are counted.
     void elevatorPrompt(ProductUi& product, std::optional<std::string> key, bool totem = false);
 
+    /// The eye is in the room whose screens are bound (I5 step 5: in a hall, the last room's screens are silent); true
+    /// without areas or before any room is bound.
+    [[nodiscard]] bool eyeInScreenRoom() const;
+
 private:
     using Clock = std::chrono::steady_clock;
 

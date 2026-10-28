@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <SDL3/SDL_mouse.h>
 
 #include <rv/app/app_catalog.hpp>
+#include <rv/app/audio_policy.hpp>
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/debug_line_selection.hpp>
@@ -36,6 +38,7 @@
 #include <rv/app/video_settings.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/assets/gltf_loader.hpp>
+#include <rv/audio/audio_engine.hpp>
 #include <rv/assets/surface_textures.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/core/frame_clock.hpp>
@@ -429,6 +432,16 @@ struct RetroverseApp::State {
     /// The light of the first view and of every frame while it eased, and of the last view (I6 step 1).
     std::vector<SceneLightingSample> lightingSamples;
     SceneLightingSample lastLighting;
+    /// video.json, read once (I5 step 1): the screens' settings and the sound's.
+    std::optional<VideoSettings> video;
+    /// The clips' sound (I5 step 5, ADR-0016 §9): the engine (none with --audio off or video.json's audio mode off),
+    /// declared before the screens' service, which feeds its mixer, so that it outlives it; the run's mute and duck,
+    /// the end of the mix pulled so far (the null output), the report's section.
+    std::unique_ptr<audio::AudioEngine> audio;
+    bool muted = false;
+    bool ducked = false;
+    std::optional<double> audioPulledTo;
+    AudioRecord audioRecord;
     /// The screens' service (I3 step 11; since I5 step 2 every CRT of the room, the hero first, sharing the decoder
     /// scheduler's slots): their decoders and the pictures of their fallback chains; none without a CRT (the model
     /// viewer). Destroyed before the graphics, whose material registry shows its pictures.
@@ -670,7 +683,142 @@ struct RetroverseApp::State {
             selected = world->screenSelection(selected);
         }
         screen->update(frame, simulatedSeconds, camera,
-                       selected ? std::optional<std::string_view>(*selected) : std::nullopt, minimized);
+                       selected ? std::optional<std::string_view>(*selected) : std::nullopt, minimized,
+                       world ? world->eyeInScreenRoom() : true);
+    }
+
+    /// video.json (the shipped defaults with the user's over them), read at its first use.
+    const VideoSettings& videoSettings(const AppContext& context) {
+        if (!video) {
+            video = videoSettingsOf(context.paths());
+        }
+        return *video;
+    }
+
+    /// The clips' sound (I5 step 5): the output the run uses (app::resolveAudioOutput; video.json's audio mode off
+    /// builds none), the device falling back to the null output when it does not open; the master, the video bus and
+    /// the mute set.
+    void createAudio(const AppContext& context) {
+        const CommandLineOptions& options = context.options();
+        const VideoSettings& settings = videoSettings(context);
+        const char* environment = std::getenv("RV_AUDIO");
+        AudioOutputChoice choice =
+            resolveAudioOutput(options.audio, environment != nullptr ? std::optional<std::string_view>(environment)
+                                                                     : std::nullopt,
+                               options.frameLimit.has_value());
+        if (!choice.warning.empty()) {
+            spdlog::warn("Audio: {}", choice.warning);
+        }
+        if (settings.audio.mode == AudioMode::Off && choice.output != audio::AudioOutput::Off) {
+            choice = AudioOutputChoice{audio::AudioOutput::Off, "video.json"};
+        }
+        if (options.audioCapture && choice.output != audio::AudioOutput::Null) {
+            spdlog::warn("Audio: --audio-capture records the null output's mix; the {} output has none",
+                         audio::toString(choice.output));
+        }
+        muted = options.mute || settings.audio.muted;
+        audioRecord.mutedAtStart = muted;
+        if (choice.output != audio::AudioOutput::Off) {
+            audio::AudioEngineOptions engineOptions;
+            engineOptions.output = choice.output;
+            if (choice.output == audio::AudioOutput::Null) {
+                engineOptions.capture = options.audioCapture;
+            }
+            auto engine = audio::AudioEngine::create(engineOptions);
+            if (!engine && choice.output == audio::AudioOutput::Device) {
+                spdlog::warn("Audio: {}; the clips' sound goes to the null output", engine.error().toString());
+                choice = AudioOutputChoice{audio::AudioOutput::Null, "device-failed"};
+                engineOptions.output = audio::AudioOutput::Null;
+                engineOptions.capture.reset();
+                engine = audio::AudioEngine::create(engineOptions);
+            }
+            if (engine) {
+                audio = std::move(*engine);
+                audio->mixer().setMaster(settings.audio.master * settings.audio.video);
+                audio->mixer().setMuted(muted);
+            } else {
+                spdlog::error("Audio: {}; no sound", engine.error().toString());
+                choice = AudioOutputChoice{audio::AudioOutput::Off, "failed"};
+            }
+        }
+        audioRecord.device = std::string(audio::toString(choice.output));
+        audioRecord.reason = choice.reason;
+        audioRecord.sampleRate = audio ? static_cast<std::uint64_t>(audio->mixer().settings().sampleRate) : 0;
+        audioRecord.deviceName = audio ? audio->deviceName() : std::string();
+        spdlog::info("Audio: output {} ({}){}", audioRecord.device, audioRecord.reason, muted ? ", muted" : "");
+    }
+
+    /// The sound's frame (I5 step 5): F8's mute, the duck under the card, the directory and the quick catalog, and the
+    /// null output's mix pulled up to the run's time.
+    void updateAudio(const input::ActionState* actions) {
+        if (actions != nullptr && actions->pressed(input::Action::ToggleMute)) {
+            muted = !muted;
+            ++audioRecord.muteToggles;
+            spdlog::info("Audio: {}", muted ? "muted" : "sound on");
+            if (audio) {
+                audio->mixer().setMuted(muted);
+            }
+        }
+        const bool card = world && world->context() == WorldContext::Inspect;
+        const bool duck =
+            audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen());
+        if (duck != ducked) {
+            ducked = duck;
+            ++audioRecord.duckChanges;
+            if (audio) {
+                audio->mixer().setDucked(duck);
+            }
+        }
+        if (ducked) {
+            ++audioRecord.duckedFrames;
+        }
+        pullAudio();
+    }
+
+    /// The null output's mix from where it stopped up to the run's time; a device lost, or not started again after a
+    /// launch, tried again (every 2 s).
+    void pullAudio() {
+        if (!audio) {
+            return;
+        }
+        audio->maintain(audio->clockSeconds(simulatedSeconds));
+        const double from = audioPulledTo.value_or(simulatedSeconds - stepSeconds);
+        if (simulatedSeconds > from) {
+            audio->pull(from, simulatedSeconds - from);
+        }
+        audioPulledTo = simulatedSeconds;
+    }
+
+    /// The run report's audio section, the capture written.
+    void recordAudio(RunReport& report) {
+        if (audio) {
+            if (Status written = audio->finish(); !written) {
+                spdlog::error("Audio: the capture was not written: {}", written.error().toString());
+            }
+            const audio::SyncSummary sync = audio->mixer().syncSummary();
+            const audio::AudioEngineStats stats = audio->stats();
+            audioRecord.blocks = stats.blocks;
+            audioRecord.framesMixed = stats.framesRendered;
+            audioRecord.deviceStops = stats.deviceStops;
+            audioRecord.deviceStarts = stats.deviceStarts;
+            audioRecord.deviceFailures = stats.deviceFailures;
+            audioRecord.deviceLosses = stats.deviceLosses;
+            audioRecord.deviceRecoveries = stats.deviceRecoveries;
+            audioRecord.capture = audio->capturePath();
+            audioRecord.captureStartSeconds = audio->captureStartSeconds();
+            audioRecord.syncBlocks = sync.blocks;
+            audioRecord.resyncs = sync.resyncs;
+            audioRecord.corrections = sync.corrections;
+            audioRecord.underrunFrames = sync.underrunFrames;
+            audioRecord.syncP50Milliseconds = sync.p50Milliseconds;
+            audioRecord.syncP95Milliseconds = sync.p95Milliseconds;
+            audioRecord.syncMaxMilliseconds = sync.maxMilliseconds;
+        }
+        if (screen) {
+            screen->recordAudio(audioRecord);
+        }
+        audioRecord.muted = muted;
+        report.audio = audioRecord;
     }
 
     /// Sets the process priority when it changes (I5 step 2): `choice` at `frame`, read back and recorded.
@@ -712,8 +860,10 @@ struct RetroverseApp::State {
             ScreenServiceOptions screenOptions;
             screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
             screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
-            // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget.
-            screenOptions.video = videoSettingsOf(context.paths());
+            // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget; step 5: the sound.
+            screenOptions.video = videoSettings(context);
+            screenOptions.audio = audio.get();
+            screenOptions.recordPresentedFrames = options.audioCapture.has_value();
             screenOptions.maxDecoders = options.maxDecoders;
             screenOptions.watchLateFrames = options.watchLateFrames;
             screenOptions.assetRoot = context.paths().assetRoot();
@@ -1244,6 +1394,12 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(sceneInstance.error());
     }
     state->scene.emplace(std::move(*sceneInstance));
+    if (!options.model) {
+        state->createAudio(context);
+    } else {
+        state->audioRecord.device = std::string(audio::toString(audio::AudioOutput::Off));
+        state->audioRecord.reason = "model-viewer";
+    }
     state->createScreen(context, std::move(screenGames));
     if (options.debugDraw) {
         state->debugLines = kAllDebugLines;
@@ -1275,14 +1431,26 @@ Status RetroverseApp::onInit(AppContext& context) {
         // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
         hooks.starting = [raw, &context] {
+            // ADR-0016 §9: the mix fades out (50 ms, begun before the screens' decoders stop, so that it runs while
+            // they do) and the device stops, leaving the endpoint to the emulator.
+            if (raw->audio) {
+                raw->audio->beginSuspend();
+            }
             if (raw->screen) {
                 raw->screen->launchStarting();
+            }
+            if (raw->audio) {
+                raw->audio->suspend();
+                ++raw->audioRecord.suspends;
             }
             raw->setPriority(context.frameIndex(), processPriorityFor(false, true));
         };
         hooks.ended = [raw] {
             if (raw->screen) {
                 raw->screen->launchEnded();
+            }
+            if (raw->audio) {
+                raw->audio->resume();
             }
         };
         state->product->setLaunchHooks(std::move(hooks));
@@ -1531,6 +1699,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.world->settle(*state.product);
     }
     state.updateScreens(frame, context.window().isMinimized());
+    state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
     state.graphics->pollShaderReload();
@@ -1589,6 +1758,7 @@ void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
     state.setPriority(context.frameIndex(),
                       processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
     state.updateScreens(context.frameIndex(), true);
+    state.updateAudio(nullptr);
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {
@@ -1609,6 +1779,8 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->screen->shutdown();
             m_state->screen->record(context.report().video);
         }
+        // The clips' sound (I5 step 5): the capture written, the section recorded (with the screens' part).
+        m_state->recordAudio(context.report());
         // Normal for the rest of the exit (the joins and the report need no boost), the report's last change. The class
         // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});

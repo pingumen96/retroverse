@@ -288,6 +288,29 @@ slot shows its cover, as today; its still is the cover.
 - **Effects and ambience.** These buses exist with their volumes, but carry no sounds in I5: interaction sounds and
   ambience need original sounds with provenance (I8).
 
+*Amended on 2026-10-28 (I5 step 5's review):* the sync is the mixer's: swresample only converts the rate on the
+decoder's thread, and each source reads its ring at 1 +- up to 1% by linear interpolation (an exact copy at ratio 1),
+the correction growing with the error, full from 30 ms, and once started continuing until the error is within 5 ms
+(hysteresis), so "within 20 ms nothing is done" applies only before a correction starts. A clip's sound is trimmed at
+its picture's end (the last finished pass's end, else the video stream's declared duration) and drained at each pass's
+end, so every loop starts in sync. The ring drops and never blocks: what does not fit is counted
+(`audio.sync.overflowFrames`) and healed by the next resync; a sample that is not a finite number is written as silence.
+The pan is equal-power with its centre at unity, so a centred source passes bit for bit, and neither channel's gain
+exceeds 1 (the louder side at unity, the quieter at the equal-power ratio); it is ramped per sample like the gain, at
+most 1 in 50 ms. The audible screen changes only when a candidate of its class is at least 0.5 m nearer, one of a higher
+class appears, or it no longer qualifies. Audible means in the frustum with the eye in the bound room: in a hall the
+last room's screens keep their video (§2's amendment) but are silent. A source's gain rises only once it sounds; a newly
+audible slot decodes from where its demuxer stands, so about 100 ms of silence precedes its 300 ms fade-in; a slot given
+its next clip while the previous one still sounds lets that one fade out (30 ms) first. Mute fades in 10 ms, the duck in
+100 ms. `RV_AUDIO`, trimmed and in any case, forces `null` or `off`, never `device`; other values are ignored with a
+warning. A device that does not open falls back to `null` (reason `device-failed`); a device lost (miniaudio's stopped
+notification) is tried again at once, one not restarted after a launch every 2 s, never while suspended
+(`audio.deviceFailures`, `deviceLosses`, `deviceRecoveries`). Before a launch the fade begins before the screens'
+decoders stop and the device stops once it has played out. `audio.mode: off` means off, and the model viewer is off.
+Lockstep runs (`--fixed-dt`) wait at most 100 ms per frame for the heard clip's sound to be decoded 40 ms past its
+picture. §12's row "a clip's sound against its picture" is measured at the mixer's output; device latency (one WASAPI
+shared period) is not compensated.
+
 ### 10. Videos and manuals in the media viewer
 
 - **The `videos` page** comes after the title screen. It plays the clip with its sound in the `direct` class at

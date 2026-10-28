@@ -16,6 +16,10 @@
 #include <string_view>
 #include <vector>
 
+namespace rv::audio {
+class AudioEngine;
+} // namespace rv::audio
+
 namespace rv::gl {
 class MaterialRegistry;
 } // namespace rv::gl
@@ -29,6 +33,7 @@ namespace rv::app {
 
 class SceneInstance;
 struct VideoRecord;
+struct AudioRecord;
 
 /// A screen of a scene the service shows pictures on: its object, the material its screen is drawn with (a picture
 /// instance of MAT_Screen_CRT, whose base colour texture the service overrides), its world bounds (the view test that
@@ -73,6 +78,11 @@ struct ScreenServiceOptions {
     bool watchLateFrames = false;
     /// The asset root: the title cards' bundled fonts.
     std::filesystem::path assetRoot;
+    /// The clips' sound (I5 step 5, ADR-0016 §9): the run's engine (none: --audio off, or video.json's audio mode off;
+    /// the clips' audio packets are then discarded undecoded). It must outlive the service.
+    audio::AudioEngine* audio = nullptr;
+    /// The audible clip's frames recorded (AudioRecord::presented): runs that capture the mix.
+    bool recordPresentedFrames = false;
 };
 
 /// The play settings of `screen` (video.json's settings of its kind, its room and itself; the frozen runs'): the hero
@@ -142,8 +152,14 @@ public:
     /// kScreenStopAfterSeconds, reason "minimized"); the scheduler's decisions carried out, the frames uploaded, the
     /// stills loaded, the screens' texture overrides set to what they show. An interactive run calls it while minimized
     /// too, after each of the host's waits (IAppLogic::onMinimized), with the waits' time.
+    ///
+    /// The sound (I5 step 5, ADR-0016 §9): the audible screen is the visible one playing of the best class, then the
+    /// nearest, within proximityMeters (app::chooseAudible), while `eyeInRoom` (the eye in the room whose screens are
+    /// bound: none in a hall); its slot's source gets its volume times its spatial gain and its pan, follows its
+    /// picture's media time, and its decoder decodes its sound; the others fade out (the 300 ms cross-fade) and their
+    /// decoders discard their audio packets.
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimized = false);
+                std::optional<std::string_view> hovered, bool minimized = false, bool eyeInRoom = true);
 
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
     void launchStarting();
@@ -154,6 +170,9 @@ public:
 
     /// The run report's video section.
     void record(VideoRecord& record) const;
+    /// The screens' part of the run report's audio section: the audible screen's changes, its levels, its frames
+    /// (recordPresentedFrames) and the clips whose sound was decoded.
+    void recordAudio(AudioRecord& record) const;
     /// Lines for the developer overlay's Stats panel.
     [[nodiscard]] std::vector<std::string> statusLines() const;
 

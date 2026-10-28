@@ -11,8 +11,10 @@
 # (third-party targets such as ${RV_SQLITE_LIBRARIES} or first-party ones such as rv_esde): the catalog domain may not
 # reach SQLite, pugixml or the Windows-only targets, each adapter may not reach the other's library (ADR-0008 §2), the
 # world generator may not reach RmlUi, SQLite, pugixml, the video decoder or the ES-DE, database and Windows modules
-# (ADR-0010 §1, src/world/forbidden_links.cmake). tests/cmake/test_layer_rules.cmake proves that a forbidden link
-# fails the configure. Aliases match the targets they name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
+# (ADR-0010 §1, src/world/forbidden_links.cmake), the mixer (rv_audio, and rv_audio_model) may not reach FFmpeg, the
+# video decoder, RmlUi, SQLite or pugixml, and the video decoder (rv_media) may not reach the mixer (ADR-0016 §9).
+# tests/cmake/test_layer_rules.cmake proves that a forbidden link fails the configure. Aliases match the targets they
+# name on both sides: EXTRA rv::esde forbids a link to rv_esde, and the reverse.
 
 set(RV_GPU_LIBRARIES
     SDL3::SDL3
@@ -38,6 +40,19 @@ set(RV_RMLUI_LIBRARIES
     RmlUi::Core
     RmlUi::Debugger
     CACHE INTERNAL "Target names of RmlUi (vcpkg port rmlui)")
+set(RV_FFMPEG_LIBRARIES
+    rv::ffmpeg
+    rv_ffmpeg
+    CACHE INTERNAL "Target names of FFmpeg (the root CMakeLists.txt's wrapper of vcpkg's FindFFMPEG)")
+# rv_audio (ADR-0016 §9): GPU-free, rv_core and miniaudio only. FFmpeg stays rv_media's (rv_app connects the two), and
+# neither the UI, the databases nor the media module may be reached from the mixer.
+set(RV_AUDIO_FORBIDDEN_LINKS
+    ${RV_FFMPEG_LIBRARIES}
+    ${RV_RMLUI_LIBRARIES}
+    ${RV_SQLITE_LIBRARIES}
+    ${RV_PUGIXML_LIBRARIES}
+    rv_media
+    CACHE INTERNAL "Libraries rv_audio must not reach")
 
 function(rv_forbid_link target)
     cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "EXTRA")
