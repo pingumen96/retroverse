@@ -134,6 +134,20 @@ inline constexpr std::int64_t kFloorCoveringMaxHeightMm = 20;
 /// The hero corner's part that is the hero TV (room_template.hpp: exactly one per template).
 inline constexpr std::string_view kHeroTvPart = "crt";
 
+/// A fixture's box as the validation judges it (see the file comment: its prefab's bounds turned by its yaw about its
+/// pivot), in its room's frame, rounded outwards to whole millimetres: what the editor picks and outlines (I4b step 4).
+struct FixtureBox {
+    std::int64_t minXMm = 0;
+    std::int64_t minYMm = 0;
+    std::int64_t minZMm = 0;
+    std::int64_t maxXMm = 0;
+    std::int64_t maxYMm = 0;
+    std::int64_t maxZMm = 0;
+
+    bool operator==(const FixtureBox&) const = default;
+};
+[[nodiscard]] FixtureBox fixtureBox(const Fixture& fixture) noexcept;
+
 /// A level of a prefab's slots: its "Slot_<level>_<index>" sockets with that level, `slots` of them.
 struct PrefabSlotLevel {
     std::uint32_t level = 0;

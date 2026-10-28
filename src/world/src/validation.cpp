@@ -1495,6 +1495,12 @@ bool hangsOnWall(const Fixture& fixture, const Room& room) noexcept {
 
 } // namespace detail
 
+FixtureBox fixtureBox(const Fixture& fixture) noexcept {
+    const Box box = boxOf(fixture);
+    return FixtureBox{floorHalf(box.minX), floorHalf(box.minY), floorHalf(box.minZ),
+                      ceilHalf(box.maxX),  ceilHalf(box.maxY),  ceilHalf(box.maxZ)};
+}
+
 std::span<const ValidationRule> validationRules() noexcept {
     return kRules;
 }

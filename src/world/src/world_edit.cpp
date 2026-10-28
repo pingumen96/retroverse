@@ -1027,6 +1027,34 @@ std::optional<FixtureTransform> fixtureHome(const EditedWorld& world, const Fixt
     return FixtureTransform{context.home.xMm, context.home.zMm, context.home.yawCdeg};
 }
 
+std::vector<EditableFixture> editableFixtures(const WorldPlan& plan, const RoomId& room, const EditData& data) {
+    std::vector<EditableFixture> fixtures;
+    if (!data.rooms.contains(room)) {
+        return fixtures;
+    }
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room || !detail::isMovableRole(fixture.role)) {
+            continue;
+        }
+        EditableFixture editable;
+        editable.id = fixture.id;
+        editable.role = fixture.role;
+        editable.kind = fixture.prefab.kind;
+        editable.hung = detail::isHungDecoration(fixture);
+        editable.at = FixtureTransform{fixture.xMm, fixture.zMm, fixture.yawCdeg};
+        editable.box = fixtureBox(fixture);
+        FixtureContext context;
+        auto refused = findFixtureContext(plan, data, fixture.id, context);
+        if (!refused) {
+            editable.refusal = std::string(edit_rule::kFixtureUnknown);
+        } else if (*refused && (*refused)->refused) {
+            editable.refusal = (*refused)->refused->rule;
+        }
+        fixtures.push_back(std::move(editable));
+    }
+    return fixtures;
+}
+
 std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const FixtureId& fixture,
                                             const FixtureTransform& wanted, const EditData& data) {
     FixtureContext context;

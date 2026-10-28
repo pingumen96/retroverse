@@ -40,6 +40,7 @@
 // A placement whose slot the built prefab lacks, or whose slot holds no item of the family in the plan's section's
 // stance (a fallback prefab with other levels), becomes no item and is reported (CollectionLayout::skipped).
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -195,6 +196,9 @@ struct CollectionLayout {
     std::vector<CollectionGroup> groups;
     /// The room's occluders (see the file comment), in the room's frame.
     std::vector<core::Aabb> occluders;
+    /// How many of the occluders, the last ones, are the dressing props' (I4b step 4: the editor lets a held game's ray
+    /// pass them, the dressing giving way where it lands). Not part of the canonical document.
+    std::size_t dressingOccluders = 0;
     /// Wall runs in the template's wall order (north, south, east, west), then the free-standing fixtures by id.
     std::vector<NavRun> navigation;
     std::vector<SkippedPlacement> skipped;

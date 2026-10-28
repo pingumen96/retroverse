@@ -1579,6 +1579,52 @@ Expected<FloorSceneData> loadFloorSceneData(const std::filesystem::path& assetRo
     return data;
 }
 
+Expected<RoomFloorScene> roomFloorScene(const WorldPlan& plan, const RoomId& roomId, const SceneData& data) {
+    const auto found =
+        std::find_if(plan.rooms.begin(), plan.rooms.end(), [&](const Room& room) { return room.id == roomId; });
+    if (found == plan.rooms.end()) {
+        return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
+    }
+    const Room& room = *found;
+    auto roomScene = toSceneFile(plan, room.id, data);
+    if (!roomScene) {
+        return propagate(roomScene.error());
+    }
+    RoomFloorScene part;
+    part.environment = std::move(roomScene->sceneFile["environment"]);
+    part.undressed = std::move(roomScene->undressed);
+    part.objects = json::array();
+    part.lights = json::array();
+    for (json& object : roomScene->sceneFile["objects"]) {
+        const std::string local = object["id"].get<std::string>();
+        object["id"] = floorObjectId(room.id, local);
+        // The shell's doorway opens onto the hall: its stop is left out.
+        if (object.value("prefab", "") == "room_shell") {
+            json& doorway = object["params"]["doorway"];
+            if (doorway.is_object()) {
+                doorway["stop"] = false;
+            }
+        }
+        object["position"] = floorPoint(object["position"], room.placement);
+        if (room.placement.yawHalfTurns % 2 != 0) {
+            json rotation = object.contains("rotationDeg") ? object["rotationDeg"] : vec3Json(0.0, 0.0, 0.0);
+            rotation[1] = floorYaw(rotation[1].get<double>(), room.placement);
+            object["rotationDeg"] = std::move(rotation);
+        }
+        part.objects.push_back(std::move(object));
+    }
+    for (json& light : roomScene->sceneFile["lights"]) {
+        light["name"] = floorObjectId(room.id, light.value("name", ""));
+        light["position"] = floorPoint(light["position"], room.placement);
+        if (light.contains("target")) {
+            light["target"] = floorPoint(light["target"], room.placement);
+        }
+        light["area"] = room.id.toString();
+        part.lights.push_back(std::move(light));
+    }
+    return part;
+}
+
 Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_view floor, const FloorSceneData& data) {
     if (std::none_of(plan.floors.begin(), plan.floors.end(), [&](const Floor& entry) { return entry.id == floor; })) {
         return makeError(ErrorCode::NotFound, "the plan has no such floor", std::string(floor));
@@ -1599,41 +1645,19 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     json lights = json::array();
     json environment = json::object();
     for (const FloorRoom& entry : floorRooms) {
-        const Room& room = *entry.room;
-        auto roomScene = toSceneFile(plan, room.id, data.rooms.at(room.id));
+        auto roomScene = roomFloorScene(plan, entry.room->id, data.rooms.at(entry.room->id));
         if (!roomScene) {
             return propagate(roomScene.error());
         }
         // Every room's data holds the floor's profile: the floor's environment is its rooms'.
         if (environment.empty()) {
-            environment = roomScene->sceneFile["environment"];
+            environment = std::move(roomScene->environment);
         }
         build.undressed.insert(build.undressed.end(), roomScene->undressed.begin(), roomScene->undressed.end());
-        for (json& object : roomScene->sceneFile["objects"]) {
-            const std::string local = object["id"].get<std::string>();
-            object["id"] = floorObjectId(room.id, local);
-            // The shell's doorway opens onto the hall: its stop is left out.
-            if (object.value("prefab", "") == "room_shell") {
-                json& doorway = object["params"]["doorway"];
-                if (doorway.is_object()) {
-                    doorway["stop"] = false;
-                }
-            }
-            object["position"] = floorPoint(object["position"], room.placement);
-            if (room.placement.yawHalfTurns % 2 != 0) {
-                json rotation = object.contains("rotationDeg") ? object["rotationDeg"] : vec3Json(0.0, 0.0, 0.0);
-                rotation[1] = floorYaw(rotation[1].get<double>(), room.placement);
-                object["rotationDeg"] = std::move(rotation);
-            }
+        for (json& object : roomScene->objects) {
             objects.push_back(std::move(object));
         }
-        for (json& light : roomScene->sceneFile["lights"]) {
-            light["name"] = floorObjectId(room.id, light.value("name", ""));
-            light["position"] = floorPoint(light["position"], room.placement);
-            if (light.contains("target")) {
-                light["target"] = floorPoint(light["target"], room.placement);
-            }
-            light["area"] = room.id.toString();
+        for (json& light : roomScene->lights) {
             lights.push_back(std::move(light));
         }
     }
