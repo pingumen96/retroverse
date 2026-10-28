@@ -259,6 +259,7 @@ AppRun StartedApp::finish() {
     }
     INFO(m_run.describe());
     REQUIRE_FALSE(m_run.timedOut);
+    checkAudioOutput(m_run, true);
     return m_run;
 }
 

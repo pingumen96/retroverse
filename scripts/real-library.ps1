@@ -18,8 +18,8 @@
          must read the library before the tests do, so that its ROM scan is the first read after the snapshot; its
          exit code counts like the tests';
       5. it runs build/<preset>/bin/rv_tests.exe with the tag filter (default "[real-library]"), the RV_REAL_*
-         variables, RV_LAUNCH_BACKGROUND=1 and RV_LAUNCH_ALLOWLIST naming the build's fake emulator alone set for it
-         only, as for the measurement script (Release by default: build it first, ./scripts/build.ps1 -Preset
+         variables, RV_LAUNCH_BACKGROUND=1, RV_AUDIO=null and RV_LAUNCH_ALLOWLIST naming the build's fake emulator alone
+         set for it only, as for the measurement script (Release by default: build it first, ./scripts/build.ps1 -Preset
          msvc-x64-release);
       6. it snapshots again and compares: any added, removed or changed file or folder is a failure.
     Everything it writes goes to -OutDir, build/real-library/ by default (the snapshots, the test log). The library is
@@ -120,6 +120,9 @@ $variables = [ordered]@{
     # The build's fake emulator alone (CLAUDE.md's safety rule): no real emulator may start, whatever a test or the
     # measurement script would launch. (Not empty: PowerShell removes a variable set to an empty value.)
     RV_LAUNCH_ALLOWLIST   = (Join-Path $root "build/$Preset/bin/rv_fake_emulator.exe")
+    # The clips' sound never reaches the system's audio (ADR-0016 §9): every run the tests start mixes into the null
+    # output.
+    RV_AUDIO              = 'null'
 }
 $saved = @{}
 foreach ($name in $variables.Keys) {

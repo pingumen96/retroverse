@@ -624,6 +624,8 @@ function Invoke-Catch([string]$Step, [string]$Name, [string]$Executable, [string
     $xmlFile = Join-Path $logDir "$Name.xml"
     Remove-Item -ErrorAction SilentlyContinue $log, $xmlFile
     $env:RV_LAUNCH_BACKGROUND = '1'
+    # The clips' sound never reaches the system's audio (ADR-0016 §9).
+    $env:RV_AUDIO = 'null'
     & $Executable $Spec --durations yes --reporter "xml::out=$xmlFile" --reporter console *> $log
     $code = $LASTEXITCODE
     if (-not (Test-Path $xmlFile)) {

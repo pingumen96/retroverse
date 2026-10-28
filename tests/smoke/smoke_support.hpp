@@ -65,9 +65,14 @@ struct AppRun {
                                 std::string_view name, std::vector<std::string> arguments);
 
 /// runCommand() with --hidden, --data-dir <caseDir>/data and --run-report <caseDir>/<name>.json after `arguments`
-/// (which must make the run frame-limited), and the report read back.
+/// (which must make the run frame-limited), and the report read back. Checks (I5 step 5) that a report's audio output
+/// is null or off, and that every retroverse.exe run that exits 0 reports one.
 [[nodiscard]] AppRun runApp(const std::filesystem::path& executable, const std::filesystem::path& caseDir,
                             std::string_view name, std::vector<std::string> arguments);
+
+/// I5 step 5: a run's report says its audio output was null or off (no test plays sound), and a retroverse.exe run
+/// (`retroverse`) that exited 0 reports one. runApp() and StartedApp::finish() check every run.
+void checkAudioOutput(const AppRun& run, bool retroverse);
 
 /// Skips the running test case (Catch2 SKIP: the test executable exits with 77) when the run could not create an
 /// OpenGL 4.5 core profile context: this machine cannot run Retroverse at all.
