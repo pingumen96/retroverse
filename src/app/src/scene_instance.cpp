@@ -1,6 +1,7 @@
 #include <rv/app/scene_instance.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -232,13 +233,13 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                          instance.m_shadowCasterBounds);
     }
     logAmbientOcclusion(description.name, instance.m_environment.ssao);
-    // The collision world as scene::buildCollisionWorld() makes it, each object's colliders kept (replaceObjects()).
+    // The collision world as scene::buildCollisionWorld() makes it, how many boxes each object has (replaceObjects()).
     instance.m_objects.reserve(geometry.objects.size());
     for (const scene::SceneObjectGeometry& object : geometry.objects) {
         instance.m_objects.push_back(recordOf(object));
-        for (const scene::ColliderBox& collider : instance.m_objects.back().colliders) {
-            instance.m_collision.addCollider(collider);
-        }
+        const std::size_t before = instance.m_collision.boxes().size();
+        scene::addObjectColliders(instance.m_collision, object);
+        instance.m_objects.back().boxes = instance.m_collision.boxes().size() - before;
     }
     scene::addSceneBoundsLines(geometry, instance.m_boundsLines);
     scene::addSceneSocketLines(geometry, instance.m_socketLines);
@@ -442,31 +443,25 @@ bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward, fl
 }
 
 SceneInstance::ObjectRecord SceneInstance::recordOf(const scene::SceneObjectGeometry& object) {
-    ObjectRecord record{object.id, object.bounds, object.instances, object.sockets, {}};
-    scene::CollisionWorld own;
-    scene::addObjectColliders(own, object);
-    record.colliders.assign(own.boxes().begin(), own.boxes().end());
-    return record;
+    return ObjectRecord{object.id, object.bounds, object.instances, object.sockets, 0};
 }
 
-void SceneInstance::rebuildObjectLines() {
-    scene::SceneGeometry lines;
-    lines.objects.reserve(m_objects.size());
-    m_objectBounds.clear();
-    m_objectBounds.reserve(m_objects.size());
-    for (const ObjectRecord& record : m_objects) {
-        scene::SceneObjectGeometry object;
-        object.id = record.id;
-        object.bounds = record.bounds;
-        object.instances = record.instances;
-        object.sockets = record.sockets;
-        lines.objects.push_back(std::move(object));
-        m_objectBounds.push_back(record.bounds);
+void SceneInstance::rebuildObjectLines() const {
+    if (!m_linesStale) {
+        return;
     }
+    m_linesStale = false;
+    // As scene::addSceneBoundsLines() and addSceneSocketLines() draw them.
     m_boundsLines = scene::DebugLines{};
     m_socketLines = scene::DebugLines{};
-    scene::addSceneBoundsLines(lines, m_boundsLines);
-    scene::addSceneSocketLines(lines, m_socketLines);
+    for (const ObjectRecord& record : m_objects) {
+        for (const glm::mat4& instance : record.instances) {
+            m_boundsLines.addBox(record.bounds, instance, scene::debug_colors::kObjectBounds);
+            for (const geometry::Socket& socket : record.sockets) {
+                m_socketLines.addAxes(instance * socket.transform, scene::socketAxisLength(socket, record.bounds));
+            }
+        }
+    }
 }
 
 std::vector<std::size_t> SceneInstance::itemsOf(const std::function<bool(std::string_view id)>& match) const {
@@ -499,6 +494,7 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
         return makeError(ErrorCode::InvalidArgument, "the description is not the one the scene shows",
                          description.name);
     }
+    const auto start = std::chrono::steady_clock::now();
     const auto replaced = [&](std::string_view id) {
         return id.starts_with(change.prefix);
     };
@@ -593,7 +589,13 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
         }
     }
 
-    // The objects' records, the collision world in their order, the description's objects.
+    // The objects' records, the collision world in their order (the kept objects' boxes moved over, the new ones'
+    // added), the description's objects.
+    std::vector<std::size_t> firstBox(count, 0);
+    for (std::size_t index = 1; index < count; ++index) {
+        firstBox[index] = firstBox[index - 1] + m_objects[index - 1].boxes;
+    }
+    std::vector<scene::ColliderBox> oldBoxes = m_collision.release();
     std::vector<ObjectRecord> records;
     records.reserve(order.size());
     std::vector<scene::SceneObject> objects;
@@ -603,12 +605,16 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
         if (entry.fresh) {
             records.push_back(recordOf(geometry.objects[entry.index]));
             objects.push_back(fresh.objects[entry.index]);
+            const std::size_t before = collision.boxes().size();
+            scene::addObjectColliders(collision, geometry.objects[entry.index]);
+            records.back().boxes = collision.boxes().size() - before;
         } else {
+            const std::size_t from = firstBox[entry.index];
+            for (std::size_t box = from; box < from + m_objects[entry.index].boxes && box < oldBoxes.size(); ++box) {
+                collision.addCollider(std::move(oldBoxes[box]));
+            }
             records.push_back(std::move(m_objects[entry.index]));
             objects.push_back(std::move(description.objects[entry.index]));
-        }
-        for (const scene::ColliderBox& collider : records.back().colliders) {
-            collision.addCollider(collider);
         }
     }
     description.objects = std::move(objects);
@@ -617,7 +623,12 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     m_itemObjects = std::move(itemObjects);
     m_itemModels = std::move(itemModels);
     m_collision = std::move(collision);
-    rebuildObjectLines();
+    m_objectBounds.clear();
+    m_objectBounds.reserve(m_objects.size());
+    for (const ObjectRecord& record : m_objects) {
+        m_objectBounds.push_back(record.bounds);
+    }
+    m_linesStale = true;
     m_shadowCasterBounds = casterBoundsOf(m_items, resources);
 
     // The lights: the new ones in place of the first replaced, the area that holds the eye choosing again at once.
@@ -653,10 +664,12 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
             return propagate(uploaded.error());
         }
     }
-    spdlog::info("Scene '{}': the objects of {} replaced: {} kept, {} built, {} gone; {} render item(s), {} collider "
-                 "box(es), {} light(s)",
-                 m_name, change.prefix, changed.kept, changed.built, changed.removed, m_items.size(),
-                 m_collision.boxes().size(), m_sceneLights.size());
+    spdlog::info("Scene '{}': the objects of {} replaced in {:.1f} ms: {} kept, {} built, {} gone; {} render item(s), {} "
+                 "collider box(es), {} light(s)",
+                 m_name, change.prefix,
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(),
+                 changed.kept, changed.built, changed.removed, m_items.size(), m_collision.boxes().size(),
+                 m_sceneLights.size());
     return changed;
 }
 

@@ -82,6 +82,8 @@ public:
     /// static part leaves as they were).
     void addCollider(ColliderBox collider) { m_boxes.push_back(std::move(collider)); }
     void clear() noexcept;
+    /// The colliders taken out, the world left empty.
+    [[nodiscard]] std::vector<ColliderBox> release() noexcept { return std::exchange(m_boxes, {}); }
     [[nodiscard]] std::span<const ColliderBox> boxes() const noexcept { return m_boxes; }
 
     /// True when the capsule standing at `feet` penetrates any collider by more than kContactTolerance.

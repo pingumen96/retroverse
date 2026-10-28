@@ -124,9 +124,15 @@ public:
     [[nodiscard]] const gl::LightsUniforms& lights() const noexcept { return m_lights; }
     [[nodiscard]] const scene::CollisionWorld& collisionWorld() const noexcept { return m_collision; }
     /// The bounds of every object instance (plain lines), in world space.
-    [[nodiscard]] const scene::DebugLines& boundsLines() const noexcept { return m_boundsLines; }
+    [[nodiscard]] const scene::DebugLines& boundsLines() const {
+        rebuildObjectLines();
+        return m_boundsLines;
+    }
     /// The axes of every socket of every object instance (markers), in world space.
-    [[nodiscard]] const scene::DebugLines& socketLines() const noexcept { return m_socketLines; }
+    [[nodiscard]] const scene::DebugLines& socketLines() const {
+        rebuildObjectLines();
+        return m_socketLines;
+    }
     /// Object-local bounds of what each object draws (scene::SceneObjectGeometry::bounds), in the order of the scene
     /// description's objects.
     [[nodiscard]] std::span<const core::Aabb> objectBounds() const noexcept { return m_objectBounds; }
@@ -206,18 +212,19 @@ private:
     /// The environment of the area that holds the eye: its terms over environment().
     [[nodiscard]] scene::EnvironmentSetup areaEnvironment() const;
     /// What each object of the description drew and collided with (I4b step 4: replaceObjects() keeps an unchanged
-    /// object's): its id, its local bounds, instances and sockets (the debug lines), its colliders in the collision
-    /// world.
+    /// object's): its id, its local bounds, instances and sockets (the debug lines), how many boxes of the collision
+    /// world are its (the world lists them object after object).
     struct ObjectRecord {
         std::string id;
         core::Aabb bounds;
         std::vector<glm::mat4> instances;
         std::vector<geometry::Socket> sockets;
-        std::vector<scene::ColliderBox> colliders;
+        std::size_t boxes = 0;
     };
     [[nodiscard]] static ObjectRecord recordOf(const scene::SceneObjectGeometry& object);
-    /// The debug lines and the object bounds made again from m_objects.
-    void rebuildObjectLines();
+    /// The debug lines made again from m_objects when they were asked for since a replacement (lazily: a floor's
+    /// sockets are many, the lines seldom shown).
+    void rebuildObjectLines() const;
     /// Takes an edit of environment()'s area terms (the developer overlay's) into the area it showed them for, then
     /// shows the eye's area's there; true when the eye's area's terms changed.
     bool takeEnvironmentEdit();
@@ -260,8 +267,9 @@ private:
     std::vector<ObjectRecord> m_objects;
     std::vector<std::uint32_t> m_itemObjects;
     std::vector<bool> m_itemModels;
-    scene::DebugLines m_boundsLines;
-    scene::DebugLines m_socketLines;
+    mutable scene::DebugLines m_boundsLines;
+    mutable scene::DebugLines m_socketLines;
+    mutable bool m_linesStale = false;
     std::vector<core::Aabb> m_objectBounds;
 };
 
