@@ -6,14 +6,19 @@
 // C above it (laid out again in place), the menu, Salva. The run report's world.edits record the session; the stored plan
 // holds A in the free slot and B and C swapped, the overrides their three pins (origin editor), the snapshot of the
 // action "edit" is there; a restart finds the plan as saved (nothing written). A session discarded with "Esci senza
-// salvare" (world_edit_discard.json) leaves the plan's SHA-256 unchanged. Screenshots of the bar: a game in the hand over
-// the free slot, the menu (build/smoke/world_edit/session/*.png).
+// salvare" (world_edit_discard.json) leaves the plan's SHA-256 unchanged and shows the stored plan again. "Sposta" on
+// the card of a cartridge of the room's shelf takes it into the editor; the walker carries it across the room and the
+// reticle drops it into a display case's free slot; Salva (a script the test writes: the walk and the looks that reach
+// the slot depend on the plan). Screenshots of the bar: a game in the hand over the free slot, the menu
+// (build/smoke/world_edit/session/*.png).
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <numbers>
 #include <memory>
 #include <optional>
 #include <string>
@@ -46,9 +51,20 @@ constexpr glm::ivec2 kShotSize{1920, 1080};
 /// The window's size: the UI is laid out for it and drawn into the screenshot scaled uniformly.
 constexpr glm::vec2 kWindowSize{1280.0f, 720.0f};
 constexpr std::string_view kRoom = "room:snes";
+/// The walker's eye above the feet and the mouse's look per pixel (scene::FirstPersonSettings' defaults).
+constexpr float kEyeHeight = 1.65f;
+constexpr float kRadiansPerPixel = 0.0022f;
 
 fs::path buildAssets() {
     return buildConfig().devAssetRoot ? sourceDir() / "assets" : retroverseExe().parent_path() / "assets";
+}
+
+/// The slot is on a display case (a fixture of the role Display, the display case's prefab).
+bool onDisplayCase(const rv::world::WorldPlan& plan, const rv::world::SlotId& slot) {
+    return std::any_of(plan.fixtures.begin(), plan.fixtures.end(), [&](const rv::world::Fixture& f) {
+        return f.id == slot.fixture() && f.role == rv::world::FixtureRole::Display &&
+               f.prefab.manifest.find("display_case") != std::string::npos;
+    });
 }
 
 /// The games and slots the session's script reaches from the plan as planned: A on a display case with a free slot on
@@ -74,14 +90,8 @@ SessionTargets sessionTargets(const PlannedBuilding& building) {
     REQUIRE(edit.has_value());
     const rv::app::EditRoom& targets = **edit;
     std::optional<SessionTargets> found;
-    const auto onDisplayCase = [&](const rv::world::SlotId& slot) {
-        return std::any_of(stored.plan.fixtures.begin(), stored.plan.fixtures.end(), [&](const rv::world::Fixture& f) {
-            return f.id == slot.fixture() && f.role == rv::world::FixtureRole::Display &&
-                   f.prefab.manifest.find("display_case") != std::string::npos;
-        });
-    };
     for (const rv::world::CollectionItem& item : layout->items) {
-        if (item.stance != rv::world::ItemStance::FaceOut || !onDisplayCase(item.slot)) {
+        if (item.stance != rv::world::ItemStance::FaceOut || !onDisplayCase(stored.plan, item.slot)) {
             continue;
         }
         // The free slot on the same display case.
@@ -131,6 +141,131 @@ std::vector<std::string> sessionArguments(const SessionTargets& targets, std::ui
         arguments.insert(arguments.end(), {"--screenshot", arg(*shot)});
     }
     return arguments;
+}
+
+/// "Sposta"'s session: a cartridge A on the room's shelf (fs01 beside the hero corner: room:snes's titles all stand
+/// face-out, so the card shows at once) and a display case's free slot F, 5 m apart in the middle of the room. The
+/// walker starts where the reticle rests on A (`spawn`); with A in the hand it turns by `toWalk` mouse pixels (x right,
+/// y up), walks `walk` metres straight to F's Focus pose (`walkFrames` frames at `walkAxis` of the walking speed,
+/// nothing in the way), and turns by `toFree` onto F: the same picks and poses the app makes in that room.
+struct CardTargets {
+    rv::world::CollectionItem a;
+    rv::world::FreeSlot free;
+    rv::app::SpawnPoint spawn;
+    glm::vec2 toWalk{0.0f};
+    float walk = 0.0f;
+    int walkFrames = 0;
+    float walkAxis = 0.0f;
+    glm::vec2 toFree{0.0f};
+};
+
+/// The yaw and pitch that look along `direction` (scene::Camera's conventions: yaw 0 towards -Z, positive to the right
+/// and up).
+glm::vec2 lookAlong(const glm::vec3& direction) {
+    return {std::atan2(direction.x, -direction.z), std::asin(std::clamp(direction.y, -1.0f, 1.0f))};
+}
+
+/// `to - from` in mouse pixels, the yaw's difference taken the short way round.
+glm::vec2 turnPixels(glm::vec2 from, glm::vec2 to) {
+    glm::vec2 turn = to - from;
+    while (turn.x > std::numbers::pi_v<float>) {
+        turn.x -= 2.0f * std::numbers::pi_v<float>;
+    }
+    while (turn.x <= -std::numbers::pi_v<float>) {
+        turn.x += 2.0f * std::numbers::pi_v<float>;
+    }
+    return turn / kRadiansPerPixel;
+}
+
+CardTargets cardTargets(const PlannedBuilding& building) {
+    const rv::world::StoredPlan stored = building.plan();
+    const rv::world::RoomId room = rv::world::RoomId::parse(kRoom).value();
+    auto data = rv::world::loadSceneData(buildAssets(), stored.plan, room);
+    REQUIRE(data.has_value());
+    auto scene = rv::world::toSceneDescription(stored.plan, room, *data);
+    REQUIRE(scene.has_value());
+    auto layout = rv::world::collectionLayout(stored.plan, room, *data, {});
+    REQUIRE(layout.has_value());
+    auto edit = rv::app::EditRoom::build(std::make_shared<const rv::world::CollectionLayout>(*layout));
+    REQUIRE(edit.has_value());
+    const rv::app::EditRoom& targets = **edit;
+    rv::app::FocusViewer viewer;
+    viewer.lens = scene->camera.lens;
+    viewer.aspect = kWindowSize.x / kWindowSize.y;
+    // Where the walker may stand: its capsule (0.3 m, a margin) clear of every occluder (walls, fixtures, props) and of
+    // every slot (a display case's glass is no occluder but stops the walker).
+    std::vector<rv::core::Aabb> solids = layout->occluders;
+    for (const rv::world::CollectionItem& item : layout->items) {
+        solids.push_back(item.worldBounds());
+    }
+    for (const rv::world::FreeSlot& free : layout->freeSlots) {
+        solids.push_back(free.worldBounds());
+    }
+    constexpr float kClear = 0.45f;
+    const auto standable = [&](const glm::vec3& feet) {
+        return std::none_of(solids.begin(), solids.end(), [&](const rv::core::Aabb& box) {
+            return box.max.y > feet.y + 0.05f && box.min.y < feet.y + 1.8f && feet.x > box.min.x - kClear &&
+                   feet.x < box.max.x + kClear && feet.z > box.min.z - kClear && feet.z < box.max.z + kClear;
+        });
+    };
+    const auto clearWalk = [&](const glm::vec3& from, const glm::vec3& to) {
+        const int steps = static_cast<int>(std::ceil(glm::length(to - from) / 0.05f));
+        for (int step = 0; step <= steps; ++step) {
+            if (!standable(glm::mix(from, to, static_cast<float>(step) / static_cast<float>(std::max(steps, 1))))) {
+                return false;
+            }
+        }
+        return true;
+    };
+    // The reticle on the target from the eye: the hover's own sample (on its core), as the app's index gives it.
+    const auto seen = [&](const glm::vec3& eye, const glm::vec3& at, rv::world::PickId id) {
+        const glm::vec3 to = at - eye;
+        if (glm::length(to) > rv::world::kMaxPickDistance - 0.3f) {
+            return false;
+        }
+        const rv::world::HoverSample sample =
+            targets.index().sample(rv::core::Ray{eye, glm::normalize(to)}, rv::world::kNoPick);
+        return sample.hit == id && sample.onCore;
+    };
+    const glm::vec3 up(0.0f, kEyeHeight, 0.0f);
+    std::optional<CardTargets> best;
+    for (const rv::world::FreeSlot& free : layout->freeSlots) {
+        const std::optional<rv::scene::WalkerPose> there = targets.focusPose(free.pickId, viewer);
+        if (!onDisplayCase(stored.plan, free.slot) || !there || !standable(there->feet) ||
+            !seen(there->feet + up, free.worldBounds().center(), free.pickId)) {
+            continue;
+        }
+        for (const rv::world::CollectionItem& item : layout->items) {
+            if (onDisplayCase(stored.plan, item.slot)) {
+                continue;
+            }
+            const glm::vec3 aAt = item.worldBounds().center();
+            for (float x = -4.5f; x <= 4.5f; x += 0.1f) {
+                for (float z = -5.0f; z <= 5.0f; z += 0.1f) {
+                    const glm::vec3 feet(x, there->feet.y, z);
+                    const float walk = glm::length(there->feet - feet);
+                    if ((best && walk >= best->walk) || walk < 0.5f || !seen(feet + up, aAt, item.pickId) ||
+                        !clearWalk(feet, there->feet)) {
+                        continue;
+                    }
+                    const glm::vec2 toA = lookAlong(glm::normalize(aAt - feet - up));
+                    const glm::vec2 heading(lookAlong(glm::normalize(there->feet - feet)).x, toA.y);
+                    CardTargets found{item, free, {}, turnPixels(toA, heading), walk, 0, 0.0f,
+                                      turnPixels(heading, glm::vec2(there->yaw, there->pitch))};
+                    // At most 80% of the walking speed (2.5 m/s), frames of 1/60 s, the distance exact.
+                    found.walkFrames = static_cast<int>(std::ceil(walk * 60.0f / (2.5f * 0.8f)));
+                    found.walkAxis = walk * 60.0f / (2.5f * static_cast<float>(found.walkFrames));
+                    found.spawn.feet = feet;
+                    found.spawn.yawDeg = rv::core::radiansToDegrees(toA.x);
+                    found.spawn.pitchDeg = rv::core::radiansToDegrees(toA.y);
+                    best = found;
+                }
+            }
+        }
+    }
+    INFO("a place in " << kRoom << " that sees a shelf's cartridge with a clear walk to a display case's free slot");
+    REQUIRE(best.has_value());
+    return *best;
 }
 
 const rv::world::Placement* placementOf(const rv::world::WorldPlan& plan, const rv::catalog::GameId& game) {
@@ -284,6 +419,78 @@ TEST_CASE("world_edit: a session left with \"Esci senza salvare\" leaves the pla
     const rv::world::WorldFiles files = worldFilesOf(building);
     CHECK_FALSE(fs::exists(files.overrides));
     CHECK(run.report->world.planDigest == before);
+    // The room shows the stored plan again: its digest (never the draft's), and the free slot the walker still faces
+    // is free again (A, moved there in the draft, is back in its own slot: the reticle rests on nothing).
+    CHECK(edit.planDigest == before);
+    CHECK(run.report->world.hoveredGame != targets.a.game.toString());
+    CHECK(run.report->world.hoveredGame.empty());
+}
+
+TEST_CASE("world_edit: \"Sposta\" on the card takes a shelf's cartridge into the editor and onto a display case",
+          "[world][edit]") {
+    const PlannedBuilding building("world_edit/card");
+    const CardTargets targets = cardTargets(building);
+    const rv::world::StoredPlan before = building.plan();
+    INFO("A " << targets.a.slot.toString() << ", the display case's free slot " << targets.free.slot.toString()
+              << ", a walk of " << targets.walk << " m in " << targets.walkFrames << " frames");
+    // frame 40 interact: Inspect (a face-out cartridge: at once), the card beside A with Avvia focused
+    // frames 70, 76 ui_down: Informazioni, Sposta      frame 82 ui_activate: Sposta: the editor, A in the hand
+    // frame 100 the view turns to the walk's heading   frames 101 on: the walk to F's Focus pose
+    // `turn` the view onto F                           `turn` + 20 interact: A moved there
+    // `turn` + 50 Enter (confirm and ui_activate): the menu, Salva focused
+    // `turn` + 70 ui_activate: Salva
+    const int turn = 101 + targets.walkFrames + 5;
+    const fs::path script = building.dir / "world_edit_card.json";
+    {
+        std::ofstream out(script, std::ios::binary);
+        const auto at = [&](int frame, const std::string& actions, bool last = false) {
+            out << "  {\"fromFrame\": " << frame << ", \"toFrame\": " << frame << ", \"actions\": {" << actions
+                << "}}" << (last ? "" : ",") << "\n";
+        };
+        out << "[\n";
+        at(40, R"("interact": 1)");
+        at(70, R"("ui_down": 1)");
+        at(76, R"("ui_down": 1)");
+        at(82, R"("ui_activate": 1)");
+        out << "  {\"fromFrame\": 100, \"toFrame\": 100, \"actions\": {\"look_delta_x\": " << targets.toWalk.x
+            << ", \"look_delta_y\": " << targets.toWalk.y << "}},\n";
+        out << "  {\"fromFrame\": 101, \"toFrame\": " << 100 + targets.walkFrames
+            << ", \"actions\": {\"move_forward\": " << targets.walkAxis << "}},\n";
+        out << "  {\"fromFrame\": " << turn << ", \"toFrame\": " << turn << ", \"actions\": {\"look_delta_x\": "
+            << targets.toFree.x << ", \"look_delta_y\": " << targets.toFree.y << "}},\n";
+        at(turn + 20, R"("interact": 1)");
+        at(turn + 50, R"("confirm": 1, "ui_activate": 1)");
+        at(turn + 70, R"("ui_activate": 1)", true);
+        out << "]\n";
+    }
+    const fs::path shot = building.dir / "card.png";
+    const AppRun run = runApp(retroverseExe(), building.dir, "card",
+                              {"--start-room", std::string(kRoom), "--exit-after-frames", "--frames", std::to_string(turn + 110),
+                               "--fixed-dt", "0.016667", "--spawn", spawnArgument(targets.spawn), "--input-script",
+                               arg(script), "--screenshot", arg(shot)});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    static_cast<void>(requireScreenshot(run, shot, kShotSize));
+    REQUIRE(run.report->world.edits.size() == 1);
+    const rv::app::WorldEditRecord& edit = run.report->world.edits.front();
+    CHECK(edit.room == kRoom);
+    CHECK(edit.via == "card");
+    CHECK(edit.heldAtStart == targets.a.game.toString());
+    CHECK(edit.failed.empty());
+    CHECK(edit.end == "saved");
+    CHECK(edit.written);
+    REQUIRE(edit.operations.size() == 1);
+    CHECK(edit.operations.front().operation ==
+          "move " + targets.a.game.toString() + " to " + targets.free.slot.toString());
+    CHECK(edit.operations.front().refused.empty());
+    // The stored plan: A on the display case, pinned there by the editor.
+    const rv::world::StoredPlan after = building.plan();
+    CHECK(after.digest != before.digest);
+    CHECK(edit.planDigest == after.digest);
+    REQUIRE(placementOf(after.plan, targets.a.game) != nullptr);
+    CHECK(placementOf(after.plan, targets.a.game)->slot == targets.free.slot);
+    CHECK(onDisplayCase(after.plan, placementOf(after.plan, targets.a.game)->slot));
 }
 
 // ADR-0015 §9's row (an edit shown within 0.25 s), measured by hand in Release (hidden: [.bench]): the overflow

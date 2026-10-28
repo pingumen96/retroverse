@@ -69,8 +69,8 @@ struct EditJobAnswer {
     Kind kind = Kind::Prepared;
     /// Why the job failed ("" none): the session cannot go on with it (logged).
     std::string error;
-    /// Prepared: the edit data, the draft's base (the plan as stored, its file's digest, the overrides read) and whether
-    /// the stored plan is not the one shown (its digest differs: the session shows the stored one).
+    /// Prepared: the edit data, the draft's base (the plan as stored, its file's digest, the overrides read) and
+    /// whether the stored plan is not the one shown (its digest differs: the session shows the stored one).
     std::shared_ptr<const world::EditData> data;
     std::optional<EditBase> base;
     bool storedChanged = false;

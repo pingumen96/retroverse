@@ -174,8 +174,8 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
                  held ? ", " + held->toString() + " held" : std::string());
 
     // The plan as stored (the draft's base), the world's data for the floor, the overrides, the floor of the stored
-    // plan (the fast path's template). The base is never the plan as shown: a stored building's lobby rooms are drawn on
-    // the hub with the stored digest kept (buildFloor()), and a save must not write that re-placement.
+    // plan (the fast path's template). The base is never the plan as shown: a stored building's lobby rooms are drawn
+    // on the hub with the stored digest kept (buildFloor()), and a save must not write that re-placement.
     const EditJobContext context = editJobContext();
     submitEditJob(EditJob::Prepare, [context, shownDigest = m_planState->digest](const core::JobContext& job) {
         EditJobAnswer answer;
@@ -434,7 +434,8 @@ void WorldSession::requestEditSave() {
             return answer;
         }
         // Replayed over a changed plan, the plan saved is not the draft shown: its floor is built for the session's end
-        // (a floor that cannot be built leaves the save as it stands: the outcome is the save's, the error the display's).
+        // (a floor that cannot be built leaves the save as it stands: the outcome is the save's, the error the
+        // display's).
         if (saved->replayed && !saved->refused) {
             displayInto(answer, context, nullptr, saved->saved.plan, saved->planDigest, world::RebuildLevel::Full, {});
             answer.displayError = std::exchange(answer.error, std::string());
@@ -901,6 +902,11 @@ void WorldSession::endEdit(std::string_view end) {
     m_interaction->leaveEdit();
     edit.record.end = std::string(end);
     edit.record.endFrame = m_context.frameIndex();
+    // The plan the floor shows as the session ends (the saved one after Salva, the stored one again after Esci senza
+    // salvare: never a draft's synthetic digest once it is over).
+    if (m_shown) {
+        edit.record.planDigest = m_shown->planDigest;
+    }
     spdlog::info("Frame {}: the edit session in {} ends ({}): {} operation(s), {} undone", m_context.frameIndex(),
                  edit.room.toString(), end, edit.record.operations.size(), edit.record.undone);
     m_record.edits.push_back(std::move(edit.record));

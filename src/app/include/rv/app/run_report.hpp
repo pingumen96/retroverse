@@ -854,8 +854,9 @@ struct WorldEditRecord {
     std::uint64_t undone = 0;
     std::uint64_t menus = 0;
     /// How it ended ("saved", "discarded", "exited": nothing pending; "" still open at the run's end) and on which frame;
-    /// the save: written, replayed over a changed plan, refused (its rule), the snapshot, the plan's digest after it,
-    /// its time and the time until the room showed again (ADR-0015 §9's 3 s).
+    /// the save: written, replayed over a changed plan, refused (its rule), the snapshot, the digest of the plan shown
+    /// at the end (the saved one after Salva, the stored one after Esci senza salvare), its time and the time until the
+    /// room showed again (ADR-0015 §9's 3 s).
     std::string end;
     std::optional<std::uint64_t> endFrame;
     bool written = false;
