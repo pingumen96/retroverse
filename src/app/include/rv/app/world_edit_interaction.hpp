@@ -135,9 +135,9 @@ struct EditFrameResult {
     bool exit = false;
     /// The walker's pose this frame while a step's ease drives it.
     std::optional<scene::WalkerPose> walker;
-    /// I4b step 4: a held fixture's new place to judge (a move-fixture operation the session applies to a copy of the
-    /// draft, setVerdict() then saying what it found); the rule a fixture the player tried to pick up is kept by ("":
-    /// none).
+    /// I4b step 4: an operation to judge ahead on a copy of the draft (a held fixture's new place: setVerdict() then
+    /// says what it found; a held game's move or swap onto the slot targeted: its drop there shows what the probe
+    /// made); the rule a fixture the player tried to pick up is kept by ("": none).
     std::optional<world::EditOperation> probe;
     std::string refused;
 };
@@ -238,6 +238,8 @@ private:
     std::optional<std::pair<world::FixtureTransform, std::string>> m_verdict;
     /// The held fixture was nudged by the D-pad: the reticle takes it again once the player looks or walks.
     bool m_nudged = false;
+    /// The slot a held game's probe was asked for last.
+    world::PickId m_probedPick = world::kNoPick;
 };
 
 } // namespace rv::app

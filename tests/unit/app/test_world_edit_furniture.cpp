@@ -668,3 +668,64 @@ TEST_CASE("app/world_edit_furniture: a held game's ray passes the dressing that 
     }
     CHECK(found);
 }
+
+TEST_CASE("app/world_edit_furniture: a held game's move or swap is judged ahead, once per slot", "[app][world_edit]") {
+    const WorldPlan& plan = room40().plan;
+    const auto data = snesEditData();
+    const EditedWorld world{plan, {}};
+    const std::unique_ptr<EditRoom> room = editRoomOf(plan, *data);
+    // A game with a free slot beside it, and another game.
+    std::optional<std::pair<rv::world::PickId, rv::world::PickId>> pair;
+    for (const rv::world::CollectionItem& item : room->layout().items) {
+        const auto next = room->step(item.pickId, rv::world::StepDirection::Right);
+        if (next && room->freeSlot(*next) != nullptr) {
+            pair = std::pair(item.pickId, *next);
+            break;
+        }
+    }
+    REQUIRE(pair.has_value());
+    const auto [item, free] = *pair;
+    const rv::catalog::GameId game = *room->target(item)->game;
+    const rv::world::CollectionItem* other = nullptr;
+    for (const rv::world::CollectionItem& candidate : room->layout().items) {
+        if (candidate.pickId != item) {
+            other = &candidate;
+            break;
+        }
+    }
+    REQUIRE(other != nullptr);
+    EditInteraction editor = readyEditor(*room, world, *data);
+    const auto on = [&](std::initializer_list<Action> actions, rv::world::PickId pick) {
+        ActionState state = press(actions);
+        EditFrame input;
+        input.actions = &state;
+        input.deltaSeconds = 0.016667f;
+        input.hover = rv::world::HoverSample{pick, pick != rv::world::kNoPick, editor.hovered() == pick};
+        return editor.update(input);
+    };
+    for (int i = 0; i <= rv::world::kHoverChangeFrames; ++i) {
+        static_cast<void>(on({}, item));
+    }
+    static_cast<void>(on({Action::Interact}, item));
+    REQUIRE(editor.mode() == EditMode::Holding);
+    // Over its own slot: nothing to judge. Over the free slot: its move, once.
+    std::optional<EditOperation> probe;
+    for (int i = 0; i <= rv::world::kHoverChangeFrames + 2; ++i) {
+        const EditFrameResult result = on({}, free);
+        if (result.probe) {
+            CHECK_FALSE(probe.has_value());
+            probe = result.probe;
+        }
+    }
+    REQUIRE(probe.has_value());
+    CHECK(*probe == EditOperation::move(game, room->target(free)->slot));
+    // Over another game: the swap.
+    probe.reset();
+    for (int i = 0; i <= rv::world::kHoverChangeFrames + 2; ++i) {
+        if (const EditFrameResult result = on({}, other->pickId); result.probe) {
+            probe = result.probe;
+        }
+    }
+    REQUIRE(probe.has_value());
+    CHECK(*probe == EditOperation::swap(game, other->game));
+}

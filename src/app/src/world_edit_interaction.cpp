@@ -123,6 +123,7 @@ void EditInteraction::end() {
         m_walker.jumpTo(m_walker.pose());
     }
     m_walkerPlaced = false;
+    m_probedPick = world::kNoPick;
     m_fixture.reset();
     m_probed.reset();
     m_verdict.reset();
@@ -243,6 +244,16 @@ EditFrameResult EditInteraction::update(const EditFrame& frame) {
     }
     if (m_mode == EditMode::Browse || m_mode == EditMode::Holding) {
         track(frame, looked);
+    }
+    // I4b step 4: where a held game would go is judged ahead (a probe), so that its drop there shows what the probe
+    // made instead of applying the operation again.
+    if (m_mode == EditMode::Holding && m_held && m_target && m_target->pick != m_heldFrom &&
+        m_target->pick != m_probedPick && !result.apply) {
+        result.probe = m_target->game ? world::EditOperation::swap(*m_held, *m_target->game)
+                                      : world::EditOperation::move(*m_held, m_target->slot);
+        m_probedPick = m_target->pick;
+    } else if (m_mode != EditMode::Holding && m_mode != EditMode::Busy) {
+        m_probedPick = world::kNoPick;
     }
     const bool easing = m_walker.animating();
     m_walker.advance(dt);

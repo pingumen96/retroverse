@@ -95,9 +95,8 @@ struct EditJobAnswer {
     std::optional<EditSaveOutcome> saved;
     std::string displayError;
     /// I4b step 4: the rooms whose static part is rebuilt alone (with `build` the shown floor's collections laid out
-    /// again); a save's floor's scene digest computed for a session whose static part changed ("" none).
+    /// again).
     std::vector<RoomStaticPart> statics;
-    std::string sceneDigest;
     /// The job's own time (milliseconds).
     double milliseconds = 0.0;
 };
@@ -119,6 +118,11 @@ struct EditProbeAnswer {
     world::EditOperation operation;
     std::string refusal;
     double milliseconds = 0.0;
+    /// What applyEdit() said and the draft's world after it (an accepted place): what a drop there shows.
+    std::optional<world::EditResult> result;
+    std::shared_ptr<const world::EditedWorld> world;
+    /// The draft the probe judged.
+    std::shared_ptr<const world::EditedWorld> base;
 };
 
 /// Where the probes post (as EditJobBox).
@@ -168,10 +172,14 @@ struct WorldEditState {
     /// games), the outlined target.
     std::vector<world::PickId> hidden;
     world::PickId outlined = world::kNoPick;
-    /// I4b step 4: the floor's scene digest when the session began (the stored plan's static part), and whether a
-    /// rebuilt static part shows since (a synthetic digest then; Salva computes the saved floor's).
+    /// I4b step 4: the floor's scene digest when the session began (the stored plan's static part: shown again by an
+    /// undo to the base or a discard; a rebuilt room's floor has a synthetic one, `edit-scene:<session>:<n>`).
     std::string baseSceneDigest;
-    bool sceneChanged = false;
+    /// The plan's derived state (the plan state, its where-is index, the card's versions, the launch's placements)
+    /// waits for the session's end (WorldSession::keepShown(), endEdit()).
+    bool planStatePending = false;
+    /// The last probe's answer, whose edited world a drop of the same place takes instead of applying it again.
+    std::optional<EditProbeAnswer> lastProbe;
     /// The probes: their box and generation, the one in flight, the next asked meanwhile, the draft they judge.
     std::shared_ptr<EditProbeBox> probeBox;
     core::JobGeneration probeGeneration;

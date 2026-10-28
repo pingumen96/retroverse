@@ -446,13 +446,34 @@ void WorldSession::requestEditOperation(const world::EditOperation& operation) {
     const world::PinProvenance provenance{world::PinOrigin::Editor, core::utcNow()};
     const std::string digest = fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
     const std::string sceneDigest = fmt::format("edit-scene:{}:{}", edit.session, edit.shownCount);
+    // A fixture dropped where its last probe judged it, on the same draft (the one taken when it was picked up: the
+    // draft does not change while it is held): the probe's edited world (applyEdit() of the same operation on the same
+    // world) is shown, not applied again.
+    std::optional<EditProbeAnswer> probed;
+    if (edit.lastProbe && edit.lastProbe->operation == operation && edit.lastProbe->world && edit.lastProbe->result &&
+        edit.lastProbe->base && edit.lastProbe->base == edit.probeWorld) {
+        probed = std::move(edit.lastProbe);
+        spdlog::info("Editor: {} shows what its probe made", world::editText(operation));
+    }
+    edit.lastProbe.reset();
+    std::optional<world::EditedWorld> current;
+    if (!probed) {
+        current = edit.draft->current();
+    }
     submitEditJob(EditJob::Operation, [context, operation, provenance, digest, sceneDigest,
-                                       world = edit.draft->current(), data = edit.draft->data(),
-                                       shown = edit.shown](const core::JobContext&) {
+                                       current = std::move(current), probed = std::move(probed),
+                                       data = edit.draft->data(), shown = edit.shown](const core::JobContext&) {
         EditJobAnswer answer;
         answer.kind = EditJobAnswer::Kind::Shown;
         answer.operation = operation;
-        world::EditedWorld edited = world;
+        if (probed) {
+            answer.result = *probed->result;
+            displayInto(answer, context, shown, probed->world->plan, digest, probed->result->rebuild,
+                        probed->result->rooms, sceneDigest);
+            answer.world = *probed->world;
+            return answer;
+        }
+        world::EditedWorld edited = *current;
         auto result = world::applyEdit(edited, operation, *data, provenance);
         if (!result) {
             answer.error = result.error().toString();
@@ -499,20 +520,13 @@ void WorldSession::requestEditSave() {
     options.library = m_planState->library;
     options.writer = m_options.writer.empty() ? std::string("retroverse (editor)") : m_options.writer + " (editor)";
     options.provenance = world::PinProvenance{world::PinOrigin::Editor, core::utcNow()};
-    submitEditJob(EditJob::Save, [context, options, draft = *edit.draft,
-                                  sceneChanged = edit.sceneChanged](const core::JobContext&) {
+    submitEditJob(EditJob::Save, [context, options, draft = *edit.draft](const core::JobContext&) {
         EditJobAnswer answer;
         answer.kind = EditJobAnswer::Kind::Saved;
         auto saved = saveDraft(draft, options);
         if (!saved) {
             answer.error = saved.error().toString();
             return answer;
-        }
-        if (sceneChanged && !saved->replayed && !saved->refused) {
-            // I4b step 4: the room's static part shown is the saved plan's, rebuilt alone: the floor's scene digest of
-            // the saved plan, so that the next live update compares the floor as it is (nothing else of the floor is
-            // shown).
-            answer.sceneDigest = floorOf(context, saved->saved.plan, saved->planDigest).sceneDigest;
         }
         // Replayed over a changed plan, the plan saved is not the draft shown: its floor is built for the session's end
         // (a floor that cannot be built leaves the save as it stands: the outcome is the save's, the error the
@@ -744,9 +758,14 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             notShown();
             return;
         }
-        // A static part rebuilt alone shows since the session began (a synthetic scene digest: Salva computes the saved
-        // floor's).
-        edit.sceneChanged = m_shown && m_shown->sceneDigest != edit.baseSceneDigest;
+        if (job == EditJob::Operation || job == EditJob::Undo) {
+            // The draft changes: the probes judged the one before (taken again at the next probe).
+            m_pool.cancel(edit.probeGeneration);
+            edit.probing.reset();
+            edit.probeNext.reset();
+            edit.lastProbe.reset();
+            edit.probeWorld.reset();
+        }
         if (job == EditJob::Operation) {
             edit.draft->adopt(*answer.operation, *answer.result, std::move(*answer.world));
             edit.interaction.setPending(edit.draft->size());
@@ -797,9 +816,6 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
         edit.record.written = saved.written;
         edit.record.snapshot = saved.snapshot;
         edit.record.planDigest = saved.planDigest;
-        if (!answer.sceneDigest.empty() && m_shown) {
-            m_shown->sceneDigest = answer.sceneDigest;
-        }
         // The plan shown is the one stored now.
         m_record.planDigest = saved.planDigest;
         m_record.planWritten = m_record.planWritten || saved.written;
@@ -1128,10 +1144,15 @@ void WorldSession::requestEditProbe(const world::EditOperation& probe) {
             const Clock::time_point start = Clock::now();
             EditProbeAnswer answer;
             answer.operation = probe;
-            // The place judged as the drop would be: applyEdit() on a copy of the draft (nothing kept).
+            answer.base = world;
+            // The place judged as the drop would be: applyEdit() on a copy of the draft (kept for a drop there).
             world::EditedWorld trial = *world;
             auto result = world::applyEdit(trial, probe, *data, provenance);
             answer.refusal = !result ? std::string("failed") : result->refused ? result->refused->rule : std::string();
+            if (result && !result->refused && result->changed) {
+                answer.result = *result;
+                answer.world = std::make_shared<const world::EditedWorld>(std::move(trial));
+            }
             answer.milliseconds = millisecondsSince(start);
             if (context.cancelled()) {
                 return;
@@ -1169,6 +1190,7 @@ void WorldSession::followEditProbe() {
     edit.probing.reset();
     ++edit.record.probes;
     edit.interaction.setVerdict(answer->operation, answer->refusal);
+    edit.lastProbe = std::move(answer);
     if (edit.probeNext) {
         const world::EditOperation next = *edit.probeNext;
         edit.probeNext.reset();
@@ -1193,6 +1215,7 @@ void WorldSession::syncHeldFixture() {
     m_pool.cancel(edit.probeGeneration);
     edit.probing.reset();
     edit.probeNext.reset();
+    edit.lastProbe.reset();
     if (edit.draft) {
         edit.probeWorld = std::make_shared<const world::EditedWorld>(edit.draft->current());
     }
@@ -1286,7 +1309,17 @@ void WorldSession::endEdit(std::string_view end) {
     spdlog::info("Frame {}: the edit session in {} ends ({}): {} operation(s), {} undone", m_context.frameIndex(),
                  edit.room.toString(), end, edit.record.operations.size(), edit.record.undone);
     m_record.edits.push_back(std::move(edit.record));
+    // The plan's derived state the session's edits left waiting (keepShown()), from the floor shown now (its plan and
+    // the digest of the plan it shows: the saved one, the stored one).
+    std::optional<WorldBuild> pending;
+    if (edit.planStatePending && edit.shown && edit.shown->plan && m_shown) {
+        pending = *edit.shown;
+        pending->planDigest = m_shown->planDigest;
+    }
     m_edit.reset();
+    if (pending) {
+        keepShown(*pending);
+    }
 }
 
 } // namespace rv::app
