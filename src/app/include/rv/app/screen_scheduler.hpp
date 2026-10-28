@@ -52,6 +52,9 @@ struct ScreenSchedulerSettings {
     int maxDecoders = kMaxScreenDecoders;
     /// Ambient requests count within this distance of the eye (video.json's proximityMeters).
     double proximityMeters = 12.0;
+    /// The late-frame drop is watched (the service turns it off in lockstep runs: their presentation runs on simulated
+    /// time, their decoding on the wall clock).
+    bool watchLateFrames = true;
 };
 
 /// One screen's request on one frame.

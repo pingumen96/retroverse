@@ -612,6 +612,26 @@ TEST_CASE("app/screen_scheduler: open plus reserved slots never exceed the budge
     CHECK(drops >= 10); // the runs went through drops
 }
 
+TEST_CASE("app/screen_scheduler: late frames not watched (a lockstep run's) never drop the budget",
+          "[app][screen_scheduler]") {
+    ScreenScheduler scheduler(ScreenSchedulerSettings{.maxDecoders = 2, .watchLateFrames = false});
+    Decoders decoders(2, 0);
+    const std::vector<ScreenRequest> requests{request("hero", ScreenClass::Room, "a", 3.0),
+                                              request("tv", ScreenClass::Ambient, "b", 2.0)};
+    double now = 0.0;
+    for (int frame = 0; frame < 900; ++frame) {
+        decoders.present(0, true);
+        decoders.present(1, true);
+        const ScheduleResult result = scheduler.update(now, requests, decoders.feedback());
+        decoders.apply(result);
+        CHECK(commandsOf(result, SlotAction::Stop).empty());
+        now += kFrame;
+    }
+    CHECK(scheduler.drops().empty());
+    CHECK(scheduler.budget(now) == 2);
+    CHECK(scheduler.openSlots() == 2);
+}
+
 TEST_CASE("app/screen_scheduler: the next room's hero takes the hero's slot back, one decoder thread across the change",
           "[app][screen_scheduler]") {
     // A room changed: its screens are bound with other object ids; the hero's owner is its role.

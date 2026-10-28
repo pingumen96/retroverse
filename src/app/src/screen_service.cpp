@@ -302,7 +302,8 @@ struct ScreenService::Impl {
     Impl(std::vector<ScreenBinding> bindings, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
          ScreenServiceOptions serviceOptions)
         : materials(registry), options(std::move(serviceOptions)),
-          scheduler(ScreenSchedulerSettings{decoderBudget(options), options.video.proximityMeters}),
+          scheduler(ScreenSchedulerSettings{decoderBudget(options), options.video.proximityMeters,
+                                            !options.lockstep || options.watchLateFrames}),
           slots(scheduler.slots().size()),
           pool(core::WorkerPoolOptions{
               .threads = 1, .capacity = 16, .belowNormalPriority = true, .name = "rv-screen-stills"}),

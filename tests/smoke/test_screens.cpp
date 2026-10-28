@@ -152,6 +152,8 @@ const rv::app::VideoRecord& requireScreens(const AppRun& run, std::uint64_t budg
     CHECK(video.maxOpenDecoders <= budget);
     CHECK(video.maxDecoderThreads <= budget);
     CHECK(video.joinedAtExit);
+    // A lockstep run never watches its late frames (--watch-late-frames aside): no drop to one decoder.
+    CHECK(video.budgetDrops.empty());
     return video;
 }
 
@@ -363,4 +365,5 @@ TEST_CASE("screens: the process runs above normal while rendering and normal dur
     // The decoders were stopped for the game, as with the hero alone.
     REQUIRE(run.report->video.launches.size() == 1);
     CHECK(run.report->video.launches.front().threadsRunning == 0);
+    CHECK(run.report->video.budgetDrops.empty());
 }

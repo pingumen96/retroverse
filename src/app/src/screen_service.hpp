@@ -67,6 +67,10 @@ struct ScreenServiceOptions {
     VideoSettings video;
     /// --max-decoders (I5 step 2): the budget over video.json's maxDecoders.
     std::optional<int> maxDecoders;
+    /// --watch-late-frames (tests): the late-frame drop is watched in a lockstep run too. Without it a lockstep run
+    /// never drops (its frames are presented on simulated time and decoded on the wall clock: their lateness says
+    /// nothing).
+    bool watchLateFrames = false;
     /// The asset root: the title cards' bundled fonts.
     std::filesystem::path assetRoot;
 };

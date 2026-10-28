@@ -172,7 +172,7 @@ void ScreenScheduler::watchLateFrames(double nowSeconds, std::span<const SlotFee
         while (stats.window.size() > 1 && stats.window[1].atSeconds <= nowSeconds - kLateWindowSeconds + kTimeTolerance) {
             stats.window.erase(stats.window.begin());
         }
-        if (m_dropUntil || m_settings.maxDecoders < 2 ||
+        if (m_dropUntil || m_settings.maxDecoders < 2 || !m_settings.watchLateFrames ||
             nowSeconds - stats.window.front().atSeconds + kTimeTolerance < kLateWindowSeconds) {
             continue;
         }
