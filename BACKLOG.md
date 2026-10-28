@@ -189,8 +189,12 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **No colour bars between two clips:** done in I5 step 1 (`docs/i5/step-1.md`): the previous picture stays up until
   the next game's still or first frame, and the building's screens show `standby`, not the bars.
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
-- **Library-wide checks:** the corruption and truncation thresholds against every video of the collection; an hour-long
-  soak with the scene renderer.
+- **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
+  stand. The hour-long soak found the private bytes growing: see the next item.
+- **Memory per clip opened (I5 step 7's soak):** done in I5 step 7's review (`docs/i5/step-7.md`, "Review"): every
+  thread that ended while the process presented OpenGL frames cost 36 to 73 KiB in the graphics driver, and a clip
+  started a thread; the decoders now run on worker threads that live on. The run report's per-frame samples (about
+  80 bytes a frame) are kept exactly for 65,536 samples, then in a histogram within 1%.
 
 ### Product UI
 

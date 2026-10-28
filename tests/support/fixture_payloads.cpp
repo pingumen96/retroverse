@@ -420,6 +420,12 @@ Status writeClip(const std::filesystem::path& target, const ClipPayload& payload
     if (payload.damage == ClipDamage::Empty) {
         return media::writeRawFile(target, {});
     }
+    if (payload.damage == ClipDamage::NoVideo) {
+        return media::writeSilentWav(target, 0.5);
+    }
+    if (payload.damage == ClipDamage::NotAVideo) {
+        return media::writeRawFile(target, "Not a clip: a few words of text in a file named like one.\n");
+    }
     if (payload.damage == ClipDamage::None) {
         return media::writeTestVideo(target, payload.spec);
     }
@@ -443,6 +449,8 @@ Status writeClip(const std::filesystem::path& target, const ClipPayload& payload
             break;
         case ClipDamage::None:
         case ClipDamage::Empty:
+        case ClipDamage::NoVideo:
+        case ClipDamage::NotAVideo:
             break;
         }
     }
@@ -623,8 +631,13 @@ Expected<ClipPayload> parseClipPayload(const nlohmann::json& value, std::string_
         if (ext != ".avi") {
             return invalid(context, "a clip of an unsupported codec is an .avi file");
         }
+    } else if (*damage == "no-video") {
+        payload.damage = ClipDamage::NoVideo;
+    } else if (*damage == "not-a-video") {
+        payload.damage = ClipDamage::NotAVideo;
     } else {
-        return invalid(context, "\"damage\" must be \"empty\", \"truncated\", \"corrupt\" or \"unsupported-codec\"");
+        return invalid(context, "\"damage\" must be \"empty\", \"truncated\", \"corrupt\", \"unsupported-codec\", "
+                                "\"no-video\" or \"not-a-video\"");
     }
     return payload;
 }

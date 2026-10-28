@@ -120,6 +120,7 @@ std::vector<ScreenGame> roomScreenGames(const world::WorldPlan& plan, const worl
             ScreenGame game;
             game.id = paths.game.toString();
             game.media.video = below(root, paths[catalog::MediaKind::Video]);
+            game.media.videoKey = game.media.video.empty() ? std::string() : paths[catalog::MediaKind::Video];
             game.media.screenshot = below(root, paths[catalog::MediaKind::Screenshot]);
             game.media.titleScreen = below(root, paths[catalog::MediaKind::TitleScreen]);
             game.media.cover = below(root, paths[catalog::MediaKind::Cover]);
@@ -187,6 +188,7 @@ std::vector<ScreenGame> roomScreenGames(const world::CollectionLayout& layout, c
         entry.title.ratingTenths = screen.ratingTenths;
         entry.game.id = item.game.toString();
         entry.game.media.video = below(mediaRoot, screen.video);
+        entry.game.media.videoKey = entry.game.media.video.empty() ? std::string() : screen.video;
         entry.game.media.screenshot = below(mediaRoot, screen.screenshot);
         entry.game.media.titleScreen = below(mediaRoot, screen.titleScreen);
         entry.game.media.cover = below(mediaRoot, text->coverPath);

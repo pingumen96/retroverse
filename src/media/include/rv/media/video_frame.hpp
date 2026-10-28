@@ -60,7 +60,8 @@ public:
     [[nodiscard]] std::size_t strideBytes() const noexcept;
     /// width * height * 4.
     [[nodiscard]] std::size_t sizeBytes() const noexcept;
-    /// Bytes allocated for pixels (at least sizeBytes()).
+    /// Bytes allocated for pixels (at least sizeBytes()), not counting the padding past them that the converter may
+    /// write into (I5 step 7).
     [[nodiscard]] std::size_t capacityBytes() const noexcept { return m_capacity; }
 
     [[nodiscard]] std::uint8_t* pixels() noexcept { return m_pixels.get(); }

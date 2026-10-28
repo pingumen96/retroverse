@@ -22,6 +22,10 @@ struct ScreenMedia {
     std::filesystem::path screenshot;
     std::filesystem::path titleScreen;
     std::filesystem::path cover;
+    /// The clip's path below the media root, '/' between the elements (I5 step 7: its verdict's key in
+    /// cache/media/videos.json, ADR-0016 §8); empty without a clip, or for a clip outside a media root (a mock
+    /// catalog's), which has no verdict.
+    std::string videoKey;
 
     bool operator==(const ScreenMedia&) const = default;
 };

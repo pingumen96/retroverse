@@ -18,6 +18,7 @@ add_library(rv_cli_core STATIC
     src/cmd_launch.cpp
     src/cmd_library.cpp
     src/cmd_media.cpp
+    src/cmd_media_videos.cpp
     src/cmd_profiles.cpp
     src/cmd_search.cpp
     src/cmd_sessions.cpp
@@ -40,10 +41,10 @@ add_library(rv::cli_core ALIAS rv_cli_core)
 rv_set_target_defaults(rv_cli_core)
 target_include_directories(rv_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # The public headers need rv_core only; the commands use the catalog, its adapters and the Windows services, and since
-# I3 the world generator (worldplan, where-is; ADR-0010).
+# I3 the world generator (worldplan, where-is; ADR-0010), since I5 step 7 the video decoder (media --check-videos).
 target_link_libraries(rv_cli_core
     PUBLIC rv_core
-    PRIVATE rv_catalog rv_esde rv_catalog_db rv_platform_win rv_launcher rv_world)
+    PRIVATE rv_catalog rv_esde rv_catalog_db rv_platform_win rv_launcher rv_world rv_media)
 rv_forbid_link(rv_cli_core)
 
 add_executable(retroverse-cli src/main.cpp)

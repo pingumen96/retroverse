@@ -22,6 +22,8 @@
          set for it only, as for the measurement script (Release by default: build it first, ./scripts/build.ps1 -Preset
          msvc-x64-release);
       6. it snapshots again and compares: any added, removed or changed file or folder is a failure.
+    With -FullVideoScan it sets RV_REAL_FULL_VIDEO_SCAN=1 for the tests: [real-library][videos] (I5 step 7) then checks
+    the clips of every system, not only the SNES ones (hours, resumable: tests/unit/cli/test_cli_media_videos_real.cpp).
     Everything it writes goes to -OutDir, build/real-library/ by default (the snapshots, the test log). The library is
     only read.
     Exit codes: 0 the tests passed and nothing changed; 1 a test or the measurements failed, or a snapshot differs; 2 it
@@ -34,6 +36,10 @@
 
 .EXAMPLE
     ./scripts/real-library.ps1 -Preset msvc-x64-debug -Filter '[real-library][system_probe]'
+
+.EXAMPLE
+    ./scripts/real-library.ps1 -Filter '[real-library][videos]' -FullVideoScan
+    The verdicts of every clip of the library (I5 step 7).
 #>
 param(
     [string]$EsdeHome = $env:RV_REAL_ESDE_HOME,
@@ -45,7 +51,8 @@ param(
     [string]$Filter = '[real-library]',
     [string]$OutDir,
     [string]$Measure,
-    [hashtable]$MeasureArguments = @{}
+    [hashtable]$MeasureArguments = @{},
+    [switch]$FullVideoScan
 )
 $ErrorActionPreference = 'Stop'
 # Numbers in messages use a decimal point whatever the Windows locale.
@@ -123,6 +130,8 @@ $variables = [ordered]@{
     # The clips' sound never reaches the system's audio (ADR-0016 §9): every run the tests start mixes into the null
     # output.
     RV_AUDIO              = 'null'
+    # [real-library][videos] checks every system's clips, not only the SNES ones (I5 step 7).
+    RV_REAL_FULL_VIDEO_SCAN = $(if ($FullVideoScan) { '1' } else { $null })
 }
 $saved = @{}
 foreach ($name in $variables.Keys) {

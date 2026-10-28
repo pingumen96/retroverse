@@ -53,6 +53,32 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   folder or a gamelist could not be read. `media --game <id>` gives a game's media as the last import stored them, each
   file's path derived under the media root of library.json's library; nothing on disk is looked at (exit 1 an unknown
   game, 2 a game of another library, 3 no catalog).
+- `media --check-videos [--system <name>] [--jobs N] [--recheck-failures] [--json] [--output <file>]` (I5 step 7,
+  ADR-0016 §8, `docs/i5/step-7.md`): the clips' verdicts. Every file of ES-DE's video extensions in the media root's
+  videos folders (`<system>/videos`, found as ES-DE finds them; one system's with `--system`) without a verdict for its
+  file as it is now (size and time) is checked by `media::checkVideo`, the screens' own decoder on a sample of it: its
+  first 2 s, 1 s from its middle and its last second (a clip up to 7 s long whole); a stream that ends after a seek (at
+  the middle's or the tail's) is held to ADR-0004's truncation rule against the video stream's own duration.
+  `--recheck-failures` also checks the clips whose verdict is a failure (their files unchanged). `--jobs` clips at
+  once (1 to 8, default 2), the process at below-normal priority, each clip within 60 s. A clip the system cannot read
+  (access denied, a sharing violation, a device error: the decoder's `read-error`) gets no verdict, like a clip gone
+  meanwhile: it is listed as not checked and checked at the next run. The verdicts go into
+  `<user data>/cache/media/videos.json` every 25 clips or 20 s (read and merged under a lock the app shares: neither
+  drops the other's; a merge that fails keeps its verdicts for the next one), so an interrupted run resumes; verdicts of
+  clips no longer in a folder listed whole are removed. Deleting `cache/media/videos.json` forgets every verdict (each
+  clip is checked again, about two hours for the whole library with 3 jobs); a verdicts file of another version (an
+  FFmpeg upgrade raises it) is replaced the same way. Nothing is written under the media root. The report: per system
+  the
+  clips, those checked now, those known (a verdict from an earlier run or the app), those without a verdict, and the
+  count of each verdict (`playable`, `invalid-file`, `no-video-stream`, `unsupported-codec`, `corrupt-data`,
+  `truncated`, `decoder-error`); the failures (path, verdict, and for those checked now the decoder's reason); the
+  playable clips in which the decoder counted errors or damaged frames below the thresholds; the clips whose check did
+  not finish; JSON `total`, `systems`, `failures`, `nearMisses`, `incomplete`, `removed`. Progress goes to stderr every
+  30 s, and the decoders' own log lines are left out at the info level. Exit 0; 1 the media root or a videos folder
+  could not be read, or a clip's check did not finish (no verdict: it is checked at the next run); 2 usage (`--jobs`
+  or `--recheck-failures` without `--check-videos`, `--check-videos` with `--game`, `--path` or `--coverage`); 3 the
+  verdicts file cannot be read (a text that is not the verdicts' is replaced instead), or the last merge failed (the
+  report still shows the verdicts found).
 - `systems`, `games [--system <name>] [--state <list>] [--availability <list>] [--include-unavailable] [--sort
   title|system|release-date] [--offset <n>] [--limit <n>]`, `search <text>` (the options of `games`; text that starts
   with `-` after `--`) and `show <gameId>` read the catalog database through a reader (`SqliteCatalogQuery`) and never

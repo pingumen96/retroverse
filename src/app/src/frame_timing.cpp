@@ -40,7 +40,7 @@ void FrameTiming::recordFrame(std::uint64_t frameIndex, std::optional<double> mi
     const std::optional<GpuSample> gpu = counted ? m_pendingGpu : std::nullopt;
     m_pendingGpu.reset();
     if (timed) {
-        m_milliseconds.push_back(*milliseconds);
+        m_milliseconds.add(*milliseconds);
     }
     if (gpu) {
         addGpuSample(m_gpu, *gpu);
@@ -49,7 +49,7 @@ void FrameTiming::recordFrame(std::uint64_t frameIndex, std::optional<double> mi
         if (phase.depth > 0 || phase.touched) {
             ++phase.frames;
             if (timed) {
-                phase.milliseconds.push_back(*milliseconds);
+                phase.milliseconds.add(*milliseconds);
             }
             if (gpu) {
                 addGpuSample(phase.gpu, *gpu);
@@ -84,7 +84,7 @@ void FrameTiming::recordGpuPasses(const gl::FrameStats& stats) {
 void FrameTiming::addGpuSample(GpuSamples& samples, const GpuSample& sample) {
     for (std::size_t pass = 0; pass < kGpuPassCount; ++pass) {
         if (sample[pass]) {
-            samples[pass].push_back(*sample[pass]);
+            samples[pass].add(*sample[pass]);
         }
     }
 }
@@ -92,8 +92,7 @@ void FrameTiming::addGpuSample(GpuSamples& samples, const GpuSample& sample) {
 std::vector<GpuPassRecord> FrameTiming::gpuPassRecords(const GpuSamples& samples) {
     std::vector<GpuPassRecord> records;
     for (std::size_t pass = 0; pass < kGpuPassCount; ++pass) {
-        std::vector<double> values = samples[pass];
-        if (const std::optional<TimeSummary> times = summarizeTimes(values)) {
+        if (const std::optional<TimeSummary> times = samples[pass].summary()) {
             records.push_back(GpuPassRecord{std::string(kGpuPassNames[pass]), *times});
         }
     }
@@ -101,17 +100,15 @@ std::vector<GpuPassRecord> FrameTiming::gpuPassRecords(const GpuSamples& samples
 }
 
 FrameTimesRecord FrameTiming::runTimes() const {
-    std::vector<double> samples = m_milliseconds;
-    return FrameTimesRecord{m_warmUpFrames, summarizeTimes(samples), gpuPassRecords(m_gpu)};
+    return FrameTimesRecord{m_warmUpFrames, m_milliseconds.summary(), gpuPassRecords(m_gpu)};
 }
 
 std::vector<PhaseRecord> FrameTiming::phases() const {
     std::vector<PhaseRecord> records;
     records.reserve(m_phases.size());
     for (const Phase& phase : m_phases) {
-        std::vector<double> samples = phase.milliseconds;
-        records.push_back(PhaseRecord{phase.name, phase.opened, phase.depth > 0, phase.frames, summarizeTimes(samples),
-                                      gpuPassRecords(phase.gpu)});
+        records.push_back(PhaseRecord{phase.name, phase.opened, phase.depth > 0, phase.frames,
+                                      phase.milliseconds.summary(), gpuPassRecords(phase.gpu)});
     }
     return records;
 }

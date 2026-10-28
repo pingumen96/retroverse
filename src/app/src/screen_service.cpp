@@ -1,4 +1,5 @@
 #include "screen_service.hpp"
+#include "screen_verdicts.hpp"
 
 #include <rv/app/audio_policy.hpp>
 #include <rv/app/run_report.hpp>
@@ -328,6 +329,12 @@ struct ScreenService::Impl {
         std::optional<audio::SourceId> source;
         std::shared_ptr<audio::AudioRing> ring;
         bool audioRecorded = false;
+
+        // The verdicts (I5 step 7): the clip's media, whether it opened at its start (a clip played through from
+        // there is playable), whether its first pass was looked at.
+        ScreenMedia media;
+        bool fromStart = false;
+        bool passChecked = false;
     };
 
     Impl(std::vector<ScreenBinding> bindings, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
@@ -338,7 +345,13 @@ struct ScreenService::Impl {
           slots(scheduler.slots().size()),
           pool(core::WorkerPoolOptions{
               .threads = 1, .capacity = 16, .belowNormalPriority = true, .name = "rv-screen-stills"}),
-          cardFonts(std::make_shared<CardFonts>()) {
+          cardFonts(std::make_shared<CardFonts>()), verdicts(options.verdictsFile, options.lockstep, kStillWait) {
+        // I5 step 7: the clips known to fail never reach a screen (a lockstep run reads the verdicts first).
+        if (options.lockstep) {
+            verdicts.waitLoaded(kStillWait);
+        }
+        rawGames = games;
+        games = verdicts.screened(std::move(games));
         for (ScreenBinding& binding : bindings) {
             ScreenPlaySettings settings = screenPlaySettings(options, binding);
             const double volume = options.video.screen(binding.kind, binding.roomId, binding.objectId).volume;
@@ -364,6 +377,9 @@ struct ScreenService::Impl {
     std::vector<Slot> slots;
     core::WorkerPool pool;
     std::shared_ptr<CardFonts> cardFonts;
+    /// The clips' verdicts (I5 step 7), and the room's games as given (screened again once the verdicts are read).
+    ScreenVerdicts verdicts;
+    std::vector<ScreenGame> rawGames;
     /// Explicit playlist ids already logged as unknown or without a clip (once per run).
     std::set<std::string, std::less<>> loggedPlaylistIds;
     /// Positions of clips stopped while still asked for (out of view, needed, the budget): reopened there.
@@ -480,8 +496,10 @@ struct ScreenService::Impl {
     void addFallback(ScreenState& screen, ScreenPicture picture, std::string reason) {
         spdlog::warn("{}: the {} of game {} cannot be shown ({}); the next picture of the chain is shown",
                      nameOf(screen), toString(picture), screen.policy.targetId(), reason);
-        counters.fallbacks.push_back(
-            VideoFallbackRecord{screen.policy.targetId(), std::string(toString(picture)), std::move(reason)});
+        if (counters.fallbacks.size() < kMaxTimelineEntries) {
+            counters.fallbacks.push_back(
+                VideoFallbackRecord{screen.policy.targetId(), std::string(toString(picture)), std::move(reason)});
+        }
     }
 
     void recordEvent(std::size_t slot, SlotAction action, std::string gameId, std::string reason,
@@ -601,6 +619,8 @@ struct ScreenService::Impl {
         slot.frozenShown = false;
         slot.pending = nullptr;
         slot.pendingSince.reset();
+        slot.media = first.policy.targetMedia();
+        slot.passChecked = false;
         // Where it opens: a launch's position (its screens' policies), else one kept when it stopped.
         std::optional<double> resume;
         for (ScreenState* screen : on) {
@@ -614,6 +634,7 @@ struct ScreenService::Impl {
                 resumeAt.erase(kept);
             }
         }
+        slot.fromStart = !resume && !options.freezePtsSeconds;
         const bool heroOn = std::find(on.begin(), on.end(), hero()) != on.end();
         if (reopenPending && heroOn && !counters.launches.empty()) {
             reopenPending = false;
@@ -759,6 +780,7 @@ struct ScreenService::Impl {
                 slot.firstPts = timing->ptsSeconds;
             }
             slot.lastPts = timing->ptsSeconds;
+            checkPass(slot);
             if (options.recordPresentedFrames && audibleSlot() == index &&
                 audioCounters.presented.size() < kMaxAudioTimelineEntries) {
                 audioCounters.presented.push_back(AudioPresentedRecord{now, timing->ptsSeconds});
@@ -861,6 +883,26 @@ struct ScreenService::Impl {
                 addFallback(*screen, ScreenPicture::Video, reason);
                 screen->policy.videoFailed();
             }
+            if (!slot.textureFailed) {
+                // I5 step 7: remembered, so that it is never opened again while its file is unchanged.
+                const media::VideoDecoder& decoder = slot.playback->decoder();
+                verdicts.clipFailed(slot.media, slot.gameId, decoder.failure(), decoder.streamInfo(), decoder.stats());
+            }
+        }
+    }
+
+    /// A clip opened at its start whose first pass ended (a frame of its second shows): playable when the decoder
+    /// counted no error and no damaged frame (I5 step 7). Looked at once per opening.
+    void checkPass(Slot& slot) {
+        if (slot.passChecked || !slot.fromStart || slot.duration <= 0.0 || !slot.lastPts ||
+            *slot.lastPts < slot.duration) {
+            return;
+        }
+        slot.passChecked = true;
+        const media::VideoDecoder& decoder = slot.playback->decoder();
+        const media::DecoderStats stats = decoder.stats();
+        if (stats.loops >= 1 && stats.decodeErrors == 0 && stats.damagedFrames == 0) {
+            verdicts.clipPlayed(slot.media, slot.gameId, decoder.streamInfo());
         }
     }
 
@@ -1143,6 +1185,14 @@ struct ScreenService::Impl {
             counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
             return;
         }
+        if (verdicts.takeChanged()) {
+            // The verdicts came after the games, or a clip left out turned out to have changed (I5 step 7): the clips
+            // known to fail leave the games now, the others come back.
+            const std::vector<ScreenGame> screenedGames = verdicts.screened(rawGames);
+            for (const std::unique_ptr<ScreenState>& screen : screens) {
+                screen->policy.setGames(screenedGames);
+            }
+        }
         const scene::Frustum frustum = camera.frustum();
         for (const std::unique_ptr<ScreenState>& screen : screens) {
             screen->policy.hover(hovered, now);
@@ -1389,6 +1439,8 @@ struct ScreenService::Impl {
 
     void bind(std::vector<ScreenBinding> bindings, std::vector<ScreenGame> games, std::uint64_t frame) {
         const Clock::time_point start = Clock::now();
+        rawGames = games;
+        games = verdicts.screened(std::move(games));
         // A clip open on the screens let go (playing, or paused out of view): stopped below, never waited for.
         const bool clipStopped =
             std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback && !slot.draining; });
@@ -1426,6 +1478,8 @@ struct ScreenService::Impl {
     }
 
     void shutdown() {
+        // The run's verdicts reach the file (I5 step 7); idempotent.
+        verdicts.shutdown(kStillWait);
         const bool decoders =
             std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
         if (phase == ScreenPhase::Quit && !decoders) {
@@ -1485,6 +1539,8 @@ ScreenService::~ScreenService() {
 }
 
 void ScreenService::setGames(std::vector<ScreenGame> games) {
+    m_impl->rawGames = games;
+    games = m_impl->verdicts.screened(std::move(games));
     for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
         screen->policy.setGames(games);
     }
@@ -1583,6 +1639,7 @@ void ScreenService::record(VideoRecord& record) const {
             drop.atSeconds, drop.slot, game != s.clipGames.end() ? game->second : std::string(), drop.ratio,
             drop.untilSeconds});
     }
+    s.verdicts.record(record.verdicts);
 }
 
 void ScreenService::recordAudio(AudioRecord& record) const {

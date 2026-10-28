@@ -114,14 +114,24 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   interact opening the directory at its floors; the favourites' showcase holding the directory's first favourite and
   recent games, a proxy hovered and its card opened, its Avvia into the fake emulator and the showcase made again on
   its return; the arcade room reached past the landmark,
-  `tests/input_scripts/hub_walk_into_arcade.json`);
+  `tests/input_scripts/hub_walk_into_arcade.json`), and the clips' verdicts (`gpu.video verdicts: ...`, I5 step 7,
+  `test_video_verdicts.cpp`, `[video_verdicts]`, on `tests/fixtures/esde/video-verdicts` with one clip kept: a clip that
+  failed opened 0 times at the next run, its screen on its still from the start, opened again once its file changed; a
+  clip played through remembered playable);
   the room's test files
   repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
   the animations' frame budget and the benchmark path (`[benchmark]`,
   `tests/input_scripts/bench_snes_room.json`: 1,230 frames at 1920 x 1080 with `--no-vsync` and `--fixed-dt 0.016667`,
   frame p99 at most 33.3 ms and p50 at most 16.7 ms in Release, the acceptable limits of `docs/roadmap.md`; the GPU
-  passes printed). Every clean run is also
+  passes printed). The hidden `[.soak]` case (I5 step 7, `test_soak.cpp`, informative): `rv_smoke_tests.exe "[soak]"`
+  in Release plays `screens_four`'s four CRTs for an hour in real time (`RV_SOAK_SECONDS` to shorten it), each
+  playlist moving on every 4 s, and samples the app's private bytes, handles and threads every 10 s into
+  `smoke/soak/memory.csv`; after the first 5 minutes the private bytes must grow by less than 32 MiB. The hidden
+  `[.soak]` case of `rv_platform_tests` (`tests/platform/test_thread_soak.cpp`, I5 step 7's review, informative) prints
+  the private bytes a thread started and joined costs without a GL context, with an idle one, and with one presenting
+  frames meanwhile (`RV_SOAK_GL_DEBUG=1` a debug context), against the same work on one thread that lives on. Every
+  clean run is also
   checked for the run report's I3 sections (the GPU memory adding up, at most one decoder thread, joined at exit).
   Every case of `rv_smoke_tests` (the gpu cases and the desktop one) runs with `RV_LAUNCH_ALLOWLIST` naming the build's
   `rv_fake_emulator.exe` (ctest `ENVIRONMENT`; the launch tests set it themselves when run outside ctest). A case is
@@ -247,7 +257,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   lines, the runs' reports left for Gate C; since I6 step 4 a second case under `build/<preset>/real-library/migration`
   plans the library with generator 1.3's `retroverse-cli.exe`, named by `RV_LEGACY_CLI` (`docs/i6/step-4.md`; skipped
   without it), then starts this build on it: the rooms of succeeded families migrated once, the others unchanged, none
-  over capacity, nothing written by a second start). `-OutDir <dir>`
+  over capacity, nothing written by a second start); since I5 step 7 `-Filter '[real-library][videos]'` (the SNES clips
+  through `retroverse-cli media --check-videos`, their verdicts per kind and the failures printed, the reports in
+  `build/<preset>/real-library/videos`, whose data directory is kept so that a run resumes: delete it to check every
+  clip again) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's clips (hours). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

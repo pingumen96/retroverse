@@ -45,6 +45,40 @@ struct DurationPercentiles {
 /// The percentiles of `milliseconds`, which it sorts; nothing for none.
 [[nodiscard]] std::optional<DurationPercentiles> summarizeDurations(std::vector<double>& milliseconds);
 
+/// Durations in milliseconds kept for their percentiles in bounded memory (I5 step 7's review: a run's per-frame
+/// samples took about 75 bytes a frame, some 45 MiB in an hour at 165 frames a second). The first kExactSamples are
+/// kept as they are and summarize exactly as summarizeDurations(); from the next one on every sample goes into a
+/// histogram of logarithmic buckets 1% wide (about 17 KiB), and a percentile is the upper bound of the bucket its rank
+/// falls in, at most the largest sample: never below the exact value and within 1% of it (a duration under 1 µs counts
+/// as 1 µs). The count and the largest sample stay exact. A run of the default frame rate keeps its samples exactly
+/// for its first 6 to 7 minutes at 165 frames a second (kExactSamples).
+class DurationRecorder {
+public:
+    static constexpr std::size_t kExactSamples = 65536;
+    /// The histogram's resolution: buckets from kSmallestMs up, each kBucketRatio times as wide as the previous; a
+    /// duration past the last bucket (beyond about 17 minutes) falls into it.
+    static constexpr double kSmallestMs = 0.001;
+    static constexpr double kBucketRatio = 1.01;
+    static constexpr std::size_t kBucketCount = 2100;
+
+    /// Adds a duration (negative or not finite: ignored).
+    void add(double milliseconds);
+    /// The percentiles so far; nothing without a sample.
+    [[nodiscard]] std::optional<DurationPercentiles> summary() const;
+    [[nodiscard]] std::uint64_t count() const noexcept { return m_count; }
+    /// True while every sample is kept as it is (the summary is exact).
+    [[nodiscard]] bool exact() const noexcept { return m_buckets.empty(); }
+
+private:
+    [[nodiscard]] static std::size_t bucketOf(double milliseconds) noexcept;
+    [[nodiscard]] static double upperBound(std::size_t bucket) noexcept;
+
+    std::vector<double> m_samples;
+    std::vector<std::uint64_t> m_buckets;
+    std::uint64_t m_count = 0;
+    double m_max = 0.0;
+};
+
 /// One section over the run: the frames during which it ran, and the percentiles of its time per frame (the sum of
 /// every time it ran during the frame).
 struct CpuSectionSummary {
@@ -60,7 +94,8 @@ struct CpuSectionSummary {
 /// others record nothing (their percentiles describe the frames they ran in). Time spent in a section between two
 /// endFrame() calls belongs to the frame the second one closes, so a section run before the first frame (an
 /// application's initialization) counts towards the first; what runs after the last endFrame() is not recorded.
-/// Samples are kept for the whole run (8 bytes per section and frame: an hour at 144 Hz is about 4 MiB per section).
+/// Samples are kept for the whole run in a DurationRecorder (8 bytes per section and frame for the first 65,536 frames
+/// a section ran in, a histogram of about 17 KiB after them).
 /// Not thread-safe: one instance per thread (mainThreadCpuTimers() for the main thread).
 class CpuTimers {
 public:
@@ -119,7 +154,7 @@ private:
         /// Time in the frame being accumulated; nothing while the section has not run in it.
         std::optional<double> current;
         /// One sample per closed frame during which the section ran.
-        std::vector<double> samples;
+        DurationRecorder samples;
     };
 
     std::vector<Section> m_sections;

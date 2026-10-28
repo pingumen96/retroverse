@@ -822,6 +822,13 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
                         {900, 15.0, 1, "stop", "g000000000000b003", "out-of-view", {}}};
     video.budgetDrops = {{12.5, 1, "g000000000000b003", 0.075, 42.5}};
     video.slotEventsDropped = 3;
+    // I5 step 7: the clips' verdicts.
+    video.verdicts.loaded = true;
+    video.verdicts.entries = 1470;
+    video.verdicts.knownBad = {{"g000000000000b004", "corrupt-data"}};
+    video.verdicts.given = {{"g000000000000b005", "truncated"}, {"g000000000000b002", "playable"}};
+    video.verdicts.written = 2;
+    video.verdicts.writeFailures = 0;
     report.processPriority = rv::app::ProcessPriorityRecord{
         {{1, "above-normal", "rendering", true}, {37, "normal", "launch", true}, {200, "normal", "exit", true}}};
     // I5 step 5: the clips' sound, written last.

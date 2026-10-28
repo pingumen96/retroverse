@@ -44,8 +44,9 @@ namespace rv::test {
 ///    and "height" say otherwise; PNG or JPEG after the extension or "format"; "shape": "cartridge" for a cartridge on
 ///    a transparent background; "damage": "truncated" or "not-an-image"), and {"path": "media/snes/videos/A
 ///    (USA).mp4", "video": {"seed": 7}} a 4:3 clip of media::test_video with its frame counter ("seconds", "width",
-///    "height", "frameRate", "codec", "quantizer"; "damage": "empty", "truncated", "corrupt" or "unsupported-codec",
-///    the last an .avi). A file holds exactly one of size and seed, copyOf, cover or video.
+///    "height", "frameRate", "codec", "quantizer"; "damage": "empty", "truncated", "corrupt", "unsupported-codec" (an
+///    .avi), "no-video" (a .wav's bytes) or "not-a-video" (text)). A file holds exactly one of size and seed, copyOf,
+///    cover or video.
 ///    "collections" (support/fixture_collection.hpp) generates a whole system from a seed and a few counts: ROM
 ///    files, their gamelist, covers and clips, for fixtures too large to list file by file.
 ///    Every file is described and checked before the first is written; they are then written on a few threads.

@@ -130,6 +130,32 @@ TEST_CASE("media/video_decoder: frames taller than maxHeight are scaled down, ne
     CHECK(unscaledFrames[0].size == FrameSize{320, 240});
 }
 
+TEST_CASE("media/video_decoder: frames whose rows are no whole number of 8 pixels convert within their buffers",
+          "[media][video_decoder]") {
+    // I5 step 7: a real 140 x 96 clip converted unscaled corrupted the heap (swscale's SIMD converters write whole
+    // blocks of pixels past a row's end); scaled to odd widths too.
+    const MediaTestDir dir;
+    struct Case {
+        int width;
+        int height;
+        int maxHeight;
+    };
+    for (const Case& size : {Case{140, 96, 0}, Case{142, 98, 0}, Case{150, 100, 0}, Case{186, 120, 0},
+                             Case{558, 358, 120}, Case{248, 192, 120}}) {
+        INFO(size.width << "x" << size.height << " at " << size.maxHeight << " rows");
+        const auto path = writeClip(dir, std::to_string(size.width) + "x" + std::to_string(size.height) + ".mp4",
+                                    smallClip(size.width, size.height, 10, 20));
+        DecoderSettings settings = noLoop();
+        settings.maxHeight = size.maxHeight;
+        for (int round = 0; round < 3; ++round) {
+            auto decoder = startDecoder(path, settings);
+            const auto frames = collectFrames(*decoder, 20);
+            REQUIRE(frames.size() == 20);
+            CHECK(frames[19].counter == 19u);
+        }
+    }
+}
+
 TEST_CASE("media/video_decoder: non-ASCII paths and every container of the fixtures decode", "[media][video_decoder]") {
     const MediaTestDir dir;
     for (const char* name : {"vidéo 日本語/clip.mp4", "clip.mkv", "clip.avi"}) {

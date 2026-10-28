@@ -83,6 +83,10 @@ struct ScreenServiceOptions {
     audio::AudioEngine* audio = nullptr;
     /// The audible clip's frames recorded (AudioRecord::presented): runs that capture the mix.
     bool recordPresentedFrames = false;
+    /// The clips' verdicts (I5 step 7, ADR-0016 §8): <user data>/cache/media/videos.json, read when the service starts
+    /// (a lockstep run waits for it) and given the verdicts of the clips that fail or play through once clean; a clip
+    /// known to fail is never opened (its screens show its stills). Empty: no verdicts.
+    std::filesystem::path verdictsFile;
 };
 
 /// The play settings of `screen` (video.json's settings of its kind, its room and itself; the frozen runs'): the hero

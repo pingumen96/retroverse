@@ -2,9 +2,10 @@
 # (VideoDecoder), a bounded queue of frames (FrameQueue) fed from a pool of reusable frames (FramePool), the
 # presentation clock that picks frames by timestamp (PresentationClock), the playback of one video for the render
 # thread (VideoPlayback), the clip's audio decoded on the same thread and resampled by swresample into an AudioSink
-# (I5 step 5, ADR-0016 §9), sample statistics, and the synthetic video fixtures of the tests and the video spike
-# (test_video.hpp). GPU-free: decoded frames are RGBA8 CPU images that rv_render uploads (gl::VideoTexture); FFmpeg types
-# never appear in the public headers.
+# (I5 step 5, ADR-0016 §9), sample statistics, the synthetic video fixtures of the tests and the video spike
+# (test_video.hpp), and since I5 step 7 (ADR-0016 §8) the clips' verdicts (video_verdicts.hpp: cache/media/videos.json)
+# and the check of a clip's sample (video_check.hpp). GPU-free: decoded frames are RGBA8 CPU images that rv_render
+# uploads (gl::VideoTexture); FFmpeg types never appear in the public headers.
 
 add_library(rv_media STATIC
     src/ffmpeg_support.cpp
@@ -13,9 +14,11 @@ add_library(rv_media STATIC
     src/presentation_clock.cpp
     src/sample_stats.cpp
     src/test_video.cpp
+    src/video_check.cpp
     src/video_decoder.cpp
     src/video_frame.cpp
     src/video_playback.cpp
+    src/video_verdicts.cpp
 )
 add_library(rv::media ALIAS rv_media)
 rv_set_target_defaults(rv_media)

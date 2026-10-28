@@ -14,14 +14,19 @@
 //    stored them, presence and extension per kind, each file's path derived again under the library's media root
 //    (esde::EsdeMediaResolver::path(): paths are never stored, ADR-0008 §5); nothing on disk is looked at. The catalog
 //    is read as `show` reads it (nothing written into it).
+//  - media --check-videos [--system <name>] [--jobs N] [--recheck-failures] [--json] [--output <file>] (I5 step 7,
+//    ADR-0016 §8): the clips' verdicts, the clips of the media root's videos folders checked and their verdicts merged
+//    into <user data>/cache/media/videos.json (cmd_media_videos.cpp).
 // The library is the one <user data>/config/library.json records (library create). Exit codes: 0; 1 when something
 // could not be read (the media root, a media folder, the settings, the systems, a gamelist, a ROM folder, the ROM
-// folder of the path), and for a --game the catalog does not have; 2 for invalid options, an unknown system, a path
-// that leads out of its ROM folder, no library.json, a --game of another library than library.json's; 3 when
-// library.json is invalid, the catalog cannot be read or the results cannot be written.
+// folder of the path, a videos folder), for a --game the catalog does not have, and for a clip whose check did not
+// finish; 2 for invalid options, an unknown system, a path that leads out of its ROM folder, no library.json, a --game
+// of another library than library.json's; 3 when library.json is invalid, the catalog cannot be read or the results or
+// the verdicts cannot be written.
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <filesystem>
 #include <optional>
@@ -57,6 +62,7 @@
 #include "commands.hpp"
 #include "esde_text.hpp"
 #include "library_snapshot.hpp"
+#include "media_videos.hpp"
 
 namespace rv::cli {
 namespace {
@@ -565,15 +571,19 @@ ExitCode showCoverage(CommandContext& context, Output& out, const Library& libra
 } // namespace
 
 ExitCode runMedia(CommandContext& context) {
-    core::ArgParser parser(std::string(kName),
-                           "Shows the media of a ROM path of a system, or the media coverage of the library.");
+    core::ArgParser parser(std::string(kName), "Shows the media of a ROM path of a system or the media coverage of the "
+                                               "library, or checks the library's clips.");
     parser.option("system", "name", "The ES-DE system (its name in es_systems.xml).")
         .option("path", "relative path",
                 "A ROM path of the system, relative to its ROM folder (or as a gamelist "
                 "writes it: \"./...\").")
         .flag("coverage", "Show the share of the entries that have each kind of media, per system.")
         .option("game", "id", "A game of the catalog (its GameId): its media as the last import stored them.")
-        .flag("json", "Print the results as JSON.");
+        .flag("json", "Print the results as JSON.")
+        .flag("check-videos", "Check the clips of the videos folders (one system's with --system) that have no verdict "
+                              "for their file as it is, and keep their verdicts in <user data>/cache/media/videos.json.")
+        .option("jobs", "n", "Clips checked at once by --check-videos (1 to 8; default 2).")
+        .flag("recheck-failures", "With --check-videos, also check again the clips whose verdict is a failure.");
     addOutputOption(parser);
     const auto args = parser.parse(context.arguments);
     if (!args) {
@@ -588,6 +598,26 @@ ExitCode runMedia(CommandContext& context) {
         context.err.writeLine(fmt::format("{}: {}", kName, message));
         return ExitCode::UsageError;
     };
+    const bool checkVideosAsked = args->has("check-videos");
+    int jobs = kDefaultVideoCheckJobs;
+    if (args->has("jobs")) {
+        if (!checkVideosAsked) {
+            return usage("--jobs goes with --check-videos");
+        }
+        const std::string text = args->value("jobs").value_or("");
+        int parsed = 0;
+        const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), parsed);
+        if (error != std::errc() || end != text.data() + text.size() || parsed < 1 || parsed > kMaxVideoCheckJobs) {
+            return usage(fmt::format("--jobs must be a whole number from 1 to {}", kMaxVideoCheckJobs));
+        }
+        jobs = parsed;
+    }
+    if (args->has("recheck-failures") && !checkVideosAsked) {
+        return usage("--recheck-failures goes with --check-videos");
+    }
+    if (checkVideosAsked && (args->has("game") || args->has("coverage") || args->has("path"))) {
+        return usage("--check-videos takes neither --game, --path nor --coverage");
+    }
     if (args->has("game")) {
         if (args->has("coverage") || args->has("path") || args->has("system")) {
             return usage("--game takes neither --system, --path nor --coverage");
@@ -617,8 +647,8 @@ ExitCode runMedia(CommandContext& context) {
     if (coverage && args->has("path")) {
         return usage("--coverage takes no --path");
     }
-    if (!coverage && (!args->has("system") || !args->has("path"))) {
-        return usage("give --system and --path (the media of a ROM path), or --coverage");
+    if (!coverage && !checkVideosAsked && (!args->has("system") || !args->has("path"))) {
+        return usage("give --system and --path (the media of a ROM path), --coverage or --check-videos");
     }
     std::optional<catalog::SystemName> system;
     if (args->has("system")) {
@@ -629,7 +659,7 @@ ExitCode runMedia(CommandContext& context) {
         system = std::move(*name);
     }
     const std::string romPath = args->value("path").value_or("");
-    if (!coverage && romPath.empty()) {
+    if (!coverage && !checkVideosAsked && romPath.empty()) {
         return usage("--path must not be empty");
     }
     auto output = outputFileOption(*args);
@@ -665,8 +695,12 @@ ExitCode runMedia(CommandContext& context) {
         return usage(fmt::format("--system: no system named \"{}\" in es_systems.xml", system->str()));
     }
 
-    const ExitCode code = coverage ? showCoverage(context, *destination.out, library, system, args->has("json"))
-                                   : showPath(context, *destination.out, library, *system, romPath, args->has("json"));
+    const ExitCode code =
+        checkVideosAsked
+            ? checkVideos(context, *destination.out, library.mediaRoot, *library.systems, system, jobs,
+                          args->has("recheck-failures"), args->has("json"))
+        : coverage ? showCoverage(context, *destination.out, library, system, args->has("json"))
+                   : showPath(context, *destination.out, library, *system, romPath, args->has("json"));
     if (destination.file && destination.file->text().empty()) {
         return code; // nothing to write: the command failed before its results
     }

@@ -8,12 +8,14 @@
 #include <cmath>
 #include <condition_variable>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -69,6 +71,8 @@ std::string_view toString(DecodeFailure failure) noexcept {
         return "truncated";
     case DecodeFailure::DecoderError:
         return "decoder error";
+    case DecodeFailure::ReadError:
+        return "read error";
     }
     return "unknown";
 }
@@ -87,6 +91,7 @@ ErrorCode errorCodeFor(DecodeFailure failure) noexcept {
     case DecodeFailure::UnsupportedCodec:
         return ErrorCode::Unsupported;
     case DecodeFailure::DecoderError:
+    case DecodeFailure::ReadError:
         return ErrorCode::IoError;
     }
     return ErrorCode::Unknown;
@@ -97,8 +102,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 /// A pass shorter than this share of the declared duration, less kTruncationSlackSeconds, means the file was cut short.
-constexpr double kTruncationRatio = 0.9;
-constexpr double kTruncationSlackSeconds = 0.5;
+constexpr double kTruncationRatio = kTruncatedPassRatio;
+constexpr double kTruncationSlackSeconds = kTruncatedPassSlackSeconds;
 /// Frame duration when neither the frame nor the stream tells one.
 constexpr double kFallbackFrameSeconds = 1.0 / 30.0;
 /// Smallest step between two frames whose timestamps do not increase (broken files).
@@ -194,62 +199,159 @@ double taggedDurationSeconds(const AVStream& stream) noexcept {
     return static_cast<double>(microseconds) * 1e-6;
 }
 
+/// True for the errors the system gives when it cannot open or read a file (FFmpeg's file protocol passes errno on):
+/// access denied or a sharing violation, a device error, a busy or missing device, too many open files, a timeout.
+/// Never a fault of the file's content, which FFmpeg reports with codes of its own (AVERROR_INVALIDDATA, ...).
+bool isSystemReadError(int code) noexcept {
+    return code == AVERROR(EACCES) || code == AVERROR(EPERM) || code == AVERROR(EIO) || code == AVERROR(EBUSY) ||
+           code == AVERROR(ENXIO) || code == AVERROR(ENODEV) || code == AVERROR(EMFILE) || code == AVERROR(ENFILE) ||
+           code == AVERROR(ETIMEDOUT);
+}
+
 std::wstring threadDescription(const std::string& name) {
     return core::pathFromUtf8("rv video: " + name).wstring();
 }
 
-/// The threads of stopped decoders: VideoDecoder::stop() hands its thread over instead of waiting for it. A thread is
-/// joined once it has ended (which then takes no time), at the next hand-over, or by joinAll().
-class StoppedThreads {
+} // namespace
+
+// --- The decoders' threads
+// ------------------------------------------------------------------------------------------------------
+
+/// One decoder's run on a worker thread: its body, its stop, and the worker's CPU time it used.
+struct VideoDecoder::Job {
+    std::function<void(std::stop_token)> body;
+    std::stop_source stop;
+    /// The worker's thread (a handle kept as long as the decoder: its CPU time), set before the body runs.
+    std::shared_ptr<const void> thread;
+    /// True from start() until the body has returned (VideoDecoder::threadRunning()).
+    std::atomic<bool> running{true};
+    /// stop() was called: waitForStoppedDecoders() waits for the body.
+    std::atomic<bool> stopped{false};
+    /// The worker's CPU time when the body began and when it returned, seconds (negative: not yet).
+    std::atomic<double> cpuAtStart{-1.0};
+    std::atomic<double> cpuAtEnd{-1.0};
+};
+
+namespace {
+
+/// The threads the decoders run on (I5 step 7's review). A process that presents OpenGL frames while threads start and
+/// end loses some 36 to 73 KiB for every thread that ended, in the graphics driver (tests/platform/
+/// test_thread_soak.cpp; nothing for a thread that lives on): a thread per clip made the screens' hour grow by about
+/// 110 MiB. So a decoder runs on a worker thread that lives on: an idle worker takes it, or a new one is started when
+/// none is idle. There are as many workers as decoders ever ran at once (the screens' slots, a scan's jobs, and the
+/// stopped decoders still finishing a read); they wait without a cost between decoders and end at the process's exit.
+class DecoderWorkers {
 public:
-    StoppedThreads() {
-        // The default logger is created first and so destroyed after this object: threads still ending at process
+    DecoderWorkers() {
+        // The default logger is created first and so destroyed after this object: decoders still ending at process
         // exit can log.
         static_cast<void>(spdlog::default_logger_raw());
     }
-    StoppedThreads(const StoppedThreads&) = delete;
-    StoppedThreads& operator=(const StoppedThreads&) = delete;
-    ~StoppedThreads() { joinAll(); }
-
-    /// Keeps `thread` (asked to stop already) until it ends; joins the threads that have ended meanwhile.
-    void adopt(std::jthread thread) {
-        std::vector<std::jthread> ended;
+    DecoderWorkers(const DecoderWorkers&) = delete;
+    DecoderWorkers& operator=(const DecoderWorkers&) = delete;
+    /// Every decoder still running is asked to stop; the workers end once their decoders have.
+    ~DecoderWorkers() {
+        std::vector<std::unique_ptr<Worker>> workers;
         {
             const std::lock_guard lock(m_mutex);
-            const auto firstEnded = std::partition(m_threads.begin(), m_threads.end(), [](std::jthread& candidate) {
-                return WaitForSingleObject(static_cast<HANDLE>(candidate.native_handle()), 0) != WAIT_OBJECT_0;
-            });
-            ended.assign(std::make_move_iterator(firstEnded), std::make_move_iterator(m_threads.end()));
-            m_threads.erase(firstEnded, m_threads.end());
-            m_threads.push_back(std::move(thread));
+            for (const std::shared_ptr<VideoDecoder::Job>& job : m_jobs) {
+                job->stop.request_stop();
+            }
+            m_quit = true;
+            workers.swap(m_workers);
         }
-        for (std::jthread& done : ended) {
-            done.join(); // ended: returns at once
-        }
-    }
-
-    /// Waits for every thread kept.
-    void joinAll() {
-        std::vector<std::jthread> threads;
-        {
-            const std::lock_guard lock(m_mutex);
-            threads.swap(m_threads);
-        }
-        for (std::jthread& thread : threads) {
-            if (thread.joinable()) {
-                thread.join();
+        m_wake.notify_all();
+        for (const std::unique_ptr<Worker>& worker : workers) {
+            if (worker->thread.joinable()) {
+                worker->thread.join();
             }
         }
     }
 
+    /// Runs `job` on an idle worker, or on a new one. Errors: Unknown when no thread can be started.
+    Status run(const std::shared_ptr<VideoDecoder::Job>& job) {
+        const std::lock_guard lock(m_mutex);
+        for (const std::unique_ptr<Worker>& worker : m_workers) {
+            if (!worker->job) {
+                give(*worker, job);
+                return ok();
+            }
+        }
+        auto worker = std::make_unique<Worker>();
+        try {
+            // It waits for the lock held here: it finds its first job given.
+            worker->thread = std::thread([this, self = worker.get()] { loop(*self); });
+        } catch (const std::system_error& e) {
+            return makeError(ErrorCode::Unknown, fmt::format("cannot start a decoder thread: {}", e.what()));
+        }
+        HANDLE duplicate = nullptr;
+        if (DuplicateHandle(GetCurrentProcess(), static_cast<HANDLE>(worker->thread.native_handle()),
+                            GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS) != 0) {
+            worker->handle = std::shared_ptr<const void>(
+                duplicate, [](const void* handle) { CloseHandle(const_cast<HANDLE>(handle)); });
+        }
+        give(*worker, job);
+        m_workers.push_back(std::move(worker));
+        return ok();
+    }
+
+    /// Waits until the body of every stopped decoder has returned.
+    void waitForStopped() {
+        std::unique_lock lock(m_mutex);
+        m_wake.wait(lock, [this] {
+            return std::none_of(m_jobs.begin(), m_jobs.end(),
+                                [](const std::shared_ptr<VideoDecoder::Job>& job) { return job->stopped.load(); });
+        });
+    }
+
 private:
+    struct Worker {
+        std::thread thread;
+        std::shared_ptr<const void> handle;
+        std::shared_ptr<VideoDecoder::Job> job;
+    };
+
+    /// The lock held.
+    void give(Worker& worker, const std::shared_ptr<VideoDecoder::Job>& job) {
+        job->thread = worker.handle;
+        worker.job = job;
+        m_jobs.push_back(job);
+        m_wake.notify_all();
+    }
+
+    void loop(Worker& worker) {
+        std::unique_lock lock(m_mutex);
+        for (;;) {
+            m_wake.wait(lock, [&] { return worker.job != nullptr || m_quit; });
+            if (!worker.job) {
+                return; // the process ends
+            }
+            const std::shared_ptr<VideoDecoder::Job> job = worker.job;
+            lock.unlock();
+            job->cpuAtStart.store(threadCpuSecondsOf(GetCurrentThread()));
+            job->body(job->stop.get_token());
+            job->body = nullptr; // the decoder's state goes when its owner lets go of it
+            job->cpuAtEnd.store(threadCpuSecondsOf(GetCurrentThread()));
+            SetThreadDescription(GetCurrentThread(), L"rv video: idle");
+            lock.lock();
+            job->running.store(false);
+            worker.job.reset();
+            m_jobs.erase(std::find(m_jobs.begin(), m_jobs.end(), job));
+            m_wake.notify_all();
+        }
+    }
+
     std::mutex m_mutex;
-    std::vector<std::jthread> m_threads;
+    std::condition_variable m_wake;
+    std::vector<std::unique_ptr<Worker>> m_workers;
+    /// The decoders running.
+    std::vector<std::shared_ptr<VideoDecoder::Job>> m_jobs;
+    bool m_quit = false;
 };
 
-StoppedThreads& stoppedThreads() {
-    static StoppedThreads threads;
-    return threads;
+DecoderWorkers& decoderWorkers() {
+    static DecoderWorkers workers;
+    return workers;
 }
 
 } // namespace
@@ -371,6 +473,10 @@ private:
     }
     [[nodiscard]] bool ensureConverter(const AVFrame& frame);
     void resetPass(bool fromStart) noexcept;
+    /// The system's error behind the latest open, read or seek: `result` itself when it is one (isSystemReadError),
+    /// else the error the file's I/O context recorded (a read the system failed, whatever the demuxer made of it); 0
+    /// when neither is.
+    [[nodiscard]] int systemReadError(int result) const noexcept;
     /// Finds the first audio stream and, with a sink, opens its decoder (a failure leaves the clip silent).
     void openAudio(StreamInfo& info);
     /// An audio packet: decoded into the sink while the sound is enabled, discarded otherwise.
@@ -508,7 +614,11 @@ bool VideoDecoder::Worker::open() {
     const std::filesystem::path& path = m_shared.path;
     std::error_code ec;
     const std::filesystem::file_status status = std::filesystem::status(path, ec);
-    if (ec || !std::filesystem::exists(status)) {
+    if (ec && status.type() != std::filesystem::file_type::not_found) {
+        fail(DecodeFailure::ReadError, fmt::format("cannot look at the file: {}", ec.message()));
+        return false;
+    }
+    if (!std::filesystem::exists(status)) {
         fail(DecodeFailure::FileNotFound, "no such file");
         return false;
     }
@@ -538,7 +648,9 @@ bool VideoDecoder::Worker::open() {
         if (m_stop.stop_requested()) {
             return false;
         }
-        fail(result == AVERROR(ENOENT) ? DecodeFailure::FileNotFound : DecodeFailure::InvalidFile,
+        fail(result == AVERROR(ENOENT)   ? DecodeFailure::FileNotFound
+             : isSystemReadError(result) ? DecodeFailure::ReadError
+                                         : DecodeFailure::InvalidFile,
              fmt::format("cannot open the file: {}", detail::errorText(result)));
         return false;
     }
@@ -548,7 +660,9 @@ bool VideoDecoder::Worker::open() {
         if (m_stop.stop_requested()) {
             return false;
         }
-        fail(DecodeFailure::InvalidFile, fmt::format("cannot read the streams: {}", detail::errorText(result)));
+        const int readError = systemReadError(result);
+        fail(readError < 0 ? DecodeFailure::ReadError : DecodeFailure::InvalidFile,
+             fmt::format("cannot read the streams: {}", detail::errorText(readError < 0 ? readError : result)));
         return false;
     }
 
@@ -638,6 +752,7 @@ bool VideoDecoder::Worker::open() {
     info.outputSize = scaledFrameSize(info.codedSize, m_streamSampleAspect, settings.maxHeight);
     info.frameRate = frameRate;
     info.durationSeconds = m_declaredDuration;
+    info.streamDurationSeconds = m_streamDuration;
     info.bitRate = stream->codecpar->bit_rate > 0 ? stream->codecpar->bit_rate : m_format->bit_rate;
     info.decoderThreads = m_codec->thread_count;
     m_videoStartSeconds = m_timestampsUsable ? detail::toSeconds(m_startTimestamp, m_timeBase) : 0.0;
@@ -655,6 +770,14 @@ bool VideoDecoder::Worker::open() {
     m_shared.setState(DecoderState::Playing);
     resetPass(true);
     return true;
+}
+
+int VideoDecoder::Worker::systemReadError(int result) const noexcept {
+    if (isSystemReadError(result)) {
+        return result;
+    }
+    const int recorded = m_format && m_format->pb != nullptr ? m_format->pb->error : 0;
+    return isSystemReadError(recorded) ? recorded : 0;
 }
 
 void VideoDecoder::Worker::resetPass(bool fromStart) noexcept {
@@ -721,12 +844,20 @@ void VideoDecoder::Worker::decodeLoop() {
 
 bool VideoDecoder::Worker::step() {
     const int result = av_read_frame(m_format.get(), m_packet.get());
-    if (result == AVERROR_EOF) {
-        return endOfStream();
-    }
     if (result == AVERROR_EXIT || m_stop.stop_requested()) {
         av_packet_unref(m_packet.get());
         return false;
+    }
+    if (result < 0 && result != AVERROR(EAGAIN)) {
+        // The system failed a read (the file's own end is no error): no fault of the clip, and no end of its stream (a
+        // failed read also sets the end-of-file flag, which would read as a file cut short).
+        if (const int readError = systemReadError(result); readError < 0) {
+            fail(DecodeFailure::ReadError, fmt::format("cannot read the file: {}", detail::errorText(readError)));
+            return false;
+        }
+    }
+    if (result == AVERROR_EOF) {
+        return endOfStream();
     }
     if (result == AVERROR(EAGAIN)) {
         return true;
@@ -1036,8 +1167,10 @@ bool VideoDecoder::Worker::seekTo(double seconds) {
     }
     if (result < 0) {
         if (!m_stop.stop_requested()) {
-            fail(DecodeFailure::DecoderError,
-                 fmt::format("cannot seek to {:.3f} s: {}", seconds, detail::errorText(result)));
+            const int readError = systemReadError(result);
+            fail(readError < 0 ? DecodeFailure::ReadError : DecodeFailure::DecoderError,
+                 fmt::format("cannot seek to {:.3f} s: {}", seconds,
+                             detail::errorText(readError < 0 ? readError : result)));
         }
         return false;
     }
@@ -1300,12 +1433,6 @@ void VideoDecoder::Worker::writeAudio(const float* converted, std::size_t frames
 // --- VideoDecoder
 // -------------------------------------------------------------------------------------------------------
 
-void VideoDecoder::HandleCloser::operator()(void* handle) const noexcept {
-    if (handle != nullptr) {
-        CloseHandle(static_cast<HANDLE>(handle));
-    }
-}
-
 VideoDecoder::VideoDecoder(std::shared_ptr<Shared> shared) noexcept : m_shared(std::move(shared)) {}
 
 Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::path path, DecoderSettings settings) {
@@ -1352,17 +1479,14 @@ Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::pat
     shared->paused.store(shared->settings.startPaused);
     shared->audioEnabled.store(shared->settings.audioEnabled);
     std::unique_ptr<VideoDecoder> decoder(new VideoDecoder(shared));
-    try {
-        decoder->m_thread = std::jthread([shared](std::stop_token stop) { Worker(*shared, std::move(stop)).run(); });
-    } catch (const std::system_error& e) {
-        return makeError(ErrorCode::Unknown, fmt::format("cannot start the decoder thread: {}", e.what()), context);
+    auto job = std::make_shared<Job>();
+    job->body = [shared](std::stop_token stop) {
+        Worker(*shared, std::move(stop)).run();
+    };
+    if (const Status started = decoderWorkers().run(job); !started) {
+        return makeError(started.error().code, started.error().message, context);
     }
-    // A handle of the decoder's own: the jthread goes to stoppedThreads() on stop(), and its handle with it.
-    HANDLE duplicate = nullptr;
-    if (DuplicateHandle(GetCurrentProcess(), static_cast<HANDLE>(decoder->m_thread.native_handle()),
-                        GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS) != 0) {
-        decoder->m_threadHandle.reset(duplicate);
-    }
+    decoder->m_job = std::move(job);
     return decoder;
 }
 
@@ -1371,16 +1495,12 @@ VideoDecoder::~VideoDecoder() {
 }
 
 void VideoDecoder::stop() {
-    if (m_thread.joinable()) {
-        m_thread.request_stop(); // wakes every wait of the thread and interrupts FFmpeg's I/O between reads
+    if (m_job && !m_job->stopped.exchange(true)) {
+        // Wakes every wait of the decoder's thread and interrupts FFmpeg's I/O between reads. Never waited for here:
+        // the thread may be in a read of a slow disk or network share (spec §9.4).
+        m_job->stop.request_stop();
         m_shared->queue.close();
         m_shared->pool->close();
-        try {
-            // Never joined here: the thread may be in a read of a slow disk or network share (spec §9.4).
-            stoppedThreads().adopt(std::move(m_thread));
-        } catch (...) {
-            // Out of memory to keep it: the thread was joined when adopt()'s argument was destroyed.
-        }
     }
     m_shared->setState(DecoderState::Stopped);
 }
@@ -1448,11 +1568,22 @@ DecoderStats VideoDecoder::stats() const {
 }
 
 double VideoDecoder::threadCpuSeconds() const {
-    return m_threadHandle ? threadCpuSecondsOf(static_cast<HANDLE>(m_threadHandle.get())) : 0.0;
+    if (!m_job) {
+        return 0.0;
+    }
+    const double start = m_job->cpuAtStart.load();
+    if (start < 0.0) {
+        return 0.0; // not begun yet
+    }
+    const double end = m_job->cpuAtEnd.load();
+    if (end >= 0.0) {
+        return std::max(0.0, end - start);
+    }
+    return m_job->thread ? std::max(0.0, threadCpuSecondsOf(const_cast<HANDLE>(m_job->thread.get())) - start) : 0.0;
 }
 
 bool VideoDecoder::threadRunning() const noexcept {
-    return m_threadHandle && WaitForSingleObject(static_cast<HANDLE>(m_threadHandle.get()), 0) == WAIT_TIMEOUT;
+    return m_job && m_job->running.load();
 }
 
 const std::filesystem::path& VideoDecoder::path() const noexcept {
@@ -1515,7 +1646,7 @@ std::atomic<std::uint64_t> g_stoppedDecoderWaits{0};
 
 void waitForStoppedDecoders() {
     g_stoppedDecoderWaits.fetch_add(1, std::memory_order_relaxed);
-    stoppedThreads().joinAll();
+    decoderWorkers().waitForStopped();
 }
 
 std::uint64_t stoppedDecoderWaits() noexcept {
