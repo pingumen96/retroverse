@@ -79,7 +79,9 @@ struct DecoderSettings {
     /// Name in logs and of the thread; the file name when empty.
     std::string name;
     /// The sound (I5 step 5, ADR-0016 §9): the clip's first audio stream is decoded on the decoder's thread, resampled
-    /// to audioSampleRate stereo float and written to the sink. None: the audio packets are discarded undecoded.
+    /// to audioSampleRate stereo float and written to the sink. A sound longer than the picture is trimmed at the
+    /// picture's end (each loop's sound starts with its picture), and the last frames are drained at each pass's end.
+    /// None: the audio packets are discarded undecoded.
     std::shared_ptr<AudioSink> audioSink;
     /// The sink's rate (8000..192000).
     int audioSampleRate = 48000;

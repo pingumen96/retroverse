@@ -377,6 +377,14 @@ private:
     void audioPacket(const AVPacket& packet);
     /// Converts a decoded audio frame to the sink's rate, stereo float, and writes it.
     void emitAudio(const AVFrame& frame);
+    /// The end of a pass: the frames the audio decoder still holds, then the resampler's tail, written.
+    void drainAudio();
+    /// Writes `frames` converted frames (m_audioOutChannels each) whose first shows at `ptsSeconds`, up-mixed to stereo
+    /// and trimmed at the picture's end (audioEndSeconds), so that every loop starts in sync.
+    void writeAudio(const float* converted, std::size_t frames, double ptsSeconds);
+    /// The end of the picture on the pass's timeline (relative to the video stream's start): the last pass's end once
+    /// one ended, else the video stream's declared duration (or the frames shown so far when longer); none when unknown.
+    [[nodiscard]] std::optional<double> audioEndSeconds() const noexcept;
     /// A discontinuity of the sound (a seek, a loop, the sound enabled again): the audio decoder flushed, the
     /// resampler's buffered samples dropped.
     void resetAudio() noexcept;
@@ -454,6 +462,11 @@ private:
     bool m_audioWasEnabled = false;
     /// After a seek: audio frames ending before the target are dropped.
     std::optional<double> m_audioSeekTarget;
+    /// The time of the next converted frame (the resampler's tail follows the last frame written).
+    std::optional<double> m_audioNextPts;
+    /// The picture's end (relative to the video stream's start) as the last pass that reached the end of the stream
+    /// showed it: a longer sound is trimmed there.
+    std::optional<double> m_videoEnd;
     std::vector<float> m_audioConverted;
     std::vector<float> m_audioStereo;
 };
@@ -962,6 +975,11 @@ bool VideoDecoder::Worker::endOfStream() {
     if (!sendPacket(nullptr)) {
         return false;
     }
+    if (m_passFrames > 0) {
+        m_videoEnd = m_passEnd; // every frame of the pass shown: the picture ends here, on every pass
+    }
+    // Then the sound's last frames, up to the picture's end.
+    drainAudio();
     return endOfPass();
 }
 
@@ -1104,6 +1122,47 @@ void VideoDecoder::Worker::resetAudio() noexcept {
     m_swr.reset();
     m_swrFormat = -1;
     m_audioSeekTarget.reset();
+    m_audioNextPts.reset();
+}
+
+std::optional<double> VideoDecoder::Worker::audioEndSeconds() const noexcept {
+    if (m_videoEnd) {
+        return m_videoEnd;
+    }
+    if (m_streamDuration > 0.0) {
+        return std::max(m_streamDuration, m_passEnd);
+    }
+    return std::nullopt; // the first pass of a stream without a duration: known at its end only
+}
+
+void VideoDecoder::Worker::drainAudio() {
+    if (!m_audioCodec || !m_audioWasEnabled || !m_shared.audioEnabled.load(std::memory_order_relaxed) ||
+        seekPending()) {
+        return;
+    }
+    if (avcodec_send_packet(m_audioCodec.get(), nullptr) >= 0) {
+        for (;;) {
+            const int result = avcodec_receive_frame(m_audioCodec.get(), m_audioFrame.get());
+            if (result < 0) {
+                break; // AVERROR_EOF: drained
+            }
+            emitAudio(*m_audioFrame);
+            av_frame_unref(m_audioFrame.get());
+        }
+    }
+    if (!m_swr || !m_audioNextPts) {
+        return;
+    }
+    const int capacity = swr_get_out_samples(m_swr.get(), 0);
+    if (capacity <= 0) {
+        return;
+    }
+    m_audioConverted.resize(static_cast<std::size_t>(capacity) * static_cast<std::size_t>(m_audioOutChannels));
+    std::uint8_t* out = reinterpret_cast<std::uint8_t*>(m_audioConverted.data());
+    const int flushed = swr_convert(m_swr.get(), &out, capacity, nullptr, 0);
+    if (flushed > 0) {
+        writeAudio(m_audioConverted.data(), static_cast<std::size_t>(flushed), *m_audioNextPts);
+    }
 }
 
 void VideoDecoder::Worker::audioPacket(const AVPacket& packet) {
@@ -1210,18 +1269,31 @@ void VideoDecoder::Worker::emitAudio(const AVFrame& frame) {
         }
         return;
     }
-    const auto frames = static_cast<std::size_t>(converted);
-    // Mono holds one float a frame: the stereo span is made once both channels are there.
-    const float* stereo = m_audioConverted.data();
+    writeAudio(m_audioConverted.data(), static_cast<std::size_t>(converted), pts - delay);
+}
+
+void VideoDecoder::Worker::writeAudio(const float* converted, std::size_t frames, double ptsSeconds) {
+    const double rate = static_cast<double>(m_shared.settings.audioSampleRate);
+    m_audioNextPts = ptsSeconds + static_cast<double>(frames) / rate;
+    // A sound longer than its picture stops at the picture's end: the next loop's sound starts there.
+    if (const std::optional<double> end = audioEndSeconds()) {
+        const double room = (m_loopOffset + *end - ptsSeconds) * rate;
+        const double kept = std::floor(room + 1e-6);
+        if (kept <= 0.0) {
+            return;
+        }
+        frames = std::min(frames, static_cast<std::size_t>(kept));
+    }
+    const float* stereo = converted;
     if (m_audioOutChannels == 1) {
         m_audioStereo.resize(frames * 2);
         for (std::size_t index = 0; index < frames; ++index) {
-            m_audioStereo[index * 2] = m_audioConverted[index];
-            m_audioStereo[index * 2 + 1] = m_audioConverted[index];
+            m_audioStereo[index * 2] = converted[index];
+            m_audioStereo[index * 2 + 1] = converted[index];
         }
         stereo = m_audioStereo.data();
     }
-    m_shared.settings.audioSink->write(std::span<const float>(stereo, frames * 2), pts - delay, m_generation);
+    m_shared.settings.audioSink->write(std::span<const float>(stereo, frames * 2), ptsSeconds, m_generation);
     m_shared.audioFramesWritten.fetch_add(frames, std::memory_order_relaxed);
 }
 

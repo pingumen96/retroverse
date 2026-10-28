@@ -261,3 +261,55 @@ TEST_CASE("media/audio: loops keep the timestamps growing, a seek starts its gen
     CHECK(seeked->pts + static_cast<double>(seeked->samples.size() / 2) / kMixRate > 0.4);
     decoder->stop();
 }
+
+TEST_CASE("media/audio: a sound longer or shorter than its picture loops with it, without a step back or a lag",
+          "[media][audio]") {
+    const MediaTestDir dir;
+    struct Row {
+        const char* file;
+        double audioSeconds;
+    };
+    // The picture: 30 frames at 30 fps, 1 s a pass.
+    for (const Row& row : {Row{"longer.mkv", 1.5}, Row{"shorter.mkv", 0.6}, Row{"longer.avi", 1.5}}) {
+        INFO(row.file << ": " << row.audioSeconds << " s of sound for 1 s of picture");
+        rv::media::TestVideoSpec spec = toneClip(44100, 1, 1.0);
+        spec.audioSeconds = row.audioSeconds;
+        const auto path = writeClip(dir, row.file, spec);
+        auto sink = std::make_shared<CollectingSink>();
+        DecoderSettings settings;
+        settings.loop = true;
+        settings.audioSink = sink;
+        settings.audioSampleRate = kMixRate;
+        auto decoder = startDecoder(path, settings);
+        constexpr int kPasses = 4;
+        static_cast<void>(collectFrames(*decoder, 30 * kPasses + 10)); // into the fifth pass
+        const double perPass = std::min(row.audioSeconds, 1.0);
+        REQUIRE(waitUntil([&] { return sink->seconds() > perPass * kPasses; }));
+        decoder->stop();
+        const auto chunks = sink->chunks();
+        // Each pass's sound starts at its picture's start and ends at the earlier of its own end and the picture's.
+        std::vector<double> starts(kPasses + 1, -1.0);
+        std::vector<double> ends(kPasses + 1, -1.0);
+        double previousEnd = -1.0;
+        for (const CollectingSink::Chunk& chunk : chunks) {
+            const double end = chunk.pts + static_cast<double>(chunk.samples.size() / 2) / kMixRate;
+            CHECK(chunk.pts >= previousEnd - 0.001); // never a step back (beyond the resampler's sub-sample rounding)
+            previousEnd = end;
+            const auto pass = static_cast<std::size_t>(std::floor(chunk.pts + 1e-6));
+            if (pass > kPasses) {
+                continue;
+            }
+            if (starts[pass] < 0.0) {
+                starts[pass] = chunk.pts;
+            }
+            ends[pass] = end;
+        }
+        for (std::size_t pass = 0; pass < kPasses; ++pass) {
+            INFO("pass " << pass);
+            CHECK(starts[pass] == Approx(static_cast<double>(pass)).margin(0.001));
+            CHECK(ends[pass] == Approx(static_cast<double>(pass) + perPass).margin(0.001));
+            CHECK(ends[pass] <= static_cast<double>(pass) + 1.0 + 1e-6);
+        }
+        CHECK(decoder->stats().audioDecodeErrors == 0);
+    }
+}
