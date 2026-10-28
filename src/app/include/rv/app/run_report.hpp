@@ -1234,6 +1234,8 @@ struct VideoRecord {
     /// Waits for every stopped decoder's thread (media::stoppedDecoderWaits()) made before the service's shutdown at
     /// the run's end: 0, none from the render loop (ADR-0004; I4 step 6b).
     std::uint64_t waitsBeforeExit = 0;
+    /// The pictures that could not be shown and why, in order (the first 512: a long run's failing clip falls back each
+    /// time it plays).
     std::vector<VideoFallbackRecord> fallbacks;
     std::vector<VideoLaunchRecord> launches;
     /// The screens bound after the first (I4 step 6b), in order.

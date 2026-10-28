@@ -496,8 +496,10 @@ struct ScreenService::Impl {
     void addFallback(ScreenState& screen, ScreenPicture picture, std::string reason) {
         spdlog::warn("{}: the {} of game {} cannot be shown ({}); the next picture of the chain is shown",
                      nameOf(screen), toString(picture), screen.policy.targetId(), reason);
-        counters.fallbacks.push_back(
-            VideoFallbackRecord{screen.policy.targetId(), std::string(toString(picture)), std::move(reason)});
+        if (counters.fallbacks.size() < kMaxTimelineEntries) {
+            counters.fallbacks.push_back(
+                VideoFallbackRecord{screen.policy.targetId(), std::string(toString(picture)), std::move(reason)});
+        }
     }
 
     void recordEvent(std::size_t slot, SlotAction action, std::string gameId, std::string reason,
