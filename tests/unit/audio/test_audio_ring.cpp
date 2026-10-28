@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -88,6 +89,17 @@ TEST_CASE("audio/ring: each chunk's time, the reader's position and the end", "[
     CHECK(ring.availableFrames() == 0);
     CHECK_FALSE(ring.front());
     CHECK(ring.stats().skippedFrames == 720);
+}
+
+TEST_CASE("audio/ring: a sample that is not a finite number is written as silence", "[audio][ring]") {
+    AudioRing ring;
+    constexpr float kInfinity = std::numeric_limits<float>::infinity();
+    const std::vector<float> damaged = {0.25f, std::numeric_limits<float>::quiet_NaN(), kInfinity, -kInfinity, -0.5f,
+                                        0.75f};
+    REQUIRE(ring.write(damaged, 0.0, 0) == 3);
+    std::vector<float> out(6, 1.0f);
+    REQUIRE(ring.read(out.data(), 3) == 3);
+    CHECK(out == std::vector<float>{0.25f, 0.0f, 0.0f, 0.0f, -0.5f, 0.75f});
 }
 
 TEST_CASE("audio/ring: a newer generation throws the older chunks away", "[audio][ring]") {

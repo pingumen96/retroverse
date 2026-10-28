@@ -5,6 +5,16 @@
 #include <cstring>
 
 namespace rv::audio {
+namespace {
+
+/// Copies `count` samples, a NaN or an infinity written as 0: a damaged frame's samples never reach the mix.
+void copyFinite(float* destination, const float* source, std::size_t count) noexcept {
+    for (std::size_t index = 0; index < count; ++index) {
+        destination[index] = std::isfinite(source[index]) ? source[index] : 0.0f;
+    }
+}
+
+} // namespace
 
 AudioRing::AudioRing(int sampleRate, double capacitySeconds, std::size_t maxChunks)
     : m_sampleRate(std::max(1, sampleRate)),
@@ -34,10 +44,9 @@ std::size_t AudioRing::write(std::span<const float> interleaved, double ptsSecon
     // Copied in at most two pieces around the ring's end.
     const std::size_t at = static_cast<std::size_t>(m_tail % m_capacity);
     const std::size_t first = std::min(kept, m_capacity - at);
-    std::memcpy(m_samples.data() + at * kMixChannels, interleaved.data(), first * kMixChannels * sizeof(float));
+    copyFinite(m_samples.data() + at * kMixChannels, interleaved.data(), first * kMixChannels);
     if (kept > first) {
-        std::memcpy(m_samples.data(), interleaved.data() + first * kMixChannels,
-                    (kept - first) * kMixChannels * sizeof(float));
+        copyFinite(m_samples.data(), interleaved.data() + first * kMixChannels, (kept - first) * kMixChannels);
     }
     m_chunks[chunksWritten % m_chunks.size()] =
         Chunk{m_tail, static_cast<std::uint32_t>(kept), generation, ptsSeconds};

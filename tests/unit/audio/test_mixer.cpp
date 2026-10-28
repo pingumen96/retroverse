@@ -5,10 +5,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -305,6 +307,29 @@ TEST_CASE("audio/mixer: a source near full scale panned 0.6 either side never re
         CHECK(peakOf(louder) > 0.97f);
         CHECK(peakOf(quieter) == Approx(0.98 * std::tan(0.1 * std::numbers::pi)).epsilon(0.01));
     }
+}
+
+TEST_CASE("audio/mixer: samples that are not finite numbers come out as silence, never as NaN", "[audio][mixer]") {
+    Mixer mixer;
+    auto ring = std::make_shared<AudioRing>(kRate);
+    std::vector<float> chunk(kBlock * 2 * 30);
+    for (std::size_t index = 0; index < chunk.size(); ++index) {
+        chunk[index] = index % 7 == 0   ? std::numeric_limits<float>::quiet_NaN()
+                       : index % 7 == 3 ? std::numeric_limits<float>::infinity()
+                                        : 0.5f;
+    }
+    ring->write(chunk, 0.0, 0);
+    const SourceId source = mixer.addSource();
+    mixer.setRing(source, ring);
+    mixer.setControl(source, SourceControl{1.0, 0.25, true});
+    mixer.setClock(source, clockAt(0.0, 0.0));
+    std::vector<float> out(kBlock * 2 * 20);
+    for (std::size_t block = 0; block < 20; ++block) {
+        mixer.render(out.data() + block * kBlock * 2, kBlock, static_cast<double>(block) * kBlockSeconds);
+    }
+    CHECK(std::all_of(out.begin(), out.end(), [](float sample) { return std::isfinite(sample); }));
+    CHECK(peakOf(out) <= 1.0f);
+    CHECK(peakOf(out) > 0.4f);
 }
 
 TEST_CASE("audio/mixer: an empty ring gives silence and counts its frames", "[audio][mixer]") {

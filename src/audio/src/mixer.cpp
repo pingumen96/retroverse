@@ -298,7 +298,9 @@ void Mixer::render(float* out, std::size_t frames, double blockStartSeconds) {
         const double gain = m_master.advance() * m_duck.advance() * m_mute.advance() * m_silence.advance();
         for (int channel = 0; channel < kMixChannels; ++channel) {
             float& sample = out[index * 2 + static_cast<std::size_t>(channel)];
-            sample = static_cast<float>(std::clamp(static_cast<double>(sample) * gain, -1.0, 1.0));
+            // std::clamp keeps a NaN: whatever is not a number is silence.
+            const double value = static_cast<double>(sample) * gain;
+            sample = std::isfinite(value) ? static_cast<float>(std::clamp(value, -1.0, 1.0)) : 0.0f;
         }
     }
     m_framesRendered += frames;

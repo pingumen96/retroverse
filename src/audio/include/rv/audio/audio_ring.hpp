@@ -52,8 +52,9 @@ public:
     // --- the writer (the decoder's thread)
 
     /// Appends `interleaved` (stereo frames) whose first frame shows at `ptsSeconds` of generation `generation`.
-    /// Returns the frames kept: those beyond the free room are dropped (RingStats::overflowFrames), and the whole write
-    /// when the chunk list is full.
+    /// A sample that is not a finite number (NaN, an infinity) is written as 0, so that a damaged frame never reaches
+    /// the mix. Returns the frames kept: those beyond the free room are dropped (RingStats::overflowFrames), and the
+    /// whole write when the chunk list is full.
     std::size_t write(std::span<const float> interleaved, double ptsSeconds, std::uint32_t generation);
 
     // --- the reader (the mixer)
