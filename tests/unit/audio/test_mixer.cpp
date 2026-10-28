@@ -138,6 +138,10 @@ TEST_CASE("audio/mixer: a picture running 0.5% fast is followed by the correctio
     CHECK(sync.underrunFrames == 0);
     CHECK(worst < 0.022); // held within the deadband (and a block)
     CHECK(sync.p95Milliseconds < 21.0);
+    CHECK(sync.p50Milliseconds > 0.0);
+    CHECK(sync.p50Milliseconds <= sync.p95Milliseconds);
+    CHECK(sync.p95Milliseconds <= sync.maxMilliseconds);
+    CHECK(sync.maxMilliseconds < 22.0);
 }
 
 TEST_CASE("audio/mixer: 80 ms behind, the sound catches up by the correction alone", "[audio][mixer][sync]") {
@@ -330,6 +334,28 @@ TEST_CASE("audio/mixer: samples that are not finite numbers come out as silence,
     CHECK(std::all_of(out.begin(), out.end(), [](float sample) { return std::isfinite(sample); }));
     CHECK(peakOf(out) <= 1.0f);
     CHECK(peakOf(out) > 0.4f);
+}
+
+TEST_CASE("audio/mixer: a block longer than its scratch is rendered in pieces, the samples still exact",
+          "[audio][mixer]") {
+    Mixer mixer;
+    Feeder feeder;
+    feeder.ring = std::make_shared<AudioRing>(kRate, 1.0);
+    feeder.topUp(0.9);
+    const SourceId source = mixer.addSource();
+    mixer.setRing(source, feeder.ring);
+    mixer.setControl(source, SourceControl{1.0, 0.0, true});
+    mixer.setClock(source, clockAt(0.0, 0.0));
+    constexpr std::size_t kFrames = Mixer::kMaxBlockFrames * 2 + 3616; // 0.42 s
+    std::vector<float> out(kFrames * 2);
+    mixer.render(out.data(), kFrames, 0.0);
+    CHECK(mixer.framesRendered() == kFrames);
+    CHECK(mixer.syncSummary().underrunFrames == 0);
+    std::size_t differing = 0;
+    for (std::size_t frame = 14400; frame < kFrames; ++frame) { // past the 300 ms fade-in
+        differing += out[frame * 2] != feeder.sample(frame) || out[frame * 2 + 1] != -feeder.sample(frame) ? 1 : 0;
+    }
+    CHECK(differing == 0);
 }
 
 TEST_CASE("audio/mixer: an empty ring gives silence and counts its frames", "[audio][mixer]") {

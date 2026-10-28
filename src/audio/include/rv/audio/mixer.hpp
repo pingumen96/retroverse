@@ -60,6 +60,8 @@ struct SyncSummary {
     std::uint64_t corrections = 0;
     /// Frames of an audible source the ring could not give (the decoder behind or the clip without sound).
     std::uint64_t underrunFrames = 0;
+    /// The error's percentiles to 10 us (a histogram's bin, reported by its upper edge and never above the largest),
+    /// and the largest exactly.
     double p50Milliseconds = 0.0;
     double p95Milliseconds = 0.0;
     double maxMilliseconds = 0.0;
@@ -76,6 +78,9 @@ struct SyncSummary {
 /// the main thread sets the controls while the output's thread renders (one mutex, held for a block).
 class Mixer {
 public:
+    /// The largest block rendered in one piece: render() splits a longer one, so that it never allocates.
+    static constexpr std::size_t kMaxBlockFrames = 8192;
+
     explicit Mixer(MixerSettings settings = {});
     Mixer(const Mixer&) = delete;
     Mixer& operator=(const Mixer&) = delete;
@@ -100,7 +105,7 @@ public:
     [[nodiscard]] bool ducked() const;
 
     /// Renders `frames` frames into `out` (2 * frames floats, overwritten), the block starting at `blockStartSeconds`
-    /// of the clock the sources' SourceClocks are stamped with.
+    /// of the clock the sources' SourceClocks are stamped with. Never allocates (it runs on the device's thread).
     void render(float* out, std::size_t frames, double blockStartSeconds);
 
     /// The source's gain as rendered last (its ramp; 0: silent), its target included in none of the master gains.
@@ -144,7 +149,9 @@ private:
     /// Drops the sound up to the picture's time `target`, or pads silence from `index` up to it, and takes its first
     /// sample (needResync stays set until it could).
     void resync(Source& source, double target, std::size_t frames, std::size_t& index);
+    void renderBlock(float* out, std::size_t frames, double blockStartSeconds);
     void recordError(double seconds);
+    [[nodiscard]] double errorPercentile(double fraction) const;
 
     MixerSettings m_settings;
     mutable std::mutex m_mutex;
@@ -158,8 +165,9 @@ private:
     bool m_muted = false;
     std::uint64_t m_framesRendered = 0;
 
-    // The sync's measures.
-    std::vector<float> m_errorsMs;
+    // The sync's measures: a fixed histogram of each block's error (sized once), its largest, the counts.
+    std::vector<std::uint64_t> m_errorBins;
+    double m_errorMaxMilliseconds = 0.0;
     SyncSummary m_counts;
 };
 

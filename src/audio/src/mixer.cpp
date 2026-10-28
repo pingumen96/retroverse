@@ -9,21 +9,12 @@
 namespace rv::audio {
 namespace {
 
-/// The sync's measures kept (each block's error): about 5 hours of 60 Hz blocks.
-constexpr std::size_t kMaxErrorSamples = 1u << 20;
+/// The sync's error histogram: bins of 10 us up to 200 ms, then one bin for everything beyond.
+constexpr double kErrorBinMilliseconds = 0.01;
+constexpr std::size_t kErrorBins = 20000;
 
 double stepFor(double seconds, int sampleRate) noexcept {
     return seconds > 0.0 ? 1.0 / (seconds * static_cast<double>(sampleRate)) : 1.0;
-}
-
-double percentile(std::vector<float> values, double fraction) {
-    if (values.empty()) {
-        return 0.0;
-    }
-    const auto index = static_cast<std::size_t>(std::ceil(fraction * static_cast<double>(values.size()))) - 1;
-    const auto nth = values.begin() + static_cast<std::ptrdiff_t>(std::min(index, values.size() - 1));
-    std::nth_element(values.begin(), nth, values.end());
-    return static_cast<double>(*nth);
 }
 
 } // namespace
@@ -44,6 +35,9 @@ Mixer::Mixer(MixerSettings settings) : m_settings(settings) {
     m_duck = Ramp{1.0, 1.0, stepFor(m_settings.duckFadeSeconds, rate)};
     m_mute = Ramp{1.0, 1.0, stepFor(m_settings.muteFadeSeconds, rate)};
     m_silence = Ramp{1.0, 1.0, stepFor(m_settings.silenceFadeSeconds, rate)};
+    // Sized once: render() never allocates (it runs on the device's thread, under the mutex).
+    m_scratch.assign(kMaxBlockFrames * kMixChannels, 0.0f);
+    m_errorBins.assign(kErrorBins + 1, 0);
 }
 
 SourceId Mixer::addSource() {
@@ -175,9 +169,35 @@ void Mixer::resync(Source& source, double target, std::size_t frames, std::size_
 
 void Mixer::recordError(double seconds) {
     ++m_counts.blocks;
-    if (m_errorsMs.size() < kMaxErrorSamples) {
-        m_errorsMs.push_back(static_cast<float>(std::abs(seconds) * 1000.0));
+    const double milliseconds = std::abs(seconds) * 1000.0;
+    if (!std::isfinite(milliseconds)) {
+        ++m_errorBins[kErrorBins];
+        return;
     }
+    m_errorMaxMilliseconds = std::max(m_errorMaxMilliseconds, milliseconds);
+    const double bin = std::floor(milliseconds / kErrorBinMilliseconds);
+    ++m_errorBins[bin < static_cast<double>(kErrorBins) ? static_cast<std::size_t>(bin) : kErrorBins];
+}
+
+double Mixer::errorPercentile(double fraction) const {
+    std::uint64_t count = 0;
+    for (const std::uint64_t bin : m_errorBins) {
+        count += bin;
+    }
+    if (count == 0) {
+        return 0.0;
+    }
+    // The rank of the nearest-rank percentile; its bin's upper edge, never above the largest error measured.
+    const auto rank = std::max<std::uint64_t>(
+        1, static_cast<std::uint64_t>(std::ceil(fraction * static_cast<double>(count))));
+    std::uint64_t seen = 0;
+    for (std::size_t bin = 0; bin < kErrorBins; ++bin) {
+        seen += m_errorBins[bin];
+        if (seen >= rank) {
+            return std::min(static_cast<double>(bin + 1) * kErrorBinMilliseconds, m_errorMaxMilliseconds);
+        }
+    }
+    return m_errorMaxMilliseconds;
 }
 
 bool Mixer::renderSource(Source& source, std::size_t frames, double blockStartSeconds) {
@@ -276,10 +296,17 @@ bool Mixer::renderSource(Source& source, std::size_t frames, double blockStartSe
 
 void Mixer::render(float* out, std::size_t frames, double blockStartSeconds) {
     const std::scoped_lock lock(m_mutex);
-    std::fill(out, out + frames * kMixChannels, 0.0f);
-    if (m_scratch.size() < frames * kMixChannels) {
-        m_scratch.resize(frames * kMixChannels);
+    // A block longer than the scratch (a null output's pull after a long frame) is rendered in pieces.
+    const double rate = static_cast<double>(m_settings.sampleRate);
+    for (std::size_t done = 0; done < frames;) {
+        const std::size_t piece = std::min(kMaxBlockFrames, frames - done);
+        renderBlock(out + done * kMixChannels, piece, blockStartSeconds + static_cast<double>(done) / rate);
+        done += piece;
     }
+}
+
+void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds) {
+    std::fill(out, out + frames * kMixChannels, 0.0f);
     for (Source& source : m_sources) {
         // A source rises only while it sounds: its fade-in starts with its first sample, not with its request.
         const bool sounding = renderSource(source, frames, blockStartSeconds);
@@ -328,10 +355,9 @@ double Mixer::outputGain() const {
 SyncSummary Mixer::syncSummary() const {
     const std::scoped_lock lock(m_mutex);
     SyncSummary summary = m_counts;
-    summary.p50Milliseconds = percentile(m_errorsMs, 0.50);
-    summary.p95Milliseconds = percentile(m_errorsMs, 0.95);
-    summary.maxMilliseconds =
-        m_errorsMs.empty() ? 0.0 : static_cast<double>(*std::max_element(m_errorsMs.begin(), m_errorsMs.end()));
+    summary.p50Milliseconds = errorPercentile(0.50);
+    summary.p95Milliseconds = errorPercentile(0.95);
+    summary.maxMilliseconds = m_errorMaxMilliseconds;
     return summary;
 }
 
