@@ -121,6 +121,10 @@
     ],
     "ui_filter_next": [
       { "padButton": "right_shoulder" }
+    ],
+    "edit_pin": [
+      { "key": "p" },
+      { "padButton": "west" }
     ]
   }
 }

@@ -221,6 +221,8 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::UiInfo, {padButton(GamepadButton::West)}},
         {Action::UiFilterPrevious, {padButton(GamepadButton::LeftShoulder)}},
         {Action::UiFilterNext, {padButton(GamepadButton::RightShoulder)}},
+        // The editor (I4b step 3, ADR-0015 §4).
+        {Action::EditPin, {key(Key::P), padButton(GamepadButton::West)}},
     };
     REQUIRE(expected.size() == rv::input::kActionCount);
 

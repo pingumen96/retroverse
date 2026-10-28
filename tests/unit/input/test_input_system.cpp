@@ -428,7 +428,9 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
         {pad(GamepadButton::South), {Action::Interact, Action::UiActivate}},
         {pad(GamepadButton::East), {Action::Back, Action::UiBack}},
         {pad(GamepadButton::North), {Action::QuickCatalog, Action::UiMedia}},
-        {pad(GamepadButton::West), {Action::UiInfo}},
+        // I4b step 3: the west button is also the editor's edit_pin (read in the editor's context only).
+        {pad(GamepadButton::West), {Action::UiInfo, Action::EditPin}},
+        {keys({Key::P}), {Action::EditPin}},
         {pad(GamepadButton::DpadDown), {Action::UiDown}},
         {pad(GamepadButton::LeftShoulder), {Action::UiFilterPrevious}},
         {pad(GamepadButton::RightShoulder), {Action::UiFilterNext}},
