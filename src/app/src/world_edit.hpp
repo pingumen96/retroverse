@@ -109,6 +109,8 @@ struct WorldEditState {
     std::optional<std::chrono::steady_clock::time_point> shownAt;
     /// The save's end waiting for the room back (backMs).
     std::optional<std::chrono::steady_clock::time_point> endAsked;
+    /// "Esci senza salvare" could not show the stored plan once and asked its whole floor again.
+    bool discardRetried = false;
     /// Synthetic digests of the drafts shown ("edit:<session>:<n>": never a file's).
     std::uint64_t session = 0;
     std::uint64_t shownCount = 0;

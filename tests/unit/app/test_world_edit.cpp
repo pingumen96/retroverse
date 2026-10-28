@@ -543,7 +543,10 @@ TEST_CASE("app/world_edit: the draft keeps each operation and undoes it back to 
     REQUIRE_FALSE(swapped->refused);
     CHECK(draft.size() == 2);
     CHECK(draft.operations().back() == EditOperation::swap(a, b));
+    // What an undo shows before the draft takes it back (the app's job), each time the draft as undo() leaves it.
+    CHECK(draft.previous() == afterMove);
     CHECK(draft.undo());
+    CHECK(draft.previous() == base);
     CHECK(draft.current() == afterMove);
     CHECK(draft.undo());
     CHECK(draft.current() == base);

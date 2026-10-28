@@ -61,6 +61,11 @@ public:
     [[nodiscard]] const world::EditedWorld& current() const noexcept {
         return m_steps.empty() ? m_base.world : m_steps.back().world;
     }
+    /// The draft as undo() would leave it (the base when it holds one operation or none): what an undo shows before
+    /// the draft takes it back.
+    [[nodiscard]] const world::EditedWorld& previous() const noexcept {
+        return m_steps.size() < 2 ? m_base.world : m_steps[m_steps.size() - 2].world;
+    }
     /// The operations kept, in order, and what each did.
     [[nodiscard]] std::vector<world::EditOperation> operations() const;
     [[nodiscard]] std::vector<world::EditResult> results() const;

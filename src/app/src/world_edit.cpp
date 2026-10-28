@@ -290,14 +290,19 @@ InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
     result.walker = answer.walker;
     if (answer.apply) {
         requestEditOperation(*answer.apply);
-    } else if (answer.undo && edit.draft && edit.draft->pending()) {
-        const world::EditResult last = edit.draft->results().back();
-        edit.draft->undo();
-        ++edit.record.undone;
-        const bool atBase = !edit.draft->pending();
-        const std::string digest = atBase ? edit.draft->base().planDigest
-                                          : fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
-        requestEditDisplay(EditJob::Undo, edit.draft->current(), digest, last.rebuild, last.rooms);
+    } else if (answer.undo) {
+        if (edit.draft && edit.draft->pending()) {
+            // The draft takes its last operation back once the room shows it without (takeEditAnswer()).
+            const world::EditResult last = edit.draft->results().back();
+            const bool toBase = edit.draft->size() == 1;
+            const std::string digest = toBase ? edit.draft->base().planDigest
+                                              : fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
+            requestEditDisplay(EditJob::Undo, edit.draft->previous(), digest, last.rebuild, last.rooms);
+        } else {
+            // Nothing to undo: the interaction never waits for an answer that will not come.
+            edit.interaction.setPending(edit.draft ? edit.draft->size() : 0);
+            edit.interaction.undone();
+        }
     } else if (answer.save) {
         requestEditSave();
     } else if (answer.discard && edit.draft) {
@@ -309,6 +314,7 @@ InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
         }
         edit.ending = "discard";
         edit.endAsked = Clock::now();
+        edit.discardRetried = false;
         requestEditDisplay(EditJob::Discard, edit.draft->base().world, edit.draft->base().planDigest, rebuild,
                            std::vector<world::RoomId>(rooms.begin(), rooms.end()));
     } else if (answer.exit) {
@@ -570,30 +576,39 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
                 return;
             }
         }
-        if (!answer.error.empty() || !answer.build) {
-            spdlog::error("Frame {}: the editor cannot show the room: {}", frame, answer.error);
+        // What shows could not change: the draft stays as it was (an operation not adopted, an undo not taken), and the
+        // session never ends with the draft in view.
+        const auto notShown = [&] {
             edit.refusal = "failed";
+            edit.interaction.setPending(edit.draft ? edit.draft->size() : 0);
             if (job == EditJob::Operation) {
                 edit.interaction.applied(false);
             } else if (job == EditJob::Undo) {
                 edit.interaction.undone();
+            } else if (job == EditJob::Discard && !edit.discardRetried && edit.draft) {
+                // The stored plan's whole floor, once.
+                spdlog::warn("Frame {}: the stored plan is asked again as a whole floor", frame);
+                edit.discardRetried = true;
+                edit.refusal.clear();
+                requestEditDisplay(EditJob::Discard, edit.draft->base().world, edit.draft->base().planDigest,
+                                   world::RebuildLevel::Full, {});
             } else {
-                endEdit("discarded");
+                // The session stays open (its draft shown): Esci senza salvare can be asked again.
+                edit.ending.clear();
+                edit.endAsked.reset();
+                edit.interaction.saved(false);
             }
+        };
+        if (!answer.error.empty() || !answer.build) {
+            spdlog::error("Frame {}: the editor cannot show the room: {}", frame, answer.error);
+            notShown();
             return;
         }
         clearEditFlags();
         const bool full = answer.fullFloor;
         if (!showEditBuild(*answer.build, full)) {
             spdlog::error("Frame {}: the editor's room cannot be shown", frame);
-            edit.refusal = "failed";
-            if (job == EditJob::Operation) {
-                edit.interaction.applied(false);
-            } else if (job == EditJob::Undo) {
-                edit.interaction.undone();
-            } else {
-                endEdit("discarded");
-            }
+            notShown();
             return;
         }
         if (job == EditJob::Operation) {
@@ -608,6 +623,10 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             spdlog::info("Frame {}: the edit {} shown ({}, {:.0f} ms)", frame, world::editText(*answer.operation),
                          full ? "the floor built again" : "in place", millisecondsSince(edit.asked));
         } else if (job == EditJob::Undo) {
+            if (edit.draft) {
+                edit.draft->undo();
+                ++edit.record.undone;
+            }
             edit.interaction.setPending(edit.draft ? edit.draft->size() : 0);
             edit.interaction.undone();
         } else if (job == EditJob::Discard) {
