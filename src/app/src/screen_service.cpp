@@ -1204,7 +1204,8 @@ struct ScreenService::Impl {
             candidates.push_back(AudibleCandidate{screen->binding.objectId, screen->screenClass, screen->distance,
                                                   screen->visible, playing});
         }
-        return chooseAudible(candidates, options.video.proximityMeters);
+        // The screen heard so far keeps the sound against one barely nearer (chooseAudible's hysteresis).
+        return chooseAudible(candidates, options.video.proximityMeters, lastAudibleScreen);
     }
 
     /// The slot the audible screen plays on; none in silence.

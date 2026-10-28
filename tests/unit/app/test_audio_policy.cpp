@@ -78,6 +78,43 @@ TEST_CASE("app/audio_policy: one audible screen: visible and playing, the best c
     CHECK_FALSE(choose({{"crt_a", ScreenClass::Room, 3.0, false, false}}));
 }
 
+TEST_CASE("app/audio_policy: the screen heard keeps the sound unless another is 0.5 m nearer or of a better class",
+          "[app][audio_policy]") {
+    const auto choose = [](const std::vector<AudibleCandidate>& candidates, std::string_view current) {
+        return rv::app::chooseAudible(candidates, 12.0, current);
+    };
+    // crt_d is heard; crt_c of its class comes nearer: kept until crt_c is 0.5 m nearer.
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.9, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_d") == 1u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.6, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_d") == 1u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.5, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_d") == 0u);
+    // Walking back between them: crt_c stays heard just the same.
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 4.4, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_c") == 0u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 4.6, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_c") == 1u);
+    // A better class wins at once, however near the screen heard.
+    CHECK(choose({{"crt_a", ScreenClass::Room, 9.0, true, true}, {"crt_d", ScreenClass::Ambient, 1.0, true, true}},
+                 "crt_d") == 0u);
+    // A worse class never takes it, even much nearer.
+    CHECK(choose({{"crt_a", ScreenClass::Room, 9.0, true, true}, {"crt_d", ScreenClass::Ambient, 1.0, true, true}},
+                 "crt_a") == 0u);
+    // The screen heard no longer qualifies (out of view, stopped, beyond the proximity): the best one, at once.
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.9, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, false, true}},
+                 "crt_d") == 0u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.9, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, false}},
+                 "crt_d") == 0u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 11.9, true, true}, {"crt_d", ScreenClass::Ambient, 12.0, true, true}},
+                 "crt_d") == 0u);
+    // None heard so far, or a screen that is gone: the plain choice.
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.9, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "") == 0u);
+    CHECK(choose({{"crt_c", ScreenClass::Ambient, 3.9, true, true}, {"crt_d", ScreenClass::Ambient, 4.0, true, true}},
+                 "crt_x") == 0u);
+}
+
 TEST_CASE("app/audio_policy: the azimuth from the eye, the spatial sound, the duck", "[app][audio_policy]") {
     constexpr double kDegree = std::numbers::pi / 180.0;
     // Looking along -Z (yaw 0): a screen ahead, to the right (+X), to the left, behind.

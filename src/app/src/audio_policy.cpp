@@ -23,31 +23,50 @@ AudioOutputChoice resolveAudioOutput(std::optional<audio::AudioOutput> commandLi
     return AudioOutputChoice{audio::AudioOutput::Device, "interactive"};
 }
 
-std::optional<std::size_t> chooseAudible(std::span<const AudibleCandidate> candidates, double proximityMeters) {
+std::optional<std::size_t> chooseAudible(std::span<const AudibleCandidate> candidates, double proximityMeters,
+                                         std::string_view current) {
+    const auto qualifies = [proximityMeters](const AudibleCandidate& candidate) {
+        return candidate.visible && candidate.playing && candidate.distance < proximityMeters;
+    };
     std::optional<std::size_t> best;
+    std::optional<std::size_t> kept;
     for (std::size_t index = 0; index < candidates.size(); ++index) {
         const AudibleCandidate& candidate = candidates[index];
-        if (!candidate.visible || !candidate.playing || !(candidate.distance < proximityMeters)) {
+        if (!qualifies(candidate)) {
             continue;
+        }
+        if (!current.empty() && candidate.screen == current) {
+            kept = index;
         }
         if (!best) {
             best = index;
             continue;
         }
-        const AudibleCandidate& current = candidates[*best];
-        if (candidate.screenClass != current.screenClass) {
-            if (candidate.screenClass < current.screenClass) {
+        const AudibleCandidate& leader = candidates[*best];
+        if (candidate.screenClass != leader.screenClass) {
+            if (candidate.screenClass < leader.screenClass) {
                 best = index;
             }
-        } else if (candidate.distance != current.distance) {
-            if (candidate.distance < current.distance) {
+        } else if (candidate.distance != leader.distance) {
+            if (candidate.distance < leader.distance) {
                 best = index;
             }
-        } else if (candidate.screen < current.screen) {
+        } else if (candidate.screen < leader.screen) {
             best = index;
         }
     }
-    return best;
+    if (!best || !kept || *best == *kept) {
+        return best;
+    }
+    // The screen heard so far keeps the sound unless a better class appears, or one of its class is clearly nearer.
+    const AudibleCandidate& challenger = candidates[*best];
+    const AudibleCandidate& heard = candidates[*kept];
+    if (challenger.screenClass < heard.screenClass ||
+        (challenger.screenClass == heard.screenClass &&
+         challenger.distance <= heard.distance - kAudibleHysteresisMeters)) {
+        return best;
+    }
+    return kept;
 }
 
 SpatialSound spatialSound(double distanceMeters, double azimuthRadians, double proximityMeters) noexcept {

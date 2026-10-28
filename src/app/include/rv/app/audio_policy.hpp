@@ -45,9 +45,13 @@ struct AudibleCandidate {
 };
 
 /// The audible screen (ADR-0016 §9, "one dominant source"): among the visible ones playing within `proximityMeters`,
-/// the best class, then the nearest, then the smallest screen id; none when there is none.
+/// the best class, then the nearest, then the smallest screen id; none when there is none. With hysteresis: while the
+/// screen `current` (the one heard so far) still qualifies, it stays audible unless a screen of a better class
+/// qualifies, or one of its class is nearer by at least kAudibleHysteresisMeters (the ambient requests' margin), so
+/// that two screens at about the same distance do not trade the sound back and forth.
+inline constexpr double kAudibleHysteresisMeters = kAmbientHysteresisMeters;
 [[nodiscard]] std::optional<std::size_t> chooseAudible(std::span<const AudibleCandidate> candidates,
-                                                       double proximityMeters);
+                                                       double proximityMeters, std::string_view current = {});
 
 /// The spatial part of an audible screen's sound: its gain (audio::spatialGain) and pan (from its azimuth).
 struct SpatialSound {
