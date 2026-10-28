@@ -549,7 +549,7 @@ TEST_CASE("world/edit: fixtures moved on the grid and turned, pinned where put; 
         EditedWorld kept = world;
         kept.plan.rooms.front().templateVersion = 1;
         requireRefused(kept, EditOperation::moveFixture(display.id, display.xMm + 100, display.zMm), data,
-                       rv::world::rule::kRoomKept);
+                       rv::world::edit_rule::kFixtureInKeptRoom);
     }
     SECTION("refusals by the hard rules") {
         EditedWorld& world = fresh.world;

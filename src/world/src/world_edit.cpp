@@ -41,7 +41,8 @@ constexpr std::array<ValidationRule, 11> kEditRules{{
     {edit_rule::kFixtureFixed, Severity::Hard,
      "Only side-wall modules, display fixtures and decoration move or are pinned; the hero corner and the hero-wall "
      "modules are fixed."},
-    {edit_rule::kRoomKept, Severity::Hard, "No fixture moves in a room kept as an older template made it."},
+    {edit_rule::kFixtureInKeptRoom, Severity::Hard,
+     "No fixture moves or is pinned in a room kept as an older template made it (until a regeneration)."},
     {edit_rule::kOffGrid, Severity::Hard,
      "A fixture's pivot stays on the room's 100 mm grid through its place in its socket (a hung decoration's along "
      "its wall)."},
@@ -122,7 +123,7 @@ Expected<std::optional<EditResult>> findFixtureContext(const WorldPlan& plan, co
     }
     context.data = found->second.get();
     if (std::string reason = roomKeepReason(plan, *context.room, *context.data); !reason.empty()) {
-        return std::optional(refusalOf(rule::kRoomKept, context.room->id.toString(),
+        return std::optional(refusalOf(edit_rule::kFixtureInKeptRoom, context.room->id.toString(),
                                      "the room is kept as an older template made it until a regeneration: " +
                                          reason));
     }
