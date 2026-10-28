@@ -198,7 +198,8 @@ struct Room {
     /// The generator that last generated or updated the room (a room kept as it is keeps its version); the plan's
     /// generatorVersion is the highest of its rooms'.
     GeneratorVersion generatorVersion;
-    /// The room an expansion extends, the head of its chain (ADR-0013 §8: reserved, empty for every room I4 makes).
+    /// The room an expansion extends, the head of its chain (ADR-0013 §8, ADR-0015 §7: generator 1.5's expansion
+    /// rooms; empty for a head).
     RoomId expands;
     /// The template it was generated from and its version (ADR-0010 §8's templateVersion, kept with its room so that
     /// I4's rooms of several templates each record theirs).

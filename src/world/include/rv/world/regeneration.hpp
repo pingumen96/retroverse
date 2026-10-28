@@ -7,11 +7,14 @@
 // Debug and Release alike.
 //
 // The scopes:
-//   - a room (its chain: the room and its expansions, ADR-0015 §7; I4b step 7 makes expansions, none stands before
-//     it): generated afresh with the data a new room of its kind reads now (the template's current version, the
-//     family's last successor, the theme pack its floor resolves), the face-out set and the representatives chosen
-//     again by priority; its id, kind, floor, x, yaw, sections and seed kept, its z following its depth. Every other
-//     room stands as it is;
+//   - a room (its chain: the room and its expansions, ADR-0015 §7, whichever of them the scope names): generated
+//     afresh with the data a new room of its kind reads now (the template's current version, the family's last
+//     successor, the theme pack its floor resolves), the face-out set and the representatives chosen again by
+//     priority; its id, kind, floor, x, yaw, sections and seed kept, its z following its depth. Since I4b step 7 the
+//     chain's titles are split again in equal alphabetical shares over the fewest rooms that hold them (generation.hpp's
+//     generator 1.5): its standing expansions kept in their places by number, the highest dropped when fewer are
+//     needed, new ones (numbered after the chain's highest) entering the floor at the east end of the shorter row; a
+//     pinned game stands in the share of the room its pin names. Every other room stands as it is;
 //   - a floor: every room of the floor, and the floor's rooms decided again: its systems (the sections of its rooms,
 //     and the systems of the selections no room holds whose classification names the floor) enter it afresh in the
 //     order (systems.json order, system name): own or shared rooms by sharedRoomMinTitles on today's counts, the
@@ -63,7 +66,8 @@
 // `worldplan undo` restores it); a dry run (the preview) saves nothing.
 //
 // The signature of regenerate() is frozen at the end of I4b step 5 (docs/i4b/plan.md): step 6 calls it from the app on
-// the pool, step 7 adds expansion chains beneath it.
+// the pool, step 7 added expansion chains beneath it (the scopes' rooms are chains; a floor's and the world's chains are
+// split as a fresh building splits them).
 
 #include <cstdint>
 #include <filesystem>
@@ -230,7 +234,7 @@ struct Regeneration {
 /// scope's room the plan lacks or a floor the building lacks, the inputs generateBuilding() refuses (a selection twice,
 /// not of a system's room); NotFound for a system of a room or floor scope without a selection; Unsupported for a room
 /// or floor scope of a plan of another seed, preset, random algorithm, title-key rule or generator major (only the world
-/// regenerates it), and for a room with expansions (I4b step 7); those of `load` and of the layout.
+/// regenerates it); those of `load` and of the layout.
 [[nodiscard]] Expected<Regeneration> regenerate(const RegenerationInput& input, const BuildingData& building,
                                                 const SystemsData& systems, const RoomDataLoader& load);
 

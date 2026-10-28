@@ -60,7 +60,8 @@ std::optional<std::int64_t> mountHeightOf(const RoomTemplate& roomTemplate, cons
     return std::nullopt;
 }
 
-/// The pinned game takes its title's place when another version represents it (rule 4); false when it cannot.
+} // namespace
+
 bool takeRepresentation(RoomSelection& selection, SectionIndex& index, const GameId& game,
                         const std::set<GameId>& pinnedGames, std::set<GameId>& titleGames, std::string& why) {
     const auto entry = std::find_if(selection.unplaced.begin(), selection.unplaced.end(),
@@ -102,8 +103,6 @@ bool takeRepresentation(RoomSelection& selection, SectionIndex& index, const Gam
     titleGames.insert(game);
     return true;
 }
-
-} // namespace
 
 Expected<WorldPlan> generatePinnedRoom(const RoomSelection& selection, const WorldConfig& config,
                                        std::uint64_t worldSeed, const WorldData& data, const SectionIndex* sections,

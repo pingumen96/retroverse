@@ -1,12 +1,13 @@
 // A fresh room's generation (rv/world/generation.hpp, ADR-0010 §3 to §8; I3 step 3): golden plans for the reference
 // sizes (tests/fixtures/world/golden, rewritten only with RV_UPDATE_GOLDEN=1), two runs byte-identical, the room at the
-// reference sizes (G02's 50 titles all face-out, the reference library's 890 in three side-wall modules, growth and
-// capacity at 8,000), every plan of the golden sizes passing I3 step 4's validation on the manifests' slots, and the
-// display rule's properties over 1,000 random sizes (60 in Debug): the face-out titles exactly the first min(T, D + B)
-// by priority (the featured the first D), the fewest side-wall modules, every module but the last filled to its
-// quotas, every unneeded side-wall socket decorated, no level bare, the levels the prefabs', no overlapping fixtures, at
-// most 16 lights, every title placed once or unplaced for capacity, no hard finding of the validation. Timings are
-// hidden [.bench] cases.
+// reference sizes (G02's 50 titles all face-out, the reference library's 890 in three side-wall modules, the room at
+// its limit at 5,615, and since generator 1.5 a chain of two rooms at 8,000), every plan of the golden sizes passing
+// I3 step 4's validation on the manifests' slots, and the display rule's properties over 1,000 random sizes (60 in
+// Debug): the face-out titles exactly the first min(T, D + B) by priority (the featured the first D), the fewest
+// side-wall modules, every module but the last filled to its quotas, every unneeded side-wall socket decorated, no
+// level bare, the levels the prefabs', no overlapping fixtures, at most 16 lights, no hard finding of the validation;
+// past the template's limit the fewest rooms in equal alphabetical shares, each room so of its share (I4b step 7,
+// ADR-0015 §7). Timings are hidden [.bench] cases.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -35,6 +36,7 @@
 #include <rv/world/capacity.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/seeds.hpp>
 #include <rv/world/validation.hpp>
 
 #include "world_generation_support.hpp"
@@ -160,13 +162,14 @@ rv::world::Footprint footprintOf(const Fixture& fixture) {
         }                                                                                                 \
     } while (false)
 
-/// The properties every fresh plan keeps (the file's header), the plan generated from `selection`.
-void checkProperties(const GenerationResult& result, const rv::world::RoomSelection& selection) {
+/// The properties every fresh room keeps (the file's header), `plan` a room generated from `selection` (a room alone,
+/// or one room of a chain with its share), `findings` the generation's validation.
+void checkRoomProperties(const WorldPlan& plan, const rv::world::RoomSelection& selection,
+                         const std::vector<rv::world::ValidationFinding>& findings) {
     // Failures are gathered and reported together: a run checks some thousands of facts, and Catch2's
     // assertions would cost more than the generation they check.
     std::vector<std::string> failures;
     std::string where;
-    const WorldPlan& plan = result.plan;
     const rv::world::WorldData& data = snesData();
     const rv::world::RoomTemplate& roomTemplate = data.roomTemplate;
     auto capacity = rv::world::collectionCapacity(roomTemplate, data.prefabs, data.mediaFamily);
@@ -372,7 +375,7 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
     }
 
     // The validation (I3 step 4) finds no hard rule broken.
-    for (const rv::world::ValidationFinding& finding : result.validation.findings) {
+    for (const rv::world::ValidationFinding& finding : findings) {
         where = finding.rule + " " + finding.subject + ": " + finding.message;
         EXPECT(finding.severity == rv::world::Severity::Soft);
     }
@@ -391,6 +394,84 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
 }
 
 #undef EXPECT
+
+/// The room `id` of `plan` with its elements, as a plan of that room.
+WorldPlan roomOf(const WorldPlan& plan, const rv::world::RoomId& id) {
+    WorldPlan part = plan;
+    std::erase_if(part.rooms, [&](const rv::world::Room& room) { return room.id != id; });
+    std::erase_if(part.fixtures, [&](const Fixture& fixture) { return fixture.id.room() != id; });
+    std::erase_if(part.placements,
+                  [&](const rv::world::Placement& placement) { return placement.slot.fixture().room() != id; });
+    std::erase_if(part.dressing,
+                  [&](const rv::world::DressedLevel& dressed) { return dressed.level.fixture().room() != id; });
+    std::erase_if(part.lights, [&](const rv::world::PlanLight& light) { return light.id.room() != id; });
+    std::erase_if(part.unplaced, [&](const rv::world::UnplacedGame& game) { return game.room != id; });
+    return part;
+}
+
+/// The properties every fresh plan keeps, the plan generated from `selection`: a room alone when the template's limit
+/// holds its titles, else a chain (ADR-0015 §7, generator 1.5): the fewest rooms that hold them with the reserve, the
+/// head and its expansions by number, every title placed once in equal alphabetical shares (the first ones a title
+/// more), each room a fresh room of its share (its own face-out titles by priority).
+void checkProperties(const GenerationResult& result, const rv::world::RoomSelection& selection) {
+    const WorldPlan& plan = result.plan;
+    const rv::world::WorldData& data = snesData();
+    auto capacity = rv::world::collectionCapacity(data.roomTemplate, data.prefabs, data.mediaFamily);
+    REQUIRE(capacity.has_value());
+    const std::uint64_t limit = rv::world::countCollection(*capacity, std::uint64_t{1} << 40, 150).placed;
+    const std::uint64_t titles = selection.titles.size();
+    const std::size_t rooms = titles == 0 ? 1 : static_cast<std::size_t>((titles + limit - 1) / limit);
+    REQUIRE(plan.rooms.size() == rooms);
+    if (rooms == 1) {
+        checkRoomProperties(plan, selection, result.validation.findings);
+        return;
+    }
+    // The chain: its rooms by number, each an expansion of the head, the same floor, kind, sections and template.
+    const rv::world::Room& head = plan.rooms.front();
+    for (std::size_t i = 0; i < rooms; ++i) {
+        const rv::world::Room& room = plan.rooms[i];
+        CHECK(room.id == *head.id.inChain(static_cast<std::uint32_t>(i + 1)));
+        CHECK(room.expands == (i == 0 ? rv::world::RoomId{} : head.id));
+        CHECK(room.floor == head.floor);
+        CHECK(room.sections == head.sections);
+        CHECK(room.templateId == head.templateId);
+    }
+    // Every title placed once, in equal alphabetical shares; nothing unplaced for capacity.
+    std::map<GameId, rv::world::RoomId> roomOfGame;
+    for (const rv::world::Placement& placement : plan.placements) {
+        CHECK(roomOfGame.emplace(placement.game, placement.slot.fixture().room()).second);
+    }
+    CHECK(roomOfGame.size() == titles);
+    for (const rv::world::UnplacedGame& game : plan.unplaced) {
+        CHECK(game.reason != rv::world::UnplacedReason::Capacity);
+        CHECK(game.room == head.id);
+    }
+    std::vector<rv::world::RoomTitle> alphabetical = selection.titles;
+    std::sort(alphabetical.begin(), alphabetical.end(), [](const rv::world::RoomTitle& a, const rv::world::RoomTitle& b) {
+        return std::tie(a.sortKey, a.titleKey, a.game) < std::tie(b.sortKey, b.titleKey, b.game);
+    });
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < rooms; ++i) {
+        const std::size_t share = titles / rooms + (i < titles % rooms ? 1 : 0);
+        for (std::size_t taken = 0; taken < share; ++taken, ++next) {
+            const auto found = roomOfGame.find(alphabetical[next].game);
+            REQUIRE(found != roomOfGame.end());
+            CHECK(found->second == plan.rooms[i].id);
+        }
+    }
+    // Each room is a fresh room of its share.
+    for (std::size_t i = 0; i < rooms; ++i) {
+        INFO(plan.rooms[i].id.toString());
+        rv::world::RoomSelection share = selection;
+        share.room = plan.rooms[i].id;
+        std::erase_if(share.titles,
+                      [&](const rv::world::RoomTitle& title) { return roomOfGame.at(title.game) != share.room; });
+        if (i > 0) {
+            share.unplaced.clear();
+        }
+        checkRoomProperties(roomOf(plan, plan.rooms[i].id), share, result.validation.findings);
+    }
+}
 
 } // namespace
 
@@ -445,7 +526,13 @@ TEST_CASE("world/generation: every plan of the golden sizes passes the validatio
             context.config.seed = seed;
             context.selections = {makeSelection(titles, kSelectionSeed)};
             context.prefabSlots = rv::world::manifestPrefabSlots(rv::test::world::assetRoot());
-            context.lights = {{result.plan.rooms.front().id, static_cast<std::uint32_t>(result.plan.lights.size())}};
+            for (const rv::world::Room& room : result.plan.rooms) {
+                const auto lights = std::count_if(result.plan.lights.begin(), result.plan.lights.end(),
+                                                  [&](const rv::world::PlanLight& light) {
+                                                      return light.id.room() == room.id;
+                                                  });
+                context.lights.push_back({room.id, static_cast<std::uint32_t>(lights)});
+            }
             const rv::world::ValidationReport report = rv::world::validatePlan(result.plan, context);
             for (const rv::world::ValidationFinding& finding : report.findings) {
                 if (finding.severity == rv::world::Severity::Hard) {
@@ -535,15 +622,16 @@ TEST_CASE("world/generation: the room at the reference sizes", "[world][generati
         CHECK(result.plan.rooms.front().growthSteps == 0);
         checkProperties(result, makeSelection(2000, kSelectionSeed));
     }
-    SECTION("8,000 titles: the room grows to 16 m, the rest unplaced for capacity") {
-        const GenerationResult result = generateRoom(8000, kSelectionSeed, 102938);
+    SECTION("5,615 titles: the room grows to 16 m, at its template's limit") {
+        const GenerationResult result = generateRoom(5615, kSelectionSeed, 102938);
         const WorldPlan& plan = result.plan;
+        REQUIRE(plan.rooms.size() == 1);
         const rv::world::Room& room = plan.rooms.front();
         CHECK(room.growthSteps == 3);
         CHECK(room.maxZMm - room.minZMm == 16000);
         CHECK(countRole(plan, FixtureRole::SideModule) == 26);
         CHECK(plan.placements.size() == 5615);
-        checkProperties(result, makeSelection(8000, kSelectionSeed));
+        checkProperties(result, makeSelection(5615, kSelectionSeed));
         // The south wall's decoration moved with the growth; the side-wall modules and the hero wall did not.
         const Fixture* w01 = fixtureAt(plan, "w01");
         REQUIRE(w01 != nullptr);
@@ -551,6 +639,30 @@ TEST_CASE("world/generation: the room at the reference sizes", "[world][generati
         const Fixture* w01Small = fixtureAt(small.plan, "w01");
         REQUIRE(w01Small != nullptr);
         CHECK(std::tie(w01->xMm, w01->zMm) == std::tie(w01Small->xMm, w01Small->zMm));
+    }
+    SECTION("8,000 titles: past the limit, a chain of two rooms of 4,000 titles (generator 1.5)") {
+        const GenerationResult result = generateRoom(8000, kSelectionSeed, 102938);
+        const WorldPlan& plan = result.plan;
+        REQUIRE(plan.rooms.size() == 2);
+        CHECK(plan.rooms[0].id.toString() == "room:snes");
+        CHECK(plan.rooms[1].id.toString() == "room:snes:2");
+        CHECK(plan.rooms[1].expands == plan.rooms[0].id);
+        CHECK(plan.placements.size() == 8000);
+        // Each room sized to its share: 4,000 titles need 18 side-wall modules, the first growth step.
+        for (const rv::world::Room& room : plan.rooms) {
+            INFO(room.id.toString());
+            CHECK(room.growthSteps == 1);
+            std::size_t modules = 0;
+            for (const Fixture& fixture : plan.fixtures) {
+                modules += fixture.id.room() == room.id && fixture.role == FixtureRole::SideModule ? 1 : 0;
+            }
+            CHECK(modules == 18);
+        }
+        // The expansion stands where a room entering the floor stands: east of the head, in the other row.
+        CHECK(plan.rooms[1].placement.yawHalfTurns == 1);
+        CHECK(plan.rooms[1].seed == rv::world::roomSeed(plan.seed, plan.rooms[1].id));
+        CHECK(result.changes.roomsAdded == std::vector{plan.rooms[0].id, plan.rooms[1].id});
+        checkProperties(result, makeSelection(8000, kSelectionSeed));
     }
 }
 

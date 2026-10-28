@@ -532,7 +532,9 @@ TEST_CASE("world/update: a full section takes a dressed level, then a module, th
     // The step's other three side-wall sockets hold decoration, as a fresh room's unneeded sockets do.
     CHECK(result.changes.fixturesAdded.size() == 4);
 
-    // At the template's limit (5,615 titles: 16 m, 26 side-wall modules) every free slot taken: then capacity.
+    // At the template's limit (5,615 titles: 16 m, 26 side-wall modules) every free slot taken: then, since generator
+    // 1.5 (I4b step 7, ADR-0015 §7), the chain's next room, room:snes:2, entering the floor, its levels dressed and no
+    // title face-out, the new title on the first level of its fill order.
     selection = makeSelection(5615, kSelectionSeed);
     taken = gameValuesOf(selection);
     plan = generateSelection(selection, kWorldSeed).plan;
@@ -543,14 +545,31 @@ TEST_CASE("world/update: a full section takes a dressed level, then a module, th
     CHECK(plan.rooms.front().growthSteps == 3);
     const RoomTitle last = addTitle(selection, random, taken);
     result = updateRoom(plan, selection, kWorldSeed);
-    CHECK(result.changes.added.empty());
-    CHECK(result.changes.unplaced == std::vector{last.game});
-    const auto entry = std::find_if(result.plan.unplaced.begin(), result.plan.unplaced.end(),
-                                    [&](const UnplacedGame& game) { return game.game == last.game; });
-    REQUIRE(entry != result.plan.unplaced.end());
-    CHECK(entry->reason == UnplacedReason::Capacity);
+    std::vector<std::string> failures;
+    checkUpdate(plan, result, failures, "the expansion");
+    report(failures);
+    CHECK(result.changes.added == std::vector{last.game});
+    CHECK(result.changes.unplaced.empty());
+    REQUIRE(result.plan.rooms.size() == 2);
+    const rv::world::Room& expansion = result.plan.rooms.back();
+    CHECK(expansion.id.toString() == "room:snes:2");
+    CHECK(expansion.expands == result.plan.rooms.front().id);
+    CHECK(expansion.growthSteps == 0);
+    CHECK(result.changes.roomsAdded == std::vector{expansion.id});
+    const auto placed = std::find_if(result.plan.placements.begin(), result.plan.placements.end(),
+                                     [&](const rv::world::Placement& placement) { return placement.game == last.game; });
+    REQUIRE(placed != result.plan.placements.end());
+    CHECK(placed->slot.fixture().room() == expansion.id);
+    CHECK(placed->slot.fixture().socket() == "hw-w");
+    // Its display fixtures and hero band dressed: no face-out title until its chain is regenerated.
+    for (const rv::world::Placement& placement : result.plan.placements) {
+        if (placement.slot.fixture().room() == expansion.id) {
+            CHECK(levelSections(result.plan).at({placement.slot.fixture(), placement.slot.level()}) ==
+                  rv::world::Section::Spine);
+        }
+    }
     CHECK(result.validation.passed());
-    // A title unplaced for capacity stays so: the next update does not place it, even with a slot freed.
+    // The next update of the same selection writes nothing.
     CHECK(updateRoom(result.plan, selection, kWorldSeed).plan == result.plan);
 }
 

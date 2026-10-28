@@ -70,11 +70,26 @@
 //     building generates it, and placed at the east end of the shorter row of its floor (a floor that held no room
 //     appears), its x fixed, its z following its depth;
 //   - a console room its floor has no place for joins the floor's shared room when that stands, else the system's
-//     games are unplaced for capacity, naming the room it would have had (expansion rooms are I4b's), as are those of a
+//     games are unplaced for capacity, naming the room it would have had (expansion rooms enter for a room past its
+//     template's capacity only, below), as are those of a
 //     shared or arcade room that finds no place; when such a system enters again, the entries naming its console room
 //     give way to its entry now (all of them: a game that left its selection has none), those naming a shared or arcade
 //     room that found no place only for the games of its selection (the plan does not say which system such an entry
 //     was of: an entry of a game that left the system stands until a regeneration).
+// Since generator 1.5 (I4b step 7, ADR-0015 §7) a room and its expansions are a chain, updated as one: its
+// selection's titles (the head's sections' for every room of it) fill one fill order, the head's spine-out levels and
+// then each expansion's by number, new titles after their alphabetical predecessor anywhere in the chain (wrapping to
+// the head's first slot, so the head's freed slots are used first); a module, then a growth step, goes to the chain's
+// first room that takes one; when every room of the chain stands at its template's limit the chain takes its next
+// room (`expands` the head, numbered after the chain's highest, laid out as a fresh room of no title: its display
+// fixtures and hero band dressed, no face-out title until the chain is regenerated, every spine-out level dressed
+// until titles take it), entering the floor at the east end of the shorter row among the rooms standing then (the
+// stored rooms, the new rooms and their expansions, those made before it); on a full floor the titles are unplaced for
+// capacity. Every unplaced entry of a chain names its head. A chain an earlier generator made whose rooms stand at
+// their limit has its titles unplaced for capacity enter as additions at its first update (the migration of capacity
+// entries); afterwards such a title stays unplaced until a regeneration, as before. A chain is kept, migrated to a
+// family's successor (its titles split over its rooms and the expansions they need) or left as it is whole. A new room
+// past its template's capacity enters with its expansions as a fresh building places them.
 // Nothing that stands moves: the stored rooms' floors, kinds, x, yaws and sections (new ones only appended), their
 // placements, and the hall's lights (derived, only appended as a floor's rooms reach further east).
 // The one exception (I6 step 4, ADR-0014 §2): a stored room whose recorded media family has a successor in rooms of

@@ -26,7 +26,7 @@ namespace {
 
 using catalog::GameId;
 
-constexpr std::array<ValidationRule, 38> kRules{{
+constexpr std::array<ValidationRule, 39> kRules{{
     {rule::kRoomUnknown, Severity::Hard,
      "Every fixture and unplaced entry names a room the plan lists (games unplaced for capacity may name the room, or "
      "the shared or arcade room, their full floor did not take)."},
@@ -37,6 +37,9 @@ constexpr std::array<ValidationRule, 38> kRules{{
     {rule::kSystemRooms, Severity::Hard,
      "Every system stands in exactly one room (with its chain of expansions) or one section; the arcade room stands "
      "on the ground floor."},
+    {rule::kExpansionChain, Severity::Hard,
+     "Every expansion's head stands in the plan, on the expansion's floor, of its kind, sections, media family and "
+     "template."},
     {rule::kHallOverlap, Severity::Hard,
      "No room of a floor overlaps the floor's hall (derived from its rooms, the elevator's end and the far end's wall "
      "included)."},
@@ -520,6 +523,7 @@ private:
             for (const catalog::SystemName& system : room.sections) {
                 standsIn[system].insert(room.id.head());
             }
+            checkExpansion(room);
         }
         for (const auto& [system, heads] : standsIn) {
             if (heads.size() > 1) {
@@ -545,6 +549,44 @@ private:
                     }
                 }
             }
+        }
+    }
+
+    /// An expansion and its chain's head (ADR-0015 §7): the head stands in the plan, and the expansion is of its floor,
+    /// kind, sections, media family and template.
+    void checkExpansion(const Room& room) {
+        if (!room.id.isExpansion()) {
+            return;
+        }
+        const std::string subject = room.id.toString();
+        const auto head = m_rooms.find(room.id.head());
+        if (head == m_rooms.end()) {
+            m_findings.add(rule::kExpansionChain, subject,
+                           fmt::format("the expansion's head {} is not in the plan", room.id.head().toString()));
+            return;
+        }
+        const Room& first = *head->second.room;
+        std::vector<std::string> differences;
+        if (room.floor != first.floor) {
+            differences.push_back(fmt::format("floor '{}' (the head's '{}')", room.floor, first.floor));
+        }
+        if (room.kind != first.kind) {
+            differences.push_back(fmt::format("kind {} (the head's {})", toString(room.kind), toString(first.kind)));
+        }
+        if (room.sections != first.sections) {
+            differences.push_back("other sections");
+        }
+        if (room.mediaFamily != first.mediaFamily) {
+            differences.push_back(fmt::format("media family {} (the head's {})", room.mediaFamily, first.mediaFamily));
+        }
+        if (room.templateId != first.templateId || room.templateVersion != first.templateVersion) {
+            differences.push_back(fmt::format("template {} v{} (the head's {} v{})", room.templateId,
+                                              room.templateVersion, first.templateId, first.templateVersion));
+        }
+        if (!differences.empty()) {
+            m_findings.add(rule::kExpansionChain, subject,
+                           fmt::format("the expansion differs from its head {}: {}", first.id.toString(),
+                                       fmt::join(differences, ", ")));
         }
     }
 

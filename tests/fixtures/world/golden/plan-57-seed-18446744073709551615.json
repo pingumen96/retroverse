@@ -42,7 +42,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.4","inputDigest":"3d063751b5d4c50454ce7c8e2d75bca7697938b0264680c1789ba98a8e0a9f2f","library":"esde","lights":[
+],"generatorVersion":"1.5","inputDigest":"bfecb76b3e9001f3bc541bd6eaaa0db2e6324d573082ec9ad82f2ebeccd59bdd","library":"esde","lights":[
 {"id":"room:snes/fx:e01.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-4000,"xMm":4300,"yMm":1379,"zMm":-4000},
 {"id":"room:snes/fx:e04.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-1000,"xMm":4300,"yMm":1379,"zMm":-1000},
 {"id":"room:snes/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},
@@ -112,7 +112,7 @@
 {"game":"g1ac9438d711e57ce","insetMm":0,"slot":"room:snes/fx:hw-w/s:5.4","yawCdeg":73},
 {"game":"g2d042b7eadf0786c","insetMm":0,"slot":"room:snes/fx:hw-w/s:5.5","yawCdeg":58}
 ],"preset":"retro_museum_cozy","randomAlgorithm":"splitmix64/1","rooms":[
-{"floor":"gen4","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":7118564190643672874,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
+{"floor":"gen4","generatorVersion":"1.5","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":7118564190643672874,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
 ],"schemaVersion":2,"seed":18446744073709551615,"titleKeyRule":"title-key/1","unplaced":[
 {"game":"g3b14865c934715dd","reason":"no-cover","room":"room:snes"},
 {"game":"g51e17187fe57f21c","reason":"duplicate-title","representative":"g0aa1eff0216e5b09","room":"room:snes"}

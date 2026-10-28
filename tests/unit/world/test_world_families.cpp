@@ -27,6 +27,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -597,14 +598,21 @@ TEST_CASE("world/families: a room of each family generates and validates at a fe
             }
             CHECK(result->validation.passed());
             const rv::world::WorldPlan& plan = result->plan;
-            REQUIRE(plan.rooms.size() == 1);
-            CHECK(plan.rooms.front().mediaFamily == entry.family);
-            // Every title placed or unplaced for capacity; the fixtures the family's own.
+            REQUIRE_FALSE(plan.rooms.empty());
+            // A room alone, or a chain past the template's limit (generator 1.5): every room of the family.
+            for (const rv::world::Room& room : plan.rooms) {
+                CHECK(room.mediaFamily == entry.family);
+            }
+            // Every title placed or unplaced for capacity, which only a full floor leaves (a chain's rooms hold the
+            // rest: the arcade room's 2,600 cabinets need 50 rooms, its floor takes 24); the fixtures the family's own.
             std::size_t capacity = 0;
             for (const rv::world::UnplacedGame& game : plan.unplaced) {
                 capacity += game.reason == rv::world::UnplacedReason::Capacity ? 1 : 0;
             }
             CHECK(plan.placements.size() + capacity == titles);
+            if (capacity > 0) {
+                CHECK(plan.rooms.size() == 2 * data.building.layout.maxRoomsPerRow);
+            }
             for (const rv::world::Fixture& fixture : plan.fixtures) {
                 if (fixture.role == rv::world::FixtureRole::HeroModule) {
                     CHECK(fixture.prefab == data.roomTemplate.heroModule);
@@ -852,36 +860,59 @@ TEST_CASE("world/families: the arcade room's cabinets face out in every fixture 
     }
     CHECK(shown == first);
 
-    // An arcade over its capacity (53 titles at 16 m, ADR-0014 §6 amended): 60 titles fill the room grown to its
-    // largest, the 53 first by priority placed, the 7 last unplaced for capacity, naming the room; the same twice.
+    // An arcade over its capacity (53 titles at 16 m, ADR-0014 §6 amended): since generator 1.5 (I4b step 7, ADR-0015
+    // §7) 60 titles stand in a chain of two rooms of 30, area:arcade and area:arcade:2, split in alphabetical order,
+    // each with its own featured titles, the first six of its share by priority; the same twice.
     rv::world::GenerationInput over = input;
     over.selection = selectionOf("mame", 60, 4601);
     auto large = rv::world::generate(over, data);
     REQUIRE(large.has_value());
     CHECK(large->validation.passed());
-    CHECK(large->plan.placements.size() == 53);
-    CHECK(large->plan.dressing.empty());
-    std::set<rv::catalog::GameId> placed;
+    CHECK(large->plan.placements.size() == 60);
+    REQUIRE(large->plan.rooms.size() == 2);
+    CHECK(large->plan.rooms[1].id == *large->plan.rooms[0].id.inChain(2));
+    CHECK(large->plan.rooms[1].expands == large->plan.rooms[0].id);
+    std::map<rv::world::RoomId, std::vector<rv::world::RoomTitle>> shares;
+    std::map<rv::catalog::GameId, rv::world::RoomId> roomOfGame;
     for (const rv::world::Placement& placement : large->plan.placements) {
-        placed.insert(placement.game);
+        roomOfGame.emplace(placement.game, placement.slot.fixture().room());
     }
-    std::set<rv::catalog::GameId> byPriority;
-    for (std::size_t i = 0; i < 53; ++i) {
-        byPriority.insert(over.selection.titles[i].game);
+    for (const rv::world::RoomTitle& title : over.selection.titles) {
+        shares[roomOfGame.at(title.game)].push_back(title); // in priority order
     }
-    CHECK(placed == byPriority);
-    std::set<rv::catalog::GameId> overCapacity;
-    for (const rv::world::UnplacedGame& game : large->plan.unplaced) {
-        if (game.reason == rv::world::UnplacedReason::Capacity) {
-            CHECK(game.room == large->plan.rooms.front().id);
-            overCapacity.insert(game.game);
+    REQUIRE(shares.size() == 2);
+    for (const auto& [room, titles] : shares) {
+        INFO(room.toString());
+        CHECK(titles.size() == 30);
+        std::set<rv::catalog::GameId> firstSix;
+        for (std::size_t i = 0; i < 6; ++i) {
+            firstSix.insert(titles[i].game);
+        }
+        std::set<rv::catalog::GameId> featuredHere;
+        for (const rv::world::Placement& placement : large->plan.placements) {
+            for (const rv::world::Fixture& fixture : large->plan.fixtures) {
+                if (fixture.id == placement.slot.fixture() && fixture.id.room() == room &&
+                    fixture.role == rv::world::FixtureRole::Display) {
+                    featuredHere.insert(placement.game);
+                }
+            }
+        }
+        CHECK(featuredHere == firstSix);
+    }
+    // The head's share comes first in the alphabet.
+    std::string lastOfHead;
+    std::string firstOfExpansion = "~";
+    for (const rv::world::RoomTitle& title : over.selection.titles) {
+        if (roomOfGame.at(title.game) == large->plan.rooms[0].id) {
+            lastOfHead = std::max(lastOfHead, title.sortKey);
+        } else {
+            firstOfExpansion = std::min(firstOfExpansion, title.sortKey);
         }
     }
-    std::set<rv::catalog::GameId> last;
-    for (std::size_t i = 53; i < 60; ++i) {
-        last.insert(over.selection.titles[i].game);
-    }
-    CHECK(overCapacity == last);
+    CHECK(lastOfHead <= firstOfExpansion);
+    CHECK(std::none_of(large->plan.unplaced.begin(), large->plan.unplaced.end(), [](const rv::world::UnplacedGame& g) {
+        return g.reason == rv::world::UnplacedReason::Capacity;
+    }));
     auto again = rv::world::generate(over, data);
     REQUIRE(again.has_value());
     CHECK(again->plan == large->plan);

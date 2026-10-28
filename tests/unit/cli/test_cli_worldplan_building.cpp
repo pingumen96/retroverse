@@ -122,8 +122,8 @@ TEST_CASE("cli/worldplan: a building of selection files, its floors, where-is wi
     REQUIRE(generated.code == ExitCode::Ok);
     CHECK(contains(generated.out, "Generated the plan of room:megadrive, room:snes: "));
     CHECK(contains(generated.out, "Floors:          ground (order 0, 0 rooms), gen4 (order 3, 2 rooms)"));
-    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.4"));
-    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.4"));
+    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.5"));
+    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.5"));
 
     const RunResult shown = session.run({"worldplan", "show", "--library", "esde", "--json"});
     REQUIRE(shown.code == ExitCode::Ok);

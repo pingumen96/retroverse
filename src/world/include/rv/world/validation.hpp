@@ -23,8 +23,9 @@
 // The building (ADR-0013 §11): the plan holds the ground floor, every room stands on a floor of the plan (and every
 // floor is building.json's, at its order, when the building is given), the rooms of a floor do not overlap (their
 // footprints on the floor: the interior grown by the building's wall allowance, building.hpp), every system stands in
-// exactly one room (an expansion counted with its chain's head) or one section, and the arcade room stands on the
-// ground floor. With the building given, each floor's hall is derived from its rooms (floor_layout.hpp's deriveHall(),
+// exactly one room (an expansion counted with its chain's head) or one section, the arcade room stands on the ground
+// floor, and every expansion's head (I4b step 7, ADR-0015 §7) stands in the plan, on its floor, of its kind, sections,
+// media family and template (expansion-chain). With the building given, each floor's hall is derived from its rooms (floor_layout.hpp's deriveHall(),
 // I4 step 3) and judged with them: no room overlaps the hall (hall-overlap), every room's doorway is in its doorway
 // wall, which stands on the hall's edge (doorway-off-hall), and every room can be walked to from the elevator
 // (floor-unreachable): the floor's navigation grid (nav_grid.hpp, 0.1 m cells over the hall and the floor's rooms;
@@ -75,6 +76,7 @@ inline constexpr std::string_view kGroundFloorMissing = "ground-floor";
 inline constexpr std::string_view kFloorUnknown = "floor-unknown";
 inline constexpr std::string_view kRoomsOverlap = "rooms-overlap";
 inline constexpr std::string_view kSystemRooms = "system-rooms";
+inline constexpr std::string_view kExpansionChain = "expansion-chain";
 inline constexpr std::string_view kHallOverlap = "hall-overlap";
 inline constexpr std::string_view kDoorwayOffHall = "doorway-off-hall";
 inline constexpr std::string_view kFloorUnreachable = "floor-unreachable";

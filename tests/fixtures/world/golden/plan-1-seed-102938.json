@@ -52,7 +52,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.4","inputDigest":"b0b00c151de2980cb1d8687079c46b095a32103482ae035e7b3fdaaa39ad95fe","library":"esde","lights":[
+],"generatorVersion":"1.5","inputDigest":"858eb7843ede802711473097c95955c2ab33ccede02c329b73a256c79bb3c97c","library":"esde","lights":[
 {"id":"room:snes/fx:e01.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":-4000,"xMm":4300,"yMm":1379,"zMm":-4000},
 {"id":"room:snes/fx:e06.light","role":"lamp","spanMm":0,"targetXMm":4300,"targetYMm":1379,"targetZMm":3000,"xMm":4300,"yMm":1379,"zMm":3000},
 {"id":"room:snes/fx:hero.key-light","role":"key","spanMm":5750,"targetXMm":0,"targetYMm":500,"targetZMm":-4870,"xMm":0,"yMm":2920,"zMm":-2670},
@@ -66,5 +66,5 @@
 ],"placements":[
 {"game":"g777ace47fa76a48c","insetMm":0,"slot":"room:snes/fx:fs01/s:1.2","yawCdeg":-106}
 ],"preset":"retro_museum_cozy","randomAlgorithm":"splitmix64/1","rooms":[
-{"floor":"gen4","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":8977635278716121260,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
+{"floor":"gen4","generatorVersion":"1.5","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":8977635278716121260,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
 ],"schemaVersion":2,"seed":102938,"titleKeyRule":"title-key/1","unplaced":[]}
