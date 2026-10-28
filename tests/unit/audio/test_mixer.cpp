@@ -358,6 +358,43 @@ TEST_CASE("audio/mixer: a block longer than its scratch is rendered in pieces, t
     CHECK(differing == 0);
 }
 
+TEST_CASE("audio/mixer: the pan moves sample by sample, never in a step", "[audio][mixer]") {
+    Mixer mixer;
+    // A constant level, so that each output sample is the channel's gain times it.
+    auto ring = std::make_shared<AudioRing>(kRate, 1.0);
+    const std::vector<float> level(static_cast<std::size_t>(kRate) * 2 * 9 / 10, 0.5f);
+    ring->write(level, 0.0, 0);
+    const SourceId source = mixer.addSource();
+    mixer.setRing(source, ring);
+    mixer.setControl(source, SourceControl{1.0, -0.6, true});
+    mixer.setClock(source, clockAt(0.0, 0.0));
+    std::vector<float> block(kBlock * 2);
+    for (std::size_t frame = 0; frame < 24; ++frame) { // 400 ms: past the fade-in, panned left
+        mixer.render(block.data(), kBlock, static_cast<double>(frame) * kBlockSeconds);
+    }
+    CHECK(block[block.size() - 2] == 0.5f);
+    CHECK(block[block.size() - 1] == Approx(0.5 * std::tan(0.1 * std::numbers::pi)).epsilon(1e-6));
+    // Across to the right: 1.2 of pan, over 60 ms (panSlewSeconds 50 ms a unit), with no step between two samples.
+    mixer.setControl(source, SourceControl{1.0, 0.6, true});
+    std::vector<float> moved;
+    for (std::size_t frame = 24; frame < 30; ++frame) {
+        mixer.render(block.data(), kBlock, static_cast<double>(frame) * kBlockSeconds);
+        moved.insert(moved.end(), block.begin(), block.end());
+    }
+    float largestStep = 0.0f;
+    for (std::size_t frame = 1; frame < moved.size() / 2; ++frame) {
+        for (std::size_t channel = 0; channel < 2; ++channel) {
+            largestStep = std::max(largestStep, std::abs(moved[frame * 2 + channel] - moved[(frame - 1) * 2 + channel]));
+        }
+    }
+    CHECK(largestStep < 0.001f);
+    const std::size_t ramp = static_cast<std::size_t>(1.2 * 0.05 * kRate);
+    CHECK(moved[(ramp / 4) * 2 + 1] < 0.49f); // still on its way a quarter through (pan about -0.3)
+    CHECK(moved[(ramp / 4) * 2 + 1] > 0.2f);
+    CHECK(moved[moved.size() - 1] == 0.5f);
+    CHECK(moved[moved.size() - 2] == Approx(0.5 * std::tan(0.1 * std::numbers::pi)).epsilon(1e-6));
+}
+
 TEST_CASE("audio/mixer: an empty ring gives silence and counts its frames", "[audio][mixer]") {
     Mixer mixer;
     const SourceId source = mixer.addSource();

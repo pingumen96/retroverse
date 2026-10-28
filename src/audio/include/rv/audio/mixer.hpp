@@ -29,6 +29,8 @@ struct MixerSettings {
     double duckFadeSeconds = 0.1;
     /// The fade before a launch stops the output.
     double silenceFadeSeconds = 0.05;
+    /// A source's pan moves at most by 1 in this time (ramped per sample, like the gains, so that it never steps).
+    double panSlewSeconds = 0.05;
 };
 
 /// What the main thread asks of a source each frame.
@@ -72,7 +74,8 @@ struct SyncSummary {
 /// the samples exactly; within its correction band it reads them at a ratio up to 1% off by linear interpolation; past
 /// it, it drops samples or pads silence (AudioSync). Gains ramp: a source's at most from 0 to 1 in crossFadeSeconds (so
 /// that a change of audible screen cross-fades), down in pauseFadeSeconds when it pauses; then the master, the duck
-/// (kDuckDecibels), the mute and the launch's silence, each with its own fade. The sum is clamped to [-1, 1].
+/// (kDuckDecibels), the mute and the launch's silence, each with its own fade; a source's pan moves at most by 1 in
+/// panSlewSeconds. The sum is clamped to [-1, 1].
 ///
 /// Deterministic: the same calls with the same rings give the same samples, bit for bit (no clock is read). Thread-safe:
 /// the main thread sets the controls while the output's thread renders (one mutex, held for a block).
@@ -132,6 +135,9 @@ private:
         SourceControl control;
         SourceClock clock;
         Ramp gain;
+        /// The pan as rendered (SourceControl::pan its target); it follows its target at once while the source is
+        /// silent.
+        Ramp pan;
         AudioSync sync;
         float previous[2] = {0.0f, 0.0f};
         double previousTime = 0.0;

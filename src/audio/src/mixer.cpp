@@ -44,6 +44,7 @@ SourceId Mixer::addSource() {
     const std::scoped_lock lock(m_mutex);
     Source source;
     source.gain = Ramp{0.0, 0.0, stepFor(m_settings.crossFadeSeconds, m_settings.sampleRate)};
+    source.pan = Ramp{0.0, 0.0, stepFor(m_settings.panSlewSeconds, m_settings.sampleRate)};
     m_sources.push_back(std::move(source));
     return static_cast<SourceId>(m_sources.size() - 1);
 }
@@ -74,6 +75,7 @@ void Mixer::setControl(SourceId id, const SourceControl& control) {
         source.gain.step =
             stepFor(control.playing ? m_settings.crossFadeSeconds : m_settings.pauseFadeSeconds, m_settings.sampleRate);
         source.gain.target = control.playing ? source.control.gain : 0.0;
+        source.pan.target = source.control.pan;
     }
 }
 
@@ -311,9 +313,15 @@ void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds
         // A source rises only while it sounds: its fade-in starts with its first sample, not with its request.
         const bool sounding = renderSource(source, frames, blockStartSeconds);
         const bool hold = !sounding && source.gain.target > source.gain.current;
-        const StereoGains pan = equalPowerGains(source.control.pan);
+        if (source.gain.current == 0.0) {
+            source.pan.current = source.pan.target; // silent: it starts where it is heard, without a sweep
+        }
+        StereoGains pan = equalPowerGains(source.pan.current);
         for (std::size_t index = 0; index < frames; ++index) {
             const double gain = hold ? source.gain.current : source.gain.advance();
+            if (source.pan.current != source.pan.target) {
+                pan = equalPowerGains(source.pan.advance());
+            }
             if (gain == 0.0) {
                 continue;
             }
