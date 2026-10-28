@@ -314,10 +314,16 @@ Expected<SaveReport> savePlan(const WorldLock& lock, const GenerationResult& res
     if (!text) {
         return propagate(text.error());
     }
+    return detail::savePlanText(lock, result, *text, options);
+}
+
+Expected<SaveReport> detail::savePlanText(const WorldLock& lock, const GenerationResult& result,
+                                          const std::string& text, const SaveOptions& options) {
+    const WorldFiles& files = lock.files();
     SaveReport report;
-    report.digest = core::sha256Hex(*text);
+    report.digest = core::sha256Hex(text);
     auto existing = core::readTextFile(files.plan);
-    if (existing && *existing == *text) {
+    if (existing && *existing == text) {
         return report; // the folder holds this plan already: no write, no backup
     }
     if (!existing && existing.error().code != ErrorCode::NotFound) {
@@ -334,7 +340,7 @@ Expected<SaveReport> savePlan(const WorldLock& lock, const GenerationResult& res
         report.backup = std::move(backedUp->backup);
         report.backupsRemoved = std::move(backedUp->removed);
     }
-    if (Status written = core::writeTextFileAtomic(files.plan, *text); !written) {
+    if (Status written = core::writeTextFileAtomic(files.plan, text); !written) {
         return propagate(written.error());
     }
     report.written = true;

@@ -269,9 +269,11 @@ struct EditSession {
 /// What commitWorld() saves for a session (world_snapshots.hpp): `edited`'s plan sorted, a change report (Updated; the
 /// session's highest rebuild level; the placements kept as they were in `stored`; the fixtures moved; the digests,
 /// before `storedDigest`, after the plan's) and the validation of the floors the session edited (each one's last).
-/// Errors: those of the plan's digest.
+/// `digestAfter` false leaves the change report's digest after empty (the editor's save takes the plan's digest from
+/// commitWorld(), which serialises the plan anyway). Errors: those of the plan's digest.
 [[nodiscard]] Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_view storedDigest,
-                                                      const EditedWorld& edited, std::span<const EditResult> results);
+                                                      const EditedWorld& edited, std::span<const EditResult> results,
+                                                      bool digestAfter = true);
 
 /// The edit script's format (`worldplan edit --script`; formatted JSON with comments):
 ///   {"schemaVersion": 1, "operations": [

@@ -1133,7 +1133,8 @@ std::optional<FixtureTransform> snapFixture(const EditedWorld& world, const Fixt
 }
 
 Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_view storedDigest,
-                                        const EditedWorld& edited, std::span<const EditResult> results) {
+                                        const EditedWorld& edited, std::span<const EditResult> results,
+                                        bool digestAfter) {
     GenerationResult result;
     result.plan = edited.plan;
     sortPlan(result.plan);
@@ -1161,11 +1162,13 @@ Expected<GenerationResult> editedResult(const WorldPlan& stored, std::string_vie
                           result.plan.placements.end(), std::back_inserter(kept));
     changes.kept = kept.size();
     changes.digestBefore = std::string(storedDigest);
-    auto after = planDigest(result.plan);
-    if (!after) {
-        return propagate(after.error());
+    if (digestAfter) {
+        auto after = planDigest(result.plan);
+        if (!after) {
+            return propagate(after.error());
+        }
+        changes.digestAfter = std::move(*after);
     }
-    changes.digestAfter = std::move(*after);
     for (const auto& [floor, validation] : floors) {
         result.validation.findings.insert(result.validation.findings.end(), validation->findings.begin(),
                                           validation->findings.end());
