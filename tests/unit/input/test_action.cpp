@@ -62,9 +62,14 @@ TEST_CASE("input/action: the product UI's actions", "[input][action]") {
     CHECK_FALSE(rv::input::isUiAction(Action::Back));
     CHECK_FALSE(rv::input::isUiAction(Action::Screenshot));
     CHECK(rv::input::toIndex(Action::Screenshot) == 15);
-    // I5 step 5's action, then I4b step 3's, come after them all (the action table's order is kept).
-    CHECK(rv::input::toIndex(Action::ToggleMute) == rv::input::kActionCount - 2);
-    CHECK(rv::input::toIndex(Action::EditPin) == rv::input::kActionCount - 1);
+    // I5 step 5's action, then I4b step 3's and step 4's, come after them all (the action table's order is kept).
+    CHECK(rv::input::toIndex(Action::ToggleMute) == rv::input::kActionCount - 4);
+    CHECK(rv::input::toIndex(Action::EditPin) == rv::input::kActionCount - 3);
+    CHECK(rv::input::toIndex(Action::EditRotateLeft) == rv::input::kActionCount - 2);
+    CHECK(rv::input::toIndex(Action::EditRotateRight) == rv::input::kActionCount - 1);
+    CHECK(rv::input::actionName(Action::EditRotateLeft) == "edit_rotate_left");
+    CHECK(rv::input::actionFromName("edit_rotate_right") == Action::EditRotateRight);
+    CHECK_FALSE(rv::input::isUiAction(Action::EditRotateLeft));
     CHECK(rv::input::actionName(Action::ToggleMute) == "toggle_mute");
     CHECK(rv::input::actionFromName("toggle_mute") == Action::ToggleMute);
     CHECK_FALSE(rv::input::isUiAction(Action::ToggleMute));

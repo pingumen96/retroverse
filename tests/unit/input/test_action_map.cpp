@@ -225,6 +225,9 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::ToggleMute, {key(Key::F8)}},
         // The editor (I4b step 3, ADR-0015 §4).
         {Action::EditPin, {key(Key::P), padButton(GamepadButton::West)}},
+        // I4b step 4: a held fixture turned.
+        {Action::EditRotateLeft, {key(Key::Q), padButton(GamepadButton::LeftShoulder)}},
+        {Action::EditRotateRight, {key(Key::R), padButton(GamepadButton::RightShoulder)}},
     };
     REQUIRE(expected.size() == rv::input::kActionCount);
 

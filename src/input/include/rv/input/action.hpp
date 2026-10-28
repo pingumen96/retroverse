@@ -58,6 +58,8 @@ enum class Action : std::uint16_t {
     UiFilterNext,     ///< right shoulder: the next filter
     ToggleMute,       ///< F8: mute the clips' sound, or sound them again (I5 step 5; no pad button: I7 remaps it)
     EditPin,          ///< P / X: the editor pins or unpins the game under the reticle (I4b step 3, ADR-0015 §4)
+    EditRotateLeft,   ///< Q / left shoulder: the editor turns a held fixture left (I4b step 4, ADR-0015 §4)
+    EditRotateRight,  ///< R / right shoulder: the editor turns a held fixture right
     Count
 };
 
