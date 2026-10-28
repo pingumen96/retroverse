@@ -224,9 +224,14 @@ public:
         m_interaction->applyInspection(view);
         applyEditOutline(view);
     }
-    /// The game the hero CRT follows (I3 step 13b, screenSelection()): `catalogSelection` (the quick catalog's, while
-    /// it is open), else the item in Focus or Inspect.
-    [[nodiscard]] std::optional<std::string> screenSelection(const std::optional<std::string>& catalogSelection) const;
+    /// The games the screens follow (I3 step 13b, app::screenSelection()): the item in Focus or Inspect (`world`), and
+    /// `catalogSelection` (the quick catalog's, while it is open) when its game stands in the eye's room (`catalog`).
+    /// Kept apart since I5 step 4's review: the arcade's hero cabinet follows the quick catalog's alone.
+    struct ScreenSelections {
+        std::optional<std::string> world;
+        std::optional<std::string> catalog;
+    };
+    [[nodiscard]] ScreenSelections screenSelections(const std::optional<std::string>& catalogSelection) const;
     /// The card beside the inspected item (I3 step 14a, world_card.hpp): before interact(), what its input presses
     /// this frame (for WorldHover::Frame::card); after it, its content given to the product UI with the item's hero
     /// texture as its cover and the interaction's `result` recorded.

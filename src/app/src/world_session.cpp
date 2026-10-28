@@ -970,7 +970,8 @@ std::span<const scene::RenderItem> WorldSession::viewItems(std::span<const scene
     return m_viewItems;
 }
 
-std::optional<std::string> WorldSession::screenSelection(const std::optional<std::string>& catalogSelection) const {
+WorldSession::ScreenSelections
+WorldSession::screenSelections(const std::optional<std::string>& catalogSelection) const {
     // ADR-0013 §9: the quick catalog's selection plays only when its game stands in the eye's room, whose CRT is the
     // one bound (I4 step 6b); else the CRT keeps what it plays.
     std::optional<std::string> catalog;
@@ -987,7 +988,10 @@ std::optional<std::string> WorldSession::screenSelection(const std::optional<std
     } else {
         catalog = catalogSelection; // the test room, a scene of no building
     }
-    return app::screenSelection(catalog, m_interaction->interaction().state(), m_interaction->focusedGame());
+    // I5 step 4's review: the two apart, so that the arcade's hero cabinet follows the quick catalog's alone.
+    return ScreenSelections{
+        app::screenSelection(std::nullopt, m_interaction->interaction().state(), m_interaction->focusedGame()),
+        std::move(catalog)};
 }
 
 std::optional<CardAction> WorldSession::cardPress(const input::ActionState* actions, ProductUi& product) {

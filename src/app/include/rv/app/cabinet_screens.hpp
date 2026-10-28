@@ -11,8 +11,10 @@
 //  - none while the room editor runs (ADR-0015 §4's session, the state Edit): its fixtures and games move, are held and
 //    have their room's static part rebuilt, so every cabinet shows its cover until the session ends, and attract starts
 //    again from its dwell.
-// The arcade's hero cabinet is no collection item: it keeps the room's playlist and never follows the selection (the
-// screen service's ScreenBinding::followsSelection).
+// The arcade's hero cabinet is no collection item: it keeps the room's playlist and never follows the world's selection
+// (the focused cabinet plays its clip itself), only the quick catalog's (the screen service's
+// ScreenBinding::followsWorldSelection). Both are named by kind, never by their materials: the hero cabinet is the
+// kCabinetPrefabKind prefab, the cabinets' screens the items of world::kArcadeRoomFamily.
 
 #include <cstdint>
 #include <optional>
@@ -28,6 +30,9 @@
 #include <rv/world/pick_index.hpp>
 
 namespace rv::app {
+
+/// The prefab kind of the arcade's cabinets (I6 step 6): the hero cabinet that stands for the room's CRT is one.
+inline constexpr std::string_view kCabinetPrefabKind = "arcade_cabinet";
 
 /// Attract takes a cabinet whose screen's centre is within this distance of the eye (meters).
 inline constexpr double kAttractMeters = 3.0;

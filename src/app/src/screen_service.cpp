@@ -2,6 +2,7 @@
 #include "screen_verdicts.hpp"
 
 #include <rv/app/audio_policy.hpp>
+#include <rv/app/cabinet_screens.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/screen_aspect.hpp>
@@ -222,7 +223,8 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         // The CRT, or (the hero only) the arcade's hero cabinet that stands for it (I6 step 6), with its screen's
         // picture.
         const bool crt = object.kind == "crt";
-        if (object.source != scene::SceneObject::Source::Prefab || !(crt || (screens.empty() && object.kind == "arcade_cabinet")) ||
+        const bool heroCabinet = screens.empty() && object.kind == kCabinetPrefabKind;
+        if (object.source != scene::SceneObject::Source::Prefab || !(crt || heroCabinet) ||
             !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
             continue;
         }
@@ -240,10 +242,10 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
         screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
         screen.kind = screens.empty() ? ScreenKind::Hero : ScreenKind::Secondary;
-        // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever is
-        // selected, the selected cabinet playing its clip itself (§6).
+        // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever the
+        // world selects, the focused or inspected cabinet playing its clip itself (§6).
         screen.screenSize = instance.screenSurfaceSize(index);
-        screen.followsSelection = object.kind != "arcade_cabinet";
+        screen.followsWorldSelection = !heroCabinet;
         if (!instance.areas().empty()) {
             const std::optional<std::size_t> area = scene::areaAt(instance.areas(), screen.bounds.center());
             if (screens.empty()) {
@@ -1319,8 +1321,8 @@ struct ScreenService::Impl {
         return screen.binding.kind == ScreenKind::Hero ? ScreenClass::Room : ScreenClass::Ambient;
     }
 
-    void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimizedWindow, bool eyeInRoom) {
+    void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera, const ScreenSelection& selection,
+                bool minimizedWindow, bool eyeInRoom) {
         frameIndex = frame;
         now = nowSeconds;
         minimized = minimizedWindow;
@@ -1344,9 +1346,12 @@ struct ScreenService::Impl {
             dropCabinets(); // asked for again next frame, with the games as screened now
         }
         const scene::Frustum frustum = camera.frustum();
+        // The quick catalog's selection, else the world's (app::screenSelection's order).
+        const std::optional<std::string_view> selected = selection.catalog ? selection.catalog : selection.world;
         for (const std::unique_ptr<ScreenState>& screen : screens) {
-            // I5 step 4: the arcade's hero cabinet never follows the selection (ADR-0016 §6).
-            screen->policy.hover(screen->binding.followsSelection ? hovered : std::nullopt, now);
+            // I5 step 4: the arcade's hero cabinet never follows the world's selection, the focused cabinet playing its
+            // clip itself (ADR-0016 §6); it follows the quick catalog's.
+            screen->policy.hover(screen->binding.followsWorldSelection ? selected : selection.catalog, now);
             screen->visible = !minimizedWindow && frustum.intersects(screen->binding.bounds);
             screen->policy.setVisible(screen->visible);
             screen->policy.tick(now);
@@ -1723,7 +1728,7 @@ struct ScreenService::Impl {
         binding.roomId = first->binding.roomId;
         binding.kind = ScreenKind::Cabinet;
         binding.screenSize = cabinetPool.screenSize;
-        binding.followsSelection = false;
+        binding.followsWorldSelection = false;
         // Its own game, from its start, looping: no playlist, nothing selected (video.json's cabinet keys decide whether
         // it asks at all: app::chooseCabinets).
         ScreenPlaySettings settings = screenPlaySettings(options, binding);
@@ -1937,8 +1942,8 @@ std::string ScreenService::screenId() const {
 }
 
 void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                           std::optional<std::string_view> hovered, bool minimized, bool eyeInRoom) {
-    m_impl->update(frame, nowSeconds, camera, hovered, minimized, eyeInRoom);
+                           const ScreenSelection& selection, bool minimized, bool eyeInRoom) {
+    m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
 }
 
 void ScreenService::launchStarting() {
