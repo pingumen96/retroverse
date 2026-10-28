@@ -14,7 +14,8 @@
 //
 // I4b step 4 adds the room's movable fixtures (world::editableFixtures(): side-wall modules, display fixtures,
 // decoration), targeted by the reticle where no game or slot is (fixtureAt(): their boxes in the scene's frame, the
-// nearest within kFixturePickDistance), and what a held fixture follows: the floor point under the reticle, or for a
+// nearest within kFixturePickDistance, unless a fixed fixture's box, the hero corner's or a hero-wall module's:
+// fixedFixtureBoxes(), stands before it), and what a held fixture follows: the floor point under the reticle, or for a
 // hung decoration the wall point (in the room's frame, millimetres: floorAim(), wallAim()). While a game is held the
 // reticle passes the dressing (heldIndex(): the occluders without the dressing props', which give way where a game
 // lands), so that a dressed free slot is targeted from afar too.
@@ -23,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -76,6 +78,10 @@ struct EditRoomFrame {
 /// large.
 inline constexpr float kFixturePickDistance = 4.0f;
 
+/// The boxes of `room`'s fixed fixtures in `plan` (the hero corner's parts, the hero-wall modules; world::fixtureBox(),
+/// millimetres in the room's frame): what hides a movable fixture behind them from the reticle.
+[[nodiscard]] std::vector<world::FixtureBox> fixedFixtureBoxes(const world::WorldPlan& plan, const world::RoomId& room);
+
 /// Where a fixture standing at `place` is drawn relative to where it stood at `from`, in the frame `toScene` maps the
 /// room's into: the move about +Y and along the floor (millimetres and centidegrees in the room's frame).
 [[nodiscard]] glm::mat4 fixtureMove(const world::FixtureTransform& from, const world::FixtureTransform& place,
@@ -83,10 +89,11 @@ inline constexpr float kFixturePickDistance = 4.0f;
 
 class EditRoom {
 public:
-    /// Errors: those of world::PickIndex::build() and world::SlotNavigation::build() for the layout.
+    /// `fixed`: the fixed fixtures' boxes (fixedFixtureBoxes()), which hide the movable ones behind them. Errors:
+    /// those of world::PickIndex::build() and world::SlotNavigation::build() for the layout.
     [[nodiscard]] static Expected<std::unique_ptr<EditRoom>>
     build(std::shared_ptr<const world::CollectionLayout> layout, std::vector<world::EditableFixture> fixtures = {},
-          const EditRoomFrame& frame = {});
+          const EditRoomFrame& frame = {}, std::span<const world::FixtureBox> fixed = {});
 
     /// The target of `pick` (an item or a free slot of the room), or nothing.
     [[nodiscard]] std::optional<EditTarget> target(world::PickId pick) const;
@@ -107,7 +114,8 @@ public:
     [[nodiscard]] const std::vector<world::EditableFixture>& fixtures() const noexcept { return m_fixtures; }
     [[nodiscard]] const world::EditableFixture* fixture(const world::FixtureId& id) const noexcept;
     [[nodiscard]] std::optional<EditTarget> fixtureTarget(const world::FixtureId& id) const;
-    /// The nearest movable fixture whose box `ray` (the scene's frame) enters within `maxDistance`, if any.
+    /// The nearest movable fixture whose box `ray` (the scene's frame) enters within `maxDistance`, if any; none when
+    /// the ray enters a fixed fixture's box before it.
     [[nodiscard]] std::optional<world::FixtureId> fixtureAt(const core::Ray& ray,
                                                             float maxDistance = kFixturePickDistance) const noexcept;
     /// Where `ray` (the scene's frame) meets the room's floor, in the room's frame (millimetres; the yaw 0), kept
@@ -134,8 +142,9 @@ private:
     world::PickIndex m_index;
     world::PickIndex m_heldIndex;
     std::vector<world::EditableFixture> m_fixtures;
-    /// Their boxes in the scene's frame.
+    /// Their boxes in the scene's frame, and the fixed fixtures'.
     std::vector<core::Aabb> m_fixtureBoxes;
+    std::vector<core::Aabb> m_fixedBoxes;
     EditRoomFrame m_frame;
     world::SlotNavigation m_navigation;
     /// Indices into the layout's items and free slots, by pick id.

@@ -34,6 +34,17 @@ namespace {
 
 } // namespace
 
+std::vector<world::FixtureBox> fixedFixtureBoxes(const world::WorldPlan& plan, const world::RoomId& room) {
+    std::vector<world::FixtureBox> boxes;
+    for (const world::Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() == room &&
+            (fixture.role == world::FixtureRole::HeroCorner || fixture.role == world::FixtureRole::HeroModule)) {
+            boxes.push_back(world::fixtureBox(fixture));
+        }
+    }
+    return boxes;
+}
+
 glm::mat4 fixtureMove(const world::FixtureTransform& from, const world::FixtureTransform& place,
                       const glm::mat4& toScene) noexcept {
     return toScene * poseOf(place) * glm::inverse(poseOf(from)) * glm::inverse(toScene);
@@ -41,7 +52,7 @@ glm::mat4 fixtureMove(const world::FixtureTransform& from, const world::FixtureT
 
 Expected<std::unique_ptr<EditRoom>> EditRoom::build(std::shared_ptr<const world::CollectionLayout> layout,
                                                     std::vector<world::EditableFixture> fixtures,
-                                                    const EditRoomFrame& frame) {
+                                                    const EditRoomFrame& frame, std::span<const world::FixtureBox> fixed) {
     std::unique_ptr<EditRoom> room(new EditRoom());
     room->m_layout = std::move(layout);
     room->m_fixtures = std::move(fixtures);
@@ -49,6 +60,10 @@ Expected<std::unique_ptr<EditRoom>> EditRoom::build(std::shared_ptr<const world:
     room->m_fixtureBoxes.reserve(room->m_fixtures.size());
     for (const world::EditableFixture& fixture : room->m_fixtures) {
         room->m_fixtureBoxes.push_back(sceneBoxOf(fixture.box, frame.toScene));
+    }
+    room->m_fixedBoxes.reserve(fixed.size());
+    for (const world::FixtureBox& box : fixed) {
+        room->m_fixedBoxes.push_back(sceneBoxOf(box, frame.toScene));
     }
     const world::CollectionLayout& shown = *room->m_layout;
     std::vector<world::PickTarget> targets = shown.pickTargets();
@@ -183,6 +198,12 @@ std::optional<world::FixtureId> EditRoom::fixtureAt(const core::Ray& ray, float 
             best = *distance;
             nearest = m_fixtures[index].id;
         }
+    }
+    // A fixed fixture before it (the hero corner, a hero-wall module) hides it.
+    if (nearest && std::any_of(m_fixedBoxes.begin(), m_fixedBoxes.end(), [&](const core::Aabb& box) {
+            return !box.isEmpty() && box.intersectRay(ray, best).has_value();
+        })) {
+        return std::nullopt;
     }
     return nearest;
 }

@@ -230,6 +230,27 @@ TEST_CASE("app/world_edit_furniture: the room's movable fixtures are targets, th
     CHECK(room->fixtureAt(ray) == display.id);
     CHECK_FALSE(room->fixtureAt(ray, 1.5f).has_value());
     CHECK_FALSE(room->fixtureAt(rv::core::Ray{ray.origin, glm::vec3(0.0f, 0.0f, 1.0f)}).has_value());
+    // The fixed fixtures' boxes (the hero corner's parts, the hero-wall modules) hide a movable one behind them: a
+    // fixed box between the eye and the case hides it, one behind the case does not.
+    const std::vector<rv::world::FixtureBox> fixed = rv::app::fixedFixtureBoxes(plan, roomOf(plan).id);
+    CHECK(fixed.size() == static_cast<std::size_t>(std::count_if(
+                              plan.fixtures.begin(), plan.fixtures.end(), [](const Fixture& fixture) {
+                                  return fixture.role == FixtureRole::HeroCorner ||
+                                         fixture.role == FixtureRole::HeroModule;
+                              })));
+    REQUIRE_FALSE(fixed.empty());
+    const auto blockAt = [&](std::int64_t zMm) {
+        rv::world::FixtureBox block = box;
+        block.minZMm = zMm;
+        block.maxZMm = zMm + 100;
+        auto blocked = EditRoom::build(std::make_shared<const rv::world::CollectionLayout>(layoutOf(plan)),
+                                       rv::world::editableFixtures(plan, roomOf(plan).id, *data), frameOf(plan),
+                                       std::vector<rv::world::FixtureBox>{block});
+        REQUIRE(blocked.has_value());
+        return (*blocked)->fixtureAt(ray);
+    };
+    CHECK_FALSE(blockAt(box.maxZMm + 500).has_value());
+    CHECK(blockAt(box.minZMm - 500) == display.id);
     // The floor under a ray looking down, kept within the room; nothing looking up.
     const rv::world::Room& interior = roomOf(plan);
     const auto floor = room->floorAim(rv::core::Ray{glm::vec3(0.5f, 1.6f, 0.0f), glm::vec3(0.0f, -1.0f, -1.0f)});

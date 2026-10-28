@@ -1003,12 +1003,14 @@ void WorldSession::bindEditRoom() {
     }
     // I4b step 4: the room's movable fixtures, its frame and interior (the plan shown's).
     std::vector<world::EditableFixture> fixtures;
+    std::vector<world::FixtureBox> fixed;
     EditRoomFrame roomFrame;
     roomFrame.toScene = world::roomToFloorMatrix(room->scenePlacement);
     if (edit.shown->plan) {
         if (edit.draft && edit.draft->data()) {
             fixtures = world::editableFixtures(*edit.shown->plan, edit.room, *edit.draft->data());
         }
+        fixed = fixedFixtureBoxes(*edit.shown->plan, edit.room);
         for (const world::Room& planned : edit.shown->plan->rooms) {
             if (planned.id == edit.room) {
                 roomFrame.minXMm = planned.minXMm;
@@ -1019,8 +1021,8 @@ void WorldSession::bindEditRoom() {
             }
         }
     }
-    auto built =
-        EditRoom::build(std::make_shared<const world::CollectionLayout>(room->layout), std::move(fixtures), roomFrame);
+    auto built = EditRoom::build(std::make_shared<const world::CollectionLayout>(room->layout), std::move(fixtures),
+                                 roomFrame, fixed);
     if (!built) {
         spdlog::error("Editor: the targets of {} cannot be built: {}", edit.room.toString(), built.error().toString());
         edit.editRoom.reset();

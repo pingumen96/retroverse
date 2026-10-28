@@ -203,7 +203,8 @@ FurnitureSession planSession(const fs::path& data, const rv::world::WorldPlan& p
     frame.maxZMm = interior.maxZMm;
     frame.heightMm = interior.heightMm;
     auto built = rv::app::EditRoom::build(std::make_shared<const rv::world::CollectionLayout>(*layout),
-                                          rv::world::editableFixtures(plan, room, edit), frame);
+                                          rv::world::editableFixtures(plan, room, edit), frame,
+                                          rv::app::fixedFixtureBoxes(plan, room));
     REQUIRE(built.has_value());
     const rv::app::EditRoom& targets = **built;
     const auto boxOf = [](const rv::world::FixtureBox& box) {
