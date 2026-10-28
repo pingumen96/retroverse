@@ -33,6 +33,44 @@ struct AudioEngineOptions {
     /// Tests only: the device path opened on miniaudio's null backend (a timer thread, never the operating system's
     /// audio) instead of WASAPI.
     bool deviceOnNullBackend = false;
+    /// Tests only: this many of the device's restarts (after a launch, or a retry) fail, as a device taken or gone
+    /// would, so that the retries are proven on the null backend.
+    int failDeviceStarts = 0;
+};
+
+/// When a device that stopped against our will is tried again (ADR-0016 §9): a device lost (miniaudio's stopped
+/// notification) is tried at the next AudioEngine::maintain(), one that failed to start every kRetrySeconds, while the
+/// output is not suspended. Times are those of maintain().
+class DeviceRetry {
+public:
+    static constexpr double kRetrySeconds = 2.0;
+
+    /// The device stopped by itself: tried at the next maintain().
+    void lost() noexcept {
+        m_pending = true;
+        m_next = 0.0;
+    }
+    /// A start failed: tried again kRetrySeconds after `nowSeconds` (none: after the next maintain()'s time).
+    void failed(std::optional<double> nowSeconds = std::nullopt) noexcept {
+        m_pending = true;
+        m_next = nowSeconds ? std::optional<double>(*nowSeconds + kRetrySeconds) : std::nullopt;
+    }
+    void recovered() noexcept { m_pending = false; }
+    [[nodiscard]] bool pending() const noexcept { return m_pending; }
+    /// Whether to try now (a failure not yet stamped is stamped with `nowSeconds`).
+    [[nodiscard]] bool due(double nowSeconds) noexcept {
+        if (!m_pending) {
+            return false;
+        }
+        if (!m_next) {
+            m_next = nowSeconds + kRetrySeconds;
+        }
+        return nowSeconds >= *m_next;
+    }
+
+private:
+    bool m_pending = false;
+    std::optional<double> m_next;
 };
 
 struct AudioEngineStats {
@@ -41,6 +79,12 @@ struct AudioEngineStats {
     std::uint64_t framesRendered = 0;
     std::uint64_t deviceStarts = 0;
     std::uint64_t deviceStops = 0;
+    /// The device's trouble after its first start: starts that failed (after a launch, or a retry), stops it made by
+    /// itself (lost), retries that brought it back, and reroutes miniaudio followed to a new default endpoint.
+    std::uint64_t deviceFailures = 0;
+    std::uint64_t deviceLosses = 0;
+    std::uint64_t deviceRecoveries = 0;
+    std::uint64_t deviceReroutes = 0;
     /// Frames of the capture dropped past kMaxCaptureSeconds.
     std::uint64_t captureFramesDropped = 0;
 };
@@ -80,9 +124,16 @@ public:
     /// Before a launch: the mix fades out (MixerSettings::silenceFadeSeconds, waited for on a device) and the device
     /// stops. Idempotent.
     void suspend();
-    /// After the return: the device starts again and the mix fades in. Idempotent.
+    /// After the return: the device starts again and the mix fades in; a start that fails is retried by maintain().
+    /// Idempotent.
     void resume();
     [[nodiscard]] bool suspended() const noexcept;
+
+    /// Each frame (main thread), `nowSeconds` on any steadily increasing clock: a device lost, or not started again,
+    /// is tried again (DeviceRetry) while the output is not suspended. Nothing for the null output.
+    void maintain(double nowSeconds);
+    /// Tests only: the device stops as a lost one would (miniaudio's stopped notification), for maintain() to restore.
+    void simulateDeviceLoss();
 
     /// Writes the capture, if any (once). Errors: those of writeWavFile.
     [[nodiscard]] Status finish();

@@ -775,11 +775,13 @@ struct RetroverseApp::State {
         pullAudio();
     }
 
-    /// The null output's mix from where it stopped up to the run's time.
+    /// The null output's mix from where it stopped up to the run's time; a device lost, or not started again after a
+    /// launch, tried again (every 2 s).
     void pullAudio() {
         if (!audio) {
             return;
         }
+        audio->maintain(audio->clockSeconds(simulatedSeconds));
         const double from = audioPulledTo.value_or(simulatedSeconds - stepSeconds);
         if (simulatedSeconds > from) {
             audio->pull(from, simulatedSeconds - from);
@@ -799,6 +801,9 @@ struct RetroverseApp::State {
             audioRecord.framesMixed = stats.framesRendered;
             audioRecord.deviceStops = stats.deviceStops;
             audioRecord.deviceStarts = stats.deviceStarts;
+            audioRecord.deviceFailures = stats.deviceFailures;
+            audioRecord.deviceLosses = stats.deviceLosses;
+            audioRecord.deviceRecoveries = stats.deviceRecoveries;
             audioRecord.capture = audio->capturePath();
             audioRecord.captureStartSeconds = audio->captureStartSeconds();
             audioRecord.syncBlocks = sync.blocks;

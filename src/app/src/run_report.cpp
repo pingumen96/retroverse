@@ -1773,6 +1773,9 @@ Json audioToJson(const AudioRecord& audio) {
     json["suspends"] = audio.suspends;
     json["deviceStops"] = audio.deviceStops;
     json["deviceStarts"] = audio.deviceStarts;
+    json["deviceFailures"] = audio.deviceFailures;
+    json["deviceLosses"] = audio.deviceLosses;
+    json["deviceRecoveries"] = audio.deviceRecoveries;
     Json audible = Json::array();
     for (const AudioAudibleRecord& change : audio.audible) {
         audible.push_back(Json{{"frame", change.frame},
@@ -1837,6 +1840,9 @@ AudioRecord readAudio(FieldReader& fields) {
     audio.suspends = fields.count("suspends");
     audio.deviceStops = fields.count("deviceStops");
     audio.deviceStarts = fields.count("deviceStarts");
+    audio.deviceFailures = fields.count("deviceFailures");
+    audio.deviceLosses = fields.count("deviceLosses");
+    audio.deviceRecoveries = fields.count("deviceRecoveries");
     for (FieldReader& change : fields.objectArray("audible")) {
         audio.audible.push_back(AudioAudibleRecord{change.count("frame"), change.number("atSeconds"),
                                                    change.string("screen"), change.string("gameId")});

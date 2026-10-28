@@ -1347,6 +1347,11 @@ struct AudioRecord {
     std::uint64_t suspends = 0;
     std::uint64_t deviceStops = 0;
     std::uint64_t deviceStarts = 0;
+    /// The device's trouble (audio::AudioEngineStats): starts that failed (after a launch, or a retry), stops it made
+    /// by itself, and retries that brought it back (every 2 s while not suspended).
+    std::uint64_t deviceFailures = 0;
+    std::uint64_t deviceLosses = 0;
+    std::uint64_t deviceRecoveries = 0;
     /// Each change of the audible screen, the levels sampled, the audible clip's frames (with a capture), the clips
     /// whose sound was decoded: the first kMaxAudioTimelineEntries of each.
     std::vector<AudioAudibleRecord> audible;

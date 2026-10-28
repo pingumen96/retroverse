@@ -799,6 +799,9 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     audio.syncP95Milliseconds = 4.5;
     audio.syncMaxMilliseconds = 21.0;
     audio.suspends = 1;
+    audio.deviceFailures = 2;
+    audio.deviceLosses = 1;
+    audio.deviceRecoveries = 1;
     audio.audible = {{0, 0.0, "", ""}, {12, 0.2, "crt_a", "g000000000000c001"}};
     audio.levels = {{0.25, "crt_a", 3.8, 0.39473684, -0.48, 0.39473684}};
     audio.presented = {{0.2, 0.0}, {0.216667, 0.016667}};

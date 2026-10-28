@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <thread>
 #include <vector>
@@ -139,4 +140,87 @@ TEST_CASE("audio/engine: the device path renders the mix from its callback (mini
     CHECK(audio.stats().framesRendered == stopped);
     audio.resume();
     CHECK(audio.stats().deviceStarts == 2);
+}
+
+TEST_CASE("audio/engine: a device lost or not started again is retried every 2 s, never while suspended",
+          "[audio][engine]") {
+    SECTION("the retry's schedule") {
+        DeviceRetry retry;
+        CHECK_FALSE(retry.due(0.0));
+        retry.lost();
+        CHECK(retry.due(5.0)); // a loss: at once
+        retry.failed(5.0);
+        CHECK_FALSE(retry.due(6.9));
+        CHECK(retry.due(7.0));
+        retry.failed(); // stamped by the next due()
+        CHECK_FALSE(retry.due(10.0));
+        CHECK_FALSE(retry.due(11.9));
+        CHECK(retry.due(12.0));
+        retry.recovered();
+        CHECK_FALSE(retry.pending());
+        CHECK_FALSE(retry.due(100.0));
+    }
+    SECTION("a start after a launch fails twice, then the device plays again (miniaudio's null backend)") {
+        AudioEngineOptions options;
+        options.output = AudioOutput::Device;
+        options.deviceOnNullBackend = true;
+        options.failDeviceStarts = 2;
+        auto engine = AudioEngine::create(options);
+        REQUIRE(engine.has_value());
+        AudioEngine& audio = **engine;
+        audio.suspend();
+        audio.resume(); // fails: retried from maintain()
+        CHECK(audio.stats().deviceFailures == 1);
+        audio.maintain(100.0); // stamps the failure
+        audio.maintain(101.9);
+        CHECK(audio.stats().deviceFailures == 1);
+        audio.maintain(102.0); // the first retry fails too
+        CHECK(audio.stats().deviceFailures == 2);
+        audio.maintain(103.9);
+        CHECK(audio.stats().deviceRecoveries == 0);
+        audio.maintain(104.0);
+        CHECK(audio.stats().deviceRecoveries == 1);
+        CHECK(audio.stats().deviceStarts == 2);
+        const std::uint64_t before = audio.stats().framesRendered;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (audio.stats().framesRendered < before + 4800 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(audio.stats().framesRendered >= before + 4800); // rendering again
+
+        // Lost while playing: tried again at the next maintain().
+        audio.simulateDeviceLoss();
+        audio.maintain(105.0);
+        CHECK(audio.stats().deviceLosses == 1);
+        CHECK(audio.stats().deviceRecoveries == 2);
+        CHECK(audio.stats().deviceStarts == 3);
+        audio.maintain(200.0); // nothing pending
+        CHECK(audio.stats().deviceStarts == 3);
+    }
+    SECTION("suspended, the device is left alone") {
+        AudioEngineOptions options;
+        options.output = AudioOutput::Device;
+        options.deviceOnNullBackend = true;
+        options.failDeviceStarts = 1;
+        auto engine = AudioEngine::create(options);
+        REQUIRE(engine.has_value());
+        AudioEngine& audio = **engine;
+        audio.suspend();
+        audio.resume();
+        CHECK(audio.stats().deviceFailures == 1);
+        audio.suspend(); // another launch before the retry
+        audio.maintain(0.0);
+        audio.maintain(1000.0);
+        CHECK(audio.stats().deviceFailures == 1);
+        CHECK(audio.stats().deviceRecoveries == 0);
+        audio.resume(); // after it, the start succeeds
+        CHECK(audio.stats().deviceFailures == 1);
+        CHECK(audio.stats().deviceStarts == 2);
+    }
+    SECTION("the null output has no device to retry") {
+        auto engine = AudioEngine::create(AudioEngineOptions{});
+        REQUIRE(engine.has_value());
+        (*engine)->maintain(10.0);
+        CHECK((*engine)->stats().deviceFailures == 0);
+    }
 }
