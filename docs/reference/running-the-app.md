@@ -428,34 +428,38 @@ build/rvdata`).
   opens the directory at its card (Avvia, "Mostra nella stanza"; `via` "showcase"); lockstep runs wait for them like the
   floor's covers. The run report's `world.showcase` {`games`, `builds`, `cardsOpened`, `lastCard`, `hovered`,
   `frontsResident`}.
-- The clips' sound (I5 step 5, ADR-0016 §9, `docs/i5/step-5.md`): `--audio device|null|off` picks the output:
-  `device` (the default of interactive runs) is the default audio endpoint in shared mode (miniaudio, 48 kHz stereo
-  float, converted to the endpoint's format), `null` (the default of frame-limited runs) mixes and throws the mix away
-  without touching the system's audio, pulled by the main thread (dt x 48000 frames a frame under `--fixed-dt`), `off`
-  builds no mixer and decodes no sound. The environment variable `RV_AUDIO=null` (or `off`) forces that output over
-  `--audio` (the test presets and `scripts/real-library.ps1` set it); a device that does not open falls back to `null`
-  (reason `device-failed`), and `video.json`'s `audio.mode` `off` means `off`. `--mute` (or `audio.muted`) starts
-  muted; F8 (`toggle_mute`, no pad button) mutes and sounds again at once. One screen is heard: the visible one playing
-  of the best class (`direct`, `focus`, `room`, `ambient`), then the nearest, within `proximityMeters`, while the eye is
-  in the room whose screens are bound (in a hall the last room's screens are silent); a change cross-fades in 300 ms,
-  a pause fades out in 30 ms, and the other slots' decoders discard their audio packets. Its gain is the master times
-  the video bus (`audio.master`, `audio.video`), the screen's `volume`, and 1 within 1.5 m, then 1.5/d, fading to 0
-  over the last 2 m before `proximityMeters`; its pan is equal-power from its azimuth, at most 0.6 either side (the
-  centre at unity). The sound ducks by 9 dB while the world's card (Inspect), the directory or the quick catalog is
-  open. The clip's first audio stream is decoded on its decoder's thread and resampled by swresample (44.1, 48, 96 kHz;
-  mono to both channels, more channels down-mixed) into the slot's 0.5 s ring, timestamped on the video's timeline;
-  the sound follows the picture's media time (nothing within 20 ms, the reading ratio corrected by up to 1% to 120 ms,
-  a resync beyond). Before a launch the mix fades out in 50 ms and the device stops; it starts again after the
-  return. `--audio-capture <wav>` (tests, frame-limited, the null output) writes the run's mix as a 32-bit float
-  48 kHz stereo WAV. The report's `audio` section (written last): `device`, `reason` (`RV_AUDIO`, `--audio`,
-  `frame-limited`, `interactive`, `video.json`, `device-failed`, `model-viewer`), `deviceName`, `sampleRate`,
-  `mutedAtStart`, `muted`, `muteToggles`, `duckedFrames`, `duckChanges`, `blocks`, `framesMixed`, `capture`,
-  `captureStartSeconds` (the run's time of the capture's first frame), `sync` (`blocks`, `resyncs`, `corrections`,
-  `underrunFrames`, `overflowFrames`, `p50Milliseconds`, `p95Milliseconds`, `maxMilliseconds`), `suspends`,
-  `deviceStops`, `deviceStarts`, `audible` (each change of the heard screen: `frame`, `atSeconds`, `screen`,
-  `gameId`), `levels` (every 0.25 s: `distance`, `spatialGain`, `pan`, `gain`), `presented` (with a capture: each frame
-  of the heard clip shown, `atSeconds` and `ptsSeconds`), `clips` (each clip heard: `gameId`, `codec`, `sampleRate`,
-  `channels`); the lists keep their first 2048 entries.
+- The clips' sound (I5 step 5, ADR-0016 §9, `docs/i5/step-5.md`): `--audio device|null|off` picks the output: `device`
+  (the default of interactive runs) is the default audio endpoint in shared mode (miniaudio, 48 kHz stereo float,
+  converted to the endpoint's format), `null` (the default of frame-limited runs) mixes and throws the mix away without
+  touching the system's audio, pulled by the main thread (dt x 48000 frames a frame under `--fixed-dt`), `off` builds no
+  mixer and decodes no sound. The environment variable `RV_AUDIO=null` (or `off`, blanks trimmed, any case) forces that
+  output over `--audio` (the test presets, `scripts/real-library.ps1` and the smoke tests' runs set it; `device` or
+  another value is ignored with a warning); a device that does not open falls back to `null` (reason `device-failed`),
+  and `video.json`'s `audio.mode` `off` means `off`. `--mute` (or `audio.muted`) starts muted; F8 (`toggle_mute`, no pad
+  button) mutes and sounds again at once. One screen is heard: the visible one playing of the best class (`direct`,
+  `focus`, `room`, `ambient`), then the nearest, within `proximityMeters` (the screen heard keeps it until one of its
+  class is 0.5 m nearer), while the eye is in the room whose screens are bound (in a hall the last room's screens are
+  silent); a change cross-fades in 300 ms, a pause fades out in 30 ms, and the other slots' decoders discard their audio
+  packets. Its gain is the master times the video bus (`audio.master`, `audio.video`), the screen's `volume`, and 1
+  within 1.5 m, then 1.5/d, fading to 0 over the last 2 m before `proximityMeters`; its pan is equal-power from its
+  azimuth, at most 0.6 either side (the centre at unity, no channel above it), ramped per sample. The sound ducks by 9
+  dB while the world's card (Inspect), the directory or the quick catalog is open. The clip's first audio stream is
+  decoded on its decoder's thread and resampled by swresample (44.1, 48, 96 kHz; mono to both channels, more channels
+  down-mixed) into the slot's 0.5 s ring, timestamped on the video's timeline, trimmed at the picture's end so that
+  every loop starts in sync; the sound follows the picture's media time (nothing within 20 ms, the reading ratio
+  corrected by up to 1% to 120 ms, a resync beyond). Before a launch the mix fades out in 50 ms (begun before the
+  screens' decoders stop) and the device stops; it starts again after the return. A device lost, or not started again,
+  is tried again (at once after a loss, then every 2 s), never while a game runs. `--audio-capture <wav>` (tests,
+  frame-limited, the null output) writes the run's mix as a 32-bit float 48 kHz stereo WAV. The report's `audio` section
+  (written last): `device`, `reason` (`RV_AUDIO`, `--audio`, `frame-limited`, `interactive`, `video.json`,
+  `device-failed`, `model-viewer`), `deviceName`, `sampleRate`, `mutedAtStart`, `muted`, `muteToggles`, `duckedFrames`,
+  `duckChanges`, `blocks`, `framesMixed`, `capture`, `captureStartSeconds` (the run's time of the capture's first
+  frame), `sync` (`blocks`, `resyncs`, `corrections`, `underrunFrames`, `overflowFrames`, `p50Milliseconds`,
+  `p95Milliseconds`, `maxMilliseconds`), `suspends`, `deviceStops`, `deviceStarts`, `deviceFailures`, `deviceLosses`,
+  `deviceRecoveries`, `audible` (each change of the heard screen: `frame`, `atSeconds`, `screen`, `gameId`), `levels`
+  (every 0.25 s: `distance`, `spatialGain`, `pan`, `gain`), `presented` (with a capture: each frame of the heard clip
+  shown, `atSeconds` and `ptsSeconds`), `clips` (each clip heard: `gameId`, `codec`, `sampleRate`, `channels`); the
+  lists keep their first 2048 entries.
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the

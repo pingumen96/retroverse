@@ -50,10 +50,13 @@ sound against its picture within 80 ms at p95").
 - **A source's gain rises only once it sounds**, so a screen's fade-in starts with its first sample, not its request.
   A newly audible slot decodes its sound from where its demuxer stands (just ahead of the picture), padded with
   silence up to it.
-- **The pan's centre is unity** (the equal-power gains scaled by sqrt 2), so a centred source passes bit for bit.
+- **The pan's centre is unity**, so a centred source passes bit for bit, and no channel exceeds unity: the louder
+  side is 1, the quieter one follows the equal-power ratio (review: the gains scaled by sqrt 2 reached 1.345 at a pan
+  of 0.6 and clipped a source near full scale).
 - **"Visible"** is the scheduler's (in the frustum) and the eye in the bound room: in a hall the last room's screens
   are silent (`WorldSession::eyeInScreenRoom`).
-- **`RV_AUDIO`** forces `null` or `off` only, never `device`; other values are ignored. `video.json`'s `audio.mode`
+- **`RV_AUDIO`** (trimmed, any case) forces `null` or `off` only, never `device`; other values are ignored with a
+  warning. `video.json`'s `audio.mode`
   `off` builds no engine. A device that does not open falls back to the null output (reason `device-failed`). The
   model viewer reports `off`.
 - **The null mix covers the elapsed time** (from the last pull to the frame's time), so the capture's frame n is the
@@ -91,11 +94,46 @@ sound against its picture within 80 ms at p95").
 - Real library (`scripts/real-library.ps1 -Filter '[real-library][audio]'`, Release, ES-DE closed): passed, 0
   differences among 542,120 entries.
 
+## Review
+
+Two reviews found no blocker; the fixes (ADR-0016 §9's amendment of the review records the final behaviour):
+- **Loops**: a clip's sound is trimmed at its picture's end (the last finished pass's end, else the video stream's
+  declared duration) and the audio decoder and swresample are drained at each pass's end, so a sound longer than its
+  picture no longer steps back 0.5 s at every loop, and the last frame is no longer lost
+  (`test_audio_decode.cpp`: a sound 1.5 s and 0.6 s long on a 1 s picture, four loops, each pass's sound starting at
+  its picture's start within 1 ms). A mono clip's stereo span is made after its up-mix (it reached past the vector).
+- **The mixer never allocates while rendering** (the device's thread, under its mutex): the sync's errors go into a
+  fixed histogram (10 us bins to 200 ms and one beyond; the percentiles a bin's upper edge, never above the exact
+  largest), the scratch is sized for 8192 frames and a longer block is rendered in pieces.
+- **The pan** is capped at unity per channel (above) and ramped per sample (at most 1 in 50 ms; a silent source takes
+  its pan at once). **Samples that are not finite** are written to the ring as 0 and the output turns anything not
+  finite into silence. **A new ring** on a source that still sounds waits for the old clip's 30 ms fade on its own
+  clock instead of cutting it.
+- **The audible screen** keeps the sound until a screen of its class is 0.5 m nearer (the ambient requests' margin);
+  a better class, or the screen no longer qualifying, changes it at once. **`RV_AUDIO`** is trimmed and case-folded,
+  and an ignored value is logged once.
+- **The device** is retried when miniaudio reports it stopped (at once) or when it does not start again after a launch
+  (every 2 s), never while suspended; the report's `audio` section counts `deviceFailures`, `deviceLosses` and
+  `deviceRecoveries` (proven on miniaudio's null backend with injected failures and a simulated loss). **Before a
+  launch** the fade begins before the screens' decoders stop (`AudioEngine::beginSuspend`), and `suspend()` waits only
+  for what remains of it, not 70 ms after them.
+- **No test can open the device**: `runCommand` and `StartedApp` set `RV_AUDIO=null` for every app they start, whatever
+  the caller's environment. `unit.cmake/layer_rules` proves `rv_audio`'s rules (FFmpeg, `rv_media`, SDL3, RmlUi).
+- **`rv_audio_model`** (`audio_output.hpp`, `spatial.hpp`, no miniaudio) is what `rv_app_cli` links; `audio_policy.hpp`
+  no longer includes the engine.
+- Docs: `docs/architecture.md`'s `audio` row, `AudioSink` in `media`'s, `audio_policy` in `app`'s; the exclusive-mode
+  check of `i5/plan.md` moves to the user's listening.
+
 ## Results
 
 - Debug unit tests: 2049 of 2049 passed. Release unit and GPU (`msvc-x64-release-gpu`): 2180 of 2180 (one skipped by
   design; 131 GPU cases, the 4 audio cases included). G01 to G18 0 pixels apart (largest difference 0/255).
 - Real library: the 96 kHz case passed through `real-library.ps1`, 0 differences.
+- After the review: Debug unit tests 2059 of 2059 passed (`tests/unit/audio` 27 cases, `test_audio_decode.cpp` 5,
+  `test_audio_policy.cpp` 4). Release unit and GPU: 2190, one skipped by design; the walking-away case first failed on
+  the old pan law's level and passes since its expectation includes the capped pan (the 4 `gpu.audio` cases rerun:
+  4 of 4). G01 to G18 passed unchanged. The real-library case was not rerun: the decoder's changes act at a loop's end
+  and the case plays 8 s of a 38 s clip.
 
 ## Measurements
 
@@ -107,7 +145,8 @@ sound against its picture within 80 ms at p95").
   0.02 ms, no resync.
 - **Two screens**: the other's tone at -119 dB (facing) and -221 dB (turned): its decoder discards its sound.
 - **Walking away** (proximity 7.5 m): 4.36 m gain 0.344 heard 0.344; 5.56 m 0.262 heard 0.258 (-0.14 dB, mid-walk);
-  6.65 m 0.096 heard 0.096.
+  6.65 m 0.096 heard 0.096. After the review's pan cap (both channels' RMS, the screen off the centre): 4.36 m at pan
+  -0.49 expected 0.2643 heard 0.2643 (-2.28 dB from the gain alone); 6.65 m at pan -0.32 expected 0.0790 heard 0.0790.
 - **Duck**: -9.00 dB.
 - Frame time and GPU memory: no row changes (the mix is a few microseconds a frame; no texture).
 

@@ -50,8 +50,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
   screenshots left out), so an edit of the assets alone reaches the next Release build.
 - No test plays sound (I5 step 5, ADR-0016 §9): every test preset of `CMakePresets.json` sets `RV_AUDIO=null` (so do
-  `scripts/real-library.ps1` and `scripts/gate.ps1`'s Catch runs), which forces `retroverse.exe`'s null output over
-  any `--audio`; frame-limited runs default to it anyway, and `smoke_support.cpp`'s `runApp` checks every report's
+  `scripts/real-library.ps1` and `scripts/gate.ps1`'s Catch runs), which forces `retroverse.exe`'s null output over any
+  `--audio`; frame-limited runs default to it anyway, `smoke_support.cpp`'s `runCommand` and `StartedApp` set
+  `RV_AUDIO=null` for every app they start, whatever the caller's environment, and `runApp` checks every report's
   `audio.device` is `null` or `off`. The audio tests read the null output's offline mix (`--audio-capture <wav>`); the
   device path is unit-tested on miniaudio's own null backend, never WASAPI.
 - GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
