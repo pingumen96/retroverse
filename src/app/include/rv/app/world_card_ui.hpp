@@ -103,6 +103,8 @@ namespace rv::app {
         return CardAction::Info;
     case ui::CardButton::Back:
         return CardAction::Back;
+    case ui::CardButton::Move:
+        return CardAction::Move;
     }
     return CardAction::Back;
 }

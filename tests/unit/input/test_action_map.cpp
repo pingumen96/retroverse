@@ -223,6 +223,8 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::UiFilterNext, {padButton(GamepadButton::RightShoulder)}},
         // The clips' sound (I5 step 5): F8, no pad button.
         {Action::ToggleMute, {key(Key::F8)}},
+        // The editor (I4b step 3, ADR-0015 §4).
+        {Action::EditPin, {key(Key::P), padButton(GamepadButton::West)}},
     };
     REQUIRE(expected.size() == rv::input::kActionCount);
 

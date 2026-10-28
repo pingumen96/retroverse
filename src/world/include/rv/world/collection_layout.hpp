@@ -34,7 +34,9 @@
 // - Navigation (step 7's SlotNavigation): one run per wall (the fixtures with slots of the template's sockets on that
 //   wall, left to right as one faces it) and one per fixture standing free (a display case); each fixture's levels
 //   bottom to top by their slots' centre height, each level's slots left to right by their centre along the run's right
-//   axis; slots without an item (empty or dressed) as kNoPick.
+//   axis; slots without an item (empty or dressed) as kNoPick, each slot with its own pick id (NavSlot::slot).
+// - Free slots (I4b step 3, the editor's empty slots): every slot of the navigation's fixtures that holds the family's
+//   item in its level's stance and no placement, with its pick id, frame and box, dressed or bare.
 // A placement whose slot the built prefab lacks, or whose slot holds no item of the family in the plan's section's
 // stance (a fallback prefab with other levels), becomes no item and is reported (CollectionLayout::skipped).
 
@@ -125,6 +127,29 @@ struct CollectionItem {
     [[nodiscard]] core::Aabb worldBounds() const noexcept;
 };
 
+/// A slot of the room that holds no item (I4b step 3, ADR-0015 §4: the editor's empty slots, where a held game may be
+/// moved): a slot of a fixture's level whose socket holds the media family's item in the level's stance, with no
+/// placement; bare, or dressed by a span of the plan's dressing (which gives way where a game lands).
+struct FreeSlot {
+    /// The slot's pick id (slotPickId()): the one an item placed there would have.
+    PickId pickId = kNoPick;
+    SlotId slot;
+    Section section = Section::Spine;
+    ItemStance stance = ItemStance::SpineOut;
+    /// CollectionCluster::id of the cluster an item there would join (its cluster may hold no item).
+    std::uint32_t cluster = 0;
+    /// The slot's frame (no placement offset), local to the room, and the slot volume in it.
+    glm::mat4 slotFrame{1.0f};
+    core::Aabb slotBox;
+    /// A dressed level's span covers it.
+    bool dressed = false;
+
+    /// Its pick target (faceTargetBox of the slot box in the slot frame), as an item's.
+    [[nodiscard]] PickTarget pickTarget() const noexcept;
+    /// Its box in the room's frame.
+    [[nodiscard]] core::Aabb worldBounds() const noexcept;
+};
+
 /// Items culled together (a level of a module, a display case).
 struct CollectionCluster {
     std::uint32_t id = 0;
@@ -173,11 +198,16 @@ struct CollectionLayout {
     /// Wall runs in the template's wall order (north, south, east, west), then the free-standing fixtures by id.
     std::vector<NavRun> navigation;
     std::vector<SkippedPlacement> skipped;
+    /// The slots of the navigation's fixtures that hold no item (I4b step 3), in slot order. Not part of the
+    /// canonical document (collectionLayoutToJson()).
+    std::vector<FreeSlot> freeSlots;
 
     /// The item of `id`, or nullptr.
     [[nodiscard]] const CollectionItem* find(PickId id) const noexcept;
     /// The item of `game`, or nullptr.
     [[nodiscard]] const CollectionItem* findGame(const catalog::GameId& game) const noexcept;
+    /// The free slot of `id`, or nullptr.
+    [[nodiscard]] const FreeSlot* findFree(PickId id) const noexcept;
     /// Every item's pick target, in item order: what PickIndex::build takes with `occluders`.
     [[nodiscard]] std::vector<PickTarget> pickTargets() const;
 };

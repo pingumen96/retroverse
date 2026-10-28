@@ -51,6 +51,17 @@
 			<p class="header-title" data-if="shown.id == 'computer'">Computer e altro</p>
 			<p class="header-title" data-if="!shown.known">Piano {{ shown.id }}</p>
 		</div>
+		<!-- I4b step 3 (ADR-0015 §4): "Modifica stanza", above the floors while the walker is in a room the editor can
+		     edit; Up from the first floor reaches it, Activate enters the editor there. -->
+		<div id="dir-edit-room" class="row edit" data-if="editShown" data-event-click="edit()">
+			<span class="badge edit-badge"><span class="edit-shelf"></span><span class="edit-shelf"></span><span class="edit-shelf"></span></span>
+			<div class="row-text">
+				<p class="row-title">Modifica stanza</p>
+				<p class="row-meta" data-if="editKind == 'console'">Sposta, scambia e fissa i giochi di {{ editTitle }}</p>
+				<p class="row-meta" data-if="editKind == 'shared'">Sposta, scambia e fissa i giochi della sala condivisa</p>
+				<p class="row-meta" data-if="editKind == 'arcade'">Sposta, scambia e fissa i giochi della sala giochi arcade</p>
+			</div>
+		</div>
 		<div id="dir-list">
 			<!-- Piani: the floors, the walker's marked. -->
 			<div class="rows" data-if="view == 'floors'">
@@ -226,7 +237,8 @@
 
 	<div id="dir-hints">
 		<div class="hint-bar">
-			<span class="hint" data-if="view == 'floors'"><span class="pad pad-a">A</span>Apri il piano</span>
+			<span class="hint" data-if="view == 'floors' && !editFocused"><span class="pad pad-a">A</span>Apri il piano</span>
+			<span class="hint" data-if="editFocused"><span class="pad pad-a">A</span>Modifica stanza</span>
 			<span class="hint" data-if="view == 'rooms'"><span class="pad pad-a">A</span>Vai</span>
 			<span class="hint" data-if="view == 'games'"><span class="pad pad-a">A</span>Apri la scheda</span>
 			<span class="hint" data-if="view == 'card'"><span class="pad pad-a">A</span>Conferma</span>

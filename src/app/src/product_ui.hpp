@@ -21,6 +21,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
+#include <rv/app/edit_bar_ui.hpp>
 #include <rv/app/world_label_ui.hpp>
 
 #include "world_notice_panel.hpp"
@@ -158,6 +159,9 @@ public:
     /// What the world's notice says from now on (I3 step 10b; an empty notice: none): shown over the scene, in
     /// screenshots too, while neither the quick catalog nor the game-session panel shows. It takes no input.
     void setWorldNotice(WorldNoticeContent content);
+    /// I4b step 3: the editor's bar from now on (nothing: none): shown over the scene, in screenshots too, while neither
+    /// the quick catalog, the directory nor the game-session panel shows. It takes no input.
+    void setEditBar(std::optional<EditBarContent> content);
     /// The hover's title label from now on (I3 step 13a; nothing: none): shown over the scene, in screenshots too,
     /// while neither the quick catalog nor the game-session panel shows. It takes no input.
     void setWorldLabel(std::optional<WorldLabelContent> content);

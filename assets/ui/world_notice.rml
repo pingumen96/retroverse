@@ -10,7 +10,8 @@
 		(src/app/include/rv/app/world_notice_ui.hpp, tests/unit/app/test_world_notice_document.cpp).
 		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed,
 		room-unreachable (I4 step 7b: the quick catalog's "Mostra nella stanza" could not go to the game's room now),
-		rooms-migrated (I6 step 4: the rooms of cases and boxes were rearranged once, their spines now out).
+		rooms-migrated (I6 step 4: the rooms of cases and boxes were rearranged once, their spines now out),
+		edit-unavailable (I4b step 3: the editor cannot edit the room now).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
 		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
@@ -80,6 +81,12 @@
 		<div data-if="notice == 'room-unreachable'">
 			<h1>Ora non si può andare nella stanza del gioco</h1>
 			<p>Riprova tra poco: "Mostra nella stanza" del catalogo rapido (Tab) ti porterà davanti al gioco.</p>
+		</div>
+
+		<div data-if="notice == 'edit-unavailable'">
+			<h1>La stanza non si può modificare ora</h1>
+			<p>Le personalizzazioni del mondo non si leggono (forse le ha scritte una versione più recente di Retroverse) o
+				la stanza non è pronta: niente è stato modificato. Il registro di Retroverse dice perché.</p>
 		</div>
 
 		<div data-if="notice == 'rooms-migrated'">

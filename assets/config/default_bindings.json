@@ -124,6 +124,10 @@
     ],
     "toggle_mute": [
       { "key": "f8" }
+    ],
+    "edit_pin": [
+      { "key": "p" },
+      { "padButton": "west" }
     ]
   }
 }

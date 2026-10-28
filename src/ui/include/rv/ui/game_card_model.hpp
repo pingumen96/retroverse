@@ -6,10 +6,11 @@
 // platform, year, developer, genre, players, the launch readiness and its first blocker (the quick catalog's keys and
 // sentences: ui::quick_catalog::kReadinessKeys, kBlockerCodes, one table its tests share), the number of other versions
 // in the catalog, the cover (a texture of the application's, "rv-texture:"), and its actions as buttons: Avvia, Vedi
-// media, Informazioni, Indietro. Every sentence is the document's (assets/ui/game_card.rml): the code passes data and
-// codes. The buttons stand in a 2 x 2 grid (Avvia, Vedi media / Informazioni, Indietro); the arrows and the D-pad move
-// the focus within it (no wrap), Enter or the pad's south button presses the focused one, a click presses the one
-// clicked; Avvia has the focus whenever the card shows another game.
+// media, Informazioni, Indietro, and Sposta (I4b step 3, ADR-0015 §4: the editor with the game in the hand) when the
+// game's room can be edited now. Every sentence is the document's (assets/ui/game_card.rml): the code passes data and
+// codes. The buttons stand in a 2 x 2 grid (Avvia, Vedi media / Informazioni, Indietro) with Sposta as a row of its own
+// below it; the arrows and the D-pad move the focus within it (no wrap), Enter or the pad's south button presses the
+// focused one, a click presses the one clicked; Avvia has the focus whenever the card shows another game.
 
 #include <array>
 #include <cstddef>
@@ -46,6 +47,8 @@ inline constexpr std::string_view kPlayId = "card-play";
 inline constexpr std::string_view kMediaId = "card-media";
 inline constexpr std::string_view kInfoId = "card-info";
 inline constexpr std::string_view kBackId = "card-back";
+/// I4b step 3: "Sposta", shown only when the game's room can be edited now (GameCardContent::movable).
+inline constexpr std::string_view kMoveId = "card-move";
 /// The data event a button's click sends: "press('<toString(CardButton)>')".
 inline constexpr std::string_view kPressEvent = "press";
 /// What a launch from the card ended with (the outcome codes of rv_app's launch_outcome, which rv_ui does not link):
@@ -55,13 +58,13 @@ inline constexpr std::array<std::string_view, 10> kOutcomeCodes{
     "not-configured", "emulator-missing",   "core-missing", "rom-missing", "not-ready"};
 } // namespace game_card
 
-/// The card's buttons, in focus order.
-enum class CardButton : std::uint8_t { Play, Media, Info, Back };
+/// The card's buttons, in focus order (Move only while shown).
+enum class CardButton : std::uint8_t { Play, Media, Info, Back, Move };
 
-inline constexpr std::array<CardButton, 4> kCardButtons{CardButton::Play, CardButton::Media, CardButton::Info,
-                                                        CardButton::Back};
+inline constexpr std::array<CardButton, 5> kCardButtons{CardButton::Play, CardButton::Media, CardButton::Info,
+                                                        CardButton::Back, CardButton::Move};
 
-/// "play", "media", "info", "back" (the press event's argument, the run report's names).
+/// "play", "media", "info", "back", "move" (the press event's argument, the run report's names).
 [[nodiscard]] std::string_view toString(CardButton button) noexcept;
 /// Parses toString(CardButton) exactly.
 [[nodiscard]] std::optional<CardButton> cardButtonFromName(std::string_view name) noexcept;
@@ -69,8 +72,9 @@ inline constexpr std::array<CardButton, 4> kCardButtons{CardButton::Play, CardBu
 [[nodiscard]] std::string_view elementIdOf(CardButton button) noexcept;
 
 /// The focus after moving from `from` in `direction` within the 2 x 2 grid (Avvia, Vedi media on the first row,
-/// Informazioni, Indietro on the second): `from` itself at an edge.
-[[nodiscard]] CardButton stepFocus(CardButton from, NavDirection direction) noexcept;
+/// Informazioni, Indietro on the second) and, when `movable`, Sposta as a third row (Down from the second row, Up back
+/// to Informazioni): `from` itself at an edge.
+[[nodiscard]] CardButton stepFocus(CardButton from, NavDirection direction, bool movable = false) noexcept;
 
 /// What the card shows: catalog data shown as it comes (the title, the platform's display name, ...), keys the
 /// document labels (readiness, blocker, state, outcome), and counts.
@@ -107,6 +111,9 @@ struct GameCardContent {
     /// The last launch from the card did not end normally: its outcome code (game_card::kOutcomeCodes, or another code
     /// the general sentence covers); empty when nothing is to be told.
     std::string outcome;
+    /// I4b step 3: the game's room can be edited now (the editor's room, not the showcase or a hall, no launch, no
+    /// floor on its way): the card shows "Sposta".
+    bool movable = false;
 
     bool operator==(const GameCardContent&) const = default;
 };
@@ -128,8 +135,9 @@ struct CardCoverBox {
 /// clicked.
 class GameCardModel {
 public:
-    /// The card shows `gameId` (another game than before: the focus goes back to Avvia).
-    void show(std::string_view gameId);
+    /// The card shows `gameId` (another game than before: the focus goes back to Avvia), with "Sposta" when `movable`
+    /// (gone while it has the focus: the focus goes to Indietro).
+    void show(std::string_view gameId, bool movable = false);
     /// The card is gone: the next show() starts on Avvia whatever the game.
     void hide() noexcept;
 
@@ -146,6 +154,7 @@ public:
 private:
     CardButton m_focused = CardButton::Play;
     bool m_shown = false;
+    bool m_movable = false;
     std::string m_gameId;
 };
 

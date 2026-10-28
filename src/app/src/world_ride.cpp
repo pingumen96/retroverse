@@ -142,6 +142,7 @@ void WorldSession::syncDirectory(ProductUi& product) {
     if (const std::optional<std::size_t> eye = eyeRoom(); eye && m_state == "room") {
         building.currentRoom = m_rooms[*eye].id.toString();
     }
+    building.editableRoom = editableRoom(product).value_or(std::string()); // I4b step 3
     product.setDirectoryBuilding(std::move(building));
 }
 
@@ -152,6 +153,13 @@ void WorldSession::followCommands(ProductUi& product) {
     const world::WorldPlan* plan = m_planState ? m_planState->plan.get() : nullptr;
     const world::PlanIndex* index = m_planIndex ? &*m_planIndex : nullptr;
     for (const ui::DirectoryCommand& command : product.takeDirectoryCommands()) {
+        if (command.kind == ui::DirectoryCommandKind::EditRoom) {
+            // I4b step 3: "Modifica stanza" (world_edit.cpp).
+            if (const auto room = world::RoomId::parse(command.id)) {
+                beginEdit(product, *room, "directory", std::nullopt);
+            }
+            continue;
+        }
         const WorldMove move =
             routeDirectoryCommand(command, moveConditions(product), plan, index, m_floor, eyeRoomId);
         spdlog::info("Frame {}: the directory's {} '{}': {} ({})", frame, ui::toString(command.kind), command.id,

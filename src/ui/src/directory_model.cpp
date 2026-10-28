@@ -108,8 +108,14 @@ std::string_view toString(DirectoryCommandKind kind) noexcept {
         return "show-in-room";
     case DirectoryCommandKind::Close:
         return "close";
+    case DirectoryCommandKind::EditRoom:
+        return "edit-room";
     }
     return "unknown";
+}
+
+bool DirectoryModel::editShown() const noexcept {
+    return m_view == DirectoryView::Floors && !m_building.editableRoom.empty();
 }
 
 void DirectoryModel::setBuilding(DirectoryBuilding building) {
@@ -198,6 +204,7 @@ void DirectoryModel::open(DirectoryTab tab) {
     m_notice.clear();
     m_tabsFocused = false;
     m_tabsForEmpty = false;
+    m_editFocused = false;
     m_tab = tab;
     m_cardGameId.clear();
     m_closedCardGameId.clear();
@@ -265,6 +272,7 @@ void DirectoryModel::close() noexcept {
 void DirectoryModel::closePanel() noexcept {
     m_open = false;
     m_tabsFocused = false;
+    m_editFocused = false;
     m_closedCardGameId = std::move(m_cardGameId);
     m_cardGameId.clear();
     changed();
@@ -304,6 +312,32 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
             return std::nullopt;
         }
     }
+    if (editFocused() && !m_tabsFocused) {
+        // I4b step 3: "Modifica stanza" above the floors.
+        switch (command) {
+        case UiCommand::Up:
+            m_editFocused = false;
+            m_tabsFocused = true;
+            m_tabsForEmpty = false;
+            changed();
+            return std::nullopt;
+        case UiCommand::Down:
+            m_editFocused = false;
+            changed();
+            return std::nullopt;
+        case UiCommand::Activate:
+            return leave(DirectoryCommandKind::EditRoom, m_building.editableRoom);
+        case UiCommand::Back:
+            return back();
+        case UiCommand::FilterPrevious:
+        case UiCommand::FilterNext:
+            m_editFocused = false;
+            switchTab(otherTab(m_tab));
+            return std::nullopt;
+        default:
+            return std::nullopt;
+        }
+    }
     if (m_tabsFocused) {
         switch (command) {
         case UiCommand::Left:
@@ -321,6 +355,8 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
             if (rowCount() > 0) {
                 m_tabsFocused = false;
                 m_tabsForEmpty = false;
+                // I4b step 3: "Modifica stanza" stands between the tab bar and the floors.
+                m_editFocused = editShown();
                 changed();
             }
             return std::nullopt;
@@ -332,6 +368,11 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
     }
     switch (command) {
     case UiCommand::Up:
+        if (editShown() && rowCount() > 0 && selectedRow() == 0) {
+            m_editFocused = true;
+            changed();
+            return std::nullopt;
+        }
         move(-1, true);
         return std::nullopt;
     case UiCommand::Down:
@@ -407,6 +448,11 @@ std::optional<DirectoryCommand> DirectoryModel::click(const DirectoryClick& clic
         m_tabsForEmpty = false;
         selectRow(click.row);
         return activateRow();
+    case DirectoryClick::Kind::Edit:
+        if (!editShown()) {
+            return std::nullopt;
+        }
+        return leave(DirectoryCommandKind::EditRoom, m_building.editableRoom);
     case DirectoryClick::Kind::Card:
         if (m_view != DirectoryView::Card ||
             (click.button == DirectoryCardButton::ShowInRoom && !cardShowsRoom())) {
@@ -427,6 +473,9 @@ std::string DirectoryModel::focusedElement() const {
     }
     if (m_tabsFocused || rowCount() == 0) {
         return std::string(m_tab == DirectoryTab::Floors ? directory::kFloorsTabId : directory::kGamesTabId);
+    }
+    if (editFocused()) {
+        return std::string(directory::kEditRoomId);
     }
     switch (m_view) {
     case DirectoryView::Floors:
@@ -521,6 +570,7 @@ void DirectoryModel::switchTab(DirectoryTab tab) {
         return;
     }
     m_tab = tab;
+    m_editFocused = false;
     if (tab == DirectoryTab::Floors) {
         // Leaving a card: the games list keeps its selection.
         m_cardGameId.clear();
@@ -539,6 +589,7 @@ void DirectoryModel::openRooms() {
     if (m_floor >= m_building.floors.size()) {
         return;
     }
+    m_editFocused = false;
     m_openedFloor = m_floor;
     m_roomRow = startRoomRow(m_floor);
     m_view = DirectoryView::Rooms;

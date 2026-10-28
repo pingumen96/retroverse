@@ -1,0 +1,23 @@
+// I4b step 3: the time an edit takes to show (ADR-0015 §9: 0.25 s), measured by hand in Release on the overflow
+// fixture's amiga room (1,561 big boxes; tests/smoke/test_world_edit.cpp's hidden [.bench] case). The walker starts at the
+// Focus pose of a spine-out box A with a box B on its right and a box D below B.
+//   frame 30, 36, 42, 48   map, ui_home, ui_up, ui_activate: "Modifica stanza"
+//   frame 70   interact: A picked up        frame 80   ui_right: B         frame 110  interact: A and B swapped
+//   frame 140  interact: B picked up        frame 150  ui_down: D           frame 180  interact: B and D swapped
+//   frame 210  edit_pin: the box the reticle rests on (B, in D's old place) pinned or unpinned
+//   frame 240  confirm, frame 250 ui_activate: Salva
+[
+  {"fromFrame": 30, "toFrame": 30, "actions": {"map": 1}},
+  {"fromFrame": 36, "toFrame": 36, "actions": {"ui_home": 1}},
+  {"fromFrame": 42, "toFrame": 42, "actions": {"ui_up": 1}},
+  {"fromFrame": 48, "toFrame": 48, "actions": {"ui_activate": 1}},
+  {"fromFrame": 70, "toFrame": 70, "actions": {"interact": 1}},
+  {"fromFrame": 80, "toFrame": 80, "actions": {"ui_right": 1}},
+  {"fromFrame": 110, "toFrame": 110, "actions": {"interact": 1}},
+  {"fromFrame": 140, "toFrame": 140, "actions": {"interact": 1}},
+  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_down": 1}},
+  {"fromFrame": 180, "toFrame": 180, "actions": {"interact": 1}},
+  {"fromFrame": 210, "toFrame": 210, "actions": {"edit_pin": 1}},
+  {"fromFrame": 240, "toFrame": 240, "actions": {"confirm": 1}},
+  {"fromFrame": 250, "toFrame": 250, "actions": {"ui_activate": 1}}
+]

@@ -33,6 +33,10 @@ struct NavSlot {
     float along = 0.0f;
     /// The item in the slot; kNoPick for an empty or dressed slot.
     PickId item = kNoPick;
+    /// The slot's own pick id (collection_layout.hpp's slotPickId()) whether it holds an item or not, so that the
+    /// editor's steps reach empty slots too (I4b step 3, ADR-0015 §4); kNoPick when not known (runs made by hand).
+    /// SlotNavigation itself steps between items only.
+    PickId slot = kNoPick;
 };
 
 struct NavLevel {

@@ -144,4 +144,5 @@ TEST_CASE("app/world_card_ui: the card's commands of a frame and the interaction
     CHECK(rv::app::cardActionOf(CardButton::Media) == CardAction::Media);
     CHECK(rv::app::cardActionOf(CardButton::Info) == CardAction::Info);
     CHECK(rv::app::cardActionOf(CardButton::Back) == CardAction::Back);
+    CHECK(rv::app::cardActionOf(CardButton::Move) == CardAction::Move);
 }

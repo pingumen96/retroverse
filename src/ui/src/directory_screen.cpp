@@ -195,6 +195,16 @@ struct DirectoryScreen::Impl {
         constructor.Bind("floorCount", &floorCount);
         constructor.Bind("gameCount", &gameCount);
         constructor.Bind("hallCurrent", &hallCurrent);
+        constructor.Bind("editShown", &editShown);
+        constructor.Bind("editFocused", &editFocused);
+        constructor.Bind("editKind", &editKind);
+        constructor.Bind("editTitle", &editTitle);
+        constructor.BindEventCallback(Rml::String(directory::kEditEvent),
+                                      [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+                                          DirectoryClick click;
+                                          click.kind = DirectoryClick::Kind::Edit;
+                                          clicked = click;
+                                      });
         constructor.Bind("floors", &floors);
         constructor.Bind("shown", &shown);
         constructor.Bind("rooms", &rooms);
@@ -278,6 +288,22 @@ struct DirectoryScreen::Impl {
             row.games = count(placed);
             row.current = floor.id == building.currentFloor;
             floors.push_back(std::move(row));
+        }
+
+        // I4b step 3: the room "Modifica stanza" edits, named as its row is.
+        editShown = model.editShown();
+        editFocused = model.editFocused();
+        editKind.clear();
+        editTitle.clear();
+        if (editShown) {
+            for (const DirectoryFloor& floor : building.floors) {
+                for (const DirectoryRoom& room : floor.rooms) {
+                    if (room.id == building.editableRoom) {
+                        editKind = Rml::String(room.kind);
+                        editTitle = room.systems.empty() ? Rml::String(room.id) : shownName(room.systems.front());
+                    }
+                }
+            }
         }
 
         shown = ShownFloor{};
@@ -381,6 +407,11 @@ struct DirectoryScreen::Impl {
     int floorCount = 0;
     int gameCount = 0;
     bool hallCurrent = false;
+    /// I4b step 3: "Modifica stanza": shown, the room's kind and title.
+    bool editShown = false;
+    bool editFocused = false;
+    Rml::String editKind;
+    Rml::String editTitle;
     std::vector<FloorRow> floors;
     ShownFloor shown;
     std::vector<RoomRow> rooms;

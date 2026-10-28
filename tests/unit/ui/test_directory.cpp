@@ -909,3 +909,64 @@ TEST_CASE("ui/directory: tests/input_scripts/directory_panel.json on rv_ui_probe
     CHECK(commands[0].first == fixture::kShowInRoomFrame);
     CHECK(commands[0].second == command(DirectoryCommandKind::ShowInRoom, fixture::gameId(fixture::kShownGame)));
 }
+
+TEST_CASE("ui/directory: \"Modifica stanza\" above the floors edits the walker's room (I4b step 3)", "[ui][directory]") {
+    // Without an editable room the floors behave as before: Up from the first floor reaches the tab bar.
+    DirectoryModel plain = floorsModel();
+    CHECK_FALSE(plain.editShown());
+    plain.apply(UiCommand::Home);
+    plain.apply(UiCommand::Up);
+    CHECK(plain.tabsFocused());
+
+    DirectoryBuilding editable = building();
+    editable.editableRoom = "room:snes";
+    DirectoryModel model;
+    model.setBuilding(editable);
+    model.open(DirectoryTab::Floors);
+    CHECK(model.editShown());
+    CHECK_FALSE(model.editFocused());
+    CHECK(model.focusedElement() == "dir-floor-1");
+    // Up from the first floor: "Modifica stanza"; Up again: the tab bar; Down: back to it; Down: the floors.
+    model.apply(UiCommand::Home);
+    model.apply(UiCommand::Up);
+    CHECK(model.editFocused());
+    CHECK(model.focusedElement() == dir::kEditRoomId);
+    model.apply(UiCommand::Up);
+    CHECK(model.tabsFocused());
+    CHECK_FALSE(model.editFocused());
+    model.apply(UiCommand::Down);
+    CHECK(model.editFocused());
+    model.apply(UiCommand::Down);
+    CHECK_FALSE(model.editFocused());
+    CHECK(model.focusedElement() == "dir-floor-0");
+    // Activate on it: EditRoom for the walker's room, the panel closed.
+    model.apply(UiCommand::Up);
+    REQUIRE(model.editFocused());
+    const std::optional<DirectoryCommand> edit = model.apply(UiCommand::Activate);
+    REQUIRE(edit.has_value());
+    CHECK(*edit == command(DirectoryCommandKind::EditRoom, "room:snes"));
+    CHECK(rv::ui::toString(DirectoryCommandKind::EditRoom) == "edit-room");
+    CHECK_FALSE(model.isOpen());
+    // Not on the rooms nor the games: it shows above the floors only.
+    model.open(DirectoryTab::Floors);
+    model.apply(UiCommand::Activate);
+    CHECK(model.view() == DirectoryView::Rooms);
+    CHECK_FALSE(model.editShown());
+    // A click on it does what Activate does.
+    model.apply(UiCommand::Back);
+    DirectoryClick click;
+    click.kind = DirectoryClick::Kind::Edit;
+    const std::optional<DirectoryCommand> clicked = model.click(click);
+    REQUIRE(clicked.has_value());
+    CHECK(clicked->kind == DirectoryCommandKind::EditRoom);
+    // The room no longer editable (a ride, a launch): gone, the focus on the floors.
+    DirectoryModel gone;
+    gone.setBuilding(editable);
+    gone.open(DirectoryTab::Floors);
+    gone.apply(UiCommand::Home);
+    gone.apply(UiCommand::Up);
+    REQUIRE(gone.editFocused());
+    gone.setBuilding(building());
+    CHECK_FALSE(gone.editFocused());
+    CHECK(gone.focusedElement() == "dir-floor-0");
+}

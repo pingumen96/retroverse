@@ -27,6 +27,9 @@
 //
 // I6 step 5: openGame() opens the panel straight at a game's card (the hub's favourites showcase), on the games tab, the
 // list asked for behind it.
+// I4b step 3 (ADR-0015 §4): "Modifica stanza" stands above the floors while the walker is in a room the editor can edit
+// (DirectoryBuilding::editableRoom); Up from the first floor reaches it (then the tab bar), Down returns to the floors,
+// Activate (or a click) asks EditRoom for that room and closes the panel.
 // What the model asks of the app (step 7b) besides its commands: a new gamesRequest() asks for the games list (the
 // panel opened on the games, or the games tab entered), a new cardRequest() asks for the content of cardGameId()'s
 // card (a card opened, the same game's again included). A command the app refuses for now (a ride) is undone with
@@ -65,11 +68,15 @@ inline constexpr std::string_view kCardId = "dir-card";
 inline constexpr std::string_view kCardPlayId = "dir-card-play";
 inline constexpr std::string_view kCardRoomId = "dir-card-room";
 inline constexpr std::string_view kCardBackId = "dir-card-back";
+/// "Modifica stanza" (I4b step 3), above the floors.
+inline constexpr std::string_view kEditRoomId = "dir-edit-room";
 /// The data events of clicks: "tab('<floors|games>')", "row(<index>)" on a row of the list shown, "card('<play|room|
 /// back>')".
 inline constexpr std::string_view kTabEvent = "tab";
 inline constexpr std::string_view kRowEvent = "row";
 inline constexpr std::string_view kCardEvent = "card";
+/// The data event of a click on "Modifica stanza": "edit()".
+inline constexpr std::string_view kEditEvent = "edit";
 /// The floors the document names, building.json's ids in its order (rv_world's kGroundFloor first): another id shows
 /// as itself.
 inline constexpr std::array<std::string_view, 9> kFloorIds{"ground", "gen2", "gen3",     "gen4",    "gen5",
@@ -126,6 +133,8 @@ struct DirectoryBuilding {
     std::string currentFloor;
     /// The room that holds the walker ("" in a hall).
     std::string currentRoom;
+    /// I4b step 3: the room the editor can edit now ("Modifica stanza"; "" none: a hall, the hub, a ride, a launch).
+    std::string editableRoom;
 
     bool operator==(const DirectoryBuilding&) const = default;
 };
@@ -189,8 +198,9 @@ enum class DirectoryCommandKind : std::uint8_t {
     Launch,      ///< launch game `id` (the quick catalog's Avvia)
     ShowInRoom,  ///< show game `id` in its room (ADR-0012 §8, across floors: ADR-0013 §10)
     Close,       ///< the panel closed (Back)
+    EditRoom,    ///< I4b step 3: edit room `id` ("Modifica stanza", ADR-0015 §4)
 };
-/// "choose-floor", "choose-room", "launch", "show-in-room", "close".
+/// "choose-floor", "choose-room", "launch", "show-in-room", "close", "edit-room".
 [[nodiscard]] std::string_view toString(DirectoryCommandKind kind) noexcept;
 
 struct DirectoryCommand {
@@ -203,7 +213,7 @@ struct DirectoryCommand {
 
 /// A click on the panel (DirectoryScreen::takeClicked): a tab, a row of the list shown, a card button.
 struct DirectoryClick {
-    enum class Kind : std::uint8_t { Tab, Row, Card };
+    enum class Kind : std::uint8_t { Tab, Row, Card, Edit };
     Kind kind = Kind::Row;
     DirectoryTab tab = DirectoryTab::Floors;
     std::size_t row = 0;
@@ -256,6 +266,9 @@ public:
     /// The tab bar has the focus (else the list, or the card's buttons in the card): the user moved it there, or the
     /// list shown has no row (until rows come).
     [[nodiscard]] bool tabsFocused() const noexcept { return m_tabsFocused; }
+    /// I4b step 3: "Modifica stanza" shows (the floors, an editable room) and has the focus.
+    [[nodiscard]] bool editShown() const noexcept;
+    [[nodiscard]] bool editFocused() const noexcept { return m_editFocused && editShown(); }
     /// The element the focus is on: a tab, a row, a card button (directory's ids).
     [[nodiscard]] std::string focusedElement() const;
 
@@ -324,6 +337,8 @@ private:
     /// The view the Piani tab shows when it comes back (Floors or Rooms).
     DirectoryView m_floorsView = DirectoryView::Floors;
     bool m_tabsFocused = false;
+    /// I4b step 3: "Modifica stanza" has the focus.
+    bool m_editFocused = false;
     /// The tab bar has the focus because the list had no row.
     bool m_tabsForEmpty = false;
 

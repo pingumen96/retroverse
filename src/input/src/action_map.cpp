@@ -324,6 +324,11 @@ ActionMap ActionMap::defaults() {
     // The clips' sound (I5 step 5, ADR-0016 §9): F8 mutes; no pad button until I7's remapping.
     map.bind(Action::ToggleMute, KeyBinding{Key::F8, 1.0f});
 
+    // The editor (I4b step 3, ADR-0015 §4): P or the pad's west button pins the game under the reticle (in the editor's
+    // context only: the west button is Informazioni elsewhere).
+    map.bind(Action::EditPin, KeyBinding{Key::P, 1.0f});
+    map.bind(Action::EditPin, GamepadButtonBinding{GamepadButton::West, 1.0f});
+
     return map;
 }
 

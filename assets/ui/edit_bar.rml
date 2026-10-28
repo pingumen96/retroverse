@@ -1,0 +1,101 @@
+<rml>
+<head>
+	<!--
+		The editor's bar (I4b step 3; ADR-0015 §4): while a room is edited, a band at the bottom of the view names the
+		room, what the reticle rests on (a game, pinned or not; an empty slot) or the game in the hand, the pending
+		changes, the last refusal's reason, and the actions with the glyphs of the device used last (the pad's buttons, or
+		the keys); with the menu (Start, Enter) a small panel above it: Salva, Annulla ultima azione, Esci senza salvare,
+		Continua. Bound to the data model "edit_bar" of rv::app::EditBarPanel (src/app/src/edit_bar_panel.cpp), which
+		also names the ids below: keep them in step (src/app/include/rv/app/edit_bar_ui.hpp,
+		tests/unit/app/test_edit_bar_document.cpp).
+		mode: preparing, browse, holding, busy, menu, saving. target: '' (nothing), game, slot (an empty slot), dressed
+		(an empty slot with decoration). device: pad, keys. refusal: an edit rule's or a validation rule's name ('' none);
+		refusalKnown: the rules worded below, another rule reads in general. Every string is written here (CLAUDE.md):
+		the panel binds titles, counts and keys. It takes no input: the world reads the editor's actions and passes the
+		menu's focus.
+	-->
+	<title>Modifica stanza</title>
+	<link type="text/rcss" href="edit_bar.rcss"/>
+</head>
+<body data-model="edit_bar">
+	<!-- The menu (Start, Enter), above the bar. -->
+	<div id="edit-menu" data-if="mode == 'menu'">
+		<h2>Modifiche alla stanza</h2>
+		<p class="menu-note" data-if="pending == 0">Nessuna modifica da salvare.</p>
+		<p class="menu-note" data-if="pending == 1">1 modifica non ancora salvata.</p>
+		<p class="menu-note" data-if="pending > 1">{{ pending }} modifiche non ancora salvate.</p>
+		<div id="edit-save" class="menu-button primary" data-class-focused="menuFocus == 'save'">Salva</div>
+		<div id="edit-undo" class="menu-button" data-class-focused="menuFocus == 'undo'" data-class-off="pending == 0">Annulla ultima azione</div>
+		<div id="edit-discard" class="menu-button" data-class-focused="menuFocus == 'discard'">Esci senza salvare</div>
+		<div id="edit-continue" class="menu-button" data-class-focused="menuFocus == 'continue'">Continua</div>
+	</div>
+
+	<div id="edit-bar">
+		<div class="bar-header">
+			<span class="mark"><span class="shelf"></span><span class="shelf"></span><span class="shelf"></span></span>
+			<p class="bar-title" data-if="roomKind == 'console'">Modifica stanza · {{ roomTitle }}</p>
+			<p class="bar-title" data-if="roomKind == 'shared'">Modifica stanza · Sala condivisa</p>
+			<p class="bar-title" data-if="roomKind == 'arcade'">Modifica stanza · Sala giochi arcade</p>
+			<span class="pending" data-if="pending == 0">Nessuna modifica</span>
+			<span class="pending changed" data-if="pending == 1">1 modifica</span>
+			<span class="pending changed" data-if="pending > 1">{{ pending }} modifiche</span>
+		</div>
+
+		<!-- What the reticle rests on, or the game in the hand. -->
+		<div class="selection">
+			<p data-if="mode == 'preparing'" class="quiet">Preparazione della stanza...</p>
+			<p data-if="mode == 'busy'" class="quiet">Sistemazione in corso...</p>
+			<p data-if="mode == 'saving' && ending == 'save'" class="quiet">Salvataggio delle modifiche...</p>
+			<p data-if="mode == 'saving' && ending == 'discard'" class="quiet">La stanza torna com'era...</p>
+			<p data-if="mode == 'menu'" class="quiet">Scegli cosa fare delle modifiche.</p>
+
+			<p data-if="mode == 'browse' && target == ''" class="quiet">Punta un gioco per prenderlo e spostarlo.</p>
+			<p data-if="mode == 'browse' && target == 'game'"><span class="title">{{ targetTitle }}</span><span class="tag pinned" data-if="targetPinned">Fissato</span><span class="tag" data-if="targetFaceOut">In vetrina</span></p>
+			<p data-if="mode == 'browse' && targetFree" class="quiet">Spazio libero: prendi un gioco per posarlo qui.</p>
+
+			<p data-if="mode == 'holding'"><span class="label">In mano:</span><span class="title">{{ heldTitle }}</span></p>
+			<p data-if="mode == 'holding' && target == ''" class="quiet">Punta uno spazio libero o un altro gioco.</p>
+			<p data-if="mode == 'holding' && targetOwn" class="quiet">Il suo posto: rimettilo qui.</p>
+			<p data-if="mode == 'holding' && !targetOwn && target == 'slot' && targetFaceOut" class="aim">Posalo qui, in vetrina.</p>
+			<p data-if="mode == 'holding' && !targetOwn && target == 'slot' && !targetFaceOut" class="aim">Posalo qui, sullo scaffale.</p>
+			<p data-if="mode == 'holding' && !targetOwn && target == 'dressed'" class="aim">Posalo qui: la decorazione fa spazio.</p>
+			<p data-if="mode == 'holding' && !targetOwn && target == 'game'" class="aim">Scambialo con {{ targetTitle }}<span class="tag pinned" data-if="targetPinned">Fissato</span></p>
+		</div>
+
+		<!-- The last refusal: why the change was not made (nothing changed). -->
+		<div class="verdict" data-if="refusal != ''">
+			<p data-if="saveRefused">Il mondo è cambiato nel frattempo e le modifiche non si possono più applicare: niente è stato salvato.</p>
+			<p data-if="refusal == 'slot-taken'">Quello spazio è già occupato.</p>
+			<p data-if="refusal == 'slot-pinned'">Quello spazio è riservato a un gioco fissato.</p>
+			<p data-if="refusal == 'other-room'">I giochi si spostano solo all'interno della loro stanza.</p>
+			<p data-if="refusal == 'same-game'">È lo stesso gioco.</p>
+			<p data-if="refusal == 'game-unknown'">Il gioco non è più nella stanza.</p>
+			<p data-if="refusal == 'slot-unknown'">Quello spazio non c'è più.</p>
+			<p data-if="refusal == 'pin-broken'">Un gioco fissato non sarebbe più al suo posto.</p>
+			<p data-if="refusal == 'failed'">La modifica non è riuscita: il registro di Retroverse dice perché.</p>
+			<p data-if="refusal == 'save-failed'">Le modifiche non sono state salvate: il registro di Retroverse dice perché.</p>
+			<p data-if="!refusalKnown">La modifica non rispetta le regole della stanza.</p>
+		</div>
+
+		<!-- The actions, with the glyphs of the device used last. -->
+		<div class="hints" data-if="mode == 'browse' || mode == 'holding'">
+			<span class="hint" data-if="mode == 'browse' && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
+			<span class="hint" data-if="mode == 'browse' && target == 'game' && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
+			<span class="hint" data-if="mode == 'browse' && target == 'game' && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
+			<span class="hint" data-if="mode == 'holding' && targetOwn"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
+			<span class="hint" data-if="mode == 'holding' && !targetOwn && targetFree"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
+			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Scambia</span>
+			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Spazio vicino</span>
+			<span class="hint" data-if="mode == 'holding'"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Rimetti a posto</span>
+			<span class="hint" data-if="mode == 'browse' && pending == 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Esci</span>
+			<span class="hint" data-if="mode == 'browse' && pending > 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Menu</span>
+			<span class="hint" data-if="mode == 'holding' || pending == 0"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
+		</div>
+		<div class="hints" data-if="mode == 'menu'">
+			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Scegli</span>
+			<span class="hint"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">Invio</span>Conferma</span>
+			<span class="hint"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Continua</span>
+		</div>
+	</div>
+</body>
+</rml>

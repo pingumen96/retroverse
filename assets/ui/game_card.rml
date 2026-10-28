@@ -3,7 +3,8 @@
 	<!--
 		The world's game card (I3 step 14a; ADR-0012 §5, style §16.3: a discreet card beside the inspected item, never
 		over it): the inspected game's cover, title, platform and year, its launch readiness with its first blocker's
-		sentence, its developer, genre, players and other versions, and its actions as buttons in a 2 x 2 grid.
+		sentence, its developer, genre, players and other versions, and its actions as buttons in a 2 x 2 grid, with
+		"Sposta" below it when the game's room can be edited now (I4b step 3, ADR-0015 §4: the editor, the game in the hand).
 		Bound to the data model "game_card" of rv::ui::GameCardScreen (src/ui/src/game_card_screen.cpp), which also names
 		the ids below: keep them in step (src/ui/include/rv/ui/game_card_model.hpp, tests/unit/ui/test_game_card.cpp).
 		The readiness and blocker sentences are the quick catalog's (quick_catalog.rml), line for line: the test reads
@@ -92,6 +93,7 @@
 		<button id="card-media" class="action" data-event-click="press('media')">Vedi media</button>
 		<button id="card-info" class="action" data-event-click="press('info')">Informazioni</button>
 		<button id="card-back" class="action" data-event-click="press('back')">Indietro</button>
+		<button id="card-move" class="action wide" data-if="card.movable" data-event-click="press('move')">Sposta</button>
 	</div>
 	<div class="hints">
 		<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>

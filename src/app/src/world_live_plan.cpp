@@ -162,7 +162,7 @@ std::string_view toString(LiveUpdateKind kind) noexcept {
     return "rebuild";
 }
 
-LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build) {
+LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build, bool movesInPlace) {
     LiveUpdatePlan plan;
     if (!build.plan || !build.scene) {
         plan.kind = LiveUpdateKind::Kept;
@@ -251,7 +251,7 @@ LiveUpdatePlan planLiveUpdate(const ShownFloor& shown, const WorldBuild& build) 
         }
     }
 
-    if (plan.difference.moved > 0) {
+    if (plan.difference.moved > 0 && !movesInPlace) {
         plan.kind = LiveUpdateKind::Rebuild;
         plan.reason = fmt::format("{} item(s) of the floor shown stand elsewhere in the build", plan.difference.moved);
         return plan;

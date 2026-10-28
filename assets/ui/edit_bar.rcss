@@ -1,0 +1,250 @@
+/*
+	The editor's bar (edit_bar.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI neutral
+	#171B22, ivory text #F4EFE6, tungsten #FFC88A for what is pointed at and the menu's focus, signage green #6EAF93 for
+	what is pinned, the warm red #C8645A of the pad's B for a refusal). Sizes in dp. A band at the bottom of the view
+	(style 16.3: the room stays in view above it), the menu a small panel above its right end; it takes no input. No
+	color transitions (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 21dp;
+	color: #F4EFE6;
+}
+
+div, p, h2 {
+	display: block;
+}
+
+p, h2, span, div {
+	focus: none;
+}
+
+#edit-bar {
+	position: absolute;
+	left: 14%;
+	width: 72%;
+	bottom: 4%;
+	box-sizing: border-box;
+	background-color: #171B22E6;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 14dp;
+	padding: 12dp 22dp 12dp 22dp;
+}
+
+.bar-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+/* A small shelf of three boards: the editor's mark (as the directory's "Modifica stanza"). */
+.mark {
+	display: block;
+	flex: 0 0 auto;
+	width: 30dp;
+	height: 30dp;
+	padding-top: 6dp;
+	box-sizing: border-box;
+	border-radius: 6dp;
+	background-color: #FFC88A33;
+	border: 2dp #FFC88A99;
+}
+
+.shelf {
+	display: block;
+	width: 16dp;
+	height: 2dp;
+	margin: 0dp auto 4dp auto;
+	background-color: #FFC88A;
+}
+
+.bar-title {
+	flex: 1 1 0dp;
+	margin-left: 12dp;
+	font-size: 22dp;
+	font-weight: bold;
+	color: #FFC88A;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pending {
+	flex: 0 0 auto;
+	margin-left: 12dp;
+	padding: 3dp 12dp;
+	border-radius: 13dp;
+	font-size: 17dp;
+	color: #F4EFE6A6;
+	border: 2dp #F4EFE633;
+	white-space: nowrap;
+}
+
+.pending.changed {
+	color: #171B22;
+	background-color: #FFC88A;
+	border-color: #FFC88A;
+}
+
+.selection {
+	margin-top: 8dp;
+}
+
+.selection p {
+	font-size: 21dp;
+	line-height: 1.3em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.quiet {
+	color: #F4EFE6B3;
+}
+
+.aim {
+	color: #FFC88A;
+}
+
+.label {
+	color: #F4EFE6A6;
+	margin-right: 8dp;
+}
+
+.title {
+	font-weight: bold;
+}
+
+.tag {
+	margin-left: 10dp;
+	padding: 1dp 9dp;
+	border-radius: 11dp;
+	font-size: 16dp;
+	font-weight: normal;
+	color: #F4EFE6CC;
+	border: 2dp #F4EFE640;
+}
+
+.tag.pinned {
+	color: #171B22;
+	background-color: #6EAF93;
+	border-color: #6EAF93;
+}
+
+.verdict {
+	margin-top: 8dp;
+	padding: 6dp 12dp;
+	border-radius: 8dp;
+	background-color: #C8645A26;
+	border-left: 4dp #C8645A;
+}
+
+.verdict p {
+	font-size: 19dp;
+	color: #F4C9BF;
+}
+
+.hints {
+	margin-top: 10dp;
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+.hint {
+	display: inline-block;
+	margin-right: 22dp;
+	white-space: nowrap;
+}
+
+.key {
+	display: inline-block;
+	width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	border-radius: 13dp;
+	margin-right: 7dp;
+	text-align: center;
+	font-size: 16dp;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.key.wide {
+	width: auto;
+	padding: 0dp 9dp;
+	border-radius: 6dp;
+	background-color: #F4EFE6CC;
+}
+
+.pad-a { background-color: #6EAF93; }
+.pad-b { background-color: #C8645A; }
+.pad-x { background-color: #4C8BC9; }
+
+/* The menu: above the bar's right end. */
+#edit-menu {
+	position: absolute;
+	right: 14%;
+	width: 26%;
+	bottom: 25%;
+	box-sizing: border-box;
+	background-color: #171B22F2;
+	border: 2dp #F4EFE61F;
+	border-radius: 14dp;
+	padding: 16dp 18dp 10dp 18dp;
+}
+
+#edit-menu h2 {
+	font-size: 23dp;
+	font-weight: bold;
+	margin-bottom: 4dp;
+}
+
+.menu-note {
+	font-size: 18dp;
+	color: #F4EFE6A6;
+	margin-bottom: 10dp;
+}
+
+.menu-button {
+	padding: 8dp 14dp;
+	margin-bottom: 6dp;
+	border-radius: 10dp;
+	border: 3dp #00000000;
+	background-color: #FFFFFF0F;
+	font-size: 21dp;
+}
+
+.menu-button.primary {
+	font-weight: bold;
+}
+
+.menu-button.off {
+	color: #F4EFE666;
+}
+
+/* The focus, always visible: a tungsten edge and a warm wash. */
+.menu-button.focused {
+	border-color: #FFC88A;
+	background-color: #FFC88A2E;
+	color: #FFFFFF;
+}
+
+/* Compact: views under 760 dp of the display's density tall (1280x720 at 125%), as the quick catalog's. */
+@media (theme: compact) {
+	body { font-size: 18dp; }
+	#edit-bar { left: 8%; width: 84%; padding: 8dp 16dp 8dp 16dp; }
+	.bar-title { font-size: 19dp; }
+	.selection p { font-size: 18dp; }
+	.hints { font-size: 16dp; margin-top: 6dp; }
+	.key { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+	#edit-menu { width: 34%; right: 8%; bottom: 28%; }
+	.menu-button { padding: 5dp 10dp; font-size: 18dp; }
+}

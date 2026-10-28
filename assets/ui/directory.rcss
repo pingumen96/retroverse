@@ -115,6 +115,28 @@ h2 {
 	text-overflow: ellipsis;
 }
 
+/* I4b step 3: "Modifica stanza" above the floors, set apart by a warm wash; its button a small shelf of three boards. */
+.row.edit {
+	flex: 0 0 auto;
+	margin-bottom: 14dp;
+	background-color: #FFC88A14;
+}
+
+.edit-badge {
+	border-radius: 8dp;
+	padding-top: 9dp;
+	line-height: 6dp;
+}
+
+.edit-shelf {
+	display: block;
+	width: 22dp;
+	height: 3dp;
+	margin: 0dp auto 6dp auto;
+	background-color: #F4EFE6CC;
+	border-radius: 1dp;
+}
+
 /* The list scrolls with the focus (RmlUi brings a focused row into view only in an auto or scroll container). */
 #dir-list {
 	position: relative;

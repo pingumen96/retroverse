@@ -209,6 +209,8 @@ WorldMove routeDirectoryCommand(const ui::DirectoryCommand& command, const World
     case ui::DirectoryCommandKind::Launch:
     case ui::DirectoryCommandKind::Close:
         return ignore("the product UI's command");
+    case ui::DirectoryCommandKind::EditRoom:
+        return ignore("the editor's command (I4b step 3: WorldSession::beginEdit)");
     case ui::DirectoryCommandKind::ShowInRoom: {
         const auto game = catalog::GameId::parse(command.id);
         if (!game) {

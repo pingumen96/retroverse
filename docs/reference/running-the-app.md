@@ -59,7 +59,12 @@ build/rvdata`).
   `walker`, where a floor committed again kept the walker: `area`, `shift`, `halfTurn`), `itemsWritten`, `screenGames`
   (the bound CRT's games), `objectFallbacks` of the persisted start; `interaction` (events, counts,
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
-  `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
+  `edits` (I4b step 3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
+  `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
+  `in-place`, `floor` or `none`, `editMs`, `shownFrame`, `shownMs`; `undone`, `menus`, `end` `saved`, `discarded`,
+  `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
+  `snapshot`, `planDigest` (the plan shown at the end),
+  `saveMs`, `backMs`, `liveUpdateDeferred`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
   `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
@@ -415,6 +420,25 @@ build/rvdata`).
   catalog's "Mostra nella stanza" refused or failed so says the world's notice (`room-unreachable`, 12 s), and in the
   room the walker is in it is taken while a floor applies, as before I4. After a ride the scene's frame is the
   destination floor's (the start room's on its own floor): `--spawn` applies to the start only.
+- The editor (I4b step 3, `docs/i4b/step-3.md`; ADR-0015 §4): while the walker is in a room with games (no floor on
+  its way, no ride, no launch), the directory shows "Modifica stanza" above its floors (Up from the first floor, then
+  Enter or A), and the card of a game of that room in Inspect shows "Sposta" below its buttons (the game then in the
+  hand): the world's state `Edit` (the bar at the bottom names the room, the game or empty slot the reticle rests
+  on, the pending changes and the keys of the device used last). The walker walks and looks; the arrows and the D-pad
+  step over every slot, empty ones included, the walker eased in front of it (the arrow keys step instead of walking).
+  E (A) picks up the game targeted, held smaller in the hand, its slot empty; on an empty slot it puts it there (where
+  it would stand outlined in warm white; a slot's decoration gives way, the floor built again from the draft), on
+  another game it swaps the two (the room's collection laid out again in place), on its own slot it puts it back; Esc
+  (B) puts it back; P (the pad's X) pins or unpins the game targeted in place. Every move and swap pins its games
+  (`overrides.json`, origin `editor`). Each edit is applied on the pool to a draft of the plan and validated; a refusal
+  ("Quello spazio è già occupato", ...) leaves the game in the hand. The reticle and the D-pad target only while the eye
+  is in the edited room. Enter or Start opens the menu (Esc with pending changes too; Start again closes it, the walker
+  stands still while it is open): Salva (the session's operations saved under the world lock behind a snapshot, action `edit`, which
+  `retroverse-cli worldplan undo` undoes; replayed onto the stored plan if it changed meanwhile, refused with nothing
+  written when one no longer applies), Annulla ultima azione (the draft's last), Esci senza salvare (the room as stored
+  again), Continua. Esc with nothing pending leaves the editor. The quick catalog, the directory and rides wait, and a
+  refreshed catalog's live update waits for the session's end. `overrides.json` that cannot be read (written by a newer
+  Retroverse) edits nothing: the world's notice `edit-unavailable`. Lockstep runs wait between frames for each edit.
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase
@@ -463,7 +487,8 @@ build/rvdata`).
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
-  directory, E (gamepad A) at an elevator, the hub's totem or a proxy of its showcase too (above); Esc (gamepad B)
+  directory, E (gamepad A) at an elevator, the hub's totem or a proxy of its showcase too (above); P (gamepad X) pins
+  in the editor (`edit_pin`, I4b step 3, above); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
   panel, else steps back through the quick catalog or the directory and closes it, else releases the mouse, else closes
   the overlay, else quits; F1 toggles the overlay; F5 reloads the shaders, F8 mutes the clips' sound or sounds it

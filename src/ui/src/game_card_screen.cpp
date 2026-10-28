@@ -45,6 +45,8 @@ struct CardData {
     Rml::String outcome;
     /// The outcome has a sentence of its own (game_card::kOutcomeCodes): else the general one.
     bool outcomeKnown = false;
+    /// "Sposta" shows (I4b step 3).
+    bool movable = false;
 };
 
 /// `fraction` as a CSS percentage ("73.4375%"), to a ten-thousandth of a percent.
@@ -113,6 +115,7 @@ struct GameCardScreen::Impl {
             card.RegisterMember("coverTop", &CardData::coverTop);
             card.RegisterMember("outcome", &CardData::outcome);
             card.RegisterMember("outcomeKnown", &CardData::outcomeKnown);
+            card.RegisterMember("movable", &CardData::movable);
         }
         constructor.Bind("card", &data);
         constructor.BindEventCallback(Rml::String(game_card::kPressEvent),
@@ -148,6 +151,7 @@ struct GameCardScreen::Impl {
         data.verified = content.verified;
         data.details = content.details;
         data.unavailable = content.unavailable;
+        data.movable = content.movable;
         data.otherVersions = static_cast<int>(std::min<std::uint32_t>(content.otherVersions, 1000000));
         data.cover = content.cover;
         // The cover at its own shape in the frame (a jewel case's square cover pillarboxed), never stretched; the
