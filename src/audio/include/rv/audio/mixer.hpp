@@ -93,7 +93,8 @@ public:
     /// A new source, silent, without a ring.
     [[nodiscard]] SourceId addSource();
     /// The ring of the source's next clip (none: silent): the source starts again (a resync at its first block), its
-    /// gain from 0.
+    /// gain from 0. A source still sounding first fades its old clip out (pauseFadeSeconds, on the old clock): the new
+    /// ring, and the clock setClock() gives meanwhile, take over once it is silent.
     void setRing(SourceId source, std::shared_ptr<AudioRing> ring);
     void setControl(SourceId source, const SourceControl& control);
     void setClock(SourceId source, const SourceClock& clock);
@@ -146,6 +147,10 @@ private:
         bool needResync = true;
         /// The generation the source played last (a seek starts it again).
         std::uint32_t generation = 0;
+        /// setRing() while the source sounded: the next clip's ring and clock, installed once the old one is silent.
+        bool ringPending = false;
+        std::shared_ptr<AudioRing> pendingRing;
+        SourceClock pendingClock;
     };
 
     /// Renders the source into m_scratch; false when it gave nothing (silent, no picture yet, nothing decoded).
@@ -156,6 +161,9 @@ private:
     /// sample (needResync stays set until it could).
     void resync(Source& source, double target, std::size_t frames, std::size_t& index);
     void renderBlock(float* out, std::size_t frames, double blockStartSeconds);
+    void installRing(Source& source, std::shared_ptr<AudioRing> ring, const SourceClock& clock);
+    /// The gain's target and slope from the source's control (0 within the pause fade while a new ring waits).
+    void retarget(Source& source);
     void recordError(double seconds);
     [[nodiscard]] double errorPercentile(double fraction) const;
 

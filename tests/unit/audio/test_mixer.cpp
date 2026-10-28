@@ -395,6 +395,54 @@ TEST_CASE("audio/mixer: the pan moves sample by sample, never in a step", "[audi
     CHECK(moved[moved.size() - 2] == Approx(0.5 * std::tan(0.1 * std::numbers::pi)).epsilon(1e-6));
 }
 
+TEST_CASE("audio/mixer: a new ring while the source sounds: the old clip fades out, then the new one fades in",
+          "[audio][mixer]") {
+    Mixer mixer;
+    Feeder a;
+    a.frequency = 440.0;
+    const SourceId source = mixer.addSource();
+    mixer.setRing(source, a.ring);
+    mixer.setControl(source, SourceControl{1.0, 0.0, true});
+    mixer.setClock(source, clockAt(0.0, 0.0));
+    const auto media = [](double t) { return t; };
+    const std::vector<float> before = renderBlocks(mixer, {&a}, 30, 0.0, media);
+    REQUIRE(mixer.sourceGain(source) == 1.0);
+
+    // The next clip, from 0 on its own clock; the old one's ring still holds sound.
+    Feeder b;
+    b.frequency = 1000.0;
+    b.topUp(0.2);
+    mixer.setRing(source, b.ring);
+    mixer.setClock(source, clockAt(0.0, 30 * kBlockSeconds));
+    std::vector<float> after(kBlock * 2 * 30);
+    for (std::size_t block = 0; block < 30; ++block) {
+        const double at = static_cast<double>(30 + block) * kBlockSeconds;
+        a.topUp(at + 0.2);
+        b.topUp(at - 30 * kBlockSeconds + 0.2);
+        mixer.render(after.data() + block * kBlock * 2, kBlock, at);
+    }
+    // No click: the first sample after the change follows the old clip's last one, and the sound fades out within
+    // the pause's 30 ms.
+    const float last = before[before.size() - 2];
+    CHECK(std::abs(after[0] - last) < 0.06f);
+    const std::vector<float> left = channelOf(after, 2, 0);
+    const std::span<const float> fading(left.data(), 1440);
+    CHECK(toneAmplitude(fading, 440.0, kRate) > 0.05);
+    // Then the new clip, from its start, fading in over 300 ms; the old one gone.
+    const std::span<const float> tail(left.data() + left.size() - 6 * kBlock, 6 * kBlock); // the last 100 ms
+    CHECK(toneAmplitude(tail, 1000.0, kRate) == Approx(0.5).epsilon(0.01));
+    CHECK(toneAmplitude(tail, 440.0, kRate) < 0.005);
+    CHECK(mixer.sourceGain(source) == 1.0);
+    // Silent and set a new ring: it is taken at once.
+    mixer.setControl(source, SourceControl{0.0, 0.0, false});
+    renderBlocks(mixer, {&b}, 3, 60 * kBlockSeconds, [](double t) { return t - 30 * kBlockSeconds; });
+    REQUIRE(mixer.sourceGain(source) == 0.0);
+    mixer.setRing(source, nullptr);
+    std::vector<float> block(kBlock * 2, 1.0f);
+    mixer.render(block.data(), kBlock, 63 * kBlockSeconds);
+    CHECK(peakOf(block) == 0.0f);
+}
+
 TEST_CASE("audio/mixer: an empty ring gives silence and counts its frames", "[audio][mixer]") {
     Mixer mixer;
     const SourceId source = mixer.addSource();

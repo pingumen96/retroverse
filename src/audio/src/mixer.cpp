@@ -55,13 +55,41 @@ void Mixer::setRing(SourceId id, std::shared_ptr<AudioRing> ring) {
         return;
     }
     Source& source = m_sources[id];
+    if (source.ring && source.gain.current > 0.0) {
+        // Still sounding: the old clip fades out first (the pause's fade, on its own clock), then the new one starts.
+        source.pendingRing = std::move(ring);
+        source.pendingClock = SourceClock{};
+        source.ringPending = true;
+        retarget(source);
+        return;
+    }
+    installRing(source, std::move(ring), SourceClock{});
+}
+
+void Mixer::installRing(Source& source, std::shared_ptr<AudioRing> ring, const SourceClock& clock) {
     source.ring = std::move(ring);
+    source.ringPending = false;
+    source.pendingRing.reset();
     source.gain.current = 0.0;
     source.hasPrevious = false;
     source.fraction = 0.0;
     source.needResync = true;
     source.sync.reset();
-    source.clock = SourceClock{};
+    source.clock = clock;
+    retarget(source);
+}
+
+void Mixer::retarget(Source& source) {
+    if (source.ringPending) {
+        source.gain.step = stepFor(m_settings.pauseFadeSeconds, m_settings.sampleRate);
+        source.gain.target = 0.0;
+        return;
+    }
+    // Paused: down within the pause fade; otherwise the cross-fade's slope.
+    const bool playing = source.control.playing;
+    source.gain.step =
+        stepFor(playing ? m_settings.crossFadeSeconds : m_settings.pauseFadeSeconds, m_settings.sampleRate);
+    source.gain.target = playing ? source.control.gain : 0.0;
 }
 
 void Mixer::setControl(SourceId id, const SourceControl& control) {
@@ -71,10 +99,7 @@ void Mixer::setControl(SourceId id, const SourceControl& control) {
         source.control = control;
         source.control.gain = std::isfinite(control.gain) ? std::max(0.0, control.gain) : 0.0;
         source.control.pan = std::isfinite(control.pan) ? std::clamp(control.pan, -1.0, 1.0) : 0.0;
-        // Paused: down within the pause fade; otherwise the cross-fade's slope.
-        source.gain.step =
-            stepFor(control.playing ? m_settings.crossFadeSeconds : m_settings.pauseFadeSeconds, m_settings.sampleRate);
-        source.gain.target = control.playing ? source.control.gain : 0.0;
+        retarget(source);
         source.pan.target = source.control.pan;
     }
 }
@@ -82,7 +107,9 @@ void Mixer::setControl(SourceId id, const SourceControl& control) {
 void Mixer::setClock(SourceId id, const SourceClock& clock) {
     const std::scoped_lock lock(m_mutex);
     if (id < m_sources.size()) {
-        m_sources[id].clock = clock;
+        Source& source = m_sources[id];
+        // While the old clip fades out it keeps its own clock; this one is the next clip's.
+        (source.ringPending ? source.pendingClock : source.clock) = clock;
     }
 }
 
@@ -310,6 +337,9 @@ void Mixer::render(float* out, std::size_t frames, double blockStartSeconds) {
 void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds) {
     std::fill(out, out + frames * kMixChannels, 0.0f);
     for (Source& source : m_sources) {
+        if (source.ringPending && source.gain.current == 0.0) {
+            installRing(source, std::move(source.pendingRing), source.pendingClock); // the old clip has faded out
+        }
         // A source rises only while it sounds: its fade-in starts with its first sample, not with its request.
         const bool sounding = renderSource(source, frames, blockStartSeconds);
         const bool hold = !sounding && source.gain.target > source.gain.current;
