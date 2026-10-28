@@ -251,6 +251,10 @@ struct ScreenService::Impl {
 
         // What the material shows and the generation the screen follows.
         GLuint appliedOverride = 0;
+        /// A video shown: the slot whose texture the override is, and the clip it played then (a held video ends
+        /// once that slot opened another screen's clip or its texture changed).
+        std::optional<std::size_t> overrideSlot;
+        std::string overrideClip;
         ScreenPicture shownPicture = ScreenPicture::IdlePattern;
         /// The game whose picture is shown (the previous target's while it is held).
         std::string shownGame;
@@ -948,7 +952,8 @@ struct ScreenService::Impl {
             // kMaxHeldPictureSeconds; then (or when nothing can come) the screen's own pattern.
             const bool arriving = policy.wantsDecoder() || policy.wantedStill().has_value();
             const double wallSeconds = std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
-            if (screen.appliedOverride != 0 && screen.held.hold(arriving, now, wallSeconds)) {
+            if (screen.appliedOverride != 0 && heldPictureThere(screen) &&
+                screen.held.hold(arriving, now, wallSeconds)) {
                 if (heroScreen) {
                     ++counters.heldFrames;
                 }
@@ -988,7 +993,25 @@ struct ScreenService::Impl {
         }
         screen.appliedOverride = texture;
         screen.shownPicture = picture;
+        screen.overrideSlot.reset();
+        screen.overrideClip.clear();
+        if (picture == ScreenPicture::Video && screen.lastSlot) {
+            screen.overrideSlot = screen.lastSlot;
+            screen.overrideClip = slots[*screen.lastSlot].clip;
+        }
         releaseHeldStill(screen);
+    }
+
+    /// The picture the screen holds is still what it showed: a still is its own (heldStill); a video is its slot's
+    /// texture while that slot plays the same clip, or the screen's next one, and keeps its texture (a slot reopened
+    /// for another screen's clip would show that game, a reallocated texture is gone).
+    [[nodiscard]] bool heldPictureThere(const ScreenState& screen) const {
+        if (!screen.overrideSlot) {
+            return true;
+        }
+        const Slot& slot = slots[*screen.overrideSlot];
+        const bool clip = slot.clip == screen.overrideClip || (!screen.clip.empty() && slot.clip == screen.clip);
+        return clip && slot.texture.textureId() == screen.appliedOverride;
     }
 
     /// The held still goes once the screen no longer shows it.
