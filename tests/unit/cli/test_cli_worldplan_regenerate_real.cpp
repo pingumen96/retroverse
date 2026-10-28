@@ -3,14 +3,15 @@
 // never runs it; scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the library before and after
 // (0 differences), and the folders in the RV_REAL_* variables:
 //   ./scripts/real-library.ps1 -Filter '[real-library][regenerate]'
-// The whole library is imported into a new catalog in a temporary data directory (library.json naming the real ES-DE
-// home, install, ROM and media roots), its building generated, then each scope's dry run: the room room:snes (else the
-// largest room), the floor with the most placements and the world. Each exits 0, writes nothing (the world's folder
+// The whole library is imported into a new catalog in a data directory under the build tree
+// (build/<preset>/real-library/regenerate/data, emptied first; library.json naming the real ES-DE home, install, ROM
+// and media roots), its building generated, then each scope's dry run: the room room:snes (else the largest room), the
+// floor with the most placements and the world. Each exits 0, writes nothing (the world's folder
 // byte for byte, no lock file), and, the catalog unchanged since the generation, changes nothing (the regeneration of
 // a world without overrides equals its fresh plan). The preview's time (the rooms' data and the regeneration, as the
 // app's job will run it on the pool; the catalog's selections apart) is checked against ADR-0015 §9's acceptable
 // limits (2 s a room, 15 s the world) and printed ("Real regeneration:" lines, for docs/i4b/step-5.md). Nothing derived
-// from the user's titles is written outside the temporary folder.
+// from the user's titles is written outside that folder (docs/reference/safety.md: never under %TEMP%).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -40,7 +41,7 @@
 #include <rv/world/plan_json.hpp>
 #include <rv/world/world_store.hpp>
 
-#include "support/temp_dir.hpp"
+#include "support/fixture.hpp"
 
 namespace fs = std::filesystem;
 using rv::cli::ExitCode;
@@ -107,12 +108,18 @@ TEST_CASE("cli/worldplan regenerate: the real library's dry runs of a room, a fl
              "(scripts/real-library.ps1 does)");
     }
     const LoggingReset loggingReset;
-    const rv::test::TempDir dir("rv-cli-regenerate-real");
+    // Under the build tree, never in the library nor in %TEMP%.
+    const fs::path folder = rv::test::testProgramsDir().parent_path() / "real-library" / "regenerate";
+    std::error_code removed;
+    fs::remove_all(folder, removed);
+    REQUIRE_FALSE(removed);
+    fs::create_directories(folder, removed);
+    REQUIRE_FALSE(removed);
     rv::core::PathEnvironment environment;
-    environment.executableDir = dir.path();
+    environment.executableDir = folder;
     environment.sourceAssetDir = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR);
     const auto run = [&](std::vector<std::string> arguments) {
-        arguments.insert(arguments.begin(), {"--data-dir", rv::core::pathToUtf8(dir.file("data"))});
+        arguments.insert(arguments.begin(), {"--data-dir", rv::core::pathToUtf8(folder / "data")});
         Output out = Output::memory();
         Output err = Output::memory();
         const ExitCode code = rv::cli::run(arguments, out, err, environment);
