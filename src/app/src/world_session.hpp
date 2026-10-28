@@ -215,7 +215,7 @@ public:
     [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,
                                                                const scene::Camera& camera);
     /// The inspection's dimming of the frame's view (I3 step 13b: WorldInspection::apply); the editor's outline colour
-    /// (I4b step 4: red over a held fixture's refused place).
+    /// (I4b step 4: a held fixture's wider outline, red over a refused place, the rest dimmed a little).
     void applyInspection(gl::RenderView& view) {
         m_interaction->applyInspection(view);
         applyEditOutline(view);
@@ -364,8 +364,8 @@ private:
     void moveHeldLights();
     /// The view's items of a held fixture: drawn where it would stand, outlined.
     void appendHeldFixture(std::span<const scene::RenderItem> sceneItems, CollectionInstance& collection);
-    /// The outline's colour of the frame (the inspection's dimming's view too): red over a held fixture's refused
-    /// place.
+    /// The outline of a held fixture (the inspection's dimming's view too): 3.5 px at 1080, the rest of the view dimmed
+    /// a little, a lighter red over a refused place.
     void applyEditOutline(gl::RenderView& view) const;
     /// The collection of the edited room, if shown.
     [[nodiscard]] CollectionInstance* editCollection() const;

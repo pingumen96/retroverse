@@ -164,8 +164,12 @@ void displayInto(EditJobAnswer& answer, const EditJobContext& context, const std
 /// The synthetic scene digest of a floor shown with a room's static part rebuilt alone ("edit-scene:<session>:<n>").
 constexpr std::string_view kEditSceneDigest = "edit-scene:";
 
-/// The outline over a held fixture's refused place (the bar's verdict colour, edit_bar.rcss).
-constexpr std::array<std::uint8_t, 3> kRefusedOutlineSrgb{0xC8, 0x64, 0x5A};
+/// The outline over a held fixture (I4b step 4's review): wider than the hover's 2 px, so that it reads on a dark
+/// cabinet; over a refused place a lighter red of the bar's verdict colour's hue (edit_bar.rcss: #C8645A), which reads
+/// on dark wood; the rest of the view dimmed a little (the inspection dims by half).
+constexpr float kHeldOutlineWidthAt1080 = 3.5f;
+constexpr std::array<std::uint8_t, 3> kRefusedOutlineSrgb{0xE8, 0x80, 0x6E};
+constexpr float kHeldDimOutside = 0.2f;
 
 /// The held game in the hand: as Inspect holds an item (heldItemTransform() at its full lift), turned a little to show
 /// its side, nearer and smaller (ADR-0015 §4).
@@ -1400,7 +1404,10 @@ void WorldSession::applyEditOutline(gl::RenderView& view) const {
     if (!m_edit || !m_edit->interaction.heldFixture()) {
         return;
     }
-    // Warm white where it may drop (the hover's colour), red where a rule refuses it (the bar names the rule).
+    // Warm white where it may drop (the hover's colour), red where a rule refuses it (the bar names the rule); wider
+    // than the hover's, the rest of the view dimmed a little, whatever the verdict.
+    view.outline.widthAt1080 = kHeldOutlineWidthAt1080;
+    view.outline.dimOutside = std::max(view.outline.dimOutside, kHeldDimOutside);
     const std::optional<std::string> verdict = m_edit->interaction.verdict();
     if (verdict && !verdict->empty()) {
         view.outline.colorSrgb = kRefusedOutlineSrgb;
