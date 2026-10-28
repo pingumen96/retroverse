@@ -86,6 +86,11 @@ enum class ClipDamage : std::uint8_t {
     Corrupt,
     /// An .avi whose video codec's four-character codes read "RVZZ", which no decoder knows (UnsupportedCodec).
     UnsupportedCodec,
+    /// A sound file (half a second of silent PCM in a .wav container) under a clip's name: no video stream
+    /// (NoVideoStream; I5 step 7).
+    NoVideo,
+    /// A few words of text under a clip's name: no container FFmpeg knows (InvalidFile; I5 step 7).
+    NotAVideo,
 };
 
 /// The clip files.json's "video" gives by default: 4:3, 640 x 480, 30 fps, 4 s, MPEG-4 Part 2 at quantizer 5 (about 0.5

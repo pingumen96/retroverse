@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Amber Tide (USA).sfc</path>
+		<name>Amber Tide</name>
+		<desc>Amber Tide: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950301T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Brass Kettle (USA).sfc</path>
+		<name>Brass Kettle</name>
+		<desc>Brass Kettle: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950302T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Cinder Bell (USA).sfc</path>
+		<name>Cinder Bell</name>
+		<desc>Cinder Bell: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950303T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Dune Lantern (USA).sfc</path>
+		<name>Dune Lantern</name>
+		<desc>Dune Lantern: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950304T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Ember Quill (USA).sfc</path>
+		<name>Ember Quill</name>
+		<desc>Ember Quill: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950305T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Frost Gate (USA).sfc</path>
+		<name>Frost Gate</name>
+		<desc>Frost Gate: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950306T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Garnet Loom (USA).sfc</path>
+		<name>Garnet Loom</name>
+		<desc>Garnet Loom: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950307T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+	<game>
+		<path>./Hazel Orbit (USA).sfc</path>
+		<name>Hazel Orbit</name>
+		<desc>Hazel Orbit: an invented game of the video-verdicts fixture.</desc>
+		<releasedate>19950308T000000</releasedate>
+		<developer>Paper Owl</developer>
+		<genre>Avventura</genre>
+		<players>1</players>
+	</game>
+</gameList>

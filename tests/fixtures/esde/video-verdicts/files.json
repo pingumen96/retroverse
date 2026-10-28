@@ -1,0 +1,33 @@
+// What git does not hold (see README.md): the ROM payloads, the placeholder ES-DE.exe, the fake emulator's copy,
+// each game's clip (one of each damaged kind of SC-08 and two playable ones) and screenshot.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1000},
+        {"path": "Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe", "copyOf": "rv_fake_emulator.exe"},
+        {"path": "roms/snes/Amber Tide (USA).sfc", "size": 65536, "seed": 10, "mtime": "1995-03-01T12:00:00Z"},
+        {"path": "roms/snes/Brass Kettle (USA).sfc", "size": 65536, "seed": 11, "mtime": "1995-03-02T12:00:00Z"},
+        {"path": "roms/snes/Cinder Bell (USA).sfc", "size": 65536, "seed": 12, "mtime": "1995-03-03T12:00:00Z"},
+        {"path": "roms/snes/Dune Lantern (USA).sfc", "size": 65536, "seed": 13, "mtime": "1995-03-04T12:00:00Z"},
+        {"path": "roms/snes/Ember Quill (USA).sfc", "size": 65536, "seed": 14, "mtime": "1995-03-05T12:00:00Z"},
+        {"path": "roms/snes/Frost Gate (USA).sfc", "size": 65536, "seed": 15, "mtime": "1995-03-06T12:00:00Z"},
+        {"path": "roms/snes/Garnet Loom (USA).sfc", "size": 65536, "seed": 16, "mtime": "1995-03-07T12:00:00Z"},
+        {"path": "roms/snes/Hazel Orbit (USA).sfc", "size": 65536, "seed": 17, "mtime": "1995-03-08T12:00:00Z"},
+        {"path": "media/snes/videos/Amber Tide (USA).mp4", "video": {"seed": 401, "seconds": 3}},
+        {"path": "media/snes/videos/Brass Kettle (USA).mp4", "video": {"seed": 402, "quantizer": 2, "damage": "truncated"}},
+        {"path": "media/snes/videos/Cinder Bell (USA).mp4", "video": {"seed": 403, "quantizer": 2, "damage": "corrupt"}},
+        {"path": "media/snes/videos/Dune Lantern (USA).mp4", "video": {"seed": 404, "damage": "empty"}},
+        {"path": "media/snes/videos/Ember Quill (USA).avi", "video": {"seed": 405, "damage": "unsupported-codec"}},
+        {"path": "media/snes/videos/Frost Gate (USA).mp4", "video": {"seed": 406, "damage": "no-video"}},
+        {"path": "media/snes/videos/Garnet Loom (USA).mp4", "video": {"seed": 407, "damage": "not-a-video"}},
+        {"path": "media/snes/videos/Hazel Orbit (USA).mp4", "video": {"seed": 408, "seconds": 12, "width": 320, "height": 240}},
+        {"path": "media/snes/screenshots/Amber Tide (USA).png", "cover": {"title": "Amber Tide", "seed": 500, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Brass Kettle (USA).png", "cover": {"title": "Brass Kettle", "seed": 501, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Cinder Bell (USA).png", "cover": {"title": "Cinder Bell", "seed": 502, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Dune Lantern (USA).png", "cover": {"title": "Dune Lantern", "seed": 503, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Ember Quill (USA).png", "cover": {"title": "Ember Quill", "seed": 504, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Frost Gate (USA).png", "cover": {"title": "Frost Gate", "seed": 505, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Garnet Loom (USA).png", "cover": {"title": "Garnet Loom", "seed": 506, "width": 640, "height": 480}},
+        {"path": "media/snes/screenshots/Hazel Orbit (USA).png", "cover": {"title": "Hazel Orbit", "seed": 507, "width": 640, "height": 480}}
+    ],
+    "directories": ["ES-DE/custom_systems"]
+}
