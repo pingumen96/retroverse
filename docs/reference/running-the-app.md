@@ -61,7 +61,8 @@ build/rvdata`).
   `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
   `edits` (I4b step 3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
   `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
-  `in-place`, `floor` or `none`, `editMs`, `shownFrame`, `shownMs`; `undone`, `menus`, `end` `saved`, `discarded`,
+  `in-place`, `room` (I4b step 4: the room's static part rebuilt alone), `floor` or `none`, `editMs`, `shownFrame`,
+  `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
   `snapshot`, `planDigest` (the plan shown at the end),
   `saveMs`, `backMs`, `liveUpdateDeferred`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
@@ -427,7 +428,7 @@ build/rvdata`).
   on, the pending changes and the keys of the device used last). The walker walks and looks; the arrows and the D-pad
   step over every slot, empty ones included, the walker eased in front of it (the arrow keys step instead of walking).
   E (A) picks up the game targeted, held smaller in the hand, its slot empty; on an empty slot it puts it there (where
-  it would stand outlined in warm white; a slot's decoration gives way, the floor built again from the draft), on
+  it would stand outlined in warm white; a slot's decoration gives way, the room's static part rebuilt alone), on
   another game it swaps the two (the room's collection laid out again in place), on its own slot it puts it back; Esc
   (B) puts it back; P (the pad's X) pins or unpins the game targeted in place. Every move and swap pins its games
   (`overrides.json`, origin `editor`). Each edit is applied on the pool to a draft of the plan and validated; a refusal
@@ -439,6 +440,17 @@ build/rvdata`).
   again), Continua. Esc with nothing pending leaves the editor. The quick catalog, the directory and rides wait, and a
   refreshed catalog's live update waits for the session's end. `overrides.json` that cannot be read (written by a newer
   Retroverse) edits nothing: the world's notice `edit-unavailable`. Lockstep runs wait between frames for each edit.
+  Furniture (I4b step 4, `docs/i4b/step-4.md`): where the reticle rests on no game or slot, it targets a side-wall
+  module, a display fixture or a decoration (within 4 m; the hero corner and the hero-wall modules are fixed); E (A)
+  picks it up, held where it was taken: it follows the floor point under the reticle (a poster the wall point, along
+  the walls only) on the room's 100 mm grid, drawn there with its games and dressing and outlined, warm white where
+  it may drop, red where a rule refuses it (the bar names the rule: another fixture, the doorway, a door-reserved wall,
+  a module or the TV no longer reached through 1.2 m, ...); each new place is judged on the pool. Q and R (the pad's
+  shoulders) turn it a quarter turn (decoration 15 degrees; a poster turns with its wall), the arrows (the D-pad) nudge
+  it by 10 cm along the room's axis nearest the view's (a poster along its wall) until the walker looks or walks; E
+  (A) drops it (a refusal keeps it in the hand), where it stood puts it back, as Esc (B) does; P (X) pins or unpins the
+  fixture targeted. A drop rebuilds the room's static part alone in place (its objects, dressing, wall-washers, a
+  lamp's light and colliders), then lays its collection out again; the fixture is pinned where it was put.
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase
@@ -488,7 +500,8 @@ build/rvdata`).
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
   directory, E (gamepad A) at an elevator, the hub's totem or a proxy of its showcase too (above); P (gamepad X) pins
-  in the editor (`edit_pin`, I4b step 3, above); Esc (gamepad B)
+  in the editor (`edit_pin`, I4b step 3, above), Q and R (the gamepad's shoulders) turn a fixture it holds
+  (`edit_rotate_left`, `edit_rotate_right`, I4b step 4); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
   panel, else steps back through the quick catalog or the directory and closes it, else releases the mouse, else closes
   the overlay, else quits; F1 toggles the overlay; F5 reloads the shaders, F8 mutes the clips' sound or sounds it

@@ -48,7 +48,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
   defaults `assets/config/video.json`); since I5 step 2 `screen_scheduler.hpp` (the decoder scheduler) and
   `process_priority.hpp` (which priority class a frame wants); since I4b step 3 `world_edit_room.hpp` (the edited room's
-  items and free slots as targets and steps), `world_edit_interaction.hpp` (the editor's modes and input) and
+  items and free slots as targets and steps; its movable fixtures and the points a held one follows since step 4),
+  `world_edit_interaction.hpp` (the editor's modes and input; Moving, a fixture held, since step 4) and
   `edit_bar_ui.hpp` (the bar's document contract); since I5 step 5 `audio_policy.hpp` (the run's audio output, the
   audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio_model`). `rv_media`'s `audio_sink.hpp`
   (I5 step 5) is where a decoder puts its clip's sound, decoded on its thread and resampled by swresample; `rv_app`'s
@@ -57,15 +58,17 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   build since I4 step 5a, the building stamp since 6b), `world_reconcile` and `room_screen` (10c), `game_screens.hpp`
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's
   items), `hub_showcase` (I6 step 5: the hub's favourites' proxies, their content made on the pool), `world_edit_draft`
-  (I4b step 3: the editor's draft, its save replayed under the world lock, the edit data, the rooms laid out again). `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
+  (I4b step 3: the editor's draft, its save replayed under the world lock, the edit data, the rooms laid out again;
+  since step 4 a room's static part rebuilt alone, `roomStaticPart`). `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
   `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`
   (14b), `world_launch` (15a), `world_live_update` (15b), `world_ride` (I4 step 7b: the directory's commands, the
   teleports, the ride's floor swap), `elevator_prompt_panel` (7b; the hub's totem's prompt since I6 step 5) and
   `world_showcase` (I6 step 5: the hub's favourites' showcase drawn, hovered and opened), `world_edit` and
-  `edit_bar_panel` (I4b step 3: the editor's session, its jobs, what it shows, the bar); the outline pass's dimming shader
-  `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
+  `edit_bar_panel` (I4b step 3: the editor's session, its jobs, what it shows, the bar; since step 4 a held fixture, its
+  probes, a room's static part replaced in place through `scene_instance`'s `replaceObjects`); the outline pass's
+  dimming shader `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
 - `rv_world` (`src/world`, `docs/i3/`, `docs/i4/`): ids (`room:snes/fx:w03/s:3.12`; since I4 step 1 the room ids'
@@ -90,7 +93,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   applied; since I4b step 1 schema 2, `writeOverrides`) and `where_is.hpp` (`PlanIndex`; 9); `world_snapshots.hpp` (I4b
   step 1: the paired snapshots, `commitWorld`, `undoLastAction`, `scanSnapshots`, the journal and
   `checkInterruptedAction`); `world_edit.hpp` (I4b step 2: the editor's operations, `applyEdit` / `applyEdits`,
-  `editRooms`, `editedResult`, the edit script); `regeneration.hpp` (I4b step 5: `regenerate` of a room, a floor or
+  `editRooms`, `editedResult`, the edit script; `editableFixtures`, I4b step 4); `regeneration.hpp` (I4b step 5: `regenerate` of a room, a floor or
   the world honouring the overrides, the conflicts, `planDifference`, the impact, `assetRootLoader`; the private
   `pinned_room.cpp`, a room generated around its pins); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
   `collection_layout.hpp` (items with transforms, pick ids, layer keys and
