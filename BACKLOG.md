@@ -189,8 +189,12 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **No colour bars between two clips:** done in I5 step 1 (`docs/i5/step-1.md`): the previous picture stays up until
   the next game's still or first frame, and the building's screens show `standby`, not the bars.
 - **Clip audio** (spec §9.7): swresample and miniaudio, and which clock drives presentation.
-- **Library-wide checks:** the corruption and truncation thresholds against every video of the collection; an hour-long
-  soak with the scene renderer.
+- **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
+  stand. The hour-long soak found the private bytes growing: see the next item.
+- **Memory per clip opened (I5 step 7's soak):** a Release app grows about 150 KiB per decoder it opens (not
+  `rv_media` alone, not a Debug app); trace the allocations around a slot's open and release. Also bound the run
+  report's per-frame samples (frame times, GPU passes, CPU sections: about 75 bytes a frame for the whole run) with a
+  reservoir or a histogram in interactive runs.
 
 ### Product UI
 
