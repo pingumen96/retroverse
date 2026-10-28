@@ -87,7 +87,8 @@ std::pair<std::vector<CabinetScreen>, CabinetPool> WorldSession::cabinetScreens(
         screen.gameId = game->toString();
         screen.screenClass = play.screenClass;
         screen.bounds = collection->itemBox(*item);
-        screen.inHand = interaction.state() == WorldState::Inspect;
+        // Held in the hand whenever the interaction holds the item: Inspect and a launch from it until the return.
+        screen.inHand = cabinetInHand(interaction.state());
         m_cabinetRequests.emplace(screen.id, std::make_pair(*roomIndex, play.pick));
         screens.push_back(std::move(screen));
     }

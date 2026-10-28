@@ -198,7 +198,8 @@ public:
     ScreenService(const ScreenService&) = delete;
     ScreenService& operator=(const ScreenService&) = delete;
 
-    /// The room's games changed (ScreenPolicy::setGames on every screen).
+    /// The room's games changed (ScreenPolicy::setGames on every screen; a cabinet whose game or clip changed lets its
+    /// clip go, the others play on).
     void setGames(std::vector<ScreenGame> games);
 
     /// Lets go of the screens (I4 step 6b): the clips stop (never waited for), the stills go, and the screens' picture

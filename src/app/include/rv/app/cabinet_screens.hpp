@@ -106,6 +106,12 @@ struct CabinetPlay {
     bool operator==(const CabinetPlay&) const = default;
 };
 
+/// The interaction holds its focused item in the hand in `state` (Inspect, and a launch from it until the return): an
+/// inspected cabinet's screen is then in view at arm's length, whatever its slot's box says.
+[[nodiscard]] constexpr bool cabinetInHand(WorldState state) noexcept {
+    return state == WorldState::Inspect || state == WorldState::Launching || state == WorldState::Returning;
+}
+
 /// The cabinets that ask for their clips (see the file comment): the focused one in Focus (`focus`), in Inspect and
 /// while its launch runs (`direct`, so that its clip's position is kept for the return); the attract one in free roam
 /// (`ambient`); none in the editor.

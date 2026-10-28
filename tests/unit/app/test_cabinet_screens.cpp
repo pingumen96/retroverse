@@ -163,3 +163,15 @@ TEST_CASE("app/cabinets: no cabinet plays while the room editor runs", "[app][sc
 TEST_CASE("app/cabinets: a cabinet's screen id names its room and its item", "[app][screens][cabinets]") {
     CHECK(rv::app::cabinetScreenId("area:arcade", 0x00A1B2C3u) == "area:arcade/cabinet:00A1B2C3");
 }
+
+TEST_CASE("app/cabinets: the inspected cabinet is in the hand through its launch until the return",
+          "[app][screens][cabinets]") {
+    // I5 step 4's review: whenever the interaction holds the item (Inspect, Launching, Returning) its screen is in view
+    // at arm's length, not at its slot's box.
+    CHECK(rv::app::cabinetInHand(WorldState::Inspect));
+    CHECK(rv::app::cabinetInHand(WorldState::Launching));
+    CHECK(rv::app::cabinetInHand(WorldState::Returning));
+    CHECK_FALSE(rv::app::cabinetInHand(WorldState::FreeRoam));
+    CHECK_FALSE(rv::app::cabinetInHand(WorldState::Focus));
+    CHECK_FALSE(rv::app::cabinetInHand(WorldState::Edit));
+}
