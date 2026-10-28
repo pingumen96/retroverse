@@ -1,0 +1,82 @@
+// GPU smoke test scene (tests/smoke/test_screens.cpp, I5 step 2): four CRTs on TV cabinets along the north wall of a
+// small room, for the decoder scheduler (ADR-0016 §2). crt_a, the first, is the hero screen; crt_b, crt_c and crt_d are
+// secondary screens of the same room (its id is the scene's name, "screens_four", in video.json's rooms). The camera
+// stands 3.8 m from the wall facing it, all four screens in view; turned 40 degrees to the left, crt_c and crt_d leave
+// the view while crt_a and crt_b stay. Room interior 8 x 7 m centred on the origin (x in [-4, 4], z in [-3.5, 3.5]),
+// doorway in the south wall. Run it on its own (the screens show their standby pattern without a catalog) with
+//   retroverse.exe --scene tests/smoke/scenes/screens_four.json --exit-after-frames --frames 5 --hidden
+//     --screenshot build/screenshots/screens_four.png --data-dir build/rvdata
+{
+  "schemaVersion": 1,
+  "name": "screens_four",
+  "camera": {"position": [0.0, 1.6, 0.6], "yawDeg": 0.0, "pitchDeg": -8.0, "horizontalFovDeg": 75.0,
+             "near": 0.05, "far": 100.0},
+  "environment": {
+    "clearColor": "#221E1A",
+    "ambientSky": "#E6E2DC",
+    "ambientGround": "#4A4642",
+    "ambientIntensity": 0.3,
+    "exposure": 1.5,
+    "bloomStrength": 0.18,
+    "bloomRadius": 0.5,
+    "vignette": 0.05,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  "lights": [
+    {"name": "ceiling_key", "type": "spot", "position": [0.0, 2.92, -1.2], "target": [0.0, 0.5, -3.5],
+     "color": "#FFE0C0", "intensity": 60.0, "range": 10.0, "innerConeDeg": 30.0, "outerConeDeg": 55.0,
+     "castsShadows": true},
+    {"name": "room_fill", "type": "point", "position": [0.0, 2.3, 0.8], "color": "#FFE0C0", "intensity": 14.0,
+     "range": 9.0}
+  ],
+  "objects": [
+    {"id": "room", "prefab": "room_shell",
+     "params": {"size": [8.0, 7.0], "wallHeight": 3.0, "wallThickness": 0.15, "metersPerTile": 2.0, "ceiling": true,
+                "baseboardHeight": 0.1, "wainscotHeight": 1.0,
+                "doorway": {"wall": "south", "offset": 0.0, "width": 1.6, "height": 2.3}},
+     "materials": {"floor": "MAT_Floor_OakPlanks", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wall_Painted",
+                   "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished"}},
+
+    {"id": "crt_a", "prefab": "crt", "position": [-2.1, 0.7, -3.18],
+     "params": {"width": 0.71, "height": 0.61, "depth": 0.56, "screenAspect": 1.3333333, "bezel": 0.06,
+                "screenInset": 0.012, "backTaper": 0.35},
+     "materials": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "standby"}}},
+    {"id": "crt_b", "prefab": "crt", "position": [-0.7, 0.7, -3.18],
+     "params": {"width": 0.71, "height": 0.61, "depth": 0.56, "screenAspect": 1.3333333, "bezel": 0.06,
+                "screenInset": 0.012, "backTaper": 0.35},
+     "materials": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "standby"}}},
+    {"id": "crt_c", "prefab": "crt", "position": [0.7, 0.7, -3.18],
+     "params": {"width": 0.71, "height": 0.61, "depth": 0.56, "screenAspect": 1.3333333, "bezel": 0.06,
+                "screenInset": 0.012, "backTaper": 0.35},
+     "materials": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "standby"}}},
+    {"id": "crt_d", "prefab": "crt", "position": [2.1, 0.7, -3.18],
+     "params": {"width": 0.71, "height": 0.61, "depth": 0.56, "screenAspect": 1.3333333, "bezel": 0.06,
+                "screenInset": 0.012, "backTaper": 0.35},
+     "materials": {"plastic_body": "MAT_Plastic_AgedIvory", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "standby"}}},
+
+    {"id": "cabinet_a", "prefab": "tv_cabinet", "position": [-2.1, 0.0, -3.17],
+     "params": {"width": 1.0, "height": 0.7, "depth": 0.58, "drawers": 2, "legHeight": 0.08},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",
+                   "metal_trim": "MAT_Metal_Brushed"}},
+    {"id": "cabinet_b", "prefab": "tv_cabinet", "position": [-0.7, 0.0, -3.17],
+     "params": {"width": 1.0, "height": 0.7, "depth": 0.58, "drawers": 2, "legHeight": 0.08},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",
+                   "metal_trim": "MAT_Metal_Brushed"}},
+    {"id": "cabinet_c", "prefab": "tv_cabinet", "position": [0.7, 0.0, -3.17],
+     "params": {"width": 1.0, "height": 0.7, "depth": 0.58, "drawers": 2, "legHeight": 0.08},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",
+                   "metal_trim": "MAT_Metal_Brushed"}},
+    {"id": "cabinet_d", "prefab": "tv_cabinet", "position": [2.1, 0.0, -3.17],
+     "params": {"width": 1.0, "height": 0.7, "depth": 0.58, "drawers": 2, "legHeight": 0.08},
+     "materials": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished",
+                   "metal_trim": "MAT_Metal_Brushed"}}
+  ]
+}
