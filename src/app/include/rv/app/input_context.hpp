@@ -29,10 +29,10 @@ enum class InputContext : std::uint8_t {
     return catalogOpen || panelOpen ? InputContext::Ui : InputContext::World;
 }
 
-/// ToggleDevUI, ReloadShaders and Screenshot: developer and host functions every context reads.
+/// ToggleDevUI, ReloadShaders, Screenshot and ToggleMute (I5 step 5): developer and host functions every context reads.
 [[nodiscard]] constexpr bool isGlobalAction(input::Action action) noexcept {
     return action == input::Action::ToggleDevUI || action == input::Action::ReloadShaders ||
-           action == input::Action::Screenshot;
+           action == input::Action::Screenshot || action == input::Action::ToggleMute;
 }
 
 /// True when `context` reads `action`: the global actions everywhere; in World every action but the UI ones; in Ui the

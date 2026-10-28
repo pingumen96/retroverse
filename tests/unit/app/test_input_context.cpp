@@ -63,6 +63,7 @@ TEST_CASE("app/input_context: each context reads its own actions and the global 
     CHECK(rv::app::isGlobalAction(Action::ToggleDevUI));
     CHECK(rv::app::isGlobalAction(Action::ReloadShaders));
     CHECK(rv::app::isGlobalAction(Action::Screenshot));
+    CHECK(rv::app::isGlobalAction(Action::ToggleMute));
     CHECK_FALSE(rv::app::isGlobalAction(Action::Back));
 }
 

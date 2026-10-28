@@ -121,6 +121,9 @@
     ],
     "ui_filter_next": [
       { "padButton": "right_shoulder" }
+    ],
+    "toggle_mute": [
+      { "key": "f8" }
     ]
   }
 }

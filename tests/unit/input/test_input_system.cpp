@@ -419,6 +419,7 @@ TEST_CASE("input/input_system: default buttons trigger their actions", "[input][
         {keys({Key::F1}), {Action::ToggleDevUI}},
         {keys({Key::F5}), {Action::ReloadShaders}},
         {keys({Key::F12}), {Action::Screenshot}},
+        {keys({Key::F8}), {Action::ToggleMute}},
         {keys({Key::Up}), {Action::MoveForward, Action::UiUp}},
         {keys({Key::PageDown}), {Action::UiPageDown}},
         {keys({Key::Home}), {Action::UiHome}},
