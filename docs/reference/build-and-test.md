@@ -49,6 +49,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   Release (`RV_DEV_ASSET_ROOT` off) also holds `assets/`, which every build mirrors from the source tree (target
   `rv_runtime_assets`, `cmake/CopyAssets.cmake`: changed files copied, deleted ones removed, `staging` and the golden
   screenshots left out), so an edit of the assets alone reaches the next Release build.
+- No test plays sound (I5 step 5, ADR-0016 §9): every test preset of `CMakePresets.json` sets `RV_AUDIO=null` (so do
+  `scripts/real-library.ps1` and `scripts/gate.ps1`'s Catch runs), which forces `retroverse.exe`'s null output over
+  any `--audio`; frame-limited runs default to it anyway, and `smoke_support.cpp`'s `runApp` checks every report's
+  `audio.device` is `null` or `off`. The audio tests read the null output's offline mix (`--audio-capture <wav>`); the
+  device path is unit-tested on miniaudio's own null backend, never WASAPI.
 - GPU smoke tests (`tests/smoke`, label `gpu`, ctest names `gpu.<case>`): each case starts the executables of its
   build frame-limited with `--hidden`, `--data-dir` and `--run-report` under `build/<preset>/smoke/<case>` (logs,
   reports, screenshots, heatmaps stay there) and checks the reports and screenshots: the reference scenes with frame
@@ -208,7 +213,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `-RomRoot`, `-MediaRoot`, `-RetroArchExe` or those variables; `-Preset`, default `msvc-x64-release`; `-Filter`): it
   refuses to run while ES-DE runs, snapshots the home and install (configuration files hashed) and the ROM and media
   roots (listings only) with `scripts/snapshot_tree.py`, runs `rv_tests.exe "[real-library]"` (with
-  `RV_LAUNCH_BACKGROUND=1` and `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone), snapshots again and
+  `RV_LAUNCH_BACKGROUND=1`, `RV_AUDIO=null` and `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone), snapshots again and
   fails on a failed test or any difference (outputs in `build/real-library`). Narrower runs: `-Filter
   '[real-library][media]'` (the media tree and the coverage against ADR-0003), `-Filter '[real-library][launch]'` (the
   readiness of the real systems and the five launches ES-DE logged, read from the git-ignored, machine-local
