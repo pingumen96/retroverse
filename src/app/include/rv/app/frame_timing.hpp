@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <rv/app/run_report.hpp>
+#include <rv/core/cpu_timers.hpp>
 #include <rv/render/frame_stats.hpp>
 
 namespace rv::app {
@@ -71,8 +72,8 @@ private:
     static constexpr std::size_t kGpuPassCount = kGpuPassNames.size();
     /// One frame's GPU times per pass (kGpuPassNames' order).
     using GpuSample = std::array<std::optional<double>, kGpuPassCount>;
-    /// Every pass's samples.
-    using GpuSamples = std::array<std::vector<double>, kGpuPassCount>;
+    /// Every pass's samples (bounded: core::DurationRecorder).
+    using GpuSamples = std::array<core::DurationRecorder, kGpuPassCount>;
 
     static void addGpuSample(GpuSamples& samples, const GpuSample& sample);
     [[nodiscard]] static std::vector<GpuPassRecord> gpuPassRecords(const GpuSamples& samples);
@@ -85,7 +86,7 @@ private:
         std::uint64_t frames = 0;
         /// Opened during the frame being recorded (counted even when closed again before it ends).
         bool touched = false;
-        std::vector<double> milliseconds;
+        core::DurationRecorder milliseconds;
         GpuSamples gpu;
     };
 
@@ -93,7 +94,8 @@ private:
     [[nodiscard]] const Phase* find(std::string_view name) const;
 
     std::uint64_t m_warmUpFrames;
-    std::vector<double> m_milliseconds;
+    /// The frames' times: exact for the first core::DurationRecorder::kExactSamples, within 1% after them.
+    core::DurationRecorder m_milliseconds;
     GpuSamples m_gpu;
     /// The GPU times of the frame being recorded (recordGpuPasses), until recordFrame() takes them.
     std::optional<GpuSample> m_pendingGpu;
