@@ -345,7 +345,7 @@ struct ScreenService::Impl {
           slots(scheduler.slots().size()),
           pool(core::WorkerPoolOptions{
               .threads = 1, .capacity = 16, .belowNormalPriority = true, .name = "rv-screen-stills"}),
-          cardFonts(std::make_shared<CardFonts>()), verdicts(options.verdictsFile) {
+          cardFonts(std::make_shared<CardFonts>()), verdicts(options.verdictsFile, options.lockstep, kStillWait) {
         // I5 step 7: the clips known to fail never reach a screen (a lockstep run reads the verdicts first).
         if (options.lockstep) {
             verdicts.waitLoaded(kStillWait);
@@ -1183,8 +1183,9 @@ struct ScreenService::Impl {
             counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
             return;
         }
-        if (verdicts.takeLoaded()) {
-            // The verdicts came after the games (I5 step 7): the clips known to fail leave them now.
+        if (verdicts.takeChanged()) {
+            // The verdicts came after the games, or a clip left out turned out to have changed (I5 step 7): the clips
+            // known to fail leave the games now, the others come back.
             const std::vector<ScreenGame> screenedGames = verdicts.screened(rawGames);
             for (const std::unique_ptr<ScreenState>& screen : screens) {
                 screen->policy.setGames(screenedGames);

@@ -15,10 +15,10 @@ constexpr std::chrono::seconds kLockWait{2};
 
 } // namespace
 
-ScreenVerdicts::ScreenVerdicts(std::filesystem::path file) : m_file(std::move(file)) {
+ScreenVerdicts::ScreenVerdicts(std::filesystem::path file, bool settle, std::chrono::milliseconds settleBound)
+    : m_file(std::move(file)), m_settle(settle), m_settleBound(settleBound) {
     if (m_file.empty()) {
         m_loaded = true;
-        m_loadReported = true;
         return;
     }
     m_thread = std::jthread([this](std::stop_token stop) { run(stop); });
@@ -30,16 +30,30 @@ ScreenVerdicts::~ScreenVerdicts() {
 
 void ScreenVerdicts::run(std::stop_token stop) {
     auto read = media::readVideoVerdicts(m_file);
+    // Only the failures are kept whole; of the playable clips, their files' facts.
+    media::VideoVerdicts failures;
+    std::map<std::string, media::VideoFileFacts, std::less<>> playable;
     std::size_t entries = 0;
+    if (read) {
+        entries = read->size();
+        for (const media::VideoVerdict* verdict : read->entries()) {
+            if (verdict->playable()) {
+                if (std::optional<std::string> key = media::verdictKey(verdict->path)) {
+                    playable.emplace(std::move(*key), verdict->file);
+                }
+            } else {
+                static_cast<void>(failures.set(*verdict));
+            }
+        }
+    }
     {
         const std::lock_guard lock(m_mutex);
-        if (read) {
-            m_verdicts = std::move(*read);
-            m_record.loaded = true;
-            m_record.entries = m_verdicts.size();
-            entries = m_verdicts.size();
-        }
+        m_failures = std::move(failures);
+        m_playable = std::move(playable);
+        m_record.loaded = read.has_value();
+        m_record.entries = entries;
         m_loaded = true;
+        m_changed = true;
     }
     m_wake.notify_all();
     if (read) {
@@ -49,46 +63,109 @@ void ScreenVerdicts::run(std::stop_token stop) {
                      core::pathToUtf8Lossy(m_file), read.error().toString());
     }
     for (;;) {
+        std::deque<Look> looks;
         std::deque<Pending> batch;
         {
             std::unique_lock lock(m_mutex);
-            m_wake.wait(lock, stop, [this] { return !m_queue.empty() || m_stopping; });
-            if (m_queue.empty()) {
-                return; // stopping, everything written
+            m_wake.wait(lock, stop, [this] { return !m_queue.empty() || !m_looks.empty() || m_stopping; });
+            if (m_queue.empty() && m_looks.empty()) {
+                return; // stopping, everything done
             }
+            looks.swap(m_looks);
             batch.swap(m_queue);
-            m_writing = true;
+            m_busy = true;
         }
-        std::vector<media::VideoVerdict> changes;
-        for (Pending& pending : batch) {
-            // The file as its folder lists it now: the verdict's key beside its path.
-            auto facts = core::listedFileFacts(pending.file);
-            if (!facts) {
-                spdlog::info("Video verdicts: a clip's verdict is not kept: its file cannot be looked at ({})",
-                             toString(facts.error().code));
-                continue;
-            }
-            pending.verdict.file = *facts;
-            changes.push_back(std::move(pending.verdict));
+        for (const Look& look : looks) {
+            lookAt(look);
         }
-        auto merged = changes.empty() ? Expected<media::VideoVerdicts>(media::VideoVerdicts{})
-                                      : media::updateVideoVerdicts(m_file, changes, {}, kLockWait);
+        write(batch);
         {
             const std::lock_guard lock(m_mutex);
-            m_writing = false;
-            if (!merged) {
-                ++m_record.writeFailures;
-                spdlog::warn("Video verdicts: {} verdict(s) not written: {}", changes.size(),
-                             merged.error().toString());
-            } else {
-                m_record.written += changes.size();
-                for (media::VideoVerdict& change : changes) {
-                    static_cast<void>(m_verdicts.set(std::move(change)));
-                }
-            }
+            m_busy = false;
         }
         m_wake.notify_all();
     }
+}
+
+void ScreenVerdicts::lookAt(const Look& look) {
+    // The file as its folder lists it now: unchanged, the clip is never opened; changed (or gone), it is played again.
+    const auto facts = core::listedFileFacts(look.file);
+    const bool unchanged = facts && *facts == look.verdict.file;
+    {
+        const std::lock_guard lock(m_mutex);
+        Screening& screening = m_screened[look.key];
+        if (screening == Screening::Looking) {
+            screening = unchanged ? Screening::KnownBad : Screening::Changed;
+            if (unchanged) {
+                m_record.knownBad.push_back(VideoVerdictRecord{look.gameId, media::verdictName(look.verdict.failure)});
+            } else {
+                m_changed = true;
+            }
+        }
+    }
+    if (unchanged) {
+        spdlog::info("Video: the clip of game {} is known to fail ({}): never opened, its stills shown", look.gameId,
+                     media::verdictName(look.verdict.failure));
+    } else {
+        spdlog::info("Video: the clip of game {} failed before ({}), but its file changed: it is played again",
+                     look.gameId, media::verdictName(look.verdict.failure));
+    }
+}
+
+void ScreenVerdicts::write(std::deque<Pending>& batch) {
+    std::vector<media::VideoVerdict> changes;
+    std::vector<VideoVerdictRecord> given;
+    for (Pending& pending : batch) {
+        // The file as its folder lists it now: the verdict's key beside its path.
+        auto facts = core::listedFileFacts(pending.file);
+        if (!facts) {
+            spdlog::info("Video verdicts: a clip's verdict is not kept: its file cannot be looked at ({})",
+                         toString(facts.error().code));
+            continue;
+        }
+        pending.verdict.file = *facts;
+        if (pending.verdict.playable()) {
+            const std::lock_guard lock(m_mutex);
+            if (const auto known = m_playable.find(pending.key); known != m_playable.end() && known->second == *facts) {
+                continue; // the file says so already, of the file as it is
+            }
+        }
+        given.push_back(VideoVerdictRecord{pending.gameId, media::verdictName(pending.verdict.failure)});
+        changes.push_back(std::move(pending.verdict));
+    }
+    {
+        const std::lock_guard lock(m_mutex);
+        m_record.given.insert(m_record.given.end(), given.begin(), given.end());
+    }
+    if (changes.empty()) {
+        return;
+    }
+    const auto merged = media::updateVideoVerdicts(m_file, changes, {}, kLockWait);
+    const std::lock_guard lock(m_mutex);
+    if (!merged) {
+        ++m_record.writeFailures;
+        spdlog::warn("Video verdicts: {} verdict(s) not written: {}", changes.size(), merged.error().toString());
+        return;
+    }
+    m_record.written += changes.size();
+    for (media::VideoVerdict& change : changes) {
+        const std::optional<std::string> key = media::verdictKey(change.path);
+        if (!key) {
+            continue;
+        }
+        if (change.playable()) {
+            m_playable.insert_or_assign(*key, change.file);
+            m_failures.erase(change.path);
+        } else {
+            m_playable.erase(*key);
+            m_screened.insert_or_assign(*key, Screening::KnownBad); // failed in this run: left out from now on
+            static_cast<void>(m_failures.set(std::move(change)));
+        }
+    }
+}
+
+bool ScreenVerdicts::idle() const noexcept {
+    return m_queue.empty() && m_looks.empty() && !m_busy;
 }
 
 void ScreenVerdicts::waitLoaded(std::chrono::milliseconds bound) {
@@ -96,24 +173,44 @@ void ScreenVerdicts::waitLoaded(std::chrono::milliseconds bound) {
     m_wake.wait_for(lock, bound, [this] { return m_loaded; });
 }
 
-bool ScreenVerdicts::takeLoaded() {
+bool ScreenVerdicts::takeChanged() {
     const std::lock_guard lock(m_mutex);
-    if (!m_loaded || m_loadReported) {
-        return false;
-    }
-    m_loadReported = true;
-    return true;
+    return std::exchange(m_changed, false);
 }
 
 std::vector<ScreenGame> ScreenVerdicts::screened(std::vector<ScreenGame> games) {
-    const std::lock_guard lock(m_mutex);
+    std::unique_lock lock(m_mutex);
     if (!m_loaded) {
         return games;
     }
-    // A screen asking later gets the same answer: the report's knownBad comes in once.
-    m_loadReported = true;
-    if (m_verdicts.empty()) {
+    // This answer holds everything known now: a change seen before it needs no other.
+    m_changed = false;
+    if (m_failures.empty()) {
         return games;
+    }
+    // The failure verdicts' clips met for the first time: looked at by the thread, left out meanwhile.
+    bool asked = false;
+    for (const ScreenGame& game : games) {
+        if (game.media.videoKey.empty() || game.media.video.empty()) {
+            continue;
+        }
+        const media::VideoVerdict* failure = m_failures.find(game.media.videoKey);
+        const std::optional<std::string> key = media::verdictKey(game.media.videoKey);
+        if (failure == nullptr || !key) {
+            continue;
+        }
+        if (m_screened.try_emplace(*key, Screening::Looking).second) {
+            m_looks.push_back(Look{*key, game.media.video, game.id, *failure});
+            asked = true;
+        }
+    }
+    if (asked) {
+        m_wake.notify_all();
+        if (m_settle) {
+            // A lockstep run gives the same games from its first frame: the looks are done first (a few files' facts).
+            m_wake.wait_for(lock, m_settleBound, [this] { return m_looks.empty() && !m_busy; });
+            m_changed = false;
+        }
     }
     for (ScreenGame& game : games) {
         if (game.media.videoKey.empty() || game.media.video.empty()) {
@@ -123,25 +220,8 @@ std::vector<ScreenGame> ScreenVerdicts::screened(std::vector<ScreenGame> games) 
         if (!key) {
             continue;
         }
-        bool knownBad = false;
-        if (const auto seen = m_screened.find(*key); seen != m_screened.end()) {
-            knownBad = seen->second;
-        } else {
-            const media::VideoVerdict* verdict = m_verdicts.find(game.media.videoKey);
-            if (verdict != nullptr && !verdict->playable()) {
-                // Only a failure's file is looked at: unchanged, the clip is never opened; changed, it is checked again
-                // by playing it.
-                const auto facts = core::listedFileFacts(game.media.video);
-                knownBad = facts && *facts == verdict->file;
-                if (knownBad) {
-                    m_record.knownBad.push_back(VideoVerdictRecord{game.id, media::verdictName(verdict->failure)});
-                    spdlog::info("Video: the clip of game {} is known to fail ({}): never opened, its stills shown",
-                                 game.id, media::verdictName(verdict->failure));
-                }
-            }
-            m_screened.emplace(*key, knownBad);
-        }
-        if (knownBad) {
+        const auto screening = m_screened.find(*key);
+        if (screening != m_screened.end() && screening->second != Screening::Changed) {
             game.media.video.clear();
             game.media.videoKey.clear();
         }
@@ -153,21 +233,22 @@ void ScreenVerdicts::give(const ScreenMedia& media, const std::string& gameId, m
     if (m_file.empty() || media.videoKey.empty() || media.video.empty()) {
         return;
     }
-    const std::optional<std::string> key = media::verdictKey(media.videoKey);
+    std::optional<std::string> key = media::verdictKey(media.videoKey);
     const std::lock_guard lock(m_mutex);
     if (!key || m_stopping || !m_given.insert(*key).second) {
         return; // one verdict per clip and run
     }
-    m_record.given.push_back(VideoVerdictRecord{gameId, media::verdictName(verdict.failure)});
     verdict.path = media.videoKey;
     verdict.source = media::VerdictSource::Play;
-    m_queue.push_back(Pending{media.video, std::move(verdict)});
+    m_queue.push_back(Pending{media.video, std::move(*key), gameId, std::move(verdict)});
     m_wake.notify_all();
 }
 
 void ScreenVerdicts::clipFailed(const ScreenMedia& media, const std::string& gameId, media::DecodeFailure failure,
                                 const std::optional<media::StreamInfo>& info, const media::DecoderStats& stats) {
-    if (failure == media::DecodeFailure::None || failure == media::DecodeFailure::FileNotFound) {
+    // A missing file, or one the system could not read, says nothing of the clip.
+    if (failure == media::DecodeFailure::None || failure == media::DecodeFailure::FileNotFound ||
+        failure == media::DecodeFailure::ReadError) {
         return;
     }
     media::VideoVerdict verdict;
@@ -182,13 +263,7 @@ void ScreenVerdicts::clipFailed(const ScreenMedia& media, const std::string& gam
 
 void ScreenVerdicts::clipPlayed(const ScreenMedia& media, const std::string& gameId,
                                 const std::optional<media::StreamInfo>& info) {
-    {
-        const std::lock_guard lock(m_mutex);
-        const media::VideoVerdict* known = m_verdicts.find(media.videoKey);
-        if (known != nullptr && known->playable()) {
-            return; // the file says so already
-        }
-    }
+    // Whether the file holds it already, of the clip's file as it is now, is the thread's to tell (a file looked at).
     media::VideoVerdict verdict;
     if (info) {
         media::describeStream(verdict, *info);
@@ -207,7 +282,7 @@ void ScreenVerdicts::shutdown(std::chrono::milliseconds bound) {
     m_wake.notify_all();
     {
         std::unique_lock lock(m_mutex);
-        if (!m_wake.wait_for(lock, bound, [this] { return m_loaded && m_queue.empty() && !m_writing; })) {
+        if (!m_wake.wait_for(lock, bound, [this] { return m_loaded && idle(); })) {
             spdlog::warn("Video verdicts: not all written within {} ms", bound.count());
         }
     }
