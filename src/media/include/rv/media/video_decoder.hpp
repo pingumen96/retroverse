@@ -153,19 +153,24 @@ struct DecoderStats {
     std::uint64_t audioDecodeErrors = 0;
 };
 
-/// Decodes the video stream of one file on its own thread (specification §9.4, §15.3): FFmpeg demuxing
-/// (avformat), decoding with timestamps (avcodec_send_packet / avcodec_receive_frame, EAGAIN handled, end of stream
-/// drained, flushed on seek and on every loop), conversion to RGBA8 scaled to DecoderSettings::maxHeight (swscale),
-/// and frames pushed with their presentation timestamps into a bounded FrameQueue fed from a FramePool. Opening the
-/// file happens on the thread too, so the caller never waits for the disk. No OpenGL: the render thread uploads the
-/// frames (gl::VideoTexture). Errors never leave the thread: they end it with a DecodeFailure that the consumer reads
-/// (state(), failure(), error()) to show its fallback picture.
+/// Decodes the video stream of one file on a thread of its own while it runs (specification §9.4, §15.3): FFmpeg
+/// demuxing (avformat), decoding with timestamps (avcodec_send_packet / avcodec_receive_frame, EAGAIN handled, end of
+/// stream drained, flushed on seek and on every loop), conversion to RGBA8 scaled to DecoderSettings::maxHeight
+/// (swscale), and frames pushed with their presentation timestamps into a bounded FrameQueue fed from a FramePool.
+/// Opening the file happens on the thread too, so the caller never waits for the disk. No OpenGL: the render thread
+/// uploads the frames (gl::VideoTexture). Errors never leave the thread: they end it with a DecodeFailure that the
+/// consumer reads (state(), failure(), error()) to show its fallback picture.
 ///
 /// The owner is the consumer: it pops the queue and calls pause(), resume(), seek() and stop() from one thread (the
 /// render thread through VideoPlayback). None of them waits for the decoder's thread: stop() and the destructor ask
 /// it to end and return, and the thread finishes on its own (at most the read or the frame it is busy with), so a
 /// slow disk or network share never blocks the render thread (spec §9.4). waitForStoppedDecoders() waits for those
 /// threads at application shutdown.
+///
+/// The thread is a worker the process keeps (I5 step 7's review): once a decoder has ended on it, it takes the next
+/// decoder started, so that clips opened one after the other start no OS thread each (a process presenting OpenGL
+/// frames loses some 36 to 73 KiB in the graphics driver for every thread that ends). Only one decoder runs on a
+/// worker at a time; there are as many workers as decoders ever ran at once, idle between decoders.
 ///
 /// Files are opened read-only through FFmpeg's file protocol only (no network or other protocol can be reached from a
 /// file's content); paths are UTF-8, so non-ASCII names work on Windows.
@@ -236,27 +241,26 @@ public:
     /// popped.
     void stop();
 
+public:
+    /// The decoder's run on its worker thread (video_decoder.cpp).
+    struct Job;
+
 private:
     struct Shared;
     class Worker;
-    struct HandleCloser {
-        void operator()(void* handle) const noexcept;
-    };
     friend Expected<StreamInfo> probeVideo(const std::filesystem::path& path, int maxHeight);
 
     explicit VideoDecoder(std::shared_ptr<Shared> shared) noexcept;
 
-    /// State shared with the thread (which holds a reference of its own).
+    /// State shared with the thread (which holds a reference of its own while the decoder runs).
     std::shared_ptr<Shared> m_shared;
-    std::jthread m_thread;
-    /// A handle of the thread owned by the decoder (a duplicate: the thread object itself is handed over by stop()),
-    /// valid after the thread ended: its CPU time and whether it still runs.
-    std::unique_ptr<void, HandleCloser> m_threadHandle;
+    /// Its run on a worker thread: whether it still runs, its stop, its CPU time (also after it ended).
+    std::shared_ptr<Job> m_job;
 };
 
-/// Waits until the thread of every stopped or destroyed VideoDecoder has ended (VideoDecoder::stop() never waits).
-/// Call it at application shutdown, before the logger shuts down, never from the render loop: a thread may still be
-/// finishing a slow read. Threads that have ended are also reclaimed as decoders stop, and at process exit.
+/// Waits until the decoding of every stopped or destroyed VideoDecoder has ended on its thread (VideoDecoder::stop()
+/// never waits). Call it at application shutdown, before the logger shuts down, never from the render loop: a decoder
+/// may still be finishing a slow read. The worker threads themselves live on (idle) until the process exits.
 void waitForStoppedDecoders();
 /// How many times waitForStoppedDecoders() was called in the process so far (I4 step 6b: the hero CRT's report shows
 /// that no call came before the run's end, so none from the render loop).

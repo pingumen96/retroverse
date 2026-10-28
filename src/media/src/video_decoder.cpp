@@ -8,12 +8,14 @@
 #include <cmath>
 #include <condition_variable>
 #include <exception>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <span>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -210,58 +212,146 @@ std::wstring threadDescription(const std::string& name) {
     return core::pathFromUtf8("rv video: " + name).wstring();
 }
 
-/// The threads of stopped decoders: VideoDecoder::stop() hands its thread over instead of waiting for it. A thread is
-/// joined once it has ended (which then takes no time), at the next hand-over, or by joinAll().
-class StoppedThreads {
+} // namespace
+
+// --- The decoders' threads
+// ------------------------------------------------------------------------------------------------------
+
+/// One decoder's run on a worker thread: its body, its stop, and the worker's CPU time it used.
+struct VideoDecoder::Job {
+    std::function<void(std::stop_token)> body;
+    std::stop_source stop;
+    /// The worker's thread (a handle kept as long as the decoder: its CPU time), set before the body runs.
+    std::shared_ptr<const void> thread;
+    /// True from start() until the body has returned (VideoDecoder::threadRunning()).
+    std::atomic<bool> running{true};
+    /// stop() was called: waitForStoppedDecoders() waits for the body.
+    std::atomic<bool> stopped{false};
+    /// The worker's CPU time when the body began and when it returned, seconds (negative: not yet).
+    std::atomic<double> cpuAtStart{-1.0};
+    std::atomic<double> cpuAtEnd{-1.0};
+};
+
+namespace {
+
+/// The threads the decoders run on (I5 step 7's review). A process that presents OpenGL frames while threads start and
+/// end loses some 36 to 73 KiB for every thread that ended, in the graphics driver (tests/platform/
+/// test_thread_soak.cpp; nothing for a thread that lives on): a thread per clip made the screens' hour grow by about
+/// 110 MiB. So a decoder runs on a worker thread that lives on: an idle worker takes it, or a new one is started when
+/// none is idle. There are as many workers as decoders ever ran at once (the screens' slots, a scan's jobs, and the
+/// stopped decoders still finishing a read); they wait without a cost between decoders and end at the process's exit.
+class DecoderWorkers {
 public:
-    StoppedThreads() {
-        // The default logger is created first and so destroyed after this object: threads still ending at process
+    DecoderWorkers() {
+        // The default logger is created first and so destroyed after this object: decoders still ending at process
         // exit can log.
         static_cast<void>(spdlog::default_logger_raw());
     }
-    StoppedThreads(const StoppedThreads&) = delete;
-    StoppedThreads& operator=(const StoppedThreads&) = delete;
-    ~StoppedThreads() { joinAll(); }
-
-    /// Keeps `thread` (asked to stop already) until it ends; joins the threads that have ended meanwhile.
-    void adopt(std::jthread thread) {
-        std::vector<std::jthread> ended;
+    DecoderWorkers(const DecoderWorkers&) = delete;
+    DecoderWorkers& operator=(const DecoderWorkers&) = delete;
+    /// Every decoder still running is asked to stop; the workers end once their decoders have.
+    ~DecoderWorkers() {
+        std::vector<std::unique_ptr<Worker>> workers;
         {
             const std::lock_guard lock(m_mutex);
-            const auto firstEnded = std::partition(m_threads.begin(), m_threads.end(), [](std::jthread& candidate) {
-                return WaitForSingleObject(static_cast<HANDLE>(candidate.native_handle()), 0) != WAIT_OBJECT_0;
-            });
-            ended.assign(std::make_move_iterator(firstEnded), std::make_move_iterator(m_threads.end()));
-            m_threads.erase(firstEnded, m_threads.end());
-            m_threads.push_back(std::move(thread));
+            for (const std::shared_ptr<VideoDecoder::Job>& job : m_jobs) {
+                job->stop.request_stop();
+            }
+            m_quit = true;
+            workers.swap(m_workers);
         }
-        for (std::jthread& done : ended) {
-            done.join(); // ended: returns at once
-        }
-    }
-
-    /// Waits for every thread kept.
-    void joinAll() {
-        std::vector<std::jthread> threads;
-        {
-            const std::lock_guard lock(m_mutex);
-            threads.swap(m_threads);
-        }
-        for (std::jthread& thread : threads) {
-            if (thread.joinable()) {
-                thread.join();
+        m_wake.notify_all();
+        for (const std::unique_ptr<Worker>& worker : workers) {
+            if (worker->thread.joinable()) {
+                worker->thread.join();
             }
         }
     }
 
+    /// Runs `job` on an idle worker, or on a new one. Errors: Unknown when no thread can be started.
+    Status run(const std::shared_ptr<VideoDecoder::Job>& job) {
+        const std::lock_guard lock(m_mutex);
+        for (const std::unique_ptr<Worker>& worker : m_workers) {
+            if (!worker->job) {
+                give(*worker, job);
+                return ok();
+            }
+        }
+        auto worker = std::make_unique<Worker>();
+        try {
+            // It waits for the lock held here: it finds its first job given.
+            worker->thread = std::thread([this, self = worker.get()] { loop(*self); });
+        } catch (const std::system_error& e) {
+            return makeError(ErrorCode::Unknown, fmt::format("cannot start a decoder thread: {}", e.what()));
+        }
+        HANDLE duplicate = nullptr;
+        if (DuplicateHandle(GetCurrentProcess(), static_cast<HANDLE>(worker->thread.native_handle()),
+                            GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS) != 0) {
+            worker->handle = std::shared_ptr<const void>(
+                duplicate, [](const void* handle) { CloseHandle(const_cast<HANDLE>(handle)); });
+        }
+        give(*worker, job);
+        m_workers.push_back(std::move(worker));
+        return ok();
+    }
+
+    /// Waits until the body of every stopped decoder has returned.
+    void waitForStopped() {
+        std::unique_lock lock(m_mutex);
+        m_wake.wait(lock, [this] {
+            return std::none_of(m_jobs.begin(), m_jobs.end(),
+                                [](const std::shared_ptr<VideoDecoder::Job>& job) { return job->stopped.load(); });
+        });
+    }
+
 private:
+    struct Worker {
+        std::thread thread;
+        std::shared_ptr<const void> handle;
+        std::shared_ptr<VideoDecoder::Job> job;
+    };
+
+    /// The lock held.
+    void give(Worker& worker, const std::shared_ptr<VideoDecoder::Job>& job) {
+        job->thread = worker.handle;
+        worker.job = job;
+        m_jobs.push_back(job);
+        m_wake.notify_all();
+    }
+
+    void loop(Worker& worker) {
+        std::unique_lock lock(m_mutex);
+        for (;;) {
+            m_wake.wait(lock, [&] { return worker.job != nullptr || m_quit; });
+            if (!worker.job) {
+                return; // the process ends
+            }
+            const std::shared_ptr<VideoDecoder::Job> job = worker.job;
+            lock.unlock();
+            job->cpuAtStart.store(threadCpuSecondsOf(GetCurrentThread()));
+            job->body(job->stop.get_token());
+            job->body = nullptr; // the decoder's state goes when its owner lets go of it
+            job->cpuAtEnd.store(threadCpuSecondsOf(GetCurrentThread()));
+            SetThreadDescription(GetCurrentThread(), L"rv video: idle");
+            lock.lock();
+            job->running.store(false);
+            worker.job.reset();
+            m_jobs.erase(std::find(m_jobs.begin(), m_jobs.end(), job));
+            m_wake.notify_all();
+        }
+    }
+
     std::mutex m_mutex;
-    std::vector<std::jthread> m_threads;
+    std::condition_variable m_wake;
+    std::vector<std::unique_ptr<Worker>> m_workers;
+    /// The decoders running.
+    std::vector<std::shared_ptr<VideoDecoder::Job>> m_jobs;
+    bool m_quit = false;
 };
 
-StoppedThreads& stoppedThreads() {
-    static StoppedThreads threads;
-    return threads;
+DecoderWorkers& decoderWorkers() {
+    static DecoderWorkers workers;
+    return workers;
 }
 
 } // namespace
@@ -1343,12 +1433,6 @@ void VideoDecoder::Worker::writeAudio(const float* converted, std::size_t frames
 // --- VideoDecoder
 // -------------------------------------------------------------------------------------------------------
 
-void VideoDecoder::HandleCloser::operator()(void* handle) const noexcept {
-    if (handle != nullptr) {
-        CloseHandle(static_cast<HANDLE>(handle));
-    }
-}
-
 VideoDecoder::VideoDecoder(std::shared_ptr<Shared> shared) noexcept : m_shared(std::move(shared)) {}
 
 Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::path path, DecoderSettings settings) {
@@ -1395,17 +1479,14 @@ Expected<std::unique_ptr<VideoDecoder>> VideoDecoder::start(std::filesystem::pat
     shared->paused.store(shared->settings.startPaused);
     shared->audioEnabled.store(shared->settings.audioEnabled);
     std::unique_ptr<VideoDecoder> decoder(new VideoDecoder(shared));
-    try {
-        decoder->m_thread = std::jthread([shared](std::stop_token stop) { Worker(*shared, std::move(stop)).run(); });
-    } catch (const std::system_error& e) {
-        return makeError(ErrorCode::Unknown, fmt::format("cannot start the decoder thread: {}", e.what()), context);
+    auto job = std::make_shared<Job>();
+    job->body = [shared](std::stop_token stop) {
+        Worker(*shared, std::move(stop)).run();
+    };
+    if (const Status started = decoderWorkers().run(job); !started) {
+        return makeError(started.error().code, started.error().message, context);
     }
-    // A handle of the decoder's own: the jthread goes to stoppedThreads() on stop(), and its handle with it.
-    HANDLE duplicate = nullptr;
-    if (DuplicateHandle(GetCurrentProcess(), static_cast<HANDLE>(decoder->m_thread.native_handle()),
-                        GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS) != 0) {
-        decoder->m_threadHandle.reset(duplicate);
-    }
+    decoder->m_job = std::move(job);
     return decoder;
 }
 
@@ -1414,16 +1495,12 @@ VideoDecoder::~VideoDecoder() {
 }
 
 void VideoDecoder::stop() {
-    if (m_thread.joinable()) {
-        m_thread.request_stop(); // wakes every wait of the thread and interrupts FFmpeg's I/O between reads
+    if (m_job && !m_job->stopped.exchange(true)) {
+        // Wakes every wait of the decoder's thread and interrupts FFmpeg's I/O between reads. Never waited for here:
+        // the thread may be in a read of a slow disk or network share (spec §9.4).
+        m_job->stop.request_stop();
         m_shared->queue.close();
         m_shared->pool->close();
-        try {
-            // Never joined here: the thread may be in a read of a slow disk or network share (spec §9.4).
-            stoppedThreads().adopt(std::move(m_thread));
-        } catch (...) {
-            // Out of memory to keep it: the thread was joined when adopt()'s argument was destroyed.
-        }
     }
     m_shared->setState(DecoderState::Stopped);
 }
@@ -1491,11 +1568,22 @@ DecoderStats VideoDecoder::stats() const {
 }
 
 double VideoDecoder::threadCpuSeconds() const {
-    return m_threadHandle ? threadCpuSecondsOf(static_cast<HANDLE>(m_threadHandle.get())) : 0.0;
+    if (!m_job) {
+        return 0.0;
+    }
+    const double start = m_job->cpuAtStart.load();
+    if (start < 0.0) {
+        return 0.0; // not begun yet
+    }
+    const double end = m_job->cpuAtEnd.load();
+    if (end >= 0.0) {
+        return std::max(0.0, end - start);
+    }
+    return m_job->thread ? std::max(0.0, threadCpuSecondsOf(const_cast<HANDLE>(m_job->thread.get())) - start) : 0.0;
 }
 
 bool VideoDecoder::threadRunning() const noexcept {
-    return m_threadHandle && WaitForSingleObject(static_cast<HANDLE>(m_threadHandle.get()), 0) == WAIT_TIMEOUT;
+    return m_job && m_job->running.load();
 }
 
 const std::filesystem::path& VideoDecoder::path() const noexcept {
@@ -1558,7 +1646,7 @@ std::atomic<std::uint64_t> g_stoppedDecoderWaits{0};
 
 void waitForStoppedDecoders() {
     g_stoppedDecoderWaits.fetch_add(1, std::memory_order_relaxed);
-    stoppedThreads().joinAll();
+    decoderWorkers().waitForStopped();
 }
 
 std::uint64_t stoppedDecoderWaits() noexcept {
