@@ -9,6 +9,10 @@ namespace {
 
 /// Alignment of frame pixels: a cache line, which also satisfies the SIMD paths of swscale and memcpy.
 constexpr std::align_val_t kPixelAlignment{64};
+/// Bytes allocated past the last row: swscale's SIMD converters write whole blocks of pixels, past the end of a row
+/// that is no whole number of them (I5 step 7: a 140 x 96 clip converted unscaled corrupted the heap). A row's overrun
+/// lands in the next row, written after it; the last row's in this padding (64 pixels: any SIMD block).
+constexpr std::size_t kTailPaddingBytes = 64 * static_cast<std::size_t>(kFrameBytesPerPixel);
 
 } // namespace
 
@@ -27,7 +31,7 @@ bool VideoFrame::resize(FrameSize size) {
                                static_cast<std::size_t>(kFrameBytesPerPixel);
     bool allocated = false;
     if (needed > m_capacity) {
-        m_pixels.reset(static_cast<std::uint8_t*>(::operator new[](needed, kPixelAlignment)));
+        m_pixels.reset(static_cast<std::uint8_t*>(::operator new[](needed + kTailPaddingBytes, kPixelAlignment)));
         m_capacity = needed;
         allocated = true;
     }

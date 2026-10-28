@@ -88,7 +88,7 @@ VideoCheckResult checkVideo(const std::filesystem::path& path, const VideoCheckS
     decoderSettings.maxHeight = std::max(0, settings.maxHeight);
     decoderSettings.loop = false;
     decoderSettings.queueCapacity = kCheckQueue;
-    decoderSettings.name = "check";
+    // The file name names it in the log (the default), so that a clip that troubles the decoder can be found.
     auto opened = VideoDecoder::start(path, std::move(decoderSettings));
     if (!opened) {
         result.detail = opened.error().toString();
