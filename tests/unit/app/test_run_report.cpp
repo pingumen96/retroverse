@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <filesystem>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <vector>
@@ -774,10 +776,42 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     video.slotEventsDropped = 3;
     report.processPriority = rv::app::ProcessPriorityRecord{
         {{1, "above-normal", "rendering", true}, {37, "normal", "launch", true}, {200, "normal", "exit", true}}};
+    // I5 step 5: the clips' sound, written last.
+    rv::app::AudioRecord audio;
+    audio.device = "null";
+    audio.reason = "RV_AUDIO";
+    audio.sampleRate = 48000;
+    audio.mutedAtStart = true;
+    audio.muted = false;
+    audio.muteToggles = 1;
+    audio.duckedFrames = 40;
+    audio.duckChanges = 2;
+    audio.blocks = 600;
+    audio.framesMixed = 480009;
+    audio.capture = std::filesystem::path("build/smoke/audio/mix.wav");
+    audio.captureStartSeconds = 0.016667;
+    audio.syncBlocks = 550;
+    audio.resyncs = 1;
+    audio.corrections = 12;
+    audio.underrunFrames = 800;
+    audio.overflowFrames = 0;
+    audio.syncP50Milliseconds = 0.25;
+    audio.syncP95Milliseconds = 4.5;
+    audio.syncMaxMilliseconds = 21.0;
+    audio.suspends = 1;
+    audio.audible = {{0, 0.0, "", ""}, {12, 0.2, "crt_a", "g000000000000c001"}};
+    audio.levels = {{0.25, "crt_a", 3.8, 0.39473684, -0.48, 0.39473684}};
+    audio.presented = {{0.2, 0.0}, {0.216667, 0.016667}};
+    audio.clips = {{"g000000000000c001", "pcm_s16le", 44100, 1}};
+    report.audio = audio;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->video == video);
     CHECK(parsed->processPriority == report.processPriority);
+    CHECK(parsed->audio == report.audio);
+    const nlohmann::ordered_json written = nlohmann::ordered_json::parse(rv::app::formatRunReport(report));
+    CHECK(std::prev(written.end()).key() == "audio"); // appended
+    report.audio.reset();
 
     // Optional values left out read back as absent; a bound record needs its fields.
     video.freezePtsSeconds.reset();

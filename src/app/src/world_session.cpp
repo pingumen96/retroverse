@@ -317,6 +317,14 @@ void WorldSession::followScreenRoom(ProductUi& product, double timeSeconds) {
     m_screenPhaseUntil = frame + kScreenBindPhaseFrames;
 }
 
+bool WorldSession::eyeInScreenRoom() const {
+    const std::optional<std::string>& bound = m_screenRooms.bound();
+    if (!bound || !m_host.eyeArea) {
+        return true;
+    }
+    return m_host.eyeArea() == *bound;
+}
+
 std::optional<std::size_t> WorldSession::eyeRoom() const {
     if (!m_host.eyeArea) {
         return m_rooms.size() == 1 ? std::optional<std::size_t>(0) : std::nullopt;

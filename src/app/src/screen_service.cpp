@@ -1,7 +1,10 @@
 #include "screen_service.hpp"
 
+#include <rv/app/audio_policy.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/scene_instance.hpp>
+#include <rv/audio/audio_engine.hpp>
+#include <rv/audio/audio_ring.hpp>
 #include <rv/assets/collection_labels.hpp>
 #include <rv/assets/cover_fit.hpp>
 #include <rv/assets/image_io.hpp>
@@ -49,6 +52,22 @@ constexpr std::chrono::milliseconds kPollInterval{1};
 
 /// The run report's lists of the games played, the pictures shown and the slots' events keep their first entries only.
 constexpr std::size_t kMaxTimelineEntries = 512;
+/// A lockstep run's frame waits (at most this long) for its audible clip's sound to be decoded kAudioLeadSeconds past
+/// the picture, so that its null mix is the same on every run.
+constexpr std::chrono::milliseconds kAudioWait{100};
+constexpr double kAudioLeadSeconds = 0.04;
+
+/// A decoder's sound into a slot's ring (rv_media knows no mixer: ADR-0016 §9).
+class RingSink final : public media::AudioSink {
+public:
+    explicit RingSink(std::shared_ptr<audio::AudioRing> ring) noexcept : m_ring(std::move(ring)) {}
+    void write(std::span<const float> interleaved, double ptsSeconds, std::uint32_t generation) override {
+        static_cast<void>(m_ring->write(interleaved, ptsSeconds, generation));
+    }
+
+private:
+    std::shared_ptr<audio::AudioRing> m_ring;
+};
 
 /// Decoders of every screen service alive (playing or still ending): never more than the budget's slots (NFR-07,
 /// ADR-0016 §2).
@@ -269,6 +288,9 @@ struct ScreenService::Impl {
         bool visible = true;
         double distance = 0.0;
         ScreenAssignment assignment;
+        /// The sound: its volume (video.json's kind, room and screen) and its azimuth from the eye this frame.
+        double volume = 1.0;
+        double azimuth = 0.0;
         /// The policy was told its target's clip shows (videoShowing()), from the slot `lastSlot`.
         bool videoTold = false;
         std::optional<std::size_t> lastSlot;
@@ -301,6 +323,11 @@ struct ScreenService::Impl {
         /// The frame waiting for its upload (VideoPlayback::update()'s), and the render frame it began to wait.
         const media::VideoFrame* pending = nullptr;
         std::optional<std::uint64_t> pendingSince;
+
+        // The sound (I5 step 5): the slot's mixer source, the clip's ring, whether its stream was recorded.
+        std::optional<audio::SourceId> source;
+        std::shared_ptr<audio::AudioRing> ring;
+        bool audioRecorded = false;
     };
 
     Impl(std::vector<ScreenBinding> bindings, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
@@ -314,9 +341,16 @@ struct ScreenService::Impl {
           cardFonts(std::make_shared<CardFonts>()) {
         for (ScreenBinding& binding : bindings) {
             ScreenPlaySettings settings = screenPlaySettings(options, binding);
+            const double volume = options.video.screen(binding.kind, binding.roomId, binding.objectId).volume;
             screens.push_back(std::make_unique<ScreenState>(std::move(binding), ScreenPolicy(games, settings)));
+            screens.back()->volume = volume;
         }
         lastScreenId = screens.empty() ? std::string() : screens.front()->binding.objectId;
+        if (options.audio != nullptr) {
+            for (Slot& slot : slots) {
+                slot.source = options.audio->mixer().addSource();
+            }
+        }
     }
 
     /// The screens bound, the hero first (none between unbind() and bind()), the policies of screens let go (reused by
@@ -343,6 +377,19 @@ struct ScreenService::Impl {
     /// This frame's window is minimized (every screen out of view).
     bool minimized = false;
     bool budgetErrorLogged = false;
+
+    // The sound: the screen the sound follows (an index into screens; none: silence), the one it should follow given
+    // the screens' wishes (the clip a slot opening gives its sound to), the screen it followed last (its id and game,
+    // for the changes' record), the next level sample's time; the report's part.
+    std::optional<std::size_t> audibleScreen;
+    std::string intendedAudibleClip;
+    std::string lastAudibleScreen;
+    std::string lastAudibleGame;
+    bool audibleRecorded = false;
+    double nextLevelAt = 0.0;
+    AudioRecord audioCounters;
+    /// Frames the rings of earlier clips could not keep.
+    std::uint64_t pastOverflowFrames = 0;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
     VideoRecord counters;
@@ -469,6 +516,10 @@ struct ScreenService::Impl {
             }
         }
         slot.playback->decoder().stop();
+        if (slot.source) {
+            // Its sound fades out (the pause's fade) with what its ring still holds.
+            options.audio->mixer().setControl(*slot.source, audio::SourceControl{0.0, 0.0, false});
+        }
         slot.draining = true;
         slot.paused = false;
         slot.pending = nullptr;
@@ -504,6 +555,14 @@ struct ScreenService::Impl {
         settings.loop = true;
         settings.startPaused = options.freezePtsSeconds.has_value();
         settings.name = fmt::format("screen-{}", index);
+        std::shared_ptr<audio::AudioRing> ring;
+        if (slot.source) {
+            // The clip's sound into a fresh ring; decoded from the start when its screen is the one to be heard.
+            ring = std::make_shared<audio::AudioRing>(options.audio->mixer().settings().sampleRate);
+            settings.audioSink = std::make_shared<RingSink>(ring);
+            settings.audioSampleRate = options.audio->mixer().settings().sampleRate;
+            settings.audioEnabled = clip == intendedAudibleClip && !options.freezePtsSeconds;
+        }
         auto decoder = media::VideoDecoder::start(first.policy.targetMedia().video, std::move(settings));
         if (!decoder) {
             for (ScreenState* screen : on) {
@@ -516,6 +575,14 @@ struct ScreenService::Impl {
         g_liveDecoders.fetch_add(1, std::memory_order_relaxed);
         ++counters.decodersStarted;
         slot.playback = std::make_unique<media::VideoPlayback>(std::move(*decoder));
+        if (slot.source) {
+            if (slot.ring) {
+                pastOverflowFrames += slot.ring->stats().overflowFrames;
+            }
+            slot.ring = ring;
+            options.audio->mixer().setRing(*slot.source, std::move(ring));
+            slot.audioRecorded = false;
+        }
         slot.draining = false;
         slot.paused = false;
         slot.clip = clip;
@@ -692,6 +759,10 @@ struct ScreenService::Impl {
                 slot.firstPts = timing->ptsSeconds;
             }
             slot.lastPts = timing->ptsSeconds;
+            if (options.recordPresentedFrames && audibleSlot() == index &&
+                audioCounters.presented.size() < kMaxAudioTimelineEntries) {
+                audioCounters.presented.push_back(AudioPresentedRecord{now, timing->ptsSeconds});
+            }
         }
         if (!slot.firstUploadAt) {
             slot.firstUploadAt = now;
@@ -1059,7 +1130,7 @@ struct ScreenService::Impl {
     }
 
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimizedWindow) {
+                std::optional<std::string_view> hovered, bool minimizedWindow, bool eyeInRoom) {
         frameIndex = frame;
         now = nowSeconds;
         minimized = minimizedWindow;
@@ -1081,7 +1152,16 @@ struct ScreenService::Impl {
             followTarget(*screen);
             screen->screenClass = classOf(*screen);
             screen->distance = glm::distance(camera.position(), screen->binding.bounds.center());
+            const glm::vec3 center = screen->binding.bounds.center();
+            const glm::vec3 forward = camera.forward();
+            screen->azimuth = azimuthOf(camera.position().x, camera.position().z, forward.x, forward.z, center.x,
+                                        center.z);
             screen->clip = screen->policy.wantsDecoder() ? clipKey(screen->policy.targetMedia().video) : std::string();
+        }
+        // The clip whose sound a slot opening this frame decodes from the start: the one the audible screen wants.
+        intendedAudibleClip.clear();
+        if (const std::optional<std::size_t> intended = chooseAudibleScreen(eyeInRoom, true)) {
+            intendedAudibleClip = screens[*intended]->clip;
         }
         schedule();
         pumpSlots();
@@ -1091,7 +1171,139 @@ struct ScreenService::Impl {
             updateStills(*screen);
             applyPicture(*screen);
         }
+        updateAudio(eyeInRoom);
         counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
+    }
+
+    // --- the sound -----------------------------------------------------------------------------------------------
+
+    /// The slot of `screen` while it plays its clip there (not paused, stopping or before its first frame).
+    [[nodiscard]] std::optional<std::size_t> playingSlot(const ScreenState& screen) const {
+        if (!screen.assignment.playing || !screen.assignment.slot) {
+            return std::nullopt;
+        }
+        const Slot& slot = slots[*screen.assignment.slot];
+        if (!slot.playback || slot.draining || slot.paused || !slot.frameShown || slot.clip != screen.clip) {
+            return std::nullopt;
+        }
+        return screen.assignment.slot;
+    }
+
+    /// The audible screen (chooseAudible): `wished`, among the screens wanting a clip (before the scheduler's
+    /// decisions); otherwise among those playing one. None while the eye is outside the bound room, without an
+    /// engine, with video.json's audio mode off, or in a frozen run.
+    [[nodiscard]] std::optional<std::size_t> chooseAudibleScreen(bool eyeInRoom, bool wished) const {
+        if (options.audio == nullptr || !eyeInRoom || options.freezePtsSeconds ||
+            options.video.audio.mode == AudioMode::Off) {
+            return std::nullopt;
+        }
+        std::vector<AudibleCandidate> candidates;
+        candidates.reserve(screens.size());
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            const bool playing = wished ? !screen->clip.empty() : playingSlot(*screen).has_value();
+            candidates.push_back(AudibleCandidate{screen->binding.objectId, screen->screenClass, screen->distance,
+                                                  screen->visible, playing});
+        }
+        return chooseAudible(candidates, options.video.proximityMeters);
+    }
+
+    /// The slot the audible screen plays on; none in silence.
+    [[nodiscard]] std::optional<std::size_t> audibleSlot() const {
+        return audibleScreen ? playingSlot(*screens[*audibleScreen]) : std::nullopt;
+    }
+
+    /// The sound's frame: the audible screen chosen, each slot's source given its gain, pan and clock, each decoder's
+    /// sound decoded only while it may be heard; the changes, levels and clips recorded.
+    void updateAudio(bool eyeInRoom) {
+        if (options.audio == nullptr) {
+            return;
+        }
+        audio::Mixer& mixer = options.audio->mixer();
+        audibleScreen = chooseAudibleScreen(eyeInRoom, false);
+        const std::optional<std::size_t> heard = audibleSlot();
+        const ScreenState* audible = audibleScreen ? screens[*audibleScreen].get() : nullptr;
+        const SpatialSound spatial =
+            audible != nullptr ? spatialSound(audible->distance, audible->azimuth, options.video.proximityMeters)
+                               : SpatialSound{};
+        // The changes of the audible screen.
+        const std::string audibleId = audible != nullptr ? audible->binding.objectId : std::string();
+        const std::string audibleGame = audible != nullptr ? audible->policy.targetId() : std::string();
+        if (!audibleRecorded || audibleId != lastAudibleScreen || audibleGame != lastAudibleGame) {
+            audibleRecorded = true;
+            lastAudibleScreen = audibleId;
+            lastAudibleGame = audibleGame;
+            if (audioCounters.audible.size() < kMaxAudioTimelineEntries) {
+                audioCounters.audible.push_back(AudioAudibleRecord{frameIndex, now, audibleId, audibleGame});
+            }
+            spdlog::info("Audio: {}", audible != nullptr
+                                          ? fmt::format("{} is heard (game {})", nameOf(*audible), audibleGame)
+                                          : std::string("no screen is heard"));
+        }
+        if (audible != nullptr && heard && now >= nextLevelAt) {
+            nextLevelAt = now + kAudioLevelSampleSeconds;
+            if (audioCounters.levels.size() < kMaxAudioTimelineEntries) {
+                audioCounters.levels.push_back(AudioLevelRecord{now, audibleId, audible->distance, spatial.gain,
+                                                                spatial.pan, audible->volume * spatial.gain});
+            }
+        }
+        const double stamp = options.audio->clockSeconds(now);
+        for (std::size_t index = 0; index < slots.size(); ++index) {
+            Slot& slot = slots[index];
+            if (!slot.source || !slot.playback || slot.draining) {
+                continue;
+            }
+            const bool isHeard = heard == index;
+            const bool playing = slot.frameShown && !slot.paused && !options.freezePtsSeconds;
+            audio::SourceControl control;
+            control.playing = playing;
+            control.gain = isHeard ? audible->volume * spatial.gain : 0.0;
+            control.pan = isHeard ? spatial.pan : 0.0;
+            mixer.setControl(*slot.source, control);
+            const media::PresentationClock& clock = slot.playback->clock();
+            mixer.setClock(*slot.source, audio::SourceClock{clock.mediaTime(now), stamp, clock.generation(), playing});
+            // Its sound is decoded while it is heard, about to be (its screen's first frame still to come) or still
+            // fading out; otherwise its packets are discarded.
+            slot.playback->decoder().setAudioEnabled(isHeard || mixer.sourceGain(*slot.source) > 0.0 ||
+                                                     (!slot.frameShown && slot.clip == intendedAudibleClip));
+            if (isHeard && !slot.audioRecorded) {
+                if (const std::optional<media::StreamInfo> info = slot.playback->decoder().streamInfo()) {
+                    slot.audioRecorded = true;
+                    if (audioCounters.clips.size() < kMaxAudioTimelineEntries) {
+                        audioCounters.clips.push_back(AudioClipRecord{
+                            slot.gameId, info->audioCodec, static_cast<std::uint64_t>(info->audioSampleRate),
+                            static_cast<std::uint64_t>(info->audioChannels)});
+                    }
+                }
+            }
+            if (isHeard && options.lockstep && playing) {
+                awaitSound(slot);
+            }
+        }
+    }
+
+    /// A lockstep run: the audible clip's sound decoded kAudioLeadSeconds past its picture's time (at most kAudioWait),
+    /// so that the frame's mix does not depend on the decoder thread's pace.
+    void awaitSound(Slot& slot) {
+        const std::optional<double> media = slot.playback->clock().mediaTime(now);
+        const std::optional<media::StreamInfo> info = slot.playback->decoder().streamInfo();
+        if (!media || !slot.ring || !info || !info->audioDecoded) {
+            return;
+        }
+        const Clock::time_point deadline = Clock::now() + kAudioWait;
+        for (;;) {
+            const std::optional<audio::RingFront> back = slot.ring->back();
+            if (back && back->ptsSeconds >= *media + kAudioLeadSeconds) {
+                return;
+            }
+            // Nothing more comes while the decoder stops, or waits for room in its frame queue (a clip whose sound is
+            // muxed after its picture: the picture's frames are what it waits on).
+            const media::VideoDecoder& decoder = slot.playback->decoder();
+            if (decoder.state() != media::DecoderState::Playing || Clock::now() >= deadline ||
+                decoder.frames().size() >= decoder.frames().capacity()) {
+                return;
+            }
+            std::this_thread::sleep_for(kPollInterval);
+        }
     }
 
     void launchStarting() {
@@ -1188,7 +1400,9 @@ struct ScreenService::Impl {
             // A policy let go is reused (its phase and the clips that failed kept), its choice made afresh.
             ScreenPolicy policy = index < sparePolicies.size() ? std::move(sparePolicies[index]) : ScreenPolicy();
             policy.restart(games, std::move(settings));
+            const double volume = options.video.screen(binding.kind, binding.roomId, binding.objectId).volume;
             screens.push_back(std::make_unique<ScreenState>(std::move(binding), std::move(policy)));
+            screens.back()->volume = volume;
             logPlaylist(*screens.back());
         }
         sparePolicies.clear();
@@ -1293,8 +1507,8 @@ std::string ScreenService::screenId() const {
 }
 
 void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                           std::optional<std::string_view> hovered, bool minimized) {
-    m_impl->update(frame, nowSeconds, camera, hovered, minimized);
+                           std::optional<std::string_view> hovered, bool minimized, bool eyeInRoom) {
+    m_impl->update(frame, nowSeconds, camera, hovered, minimized, eyeInRoom);
 }
 
 void ScreenService::launchStarting() {
@@ -1367,6 +1581,20 @@ void ScreenService::record(VideoRecord& record) const {
         record.budgetDrops.push_back(VideoBudgetDropRecord{
             drop.atSeconds, drop.slot, game != s.clipGames.end() ? game->second : std::string(), drop.ratio,
             drop.untilSeconds});
+    }
+}
+
+void ScreenService::recordAudio(AudioRecord& record) const {
+    const Impl& s = *m_impl;
+    record.audible = s.audioCounters.audible;
+    record.levels = s.audioCounters.levels;
+    record.presented = s.audioCounters.presented;
+    record.clips = s.audioCounters.clips;
+    record.overflowFrames = s.pastOverflowFrames;
+    for (const Impl::Slot& slot : s.slots) {
+        if (slot.ring) {
+            record.overflowFrames += slot.ring->stats().overflowFrames;
+        }
     }
 }
 
