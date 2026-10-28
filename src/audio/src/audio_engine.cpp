@@ -70,6 +70,8 @@ struct AudioEngine::Impl {
     std::uint64_t failures = 0;
     std::uint64_t losses = 0;
     std::uint64_t recoveries = 0;
+    /// When the launch's fade began (beginSuspend()).
+    std::optional<std::chrono::steady_clock::time_point> fadeStarted;
 
     // The null output.
     double carry = 0.0;
@@ -290,17 +292,31 @@ void AudioEngine::pull(double startSeconds, double seconds) {
     }
 }
 
+void AudioEngine::beginSuspend() {
+    Impl& impl = *m_impl;
+    if (impl.suspended || impl.fadeStarted) {
+        return;
+    }
+    impl.fadeStarted = std::chrono::steady_clock::now();
+    impl.mixer.setSilenced(true);
+}
+
 void AudioEngine::suspend() {
     Impl& impl = *m_impl;
     if (impl.suspended) {
         return;
     }
+    beginSuspend();
     impl.suspended = true;
-    impl.mixer.setSilenced(true);
     if (impl.options.output == AudioOutput::Device && impl.running) {
-        // The fade plays out before the device stops (a little more than its length: a period's latency).
-        const auto fade = std::chrono::duration<double>(impl.mixer.settings().silenceFadeSeconds + 0.02);
-        std::this_thread::sleep_for(fade);
+        // The fade plays out before the device stops (a little more than its length: a period's latency); only what
+        // remains of it since beginSuspend() is waited for.
+        const auto fade = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(impl.mixer.settings().silenceFadeSeconds + 0.02));
+        const auto end = *impl.fadeStarted + fade;
+        if (const auto now = std::chrono::steady_clock::now(); now < end) {
+            std::this_thread::sleep_for(end - now);
+        }
         impl.stopDevice();
         spdlog::info("Audio: the device stopped for the launch");
     }
@@ -308,10 +324,11 @@ void AudioEngine::suspend() {
 
 void AudioEngine::resume() {
     Impl& impl = *m_impl;
-    if (!impl.suspended) {
+    if (!impl.suspended && !impl.fadeStarted) {
         return;
     }
     impl.suspended = false;
+    impl.fadeStarted.reset();
     impl.mixer.setSilenced(false);
     if (impl.options.output == AudioOutput::Device && !impl.running) {
         if (Status started = impl.restartDevice(); !started) {
@@ -337,7 +354,7 @@ void AudioEngine::maintain(double nowSeconds) {
         impl.retry.lost();
         spdlog::warn("Audio: the device stopped by itself; trying it again");
     }
-    if (impl.suspended || !impl.retry.due(nowSeconds)) {
+    if (impl.suspended || impl.fadeStarted || !impl.retry.due(nowSeconds)) {
         return;
     }
     if (Status started = impl.restartDevice(); !started) {

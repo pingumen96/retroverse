@@ -121,8 +121,11 @@ public:
     /// the frames follow the time exactly), kept when capturing. A device: nothing (its thread renders).
     void pull(double startSeconds, double seconds);
 
-    /// Before a launch: the mix fades out (MixerSettings::silenceFadeSeconds, waited for on a device) and the device
-    /// stops. Idempotent.
+    /// Before a launch, first: the mix starts fading out (MixerSettings::silenceFadeSeconds) without waiting, so that
+    /// the fade runs while the screens' decoders stop. Idempotent.
+    void beginSuspend();
+    /// Then: the fade (begun here if beginSuspend() was not called) plays out, waiting only what remains of it on a
+    /// device, and the device stops. Idempotent.
     void suspend();
     /// After the return: the device starts again and the mix fades in; a start that fails is retried by maintain().
     /// Idempotent.

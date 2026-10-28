@@ -1431,10 +1431,14 @@ Status RetroverseApp::onInit(AppContext& context) {
         // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
         hooks.starting = [raw, &context] {
+            // ADR-0016 §9: the mix fades out (50 ms, begun before the screens' decoders stop, so that it runs while
+            // they do) and the device stops, leaving the endpoint to the emulator.
+            if (raw->audio) {
+                raw->audio->beginSuspend();
+            }
             if (raw->screen) {
                 raw->screen->launchStarting();
             }
-            // ADR-0016 §9: the mix fades out and the device stops, leaving the endpoint to the emulator.
             if (raw->audio) {
                 raw->audio->suspend();
                 ++raw->audioRecord.suspends;

@@ -224,3 +224,27 @@ TEST_CASE("audio/engine: a device lost or not started again is retried every 2 s
         CHECK((*engine)->stats().deviceFailures == 0);
     }
 }
+
+TEST_CASE("audio/engine: the launch's fade begins before the screens stop; the device then stops at once",
+          "[audio][engine]") {
+    AudioEngineOptions options;
+    options.output = AudioOutput::Device;
+    options.deviceOnNullBackend = true;
+    auto engine = AudioEngine::create(options);
+    REQUIRE(engine.has_value());
+    AudioEngine& audio = **engine;
+    audio.beginSuspend();
+    CHECK_FALSE(audio.suspended());
+    // The device's thread renders the fade meanwhile (the screens' decoders stopping, in the app).
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (audio.mixer().outputGain() > 0.0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(audio.mixer().outputGain() == 0.0);
+    audio.suspend();
+    CHECK(audio.suspended());
+    CHECK(audio.stats().deviceStops == 1);
+    audio.resume();
+    CHECK(audio.stats().deviceStarts == 2);
+    CHECK_FALSE(audio.suspended());
+}
