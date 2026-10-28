@@ -2,10 +2,11 @@
 
 // A clip checked without playing it (I5 step 7, ADR-0016 §8: `retroverse-cli media --check-videos`): a VideoDecoder,
 // the screens' own, decodes a sample of it (its first seconds, a second from its middle, its last second) and its
-// verdict is the decoder's: the failure it reports with ADR-0004's thresholds, or playable. The sample's last frame
-// must reach the video stream's declared duration as the decoder's truncation rule asks of a whole pass (90% of it,
-// less 0.5 s): a file cut short whose index is intact fails as truncated without being decoded whole. A short clip is
-// decoded whole. GPU-free; the calling thread waits for the decoder's (polling its queue).
+// verdict is the decoder's: the failure it reports with ADR-0004's thresholds, or playable. A stream that ends after
+// a seek (at the middle's or at the tail's) must have reached the video stream's declared duration, as the decoder's
+// truncation rule asks of a whole pass (90% of it, less 0.5 s): a file cut short whose index is intact fails as
+// truncated without being decoded whole, wherever it was cut. A short clip is decoded whole. GPU-free; the calling
+// thread waits for the decoder's (polling its queue).
 
 #include <rv/media/video_decoder.hpp>
 

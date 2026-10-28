@@ -97,6 +97,18 @@ VideoCheckResult checkVideo(const std::filesystem::path& path, const VideoCheckS
     VideoDecoder& decoder = **opened;
     Checker checker(decoder, settings, result);
 
+    // ADR-0004's truncation rule for a stretch read after a seek, which the decoder's own rule (a first pass from the
+    // start) no longer covers: a stream that ends there must have reached the video stream's own duration (never the
+    // container's, which covers a longer sound), 90% of it less 0.5 s. A file cut before the middle ends at the
+    // middle's seek, one cut later at the tail's.
+    const auto checkEnd = [&]() {
+        const double own = result.info ? result.info->streamDurationSeconds : 0.0;
+        if (own > 0.0 && result.lastFrameSeconds < own * kTruncatedPassRatio - kTruncatedPassSlackSeconds) {
+            result.failure = DecodeFailure::Truncated;
+            result.detail =
+                fmt::format("the stream ends after {:.2f} s of the {:.2f} s it declares", result.lastFrameSeconds, own);
+        }
+    };
     const auto finish = [&](Stretch stretch) {
         if (stretch == Stretch::Failed) {
             result.completed = true;
@@ -150,19 +162,15 @@ VideoCheckResult checkVideo(const std::filesystem::path& path, const VideoCheckS
     stretch = checker.read(middle + settings.middleSeconds, decoder.seek(middle));
     if (stretch != Stretch::Reached) {
         finish(stretch);
+        if (stretch == Stretch::Ended) {
+            checkEnd();
+        }
         return result;
     }
     stretch = checker.read(std::numeric_limits<double>::infinity(), decoder.seek(declared - settings.tailSeconds));
     finish(stretch);
     if (stretch == Stretch::Ended) {
-        // The sample's last frame against the stream's own duration (never the container's, which covers a longer
-        // sound): ADR-0004's truncation rule.
-        const double own = result.info ? result.info->streamDurationSeconds : 0.0;
-        if (own > 0.0 && result.lastFrameSeconds < own * kTruncatedPassRatio - kTruncatedPassSlackSeconds) {
-            result.failure = DecodeFailure::Truncated;
-            result.detail =
-                fmt::format("the stream ends after {:.2f} s of the {:.2f} s it declares", result.lastFrameSeconds, own);
-        }
+        checkEnd();
     }
     return result;
 }

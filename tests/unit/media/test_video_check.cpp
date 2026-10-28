@@ -1,7 +1,7 @@
 // The check of a clip's sample (I5 step 7, ADR-0016 §8: what `retroverse-cli media --check-videos` runs on each clip):
 // every damaged kind of SC-08 gets the decoder's verdict, a short clip is decoded whole, a long one only at its head,
-// middle and end, a long clip cut short whose index is intact fails as truncated without being decoded whole, and a
-// file the system cannot read is no verdict.
+// middle and end, a long clip cut short whose index is intact fails as truncated without being decoded whole (cut
+// before or after its middle), and a file the system cannot read is no verdict.
 
 #include "media_test_support.hpp"
 
@@ -100,6 +100,21 @@ TEST_CASE("media/video_check: a long clip cut short fails as truncated without b
     CHECK(result.failure == DecodeFailure::Truncated);
     CHECK_FALSE(result.whole);
     CHECK(result.frames < 100);
+}
+
+TEST_CASE("media/video_check: a long clip cut before its middle fails as truncated", "[media][video_check]") {
+    const MediaTestDir dir;
+    auto spec = smallClip(320, 240, 10, 200); // 20 s
+    spec.quantizer = 2;
+    const auto clip = writeClip(dir, "long.mp4", spec);
+    // The index first (faststart), 70% of the frames' bytes gone: the stream ends near 6 s, before the middle's seek
+    // (9.5 s), which then finds nothing to read.
+    REQUIRE(rv::media::writeTruncatedCopy(clip, dir.file("cut.mp4"), 0.3));
+    const VideoCheckResult result = checked(dir.file("cut.mp4"));
+    CHECK(result.failure == DecodeFailure::Truncated);
+    CHECK_FALSE(result.whole);
+    CHECK(result.lastFrameSeconds < 9.0);
+    CHECK(result.frames < 60);
 }
 
 TEST_CASE("media/video_check: a file the system cannot read gives a read error, never a verdict of the clip",
