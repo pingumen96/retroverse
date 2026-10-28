@@ -502,14 +502,23 @@ TEST_CASE("world/edit: fixtures moved on the grid and turned, pinned where put; 
             CHECK(after->zMm - before.zMm == z - decoration.zMm);
             CHECK(after->yMm == before.yMm);
         }
-        // Put back home: pinned in its socket, the plan as generated but its digest.
+        // Put back home: its pin removed (it stands where the layout stands it), the plan as generated, its digest
+        // included; nothing left to unpin.
         const EditResult back = edit(
             fresh.world, EditOperation::moveFixture(decoration.id, decoration.xMm, decoration.zMm, decoration.yawCdeg),
             data);
         REQUIRE_FALSE(back.refused);
-        CHECK_FALSE(fresh.world.overrides.fixturePins.front().transform.has_value());
-        CHECK(edit(fresh.world, EditOperation::unpinFixture(decoration.id), data).changed);
+        CHECK(back.changed);
+        CHECK(fresh.world.overrides.empty());
         CHECK(fresh.world.plan == fresh.generated.plan);
+        CHECK_FALSE(edit(fresh.world, EditOperation::unpinFixture(decoration.id), data).changed);
+        // A move onto where it stands at home changes nothing, and a pin in its socket stays.
+        CHECK_FALSE(edit(fresh.world, EditOperation::moveFixture(decoration.id, decoration.xMm, decoration.zMm), data)
+                        .changed);
+        REQUIRE(edit(fresh.world, EditOperation::pinFixture(decoration.id), data).changed);
+        CHECK_FALSE(edit(fresh.world, EditOperation::moveFixture(decoration.id, decoration.xMm, decoration.zMm), data)
+                        .changed);
+        CHECK(fresh.world.overrides.fixturePins.size() == 1);
     }
     SECTION("pin and unpin a fixture where it stands") {
         CHECK(edit(fresh.world, EditOperation::pinFixture(display.id), data).changed);
@@ -770,6 +779,57 @@ TEST_CASE("world/edit: a fixture moved by the user is never moved by the room's 
     CHECK_FALSE(refused.changes.needsConfirmation.empty());
 }
 
+TEST_CASE("world/edit: a south-wall fixture moved back home is unpinned and moves with its wall again",
+          "[world][edit]") {
+    std::optional<Fresh> found;
+    Fixture south;
+    for (std::uint64_t seed = 1; seed < 40 && !found; ++seed) {
+        Fresh fresh = freshRoom(60, seed);
+        const Fixture* onSouth = findFixture(fresh.world.plan, FixtureRole::Decoration, [](const Fixture& fixture) {
+            const auto* socket = socketOf(fixture);
+            return socket != nullptr && socket->wall == rv::world::Wall::South && fixture.yMm == 0;
+        });
+        if (onSouth != nullptr) {
+            south = *onSouth;
+            found = std::move(fresh);
+        }
+    }
+    REQUIRE(found.has_value());
+    const EditData data = snesEditData();
+    EditedWorld& world = found->world;
+    bool moved = false;
+    for (const std::int64_t step : {100, -100, 200, -200}) {
+        EditedWorld trial = world;
+        if (!edit(trial, EditOperation::moveFixture(south.id, south.xMm + step, south.zMm), data).refused) {
+            world = trial;
+            moved = true;
+            break;
+        }
+    }
+    REQUIRE(moved);
+    REQUIRE(world.overrides.fixturePins.size() == 1);
+    const EditResult back = edit(world, EditOperation::moveFixture(south.id, south.xMm, south.zMm), data);
+    REQUIRE_FALSE(back.refused);
+    CHECK(world.overrides.empty());
+    CHECK(world.plan == found->generated.plan);
+
+    // The growth is taken (a pin in its socket would refuse it) and the fixture moves with the south wall.
+    RoomSelection more = found->selection;
+    rv::core::Random random(rv::core::deriveSeed("edit-growth", 1));
+    std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(more);
+    for (int i = 0; i < 6000; ++i) {
+        rv::test::world::addTitle(more, random, taken);
+    }
+    const GenerationResult update = updated(world, more);
+    const std::uint32_t steps = update.plan.rooms.front().growthSteps - world.plan.rooms.front().growthSteps;
+    REQUIRE(steps > 0);
+    const Fixture* after = fixtureOf(update.plan, south.id.toString());
+    REQUIRE(after != nullptr);
+    CHECK(after->xMm == south.xMm);
+    CHECK(after->zMm == south.zMm + static_cast<std::int64_t>(steps) * snesData().roomTemplate.growthStepMm);
+    CHECK(update.validation.passed());
+}
+
 TEST_CASE("world/edit: a fixture moved then unpinned is still held where it stands by growth", "[world][edit]") {
     // A room with decoration on the south wall (a decoration socket the density chose).
     std::optional<Fresh> found;
@@ -942,9 +1002,15 @@ TEST_CASE("world/edit: random edit sessions keep the plan valid, every manual ch
                 }
             }
             if (operation.kind == EditKind::MoveFixture) {
-                const auto pin = std::find_if(world.overrides.fixturePins.begin(), world.overrides.fixturePins.end(),
-                                              [&](const auto& candidate) { return candidate.fixture == operation.fixture; });
-                CHECK(pin != world.overrides.fixturePins.end());
+                // Pinned where it stands, unless back home (where the fresh layout stood it), where it stands unpinned.
+                const auto pin =
+                    std::find_if(world.overrides.fixturePins.begin(), world.overrides.fixturePins.end(),
+                                 [&](const auto& candidate) { return candidate.fixture == operation.fixture; });
+                const Fixture* now = fixtureOf(world.plan, operation.fixture.toString());
+                const Fixture* home = fixtureOf(fresh.generated.plan, operation.fixture.toString());
+                const bool atHome =
+                    now->xMm == home->xMm && now->zMm == home->zMm && now->yawCdeg == home->yawCdeg;
+                CHECK((pin != world.overrides.fixturePins.end()) != atHome);
             }
             requirePinsHonoured(world);
         }

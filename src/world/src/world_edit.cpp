@@ -181,6 +181,16 @@ private:
                   [](const FixturePin& a, const FixturePin& b) { return a.fixture < b.fixture; });
     }
 
+    /// A fixture back home: its pin removed, but for a pinned prefab, which stays pinned in its socket.
+    void dropTransformPin(const FixtureId& fixture) {
+        const FixturePin* existing = fixturePinOf(fixture);
+        if (existing != nullptr && existing->prefab) {
+            setFixturePin(fixture, std::nullopt);
+            return;
+        }
+        std::erase_if(m_world.overrides.fixturePins, [&](const FixturePin& pin) { return pin.fixture == fixture; });
+    }
+
     /// The pins of `game`'s other slot or another game's pin of `slot`: a slot holds one pin (overrides.hpp).
     std::optional<EditResult> slotPinnedByOther(const SlotId& slot, const GameId& game, const GameId& other = {}) {
         const GamePin* pin = slotPinOf(slot);
@@ -577,7 +587,20 @@ private:
         const std::optional<FixtureTransform> transform = pinnedTransform(context, pose);
         const detail::SocketPose before{fixture.xMm, fixture.zMm, fixture.yawCdeg};
         if (pose == before) {
-            return pinFixture(operation.fixture);
+            if (transform) {
+                return pinFixture(operation.fixture);
+            }
+            // At home already: a pin of a transform (written by hand) goes; a pin in its socket stays.
+            const FixturePin* existing = fixturePinOf(fixture.id);
+            if (existing == nullptr || !existing->transform) {
+                return unchanged(fmt::format("{} stands in its socket already", fixture.id.toString()));
+            }
+            dropTransformPin(fixture.id);
+            EditResult result;
+            result.changed = true;
+            result.summary =
+                fmt::format("{} stands in its socket: its pin at a transform removed", fixture.id.toString());
+            return result;
         }
         fixture.xMm = pose.xMm;
         fixture.zMm = pose.zMm;
@@ -591,7 +614,13 @@ private:
                 }
             }
         }
-        setFixturePin(fixture.id, transform);
+        if (transform) {
+            setFixturePin(fixture.id, transform);
+        } else {
+            // Back home it stands where the layout stands it: nothing left to pin (a pin in its socket of the south
+            // wall would refuse every growth, ADR-0015 §3), but a pinned prefab stays pinned, in its socket.
+            dropTransformPin(fixture.id);
+        }
         if (fixture.role == FixtureRole::SideModule) {
             placeWallWashersAgain(context);
         }
@@ -603,7 +632,7 @@ private:
         result.summary =
             transform ? fmt::format("moved {} to {}, pinned there", fixture.id.toString(),
                                     transformText(pose.xMm, pose.zMm, pose.yawCdeg))
-                      : fmt::format("moved {} back into its socket, pinned in it", fixture.id.toString());
+                      : fmt::format("moved {} back into its socket, its pin removed", fixture.id.toString());
         return result;
     }
 

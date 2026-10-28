@@ -4,7 +4,8 @@
 // 4) and `retroverse-cli worldplan edit` apply, each a pure change of a plan and its overrides together, validated at
 // once by the hard rules. The plan is the truth: an edit changes it (a placement's slot, a fixture's place); the
 // overrides record what the user decided, so that a regeneration honours it (I4b step 5). Every manual change is pinned
-// (style §13.4): a game moved or swapped is pinned in its new slot, a fixture moved is pinned where it was put.
+// (style §13.4): a game moved or swapped is pinned in its new slot, a fixture moved is pinned where it was put (a fixture
+// put back home stands where the layout stands it: its pin is removed).
 //
 // The operations:
 //   - move: a placed game into an empty slot of its room chain (its room and its expansions, ADR-0015 §7), a face-out
@@ -14,14 +15,16 @@
 //   - swap: two placed games of one room chain exchange their slots, both pinned.
 //   - pin, unpin: a placed game pinned in its slot; a game's pin removed (also an orphaned one), the game left where it
 //     stands. Nothing to do (pinned there already, no pin) is no change.
-//   - move-fixture: a side-wall module, a display fixture or a decoration moved and turned in its room: its pivot on the
-//     room's 100 mm grid through its place in its socket (its "home", where a fresh layout stands it), so that a fixture
-//     slid along its wall stays flush with it; turned a quarter turn at a time (decoration by 15 degrees); a
-//     decoration hung on a wall (a poster) only along the walls, its back on a wall (within kMaxWallGapMm) facing into
-//     the room, the coordinate across its wall exempt from the grid. Its games and its dressing move with it (they name
-//     it); a lamp's light follows it; a moved side-wall module has the room's wall-washers placed again over the
-//     modules where they stand. Pinned at its transform (in its socket, without one, when it is put back home). The
-//     hero corner and the hero-wall modules are fixed.
+//   - move-fixture: a side-wall module, a display fixture or a decoration moved and turned in its room: its pivot on
+//     the room's 100 mm grid through its place in its socket (its "home", where a fresh layout stands it), so
+//     that a fixture slid along its wall stays flush with it; turned a quarter turn at a time
+//     (decoration by 15 degrees); a decoration hung on a wall (a poster) only along the walls, its back on a wall
+//     (within kMaxWallGapMm) facing into the room, the coordinate across its wall exempt from the grid. Its games and
+//     its dressing move with it (they name it); a lamp's light follows it; a moved side-wall module has the room's
+//     wall-washers placed again over the modules where they stand. Pinned at its transform; put back home, its pin is
+//     removed (a pinned prefab stays pinned, in its socket), so that a fixture of the south wall put back moves with
+//     its wall again (ADR-0015 §3 refuses a growth that would move one pinned in its socket). A move onto where it
+//     stands pins it there, or changes nothing at home. The hero corner and the hero-wall modules are fixed.
 //   - pin-fixture, unpin-fixture: a movable fixture pinned where it stands (in its socket when at home, else at its
 //     transform), or its pin removed (the fixture left where it stands).
 // An edit is refused, the world unchanged, when it names what the plan lacks, breaks a rule of its own (edit_rule) or
