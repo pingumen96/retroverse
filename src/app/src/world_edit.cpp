@@ -20,6 +20,7 @@
 #include <rv/core/time.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/scene/instance_data.hpp>
+#include <rv/world/building.hpp>
 #include <rv/world/overrides.hpp>
 #include <rv/world/world_store.hpp>
 
@@ -35,16 +36,14 @@ using Clock = std::chrono::steady_clock;
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 
-/// What the session's jobs read besides their own input.
-struct EditJobContext {
-    WorldPaths paths;
-    catalog::LibraryId library;
-    std::string floor;
-    std::optional<world::RoomId> startRoom;
-    FloorSources sources;
-    world::RoomId room;
-    std::string writer;
-};
+/// `plan` as the app shows it: a stored building's ground-floor rooms that stand at I4's lobby drawn on the hub, as
+/// buildFloor() draws them (world::placeOnHub(); nothing written). The draft and every save keep the plan as stored.
+[[nodiscard]] world::WorldPlan asShown(world::WorldPlan plan, const world::EditData* data) {
+    if (data != nullptr) {
+        static_cast<void>(world::placeOnHub(plan.rooms, data->building.layout));
+    }
+    return plan;
+}
 
 /// The floor shown kept for the fast path: `build` without its scene, the scene data of every room but `room` dropped
 /// (only the edited room is laid out again).
@@ -84,7 +83,7 @@ void displayInto(EditJobAnswer& answer, const EditJobContext& context, const std
                 onFloor.push_back(room);
             }
         }
-        if (auto fast = editedRoomCollections(*shown, plan, digest, onFloor)) {
+        if (auto fast = editedRoomCollections(*shown, asShown(plan, context.data.get()), digest, onFloor)) {
             answer.build = std::move(*fast);
             answer.fullFloor = false;
             return;
@@ -165,21 +164,20 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
     spdlog::info("Frame {}: the editor begins in {} ({}{})", frame, room.toString(), via,
                  held ? ", " + held->toString() + " held" : std::string());
 
-    // The world's data for the floor, the overrides, the floor of the plan shown (the fast path's template).
-    EditJobContext context;
-    context.paths = m_options.paths;
-    context.library = m_planState->library;
-    context.floor = m_floor;
-    context.startRoom = m_options.startRoom;
-    context.sources.mediaRoot = m_planState->mediaRoot;
-    context.sources.mediaRootPath = m_planState->mediaRootPath;
-    context.sources.screenMediaRoot = m_planState->screenMediaRoot;
-    context.room = room;
-    submitEditJob(EditJob::Prepare, [context, plan = m_planState->plan,
-                                     digest = m_planState->digest](const core::JobContext& job) {
+    // The plan as stored (the draft's base), the world's data for the floor, the overrides, the floor of the stored
+    // plan (the fast path's template). The base is never the plan as shown: a stored building's lobby rooms are drawn on
+    // the hub with the stored digest kept (buildFloor()), and a save must not write that re-placement.
+    const EditJobContext context = editJobContext();
+    submitEditJob(EditJob::Prepare, [context, shownDigest = m_planState->digest](const core::JobContext& job) {
         EditJobAnswer answer;
         answer.kind = EditJobAnswer::Kind::Prepared;
-        auto data = prepareEditData(context.paths, *plan, context.floor);
+        StoredWorldPlan read = readWorldPlan(context.paths, context.library);
+        if (read.error || !read.stored) {
+            answer.error = "the stored plan: " + (read.error ? read.error->toString() : std::string("none"));
+            return answer;
+        }
+        world::StoredPlan& stored = *read.stored;
+        auto data = prepareEditData(context.paths, stored.plan, context.floor);
         if (!data) {
             answer.error = "the world's data: " + data.error().toString();
             return answer;
@@ -192,11 +190,12 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
             answer.error = "overrides.json: " + overrides.error().toString();
             return answer;
         }
-        answer.overrides = std::move(*overrides);
         if (job.cancelled()) {
             return answer;
         }
-        displayInto(answer, context, nullptr, *plan, digest, world::RebuildLevel::Full, {});
+        answer.storedChanged = stored.digest != shownDigest;
+        displayInto(answer, context, nullptr, stored.plan, stored.digest, world::RebuildLevel::Full, {});
+        answer.base = EditBase{world::EditedWorld{std::move(stored.plan), std::move(*overrides)}, stored.digest};
         return answer;
     });
 }
@@ -248,6 +247,22 @@ void WorldSession::submitEditJob(EditJob job, std::function<EditJobAnswer(const 
         edit.box->answer = std::move(failed);
         edit.box->generation = generation;
     }
+}
+
+EditJobContext WorldSession::editJobContext() const {
+    EditJobContext context;
+    context.paths = m_options.paths;
+    context.library = m_planState->library;
+    context.floor = m_floor;
+    context.startRoom = m_options.startRoom;
+    context.sources.mediaRoot = m_planState->mediaRoot;
+    context.sources.mediaRootPath = m_planState->mediaRootPath;
+    context.sources.screenMediaRoot = m_planState->screenMediaRoot;
+    if (m_edit) {
+        context.room = m_edit->room;
+        context.data = m_edit->draft ? m_edit->draft->data() : nullptr;
+    }
+    return context;
 }
 
 bool WorldSession::editWaits() const noexcept {
@@ -338,15 +353,7 @@ void WorldSession::requestEditOperation(const world::EditOperation& operation) {
     edit.record.operations.push_back(std::move(record));
     edit.refusal.clear();
     edit.saveRefused = false;
-    EditJobContext context;
-    context.paths = m_options.paths;
-    context.library = m_planState->library;
-    context.floor = m_floor;
-    context.startRoom = m_options.startRoom;
-    context.sources.mediaRoot = m_planState->mediaRoot;
-    context.sources.mediaRootPath = m_planState->mediaRootPath;
-    context.sources.screenMediaRoot = m_planState->screenMediaRoot;
-    context.room = edit.room;
+    const EditJobContext context = editJobContext();
     const world::PinProvenance provenance{world::PinOrigin::Editor, core::utcNow()};
     const std::string digest = fmt::format("edit:{}:{}", edit.session, ++edit.shownCount);
     submitEditJob(EditJob::Operation, [context, operation, provenance, digest, world = edit.draft->current(),
@@ -373,15 +380,7 @@ void WorldSession::requestEditOperation(const world::EditOperation& operation) {
 void WorldSession::requestEditDisplay(EditJob job, world::EditedWorld world, std::string digest,
                                       world::RebuildLevel rebuild, std::vector<world::RoomId> rooms) {
     WorldEditState& edit = *m_edit;
-    EditJobContext context;
-    context.paths = m_options.paths;
-    context.library = m_planState->library;
-    context.floor = m_floor;
-    context.startRoom = m_options.startRoom;
-    context.sources.mediaRoot = m_planState->mediaRoot;
-    context.sources.mediaRootPath = m_planState->mediaRootPath;
-    context.sources.screenMediaRoot = m_planState->screenMediaRoot;
-    context.room = edit.room;
+    const EditJobContext context = editJobContext();
     submitEditJob(job, [context, world = std::move(world), digest = std::move(digest), rebuild,
                         rooms = std::move(rooms), shown = edit.shown](const core::JobContext&) {
         EditJobAnswer answer;
@@ -401,15 +400,7 @@ void WorldSession::requestEditSave() {
     edit.endAsked = Clock::now();
     edit.refusal.clear();
     edit.saveRefused = false;
-    EditJobContext context;
-    context.paths = m_options.paths;
-    context.library = m_planState->library;
-    context.floor = m_floor;
-    context.startRoom = m_options.startRoom;
-    context.sources.mediaRoot = m_planState->mediaRoot;
-    context.sources.mediaRootPath = m_planState->mediaRootPath;
-    context.sources.screenMediaRoot = m_planState->screenMediaRoot;
-    context.room = edit.room;
+    const EditJobContext context = editJobContext();
     EditSaveOptions options;
     options.paths = m_options.paths;
     options.library = m_planState->library;
@@ -512,7 +503,7 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
     const std::uint64_t frame = m_context.frameIndex();
     switch (answer.kind) {
     case EditJobAnswer::Kind::Prepared: {
-        if (!answer.error.empty() || !answer.build || !m_planState) {
+        if (!answer.error.empty() || !answer.build || !answer.base || !m_planState) {
             spdlog::error("Frame {}: the editor cannot edit {}: {}", frame, edit.room.toString(),
                           answer.error.empty() ? std::string("no floor") : answer.error);
             edit.record.failed = answer.error.empty() ? std::string("no floor") : answer.error;
@@ -520,14 +511,25 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
             endEdit("failed");
             return;
         }
-        if (m_shown && answer.build->sceneDigest != m_shown->sceneDigest) {
-            spdlog::warn("Editor: the floor read for the session is not the floor shown (its scene differs)");
+        edit.draft = std::make_unique<EditDraft>(std::move(*answer.base), std::move(answer.data));
+        if (answer.storedChanged) {
+            // Another writer changed the plan since the floor was shown: the session edits, and shows, the stored one.
+            spdlog::warn("Frame {}: the stored plan is not the one shown; the editor shows it", frame);
+            clearEditFlags();
+            if (!showEditBuild(*answer.build, true)) {
+                spdlog::error("Frame {}: the editor cannot show the stored plan of {}", frame, edit.room.toString());
+                edit.record.failed = "the stored plan cannot be shown";
+                setNotice(WorldNoticeContent{std::string(world_notice::kEditUnavailable), {}, noticeRoom()}, true);
+                endEdit("failed");
+                return;
+            }
+        } else {
+            if (m_shown && answer.build->sceneDigest != m_shown->sceneDigest) {
+                spdlog::warn("Editor: the floor read for the session is not the floor shown (its scene differs)");
+            }
+            edit.shown = templateOf(std::move(*answer.build), edit.room);
+            bindEditRoom();
         }
-        edit.draft = std::make_unique<EditDraft>(
-            EditBase{world::EditedWorld{*m_planState->plan, std::move(answer.overrides)}, m_planState->digest},
-            std::move(answer.data));
-        edit.shown = templateOf(std::move(*answer.build), edit.room);
-        bindEditRoom();
         edit.interaction.ready();
         edit.record.readyFrame = frame;
         edit.record.prepareMs = millisecondsSince(edit.asked);
@@ -675,7 +677,8 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
         if (!shown && m_planState) {
             // The draft shown is the plan saved (or, when a replay's floor could not be shown, the nearest to it): the
             // floor shown takes its plan and digest (the next live update compares them).
-            m_planState->plan = std::make_shared<const world::WorldPlan>(saved.saved.plan);
+            m_planState->plan = std::make_shared<const world::WorldPlan>(
+                asShown(saved.saved.plan, edit.draft ? edit.draft->data().get() : nullptr));
             m_planState->digest = saved.planDigest;
             m_planIndex.emplace(*m_planState->plan);
             if (m_shown) {

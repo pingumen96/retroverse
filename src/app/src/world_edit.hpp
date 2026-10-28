@@ -44,6 +44,18 @@
 
 namespace rv::app {
 
+/// What the session's jobs read besides their own input (WorldSession::editJobContext()).
+struct EditJobContext {
+    WorldPaths paths;
+    catalog::LibraryId library;
+    std::string floor;
+    std::optional<world::RoomId> startRoom;
+    FloorSources sources;
+    world::RoomId room;
+    /// The session's edit data (none while it is prepared): the building's layout for the plan as shown.
+    std::shared_ptr<const world::EditData> data;
+};
+
 /// What an editor's job answers.
 struct EditJobAnswer {
     enum class Kind : std::uint8_t {
@@ -54,9 +66,11 @@ struct EditJobAnswer {
     Kind kind = Kind::Prepared;
     /// Why the job failed ("" none): the session cannot go on with it (logged).
     std::string error;
-    /// Prepared: the edit data and the overrides read.
+    /// Prepared: the edit data, the draft's base (the plan as stored, its file's digest, the overrides read) and whether
+    /// the stored plan is not the one shown (its digest differs: the session shows the stored one).
     std::shared_ptr<const world::EditData> data;
-    world::WorldOverrides overrides;
+    std::optional<EditBase> base;
+    bool storedChanged = false;
     /// The floor to show (Prepared: the plan shown's; none for a refused operation, a save that needs no new floor),
     /// whether it is a whole floor built again (its scene new: committed again) or the shown floor with its edited rooms
     /// laid out again.

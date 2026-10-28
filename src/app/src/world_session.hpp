@@ -298,6 +298,8 @@ private:
     void requestEditSave();
     /// Submits `work` as the session's one job (its answer into the session's box, the host woken).
     void submitEditJob(EditJob job, std::function<EditJobAnswer(const core::JobContext&)> work);
+    /// What the session's jobs read (the plan state's library and media, the floor, the edited room, its data).
+    [[nodiscard]] EditJobContext editJobContext() const;
     /// `build` shown for the session (`fullFloor`: its own scene, else the shown one's with its rooms laid out again):
     /// applied in place room by room when the static part is the same, else the floor committed again. False when it
     /// could not be shown.
