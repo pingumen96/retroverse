@@ -1609,7 +1609,8 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->screen->shutdown();
             m_state->screen->record(context.report().video);
         }
-        // Normal again for whatever runs after Retroverse in the same console.
+        // Normal for the rest of the exit (the joins and the report need no boost), the report's last change. The class
+        // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});
         context.report().processPriority = m_state->priority;
         if (context.options().frameLimit) {
