@@ -79,11 +79,29 @@ Roadmap row: I4b step 8. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
 Computer · 850 giochi · A – Mo", "Lumen Desk Computer 2 · 850 giochi · Mo – Y" indented), `inside-expansion.png` (its
 neon "HOME COMPUTERS 2", its CRT), `inspect-expansion.png`, `arcade-expansion.png` ("ARCADE 2"),
 `carried-into-expansion.png` and `holding-over-free-slot.png` (the bar "Modifica stanza · Lumen Desk Computer 2", the
-game in the hand), `notice-rooms-added.png` (the lobby: "Una nuova stanza per la collezione", "Sala giochi arcade 2").
+game in the hand), `moved-into-expansion.png` (the game dropped there with its title and cover),
+`show-in-expansion.png` ("Mostra nella stanza": its Focus pose in the expansion), `notice-rooms-added.png` (the lobby: "Una nuova stanza per la collezione", "Sala giochi arcade 2").
 
 ## Real library
 
-See below (`[real-library][building]`).
+`./scripts/real-library.ps1 -Filter '[real-library][building]'` in Release, ES-DE closed, 0 differences among 542,120
+entries. Nothing changed for the reference library, which has no chain: its directory lists 44 rooms on 9 floors, each
+alone without a range, no items file read for ranges, no room added (`world.roomsAdded` empty at every start); the
+building planned twice gives one plan digest and one file SHA-256 (19,985 placements, 71,290 unplaced), the unchanged
+starts plan nothing (skipped by the stamp) and the update writes nothing. The timings did not hold this time: the run
+shared the machine with two other worktrees' GPU suites and a build (the CPU at 100%, the import 40.0 s against step
+7's 12.4 s), and the lobby showed 5.5 s and 9.0 s after the process started (the quick catalog's first page 4.0 s and
+7.6 s; the 5 s row), and the cold ride back to the lobby reported its arrays before the arcade room's second array came
+in (2.5 MiB against 5.0 MiB; the run's end equal). The step changes nothing those runs execute on a plan without a
+chain (the signs of rooms alone, the ranges' read skipped, the update's data unchanged), so these are the load's; the
+row is to be measured again on a quiet machine (the gate's run).
+
+## Release
+
+`./scripts/test.ps1 -Preset msvc-x64-release-gpu`: 2,343 of 2,344 passed; `gpu.world floor: light reaches through the
+doorways ...` timed out under the same load and passed alone (376 s). The goldens G01 to G19 skipped: the machine's
+driver is NVIDIA 621.01, the goldens were recorded under 617.42 (`docs/testing/reference-hardware.md`: compared on the
+reference machine only).
 
 ## Goldens
 
