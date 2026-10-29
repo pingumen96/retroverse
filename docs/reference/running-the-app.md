@@ -256,10 +256,13 @@ build/rvdata`).
   `m0_testroom`. The report's `video` section adds `playlistMode`, `playlistRoom`, `previewSeconds`, `playlistOrder`
   (the current cycle), `origin` (`start`, `playlist`, `selection`), `played` and `shown` (each game played and each
   picture shown, with the run's simulated seconds, the first 512), `heldFrames` and `idleFramesWithGame`.
-- The decoder scheduler (I5 step 2, ADR-0016 §2, `docs/i5/step-2.md`): every `crt` of the room with a picture on its
-  screen is a screen, the hero first (the first `crt`, or the arcade's hero cabinet), the others secondaries (in a
-  scene with areas, those in the hero's area); a secondary plays its own playlist (`secondary`'s keys, seeded by its
-  object id, no start choice). `app::ScreenScheduler` gives the clips the budget's decoder slots: `--max-decoders 1|2`,
+- The decoder scheduler (I5 step 2, ADR-0016 §2, `docs/i5/step-2.md`): the room's screens, the hero first (by its
+  role since I5 step 3: the hero corner's CRT `...fx:hero.crt`, or the arcade's hero cabinet; a hand-made scene's first
+  `crt`), then the secondaries: the room's secondary TV (I5 step 3, `docs/i5/step-3.md`: a pack's `secondary_tv`, a
+  small CRT on a sideboard standing in one of the room's sideboard sockets, two in a room deeper than 12 m, none in the
+  arcade or the hub) and a hand-made scene's further `crt`s (in a scene with areas, those in the hero's area); a
+  secondary plays its own playlist (`secondary`'s keys, seeded by its object id, no start choice) in the `ambient`
+  class, within `proximityMeters` of the eye (to its object's bounds' middle), else its still. `app::ScreenScheduler` gives the clips the budget's decoder slots: `--max-decoders 1|2`,
   else `video.json`'s `maxDecoders` (2). Screens asking for one clip share its slot and texture; clips rank by being in
   view, then their class (`direct`, `focus`: the selected game's screen, `room`: the hero, `ambient`: secondaries
   within `proximityMeters`, 0.5 m hysteresis), their nearest screen and its id; a screen without a slot shows its

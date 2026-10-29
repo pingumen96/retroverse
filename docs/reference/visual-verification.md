@@ -130,7 +130,11 @@ room:gb --spawn 3.85,0,6.65,270,-4`, the handheld floor's hall from east of its 
 (`g20_cabinet_focus_golden.png`: `esde/building`, `--start-room area:arcade`, the walker at the Focus pose of the
 cabinet of the fixture's one mame clip, `tests/input_scripts/golden_g20_cabinet_focus.json`: inspected, then in Focus
 after Indietro, its clip held at 1.0 s and letterboxed on its portrait screen, the bars the tube's off-black since the
-step's review). The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
+step's review). I5 step 3 adds G19 (`g19_secondary_tv_golden.png`: `esde/snes-room`, `--start-room room:snes`, the walker
+in front of the middle between the hero CRT and the room's secondary TV, both playing their clips held at 1.0 s, the
+secondary's playlist one game through `video.json`'s per-screen keys). The room of 14 m with two secondary TVs is
+`rv_tests "[.secondary_tv_look]"`, which writes `build/i5/step3/grown-room.scene.json` for `--scene`. The cases' upright
+spines up close are `gpu.world families: jewel cases stand on their side` (the
 `esde/case-shelves` fixture: 160 jewel cases, 100 keep cases, 120 big boxes, most of them spine-out, their dark shells
 and full-height printed spines since the step's review) and `gpu.world families: a stored building of generator 1.3 is
 migrated once` (`tests/fixtures/world/legacy/`). `$env:RV_UPDATE_GOLDEN=1;

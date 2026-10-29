@@ -196,6 +196,11 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   arcade clip fills only about 56% of a cabinet's portrait screen (a 4:3 picture letterboxed on 298 x 398 mm, its
   bars the tube's off-black). Candidate remedies, an ADR-0014 follow-up: a landscape screen for the horizontal games,
   or a deeper item.
+- **Secondary TVs (I5 step 3, `docs/i5/step-3.md`):** a room whose decoration drew no sideboard has none (its side
+  walls all modules, or its decoration posters, lamps and plants): a pack could list the TV under a second kind, or the
+  generator could reserve a sideboard (a plan change, a migration). A secondary whose clip fails shows its still until
+  its preview ends (30 s), as the hero does (step 1's rule), rather than moving on at once. The secondary is silent
+  while the hero is in view (`room` above `ambient`), as an attract cabinet is (step 4's open question).
 - **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
   stand. The hour-long soak found the private bytes growing: see the next item.
 - **Memory per clip opened (I5 step 7's soak):** done in I5 step 7's review (`docs/i5/step-7.md`, "Review"): every

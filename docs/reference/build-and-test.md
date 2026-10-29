@@ -267,7 +267,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `build/<preset>/real-library/videos`, whose data directory is kept so that a run resumes: delete it to check every
   clip again), since I5 step 4 `-Filter '[real-library][arcade]'` (the whole library imported under
   `build/<preset>/real-library/arcade`, attract in front of each featured cabinet of the real arcade room, the first
-  that played inspected; "Real arcade:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every
+  that played inspected; "Real arcade:" lines), since I5 step 3 `-Filter '[real-library][secondary_tv]'` (the busiest
+  floor's largest room with a secondary TV, both screens playing in view, its GPU memory within 512 MiB in runs without
+  `--screenshot`, whose render targets add about 72 MiB; "Real secondary TV:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every
   system's clips (hours). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot

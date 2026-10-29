@@ -183,6 +183,27 @@ sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under
 - **What it plays.** Its own playlist (`shuffle` with its own seed by default) in the `ambient` class, with its game's
   still when it has no slot.
 
+*Amended on 2026-10-29 (I5 step 3):*
+- **The piece.** One prefab, `secondary_tv` (`geometry::SecondaryTvParams`): the sideboard's body (tv_cabinet's) carrying
+  the consumer CRT's model at 0.46 x 0.4 x 0.32 m, its screen the CRT's `ScreenSurface`, its default footprint the
+  narrow sideboard's (0.8 x 0.36 m). A pack lists it once, without a weight, in a decoration kind's list (every pack but
+  the arcade's and the hub's: under `tv_cabinet`); it is no weighted variant. Its materials are the pack's `tv_cabinet`
+  and `crt` kinds'. The reader refuses a second one, a weight, one among a hero part's pieces, and a decoration piece of
+  kind `crt`.
+- **Which sockets.** The room's decoration fixtures of that kind whose own prefab's footprint the TV fits, ordered by
+  `core::deriveSeed(room seed, "secondary_tv", fixture id)`: the first, and in a room deeper than 12 m (14 and 16 m) the
+  next one on another wall (else the next one). A room with no such decoration has none (a room whose side walls are
+  all modules and whose decoration drew no sideboard). "Past 12 m" is the room's depth, so a 12 m room holds one.
+- **Where it stands.** Where its fixture stands, judged within that fixture's own prefab's footprint there, not its
+  socket's: a sideboard the room editor moves (I4b) carries its TV, and the editor's collisions and the walkable
+  passages judge the plan's fixture, which the TV never leaves.
+- **Expansions** (I4b step 7) are rooms of their own: each holds its own secondary TV by the same rule and seed.
+- **The screen.** `app::findScreens()` takes the hero by its role (the hero corner's `crt` part, or the arcade's hero
+  cabinet with its id), then binds every `secondary_tv` object of the hero's room as a secondary screen (a hand-made
+  scene's further `crt`s too). Its distance for `proximityMeters` is the eye's to its object's bounds' middle, as every
+  screen's. When the room editor rebuilds a room's static part in place, the bound screens move onto the new objects
+  (`ScreenService::rebind()`): a moved TV is a new object with a new material, its clip playing on.
+
 ### 6. Arcade cabinets with clips
 
 A cabinet's screen is a collection item showing its cover (ADR-0014 §6). With a slot:
