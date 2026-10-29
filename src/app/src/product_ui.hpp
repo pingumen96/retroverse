@@ -113,6 +113,8 @@ public:
     void setDirectoryBuilding(ui::DirectoryBuilding building);
     /// The world's commands the directory gave since the last call, in order (the panel closed itself for each).
     [[nodiscard]] std::vector<ui::DirectoryCommand> takeDirectoryCommands();
+    /// A directory command waits to be taken (the directory closed by it this frame).
+    [[nodiscard]] bool directoryCommandsPending() const noexcept;
     /// `command` refused for now by the world (a ride in Focus, a plan not ready): the panel again where it was, with
     /// `notice` (ui::directory::kNotices) under its list.
     void refuseDirectory(const ui::DirectoryCommand& command, std::string_view notice);

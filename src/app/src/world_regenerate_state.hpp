@@ -51,21 +51,6 @@
 
 namespace rv::app {
 
-/// The inputs of the catalog as it is (RegenerationInputs), made once by the first job that needs them (a prewarm, a
-/// preview) while the others wait for them. Shared with the jobs; a new slot for each refresh of the catalog.
-struct RegenerationInputsSlot {
-    std::mutex mutex;
-    std::condition_variable done;
-    bool running = false;
-    std::optional<RegenerationInputsResult> result;
-    /// How long they took (milliseconds), when made.
-    double milliseconds = 0.0;
-};
-
-/// The slot's inputs: made by this call (`taken` set) unless they are made or being made (then waited for).
-[[nodiscard]] RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
-                                                             WorldCatalogReader* reader, bool& taken);
-
 /// What asked for a preview: its kind, its scope (an undo's: the world), and how (the directory, the notice).
 struct RegenerateRequest {
     ui::RegenerateKind kind = ui::RegenerateKind::Room;

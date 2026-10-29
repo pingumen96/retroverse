@@ -486,3 +486,39 @@ TEST_CASE("app/world_regenerate: the rooms a commit changed alone on a floor", "
     stamped.rooms.front().generatorVersion = {};
     CHECK(rv::app::roomsChangedAlone(before, stamped, floor) == std::vector<rv::world::RoomId>{kSnesRoom});
 }
+
+TEST_CASE("app/world_regenerate: the inputs let go of while nothing needs them; a preview right after makes them again",
+          "[app][world_regenerate]") {
+    const ImportedFixture imported("world-regenerate-release", true, "esde/snes-room");
+    const auto reader = readerOf(imported);
+    static_cast<void>(planned(imported, *reader));
+    const rv::app::WorldPaths paths = worldPathsOf(imported);
+    rv::app::RegenerationInputsSlot slot;
+    // The tab's read-ahead: made once, then served.
+    bool taken = false;
+    const rv::app::RegenerationInputsResult first = rv::app::regenerationInputsFor(slot, paths, reader.get(), taken);
+    REQUIRE(first.inputs);
+    CHECK(taken);
+    CHECK(rv::app::regenerationInputsFor(slot, paths, reader.get(), taken).inputs == first.inputs);
+    CHECK_FALSE(taken);
+    // Needed (the directory open, a preview or a commit asked or running): kept.
+    CHECK_FALSE(rv::app::releaseIdleInputs(slot, true));
+    CHECK(slot.result.has_value());
+    // The directory closed with nothing running: the slot is empty; a job that took them keeps them.
+    CHECK(rv::app::releaseIdleInputs(slot, false));
+    CHECK_FALSE(slot.result.has_value());
+    CHECK_FALSE(rv::app::releaseIdleInputs(slot, false));
+    const rv::app::RegenerationPreview held =
+        rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *first.inputs);
+    CHECK(held.failure.empty());
+    // A preview opened right after: its inputs made again, the preview as before.
+    const rv::app::RegenerationInputsResult again = rv::app::regenerationInputsFor(slot, paths, reader.get(), taken);
+    REQUIRE(again.inputs);
+    CHECK(taken);
+    CHECK(again.inputs != first.inputs);
+    const rv::app::RegenerationPreview preview =
+        rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *again.inputs);
+    INFO(preview.error);
+    REQUIRE(preview.failure.empty());
+    CHECK(preview.content == held.content);
+}

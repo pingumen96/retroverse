@@ -213,6 +213,51 @@ RegenerationInputsResult regenerationInputsOf(const WorldPaths& paths,
     return result;
 }
 
+RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
+                                               WorldCatalogReader* reader, bool& taken) {
+    taken = false;
+    {
+        std::unique_lock lock(slot.mutex);
+        slot.done.wait(lock, [&] { return !slot.running; });
+        if (slot.result) {
+            return *slot.result;
+        }
+        slot.running = true;
+    }
+    const auto start = Clock::now();
+    RegenerationInputsResult result;
+    if (reader == nullptr) {
+        result.failure = regenerate_failure::kFailed;
+        result.error = "no catalog to read the selections from";
+    } else {
+        result = takeRegenerationInputs(paths, *reader);
+    }
+    taken = true;
+    {
+        const std::lock_guard lock(slot.mutex);
+        slot.running = false;
+        slot.milliseconds = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        // A failure is not kept: the next preview tries again (the media may be back).
+        if (result.inputs) {
+            slot.result = result;
+        }
+    }
+    slot.done.notify_all();
+    return result;
+}
+
+bool releaseIdleInputs(RegenerationInputsSlot& slot, bool wanted) {
+    if (wanted) {
+        return false;
+    }
+    const std::lock_guard lock(slot.mutex);
+    if (slot.running || !slot.result) {
+        return false;
+    }
+    slot.result.reset();
+    return true;
+}
+
 RegenerationInputsResult takeRegenerationInputs(const WorldPaths& paths, WorldCatalogReader& reader) {
     // The systems that get a room (ADR-0013 §2), every one of the library's in one read transaction, as the building
     // job takes them; no placed game's alias is asked (a regeneration reads none).

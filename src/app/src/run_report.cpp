@@ -1395,6 +1395,7 @@ Json worldToJson(const WorldRecord& world) {
     if (!world.regenerations.empty()) {
         json["regenerations"] = regenerationsToJson(world.regenerations); // I4b step 6
     }
+    json["regenerationInputsReleased"] = world.regenerationInputsReleased;
     json["cabinetClipFrames"] = world.cabinetClipFrames;
     json["cabinetCoverBeneathFrames"] = world.cabinetCoverBeneathFrames;
     return json;
@@ -1636,6 +1637,7 @@ WorldRecord readWorld(FieldReader& fields) {
     }
     world.edits = readEdits(fields);
     world.regenerations = readRegenerations(fields); // I4b step 6 (absent from earlier reports)
+    world.regenerationInputsReleased = fields.optionalCount("regenerationInputsReleased").value_or(0);
     // I5 step 4's review (absent from earlier reports).
     world.cabinetClipFrames = fields.optionalCount("cabinetClipFrames").value_or(0);
     world.cabinetCoverBeneathFrames = fields.optionalCount("cabinetCoverBeneathFrames").value_or(0);

@@ -28,6 +28,7 @@
 //     (world::undoLastAction()) when it is still that one, then the items files and the stamp as above.
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -98,6 +99,29 @@ struct RegenerationInputsResult {
                                                             std::shared_ptr<const BuildingSnapshot> snapshot);
 /// The catalog's building snapshot taken on `reader` (its mutex held while it reads), then regenerationInputsOf().
 [[nodiscard]] RegenerationInputsResult takeRegenerationInputs(const WorldPaths& paths, WorldCatalogReader& reader);
+
+/// The inputs of the catalog as it is (RegenerationInputs), made once by the first job that needs them (a prewarm, a
+/// preview, an undo's commit) while the others wait for them. Shared with the jobs (a job that took the inputs holds
+/// them through their shared_ptr); a new slot for each refresh of the catalog, emptied while nothing needs them
+/// (releaseIdleInputs()).
+struct RegenerationInputsSlot {
+    std::mutex mutex;
+    std::condition_variable done;
+    bool running = false;
+    std::optional<RegenerationInputsResult> result;
+    /// How long they took (milliseconds), when made.
+    double milliseconds = 0.0;
+};
+
+/// The slot's inputs: made by this call (`taken` set) unless they are made or being made (then waited for).
+[[nodiscard]] RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
+                                                             WorldCatalogReader* reader, bool& taken);
+
+/// Lets go of `slot`'s inputs when nothing needs them now (`wanted` false: the directory closed, no notice offering a
+/// preview, no preview or commit asked or running; I4b step 6's review: they hold about 224 MiB of private bytes on the
+/// reference library), unless a job is making them. A job or a preview that took them keeps them through its
+/// shared_ptr; the next one that needs them makes them again. True when they were let go of.
+bool releaseIdleInputs(RegenerationInputsSlot& slot, bool wanted);
 
 /// A preview: the scope's dry run on the world as it was read, and the panel's content.
 struct RegenerationPreview {

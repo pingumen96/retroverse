@@ -28,39 +28,6 @@
 
 namespace rv::app {
 
-RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
-                                               WorldCatalogReader* reader, bool& taken) {
-    taken = false;
-    {
-        std::unique_lock lock(slot.mutex);
-        slot.done.wait(lock, [&] { return !slot.running; });
-        if (slot.result) {
-            return *slot.result;
-        }
-        slot.running = true;
-    }
-    const auto start = std::chrono::steady_clock::now();
-    RegenerationInputsResult result;
-    if (reader == nullptr) {
-        result.failure = regenerate_failure::kFailed;
-        result.error = "no catalog to read the selections from";
-    } else {
-        result = takeRegenerationInputs(paths, *reader);
-    }
-    taken = true;
-    {
-        const std::lock_guard lock(slot.mutex);
-        slot.running = false;
-        slot.milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        // A failure is not kept: the next preview tries again (the media may be back).
-        if (result.inputs) {
-            slot.result = result;
-        }
-    }
-    slot.done.notify_all();
-    return result;
-}
-
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -482,6 +449,19 @@ void WorldSession::followRegeneration(ProductUi& product) {
             product.failRegeneratePreview(std::string(regenerate_failure::kFailed));
         }
         requestLiveUpdate();
+    }
+    // I4b step 6's review: the catalog's inputs (about 224 MiB of private bytes on the reference library) are let go of
+    // while nothing needs them: the directory closed, no notice offering a preview, no preview, commit or undo asked or
+    // running (a job that took them keeps them), no directory command waiting (a row that closed it, "Rigenera ...",
+    // taken next frame). The tab or the notice reads them ahead again.
+    const bool wanted = product.directoryOpen() || product.directoryCommandsPending() || confirmationOffered() ||
+                        state.confirmationPending ||
+                        state.request.has_value() || state.job != RegenerateJob::None;
+    if (releaseIdleInputs(*state.slot, wanted)) {
+        state.prewarmed = false;
+        ++m_record.regenerationInputsReleased;
+        spdlog::info("Frame {}: the regenerations' inputs are let go of (nothing needs them now)",
+                     m_context.frameIndex());
     }
     // The directory's "Modifiche" shown: the inputs read ahead.
     if (!state.request && product.directoryTab() == ui::DirectoryTab::Changes) {

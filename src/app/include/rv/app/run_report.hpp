@@ -1048,6 +1048,9 @@ struct WorldRecord {
     std::vector<WorldEditRecord> edits;
     /// I4b step 6: the regenerations and undos asked, in order.
     std::vector<WorldRegenerationRecord> regenerations;
+    /// I4b step 6's review: the times the regenerations' inputs were let go of while nothing needed them (the
+    /// directory closed, no notice offering a preview, no preview or commit asked or running).
+    std::uint64_t regenerationInputsReleased = 0;
     /// I5 step 4's review: the frames that drew a cabinet's clip on the dynamic path, and those among them in which
     /// such a cabinet's static front (its cover) was drawn too, or its item was gone: 0.
     std::uint64_t cabinetClipFrames = 0;

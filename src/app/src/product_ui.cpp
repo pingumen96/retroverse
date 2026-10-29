@@ -1078,6 +1078,10 @@ void ProductUi::setDirectoryBuilding(ui::DirectoryBuilding building) {
     }
 }
 
+bool ProductUi::directoryCommandsPending() const noexcept {
+    return !m_impl->directoryCommands.empty();
+}
+
 std::vector<ui::DirectoryCommand> ProductUi::takeDirectoryCommands() {
     return std::exchange(m_impl->directoryCommands, {});
 }

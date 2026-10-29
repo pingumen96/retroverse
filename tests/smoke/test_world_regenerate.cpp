@@ -394,6 +394,26 @@ TEST_CASE("world_regenerate: the world's preview, then Annulla, writes nothing",
     CHECK(record.end == "cancelled");
     CHECK(building.plan().digest == before);
     CHECK(fileText(files.overrides) == overrides);
+
+    // I4b step 6's review: the inputs the tab read ahead are let go of once the directory closes with nothing running;
+    // the tab shown again and a preview opened right after work as before.
+    std::vector<Step> reopen = toChanges();
+    reopen.push_back({70, R"("ui_back": 1)"});
+    reopen.push_back({120, R"("map": 1)"});
+    reopen.push_back({126, R"("ui_filter_next": 1)"});
+    reopen.push_back({132, R"("ui_filter_next": 1)"});
+    reopen.push_back({138, R"("ui_end": 1)"});
+    reopen.push_back({142, R"("ui_up": 1)"});
+    reopen.push_back({148, R"("ui_activate": 1)"});
+    const AppRun reopened = runRegeneration(building, "reopen", reopen, 190, std::nullopt);
+    const rv::app::WorldRegenerationRecord& again = onlyRegeneration(reopened);
+    CHECK(reopened.report->world.regenerationInputsReleased == 1);
+    // The tab shown again read them ahead: the preview found them made (or being made), not cold.
+    CHECK_FALSE(again.inputsTaken);
+    CHECK(again.kind == "world");
+    CHECK(again.changed);
+    CHECK(again.roomsRegenerated == building.plan().plan.rooms.size());
+    CHECK(building.plan().digest == before);
 }
 
 TEST_CASE("world_regenerate: a floor regenerated decides its rooms again and moves them; the walker of a room gone "

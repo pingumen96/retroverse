@@ -461,6 +461,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         undo.choice = "cancel";
         undo.end = "failed";
         world.regenerations = {regeneration, undo};
+        world.regenerationInputsReleased = 2;
     }
     // I5 step 4's review: the cabinets' clips drawn, none over its cover.
     world.cabinetClipFrames = 120;
