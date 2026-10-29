@@ -186,6 +186,8 @@ struct PinCheck {
     /// The pins the plan does not honour although what they name is there: applying them would move or replace
     /// something, which I3 never does (ChangeReport::needsConfirmation), each as pinText().
     std::vector<std::string> unhonoured;
+    /// The room of each unhonoured pin (its slot's or its fixture's), in `unhonoured`'s order.
+    std::vector<RoomId> unhonouredRooms;
     /// The pins the plan honours, and the orphaned ones but the recorded conflicts (reported, not judged: the
     /// validation's pin-orphaned and pin-broken rules see these).
     WorldOverrides honouredOrOrphaned;

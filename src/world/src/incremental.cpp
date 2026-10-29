@@ -206,7 +206,8 @@ struct RoomUpdate {
     std::vector<GameId> handedOver;
     std::vector<LevelId> dressingRemoved;
     std::vector<SlotId> slotsFreed;
-    std::vector<std::string> refused;
+    /// What a pin refused, each with the room it is about (ChangeReport::needsConfirmationRooms).
+    std::vector<std::pair<std::string, RoomId>> refused;
     /// The pins at a transform whose fixture followed its wall (a poster on the south wall), with their new transform.
     std::map<FixtureId, FixtureTransform> pinsFollowed;
     /// The expansions the update created (I4b step 7), by number.
@@ -279,7 +280,7 @@ private:
 
     bool isPlaced(const GameId& game) const { return m_placed.contains(game); }
 
-    void refuse(std::string change) { m_refused.push_back(std::move(change)); }
+    void refuse(const RoomId& room, std::string change) { m_refused.emplace_back(std::move(change), room); }
 
     Room& recordOf(const RoomId& id) {
         return *std::find_if(m_plan.rooms.begin(), m_plan.rooms.end(), [&](const Room& room) { return room.id == id; });
@@ -706,13 +707,13 @@ private:
             }
             if (room.pinnedSockets.contains(socketId)) {
                 // Reported once: the report's lists are made unique.
-                refuse(socketText(room, socketId) +
-                       ": a side-wall module would replace a pinned fixture; it went to the next socket");
+                refuse(room.id, socketText(room, socketId) +
+                                    ": a side-wall module would replace a pinned fixture; it went to the next socket");
                 continue;
             }
             if (room.heldSockets.contains(socketId)) {
-                refuse(socketText(room, socketId) +
-                       ": a side-wall module would replace the fixture moved out of it; it went to the next socket");
+                refuse(room.id, socketText(room, socketId) + ": a side-wall module would replace the fixture moved "
+                                                              "out of it; it went to the next socket");
                 continue;
             }
             auto module = detail::sideModuleIn(*room.layout, *socket);
@@ -720,8 +721,8 @@ private:
                 return propagate(module.error());
             }
             if (const Fixture* moved = overlapped(module->fixture, room.id, socketId)) {
-                refuse(socketText(room, socketId) + ": a side-wall module would overlap " + moved->id.toString() +
-                       ", moved there; it went to the next socket");
+                refuse(room.id, socketText(room, socketId) + ": a side-wall module would overlap " +
+                                    moved->id.toString() + ", moved there; it went to the next socket");
                 continue;
             }
             std::erase_if(m_plan.fixtures, [&](const Fixture& fixture) {
@@ -781,8 +782,9 @@ private:
         }
         for (const std::string& socket : chainRoom.socketPinned) {
             if (southSockets.contains(socket)) {
-                refuse("growth: the room would grow and move the pinned fixture of " + socketText(chainRoom, socket) +
-                       "; the titles that need it are unplaced for capacity");
+                refuse(chainRoom.id, "growth: the room would grow and move the pinned fixture of " +
+                                         socketText(chainRoom, socket) +
+                                         "; the titles that need it are unplaced for capacity");
                 chainRoom.grownOut = true;
                 return false;
             }
@@ -986,7 +988,7 @@ private:
     std::vector<GameId> m_handedOver;
     std::vector<LevelId> m_dressingRemoved;
     std::vector<SlotId> m_slotsFreed;
-    std::vector<std::string> m_refused;
+    std::vector<std::pair<std::string, RoomId>> m_refused;
     std::vector<RoomId> m_expansionsAdded;
     bool m_floorFull = false;
 };
@@ -1169,7 +1171,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // every section's selection and kept by no rule, is regenerated with its successor's data (WorldData::successor),
     // unless a pin names it (the regeneration would move what is pinned: refused, and said so).
     std::map<RoomId, const WorldData*> migrating;
-    std::vector<std::string> migrationRefused;
+    std::vector<std::pair<std::string, RoomId>> migrationRefused;
     for (const Room& room : previous.rooms) {
         const WorldData* data = dataOf.at(room.id);
         if (room.id.isExpansion() || data->successor == nullptr || !selectionsOf.contains(room.id) ||
@@ -1188,8 +1190,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                                             return pin.fixture.room().head() == room.id && !detail::isStalePin(pin);
                                         });
         if (pinned) {
-            migrationRefused.push_back("migrate " + room.id.toString() + " from " + room.mediaFamily + " to " +
-                                       data->successor->mediaFamily.id + ": a pin names the room");
+            migrationRefused.emplace_back("migrate " + room.id.toString() + " from " + room.mediaFamily + " to " +
+                                              data->successor->mediaFamily.id + ": a pin names the room",
+                                          room.id);
             continue;
         }
         migrating.emplace(room.id, data->successor.get());
@@ -1369,7 +1372,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::vector<GameId> handedOver;
     std::vector<LevelId> dressingRemoved;
     std::vector<SlotId> slotsFreed;
-    std::vector<std::string> refused = std::move(migrationRefused);
+    std::vector<std::pair<std::string, RoomId>> refused = std::move(migrationRefused);
     std::vector<MigratedRoom> migratedRooms;
     std::map<FixtureId, FixtureTransform> pinsFollowed;
     bool grew = false;
@@ -1732,10 +1735,14 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             : (grew ? RebuildLevel::RoomExpansion : (geometry ? RebuildLevel::LocalReflow : RebuildLevel::NoRebuild));
 
     changes.orphanedPins = pins.orphaned;
-    changes.needsConfirmation = std::move(refused);
-    changes.needsConfirmation.insert(changes.needsConfirmation.end(), pins.unhonoured.begin(),
-                                     pins.unhonoured.end());
-    changes.needsConfirmation = sortedUnique(std::move(changes.needsConfirmation));
+    // Each sentence with the room it is about (I4b step 6's review: the app's notice offers that room's regeneration).
+    for (std::size_t index = 0; index < pins.unhonoured.size(); ++index) {
+        refused.emplace_back(pins.unhonoured[index], pins.unhonouredRooms[index]);
+    }
+    for (auto& [sentence, room] : sortedUnique(std::move(refused))) {
+        changes.needsConfirmation.push_back(std::move(sentence));
+        changes.needsConfirmationRooms.push_back(room);
+    }
     changes.digestBefore = std::move(digestBefore);
     if (stored.schemaVersion == kPlanSchemaVersion && plan == previous && changes.replacedRooms.empty()) {
         changes.digestAfter = changes.digestBefore;

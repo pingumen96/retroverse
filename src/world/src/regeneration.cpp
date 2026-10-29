@@ -960,6 +960,7 @@ private:
         changes.systemsEntered = sortedUnique(std::move(generation.systemsEntered));
         changes.orphanedPins = reported.orphaned;
         changes.needsConfirmation = reported.unhonoured;
+        changes.needsConfirmationRooms = reported.unhonouredRooms;
         changes.keptRooms = keptRooms;
         if (!m_input.previousDigest.empty()) {
             changes.digestBefore = m_input.previousDigest;

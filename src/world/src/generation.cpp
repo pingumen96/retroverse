@@ -1349,6 +1349,7 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
 
     changes.orphanedPins = pins.orphaned;
     changes.needsConfirmation = pins.unhonoured;
+    changes.needsConfirmationRooms = pins.unhonouredRooms;
     result.validation =
         validatePlan(plan, detail::buildingValidationContext(plan, input.config, input.selections, datas, building,
                                                              input.overrides, {}));

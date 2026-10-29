@@ -281,6 +281,10 @@ TEST_CASE("world/migration: a room without every section's selection or with a p
         CHECK(pinned->changes.migratedRooms.size() == 3);
         CHECK(std::any_of(pinned->changes.needsConfirmation.begin(), pinned->changes.needsConfirmation.end(),
                           [](const std::string& text) { return text.find("migrate room:psx") != std::string::npos; }));
+        // Each sentence has its room beside it, the room not migrated among them (I4b step 6's review).
+        const std::vector<rv::world::RoomId>& named = pinned->changes.needsConfirmationRooms;
+        CHECK(named.size() == pinned->changes.needsConfirmation.size());
+        CHECK(std::find(named.begin(), named.end(), *rv::world::RoomId::parse("room:psx")) != named.end());
     }
 }
 
