@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -245,6 +246,7 @@ private:
         std::optional<Clock::time_point> exitRequestedAt;
         std::optional<Clock::time_point> firstFrame;
         Clock::time_point lastPoseSample{};
+        Clock::time_point lastCounterSample{};
         m_frames.reserve(1u << 15);
 
         for (;;) {
@@ -329,6 +331,10 @@ private:
                                       millisecondsBetween(frameStart, frameEnd), m_gpuTimer.latestMilliseconds()};
             const bool warmingUp = !firstFrame || secondsBetween(*firstFrame, frameEnd) < m_options.warmUpSeconds;
             (warmingUp ? m_warmUpFrames : m_frames).push_back(record);
+            if (!warmingUp && frameEnd - lastCounterSample >= kPoseSampleInterval) {
+                lastCounterSample = frameEnd;
+                sampleCounters();
+            }
             if (rendered) {
                 sampleHead(eyes, frameEnd, lastPoseSample);
             }
@@ -380,6 +386,34 @@ private:
         }
     }
 
+    void sampleCounters() {
+        for (const spike::RuntimeCounter& counter : m_xr->queryCounters()) {
+            CounterSeries& series = m_counters[counter.path];
+            series.unit = counter.unit;
+            series.values.push_back(counter.value);
+        }
+    }
+
+    /// Each runtime counter over the measured frames: whether it counts up or reads a level, the samples show.
+    nlohmann::json describeCounters() const {
+        nlohmann::json counters = nlohmann::json::object();
+        for (const auto& [path, series] : m_counters) {
+            const auto [low, high] = std::minmax_element(series.values.begin(), series.values.end());
+            double sum = 0.0;
+            for (const double value : series.values) {
+                sum += value;
+            }
+            counters[path] = {{"unit", series.unit},
+                              {"samples", series.values.size()},
+                              {"first", rounded(series.values.front())},
+                              {"last", rounded(series.values.back())},
+                              {"min", rounded(*low)},
+                              {"max", rounded(*high)},
+                              {"mean", rounded(sum / static_cast<double>(series.values.size()))}};
+        }
+        return counters;
+    }
+
     int summarize() {
         const spike::FrameSummary summary = spike::summarizeFrames(m_frames);
         m_report["frames"] = spike::toJson(summary);
@@ -399,6 +433,7 @@ private:
             m_report["headRangeM"] = {rounded(range.x), rounded(range.y), rounded(range.z)};
         }
         m_report["poses"] = m_poses;
+        m_report["runtimeCounters"] = describeCounters();
         spdlog::info("{} frames at {:.1f} Hz, {} refreshes missed ({:.2f}%), CPU p99 {:.2f} ms, GPU p99 {:.2f} ms",
                      summary.frames, summary.refreshHz, summary.missedRefreshes, summary.missedFraction * 100.0,
                      summary.cpu.p99Ms, summary.gpu.p99Ms);
@@ -435,6 +470,12 @@ private:
         spdlog::info("Report: {}", rv::core::pathToUtf8(m_options.report));
     }
 
+    /// A runtime counter's samples over the measured frames, one every kPoseSampleInterval.
+    struct CounterSeries {
+        std::string unit;
+        std::vector<double> values;
+    };
+
     SpikeOptions m_options;
     nlohmann::json m_report = nlohmann::json::object();
     // Destroyed in reverse: the session's swapchains go before the GL context they live in.
@@ -452,6 +493,7 @@ private:
     std::optional<glm::vec3> m_headMin;
     std::optional<glm::vec3> m_headMax;
     nlohmann::json m_poses = nlohmann::json::array();
+    std::map<std::string, CounterSeries> m_counters;
     std::size_t m_trackingLost = 0;
     std::string m_stopReason;
 };

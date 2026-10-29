@@ -34,6 +34,43 @@ DurationStats durationStats(std::vector<double> values) {
     return stats;
 }
 
+GapHistogram countGap(GapHistogram histogram, std::int64_t gapNs, std::int64_t periodNs) noexcept {
+    const double periods = periodNs > 0 ? static_cast<double>(gapNs) / static_cast<double>(periodNs) : 0.0;
+    if (periods < 0.75) {
+        ++histogram.underOne;
+    } else if (periods < 1.25) {
+        ++histogram.one;
+    } else if (periods < 1.75) {
+        ++histogram.oneAndHalf;
+    } else if (periods < 2.5) {
+        ++histogram.two;
+    } else {
+        ++histogram.more;
+    }
+    return histogram;
+}
+
+struct Stretch {
+    std::size_t refreshes = 0;
+    std::size_t missed = 0;
+};
+
+/// The refreshes a stretch of frames with one display period spans, and those no new frame reached.
+Stretch countStretch(std::span<const FrameRecord> frames) noexcept {
+    if (frames.size() < 2) {
+        return {};
+    }
+    const std::int64_t period = frames.back().displayPeriodNs;
+    const std::int64_t span = frames.back().displayTimeNs - frames.front().displayTimeNs;
+    if (period <= 0 || span <= 0) {
+        return {};
+    }
+    const auto spanned = static_cast<std::size_t>(
+        std::max<long long>(1, std::llround(static_cast<double>(span) / static_cast<double>(period))));
+    const std::size_t intervals = frames.size() - 1;
+    return {spanned, spanned > intervals ? spanned - intervals : 0};
+}
+
 double rounded(double value) {
     return std::round(value * 1000.0) / 1000.0;
 }
@@ -68,17 +105,23 @@ FrameSummary summarizeFrames(std::span<const FrameRecord> frames) {
         summary.refreshHz = summary.displayPeriodMs > 0.0 ? 1000.0 / summary.displayPeriodMs : 0.0;
     }
 
-    std::size_t refreshes = 0;
     for (std::size_t i = 1; i < frames.size(); ++i) {
-        const std::int64_t period = frames[i].displayPeriodNs;
-        const std::int64_t gap = frames[i].displayTimeNs - frames[i - 1].displayTimeNs;
-        if (period <= 0 || gap <= 0) {
-            continue;
+        summary.gaps = countGap(summary.gaps, frames[i].displayTimeNs - frames[i - 1].displayTimeNs,
+                                frames[i].displayPeriodNs);
+    }
+
+    // Stretches of one display period: a frame whose period differs from the previous one's ends a stretch, and that
+    // interval opens the next one (the previous frame is then the first of both).
+    std::size_t refreshes = 0;
+    std::size_t first = 0;
+    for (std::size_t i = 1; i <= frames.size(); ++i) {
+        const bool last = i == frames.size();
+        if (last || (i > first + 1 && frames[i].displayPeriodNs != frames[i - 1].displayPeriodNs)) {
+            const Stretch stretch = countStretch(frames.subspan(first, i - first));
+            refreshes += stretch.refreshes;
+            summary.missedRefreshes += stretch.missed;
+            first = i - 1;
         }
-        const auto spanned = static_cast<std::size_t>(
-            std::max<long long>(1, std::llround(static_cast<double>(gap) / static_cast<double>(period))));
-        refreshes += spanned;
-        summary.missedRefreshes += spanned - 1;
     }
     summary.missedFraction =
         refreshes > 0 ? static_cast<double>(summary.missedRefreshes) / static_cast<double>(refreshes) : 0.0;
@@ -105,6 +148,12 @@ nlohmann::json toJson(const FrameSummary& summary) {
                           {"refreshHz", rounded(summary.refreshHz)},
                           {"missedRefreshes", summary.missedRefreshes},
                           {"missedFraction", rounded(summary.missedFraction)},
+                          {"gapsInPeriods",
+                           {{"under0.75", summary.gaps.underOne},
+                            {"0.75-1.25", summary.gaps.one},
+                            {"1.25-1.75", summary.gaps.oneAndHalf},
+                            {"1.75-2.5", summary.gaps.two},
+                            {"2.5+", summary.gaps.more}}},
                           {"cpu", toJson(summary.cpu)},
                           {"gpu", toJson(summary.gpu)}};
 }

@@ -30,6 +30,7 @@ using namespace std::chrono_literals;
 constexpr const char* kOpenGlExtension = "XR_KHR_opengl_enable";
 constexpr const char* kRefreshRateExtension = "XR_FB_display_refresh_rate";
 constexpr const char* kLocalFloorExtension = "XR_EXT_local_floor";
+constexpr const char* kPerformanceMetricsExtension = "XR_META_performance_metrics";
 constexpr XrViewConfigurationType kStereo = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 /// LOCAL_FLOOR: core in OpenXR 1.1, XR_EXT_local_floor in 1.0 (the same value).
 constexpr auto kLocalFloorSpace = static_cast<XrReferenceSpaceType>(1000426000);
@@ -137,6 +138,21 @@ T typed(XrStructureType type) {
     return value;
 }
 
+const char* counterUnitName(XrPerformanceMetricsCounterUnitMETA unit) {
+    switch (unit) {
+    case XR_PERFORMANCE_METRICS_COUNTER_UNIT_PERCENTAGE_META:
+        return "percent";
+    case XR_PERFORMANCE_METRICS_COUNTER_UNIT_MILLISECONDS_META:
+        return "ms";
+    case XR_PERFORMANCE_METRICS_COUNTER_UNIT_BYTES_META:
+        return "bytes";
+    case XR_PERFORMANCE_METRICS_COUNTER_UNIT_HERTZ_META:
+        return "hz";
+    default:
+        return "generic";
+    }
+}
+
 EyePose toPose(const XrPosef& pose) {
     return EyePose{glm::quat(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z),
                    glm::vec3(pose.position.x, pose.position.y, pose.position.z)};
@@ -155,10 +171,17 @@ struct OpenXrSession::Native {
     std::array<XrView, 2> views{};
     bool refreshRateExtension = false;
     bool localFloorExtension = false;
+    bool performanceMetricsExtension = false;
+    /// The runtime's performance counters, turned on for the session, and their paths as text.
+    std::vector<XrPath> counterPaths;
+    std::vector<std::string> counterNames;
     PFN_xrGetOpenGLGraphicsRequirementsKHR getGraphicsRequirements = nullptr;
     PFN_xrEnumerateDisplayRefreshRatesFB enumerateRefreshRates = nullptr;
     PFN_xrGetDisplayRefreshRateFB getRefreshRate = nullptr;
     PFN_xrRequestDisplayRefreshRateFB requestRefreshRate = nullptr;
+    PFN_xrEnumeratePerformanceMetricsCounterPathsMETA enumerateCounterPaths = nullptr;
+    PFN_xrSetPerformanceMetricsStateMETA setPerformanceMetricsState = nullptr;
+    PFN_xrQueryPerformanceMetricsCounterMETA queryCounter = nullptr;
 
     template <class Pfn>
     void load(const char* name, Pfn& pfn) const {
@@ -235,6 +258,10 @@ Expected<std::unique_ptr<OpenXrSession>> OpenXrSession::createInstance(const Ins
         enabled.push_back(kLocalFloorExtension);
         n.localFloorExtension = true;
     }
+    if (offers(kPerformanceMetricsExtension)) {
+        enabled.push_back(kPerformanceMetricsExtension);
+        n.performanceMetricsExtension = true;
+    }
     runtime["enabledExtensions"] = enabled;
 
     XrInstanceCreateInfo create = typed<XrInstanceCreateInfo>(XR_TYPE_INSTANCE_CREATE_INFO);
@@ -263,6 +290,11 @@ Expected<std::unique_ptr<OpenXrSession>> OpenXrSession::createInstance(const Ins
         n.load("xrEnumerateDisplayRefreshRatesFB", n.enumerateRefreshRates);
         n.load("xrGetDisplayRefreshRateFB", n.getRefreshRate);
         n.load("xrRequestDisplayRefreshRateFB", n.requestRefreshRate);
+    }
+    if (n.performanceMetricsExtension) {
+        n.load("xrEnumeratePerformanceMetricsCounterPathsMETA", n.enumerateCounterPaths);
+        n.load("xrSetPerformanceMetricsStateMETA", n.setPerformanceMetricsState);
+        n.load("xrQueryPerformanceMetricsCounterMETA", n.queryCounter);
     }
     if (n.getGraphicsRequirements == nullptr) {
         return makeError(ErrorCode::Unsupported, "xrGetOpenGLGraphicsRequirementsKHR is missing", "openxr");
@@ -525,6 +557,32 @@ Status OpenXrSession::createSession(const SessionOptions& options, nlohmann::jso
     if (const auto rate = currentRefreshRate()) {
         session["refreshRateAtStart"] = *rate;
     }
+    // The runtime's own counters: what its compositor dropped, its view of the app's frame times.
+    if (n.enumerateCounterPaths != nullptr && n.setPerformanceMetricsState != nullptr && n.queryCounter != nullptr) {
+        enumerate(
+            n.counterPaths,
+            [&](std::uint32_t capacity, std::uint32_t* count, XrPath* out) {
+                return n.enumerateCounterPaths(n.instance, capacity, count, out);
+            },
+            [] { return XrPath{XR_NULL_PATH}; });
+        for (const XrPath path : n.counterPaths) {
+            char name[XR_MAX_PATH_LENGTH] = {};
+            std::uint32_t length = 0;
+            n.counterNames.emplace_back(
+                XR_SUCCEEDED(xrPathToString(n.instance, path, XR_MAX_PATH_LENGTH, &length, name)) ? name : "?");
+        }
+        XrPerformanceMetricsStateMETA state =
+            typed<XrPerformanceMetricsStateMETA>(XR_TYPE_PERFORMANCE_METRICS_STATE_META);
+        state.enabled = XR_TRUE;
+        const XrResult result = n.setPerformanceMetricsState(n.session, &state);
+        session["runtimeCounters"] = {{"enabled", resultName(n.instance, result)}, {"paths", n.counterNames}};
+        if (XR_FAILED(result)) {
+            n.counterPaths.clear();
+            n.counterNames.clear();
+        }
+    } else {
+        session["runtimeCounters"] = {{"enabled", "XR_META_performance_metrics not offered"}};
+    }
     spdlog::info("Session: {} space, eyes {}x{} {}", spaceName(chosen), m_eyeSize.x, m_eyeSize.y,
                  glFormatName(format->format));
     return {};
@@ -717,6 +775,28 @@ std::optional<float> OpenXrSession::currentRefreshRate() const {
         return rate;
     }
     return std::nullopt;
+}
+
+std::vector<RuntimeCounter> OpenXrSession::queryCounters() const {
+    const Native& n = *m_native;
+    std::vector<RuntimeCounter> counters;
+    for (std::size_t i = 0; i < n.counterPaths.size(); ++i) {
+        XrPerformanceMetricsCounterMETA counter =
+            typed<XrPerformanceMetricsCounterMETA>(XR_TYPE_PERFORMANCE_METRICS_COUNTER_META);
+        if (XR_FAILED(n.queryCounter(n.session, n.counterPaths[i], &counter))) {
+            continue;
+        }
+        double value = 0.0;
+        if ((counter.counterFlags & XR_PERFORMANCE_METRICS_COUNTER_FLOAT_VALUE_VALID_BIT_META) != 0) {
+            value = counter.floatValue;
+        } else if ((counter.counterFlags & XR_PERFORMANCE_METRICS_COUNTER_UINT_VALUE_VALID_BIT_META) != 0) {
+            value = counter.uintValue;
+        } else {
+            continue;
+        }
+        counters.push_back({n.counterNames[i], counterUnitName(counter.counterUnit), value});
+    }
+    return counters;
 }
 
 const char* toString(SpaceChoice space) noexcept {

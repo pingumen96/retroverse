@@ -62,7 +62,12 @@ Esc or closing the window ends the session; so does quitting it from the headset
 - the system: its name, eyes, blend modes and OpenGL requirements;
 - the session: the spaces, formats, eye size, images and refresh rates;
 - the event timeline;
-- `frames` and `warmUp`: the display period and refresh rate, the missed refreshes, CPU and GPU percentiles;
+- `frames` and `warmUp`: the display period and refresh rate, the missed refreshes, how far apart consecutive
+  predicted display times were (`gapsInPeriods`), CPU and GPU percentiles. A missed refresh is one that no new frame
+  reached: the refreshes the run spans less the intervals between its frames. Counting each interval on its own took
+  the jitter of Meta's predictions over Link (a long interval, then a short one) for misses;
+- `runtimeCounters`: the runtime's own counters when it offers `XR_META_performance_metrics` (the compositor's dropped
+  frames, its view of the app's CPU and GPU time), sampled every 0.5 s over the measured frames;
 - the eyes at the start (poses and fields in degrees), the median eye distance, the head's range, and poses every
   0.5 s.
 
@@ -74,6 +79,21 @@ and the mirror's blit.
 
 To be measured in the headset (Release, the reference machine, Quest 3S over the Link cable, then Air Link; SteamVR
 if installed: on 2026-10-29 only Meta's runtime is registered on the machine).
+
+**First runs (2026-10-29, Meta Horizon Link 1.208, Quest 3S):**
+- **The active runtime:** the registry's `ActiveRuntime` named a manifest under `C:\Program Files\Oculus` that no
+  longer existed (the app had moved to another drive), so the loader found no runtime. Meta Horizon Link's settings
+  (General, OpenXR runtime) make it active again; `--runtime-json` with the installed manifest works meanwhile. The
+  VR mode's log has to say this plainly (step 2).
+- **OpenGL:** accepted. The session reached FOCUSED with `GL_SRGB8_ALPHA8` swapchains (3 images per eye) at the
+  recommended 2080 x 2096 per eye, in LOCAL_FLOOR (STAGE and LOCAL offered too); OpenGL 4.0 to 4.6.
+- **The fields:** asymmetric, 52° outwards, 45° inwards, 48° up, 50° down per eye; the eyes 68 mm apart.
+- **The refresh rate:** the runtime offered 72 Hz only, so asking for 90 Hz returned
+  `XR_ERROR_DISPLAY_REFRESH_RATE_UNSUPPORTED_FB`. Over Link the rates come from Meta Horizon Link's graphics settings
+  for the headset.
+- **Pacing:** CPU p99 2.2 to 3.9 ms, GPU 0.25 ms per frame (both eyes). The reports counted 25 missed refreshes
+  (1.2%), but the 28 measured seconds at 72 Hz hold 2016 refreshes and the runs delivered 2018 and 2017 frames:
+  the old count read the predictions' jitter as misses. It was replaced (above); the runs are to be repeated.
 
 | Run | Runtime | OpenGL accepted | Format | Space | Eye size | Refresh | Missed | CPU p99 | GPU p99 |
 |---|---|---|---|---|---|---|---|---|---|

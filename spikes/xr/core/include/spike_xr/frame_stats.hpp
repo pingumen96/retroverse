@@ -32,9 +32,22 @@ struct DurationStats {
     double maxMs = 0.0;
 };
 
-/// What a run of frames shows about pacing. A frame is missed when two consecutive predicted display times are more
-/// than one display period apart: the runtime skipped a refresh (it reprojected the previous frame), so (gap / period
-/// rounded) - 1 refreshes were missed.
+/// How far apart consecutive predicted display times were, in display periods. A steady runtime puts every interval
+/// in `one`; a runtime whose predictions jitter (Meta's over Link) spreads them, a long interval followed by a short
+/// one, without missing anything.
+struct GapHistogram {
+    std::size_t underOne = 0;   ///< below 0.75 periods (or not after the previous frame)
+    std::size_t one = 0;        ///< 0.75 to 1.25
+    std::size_t oneAndHalf = 0; ///< 1.25 to 1.75
+    std::size_t two = 0;        ///< 1.75 to 2.5
+    std::size_t more = 0;       ///< 2.5 and above
+};
+
+/// What a run of frames shows about pacing. xrWaitFrame lets at most one frame through per refresh, so the refreshes
+/// a run spans (its first to its last predicted display time, over the display period, rounded) less the intervals
+/// between its frames are the refreshes no new frame reached: the runtime showed the previous one again. Counted over
+/// each stretch of one display period (a refresh rate change starts another). Counting each interval on its own would
+/// take a prediction's jitter for misses.
 struct FrameSummary {
     std::size_t frames = 0;
     std::size_t rendered = 0;
@@ -44,6 +57,7 @@ struct FrameSummary {
     std::size_t missedRefreshes = 0;
     /// Missed refreshes over every refresh the run spanned.
     double missedFraction = 0.0;
+    GapHistogram gaps;
     DurationStats cpu;
     DurationStats gpu;
 };

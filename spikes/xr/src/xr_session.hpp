@@ -52,6 +52,13 @@ struct FrameTiming {
     std::int64_t displayPeriodNs = 0;
 };
 
+/// One of the runtime's own performance counters (XR_META_performance_metrics) as it reads now.
+struct RuntimeCounter {
+    std::string path; ///< e.g. "/perfmetrics_meta/compositor/dropped_frame_count"
+    std::string unit; ///< "generic", "percent", "ms", "bytes" or "hz"
+    double value = 0.0;
+};
+
 /// The spike's OpenXR session on the current OpenGL context (XR_KHR_opengl_enable on Win32): the instance, the
 /// headset, the session and its state machine, a reference space, one swapchain per eye, the frame loop's calls. Every
 /// step records what it found in the report it is given. The OpenXR types stay in the implementation. Main thread
@@ -63,7 +70,7 @@ public:
     OpenXrSession& operator=(const OpenXrSession&) = delete;
 
     /// Loads the runtime and creates the instance with XR_KHR_opengl_enable (required) and the optional extensions the
-    /// spike uses (XR_FB_display_refresh_rate, XR_EXT_local_floor). Records the runtime and every extension it
+    /// spike uses (XR_FB_display_refresh_rate, XR_EXT_local_floor, XR_META_performance_metrics). Records the runtime and every extension it
     /// offers under report["runtime"]. Errors: Unavailable (no runtime installed or active), Unsupported (no OpenGL).
     [[nodiscard]] static Expected<std::unique_ptr<OpenXrSession>> createInstance(const InstanceOptions& options,
                                                                                  nlohmann::json& report);
@@ -74,7 +81,8 @@ public:
     [[nodiscard]] Status findSystem(std::chrono::milliseconds wait, nlohmann::json& report);
 
     /// Creates the session on the OpenGL context current on this thread, the reference space and the eyes'
-    /// swapchains. Records them under report["session"].
+    /// swapchains, and turns the runtime's performance counters on when it offers them. Records them under
+    /// report["session"].
     [[nodiscard]] Status createSession(const SessionOptions& options, nlohmann::json& report);
 
     /// Handles the runtime's events: begins the session when it is ready, ends it when it stops. Every state change
@@ -110,6 +118,8 @@ public:
     [[nodiscard]] float floorOffset() const noexcept { return m_floorOffset; }
     /// The refresh rate the runtime reports now (XR_FB_display_refresh_rate); nothing without the extension.
     [[nodiscard]] std::optional<float> currentRefreshRate() const;
+    /// The runtime's performance counters now, those with a valid value; empty without XR_META_performance_metrics.
+    [[nodiscard]] std::vector<RuntimeCounter> queryCounters() const;
 
 private:
     struct Native;

@@ -34,6 +34,16 @@ std::vector<FrameRecord> framesAdvancing(const std::vector<int>& steps) {
     return frames;
 }
 
+/// Frames at the given predicted display times, in periods of `period` after an arbitrary start.
+std::vector<FrameRecord> framesAt(const std::vector<double>& periods, std::int64_t period = kPeriod72) {
+    std::vector<FrameRecord> frames;
+    for (const double at : periods) {
+        const auto offset = static_cast<std::int64_t>(at * static_cast<double>(period));
+        frames.push_back({5'000'000'000 + offset, period, true, 3.0, 4.0});
+    }
+    return frames;
+}
+
 } // namespace
 
 TEST_CASE("xr_spike/frames: a steady run misses no refresh", "[xr_spike][frames]") {
@@ -57,6 +67,43 @@ TEST_CASE("xr_spike/frames: a gap of several periods counts the refreshes it ski
     CHECK_THAT(summary.missedFraction, WithinAbs(3.0 / 103.0, 1e-9));
     CHECK_FALSE(meetsCriteria(summary));
     CHECK(meetsCriteria(summary, 0.05));
+}
+
+TEST_CASE("xr_spike/frames: predictions that jitter around the refreshes miss nothing", "[xr_spike][frames]") {
+    // One frame per refresh, some predicted 0.6 of a period late and the next on time again (Meta's runtime over Link):
+    // the long intervals round to two periods, the short ones to one, and no refresh went without a frame.
+    std::vector<double> at;
+    for (int i = 0; i < 100; ++i) {
+        at.push_back(i % 10 == 3 ? i + 0.6 : static_cast<double>(i));
+    }
+    const auto summary = summarizeFrames(framesAt(at));
+    CHECK(summary.missedRefreshes == 0);
+    CHECK(meetsCriteria(summary));
+    CHECK(summary.gaps.one == 79);
+    CHECK(summary.gaps.oneAndHalf == 10);
+    CHECK(summary.gaps.underOne == 10);
+}
+
+TEST_CASE("xr_spike/frames: a refresh rate change starts another stretch", "[xr_spike][frames]") {
+    // 50 frames at 72 Hz, then 90 Hz with one refresh skipped: 1 missed of 49 + 51 refreshes.
+    constexpr std::int64_t kPeriod90 = 11'111'111;
+    std::vector<FrameRecord> frames = framesAt([] {
+        std::vector<double> at;
+        for (int i = 0; i < 50; ++i) {
+            at.push_back(i);
+        }
+        return at;
+    }());
+    std::int64_t time = frames.back().displayTimeNs;
+    for (int i = 1; i <= 50; ++i) {
+        time += kPeriod90 * (i == 20 ? 2 : 1);
+        frames.push_back({time, kPeriod90, true, 3.0, 4.0});
+    }
+    const auto summary = summarizeFrames(frames);
+    CHECK(summary.missedRefreshes == 1);
+    CHECK_THAT(summary.missedFraction, WithinAbs(1.0 / 100.0, 1e-9));
+    CHECK(summary.gaps.two == 1);
+    CHECK(summary.gaps.one == 98);
 }
 
 TEST_CASE("xr_spike/frames: durations use nearest-rank percentiles, the GPU only where it arrived",
