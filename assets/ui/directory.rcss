@@ -498,3 +498,74 @@ h2 {
 	.pad { width: 28dp; height: 28dp; line-height: 28dp; border-radius: 14dp; }
 	.pad-wide { width: auto; }
 }
+
+/* I4b step 6: the "Modifiche" tab's rows. Their buttons are drawn with boxes (the bundled fonts have no symbols): a
+   room, a floor's three rooms, the building's two floors, two sheets for the state before the last change. A row that
+   does nothing now is dimmed; its line says why. */
+.glyph {
+	position: relative;
+	line-height: 6dp;
+	border-radius: 8dp;
+	padding-top: 11dp;
+}
+
+/* A floor's rooms: one row of cells, centred; the building: two rows. */
+.glyph.rows-1 {
+	padding-top: 16dp;
+}
+
+.glyph.rows-2 {
+	padding-top: 10dp;
+}
+
+.cells {
+	display: block;
+	text-align: center;
+	white-space: nowrap;
+	height: 9dp;
+	margin-bottom: 3dp;
+}
+
+.cell {
+	display: inline-block;
+	width: 5dp;
+	height: 5dp;
+	margin: 0dp 1dp;
+	border: 2dp #F4EFE6CC;
+	border-radius: 1dp;
+}
+
+.cell.big {
+	display: block;
+	width: 18dp;
+	height: 14dp;
+	margin: 3dp auto 0dp auto;
+}
+
+.sheet {
+	position: absolute;
+	width: 14dp;
+	height: 16dp;
+	border: 2dp #F4EFE6CC;
+	border-radius: 2dp;
+	background-color: #2A2F38;
+}
+
+.sheet.back {
+	left: 11dp;
+	top: 9dp;
+	border-color: #F4EFE680;
+}
+
+.sheet.front {
+	left: 17dp;
+	top: 15dp;
+}
+
+.row.disabled .row-title {
+	color: #F4EFE680;
+}
+
+.row.disabled .badge {
+	border-color: #F4EFE620;
+}

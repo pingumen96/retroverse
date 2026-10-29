@@ -30,6 +30,11 @@
 // I4b step 3 (ADR-0015 §4): "Modifica stanza" stands above the floors while the walker is in a room the editor can edit
 // (DirectoryBuilding::editableRoom); Up from the first floor reaches it (then the tab bar), Down returns to the floors,
 // Activate (or a click) asks EditRoom for that room and closes the panel.
+// I4b step 6 (ADR-0015 §5, §6): a third tab, "Modifiche", lists the explicit actions on the world: "Modifica stanza"
+// (while a room can be edited), "Rigenera stanza" (the room that holds the walker; without one the row says so and
+// does nothing), "Rigenera piano" (the walker's floor), "Rigenera mondo" and "Annulla ultima modifica"; Activate asks
+// the app for it (RegenerateRoom, RegenerateFloor, RegenerateWorld, Undo, EditRoom) and closes the panel: the app opens
+// the preview (rv/ui/regenerate_preview_model.hpp). The shoulders and the tab bar's Left and Right walk the three tabs.
 // What the model asks of the app (step 7b) besides its commands: a new gamesRequest() asks for the games list (the
 // panel opened on the games, or the games tab entered), a new cardRequest() asks for the content of cardGameId()'s
 // card (a card opened, the same game's again included). A command the app refuses for now (a ride) is undone with
@@ -59,10 +64,14 @@ inline constexpr std::string_view kListId = "dir-list";
 /// The tab bar's buttons.
 inline constexpr std::string_view kFloorsTabId = "dir-tab-floors";
 inline constexpr std::string_view kGamesTabId = "dir-tab-games";
+/// I4b step 6: the "Modifiche" tab.
+inline constexpr std::string_view kChangesTabId = "dir-tab-changes";
 /// Rows: "<prefix><index>" (the rooms list's row 0 is the floor's hall).
 inline constexpr std::string_view kFloorRowPrefix = "dir-floor-";
 inline constexpr std::string_view kRoomRowPrefix = "dir-room-";
 inline constexpr std::string_view kGameRowPrefix = "dir-game-";
+/// I4b step 6: the "Modifiche" tab's rows, "<prefix><index>" (DirectoryModel::actions()'s order).
+inline constexpr std::string_view kActionRowPrefix = "dir-action-";
 /// The card and its buttons, in focus order (DirectoryCardButton).
 inline constexpr std::string_view kCardId = "dir-card";
 inline constexpr std::string_view kCardPlayId = "dir-card-play";
@@ -70,8 +79,8 @@ inline constexpr std::string_view kCardRoomId = "dir-card-room";
 inline constexpr std::string_view kCardBackId = "dir-card-back";
 /// "Modifica stanza" (I4b step 3), above the floors.
 inline constexpr std::string_view kEditRoomId = "dir-edit-room";
-/// The data events of clicks: "tab('<floors|games>')", "row(<index>)" on a row of the list shown, "card('<play|room|
-/// back>')".
+/// The data events of clicks: "tab('<floors|games|changes>')", "row(<index>)" on a row of the list shown,
+/// "card('<play|room|back>')".
 inline constexpr std::string_view kTabEvent = "tab";
 inline constexpr std::string_view kRowEvent = "row";
 inline constexpr std::string_view kCardEvent = "card";
@@ -87,7 +96,12 @@ inline constexpr std::array<std::string_view, 3> kRoomKinds{"console", "shared",
 inline constexpr std::array<std::string_view, 3> kGamesStates{"loading", "ready", "failed"};
 /// What the panel may tell under its list (setNotice): a ride or a teleport refused for now, the building not planned
 /// yet. Empty: nothing.
-inline constexpr std::array<std::string_view, 2> kNotices{"ride-unavailable", "building-pending"};
+/// I4b step 6: "change-unavailable": a regeneration or an undo refused for now (a floor being applied, a ride, a
+/// launch, another regeneration).
+inline constexpr std::array<std::string_view, 3> kNotices{"ride-unavailable", "building-pending", "change-unavailable"};
+/// I4b step 6: the "Modifiche" tab's actions (DirectoryAction), as the document names them.
+inline constexpr std::array<std::string_view, 5> kActions{"edit-room", "regenerate-room", "regenerate-floor",
+                                                          "regenerate-world", "undo"};
 /// Rows a page (Page Up, Page Down, the triggers) moves.
 inline constexpr std::size_t kPageRows = 8;
 } // namespace directory
@@ -135,6 +149,9 @@ struct DirectoryBuilding {
     std::string currentRoom;
     /// I4b step 3: the room the editor can edit now ("Modifica stanza"; "" none: a hall, the hub, a ride, a launch).
     std::string editableRoom;
+    /// I4b step 6: the room "Rigenera stanza" regenerates (the room of the plan that holds the walker on the floor
+    /// shown; "" in a hall).
+    std::string regenerableRoom;
 
     bool operator==(const DirectoryBuilding&) const = default;
 };
@@ -163,8 +180,8 @@ struct DirectoryGame {
     bool operator==(const DirectoryGame&) const = default;
 };
 
-enum class DirectoryTab : std::uint8_t { Floors, Games };
-/// "floors", "games" (the tab event's argument).
+enum class DirectoryTab : std::uint8_t { Floors, Games, Changes };
+/// "floors", "games", "changes" (the tab event's argument).
 [[nodiscard]] std::string_view toString(DirectoryTab tab) noexcept;
 [[nodiscard]] std::optional<DirectoryTab> directoryTabFromName(std::string_view name) noexcept;
 
@@ -174,8 +191,9 @@ enum class DirectoryView : std::uint8_t {
     Rooms,  ///< a floor's hall and rooms (tab Piani)
     Games,  ///< the favourites and recent games
     Card,   ///< a game's card (tab Preferiti e recenti)
+    Changes, ///< I4b step 6: the explicit actions on the world (tab Modifiche)
 };
-/// "floors", "rooms", "games", "card".
+/// "floors", "rooms", "games", "card", "changes".
 [[nodiscard]] std::string_view toString(DirectoryView view) noexcept;
 
 /// The games list: asked for and not answered yet, answered, or the catalog could not be read.
@@ -191,6 +209,11 @@ enum class DirectoryCardButton : std::uint8_t { Play, ShowInRoom, Back };
 /// The button's element id (directory::kCardPlayId ...).
 [[nodiscard]] std::string_view elementIdOf(DirectoryCardButton button) noexcept;
 
+/// I4b step 6: a row of the "Modifiche" tab.
+enum class DirectoryAction : std::uint8_t { EditRoom, RegenerateRoom, RegenerateFloor, RegenerateWorld, Undo };
+/// directory::kActions' names.
+[[nodiscard]] std::string_view toString(DirectoryAction action) noexcept;
+
 /// What the directory asks of the app.
 enum class DirectoryCommandKind : std::uint8_t {
     ChooseFloor, ///< ride to the floor `id` (its elevator); the walker's own floor: back to its elevator, no ride
@@ -199,13 +222,18 @@ enum class DirectoryCommandKind : std::uint8_t {
     ShowInRoom,  ///< show game `id` in its room (ADR-0012 §8, across floors: ADR-0013 §10)
     Close,       ///< the panel closed (Back)
     EditRoom,    ///< I4b step 3: edit room `id` ("Modifica stanza", ADR-0015 §4)
+    RegenerateRoom,  ///< I4b step 6: the preview of "Rigenera stanza" of room `id` (ADR-0015 §5)
+    RegenerateFloor, ///< I4b step 6: the preview of "Rigenera piano" of floor `id`
+    RegenerateWorld, ///< I4b step 6: the preview of "Rigenera mondo"
+    Undo,            ///< I4b step 6: the preview of "Annulla ultima modifica" (ADR-0015 §6)
 };
-/// "choose-floor", "choose-room", "launch", "show-in-room", "close", "edit-room".
+/// "choose-floor", "choose-room", "launch", "show-in-room", "close", "edit-room", "regenerate-room",
+/// "regenerate-floor", "regenerate-world", "undo".
 [[nodiscard]] std::string_view toString(DirectoryCommandKind kind) noexcept;
 
 struct DirectoryCommand {
     DirectoryCommandKind kind = DirectoryCommandKind::Close;
-    /// The floor, room or game id; empty for Close.
+    /// The floor, room or game id; empty for Close, RegenerateWorld and Undo.
     std::string id;
 
     bool operator==(const DirectoryCommand&) const = default;
@@ -279,7 +307,13 @@ public:
     [[nodiscard]] const DirectoryFloor* openedFloor() const noexcept;
     /// The rooms list's selected row: 0 the hall, i the room i - 1.
     [[nodiscard]] std::size_t selectedRoomRow() const noexcept { return m_roomRow; }
-    /// The rows of the list the view shows (floors, the hall and rooms, games; 0 in the card).
+    /// I4b step 6: the "Modifiche" tab's rows, in order ("Modifica stanza" only while a room can be edited), and
+    /// whether one does something now ("Rigenera stanza" needs a room, "Rigenera piano" a floor).
+    [[nodiscard]] std::vector<DirectoryAction> actions() const;
+    [[nodiscard]] bool actionEnabled(DirectoryAction action) const noexcept;
+    /// The selected row of the "Modifiche" tab.
+    [[nodiscard]] std::size_t selectedAction() const noexcept { return m_action; }
+    /// The rows of the list the view shows (floors, the hall and rooms, games, actions; 0 in the card).
     [[nodiscard]] std::size_t rowCount() const noexcept;
     /// The selected row of the list the view shows.
     [[nodiscard]] std::size_t selectedRow() const noexcept;
@@ -361,6 +395,9 @@ private:
     std::uint64_t m_cardRequest = 0;
     /// The card's game when the panel closed on it (reopen()).
     std::string m_closedCardGameId;
+
+    /// I4b step 6: the selected row of the "Modifiche" tab.
+    std::size_t m_action = 0;
 
     std::string m_notice;
     std::uint64_t m_revision = 0;

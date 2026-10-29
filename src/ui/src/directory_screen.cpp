@@ -68,6 +68,16 @@ struct GameRow {
     bool chosen = false;
 };
 
+/// I4b step 6: a row of the "Modifiche" tab ("actions").
+struct ActionRow {
+    Rml::String elementId;
+    int index = 0;
+    /// directory::kActions' name.
+    Rml::String action;
+    /// It does something now (else its line says why and it is dimmed).
+    bool enabled = false;
+};
+
 /// The card ("card"): GameCardContent's fields as game_card_screen.cpp binds them, and where the game stands.
 struct CardData {
     Rml::String title;
@@ -171,6 +181,13 @@ struct DirectoryScreen::Impl {
             game.RegisterMember("chosen", &GameRow::chosen);
         }
         constructor.RegisterArray<std::vector<GameRow>>();
+        if (auto action = constructor.RegisterStruct<ActionRow>()) {
+            action.RegisterMember("elementId", &ActionRow::elementId);
+            action.RegisterMember("index", &ActionRow::index);
+            action.RegisterMember("action", &ActionRow::action);
+            action.RegisterMember("enabled", &ActionRow::enabled);
+        }
+        constructor.RegisterArray<std::vector<ActionRow>>();
         if (auto card = constructor.RegisterStruct<CardData>()) {
             card.RegisterMember("title", &CardData::title);
             card.RegisterMember("platform", &CardData::platform);
@@ -199,6 +216,12 @@ struct DirectoryScreen::Impl {
         constructor.Bind("editFocused", &editFocused);
         constructor.Bind("editKind", &editKind);
         constructor.Bind("editTitle", &editTitle);
+        // I4b step 6: the "Modifiche" tab: its rows, the room "Rigenera stanza" names, the walker's floor.
+        constructor.Bind("actions", &actions);
+        constructor.Bind("actionRoomKind", &actionRoomKind);
+        constructor.Bind("actionRoomTitle", &actionRoomTitle);
+        constructor.Bind("actionFloor", &actionFloor);
+        constructor.Bind("actionFloorKnown", &actionFloorKnown);
         constructor.BindEventCallback(Rml::String(directory::kEditEvent),
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
                                           DirectoryClick click;
@@ -306,6 +329,35 @@ struct DirectoryScreen::Impl {
             }
         }
 
+        // I4b step 6: the "Modifiche" tab.
+        actions.clear();
+        const std::vector<DirectoryAction> shownActions = model.actions();
+        for (std::size_t index = 0; index < shownActions.size(); ++index) {
+            ActionRow row;
+            row.elementId = Rml::String(directory::kActionRowPrefix) + std::to_string(index);
+            row.index = count(index);
+            row.action = Rml::String(toString(shownActions[index]));
+            row.enabled = model.actionEnabled(shownActions[index]);
+            actions.push_back(std::move(row));
+        }
+        actionRoomKind.clear();
+        actionRoomTitle.clear();
+        for (const DirectoryFloor& floor : building.floors) {
+            for (const DirectoryRoom& room : floor.rooms) {
+                if (!building.regenerableRoom.empty() && room.id == building.regenerableRoom) {
+                    actionRoomKind = Rml::String(room.kind);
+                    actionRoomTitle = room.systems.empty() ? Rml::String(room.id) : shownName(room.systems.front());
+                }
+            }
+        }
+        if (actionRoomKind.empty() && !building.regenerableRoom.empty()) {
+            // A room the floors do not list (an expansion, step 8's): named by its id.
+            actionRoomKind = "console";
+            actionRoomTitle = Rml::String(building.regenerableRoom);
+        }
+        actionFloor = Rml::String(building.currentFloor);
+        actionFloorKnown = knownFloor(building.currentFloor);
+
         shown = ShownFloor{};
         rooms.clear();
         hallCurrent = false;
@@ -412,6 +464,12 @@ struct DirectoryScreen::Impl {
     bool editFocused = false;
     Rml::String editKind;
     Rml::String editTitle;
+    /// I4b step 6: the "Modifiche" tab.
+    std::vector<ActionRow> actions;
+    Rml::String actionRoomKind;
+    Rml::String actionRoomTitle;
+    Rml::String actionFloor;
+    bool actionFloorKnown = false;
     std::vector<FloorRow> floors;
     ShownFloor shown;
     std::vector<RoomRow> rooms;

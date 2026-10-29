@@ -12,8 +12,18 @@ namespace {
 constexpr std::array<DirectoryCardButton, 3> kDirectoryCardButtons{
     DirectoryCardButton::Play, DirectoryCardButton::ShowInRoom, DirectoryCardButton::Back};
 
-[[nodiscard]] DirectoryTab otherTab(DirectoryTab tab) noexcept {
-    return tab == DirectoryTab::Floors ? DirectoryTab::Games : DirectoryTab::Floors;
+constexpr std::array<DirectoryTab, 3> kDirectoryTabs{DirectoryTab::Floors, DirectoryTab::Games,
+                                                     DirectoryTab::Changes};
+
+/// The tab after `tab` (`forward`) or before it, round the bar (the shoulders), or stopping at its ends (the tab bar's
+/// Left and Right).
+[[nodiscard]] DirectoryTab nextTab(DirectoryTab tab, bool forward, bool wrap) noexcept {
+    const auto index = static_cast<std::size_t>(tab);
+    const std::size_t count = kDirectoryTabs.size();
+    if (forward) {
+        return index + 1 < count ? kDirectoryTabs[index + 1] : (wrap ? kDirectoryTabs.front() : tab);
+    }
+    return index > 0 ? kDirectoryTabs[index - 1] : (wrap ? kDirectoryTabs.back() : tab);
 }
 
 } // namespace
@@ -24,12 +34,14 @@ std::string_view toString(DirectoryTab tab) noexcept {
         return "floors";
     case DirectoryTab::Games:
         return "games";
+    case DirectoryTab::Changes:
+        return "changes";
     }
     return "unknown";
 }
 
 std::optional<DirectoryTab> directoryTabFromName(std::string_view name) noexcept {
-    for (const DirectoryTab tab : {DirectoryTab::Floors, DirectoryTab::Games}) {
+    for (const DirectoryTab tab : kDirectoryTabs) {
         if (toString(tab) == name) {
             return tab;
         }
@@ -47,6 +59,24 @@ std::string_view toString(DirectoryView view) noexcept {
         return "games";
     case DirectoryView::Card:
         return "card";
+    case DirectoryView::Changes:
+        return "changes";
+    }
+    return "unknown";
+}
+
+std::string_view toString(DirectoryAction action) noexcept {
+    switch (action) {
+    case DirectoryAction::EditRoom:
+        return directory::kActions[0];
+    case DirectoryAction::RegenerateRoom:
+        return directory::kActions[1];
+    case DirectoryAction::RegenerateFloor:
+        return directory::kActions[2];
+    case DirectoryAction::RegenerateWorld:
+        return directory::kActions[3];
+    case DirectoryAction::Undo:
+        return directory::kActions[4];
     }
     return "unknown";
 }
@@ -110,12 +140,45 @@ std::string_view toString(DirectoryCommandKind kind) noexcept {
         return "close";
     case DirectoryCommandKind::EditRoom:
         return "edit-room";
+    case DirectoryCommandKind::RegenerateRoom:
+        return "regenerate-room";
+    case DirectoryCommandKind::RegenerateFloor:
+        return "regenerate-floor";
+    case DirectoryCommandKind::RegenerateWorld:
+        return "regenerate-world";
+    case DirectoryCommandKind::Undo:
+        return "undo";
     }
     return "unknown";
 }
 
 bool DirectoryModel::editShown() const noexcept {
     return m_view == DirectoryView::Floors && !m_building.editableRoom.empty();
+}
+
+std::vector<DirectoryAction> DirectoryModel::actions() const {
+    std::vector<DirectoryAction> shown;
+    if (!m_building.editableRoom.empty()) {
+        shown.push_back(DirectoryAction::EditRoom);
+    }
+    shown.insert(shown.end(), {DirectoryAction::RegenerateRoom, DirectoryAction::RegenerateFloor,
+                               DirectoryAction::RegenerateWorld, DirectoryAction::Undo});
+    return shown;
+}
+
+bool DirectoryModel::actionEnabled(DirectoryAction action) const noexcept {
+    switch (action) {
+    case DirectoryAction::EditRoom:
+        return !m_building.editableRoom.empty();
+    case DirectoryAction::RegenerateRoom:
+        return !m_building.regenerableRoom.empty();
+    case DirectoryAction::RegenerateFloor:
+        return !m_building.currentFloor.empty();
+    case DirectoryAction::RegenerateWorld:
+    case DirectoryAction::Undo:
+        return true;
+    }
+    return false;
 }
 
 void DirectoryModel::setBuilding(DirectoryBuilding building) {
@@ -146,6 +209,10 @@ void DirectoryModel::setBuilding(DirectoryBuilding building) {
         if (m_view == DirectoryView::Rooms) {
             m_view = DirectoryView::Floors;
         }
+    }
+    // I4b step 6: the "Modifiche" tab's row stays within its rows ("Modifica stanza" comes and goes above the others).
+    if (const std::size_t rows = actions().size(); m_action >= rows) {
+        m_action = rows - 1;
     }
     followRows();
     changed();
@@ -216,8 +283,11 @@ void DirectoryModel::open(DirectoryTab tab) {
     m_floor = current < m_building.floors.size() ? current : 0;
     m_game = 0;
     m_gamesFromTop = true;
+    m_action = 0;
     if (tab == DirectoryTab::Floors) {
         m_view = DirectoryView::Floors;
+    } else if (tab == DirectoryTab::Changes) {
+        m_view = DirectoryView::Changes;
     } else {
         m_view = DirectoryView::Games;
         ++m_gamesRequest;
@@ -332,7 +402,7 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
         case UiCommand::FilterPrevious:
         case UiCommand::FilterNext:
             m_editFocused = false;
-            switchTab(otherTab(m_tab));
+            switchTab(nextTab(m_tab, command == UiCommand::FilterNext, true));
             return std::nullopt;
         default:
             return std::nullopt;
@@ -341,14 +411,12 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
     if (m_tabsFocused) {
         switch (command) {
         case UiCommand::Left:
-            switchTab(DirectoryTab::Floors);
-            return std::nullopt;
         case UiCommand::Right:
-            switchTab(DirectoryTab::Games);
+            switchTab(nextTab(m_tab, command == UiCommand::Right, false));
             return std::nullopt;
         case UiCommand::FilterPrevious:
         case UiCommand::FilterNext:
-            switchTab(otherTab(m_tab));
+            switchTab(nextTab(m_tab, command == UiCommand::FilterNext, true));
             return std::nullopt;
         case UiCommand::Down:
         case UiCommand::Activate:
@@ -410,7 +478,7 @@ std::optional<DirectoryCommand> DirectoryModel::apply(UiCommand command) {
         return back();
     case UiCommand::FilterPrevious:
     case UiCommand::FilterNext:
-        switchTab(otherTab(m_tab));
+        switchTab(nextTab(m_tab, command == UiCommand::FilterNext, true));
         return std::nullopt;
     default:
         return std::nullopt;
@@ -472,7 +540,14 @@ std::string DirectoryModel::focusedElement() const {
         return std::string(elementIdOf(m_cardButton));
     }
     if (m_tabsFocused || rowCount() == 0) {
-        return std::string(m_tab == DirectoryTab::Floors ? directory::kFloorsTabId : directory::kGamesTabId);
+        switch (m_tab) {
+        case DirectoryTab::Floors:
+            return std::string(directory::kFloorsTabId);
+        case DirectoryTab::Games:
+            return std::string(directory::kGamesTabId);
+        case DirectoryTab::Changes:
+            return std::string(directory::kChangesTabId);
+        }
     }
     if (editFocused()) {
         return std::string(directory::kEditRoomId);
@@ -485,6 +560,8 @@ std::string DirectoryModel::focusedElement() const {
     case DirectoryView::Games:
     case DirectoryView::Card:
         return std::string(directory::kGameRowPrefix) + std::to_string(m_game);
+    case DirectoryView::Changes:
+        return std::string(directory::kActionRowPrefix) + std::to_string(m_action);
     }
     return {};
 }
@@ -508,6 +585,8 @@ std::size_t DirectoryModel::rowCount() const noexcept {
         return m_gamesState == DirectoryGamesState::Failed ? 0 : m_games.size();
     case DirectoryView::Card:
         return 0;
+    case DirectoryView::Changes:
+        return actions().size();
     }
     return 0;
 }
@@ -521,6 +600,8 @@ std::size_t DirectoryModel::selectedRow() const noexcept {
     case DirectoryView::Games:
     case DirectoryView::Card:
         return m_game;
+    case DirectoryView::Changes:
+        return m_action;
     }
     return 0;
 }
@@ -561,6 +642,9 @@ void DirectoryModel::selectRow(std::size_t row) {
         m_game = row;
         m_gamesFromTop = false;
         break;
+    case DirectoryView::Changes:
+        m_action = row;
+        break;
     }
     changed();
 }
@@ -577,6 +661,10 @@ void DirectoryModel::switchTab(DirectoryTab tab) {
         m_view = m_floorsView == DirectoryView::Rooms && m_openedFloor < m_building.floors.size()
                      ? DirectoryView::Rooms
                      : DirectoryView::Floors;
+    } else if (tab == DirectoryTab::Changes) {
+        // I4b step 6: leaving a card too; the games list keeps its selection.
+        m_cardGameId.clear();
+        m_view = DirectoryView::Changes;
     } else {
         m_view = DirectoryView::Games;
         ++m_gamesRequest;
@@ -638,6 +726,7 @@ std::optional<DirectoryCommand> DirectoryModel::back() {
         return std::nullopt;
     case DirectoryView::Floors:
     case DirectoryView::Games:
+    case DirectoryView::Changes:
         return leave(DirectoryCommandKind::Close, {});
     }
     return std::nullopt;
@@ -668,6 +757,26 @@ std::optional<DirectoryCommand> DirectoryModel::activateRow() {
         return std::nullopt;
     case DirectoryView::Card:
         return std::nullopt;
+    case DirectoryView::Changes: {
+        // I4b step 6: an action asked of the app (a row that does nothing now: nothing).
+        const std::vector<DirectoryAction> shown = actions();
+        if (m_action >= shown.size() || !actionEnabled(shown[m_action])) {
+            return std::nullopt;
+        }
+        switch (shown[m_action]) {
+        case DirectoryAction::EditRoom:
+            return leave(DirectoryCommandKind::EditRoom, m_building.editableRoom);
+        case DirectoryAction::RegenerateRoom:
+            return leave(DirectoryCommandKind::RegenerateRoom, m_building.regenerableRoom);
+        case DirectoryAction::RegenerateFloor:
+            return leave(DirectoryCommandKind::RegenerateFloor, m_building.currentFloor);
+        case DirectoryAction::RegenerateWorld:
+            return leave(DirectoryCommandKind::RegenerateWorld, {});
+        case DirectoryAction::Undo:
+            return leave(DirectoryCommandKind::Undo, {});
+        }
+        return std::nullopt;
+    }
     }
     return std::nullopt;
 }

@@ -2,9 +2,11 @@
 <head>
 	<!--
 		The directory (I4 step 7a; ADR-0013 §10): the building's one panel, opened at the elevator and with M or Select in
-		free roam. Two tabs: "Piani" (the plan's floors in the elevator's order; a floor opens its hall and its rooms) and
+		free roam. Three tabs: "Piani" (the plan's floors in the elevator's order; a floor opens its hall and its rooms),
 		"Preferiti e recenti" (the catalog's favourites, then its most recently played games; a game opens its card, the
-		quick catalog's card with Avvia and "Mostra nella stanza").
+		quick catalog's card with Avvia and "Mostra nella stanza") and, since I4b step 6, "Modifiche" (the explicit
+		actions on the world: "Modifica stanza", "Rigenera stanza / piano / mondo", "Annulla ultima modifica", each of
+		which opens its preview, regenerate_preview.rml).
 		Bound to the data model "directory" of rv::ui::DirectoryScreen (src/ui/src/directory_screen.cpp), which also names
 		the ids below: keep them in step (src/ui/include/rv/ui/directory_model.hpp, tests/unit/ui/test_directory.cpp).
 		Every string is written here: the screen binds data and keys only (the floors by their building.json id, the rooms
@@ -36,6 +38,7 @@
 		<div id="dir-tabs">
 			<button id="dir-tab-floors" class="tab" data-class-active="tab == 'floors'" data-event-click="tab('floors')">Piani</button>
 			<button id="dir-tab-games" class="tab" data-class-active="tab == 'games'" data-event-click="tab('games')">Preferiti e recenti</button>
+			<button id="dir-tab-changes" class="tab" data-class-active="tab == 'changes'" data-event-click="tab('changes')">Modifiche</button>
 		</div>
 		<!-- The rooms' header: the floor whose rooms are listed. -->
 		<div id="dir-floor-header" data-if="view == 'rooms'">
@@ -127,6 +130,35 @@
 					</div>
 				</div>
 			</div>
+			<!-- I4b step 6, Modifiche (ADR-0015 §5, §6): the explicit actions on the world. A row that does nothing now (no
+			     room holds the walker) says why, dimmed. Each opens its preview before anything is written. -->
+			<div class="rows" data-if="view == 'changes'">
+				<div class="slot" data-for="action : actions">
+					<div class="row action-row" data-attr-id="action.elementId" data-class-disabled="!action.enabled" data-event-click="row(action.index)">
+						<span class="badge glyph" data-if="action.action == 'edit-room'"><span class="edit-shelf"></span><span class="edit-shelf"></span><span class="edit-shelf"></span></span>
+						<span class="badge glyph" data-if="action.action == 'regenerate-room'"><span class="cell big"></span></span>
+						<span class="badge glyph rows-1" data-if="action.action == 'regenerate-floor'"><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span></span>
+						<span class="badge glyph rows-2" data-if="action.action == 'regenerate-world'"><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span></span>
+						<span class="badge glyph" data-if="action.action == 'undo'"><span class="sheet back"></span><span class="sheet front"></span></span>
+						<div class="row-text">
+							<p class="row-title" data-if="action.action == 'edit-room'">Modifica stanza</p>
+							<p class="row-meta" data-if="action.action == 'edit-room'">Sposta, scambia e fissa giochi e arredi della stanza in cui sei</p>
+							<p class="row-title" data-if="action.action == 'regenerate-room'">Rigenera stanza</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && !action.enabled">Entra in una stanza per rigenerarla</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console'">Riallestisce {{ actionRoomTitle }}; le personalizzazioni restano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared'">Riallestisce la sala condivisa; le personalizzazioni restano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade'">Riallestisce la sala giochi arcade; le personalizzazioni restano</p>
+							<p class="row-title" data-if="action.action == 'regenerate-floor'">Rigenera piano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && !action.enabled">Esci dall'ascensore per rigenerare un piano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled">Riallestisce le stanze di questo piano e le ridispone lungo il corridoio</p>
+							<p class="row-title" data-if="action.action == 'regenerate-world'">Rigenera mondo</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-world'">Riallestisce tutto l'edificio: ogni sistema torna al suo piano</p>
+							<p class="row-title" data-if="action.action == 'undo'">Annulla ultima modifica</p>
+							<p class="row-meta" data-if="action.action == 'undo'">Torna a com'era prima dell'ultima modifica salvata o rigenerazione</p>
+						</div>
+					</div>
+				</div>
+			</div>
 			<!-- Preferiti e recenti: the favourites first, then the most recently played; beside the card, the game
 			     chosen stays marked. -->
 			<div class="rows" data-if="view == 'games' || view == 'card'">
@@ -149,6 +181,7 @@
 		</div>
 		<p id="dir-notice" class="notice" data-if="notice == 'ride-unavailable'">Ora non si può cambiare piano: riprova tra poco.</p>
 		<p class="notice" data-if="notice == 'building-pending'">L'edificio si sta aggiornando: piani e stanze cambiano appena è pronto.</p>
+		<p class="notice" data-if="notice == 'change-unavailable'">Ora non si può: l'edificio si sta aggiornando o un'altra modifica è in corso. Riprova tra poco.</p>
 	</div>
 
 	<!-- A game's card (the quick catalog's, with Avvia and "Mostra nella stanza"), beside the list. -->
@@ -242,8 +275,9 @@
 			<span class="hint" data-if="view == 'rooms'"><span class="pad pad-a">A</span>Vai</span>
 			<span class="hint" data-if="view == 'games'"><span class="pad pad-a">A</span>Apri la scheda</span>
 			<span class="hint" data-if="view == 'card'"><span class="pad pad-a">A</span>Conferma</span>
+			<span class="hint" data-if="view == 'changes'"><span class="pad pad-a">A</span>Scegli</span>
 			<span class="hint" data-if="view != 'card'"><span class="pad pad-wide">LB RB</span>Cambia elenco</span>
-			<span class="hint" data-if="view == 'floors' || view == 'games'"><span class="pad pad-b">B</span>Chiudi</span>
+			<span class="hint" data-if="view == 'floors' || view == 'games' || view == 'changes'"><span class="pad pad-b">B</span>Chiudi</span>
 			<span class="hint" data-if="view == 'rooms' || view == 'card'"><span class="pad pad-b">B</span>Indietro</span>
 		</div>
 	</div>
