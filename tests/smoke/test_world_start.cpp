@@ -226,7 +226,8 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
     const std::string plan = rv::core::readTextFile(planFile).value();
 
     // One frame: the stored plan's room alone, whole (every layer from the cache), its CRT already on the start choice
-    // from the room's items (I4 step 6b: its screenshot while the clip opens).
+    // from the room's items (I4 step 6b), its clip's first frame on that frame (since I5 step 4's review a lockstep run
+    // waits for it; it showed the screenshot while the clip opened before).
     const fs::path previewShot = room.dir / "preview.png";
     const AppRun preview = runApp(retroverseExe(), room.dir, "preview", roomArguments("1", previewShot));
     requireCleanRun(preview);
@@ -250,7 +251,7 @@ TEST_CASE("world: the stored room shows at the first frame before the snapshot, 
         }
         CHECK_FALSE(world.reconcile.has_value()); // the run ended at the first frame
         CHECK(preview.report->video.gameId == room.gameOf("Amber Lantern"));
-        CHECK(preview.report->video.picture == "screenshot");
+        CHECK(preview.report->video.picture == "video");
         CHECK(world.screenGames == 50);
         CHECK(world.screenRoom == "room:snes");
     }
