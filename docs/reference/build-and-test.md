@@ -268,14 +268,14 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   clip again), since I5 step 4 `-Filter '[real-library][arcade]'` (the whole library imported under
   `build/<preset>/real-library/arcade`, attract in front of each featured cabinet of the real arcade room, the first
   that played inspected; "Real arcade:" lines), since I5 step 3 `-Filter '[real-library][secondary_tv]'` (the busiest
-  floor's largest room with a secondary TV, both screens playing in view, its GPU memory within 512 MiB in runs without
-  `--screenshot`, whose render targets add about 72 MiB; "Real secondary TV:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every
-  system's clips (hours). `-OutDir <dir>`
-  moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
-  snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
-  <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python
-  3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to is snapshotted as a linked
-  root unless a root covers it).
+  floor's largest room with a secondary TV, both screens playing in view in a 1920 x 1080 window, its GPU memory
+  within 512 MiB in runs without `--screenshot`, whose render targets add about 72 MiB; the frame times with and
+  without clips; "Real secondary TV:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's
+  clips (hours). `-OutDir <dir>` moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that
+  script between the first snapshot and the tests, with the same variables (Gate M1's measurements). `python -I
+  scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a
+  difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to
+  is snapshotted as a linked root unless a root covers it).
 - `python -I scripts/esde_census.py --esde-home <ES-DE home> [--esde-install <dir>] [--rom-root <dir>] [--system
   <name>] [--json] [--output <file>]` is the independent oracle of the ROM scan (I2 step 7; standard library only,
   read-only, written apart from the C++ and naming no machine path): it prints per system ES-DE's count, the entries by
