@@ -1,8 +1,8 @@
 # ADR-0017: VR through OpenXR: a headset on the PC, any runtime, the game on the room's CRT
 
 - Status: accepted (the user's approval of the I10 plan on 2026-10-29, the choices below made with the user in
-  planning); §2's graphics binding and §9's limits to be confirmed by the step 0 spike
-  ([spikes/i10-xr.md](../spikes/i10-xr.md))
+  planning). §2's graphics binding was confirmed on Meta's runtime by the step 0 spike
+  ([spikes/i10-xr.md](../spikes/i10-xr.md)); SteamVR and §9's limits on the cable are still open
 - Date: 2026-10-29
 - Amends: specification §2.2 (VR is no longer out of scope), §22 M6 and FR-037 (VR moves from M6 to iteration I10);
   ADR-0001 (a new dependency, `openxr-loader`, at the same baseline); ADR-0006 (a launch from VR keeps the session and
@@ -61,8 +61,8 @@ Optional extensions, each checked for and recorded:
   `WGL_NV_DX_interop2`. It serves the runtimes that refuse OpenGL, and reuses the interop the game's capture needs
   (§7).
 - **Shape in the code:** an `xr::GraphicsBinding` interface with these two implementations.
-- **Open:** the spike confirms the first binding on Meta's runtime and on SteamVR. If either refuses OpenGL, the
-  bridge moves to step 2.
+- **Confirmed on Meta's runtime** (Meta Horizon Link 1.208, Quest 3S; the spike on 2026-10-29). SteamVR is still
+  open. If it refuses OpenGL, the bridge moves before SteamVR's support.
 
 ### 3. The module `xr`
 
@@ -207,4 +207,6 @@ step 7. Correctness and the focus rules are never relaxed.
   game" profile may be needed (the room alone, or a cinema).
 - **Capture limits:** exclusive fullscreen emulators cannot be captured. The capture's yellow border is removed with
   `IsBorderRequired = false` (Windows 11).
-- **Air Link:** adds latency the app does not control; the limits are measured on the cable.
+- **Air Link:** adds latency the app does not control (49 to 65 ms motion to photon in the spike). It can also turn
+  spacewarp on, which paces the app at half rate. The limits are measured on the cable, and the run report records
+  the runtime's spacewarp state.
