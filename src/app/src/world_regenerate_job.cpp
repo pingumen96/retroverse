@@ -12,6 +12,8 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/core/file_io.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/time.hpp>
 #include <rv/core/version.hpp>
 #include <rv/world/lift.hpp>
@@ -366,12 +368,14 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
                      *lock->rolledBack());
     }
     // The plan and the overrides read again under the lock (a writer reads what it replaces under the lock).
-    auto stored = readStored(files, inputs.building, inputs.systems);
-    if (!stored) {
-        return fail(stored.error().code == ErrorCode::NotFound ? regenerate_failure::kNoPlan
-                                                               : regenerate_failure::kFailed,
-                    "the plan: " + stored.error().toString());
+    // Its text's digest first: the plan is parsed only when the preview's result cannot be committed (I4b step 6's
+    // review: reading the reference library's plan costs about 0.4 s).
+    auto text = core::readTextFile(files.plan);
+    if (!text) {
+        return fail(text.error().code == ErrorCode::NotFound ? regenerate_failure::kNoPlan : regenerate_failure::kFailed,
+                    "the plan: " + text.error().toString());
     }
+    const std::string storedDigest = core::sha256Hex(*text);
     auto overrides = world::loadOverrides(files.overrides);
     if (!overrides) {
         return fail(regenerate_failure::kFailed, "overrides.json: " + overrides.error().toString());
@@ -382,8 +386,10 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
     // the overrides; else, the overrides kept, the scope regenerated again on the world as it is now. The drop is
     // consented to for the customizations the preview named: over another plan or other overrides it is refused (I4b
     // step 6's review), so that it never removes one the user did not see.
-    const bool unchanged = stored->digest == preview.planDigest && *overrides == preview.overrides;
+    const bool unchanged = storedDigest == preview.planDigest && *overrides == preview.overrides;
     std::shared_ptr<const world::Regeneration> regeneration;
+    // The plan the regeneration replaces (the items files of the rooms that changed against it are written again).
+    std::shared_ptr<const world::WorldPlan> previous = preview.previous;
     if (dropOverrides && !unchanged) {
         return fail(regenerate_failure::kChanged,
                     "the plan or the overrides changed since the preview; the drop is not made over them");
@@ -396,17 +402,25 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
             spdlog::warn("Regeneration: the world changed since the preview of {}; it is regenerated again",
                          preview.scope.toString());
         }
+        auto parsed = world::readPlan(*text, "world-plan.json");
+        if (!parsed) {
+            return fail(regenerate_failure::kFailed, "the plan: " + parsed.error().toString());
+        }
+        auto stored = lifted(std::move(*parsed), inputs.building, inputs.systems);
+        if (!stored) {
+            return fail(regenerate_failure::kFailed, "the plan's lift: " + stored.error().toString());
+        }
         std::vector<std::string> leftOut;
         world::RegenerationInput input;
         input.scope = preview.scope;
         input.dropOverrides = dropOverrides;
         input.library = inputs.library;
-        input.selections = scopeSelections(inputs, stored->plan, preview.scope, leftOut);
+        input.selections = scopeSelections(inputs, *stored, preview.scope, leftOut);
         input.platformTags = inputs.platformTags;
         input.config = inputs.config;
         input.overrides = *overrides;
-        input.previous = stored->plan;
-        input.previousDigest = stored->digest;
+        input.previous = std::move(*stored);
+        input.previousDigest = storedDigest;
         const Clock::time_point regenerating = Clock::now();
         auto again = world::regenerate(input, inputs.building, inputs.systems, inputs.load);
         commit.regenerateMs = millisecondsSince(regenerating);
@@ -414,6 +428,7 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
             return fail(regenerate_failure::kFailed, "the regeneration: " + again.error().toString());
         }
         regeneration = std::make_shared<const world::Regeneration>(std::move(*again));
+        previous = std::make_shared<const world::WorldPlan>(std::move(input.previous));
     }
     for (const world::ValidationFinding& finding : regeneration->result.validation.findings) {
         if (finding.severity == world::Severity::Hard) {
@@ -443,14 +458,16 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
         commit.planDigest = written->plan.digest;
         commit.plan = std::make_shared<const world::WorldPlan>(regeneration->result.plan);
     } else {
-        commit.planDigest = stored->digest;
-        commit.plan = std::make_shared<const world::WorldPlan>(std::move(stored->plan));
+        // Nothing to write: the plan stored is the regeneration's previous one.
+        commit.planDigest = storedDigest;
+        commit.plan = std::make_shared<const world::WorldPlan>(regeneration->result.plan);
     }
     commit.commitMs = millisecondsSince(committing);
     lock.reset(); // the lock goes before the items (they are the cache's, not the world's)
     const Clock::time_point keeping = Clock::now();
     if (commit.changed && inputs.snapshot) {
-        commit.items = keepRoomItems(paths, inputs.library, *inputs.snapshot, *commit.plan);
+        commit.items = keepRoomItems(paths, inputs.library, *inputs.snapshot, *commit.plan,
+                                     previous.get());
     } else if (commit.changed) {
         removeBuildingStamp(buildingStampFile(paths.cacheDir, inputs.library));
     }
@@ -511,7 +528,8 @@ UndoPreview previewUndo(const WorldPaths& paths, const catalog::LibraryId& libra
 }
 
 UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library, std::string_view expected,
-                      std::string_view writer, const BuildingSnapshot* snapshot, std::chrono::milliseconds lockWait) {
+                      std::string_view writer, const BuildingSnapshot* snapshot, const world::WorldPlan* before,
+                      std::chrono::milliseconds lockWait) {
     const Clock::time_point start = Clock::now();
     UndoCommit commit;
     const auto fail = [&](std::string_view failure, std::string error) {
@@ -573,7 +591,7 @@ UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library
     lock.reset();
     const Clock::time_point keeping = Clock::now();
     if (snapshot != nullptr && commit.plan) {
-        commit.items = keepRoomItems(paths, library, *snapshot, *commit.plan);
+        commit.items = keepRoomItems(paths, library, *snapshot, *commit.plan, before);
     } else {
         // The plan is no longer the one the stamp names, whatever could be read of it.
         removeBuildingStamp(buildingStampFile(paths.cacheDir, library));
@@ -586,11 +604,70 @@ UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library
     return commit;
 }
 
+std::set<world::RoomId> roomsWithOtherItems(const world::WorldPlan& before, const world::WorldPlan& after) {
+    struct Content {
+        const world::Room* room = nullptr;
+        std::vector<const world::Placement*> placements;
+        std::vector<const world::UnplacedGame*> unplaced;
+    };
+    const auto byRoom = [](const world::WorldPlan& plan) {
+        std::map<world::RoomId, Content> rooms;
+        for (const world::Room& room : plan.rooms) {
+            rooms[room.id].room = &room;
+        }
+        for (const world::Placement& placement : plan.placements) {
+            rooms[placement.slot.fixture().room()].placements.push_back(&placement);
+        }
+        for (const world::UnplacedGame& game : plan.unplaced) {
+            rooms[game.room].unplaced.push_back(&game);
+        }
+        return rooms;
+    };
+    const auto same = [](const auto& a, const auto& b) {
+        return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](const auto* x, const auto* y) { return *x == *y; });
+    };
+    const std::map<world::RoomId, Content> was = byRoom(before);
+    const std::map<world::RoomId, Content> now = byRoom(after);
+    std::set<world::RoomId> changed;
+    for (const auto& [id, content] : now) {
+        const auto old = was.find(id);
+        if (old == was.end() || (old->second.room == nullptr) != (content.room == nullptr) ||
+            (content.room != nullptr && !(*old->second.room == *content.room)) ||
+            !same(old->second.placements, content.placements) || !same(old->second.unplaced, content.unplaced)) {
+            changed.insert(id);
+        }
+    }
+    for (const auto& [id, content] : was) {
+        if (!now.contains(id)) {
+            changed.insert(id);
+        }
+    }
+    return changed;
+}
+
 std::map<catalog::SystemName, RoomItems> keepRoomItems(const WorldPaths& paths, const catalog::LibraryId& library,
-                                                       const BuildingSnapshot& snapshot, const world::WorldPlan& plan) {
+                                                       const BuildingSnapshot& snapshot, const world::WorldPlan& plan,
+                                                       const world::WorldPlan* before) {
+    // The systems whose items may change: those of the rooms that changed (in either plan), else every one.
+    std::optional<std::set<catalog::SystemName>> changedSystems;
+    if (before != nullptr) {
+        changedSystems.emplace();
+        const std::set<world::RoomId> rooms = roomsWithOtherItems(*before, plan);
+        for (const world::WorldPlan* side : {before, &plan}) {
+            for (const world::Room& room : side->rooms) {
+                if (rooms.contains(room.id)) {
+                    changedSystems->insert(room.sections.begin(), room.sections.end());
+                    if (room.id.kind() == world::RoomIdKind::System) {
+                        changedSystems->insert(room.id.system());
+                    }
+                }
+            }
+        }
+    }
     std::map<catalog::SystemName, RoomItems> kept;
     for (const RoomSnapshotResult& system : snapshot.systems) {
-        if (system.error || roomHolding(plan, system.system) == nullptr) {
+        if (system.error || roomHolding(plan, system.system) == nullptr ||
+            (changedSystems && !changedSystems->contains(system.system))) {
             continue;
         }
         RoomItems items = snapshotRoomItems(system, plan);
@@ -657,8 +734,15 @@ std::optional<std::vector<world::RoomId>> roomsChangedAlone(const world::WorldPl
     if (onFloor(before) != onFloor(after)) {
         return std::nullopt; // a room added, removed, moved, grown or of another template: the hall may change
     }
-    auto digestsBefore = world::roomContentDigests(before);
-    auto digestsAfter = world::roomContentDigests(after);
+    // The floor's rooms' digests alone (the whole plan's documents cost a few hundred milliseconds on a large plan).
+    std::set<world::RoomId> rooms;
+    for (const world::Room& room : after.rooms) {
+        if (room.floor == floor) {
+            rooms.insert(room.id);
+        }
+    }
+    auto digestsBefore = world::roomContentDigests(before, rooms);
+    auto digestsAfter = world::roomContentDigests(after, rooms);
     if (!digestsBefore || !digestsAfter) {
         return std::nullopt;
     }

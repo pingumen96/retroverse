@@ -138,29 +138,35 @@ void buildCommittedFloor(const FloorJob& job, const std::shared_ptr<const world:
         sources->lastPlayed = catalogLastPlayed(*job.reader);
     }
     answer.fallback = sources;
+    const double lastPlayedMs = millisecondsSince(start);
     if (job.shown && job.before) {
         // The plan as the floor shows it (a stored building's ground floor on the hub, as buildFloor() draws it).
         world::WorldPlan drawn = *plan;
         if (auto building = world::loadBuildingData(job.paths.assetRoot)) {
             static_cast<void>(world::placeOnHub(drawn.rooms, building->layout));
         }
+        Clock::time_point part = Clock::now();
         if (auto rooms = roomsChangedAlone(*job.before, drawn, job.shown->shown.floor)) {
+            const double compareMs = millisecondsSince(part);
+            part = Clock::now();
             WorldBuild alone = templateOf(*job.shown);
             alone.plan = std::move(drawn);
             alone.planDigest = digest;
             alone.reason = "a regeneration's rooms";
             Status rebuilt = rebuildRoomsAlone(job.paths, alone, *rooms, *sources);
+            const double roomsMs = millisecondsSince(part);
+            part = Clock::now();
             std::vector<RoomStaticPart> statics;
             for (const world::RoomId& room : *rooms) {
                 if (!rebuilt) {
                     break;
                 }
-                auto part = roomStaticPart(alone, *alone.plan, room);
-                if (!part) {
-                    rebuilt = propagate(part.error());
+                auto staticPart = roomStaticPart(alone, *alone.plan, room);
+                if (!staticPart) {
+                    rebuilt = propagate(staticPart.error());
                     break;
                 }
-                statics.push_back(std::move(*part));
+                statics.push_back(std::move(*staticPart));
             }
             if (rebuilt) {
                 alone.scene.emplace(); // the scene shown, its rooms' parts replaced: a stand-in for the decision
@@ -170,8 +176,11 @@ void buildCommittedFloor(const FloorJob& job, const std::shared_ptr<const world:
                 const LiveUpdatePlan update = planLiveUpdate(probe, alone, true);
                 if (update.kind != LiveUpdateKind::Rebuild && update.kind != LiveUpdateKind::Kept) {
                     answer.floorMs = millisecondsSince(start);
-                    spdlog::info("Regeneration: {} room(s) of the floor {} rebuilt alone in {:.0f} ms", rooms->size(),
-                                 alone.floor, answer.floorMs);
+                    spdlog::info("Regeneration: {} room(s) of the floor {} rebuilt alone in {:.0f} ms (the CRTs' plays "
+                                 "{:.0f}, the rooms compared {:.0f}, their collections {:.0f}, their static parts and "
+                                 "the decision {:.0f})",
+                                 rooms->size(), alone.floor, answer.floorMs, lastPlayedMs, compareMs, roomsMs,
+                                 millisecondsSince(part));
                     answer.build = std::move(alone);
                     answer.statics = std::move(statics);
                     answer.alone = true;
@@ -625,7 +634,8 @@ void WorldSession::followRegenerateChoices(ProductUi& product) {
                                  inputs.error);
                 }
                 const BuildingSnapshot* snapshot = inputs.inputs ? inputs.inputs->snapshot.get() : nullptr;
-                UndoCommit undone = commitUndo(paths, library, expected, writer, snapshot);
+                // The plan shown is the one the undo replaces (only the rooms that change get their items again).
+                UndoCommit undone = commitUndo(paths, library, expected, writer, snapshot, floorJob.before.get());
                 if (undone.failure.empty() && undone.plan) {
                     buildCommittedFloor(floorJob, undone.plan, undone.planDigest, undone.items, answer);
                 }

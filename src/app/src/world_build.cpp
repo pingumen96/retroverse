@@ -1566,7 +1566,7 @@ Status rebuildRoomsAlone(const WorldPaths& paths, WorldBuild& build, std::span<c
         const std::map<catalog::SystemName, RoomItems> items = floorItems(paths, build, records, sources);
         const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
         std::map<world::RoomId, std::string> digests;
-        if (auto computed = world::roomContentDigests(plan)) {
+        if (auto computed = world::roomContentDigests(plan, std::set<world::RoomId>(rooms.begin(), rooms.end()))) {
             digests = std::move(*computed);
         } else {
             spdlog::warn("World: the rooms' content digests: {}; every room is compared whole",

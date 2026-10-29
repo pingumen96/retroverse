@@ -421,10 +421,12 @@ TEST_CASE("app/world_regenerate: the real library's previews of a room, a floor 
         const rv::app::RunReport regenerated = runApp(appFolder, data, "regenerate-" + tag, shownRoom, regenerate, 160);
         const rv::app::WorldRegenerationRecord done = commitOf(regenerated, "Rigenera stanza", "regenerate");
         CHECK(done.backMs.value_or(1e9) <= kCommitShownLimitMs);
-        // "Annulla ultima modifica" (the last row; its preview focused on "Indietro": Up to "Annulla la modifica").
+        // "Annulla ultima modifica" (the last row; its preview focused on "Indietro": Up to "Annulla la modifica"),
+        // chosen a few seconds after the tab showed, as a player would (warm: the catalog's inputs read ahead by the
+        // tab are ready; the lockstep's frames do not wait for them).
         std::vector<std::pair<int, std::string>> undo = toChanges();
-        undo.insert(undo.end(), {{54, R"("ui_activate": 1)"}, {92, R"("ui_up": 1)"}, {96, R"("ui_activate": 1)"}});
-        const rv::app::RunReport undone = runApp(appFolder, data, "undo-" + tag, shownRoom, undo, 150);
+        undo.insert(undo.end(), {{54, R"("ui_activate": 1)"}, {292, R"("ui_up": 1)"}, {296, R"("ui_activate": 1)"}});
+        const rv::app::RunReport undone = runApp(appFolder, data, "undo-" + tag, shownRoom, undo, 350);
         const rv::app::WorldRegenerationRecord back = commitOf(undone, "Annulla ultima modifica", "undo");
         CHECK(back.backMs.value_or(1e9) <= kCommitShownLimitMs);
     }

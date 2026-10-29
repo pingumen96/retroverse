@@ -34,6 +34,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -209,18 +210,28 @@ struct UndoCommit {
 /// changed, nothing written), reads the plan restored, then writes the rooms' items again from `snapshot` (the
 /// catalog's: the app's inputs, waited for) and removes the building stamp (whenever the undo wrote, even when the plan
 /// cannot be read back).
+/// `before`, when given, is the plan the undo replaces as the app shows it: only the items of the systems whose rooms
+/// changed are written again (keepRoomItems()).
 [[nodiscard]] UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library,
                                     std::string_view expected, std::string_view writer,
-                                    const BuildingSnapshot* snapshot,
+                                    const BuildingSnapshot* snapshot, const world::WorldPlan* before = nullptr,
                                     std::chrono::milliseconds lockWait = world::kWorldLockWait);
 
 /// The rooms' items of every system of `snapshot` that a room of `plan` holds, written again into their files (those
 /// that changed) for the floors' builds and the next start, and the building stamp removed (the plan is no longer the
-/// one it names). The items by system; a file that cannot be written is logged.
+/// one it names). With `before` (the plan `plan` replaces), only the systems of the rooms whose record, placements or
+/// unplaced games differ (roomsWithOtherItems(); I4b step 6's review: every system's items cost about 0.4 s on the
+/// reference library). The items by system; a file that cannot be written is logged.
 [[nodiscard]] std::map<catalog::SystemName, RoomItems> keepRoomItems(const WorldPaths& paths,
                                                                      const catalog::LibraryId& library,
                                                                      const BuildingSnapshot& snapshot,
-                                                                     const world::WorldPlan& plan);
+                                                                     const world::WorldPlan& plan,
+                                                                     const world::WorldPlan* before = nullptr);
+
+/// The rooms whose record, placements or unplaced games differ between `before` and `after` (a room in one plan only
+/// included): the rooms whose systems' items may change.
+[[nodiscard]] std::set<world::RoomId> roomsWithOtherItems(const world::WorldPlan& before,
+                                                          const world::WorldPlan& after);
 
 /// The area that holds the walker (`area`: a room's id, "hall:<floor>") is one an action of `scope` changes (a room
 /// scope covers its chain; "floor:<id>" the rooms `before` holds on that floor and that floor's hall, whose rooms are
