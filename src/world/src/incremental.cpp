@@ -195,6 +195,8 @@ struct RoomUpdateInput {
     /// Where an expansion the chain needs stands on its floor (the east end of the shorter row among the rooms standing
     /// then, which it joins), or nothing on a full floor. Null: the chain takes no expansion.
     std::function<std::optional<RoomPlacement>(const Room&)> placeExpansion;
+    /// The numbers the overrides name (ADR-0015 §7 as amended on 2026-10-29): a new expansion's comes after them.
+    const detail::ChainNumbering* numbering = nullptr;
 };
 
 /// What one chain's update gives: the chain as a plan of its rooms, and what the building's report needs of it.
@@ -305,7 +307,8 @@ private:
     /// pinned or not, so that an unpin leaves a fixture where it stands) and those pinned at a transform; growth never
     /// moves them (a poster hung on the south wall excepted: it follows its wall) and a module never replaces them. The
     /// sockets whose fixtures are pinned and stand in the plan: a module never replaces them; a growth that would move
-    /// one pinned in its socket of the south wall is not taken.
+    /// one pinned in its socket of the south wall is not taken. A stale pin (its conflict room-gone: a room of that id
+    /// stands again) protects nothing.
     void protectPinnedFixtures(ChainRoom& room) {
         for (const Fixture& fixture : m_plan.fixtures) {
             if (fixture.id.room() == room.id && detail::standsMoved(*room.layout, fixture)) {
@@ -314,6 +317,9 @@ private:
             }
         }
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
+            if (detail::isStalePin(pin)) {
+                continue;
+            }
             const bool stands = std::any_of(m_plan.fixtures.begin(), m_plan.fixtures.end(),
                                             [&](const Fixture& fixture) { return fixture.id == pin.fixture; });
             if (stands && pin.fixture.room() == room.id) {
@@ -329,8 +335,9 @@ private:
     }
 
     /// The fixture of `room` standing in the plan that `candidate` (a fixture for `socket`) would overlap, other than
-    /// what stands in `socket` itself, or null. Every fixture a layout places stays within its socket and the sockets do
-    /// not overlap, so only a fixture the user moved there is ever found (I4b step 2, ADR-0015 §3: its sockets skipped).
+    /// what stands in `socket` itself, or null. Every fixture a layout places stays within its socket and the sockets
+    /// do not overlap, so only a fixture the user moved there is ever found (I4b step 2, ADR-0015 §3: its sockets
+    /// skipped).
     const Fixture* overlapped(const Fixture& candidate, const RoomId& room, const std::string& socket) const {
         for (const Fixture& fixture : m_plan.fixtures) {
             if (fixture.id.room() == room && fixture.id.socket() != socket &&
@@ -852,10 +859,11 @@ private:
     }
 
     /// The chain's next room (ADR-0015 §7): when every room stands at its template's limit, an expansion numbered after
-    /// the chain's highest enters the floor where `placeExpansion` stands it, laid out as a fresh room of no title (its
-    /// display fixtures and hero band dressed: an expansion an update creates has no face-out titles until its chain is
-    /// regenerated), every spine-out level dressed until titles take it. False on a full floor, or when a room of the
-    /// chain is short of its limit (a growth a pin refused).
+    /// the chain's highest and every number of the chain the overrides name (as amended on 2026-10-29: a number they
+    /// name never comes back) enters the floor where `placeExpansion` stands it, laid out as a fresh room of no title
+    /// (its display fixtures and hero band dressed: an expansion an update creates has no face-out titles until its
+    /// chain is regenerated), every spine-out level dressed until titles take it. False on a full floor, or when a room
+    /// of the chain is short of its limit (a growth a pin refused).
     Expected<bool> addExpansion() {
         if (m_floorFull || !m_input.placeExpansion || !atLimit()) {
             return false;
@@ -864,7 +872,9 @@ private:
         for (const Room& room : m_plan.rooms) {
             highest = std::max(highest, room.id.index());
         }
-        auto record = detail::expansionRecord(recordOf(m_head), highest + 1, m_template);
+        const std::uint32_t number =
+            m_input.numbering != nullptr ? m_input.numbering->next(m_head, highest) : highest + 1;
+        auto record = detail::expansionRecord(recordOf(m_head), number, m_template);
         if (!record) {
             m_floorFull = true; // past the largest number of a chain
             return false;
@@ -909,7 +919,7 @@ private:
             return;
         }
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
-            if (pin.fixture == fixture.id && pin.transform == standing) {
+            if (pin.fixture == fixture.id && pin.transform == standing && !detail::isStalePin(pin)) {
                 m_pinsFollowed.emplace(fixture.id, next);
             }
         }
@@ -1075,6 +1085,12 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     }
     WorldPlan previous = std::move(*lifted);
     sortPlan(previous);
+    // A chain is updated by its head: an expansion without one is refused before anything is decided.
+    if (Status heads = detail::checkChainHeads(previous, "update"); !heads) {
+        return propagate(heads.error());
+    }
+    // The numbers the overrides name, which a new expansion never takes (ADR-0015 §7 as amended on 2026-10-29).
+    const detail::ChainNumbering numbering = detail::chainNumbering(input.overrides);
 
     // Each selection goes to the room that holds its system's section, once: a system that has grown past the shared
     // threshold stays in its section (ADR-0013 §3: sticky). A system no room holds enters the building (I4 step 6a).
@@ -1160,13 +1176,17 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             !roomKeepReason(previous, room, *data).empty()) {
             continue;
         }
-        // A chain migrates whole (its expansions with its head); a pin in any of its rooms refuses it.
+        // A chain migrates whole (its expansions with its head); a pin in any of its rooms refuses it, a stale one
+        // (room-gone) excepted.
         const bool pinned = std::any_of(input.overrides.gamePins.begin(), input.overrides.gamePins.end(),
                                         [&](const GamePin& pin) {
-                                            return pin.slot.fixture().room().head() == room.id;
+                                            return pin.slot.fixture().room().head() == room.id &&
+                                                   !detail::isStalePin(pin);
                                         }) ||
                             std::any_of(input.overrides.fixturePins.begin(), input.overrides.fixturePins.end(),
-                                        [&](const FixturePin& pin) { return pin.fixture.room().head() == room.id; });
+                                        [&](const FixturePin& pin) {
+                                            return pin.fixture.room().head() == room.id && !detail::isStalePin(pin);
+                                        });
         if (pinned) {
             migrationRefused.push_back("migrate " + room.id.toString() + " from " + room.mediaFamily + " to " +
                                        data->successor->mediaFamily.id + ": a pin names the room");
@@ -1258,7 +1278,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     }
     // A new room past its template's capacity takes expansions (ADR-0015 §7), placed once every system entered; a
     // stored chain's expansions enter after them, as its update needs them (the rooms standing then: `standing`).
-    if (Status placed = detail::placeExpansions(*entry, input.config, building); !placed) {
+    if (Status placed = detail::placeExpansions(*entry, input.config, building, numbering); !placed) {
         return propagate(placed.error());
     }
     std::vector<Room> standingRooms;
@@ -1406,7 +1426,8 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                 return propagate(limit.error());
             }
             const std::uint32_t needed = detail::chainRoomsFor(selection->titles.size(), *limit);
-            for (std::uint32_t index = records.back().id.index() + 1; records.size() < needed; ++index) {
+            for (std::uint32_t index = numbering.next(room.id, records.back().id.index()); records.size() < needed;
+                 ++index) {
                 auto record = detail::expansionRecord(records.front(), index, data.roomTemplate);
                 if (!record) {
                     break;
@@ -1502,7 +1523,8 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
                                         std::move(part),
                                         room.kind == RoomKind::Console ? nullptr : &sections,
                                         seed,
-                                        placeExpansion};
+                                        placeExpansion,
+                                        &numbering};
         auto update = Updater(roomInput, data).run();
         if (!update) {
             return propagate(update.error());

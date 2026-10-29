@@ -268,8 +268,86 @@ Expected<Room> expansionRecord(const Room& head, std::uint32_t index, const Room
     return record;
 }
 
+std::vector<std::uint32_t> ChainNumbering::numbers(const RoomId& head, std::uint32_t count) const {
+    std::vector<std::uint32_t> result;
+    std::uint32_t highest = 1;
+    if (const auto found = standing.find(head); found != standing.end()) {
+        for (const std::uint32_t number : found->second) {
+            if (result.size() < count) {
+                result.push_back(number);
+            }
+            highest = std::max(highest, number);
+        }
+    }
+    for (std::uint32_t number = next(head, highest); result.size() < count; ++number) {
+        result.push_back(number);
+    }
+    return result;
+}
+
+std::uint32_t ChainNumbering::next(const RoomId& head, std::uint32_t highest) const {
+    if (const auto found = standing.find(head); found != standing.end() && !found->second.empty()) {
+        highest = std::max(highest, found->second.back());
+    }
+    if (const auto found = named.find(head); found != named.end()) {
+        highest = std::max(highest, found->second);
+    }
+    return highest + 1;
+}
+
+ChainNumbering chainNumbering(const WorldOverrides& overrides, const WorldPlan* previous) {
+    ChainNumbering numbering;
+    const auto name = [&](const RoomId& room) {
+        std::uint32_t& highest = numbering.named.try_emplace(room.head(), 1).first->second;
+        highest = std::max(highest, room.index());
+    };
+    for (const GamePin& pin : overrides.gamePins) {
+        name(pin.slot.fixture().room());
+    }
+    for (const FixturePin& pin : overrides.fixturePins) {
+        name(pin.fixture.room());
+    }
+    if (previous != nullptr) {
+        for (const Room& room : previous->rooms) {
+            if (room.id.isExpansion()) {
+                numbering.standing[room.id.head()].push_back(room.id.index());
+            }
+        }
+        for (auto& [head, numbers] : numbering.standing) {
+            std::sort(numbers.begin(), numbers.end());
+        }
+    }
+    return numbering;
+}
+
+Status checkChainHeads(const WorldPlan& plan, std::string_view context) {
+    std::set<RoomId> rooms;
+    for (const Room& room : plan.rooms) {
+        rooms.insert(room.id);
+    }
+    for (const Room& room : plan.rooms) {
+        if (room.id.isExpansion() && !rooms.contains(room.id.head())) {
+            return makeError(ErrorCode::InvalidArgument,
+                             "the plan holds the expansion " + room.id.toString() + " without its head " +
+                                 room.id.head().toString() +
+                                 " (edited by hand?): a chain is worked on by its head; restore a snapshot "
+                                 "('worldplan undo') or generate the building again",
+                             std::string(context));
+        }
+    }
+    return ok();
+}
+
+bool isStalePin(const GamePin& pin) noexcept {
+    return pin.conflict == ConflictReason::RoomGone;
+}
+
+bool isStalePin(const FixturePin& pin) noexcept {
+    return pin.conflict == ConflictReason::RoomGone;
+}
+
 Status placeExpansions(BuildingEntry& entry, const WorldConfig& config, const BuildingData& building,
-                       std::span<const Room> others) {
+                       const ChainNumbering& numbering, std::span<const Room> others) {
     std::vector<Room> standing(others.begin(), others.end());
     for (const BuildingRoom& room : entry.rooms) {
         standing.push_back(room.record);
@@ -293,10 +371,11 @@ Status placeExpansions(BuildingEntry& entry, const WorldConfig& config, const Bu
         for (const EnteringSystem* system : room.entered) {
             head.sections.push_back(system->selection->room.system());
         }
-        for (std::uint32_t index = 2 + static_cast<std::uint32_t>(room.expansions.size()); index <= rooms; ++index) {
-            auto record = expansionRecord(head, index, room.data->roomTemplate);
+        const std::vector<std::uint32_t> numbers = numbering.numbers(head.id.head(), rooms - 1);
+        for (std::size_t next = room.expansions.size(); next < numbers.size(); ++next) {
+            auto record = expansionRecord(head, numbers[next], room.data->roomTemplate);
             if (!record) {
-                return propagate(record.error());
+                break; // past the largest number of a chain
             }
             const auto placement =
                 placeEnteringRoom(*record, floorRows(standing, record->floor, building.layout), building.layout);
@@ -319,71 +398,122 @@ RoomPins ChainPins::of(const RoomId& room) const {
         return result;
     }
     for (const GamePin& pin : pins->gamePins) {
-        if (pin.slot.fixture().room() == room) {
+        if (pin.slot.fixture().room() == room && !isStalePin(pin)) {
             result.games.push_back(pin);
         }
     }
     for (const FixturePin& pin : pins->fixturePins) {
-        if (pin.fixture.room() == room) {
+        if (pin.fixture.room() == room && !isStalePin(pin)) {
             result.fixtures.push_back(pin);
         }
     }
     return result;
 }
 
+namespace {
+
+/// Each room's quota of a chain's `titles` titles (chainShares()): equal shares, the first ones a title more when they
+/// do not divide; a room whose pinned games (`pinned`, by room) outnumber its share takes them all, and the others
+/// share the rest equally, until no sharing room's pins outnumber its share. Some room always shares: the pinned games
+/// are among the titles, so they cannot all outnumber their shares.
+std::vector<std::size_t> shareQuotas(std::size_t titles, const std::vector<std::size_t>& pinned) {
+    const std::size_t count = pinned.size();
+    std::vector<bool> full(count, false);
+    std::vector<std::size_t> quota(count, 0);
+    for (bool changed = true; changed;) {
+        changed = false;
+        std::size_t rest = titles;
+        std::size_t open = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (full[i]) {
+                rest -= pinned[i];
+            } else {
+                ++open;
+            }
+        }
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < count && open > 0; ++i) {
+            if (full[i]) {
+                quota[i] = pinned[i];
+                continue;
+            }
+            quota[i] = rest / open + (k < rest % open ? 1 : 0);
+            ++k;
+            if (pinned[i] > quota[i]) {
+                full[i] = true;
+                changed = true;
+            }
+        }
+    }
+    return quota;
+}
+
+} // namespace
+
 std::vector<RoomSelection> chainShares(const RoomSelection& merged, SectionIndex& index, std::span<const RoomId> rooms,
-                                       const ChainPins* pins) {
+                                       const ChainPins* pins, std::map<catalog::GameId, std::string>* why) {
     RoomSelection chain = merged;
     // Rule 4 over the chain: a pinned duplicate takes its title's place before the titles are shared out, so that its
     // room's share holds it as a title.
-    std::map<catalog::GameId, RoomId> pinnedRoom;
+    std::map<catalog::GameId, std::size_t> pinnedShare;
     if (pins != nullptr && pins->pins != nullptr) {
-        std::vector<GamePin> gamePins;
+        std::vector<std::pair<GamePin, std::size_t>> gamePins;
         for (const GamePin& pin : pins->pins->gamePins) {
-            if (std::find(rooms.begin(), rooms.end(), pin.slot.fixture().room()) != rooms.end()) {
-                gamePins.push_back(pin);
+            const auto room = std::find(rooms.begin(), rooms.end(), pin.slot.fixture().room());
+            if (room != rooms.end() && !isStalePin(pin)) {
+                gamePins.emplace_back(pin, static_cast<std::size_t>(room - rooms.begin()));
             }
         }
-        std::sort(gamePins.begin(), gamePins.end(), [](const GamePin& a, const GamePin& b) { return a.game < b.game; });
+        std::sort(gamePins.begin(), gamePins.end(),
+                  [](const auto& a, const auto& b) { return a.first.game < b.first.game; });
         std::set<catalog::GameId> pinnedGames;
-        for (const GamePin& pin : gamePins) {
+        for (const auto& [pin, share] : gamePins) {
             pinnedGames.insert(pin.game);
         }
         std::set<catalog::GameId> titleGames;
         for (const RoomTitle& title : chain.titles) {
             titleGames.insert(title.game);
         }
-        for (const GamePin& pin : gamePins) {
-            std::string why;
+        for (const auto& [pin, share] : gamePins) {
+            std::string reason;
             if (titleGames.contains(pin.game) ||
-                takeRepresentation(chain, index, pin.game, pinnedGames, titleGames, why)) {
-                pinnedRoom.emplace(pin.game, pin.slot.fixture().room());
+                takeRepresentation(chain, index, pin.game, pinnedGames, titleGames, reason)) {
+                pinnedShare.emplace(pin.game, share);
+            } else if (why != nullptr) {
+                why->emplace(pin.game, std::move(reason));
             }
         }
         std::sort(chain.unplaced.begin(), chain.unplaced.end());
     }
-    // Equal alphabetical shares, the first ones a title more when they do not divide.
-    std::vector<RoomTitle> alphabetical = chain.titles;
-    std::sort(alphabetical.begin(), alphabetical.end(),
-              [&](const RoomTitle& a, const RoomTitle& b) { return alphabeticalLess(index, a, b); });
+    // The quotas; the pinned titles first, each in its room's share, then the others in the collection's order
+    // filling the quotas left, room after room.
     const std::size_t count = rooms.size();
+    std::vector<std::size_t> pinned(count, 0);
+    for (const auto& [game, share] : pinnedShare) {
+        ++pinned[share];
+    }
+    const std::vector<std::size_t> quota = shareQuotas(chain.titles.size(), pinned);
     std::vector<RoomSelection> shares(count);
-    std::size_t next = 0;
     for (std::size_t i = 0; i < count; ++i) {
         shares[i].room = rooms[i];
         shares[i].eligibility = chain.eligibility;
         shares[i].titleKeyRule = chain.titleKeyRule;
         shares[i].catalogSortKeyVersion = chain.catalogSortKeyVersion;
-        const std::size_t size = alphabetical.size() / count + (i < alphabetical.size() % count ? 1 : 0);
-        for (std::size_t taken = 0; taken < size; ++taken, ++next) {
-            const RoomTitle& title = alphabetical[next];
-            // A pinned game stands in the share of the room its pin names (the pin wins over the equal shares).
-            std::size_t share = i;
-            if (const auto pinned = pinnedRoom.find(title.game); pinned != pinnedRoom.end()) {
-                share = static_cast<std::size_t>(std::find(rooms.begin(), rooms.end(), pinned->second) -
-                                                 rooms.begin());
-            }
-            shares[share].titles.push_back(title);
+    }
+    std::vector<RoomTitle> alphabetical;
+    for (const RoomTitle& title : chain.titles) {
+        if (const auto share = pinnedShare.find(title.game); share != pinnedShare.end()) {
+            shares[share->second].titles.push_back(title);
+        } else {
+            alphabetical.push_back(title);
+        }
+    }
+    std::sort(alphabetical.begin(), alphabetical.end(),
+              [&](const RoomTitle& a, const RoomTitle& b) { return alphabeticalLess(index, a, b); });
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        while (shares[i].titles.size() < quota[i] && next < alphabetical.size()) {
+            shares[i].titles.push_back(alphabetical[next++]);
         }
     }
     for (RoomSelection& share : shares) {
@@ -412,14 +542,16 @@ Expected<WorldPlan> generateChain(const RoomSelection& merged, const SectionInde
     // A room alone generates as it always did; a chain over its equal alphabetical shares (ADR-0015 §7).
     SectionIndex sharesIndex = index != nullptr ? *index : SectionIndex{};
     std::vector<RoomSelection> shares;
+    std::map<catalog::GameId, std::string> why;
     if (records.size() == 1) {
         shares.push_back(merged);
     } else {
-        shares = chainShares(merged, sharesIndex, ids, pins);
+        shares = chainShares(merged, sharesIndex, ids, pins, &why);
     }
     WorldPlan chain;
     for (std::size_t i = 0; i < shares.size(); ++i) {
-        const RoomPins roomPins = pins != nullptr ? pins->of(ids[i]) : RoomPins{};
+        RoomPins roomPins = pins != nullptr ? pins->of(ids[i]) : RoomPins{};
+        roomPins.chainWhy = why;
         const SectionIndex* roomIndex = index == nullptr ? nullptr : (records.size() == 1 ? index : &sharesIndex);
         auto content = generateRoomContent(shares[i], config, worldSeed, data, roomIndex,
                                            pins != nullptr ? &roomPins : nullptr, outcome);
@@ -1134,8 +1266,10 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     if (!entry) {
         return propagate(entry.error());
     }
-    // The rooms past their template's capacity take expansions (ADR-0015 §7), placed once every system entered.
-    if (Status placed = detail::placeExpansions(*entry, input.config, building); !placed) {
+    // The rooms past their template's capacity take expansions (ADR-0015 §7), placed once every system entered, their
+    // numbers after those the overrides name.
+    const detail::ChainNumbering numbering = detail::chainNumbering(input.overrides);
+    if (Status placed = detail::placeExpansions(*entry, input.config, building, numbering); !placed) {
         return propagate(placed.error());
     }
     for (const detail::BuildingRoom& room : entry->rooms) {

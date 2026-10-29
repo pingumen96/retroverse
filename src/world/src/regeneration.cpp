@@ -291,6 +291,9 @@ public:
             std::erase_if(overrides.fixturePins, isScopePin);
             honour = WorldOverrides{};
         }
+        // A new expansion's number comes after every number of its chain that stands or that the overrides saved
+        // with the plan name (ADR-0015 §7 as amended on 2026-10-29): dropped overrides name none.
+        m_numbering = detail::chainNumbering(overrides, &m_input.previous);
 
         // Each attempt generates the scope; a pinned fixture breaking a hard rule of the new layout is a conflict
         // (invalid), and the scope is generated again without it.
@@ -310,7 +313,8 @@ public:
             if (!finished->result.validation.passed()) {
                 std::vector<FixturePin> candidates;
                 for (const FixturePin& pin : honour.fixturePins) {
-                    if (!excluded.contains(pin.fixture)) {
+                    // A stale pin was never applied: no finding is its.
+                    if (!excluded.contains(pin.fixture) && !detail::isStalePin(pin)) {
                         candidates.push_back(pin);
                     }
                 }
@@ -340,6 +344,9 @@ private:
         if (previous.library != m_input.library) {
             return refuse("the plan is of the library " + previous.library.str() + ", not " + m_input.library.str());
         }
+        if (Status heads = detail::checkChainHeads(previous, "regenerate"); !heads) {
+            return heads;
+        }
         for (const RoomSelection& selection : m_input.selections) {
             if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion()) {
                 return refuse("a selection is of a system's room, room:<system>, not " + selection.room.toString());
@@ -359,12 +366,16 @@ private:
             }
         }
         if (scope.kind == RegenerationScopeKind::Room) {
+            // The room named must stand (an expansion's number the plan lacks is refused, not taken for its head's
+            // chain); its chain is regenerated from its head, which checkChainHeads() found standing.
+            const auto named = std::find_if(previous.rooms.begin(), previous.rooms.end(),
+                                            [&](const Room& candidate) { return candidate.id == scope.room; });
+            if (named == previous.rooms.end()) {
+                return refuse("the plan holds no room " + scope.room.toString());
+            }
             const RoomId head = scope.room.head();
             const auto room = std::find_if(previous.rooms.begin(), previous.rooms.end(),
                                            [&](const Room& candidate) { return candidate.id == head; });
-            if (room == previous.rooms.end()) {
-                return refuse("the plan holds no room " + scope.room.toString());
-            }
             m_room = &*room;
             m_scopeRooms.insert(head);
             for (const SystemName& section : m_room->sections) {
@@ -514,7 +525,8 @@ private:
         room.expansions = std::move(expansions);
         standing.push_back(stored);
         standing.insert(standing.end(), room.expansions.begin(), room.expansions.end());
-        for (std::uint32_t index = highest + 1; room.expansions.size() + 1 < needed; ++index) {
+        for (std::uint32_t index = m_numbering.next(stored.id, highest); room.expansions.size() + 1 < needed;
+             ++index) {
             auto record = detail::expansionRecord(stored, index, (*data)->roomTemplate);
             if (!record) {
                 break;
@@ -598,7 +610,7 @@ private:
         if (!entry) {
             return propagate(entry.error());
         }
-        if (Status placed = detail::placeExpansions(*entry, m_input.config, m_building); !placed) {
+        if (Status placed = detail::placeExpansions(*entry, m_input.config, m_building, m_numbering); !placed) {
             return propagate(placed.error());
         }
         generation.plan = m_input.previous;
@@ -618,7 +630,8 @@ private:
             if (room.stored) {
                 continue;
             }
-            auto content = detail::generateEnteredChain(room, m_input.config, seed, m_building, &pins, &generation.pins);
+            auto content =
+                detail::generateEnteredChain(room, m_input.config, seed, m_building, &pins, &generation.pins);
             if (!content) {
                 return propagate(content.error());
             }
@@ -657,14 +670,15 @@ private:
         if (!entry) {
             return propagate(entry.error());
         }
-        if (Status placed = detail::placeExpansions(*entry, m_input.config, m_building); !placed) {
+        if (Status placed = detail::placeExpansions(*entry, m_input.config, m_building, m_numbering); !placed) {
             return propagate(placed.error());
         }
         freshHeader(generation.plan, m_input);
         const std::uint64_t seed = worldSeed(m_input.config, m_input.library);
         const detail::ChainPins pins{&honour, &m_input.previous, excluded};
         for (const detail::BuildingRoom& room : entry->rooms) {
-            auto content = detail::generateEnteredChain(room, m_input.config, seed, m_building, &pins, &generation.pins);
+            auto content =
+                detail::generateEnteredChain(room, m_input.config, seed, m_building, &pins, &generation.pins);
             if (!content) {
                 return propagate(content.error());
             }
@@ -814,8 +828,12 @@ private:
         sortPlan(previous);
         RegenerationImpact& impact = regeneration.impact;
         impact = planDifference(previous, plan);
+        // A room only the new plan holds (a new expansion, a room a system entered) is among the added, not the
+        // regenerated: each room counted once.
         for (const auto& [room, data] : generation.regenerated) {
-            impact.roomsRegenerated.push_back(room);
+            if (!std::binary_search(impact.roomsAdded.begin(), impact.roomsAdded.end(), room)) {
+                impact.roomsRegenerated.push_back(room);
+            }
         }
         std::set<RoomId> rooms;
         for (const Room& room : plan.rooms) {
@@ -847,6 +865,12 @@ private:
             } else if (!rooms.contains(roomOfPin(pin))) {
                 conflicts.emplace(text, OverrideConflict{text, game, fixture, ConflictReason::RoomGone,
                                                          "the new plan holds no room " + roomOfPin(pin).toString()});
+            } else if (detail::isStalePin(pin)) {
+                // Its room was gone and a room of that id stands again (a system's own room back): the stale pin is
+                // never applied to it, and keeps its reason until the user drops it or pins anew.
+                conflicts.emplace(text, OverrideConflict{text, game, fixture, ConflictReason::RoomGone,
+                                                         "its room was gone: a stale pin is not applied to " +
+                                                             roomOfPin(pin).toString() + " (pin it anew)"});
             } else {
                 conflicts.emplace(text, OverrideConflict{text, game, fixture, ConflictReason::Invalid,
                                                          "the new layout does not stand it as pinned"});
@@ -968,6 +992,7 @@ private:
     const Room* m_room = nullptr;
     std::vector<SystemName> m_floorSystems;
     std::set<RoomId> m_scopeRooms;
+    detail::ChainNumbering m_numbering;
 };
 
 } // namespace

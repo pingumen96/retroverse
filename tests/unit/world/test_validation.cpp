@@ -827,6 +827,12 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         expansion.sections = plan.rooms.front().sections;
         plan.rooms.push_back(expansion);
         CHECK(findingsOf(validate(plan), rule::kExpansionChain).empty());
+        // A gap in the numbers is valid (ADR-0015 §7 as amended on 2026-10-29): a number the overrides still name is
+        // never given again, so a chain shrunk by a regeneration and grown by an update stands as room:snes and :3.
+        plan.rooms.back().id = *plan.rooms.front().id.inChain(3);
+        CHECK(findingsOf(validate(plan), rule::kExpansionChain).empty());
+        CHECK(findingsOf(validate(plan), rule::kSystemRooms).empty());
+        plan.rooms.back().id = expansion.id;
         // Another family and template version than the head's.
         plan.rooms.back().mediaFamily = "generic_case_v2";
         plan.rooms.back().templateVersion += 1;

@@ -25,9 +25,11 @@
 // footprints on the floor: the interior grown by the building's wall allowance, building.hpp), every system stands in
 // exactly one room (an expansion counted with its chain's head) or one section, the arcade room stands on the ground
 // floor, and every expansion's head (I4b step 7, ADR-0015 §7) stands in the plan, on its floor, of its kind, sections,
-// media family and template (expansion-chain). With the building given, each floor's hall is derived from its rooms (floor_layout.hpp's deriveHall(),
-// I4 step 3) and judged with them: no room overlaps the hall (hall-overlap), every room's doorway is in its doorway
-// wall, which stands on the hall's edge (doorway-off-hall), and every room can be walked to from the elevator
+// media family and template (expansion-chain; a chain's numbers may leave gaps: a number the overrides still name is
+// never given again, as amended on 2026-10-29, so `:3` may stand without `:2`). With the building given, each floor's
+// hall is derived from its rooms (floor_layout.hpp's deriveHall(), I4 step 3) and judged with them: no room overlaps
+// the hall (hall-overlap), every room's doorway is in its doorway wall, which stands on the hall's edge
+// (doorway-off-hall), and every room can be walked to from the elevator
 // (floor-unreachable): the floor's navigation grid (nav_grid.hpp, 0.1 m cells over the hall and the floor's rooms;
 // obstacles the hall's walls, the elevator's frame, the hall's benches and plants (I6 step 2), the hub's solid pieces
 // (I6 step 5: columns, the landmark, the totem, the showcase, sofas and plants; its walls above its rooms are not), the

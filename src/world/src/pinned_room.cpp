@@ -148,6 +148,11 @@ Expected<WorldPlan> generatePinnedRoom(const RoomSelection& selection, const Wor
             titlePins.push_back(&pin);
             continue;
         }
+        // In a chain, the chain's rule 4 judged the game against the whole selection (an expansion's share lists no
+        // unplaced game): its reason, such as the game's own unplaced reason.
+        if (const auto chain = pins.chainWhy.find(pin.game); chain != pins.chainWhy.end()) {
+            why = chain->second;
+        }
         outcome.conflicts.push_back(gameConflict(pin, ConflictReason::GameGone, why));
     }
     std::sort(adjusted.titles.begin(), adjusted.titles.end(), priorityLess);

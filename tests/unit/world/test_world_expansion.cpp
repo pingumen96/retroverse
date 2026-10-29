@@ -11,7 +11,7 @@
 // regenerated (a room's chain split again, the world equal to the fresh building), a pin in an expansion honoured;
 // two runs one SHA-256.
 
-#include "world_building_support.hpp"
+#include "world_expansion_support.hpp"
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/random.hpp>
@@ -60,152 +60,6 @@ namespace {
 using namespace rv::test::world;
 
 constexpr std::uint64_t kWorldSeed = 102938;
-
-/// The selections of tests/fixtures/world/legacy/building-overflow-seed-102938-generator-1.4.json: the esde/overflow
-/// fixture's counts (a big-box system of 1,700 titles, an arcade of 60) and three rooms beside them.
-std::vector<RoomSelection> overflowSelections() {
-    return {systemSelection("amiga", 1700, 5200), systemSelection("mame", 60, 5100), systemSelection("snes", 40, 5300),
-            systemSelection("gb", 30, 5400), systemSelection("pokemini", 8, 5500)};
-}
-
-RoomId roomId(std::string_view text) {
-    return *RoomId::parse(text);
-}
-
-/// The placements of `plan` by room.
-std::map<RoomId, std::vector<Placement>> placementsByRoom(const WorldPlan& plan) {
-    std::map<RoomId, std::vector<Placement>> rooms;
-    for (const Placement& placement : plan.placements) {
-        rooms[placement.slot.fixture().room()].push_back(placement);
-    }
-    return rooms;
-}
-
-std::size_t capacityEntries(const WorldPlan& plan) {
-    return static_cast<std::size_t>(std::count_if(plan.unplaced.begin(), plan.unplaced.end(), [](const auto& game) {
-        return game.reason == UnplacedReason::Capacity;
-    }));
-}
-
-/// The room `id` with its elements, as a plan of that room, its record's generator and theme pack left out (an update
-/// stamps them), so that rooms compare by their elements.
-WorldPlan roomPart(const WorldPlan& plan, const RoomId& id) {
-    WorldPlan part;
-    for (const Room& room : plan.rooms) {
-        if (room.id == id) {
-            part.rooms.push_back(room);
-            part.rooms.back().generatorVersion = {};
-            part.rooms.back().themePack.clear();
-        }
-    }
-    std::copy_if(plan.fixtures.begin(), plan.fixtures.end(), std::back_inserter(part.fixtures),
-                 [&](const auto& fixture) { return fixture.id.room() == id; });
-    std::copy_if(plan.placements.begin(), plan.placements.end(), std::back_inserter(part.placements),
-                 [&](const auto& placement) { return placement.slot.fixture().room() == id; });
-    std::copy_if(plan.dressing.begin(), plan.dressing.end(), std::back_inserter(part.dressing),
-                 [&](const auto& dressed) { return dressed.level.fixture().room() == id; });
-    std::copy_if(plan.lights.begin(), plan.lights.end(), std::back_inserter(part.lights),
-                 [&](const auto& light) { return light.id.room() == id; });
-    std::copy_if(plan.unplaced.begin(), plan.unplaced.end(), std::back_inserter(part.unplaced),
-                 [&](const auto& game) { return game.room == id; });
-    return part;
-}
-
-/// The face-out placements of `room` in `plan`.
-std::size_t faceOutIn(const WorldPlan& plan, const RoomId& room) {
-    const auto sections = levelSections(plan);
-    return static_cast<std::size_t>(std::count_if(plan.placements.begin(), plan.placements.end(), [&](const auto& p) {
-        return p.slot.fixture().room() == room &&
-               rv::world::isFaceOut(sections.at({p.slot.fixture(), p.slot.level()}));
-    }));
-}
-
-std::string hardFindings(const rv::world::ValidationReport& report) {
-    std::string text;
-    for (const rv::world::ValidationFinding& finding : report.findings) {
-        if (finding.severity == rv::world::Severity::Hard) {
-            text += finding.rule + " " + finding.subject + ": " + finding.message + "\n";
-        }
-    }
-    return text;
-}
-
-const rv::world::RoomDataLoader& loader() {
-    static const rv::world::RoomDataLoader load = rv::world::assetRootLoader(assetRoot());
-    return load;
-}
-
-Regeneration regenerateOf(const BuildingWorld& world, const WorldPlan& previous,
-                          const std::vector<RoomSelection>& selections, const RegenerationScope& scope,
-                          const rv::world::WorldOverrides& overrides = {}) {
-    rv::world::RegenerationInput input;
-    input.scope = scope;
-    input.library = library();
-    input.selections = selections;
-    input.platformTags = world.tags;
-    input.config = world.config;
-    input.overrides = overrides;
-    input.previous = previous;
-    auto result = rv::world::regenerate(input, world.building, world.systems, loader());
-    INFO(scope.toString() << ": " << (result ? std::string("regenerated") : result.error().toString()));
-    REQUIRE(result.has_value());
-    INFO(hardFindings(result->result.validation));
-    CHECK(result->result.validation.passed());
-    return std::move(*result);
-}
-
-/// The chain whose head is `head` in `plan`: its rooms by number.
-std::vector<const Room*> chainOf(const WorldPlan& plan, const RoomId& head) {
-    std::vector<const Room*> chain;
-    for (const Room& room : plan.rooms) {
-        if (room.id.head() == head) {
-            chain.push_back(&room);
-        }
-    }
-    std::sort(chain.begin(), chain.end(), [](const Room* a, const Room* b) { return a->id < b->id; });
-    return chain;
-}
-
-/// A chain's rooms each of the head's record but for their places (ADR-0015 §7), numbered from 2 without gaps
-/// (a fresh chain's), the titles of `selections` in equal alphabetical shares (the collection's order: section, sort
-/// key, title key, GameId), each placed once.
-void checkFreshChain(const WorldPlan& plan, const RoomId& head, const std::vector<const RoomSelection*>& selections,
-                     std::size_t rooms) {
-    INFO(head.toString());
-    const std::vector<const Room*> chain = chainOf(plan, head);
-    REQUIRE(chain.size() == rooms);
-    for (std::size_t i = 0; i < chain.size(); ++i) {
-        const Room& room = *chain[i];
-        CHECK(room.id == *head.inChain(static_cast<std::uint32_t>(i + 1)));
-        CHECK(room.expands == (i == 0 ? RoomId{} : head));
-        CHECK(room.floor == chain.front()->floor);
-        CHECK(room.kind == chain.front()->kind);
-        CHECK(room.sections == chain.front()->sections);
-        CHECK(room.mediaFamily == chain.front()->mediaFamily);
-        CHECK(room.templateId == chain.front()->templateId);
-        CHECK(room.seed == rv::world::roomSeed(plan.seed, room.id));
-    }
-    std::vector<std::tuple<std::size_t, std::string, std::string, GameId>> alphabetical;
-    for (std::size_t section = 0; section < selections.size(); ++section) {
-        for (const RoomTitle& title : selections[section]->titles) {
-            alphabetical.emplace_back(section, title.sortKey, title.titleKey, title.game);
-        }
-    }
-    std::sort(alphabetical.begin(), alphabetical.end());
-    std::map<GameId, RoomId> roomOfGame;
-    for (const Placement& placement : plan.placements) {
-        roomOfGame.emplace(placement.game, placement.slot.fixture().room());
-    }
-    std::size_t next = 0;
-    for (std::size_t i = 0; i < rooms; ++i) {
-        const std::size_t share = alphabetical.size() / rooms + (i < alphabetical.size() % rooms ? 1 : 0);
-        for (std::size_t taken = 0; taken < share; ++taken, ++next) {
-            const auto found = roomOfGame.find(std::get<3>(alphabetical[next]));
-            REQUIRE(found != roomOfGame.end());
-            CHECK(found->second == chain[i]->id);
-        }
-    }
-}
 
 } // namespace
 
@@ -377,6 +231,9 @@ TEST_CASE("world/expansion: generator 1.4's capacity entries enter their chains,
         regenerateOf(world, migrated.plan, given, RegenerationScope::ofRoom(roomId("room:amiga")));
     checkFreshChain(split.result.plan, roomId("room:amiga"), {&given[0]}, 2);
     CHECK(split.impact.roomsAdded == std::vector{roomId("room:amiga:2")});
+    // The new expansion is added, not also regenerated (I4b step 7's review): each room counted once.
+    CHECK(split.impact.roomsRegenerated == std::vector{roomId("room:amiga")});
+    CHECK(split.result.changes.roomsAdded == std::vector{roomId("room:amiga:2")});
 }
 
 TEST_CASE("world/expansion: one fill order per chain, the head's freed slots used first", "[world][expansion]") {
