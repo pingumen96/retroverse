@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "e58a13de9116d99e268f1af885397bb2e563698d",
+    "gitCommit": "9b14d9d4fad2120819446adf0d32db3c4b96cd9b",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g20_cabinet_focus_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "66dc16b9db59a70d3b14fc3fdc5f7d8feb97b34409552309ccfc7fc2c7cfd8ed",
+    "sha256": "b4f6a77b1243ee968d76921e71d601498d624dc7a0b46d9b1c060b175c93b14e",
     "width": 1920
   },
   "inputs": {
@@ -43,7 +43,7 @@
       "sha256": "4a1217897ee893d8a75c6004c2827144acb48ab2c3c9c42197a0260ff77d100b"
     }
   },
-  "renderedOn": "2026-10-28",
+  "renderedOn": "2026-10-29",
   "run": {
     "capturedFrame": 99,
     "frames": 100,

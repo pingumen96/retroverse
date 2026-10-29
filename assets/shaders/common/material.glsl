@@ -22,7 +22,8 @@ layout(std140, binding = 2) uniform MaterialUniforms {
     float uCrtVignette;          // [0, 1]
     float uCrtGlassReflection;   // [0, 1]
     // The part of a screen its picture fills (I5 step 4), with RV_MATERIAL_PICTURE_RECT: its corner (xy) and size (zw)
-    // in the screen's texture coordinates; black around it (a letterbox or a pillarbox, never a stretch).
+    // in the screen's texture coordinates; the tube's off-black around it (a letterbox or a pillarbox, never a
+    // stretch).
     vec4 uPictureRect;
 };
 
@@ -41,7 +42,7 @@ const uint RV_MATERIAL_CRT_SCREEN = 256u;
 // with RV_MATERIAL_SPINE_LAYER, else its front layer (materialInstanceBaseColor).
 const uint RV_MATERIAL_LAYERED_BASE_COLOR = 512u;
 const uint RV_MATERIAL_SPINE_LAYER = 1024u;
-// The picture fills uPictureRect of the screen, black around it (materialPictureUv, materialPictureCoverage).
+// The picture fills uPictureRect of the screen, the bars around it (materialPictureUv, materialPictureCoverage).
 const uint RV_MATERIAL_PICTURE_RECT = 2048u;
 
 layout(binding = 0) uniform sampler2D uBaseColorTexture;         // sRGB, multiplies uBaseColorFactor
@@ -96,7 +97,8 @@ void materialAlphaTest(float alpha) {
     }
 }
 
-// The picture's texture coordinates at the screen's `uv` with RV_MATERIAL_PICTURE_RECT: uPictureRect mapped onto [0, 1].
+// The picture's texture coordinates at the screen's `uv` with RV_MATERIAL_PICTURE_RECT: uPictureRect mapped onto
+// [0, 1].
 vec2 materialPictureUv(vec2 uv) {
     return (uv - uPictureRect.xy) / uPictureRect.zw;
 }

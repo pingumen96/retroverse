@@ -16,6 +16,10 @@ const float RV_CRT_GLASS_ROUGHNESS = 0.35;
 // Corner radius of the picture, in picture widths and heights, per unit of uCrtCurvature: the more a tube bulges, the
 // rounder its picture's corners (0.045 at the test room's curvature of 0.06; a flat tube has square corners).
 const float RV_CRT_CORNER_ROUNDING = 0.75;
+// Linear base colour of a lit tube showing black (I5 step 4's review): the letterbox and pillarbox bars around a
+// picture of another aspect glow faintly through the scanlines and mask, as a powered CRT's black does, instead of
+// reading as a hole in the screen (unlit/unlit_emissive.frag, RV_MATERIAL_PICTURE_RECT).
+const float RV_CRT_BLACK_LEVEL = 0.01;
 
 // Picture coordinates of the screen coordinates `uv` under the barrel curvature. Near the corners they leave [0, 1]:
 // the tube's border shows there.

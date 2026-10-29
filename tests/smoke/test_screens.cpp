@@ -497,7 +497,8 @@ TEST_CASE("screens: a 16:9 clip on a 4:3 tube shows black bars above and below, 
     CHECK(tall[3] == 1.0);
     CHECK(rectOf("crt_c") == wide);
     CHECK(rectOf("crt_d") == tall);
-    // The probes: the bars are the tube's black (its glass's faint sheen aside), the picture between them lit.
+    // The probes: the bars are the lit tube's off-black (I5 step 4's review: crt.glsl's RV_CRT_BLACK_LEVEL, its glass's
+    // faint sheen over it): dark, yet never a hole; the picture between them lit.
     const auto scene = rv::scene::loadSceneDescription(sceneFile());
     REQUIRE(scene.has_value());
     const rv::assets::ImageData image = requireScreenshot(run, shot, kShotSize);
@@ -511,24 +512,28 @@ TEST_CASE("screens: a 16:9 clip on a 4:3 tube shows black bars above and below, 
         const std::vector<double> bars = screenProbes(image, *scene, id, letterbox);
         const std::vector<double> picture = screenProbes(image, *scene, id, middle);
         const double darkest = *std::max_element(bars.begin(), bars.end());
+        const double faintest = *std::min_element(bars.begin(), bars.end());
         double lit = 0.0;
         for (const double luma : picture) {
             lit += luma / static_cast<double>(picture.size());
         }
-        WARN(id << ": bars at most " << darkest << " luma, the picture's mean " << lit);
-        CHECK(darkest < 24.0);
+        WARN(id << ": bars " << faintest << " to " << darkest << " luma, the picture's mean " << lit);
+        CHECK(darkest < 36.0);
+        CHECK(faintest > 6.0);
         CHECK(lit > 3.0 * darkest);
     }
     for (const std::string_view id : {"crt_b", "crt_d"}) {
         const std::vector<double> bars = screenProbes(image, *scene, id, pillarbox);
         const std::vector<double> picture = screenProbes(image, *scene, id, middle);
         const double darkest = *std::max_element(bars.begin(), bars.end());
+        const double faintest = *std::min_element(bars.begin(), bars.end());
         double lit = 0.0;
         for (const double luma : picture) {
             lit += luma / static_cast<double>(picture.size());
         }
-        WARN(id << ": bars at most " << darkest << " luma, the picture's mean " << lit);
-        CHECK(darkest < 24.0);
+        WARN(id << ": bars " << faintest << " to " << darkest << " luma, the picture's mean " << lit);
+        CHECK(darkest < 36.0);
+        CHECK(faintest > 6.0);
         CHECK(lit > 3.0 * darkest);
     }
 }
