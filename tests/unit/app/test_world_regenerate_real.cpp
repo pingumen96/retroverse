@@ -413,14 +413,22 @@ TEST_CASE("app/world_regenerate: the real library's previews of a room, a floor 
         static_cast<void>(runApp(appFolder, data, "warm-" + tag, shownRoom, {}, 300));
         // "Rigenera stanza" (End, then up past "Rigenera mondo" and "Rigenera piano"), Rigenera once its preview shows.
         std::vector<std::pair<int, std::string>> regenerate = toChanges();
-        regenerate.insert(regenerate.end(), {{52, R"("ui_up": 1)"},
-                                             {56, R"("ui_up": 1)"},
-                                             {60, R"("ui_up": 1)"},
-                                             {66, R"("ui_activate": 1)"},
-                                             {110, R"("ui_activate": 1)"}});
-        const rv::app::RunReport regenerated = runApp(appFolder, data, "regenerate-" + tag, shownRoom, regenerate, 160);
+        // The row asked a few seconds after the tab showed, as a player would (the tab's read-ahead done: the room's
+        // preview warm, I4b step 6's review; the lockstep's frames do not wait for it).
+        regenerate.insert(regenerate.end(), {{240, R"("ui_up": 1)"},
+                                             {244, R"("ui_up": 1)"},
+                                             {248, R"("ui_up": 1)"},
+                                             {254, R"("ui_activate": 1)"},
+                                             {300, R"("ui_activate": 1)"}});
+        const rv::app::RunReport regenerated = runApp(appFolder, data, "regenerate-" + tag, shownRoom, regenerate, 350);
         const rv::app::WorldRegenerationRecord done = commitOf(regenerated, "Rigenera stanza", "regenerate");
         CHECK(done.backMs.value_or(1e9) <= kCommitShownLimitMs);
+        std::cout << fmt::format("Real app regeneration: in the app, the preview of {} shown {:.0f} ms after the "
+                                 "request (its job {:.0f} ms, the inputs {}), acceptable {:.0f} ms\n",
+                                 shownRoom, done.previewMs.value_or(-1.0), done.previewJobMs.value_or(-1.0),
+                                 done.inputsTaken ? "taken by it" : "read ahead by the tab", kRoomPreviewLimitMs);
+        CHECK_FALSE(done.inputsTaken);
+        CHECK(done.previewMs.value_or(1e9) <= kRoomPreviewLimitMs);
         // "Annulla ultima modifica" (the last row; its preview focused on "Indietro": Up to "Annulla la modifica"),
         // chosen a few seconds after the tab showed, as a player would (warm: the catalog's inputs read ahead by the
         // tab are ready; the lockstep's frames do not wait for them).
