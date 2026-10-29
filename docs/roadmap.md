@@ -16,12 +16,13 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
+| I10 | VR through OpenXR (ADR-0017), beside I4b and I5: a headset on the PC (Meta Quest through Link or Air Link, SteamVR, any OpenXR runtime), the building walked and used with Touch controllers or the pad, the launched game on the room's CRT | Gate VR: a 30-minute session in the headset |
 
 Removed from scope: the integrated scraper (spec §10, FR-021 to FR-023). ES-DE stays the scraping tool; Retroverse
 reads its metadata and media in place and uses generated labels and screenshots where media are missing (ADR-0003).
 
-Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, VR, hardware video
-decoding, Linux, an OpenGL 3.3 fallback.
+Deferred beyond v1: gamelist write-back, legacy EmulationStation/RetroBat/Batocera adapters, hardware video decoding,
+Linux, an OpenGL 3.3 fallback. VR left this list on October 29, 2026 (I10, ADR-0017).
 
 Done: I0 (M0, Gate A), I1, I2 (M1) and I3 (M2, Gate B); the user declared M1 and M2 done on October 20, 2026. I4, the
 building ([ADR-0013](decisions/ADR-0013-the-building.md)): Gate C passed on October 22, 2026
@@ -31,7 +32,9 @@ and I6 done on October 27, 2026, the walk of the building postponed (its list st
 building"). Next, planned on October 27, 2026 on the user's request: I4b, customization
 ([ADR-0015](decisions/ADR-0015-customization.md)), and I5, screens and media
 ([ADR-0016](decisions/ADR-0016-screens-and-media.md)), their steps run side by side where they own their files
-([i4b/plan.md](i4b/plan.md), [i5/plan.md](i5/plan.md), "Beside I5" / "Beside I4b").
+([i4b/plan.md](i4b/plan.md), [i5/plan.md](i5/plan.md), "Beside I5" / "Beside I4b"). Planned on October 29, 2026 on
+the user's request: I10, VR through OpenXR ([ADR-0017](decisions/ADR-0017-vr-through-openxr.md)), in its own
+worktree beside them.
 
 ## Acceptable performance
 
@@ -58,6 +61,8 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | Frame time with two clips playing (the benchmark path past a secondary TV) | p50 at most 16.7 ms, p99 at most 33.3 ms |
 | GPU memory with the screens playing (the busiest floor, two slots; the viewer's clip) | all textures at most 512 MiB |
 | A clip's sound against its picture | within 80 ms at p95 |
+| Frame time in VR, a populated room, both eyes at the runtime's recommended size (ADR-0017 §9) | p50 at most 13.9 ms, p99 at most 20 ms, at most 1% of the refreshes missed (72 Hz); 90 Hz informative |
+| Frame time in VR with a game captured on the CRT (the "in game" profile) | the same limits |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -327,6 +332,33 @@ and after and 0 differences:
 - the follow-ups;
 - what to try: a room's playlist and a selection, a secondary TV, the arcade, the sound walking away, mute, the
   viewer's video and a manual, a launch with its animation.
+
+## I10: VR through OpenXR
+
+[ADR-0017](decisions/ADR-0017-vr-through-openxr.md), planned with the user on October 29, 2026: OpenXR only (no
+vendor SDK), the app's OpenGL context bound through `XR_KHR_opengl_enable` (a D3D11 bridge for the runtimes that
+refuse it), a module `xr` between `render` and `app`, the desktop unchanged (no golden moves). It runs in its own
+worktree beside I4b and I5; its logic lives in new files with small hooks in `rv_app`. Step notes in `docs/i10/`.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | The spike `spike_xr` (an OpenXR session on the GL context, a ray-cast stereo room, frame pacing measured), ADR-0017, these amendments, the vcpkg feature `xr` | | Unit: the off-axis projection, the frame statistics, the swapchain format; by hand: the room in the headset on Meta's runtime and on SteamVR, the report ([spikes/i10-xr.md](spikes/i10-xr.md)) | in progress: the spike and the documents |
+| 1 | Views per eye, desktop only: the camera's eye mode (a quaternion, four field angles), the SSAO's off-axis reconstruction, the shadow map once per frame, more instance-buffer regions, N views in `SceneGraphics`, a frustum enclosing both eyes; `--stereo-preview` (both eyes side by side in the window and the screenshot) | 0 | Unit: the projections and frusta; every golden unchanged; a stereo-preview screenshot of the test room judged by eye | |
+| 2 | The session: the module `xr` (`rv_xr_model`, `rv_xr`), `--vr`, the `FramePacer` (`XrPacer`), sRGB swapchains at the recommended size times the render scale, the head tracked, the mirror, the fake runtime, the report's `xr` section, the vignette off and the ride's fade per eye | 1 | Unit: the session's state machine against the fake runtime; GPU: `--vr --xr-runtime fake` hidden, a scripted look around, the report's poses, one stereo golden; by hand: the lobby and the SNES room in the headset | |
+| 3 | Movement and comfort: the tracking space on the walker, head-relative stick movement, snap and smooth turn, teleport with an arc, the head's offset through `moveCapsule` (a fade and a push back in a wall), recentering, seated and standing heights, `reduceMotion` forced, the comfort vignette; the pad as today | 2 | Unit: the composition, the turns, the push back; GPU: a scripted walk with the fake runtime; by hand: the building, the elevator, a teleport from the directory | |
+| 4 | Controllers: action sets onto `input::Action`, hand poses and the ray, bindings for the Touch, Index, Vive, WMR, Pico and simple controllers, generic controller models, the ray into `pickRay()`, Focus without moving, Inspect in the hand, haptics | 3 | Unit: the bindings' JSON per profile; GPU: a scripted hand ray inspects a cover; by hand: point, inspect, open the card | |
+| 5 | The UI in VR: the documents and the devui through `renderTo` into quad layers placed in the world, the ray into RmlUi's mouse at the quad's UV, the card beside its item, labels and prompts as small quads, the in-scene fallback | 4 | Unit: ray against quad; GPU: the quick catalog driven by a scripted ray; by hand: the catalog, the directory and the card with the Touch controllers only, then with the pad only | |
+| 6 | The game on the CRT: Windows.Graphics.Capture of the emulator's window, the D3D11 to GL interop, the captured texture on the hero CRT (or a large quad), the launch flow keeping the session, the "in game" profile, the return; the D3D11 bridge as the second graphics binding | 5 | Desktop test: the fake emulator's window captured; by hand: an SNES game in RetroArch (isolated configuration under `build/`, borderless) played with the pad on the CRT | |
+| 7 | Performance: the VR quality profile, the dynamic render scale, 72 and 90 Hz, the benchmark path with the fake runtime at Link's size, the room and the captured game measured | 6 | ADR-0017 §9's rows in Release | |
+| 8 | Gate VR: `scripts/gate.ps1 -Gate VR` (and `-RealLibrary`), `docs/testing/gate-vr.md` | 7 | The gate passes; the user's 30-minute session in the headset on Meta's runtime and on SteamVR | |
+
+### Gate VR
+
+`scripts/gate.ps1 -Gate VR` runs the build matrix, the unit tests and the GPU smoke tests in Debug and Release, every
+golden (none rewritten), the smoke tests with the fake runtime, the VR benchmark path in Release against ADR-0017 §9,
+under `scripts/focus_watch.py`; `-RealLibrary` adds the SNES room in VR with the fake runtime. Then the user plays a
+30-minute session in the headset (the lobby, the elevator, a room, a cover, the card, a game launched onto the CRT and
+the return), on Meta's runtime and on SteamVR, and declares I10 done.
 
 ## I6: the styling pass of the building (done, Gate D)
 

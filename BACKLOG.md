@@ -11,7 +11,8 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 
 - Writing back to `gamelist.xml` (spec §4.6): read-only until a round-trip test suite exists.
 - Legacy EmulationStation, RetroBat and Batocera library adapters.
-- VR, Linux build, hardware video decoding (D3D11VA), OpenGL 3.3 fallback.
+- Linux build, hardware video decoding (D3D11VA), OpenGL 3.3 fallback. (VR left this list on 2026-10-29: ADR-0017,
+  iteration I10.)
 - Alternative world style presets beyond `RetroMuseumCozy` (style §18).
 
 ## Follow-ups from M0
@@ -676,3 +677,13 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   the objects that changed; the old ones stay registered (unused), across sessions, until the floor is committed again
   (a ride, a building's result, a refresh's commit). Sessions that move furniture for long grow them a little;
   releasing unused entries needs reference counts in the registries.
+
+## Follow-ups from I10
+
+Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
+
+- **Hand tracking** (`XR_EXT_hand_tracking`): pointing and pinching without the controllers.
+- **Passthrough and mixed reality** (`XR_FB_passthrough` or the environment blend modes): the room around the real one.
+- **The Touch controllers as the emulator's pad:** a virtual XInput pad needs a third-party kernel driver (ViGEmBus, a
+  retired project) installed by hand; the physical pad plays the game instead.
+- **A Linux runtime** (Monado), with the Linux build.
