@@ -625,12 +625,12 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 - **The preview lists five conflicts:** the panel names the first five customizations a regeneration cannot honour
   and counts the others ("e altre N"); a scrolling list, or the editor showing them in the room (ADR-0015 §3: "shown by
   the editor"), would name them all.
-- **The catalog's inputs held for the session:** the directory's "Modifiche" tab (and the needs-confirmation notice)
-  reads the catalog's building snapshot and every system's selection ahead (about 1.1 s on the reference library) and
-  keeps them until a refresh, so that a preview is within its 2 s; they stay in memory meanwhile: 224 MiB of private
-  bytes on the reference library (I4b step 6's review), which beside the busiest floor's 472 MiB is over the 512 MiB
-  row while they are kept. Letting them go a minute after the tab or the panel closed without a preview, or keeping
-  the selections with only the titles and items the commit needs of the snapshot's entries, would give it back.
+- **The catalog's inputs while the directory shows:** the directory's "Modifiche" tab (and the needs-confirmation
+  notice) reads the catalog's building snapshot and every system's selection ahead (about 1.1 s on the reference
+  library), so that a preview is within its 2 s, and since I4b step 6's review lets them go once the directory closes
+  with nothing pending. While they are held they are 224 MiB of private bytes on the reference library: CPU memory,
+  not counted by the roadmap's 512 MiB row (GPU memory). Keeping the selections with only the titles and items the
+  commit needs of the snapshot's entries would make them smaller.
 
 ### The editor
 

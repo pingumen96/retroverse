@@ -65,7 +65,9 @@ build/rvdata`).
   `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
   `snapshot`, `planDigest` (the plan shown at the end),
-  `saveMs`, `backMs`, `liveUpdateDeferred`); `regenerations` (I4b step 6: one per preview asked, `kind` `room`,
+  `saveMs`, `backMs`, `liveUpdateDeferred`); `regenerationInputsReleased` (I4b step 6's review: the times the
+  regenerations' inputs were let go of, the directory closed with nothing pending); `regenerations` (I4b step 6: one
+  per preview asked, `kind` `room`,
   `floor`, `world` or `undo`, `scope`, `via` `directory` or `notice`, `requestFrame`, `previewFrame`, `previewMs` (from
   the request to the preview shown), `previewJobMs`, `inputsTaken` and `inputsMs` (the catalog's snapshot and
   selections, when the preview took them), `regenerateMs`, `failure`, the counts `roomsRegenerated`, `roomsAdded`,

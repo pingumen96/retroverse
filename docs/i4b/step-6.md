@@ -170,8 +170,9 @@ notice) reads them ahead (the user's move from the tab to a row and A takes long
 practice; a preview asked sooner waits for them, and the record says so: `inputsTaken`). Its read (the plan of 19,985
 placements read and parsed) and the data of every standing room (the digest, the validation) are most of it, as step 5
 found. The inputs hold 224 MiB of private bytes (46 MiB before them, in the test's process: the snapshot's 105,130
-entries of 192 systems and their selections) until the catalog's refresh. Beside the busiest floor's 472 MiB (I6 step
-6) that is about 700 MiB, over the 512 MiB row while they are kept: see "Review", item 16.
+entries of 192 systems and their selections): CPU memory, which the roadmap's 512 MiB row does not count (it counts
+GPU memory, every texture, where the busiest floor takes 472 MiB: I6 step 6), so no acceptable limit is passed. They
+are let go of once the directory closes with nothing pending (item 16 of "Review").
 
 Then, since the review, the app's commits in that world (retroverse.exe of the build, hidden, lockstep, warm: the
 building shown once first): a game of room:snes and one of room:amstradcpc (the computer floor's busiest room that
@@ -270,11 +271,17 @@ The step's review (2026-10-29) found, and this step fixed:
 15. **Italian wording**: "Viene annullata: La rigenerazione", "Del ... L'annullamento è definitivo.", "una per volta",
     "va al piano che gli spetta", "un edificio nuovo", the drop's "vengono eliminate", the `invalid` reason,
     "riallestire" throughout, "(M o Select, scheda Modifiche)", "giochi e arredi" above the floors.
-16. **Memory**: the panel's preview, inputs and undo's preview let go of when the panel ends or a commit ends; the
-    slot's inputs stay until the catalog's refresh, as decided: 224 MiB of private bytes on the reference library (the
-    test's process: 46 MiB before). Beside the busiest floor's 472 MiB that is about 700 MiB, over the 512 MiB row
-    while they are kept (only after "Modifiche" or the notice showed). Measured, not acted on in this step:
-    `BACKLOG.md`'s "The catalog's inputs held for the session" names the figure and the ways out.
+16. **Memory**: the panel's preview, inputs and undo's preview let go of when the panel ends or a commit ends. The
+    slot's inputs are 224 MiB of private bytes on the reference library (the test's process: 46 MiB before): CPU
+    memory, not the GPU memory the roadmap's 512 MiB row counts (every texture; the busiest floor's 472 MiB is the
+    renderer's `gpuMemory`), so the two do not add up against that row and the step passes no limit. Held for the
+    whole session they were too much to keep idle: since the follow-up the slot is emptied (`releaseIdleInputs()`) once
+    the directory is closed with no directory command waiting, no notice offering a preview, and no preview, commit or
+    undo asked or running (a job or a preview that took them keeps them through its `shared_ptr`); "Modifiche" and
+    the needs-confirmation notice read them ahead again, so a preview opened from them stays warm. The run report
+    counts the releases (`world.regenerationInputsReleased`). Unit: the slot emptied when not wanted, kept while
+    wanted, a held preview unaffected, the next one making them again; GPU: the directory closed then reopened, one
+    release, the world's preview finding its inputs read ahead (`inputsTaken` false).
 
 Nits: the in-place path records the build and makes the showcase again as `applyLive()` does; a commit that changes
 nothing writes no items, keeps the stamp and moves no walker; the smoke test asserts the path exactly; the note's long
