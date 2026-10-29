@@ -438,10 +438,11 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 
 ### The plan and its update
 
-- **Expansion rooms and per-room regeneration (I4b; ADR-0013 §8, I4 step 6a):** no reference system overflows a room
-  grown to its limit (step 2's census), so `unplaced: capacity` stays and the ids `room:<system>:<n>` and the
-  `expands` field stay reserved; "Rigenera stanza / piano / mondo" with an impact preview, backup and undo is the only
-  way to move a system between rooms or floors (`docs/i4/step-6a.md`).
+- **Expansion rooms and per-room regeneration (I4b; ADR-0013 §8, I4 step 6a):** done. Per-room, per-floor and world
+  regeneration with an impact preview, snapshots and undo came with I4b steps 1 to 6 (ADR-0015 §5, §6); expansion rooms
+  (`room:<system>:<n>`, `expands`) with generator 1.5 in I4b step 7 (ADR-0015 §7): a room past its template's limit is
+  a chain, and titles are unplaced for capacity only on a full floor or behind a growth a pin refuses
+  (`docs/i4b/step-7.md`). What is left is under "Follow-ups from I4b".
 - **`worldplan check` and kept rooms (I4 step 1):** the check judges a room made from an older template version or by
   another generator major as kept (`room-kept`, soft), but a room whose prefabs' levels changed still fails
   `prefab-slots` there, while `world::updateBuilding` keeps such a room and saves the plan (`docs/i4/step-1.md`). The
@@ -517,9 +518,10 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   area's 15 with the globe's (a light per room sign pushed the doorway's fill out of the arcade's view: the
   signs glow by their bloom alone; a hub of several portals adds a fill each, step 1's selection applies).
 - **Arcade and handhelds (I6 step 6, `docs/i6/step-6.md`):** done (the arcade's rows of cabinets and its hero
-  cabinet, the handhelds' counters and stations). Left: an arcade of more than 53 titles places the rest as unplaced
-  for capacity (a second arcade room, a back room of cases or cabinets of two games, ADR-0014 §6 amended); the
-  cabinets are slim (0.4 m deep, to fit the template's sockets: an arcade template with deeper sockets, a cabinet with
+  cabinet, the handhelds' counters and stations). Left: an arcade of more than 53 titles is a chain of arcade rooms
+  since I4b step 7 (`area:arcade:<n>`, ADR-0015 §7), each room of 53 at most; a back room of cases or cabinets of two
+  games (ADR-0014 §6 amended) would hold more in one room; the cabinets are slim (0.4 m deep, to fit the template's
+  sockets: an arcade template with deeper sockets, a cabinet with
   a stool before each); a cabinet's marquee shows a generic word, not its game's title or marquee art (a marquee
   layer per item in the collection's arrays); the screens show the cover, never the game's screenshot or a clip (one
   decoder: ADR-0004, I5); empty cabinets of the reserve ask for a coin; the handheld rooms stay calmer than concept
@@ -571,6 +573,29 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   them (`docs/i4/step-7b.md`).
 
 ## Follow-ups from I4b
+
+### Expansion rooms (I4b step 7)
+
+- **Expansion numbers after dropped overrides (I4b step 7's review, ADR-0015 §7 as amended on 2026-10-29):** a chain's
+  numbers are never given again while the overrides name them (a pin's room, its recorded conflict whatever it is),
+  but the plan (schema 2, I4b risk 3) keeps no record of a dropped room: once the overrides that named it are dropped
+  (`--drop-overrides`, "Rigenera e scarta le personalizzazioni", unpinning) a later expansion may take the number
+  again, and `video.json`'s `rooms.<id>` settings would then apply to the new room. A plan field listing the retired
+  numbers of each chain (schema 3), or `video.json` settings keyed by something stabler than the room id, would close
+  it.
+- **The app's update reads every expansion's data (I4b step 7):** the app's update loads the data of every room of the
+  plan, an expansion's like its head's (`src/app/src/world_build.cpp`), while the CLI skips them; loading a chain's data
+  once (by its head) would save a load per expansion.
+- **Capacity entries after a migration on a full floor (I4b step 7):** generator 1.4's capacity entries migrate once
+  (the head's reserve, then expansions while the floor has room); those left on a full floor stay unplaced for capacity
+  even once the floor gains room (another room regenerated away, a floor regenerated), until "Rigenera stanza" of the
+  chain. An update that retried them only when the floor's rooms changed would place them without a regeneration and
+  still leave an update of an unchanged catalog writing nothing.
+- **What step 8 needs from the chains:** the directory groups a chain by `RoomId::head()` (its numbers may leave gaps:
+  `:3` without `:2` after a shrink); each room's title range ("A – K") comes from its items, and after updates the
+  ranges may overlap (a new title goes after its predecessor anywhere in the chain, wrapping to the head's free slots)
+  and span sections (a shared room's); the app's notice names the expansions an update added (ADR-0015 §7's
+  "`roomsAdded` and the app's notice name the new rooms").
 
 ### The editor
 

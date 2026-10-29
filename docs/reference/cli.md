@@ -239,13 +239,12 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
   the world's configuration and the building's data (39 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
   floors, no two rooms of a floor overlapping, every system in one room or chain; since I4b step 7 every expansion's
-  head in the plan, of its floor, kind, sections, family and template, `expansion-chain`; since I4 step 3 each floor's
-  derived hall: no
-  room overlapping it, every doorway in its room's doorway wall on the hall's edge, every room walked to from the
-  elevator on the floor's navigation grid; a room of an older template version or
-  another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a hard rule broken or not
-  a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3 unreadable). Every subcommand
-  takes `--output <file>`.
+  head in the plan, of its floor, kind, sections, family and template, `expansion-chain`, a chain's numbers possibly
+  leaving gaps; since I4 step 3 each floor's derived hall: no room overlapping it, every doorway in its room's doorway
+  wall on the hall's edge, every room walked to from the elevator on the floor's navigation grid; a room of an older
+  template version or another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a
+  hard rule broken or not a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3
+  unreadable). Every subcommand takes `--output <file>`.
   `worldplan snapshots [--library <id>] [--json]` (I4b step 1, ADR-0015 §6) lists the world's snapshots newest first:
   each folder's name, its action and scope, when and by whom it was taken, the plan's and the overrides' digests
   (shortened; "none" for a file it did not hold), "undone" or, for an undo's own snapshot, the snapshot it undid; then
@@ -298,22 +297,23 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   room (its chain), a floor or the whole building of the world's plan through `world::regenerate()`
   (`rv/world/regeneration.hpp`): a room afresh where it stands (the template's current version, the family's last
   successor, the face-out titles and representatives chosen again; its id, kind, floor, x, yaw, sections and seed kept;
-  since I4b step 7 `--room` of a head or of an expansion regenerates the whole chain, its titles split again in equal
-  alphabetical shares over the rooms they need, its standing rooms kept in their places, the highest numbers dropped
-  when fewer are needed, new expansions entering the floor);
-  a floor's systems decided again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a
-  system on the floor staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned
-  fixtures first, the sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's
-  representative); a pin it cannot honour is a conflict (`room-gone`, `slot-gone`, `game-gone`, `invalid`), kept in
-  `overrides.json` with its reason recorded on the pin (`"conflict"`; an update then reports it as orphaned, not as
-  needing a confirmation) and reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The
-  selections are the catalog's as `update` reads them (every system of the catalog that gets a room; the scope's systems
-  required: exit 1 without one) or selection files (`--world`'s must hold every system of the stored building, else exit
-  2). It prints the impact: "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out,
-  leave it, newly placed, newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each
-  ("<pin>: <reason>: <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the selections,
-  the data and the regeneration); `--diff` lists every item (JSON `scope`, `library`, `plan`, `dryRun`, `dropOverrides`,
-  `changed`, `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`, `roomsMoved`,
+  since I4b step 7 `--room` of a head or of an expansion standing in the plan regenerates the whole chain, its titles
+  split again in equal alphabetical shares over the rooms they need (a pinned game counted in its room's share), its
+  standing rooms kept in their places, the highest numbers dropped when fewer are needed, new expansions entering the
+  floor numbered after every number of the chain that stands or that the overrides name); a floor's systems decided
+  again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a system on the floor
+  staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned fixtures first, the
+  sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's representative); a pin
+  it cannot honour is a conflict (`room-gone`, `slot-gone`, `game-gone`, `invalid`), kept in `overrides.json` with its
+  reason recorded on the pin (`"conflict"`; an update then reports it as orphaned, not as needing a confirmation) and
+  reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The selections are the catalog's as
+  `update` reads them (every system of the catalog that gets a room; the scope's systems required: exit 1 without one)
+  or selection files (`--world`'s must hold every system of the stored building, else exit 2). It prints the impact:
+  "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out, leave it, newly placed,
+  newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each ("<pin>: <reason>:
+  <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the selections, the data and the
+  regeneration); `--diff` lists every item (JSON `scope`, `library`, `plan`, `dryRun`, `dropOverrides`, `changed`,
+  `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`, `roomsMoved`,
   `gamesMoved` {`game`, `from`, `to`}, `faceOutEntering`, `faceOutLeaving`, `newlyPlaced`, `newlyUnplaced`,
   `fixturesAdded`, `fixturesRemoved`, `fixturesMoved`, `pinsKept`, `conflicts` {`pin`, `game`, `fixture`, `reason`,
   `message`}, `overridesDropped`}, `validation`, `digestBefore`, `digestAfter`, `gamePins`, `fixturePins`, `timings`

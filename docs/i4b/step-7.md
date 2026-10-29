@@ -53,13 +53,18 @@ Roadmap row: I4b step 7. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
 - **Capacity entries stay after the migration**: re-trying them at every update would have made an update of an
   unchanged catalog write a fresh full floor's plan again (its head's reserve taking them); they wait for "Rigenera
   stanza" as an update's own capacity entries always did.
-- **"Never reused"** is the number of a standing room (ADR-0015 §7 as amended): a dropped number may come back.
+- **"Never reused"** holds while the overrides name a number (ADR-0015 §7 as amended, reworded by the review): a new
+  expansion takes the number after the chain's standing rooms and every room of the chain the overrides name, so a
+  chain's numbers may leave a gap (`:3` without `:2`), which `expansion-chain` accepts; once the overrides are dropped a
+  number may come back (`BACKLOG.md`).
+- **An update never removes an expansion**: titles that leave the catalog keep their slots (ADR-0010 §10), so an
+  expansion whose every title left stands as it was, nothing moved, until "Rigenera stanza" drops it.
 - **An expansion is created only when every room of the chain is at its limit**: a growth a socket pin refuses leaves
   the titles unplaced for capacity (ADR-0015 §3), as before.
-- **The proof's 1.4 plan** is `tests/fixtures/world/legacy/building-overflow-seed-102938-generator-1.4.json`, written by
-  `main`'s Release CLI (generator 1.4) from invented selections with the `esde/overflow` fixture's counts and three rooms
-  beside them, so that "every other room byte for byte" has rooms to compare; the ES-DE fixture itself proves the fresh
-  generation and the CLI path.
+- **The proof's 1.4 plan** is `tests/fixtures/world/legacy/building-overflow-seed-102938-generator-1.4.json`,
+  written by `main`'s Release CLI (generator 1.4) from invented selections with the `esde/overflow` fixture's counts and
+  three rooms beside them, so that "every other room byte for byte" has rooms to compare; the ES-DE fixture itself
+  proves the fresh generation and the CLI path.
 
 ## Proofs
 
@@ -97,7 +102,9 @@ unplaced, none for capacity, no expansion; the busiest room `room:nes`, 2,217 pl
 1.5 in 3.4 s, 44 of 44 rooms' elements byte for byte, no capacity entry before or after, the next update up to date.
 Beside the test, the real generator-1.4 plan step 5's run left in the build tree
 (`build/msvc-x64-release/real-library/regenerate/`) equals this run's 1.5 plan byte for byte but for the generator
-stamps and the inputs' digest.
+stamps and the inputs' digest. The limit of the test itself: its "1.4 plan" is this run's 1.5 plan restamped 1.4, not
+one generator 1.4 wrote (building `main` before the step beside this branch is not cheap); it proves the migration's
+path on the real library, and the comparison by hand above that the two generators place it alike.
 
 ## Goldens and oracles
 
@@ -113,4 +120,64 @@ screenshot golden, selection golden or oracle changed: no rule an oracle mirrors
 - The app (step 8): the expansions' portals and signs, the directory's chains and title ranges, teleport and where-is
   into an expansion. Until then the app draws an expansion as a room of its floor.
 - The app's update reads every room's data, an expansion's like its head's (the CLI now skips them): step 8 can skip
-  them too.
+  them too (`BACKLOG.md`).
+- A migration on a full floor leaves capacity entries that wait for "Rigenera stanza" even once the floor gains room
+  (`BACKLOG.md`).
+- Step 8 needs: the directory grouping a chain by `id.head()` (numbers may leave gaps), title ranges that may overlap
+  after updates and span sections, the app's notice naming new expansions (ADR-0015 §7) (`BACKLOG.md`).
+
+## Review
+
+The step's review found four bugs, missing tests and benches, and nits; each was fixed on the branch.
+
+- **A pin pushed a share past its room's limit** (`chainShares()`): a pinned game went into its room's share on top of
+  that share's equal quota, so an arcade of 106 titles (2 × 53) with one game pinned from `:2` into the head left a
+  title unplaced for capacity after "Rigenera stanza" while the floor had room. Each room's quota is now an equal share,
+  its pinned games filling it first (a room whose pins outnumber its share takes them all, the others sharing the rest
+  equally: `shareQuotas()`), the other titles filling the quotas left alphabetically. The review asked for a further
+  room when pinned titles alone pass a room's limit: with the quotas above that never helps, since the other rooms'
+  quotas only shrink and a further room could hold none of the pinned games; the test proves it (54 pins in the head of
+  a 2 × 53 arcade: the head holds them in its reserve, the expansion 52, no title for capacity, no room added).
+- **Expansion numbers came back** (ADR-0015 §7's amendment narrowed "never reused" to standing rooms): reverted. A new
+  expansion's number is after the highest of the chain's standing rooms and of every room of the chain the overrides
+  name, pins and recorded conflicts alike (`detail::ChainNumbering`, used by `placeExpansions()`, the room scope's
+  regeneration, the update's `addExpansion()` and its family migration; the floor and world scopes reuse the chain's
+  standing numbers first). The plan schema stays 2 (I4b risk 3): no field records a dropped room. `update` and
+  `regenerate` (CLI) and the app's update pass the overrides already; the app does not regenerate yet (step 6). A pin
+  whose conflict is `room-gone` is stale (`detail::isStalePin()`): the update's `protectPinnedFixtures()`, its wall
+  following and its migration refusal, and the regeneration's `ChainPins::of()` and `chainShares()` skip it, and the
+  regeneration keeps its reason when a room of that id stands again. The amendment is reworded (numbers never reused
+  while the overrides name them; once dropped a number may come back, `video.json`'s `rooms.<id>` then applying to the
+  new room: `BACKLOG.md`).
+- **`regenerate --room` of an expansion the plan lacks** worked on its head's chain: `regenerate()` and the CLI now
+  require the room itself (InvalidArgument, "the plan holds no room ...").
+- **An expansion without its head** made `updateBuilding()` dereference `end()`: the update and every regeneration
+  scope refuse such a plan first (`detail::checkChainHeads()`, InvalidArgument naming both rooms).
+- **Tests** (`tests/unit/world/test_world_expansion_chains.cpp`, 11 cases; the expansion tests' helpers moved to
+  `world_expansion_support.hpp`): the pinned share (106 titles, 53 and 53; pins outnumbering a share; pins past the
+  limit); a game without a cover pinned into an expansion reporting "the game is unplaced (no-cover)" (the chain's
+  reason, no longer "the room's selection does not hold the game"); a chain of three shrunk to two (its `:3` pins
+  `room-gone`), then an update taking `:4`, "Rigenera stanza" keeping `head, :2, :4`, and with the overrides dropped
+  `:3` coming back; stale pins neither refusing growth nor pulling a title; a pin refusing the head's growth (no
+  expansion); a fixture pinned in an expansion (its growth refused, named with its room, no expansion); a room scope
+  the plan lacks and a headless expansion refused (update, room, floor and world); a stored chain's next room and a new
+  system's room competing for a floor's last place (the new system enters first and takes it; the chain's titles past
+  its reserve unplaced for capacity, naming the head); `area:shared:handheld`'s chain (7,000 titles, two rooms) and a
+  new section entering it (appended to both rooms, its titles after the last section's, wrapping to the head's free
+  slots); generator 1.4's capacity entries on a full floor migrated in part (the head's free slots, the rest for
+  capacity), the second update writing nothing; a chain held at its first 1.5 update (a section's selection missing)
+  and migrated at the next; an expansion whose every title left the catalog standing as it was. Also: a gap in
+  `test_validation`, the impact below, and the CLI's `regenerate --room room:snes:2` refused.
+- **The GPU benches** measured 850 boxes since the split: `[.bench][edit]` and `[.bench][furniture]` now plan the
+  overflow fixture with `world.json`'s `growthReservePermille` 0 (`kRoomAtLimitWorldJson`), so that its 1,700 big boxes
+  stand in one room at its template's limit, the largest room a plan holds (a generator-1.4 room migrated by 1.5 holds
+  as many), and require it.
+- **Nits**: the impact counts a new expansion of a room scope among `roomsAdded` only (`roomsRegenerated`: the scope's
+  rooms in both plans); `expansion-chain` accepts gaps, which decision 2's numbering makes after a shrink (documented
+  in `validation.hpp`, tested); the legacy fixture's README; `BACKLOG.md`; lines over 120 characters; `cli.md`'s stray
+  line; the rule counts (39).
+- **Goldens**: none changed. Without overrides the shares, the numbering and every plan are as before (the world suites
+  and the golden plans pass unchanged), so no plan digest moved; `i5/step-4`'s G20 records the building fixture's plan
+  digest, which this review leaves as the step made it.
+- **Real library**: not run again. The review changes nothing a run without overrides and without expansions sees
+  (the real library has neither), so the figures above stand.

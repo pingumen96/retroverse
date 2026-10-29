@@ -19,7 +19,10 @@ systems and three rooms beside them: `retroverse-cli worldplan generate --select
 --plan <file>` with `main`'s Release build. Its big-box room and arcade room stand at their template's limit, 139 and 7
 titles unplaced for capacity. `tests/unit/world/test_world_expansion.cpp` and
 `tests/unit/cli/test_cli_worldplan_building.cpp` update it with the same selections and check generator 1.5's
-migration of the capacity entries (ADR-0015 §7, I4b step 7): the two rooms' titles enter their chains as additions
-(`room:amiga:2`, `area:arcade:2`), every other room byte for byte in its elements.
+migration of the capacity entries (ADR-0015 §7, I4b step 7): the two rooms' titles enter their chains as additions,
+which their heads' free slots (their reserve) hold, so no new room is opened, every other room byte for byte in its
+elements; 300 more amiga titles then open `room:amiga:2`. `tests/unit/world/test_world_expansion_chains.cpp` gives its
+arcade room a second section in memory (fbneo), so that the chain is held at its first update by 1.5 and migrated at
+the next.
 
 Never rewrite them: they stand for every building a user's earlier Retroverse stored.
