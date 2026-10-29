@@ -30,7 +30,7 @@
 ],"floors":[
 {"id":"ground","order":0},
 {"id":"gen4","order":3}
-],"generatorVersion":"1.4","inputDigest":"fa28bdf036ebcd012670f528fb69312111827772d2a9e2703e75a064e0f04ed1","library":"esde","lights":[
+],"generatorVersion":"1.5","inputDigest":"139679cf286b2cba74a238f2af69bed0dcad60559cbf3a884b2eb61e262cdfe4","library":"esde","lights":[
 {"id":"room:snes/fx:dec-se.light","role":"lamp","spanMm":0,"targetXMm":2500,"targetYMm":1379,"targetZMm":4800,"xMm":2500,"yMm":1379,"zMm":4800},
 {"id":"room:snes/fx:e01.washer","role":"wall-washer","spanMm":1900,"targetXMm":4470,"targetYMm":1000,"targetZMm":-3500,"xMm":3430,"yMm":2950,"zMm":-3500},
 {"id":"room:snes/fx:e03.washer","role":"wall-washer","spanMm":1900,"targetXMm":4470,"targetYMm":1000,"targetZMm":-1500,"xMm":3430,"yMm":2950,"zMm":-1500},
@@ -2046,7 +2046,7 @@
 {"game":"g09d8b9db18301bb9","insetMm":0,"slot":"room:snes/fx:w04/s:6.27","yawCdeg":0},
 {"game":"g62ca49f8a4f92372","insetMm":0,"slot":"room:snes/fx:w04/s:6.28","yawCdeg":0}
 ],"preset":"retro_museum_cozy","randomAlgorithm":"splitmix64/1","rooms":[
-{"floor":"gen4","generatorVersion":"1.4","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":17603924443371940729,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
+{"floor":"gen4","generatorVersion":"1.5","growthSteps":0,"heightMm":3200,"id":"room:snes","kind":"console","maxXMm":4500,"maxZMm":5000,"mediaFamily":"cartridge_home_16bit","minXMm":-4500,"minZMm":-5000,"placement":{"xMm":7650,"yawHalfTurns":0,"zMm":-6650},"sections":["snes"],"seed":17603924443371940729,"template":"console_room_9x10","templateVersion":2,"themePack":"classic_16bit_warm"}
 ],"schemaVersion":2,"seed":7,"titleKeyRule":"title-key/1","unplaced":[
 {"game":"g01c7d42e72f8272f","reason":"no-cover","room":"room:snes"},
 {"game":"g02069ae04f1318bd","reason":"no-cover","room":"room:snes"},

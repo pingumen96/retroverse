@@ -10,6 +10,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -92,6 +93,9 @@ struct RoomPins {
     const WorldPlan* previous = nullptr;
     /// The fixture pins a previous attempt found breaking a hard rule (the regeneration's `invalid`): not applied.
     std::set<FixtureId> excluded;
+    /// Why the chain's rule 4 (chainShares()) could not make a pinned game a title, by game: the conflict's message
+    /// then, measured against the chain's whole selection (an expansion's share lists no unplaced game).
+    std::map<catalog::GameId, std::string> chainWhy;
 
     [[nodiscard]] bool empty() const noexcept { return games.empty() && fixtures.empty(); }
 };
@@ -157,6 +161,9 @@ struct BuildingRoom {
     bool closed = false;
     /// The systems that entered it, in the order they entered: a new room's sections, a stored room's new ones.
     std::vector<const EnteringSystem*> entered;
+    /// A new room's expansions (I4b step 7, ADR-0015 §7), by number: each record at the template's base size, placed
+    /// when it entered its floor (placeExpansions()), its id the chain's next and `expands` the room.
+    std::vector<Room> expansions;
 };
 
 /// What the entry of systems into a building decided (enterBuilding()).
@@ -194,6 +201,119 @@ struct BuildingEntry {
                                                       std::uint64_t worldSeed, const BuildingData& building,
                                                       const RoomPins* pins = nullptr,
                                                       RoomPinOutcome* outcome = nullptr);
+
+// --- Expansion chains (I4b step 7, ADR-0015 §7; generator 1.5) -------------------------------------------------------
+
+/// The most titles one room of `data` holds with the reserve, at its template's growth limit (countCollection()'s
+/// largest count that fits). Errors: those of collectionCapacity().
+[[nodiscard]] Expected<std::uint64_t> roomTitleLimit(const WorldData& data, const WorldConfig& config);
+
+/// The fewest rooms that hold `titles` titles, each holding at most `limit`: 1 for none, or when a room holds none.
+[[nodiscard]] std::uint32_t chainRoomsFor(std::uint64_t titles, std::uint64_t limit) noexcept;
+
+/// A room record entering a floor at its template's base size (its width, which places the rooms after it, never
+/// changes; its z follows its depth once it is generated).
+[[nodiscard]] Room enteringRecord(const RoomId& id, RoomKind kind, const std::string& floor,
+                                  std::vector<catalog::SystemName> sections, const RoomTemplate& roomTemplate);
+
+/// The record of expansion `index` of `head` (a room of the chain, as it stands), at the template's base size, of the
+/// head's kind, floor and sections, `expands` the head, not yet placed. Errors: InvalidArgument for an index past
+/// kMaxRoomIndex.
+[[nodiscard]] Expected<Room> expansionRecord(const Room& head, std::uint32_t index, const RoomTemplate& roomTemplate);
+
+/// The numbers a chain's expansions take (ADR-0015 §7 as amended on 2026-10-28 and 2026-10-29): first those of the
+/// chain's expansions standing in the plan a regeneration replaces, lowest first, then the numbers after the highest
+/// of those and of every room of the chain that the overrides name (a pin's room, whatever conflict it records), so
+/// that a number the overrides still name never comes back while they name it. The plan's schema holds no record of
+/// a dropped room: the overrides are the only memory of one.
+struct ChainNumbering {
+    /// By head: the numbers of the chain's expansions standing in the previous plan, ascending.
+    std::map<RoomId, std::vector<std::uint32_t>> standing;
+    /// By head: the highest number of the chain's rooms the overrides name (1: the head only).
+    std::map<RoomId, std::uint32_t> named;
+
+    /// The numbers of `count` expansions of the chain `head`: its standing ones first, then fresh ones (next()).
+    [[nodiscard]] std::vector<std::uint32_t> numbers(const RoomId& head, std::uint32_t count) const;
+    /// The number of a fresh expansion of the chain `head` whose highest room stands at `highest`: after the highest
+    /// of `highest`, the chain's standing numbers and its named ones.
+    [[nodiscard]] std::uint32_t next(const RoomId& head, std::uint32_t highest) const;
+};
+
+/// The numbering of chains with `overrides` (their rooms named) and the expansions standing in `previous` (null: no
+/// plan replaced).
+[[nodiscard]] ChainNumbering chainNumbering(const WorldOverrides& overrides, const WorldPlan* previous = nullptr);
+
+/// Refuses a plan holding an expansion whose head it lacks (InvalidArgument, `context` the operation): an update or a
+/// regeneration works on chains by their heads and could not tell what the expansion is of. Only a plan edited by hand
+/// holds one: every generator writes a chain whole.
+[[nodiscard]] Status checkChainHeads(const WorldPlan& plan, std::string_view context);
+
+/// Whether a pin's recorded conflict says its room was gone (room-gone): a stale pin, which an update and a
+/// regeneration never apply (it refuses no growth, blocks no module and pulls no title into a room of that id that
+/// stands again), though it stays in the overrides, and names its room for the numbering, until the user drops it.
+[[nodiscard]] bool isStalePin(const GamePin& pin) noexcept;
+[[nodiscard]] bool isStalePin(const FixturePin& pin) noexcept;
+
+/// The expansions the new rooms of `entry` need (each its chainRoomsFor() over its sections' titles), numbered by
+/// `numbering`, placed once every system entered, room after room in the entry's order and by number, each at the east
+/// end of the shorter row of its floor among the rooms standing then (placeEnteringRoom(); `others`: rooms that stand
+/// besides the entry's). On a full floor a chain takes the expansions that found a place and no more. Errors: those of
+/// roomTitleLimit().
+[[nodiscard]] Status placeExpansions(BuildingEntry& entry, const WorldConfig& config, const BuildingData& building,
+                                     const ChainNumbering& numbering, std::span<const Room> others = {});
+
+/// The pins of a regeneration's chains (regeneration.hpp's rules): `pins` the scope's to honour, `previous` the plan
+/// regenerated (the pinned fixtures' roles and prefabs), `excluded` the fixture pins an earlier attempt found invalid.
+/// A stale pin (isStalePin()) is never among them.
+struct ChainPins {
+    const WorldOverrides* pins = nullptr;
+    const WorldPlan* previous = nullptr;
+    std::set<FixtureId> excluded;
+
+    /// The pins of `room` among them.
+    [[nodiscard]] RoomPins of(const RoomId& room) const;
+};
+
+/// The titles of a chain's merged selection split among its rooms (ADR-0015 §7): each room's quota an equal share of
+/// the titles (the first shares one title more when they do not divide), a room whose pinned games outnumber its share
+/// taking them all and the other rooms sharing the rest equally; a pinned game a title of the room its pin names (the
+/// pin wins, rule 4 of regeneration.hpp applied over the chain first, `why` getting why it could not, by game), and
+/// the other titles filling the quotas left in the collection's order (section, catalog sort key, title key, GameId),
+/// room after room. The quotas never ask more of a room past its pins than an equal share, so no room's share passes
+/// the limit the chain's room count was computed with because of a pin elsewhere. Each share is in priority order, of
+/// its room (`rooms`, head first); only the head's lists the selection's unplaced games.
+[[nodiscard]] std::vector<RoomSelection> chainShares(const RoomSelection& merged, SectionIndex& index,
+                                                     std::span<const RoomId> rooms, const ChainPins* pins,
+                                                     std::map<catalog::GameId, std::string>* why = nullptr);
+
+/// A chain generated by I3's room-level rules over `merged` (a console room's selection; a shared or arcade room's
+/// over its sections, sectionsSelection(), `index` its titles' sections; null for a console room): `records` its rooms
+/// as they stand or entered (the head first, then its expansions by number, each placed), as one plan of the chain's
+/// rooms. A room alone is generateRoomContent()'s room; a chain is shared out by chainShares(), each room sized to its
+/// share and choosing its own face-out titles from it by priority. Each record takes the head's kind and floor,
+/// `sections`, this generator's version, its placement (its z following its depth) and `expands` (the head, for an
+/// expansion); every unplaced entry names the head. With `pins` each room honours its own (generatePinnedRoom()).
+/// Errors: InvalidArgument for no record; those of the layout.
+[[nodiscard]] Expected<WorldPlan> generateChain(const RoomSelection& merged, const SectionIndex* index,
+                                                std::span<const Room> records,
+                                                const std::vector<catalog::SystemName>& sections,
+                                                const WorldData& data, const WorldConfig& config,
+                                                std::uint64_t worldSeed, const BuildingData& building,
+                                                const ChainPins* pins = nullptr, RoomPinOutcome* outcome = nullptr);
+
+/// A new room and its expansions (`room.expansions`) generated by I3's room-level rules over its sections' selections,
+/// as one plan of the chain's rooms (generateChain(); a room alone as generateEnteredRoom() generates it). Errors:
+/// those of the layout.
+[[nodiscard]] Expected<WorldPlan> generateEnteredChain(const BuildingRoom& room, const WorldConfig& config,
+                                                       std::uint64_t worldSeed, const BuildingData& building,
+                                                       const ChainPins* pins = nullptr,
+                                                       RoomPinOutcome* outcome = nullptr);
+
+/// Rule 4 of regeneration.hpp over `selection`: the pinned `game`, a duplicate of its title, takes the title's place
+/// (the representative unplaced as its duplicate); false with `why` when it cannot (pinned_room.cpp).
+[[nodiscard]] bool takeRepresentation(RoomSelection& selection, SectionIndex& index, const catalog::GameId& game,
+                                      const std::set<catalog::GameId>& pinnedGames,
+                                      std::set<catalog::GameId>& titleGames, std::string& why);
 
 /// Moves the room and the elements of `room` (a one-room plan) into `plan`.
 void appendRoom(WorldPlan& plan, WorldPlan&& room);

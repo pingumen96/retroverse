@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -213,15 +214,24 @@ void unplaceForCapacity(std::vector<UnplacedGame>& unplaced, const RoomSelection
     }
 }
 
-/// A room entering its floor, at the template's base size (its width never changes; its z follows its depth once it is
-/// generated).
-Room enteringRecord(const RoomId& id, RoomKind kind, const std::string& floor, const catalog::SystemName& system,
-                    const RoomTemplate& roomTemplate) {
+/// The collection's order of titles (ADR-0010 §6, ADR-0013 §6): section, catalog sort key, title key, GameId.
+bool alphabeticalLess(const detail::SectionIndex& index, const RoomTitle& a, const RoomTitle& b) {
+    const std::uint32_t sectionA = detail::sectionOf(&index, a.game);
+    const std::uint32_t sectionB = detail::sectionOf(&index, b.game);
+    return std::tie(sectionA, a.sortKey, a.titleKey, a.game) < std::tie(sectionB, b.sortKey, b.titleKey, b.game);
+}
+
+} // namespace
+
+namespace detail {
+
+Room enteringRecord(const RoomId& id, RoomKind kind, const std::string& floor,
+                    std::vector<catalog::SystemName> sections, const RoomTemplate& roomTemplate) {
     Room room;
     room.id = id;
     room.kind = kind;
     room.floor = floor;
-    room.sections = {system};
+    room.sections = std::move(sections);
     const Footprint base = interiorFootprint(roomTemplate, 0);
     room.minXMm = base.minXMm;
     room.maxXMm = base.maxXMm;
@@ -230,9 +240,365 @@ Room enteringRecord(const RoomId& id, RoomKind kind, const std::string& floor, c
     return room;
 }
 
+Expected<std::uint64_t> roomTitleLimit(const WorldData& data, const WorldConfig& config) {
+    auto capacity = collectionCapacity(data.roomTemplate, data.prefabs, data.mediaFamily);
+    if (!capacity) {
+        return propagate(capacity.error());
+    }
+    // countCollection() bisects up to the count it is given: a count no room of a template ever holds.
+    constexpr std::uint64_t kBeyondAnyRoom = std::uint64_t{1} << 40;
+    return countCollection(*capacity, kBeyondAnyRoom, config.growthReservePermille).placed;
+}
+
+std::uint32_t chainRoomsFor(std::uint64_t titles, std::uint64_t limit) noexcept {
+    if (titles == 0 || limit == 0) {
+        return 1;
+    }
+    const std::uint64_t rooms = (titles + limit - 1) / limit;
+    return static_cast<std::uint32_t>(std::clamp<std::uint64_t>(rooms, 1, kMaxRoomIndex));
+}
+
+Expected<Room> expansionRecord(const Room& head, std::uint32_t index, const RoomTemplate& roomTemplate) {
+    auto id = head.id.head().inChain(index);
+    if (!id) {
+        return propagate(id.error());
+    }
+    Room record = enteringRecord(*id, head.kind, head.floor, head.sections, roomTemplate);
+    record.expands = head.id.head();
+    return record;
+}
+
+std::vector<std::uint32_t> ChainNumbering::numbers(const RoomId& head, std::uint32_t count) const {
+    std::vector<std::uint32_t> result;
+    std::uint32_t highest = 1;
+    if (const auto found = standing.find(head); found != standing.end()) {
+        for (const std::uint32_t number : found->second) {
+            if (result.size() < count) {
+                result.push_back(number);
+            }
+            highest = std::max(highest, number);
+        }
+    }
+    for (std::uint32_t number = next(head, highest); result.size() < count; ++number) {
+        result.push_back(number);
+    }
+    return result;
+}
+
+std::uint32_t ChainNumbering::next(const RoomId& head, std::uint32_t highest) const {
+    if (const auto found = standing.find(head); found != standing.end() && !found->second.empty()) {
+        highest = std::max(highest, found->second.back());
+    }
+    if (const auto found = named.find(head); found != named.end()) {
+        highest = std::max(highest, found->second);
+    }
+    return highest + 1;
+}
+
+ChainNumbering chainNumbering(const WorldOverrides& overrides, const WorldPlan* previous) {
+    ChainNumbering numbering;
+    const auto name = [&](const RoomId& room) {
+        std::uint32_t& highest = numbering.named.try_emplace(room.head(), 1).first->second;
+        highest = std::max(highest, room.index());
+    };
+    for (const GamePin& pin : overrides.gamePins) {
+        name(pin.slot.fixture().room());
+    }
+    for (const FixturePin& pin : overrides.fixturePins) {
+        name(pin.fixture.room());
+    }
+    if (previous != nullptr) {
+        for (const Room& room : previous->rooms) {
+            if (room.id.isExpansion()) {
+                numbering.standing[room.id.head()].push_back(room.id.index());
+            }
+        }
+        for (auto& [head, numbers] : numbering.standing) {
+            std::sort(numbers.begin(), numbers.end());
+        }
+    }
+    return numbering;
+}
+
+Status checkChainHeads(const WorldPlan& plan, std::string_view context) {
+    std::set<RoomId> rooms;
+    for (const Room& room : plan.rooms) {
+        rooms.insert(room.id);
+    }
+    for (const Room& room : plan.rooms) {
+        if (room.id.isExpansion() && !rooms.contains(room.id.head())) {
+            return makeError(ErrorCode::InvalidArgument,
+                             "the plan holds the expansion " + room.id.toString() + " without its head " +
+                                 room.id.head().toString() +
+                                 " (edited by hand?): a chain is worked on by its head; restore a snapshot "
+                                 "('worldplan undo') or generate the building again",
+                             std::string(context));
+        }
+    }
+    return ok();
+}
+
+bool isStalePin(const GamePin& pin) noexcept {
+    return pin.conflict == ConflictReason::RoomGone;
+}
+
+bool isStalePin(const FixturePin& pin) noexcept {
+    return pin.conflict == ConflictReason::RoomGone;
+}
+
+Status placeExpansions(BuildingEntry& entry, const WorldConfig& config, const BuildingData& building,
+                       const ChainNumbering& numbering, std::span<const Room> others) {
+    std::vector<Room> standing(others.begin(), others.end());
+    for (const BuildingRoom& room : entry.rooms) {
+        standing.push_back(room.record);
+        standing.insert(standing.end(), room.expansions.begin(), room.expansions.end());
+    }
+    for (BuildingRoom& room : entry.rooms) {
+        if (room.stored || room.entered.empty()) {
+            continue;
+        }
+        std::uint64_t titles = 0;
+        for (const EnteringSystem* system : room.entered) {
+            titles += system->selection->titles.size();
+        }
+        auto limit = roomTitleLimit(*room.data, config);
+        if (!limit) {
+            return propagate(limit.error());
+        }
+        const std::uint32_t rooms = chainRoomsFor(titles, *limit);
+        Room head = room.record;
+        head.sections.clear();
+        for (const EnteringSystem* system : room.entered) {
+            head.sections.push_back(system->selection->room.system());
+        }
+        const std::vector<std::uint32_t> numbers = numbering.numbers(head.id.head(), rooms - 1);
+        for (std::size_t next = room.expansions.size(); next < numbers.size(); ++next) {
+            auto record = expansionRecord(head, numbers[next], room.data->roomTemplate);
+            if (!record) {
+                break; // past the largest number of a chain
+            }
+            const auto placement =
+                placeEnteringRoom(*record, floorRows(standing, record->floor, building.layout), building.layout);
+            if (!placement) {
+                break; // a full floor: the chain takes the expansions that found a place
+            }
+            record->placement = *placement;
+            standing.push_back(*record);
+            room.expansions.push_back(std::move(*record));
+        }
+    }
+    return ok();
+}
+
+RoomPins ChainPins::of(const RoomId& room) const {
+    RoomPins result;
+    result.previous = previous;
+    result.excluded = excluded;
+    if (pins == nullptr) {
+        return result;
+    }
+    for (const GamePin& pin : pins->gamePins) {
+        if (pin.slot.fixture().room() == room && !isStalePin(pin)) {
+            result.games.push_back(pin);
+        }
+    }
+    for (const FixturePin& pin : pins->fixturePins) {
+        if (pin.fixture.room() == room && !isStalePin(pin)) {
+            result.fixtures.push_back(pin);
+        }
+    }
+    return result;
+}
+
+namespace {
+
+/// Each room's quota of a chain's `titles` titles (chainShares()): equal shares, the first ones a title more when they
+/// do not divide; a room whose pinned games (`pinned`, by room) outnumber its share takes them all, and the others
+/// share the rest equally, until no sharing room's pins outnumber its share. Some room always shares: the pinned games
+/// are among the titles, so they cannot all outnumber their shares.
+std::vector<std::size_t> shareQuotas(std::size_t titles, const std::vector<std::size_t>& pinned) {
+    const std::size_t count = pinned.size();
+    std::vector<bool> full(count, false);
+    std::vector<std::size_t> quota(count, 0);
+    for (bool changed = true; changed;) {
+        changed = false;
+        std::size_t rest = titles;
+        std::size_t open = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            if (full[i]) {
+                rest -= pinned[i];
+            } else {
+                ++open;
+            }
+        }
+        std::size_t k = 0;
+        for (std::size_t i = 0; i < count && open > 0; ++i) {
+            if (full[i]) {
+                quota[i] = pinned[i];
+                continue;
+            }
+            quota[i] = rest / open + (k < rest % open ? 1 : 0);
+            ++k;
+            if (pinned[i] > quota[i]) {
+                full[i] = true;
+                changed = true;
+            }
+        }
+    }
+    return quota;
+}
+
 } // namespace
 
-namespace detail {
+std::vector<RoomSelection> chainShares(const RoomSelection& merged, SectionIndex& index, std::span<const RoomId> rooms,
+                                       const ChainPins* pins, std::map<catalog::GameId, std::string>* why) {
+    RoomSelection chain = merged;
+    // Rule 4 over the chain: a pinned duplicate takes its title's place before the titles are shared out, so that its
+    // room's share holds it as a title.
+    std::map<catalog::GameId, std::size_t> pinnedShare;
+    if (pins != nullptr && pins->pins != nullptr) {
+        std::vector<std::pair<GamePin, std::size_t>> gamePins;
+        for (const GamePin& pin : pins->pins->gamePins) {
+            const auto room = std::find(rooms.begin(), rooms.end(), pin.slot.fixture().room());
+            if (room != rooms.end() && !isStalePin(pin)) {
+                gamePins.emplace_back(pin, static_cast<std::size_t>(room - rooms.begin()));
+            }
+        }
+        std::sort(gamePins.begin(), gamePins.end(),
+                  [](const auto& a, const auto& b) { return a.first.game < b.first.game; });
+        std::set<catalog::GameId> pinnedGames;
+        for (const auto& [pin, share] : gamePins) {
+            pinnedGames.insert(pin.game);
+        }
+        std::set<catalog::GameId> titleGames;
+        for (const RoomTitle& title : chain.titles) {
+            titleGames.insert(title.game);
+        }
+        for (const auto& [pin, share] : gamePins) {
+            std::string reason;
+            if (titleGames.contains(pin.game) ||
+                takeRepresentation(chain, index, pin.game, pinnedGames, titleGames, reason)) {
+                pinnedShare.emplace(pin.game, share);
+            } else if (why != nullptr) {
+                why->emplace(pin.game, std::move(reason));
+            }
+        }
+        std::sort(chain.unplaced.begin(), chain.unplaced.end());
+    }
+    // The quotas; the pinned titles first, each in its room's share, then the others in the collection's order
+    // filling the quotas left, room after room.
+    const std::size_t count = rooms.size();
+    std::vector<std::size_t> pinned(count, 0);
+    for (const auto& [game, share] : pinnedShare) {
+        ++pinned[share];
+    }
+    const std::vector<std::size_t> quota = shareQuotas(chain.titles.size(), pinned);
+    std::vector<RoomSelection> shares(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        shares[i].room = rooms[i];
+        shares[i].eligibility = chain.eligibility;
+        shares[i].titleKeyRule = chain.titleKeyRule;
+        shares[i].catalogSortKeyVersion = chain.catalogSortKeyVersion;
+    }
+    std::vector<RoomTitle> alphabetical;
+    for (const RoomTitle& title : chain.titles) {
+        if (const auto share = pinnedShare.find(title.game); share != pinnedShare.end()) {
+            shares[share->second].titles.push_back(title);
+        } else {
+            alphabetical.push_back(title);
+        }
+    }
+    std::sort(alphabetical.begin(), alphabetical.end(),
+              [&](const RoomTitle& a, const RoomTitle& b) { return alphabeticalLess(index, a, b); });
+    std::size_t next = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        while (shares[i].titles.size() < quota[i] && next < alphabetical.size()) {
+            shares[i].titles.push_back(alphabetical[next++]);
+        }
+    }
+    for (RoomSelection& share : shares) {
+        std::sort(share.titles.begin(), share.titles.end(), priorityLess);
+        share.distinctTitles = share.titles.size();
+    }
+    shares.front().unplaced = chain.unplaced;
+    for (UnplacedGame& game : shares.front().unplaced) {
+        game.room = rooms.front();
+    }
+    return shares;
+}
+
+Expected<WorldPlan> generateChain(const RoomSelection& merged, const SectionIndex* index, std::span<const Room> records,
+                                  const std::vector<catalog::SystemName>& sections, const WorldData& data,
+                                  const WorldConfig& config, std::uint64_t worldSeed, const BuildingData& building,
+                                  const ChainPins* pins, RoomPinOutcome* outcome) {
+    if (records.empty()) {
+        return makeError(ErrorCode::InvalidArgument, "a chain without a room", "generate");
+    }
+    const Room& head = records.front();
+    std::vector<RoomId> ids;
+    for (const Room& record : records) {
+        ids.push_back(record.id);
+    }
+    // A room alone generates as it always did; a chain over its equal alphabetical shares (ADR-0015 §7).
+    SectionIndex sharesIndex = index != nullptr ? *index : SectionIndex{};
+    std::vector<RoomSelection> shares;
+    std::map<catalog::GameId, std::string> why;
+    if (records.size() == 1) {
+        shares.push_back(merged);
+    } else {
+        shares = chainShares(merged, sharesIndex, ids, pins, &why);
+    }
+    WorldPlan chain;
+    for (std::size_t i = 0; i < shares.size(); ++i) {
+        RoomPins roomPins = pins != nullptr ? pins->of(ids[i]) : RoomPins{};
+        roomPins.chainWhy = why;
+        const SectionIndex* roomIndex = index == nullptr ? nullptr : (records.size() == 1 ? index : &sharesIndex);
+        auto content = generateRoomContent(shares[i], config, worldSeed, data, roomIndex,
+                                           pins != nullptr ? &roomPins : nullptr, outcome);
+        if (!content) {
+            return propagate(content.error());
+        }
+        Room& record = content->rooms.front();
+        record.kind = head.kind;
+        record.floor = head.floor;
+        record.sections = sections;
+        record.generatorVersion = kGeneratorVersion;
+        record.expands = i == 0 ? RoomId{} : head.id;
+        record.placement = records[i].placement;
+        record.placement = followDepth(record, building.layout);
+        // Every unplaced entry of a chain names its head (a share's titles over its room's capacity on a full floor).
+        if (i > 0) {
+            for (UnplacedGame& game : content->unplaced) {
+                game.room = head.id;
+            }
+        }
+        appendRoom(chain, std::move(*content));
+    }
+    return chain;
+}
+
+Expected<WorldPlan> generateEnteredChain(const BuildingRoom& room, const WorldConfig& config, std::uint64_t worldSeed,
+                                         const BuildingData& building, const ChainPins* pins,
+                                         RoomPinOutcome* outcome) {
+    std::vector<catalog::SystemName> sections;
+    std::vector<const RoomSelection*> selections;
+    for (const EnteringSystem* system : room.entered) {
+        sections.push_back(system->selection->room.system());
+        selections.push_back(system->selection);
+    }
+    if (selections.empty()) {
+        return makeError(ErrorCode::InvalidArgument, "a room without a section", "generate");
+    }
+    std::vector<Room> records{room.record};
+    records.insert(records.end(), room.expansions.begin(), room.expansions.end());
+    if (room.kind == RoomKind::Console && selections.size() == 1) {
+        return generateChain(*selections.front(), nullptr, records, sections, *room.data, config, worldSeed, building,
+                             pins, outcome);
+    }
+    SectionIndex index;
+    const RoomSelection merged = sectionsSelection(room.id, sections, selections, index);
+    return generateChain(merged, &index, records, sections, *room.data, config, worldSeed, building, pins, outcome);
+}
 
 PrefabSlotSource catalogSlots(std::vector<const PrefabCatalog*> catalogs) {
     return [catalogs = std::move(catalogs)](const PrefabRef& ref) -> Expected<std::vector<PrefabSlotLevel>> {
@@ -587,7 +953,7 @@ Expected<BuildingEntry> enterBuilding(std::vector<BuildingRoom> stored, std::vec
         }
 
         if (kind == RoomKind::Console) {
-            Room record = enteringRecord(*id, kind, floor, name, system.data->roomTemplate);
+            Room record = detail::enteringRecord(*id, kind, floor, {name}, system.data->roomTemplate);
             if (const auto placement = placeEnteringRoom(record, rowsOf(floor), building.layout)) {
                 record.placement = *placement;
                 entry.rooms.push_back(BuildingRoom{*id, kind, floor, system.data, std::move(record), false, false,
@@ -619,7 +985,7 @@ Expected<BuildingEntry> enterBuilding(std::vector<BuildingRoom> stored, std::vec
                                  " (loadWorldData() of a system reads the room its section would stand in)",
                              "generate");
         }
-        Room record = enteringRecord(*id, kind, floor, name, data->roomTemplate);
+        Room record = detail::enteringRecord(*id, kind, floor, {name}, data->roomTemplate);
         entry.digest.emplace_back(system.selection, data);
         if (const auto placement = placeEnteringRoom(record, rowsOf(floor), building.layout)) {
             record.placement = *placement;
@@ -900,13 +1266,22 @@ Expected<GenerationResult> generateBuilding(const BuildingInput& input, const Bu
     if (!entry) {
         return propagate(entry.error());
     }
+    // The rooms past their template's capacity take expansions (ADR-0015 §7), placed once every system entered, their
+    // numbers after those the overrides name.
+    const detail::ChainNumbering numbering = detail::chainNumbering(input.overrides);
+    if (Status placed = detail::placeExpansions(*entry, input.config, building, numbering); !placed) {
+        return propagate(placed.error());
+    }
     for (const detail::BuildingRoom& room : entry->rooms) {
-        auto content = detail::generateEnteredRoom(room, input.config, seed, building);
+        auto content = detail::generateEnteredChain(room, input.config, seed, building);
         if (!content) {
             return propagate(content.error());
         }
         detail::appendRoom(plan, std::move(*content));
         result.changes.roomsAdded.push_back(room.id);
+        for (const Room& expansion : room.expansions) {
+            result.changes.roomsAdded.push_back(expansion.id);
+        }
         for (const detail::EnteringSystem* system : room.entered) {
             result.changes.systemsEntered.push_back({system->selection->room.system(), room.id});
         }

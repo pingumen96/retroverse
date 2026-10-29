@@ -197,7 +197,19 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   fixture the user moved stays where it stands when its room grows, pinned or not, but for a poster hung on the south
   wall, which follows its wall: when it is pinned, its pin's transform follows it and `update` saves the plan and
   `overrides.json` together behind a snapshot (action `update`), which `worldplan undo` restores (with `--plan` only
-  the plan is written, with a warning). It prints the change report. Both exit 0 written or up to date; 1 nothing
+  the plan is written, with a warning). Since I4b step 7 (`docs/i4b/step-7.md`, ADR-0015 §7, generator
+  1.5) a room past its template's capacity is a chain, its head and its expansions (`room:<system>:<n>`,
+  `area:shared:<floor>:<n>`, `area:arcade:<n>`, n from 2, each `expands` naming the head, of its kind, floor, sections,
+  family and template): `generate` splits its titles into the fewest rooms that hold them with the reserve, in equal
+  alphabetical shares, each expansion entering its floor at the east end of the shorter row once every system entered;
+  `update` fills one fill order per chain (the head's, then each expansion's by number: a new title after its
+  alphabetical predecessor, else the chain's next free slot, wrapping to the head), then a module, then growth in the
+  chain's first room that takes one, then the chain's next room when every room stands at its limit, its display
+  fixtures and hero band dressed (no face-out title until a regeneration), "Expansion: <room> of <head> (a new room)"
+  (JSON `changes.roomsAdded`); on a full floor the titles stay unplaced for capacity, naming the head. A plan of an
+  earlier generator whose room stands at its limit with titles unplaced for capacity has them enter its chain as
+  additions at its first update (its free slots, then an expansion); since then a title unplaced for capacity stays so
+  until a regeneration. It prints the change report. Both exit 0 written or up to date; 1 nothing
   written (a plan exists without `--replace`; no plan to update, one edited by hand or newer, one that needs `generate
   --replace`: another seed, preset or generator major version; the media unknown; no such system in the catalog); 2
   usage; 3 the data, catalog, selections or overrides unreadable (a system named that gets no room, an excluded one,
@@ -225,13 +237,14 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   with a plant beside them, the runner), the areas whose lights the app packs
   (each room's interior with its doorway's passage, the hall), a camera in front of the elevator facing east.
   `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
-  the world's configuration and the building's data (37 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
-  floors, no two rooms of a floor overlapping, every system in one room; since I4 step 3 each floor's derived hall: no
-  room overlapping it, every doorway in its room's doorway wall on the hall's edge, every room walked to from the
-  elevator on the floor's navigation grid; a room of an older template version or
-  another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a hard rule broken or not
-  a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3 unreadable). Every subcommand
-  takes `--output <file>`.
+  the world's configuration and the building's data (39 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
+  floors, no two rooms of a floor overlapping, every system in one room or chain; since I4b step 7 every expansion's
+  head in the plan, of its floor, kind, sections, family and template, `expansion-chain`, a chain's numbers possibly
+  leaving gaps; since I4 step 3 each floor's derived hall: no room overlapping it, every doorway in its room's doorway
+  wall on the hall's edge, every room walked to from the elevator on the floor's navigation grid; a room of an older
+  template version or another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a
+  hard rule broken or not a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3
+  unreadable). Every subcommand takes `--output <file>`.
   `worldplan snapshots [--library <id>] [--json]` (I4b step 1, ADR-0015 §6) lists the world's snapshots newest first:
   each folder's name, its action and scope, when and by whom it was taken, the plan's and the overrides' digests
   (shortened; "none" for a file it did not hold), "undone" or, for an undo's own snapshot, the snapshot it undid; then
@@ -283,20 +296,24 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   [--seed <n>] [--library <id>] [--diff] [--json]` (I4b step 5, ADR-0015 §3, §5, §8, `docs/i4b/step-5.md`) regenerates a
   room (its chain), a floor or the whole building of the world's plan through `world::regenerate()`
   (`rv/world/regeneration.hpp`): a room afresh where it stands (the template's current version, the family's last
-  successor, the face-out titles and representatives chosen again; its id, kind, floor, x, yaw, sections and seed kept);
-  a floor's systems decided again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a
-  system on the floor staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned
-  fixtures first, the sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's
-  representative); a pin it cannot honour is a conflict (`room-gone`, `slot-gone`, `game-gone`, `invalid`), kept in
-  `overrides.json` with its reason recorded on the pin (`"conflict"`; an update then reports it as orphaned, not as
-  needing a confirmation) and reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The
-  selections are the catalog's as `update` reads them (every system of the catalog that gets a room; the scope's systems
-  required: exit 1 without one) or selection files (`--world`'s must hold every system of the stored building, else exit
-  2). It prints the impact: "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out,
-  leave it, newly placed, newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each
-  ("<pin>: <reason>: <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the selections,
-  the data and the regeneration); `--diff` lists every item (JSON `scope`, `library`, `plan`, `dryRun`, `dropOverrides`,
-  `changed`, `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`, `roomsMoved`,
+  successor, the face-out titles and representatives chosen again; its id, kind, floor, x, yaw, sections and seed kept;
+  since I4b step 7 `--room` of a head or of an expansion standing in the plan regenerates the whole chain, its titles
+  split again in equal alphabetical shares over the rooms they need (a pinned game counted in its room's share), its
+  standing rooms kept in their places, the highest numbers dropped when fewer are needed, new expansions entering the
+  floor numbered after every number of the chain that stands or that the overrides name); a floor's systems decided
+  again (own or shared rooms by today's counts, the rooms placed again from the rows' start, a system on the floor
+  staying there); the world as `generate` makes it. The scope's overrides are honoured (pinned fixtures first, the
+  sockets of pinned slots taking their module, pinned games reserved, a pinned game its title's representative); a pin
+  it cannot honour is a conflict (`room-gone`, `slot-gone`, `game-gone`, `invalid`), kept in `overrides.json` with its
+  reason recorded on the pin (`"conflict"`; an update then reports it as orphaned, not as needing a confirmation) and
+  reported, unless `--drop-overrides` (the consent) drops the scope's overrides. The selections are the catalog's as
+  `update` reads them (every system of the catalog that gets a room; the scope's systems required: exit 1 without one)
+  or selection files (`--world`'s must hold every system of the stored building, else exit 2). It prints the impact:
+  "Rooms: <n> regenerated, added, removed, moved", "Games: <n> change slot, enter face-out, leave it, newly placed,
+  newly unplaced", "Fixtures:", "Pins: <n> kept, conflicting, dropped", a "Conflict:" line each ("<pin>: <reason>:
+  <why>") and "Dropped:" lines, the validation, the digests, "Snapshot:" and "Time:" (the selections, the data and the
+  regeneration); `--diff` lists every item (JSON `scope`, `library`, `plan`, `dryRun`, `dropOverrides`, `changed`,
+  `written`, `snapshot`, `impact` {`counts`, `roomsRegenerated`, `roomsAdded`, `roomsRemoved`, `roomsMoved`,
   `gamesMoved` {`game`, `from`, `to`}, `faceOutEntering`, `faceOutLeaving`, `newlyPlaced`, `newlyUnplaced`,
   `fixturesAdded`, `fixturesRemoved`, `fixturesMoved`, `pinsKept`, `conflicts` {`pin`, `game`, `fixture`, `reason`,
   `message`}, `overridesDropped`}, `validation`, `digestBefore`, `digestAfter`, `gamePins`, `fixturePins`, `timings`

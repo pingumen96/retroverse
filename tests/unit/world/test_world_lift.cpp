@@ -1,11 +1,12 @@
 // The schema-1 lift (rv/world/lift.hpp, ADR-0013 §5; I4 step 1), checked against the frozen oracles of
-// tests/fixtures/world/v1/ (never rewritten): every oracle lifted, then updated by generator 1.3 with the selection it
+// tests/fixtures/world/v1/ (never rewritten): every oracle lifted, then updated by this generator with the selection it
 // was made from (world_generation_support.hpp's makeSelection, as tests/fixtures/world/golden/README.md describes),
 // keeps its room's id, template and version, bounds, height, growth steps, seed, media family and theme pack, and every
-// fixture, placement, dressing, light and unplaced element equal to the oracle's; a fresh 1.3 generation gives the
-// oracle's room too. The lift itself: pure, a valid building (the room on its system's floor at the north row's first
-// position, the ground floor, nothing else), refused for what is not a schema-1 room; a lifted plan updated with
-// nothing new is written once, in schema 2, and then left as it is.
+// fixture, placement, dressing, light and unplaced element equal to the oracle's (the 8,000 titles' oracle: its every
+// element kept, its titles unplaced for capacity added to its chain by generator 1.5); a fresh generation gives the
+// oracle's room too, below the template's limit. The lift itself: pure, a valid building (the room on its system's
+// floor at the north row's first position, the ground floor, nothing else), refused for what is not a schema-1 room; a
+// lifted plan updated with nothing new is written once, in schema 2, and then left as it is.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -221,25 +222,48 @@ TEST_CASE("world/lift: every v1 oracle lifted and updated by 1.3 with its select
         checkProjection(*lifted, oracle.plan);
         CHECK(lifted->generatorVersion == oracle.plan.generatorVersion);
         CHECK(lifted->inputDigest == oracle.plan.inputDigest);
-        // Then a 1.3 update with the same selection: nothing moves, the room is now 1.3's, the file schema 2.
+        // Then an update with the same selection: nothing moves, the room is now this generator's, the file schema 2.
         const GenerationResult updated = updateLifted(oracle, test.selection, test.worldSeed);
         CHECK(updated.changes.outcome == GenerationOutcome::Updated);
-        CHECK(updated.changes.added.empty());
         CHECK(updated.changes.unplaced.empty());
         CHECK(updated.changes.kept == oracle.plan.placements.size());
         CHECK(updated.changes.keptRooms.empty());
-        CHECK(updated.changes.rebuild == RebuildLevel::NoRebuild);
         CHECK(updated.changes.digestBefore == rv::core::sha256Hex(oracle.text));
         CHECK(updated.changes.digestAfter != updated.changes.digestBefore);
         CHECK(updated.validation.passed());
-        checkProjection(updated.plan, oracle.plan);
         CHECK(updated.plan.schemaVersion == 2);
         CHECK(updated.plan.generatorVersion == rv::world::kGeneratorVersion);
         CHECK(updated.plan.rooms.front().generatorVersion == rv::world::kGeneratorVersion);
         CHECK(updated.plan.rooms.front().placement == lifted->rooms.front().placement);
-        // A fresh 1.3 generation of the plan-* oracles' selections gives their rooms too (generate() stands on I3's
-        // room-level rules).
-        if (test.name.starts_with("plan-")) {
+        std::vector<rv::catalog::GameId> overCapacity;
+        for (const rv::world::UnplacedGame& game : oracle.plan.unplaced) {
+            if (game.reason == rv::world::UnplacedReason::Capacity) {
+                overCapacity.push_back(game.game);
+            }
+        }
+        std::sort(overCapacity.begin(), overCapacity.end());
+        if (overCapacity.empty()) {
+            CHECK(updated.changes.added.empty());
+            CHECK(updated.changes.rebuild == RebuildLevel::NoRebuild);
+            checkProjection(updated.plan, oracle.plan);
+        } else {
+            // Generator 1.5 (I4b step 7, ADR-0015 §7): the titles the oracle's room at its limit left unplaced for
+            // capacity enter its chain as additions, the head's free slots first, then a new expansion; every element
+            // of the oracle stands as it stood.
+            CHECK(updated.changes.added == overCapacity);
+            CHECK(updated.changes.roomsAdded == std::vector{*updated.plan.rooms.front().id.inChain(2)});
+            REQUIRE(updated.plan.rooms.size() == 2);
+            CHECK(coreOf(updated.plan.rooms.front()) == coreOf(oracle.plan.rooms.front()));
+            CHECK(std::includes(updated.plan.placements.begin(), updated.plan.placements.end(),
+                                oracle.plan.placements.begin(), oracle.plan.placements.end()));
+            CHECK(std::none_of(updated.plan.unplaced.begin(), updated.plan.unplaced.end(),
+                               [](const rv::world::UnplacedGame& game) {
+                                   return game.reason == rv::world::UnplacedReason::Capacity;
+                               }));
+        }
+        // A fresh generation of the plan-* oracles' selections the template's limit holds gives their rooms too
+        // (generate() stands on I3's room-level rules; past the limit it makes a chain since generator 1.5).
+        if (test.name.starts_with("plan-") && overCapacity.empty()) {
             rv::world::GenerationInput input;
             input.library = rv::test::world::library();
             input.selection = test.selection;

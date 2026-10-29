@@ -7,11 +7,16 @@
 // Debug and Release alike.
 //
 // The scopes:
-//   - a room (its chain: the room and its expansions, ADR-0015 §7; I4b step 7 makes expansions, none stands before
-//     it): generated afresh with the data a new room of its kind reads now (the template's current version, the
+//   - a room (its chain: the room and its expansions, ADR-0015 §7, whichever of them the scope names, which must
+//     stand): generated afresh with the data a new room of its kind reads now (the template's current version, the
 //     family's last successor, the theme pack its floor resolves), the face-out set and the representatives chosen
-//     again by priority; its id, kind, floor, x, yaw, sections and seed kept, its z following its depth. Every other
-//     room stands as it is;
+//     again by priority; its id, kind, floor, x, yaw, sections and seed kept, its z following its depth. Since I4b
+//     step 7 the chain's titles are split again in equal alphabetical shares over the fewest rooms that hold them
+//     (generation.hpp's generator 1.5): its standing expansions kept in their places by number, the highest dropped
+//     when fewer are needed, new ones (numbered after the chain's highest standing number and every number of the
+//     chain the overrides name: ADR-0015 §7 as amended on 2026-10-29) entering the floor at the east end of the
+//     shorter row; a pinned game stands in the share of the room its pin names, counted in that room's equal share.
+//     Every other room stands as it is;
 //   - a floor: every room of the floor, and the floor's rooms decided again: its systems (the sections of its rooms,
 //     and the systems of the selections no room holds whose classification names the floor) enter it afresh in the
 //     order (systems.json order, system name): own or shared rooms by sharedRoomMinTitles on today's counts, the
@@ -50,8 +55,8 @@
 // every one of them (ADR-0015 §5's consent). Pins outside the scope are left as they are.
 //
 // The regenerated plan's inputDigest is what an update of the same selections computes over it (the rooms given a
-// selection, each with the data of the room it stands in now, the honoured pins joined: ADR-0015 §2), so that an update
-// of an unchanged catalog after a regeneration writes nothing; a regeneration of a world without overrides of an
+// selection, each with the data of the room it stands in now, the honoured pins joined: ADR-0015 §2), so that an
+// update of an unchanged catalog after a regeneration writes nothing; a regeneration of a world without overrides of an
 // unchanged catalog equals the fresh building byte for byte. The plan is validated as a fresh one is (the rooms
 // outside the scope judged as the update judges them: kept rooms as kept, their selections not judged); a plan that
 // breaks a hard rule is returned all the same, and its caller never saves it (ADR-0010 §11).
@@ -62,8 +67,11 @@
 // The caller saves the result behind a snapshot (world_snapshots.hpp's commitWorld(), action `regenerate`, so that
 // `worldplan undo` restores it); a dry run (the preview) saves nothing.
 //
-// The signature of regenerate() is frozen at the end of I4b step 5 (docs/i4b/plan.md): step 6 calls it from the app on
-// the pool, step 7 adds expansion chains beneath it.
+// The signature of regenerate() is frozen at the end of I4b step 5 (docs/i4b/plan.md): step 6 calls it from the app
+// on the pool, step 7 added expansion chains beneath it (the scopes' rooms are chains; a floor's and the world's chains
+// are split as a fresh building splits them, numbered as above: the chain's expansions that stood keep their numbers,
+// lowest first, the others take numbers after every standing or named one). A pin whose recorded conflict is
+// room-gone is stale: never applied (rules 1 to 4 skip it), it keeps its reason until the user drops it.
 
 #include <cstdint>
 #include <filesystem>
@@ -111,7 +119,7 @@ enum class RegenerationScopeKind : std::uint8_t {
 
 struct RegenerationScope {
     RegenerationScopeKind kind = RegenerationScopeKind::World;
-    /// Room: a room of the plan (an expansion names its head's chain).
+    /// Room: a room of the plan (an expansion names its head's chain; a number the plan lacks is refused).
     RoomId room;
     /// Floor: a floor of the building (building.json's id).
     std::string floor;
@@ -148,7 +156,8 @@ struct GameMove {
 
 /// What a regeneration changes (ADR-0015 §5's preview), each list sorted.
 struct RegenerationImpact {
-    /// The scope's rooms in the new plan.
+    /// The scope's rooms in both plans (a room only the new plan holds, a new expansion included, is among
+    /// roomsAdded only).
     std::vector<RoomId> roomsRegenerated;
     /// The rooms only the new plan holds, only the previous one, and those whose floor or place on it changed.
     std::vector<RoomId> roomsAdded;
@@ -227,10 +236,11 @@ struct Regeneration {
 /// (loadBuildingData(), loadSystemsData()), `load` reads the rooms' data: a new room's (RoomDataRequest without a
 /// family), a standing room's as an update reads it (loadRoomData()'s request: its kind, floor, recorded family and
 /// template). Errors (nothing decided): InvalidArgument for a previous plan of another library or not of schema 2, a
-/// scope's room the plan lacks or a floor the building lacks, the inputs generateBuilding() refuses (a selection twice,
-/// not of a system's room); NotFound for a system of a room or floor scope without a selection; Unsupported for a room
-/// or floor scope of a plan of another seed, preset, random algorithm, title-key rule or generator major (only the world
-/// regenerates it), and for a room with expansions (I4b step 7); those of `load` and of the layout.
+/// scope's room the plan lacks (an expansion's number too) or a floor the building lacks, an expansion whose head the
+/// plan lacks (in every scope), the inputs generateBuilding() refuses (a selection twice, not of a system's room);
+/// NotFound for a system of a room or floor scope without a selection; Unsupported for a room or floor scope of a plan
+/// of another seed, preset, random algorithm, title-key rule or generator major (only the world regenerates it); those
+/// of `load` and of the layout.
 [[nodiscard]] Expected<Regeneration> regenerate(const RegenerationInput& input, const BuildingData& building,
                                                 const SystemsData& systems, const RoomDataLoader& load);
 

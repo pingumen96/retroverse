@@ -236,6 +236,33 @@ walker kept.
   items files; teleport, "Mostra nella stanza" and where-is reach any room of a chain; an expansion's CRT plays its
   own games (ADR-0013 §9, unchanged). A door between a head and an expansion that stand side by side is not built.
 
+*Amended on 2026-10-28 (I4b step 7; reworded on 2026-10-29 by the step's review):* a number is never reused while the
+overrides name it: a regeneration that needs fewer rooms drops the highest numbers, the pins that named those rooms kept
+as `room-gone` conflicts, and a new expansion (an update's, a regeneration's) takes the number after the highest of the
+chain's standing rooms and of every room of the chain the overrides name (a pin's room, whatever conflict it records),
+so a chain's numbers may leave a gap (`:3` standing without `:2`), which the validation accepts. The plan stays of
+schema 2 and keeps no record of the rooms it no longer holds: the overrides are the only memory of a dropped number, so
+once they are dropped (`--drop-overrides`, "Rigenera e scarta le personalizzazioni", the pins removed by hand or by the
+editor) the number may come back, and `video.json`'s `rooms.<id>` settings would then apply to the new room (a known
+limit, `BACKLOG.md`). A pin whose recorded conflict is `room-gone` is stale: no update or regeneration applies it (it
+refuses no growth, blocks no module, pulls no title into a room of that id standing again); it stays in the overrides,
+reported as orphaned, until the user drops it. A regeneration's pinned game counts in its room's equal share: each
+room's quota is an equal share of the chain's titles, its pinned games fill it first (a room whose pins outnumber its
+share takes them all, the others sharing the rest equally), then the other titles fill the quotas left in alphabetical
+order, so a pin never pushes another room, or a title no pin holds, past the limit the chain's room count was computed
+with (a room whose own pins pass it holds them in its reserve: a further room could hold none of them). Every unplaced
+entry of a chain names its head, not only those for capacity. A fresh generation places a building's expansions once
+every system entered, room after room in the entry order, so the heads stand where generator 1.4 stood them. The
+migration's additions follow the update's rules, so a head at its limit gives them its free slots (its reserve) before
+the chain takes an expansion; it runs once, at the first update by generator 1.5 of a chain an earlier generator made,
+and since then a title unplaced for capacity stays so until a regeneration (as an update's own capacity entries always
+did, so that an update of an unchanged catalog writes nothing). An update gives a module, then a growth step, to the
+chain's first room that takes one, and creates an expansion only when every room of the chain stands at its template's
+limit (a growth a pin refuses leaves the titles unplaced for capacity, §3). An update never removes an expansion: titles
+that leave the catalog keep their slots (ADR-0010 §10), so one whose every title left stands as it was until a
+regeneration drops it. An update or a regeneration refuses a plan holding an expansion without its head (only a hand
+edit makes one).
+
 ### 8. Command line
 
 - `worldplan edit move --game <id> --slot <slot>`, `swap --game <id> --with <id>`, `pin | unpin --game <id>`,

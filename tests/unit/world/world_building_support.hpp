@@ -193,10 +193,11 @@ enum class StoredRoomData {
     OfItsFirstSection,
 };
 
-/// The update of `previous` to `selections`: the stored rooms' data and the entering systems'.
+/// The update of `previous` to `selections` with `overrides`: the stored rooms' data and the entering systems'.
 inline rv::world::GenerationResult updateBuildingOf(const BuildingWorld& world, const rv::world::WorldPlan& previous,
                                                     const std::vector<rv::world::RoomSelection>& selections,
-                                                    StoredRoomData stored = StoredRoomData::Recorded) {
+                                                    StoredRoomData stored = StoredRoomData::Recorded,
+                                                    const rv::world::WorldOverrides& overrides = {}) {
     std::vector<rv::world::WorldData> rooms;
     std::set<rv::catalog::SystemName> given;
     for (const rv::world::Room& room : previous.rooms) {
@@ -221,6 +222,7 @@ inline rv::world::GenerationResult updateBuildingOf(const BuildingWorld& world, 
     input.selections = selections;
     input.platformTags = world.tags;
     input.config = world.config;
+    input.overrides = overrides;
     input.previous = previous;
     auto result = rv::world::updateBuilding(input, world.building, world.systems, rooms);
     INFO((result ? std::string("updated") : result.error().toString()));

@@ -237,11 +237,12 @@ TEST_CASE("world/plan_scene: the room shell is sized to the plan's room", "[worl
         CHECK(scene.camera.position.z < static_cast<float>(room.maxZMm) / 1000.0f);
         CHECK(scene.camera.position.z > static_cast<float>(room.maxZMm) / 1000.0f - 1.5f);
     }
-    // The grown room's shell stands south of the origin, its north wall where the base room's is.
+    // The grown room's shell stands south of the origin, its north wall where the base room's is (plan-8000's head,
+    // 4,000 titles of its chain since generator 1.5: one growth step).
     const rv::world::Room& grown = planCase("plan-8000-seed-102938").plan.rooms.front();
-    CHECK(grown.growthSteps == 3);
+    CHECK(grown.growthSteps == 1);
     CHECK(grown.minZMm == -5000);
-    CHECK(grown.maxZMm == 11000);
+    CHECK(grown.maxZMm == 7000);
 }
 
 TEST_CASE("world/plan_scene: the dressing stands in its levels' free volumes; display cases' levels stay bare",

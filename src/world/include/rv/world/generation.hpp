@@ -251,8 +251,14 @@ struct GenerationResult {
 /// (ChangeReport::migratedRooms), made for this pass only. It is a minor version all the same: a major one would hold
 /// every room of every stored plan as it stands until an explicit regeneration (ADR-0010 §10), while the migration is
 /// scoped to the rooms of a succeeded family, room by room, and every other room, the cartridges' among them, keeps
-/// every placement; and an update by 1.4 of a plan it wrote moves nothing.
-inline constexpr GeneratorVersion kGeneratorVersion{1, 4};
+/// every placement; and an update by 1.4 of a plan it wrote moves nothing. 1.5 (I4b step 7, ADR-0015 §7) builds
+/// expansion rooms: a room past its template's capacity is a chain (its head and its expansions, room:<system>:<n>,
+/// area:shared:<floor>:<n>, area:arcade:<n>, each `expands` naming the head), a fresh one split in equal alphabetical
+/// shares, an update filling one fill order per chain and creating the chain's next room (with no face-out titles) when
+/// every room of the chain stands at its limit; a stored plan's titles unplaced for capacity in a room at its limit
+/// enter its chain as additions at the first update. A minor version: every placement that stands is kept, and a plan
+/// without a capacity entry is updated exactly as 1.4 updated it.
+inline constexpr GeneratorVersion kGeneratorVersion{1, 5};
 
 /// The one room template of I3 (ADR-0010 §4).
 inline constexpr std::string_view kDefaultRoomTemplate = "console_room_9x10";
@@ -408,7 +414,15 @@ struct BuildingInput {
 ///    (section, catalog sort key, title key, GameId), every game unplaced as its section's selection says;
 ///  - each room is placed by placeEnteringRoom() when it enters (its z following its depth once generated); a console
 ///    room its floor has no place for joins that floor's shared room as a section when the floor has one, else its
-///    games (and those of a shared room that finds no place) are unplaced for capacity, naming the room.
+///    games (and those of a shared room that finds no place) are unplaced for capacity, naming the room;
+///  - a room whose titles its template's limit does not hold with the reserve (since generator 1.5, I4b step 7,
+///    ADR-0015 §7) is a chain of the fewest rooms that hold them: its expansions (RoomId::inChain(), `expands` the
+///    head, of its kind, floor, sections, family and template, each seeded by its own id) enter its floor once every
+///    system entered, room after room in the entry order, at the east end of the shorter row; its titles split in equal
+///    alphabetical shares (the collection's order, the first shares a title more), each room sized to its share and
+///    choosing its own face-out titles from it by priority; on a full floor the chain takes the rooms that found a
+///    place, its titles over their capacity unplaced for capacity, naming the head (every unplaced entry of a chain
+///    does).
 /// The plan holds the ground floor and every floor with a room. The result's changes are a fresh plan's (Generated,
 /// Full, every placement added); its validation is validatePlan()'s against the rooms' templates, the configuration,
 /// the selections, the prefabs' slots as measured here, the rooms' lights and the building: a plan with a hard finding

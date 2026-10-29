@@ -204,6 +204,11 @@ TEST_CASE("cli/worldplan regenerate: dry runs, a room, a floor and the world on 
     const RunResult noRoom = session.run({"worldplan", "regenerate", "--room", "room:nes", "--seed", "102938"});
     CHECK(noRoom.code == ExitCode::ProblemsFound);
     CHECK(contains(noRoom.err, "the plan holds no room room:nes"));
+    // An expansion's number the plan lacks is refused, not taken for its head's chain (I4b step 7's review).
+    const RunResult noExpansion =
+        session.run({"worldplan", "regenerate", "--room", "room:snes:2", "--seed", "102938", "--dry-run"});
+    CHECK(noExpansion.code == ExitCode::ProblemsFound);
+    CHECK(contains(noExpansion.err, "the plan holds no room room:snes:2"));
     const RunResult noFloor = session.run({"worldplan", "regenerate", "--floor", "attic", "--seed", "102938"});
     CHECK(noFloor.code == ExitCode::ProblemsFound);
     CHECK(contains(noFloor.err, "the building has no floor attic"));

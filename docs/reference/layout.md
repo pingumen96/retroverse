@@ -94,7 +94,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `assets/world` (errors name `<file>:<line>` and a JSON pointer; 1a); `selectRoom` and `title_key.hpp` (the room's
   titles, `title-key/1`, representatives by region rank, status and revision, priority; 2); `generation.hpp`
   (`generate`, `loadWorldData`), `capacity.hpp`, `seeds.hpp`, the plan's lights (3); `validation.hpp` (`validatePlan`,
-  37 rules since I4 step 3) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and
+  39 rules since I4b step 7) and `nav_grid.hpp` (4); `pick_index.hpp` (picking, the 3-frame hover) and
   `slot_navigation.hpp` (the D-pad steps; 7); `world_store.hpp` (the world's files and lock, `savePlan`; since I4b step
   1 `saveOverrides` and the lock's rollback), `incremental.hpp` (`update`), `overrides.hpp` (pins: protected, never
   applied; since I4b step 1 schema 2, `writeOverrides`) and `where_is.hpp` (`PlanIndex`; 9); `world_snapshots.hpp` (I4b
@@ -102,7 +102,11 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `checkInterruptedAction`); `world_edit.hpp` (I4b step 2: the editor's operations, `applyEdit` / `applyEdits`,
   `editRooms`, `editedResult`, the edit script; `editableFixtures`, I4b step 4); `regeneration.hpp` (I4b step 5: `regenerate` of a room, a floor or
   the world honouring the overrides, the conflicts, `planDifference`, the impact, `assetRootLoader`; the private
-  `pinned_room.cpp`, a room generated around its pins); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
+  `pinned_room.cpp`, a room generated around its pins; since I4b step 7 a room's chain regenerated whole); the expansion
+  rooms of generator 1.5 (I4b step 7: `RoomId::inChain` in `ids.hpp`; the chains' private parts in
+  `generation_parts.hpp` and `generation.cpp`: `roomTitleLimit`, `chainShares`, `placeExpansions`, `generateChain`,
+  `ChainNumbering`, `checkChainHeads`, `isStalePin`; the update's chain-wide `Updater` in `incremental.cpp`; the
+  `expansion-chain` rule); `scene_builder.hpp` (`toSceneFile`, `toSceneDescription`, `loadSceneData`) and
   `collection_layout.hpp` (items with transforms, pick ids, layer keys and
   flags, clusters, groups, occluders, navigation; 10a); `room_look.hpp` (the lighting profiles and the theme packs as
   data, `assets/world/lighting`, `assets/world/themes`; 16; since I6 step 3 the packs' label palettes, neon, light

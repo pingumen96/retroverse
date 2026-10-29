@@ -318,7 +318,9 @@ build/rvdata`).
   or updates its rooms as `worldplan update` does (each system's selection to the room that holds its section; a shared
   or arcade room lacking a section's selection held as it is, logged; a new system with a placeable title enters, its
   own room or a section, logged, since I4 step 6b), saves it
-  under `<user data>/worlds/<library id>/` (generator 1.4, schema 2; a stored schema-1 plan of I3 is read lifted and
+  under `<user data>/worlds/<library id>/` (generator 1.5, schema 2: since I4b step 7 a room past its template's
+  capacity is a chain of a head and expansion rooms, `room:<system>:<n>`, which the app shows as rooms of their floor
+  until step 8 signs them; a stored schema-1 plan of I3 is read lifted and
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
   with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
   planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run

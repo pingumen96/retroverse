@@ -1,6 +1,6 @@
 // I4b step 3: the time an edit takes to show (ADR-0015 §9: 0.25 s), measured by hand in Release on the overflow
-// fixture's amiga room (1,561 big boxes; tests/smoke/test_world_edit.cpp's hidden [.bench] case). The walker starts at the
-// Focus pose of a spine-out box A with a box B on its right and a box D below B.
+// fixture's amiga room (1,700 big boxes at its limit; tests/smoke/test_world_edit.cpp's hidden [.bench] case). The
+// walker starts at the Focus pose of a spine-out box A with a box B on its right and a box D below B.
 //   frame 30, 36, 42, 48   map, ui_home, ui_up, ui_activate: "Modifica stanza"
 //   frame 70   interact: A picked up        frame 80   ui_right: B         frame 110  interact: A and B swapped
 //   frame 140  interact: B picked up        frame 150  ui_down: D           frame 180  interact: B and D swapped

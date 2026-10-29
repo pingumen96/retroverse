@@ -122,8 +122,8 @@ TEST_CASE("cli/worldplan: a building of selection files, its floors, where-is wi
     REQUIRE(generated.code == ExitCode::Ok);
     CHECK(contains(generated.out, "Generated the plan of room:megadrive, room:snes: "));
     CHECK(contains(generated.out, "Floors:          ground (order 0, 0 rooms), gen4 (order 3, 2 rooms)"));
-    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.4"));
-    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.4"));
+    CHECK(contains(generated.out, "gen4, console room of snes, north row at x 7650 z -6650 mm, generator 1.5"));
+    CHECK(contains(generated.out, "gen4, console room of megadrive, south row at x 7650 z 6650 mm, generator 1.5"));
 
     const RunResult shown = session.run({"worldplan", "show", "--library", "esde", "--json"});
     REQUIRE(shown.code == ExitCode::Ok);
@@ -792,4 +792,105 @@ TEST_CASE("cli/worldplan update: generator 1.3's building migrated once, in the 
     REQUIRE(replaced.size() == 1);
     CHECK(replaced[0]["room"] == "area:arcade");
     CHECK(replaced[0]["from"] == nlohmann::json{{"xMm", 7650}, {"zMm", -8150}, {"yawHalfTurns", 0}});
+}
+
+TEST_CASE("cli/worldplan update: generator 1.4's titles unplaced for capacity enter their chains", "[cli][worldplan]") {
+    // I4b step 7 (ADR-0015 §7): main's generator 1.4 building of the overflow fixture's counts and three rooms beside
+    // them (tests/fixtures/world/legacy/), updated with the selections that made it: amiga's 139 and mame's 7 titles
+    // unplaced for capacity placed as additions of their chains (the heads' reserve holds them); every other room byte
+    // for byte in its elements; the next update up to date; then 300 amiga titles more open room:amiga:2
+    // ("Expansion:", changes.roomsAdded).
+    const Session session;
+    const LoggingReset loggingReset;
+    const std::filesystem::path legacyFile = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "tests" / "fixtures" /
+                                             "world" / "legacy" / "building-overflow-seed-102938-generator-1.4.json";
+    const std::string legacy = readText(legacyFile);
+    struct Entry {
+        std::string_view system;
+        std::size_t titles;
+        std::uint64_t seed;
+    };
+    const Entry systems[] = {
+        {"amiga", 1700, 5200}, {"mame", 60, 5100}, {"snes", 40, 5300}, {"gb", 30, 5400}, {"pokemini", 8, 5500}};
+    std::vector<std::string> arguments{"worldplan", "update"};
+    for (const Entry& entry : systems) {
+        arguments.push_back("--selection");
+        arguments.push_back(
+            session.write(std::string(entry.system) + ".json", selectionOf(entry.system, entry.titles, entry.seed)));
+    }
+    arguments.insert(arguments.end(), {"--library", "esde", "--seed", "102938"});
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, legacy).has_value());
+    auto before = rv::world::readPlan(legacy, "legacy");
+    REQUIRE(before.has_value());
+
+    const RunResult updated = session.run(arguments);
+    INFO(updated.out << updated.err);
+    REQUIRE(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "Changes:         146 added, "));
+    CHECK_FALSE(contains(updated.out, "Expansion:"));
+    auto plan = rv::world::readPlan(readText(session.files.plan), "migrated");
+    REQUIRE(plan.has_value());
+    CHECK(plan->generatorVersion == rv::world::kGeneratorVersion);
+    CHECK(std::none_of(plan->unplaced.begin(), plan->unplaced.end(), [](const rv::world::UnplacedGame& game) {
+        return game.reason == rv::world::UnplacedReason::Capacity;
+    }));
+    for (const std::string_view id : {"area:shared:handheld", "room:gb", "room:snes"}) {
+        INFO(id);
+        const rv::world::RoomId room = *rv::world::RoomId::parse(id);
+        const auto elements = [&](const rv::world::WorldPlan& of) {
+            std::vector<std::string> texts;
+            for (const rv::world::Fixture& fixture : of.fixtures) {
+                if (fixture.id.room() == room) {
+                    texts.push_back(fixture.id.toString() + fixture.prefab.manifest + std::to_string(fixture.xMm) +
+                                    std::to_string(fixture.zMm));
+                }
+            }
+            for (const rv::world::Placement& placement : of.placements) {
+                if (placement.slot.fixture().room() == room) {
+                    texts.push_back(placement.slot.toString() + placement.game.toString());
+                }
+            }
+            for (const rv::world::UnplacedGame& game : of.unplaced) {
+                if (game.room == room) {
+                    texts.push_back(game.game.toString() + std::string(rv::world::toString(game.reason)));
+                }
+            }
+            return texts;
+        };
+        CHECK(elements(*plan) == elements(*before));
+    }
+    const RunResult checked = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
+    INFO(checked.out);
+    CHECK(checked.code == ExitCode::Ok);
+
+    // Once: the next update is up to date.
+    const std::string migrated = readText(session.files.plan);
+    const RunResult again = session.run(arguments);
+    CHECK(again.code == ExitCode::Ok);
+    CHECK(contains(again.out, "is up to date"));
+    CHECK(readText(session.files.plan) == migrated);
+
+    // 300 amiga titles more than the full head holds: its expansion, in the JSON and the text.
+    rv::world::RoomSelection amiga = selectionOf("amiga", 1700, 5200);
+    std::set<std::uint64_t> taken = rv::test::world::gameValuesOf(amiga);
+    rv::core::Random random(5201);
+    for (int i = 0; i < 300; ++i) {
+        rv::test::world::addTitle(amiga, random, taken);
+    }
+    std::vector<std::string> more = arguments;
+    REQUIRE(more[2] == "--selection");
+    more[3] = session.write("amiga-more.json", amiga);
+    more.push_back("--json");
+    const RunResult reported = session.run(more);
+    INFO(reported.out << reported.err);
+    REQUIRE(reported.code == ExitCode::Ok);
+    const nlohmann::json document = nlohmann::json::parse(reported.out);
+    CHECK(document["changes"]["roomsAdded"] == nlohmann::json{"room:amiga:2"});
+    more.pop_back();
+    const RunResult upToDate = session.run(more);
+    CHECK(contains(upToDate.out, "is up to date"));
+    REQUIRE(rv::core::writeTextFileAtomic(session.files.plan, migrated).has_value());
+    const RunResult text = session.run(more);
+    INFO(text.out << text.err);
+    CHECK(contains(text.out, "Expansion:       room:amiga:2 of room:amiga (a new room)\n"));
 }

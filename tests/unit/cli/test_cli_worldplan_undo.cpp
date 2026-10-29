@@ -5,7 +5,7 @@
 // nothing, writing once the inputDigest that the hand-written pin joins since I4b step 2), the undo itself never
 // undone; a snapshot missing a file, a damaged folder and a journal the lock cannot roll back each refused (exit 3) and
 // listed. And the overflow fixture's building (I4b step 0): more titles than the big-box room and the arcade room hold,
-// unplaced for capacity until generator 1.5's expansion rooms (step 7).
+// each split into a chain of two rooms by generator 1.5's expansion rooms (step 7), nothing unplaced for capacity.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -289,9 +289,11 @@ TEST_CASE("cli/worldplan undo: a regeneration undone on the building fixture's w
     CHECK(contentOf(session.files.plan) == secondPlan);
 }
 
-TEST_CASE("cli/worldplan: the overflow fixture's building holds more titles than its rooms", "[cli][worldplan]") {
-    // I4b step 0 (tests/fixtures/esde/overflow/README.md): until generator 1.5 (step 7) the big-box room and the
-    // arcade room place what their templates' growth allows, the rest unplaced for capacity, naming the room.
+TEST_CASE("cli/worldplan: the overflow fixture's building places every title in chains of rooms", "[cli][worldplan]") {
+    // I4b step 0 and step 7 (tests/fixtures/esde/overflow/README.md, ADR-0015 §7): the big-box room (1,561 at its
+    // template's limit) and the arcade room (53) are past their capacity; generator 1.5 splits each into a chain of two
+    // rooms in equal alphabetical shares, nothing unplaced for capacity; the update after writes nothing, and a
+    // regeneration of a chain from its expansion changes nothing.
     auto fixture = rv::test::Fixture::materialize("esde/overflow");
     INFO((fixture ? "materialized" : fixture.error().toString()));
     REQUIRE(fixture.has_value());
@@ -301,28 +303,40 @@ TEST_CASE("cli/worldplan: the overflow fixture's building holds more titles than
     const RunResult generated = session.run({"worldplan", "generate", "--seed", "102938"});
     INFO(generated.out << generated.err);
     REQUIRE(generated.code == ExitCode::Ok);
-    auto plan = rv::world::readPlan(*contentOf(session.files.plan), "plan");
+    const std::string text = *contentOf(session.files.plan);
+    auto plan = rv::world::readPlan(text, "plan");
     REQUIRE(plan.has_value());
     std::map<std::string, std::size_t> placed;
     for (const rv::world::Placement& placement : plan->placements) {
         ++placed[placement.slot.fixture().room().toString()];
     }
-    std::map<std::string, std::size_t> capacity;
-    std::size_t otherwise = 0;
+    std::size_t capacity = 0;
     for (const rv::world::UnplacedGame& unplaced : plan->unplaced) {
-        if (unplaced.reason == rv::world::UnplacedReason::Capacity) {
-            ++capacity[unplaced.room.toString()];
-        } else {
-            ++otherwise;
-        }
+        capacity += unplaced.reason == rv::world::UnplacedReason::Capacity ? 1 : 0;
     }
     INFO(generated.out);
-    CHECK(otherwise == 0);
-    REQUIRE(placed.size() == 2);
-    CHECK(placed.at("area:arcade") + capacity["area:arcade"] == 60);
-    CHECK(placed.at("room:amiga") + capacity["room:amiga"] == 1700);
-    // Both past their room (the arcade room holds 53 sets, the big-box room 1,561 titles at its growth limit): the
-    // titles the expansion rooms of step 7 will place.
-    CHECK(capacity["area:arcade"] == 7);
-    CHECK(capacity["room:amiga"] == 139);
+    CHECK(capacity == 0);
+    CHECK(placed == std::map<std::string, std::size_t>{
+                        {"area:arcade", 30}, {"area:arcade:2", 30}, {"room:amiga", 850}, {"room:amiga:2", 850}});
+    for (const rv::world::Room& room : plan->rooms) {
+        INFO(room.id.toString());
+        CHECK(room.expands == (room.id.isExpansion() ? room.id.head() : rv::world::RoomId{}));
+    }
+    const RunResult checked = session.run({"worldplan", "check", rv::core::pathToUtf8(session.files.plan)});
+    INFO(checked.out << checked.err);
+    CHECK(checked.code == ExitCode::Ok);
+    // The update of the unchanged catalog writes nothing; the chain regenerated from its expansion changes nothing.
+    const RunResult updated = session.run({"worldplan", "update", "--seed", "102938"});
+    INFO(updated.out << updated.err);
+    CHECK(updated.code == ExitCode::Ok);
+    CHECK(contains(updated.out, "is up to date"));
+    CHECK(contentOf(session.files.plan) == text);
+    const RunResult regenerated =
+        session.run({"worldplan", "regenerate", "--room", "room:amiga:2", "--seed", "102938", "--dry-run", "--json"});
+    INFO(regenerated.out << regenerated.err);
+    REQUIRE(regenerated.code == ExitCode::Ok);
+    const nlohmann::json result = nlohmann::json::parse(regenerated.out);
+    CHECK(result["changed"] == false);
+    CHECK(result["impact"]["roomsRegenerated"] == nlohmann::json{"room:amiga", "room:amiga:2"});
+    CHECK(contentOf(session.files.plan) == text);
 }

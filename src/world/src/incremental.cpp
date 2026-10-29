@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -32,6 +33,10 @@ namespace rv::world {
 namespace {
 
 using catalog::GameId;
+
+/// The first generator that builds expansion rooms (ADR-0015 §7): a chain an earlier one made migrates its titles
+/// unplaced for capacity once.
+constexpr GeneratorVersion kFirstExpandingGenerator{1, 5};
 
 /// The order of titles within a section (ADR-0010 §6): catalog sort key, title key, GameId; in a shared or arcade room
 /// after the title's system's section (ADR-0013 §6), so that a new title's predecessor is in its own section.
@@ -133,48 +138,68 @@ std::string globalRegenerationReason(const WorldPlan& previous, const BuildingUp
     return {};
 }
 
-/// The room `room` of `building` with its elements, as a plan of that one room (the header kept).
-WorldPlan extractRoom(const WorldPlan& building, const RoomId& room) {
+/// The rooms `rooms` of `building` (a chain: a room and its expansions) with their elements, as a plan of those rooms
+/// (the header kept).
+WorldPlan extractRooms(const WorldPlan& building, const std::set<RoomId>& rooms) {
     WorldPlan part = building;
     part.floors.clear();
-    std::erase_if(part.rooms, [&](const Room& candidate) { return candidate.id != room; });
-    std::erase_if(part.fixtures, [&](const Fixture& fixture) { return fixture.id.room() != room; });
+    std::erase_if(part.rooms, [&](const Room& candidate) { return !rooms.contains(candidate.id); });
+    std::erase_if(part.fixtures, [&](const Fixture& fixture) { return !rooms.contains(fixture.id.room()); });
     std::erase_if(part.placements,
-                  [&](const Placement& placement) { return placement.slot.fixture().room() != room; });
+                  [&](const Placement& placement) { return !rooms.contains(placement.slot.fixture().room()); });
     std::erase_if(part.dressing,
-                  [&](const DressedLevel& dressed) { return dressed.level.fixture().room() != room; });
-    std::erase_if(part.lights, [&](const PlanLight& light) { return light.id.room() != room; });
-    std::erase_if(part.unplaced, [&](const UnplacedGame& game) { return game.room != room; });
+                  [&](const DressedLevel& dressed) { return !rooms.contains(dressed.level.fixture().room()); });
+    std::erase_if(part.lights, [&](const PlanLight& light) { return !rooms.contains(light.id.room()); });
+    std::erase_if(part.unplaced, [&](const UnplacedGame& game) { return !rooms.contains(game.room); });
     return part;
 }
 
-/// `building` with the room `room` and its elements replaced by those of `part` (a plan of that one room).
-void replaceRoom(WorldPlan& building, const RoomId& room, WorldPlan&& part) {
-    std::erase_if(building.rooms, [&](const Room& candidate) { return candidate.id == room; });
-    std::erase_if(building.fixtures, [&](const Fixture& fixture) { return fixture.id.room() == room; });
+/// `building` with the rooms `rooms` and their elements replaced by those of `part` (a plan of those rooms, and of
+/// the expansions it added).
+void replaceRooms(WorldPlan& building, const std::set<RoomId>& rooms, WorldPlan&& part) {
+    std::erase_if(building.rooms, [&](const Room& candidate) { return rooms.contains(candidate.id); });
+    std::erase_if(building.fixtures, [&](const Fixture& fixture) { return rooms.contains(fixture.id.room()); });
     std::erase_if(building.placements,
-                  [&](const Placement& placement) { return placement.slot.fixture().room() == room; });
+                  [&](const Placement& placement) { return rooms.contains(placement.slot.fixture().room()); });
     std::erase_if(building.dressing,
-                  [&](const DressedLevel& dressed) { return dressed.level.fixture().room() == room; });
-    std::erase_if(building.lights, [&](const PlanLight& light) { return light.id.room() == room; });
-    std::erase_if(building.unplaced, [&](const UnplacedGame& game) { return game.room == room; });
+                  [&](const DressedLevel& dressed) { return rooms.contains(dressed.level.fixture().room()); });
+    std::erase_if(building.lights, [&](const PlanLight& light) { return rooms.contains(light.id.room()); });
+    std::erase_if(building.unplaced, [&](const UnplacedGame& game) { return rooms.contains(game.room); });
     detail::appendRoom(building, std::move(part));
 }
 
-/// What one room's update reads.
+/// The rooms of the chain whose head is `head` among `rooms`: the head and its expansions.
+std::set<RoomId> chainOf(std::span<const Room> rooms, const RoomId& head) {
+    std::set<RoomId> chain;
+    for (const Room& room : rooms) {
+        if (room.id.head() == head) {
+            chain.insert(room.id);
+        }
+    }
+    return chain;
+}
+
+/// What one chain's update reads (a room alone, or a room and its expansions: ADR-0015 §7).
 struct RoomUpdateInput {
-    /// The room's selection: its system's, or a shared or arcade room's over its sections (sectionsSelection()).
+    /// The chain's selection: its system's, or a shared or arcade room's over its sections (sectionsSelection()).
     const RoomSelection& selection;
     const WorldConfig& config;
     const WorldOverrides& overrides;
     const std::vector<GameAlias>& aliases;
-    /// The room as it stands, a plan of that one room.
+    /// The chain as it stands, a plan of its rooms (the head and its expansions).
     WorldPlan previous;
     /// A shared or arcade room's titles' sections; null for a console room.
     const detail::SectionIndex* sections = nullptr;
+    /// The world seed, which seeds an expansion the update creates (seeds.hpp's roomSeed() of its own id).
+    std::uint64_t worldSeed = 0;
+    /// Where an expansion the chain needs stands on its floor (the east end of the shorter row among the rooms standing
+    /// then, which it joins), or nothing on a full floor. Null: the chain takes no expansion.
+    std::function<std::optional<RoomPlacement>(const Room&)> placeExpansion;
+    /// The numbers the overrides name (ADR-0015 §7 as amended on 2026-10-29): a new expansion's comes after them.
+    const detail::ChainNumbering* numbering = nullptr;
 };
 
-/// What one room's update gives: the room as a plan of that one room, and what the building's report needs of it.
+/// What one chain's update gives: the chain as a plan of its rooms, and what the building's report needs of it.
 struct RoomUpdate {
     WorldPlan plan;
     std::vector<GameId> added;
@@ -184,7 +209,23 @@ struct RoomUpdate {
     std::vector<std::string> refused;
     /// The pins at a transform whose fixture followed its wall (a poster on the south wall), with their new transform.
     std::map<FixtureId, FixtureTransform> pinsFollowed;
+    /// The expansions the update created (I4b step 7), by number.
+    std::vector<RoomId> expansionsAdded;
     bool grew = false;
+};
+
+/// A room of the chain an update works on, with what protects its fixtures.
+struct ChainRoom {
+    RoomId id;
+    std::optional<detail::LayoutInput> layout;
+    /// Sockets whose fixture is pinned (no module replaces it), held where the user moved it (nor growth), or pinned in
+    /// its socket (growth would move it: refused on the south wall).
+    std::set<std::string> pinnedSockets;
+    std::set<std::string> socketPinned;
+    std::set<std::string> heldSockets;
+    bool lightsDirty = false;
+    bool grew = false;
+    bool grownOut = false;
 };
 
 class Updater {
@@ -196,15 +237,17 @@ public:
     }
 
     Expected<RoomUpdate> run() {
-        m_room = &m_plan.rooms.front();
-        m_layoutInput.emplace(detail::LayoutInput{m_template, m_data.platform, m_data.mediaFamily, m_data.prefabs,
-                                                  m_room->id, m_room->seed, {},
-                                                  m_input.config.decorationDensityPermille});
-        m_layoutInput->counts.growthSteps = m_room->growthSteps;
+        // The chain's rooms by id: the head first, then its expansions by number.
+        m_head = m_plan.rooms.front().id.head();
+        for (const Room& room : m_plan.rooms) {
+            addChainRoom(room);
+        }
         for (const Placement& placement : m_plan.placements) {
             m_placed.emplace(placement.game, placement);
         }
-        protectPinnedFixtures();
+        for (ChainRoom& room : m_rooms) {
+            protectPinnedFixtures(room);
+        }
         applyAliases();
         classifySelection();
         buildFillOrder();
@@ -218,11 +261,13 @@ public:
                 return propagate(placed.error());
             }
             if (!*placed) {
-                m_unplaced.push_back({title->game, m_room->id, UnplacedReason::Capacity, {}});
+                m_unplaced.push_back({title->game, m_head, UnplacedReason::Capacity, {}});
             }
         }
-        if (m_lightsDirty) {
-            placeWallWashersAgain();
+        for (ChainRoom& room : m_rooms) {
+            if (room.lightsDirty) {
+                placeWallWashersAgain(room);
+            }
         }
         return finish();
     }
@@ -236,39 +281,67 @@ private:
 
     void refuse(std::string change) { m_refused.push_back(std::move(change)); }
 
+    Room& recordOf(const RoomId& id) {
+        return *std::find_if(m_plan.rooms.begin(), m_plan.rooms.end(), [&](const Room& room) { return room.id == id; });
+    }
+    const Room& recordOf(const RoomId& id) const {
+        return *std::find_if(m_plan.rooms.begin(), m_plan.rooms.end(), [&](const Room& room) { return room.id == id; });
+    }
+
+    /// "socket w05" in the head, "socket w05 of room:snes:2" in an expansion (the head's text as before chains).
+    std::string socketText(const ChainRoom& room, const std::string& socket) const {
+        return room.id == m_head ? "socket " + socket : "socket " + socket + " of " + room.id.toString();
+    }
+
+    void addChainRoom(const Room& room) {
+        ChainRoom chainRoom;
+        chainRoom.id = room.id;
+        chainRoom.layout.emplace(detail::LayoutInput{m_template, m_data.platform, m_data.mediaFamily, m_data.prefabs,
+                                                     room.id, room.seed, {},
+                                                     m_input.config.decorationDensityPermille});
+        chainRoom.layout->counts.growthSteps = room.growthSteps;
+        m_rooms.push_back(std::move(chainRoom));
+    }
+
     /// The fixtures the user moved, held where they stand: those standing elsewhere than their home (I4b step 2:
     /// pinned or not, so that an unpin leaves a fixture where it stands) and those pinned at a transform; growth never
     /// moves them (a poster hung on the south wall excepted: it follows its wall) and a module never replaces them. The
     /// sockets whose fixtures are pinned and stand in the plan: a module never replaces them; a growth that would move
-    /// one pinned in its socket of the south wall is not taken.
-    void protectPinnedFixtures() {
+    /// one pinned in its socket of the south wall is not taken. A stale pin (its conflict room-gone: a room of that id
+    /// stands again) protects nothing.
+    void protectPinnedFixtures(ChainRoom& room) {
         for (const Fixture& fixture : m_plan.fixtures) {
-            if (detail::standsMoved(*m_layoutInput, fixture)) {
+            if (fixture.id.room() == room.id && detail::standsMoved(*room.layout, fixture)) {
                 m_held.insert(fixture.id);
-                m_heldSockets.insert(fixture.id.socket());
+                room.heldSockets.insert(fixture.id.socket());
             }
         }
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
+            if (detail::isStalePin(pin)) {
+                continue;
+            }
             const bool stands = std::any_of(m_plan.fixtures.begin(), m_plan.fixtures.end(),
                                             [&](const Fixture& fixture) { return fixture.id == pin.fixture; });
-            if (stands && pin.fixture.room() == m_room->id) {
-                m_pinnedSockets.insert(pin.fixture.socket());
+            if (stands && pin.fixture.room() == room.id) {
+                room.pinnedSockets.insert(pin.fixture.socket());
                 if (pin.transform) {
                     m_held.insert(pin.fixture);
-                    m_heldSockets.insert(pin.fixture.socket());
+                    room.heldSockets.insert(pin.fixture.socket());
                 } else if (!m_held.contains(pin.fixture)) {
-                    m_socketPinned.insert(pin.fixture.socket());
+                    room.socketPinned.insert(pin.fixture.socket());
                 }
             }
         }
     }
 
-    /// The fixture standing in the plan that `candidate` (a fixture for `socket`) would overlap, other than what
-    /// stands in `socket` itself, or null. Every fixture a layout places stays within its socket and the sockets do not
-    /// overlap, so only a fixture the user moved there is ever found (I4b step 2, ADR-0015 §3: its sockets skipped).
-    const Fixture* overlapped(const Fixture& candidate, const std::string& socket) const {
+    /// The fixture of `room` standing in the plan that `candidate` (a fixture for `socket`) would overlap, other than
+    /// what stands in `socket` itself, or null. Every fixture a layout places stays within its socket and the sockets
+    /// do not overlap, so only a fixture the user moved there is ever found (I4b step 2, ADR-0015 §3: its sockets
+    /// skipped).
+    const Fixture* overlapped(const Fixture& candidate, const RoomId& room, const std::string& socket) const {
         for (const Fixture& fixture : m_plan.fixtures) {
-            if (fixture.id.socket() != socket && detail::fixturesOverlap(candidate, fixture)) {
+            if (fixture.id.room() == room && fixture.id.socket() != socket &&
+                detail::fixturesOverlap(candidate, fixture)) {
                 return &fixture;
             }
         }
@@ -320,14 +393,26 @@ private:
                 dressed.level = slot.levelId();
                 dressed.firstSlot = slot.index();
                 dressed.count = 1;
-                dressed.prop = detail::dressingProp(m_room->seed, dressed.level, m_template.shelfDressing);
+                dressed.prop = detail::dressingProp(recordOf(slot.fixture().room()).seed, dressed.level,
+                                                    m_template.shelfDressing);
                 m_plan.dressing.push_back(std::move(dressed));
             }
         }
     }
 
+    /// Whether every room of the chain stands at its template's growth limit (an expansion is then the chain's next
+    /// room: ADR-0015 §7).
+    bool atLimit() const {
+        return std::all_of(m_plan.rooms.begin(), m_plan.rooms.end(), [&](const Room& room) {
+            return room.growthSteps >= m_template.maxGrowthSteps();
+        });
+    }
+
     /// Which selection titles a placed game represents, which are new, which stay unplaced for capacity; the unplaced
-    /// games of the selection with their representatives.
+    /// games of the selection with their representatives. A title the previous plan left unplaced for capacity stays
+    /// so until a regeneration, but at the first update by generator 1.5 of a chain an earlier generator made (its
+    /// head's recorded version), whose every room stands at its limit: there it is new again, an addition of the
+    /// chain (ADR-0015 §7's migration: the chain's free slots, then its next room).
     void classifySelection() {
         const RoomSelection& selection = m_input.selection;
         std::map<GameId, std::vector<GameId>> versionsOf; // a title's other versions, by its representative
@@ -342,10 +427,11 @@ private:
         }
         std::map<GameId, GameId> previousRepresentative;
         std::set<GameId> previousCapacity;
+        const bool capacityAgain = m_previous.rooms.front().generatorVersion < kFirstExpandingGenerator && atLimit();
         for (const UnplacedGame& game : m_previous.unplaced) {
             if (game.reason == UnplacedReason::DuplicateTitle) {
                 previousRepresentative.emplace(game.game, game.representative);
-            } else if (game.reason == UnplacedReason::Capacity) {
+            } else if (game.reason == UnplacedReason::Capacity && !capacityAgain) {
                 previousCapacity.insert(game.game);
             }
         }
@@ -377,7 +463,7 @@ private:
                 m_representedBy.emplace(title.game, *representative);
                 m_keys.emplace(*representative, keyOf(title));
             } else if (previousCapacity.contains(title.game)) {
-                m_unplaced.push_back({title.game, m_room->id, UnplacedReason::Capacity, {}});
+                m_unplaced.push_back({title.game, m_head, UnplacedReason::Capacity, {}});
             } else {
                 m_newTitles.push_back(&title);
             }
@@ -387,6 +473,7 @@ private:
                 continue; // it keeps its slot (no cover now, unavailable, or a version of a title it represents)
             }
             UnplacedGame entry = game;
+            entry.room = m_head;
             if (entry.reason == UnplacedReason::DuplicateTitle) {
                 if (const auto by = m_representedBy.find(entry.representative); by != m_representedBy.end()) {
                     entry.representative = by->second;
@@ -395,15 +482,16 @@ private:
             m_unplaced.push_back(entry);
         }
         for (const auto& [title, representative] : m_representedBy) {
-            m_unplaced.push_back({title, m_room->id, UnplacedReason::DuplicateTitle, representative});
+            m_unplaced.push_back({title, m_head, UnplacedReason::DuplicateTitle, representative});
         }
     }
 
-    /// The collection modules in the collection's order, then any other by id.
-    std::vector<const Fixture*> modulesInOrder() const {
+    /// The collection modules of `room` in the collection's order, then any other by id.
+    std::vector<const Fixture*> modulesInOrder(const RoomId& room) const {
         std::vector<const Fixture*> modules;
         for (const Fixture& fixture : m_plan.fixtures) {
-            if (fixture.role == FixtureRole::HeroModule || fixture.role == FixtureRole::SideModule) {
+            if (fixture.id.room() == room &&
+                (fixture.role == FixtureRole::HeroModule || fixture.role == FixtureRole::SideModule)) {
                 modules.push_back(&fixture);
             }
         }
@@ -419,40 +507,43 @@ private:
     }
 
     /// The spine-out section's levels in fill order (allocation.hpp's spineFillRounds(): a family standing on its side
-    /// takes the hero-wall modules' levels in turns) with what stands on them.
+    /// takes the hero-wall modules' levels in turns) with what stands on them: one fill order per chain, its head's
+    /// levels, then each expansion's by number (ADR-0015 §7).
     void buildFillOrder() {
         m_fill.clear();
         m_levelIndex.clear();
-        std::vector<const Fixture*> modules;
-        std::vector<const PrefabInfo*> infos;
-        std::vector<std::vector<std::size_t>> bandLevels;
-        std::vector<bool> heroWall;
-        for (const Fixture* module : modulesInOrder()) {
-            const PrefabInfo* info = m_data.prefabs.find(module->prefab);
-            if (info == nullptr) {
-                continue; // roomKeepReason() made sure of every collection fixture's prefab
+        for (const ChainRoom& room : m_rooms) {
+            std::vector<const Fixture*> modules;
+            std::vector<const PrefabInfo*> infos;
+            std::vector<std::vector<std::size_t>> bandLevels;
+            std::vector<bool> heroWall;
+            for (const Fixture* module : modulesInOrder(room.id)) {
+                const PrefabInfo* info = m_data.prefabs.find(module->prefab);
+                if (info == nullptr) {
+                    continue; // roomKeepReason() made sure of every collection fixture's prefab
+                }
+                std::vector<LevelFacing> facings;
+                for (const SlotLevelInfo& level : info->levels) {
+                    facings.push_back(level.facing(m_data.mediaFamily, module->role));
+                }
+                modules.push_back(module);
+                infos.push_back(info);
+                bandLevels.push_back(detail::bandOrder(info->levels, facings, m_template.eyeHeightMm));
+                heroWall.push_back(module->role == FixtureRole::HeroModule);
             }
-            std::vector<LevelFacing> facings;
-            for (const SlotLevelInfo& level : info->levels) {
-                facings.push_back(level.facing(m_data.mediaFamily, module->role));
-            }
-            modules.push_back(module);
-            infos.push_back(info);
-            bandLevels.push_back(detail::bandOrder(info->levels, facings, m_template.eyeHeightMm));
-            heroWall.push_back(module->role == FixtureRole::HeroModule);
-        }
-        for (const auto& round : detail::spineFillRounds(bandLevels, heroWall, m_data.mediaFamily.spineFacing)) {
-            for (const detail::ModuleLevel& at : round) {
-                const Fixture* module = modules[at.module];
-                const SlotLevelInfo& level = infos[at.module]->levels[at.level];
-                SpineLevel spine;
-                spine.fixture = module->id;
-                spine.level = level.level;
-                spine.slots = level.slots;
-                spine.taken.assign(level.slots, false);
-                spine.dressed.assign(level.slots, false);
-                m_levelIndex.emplace(std::pair(module->id, level.level), m_fill.size());
-                m_fill.push_back(std::move(spine));
+            for (const auto& round : detail::spineFillRounds(bandLevels, heroWall, m_data.mediaFamily.spineFacing)) {
+                for (const detail::ModuleLevel& at : round) {
+                    const Fixture* module = modules[at.module];
+                    const SlotLevelInfo& level = infos[at.module]->levels[at.level];
+                    SpineLevel spine;
+                    spine.fixture = module->id;
+                    spine.level = level.level;
+                    spine.slots = level.slots;
+                    spine.taken.assign(level.slots, false);
+                    spine.dressed.assign(level.slots, false);
+                    m_levelIndex.emplace(std::pair(module->id, level.level), m_fill.size());
+                    m_fill.push_back(std::move(spine));
+                }
             }
         }
         for (const auto& [game, placement] : m_placed) {
@@ -528,8 +619,8 @@ private:
         return level ? Cell{*level, slot.index() + 1} : Cell{};
     }
 
-    /// Places a new title (the file's header), adding a module or growing the room when the section is full. False
-    /// when even the template's limit holds no more.
+    /// Places a new title (the file's header), adding a module, growing a room or adding an expansion when the
+    /// chain's section is full. False when even that holds no more.
     Expected<bool> placeNewTitle(const RoomTitle& title) {
         const TitleKey key = keyOf(title);
         for (;;) {
@@ -550,7 +641,14 @@ private:
             if (*added) {
                 continue;
             }
-            if (!grow()) {
+            if (grow()) {
+                continue;
+            }
+            auto expanded = addExpansion();
+            if (!expanded) {
+                return propagate(expanded.error());
+            }
+            if (!*expanded) {
                 return false;
             }
         }
@@ -561,7 +659,7 @@ private:
         Placement placement;
         placement.slot = *SlotId::make(level.fixture, level.level, cell.index);
         placement.game = title.game;
-        detail::setPlacementOffset(placement, m_room->seed, m_data.mediaFamily.id, false);
+        detail::setPlacementOffset(placement, recordOf(level.fixture.room()).seed, m_data.mediaFamily.id, false);
         level.taken[cell.index] = true;
         m_keys[title.game] = key;
         m_spine.insert(std::upper_bound(m_spine.begin(), m_spine.end(), std::pair(key, placement.slot)),
@@ -579,44 +677,60 @@ private:
         m_dressingRemoved.push_back(id);
     }
 
-    bool hasModuleIn(const std::string& socket) const {
+    bool hasModuleIn(const RoomId& room, const std::string& socket) const {
         return std::any_of(m_plan.fixtures.begin(), m_plan.fixtures.end(), [&](const Fixture& fixture) {
-            return fixture.id.socket() == socket && fixture.role == FixtureRole::SideModule;
+            return fixture.id.room() == room && fixture.id.socket() == socket &&
+                   fixture.role == FixtureRole::SideModule;
         });
     }
 
-    /// A side-wall module in the next side-wall socket of the collection's order that holds none (its decoration
-    /// removed, every level dressed). False when no socket of the room's growth is left.
+    /// A side-wall module in the next side-wall socket of the collection's order that holds none, in the chain's first
+    /// room that has one (its decoration removed, every level dressed). False when no room's growth leaves a socket.
     Expected<bool> addSideModule() {
+        for (ChainRoom& room : m_rooms) {
+            auto added = addSideModuleIn(room);
+            if (!added || *added) {
+                return added;
+            }
+        }
+        return false;
+    }
+
+    Expected<bool> addSideModuleIn(ChainRoom& room) {
+        const std::uint32_t growth = recordOf(room.id).growthSteps;
         for (const std::string& socketId : m_template.collectionOrder) {
             const TemplateSocket* socket = m_template.socket(socketId);
-            if (socket == nullptr || socket->kind != SocketKind::SideWall || socket->growthStep > m_room->growthSteps ||
-                hasModuleIn(socketId)) {
+            if (socket == nullptr || socket->kind != SocketKind::SideWall || socket->growthStep > growth ||
+                hasModuleIn(room.id, socketId)) {
                 continue;
             }
-            if (m_pinnedSockets.contains(socketId)) {
+            if (room.pinnedSockets.contains(socketId)) {
                 // Reported once: the report's lists are made unique.
-                refuse("socket " + socketId +
+                refuse(socketText(room, socketId) +
                        ": a side-wall module would replace a pinned fixture; it went to the next socket");
                 continue;
             }
-            if (m_heldSockets.contains(socketId)) {
-                refuse("socket " + socketId +
+            if (room.heldSockets.contains(socketId)) {
+                refuse(socketText(room, socketId) +
                        ": a side-wall module would replace the fixture moved out of it; it went to the next socket");
                 continue;
             }
-            auto module = detail::sideModuleIn(*m_layoutInput, *socket);
+            auto module = detail::sideModuleIn(*room.layout, *socket);
             if (!module) {
                 return propagate(module.error());
             }
-            if (const Fixture* moved = overlapped(module->fixture, socketId)) {
-                refuse("socket " + socketId + ": a side-wall module would overlap " + moved->id.toString() +
+            if (const Fixture* moved = overlapped(module->fixture, room.id, socketId)) {
+                refuse(socketText(room, socketId) + ": a side-wall module would overlap " + moved->id.toString() +
                        ", moved there; it went to the next socket");
                 continue;
             }
-            std::erase_if(m_plan.fixtures, [&](const Fixture& fixture) { return fixture.id.socket() == socketId; });
+            std::erase_if(m_plan.fixtures, [&](const Fixture& fixture) {
+                return fixture.id.room() == room.id && fixture.id.socket() == socketId;
+            });
             // A lamp standing there took its light with it; the wall-washers are placed again below.
-            std::erase_if(m_plan.lights, [&](const PlanLight& light) { return light.id.socket() == socketId; });
+            std::erase_if(m_plan.lights, [&](const PlanLight& light) {
+                return light.id.room() == room.id && light.id.socket() == socketId;
+            });
             Fixture fixture = std::move(module->fixture);
             if (!m_template.shelfDressing.empty()) {
                 for (const FixtureLevel& level : fixture.levels) {
@@ -624,22 +738,39 @@ private:
                     dressed.level = *LevelId::make(fixture.id, level.level);
                     dressed.firstSlot = 0;
                     dressed.count = level.slots;
-                    dressed.prop = detail::dressingProp(m_room->seed, dressed.level, m_template.shelfDressing);
+                    dressed.prop =
+                        detail::dressingProp(recordOf(room.id).seed, dressed.level, m_template.shelfDressing);
                     m_plan.dressing.push_back(std::move(dressed));
                 }
             }
             m_plan.fixtures.push_back(std::move(fixture));
-            m_lightsDirty = true;
+            room.lightsDirty = true;
             buildFillOrder();
             return true;
         }
         return false;
     }
 
-    /// One more growth step (ADR-0010 §4): the south wall and what stands on it move south, the step's side-wall sockets
-    /// are decorated. False at the template's limit, or when it would move a pinned fixture.
+    /// One more growth step of the chain's first room that can take one. False when none can.
     bool grow() {
-        if (m_grownOut || m_room->growthSteps >= m_template.maxGrowthSteps()) {
+        for (ChainRoom& room : m_rooms) {
+            if (growRoom(room)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::size_t lightsOf(const RoomId& room) const {
+        return static_cast<std::size_t>(std::count_if(m_plan.lights.begin(), m_plan.lights.end(),
+                                                      [&](const PlanLight& light) { return light.id.room() == room; }));
+    }
+
+    /// One more growth step of `room` (ADR-0010 §4): the south wall and what stands on it move south, the step's
+    /// side-wall sockets are decorated. False at the template's limit, or when it would move a pinned fixture.
+    bool growRoom(ChainRoom& chainRoom) {
+        Room& room = recordOf(chainRoom.id);
+        if (chainRoom.grownOut || room.growthSteps >= m_template.maxGrowthSteps()) {
             return false;
         }
         std::set<std::string> southSockets;
@@ -648,34 +779,39 @@ private:
                 southSockets.insert(socket.id);
             }
         }
-        for (const std::string& socket : m_socketPinned) {
+        for (const std::string& socket : chainRoom.socketPinned) {
             if (southSockets.contains(socket)) {
-                refuse("growth: the room would grow and move the pinned fixture of socket " + socket +
+                refuse("growth: the room would grow and move the pinned fixture of " + socketText(chainRoom, socket) +
                        "; the titles that need it are unplaced for capacity");
-                m_grownOut = true;
+                chainRoom.grownOut = true;
                 return false;
             }
         }
-        const Room before = *m_room;
-        const std::uint32_t growth = m_room->growthSteps + 1;
+        const Room before = room;
+        const std::uint32_t growth = room.growthSteps + 1;
         const Footprint interior = interiorFootprint(m_template, growth);
-        m_room->growthSteps = growth;
-        m_room->minXMm = interior.minXMm;
-        m_room->maxXMm = interior.maxXMm;
-        m_room->minZMm = interior.minZMm;
-        m_room->maxZMm = interior.maxZMm;
-        m_layoutInput->counts.growthSteps = growth;
+        room.growthSteps = growth;
+        room.minXMm = interior.minXMm;
+        room.maxXMm = interior.maxXMm;
+        room.minZMm = interior.minZMm;
+        room.maxZMm = interior.maxZMm;
+        chainRoom.layout->counts.growthSteps = growth;
         // A fixture the user moved stays where it was put, and so does its light (I4b step 2, ADR-0015 §3), but for a
         // decoration hung on the south wall: it hangs on its wall still (the validation's decoration-off-wall), its pin
         // following it.
         std::set<std::string> followed;
+        bool holds = false;
         for (Fixture& fixture : m_plan.fixtures) {
+            if (fixture.id.room() != chainRoom.id) {
+                continue;
+            }
             if (!m_held.contains(fixture.id)) {
                 if (southSockets.contains(fixture.id.socket())) {
                     fixture.zMm += m_template.growthStepMm;
                 }
                 continue;
             }
+            holds = true;
             const std::optional<detail::WallMount> mount = detail::wallMountOf(fixture, before);
             if (detail::isHungDecoration(fixture) && mount && mount->wall == Wall::South &&
                 detail::hangsOnWall(fixture, before)) {
@@ -685,30 +821,89 @@ private:
             }
         }
         for (PlanLight& light : m_plan.lights) {
-            if ((southSockets.contains(light.id.socket()) && !m_heldSockets.contains(light.id.socket())) ||
+            if (light.id.room() != chainRoom.id) {
+                continue;
+            }
+            if ((southSockets.contains(light.id.socket()) && !chainRoom.heldSockets.contains(light.id.socket())) ||
                 followed.contains(light.id.socket())) {
                 light.zMm += m_template.growthStepMm;
                 light.targetZMm += m_template.growthStepMm;
             }
         }
         // The wall-washers then follow the modules where they stand.
-        m_lightsDirty = m_lightsDirty || !m_held.empty();
+        chainRoom.lightsDirty = chainRoom.lightsDirty || holds;
+        std::vector<Fixture> roomFixtures;
+        for (const Fixture& fixture : m_plan.fixtures) {
+            if (fixture.id.room() == chainRoom.id) {
+                roomFixtures.push_back(fixture);
+            }
+        }
         for (const std::string& socketId : m_template.collectionOrder) {
             const TemplateSocket* socket = m_template.socket(socketId);
             if (socket == nullptr || socket->kind != SocketKind::SideWall || socket->growthStep != growth) {
                 continue;
             }
             const std::size_t limit = std::min(m_template.lightLimit, kMaxSceneLights);
-            const std::size_t left = limit - std::min(limit, m_plan.lights.size());
-            auto decoration = detail::decorationIn(*m_layoutInput, *socket, left, m_plan.fixtures);
-            if (decoration && overlapped(decoration->fixture.fixture, socketId) == nullptr) {
+            const std::size_t left = limit - std::min(limit, lightsOf(chainRoom.id));
+            auto decoration = detail::decorationIn(*chainRoom.layout, *socket, left, roomFixtures);
+            if (decoration && overlapped(decoration->fixture.fixture, chainRoom.id, socketId) == nullptr) {
+                roomFixtures.push_back(decoration->fixture.fixture);
                 m_plan.fixtures.push_back(std::move(decoration->fixture.fixture));
                 if (decoration->light) {
                     m_plan.lights.push_back(*decoration->light);
                 }
             }
         }
-        m_grew = true;
+        chainRoom.grew = true;
+        return true;
+    }
+
+    /// The chain's next room (ADR-0015 §7): when every room stands at its template's limit, an expansion numbered after
+    /// the chain's highest and every number of the chain the overrides name (as amended on 2026-10-29: a number they
+    /// name never comes back) enters the floor where `placeExpansion` stands it, laid out as a fresh room of no title
+    /// (its display fixtures and hero band dressed: an expansion an update creates has no face-out titles until its
+    /// chain is regenerated), every spine-out level dressed until titles take it. False on a full floor, or when a room
+    /// of the chain is short of its limit (a growth a pin refused).
+    Expected<bool> addExpansion() {
+        if (m_floorFull || !m_input.placeExpansion || !atLimit()) {
+            return false;
+        }
+        std::uint32_t highest = 1;
+        for (const Room& room : m_plan.rooms) {
+            highest = std::max(highest, room.id.index());
+        }
+        const std::uint32_t number =
+            m_input.numbering != nullptr ? m_input.numbering->next(m_head, highest) : highest + 1;
+        auto record = detail::expansionRecord(recordOf(m_head), number, m_template);
+        if (!record) {
+            m_floorFull = true; // past the largest number of a chain
+            return false;
+        }
+        const std::optional<RoomPlacement> placement = m_input.placeExpansion(*record);
+        if (!placement) {
+            m_floorFull = true;
+            return false;
+        }
+        RoomSelection none;
+        none.room = record->id;
+        none.eligibility = m_input.selection.eligibility;
+        none.titleKeyRule = m_input.selection.titleKeyRule;
+        none.catalogSortKeyVersion = m_input.selection.catalogSortKeyVersion;
+        auto content = detail::generateRoomContent(none, m_input.config, m_input.worldSeed, m_data, m_input.sections);
+        if (!content) {
+            return propagate(content.error());
+        }
+        Room& room = content->rooms.front();
+        room.kind = record->kind;
+        room.floor = record->floor;
+        room.sections = record->sections;
+        room.generatorVersion = kGeneratorVersion;
+        room.expands = m_head;
+        room.placement = *placement;
+        addChainRoom(room);
+        m_expansionsAdded.push_back(room.id);
+        detail::appendRoom(m_plan, std::move(*content));
+        buildFillOrder();
         return true;
     }
 
@@ -724,21 +919,24 @@ private:
             return;
         }
         for (const FixturePin& pin : m_input.overrides.fixturePins) {
-            if (pin.fixture == fixture.id && pin.transform == standing) {
+            if (pin.fixture == fixture.id && pin.transform == standing && !detail::isStalePin(pin)) {
                 m_pinsFollowed.emplace(fixture.id, next);
             }
         }
     }
 
-    /// The wall-washers over the modules as they stand now (a module the user moved where it stands), within the
-    /// lights the others leave (fixture_layout.hpp).
-    void placeWallWashersAgain() {
-        std::erase_if(m_plan.lights, [](const PlanLight& light) { return light.role == LightRole::WallWasher; });
-        const std::vector<const Fixture*> inOrder = modulesInOrder();
-        const detail::ModulesOnWalls modules = detail::modulesOnWalls(*m_layoutInput, *m_room, inOrder, m_held);
+    /// The wall-washers of `room` over its modules as they stand now (a module the user moved where it stands), within
+    /// the lights the others leave (fixture_layout.hpp).
+    void placeWallWashersAgain(ChainRoom& room) {
+        std::erase_if(m_plan.lights, [&](const PlanLight& light) {
+            return light.id.room() == room.id && light.role == LightRole::WallWasher;
+        });
+        const std::vector<const Fixture*> inOrder = modulesInOrder(room.id);
+        const detail::ModulesOnWalls modules =
+            detail::modulesOnWalls(*room.layout, recordOf(room.id), inOrder, m_held);
         const std::size_t limit = std::min(m_template.lightLimit, kMaxSceneLights);
-        const std::size_t budget = limit - std::min(limit, m_plan.lights.size());
-        for (const PlanLight& light : detail::wallWasherLights(*m_layoutInput, modules.modules, budget)) {
+        const std::size_t budget = limit - std::min(limit, lightsOf(room.id));
+        for (const PlanLight& light : detail::wallWasherLights(*room.layout, modules.modules, budget)) {
             m_plan.lights.push_back(light);
         }
     }
@@ -759,7 +957,8 @@ private:
         update.slotsFreed = std::move(m_slotsFreed);
         update.refused = std::move(m_refused);
         update.pinsFollowed = std::move(m_pinsFollowed);
-        update.grew = m_grew;
+        update.expansionsAdded = std::move(m_expansionsAdded);
+        update.grew = std::any_of(m_rooms.begin(), m_rooms.end(), [](const ChainRoom& room) { return room.grew; });
         return update;
     }
 
@@ -768,18 +967,15 @@ private:
     const RoomTemplate& m_template;
     WorldPlan m_previous;
     WorldPlan m_plan;
-    Room* m_room = nullptr;
-    std::optional<detail::LayoutInput> m_layoutInput;
+    RoomId m_head;
+    std::vector<ChainRoom> m_rooms;
 
     std::map<GameId, Placement> m_placed;
     std::map<GameId, TitleKey> m_keys;
     std::map<GameId, GameId> m_representedBy;
     std::vector<const RoomTitle*> m_newTitles;
     std::vector<UnplacedGame> m_unplaced;
-    std::set<std::string> m_pinnedSockets;
-    std::set<std::string> m_socketPinned;
     std::set<FixtureId> m_held;
-    std::set<std::string> m_heldSockets;
     std::map<FixtureId, FixtureTransform> m_pinsFollowed;
 
     std::vector<SpineLevel> m_fill;
@@ -791,9 +987,8 @@ private:
     std::vector<LevelId> m_dressingRemoved;
     std::vector<SlotId> m_slotsFreed;
     std::vector<std::string> m_refused;
-    bool m_lightsDirty = false;
-    bool m_grew = false;
-    bool m_grownOut = false;
+    std::vector<RoomId> m_expansionsAdded;
+    bool m_floorFull = false;
 };
 
 /// The list without its repeated elements, sorted.
@@ -890,6 +1085,12 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     }
     WorldPlan previous = std::move(*lifted);
     sortPlan(previous);
+    // A chain is updated by its head: an expansion without one is refused before anything is decided.
+    if (Status heads = detail::checkChainHeads(previous, "update"); !heads) {
+        return propagate(heads.error());
+    }
+    // The numbers the overrides name, which a new expansion never takes (ADR-0015 §7 as amended on 2026-10-29).
+    const detail::ChainNumbering numbering = detail::chainNumbering(input.overrides);
 
     // Each selection goes to the room that holds its system's section, once: a system that has grown past the shared
     // threshold stays in its section (ADR-0013 §3: sticky). A system no room holds enters the building (I4 step 6a).
@@ -914,7 +1115,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             newSystems.push_back(&selection);
             continue;
         }
-        selectionsOf[room->id].push_back(&selection);
+        selectionsOf[room->id.head()].push_back(&selection);
     }
     // A shared or arcade room is updated with the selections of all its sections: the plan does not say which section
     // an unplaced game was of, and a new title's predecessor may be another section's. A room some of whose sections
@@ -971,21 +1172,30 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::vector<std::string> migrationRefused;
     for (const Room& room : previous.rooms) {
         const WorldData* data = dataOf.at(room.id);
-        if (data->successor == nullptr || !selectionsOf.contains(room.id) ||
+        if (room.id.isExpansion() || data->successor == nullptr || !selectionsOf.contains(room.id) ||
             !roomKeepReason(previous, room, *data).empty()) {
             continue;
         }
+        // A chain migrates whole (its expansions with its head); a pin in any of its rooms refuses it, a stale one
+        // (room-gone) excepted.
         const bool pinned = std::any_of(input.overrides.gamePins.begin(), input.overrides.gamePins.end(),
-                                        [&](const GamePin& pin) { return pin.slot.fixture().room() == room.id; }) ||
+                                        [&](const GamePin& pin) {
+                                            return pin.slot.fixture().room().head() == room.id &&
+                                                   !detail::isStalePin(pin);
+                                        }) ||
                             std::any_of(input.overrides.fixturePins.begin(), input.overrides.fixturePins.end(),
-                                        [&](const FixturePin& pin) { return pin.fixture.room() == room.id; });
+                                        [&](const FixturePin& pin) {
+                                            return pin.fixture.room().head() == room.id && !detail::isStalePin(pin);
+                                        });
         if (pinned) {
             migrationRefused.push_back("migrate " + room.id.toString() + " from " + room.mediaFamily + " to " +
                                        data->successor->mediaFamily.id + ": a pin names the room");
             continue;
         }
         migrating.emplace(room.id, data->successor.get());
-        dataOf[room.id] = data->successor.get();
+        for (const RoomId& member : chainOf(previous.rooms, room.id)) {
+            dataOf[member] = data->successor.get();
+        }
     }
 
     // The systems entering the building, each with its own data (loadWorldData()'s, with the data of the shared or
@@ -1059,13 +1269,33 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         standing.data = dataOf.at(room.id);
         standing.record = room;
         standing.stored = true;
-        standing.closed = !selectionsOf.contains(room.id);
+        standing.closed = !selectionsOf.contains(room.id.head());
         buildingRooms.push_back(std::move(standing));
     }
     auto entry = detail::enterBuilding(std::move(buildingRooms), entering, input.config, building);
     if (!entry) {
         return propagate(entry.error());
     }
+    // A new room past its template's capacity takes expansions (ADR-0015 §7), placed once every system entered; a
+    // stored chain's expansions enter after them, as its update needs them (the rooms standing then: `standing`).
+    if (Status placed = detail::placeExpansions(*entry, input.config, building, numbering); !placed) {
+        return propagate(placed.error());
+    }
+    std::vector<Room> standingRooms;
+    for (const detail::BuildingRoom& room : entry->rooms) {
+        standingRooms.push_back(room.record);
+        standingRooms.insert(standingRooms.end(), room.expansions.begin(), room.expansions.end());
+    }
+    const auto placeExpansion = [&](const Room& record) -> std::optional<RoomPlacement> {
+        const auto placement =
+            placeEnteringRoom(record, floorRows(standingRooms, record.floor, building.layout), building.layout);
+        if (placement) {
+            Room placed = record;
+            placed.placement = *placement;
+            standingRooms.push_back(std::move(placed));
+        }
+        return placement;
+    };
     digestRooms.insert(digestRooms.end(), entry->digest.begin(), entry->digest.end());
     std::set<const RoomSelection*> waiting;
     std::vector<SystemRoom> systemsWaiting;
@@ -1148,15 +1378,23 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     for (const Placement& placement : previous.placements) {
         placedBefore.insert(placement.game);
     }
+    const std::uint64_t seed = worldSeed(input.config, input.library);
+    std::vector<RoomId> roomsAdded;
+    // Each stored chain (a room and its expansions, ADR-0015 §7), by its head's id: kept, migrated, updated with its
+    // selection, or left as it is.
     for (const Room& room : previous.rooms) {
+        if (room.id.isExpansion()) {
+            continue; // with its head
+        }
+        const std::set<RoomId> chain = chainOf(previous.rooms, room.id);
         const WorldData& data = *dataOf.at(room.id);
         const auto selections = selectionsOf.find(room.id);
         const auto now = sectionsNow.find(room.id);
         const std::vector<catalog::SystemName>& roomSections = now != sectionsNow.end() ? now->second : room.sections;
         if (now != sectionsNow.end()) {
-            // The new sections are appended to its record whatever becomes of its contents.
+            // The new sections are appended to its records whatever becomes of its contents.
             for (Room& record : plan.rooms) {
-                if (record.id == room.id) {
+                if (record.id.head() == room.id) {
                     record.sections = roomSections;
                 }
             }
@@ -1174,38 +1412,69 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             }
         }
         if (const auto migration = migrating.find(room.id); migration != migrating.end() && selection != nullptr) {
-            // Regenerated as a fresh building generates it, with its successor's data; its place on its floor kept, its
-            // z following its new depth.
-            auto content = detail::generateRoomContent(*selection, input.config, worldSeed(input.config, input.library),
-                                                       data, room.kind == RoomKind::Console ? nullptr : &sections);
+            // Regenerated as a fresh building generates it, with its successor's data; its rooms' places on their
+            // floor kept, their z following their new depth, and the expansions its titles need now added.
+            std::vector<Room> records;
+            for (const Room& member : previous.rooms) {
+                if (chain.contains(member.id)) {
+                    records.push_back(member);
+                    records.back().sections = roomSections;
+                }
+            }
+            auto limit = detail::roomTitleLimit(data, input.config);
+            if (!limit) {
+                return propagate(limit.error());
+            }
+            const std::uint32_t needed = detail::chainRoomsFor(selection->titles.size(), *limit);
+            for (std::uint32_t index = numbering.next(room.id, records.back().id.index()); records.size() < needed;
+                 ++index) {
+                auto record = detail::expansionRecord(records.front(), index, data.roomTemplate);
+                if (!record) {
+                    break;
+                }
+                const auto placement = placeExpansion(*record);
+                if (!placement) {
+                    break;
+                }
+                record->placement = *placement;
+                roomsAdded.push_back(record->id);
+                dataOf.emplace(record->id, &data);
+                records.push_back(std::move(*record));
+            }
+            auto content = detail::generateChain(*selection, room.kind == RoomKind::Console ? nullptr : &sections,
+                                                 records, roomSections, data, input.config, seed, building);
             if (!content) {
                 return propagate(content.error());
             }
-            Room& record = content->rooms.front();
-            record.kind = room.kind;
-            record.floor = room.floor;
-            record.sections = roomSections;
-            record.generatorVersion = kGeneratorVersion;
-            record.expands = room.expands;
-            record.placement = room.placement;
-            record.placement = followDepth(record, building.layout);
             for (const Placement& placement : content->placements) {
                 if (!placedBefore.contains(placement.game)) {
                     added.push_back(placement.game);
                 }
             }
             newItems = true;
-            // The titles its successor's room holds no slot for, even grown to its largest (unplaced for capacity).
+            // The titles its successor's rooms hold no slot for, even grown to their largest (unplaced for capacity).
             const auto overCapacity = static_cast<std::uint64_t>(
                 std::count_if(content->unplaced.begin(), content->unplaced.end(), [&](const UnplacedGame& game) {
                     return game.room == room.id && game.reason == UnplacedReason::Capacity;
                 }));
-            migratedRooms.push_back({room.id, room.mediaFamily, record.mediaFamily, overCapacity});
-            replaceRoom(plan, room.id, std::move(*content));
+            migratedRooms.push_back({room.id, room.mediaFamily, content->rooms.front().mediaFamily, overCapacity});
+            replaceRooms(plan, chain, std::move(*content));
             continue;
         }
-        if (std::string reason = roomKeepReason(previous, room, data); !reason.empty()) {
-            keptRooms.push_back({room.id, std::move(reason)});
+        std::string keepReason;
+        for (const Room& member : previous.rooms) {
+            if (chain.contains(member.id) && keepReason.empty()) {
+                keepReason = roomKeepReason(previous, member, data);
+            }
+        }
+        if (!keepReason.empty()) {
+            // A chain is kept whole: its rooms share their template, family and generator.
+            for (const Room& member : previous.rooms) {
+                if (chain.contains(member.id)) {
+                    std::string reason = roomKeepReason(previous, member, data);
+                    keptRooms.push_back({member.id, reason.empty() ? "its chain is kept: " + keepReason : reason});
+                }
+            }
             if (selection == nullptr) {
                 continue;
             }
@@ -1213,16 +1482,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
             // selection that it neither places nor lists is unplaced as room-kept. The room-kept entries follow the
             // selection: those of a game no longer in it go, so an update with the same selection changes nothing.
             std::erase_if(plan.unplaced, [&](const UnplacedGame& game) {
-                return game.room == room.id && game.reason == UnplacedReason::RoomKept;
+                return chain.contains(game.room) && game.reason == UnplacedReason::RoomKept;
             });
             std::set<GameId> held;
             for (const Placement& placement : plan.placements) {
-                if (placement.slot.fixture().room() == room.id) {
+                if (chain.contains(placement.slot.fixture().room())) {
                     held.insert(placement.game);
                 }
             }
             for (const UnplacedGame& game : plan.unplaced) {
-                if (game.room == room.id) {
+                if (chain.contains(game.room)) {
                     held.insert(game.game);
                 }
             }
@@ -1243,18 +1512,31 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         if (selection == nullptr) {
             continue;
         }
-        WorldPlan part = extractRoom(previous, room.id);
-        part.rooms.front().sections = roomSections;
-        auto update = Updater(RoomUpdateInput{*selection, input.config, input.overrides, input.aliases,
-                                              std::move(part), room.kind == RoomKind::Console ? nullptr : &sections},
-                              data)
-                          .run();
+        WorldPlan part = extractRooms(previous, chain);
+        for (Room& record : part.rooms) {
+            record.sections = roomSections;
+        }
+        const RoomUpdateInput roomInput{*selection,
+                                        input.config,
+                                        input.overrides,
+                                        input.aliases,
+                                        std::move(part),
+                                        room.kind == RoomKind::Console ? nullptr : &sections,
+                                        seed,
+                                        placeExpansion,
+                                        &numbering};
+        auto update = Updater(roomInput, data).run();
         if (!update) {
             return propagate(update.error());
         }
-        Room& updated = update->plan.rooms.front();
-        updated.generatorVersion = kGeneratorVersion;
-        updated.placement = followDepth(updated, building.layout);
+        for (Room& updated : update->plan.rooms) {
+            updated.generatorVersion = kGeneratorVersion;
+            updated.placement = followDepth(updated, building.layout);
+        }
+        for (const RoomId& expansion : update->expansionsAdded) {
+            dataOf.emplace(expansion, &data);
+            roomsAdded.push_back(expansion);
+        }
         newItems = newItems || !update->added.empty() || !update->slotsFreed.empty();
         added.insert(added.end(), update->added.begin(), update->added.end());
         handedOver.insert(handedOver.end(), update->handedOver.begin(), update->handedOver.end());
@@ -1263,18 +1545,16 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         refused.insert(refused.end(), update->refused.begin(), update->refused.end());
         pinsFollowed.insert(update->pinsFollowed.begin(), update->pinsFollowed.end());
         grew = grew || update->grew;
-        replaceRoom(plan, room.id, std::move(update->plan));
+        replaceRooms(plan, chain, std::move(update->plan));
     }
-    // The new rooms, generated as a fresh building generates them (their face-out titles chosen among their own), and
-    // the games of the systems that found no place.
-    std::vector<RoomId> roomsAdded;
+    // The new rooms, generated as a fresh building generates them (their face-out titles chosen among their own, a
+    // room past its capacity with its expansions), and the games of the systems that found no place.
     std::vector<const WorldData*> newRoomData;
-    const std::uint64_t seed = worldSeed(input.config, input.library);
     for (const detail::BuildingRoom& room : entry->rooms) {
         if (room.stored) {
             continue;
         }
-        auto content = detail::generateEnteredRoom(room, input.config, seed, building);
+        auto content = detail::generateEnteredChain(room, input.config, seed, building);
         if (!content) {
             return propagate(content.error());
         }
@@ -1283,6 +1563,9 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
         }
         newItems = newItems || !content->placements.empty();
         roomsAdded.push_back(room.id);
+        for (const Room& expansion : room.expansions) {
+            roomsAdded.push_back(expansion.id);
+        }
         newRoomData.push_back(room.data);
         for (const detail::EnteringSystem* system : room.entered) {
             systemsEntered.push_back({system->selection->room.system(), room.id});
@@ -1315,7 +1598,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     // changes nothing keeps the plan's provenance, which named more: an update with nothing new then writes nothing
     // whichever rooms it was given (plan still holds the previous inputDigest here).
     const bool partial = std::any_of(previous.rooms.begin(), previous.rooms.end(),
-                                     [&](const Room& room) { return !selectionsOf.contains(room.id); });
+                                     [&](const Room& room) { return !selectionsOf.contains(room.id.head()); });
     // A pack rewritten (a look, ADR-0014 §1) is no change of the inputs either.
     const auto sameButPacks = [&] {
         if (plan.rooms.size() != previous.rooms.size()) {

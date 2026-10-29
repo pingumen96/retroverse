@@ -306,7 +306,8 @@ TEST_CASE("world/migration: a new room of a succeeded family takes its successor
     CHECK(entered.changes.migratedRooms.size() == 1);
 }
 
-TEST_CASE("world/migration: a room grows past its successor's capacity or shrinks, its z following its depth",
+TEST_CASE("world/migration: a room past its successor's capacity takes an expansion, or shrinks, its z following its "
+          "depth",
           "[world][migration]") {
     BuildingWorld world = shippedWorld(kWorldSeed);
     // amiga's 1,700 big boxes fill the old room grown to 16 m (1,923 of big_box), not the new one (1,561 of big_box_v2:
@@ -335,9 +336,20 @@ TEST_CASE("world/migration: a room grows past its successor's capacity or shrink
         CHECK(now->placement == rv::world::followDepth(*now, world.building.layout));
         CHECK(now->placement.xMm == then->placement.xMm);
         if (id == "room:amiga") {
-            // Grown to its largest and still short: the rest unplaced for capacity, counted in the report.
-            CHECK(entry.unplacedForCapacity == 1700 - 1561);
-            CHECK(now->growthSteps >= then->growthSteps);
+            // Past its successor's limit (1,561): a chain of two rooms of 850 (generator 1.5, ADR-0015 §7), the new
+            // expansion entering the floor; nothing unplaced for capacity.
+            CHECK(entry.unplacedForCapacity == 0);
+            const Room* expansion = findRoom(migrated.plan, "room:amiga:2");
+            REQUIRE(expansion != nullptr);
+            CHECK(expansion->expands == now->id);
+            CHECK(expansion->mediaFamily == now->mediaFamily);
+            CHECK(migrated.changes.roomsAdded == std::vector{expansion->id});
+            std::map<std::string, std::size_t> placed;
+            for (const rv::world::Placement& placement : migrated.plan.placements) {
+                ++placed[placement.slot.fixture().room().toString()];
+            }
+            CHECK(placed["room:amiga"] == 850);
+            CHECK(placed["room:amiga:2"] == 850);
         } else {
             // Shallower than before: its z follows its depth back towards the hall.
             CHECK(entry.unplacedForCapacity == 0);

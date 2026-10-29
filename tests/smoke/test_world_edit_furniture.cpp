@@ -883,13 +883,16 @@ TEST_CASE("world_edit: a fixture moved and saved on the real library's computer 
 }
 
 // ADR-0015 §9's row for a fixture moved, measured by hand in Release (hidden: [.bench]): the overflow fixture's amiga
-// room (1,561 big boxes, the size of the reference library's largest room) on its floor, a side-wall module picked up,
-// nudged a few grid steps and dropped (its room's static part rebuilt alone, its collection laid out again), then Salva:
-// the move's and the save's times printed. Run: rv_smoke_tests.exe "[.bench][furniture]" -s.
-TEST_CASE("world_edit: a fixture moved in a room of 1,561 big boxes", "[.bench][edit][furniture]") {
-    const PlannedBuilding building("world_edit_furniture/bench", true, "esde/overflow");
+// room at its template's limit (1,700 big boxes in one room, kRoomAtLimitWorldJson, as a migrated generator-1.4 room
+// holds them) on its floor, a side-wall module picked up, nudged a few grid steps and dropped (its room's static part
+// rebuilt alone, its collection laid out again), then Salva: the move's and the save's times printed. Run:
+// rv_smoke_tests.exe "[.bench][furniture]" -s.
+TEST_CASE("world_edit: a fixture moved in a room of 1,700 big boxes at its limit", "[.bench][edit][furniture]") {
+    const PlannedBuilding building("world_edit_furniture/bench", true, "esde/overflow", {}, kRoomAtLimitWorldJson);
     const rv::world::StoredPlan stored = building.plan();
     const std::string room = building.roomOf("amiga");
+    REQUIRE(room == "room:amiga");
+    REQUIRE(placementsIn(stored.plan, room) == 1700);
     PlanOptions options;
     options.poster = false;
     options.refusal = false;

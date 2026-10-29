@@ -91,7 +91,7 @@ std::vector<ValidationFinding> requireOnlyHard(const ValidationReport& report, s
 TEST_CASE("world/validation: the rules are named once each, hard ones first, every name a rule name",
           "[world][validation]") {
     const auto rules = rv::world::validationRules();
-    REQUIRE(rules.size() == 38);
+    REQUIRE(rules.size() == 39);
     std::set<std::string_view> names;
     bool soft = false;
     for (const rv::world::ValidationRule& entry : rules) {
@@ -817,6 +817,53 @@ TEST_CASE("world/validation: the building's rules", "[world][validation]") {
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].subject == "area:arcade");
         CHECK_THAT(findings[0].message, ContainsSubstring("not on the ground floor"));
+    }
+    SECTION("expansion-chain: an expansion's head stands, on its floor, of its kind, sections, family and template") {
+        // I4b step 7 (ADR-0015 §7): the expansion copies its head's record but for its place on the floor.
+        WorldPlan plan = rv::test::validRoomPlan();
+        rv::world::Room expansion = secondRoom(plan);
+        expansion.id = *plan.rooms.front().id.inChain(2);
+        expansion.expands = plan.rooms.front().id;
+        expansion.sections = plan.rooms.front().sections;
+        plan.rooms.push_back(expansion);
+        CHECK(findingsOf(validate(plan), rule::kExpansionChain).empty());
+        // A gap in the numbers is valid (ADR-0015 §7 as amended on 2026-10-29): a number the overrides still name is
+        // never given again, so a chain shrunk by a regeneration and grown by an update stands as room:snes and :3.
+        plan.rooms.back().id = *plan.rooms.front().id.inChain(3);
+        CHECK(findingsOf(validate(plan), rule::kExpansionChain).empty());
+        CHECK(findingsOf(validate(plan), rule::kSystemRooms).empty());
+        plan.rooms.back().id = expansion.id;
+        // Another family and template version than the head's.
+        plan.rooms.back().mediaFamily = "generic_case_v2";
+        plan.rooms.back().templateVersion += 1;
+        auto findings = findingsOf(validate(plan), rule::kExpansionChain);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes:2");
+        CHECK_THAT(findings[0].message, ContainsSubstring("differs from its head room:snes: media family "
+                                                          "generic_case_v2 (the head's cartridge_home_16bit)"));
+        CHECK_THAT(findings[0].message, ContainsSubstring("template console_room_9x10"));
+        // Another kind and sections.
+        plan.rooms.back() = expansion;
+        plan.rooms.back().kind = rv::world::RoomKind::Shared;
+        plan.rooms.back().sections = {megadrive.system()};
+        findings = findingsOf(validate(plan), rule::kExpansionChain);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("kind shared (the head's console), other sections"));
+        // On another floor.
+        plan.rooms.back() = expansion;
+        plan.rooms.back().floor = "gen3";
+        plan.floors.push_back({"gen3", 2});
+        findings = findingsOf(validate(plan), rule::kExpansionChain);
+        REQUIRE(findings.size() == 1);
+        CHECK_THAT(findings[0].message, ContainsSubstring("floor 'gen3' (the head's 'gen4')"));
+        // Without its head.
+        plan = rv::test::validRoomPlan();
+        plan.rooms.front() = expansion;
+        plan.rooms.front().placement = rv::test::validRoomPlan().rooms.front().placement;
+        findings = findingsOf(validate(plan), rule::kExpansionChain);
+        REQUIRE(findings.size() == 1);
+        CHECK(findings[0].subject == "room:snes:2");
+        CHECK_THAT(findings[0].message, ContainsSubstring("the expansion's head room:snes is not in the plan"));
     }
     SECTION("room-unknown: games of a room a full floor did not take may name it, unplaced for capacity") {
         WorldPlan plan = rv::test::validRoomPlan();

@@ -496,13 +496,18 @@ TEST_CASE("world_edit: \"Sposta\" on the card takes a shelf's cartridge into the
 }
 
 // ADR-0015 §9's row (an edit shown within 0.25 s), measured by hand in Release (hidden: [.bench]): the overflow
-// fixture's amiga room (1,561 big boxes, the size of the reference library's largest room), two swaps and a pin through
-// the editor (tests/input_scripts/world_edit_bench.json), each one's time from its request to the frame that shows it
-// (world.edits' shownMs) printed. Run: rv_smoke_tests.exe "[.bench][edit]" -s (build/i4b/step3's measurement).
-TEST_CASE("world_edit: an edit's display time in a room of 1,561 big boxes", "[.bench][edit]") {
-    const PlannedBuilding building("world_edit/bench", true, "esde/overflow");
+// fixture's amiga room at its template's limit (1,700 big boxes in one room, kRoomAtLimitWorldJson: more than the
+// reference library's largest room of big boxes, as a migrated generator-1.4 room holds them; generator 1.5 alone
+// splits them into two rooms of 850), two swaps and a pin through the editor
+// (tests/input_scripts/world_edit_bench.json), each one's time from its request to the frame that shows it
+// (world.edits' shownMs) printed. Run:
+// rv_smoke_tests.exe "[.bench][edit]" -s (build/i4b/step3's measurement).
+TEST_CASE("world_edit: an edit's display time in a room of 1,700 big boxes at its limit", "[.bench][edit]") {
+    const PlannedBuilding building("world_edit/bench", true, "esde/overflow", {}, kRoomAtLimitWorldJson);
     const rv::world::StoredPlan stored = building.plan();
     const std::string room = building.roomOf("amiga");
+    REQUIRE(room == "room:amiga");
+    REQUIRE(placementsIn(stored.plan, room) == 1700);
     const rv::world::RoomId roomId = rv::world::RoomId::parse(room).value();
     auto data = rv::world::loadSceneData(buildAssets(), stored.plan, roomId);
     REQUIRE(data.has_value());

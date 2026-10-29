@@ -53,7 +53,7 @@ inline const std::vector<std::string>& goldenPlanNames() {
     return names;
 }
 
-/// A golden plan with its scene data and titles, read once per name.
+/// A golden plan with its scene data and titles, read once per name: its first room (a chain's head) alone.
 struct PlanCase {
     std::string name;
     rv::world::WorldPlan plan;
@@ -89,10 +89,20 @@ inline const PlanCase& planCase(const std::string& name) {
     REQUIRE(text.has_value());
     auto plan = rv::world::readPlan(*text, name);
     REQUIRE(plan.has_value());
-    REQUIRE(plan->rooms.size() == 1);
+    REQUIRE_FALSE(plan->rooms.empty());
     PlanCase entry;
     entry.name = name;
     entry.room = plan->rooms.front().id;
+    // A chain's head alone (plan-8000's room:snes, generator 1.5: ADR-0015 §7), as a plan of that one room.
+    const rv::world::RoomId& head = entry.room;
+    std::erase_if(plan->rooms, [&](const rv::world::Room& room) { return room.id != head; });
+    std::erase_if(plan->fixtures, [&](const rv::world::Fixture& fixture) { return fixture.id.room() != head; });
+    std::erase_if(plan->placements,
+                  [&](const rv::world::Placement& placement) { return placement.slot.fixture().room() != head; });
+    std::erase_if(plan->dressing,
+                  [&](const rv::world::DressedLevel& dressed) { return dressed.level.fixture().room() != head; });
+    std::erase_if(plan->lights, [&](const rv::world::PlanLight& light) { return light.id.room() != head; });
+    std::erase_if(plan->unplaced, [&](const rv::world::UnplacedGame& game) { return game.room != head; });
     auto data = rv::world::loadSceneData(sourceAssetRoot(), *plan, entry.room);
     INFO((data ? std::string("loaded") : data.error().toString()));
     REQUIRE(data.has_value());

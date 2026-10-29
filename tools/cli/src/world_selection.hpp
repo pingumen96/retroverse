@@ -353,6 +353,12 @@ inline std::string changeReportText(const world::ChangeReport& changes, bool det
         line("Entered", fmt::format("{} in {}{}", entered.system.str(), entered.room.toString(),
                                     opened ? " (a new room)" : " (a new section)"));
     }
+    // The expansion rooms the chains past their capacity took (I4b step 7, ADR-0015 §7).
+    for (const world::RoomId& added : changes.roomsAdded) {
+        if (added.isExpansion()) {
+            line("Expansion", fmt::format("{} of {} (a new room)", added.toString(), added.head().toString()));
+        }
+    }
     for (const world::SystemRoom& waiting : changes.systemsWaiting) {
         line("Waiting", fmt::format("{} for {} (held: an update given every section's selection enters it)",
                                     waiting.system.str(), waiting.room.toString()));
