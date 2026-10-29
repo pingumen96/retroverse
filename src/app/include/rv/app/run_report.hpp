@@ -1202,6 +1202,9 @@ struct VideoScreenRecord {
     bool visible = false;
     std::vector<double> pictureRect;
     bool heldFrame = false;
+    /// I5 step 3's review: the box its distance and view test read (its object's bounds in the scene: min x, y, z, max
+    /// x, y, z; a cabinet's item box), as bound or rebound last.
+    std::vector<double> bounds;
 
     bool operator==(const VideoScreenRecord&) const = default;
 };
@@ -1328,6 +1331,9 @@ struct VideoRecord {
     std::vector<VideoLaunchRecord> launches;
     /// The screens bound after the first (I4 step 6b), in order.
     std::vector<VideoBindRecord> binds;
+    /// The bound screens moved onto their objects replaced in place, their state kept (I5 step 3,
+    /// ScreenService::rebind(): the room editor rebuilt the room's static part).
+    std::uint64_t rebinds = 0;
     /// The playlist at the end of the run (I5 step 1, ADR-0016 §3): its mode as played (toString(PlaylistMode)), its
     /// room, the seconds a game plays, its current cycle's order, and why the last target played.
     std::string playlistMode;

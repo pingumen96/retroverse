@@ -57,6 +57,9 @@ fs::path retroverseCliExe() {
     return retroverseExe().parent_path() / "retroverse-cli.exe";
 }
 
+/// video.json with the secondary TVs' autoplay off (I5 step 3).
+constexpr std::string_view kSecondaryOff = "{\"secondary\": {\"enabled\": false}}\n";
+
 /// The snes-room fixture recorded as the library of <caseDir>/data and imported with retroverse-cli.
 struct ImportedRoom {
     rv::test::Fixture fixture;
@@ -69,6 +72,9 @@ struct ImportedRoom {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
+        // These cases follow the hero CRT alone, on its own decoder: the room's secondary TV (I5 step 3) is left to
+        // selections (video.json's secondary autoplay off), so that it never opens a second one.
+        REQUIRE(rv::core::writeTextFileAtomic(data / "config" / "video.json", kSecondaryOff).has_value());
     }
 
     /// retroverse-cli --data-dir <data> `arguments`, which must exit 0.

@@ -105,7 +105,11 @@
                     "shadeHeight": 0.14}}],
       "tv_cabinet": [
         {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
-         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "console"}}]
+         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "console"}},
+        // I5 step 3 (ADR-0016 §5): the room's secondary TV, a grey set on a low oak sideboard without drawers; its
+        // own charcoal body (the review: the hero's grey reads ivory under the room's warm light).
+        {"prefab": {"manifest": "furniture.secondary_tv.generic", "kind": "secondary_tv"},
+         "params": {"drawers": 0, "height": 0.46}, "materials": {"plastic_body": "MAT_Plastic_Charcoal"}}]
     }
   },
   "labelPalette": ["#6EAF93", "#4C8BC9", "#B8483E", "#C9A23C", "#7D6E9E", "#3E8A8A", "#252A2E", "#F4EFE6"],

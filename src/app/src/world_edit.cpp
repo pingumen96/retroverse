@@ -23,6 +23,8 @@
 #include <rv/scene/instance_data.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/overrides.hpp>
+#include <rv/world/room_look.hpp>
+#include <rv/world/validation.hpp>
 #include <rv/world/world_store.hpp>
 
 #include "collection_instance.hpp"
@@ -1024,13 +1026,18 @@ void WorldSession::bindEditRoom() {
         if (edit.draft && edit.draft->data()) {
             fixtures = world::editableFixtures(*edit.shown->plan, edit.room, *edit.draft->data());
         }
-        // Each named by what it is drawn as (a pack's variant of a decoration: the bar's words).
+        // Each named by what it is drawn as (a pack's variant of a decoration: the bar's words). A secondary TV (I5
+        // step 3's review) stands taller than its planned sideboard: its pick box reaches up to the CRT's top, so that
+        // aiming at the set picks its fixture (its footprint, the moves' rules, stay the plan's).
         if (!room->sceneData.roomTemplate.id.empty()) {
             if (auto drawn = world::drawnFixtures(*edit.shown->plan, edit.room, room->sceneData)) {
                 for (const world::Fixture& shown : *drawn) {
                     for (world::EditableFixture& fixture : fixtures) {
                         if (shown.id == fixture.id) {
                             fixture.kind = shown.prefab.kind;
+                            if (shown.prefab.kind == world::kSecondaryTvKind) {
+                                fixture.box.maxYMm = std::max(fixture.box.maxYMm, world::fixtureBox(shown).maxYMm);
+                            }
                         }
                     }
                 }

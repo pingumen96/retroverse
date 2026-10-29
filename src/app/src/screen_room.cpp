@@ -1,5 +1,6 @@
 #include <rv/app/screen_room.hpp>
 
+#include <algorithm>
 #include <utility>
 
 #include <rv/app/screen_policy.hpp>
@@ -34,6 +35,30 @@ std::optional<std::string> ScreenRoomTracker::update(std::optional<std::string_v
 void ScreenRoomTracker::reset(std::optional<std::string> room) {
     m_bound = std::move(room);
     m_candidate.reset();
+}
+
+std::optional<std::vector<std::size_t>> rebindOrder(std::span<const std::string> bound,
+                                                    std::span<const std::string> found) {
+    if (bound.size() != found.size()) {
+        return std::nullopt;
+    }
+    std::vector<std::size_t> order;
+    order.reserve(bound.size());
+    std::vector<bool> taken(found.size(), false);
+    for (const std::string& id : bound) {
+        const auto match = std::find(found.begin(), found.end(), id);
+        if (match == found.end()) {
+            return std::nullopt;
+        }
+        const auto index = static_cast<std::size_t>(match - found.begin());
+        // An id twice among the found: the second of the bound finds the first again.
+        if (taken[index] || std::find(match + 1, found.end(), id) != found.end()) {
+            return std::nullopt;
+        }
+        taken[index] = true;
+        order.push_back(index);
+    }
+    return order;
 }
 
 } // namespace rv::app

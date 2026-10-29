@@ -1,0 +1,43 @@
+// A room's secondary TV (I5 step 3, ADR-0016 §5, style §15.1 and §15.3: one hero TV and a small secondary one per room,
+// one consumer CRT model in two sizes): a low sideboard 0.8 m wide and 0.36 m deep (the narrow cabinet's footprint, so
+// that it stands where a decoration socket's sideboard does) carrying a small consumer CRT, 0.46 x 0.4 x 0.32 m, whose
+// screen is a ScreenSurface that plays the room's clips. Original design: no brand, logo or artwork. A theme pack draws
+// it as furniture (room_look.hpp's "secondary_tv" piece), never the plan.
+{
+  "schemaVersion": 1,
+  "id": "furniture.secondary_tv.generic",
+  "assetType": "electronic_screen",
+  "category": "secondary_tv",
+  "role": "secondary",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-10-29",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "secondary_tv",
+    "params": {},
+    "scaleMeters": [0.8, 0.9, 0.36],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "screen": "ScreenSurface",
+      "inspect": "ScreenLook",
+      "stand": "TV_Stand",
+      "power": "PowerButton"
+    },
+    "collision": "box",
+    "videoSurface": {
+      "aspectRatio": "4:3",
+      "meshNode": "ScreenSurface"
+    }
+  },
+  "tags": ["furniture", "electronics", "crt", "tv", "4_3", "secondary", "console_room", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

@@ -147,7 +147,7 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
         CHECK((manifest->source.acquiredAt == "2026-10-14" || manifest->source.acquiredAt == "2026-10-18" ||
                manifest->source.acquiredAt == "2026-10-19" || manifest->source.acquiredAt == "2026-10-20" ||
                manifest->source.acquiredAt == "2026-10-24" || manifest->source.acquiredAt == "2026-10-25" ||
-               manifest->source.acquiredAt == "2026-10-26"));
+               manifest->source.acquiredAt == "2026-10-26" || manifest->source.acquiredAt == "2026-10-29"));
         CHECK(manifest->source.redistributionApproved);
         CHECK_FALSE(manifest->tags.empty());
         if (!manifest->fallbackPrefab.empty()) {
@@ -160,7 +160,7 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
     // and four fixtures each (ADR-0013 §4); the five successors of I6 step 4 an item and two modules each (their display
     // fixtures are their predecessors', ADR-0014 §2); I6 step 3b's era furniture and I6 step 5's hub (column, railing,
     // landmark, totem) one each, counted with the kinds; I6 step 6's arcade cabinets (counted with the kinds) and their
-    // screen, the arcade_cabinet family's item.
+    // screen, the arcade_cabinet family's item; I5 step 3's secondary TV (counted with the kinds).
     CHECK(count == kGeneratorKinds.size() + 5 + 8 * 5 + 5 * 3 + 1);
     CHECK(generators == kGeneratorKinds);
     // Every kind the geometry builds is a manifest kind.

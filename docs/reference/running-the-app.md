@@ -45,8 +45,10 @@ build/rvdata`).
   first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings, since I4 step 6b
   `binds`, the screens bound after the run's first (at a room change, or a scene shown in place of another; the first,
   at the start room or the first room the eye stays in, is not one): frame, screen, games, `bindMs`, decoder threads
-  still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); `waitsBeforeExit`, the
-  waits for the decoders' threads before the run's end, 0; `{}` without a CRT),
+  still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); since I5 step 3's review
+  `rebinds`, the bound screens moved onto their objects replaced in place (the room editor rebuilt the room's static
+  part: no bind, their clips playing on); `waitsBeforeExit`, the waits for the decoders' threads before the run's end,
+  0; `{}` without a CRT),
   `world` (`{}` without a room: the state, notice, outcome and rebuild, the plan's digest, placements per section and
   `unplaced` per reason (`roomKept` since I4 step 1), items, clusters, lights, findings, `times` from the process's
   creation; since I4 step 5a `floor` (the floor shown), `rooms` (its rooms: `id`, `floor`, `x` and `z` in millimetres
@@ -256,37 +258,41 @@ build/rvdata`).
   `m0_testroom`. The report's `video` section adds `playlistMode`, `playlistRoom`, `previewSeconds`, `playlistOrder`
   (the current cycle), `origin` (`start`, `playlist`, `selection`), `played` and `shown` (each game played and each
   picture shown, with the run's simulated seconds, the first 512), `heldFrames` and `idleFramesWithGame`.
-- The decoder scheduler (I5 step 2, ADR-0016 §2, `docs/i5/step-2.md`): every `crt` of the room with a picture on its
-  screen is a screen, the hero first (the first `crt`, or the arcade's hero cabinet), the others secondaries (in a
-  scene with areas, those in the hero's area); a secondary plays its own playlist (`secondary`'s keys, seeded by its
-  object id, no start choice). `app::ScreenScheduler` gives the clips the budget's decoder slots: `--max-decoders 1|2`,
-  else `video.json`'s `maxDecoders` (2). Screens asking for one clip share its slot and texture; clips rank by being in
-  view, then their class (`direct`, `focus`: the selected game's screen, `room`: the hero, `ambient`: secondaries
-  within `proximityMeters`, 0.5 m hysteresis), their nearest screen and its id; a screen without a slot shows its
-  still (its title card last). A slot whose screens all leave the view pauses on that frame and stops after 10 s (its
-  clip reopens where it stopped), or sooner when a request in view needs it (out of view, a clip takes only a free slot,
-  opening paused); a minimized window counts as every screen out of view (reason `minimized`). A slot changes hands at
-  most once a second unless `focus` or `direct` asks; a clip no screen wants stops at once, and a screen switching
-  clips waits for its own slot's thread (one thread per screen, as in I5 step 1; the next room's hero waits for the
-  last hero's slot). Late plus dropped frames over 5% for 4 s drop the budget to 1 for 30 s (open plus reserved slots
-  never above it); `--fixed-dt` runs do not watch late frames unless `--watch-late-frames` (tests). World screens
-  decode at `video.json`'s `maxRows` (480); one render frame uploads at most 4 MiB of video, the longest pending frame
-  first. `rooms.<room id>.screens.<screen's object id>` takes a kind's keys for one screen, for tests and hand-made
-  scenes (a generated room's object ids are the generator's; the smoke scene `tests/smoke/scenes/screens_four.json`,
-  room `screens_four`, gives each of its four CRTs one game).
-  The report's `video` adds `maxDecoders` (the budget), `maxOpenDecoders`, `handOvers`, `maxUploadBytes` (the most in
-  one frame), `deferredUploads`, `oversizeUploads` (a single frame over 4 MiB), `screens` (each screen at the end:
-  `screen`, `kind`, `screenClass`, `gameId`, `picture`, `slot`, `playing`, `textureId`, the GL texture its material
-  shows, equal on screens sharing a slot, `visible`), `slotEvents` (`frame`, `atSeconds`, `slot`, `action` open, stop,
-  pause or resume, `gameId`, `reason`: wanted, unwanted, needed, out-of-view, in-view, budget, minimized, launch,
-  unbind, shutdown, `screens`; the first 512), `budgetDrops` and `slotEventsDropped` (the events after the first 512);
-  `maxDecoderThreads` and `decodersStarted` count the whole service. The process runs at `ABOVE_NORMAL_PRIORITY_CLASS`
-  while it renders and is not minimized, `NORMAL_PRIORITY_CLASS` while minimized, from just before an emulator starts
-  until the first frame after the return, and at the exit: the report's `processPriority.changes` (`frame`, `priority`
-  read back: `above-normal`, `normal`, `other`; `reason`: rendering, minimized, launch, exit; `applied`). An
-  interactive run renders nothing while minimized, but after each wait (0.1 s) it sets the priority and ticks the
-  screens with the time waited; `--simulate-minimized FRAME:SECONDS` (tests, frame-limited runs) takes that path after
-  FRAME frames for SECONDS, the window untouched, each wait counting 0.1 s without waiting under `--fixed-dt`.
+- The decoder scheduler (I5 step 2, ADR-0016 §2, `docs/i5/step-2.md`): the room's screens, the hero first (by its role
+  since I5 step 3: the hero corner's CRT `...fx:hero.crt`, or the arcade's hero cabinet; a hand-made scene's first
+  `crt`), then the secondaries: the room's secondary TV (I5 step 3, `docs/i5/step-3.md`: a pack's `secondary_tv`, a
+  small CRT on a sideboard standing in one of the room's sideboard sockets away from the doorway, at most two in a room
+  deeper than 12 m, none in the arcade or the hub) and a hand-made scene's further `crt`s (in a scene with areas, those
+  in the hero's area); a secondary plays its own playlist (`secondary`'s keys, seeded by its object id, no start choice)
+  in the `ambient` class, opening a slot only within `proximityMeters` of the eye (to its object's bounds' middle) and
+  in view, else its still; it plays nothing while the room editor runs. `app::ScreenScheduler` gives the clips the
+  budget's decoder slots: `--max-decoders 1|2`, else `video.json`'s `maxDecoders` (2). Screens asking for one clip share
+  its slot and texture; clips rank by being in view, then their class (`direct`, `focus`: the selected game's screen,
+  `room`: the hero, `ambient`: secondaries within `proximityMeters`, 0.5 m hysteresis), their nearest screen and its id;
+  a screen without a slot shows its still (its title card last). A slot whose screens all leave the view pauses on that
+  frame and stops after 10 s (its clip reopens where it stopped), or sooner when a request in view needs it (out of
+  view, a clip takes only a free slot, opening paused, and an `ambient` one none); a minimized window counts as every
+  screen out of view (reason `minimized`). A slot changes hands at most once a second unless `focus` or `direct` asks; a
+  clip no screen wants stops at once, and a screen switching clips waits for its own slot's thread (one thread per
+  screen, as in I5 step 1; the next room's hero waits for the last hero's slot). Late plus dropped frames over 5% for 4
+  s drop the budget to 1 for 30 s (open plus reserved slots never above it); `--fixed-dt` runs do not watch late frames
+  unless `--watch-late-frames` (tests). World screens decode at `video.json`'s `maxRows` (480); one render frame uploads
+  at most 4 MiB of video, the longest pending frame first. `rooms.<room id>.screens.<screen's object id>` takes a kind's
+  keys for one screen, for tests and hand-made scenes (a generated room's object ids are the generator's; the smoke
+  scene `tests/smoke/scenes/screens_four.json`, room `screens_four`, gives each of its four CRTs one game). The report's
+  `video` adds `maxDecoders` (the budget), `maxOpenDecoders`, `handOvers`, `maxUploadBytes` (the most in one frame),
+  `deferredUploads`, `oversizeUploads` (a single frame over 4 MiB), `screens` (each screen at the end: `screen`, `kind`,
+  `screenClass`, `gameId`, `picture`, `slot`, `playing`, `textureId`, the GL texture its material shows, equal on
+  screens sharing a slot, `visible`), `slotEvents` (`frame`, `atSeconds`, `slot`, `action` open, stop, pause or resume,
+  `gameId`, `reason`: wanted, unwanted, needed, out-of-view, in-view, budget, minimized, launch, unbind, shutdown,
+  `screens`; the first 512), `budgetDrops` and `slotEventsDropped` (the events after the first 512); `maxDecoderThreads`
+  and `decodersStarted` count the whole service. The process runs at `ABOVE_NORMAL_PRIORITY_CLASS` while it renders and
+  is not minimized, `NORMAL_PRIORITY_CLASS` while minimized, from just before an emulator starts until the first frame
+  after the return, and at the exit: the report's `processPriority.changes` (`frame`, `priority` read back:
+  `above-normal`, `normal`, `other`; `reason`: rendering, minimized, launch, exit; `applied`). An interactive run
+  renders nothing while minimized, but after each wait (0.1 s) it sets the priority and ticks the screens with the time
+  waited; `--simulate-minimized FRAME:SECONDS` (tests, frame-limited runs) takes that path after FRAME frames for
+  SECONDS, the window untouched, each wait counting 0.1 s without waiting under `--fixed-dt`.
 - The arcade cabinets playing their clips and the picture's aspect (I5 step 4, ADR-0016 §6 and §7,
   `docs/i5/step-4.md`): in the arcade room the focused cabinet (`focus`) or the inspected one (`direct`, its clip in the
   hand) plays its own game's clip, looping, and in free roam attract plays the nearest cabinet in view within 3 m whose
@@ -300,7 +306,8 @@ build/rvdata`).
   screen's is letterboxed or pillarboxed in the lit tube's off-black (within 2% it fills the screen; a console's frame
   of at most 240 rows within 15% of 4:3, such as 256 x 224, is shown at 4:3). The report's `video.screens` lists the
   cabinets asking for their clips at the end too (`kind` `cabinet`), each screen's `pictureRect` (x, y, width, height;
-  empty for the whole screen) and `heldFrame`; `video.cabinetEvents` (`frame`, `atSeconds`, `screen`
+  empty for the whole screen), `heldFrame` and (I5 step 3's review) `bounds` (the box its distance and view test
+  read: min x, y, z, max x, y, z); `video.cabinetEvents` (`frame`, `atSeconds`, `screen`
   "<room>/cabinet:<pick id>", `gameId`, `screenClass`, `picture` `video` or `cover`; the first 512, the rest counted in
   `cabinetEventsDropped`) and `heldFrameShows` (frames a kept frame showed); `world.cabinetClipFrames` and
   `world.cabinetCoverBeneathFrames` (frames a cabinet's clip drew, and those with its cover drawn beneath it: 0).

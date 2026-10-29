@@ -196,6 +196,15 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   arcade clip fills only about 56% of a cabinet's portrait screen (a 4:3 picture letterboxed on 298 x 398 mm, its
   bars the tube's off-black). Candidate remedies, an ADR-0014 follow-up: a landscape screen for the horizontal games,
   or a deeper item.
+- **Secondary TVs (I5 step 3, `docs/i5/step-3.md`):** a room whose decoration drew no sideboard away from the doorway
+  has none (its side walls all modules, or its decoration posters, lamps and plants, or its only sideboard the one
+  nearest the doorway): a pack could list the TV under a second floor-standing kind (the reader's one-TV rule relaxed
+  then: one piece per kind, still at most one TV a room), or the generator could reserve a sideboard in the room's back
+  half (a plan change, a migration). A grown room's free side-wall sockets are its last growth steps', by the doorway,
+  so a room past 12 m rarely holds the second TV the rule allows (the 4,300-title room holds one). A secondary whose
+  clip fails shows its still until its preview ends (30 s), as the hero does (step 1's rule), rather than moving on at
+  once. The secondary is silent while the hero is in view (`room` above `ambient`), as an attract cabinet is (step 4's
+  open question).
 - **Library-wide checks:** done in I5 step 7 (`docs/i5/step-7.md`): 32,806 of 32,809 clips playable, the thresholds
   stand. The hour-long soak found the private bytes growing: see the next item.
 - **Memory per clip opened (I5 step 7's soak):** done in I5 step 7's review (`docs/i5/step-7.md`, "Review"): every
@@ -434,6 +443,11 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 
 ### Measurement
 
+- **Gate D's GPU memory at 1080p (I5 step 3's review):** Gate D's 471.8 MiB for the busiest real floor was measured in
+  the default 1280 x 720 window, as I5 step 3's first figures were; the render targets follow the window's size
+  (40.3 MiB more at 1920 x 1080: the busiest floor with both screens playing holds 505.8 MiB there,
+  `docs/i5/step-3.md`'s review). Gate M4 measures the busiest floor again at 1080p with every screen playing; over 512
+  MiB, the proposed remedy is in the targets (post-processing intermediates at reduced resolution, shared buffers).
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.

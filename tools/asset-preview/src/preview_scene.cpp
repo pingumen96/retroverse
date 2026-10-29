@@ -59,6 +59,13 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
                              {"wood_secondary", "MAT_Wood_Varnished"},
                              {"metal_trim", "MAT_Metal_Brushed"}};
     }
+    // I5 step 3's secondary TV: the sideboard's and the CRT's.
+    if (kind == "secondary_tv") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},     {"wood_secondary", "MAT_Wood_Varnished"},
+                             {"metal_trim", "MAT_Metal_Brushed"},     {"plastic_body", "MAT_Plastic_AgedIvory"},
+                             {"plastic_bezel", "MAT_Plastic_Black"}, {"screen", std::string(kScreenMaterialName)},
+                             {"plastic_dark", "MAT_Plastic_Black"}};
+    }
     if (kind == "console_cartridge") {
         return RoleMaterials{{"plastic_body", "MAT_Plastic_Gray"},
                              {"plastic_dark", "MAT_Plastic_Black"},
@@ -170,7 +177,7 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
 
 std::map<std::string, scene::TextureSource> prefabRoleTextures(std::string_view kind) {
     std::map<std::string, scene::TextureSource> textures;
-    if (kind == "crt" || kind == "desk") {
+    if (kind == "crt" || kind == "desk" || kind == "secondary_tv") {
         scene::TextureSource bars;
         bars.kind = scene::TextureSource::Kind::Pattern;
         bars.pattern = std::string(kScreenPattern);

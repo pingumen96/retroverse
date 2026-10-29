@@ -1263,6 +1263,12 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     const PlannedBuilding building("world_floor_app/live_gen4", false);
     const std::string snes = building.roomOf("snes");
     CHECK(snes == "room:snes");
+    // The case follows the hero CRT alone, on its own decoder: the room's secondary TV (I5 step 3) is left to
+    // selections (video.json's secondary autoplay off), so that the one-thread guard below holds.
+    fs::create_directories(building.data / "config");
+    REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "video.json",
+                                          "{\"secondary\": {\"enabled\": false}}\n")
+                .has_value());
     const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(snes, 2, std::nullopt));
     skipWithoutOpenGl(first);
     requireCleanRun(first);

@@ -6,6 +6,7 @@
 #include <rv/app/run_report.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/screen_aspect.hpp>
+#include <rv/app/screen_room.hpp>
 #include <rv/audio/audio_engine.hpp>
 #include <rv/audio/audio_ring.hpp>
 #include <rv/assets/collection_labels.hpp>
@@ -24,6 +25,7 @@
 #include <rv/scene/camera.hpp>
 #include <rv/scene/scene_areas.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/room_look.hpp>
 
 #include <fmt/format.h>
 #include <glm/geometric.hpp>
@@ -170,20 +172,26 @@ Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::st
     return std::move(fitted->picture);
 }
 
-/// The material of `object`'s screen picture in `materials` ("<object id>/screen", "@<w>x<h>" for a pattern) with a
-/// base colour texture to override.
-std::optional<scene::MaterialHandle> screenMaterial(const scene::SceneObject& object,
+/// The material of `object`'s screen picture ("<object id>/screen", "@<w>x<h>" for a pattern, then "#<hash>") with a
+/// base colour texture to override, taken from the object's own render items (I5 step 3's review): the registry is
+/// append-only, so an object replaced in place leaves its old material behind under the same prefix.
+std::optional<scene::MaterialHandle> screenMaterial(const scene::SceneObject& object, const SceneInstance& instance,
                                                     const gl::MaterialRegistry& materials) {
     const std::string key = object.id + "/screen";
-    for (std::uint32_t handle = 0; handle < materials.size(); ++handle) {
-        const gl::GpuMaterial& material = materials.material(scene::MaterialHandle{handle});
-        if (material.key != key && !material.key.starts_with(key + "@")) {
+    const std::span<const scene::RenderItem> items = instance.renderItems();
+    for (const std::size_t item : instance.itemsOf([&](std::string_view id) { return id == object.id; })) {
+        const scene::MaterialHandle handle = items[item].material;
+        if (handle.value >= materials.size()) {
+            continue;
+        }
+        const gl::GpuMaterial& material = materials.material(handle);
+        if (material.key != key && !material.key.starts_with(key + "@") && !material.key.starts_with(key + "#")) {
             continue;
         }
         if (material.textureSources[gl::toIndex(gl::MaterialTextureSlot::BaseColor)] == nullptr) {
             continue;
         }
-        return scene::MaterialHandle{handle};
+        return handle;
     }
     return std::nullopt;
 }
@@ -221,23 +229,17 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
     const std::string roomId = idPrefix
                                    ? (idPrefix->ends_with('/') ? idPrefix->substr(0, idPrefix->size() - 1) : *idPrefix)
                                    : description.name;
-    std::optional<std::size_t> heroArea;
-    for (std::size_t index = 0; index < description.objects.size(); ++index) {
+    // An object whose screen can show pictures: a prefab with its screen's picture (its "screen" role's scene texture,
+    // so that its material has a base colour texture to override), of the room asked for.
+    const auto binding = [&](std::size_t index, ScreenKind kind) -> std::optional<ScreenBinding> {
         const scene::SceneObject& object = description.objects[index];
-        // The CRT, or (the hero only) the arcade's hero cabinet that stands for it (I6 step 6), with its screen's
-        // picture.
-        const bool crt = object.kind == "crt";
-        const bool heroCabinet = screens.empty() && object.kind == kCabinetPrefabKind;
-        if (object.source != scene::SceneObject::Source::Prefab || !(crt || heroCabinet) ||
-            !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
-            continue;
+        if (object.source != scene::SceneObject::Source::Prefab || !object.texturesByRole.contains("screen") ||
+            index >= instance.objectBounds().size() || (idPrefix && !object.id.starts_with(*idPrefix))) {
+            return std::nullopt;
         }
-        if (idPrefix && !object.id.starts_with(*idPrefix)) {
-            continue;
-        }
-        const std::optional<scene::MaterialHandle> material = screenMaterial(object, materials);
+        const std::optional<scene::MaterialHandle> material = screenMaterial(object, instance, materials);
         if (!material) {
-            continue;
+            return std::nullopt;
         }
         ScreenBinding screen;
         screen.objectId = object.id;
@@ -245,20 +247,58 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         screen.material = *material;
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
         screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
-        screen.kind = screens.empty() ? ScreenKind::Hero : ScreenKind::Secondary;
+        screen.kind = kind;
         // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever
         // the world selects, the focused or inspected cabinet playing its clip itself (§6).
         screen.screenSize = instance.screenSurfaceSize(index);
-        screen.followsWorldSelection = !heroCabinet;
-        if (!instance.areas().empty()) {
-            const std::optional<std::size_t> area = scene::areaAt(instance.areas(), screen.bounds.center());
-            if (screens.empty()) {
-                heroArea = area;
-            } else if (area != heroArea) {
-                continue; // a CRT of another area: another room's screen
-            }
+        screen.followsWorldSelection = object.kind != kCabinetPrefabKind;
+        return screen;
+    };
+    // The hero by its role (I5 step 3): the hero corner's CRT ("...fx:<socket>.crt", or the arcade's hero cabinet that
+    // stands for it with the part's id, I6 step 6), else the first CRT (a hand-made scene's: the test room's,
+    // screens_four's). The kind and the id first: an arcade's hundreds of cabinets are never bound to be refused.
+    std::optional<std::size_t> heroIndex;
+    std::optional<ScreenBinding> hero;
+    for (std::size_t index = 0; index < description.objects.size(); ++index) {
+        const scene::SceneObject& object = description.objects[index];
+        const bool byRole = (object.kind == "crt" || object.kind == kCabinetPrefabKind) &&
+                            object.id.ends_with(kHeroCrtIdSuffix);
+        if (!byRole && (heroIndex || object.kind != "crt")) {
+            continue;
         }
-        screens.push_back(std::move(screen));
+        std::optional<ScreenBinding> found = binding(index, ScreenKind::Hero);
+        if (!found) {
+            continue;
+        }
+        heroIndex = index;
+        hero = std::move(found);
+        if (byRole) {
+            break;
+        }
+    }
+    if (!hero) {
+        return screens;
+    }
+    screens.push_back(std::move(*hero));
+    std::optional<std::size_t> heroArea;
+    if (!instance.areas().empty()) {
+        heroArea = scene::areaAt(instance.areas(), screens.front().bounds.center());
+    }
+    // The secondaries (I5 step 3, ADR-0016 §5): the pack's secondary TVs, and any further CRT (a hand-made scene's,
+    // screens_four's: a generated room holds one), in a scene with areas only those of the hero's area.
+    for (std::size_t index = 0; index < description.objects.size(); ++index) {
+        const scene::SceneObject& object = description.objects[index];
+        if (index == *heroIndex || (object.kind != world::kSecondaryTvKind && object.kind != "crt")) {
+            continue;
+        }
+        std::optional<ScreenBinding> screen = binding(index, ScreenKind::Secondary);
+        if (!screen) {
+            continue;
+        }
+        if (!instance.areas().empty() && scene::areaAt(instance.areas(), screen->bounds.center()) != heroArea) {
+            continue; // a TV of another area: another room's screen
+        }
+        screens.push_back(std::move(*screen));
     }
     return screens;
 }
@@ -1413,6 +1453,10 @@ struct ScreenService::Impl {
             screen->azimuth = azimuthOf(camera.position().x, camera.position().z, forward.x, forward.z, center.x,
                                         center.z);
             screen->clip = screen->policy.wantsDecoder() ? clipKey(screen->policy.targetMedia().video) : std::string();
+            // I5 step 3's review: while the room editor runs, the secondaries (whose sideboards it moves) play nothing.
+            if (selection.editing && screen->binding.kind == ScreenKind::Secondary) {
+                screen->clip.clear();
+            }
         }
         // I5 step 4: the cabinets asking for their clips, in view (one in the hand always) and at their distance.
         for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
@@ -1916,6 +1960,53 @@ struct ScreenService::Impl {
         shownCabinets = std::move(shown);
     }
 
+    /// ScreenService::rebind(): the same screens on the objects that replaced theirs, their state kept, matched by
+    /// object id whatever the order they were found in.
+    bool rebind(const std::vector<ScreenBinding>& bindings) {
+        if (screens.empty()) {
+            return false;
+        }
+        std::vector<std::string> boundIds;
+        std::vector<std::string> foundIds;
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            boundIds.push_back(screen->binding.objectId);
+        }
+        for (const ScreenBinding& binding : bindings) {
+            foundIds.push_back(binding.objectId);
+        }
+        const std::optional<std::vector<std::size_t>> order = rebindOrder(boundIds, foundIds);
+        if (!order) {
+            return false;
+        }
+        for (std::size_t index = 0; index < screens.size(); ++index) {
+            if (bindings[(*order)[index]].kind != screens[index]->binding.kind) {
+                return false; // the hero found as another one: bind() them
+            }
+        }
+        for (std::size_t index = 0; index < screens.size(); ++index) {
+            ScreenState& screen = *screens[index];
+            const ScreenBinding& next = bindings[(*order)[index]];
+            if (next.material != screen.binding.material) {
+                // The old material is no object's any more: cleared, the new one takes the picture at the next
+                // update (nothing applied on it yet).
+                if (screen.appliedOverride != 0) {
+                    static_cast<void>(materials.setTextureOverride(screen.binding.material,
+                                                                   gl::MaterialTextureSlot::BaseColor, 0));
+                }
+                if (!isWholeScreen(screen.rect)) {
+                    static_cast<void>(materials.setPictureRect(screen.binding.material, std::nullopt));
+                }
+                screen.appliedOverride = 0;
+                screen.rect = kWholeScreen;
+                spdlog::info("{}: the screen of '{}' rebound to its object's new material", nameOf(screen),
+                             screen.binding.objectId);
+            }
+            screen.binding = next;
+        }
+        ++counters.rebinds;
+        return true;
+    }
+
     void bind(std::vector<ScreenBinding> bindings, std::vector<ScreenGame> games, std::uint64_t frame) {
         const Clock::time_point start = Clock::now();
         rawGames = games;
@@ -2056,6 +2147,14 @@ void ScreenService::bind(std::vector<ScreenBinding> screens, std::vector<ScreenG
     m_impl->bind(std::move(screens), std::move(games), frame);
 }
 
+bool ScreenService::rebind(const std::vector<ScreenBinding>& screens) {
+    return m_impl->rebind(screens);
+}
+
+const std::vector<ScreenGame>& ScreenService::games() const noexcept {
+    return m_impl->rawGames;
+}
+
 bool ScreenService::bound() const noexcept {
     return !m_impl->screens.empty();
 }
@@ -2136,6 +2235,8 @@ void ScreenService::record(VideoRecord& record) const {
             entry.pictureRect = {screen->rect.x, screen->rect.y, screen->rect.z, screen->rect.w};
         }
         entry.heldFrame = screen->showingHeldFrame;
+        const core::Aabb& bounds = screen->binding.bounds;
+        entry.bounds = {bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z};
         record.screens.push_back(std::move(entry));
     }
     record.maxDecoders = static_cast<std::uint64_t>(s.scheduler.settings().maxDecoders);

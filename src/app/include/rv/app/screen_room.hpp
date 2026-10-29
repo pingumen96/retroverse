@@ -11,9 +11,12 @@
 // bound, paused while out of view (ScreenPolicy::setVisible). A run that starts in a room (--start-room) has its CRT
 // bound from the start; one that starts in the lobby has none until the eye stays in a room.
 
+#include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace rv::app {
 
@@ -40,5 +43,12 @@ private:
     std::optional<std::string> m_candidate;
     double m_since = 0.0;
 };
+
+/// The bound screens found again after the room editor replaced their objects in place (I5 step 3's review,
+/// ScreenService::rebind()): for each bound screen (`bound`, by object id, in its order), the index in `found` of the
+/// screen with its id, whatever their order. None when the two are not the same screens: another count, an id of one
+/// missing from the other, or an id twice.
+[[nodiscard]] std::optional<std::vector<std::size_t>> rebindOrder(std::span<const std::string> bound,
+                                                                  std::span<const std::string> found);
 
 } // namespace rv::app

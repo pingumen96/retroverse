@@ -152,6 +152,9 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
             // The collection's items are never scene objects (ADR-0011 §1).
             CHECK(object.kind != entry.data.mediaFamily.item.kind);
         }
+        // I5 step 3: the room's secondary TV stands for its sideboard (test_secondary_tv.cpp).
+        auto tvs = rv::world::secondaryTvFixtures(entry.plan, entry.room, entry.data);
+        REQUIRE(tvs.has_value());
         std::size_t fixtures = 0;
         for (const rv::world::Fixture& fixture : entry.plan.fixtures) {
             INFO(fixture.id.toString());
@@ -160,6 +163,10 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
             const rv::world::ScenePrefab* prefab = entry.data.prefabs.find(fixture.prefab);
             REQUIRE(prefab != nullptr);
             REQUIRE(object.source == rv::scene::SceneObject::Source::Prefab);
+            if (std::find(tvs->begin(), tvs->end(), fixture.id) != tvs->end()) {
+                CHECK(object.kind == "secondary_tv");
+                continue;
+            }
             CHECK(object.kind == fixture.prefab.kind);
             // The prefab's parameters, a shelf's lit by the pack (I6 step 3, boardLight) without changing its size.
             nlohmann::json params = prefab->params;

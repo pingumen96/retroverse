@@ -99,7 +99,9 @@
          "textures": {"picture": "poster_console"}}],
       "tv_cabinet": [
         {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
-         "params": {"width": 0.8, "height": 0.95, "depth": 0.36, "baseHeight": 0.55, "item": "handheld"}}],
+         "params": {"width": 0.8, "height": 0.95, "depth": 0.36, "baseHeight": 0.55, "item": "handheld"}},
+        // I5 step 3 (ADR-0016 §5): the room's secondary TV on an oak sideboard (the handhelds' clips on a small set).
+        {"prefab": {"manifest": "furniture.secondary_tv.generic", "kind": "secondary_tv"}}],
       "plant": [
         {"weight": 0.6, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
          "params": {"width": 0.42, "height": 1.25, "depth": 0.36, "baseHeight": 0.85, "item": "handheld"},

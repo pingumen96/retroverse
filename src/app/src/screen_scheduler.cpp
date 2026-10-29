@@ -383,6 +383,11 @@ ScheduleResult ScreenScheduler::update(double nowSeconds, std::span<const Screen
         if (holder(demand.clip)) {
             continue;
         }
+        // An ambient clip opens a slot only within its proximity and in view (I5 step 3's review: a secondary TV behind
+        // the walker on entering opens nothing); out of view it keeps a slot it has, paused, for the usual time.
+        if (demand.screenClass == ScreenClass::Ambient && !demand.visible) {
+            continue;
+        }
         const auto showedBefore = [&](const ScreenSlot& slot) {
             return std::any_of(slot.previousOwners.begin(), slot.previousOwners.end(), [&](const std::string& owner) {
                 return std::binary_search(demand.owners.begin(), demand.owners.end(), owner);

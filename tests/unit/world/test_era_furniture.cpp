@@ -237,7 +237,7 @@ rv::world::SceneData withPack(rv::world::SceneData data, const std::string& pack
 
 } // namespace
 
-TEST_CASE("world/era furniture: every pack's pieces resolve and build, the classic packs have none",
+TEST_CASE("world/era furniture: every pack's pieces resolve and build, the classic packs have none but the TV",
           "[world][era_furniture]") {
     auto families = rv::assets::loadPrefabFamilies(assets());
     REQUIRE(families.has_value());
@@ -256,7 +256,11 @@ TEST_CASE("world/era furniture: every pack's pieces resolve and build, the class
             CHECK(furniture.decoration.at(kind).size() == variants.size());
         }
         const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
-        CHECK(theme->furniture.empty() == classic);
+        // I5 step 3: the classic pack's furniture is its secondary TV alone; the hub's and the arcade's have none.
+        CHECK(theme->furniture.heroParts.empty() == classic);
+        CHECK(theme->furniture.decoration.empty() == classic);
+        CHECK(theme->furniture.secondaryTv.has_value() == (pack != "retro_library_hub" && pack != "arcade_after_dark"));
+        CHECK(furniture.secondaryTv.has_value() == theme->furniture.secondaryTv.has_value());
         if (pack == "arcade_after_dark") {
             // The runner is the room's dressing (I6 step 6's review: 3.5 m, longer than the hero corner), the hero's
             // rug left out; the rug kind stays the ornate carpet, which a plan's rug drawn as planned keeps.
@@ -377,7 +381,11 @@ TEST_CASE("world/era furniture: every pack's variants stand within their footpri
             const std::size_t replaced = checkRoom(entry.plan, entry.room, data, context, before);
             const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
             if (classic) {
-                CHECK(replaced == 0);
+                // The classic pack replaces its secondary TV's sideboard alone (I5 step 3), the hub's nothing.
+                auto tvs = rv::world::secondaryTvFixtures(entry.plan, entry.room, data);
+                REQUIRE(tvs.has_value());
+                CHECK(replaced == tvs->size());
+                CHECK(tvs->size() <= 1);
             } else {
                 CHECK(replaced > 0);
             }
