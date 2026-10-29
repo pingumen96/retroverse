@@ -965,3 +965,110 @@ TEST_CASE("cabinets: attract swaps the cover for the clip on the screen alone, n
     CHECK(changedPixels(cover, clip, box->first, box->second) > 1000u);
     CHECK(changedOutside(cover, clip, box->first - margin, box->second + margin) == 0u);
 }
+
+namespace {
+
+/// The CRC of a PNG chunk's type and data.
+std::uint32_t pngCrc(const std::vector<std::uint8_t>& bytes) {
+    std::uint32_t crc = 0xFFFFFFFFu;
+    for (const std::uint8_t value : bytes) {
+        crc ^= value;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
+    }
+    return ~crc;
+}
+
+/// A PNG of `image` carrying an eXIf chunk (little-endian TIFF, IFD0's Orientation `orientation`) after its IHDR.
+std::vector<std::byte> pngWithOrientation(const rv::assets::ImageData& image, int orientation) {
+    auto png = rv::assets::encodePng(image);
+    REQUIRE(png.has_value());
+    const std::vector<std::uint8_t> tiff = {'I', 'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0,
+                                            static_cast<std::uint8_t>(orientation), 0, 0, 0, 0, 0, 0, 0};
+    std::vector<std::uint8_t> chunk = {'e', 'X', 'I', 'f'};
+    chunk.insert(chunk.end(), tiff.begin(), tiff.end());
+    std::vector<std::byte> out(png->begin(), png->begin() + 33); // the signature and IHDR
+    const auto be32 = [&out](std::uint32_t value) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            out.push_back(static_cast<std::byte>(value >> shift));
+        }
+    };
+    be32(static_cast<std::uint32_t>(tiff.size()));
+    for (const std::uint8_t value : chunk) {
+        out.push_back(static_cast<std::byte>(value));
+    }
+    be32(pngCrc(chunk));
+    out.insert(out.end(), png->begin() + 33, png->end());
+    return out;
+}
+
+/// Every mame cover of the fixture rewritten as a PNG of its own pixels: upright as it is (`turned` false), or stored
+/// turned a quarter counter-clockwise with EXIF orientation 6 saying to turn it back clockwise, as a phone writes a
+/// photo taken on its side (`turned` true). Both show the same picture once the orientation is honoured.
+void rewriteMameCovers(const rv::test::Fixture& fixture, bool turned) {
+    for (const fs::directory_entry& entry : fs::directory_iterator(fixture.path("media/mame/covers"))) {
+        auto upright = rv::assets::loadImage(entry.path(), 0);
+        if (!upright) {
+            continue; // a damaged payload stays as it is
+        }
+        const std::vector<std::byte> bytes = turned ? pngWithOrientation(rv::assets::orientImage(*upright, 8), 6)
+                                                    : rv::assets::encodePng(*upright).value();
+        REQUIRE(rv::core::writeFileAtomic(entry.path(), bytes).has_value());
+    }
+}
+
+struct CoverRun {
+    std::vector<rv::assets::ImageData> shots;
+    rv::world::CollectionItem item;
+};
+
+/// The building whose mame covers are rewritten (rewriteMameCovers), its cache warmed by a first run; then at a
+/// featured cabinet's Focus pose: F12 at 30 (its cover on its screen), interact at 40, F12 at 90 (in the hand, the
+/// card's picture beside it).
+CoverRun coverRun(std::string_view name, bool turned) {
+    PlannedBuilding building(std::string("cabinets/") + std::string(name), true, "esde/building",
+                             [turned](const rv::test::Fixture& fixture) { rewriteMameCovers(fixture, turned); });
+    writeVideoSettings(building, Json{{"cabinet", {{"enabled", false}, {"showOnFocus", false}}}});
+    const AppRun firstApp = runArcade(building, "first", 2, {});
+    requireCleanRun(firstApp);
+    const ShownRoom shown = shownRoom(building, *firstApp.report);
+    const rv::world::CollectionItem& item = featuredCabinet(shown, {});
+    const fs::path script = writeScript(building, "covers.json",
+                                        Json::array({step(30, 30, {{"screenshot", 1}}), step(40, 40, {{"interact", 1}}),
+                                                     step(90, 90, {{"screenshot", 1}})}));
+    const AppRun run = runArcade(building, "covers", 100,
+                                 {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)), "--input-script",
+                                  arg(script)});
+    requireCleanRun(run);
+    INFO(run.describe());
+    CHECK(run.report->residency.coverFailures == 0u);
+    CHECK(run.report->residency.pending == 0u);
+    CHECK(run.report->world.interaction.state == "inspect");
+    CoverRun result;
+    result.item = item;
+    for (const fs::path& shot : takenScreenshots(building)) {
+        result.shots.push_back(readShot(shot));
+    }
+    REQUIRE(result.shots.size() == 2);
+    return result;
+}
+
+} // namespace
+
+TEST_CASE("cabinets: a cover stored turned with an EXIF orientation stands upright, on its screen and in the hand "
+          "(fix 2026-10-29)",
+          "[gpu][cabinets][covers]") {
+    // The user's report: some covers rendered rotated, others of the same system upright. stb_image ignores the EXIF
+    // orientation; the covers whose pixels a phone or an editor stored turned (the tag saying how to stand them up)
+    // drew sideways. The same pictures, upright as files or turned with the tag, now draw alike: the cabinet's cover
+    // (the front layer) and the inspected item's front with its card (the hero picture).
+    const CoverRun upright = coverRun("covers_upright", false);
+    const CoverRun turned = coverRun("covers_turned", true);
+    REQUIRE(upright.item.game == turned.item.game);
+    const glm::ivec2 whole(kShotSize.x - 1, kShotSize.y - 1);
+    for (std::size_t shot = 0; shot < 2; ++shot) {
+        INFO("screenshot " << shot);
+        CHECK(changedPixels(upright.shots[shot], turned.shots[shot], glm::ivec2(0), whole) == 0u);
+    }
+}
