@@ -323,6 +323,56 @@ TEST_CASE("app/screen_scheduler: ambient requests enter within proximityMeters a
     CHECK(hero.screens.front().slot.has_value());
 }
 
+TEST_CASE("app/screen_scheduler: an ambient request opens a slot only in view; out of view it keeps the one it has",
+          "[app][screen_scheduler]") {
+    // I5 step 3's review: a secondary TV behind the walker on entering opens nothing, though within its proximity and a
+    // slot free; turned towards, it opens; turned away, it keeps its slot paused for kScreenStopAfterSeconds.
+    ScreenScheduler scheduler(ScreenSchedulerSettings{.maxDecoders = 2, .proximityMeters = 12.0});
+    Decoders decoders(2, 0);
+    double now = 0.0;
+    const auto frame = [&](bool tvVisible) {
+        const ScheduleResult result =
+            scheduler.update(now, std::vector{request("hero", ScreenClass::Room, "a", 4.0, false),
+                                              request("tv", ScreenClass::Ambient, "b", 3.0, tvVisible)},
+                             decoders.feedback());
+        decoders.apply(result);
+        now += kFrame;
+        return result;
+    };
+    for (int step = 0; step < 90; ++step) {
+        const ScheduleResult behind = frame(false);
+        // The hero (room class) takes a free slot out of view, as before; the ambient one never does.
+        CHECK(behind.screens[0].slot.has_value());
+        CHECK_FALSE(behind.screens[1].slot.has_value());
+    }
+    CHECK(scheduler.openSlots() == 1);
+    const ScheduleResult turned = frame(true);
+    REQUIRE(turned.screens[1].slot.has_value());
+    CHECK(turned.screens[1].playing);
+    CHECK(scheduler.openSlots() == 2);
+    // Out of view again: paused, its slot kept until kScreenStopAfterSeconds, then stopped.
+    const std::size_t slot = *turned.screens[1].slot;
+    const ScheduleResult away = frame(false);
+    CHECK(away.screens[1].slot == std::optional<std::size_t>(slot));
+    const SlotCommand pause{SlotAction::Pause, slot, "b", "out-of-view"};
+    CHECK(std::find(away.commands.begin(), away.commands.end(), pause) != away.commands.end());
+    bool stopped = false;
+    while (now < 11.0 + 1.5 && !stopped) {
+        const ScheduleResult result = frame(false);
+        stopped = std::find(result.commands.begin(), result.commands.end(),
+                            SlotCommand{SlotAction::Stop, slot, "b", "out-of-view"}) != result.commands.end();
+        if (!stopped) {
+            CHECK(result.screens[1].slot == std::optional<std::size_t>(slot));
+        }
+    }
+    CHECK(stopped);
+    CHECK(now >= 1.5 + rv::app::kScreenStopAfterSeconds - 2 * kFrame);
+    // Stopped out of view, it takes no slot again until it is in view.
+    for (int step = 0; step < 10; ++step) {
+        CHECK_FALSE(frame(false).screens[1].slot.has_value());
+    }
+}
+
 TEST_CASE("app/screen_scheduler: late frames drop the budget to one for 30 s, the lowest class losing its slot",
           "[app][screen_scheduler]") {
     ScreenScheduler scheduler;

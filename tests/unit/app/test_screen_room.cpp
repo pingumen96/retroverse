@@ -1,14 +1,17 @@
 // Which room's CRT is the hero CRT on a floor (I4 step 6b; ADR-0013 §9): the room that holds the eye after the dwell,
-// the doorway's hysteresis, the hall keeping the last room's.
+// the doorway's hysteresis, the hall keeping the last room's; the bound screens found again by object id (I5 step 3's
+// review).
 
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_room.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using rv::app::ScreenRoomTracker;
 
@@ -96,4 +99,27 @@ TEST_CASE("app/screen_room: a start room bound from the start, another room afte
     // An empty area is a hall.
     CHECK(walk(tracker, "", 60, b.now + 1.0).binds == 0);
     CHECK(rv::app::kScreenDwellSeconds == 0.3);
+}
+
+TEST_CASE("app/screen_room: the bound screens found again by object id, whatever their order", "[app][screen]") {
+    // I5 step 3's review (ScreenService::rebind()): a grown room's hero and two secondary TVs, found again after the
+    // room editor rebuilt the room's static part, the two TVs in the other order.
+    using rv::app::rebindOrder;
+    const std::vector<std::string> bound{"room:snes/fx:hero.crt", "room:snes/fx:w03", "room:snes/fx:e11"};
+    CHECK(rebindOrder(bound, bound) == std::optional<std::vector<std::size_t>>({0, 1, 2}));
+    const std::vector<std::string> reordered{"room:snes/fx:hero.crt", "room:snes/fx:e11", "room:snes/fx:w03"};
+    CHECK(rebindOrder(bound, reordered) == std::optional<std::vector<std::size_t>>({0, 2, 1}));
+    const std::vector<std::string> heroLast{"room:snes/fx:e11", "room:snes/fx:w03", "room:snes/fx:hero.crt"};
+    CHECK(rebindOrder(bound, heroLast) == std::optional<std::vector<std::size_t>>({2, 1, 0}));
+    // Not the bound screens: one missing, one more, another id, an id twice.
+    CHECK_FALSE(rebindOrder(bound, std::vector<std::string>{"room:snes/fx:hero.crt", "room:snes/fx:w03"}));
+    CHECK_FALSE(rebindOrder(bound, std::vector<std::string>{"room:snes/fx:hero.crt", "room:snes/fx:w03",
+                                                            "room:snes/fx:e11", "room:snes/fx:e12"}));
+    CHECK_FALSE(rebindOrder(bound, std::vector<std::string>{"room:snes/fx:hero.crt", "room:snes/fx:w03",
+                                                            "room:snes/fx:e12"}));
+    CHECK_FALSE(rebindOrder(bound, std::vector<std::string>{"room:snes/fx:hero.crt", "room:snes/fx:w03",
+                                                            "room:snes/fx:w03"}));
+    CHECK_FALSE(rebindOrder(std::vector<std::string>{}, std::vector<std::string>{"a"}));
+    CHECK(rebindOrder(std::vector<std::string>{}, std::vector<std::string>{}) ==
+          std::optional<std::vector<std::size_t>>(std::vector<std::size_t>{}));
 }

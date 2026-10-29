@@ -173,7 +173,8 @@ struct BudgetDrop {
 ///    kAmbientHysteresisMeters.
 ///  - The budget's best-ranked clips have slots. A clip out of view keeps a slot it has, paused, and takes only a free
 ///    one (never one another clip holds), until kScreenStopAfterSeconds out of view (counted from when its last screen
-///    left the view) or until a request in view needs it.
+///    left the view) or until a request in view needs it. An `ambient` clip out of view takes none (I5 step 3's review:
+///    it opens a slot only within its proximity and in view), keeping one it has as any clip does.
 ///  - A slot changes hands (a request takes it from a clip still asked for) at most once every kSlotHandOverSeconds
 ///    unless the request taking it is `direct` or `focus`. A clip no screen asks for any more stops at once.
 ///  - A stopped slot drains: it opens its next clip only once the service reports its thread ended, so that there are

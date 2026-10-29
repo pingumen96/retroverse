@@ -1760,6 +1760,7 @@ Json videoToJson(const VideoRecord& video) {
                              {"clipStopped", bind.clipStopped}});
     }
     json["binds"] = std::move(binds);
+    json["rebinds"] = video.rebinds;
     json["playlistMode"] = video.playlistMode;
     json["playlistRoom"] = video.playlistRoom;
     json["previewSeconds"] = video.previewSeconds;
@@ -1794,7 +1795,8 @@ Json videoToJson(const VideoRecord& video) {
                    {"textureId", screen.textureId},
                    {"visible", screen.visible},
                    {"pictureRect", screen.pictureRect},
-                   {"heldFrame", screen.heldFrame}};
+                   {"heldFrame", screen.heldFrame},
+                   {"bounds", screen.bounds}};
         if (screen.slot) {
             entry["slot"] = *screen.slot;
         }
@@ -2050,6 +2052,7 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.clipStopped = bind.has("clipStopped") && bind.boolean("clipStopped");
         video.binds.push_back(std::move(entry));
     }
+    video.rebinds = fields.optionalCount("rebinds").value_or(0); // I5 step 3's review
     // I5 step 1's playlist (absent from earlier reports).
     if (fields.has("playlistMode")) {
         video.playlistMode = fields.string("playlistMode");
@@ -2091,6 +2094,10 @@ VideoRecord readVideo(FieldReader& fields) {
             screen.pictureRect = entry.numberArray("pictureRect");
         }
         screen.heldFrame = entry.has("heldFrame") && entry.boolean("heldFrame");
+        // I5 step 3's review (absent from earlier reports).
+        if (entry.has("bounds")) {
+            screen.bounds = entry.numberArray("bounds");
+        }
         video.screens.push_back(std::move(screen));
     }
     for (FieldReader& entry : fields.optionalObjectArray("cabinetEvents")) {

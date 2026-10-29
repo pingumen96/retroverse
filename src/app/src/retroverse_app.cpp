@@ -693,7 +693,8 @@ struct RetroverseApp::State {
         const auto view = [](const std::optional<std::string>& id) {
             return id ? std::optional<std::string_view>(*id) : std::nullopt;
         };
-        const ScreenSelection selection{view(selections.world), view(selections.catalog)};
+        // I5 step 3's review: the secondaries play nothing while the room editor runs.
+        const ScreenSelection selection{view(selections.world), view(selections.catalog), world && world->editing()};
         screen->update(frame, simulatedSeconds, camera, selection, minimized, world ? world->eyeInScreenRoom() : true);
         if (world) {
             world->showCabinets(screen->cabinetsShown());
@@ -938,7 +939,7 @@ struct RetroverseApp::State {
         };
         // I4b step 4: a room's static part rebuilt alone in place (the walker where it stands), and a held fixture's
         // render items.
-        host.replaceObjects = [this](const SceneObjectsChange& change) -> bool {
+        host.replaceObjects = [this, &context](const SceneObjectsChange& change) -> bool {
             if (!scene) {
                 return false;
             }
@@ -952,13 +953,24 @@ struct RetroverseApp::State {
                 }
             }
             freeRoam->setCollision(scene->collisionWorld());
-            // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved is a new
-            // object with a new material), their clips playing on.
-            if (screen && screen->bound() && screen->screenId().starts_with(change.prefix) &&
-                !screen->rebind(findScreens(description, *scene, graphics->materials(), change.prefix))) {
-                spdlog::warn("World: the screens of {} are no longer the bound ones; the bound ones keep their old "
-                             "materials until the room is bound again",
-                             change.prefix);
+            // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved stands as a
+            // new object, its screen's material another registry entry), their clips playing on; screens that are no
+            // longer the bound ones are bound afresh with the room's games (never left on the old materials).
+            if (screen && screen->bound() && screen->screenId().starts_with(change.prefix)) {
+                std::vector<ScreenBinding> found =
+                    findScreens(description, *scene, graphics->materials(), change.prefix);
+                if (!screen->rebind(found)) {
+                    if (found.empty()) {
+                        spdlog::warn("World: {} has no screen any more after its objects were replaced; unbound",
+                                     change.prefix);
+                        screen->unbind(true);
+                    } else {
+                        spdlog::info("World: the screens of {} are no longer the bound ones; bound again",
+                                     change.prefix);
+                        std::vector<ScreenGame> games = screen->games();
+                        screen->bind(std::move(found), std::move(games), context.frameIndex());
+                    }
+                }
             }
             shownDebugLines = DebugLineSelection{};
             if (Status shown = syncDebugLines(); !shown) {

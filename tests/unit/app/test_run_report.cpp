@@ -810,6 +810,8 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     video.binds = {{240, "room:megadrive/fx:hero.crt", 12, 0.75, 1, true},
                    {420, "room:snes/fx:hero.crt", 50, 0.5, 0, false}};
     video.waitsBeforeExit = 2;
+    // I5 step 3's review: the screens moved onto their objects replaced in place.
+    video.rebinds = 3;
     // I5 step 2: the scheduler's budget, slots, uploads and screens; the process priority's changes.
     video.maxDecoders = 2;
     video.maxOpenDecoders = 2;
@@ -823,6 +825,8 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     // I5 step 4: a 16:9 clip letterboxed on a 4:3 tube; a cabinet's frame kept while another plays.
     shared.pictureRect = {0.0, 0.125, 1.0, 0.75};
     still.heldFrame = true;
+    // I5 step 3's review: the box the screen's distance and view test read.
+    shared.bounds = {-4.25, 0.5, -3.125, -3.75, 0.875, -2.5};
     rv::app::VideoScreenRecord cabinet{"area:arcade/cabinet:000000A1", "cabinet", "direct", "g000000000000b006",
                                        "video", 1, true, 11, true};
     cabinet.pictureRect = {0.0, 0.219221, 1.0, 0.561558};
