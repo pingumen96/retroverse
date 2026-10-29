@@ -74,6 +74,12 @@
           ]
         }
       ]
+    },
+    "xr": {
+      "description": "OpenXR loader for the VR mode (iteration I10, ADR-0017)",
+      "dependencies": [
+        "openxr-loader"
+      ]
     }
   }
 }
