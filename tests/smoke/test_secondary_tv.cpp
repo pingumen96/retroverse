@@ -7,7 +7,8 @@
 //  - walking from the doorway towards the secondary TV with video.json's proximityMeters short of it, the hero keeps
 //    the first slot from the room's first update while the secondary (`ambient`) has none and shows its still, then
 //    takes the second slot on the frame the walker comes within its proximity, in view;
-//  - with one decoder (--max-decoders 1) the hero keeps the slot and the secondary shows its still the whole walk;
+//  - with one decoder (--max-decoders 1) and both screens in view the hero keeps the slot and the secondary shows its
+//    still;
 //  - I5 step 3's review, on the product defaults (proximityMeters 12): the TV behind the walker on entering opens no
 //    slot (one decoder), turning towards it opens the second;
 //  - I5 step 3's review: the room editor picks the TV up, nudges and turns it and drops it (the room's static part
@@ -81,6 +82,8 @@ struct SecondaryTv {
     /// The middle of its object's bounds: the screen service's distance to it (ScreenService::update()).
     glm::vec3 boundsCentre{0.0f};
     glm::vec3 doorwayEye{0.0f};
+    /// The middle of the hero CRT's screen.
+    glm::vec3 heroPoint{0.0f};
 };
 
 SecondaryTv secondaryOf(const PlannedBuilding& building) {
@@ -109,6 +112,14 @@ SecondaryTv secondaryOf(const PlannedBuilding& building) {
     tv.screenPoint = glm::vec3(object->instanceTransforms().front() * surface->transform *
                                glm::vec4(surface->bounds.center(), 1.0f));
     tv.boundsCentre = glm::vec3(object->instanceTransforms().front() * glm::vec4(prefab->bounds.center(), 1.0f));
+    const rv::scene::SceneObject* hero = scene->findObject("fx:hero.crt");
+    REQUIRE(hero != nullptr);
+    auto heroPrefab = rv::geometry::buildPrefab(hero->kind, hero->params);
+    REQUIRE(heroPrefab.has_value());
+    const rv::geometry::Socket* heroSurface = rv::geometry::findSocket(heroPrefab->sockets, "ScreenSurface");
+    REQUIRE(heroSurface != nullptr);
+    tv.heroPoint = glm::vec3(hero->instanceTransforms().front() * heroSurface->transform *
+                             glm::vec4(heroSurface->bounds.center(), 1.0f));
     const rv::world::Room& planned = roomIn(stored.plan, kRoom);
     const rv::world::DoorwayCamera doorway = rv::world::doorwayCamera(planned, data->roomTemplate);
     tv.doorwayEye = glm::vec3(static_cast<float>(doorway.x), kEyeHeight, static_cast<float>(doorway.z));
@@ -190,6 +201,34 @@ const rv::app::VideoScreenRecord& screenOf(const rv::app::VideoRecord& video, st
 
 } // namespace
 
+namespace {
+
+/// The walker in front of the middle between two screens, both in view (inside the room, at most 55 degrees apart).
+rv::app::SpawnPoint bothInView(const rv::world::Room& room, const glm::vec3& a, const glm::vec3& b) {
+    const glm::vec2 middle(0.5f * (a.x + b.x), 0.5f * (a.z + b.z));
+    const glm::vec2 along(b.x - a.x, b.z - a.z);
+    glm::vec2 normal = glm::normalize(glm::vec2(-along.y, along.x));
+    const glm::vec2 centre(0.5f * static_cast<float>(room.minXMm + room.maxXMm) / 1000.0f,
+                           0.5f * static_cast<float>(room.minZMm + room.maxZMm) / 1000.0f);
+    if (glm::dot(centre - middle, normal) < 0.0f) {
+        normal = -normal;
+    }
+    const float distance = 0.5f * glm::length(along) / std::tan(glm::radians(27.5f));
+    glm::vec2 eye = middle + distance * normal;
+    eye.x = std::clamp(eye.x, static_cast<float>(room.minXMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxXMm) / 1000.0f - 0.8f);
+    eye.y = std::clamp(eye.y, static_cast<float>(room.minZMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxZMm) / 1000.0f - 0.8f);
+    const glm::vec3 look(middle.x - eye.x, 0.5f * (a.y + b.y) - kEyeHeight, middle.y - eye.y);
+    rv::app::SpawnPoint spawn;
+    spawn.feet = glm::vec3(eye.x, 0.0f, eye.y);
+    spawn.yawDeg = rv::core::radiansToDegrees(std::atan2(look.x, -look.z));
+    spawn.pitchDeg = rv::core::radiansToDegrees(std::atan2(look.y, std::sqrt(look.x * look.x + look.z * look.z)));
+    return spawn;
+}
+
+} // namespace
+
 TEST_CASE("gpu.secondary_tv: walking from the doorway, the secondary takes the second slot within its proximity and in "
           "view while the hero keeps the first",
           "[gpu][secondary_tv]") {
@@ -249,9 +288,19 @@ TEST_CASE("gpu.secondary_tv: walking from the doorway, the secondary takes the s
 
 TEST_CASE("gpu.secondary_tv: with one decoder the hero keeps the slot and the secondary shows its still",
           "[gpu][secondary_tv]") {
+    // Both screens in view (an ambient screen in view ranks above a hero out of view: ADR-0016 §2).
     PlannedBuilding building("secondary_tv/one_decoder", true, "esde/snes-room");
     const SecondaryTv tv = secondaryOf(building);
-    const AppRun run = walkTowards(building, "walk", tv, {"--max-decoders", "1"});
+    const AppRun run = runApp(
+        retroverseExe(), building.dir, "both",
+        {"--start-room", std::string(kRoom), "--exit-after-frames", "--frames", std::to_string(kWalkFrames),
+         "--fixed-dt", "0.016667", "--spawn",
+         spawnArgument(bothInView(roomIn(building.plan().plan, kRoom), tv.heroPoint, tv.screenPoint)),
+         "--max-decoders", "1", "--screenshot", arg(building.dir / "both.png")});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->video.bound);
     const rv::app::VideoRecord& video = run.report->video;
     CHECK(video.maxDecoders == 1);
     CHECK(video.maxOpenDecoders == 1);
@@ -261,7 +310,7 @@ TEST_CASE("gpu.secondary_tv: with one decoder the hero keeps the slot and the se
     REQUIRE(heroOpens.size() == 1);
     CHECK(heroOpens.front().frame <= 1);
     CHECK(stopsBeforeExit(video, kHeroScreen) == 0);
-    // The secondary never opens: the walk ends within its proximity (12 m: the whole room) and in view, its still up.
+    // The secondary never opens: within its proximity (12 m: the whole room) and in view, its still up.
     CHECK(eventsOf(video, "open", tv.screen).empty());
     const rv::app::VideoScreenRecord& secondary = screenOf(video, tv.screen);
     CHECK(secondary.kind == "secondary");
@@ -587,34 +636,6 @@ TEST_CASE("gpu.secondary_tv: the room editor moves and turns the TV: it plays no
     CHECK(glm::distance(glm::vec2(centre.x, centre.z), glm::vec2(tv.boundsCentre.x, tv.boundsCentre.z) + shift) < 0.2f);
     static_cast<void>(requireScreenshot(run, shot, {1920, 1080}));
 }
-
-namespace {
-
-/// The walker in front of the middle between two screens, both in view (inside the room, at most 55 degrees apart).
-rv::app::SpawnPoint bothInView(const rv::world::Room& room, const glm::vec3& a, const glm::vec3& b) {
-    const glm::vec2 middle(0.5f * (a.x + b.x), 0.5f * (a.z + b.z));
-    const glm::vec2 along(b.x - a.x, b.z - a.z);
-    glm::vec2 normal = glm::normalize(glm::vec2(-along.y, along.x));
-    const glm::vec2 centre(0.5f * static_cast<float>(room.minXMm + room.maxXMm) / 1000.0f,
-                           0.5f * static_cast<float>(room.minZMm + room.maxZMm) / 1000.0f);
-    if (glm::dot(centre - middle, normal) < 0.0f) {
-        normal = -normal;
-    }
-    const float distance = 0.5f * glm::length(along) / std::tan(glm::radians(27.5f));
-    glm::vec2 eye = middle + distance * normal;
-    eye.x = std::clamp(eye.x, static_cast<float>(room.minXMm) / 1000.0f + 0.8f,
-                       static_cast<float>(room.maxXMm) / 1000.0f - 0.8f);
-    eye.y = std::clamp(eye.y, static_cast<float>(room.minZMm) / 1000.0f + 0.8f,
-                       static_cast<float>(room.maxZMm) / 1000.0f - 0.8f);
-    const glm::vec3 look(middle.x - eye.x, 0.5f * (a.y + b.y) - kEyeHeight, middle.y - eye.y);
-    rv::app::SpawnPoint spawn;
-    spawn.feet = glm::vec3(eye.x, 0.0f, eye.y);
-    spawn.yawDeg = rv::core::radiansToDegrees(std::atan2(look.x, -look.z));
-    spawn.pitchDeg = rv::core::radiansToDegrees(std::atan2(look.y, std::sqrt(look.x * look.x + look.z * look.z)));
-    return spawn;
-}
-
-} // namespace
 
 TEST_CASE("gpu.secondary_tv: screenshots for a look by hand", "[.secondary_tv_shots]") {
     // build/i5/step3/ under the source tree: the console room with the hero and its secondary TV playing (the secondary
