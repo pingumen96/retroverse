@@ -38,6 +38,7 @@
 #include <rv/app/world_regenerate.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/migrator.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/file_io.hpp>
