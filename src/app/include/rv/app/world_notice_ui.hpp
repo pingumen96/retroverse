@@ -14,7 +14,8 @@ inline constexpr std::string_view kDocumentPath = "ui/world_notice.rml";
 inline constexpr std::string_view kStyleSheetPath = "ui/world_notice.rcss";
 /// The data model: "notice" (one of the keys below), "state" (the catalog's state for kNoCatalog: catalog_worker.hpp's
 /// toString(CatalogState)), "room" (the start room's id as --start-room gives it, "room:snes", "area:arcade" or
-/// "area:shared:<floor>", for kNoGames; empty without --start-room).
+/// "area:shared:<floor>", for kNoGames; empty without --start-room), "roomKind" and "roomTitle" (kNeedsConfirmation's
+/// room: "console", "shared" or "arcade", and a console room's system's name).
 inline constexpr std::string_view kDataModel = "world_notice";
 inline constexpr std::string_view kPanelId = "world-notice";
 
@@ -49,10 +50,16 @@ inline constexpr std::string_view kRoomsMigrated = "rooms-migrated";
 /// world's data or lock out of reach, the room not ready): nothing is edited. Shown for kShownSeconds.
 inline constexpr std::string_view kEditUnavailable = "edit-unavailable";
 
+/// I4b step 6 (ADR-0015 §3, §5): the update left something undone because it would have moved what the user pinned
+/// (its needsConfirmation: a room that cannot grow past a pinned fixture, a pinned room not migrated): the notice
+/// offers "Rigenera stanza" of that room, whose preview confirm (Enter, the pad's Start) opens while it shows in free
+/// roam.
+inline constexpr std::string_view kNeedsConfirmation = "needs-confirmation";
+
 /// Every key with a sentence of its own.
-inline constexpr std::array<std::string_view, 11> kNotices{kGenerating,       kNoCatalog,    kNoGames, kMediaUnknown,
-                                                           kMediaUnknownKept, kRegeneration, kRefused, kFailed,
-                                                           kRoomUnreachable,  kRoomsMigrated, kEditUnavailable};
+inline constexpr std::array<std::string_view, 12> kNotices{
+    kGenerating, kNoCatalog, kNoGames,         kMediaUnknown,  kMediaUnknownKept, kRegeneration,
+    kRefused,    kFailed,    kRoomUnreachable, kRoomsMigrated, kEditUnavailable,  kNeedsConfirmation};
 /// The catalog states kNoCatalog has a sentence for (CatalogState but Ready and Opening).
 inline constexpr std::array<std::string_view, 5> kCatalogStates{"no-library", "no-database", "data-directory",
                                                                 "library-mismatch", "unavailable"};

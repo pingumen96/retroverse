@@ -11,10 +11,13 @@
 		notice: generating, no-catalog, no-games, media-unknown, media-unknown-kept, regeneration, refused, failed,
 		room-unreachable (I4 step 7b: the quick catalog's "Mostra nella stanza" could not go to the game's room now),
 		rooms-migrated (I6 step 4: the rooms of cases and boxes were rearranged once, their spines now out),
-		edit-unavailable (I4b step 3: the editor cannot edit the room now).
+		edit-unavailable (I4b step 3: the editor cannot edit the room now), needs-confirmation (I4b step 6: the update left
+		a room as it stands because it would have moved something the user pinned; confirm opens the preview of
+		"Rigenera stanza" while it shows).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
-		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
+		for no-games; empty without one. roomKind (console, shared, arcade) and roomTitle (a console room's system's
+		name): the room needs-confirmation offers to regenerate. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
 		no input: the quick catalog (Tab) is where to act.
 	-->
 	<title>Stanza</title>
@@ -62,8 +65,8 @@
 
 		<div data-if="notice == 'regeneration'">
 			<h1>La stanza resta com'era</h1>
-			<p>La configurazione del mondo è cambiata: "retroverse-cli worldplan generate --replace" genera di nuovo la
-				stanza, dopo averne conservato una copia.</p>
+			<p>La configurazione del mondo è cambiata: "Rigenera stanza" o "Rigenera mondo" nell'indice (M o Select, scheda
+				Modifiche) la riallestisce, dopo averne conservato una copia.</p>
 		</div>
 
 		<div data-if="notice == 'refused'">
@@ -87,6 +90,15 @@
 			<h1>La stanza non si può modificare ora</h1>
 			<p>Le personalizzazioni del mondo non si leggono (forse le ha scritte una versione più recente di Retroverse) o
 				la stanza non è pronta: niente è stato modificato. Il registro di Retroverse dice perché.</p>
+		</div>
+
+		<div data-if="notice == 'needs-confirmation'">
+			<h1>Una stanza attende la tua conferma</h1>
+			<p>Una stanza resta com'è per non spostare ciò che hai fissato.</p>
+			<p class="room-name" data-if="roomKind == 'console'">{{ roomTitle }}</p>
+			<p class="room-name" data-if="roomKind == 'shared'">Sala condivisa</p>
+			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade</p>
+			<p>Premi Invio (Start sul controller) per vedere cosa cambierebbe rigenerandola.</p>
 		</div>
 
 		<div data-if="notice == 'rooms-migrated'">

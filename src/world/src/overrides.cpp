@@ -253,6 +253,8 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
     for (const UnplacedGame& game : plan.unplaced) {
         unplaced.insert(game.game);
     }
+    // The unhonoured pins with their rooms, sorted by their text below.
+    std::vector<std::pair<std::string, RoomId>> unhonoured;
     for (const GamePin& pin : overrides.gamePins) {
         const auto stands = placed.find(pin.game);
         if (stands != placed.end() && *stands->second == pin.slot) {
@@ -264,7 +266,7 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         } else if (pin.conflict) {
             check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
         } else {
-            check.unhonoured.push_back(pinText(pin));
+            unhonoured.emplace_back(pinText(pin), pin.slot.fixture().room());
         }
     }
     for (const FixturePin& pin : overrides.fixturePins) {
@@ -295,11 +297,15 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
         } else if (pin.conflict) {
             check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
         } else {
-            check.unhonoured.push_back(pinText(pin));
+            unhonoured.emplace_back(pinText(pin), pin.fixture.room());
         }
     }
     std::sort(check.orphaned.begin(), check.orphaned.end());
-    std::sort(check.unhonoured.begin(), check.unhonoured.end());
+    std::sort(unhonoured.begin(), unhonoured.end());
+    for (auto& [text, room] : unhonoured) {
+        check.unhonoured.push_back(std::move(text));
+        check.unhonouredRooms.push_back(room);
+    }
     return check;
 }
 

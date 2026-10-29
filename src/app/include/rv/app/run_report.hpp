@@ -874,6 +874,67 @@ struct WorldEditRecord {
     bool operator==(const WorldEditRecord&) const = default;
 };
 
+/// I4b step 6: one regeneration or undo asked in the app (ADR-0015 §5, §6): its preview, the choice, the commit.
+struct WorldRegenerationRecord {
+    /// "room", "floor", "world", "undo"; the scope (a room's id, "floor:<id>", "world"; an undo's: the snapshot's
+    /// scope once known); how it was asked ("directory", "notice"), on which frame.
+    std::string kind;
+    std::string scope;
+    std::string via;
+    std::uint64_t requestFrame = 0;
+    /// The preview shown: its frame, the time from the request (ADR-0015 §9: a room 2 s, a floor or the world 15 s),
+    /// its job's, the catalog's inputs (taken by the preview: `inputsTaken`, else made before) and the dry run's own.
+    std::optional<std::uint64_t> previewFrame;
+    std::optional<double> previewMs;
+    std::optional<double> previewJobMs;
+    std::optional<double> inputsMs;
+    bool inputsTaken = false;
+    std::optional<double> regenerateMs;
+    /// Why there was no preview or no commit (ui::regenerate_preview::kFailures; "" none).
+    std::string failure;
+    /// The preview's counts (ui::RegeneratePreviewContent), whether "Rigenera" would change anything, the overrides the
+    /// drop would remove; an undo's snapshot.
+    std::uint64_t roomsRegenerated = 0;
+    std::uint64_t roomsAdded = 0;
+    std::uint64_t roomsRemoved = 0;
+    std::uint64_t roomsMoved = 0;
+    std::uint64_t gamesMoved = 0;
+    std::uint64_t faceOutEntering = 0;
+    std::uint64_t faceOutLeaving = 0;
+    std::uint64_t newlyPlaced = 0;
+    std::uint64_t newlyUnplaced = 0;
+    std::uint64_t fixturesAdded = 0;
+    std::uint64_t fixturesRemoved = 0;
+    std::uint64_t fixturesMoved = 0;
+    std::uint64_t pinsKept = 0;
+    std::uint64_t conflicts = 0;
+    std::uint64_t overrides = 0;
+    bool changed = false;
+    std::string undoSnapshot;
+    /// The second confirmations of "Rigenera e scarta le personalizzazioni" shown.
+    std::uint64_t confirmations = 0;
+    /// The choice ("regenerate", "regenerate-drop", "undo", "cancel"; "" none by the run's end) and its frame.
+    std::string choice;
+    std::optional<std::uint64_t> choiceFrame;
+    /// The commit: written (behind the snapshot named), the preview's own result committed (`reused`), the digest of
+    /// the plan stored after it, its job's time; the room shown again (ADR-0015 §9: 3 s warm) from the choice to the
+    /// frame that shows it, how ("in-place": the floor's rooms applied in place, "floor": the floor committed again,
+    /// "none"), where the walker went ("doorway:<room>", "elevator", "kept").
+    bool written = false;
+    bool reused = false;
+    std::string snapshot;
+    std::string planDigest;
+    std::optional<double> commitMs;
+    std::optional<std::uint64_t> backFrame;
+    std::optional<double> backMs;
+    std::string path;
+    std::string walker;
+    /// How it ended: "committed", "cancelled", "failed" ("" still open at the run's end).
+    std::string end;
+
+    bool operator==(const WorldRegenerationRecord&) const = default;
+};
+
 struct WorldRecord {
     /// The run asked for the generated room (retroverse.exe without --scene, --model or --mock-catalog).
     bool bound = false;
@@ -985,6 +1046,11 @@ struct WorldRecord {
     ShowcaseRecord showcase;
     /// I4b step 3: the editor's sessions, in order.
     std::vector<WorldEditRecord> edits;
+    /// I4b step 6: the regenerations and undos asked, in order.
+    std::vector<WorldRegenerationRecord> regenerations;
+    /// I4b step 6's review: the times the regenerations' inputs were let go of while nothing needed them (the
+    /// directory closed, no notice offering a preview, no preview or commit asked or running).
+    std::uint64_t regenerationInputsReleased = 0;
     /// I5 step 4's review: the frames that drew a cabinet's clip on the dynamic path, and those among them in which
     /// such a cabinet's static front (its cover) was drawn too, or its item was gone: 0.
     std::uint64_t cabinetClipFrames = 0;

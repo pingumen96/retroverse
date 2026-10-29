@@ -69,9 +69,9 @@ rv_forbid_link(rv_app_cli)
 # catalog of the tests); since I3 the catalog's refresh on its worker, the room's snapshot and the room's making up to
 # its commit (world_build: the jobs on the worker pool and the main thread's flow, step 10b), the persisted start's
 # reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c), the live update's decision
-# (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b). Kept
-# apart from rv_app_cli,
-# which the GPU smoke tests link for the run report alone.
+# (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b); since I4b
+# the editor's draft (world_edit_draft: step 3) and the regenerations' and the undo's jobs (world_regenerate_job: step
+# 6). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
@@ -86,6 +86,7 @@ add_library(rv_app_catalog STATIC
     src/world_live_plan.cpp
     src/world_reconcile.cpp
     src/world_edit_draft.cpp
+    src/world_regenerate_job.cpp
 )
 add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)
@@ -130,6 +131,7 @@ add_library(rv_app STATIC
     src/world_start.cpp
     src/edit_bar_panel.cpp
     src/world_edit.cpp
+    src/world_regenerate.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)

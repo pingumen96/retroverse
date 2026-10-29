@@ -195,6 +195,34 @@ walker kept.
 - **After.** The result is saved behind a snapshot (§6) and the resident floor reconciled room by room; a walker in a
   regenerated room stands at its doorway, facing in.
 
+*Amended on 2026-10-29 (I4b step 6; reworded on 2026-10-29 by the step's review):* the preview and the choices are one
+panel (`regenerate_preview.rml`), opened by the directory's "Modifiche" tab ("Rigenera stanza / piano / mondo",
+"Annulla ultima modifica") and by the update's notice (§3: confirm, Enter or the pad's Start, while it shows). The
+notice names the room it offers, the first of the rooms the update's sentences are about that stands (the change
+report carries each sentence's room beside it: a head's refusal names its socket alone); it waits for the update's own
+notice to hide, and an update that refuses the same again offers it again. The focus a preview arrives with never rests
+on a choice that cannot be taken back ("Rigenera", which an undo takes back, else "Annulla"), the first input frame
+after it takes no Activate, and the second confirmation puts "Indietro" where the drop was (the choices stand at the
+panel's bottom; a click within 0.5 s of the buttons changing is ignored). The commit takes the preview's own result
+when the plan and the overrides read again under the lock are those it read and the overrides are kept; when another
+writer changed either meanwhile, "Rigenera" regenerates the scope again under the lock with the overrides kept, but
+"Rigenera e scarta le personalizzazioni" is refused (the world changed: nothing written), since its consent is to drop
+the customizations the preview named, never one the user did not see. A commit that changes nothing writes nothing:
+no snapshot, no items files, the building stamp kept, the walker where it stands. Otherwise the plan committed is the
+regeneration's own (nothing read back) and the floor shown follows it: the rooms the commit changed rebuilt alone in
+place, step 4's path (their static parts replaced, their collections applied), when the floor's other rooms and its
+hall stand as they did (every room of the floor kept its id, place, interior, template and family), which a room's
+regeneration that keeps its depth is; else through the live update's path (room by room when the floor's static part
+stands, else committed again with the walker kept), as a floor's or the world's regeneration that places rooms again
+is. An undo whose difference is a room's is shown alone the same way. When nothing can be shown, the plan's derived
+state (rides, where-is, the directory) follows the stored plan at once and a live update shows its floor. A walker in a
+room the regeneration covers stands at its doorway; in a room it removed (a floor's system gone to the shared room), or
+in the hall of a floor whose rooms it placed again (a floor's or the world's regeneration), at the floor's elevator.
+The rooms' items files are written again from the catalog's snapshot (a game placed anew has its title and cover) and
+the building stamp removed, so that the next start runs the building job. While a preview shows or a commit runs,
+rides, the editor and live updates wait; a commit that does not answer within 120 s is given up (the panel says it
+failed, a live update follows the stored plan).
+
 ### 6. Snapshots, transactions and undo
 
 - **Snapshots.** Before every explicit action (an editor save, a regeneration, an undo, a CLI edit), the plan and the
@@ -208,6 +236,15 @@ walker kept.
   snapshot not yet undone, marks it undone, and keeps the state it replaced as a snapshot of kind `undo`, which undo
   never offers: undo walks back up to the kept snapshots, and redo is not offered. The catalog's changes since then
   come back through the next update as usual. Incremental updates are not undoable actions (their plan backups stay).
+
+*Amended on 2026-10-29 (I4b step 6; reworded on 2026-10-29 by the step's review):* in the app "Annulla ultima
+modifica" is the directory's (its "Modifiche" tab): it first names the action it would undo (its kind, its scope, its
+time, read from the snapshots without the lock) with "Annulla la modifica" and "Indietro", "Indietro" focused since no
+redo brings it back; the undo is made only when the snapshot it restores under the lock is still that one. It waits for
+the catalog's inputs, so that the rooms' items files are always written again for the plan restored, and removes the
+building stamp whenever it wrote, even when the plan restored cannot be read back (the floor then follows it through a
+live update). The editor's menu keeps its session's own "Annulla ultima azione" (§4), which takes back the draft's last
+operation and touches no snapshot: a stored action is undone from the directory or the CLI.
 
 ### 7. Expansion rooms (amends ADR-0013 §8; generator 1.5)
 

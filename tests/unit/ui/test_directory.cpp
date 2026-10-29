@@ -38,6 +38,7 @@
 
 namespace dir = rv::ui::directory;
 namespace qc = rv::ui::quick_catalog;
+using rv::ui::DirectoryAction;
 using rv::ui::DirectoryBuilding;
 using rv::ui::DirectoryCardButton;
 using rv::ui::DirectoryClick;
@@ -969,4 +970,158 @@ TEST_CASE("ui/directory: \"Modifica stanza\" above the floors edits the walker's
     gone.setBuilding(building());
     CHECK_FALSE(gone.editFocused());
     CHECK(gone.focusedElement() == "dir-floor-0");
+}
+
+TEST_CASE("ui/directory: the \"Modifiche\" tab asks the regenerations and the undo (I4b step 6)", "[ui][directory]") {
+    DirectoryBuilding walker = building();
+    walker.regenerableRoom = "room:snes";
+    DirectoryModel model;
+    model.setBuilding(walker);
+    model.open(DirectoryTab::Floors);
+    // The shoulders walk the three tabs round; the tab bar's Left and Right stop at its ends.
+    model.apply(UiCommand::FilterNext);
+    model.apply(UiCommand::FilterNext);
+    CHECK(model.tab() == DirectoryTab::Changes);
+    CHECK(model.view() == DirectoryView::Changes);
+    model.apply(UiCommand::FilterNext);
+    CHECK(model.tab() == DirectoryTab::Floors);
+    model.apply(UiCommand::FilterPrevious);
+    CHECK(model.tab() == DirectoryTab::Changes);
+    model.apply(UiCommand::Up);
+    REQUIRE(model.tabsFocused());
+    CHECK(model.focusedElement() == dir::kChangesTabId);
+    model.apply(UiCommand::Right);
+    CHECK(model.tab() == DirectoryTab::Changes);
+    model.apply(UiCommand::Left);
+    CHECK(model.tab() == DirectoryTab::Games);
+    model.apply(UiCommand::Right);
+    model.apply(UiCommand::Down);
+    CHECK_FALSE(model.tabsFocused());
+    // Its rows: no "Modifica stanza" without an editable room.
+    CHECK(model.actions() == std::vector<DirectoryAction>{DirectoryAction::RegenerateRoom,
+                                                          DirectoryAction::RegenerateFloor,
+                                                          DirectoryAction::RegenerateWorld, DirectoryAction::Undo});
+    CHECK(model.rowCount() == 4);
+    CHECK(model.focusedElement() == "dir-action-0");
+    CHECK(rv::ui::toString(DirectoryAction::RegenerateFloor) == "regenerate-floor");
+    // "Rigenera stanza": the walker's room, the panel closed.
+    std::optional<DirectoryCommand> asked = model.apply(UiCommand::Activate);
+    REQUIRE(asked.has_value());
+    CHECK(*asked == command(DirectoryCommandKind::RegenerateRoom, "room:snes"));
+    CHECK_FALSE(model.isOpen());
+    CHECK(rv::ui::toString(DirectoryCommandKind::RegenerateRoom) == "regenerate-room");
+    // "Rigenera piano": the walker's floor; "Rigenera mondo" and "Annulla ultima modifica" name nothing.
+    model.reopen();
+    CHECK(model.view() == DirectoryView::Changes);
+    model.apply(UiCommand::Down);
+    asked = model.apply(UiCommand::Activate);
+    REQUIRE(asked.has_value());
+    CHECK(*asked == command(DirectoryCommandKind::RegenerateFloor, "gen4"));
+    model.open(DirectoryTab::Changes);
+    model.apply(UiCommand::End);
+    asked = model.apply(UiCommand::Activate);
+    REQUIRE(asked.has_value());
+    CHECK(*asked == command(DirectoryCommandKind::Undo));
+    CHECK(rv::ui::toString(DirectoryCommandKind::Undo) == "undo");
+    model.open(DirectoryTab::Changes);
+    model.apply(UiCommand::End);
+    model.apply(UiCommand::Up);
+    asked = model.apply(UiCommand::Activate);
+    REQUIRE(asked.has_value());
+    CHECK(*asked == command(DirectoryCommandKind::RegenerateWorld));
+    // In a hall: "Rigenera stanza" says why and does nothing; a click on it neither.
+    DirectoryBuilding hall = building();
+    hall.currentRoom.clear();
+    DirectoryModel inHall;
+    inHall.setBuilding(hall);
+    inHall.open(DirectoryTab::Changes);
+    CHECK_FALSE(inHall.actionEnabled(DirectoryAction::RegenerateRoom));
+    CHECK(inHall.actionEnabled(DirectoryAction::RegenerateFloor));
+    CHECK_FALSE(inHall.apply(UiCommand::Activate).has_value());
+    CHECK(inHall.isOpen());
+    DirectoryClick click;
+    click.kind = DirectoryClick::Kind::Row;
+    click.row = 0;
+    CHECK_FALSE(inHall.click(click).has_value());
+    // An editable room puts "Modifica stanza" first: EditRoom, as above the floors.
+    DirectoryBuilding editable = walker;
+    editable.editableRoom = "room:snes";
+    model.setBuilding(editable);
+    model.open(DirectoryTab::Changes);
+    CHECK(model.actions().front() == DirectoryAction::EditRoom);
+    CHECK(model.rowCount() == 5);
+    asked = model.apply(UiCommand::Activate);
+    REQUIRE(asked.has_value());
+    CHECK(*asked == command(DirectoryCommandKind::EditRoom, "room:snes"));
+    // Back from the tab closes the panel.
+    model.open(DirectoryTab::Changes);
+    asked = model.apply(UiCommand::Back);
+    REQUIRE(asked.has_value());
+    CHECK(asked->kind == DirectoryCommandKind::Close);
+}
+
+TEST_CASE("ui/directory: the \"Modifiche\" tab's selection follows its action while \"Modifica stanza\" comes and "
+          "goes (I4b step 6's review)",
+          "[ui][directory]") {
+    DirectoryBuilding walker = building();
+    walker.regenerableRoom = "room:snes";
+    DirectoryBuilding editable = walker;
+    editable.editableRoom = "room:snes";
+    DirectoryModel model;
+    model.setBuilding(walker);
+    model.open(DirectoryTab::Changes);
+    model.apply(UiCommand::Down);
+    model.apply(UiCommand::Down);
+    REQUIRE(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    // "Modifica stanza" arrives above: "Rigenera mondo" stays selected, one row down.
+    model.setBuilding(editable);
+    CHECK(model.selectedAction() == 3);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    CHECK(model.focusedElement() == "dir-action-3");
+    // It goes: the same action, one row up.
+    model.setBuilding(walker);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    // "Modifica stanza" selected and gone: the first row.
+    model.setBuilding(editable);
+    model.apply(UiCommand::Home);
+    REQUIRE(model.actions()[model.selectedAction()] == DirectoryAction::EditRoom);
+    model.setBuilding(walker);
+    CHECK(model.selectedAction() == 0);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateRoom);
+}
+
+TEST_CASE("ui/directory: the \"Modifiche\" tab's document: its tab, rows and notice (I4b step 6)",
+          "[ui][directory][documents]") {
+    const std::string rml = readAsset(dir::kDocumentPath);
+    CHECK(contains(rml, "id=\"" + std::string(dir::kChangesTabId) + "\""));
+    for (const std::string_view binding :
+         {"data-event-click=\"tab('changes')\"", "action : actions", "data-attr-id=\"action.elementId\"",
+          "data-event-click=\"row(action.index)\"", "view == 'changes'", "{{ actionRoomTitle }}", ">Modifiche<"}) {
+        INFO(binding);
+        CHECK(contains(rml, binding));
+    }
+    for (const std::string_view action : dir::kActions) {
+        INFO(action);
+        CHECK(contains(rml, "action.action == '" + std::string(action) + "'"));
+    }
+    for (const std::string_view word :
+         {">Rigenera stanza<", ">Rigenera piano<", ">Rigenera mondo<", ">Annulla ultima modifica<"}) {
+        INFO(word);
+        CHECK(contains(rml, word));
+    }
+    // One short line each (I4b step 6's review: the five rows fit the list), the floor named by the directory's names.
+    for (const std::string_view line :
+         {">Sposta e fissa giochi e arredi<", ">Riallestisce {{ actionRoomTitle }}<", ">Riallestisce tutto l'edificio<",
+          ">Torna a prima dell'ultima modifica<", ">Disponibile fuori dall'ascensore<",
+          ">Riallestisce il piano {{ actionFloor }}<", "!actionFloorKnown"}) {
+        INFO(line);
+        CHECK(contains(rml, line));
+    }
+    for (const std::string_view floor : dir::kFloorIds) {
+        INFO(floor);
+        CHECK(contains(rml, "actionFloor == '" + std::string(floor) + "'"));
+    }
+    // The undo's button is a back chevron, not two sheets (which read as "copy").
+    CHECK(contains(rml, "<span class=\"chevron\"></span>"));
+    CHECK_FALSE(contains(rml, "sheet"));
 }

@@ -163,9 +163,6 @@ void displayInto(EditJobAnswer& answer, const EditJobContext& context, const std
            local == "dressing:picture:" + own;
 }
 
-/// The synthetic scene digest of a floor shown with a room's static part rebuilt alone ("edit-scene:<session>:<n>").
-constexpr std::string_view kEditSceneDigest = "edit-scene:";
-
 /// The outline over a held fixture (I4b step 4's review): wider than the hover's 2 px, so that it reads on a dark
 /// cabinet; over a refused place a lighter red of the bar's verdict colour's hue (edit_bar.rcss: #C8645A), which reads
 /// on dark wood; the rest of the view dimmed a little (the inspection dims by half).
@@ -182,8 +179,8 @@ constexpr float kHeldScale = 0.7f;
 } // namespace
 
 std::optional<std::string> WorldSession::editableRoom(const ProductUi& product) const {
-    if (m_edit || m_state != "room" || !m_shown || !m_planState || m_ride || m_retargetPending || m_retargetResult ||
-        m_shownPreview || m_previewAwaitingFrame || product.launchActive() ||
+    if (m_edit || regenerating() || m_state != "room" || !m_shown || !m_planState || m_ride || m_retargetPending ||
+        m_retargetResult || m_shownPreview || m_previewAwaitingFrame || product.launchActive() ||
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return std::nullopt;
     }

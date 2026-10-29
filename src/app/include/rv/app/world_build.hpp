@@ -67,6 +67,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -356,6 +357,17 @@ struct BuildingResult {
 /// and builds nothing; a requested floor the plan lacks, or a floor that cannot be made, leaves the build with no plan
 /// and its notice (logged). Nothing for a build without a plan.
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources);
+
+/// I4b step 6's review (ADR-0015 §5 as amended): `rooms` of `build`'s floor rebuilt alone from its plan, for a
+/// regeneration or an undo that changed only them and kept their places. `build` is the floor shown as a template
+/// (its collections, frame, elevator, arrival and doorways; no scene needed) with the plan and digest to show; each
+/// room's scene data is read as buildFloor() reads it (loadSceneData() with the lighting profile and its first system's
+/// platform tags) and kept in its collection (roomStaticPart() reads it), its collection, covers, content digest, CRT's
+/// games and doorway camera made as buildFloor() makes them, in its place on the floor shown (its scene placement and
+/// doorway kept). The other rooms stay as `build` holds them. Errors (nothing usable: build the floor): a room the plan
+/// or the floor shown lacks, its data, its layout.
+[[nodiscard]] Status rebuildRoomsAlone(const WorldPaths& paths, WorldBuild& build, std::span<const world::RoomId> rooms,
+                                       const FloorSources& sources);
 
 /// An unchanged start's building job (see the file comment): the stored plan `stored` as it is when the building stamp
 /// says the catalog (its stamp `catalogStamp`) and the world's inputs are those it was made from, its file still that

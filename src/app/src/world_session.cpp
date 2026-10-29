@@ -22,6 +22,7 @@
 #include "cover_loader.hpp"
 #include "hero_textures.hpp"
 #include "product_ui.hpp"
+#include "world_regenerate_state.hpp"
 
 namespace rv::app {
 namespace {
@@ -152,6 +153,12 @@ WorldSession::~WorldSession() {
         const std::lock_guard lock(m_showcaseBox->mutex);
         m_showcaseBox->wake = nullptr;
     }
+    if (m_regenerations) {
+        // I4b step 6: a preview's or a commit's job posts into its box harmlessly (a commit under way still ends).
+        m_pool.cancel(m_regenerations->generation);
+        const std::lock_guard lock(m_regenerations->box->mutex);
+        m_regenerations->box->wake = nullptr;
+    }
     // I4b step 3: an edit session's job is cancelled too and wakes nothing (its box, shared, takes a late answer).
     if (m_edit) {
         m_pool.cancel(m_edit->generation);
@@ -189,6 +196,15 @@ void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
     m_noticeSince.reset();
     m_record.notice = m_notice.notice;
     m_record.noticeRoom = m_notice.startRoom;
+}
+
+bool WorldSession::noticeShowing() const {
+    if (m_notice.notice.empty()) {
+        return false;
+    }
+    // A timed notice hides after its time (showNotice()); its time starts at the first showNotice() after it was set.
+    return !m_noticeTimed || !m_noticeSince || !m_lastTime ||
+           *m_lastTime - *m_noticeSince < world_notice::kShownSeconds;
 }
 
 void WorldSession::showNotice(ProductUi& product, double timeSeconds) {
@@ -260,7 +276,8 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
-    followEdit(product); // I4b step 3
+    followEdit(product);         // I4b step 3
+    followRegeneration(product); // I4b step 6
 }
 
 std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) const {
@@ -643,7 +660,11 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.migratedRooms.clear();
     m_record.replacedRooms.clear();
     m_record.needsConfirmation.clear();
+    // I4b step 6: the rooms the needs-confirmation notice may offer (followConfirmations()).
+    ++m_buildsRecorded;
+    m_confirmationRooms.clear();
     if (build.changes) {
+        m_confirmationRooms = build.changes->needsConfirmationRooms;
         m_record.changeOutcome = std::string(world::toString(build.changes->outcome));
         m_record.rebuild = std::string(world::toString(build.changes->rebuild));
         m_record.added = build.changes->added.size();
@@ -1078,7 +1099,8 @@ void WorldSession::frameRendered() {
     }
     m_waitSince.reset();
     m_nextFrame = m_context.frameIndex() + 1;
-    editFrameRendered(); // I4b step 3
+    editFrameRendered();         // I4b step 3
+    regenerationFrameRendered(); // I4b step 6
     if (std::exchange(m_previewAwaitingFrame, false) && m_record.preview) {
         // The stored plan's floor as its first frame showed it (I3 step 10c); the building's result may come now.
         std::uint64_t fronts = 0;
@@ -1110,8 +1132,8 @@ bool WorldSession::waits() const {
     const bool flowPending =
         m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
-                         ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled() ||
-                         editWaits();
+                         ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled() || editWaits() ||
+                         regenerationWaits();
     if (!pending) {
         return false;
     }

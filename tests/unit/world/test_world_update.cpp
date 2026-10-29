@@ -830,6 +830,8 @@ TEST_CASE("world/update: pins are kept, orphans reported, a change that would mo
     CHECK(result.changes.fixturesAdded == std::vector{*rv::world::FixtureId::parse("room:snes/fx:w03")});
     REQUIRE(result.changes.needsConfirmation.size() == 1);
     CHECK_THAT(result.changes.needsConfirmation.front(), ContainsSubstring("socket e02"));
+    // The sentence names the head's socket alone; its room comes beside it (I4b step 6's review).
+    CHECK(result.changes.needsConfirmationRooms == std::vector{*rv::world::RoomId::parse("room:snes")});
     CHECK(result.changes.orphanedPins.size() == 2);
     const rv::world::PlanIndex index(result.plan);
     CHECK(index.find(pinned.game)->place->slot == pinned.slot);
@@ -860,6 +862,7 @@ TEST_CASE("world/update: pins are kept, orphans reported, a change that would mo
     CHECK(held.changes.unplaced.size() == 3);
     REQUIRE(held.changes.needsConfirmation.size() == 1);
     CHECK_THAT(held.changes.needsConfirmation.front(), ContainsSubstring("growth"));
+    CHECK(held.changes.needsConfirmationRooms == std::vector{*rv::world::RoomId::parse("room:snes")});
     // Without the pin the same update grows the room.
     CHECK(updateRoom(full, more, kWorldSeed).plan.rooms.front().growthSteps == 1);
 }

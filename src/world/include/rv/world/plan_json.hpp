@@ -45,6 +45,7 @@
 // (rv/world/validation.hpp), which judges a plan it can read.
 
 #include <map>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -81,5 +82,9 @@ namespace rv::world {
 /// Every room's content digest at once (the plan sorted once: what the app's per-room reconcile compares, I4 step 6b).
 /// Errors: those of core::canonicalJsonDigest.
 [[nodiscard]] Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan);
+/// The content digests of `rooms` alone (those the plan holds; I4b step 6's review: a floor's rooms without the
+/// whole plan's documents), each equal to roomContentDigests()'s. Errors: those of core::canonicalJsonDigest.
+[[nodiscard]] Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan,
+                                                                         const std::set<RoomId>& rooms);
 
 } // namespace rv::world

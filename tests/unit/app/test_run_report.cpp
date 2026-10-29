@@ -418,6 +418,51 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         open.failed = "overrides.json: unsupported";
         world.edits = {edit, open};
     }
+    {
+        // I4b step 6: a regeneration committed, an undo cancelled at its preview.
+        rv::app::WorldRegenerationRecord regeneration;
+        regeneration.kind = "room";
+        regeneration.scope = "room:snes";
+        regeneration.via = "directory";
+        regeneration.requestFrame = 66;
+        regeneration.previewFrame = 67;
+        regeneration.previewMs = 180.5;
+        regeneration.previewJobMs = 175.25;
+        regeneration.inputsMs = 40.0;
+        regeneration.inputsTaken = true;
+        regeneration.regenerateMs = 120.75;
+        regeneration.roomsRegenerated = 1;
+        regeneration.gamesMoved = 33;
+        regeneration.faceOutEntering = 2;
+        regeneration.faceOutLeaving = 1;
+        regeneration.fixturesMoved = 3;
+        regeneration.pinsKept = 1;
+        regeneration.conflicts = 1;
+        regeneration.overrides = 2;
+        regeneration.changed = true;
+        regeneration.confirmations = 1;
+        regeneration.choice = "regenerate";
+        regeneration.choiceFrame = 110;
+        regeneration.written = true;
+        regeneration.reused = true;
+        regeneration.snapshot = "20261029T090000000Z-regenerate";
+        regeneration.planDigest = std::string(64, 'b');
+        regeneration.commitMs = 210.5;
+        regeneration.backFrame = 112;
+        regeneration.backMs = 260.25;
+        regeneration.path = "floor";
+        regeneration.walker = "doorway:room:snes";
+        regeneration.end = "committed";
+        rv::app::WorldRegenerationRecord undo;
+        undo.kind = "undo";
+        undo.via = "directory";
+        undo.requestFrame = 300;
+        undo.failure = "nothing-to-undo";
+        undo.choice = "cancel";
+        undo.end = "failed";
+        world.regenerations = {regeneration, undo};
+        world.regenerationInputsReleased = 2;
+    }
     // I5 step 4's review: the cabinets' clips drawn, none over its cover.
     world.cabinetClipFrames = 120;
     world.cabinetCoverBeneathFrames = 0;

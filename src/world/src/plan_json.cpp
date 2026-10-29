@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <initializer_list>
+#include <iterator>
 #include <map>
 #include <set>
 #include <tuple>
@@ -628,6 +629,28 @@ Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan
         digests.emplace(room.id, std::move(*digest));
     }
     return digests;
+}
+
+Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan, const std::set<RoomId>& rooms) {
+    // A room's digest reads its record and its own elements only: the plan of those rooms gives the same digests.
+    WorldPlan part;
+    for (const Room& room : plan.rooms) {
+        if (rooms.contains(room.id)) {
+            part.rooms.push_back(room);
+        }
+    }
+    const auto held = [&](const RoomId& room) { return rooms.contains(room); };
+    std::copy_if(plan.fixtures.begin(), plan.fixtures.end(), std::back_inserter(part.fixtures),
+                 [&](const Fixture& fixture) { return held(fixture.id.room()); });
+    std::copy_if(plan.placements.begin(), plan.placements.end(), std::back_inserter(part.placements),
+                 [&](const Placement& placement) { return held(placement.slot.fixture().room()); });
+    std::copy_if(plan.dressing.begin(), plan.dressing.end(), std::back_inserter(part.dressing),
+                 [&](const DressedLevel& dressed) { return held(dressed.level.fixture().room()); });
+    std::copy_if(plan.lights.begin(), plan.lights.end(), std::back_inserter(part.lights),
+                 [&](const PlanLight& light) { return held(light.id.room()); });
+    std::copy_if(plan.unplaced.begin(), plan.unplaced.end(), std::back_inserter(part.unplaced),
+                 [&](const UnplacedGame& game) { return held(game.room); });
+    return roomContentDigests(part);
 }
 
 Expected<std::string> roomContentDigest(const WorldPlan& plan, const RoomId& room) {

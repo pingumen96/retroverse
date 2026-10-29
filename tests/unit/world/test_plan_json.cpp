@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -376,6 +378,11 @@ TEST_CASE("world/plan_json: a room's content digest covers its record and its el
     CHECK(all->size() == 2);
     CHECK(all->at(room) == *digest);
     CHECK(all->at(other.id) == *rv::world::roomContentDigest(building, other.id));
+    // Some rooms' alone (I4b step 6's review): the same digests, the others left out.
+    const auto some = rv::world::roomContentDigests(building, std::set<RoomId>{other.id});
+    REQUIRE(some.has_value());
+    CHECK(*some == std::map<RoomId, std::string>{{other.id, all->at(other.id)}});
+    CHECK(*rv::world::roomContentDigests(building, std::set<RoomId>{room, other.id}) == *all);
 }
 
 TEST_CASE("world/plan_json: a large plan round-trips byte for byte", "[world][plan_json]") {

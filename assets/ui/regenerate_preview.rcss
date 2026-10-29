@@ -1,0 +1,279 @@
+/*
+	The impact preview of a regeneration or an undo (regenerate_preview.rml), in the directory's look (directory.rcss:
+	palette of style 3, UI neutral #171B22 in a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the
+	focus, signage green #6EAF93 for what is kept, the warm red #C8645A of the pad's B for what is lost). A panel in the
+	middle of the view, the room dimmed behind it by nothing but the panel itself (style 16.3); the choices one per row.
+	The panel is a column (I4b step 6's review): its title, then the body, which scrolls when a crowded preview would
+	not fit, then the choices and the hints, never clipped. Sizes in dp. No colour is animated (RmlUi rebuilds the
+	geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+}
+
+div, p, h1, h2 {
+	display: block;
+}
+
+p, h1, h2, span {
+	focus: none;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+h2 {
+	font-size: 28dp;
+	font-weight: bold;
+	margin-bottom: 10dp;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+	padding: 26dp 30dp;
+}
+
+/* Its bottom stands still (I4b step 6's review): the choices keep their rows counted from it whatever the body holds,
+   so that the drop's row is "Indietro"'s in the second confirmation. */
+#regenerate-preview {
+	display: flex;
+	flex-direction: column;
+	left: 27%;
+	width: 46%;
+	bottom: 5%;
+	max-height: 88%;
+}
+
+#regenerate-preview h1, .scope {
+	flex: 0 0 auto;
+}
+
+/* What would change: it scrolls rather than push the choices out of the panel. */
+#rp-body {
+	flex: 1 1 auto;
+	min-height: 0dp;
+	overflow-y: auto;
+	padding-right: 10dp;
+}
+
+#rp-body scrollbarvertical {
+	width: 8dp;
+}
+
+#rp-body scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#rp-body scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.scope {
+	font-size: 24dp;
+	color: #F4EFE6B3;
+	margin-top: 2dp;
+	margin-bottom: 14dp;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.lead {
+	font-size: 21dp;
+	margin-bottom: 12dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6A6;
+	margin-bottom: 12dp;
+}
+
+/* The counts: a line each, the key on the left, the numbers on the right. */
+.facts {
+	border-top: 2dp #F4EFE61F;
+	border-bottom: 2dp #F4EFE61F;
+	padding: 6dp 0dp;
+	margin-bottom: 12dp;
+}
+
+.fact {
+	display: flex;
+	flex-direction: row;
+	font-size: 21dp;
+	padding: 3dp 0dp;
+}
+
+.key {
+	flex: 1 1 0dp;
+	color: #F4EFE6A6;
+}
+
+.value {
+	flex: 0 0 auto;
+	margin-left: 16dp;
+	white-space: nowrap;
+}
+
+.pins {
+	font-size: 21dp;
+	color: #A8E6B0;
+	margin-bottom: 10dp;
+}
+
+.warning {
+	font-size: 21dp;
+	color: #FFC88A;
+	margin-bottom: 8dp;
+}
+
+/* The customizations that cannot be honoured: what, then why. */
+.conflicts {
+	margin-bottom: 12dp;
+}
+
+.conflict {
+	display: flex;
+	flex-direction: row;
+	font-size: 20dp;
+	padding: 2dp 0dp 2dp 14dp;
+	border-left: 3dp #C8645A;
+	margin-bottom: 4dp;
+}
+
+.subject {
+	flex: 0 1 auto;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 45%;
+}
+
+.reason {
+	flex: 1 1 auto;
+	margin-left: 10dp;
+	color: #F4EFE6B3;
+}
+
+/* What an undo takes back. */
+.undone {
+	font-size: 26dp;
+	font-weight: bold;
+}
+
+.undone-scope {
+	font-size: 24dp;
+	color: #F4EFE6D9;
+	margin-bottom: 14dp;
+}
+
+#rp-actions {
+	flex: 0 0 auto;
+	margin-top: 8dp;
+}
+
+/* The glyphs of the device used last, as the editor's bar draws them (edit_bar.rcss's .key: .key is a fact's here). */
+#rp-hints {
+	flex: 0 0 auto;
+	margin-top: 4dp;
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+.hint {
+	display: inline-block;
+	margin-right: 22dp;
+	white-space: nowrap;
+}
+
+.kbd {
+	display: inline-block;
+	width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	border-radius: 13dp;
+	margin-right: 7dp;
+	text-align: center;
+	font-size: 16dp;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.kbd.wide {
+	width: auto;
+	padding: 0dp 9dp;
+	border-radius: 6dp;
+	background-color: #F4EFE6CC;
+}
+
+.pad-a { background-color: #6EAF93; }
+.pad-b { background-color: #C8645A; }
+
+.action {
+	display: block;
+	padding: 8dp 22dp;
+	margin-bottom: 8dp;
+	font-size: 23dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.action.primary {
+	background-color: #6EAF9340;
+}
+
+.action.danger {
+	background-color: #C8645A33;
+}
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.action.danger:focus {
+	background-color: #C8645A;
+	border-color: #FFC88A;
+	color: #FFFFFF;
+}
+
+/* Compact: views under 760 dp of the display's density tall, as the directory's. */
+@media (theme: compact) {
+	body { font-size: 20dp; }
+	h1 { font-size: 28dp; }
+	h2 { font-size: 24dp; }
+	.panel { padding: 18dp 22dp; }
+	.scope { font-size: 21dp; margin-bottom: 12dp; }
+	.lead { font-size: 19dp; }
+	.note { font-size: 18dp; }
+	.fact, .pins, .warning { font-size: 18dp; }
+	.conflict { font-size: 17dp; }
+	.action { font-size: 20dp; padding: 8dp 18dp; margin-bottom: 8dp; }
+	#rp-hints { font-size: 16dp; }
+	.kbd { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+}

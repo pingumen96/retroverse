@@ -139,6 +139,10 @@ struct ChangeReport {
     /// text (overrides.hpp's pinText()), or for a refused change what it would have done.
     std::vector<std::string> orphanedPins;
     std::vector<std::string> needsConfirmation;
+    /// The room each needsConfirmation sentence is about, in the sentences' order (one per sentence; I4b step 6's
+    /// review): the room whose growth or side-wall module a pin refused, the room not migrated, the room of an
+    /// unhonoured pin's slot or fixture. The app's notice offers "Rigenera stanza" of the first that stands.
+    std::vector<RoomId> needsConfirmationRooms;
     /// Why an explicit regeneration is needed (RequiresExplicitRegeneration): which version, seed or preset differs.
     std::string regenerationReason;
     /// The rooms an update kept as they are (their games it does not hold unplaced as room-kept), by room.

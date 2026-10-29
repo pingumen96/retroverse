@@ -67,7 +67,20 @@ build/rvdata`).
   `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
   `snapshot`, `planDigest` (the plan shown at the end),
-  `saveMs`, `backMs`, `liveUpdateDeferred`); `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
+  `saveMs`, `backMs`, `liveUpdateDeferred`); `regenerationInputsReleased` (I4b step 6's review: the times the
+  regenerations' inputs were let go of, the directory closed with nothing pending); `regenerations` (I4b step 6: one
+  per preview asked, `kind` `room`,
+  `floor`, `world` or `undo`, `scope`, `via` `directory` or `notice`, `requestFrame`, `previewFrame`, `previewMs` (from
+  the request to the preview shown), `previewJobMs`, `inputsTaken` and `inputsMs` (the catalog's snapshot and
+  selections, when the preview took them), `regenerateMs`, `failure`, the counts `roomsRegenerated`, `roomsAdded`,
+  `roomsRemoved`, `roomsMoved`, `gamesMoved`, `faceOutEntering`, `faceOutLeaving`, `newlyPlaced`, `newlyUnplaced`,
+  `fixturesAdded`, `fixturesRemoved`, `fixturesMoved`, `pinsKept`, `conflicts`, `overrides`, `changed`,
+  `undoSnapshot`, `confirmations` (the drop's second confirmations shown), `choice` `regenerate`, `regenerate-drop`,
+  `undo` or `cancel`, `choiceFrame`, `written`, `reused` (the preview's own result committed), `snapshot`,
+  `planDigest`, `commitMs`, `backFrame` and `backMs` (from the choice to the frame that shows the room again), `path`
+  `in-place`, `floor` or `none`, `walker` `doorway:<room>`, `elevator` or `kept`, `end` `committed`, `cancelled`,
+  `failed` or "" still open);
+  `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
   placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
   `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
@@ -486,6 +499,28 @@ build/rvdata`).
   rebuilds the room's static part alone in place (its objects, dressing, wall-washers, a lamp's light and colliders),
   then lays its collection out again; the fixture is pinned where it was put. Salva logs its parts ("Editor: saved in
   ... ms: read, result, commit, digest").
+- Regeneration and undo (I4b step 6, `docs/i4b/step-6.md`; ADR-0015 §5, §6): the directory's third tab, "Modifiche"
+  (the shoulders, or Right on the tab bar), lists "Modifica stanza" (while a room can be edited), "Rigenera stanza"
+  (the room that holds the walker; in a hall the row says so and does nothing), "Rigenera piano" (the walker's floor),
+  "Rigenera mondo" and "Annulla ultima modifica"; showing the tab reads the catalog's selections ahead on the pool.
+  A row opens the preview (`regenerate_preview.rml`): "Calcolo di cosa cambierebbe..." while the dry run runs on the
+  pool (nothing written, not even `world.lock`), then the rooms regenerated, added, removed and moved, the games that
+  change place, those entering and leaving the display cases, the fixtures, the customizations kept and those that
+  cannot be (each with why, kept in `overrides.json`), and the choices: Rigenera (only when something would change),
+  Rigenera e scarta le personalizzazioni (only when the scope has some; a second confirmation names how many,
+  "Indietro" focused above "Scarta e rigenera") and Annulla; Rigenera focused when it shows, else Annulla, and the
+  hints show the pad's or the keys' glyphs. The commit runs under the world lock behind a snapshot (action
+  `regenerate`; the drop is refused, nothing written, when the plan or the overrides changed since the preview); the
+  rooms it changed are rebuilt alone in place when the floor's other rooms and its hall stand as they did (the run
+  report's path `room`), else the floor follows the plan stored (room by room, `in-place`, else committed again with
+  the walker kept, `floor`); a walker in a regenerated room stands at its doorway (at the elevator when its room is
+  gone, or when it stood in the hall of a regenerated floor). "Annulla ultima modifica" names the action it undoes (a
+  saved edit or a regeneration, its room, floor or the building, when) before "Annulla la modifica" ("Indietro"
+  focused); there is no redo. A preview or a commit refused for now (a floor on its way, a ride, a launch) puts the
+  directory back with `change-unavailable`; while one runs, rides, the editor and live updates wait, and lockstep runs
+  wait between frames for its jobs. An update that left a room as it stands because it would have moved something
+  pinned shows the notice `needs-confirmation` (12 s, after the update's own notice), naming the room: Enter (the pad's
+  Start) in free roam opens the preview of that room's "Rigenera stanza".
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase

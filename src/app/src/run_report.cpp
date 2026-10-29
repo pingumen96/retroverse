@@ -1049,6 +1049,112 @@ std::vector<WorldEditRecord> readEdits(FieldReader& fields) {
     return edits;
 }
 
+/// I4b step 6: the regenerations and undos (world.regenerations).
+Json regenerationsToJson(const std::vector<WorldRegenerationRecord>& regenerations) {
+    Json records = Json::array();
+    for (const WorldRegenerationRecord& regeneration : regenerations) {
+        Json record{{"kind", regeneration.kind},
+                    {"scope", regeneration.scope},
+                    {"via", regeneration.via},
+                    {"requestFrame", regeneration.requestFrame},
+                    {"inputsTaken", regeneration.inputsTaken},
+                    {"failure", regeneration.failure},
+                    {"roomsRegenerated", regeneration.roomsRegenerated},
+                    {"roomsAdded", regeneration.roomsAdded},
+                    {"roomsRemoved", regeneration.roomsRemoved},
+                    {"roomsMoved", regeneration.roomsMoved},
+                    {"gamesMoved", regeneration.gamesMoved},
+                    {"faceOutEntering", regeneration.faceOutEntering},
+                    {"faceOutLeaving", regeneration.faceOutLeaving},
+                    {"newlyPlaced", regeneration.newlyPlaced},
+                    {"newlyUnplaced", regeneration.newlyUnplaced},
+                    {"fixturesAdded", regeneration.fixturesAdded},
+                    {"fixturesRemoved", regeneration.fixturesRemoved},
+                    {"fixturesMoved", regeneration.fixturesMoved},
+                    {"pinsKept", regeneration.pinsKept},
+                    {"conflicts", regeneration.conflicts},
+                    {"overrides", regeneration.overrides},
+                    {"changed", regeneration.changed},
+                    {"undoSnapshot", regeneration.undoSnapshot},
+                    {"confirmations", regeneration.confirmations},
+                    {"choice", regeneration.choice},
+                    {"written", regeneration.written},
+                    {"reused", regeneration.reused},
+                    {"snapshot", regeneration.snapshot},
+                    {"planDigest", regeneration.planDigest},
+                    {"path", regeneration.path},
+                    {"walker", regeneration.walker},
+                    {"end", regeneration.end}};
+        if (regeneration.previewFrame) {
+            record["previewFrame"] = *regeneration.previewFrame;
+        }
+        if (regeneration.choiceFrame) {
+            record["choiceFrame"] = *regeneration.choiceFrame;
+        }
+        if (regeneration.backFrame) {
+            record["backFrame"] = *regeneration.backFrame;
+        }
+        putOptional(record, "previewMs", regeneration.previewMs);
+        putOptional(record, "previewJobMs", regeneration.previewJobMs);
+        putOptional(record, "inputsMs", regeneration.inputsMs);
+        putOptional(record, "regenerateMs", regeneration.regenerateMs);
+        putOptional(record, "commitMs", regeneration.commitMs);
+        putOptional(record, "backMs", regeneration.backMs);
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
+std::vector<WorldRegenerationRecord> readRegenerations(FieldReader& fields) {
+    std::vector<WorldRegenerationRecord> regenerations;
+    for (FieldReader& record : fields.optionalObjectArray("regenerations")) {
+        WorldRegenerationRecord regeneration;
+        regeneration.kind = record.string("kind");
+        regeneration.scope = record.string("scope");
+        regeneration.via = record.string("via");
+        regeneration.requestFrame = record.count("requestFrame");
+        regeneration.previewFrame = record.optionalCount("previewFrame");
+        regeneration.previewMs = record.optionalNumber("previewMs");
+        regeneration.previewJobMs = record.optionalNumber("previewJobMs");
+        regeneration.inputsMs = record.optionalNumber("inputsMs");
+        regeneration.inputsTaken = record.boolean("inputsTaken");
+        regeneration.regenerateMs = record.optionalNumber("regenerateMs");
+        regeneration.failure = record.string("failure");
+        regeneration.roomsRegenerated = record.count("roomsRegenerated");
+        regeneration.roomsAdded = record.count("roomsAdded");
+        regeneration.roomsRemoved = record.count("roomsRemoved");
+        regeneration.roomsMoved = record.count("roomsMoved");
+        regeneration.gamesMoved = record.count("gamesMoved");
+        regeneration.faceOutEntering = record.count("faceOutEntering");
+        regeneration.faceOutLeaving = record.count("faceOutLeaving");
+        regeneration.newlyPlaced = record.count("newlyPlaced");
+        regeneration.newlyUnplaced = record.count("newlyUnplaced");
+        regeneration.fixturesAdded = record.count("fixturesAdded");
+        regeneration.fixturesRemoved = record.count("fixturesRemoved");
+        regeneration.fixturesMoved = record.count("fixturesMoved");
+        regeneration.pinsKept = record.count("pinsKept");
+        regeneration.conflicts = record.count("conflicts");
+        regeneration.overrides = record.count("overrides");
+        regeneration.changed = record.boolean("changed");
+        regeneration.undoSnapshot = record.string("undoSnapshot");
+        regeneration.confirmations = record.count("confirmations");
+        regeneration.choice = record.string("choice");
+        regeneration.choiceFrame = record.optionalCount("choiceFrame");
+        regeneration.written = record.boolean("written");
+        regeneration.reused = record.boolean("reused");
+        regeneration.snapshot = record.string("snapshot");
+        regeneration.planDigest = record.string("planDigest");
+        regeneration.commitMs = record.optionalNumber("commitMs");
+        regeneration.backFrame = record.optionalCount("backFrame");
+        regeneration.backMs = record.optionalNumber("backMs");
+        regeneration.path = record.string("path");
+        regeneration.walker = record.string("walker");
+        regeneration.end = record.string("end");
+        regenerations.push_back(std::move(regeneration));
+    }
+    return regenerations;
+}
+
 Json worldToJson(const WorldRecord& world) {
     Json json = Json::object();
     if (!world.bound) {
@@ -1286,6 +1392,10 @@ Json worldToJson(const WorldRecord& world) {
     if (!world.edits.empty()) {
         json["edits"] = editsToJson(world.edits);
     }
+    if (!world.regenerations.empty()) {
+        json["regenerations"] = regenerationsToJson(world.regenerations); // I4b step 6
+    }
+    json["regenerationInputsReleased"] = world.regenerationInputsReleased;
     json["cabinetClipFrames"] = world.cabinetClipFrames;
     json["cabinetCoverBeneathFrames"] = world.cabinetCoverBeneathFrames;
     return json;
@@ -1526,6 +1636,8 @@ WorldRecord readWorld(FieldReader& fields) {
         world.showcase.frontsResident = showcase->count("frontsResident");
     }
     world.edits = readEdits(fields);
+    world.regenerations = readRegenerations(fields); // I4b step 6 (absent from earlier reports)
+    world.regenerationInputsReleased = fields.optionalCount("regenerationInputsReleased").value_or(0);
     // I5 step 4's review (absent from earlier reports).
     world.cabinetClipFrames = fields.optionalCount("cabinetClipFrames").value_or(0);
     world.cabinetCoverBeneathFrames = fields.optionalCount("cabinetCoverBeneathFrames").value_or(0);
