@@ -848,3 +848,227 @@ TEST_CASE("cabinets: the quick catalog's selection of an arcade game plays on th
     CHECK(std::find(opens.front().screens.begin(), opens.front().screens.end(), std::string(kHeroScreen)) !=
           opens.front().screens.end());
 }
+
+namespace {
+
+/// The pixel box an item's slot box covers in a screenshot from `camera` (its eight corners projected; empty when one
+/// is behind the camera).
+std::optional<std::pair<glm::ivec2, glm::ivec2>> projectedBox(const rv::world::CollectionItem& item,
+                                                              const rv::scene::CameraSetup& camera) {
+    const rv::core::Aabb box = item.worldBounds();
+    glm::ivec2 min(kShotSize);
+    glm::ivec2 max(0);
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 point((corner & 1) != 0 ? box.max.x : box.min.x, (corner & 2) != 0 ? box.max.y : box.min.y,
+                              (corner & 4) != 0 ? box.max.z : box.min.z);
+        const std::optional<glm::ivec2> pixel = projectToPixel(camera, kShotSize, point);
+        if (!pixel) {
+            return std::nullopt;
+        }
+        min = glm::min(min, *pixel);
+        max = glm::max(max, *pixel);
+    }
+    return std::make_pair(min, max);
+}
+
+/// Pixels of `a` and `b` outside the box [min, max] whose channels differ by more than 24.
+std::size_t changedOutside(const rv::assets::ImageData& a, const rv::assets::ImageData& b, glm::ivec2 min,
+                           glm::ivec2 max) {
+    return changedPixels(a, b, glm::ivec2(0), glm::ivec2(a.width - 1, a.height - 1)) - changedPixels(a, b, min, max);
+}
+
+} // namespace
+
+TEST_CASE("cabinets: aiming at a cabinet's screen moves nothing, in free roam and in Focus (fix 2026-10-29)",
+          "[gpu][video][cabinets][aim]") {
+    // The user's report: aimed at, an arcade cabinet's screen moved. It was the face-out pull-out: after the hover's
+    // 150 ms dwell the screen tipped 10 degrees out of its bezel (frames 10 to 24), and stood so in Focus. A cabinet's
+    // screen is part of its fixture now: nothing moves while it is aimed at, and Focus after Indietro shows it where
+    // it stands. No clip here (attract and showOnFocus off): only the cover, so the screenshots compare exactly.
+    ArcadeBuilding building("aim");
+    writeVideoSettings(building, Json{{"cabinet", {{"enabled", false}, {"showOnFocus", false}}}});
+    const FirstRun first = firstRun(building);
+    const rv::world::CollectionItem& item = featuredCabinet(first.shown, first.heroGame);
+    // F12 at 6 (hovered since frame 2, before the dwell ended), 40 and 80 (long after it); interact at 90 (Inspect),
+    // ui_back at 140 (Focus, lowered by 160), F12 at 190.
+    const fs::path script =
+        writeScript(building, "aim.json",
+                    Json::array({step(6, 6, {{"screenshot", 1}}), step(40, 40, {{"screenshot", 1}}),
+                                 step(80, 80, {{"screenshot", 1}}), step(90, 90, {{"interact", 1}}),
+                                 step(140, 140, {{"ui_back", 1}}), step(190, 190, {{"screenshot", 1}})}));
+    const AppRun run =
+        runArcade(building, "aim", 200,
+                  {"--spawn", spawnArgument(focusSpawn(item, first.shown.scene.camera)), "--input-script",
+                   arg(script)});
+    requireArcade(run, 2);
+    INFO(run.describe());
+    const rv::app::InteractionRecord& interaction = run.report->world.interaction;
+    CHECK(interaction.state == "focus");
+    CHECK(interaction.focusedGame == item.game.toString());
+    // Hovered from the first frames on, never pulled out before the interact.
+    bool hovered = false;
+    for (const rv::app::InteractionEventRecord& event : interaction.events) {
+        INFO("frame " << event.frame << ": " << event.event << " " << event.pickId << " " << event.state);
+        if (event.event == "hover" && event.frame <= 6) {
+            hovered = true;
+        }
+        if (event.frame < 90) {
+            CHECK(event.event != "pull-out");
+            CHECK(event.event != "pulled");
+        }
+    }
+    CHECK(hovered);
+    const std::vector<fs::path> shots = takenScreenshots(building);
+    REQUIRE(shots.size() == 4);
+    const rv::assets::ImageData early = readShot(shots[0]);
+    const glm::ivec2 whole(kShotSize.x - 1, kShotSize.y - 1);
+    // Free roam, aimed at: the same picture at 6, 40 and 80 (it used to tip after frame 10).
+    CHECK(changedPixels(early, readShot(shots[1]), glm::ivec2(0), whole) == 0u);
+    CHECK(changedPixels(early, readShot(shots[2]), glm::ivec2(0), whole) == 0u);
+    // In Focus after Indietro the walker stands where it stood (the spawn is the Focus pose) and the screen where it
+    // stands: the cabinet the same (it stood tipped out of its bezel before the fix).
+    const std::size_t focusChanged = changedPixels(early, readShot(shots[3]), glm::ivec2(0), whole);
+    WARN("pixels changed in Focus against free roam: " << focusChanged);
+    CHECK(focusChanged < 200u);
+}
+
+TEST_CASE("cabinets: attract swaps the cover for the clip on the screen alone, nothing around it moves (fix "
+          "2026-10-29)",
+          "[gpu][video][cabinets][aim]") {
+    // The dynamic path's video front stands where the static front stood: across the frame the clip replaces the cover
+    // only the screen's pixels change.
+    ArcadeBuilding building("aim_attract");
+    const FirstRun first = firstRun(building);
+    const rv::world::CollectionItem& item = featuredCabinet(first.shown, first.heroGame);
+    const Viewpoint view = viewpointOf(item, first.shown.scene.camera, 1.6f);
+    // F12 at 50 (the cover, aimed at) and 70 (attract's clip since frame 60).
+    const fs::path script = writeScript(
+        building, "aim_attract.json",
+        Json::array({step(50, 50, {{"screenshot", 1}}), step(70, 70, {{"screenshot", 1}})}));
+    const AppRun run =
+        runArcade(building, "aim_attract", 80, {"--spawn", spawnArgument(view.spawn), "--input-script", arg(script)});
+    const rv::app::VideoRecord& video = requireArcade(run, 2);
+    INFO(run.describe());
+    const std::vector<rv::app::VideoCabinetEventRecord> events =
+        cabinetEvents(video, rv::app::cabinetScreenId(kRoom, item.pickId));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].picture == "video");
+    CHECK(events[0].frame == static_cast<std::uint64_t>(kDwellFrames));
+    const std::vector<fs::path> shots = takenScreenshots(building);
+    REQUIRE(shots.size() == 2);
+    const auto box = projectedBox(item, view.camera);
+    REQUIRE(box.has_value());
+    const glm::ivec2 margin(4);
+    const rv::assets::ImageData cover = readShot(shots[0]);
+    const rv::assets::ImageData clip = readShot(shots[1]);
+    // The screen changed (the clip), nothing outside its box did.
+    CHECK(changedPixels(cover, clip, box->first, box->second) > 1000u);
+    CHECK(changedOutside(cover, clip, box->first - margin, box->second + margin) == 0u);
+}
+
+namespace {
+
+/// The CRC of a PNG chunk's type and data.
+std::uint32_t pngCrc(const std::vector<std::uint8_t>& bytes) {
+    std::uint32_t crc = 0xFFFFFFFFu;
+    for (const std::uint8_t value : bytes) {
+        crc ^= value;
+        for (int bit = 0; bit < 8; ++bit) {
+            crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
+    }
+    return ~crc;
+}
+
+/// A PNG of `image` carrying an eXIf chunk (little-endian TIFF, IFD0's Orientation `orientation`) after its IHDR.
+std::vector<std::byte> pngWithOrientation(const rv::assets::ImageData& image, int orientation) {
+    auto png = rv::assets::encodePng(image);
+    REQUIRE(png.has_value());
+    const std::vector<std::uint8_t> tiff = {'I', 'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0,
+                                            static_cast<std::uint8_t>(orientation), 0, 0, 0, 0, 0, 0, 0};
+    std::vector<std::uint8_t> chunk = {'e', 'X', 'I', 'f'};
+    chunk.insert(chunk.end(), tiff.begin(), tiff.end());
+    std::vector<std::byte> out(png->begin(), png->begin() + 33); // the signature and IHDR
+    const auto be32 = [&out](std::uint32_t value) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            out.push_back(static_cast<std::byte>(value >> shift));
+        }
+    };
+    be32(static_cast<std::uint32_t>(tiff.size()));
+    for (const std::uint8_t value : chunk) {
+        out.push_back(static_cast<std::byte>(value));
+    }
+    be32(pngCrc(chunk));
+    out.insert(out.end(), png->begin() + 33, png->end());
+    return out;
+}
+
+/// Every mame cover of the fixture rewritten as a PNG of its own pixels: upright as it is (`turned` false), or stored
+/// turned a quarter counter-clockwise with EXIF orientation 6 saying to turn it back clockwise, as a phone writes a
+/// photo taken on its side (`turned` true). Both show the same picture once the orientation is honoured.
+void rewriteMameCovers(const rv::test::Fixture& fixture, bool turned) {
+    for (const fs::directory_entry& entry : fs::directory_iterator(fixture.path("media/mame/covers"))) {
+        auto upright = rv::assets::loadImage(entry.path(), 0);
+        if (!upright) {
+            continue; // a damaged payload stays as it is
+        }
+        const std::vector<std::byte> bytes = turned ? pngWithOrientation(rv::assets::orientImage(*upright, 8), 6)
+                                                    : rv::assets::encodePng(*upright).value();
+        REQUIRE(rv::core::writeFileAtomic(entry.path(), bytes).has_value());
+    }
+}
+
+struct CoverRun {
+    std::vector<rv::assets::ImageData> shots;
+    rv::world::CollectionItem item;
+};
+
+/// The building whose mame covers are rewritten (rewriteMameCovers), its cache warmed by a first run; then at a
+/// featured cabinet's Focus pose: F12 at 30 (its cover on its screen), interact at 40, F12 at 90 (in the hand, the
+/// card's picture beside it).
+CoverRun coverRun(std::string_view name, bool turned) {
+    PlannedBuilding building(std::string("cabinets/") + std::string(name), true, "esde/building",
+                             [turned](const rv::test::Fixture& fixture) { rewriteMameCovers(fixture, turned); });
+    writeVideoSettings(building, Json{{"cabinet", {{"enabled", false}, {"showOnFocus", false}}}});
+    const AppRun firstApp = runArcade(building, "first", 2, {});
+    requireCleanRun(firstApp);
+    const ShownRoom shown = shownRoom(building, *firstApp.report);
+    const rv::world::CollectionItem& item = featuredCabinet(shown, {});
+    const fs::path script = writeScript(building, "covers.json",
+                                        Json::array({step(30, 30, {{"screenshot", 1}}), step(40, 40, {{"interact", 1}}),
+                                                     step(90, 90, {{"screenshot", 1}})}));
+    const AppRun run = runArcade(building, "covers", 100,
+                                 {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)), "--input-script",
+                                  arg(script)});
+    requireCleanRun(run);
+    INFO(run.describe());
+    CHECK(run.report->residency.coverFailures == 0u);
+    CHECK(run.report->residency.pending == 0u);
+    CHECK(run.report->world.interaction.state == "inspect");
+    CoverRun result;
+    result.item = item;
+    for (const fs::path& shot : takenScreenshots(building)) {
+        result.shots.push_back(readShot(shot));
+    }
+    REQUIRE(result.shots.size() == 2);
+    return result;
+}
+
+} // namespace
+
+TEST_CASE("cabinets: a cover stored turned with an EXIF orientation stands upright, on its screen and in the hand "
+          "(fix 2026-10-29)",
+          "[gpu][cabinets][covers]") {
+    // The user's report: some covers rendered rotated, others of the same system upright. stb_image ignores the EXIF
+    // orientation; the covers whose pixels a phone or an editor stored turned (the tag saying how to stand them up)
+    // drew sideways. The same pictures, upright as files or turned with the tag, now draw alike: the cabinet's cover
+    // (the front layer) and the inspected item's front with its card (the hero picture).
+    const CoverRun upright = coverRun("covers_upright", false);
+    const CoverRun turned = coverRun("covers_turned", true);
+    REQUIRE(upright.item.game == turned.item.game);
+    const glm::ivec2 whole(kShotSize.x - 1, kShotSize.y - 1);
+    for (std::size_t shot = 0; shot < 2; ++shot) {
+        INFO("screenshot " << shot);
+        CHECK(changedPixels(upright.shots[shot], turned.shots[shot], glm::ivec2(0), whole) == 0u);
+    }
+}

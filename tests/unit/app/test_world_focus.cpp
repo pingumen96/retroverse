@@ -134,9 +134,13 @@ struct PulledPose {
     REQUIRE(result->validation.passed());
     rv::test::world::PlanCase entry;
     entry.name = name;
-    entry.room = input.selection.room;
+    // The room the plan made (an arcade system's is area:arcade).
+    REQUIRE(result->plan.rooms.size() == 1);
+    entry.room = result->plan.rooms.front().id;
     auto scene = rv::world::loadSceneData(rv::test::world::sourceAssetRoot(), result->plan, entry.room);
-    REQUIRE(scene.has_value());
+    if (!scene) {
+        FAIL(name << ": " << scene.error().toString());
+    }
     entry.data = std::move(*scene);
     entry.titles = rv::test::world::inventedTitles(result->plan);
     entry.plan = std::move(result->plan);
@@ -189,6 +193,14 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
                 CHECK(std::fabs(glm::dot(out.centre - rest.centre, slotOut) - expected) < 1e-4f);
                 CHECK(glm::dot(out.front, slotOut) > 0.9999f);
                 CHECK(glm::dot(rest.front, slotAxis(item, 0)) > 0.9999f);
+                // Pulled out, its cover stands upright to the viewer, not mirrored (the fix of 2026-10-29: a cartridge
+                // on its end showed it sideways, its picture's top to the left): the item's +Y up, its +X to the
+                // viewer's right.
+                const glm::mat4 pulledOut = rv::app::pulledItemTransform(item, 1.0f, reach);
+                CHECK(glm::dot(glm::normalize(glm::vec3(pulledOut * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))),
+                               slotAxis(item, 1)) > 0.9999f);
+                CHECK(glm::dot(glm::normalize(glm::vec3(pulledOut * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f))),
+                               slotAxis(item, 0)) > 0.9999f);
                 if (side) {
                     // On its side, its -X face (the spine) out at rest, upright all the way like a book.
                     const glm::mat4 restTransform = rv::app::pulledItemTransform(item, 0.0f, reach);
@@ -250,11 +262,15 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
             CHECK(spineOut > 0);
         }
         CHECK((side || name.starts_with("plan-")));
-        // Most spine-out items settle at 70%: only those at the ends of their rows go farther.
+        // Most spine-out items on their side settle at 70%: only those at the ends of their rows go farther.
         INFO(fartherOut << " of " << spineOut << " spine-out items settle farther out, at most "
                         << farthestShare * 100.0f
                         << "% of their depth");
-        CHECK(fartherOut * 4 <= spineOut);
+        // Cartridges on their end roll upright as they turn (the fix of 2026-10-29): their corners sweep past the
+        // boards above and below, which stand a little proud of the slots, so every one settles that much farther.
+        if (side) {
+            CHECK(fartherOut * 4 <= spineOut);
+        }
         CHECK(farthestShare <= 0.85f);
     }
 }
@@ -437,7 +453,9 @@ namespace {
 class RoomLoop {
 public:
     explicit RoomLoop(const std::string& plan, rv::app::InteractionSettings settings = {})
-        : m_layout(rv::test::world::layoutOf(rv::test::world::planCase(plan))), m_interaction(settings) {
+        : RoomLoop(rv::test::world::planCase(plan), settings) {}
+    explicit RoomLoop(const rv::test::world::PlanCase& plan, rv::app::InteractionSettings settings = {})
+        : m_layout(rv::test::world::layoutOf(plan)), m_interaction(settings) {
         auto room = CollectionRoom::build(std::make_shared<const CollectionLayout>(m_layout));
         REQUIRE(room.has_value());
         m_room = std::move(*room);
@@ -593,6 +611,64 @@ TEST_CASE("app/world_focus: hover, pull-out, Focus and D-pad steps over the 50-t
     CHECK(world.state() == rv::app::WorldState::FreeRoam);
     loop.until([&] { return world.pulledItems().empty(); }, 30);
     CHECK(world.pulledItems().empty());
+}
+
+TEST_CASE("app/world_focus: an arcade cabinet's screen never moves under the hover or in Focus (fix 2026-10-29)",
+          "[app][world_focus][cabinets]") {
+    // The arcade room's items are its cabinets' screens (arcade_cabinet, spineFacing front): part of their fixtures.
+    // Aimed at, a screen used to tip 10 degrees out of its bezel after the hover's dwell (the face-out pull-out), and
+    // to stand so in Focus after Indietro: the user saw the cabinet move. It now stays as it stands.
+    const rv::test::world::PlanCase& arcade = generatedCase("mame", 30);
+    const CollectionLayout layout = rv::test::world::layoutOf(arcade);
+    REQUIRE_FALSE(layout.items.empty());
+    for (const CollectionItem& item : layout.items) {
+        CHECK(item.inFixture);
+        CHECK(item.stance == ItemStance::FaceOut);
+        for (const float progress : {0.0f, 0.25f, 0.5f, 1.0f}) {
+            CHECK(rv::app::pulledItemTransform(item, progress, 0.0f) == item.transform);
+        }
+        const rv::core::Aabb resting = rv::app::itemBounds(item, 0.0f);
+        const rv::core::Aabb pulled = rv::app::itemBounds(item, 1.0f);
+        CHECK(resting.min == pulled.min);
+        CHECK(resting.max == pulled.max);
+    }
+    // Every other family's items are not (a cartridge on a shelf still slides out, a face-out case still tips).
+    for (const CollectionItem& item : rv::test::world::layoutOf(rv::test::world::planCase(kRooms.front())).items) {
+        CHECK_FALSE(item.inFixture);
+    }
+    for (const CollectionItem& item : rv::test::world::layoutOf(generatedCase("psx", 400)).items) {
+        CHECK_FALSE(item.inFixture);
+    }
+
+    // As the app drives it: the walker at a cabinet's Focus pose, the reticle on its screen. Hovered, never pulled.
+    RoomLoop loop(arcade);
+    const rv::app::WorldInteraction& world = loop.interaction();
+    const CollectionItem& cabinet = layout.items.front();
+    loop.place(rv::app::focusPoseFor(cabinet, FocusViewer{}));
+    const int hovered = loop.until([&] { return world.hovered() == cabinet.pickId; });
+    REQUIRE(hovered >= 1);
+    for (int i = 0; i < 90; ++i) {
+        loop.frame();
+        CHECK(world.pulledItems().empty());
+    }
+    CHECK(world.hovered() == cabinet.pickId);
+    CHECK(world.highlighted() == cabinet.pickId);
+    // Interact inspects it (lifted into the hand from where it stands); Indietro leaves it in Focus at its place.
+    loop.frame(pressing({Action::Interact}));
+    CHECK(world.state() == rv::app::WorldState::Inspect);
+    loop.until([&] { return world.inspectView().lift >= 1.0f; });
+    loop.frame(pressing({Action::UiBack}));
+    CHECK(world.state() == rv::app::WorldState::Focus);
+    loop.until([&] { return !world.walkerEasing() && world.inspectView().lift <= 0.0f; });
+    CHECK(rv::app::pulledItemTransform(cabinet, loop.pull(cabinet.pickId), 0.0f) == cabinet.transform);
+    // Back: free roam, the hover on it, still nothing pulled.
+    loop.frame(pressing({Action::Back}));
+    CHECK(world.state() == rv::app::WorldState::FreeRoam);
+    loop.until([&] { return world.pulledItems().empty(); }, 30);
+    for (int i = 0; i < 60; ++i) {
+        loop.frame();
+        CHECK(world.pulledItems().empty());
+    }
 }
 
 TEST_CASE("app/world_focus: under reduceMotion every transition is instant, the dwell kept", "[app][world_focus]") {

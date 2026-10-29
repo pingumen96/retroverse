@@ -320,7 +320,7 @@ Rgb8 dominantColour(const ImageData& image, int x, int y, int width, int height)
 
 Expected<CoverLayer> buildCoverLayer(std::span<const std::byte> bytes, TextureFormat format, std::string_view context,
                                      const FitOptions& options) {
-    auto decoded = decodeImage(bytes, 4, context); // palettes, grey and 16-bit samples expanded by stb_image
+    auto decoded = decodeUprightImage(bytes, 4, context); // palettes, grey and 16-bit samples expanded by stb_image
     if (!decoded) {
         return propagate(decoded.error());
     }

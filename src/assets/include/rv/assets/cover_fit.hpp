@@ -116,9 +116,9 @@ struct CoverLayer {
     int sourceHeight = 0;
 };
 
-/// The whole cold path of one cover on a worker: decode (PNG or JPEG, assets::decodeImage), fit to the front class's
-/// size in `format` (to FitOptions::label's shape, resampled into the layer), the dominant colour, the mip chain in
-/// linear light and its encoding. Errors: those of
+/// The whole cold path of one cover on a worker: decode (PNG or JPEG, assets::decodeUprightImage: its EXIF orientation
+/// applied, the fix of 2026-10-29), fit to the front class's size in `format` (to FitOptions::label's shape, resampled
+/// into the layer), the dominant colour, the mip chain in linear light and its encoding. Errors: those of
 /// decodeImage() (Unsupported, ParseError for a truncated file, OutOfRange, InvalidArgument for no bytes), with
 /// `context` (logged at debug level only by the callers: it names the user's file).
 [[nodiscard]] Expected<CoverLayer> buildCoverLayer(std::span<const std::byte> bytes, TextureFormat format,

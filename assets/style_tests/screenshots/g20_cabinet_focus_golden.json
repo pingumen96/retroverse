@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "49ad7a8a626efaf97a4b2636b2e9cd232928022f",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, then in Focus after Indietro, lowered to its pulled-out pose: its generated 4:3 clip held at 1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
+  "description": "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, then in Focus after Indietro, lowered back into its bezel (since the fix of 2026-10-29 a cabinet's screen no longer tips out when pulled): its generated 4:3 clip held at 1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 617.42",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g20_cabinet_focus_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "b4f6a77b1243ee968d76921e71d601498d624dc7a0b46d9b1c060b175c93b14e",
+    "sha256": "063a3de7d2f37d7223e723500dd34b2ac61d4aba0695d40459ed82e446c6cb73",
     "width": 1920
   },
   "inputs": {

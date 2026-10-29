@@ -208,6 +208,9 @@ struct RoomItem {
     /// Its shelf section (any number the room chooses: a module, a display case): looking in Focus moves the focus
     /// within it.
     std::uint32_t section = 0;
+    /// Part of its fixture (world::CollectionItem::inFixture: an arcade cabinet's screen; the fix of 2026-10-29): the
+    /// hover's dwell does not pull it out, so aiming at it moves nothing; Focus and Inspect hold it as any item.
+    bool inFixture = false;
 
     bool operator==(const RoomItem&) const = default;
 };

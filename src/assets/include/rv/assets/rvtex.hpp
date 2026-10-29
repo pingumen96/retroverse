@@ -42,7 +42,9 @@ inline constexpr std::uint32_t kRvtexFileVersion = 1;
 /// The version of the pipeline that makes the layers (fit rules, filters, encoder settings, text layout and drawing):
 /// part of every cache key, so that a new version names new entries and never reads an old one. Raise it with any
 /// change that alters a layer's pixels.
-inline constexpr std::uint32_t kCoverPipelineVersion = 2; // 2: I3 step 16, colourful dominant colours
+/// 2: I3 step 16, colourful dominant colours; 3: the fix of 2026-10-29, covers stood upright by their EXIF
+/// orientation.
+inline constexpr std::uint32_t kCoverPipelineVersion = 3;
 inline constexpr std::size_t kRvtexHeaderBytes = 96;
 
 /// The size classes of the collection's texture arrays (ADR-0011 §4).

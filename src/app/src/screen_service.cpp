@@ -161,7 +161,7 @@ Expected<assets::ImageData> loadStill(const std::filesystem::path& path, std::st
     if (!bytes) {
         return propagate(bytes.error());
     }
-    auto image = assets::decodeImage(std::as_bytes(std::span(bytes->data(), bytes->size())), 0, context);
+    auto image = assets::decodeUprightImage(std::as_bytes(std::span(bytes->data(), bytes->size())), 0, context);
     if (!image) {
         return propagate(image.error());
     }

@@ -387,7 +387,7 @@ glm::ivec2 heroPictureSize(int sourceWidth, int sourceHeight, int maxSide, const
 
 Expected<assets::ImageData> makeHeroPicture(std::span<const std::byte> bytes, std::string_view context, int maxSide,
                                             const assets::LabelAspect& label) {
-    auto image = assets::decodeImage(bytes, 0, context);
+    auto image = assets::decodeUprightImage(bytes, 0, context);
     if (!image) {
         return propagate(image.error());
     }

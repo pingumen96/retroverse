@@ -193,6 +193,24 @@ std::size_t outlinePixels(const rv::assets::ImageData& image, glm::ivec2 centre,
     return count;
 }
 
+/// The box of the outline's pixels (outlinePixels()'s colour) within `radius` of `centre`: min and max corners.
+std::pair<glm::ivec2, glm::ivec2> outlineBox(const rv::assets::ImageData& image, glm::ivec2 centre, int radius) {
+    glm::ivec2 min(image.width, image.height);
+    glm::ivec2 max(-1);
+    for (int y = std::max(0, centre.y - radius); y <= std::min(image.height - 1, centre.y + radius); ++y) {
+        for (int x = std::max(0, centre.x - radius); x <= std::min(image.width - 1, centre.x + radius); ++x) {
+            const std::size_t at =
+                (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) *
+                static_cast<std::size_t>(image.channels);
+            if (image.pixels[at] == 0xF4 && image.pixels[at + 1] == 0xEF && image.pixels[at + 2] == 0xE6) {
+                min = glm::min(min, glm::ivec2(x, y));
+                max = glm::max(max, glm::ivec2(x, y));
+            }
+        }
+    }
+    return {min, max};
+}
+
 /// What every run of these cases must report: a clean run of the room, its interaction bound, no static record drawn
 /// while its item was off its pose.
 const rv::app::InteractionRecord& requireInteraction(const AppRun& run) {
@@ -469,6 +487,12 @@ TEST_CASE("world focus: a spine-out cartridge slides out with its cover to the v
     const std::optional<glm::ivec2> centre = projectToPixel(pose.camera, kShotSize, rv::app::itemFace(*spine).center);
     REQUIRE(centre.has_value());
     CHECK(outlinePixels(image, *centre, 300) >= 200);
+    // Its cover upright (the fix of 2026-10-29): the cartridge, 12.5 cm wide by 8.5 cm tall as its cover stands, is
+    // outlined wider than tall; on its end, its cover sideways, it stood taller than wide.
+    const auto [outlineMin, outlineMax] = outlineBox(image, *centre, 300);
+    const glm::ivec2 outlineSize = outlineMax - outlineMin;
+    INFO("the pulled cartridge's outline: " << outlineSize.x << " x " << outlineSize.y << " pixels");
+    CHECK(outlineSize.x > outlineSize.y * 5 / 4);
 
     const AppRun back =
         runApp(retroverseExe(), room.dir, "back", roomArguments(130, room.dir / "spine_back.png", script));
