@@ -51,9 +51,10 @@
 //     camera (with one candidate, it is kept only where it is preferred); the preferred first, those in the room's back
 //     half from the doorway or within kSecondaryTvNearHeroMm of the hero corner; then the farthest from the doorway's
 //     camera (the farther, the smaller and dimmer the set the doorway sees); then the room's seed (sockets mirrored
-//     across the room: core::deriveSeed(room seed, "secondary_tv", the fixture's local id), then the id). The first is drawn as the TV
-//     and, in a room deeper than 12 m, the next one in another third of the room's depth from the doorway (else none:
-//     never a pair mirrored across the room): at most one a room, two past 12 m, none in the arcade.
+//     across the room: core::deriveSeed(room seed, "secondary_tv", the fixture's local id), then the id). The first is
+//     drawn as the TV and, in a room deeper than 12 m, the next one in another third of the room's depth from the
+//     doorway (else none: never a pair mirrored across the room): at most one a room, two past 12 m, none in the
+//     arcade.
 //     It stands where its fixture stands, moved by the room editor or not (the guard: within its fixture's own
 //     prefab's footprint there, not its socket's), with the fixture's id; its screen shows the standby pattern until
 //     the app plays a clip on it (app::findScreens() binds it as a secondary screen). The other decorations of the
