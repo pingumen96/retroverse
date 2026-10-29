@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "02a68d22762161cfb3684a934d4920a4aabfe95d",
+    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -29,17 +29,17 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "13e602d32a0b5a71148f8646a73ade38a8cd918ae16226d75146866ccf1ad85d",
-      "fileSha256": "13e602d32a0b5a71148f8646a73ade38a8cd918ae16226d75146866ccf1ad85d",
+      "digest": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
+      "fileSha256": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
       "items": 50,
       "placements": 50
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "057764de31fec8b5859139578d271e606e96d8f50f77259f9a9326067eb22ef2"
+      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
     }
   },
-  "renderedOn": "2026-10-25",
+  "renderedOn": "2026-10-29",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
@@ -48,6 +48,7 @@
       "materialize tests/fixtures/esde/snes-room into <fixture> (rv::test::Fixture)",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
       "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "write <case>/data/config/video.json: {\"secondary\":{\"enabled\":false}}",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
       "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g08a.png --screenshot-size 1920x1080 --spawn -0.805000007,0,-2.82200003,0,-25.539053 --video-freeze-pts 1 --hidden --data-dir <case>/data"
     ]

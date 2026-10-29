@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "7f080a78218d4288c11407a78c705915925b2638",
+    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g18_handheld_hall_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "19b3316eb5f620a433f55d5ca1289a8af5dab7f6f7b9e7f1721e9652433366cd",
+    "sha256": "39ca400376bf1b31da05500766c33534a48f3a88bd03150671aaa66101e376b3",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "3f8dff42ba8e74062ff02931b726e9b2841eab1a973a1efb40fbbbdbfe8b7f3c"
+      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
     }
   },
   "renderedOn": "2026-10-29",
