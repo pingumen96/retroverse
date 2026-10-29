@@ -56,6 +56,9 @@ fs::path retroverseCliExe() {
 
 /// The snes-room fixture recorded as the library of <caseDir>/data and imported, the fake emulator's "fake-return"
 /// profile assigned to snes (as test_catalog.cpp assigns it to gb).
+/// video.json with the secondary TVs' autoplay off (I5 step 3).
+constexpr std::string_view kSecondaryOff = "{\"secondary\": {\"enabled\": false}}\n";
+
 struct ImportedRoom {
     rv::test::Fixture fixture;
     fs::path dir;
@@ -67,6 +70,9 @@ struct ImportedRoom {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
+        // These cases follow the hero CRT alone, on its own decoder: the room's secondary TV (I5 step 3) is left to
+        // selections (video.json's secondary autoplay off), so that it never opens a second one.
+        REQUIRE(rv::core::writeTextFileAtomic(data / "config" / "video.json", kSecondaryOff).has_value());
         const nlohmann::json profile{{"id", "fake-return"},
                                      {"executable", arg(fakeEmulatorExe())},
                                      {"arguments", {"--sleep-ms", "2500", "--exit-timeout-ms", "30000", "--", "{rom}"}},

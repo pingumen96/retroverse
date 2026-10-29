@@ -1329,7 +1329,8 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     CHECK(world.screenRoom == snes);
     REQUIRE(report.video.binds.size() == 1);
     CHECK(report.video.binds.front().screen.starts_with(snes + "/"));
-    CHECK(report.video.maxDecoderThreads <= 1);
+    // The hero CRT and (I5 step 3) the room's secondary TV, within the budget.
+    CHECK(report.video.maxDecoderThreads <= 2);
 
     // gen5 at its next start: psx's new titles, saved meanwhile with their items, shown at the first frame from the
     // plan and the items files, then reconciled with nothing to change but the covers' sources checked. gen5 never
