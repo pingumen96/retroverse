@@ -280,6 +280,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
+    followRoomsAdded(product);   // I4b step 8
     followEdit(product);         // I4b step 3
     followRegeneration(product); // I4b step 6
 }
@@ -653,6 +654,46 @@ void WorldSession::commit(WorldResult result) {
     finishCommit(build, start);
 }
 
+void WorldSession::followRoomsAdded(ProductUi& product) {
+    // After the build's own notice (rooms migrated, a room kept...), over the floor of the plan that holds the room.
+    if (!m_addedRoomsPending || m_state != "room" || noticeShowing() || !m_planState || !m_planState->plan) {
+        return;
+    }
+    m_addedRoomsPending = false;
+    const world::WorldPlan& plan = *m_planState->plan;
+    std::vector<world::RoomId> standing;
+    for (const world::RoomId& room : m_addedRooms) {
+        if (std::any_of(plan.rooms.begin(), plan.rooms.end(),
+                        [&](const world::Room& planned) { return planned.id == room; })) {
+            standing.push_back(room);
+        }
+    }
+    if (standing.empty()) {
+        return;
+    }
+    const world::RoomId& first = standing.front();
+    WorldNoticeContent notice{std::string(world_notice::kRoomsAdded), {}, noticeRoom()};
+    switch (first.kind()) {
+    case world::RoomIdKind::System: {
+        notice.roomKind = "console";
+        const std::string fullName = product.catalog().systemFullName(first.system());
+        notice.roomTitle = fullName.empty() ? first.system().str() : fullName;
+        break;
+    }
+    case world::RoomIdKind::Shared:
+        notice.roomKind = "shared";
+        break;
+    case world::RoomIdKind::Arcade:
+        notice.roomKind = "arcade";
+        break;
+    }
+    notice.roomNumber = first.index();
+    notice.moreRooms = static_cast<std::uint32_t>(standing.size() - 1);
+    spdlog::info("Frame {}: the notice names the expansion room {} the update added ({} more)",
+                 m_context.frameIndex(), first.toString(), notice.moreRooms);
+    setNotice(std::move(notice), true);
+}
+
 void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.reason = build.reason;
     m_record.library = build.library.str();
@@ -664,6 +705,7 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.migratedRooms.clear();
     m_record.replacedRooms.clear();
     m_record.needsConfirmation.clear();
+    m_record.roomsAdded.clear();
     // I4b step 6: the rooms the needs-confirmation notice may offer (followConfirmations()).
     ++m_buildsRecorded;
     m_confirmationRooms.clear();
@@ -682,6 +724,20 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                                               replaced.to.xMm, replaced.to.zMm});
         }
         m_record.needsConfirmation = build.changes->needsConfirmation;
+        // I4b step 8 (ADR-0015 §7): the expansions an update added (a first building's are no news), named by a notice.
+        if (build.outcome == WorldOutcome::Updated && !build.preview) {
+            std::vector<world::RoomId> added;
+            for (const world::RoomId& room : build.changes->roomsAdded) {
+                if (room.isExpansion()) {
+                    added.push_back(room);
+                    m_record.roomsAdded.push_back(room.toString());
+                }
+            }
+            if (!added.empty()) {
+                m_addedRooms = std::move(added);
+                m_addedRoomsPending = true;
+            }
+        }
     }
     m_record.planDigest = build.planDigest;
     m_record.planWritten = build.written;

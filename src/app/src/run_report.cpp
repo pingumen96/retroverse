@@ -1215,6 +1215,7 @@ Json worldToJson(const WorldRecord& world) {
     }
     json["replacedRooms"] = std::move(replaced);
     json["needsConfirmation"] = world.needsConfirmation;
+    json["roomsAdded"] = world.roomsAdded;
     json["hardFindings"] = world.hardFindings;
     json["softFindings"] = world.softFindings;
     json["objects"] = world.objects;
@@ -1465,6 +1466,7 @@ WorldRecord readWorld(FieldReader& fields) {
         world.replacedRooms.push_back(std::move(record));
     }
     world.needsConfirmation = fields.optionalStringArray("needsConfirmation");
+    world.roomsAdded = fields.optionalStringArray("roomsAdded");
     world.hardFindings = fields.count("hardFindings");
     world.softFindings = fields.count("softFindings");
     world.objects = fields.count("objects");

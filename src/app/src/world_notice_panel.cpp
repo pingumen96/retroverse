@@ -1,5 +1,7 @@
 #include "world_notice_panel.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <utility>
 
 #include <RmlUi/Core/Context.h>
@@ -39,6 +41,8 @@ struct WorldNoticePanel::Impl {
         constructor.Bind("room", &room);
         constructor.Bind("roomKind", &roomKind);
         constructor.Bind("roomTitle", &roomTitle);
+        constructor.Bind("roomNumber", &roomNumber);
+        constructor.Bind("moreRooms", &moreRooms);
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -64,6 +68,8 @@ struct WorldNoticePanel::Impl {
     Rml::String room;
     Rml::String roomKind;
     Rml::String roomTitle;
+    int roomNumber = 1;
+    int moreRooms = 0;
 };
 
 WorldNoticePanel::WorldNoticePanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -96,6 +102,8 @@ void WorldNoticePanel::show(const WorldNoticeContent& content) {
     impl.room = Rml::String(content.startRoom);
     impl.roomKind = Rml::String(content.roomKind);
     impl.roomTitle = Rml::String(content.roomTitle);
+    impl.roomNumber = static_cast<int>(std::min<std::uint32_t>(content.roomNumber, 1'000'000));
+    impl.moreRooms = static_cast<int>(std::min<std::uint32_t>(content.moreRooms, 1'000'000));
     impl.handle.DirtyAllVariables();
     if (!impl.shown) {
         // Shown without taking the focus: the world and the quick catalog keep theirs.

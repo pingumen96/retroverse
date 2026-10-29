@@ -709,6 +709,10 @@ private:
     /// step 6's review: its notice offers the first that stands).
     std::uint64_t m_buildsRecorded = 0;
     std::vector<world::RoomId> m_confirmationRooms;
+    /// I4b step 8 (ADR-0015 §7): the expansion rooms the last update that saved the building added, and whether their
+    /// notice waits to show (followRoomsAdded()).
+    std::vector<world::RoomId> m_addedRooms;
+    bool m_addedRoomsPending = false;
     std::optional<std::chrono::system_clock::time_point> m_shownAt;
     bool m_coverPhaseOpen = false;
     /// The coverLoad phase waits to open until the frame after m_coverPhaseAfter (commit(), update()).

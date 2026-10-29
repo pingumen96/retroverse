@@ -988,6 +988,9 @@ struct WorldRecord {
     /// What the update left undone because it would have moved something pinned (world::ChangeReport's
     /// needsConfirmation: an unhonoured pin, a pinned room not migrated), as the report words it.
     std::vector<std::string> needsConfirmation;
+    /// I4b step 8 (ADR-0015 §7): the expansion rooms the update that saved the building added (the change report's
+    /// roomsAdded of a chain), which its notice names.
+    std::vector<std::string> roomsAdded;
     /// The validation's findings of the plan made (a hard one keeps the plan from showing).
     std::uint64_t hardFindings = 0;
     std::uint64_t softFindings = 0;
