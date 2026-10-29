@@ -34,6 +34,10 @@ void WorldSession::startLiveFlow(ProductUi& product) {
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return;
     }
+    // I4b step 6: and for a regeneration's preview or commit (it reads the plan the update would write).
+    if (regenerating()) {
+        return;
+    }
     // I4b step 3 (ADR-0015 §4): updates wait for an edit session's end.
     if (m_edit) {
         if (!m_edit->record.liveUpdateDeferred) {

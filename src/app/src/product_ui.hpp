@@ -17,6 +17,7 @@
 #include <rv/input/action_state.hpp>
 #include <rv/ui/directory_model.hpp>
 #include <rv/ui/game_card_model.hpp>
+#include <rv/ui/regenerate_preview_model.hpp>
 
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
@@ -81,7 +82,7 @@ public:
 
     [[nodiscard]] bool catalogOpen() const noexcept;
     /// The game-session panel shows (a game running and asking, an outcome), or the media viewer or Informazioni (I3
-    /// step 14b: Back's PanelBack level closes them first).
+    /// step 14b: Back's PanelBack level closes them first), or the regeneration's preview (I4b step 6).
     [[nodiscard]] bool panelOpen() const noexcept;
     /// The product UI has the input (InputContext::Ui): the catalog, the directory or the panel is open.
     [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen() || directoryOpen(); }
@@ -94,6 +95,9 @@ public:
     /// (its outcome back on the card), the world's commands (ChooseFloor, ChooseRoom, ShowInRoom) handed to the world
     /// (takeDirectoryCommands()).
     [[nodiscard]] bool directoryOpen() const noexcept;
+    /// I4b step 6: the tab the directory shows (none while it is closed): "Modifiche" reads the regenerations' inputs
+    /// ahead.
+    [[nodiscard]] std::optional<ui::DirectoryTab> directoryTab() const noexcept;
     /// Opens the directory on `tab` (`via`: "elevator" or "map", for the run report); its screen is made the first
     /// time (a screen that cannot be made is logged and the directory stays closed).
     void openDirectory(ui::DirectoryTab tab, std::string_view via);
@@ -112,6 +116,19 @@ public:
     /// `command` refused for now by the world (a ride in Focus, a plan not ready): the panel again where it was, with
     /// `notice` (ui::directory::kNotices) under its list.
     void refuseDirectory(const ui::DirectoryCommand& command, std::string_view notice);
+    /// I4b step 6 (ADR-0015 §5, §6): the impact preview of a regeneration or an undo (ui::RegeneratePreviewModel on
+    /// assets/ui/regenerate_preview.rml through ui::RegeneratePreviewScreen): opened on `kind` for `scope`, computing
+    /// (the directory closed if it showed; its screen made the first time: one that cannot be made is logged and the
+    /// preview stays closed), given the dry run's content or a failure, closed by its Cancel or by the world. It is a
+    /// panel (panelOpen(): the UI's input, Back's PanelBack level). Its choices (Rigenera, Scarta e rigenera, Annulla
+    /// la modifica, a cancel) are the world's (takeRegenerateCommands()).
+    void openRegeneratePreview(ui::RegenerateKind kind, ui::RegenerateScopeTitle scope);
+    void setRegeneratePreview(ui::RegeneratePreviewContent content);
+    void failRegeneratePreview(std::string failure);
+    void closeRegeneratePreview();
+    [[nodiscard]] bool regeneratePreviewOpen() const noexcept;
+    [[nodiscard]] const ui::RegeneratePreviewModel& regeneratePreview() const noexcept;
+    [[nodiscard]] std::vector<ui::RegenerateCommandKind> takeRegenerateCommands();
     /// The elevator's prompt naming `key` from now on (nothing: none), the hub's totem's with `totem` (I6 step 5):
     /// shown over the scene while neither the quick catalog, the directory nor the game-session panel shows. It takes no
     /// input.

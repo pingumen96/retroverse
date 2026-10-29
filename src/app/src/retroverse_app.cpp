@@ -1685,6 +1685,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                 } else if (actions.pressed(input::Action::Interact) && state.world->showcaseHovered()) {
                     // I6 step 5: a proxy of the hub's favourites showcase opens the directory at its card.
                     state.world->openShowcaseCard(*state.product);
+                } else if (actions.pressed(input::Action::Confirm) && state.world->confirmationOffered()) {
+                    // I4b step 6: the notice of a room that needs a confirmation opens the preview of "Rigenera
+                    // stanza" (ADR-0015 §3).
+                    state.world->openConfirmationPreview(*state.product);
                 }
                 state.syncCaptureLayers();
             }

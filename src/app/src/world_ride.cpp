@@ -80,7 +80,8 @@ void WorldSession::elevatorPrompt(ProductUi& product, std::optional<std::string>
 WorldMoveConditions WorldSession::moveConditions(const ProductUi& product) const {
     WorldMoveConditions conditions;
     conditions.planReady = m_state == "room" && m_planState.has_value() && m_planIndex.has_value() && !m_floor.empty();
-    conditions.applying = m_shownPreview.has_value() || m_previewAwaitingFrame || m_retargetPending;
+    // I4b step 6: a regeneration under way applies a floor too.
+    conditions.applying = m_shownPreview.has_value() || m_previewAwaitingFrame || m_retargetPending || regenerating();
     conditions.riding = m_ride != nullptr;
     conditions.launchActive = product.launchActive();
     conditions.state = m_interaction->interaction().state();
@@ -143,6 +144,15 @@ void WorldSession::syncDirectory(ProductUi& product) {
         building.currentRoom = m_rooms[*eye].id.toString();
     }
     building.editableRoom = editableRoom(product).value_or(std::string()); // I4b step 3
+    // I4b step 6: "Rigenera stanza" regenerates the room of the plan that holds the walker.
+    if (m_state == "room" && m_host.eyeArea) {
+        const std::string area = m_host.eyeArea();
+        if (world::RoomId::parse(area) && m_planState && m_planState->plan &&
+            std::any_of(m_planState->plan->rooms.begin(), m_planState->plan->rooms.end(),
+                        [&](const world::Room& room) { return room.id.toString() == area; })) {
+            building.regenerableRoom = area;
+        }
+    }
     product.setDirectoryBuilding(std::move(building));
 }
 
@@ -158,6 +168,27 @@ void WorldSession::followCommands(ProductUi& product) {
             if (const auto room = world::RoomId::parse(command.id)) {
                 beginEdit(product, *room, "directory", std::nullopt);
             }
+            continue;
+        }
+        // I4b step 6: "Rigenera stanza / piano / mondo", "Annulla ultima modifica" (world_regenerate.cpp).
+        if (command.kind == ui::DirectoryCommandKind::RegenerateRoom) {
+            if (const auto room = world::RoomId::parse(command.id)) {
+                beginRegeneration(product, ui::RegenerateKind::Room, world::RegenerationScope::ofRoom(*room),
+                                  "directory", command);
+            }
+            continue;
+        }
+        if (command.kind == ui::DirectoryCommandKind::RegenerateFloor) {
+            beginRegeneration(product, ui::RegenerateKind::Floor, world::RegenerationScope::ofFloor(command.id),
+                              "directory", command);
+            continue;
+        }
+        if (command.kind == ui::DirectoryCommandKind::RegenerateWorld ||
+            command.kind == ui::DirectoryCommandKind::Undo) {
+            beginRegeneration(product,
+                              command.kind == ui::DirectoryCommandKind::Undo ? ui::RegenerateKind::Undo
+                                                                             : ui::RegenerateKind::World,
+                              world::RegenerationScope::ofWorld(), "directory", command);
             continue;
         }
         const WorldMove move =

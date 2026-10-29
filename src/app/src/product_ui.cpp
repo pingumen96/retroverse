@@ -37,6 +37,7 @@
 #include <rv/app/world_card_ui.hpp>
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
+#include <rv/ui/regenerate_preview_screen.hpp>
 
 #include "edit_bar_panel.hpp"
 #include "elevator_prompt_panel.hpp"
@@ -183,11 +184,38 @@ struct ProductUi::Impl {
     /// I4b step 3: the editor's bar and what the world wants it to show.
     std::unique_ptr<EditBarPanel> editBar;
     std::optional<EditBarContent> wantedEditBar;
+    /// I4b step 6: the impact preview of a regeneration or an undo (its screen made when it first opens), the choices
+    /// it gave and the world has not taken yet.
+    std::unique_ptr<ui::RegeneratePreviewScreen> previewScreen;
+    ui::RegeneratePreviewModel preview;
+    std::vector<ui::RegenerateCommandKind> previewCommands;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
-               (editBar && editBar->visible());
+               (editBar && editBar->visible()) || previewShown();
+    }
+
+    /// I4b step 6: the preview shows.
+    [[nodiscard]] bool previewShown() const noexcept { return previewScreen && preview.isOpen(); }
+    /// A choice of the preview's model handed to the world (its panel closes itself on Cancel).
+    void previewCommand(const std::optional<ui::RegenerateCommandKind>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the preview of {} asks {}", context.frameIndex(), ui::toString(preview.kind()),
+                     ui::toString(*command));
+        previewCommands.push_back(*command);
+    }
+    void syncPreview() {
+        if (!previewScreen) {
+            return;
+        }
+        if (preview.isOpen()) {
+            previewScreen->show(preview);
+        } else {
+            previewScreen->hide();
+        }
     }
 
     /// The media viewer or Informazioni shows (I3 step 14b).
@@ -196,7 +224,7 @@ struct ProductUi::Impl {
     [[nodiscard]] bool directoryShown() const noexcept { return directoryScreen && directory.isOpen(); }
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
-        return catalogOpen || panel->visible() || screensOpen() || directoryShown();
+        return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -289,6 +317,10 @@ struct ProductUi::Impl {
         case ui::DirectoryCommandKind::ChooseRoom:
         case ui::DirectoryCommandKind::ShowInRoom:
         case ui::DirectoryCommandKind::EditRoom:
+        case ui::DirectoryCommandKind::RegenerateRoom:  // I4b step 6
+        case ui::DirectoryCommandKind::RegenerateFloor: // I4b step 6
+        case ui::DirectoryCommandKind::RegenerateWorld: // I4b step 6
+        case ui::DirectoryCommandKind::Undo:            // I4b step 6
             directoryCommands.push_back(*command);
             break;
         }
@@ -849,7 +881,56 @@ bool ProductUi::catalogOpen() const noexcept {
 }
 
 bool ProductUi::panelOpen() const noexcept {
-    return m_impl->panel->visible() || m_impl->flow.panel() != SessionPanel::None || m_impl->screensOpen();
+    // I4b step 6: the regeneration's preview is a panel too (Back's PanelBack level leaves it first).
+    return m_impl->panel->visible() || m_impl->flow.panel() != SessionPanel::None || m_impl->screensOpen() ||
+           m_impl->preview.isOpen();
+}
+
+void ProductUi::openRegeneratePreview(ui::RegenerateKind kind, ui::RegenerateScopeTitle scope) {
+    Impl& s = *m_impl;
+    if (!s.previewScreen) {
+        auto screen = ui::RegeneratePreviewScreen::create(*s.view);
+        if (!screen) {
+            spdlog::error("The regeneration's preview unavailable: {}", screen.error().toString());
+            return;
+        }
+        s.previewScreen = std::move(*screen);
+    } else if (Rml::Element* root = s.view->context().GetRootElement()) {
+        // As the directory's: the focus the screen applies starts from the context's root.
+        root->Focus();
+    }
+    if (s.directory.isOpen()) {
+        s.directory.close();
+    }
+    // A stick or direction still held must not move in the panel that just opened.
+    s.nav.reset();
+    s.previewCommands.clear();
+    s.preview.open(kind, std::move(scope));
+    spdlog::info("Frame {}: the preview of {} opened", s.context.frameIndex(), ui::toString(kind));
+}
+
+void ProductUi::setRegeneratePreview(ui::RegeneratePreviewContent content) {
+    m_impl->preview.setContent(std::move(content));
+}
+
+void ProductUi::failRegeneratePreview(std::string failure) {
+    m_impl->preview.setFailed(std::move(failure));
+}
+
+void ProductUi::closeRegeneratePreview() {
+    m_impl->preview.close();
+}
+
+bool ProductUi::regeneratePreviewOpen() const noexcept {
+    return m_impl->preview.isOpen();
+}
+
+const ui::RegeneratePreviewModel& ProductUi::regeneratePreview() const noexcept {
+    return m_impl->preview;
+}
+
+std::vector<ui::RegenerateCommandKind> ProductUi::takeRegenerateCommands() {
+    return std::exchange(m_impl->previewCommands, {});
 }
 
 void ProductUi::openCatalog() {
@@ -917,6 +998,13 @@ void ProductUi::closeCatalog() {
 
 bool ProductUi::directoryOpen() const noexcept {
     return m_impl->directory.isOpen();
+}
+
+std::optional<ui::DirectoryTab> ProductUi::directoryTab() const noexcept {
+    if (!m_impl->directory.isOpen()) {
+        return std::nullopt;
+    }
+    return m_impl->directory.tab();
 }
 
 void ProductUi::openDirectory(ui::DirectoryTab tab, std::string_view via) {
@@ -1006,6 +1094,10 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
 bool ProductUi::handleEvent(const SDL_Event& event) {
     if (!hasInput()) {
         return false;
+    }
+    // I4b step 6: the regeneration's preview likewise (only the mouse; its choices come from the UI actions).
+    if (m_impl->previewShown() && !m_impl->panel->visible() && !m_impl->screensOpen()) {
+        return m_impl->previewScreen->handlePointer(event);
     }
     // The directory (I4 step 7b): only the mouse reaches it (its commands come from the UI actions), unless the
     // game-session panel or the media screens show over it.
@@ -1180,6 +1272,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
+            } else if (s.preview.isOpen()) {
+                s.previewCommand(s.preview.apply(command)); // I4b step 6
             } else if (s.screensOpen()) {
                 s.switchScreen(s.screens->apply(command, s.context.frameIndex()));
             } else if (s.catalogOpen && s.screen) {
@@ -1194,6 +1288,13 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         if (const std::optional<ui::DirectoryClick> click = s.directoryScreen->takeClicked();
             click && s.directoryShown() && !s.panel->visible()) {
             s.directoryCommand(s.directory.click(*click));
+        }
+    }
+    // I4b step 6: the preview's clicks.
+    if (s.previewScreen) {
+        if (const std::optional<ui::RegenerateButton> click = s.previewScreen->takeClicked();
+            click && s.previewShown() && !s.panel->visible()) {
+            s.previewCommand(s.preview.click(*click));
         }
     }
     if (std::exchange(s.refreshRequested, false)) {
@@ -1215,6 +1316,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncCard();
     s.syncPrompt();
     s.syncEditBar();
+    s.syncPreview();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
@@ -1225,6 +1327,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         }
         if (s.directoryShown()) {
             s.directoryScreen->afterUpdate();
+        }
+        if (s.previewShown()) {
+            s.previewScreen->afterUpdate();
         }
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
@@ -1241,6 +1346,12 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
 }
 
 void ProductUi::panelBack() {
+    // I4b step 6: the regeneration's preview leaves one level (the second confirmation, then the panel), unless the
+    // game-session panel shows over it.
+    if (m_impl->preview.isOpen() && !m_impl->panel->visible() && m_impl->flow.panel() == SessionPanel::None) {
+        m_impl->previewCommand(m_impl->preview.apply(ui::UiCommand::Back));
+        return;
+    }
     // The media viewer and Informazioni close first (I3 step 14b), unless the game-session panel shows over them.
     if (m_impl->screensOpen() && !m_impl->panel->visible()) {
         m_impl->screens->close(m_impl->context.frameIndex());
