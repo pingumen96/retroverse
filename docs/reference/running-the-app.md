@@ -294,13 +294,20 @@ build/rvdata`).
   stops once it leaves the view. `video.json`'s `cabinet.enabled` is attract, `cabinet.showOnFocus` the focused
   cabinet. A cabinet's screen is drawn with its slot's pooled video material on the dynamic path while its clip shows
   (its static front hidden), its cover otherwise; no cabinet plays while the room editor runs. The hero cabinet keeps
-  the room's playlist and never follows a selection (the quick catalog's neither). With one decoder the inspected
-  cabinet takes the slot, and a screen whose slot is taken from a clip it still wants keeps that clip's frame until it
-  plays again. A clip of another aspect than its screen's is letterboxed or pillarboxed in the tube's black (within 2%
-  it fills the screen). The report's `video.screens` lists the cabinets playing at the end too (`kind` `cabinet`), each
-  screen's `pictureRect` (x, y, width, height; empty for the whole screen) and `heldFrame`; `video.cabinetEvents`
-  (`frame`, `atSeconds`, `screen` "<room>/cabinet:<pick id>", `gameId`, `screenClass`, `picture` `video` or `cover`;
-  the first 512) and `heldFrameShows` (frames a kept frame showed).
+  the room's playlist and never follows the world's selection (the focused cabinet plays itself); it follows the quick
+  catalog's, as every hero screen does. With one decoder the inspected cabinet takes the slot, and a screen whose slot
+  is taken from a clip it still wants keeps that clip's frame until it plays again. A clip of another aspect than its
+  screen's is letterboxed or pillarboxed in the lit tube's off-black (within 2% it fills the screen; a console's frame
+  of at most 240 rows within 15% of 4:3, such as 256 x 224, is shown at 4:3). The report's `video.screens` lists the
+  cabinets asking for their clips at the end too (`kind` `cabinet`), each screen's `pictureRect` (x, y, width, height;
+  empty for the whole screen) and `heldFrame`; `video.cabinetEvents` (`frame`, `atSeconds`, `screen`
+  "<room>/cabinet:<pick id>", `gameId`, `screenClass`, `picture` `video` or `cover`; the first 512, the rest counted in
+  `cabinetEventsDropped`) and `heldFrameShows` (frames a kept frame showed); `world.cabinetClipFrames` and
+  `world.cabinetCoverBeneathFrames` (frames a cabinet's clip drew, and those with its cover drawn beneath it: 0).
+  Since the step's review a lockstep run waits, at most 2 s (NFR-06), for the first frame of a clip a slot opened for a
+  screen in view, so that it shows on the frame the slot opened (`video.firstFrameWaits`, `firstFrameWaitMaxMs`,
+  `firstFrameWaitTimeouts`); a slot's `open` event gives the position it opened at (`fromSeconds`; absent: the
+  clip's start).
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every

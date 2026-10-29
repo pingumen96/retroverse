@@ -54,7 +54,8 @@ points 4 and 9, ADR-0012 §7, ADR-0013 §9).
   one. A screen is known to its slot by its owner: the hero by its role (`hero`), so the next room's hero waits for the
   last hero's slot (one thread across a room change), a secondary by its object id.
 - **Positions are kept.** A clip stopped while still wanted (`out-of-view`, `needed`, `budget`) reopens where it
-  stopped, as after a launch. The screen shows its still meanwhile; the reopened first frame replaces it.
+  stopped, as after a launch. The screen shows its still meanwhile (since I5 step 4: the kept frame, ADR-0016 §6
+  amended); the reopened first frame replaces it.
 - **Per-screen keys in `video.json`.** The smoke scene needs screens of one kind playing different games. They are for
   tests and hand-made scenes: a generated room's object ids are the generator's, not a name for users.
 - **Secondaries are any further `crt` in the room** until step 3's `secondary_tv` piece. No shipped scene or floor has

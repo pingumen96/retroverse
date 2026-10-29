@@ -84,6 +84,7 @@ in `rv_app` carries the decisions out: decoders, textures, stills, overrides and
   - A screen that leaves the view pauses at once and keeps its frame (`VideoPlayback::pause`).
   - It is stopped after 10 s out of view, or when its slot is needed.
   - Its screen then shows its still (§8).
+  - A slot taken from a clip still wanted (`needed`, `budget`) leaves its screen its kept frame instead (§6 amended).
 - **Stability.** A slot changes hands at most once a second, unless a `direct` or `focus` request asks. Ambient
   requests enter and leave by `proximityMeters` with a 0.5 m hysteresis.
 - **Late frames.** A slot whose late plus dropped frames exceed 5% over 4 s drops the budget to 1 for 30 s, and the
@@ -137,7 +138,8 @@ id, screen id, mode, cycle)`.
   - Once the walker is back in free roam, the selected clip plays to its end, at most `previewDuration`. The playlist
     then resumes where it stopped.
   - This replaces ADR-0012 §7's "keeps looping until another item is selected".
-  - In the arcade the hero cabinet never follows the selection: the selected cabinet plays the clip itself (§6).
+  - In the arcade the hero cabinet never follows the selection: the selected cabinet plays the clip itself (§6; the
+    quick catalog's selection plays on it since I5 step 4's review, §6 amended).
 - **Frozen runs.** Under `--video-freeze-pts` every screen opens the first clip of its playlist (the start choice for
   the hero screen), paused at that time. Goldens stay reproducible and the existing room goldens unchanged.
 - **No prefetch** of the next clip: a 480p clip's first frame comes in about 20 ms, and its still covers the switch
@@ -203,21 +205,27 @@ slot shows its cover, as today; its still is the cover.
   not flip it at the limit), and while another's 1 s dwell runs; it stops at once when it no longer qualifies (out of
   view, turned away, walked away). Attract plays only in free roam: Focus, Inspect and the editor reset its dwell.
 - **The classes.** Focus asks `focus`; Inspect, and a launch from it until the return, ask `direct`, so that the
-  inspected cabinet's clip position is kept for the return. A cabinet loops its own game's clip: `video.json`'s
+  inspected cabinet's clip position is kept for the return; through all three the cabinet is in the hand (in view, at
+  arm's length), whatever its slot's box (I5 step 4's review). A cabinet loops its own game's clip: `video.json`'s
   `cabinet.enabled` is attract and `showOnFocus` the focused cabinet; its `playlist` and `previewDuration` are unused. A
   clip that fails on a cabinet leaves that cabinet on its cover for the rest of the run.
 - **The pool.** The cabinets' collection makes its video materials (the label's `MAT_Screen_Arcade` with a base colour
   texture of its own) the first time one plays, as many as the decoder slots: slot i's picture on material i.
-  Registered after everything else, they move no handle.
-- **"Never follows the selection"** holds for the quick catalog's selection too: the arcade's hero cabinet never takes
-  one (`ScreenBinding::followsSelection`).
+  Appended: no handle moves. A pooled material no cabinet shows on draws its own white again (its override and
+  rectangle cleared), and so does every one when the cabinets go, unless the registry is being cleared. The cabinets'
+  screens are named by their family (`world::kArcadeRoomFamily`), sized by its label (298 x 398 mm). A change of the
+  room's games or of the clips' verdicts lets go only the cabinets whose game or clip changed.
+- **"Never follows the selection"** is the world's selection (the focused or inspected cabinet plays its clip
+  itself): the arcade's hero cabinet never takes it (`ScreenBinding::followsWorldSelection`). *Narrowed by I5 step 4's
+  review:* the quick catalog's selection of a game of the eye's room plays on the hero cabinet, as on every hero
+  screen.
 - **While the room editor runs** (ADR-0015 §4's session) no cabinet plays, attract and focus alike: its fixtures are
   held, moved and have their room's static part rebuilt. Every cabinet shows its cover from the frame the session
   begins; after it, attract starts again from its dwell. A cabinet's clip follows its item by pick id, so a collection
   laid out again in place keeps it; a collection dropped (a floor committed again, a ride) lets every one go.
 - **The paused frame** is a GPU copy of the slot's picture that every bound screen (the hero, a secondary) keeps when
   its slot is taken from a clip it still wants (`needed`, `budget`), shown until that clip has a slot again, in place of
-  its still (§2's "a screen without a slot shows its still" stays for the other cases: a stop out of view, a clip never
+  its still (§2's "Its screen then shows its still (§8)." stays for the other cases: a stop out of view, a clip never
   opened).
 
 ### 7. The picture's aspect and CRT presets
@@ -244,13 +252,22 @@ slot shows its cover, as today; its still is the cover.
   on the emissive screen.
 
 *Amended on 2026-10-28 (I5 step 4):* the aspect is the clip's frame as decoded (square pixels: the stream's sample
-aspect applied) against its screen's `ScreenSurface` (a cabinet's: its family's item). A clip within 2% of its screen's
-aspect fills it (an encoder's crop such as 640 x 478 or 584 x 446 shows no hairline bars); beyond, it keeps its own (a
-256 x 224 clip, 8:7, is pillarboxed on a 4:3 tube). The rectangle (`MaterialUniforms::pictureRect`, a `vec4` after the
-CRT fields: the block grows from 96 to 112 bytes) is read only under a new flag (`kPictureRect`), set only while a clip
-of another aspect shows, so that a 4:3 clip on a 4:3 tube draws exactly as before; a still (fitted to 4:3) and a
-screen's own pattern fill their screen. The bars are the tube's black: the picture's coverage is anti-aliased over a
-pixel, and the tube's scanlines, mask, vignette and rounded edge stay the screen's.
+aspect applied) against its screen's `ScreenSurface` (a cabinet's: its family's label since the step's review). A clip
+within 2% of its screen's aspect fills it (an encoder's crop such as 640 x 478 or 584 x 446 shows no hairline bars);
+beyond, it keeps its own (but see the next amendment for a console's low-resolution frame). The rectangle
+(`MaterialUniforms::pictureRect`, a `vec4` after the CRT fields: the block grows from 96 to 112 bytes) is read only
+under a new flag (`kPictureRect`), set only while a clip of another aspect shows, so that a 4:3 clip on a 4:3 tube draws
+exactly as before; a still (fitted to 4:3) and a screen's own pattern fill their screen. The bars are the tube's black:
+the picture's coverage is anti-aliased over a pixel, and the tube's scanlines, mask, vignette and rounded edge stay the
+screen's.
+
+*Amended on 2026-10-29 (I5 step 4's review):* a console's low-resolution frame keeps the aspect its television gave it
+(style §15.2, the original aspect), with no per-system data: a frame of at most 240 rows whose aspect is within 15% of
+4:3 (256 x 224, 8:7; 320 x 224) is shown at 4:3 (`app::displayAspect()`), so it fills a 4:3 screen and is letterboxed
+as a 4:3 picture on a cabinet's portrait screen. A 256 x 240 frame (20% off) and every clip of more than 240 rows keep
+their own aspect. The bars are the lit tube's off-black (`RV_CRT_BLACK_LEVEL`, linear 0.01, through the tube's
+scanlines, mask and vignette), as a powered CRT's black, not 0: they never read as a hole in the screen. A 4:3 clip on
+a 4:3 tube is unchanged (the flag stays clear).
 
 ### 8. Fallbacks and missing media
 
@@ -376,7 +393,7 @@ shared period) is not compensated.
   `viewerMaxRows`.
   - `ui_activate` pauses it and plays it again.
   - The world's screens pause while the viewer is open. In Low the world's slot is taken, and its screen shows its
-    held frame, then its still.
+    kept frame while its clip waits for a slot (§6 amended).
   - The frame reaches RmlUi as `rv-texture:media-viewer-video`, through a `GL_RGBA8` view of the video's
     `GL_SRGB8_ALPHA8` texture (the UI composites encoded sRGB values, as `devui::TexturePreviews` does).
   - A clip whose verdict is a failure shows the page's fallback with its reason, from the RML document.

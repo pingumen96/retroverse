@@ -129,7 +129,8 @@ room:gb --spawn 3.85,0,6.65,270,-4`, the handheld floor's hall from east of its 
 `--spawn` is in the start room's frame, here the floor's x 11.5 m on the hall's centre line). I5 step 4 adds G20
 (`g20_cabinet_focus_golden.png`: `esde/building`, `--start-room area:arcade`, the walker at the Focus pose of the
 cabinet of the fixture's one mame clip, `tests/input_scripts/golden_g20_cabinet_focus.json`: inspected, then in Focus
-after Indietro, its clip held at 1.0 s and letterboxed on its portrait screen). The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
+after Indietro, its clip held at 1.0 s and letterboxed on its portrait screen, the bars the tube's off-black since the
+step's review). The cases' upright spines up close are `gpu.world families: jewel cases stand on their side` (the
 `esde/case-shelves` fixture: 160 jewel cases, 100 keep cases, 120 big boxes, most of them spine-out, their dark shells
 and full-height printed spines since the step's review) and `gpu.world families: a stored building of generator 1.3 is
 migrated once` (`tests/fixtures/world/legacy/`). `$env:RV_UPDATE_GOLDEN=1;

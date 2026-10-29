@@ -55,7 +55,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `screen_aspect.hpp` (the rectangle a clip fills on its screen) and `cabinet_screens.hpp` (which arcade cabinets play:
   attract's choice and dwell, the focused and inspected one, none in the editor). `rv_app`'s `world_cabinets.cpp`
   (I5 step 4) is the world's side of the cabinets: their requests to `ScreenService::setCabinets()`, their fronts drawn
-  with the collection's pooled video materials (`CollectionInstance::videoMaterials`, `setVideoFront`). `rv_media`'s `audio_sink.hpp`
+  with the collection's pooled video materials (`CollectionInstance::videoMaterials`, `setVideoFront`). `rv_media`'s
+  `audio_sink.hpp`
   (I5 step 5) is where a decoder puts its clip's sound, decoded on its thread and resampled by swresample; `rv_app`'s
   `screen_service.cpp` connects it to a slot's `audio::AudioRing` (`RingSink`). Since I5 step 7 `rv_media`'s `video_verdicts.hpp` (the clips' verdicts, `cache/media/videos.json`) and `video_check.hpp` (a clip's
   sample decoded) serve `rv_cli_core`'s `cmd_media_videos.cpp` (`media --check-videos`, now linking `rv_media`) and
