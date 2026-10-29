@@ -952,6 +952,14 @@ struct RetroverseApp::State {
                 }
             }
             freeRoam->setCollision(scene->collisionWorld());
+            // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved is a new
+            // object with a new material), their clips playing on.
+            if (screen && screen->bound() && screen->screenId().starts_with(change.prefix) &&
+                !screen->rebind(findScreens(description, *scene, graphics->materials(), change.prefix))) {
+                spdlog::warn("World: the screens of {} are no longer the bound ones; the bound ones keep their old "
+                             "materials until the room is bound again",
+                             change.prefix);
+            }
             shownDebugLines = DebugLineSelection{};
             if (Status shown = syncDebugLines(); !shown) {
                 spdlog::error("Debug lines unavailable: {}", shown.error().toString());

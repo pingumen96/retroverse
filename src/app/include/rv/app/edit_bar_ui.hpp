@@ -18,13 +18,14 @@ namespace edit_bar {
 /// The furniture the bar names (I4b step 4's review), by the prefab kind a fixture is drawn with (world::
 /// drawnFixtures(): a pack's variant of a decoration): `kind` the prefab's, the name the bar's (its noun in
 /// edit_bar.rml: "Stai spostando: uno scaffale", the target's "Scaffale"). Any other kind is "furniture" ("un arredo").
-inline constexpr std::array<std::pair<std::string_view, std::string_view>, 17> kFixtureKindNames{{
+inline constexpr std::array<std::pair<std::string_view, std::string_view>, 18> kFixtureKindNames{{
     {"shelf", "shelf"},              // uno scaffale: a side-wall module
     {"arcade_cabinet", "cabinet"},   // un cabinato: an arcade room's side-wall module
     {"wall_shelf", "wall-shelf"},    // una mensola: the featured wall shelf
     {"display_case", "display-case"}, // una vetrina: a display case
     {"showcase", "showcase"},        // una teca: a pack's glass showcase
     {"tv_cabinet", "sideboard"},     // una credenza: the low cabinet between modules
+    {"secondary_tv", "tv"},          // un televisore: a pack's secondary TV on its sideboard (I5 step 3)
     {"poster_frame", "poster"},      // un poster
     {"floor_lamp", "floor-lamp"},    // una lampada a stelo
     {"banker_lamp", "table-lamp"},   // una lampada da tavolo

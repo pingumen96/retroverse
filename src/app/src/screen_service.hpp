@@ -95,13 +95,21 @@ struct CabinetShown {
     bool operator==(const CabinetShown&) const = default;
 };
 
-/// The screens of `description`, the hero first: the first object built from the `crt` prefab, or from the
-/// `arcade_cabinet` prefab that stands for it in the arcade (I6 step 6's hero cabinet, which never follows the world's
-/// selection: I5 step 4), whose screen shows a picture (its "screen" role has a scene texture, so that its material
-/// has a base colour texture to override), with its screen's material in `materials` (registered by SceneInstance
-/// under "<object id>/screen..."), the bounds of its first instance and its ScreenSurface's size; then (I5 step 2)
-/// every other `crt` object with a picture, as a secondary screen (in a scene with areas, only those in the hero's
-/// area). Empty when the scene has none (the model viewer, scenes without a TV). With
+/// The prefab kind of a pack's secondary TV (world::kSecondaryTvKind, I5 step 3).
+inline constexpr std::string_view kSecondaryTvPrefabKind = "secondary_tv";
+/// The id's end of a generated room's hero CRT, the hero corner's "crt" part ("room:snes/fx:hero.crt"), which the
+/// arcade's hero cabinet keeps.
+inline constexpr std::string_view kHeroCrtIdSuffix = ".crt";
+
+/// The screens of `description`, the hero first: by its role since I5 step 3, the object whose id ends with
+/// kHeroCrtIdSuffix built from the `crt` prefab, or from the `arcade_cabinet` prefab that stands for it in the arcade
+/// (I6 step 6's hero cabinet, which never follows the world's selection: I5 step 4), else the first `crt` (a hand-made
+/// scene's), whose screen shows a picture (its "screen" role has a scene texture, so that its material has a base
+/// colour texture to override), with its screen's material in `materials` (registered by SceneInstance under
+/// "<object id>/screen..."), the bounds of its first instance and its ScreenSurface's size; then, as secondary screens,
+/// every `secondary_tv` object with a picture (I5 step 3: a pack's secondary TV) and every other `crt` (I5 step 2: a
+/// hand-made scene's, screens_four's), in a scene with areas only those in the hero's area. Empty when the scene has
+/// no hero (the model viewer, scenes without a TV). With
 /// `idPrefix` (I4 step 5a: a floor's start room, "room:snes/") only objects whose ids start with it count, and the
 /// room's id is the prefix without its "/"; an empty prefix finds none. Without, the room's id is the scene's name.
 [[nodiscard]] std::vector<ScreenBinding> findScreens(const scene::SceneDescription& description,
@@ -209,6 +217,12 @@ public:
     /// Binds `screens` (another room's, or the same room's in a scene committed again) with `games`, each screen's
     /// choice made as at the start; recorded with `frame` (VideoRecord::binds).
     void bind(std::vector<ScreenBinding> screens, std::vector<ScreenGame> games, std::uint64_t frame);
+    /// The bound room's screens found again after its objects were replaced in place (I5 step 3: the room editor rebuilt
+    /// its static part, a secondary TV it moved standing as a new object with a new material): each screen keeps its
+    /// state (its clip, slot and picture) and takes its object's new material, bounds and screen size, the picture set
+    /// on the new material at the next update(). False, nothing changed, when `screens` are not the bound ones (other
+    /// object ids, or none bound): bind() them.
+    [[nodiscard]] bool rebind(std::vector<ScreenBinding> screens);
     /// Screens are bound, and the hero's object id ("" none).
     [[nodiscard]] bool bound() const noexcept;
     [[nodiscard]] std::string screenId() const;
