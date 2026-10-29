@@ -3,7 +3,8 @@
 - Status: accepted
 - Date: 2026-10-18
 - Amended: 2026-10-19, at I3 step 17a's review: §4 holds the inspected item at 0.45 m, left of and below the view's
-  centre beside the card, the zoom from 0.3 to 1.0 m
+  centre beside the card, the zoom from 0.3 to 1.0 m; 2026-10-29 (fix): §3's pull-out stands a cartridge's cover
+  upright and leaves an arcade cabinet's screen in its bezel
 - Relates to: ADR-0004 (brings forward from I5 the screen material binding, `waitForStoppedDecoders()` at shutdown and
   the filter of NVIDIA's message 131154; the scheduler, the priority boost, upload staggering and audio stay I5's),
   ADR-0005 (Vedi media, Informazioni and pictures in the UI), ADR-0006 (the launch and the return, unchanged)
@@ -98,6 +99,15 @@ and UI contexts, so that no button means two things at once:
   with a fixed frame time animate on the fixed time, so scripted runs are reproducible.
 - **Focus** eases the walker in **350 ms** to `scene::frontViewpoint` of the item's shelf section at 0.9 m, framed in
   the part of the view the card leaves free (`ViewArea`), the same pull-out kept.
+- *Amended on 2026-10-29 (fix):* the pulled cover stands **upright**. A cartridge standing on its end (its top face
+  out, the cartridge families) rolls a quarter about the view's axis while it turns, so its cover's top is up, as a
+  case on its side (I6 step 4) always was; I3 step 13a had left it on its end, its cover sideways, which read as a
+  rotated cover beside the upright face-out ones of the same system. Its turn and roll stay clear of the boards above
+  and below it (`app::rowReach()` counts what the roll sweeps): every such cartridge settles about 80% of its depth
+  out. And an item that is **part of its fixture** (`world::CollectionItem::inFixture`: an arcade cabinet's screen,
+  the family facing front of I6 step 6) never moves: the hover does not pull it, and Focus shows it where it stands
+  (it used to tip 10 degrees out of its bezel after the dwell, the cabinet seeming to move when aimed at); Inspect
+  still lifts it into the hand. See `docs/fixes/2026-10-29-arcade-screen-covers.md`.
 
 ### 4. Inspection
 
