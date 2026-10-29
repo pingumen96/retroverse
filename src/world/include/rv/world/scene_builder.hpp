@@ -49,9 +49,9 @@
 //     the TV fits (centred across it, its back on the prefab's back), judged where their sockets stand at home (so that
 //     the style's lesser screen never competes with the hero, I5 step 3's review): never the one nearest the doorway's
 //     camera (with one candidate, it is kept only where it is preferred); the preferred first, those in the room's back
-//     half from the doorway or within kSecondaryTvNearHeroMm of the hero corner; then the deepest third of the room's
-//     depth from the doorway (the farther, the smaller and dimmer the set the doorway sees); then the room's seed
-//     (core::deriveSeed(room seed, "secondary_tv", the fixture's local id), then the id). The first is drawn as the TV
+//     half from the doorway or within kSecondaryTvNearHeroMm of the hero corner; then the farthest from the doorway's
+//     camera (the farther, the smaller and dimmer the set the doorway sees); then the room's seed (sockets mirrored
+//     across the room: core::deriveSeed(room seed, "secondary_tv", the fixture's local id), then the id). The first is drawn as the TV
 //     and, in a room deeper than 12 m, the next one in another third of the room's depth from the doorway (else none:
 //     never a pair mirrored across the room): at most one a room, two past 12 m, none in the arcade.
 //     It stands where its fixture stands, moved by the room editor or not (the guard: within its fixture's own

@@ -184,12 +184,12 @@ sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under
   still when it has no slot.
 
 *Amended on 2026-10-29 (I5 step 3):*
-- **The piece.** One prefab, `secondary_tv` (`geometry::SecondaryTvParams`): the sideboard's body (tv_cabinet's) carrying
-  the consumer CRT's model at 0.46 x 0.4 x 0.32 m, its screen the CRT's `ScreenSurface`, its default footprint the
-  narrow sideboard's (0.8 x 0.36 m). A pack lists it once, without a weight, in a decoration kind's list (every pack but
-  the arcade's and the hub's: under `tv_cabinet`); it is no weighted variant. Its materials are the pack's `tv_cabinet`
-  and `crt` kinds'. The reader refuses a second one, a weight, one among a hero part's pieces, and a decoration piece of
-  kind `crt`.
+- **The piece.** One prefab, `secondary_tv` (`geometry::SecondaryTvParams`): the sideboard's body (tv_cabinet's)
+  carrying the consumer CRT's model at 0.46 x 0.4 x 0.32 m, its screen the CRT's `ScreenSurface`, its default footprint
+  the narrow sideboard's (0.8 x 0.36 m). A pack lists it once, without a weight, in a decoration kind's list (every pack
+  but the arcade's and the hub's: under `tv_cabinet`); it is no weighted variant. Its materials are the pack's
+  `tv_cabinet` and `crt` kinds'. The reader refuses a second one, a weight, one among a hero part's pieces, and a
+  decoration piece of kind `crt`.
 - **Which sockets.** The room's decoration fixtures of that kind whose own prefab's footprint the TV fits, ordered by
   `core::deriveSeed(room seed, "secondary_tv", fixture id)`: the first, and in a room deeper than 12 m (14 and 16 m) the
   next one on another wall (else the next one). A room with no such decoration has none (a room whose side walls are
@@ -202,7 +202,39 @@ sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under
   cabinet with its id), then binds every `secondary_tv` object of the hero's room as a secondary screen (a hand-made
   scene's further `crt`s too). Its distance for `proximityMeters` is the eye's to its object's bounds' middle, as every
   screen's. When the room editor rebuilds a room's static part in place, the bound screens move onto the new objects
-  (`ScreenService::rebind()`): a moved TV is a new object with a new material, its clip playing on.
+  (`ScreenService::rebind()`): a moved TV keeps its object id and, its screen's picture unchanged, its material (the
+  registry keys a material by its object, role and picture), its clip playing on (the review below: it plays nothing
+  while the editor runs).
+
+*Amended on 2026-10-29 (I5 step 3's review):*
+- **Which sockets (replaces "the first, and ... the next one on another wall").** The candidates are ranked by where
+  their sockets stand at home (never where the editor moved them), in integers from the plan and the room's seed alone,
+  so that the lesser screen never competes with the hero (style §15.3): never the one nearest the doorway's camera (ties
+  by fixture id), which the doorway's view shows as large and as bright as the hero; first those in the room's back
+  half from the doorway or within 3 m of the hero corner, the farthest from the doorway's camera first among those,
+  then the seed's order (sockets mirrored across the room). A room's only candidate is kept only
+  where it is preferred. In a room deeper than 12 m the second stands in another third of the room's depth from the
+  doorway, else there is none: never a pair mirrored across the room. Plans stay byte-identical; scene digests and the
+  goldens where a TV shows change.
+- **The reader** admits the TV only under a floor-standing decoration kind (`tv_cabinet`, `floor_lamp`, `plant`): under
+  a poster's kind it would float. Its materials, a role's later source winning: the pack's `tv_cabinet`, `crt` and
+  `secondary_tv` kinds', then the piece's own (the 90s collector pack's charcoal set: its hero's grey reads ivory under
+  the room's warm light).
+- **In view as well as within proximity.** An `ambient` screen opens a slot only within `proximityMeters` and in view:
+  out of view it takes no free slot (a TV behind the walker on entering opens nothing; after a launch's return, one out
+  of view opens again, where it stopped, once in view). One already playing keeps its slot out of view, paused, for
+  §2's 10 s.
+- **While the room editor runs** (ADR-0015 §4's session) the secondaries ask for no clip: their slots stop
+  (`unwanted`) and they show their stills, as the cabinets (§6). A held TV's bounds therefore never steer a decoder.
+  After the session they ask again, on the objects `rebind()` (or a new `bind()`) gave them.
+- **Rebinding.** `ScreenService::rebind()` matches the bound screens to the objects found again by object id, whatever
+  their order (`app::rebindOrder()`), and `findScreens()` takes each screen's material from its object's own render
+  items, never the first registry entry under its key's prefix: the registry is append-only, so an object rebuilt with
+  another picture (another `@<w>x<h>` or picture hash) leaves its old material there under the same prefix. Screens that
+  are no longer the bound ones (another id or kind) are bound again with the room's games (`bind()`), never left on the
+  old materials; the report counts the rebinds (`video.rebinds`).
+- **The selection.** A secondary follows the world's selection as every screen does (only the arcade's hero cabinet
+  does not, §6): its kind's `showOnFocus` (false by default) decides whether it shows the focused or inspected game.
 
 ### 6. Arcade cabinets with clips
 

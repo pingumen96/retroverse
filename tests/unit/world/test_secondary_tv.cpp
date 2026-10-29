@@ -1,9 +1,9 @@
 // The rooms' secondary TVs (I5 step 3, ADR-0016 §5): a theme pack's furniture, a look and never the plan's. The reader
 // takes the pack's one secondary TV in a floor-standing decoration kind's list; the scene builder stands it in at most
-// one socket of that kind a room (two in a room grown past 12 m, none in the arcade), never the one nearest the
-// doorway's camera, the room's back half or the hero corner's reach first, then the room's seed (I5 step 3's review),
-// within its fixture's own footprint wherever the fixture stands (the room editor may move it); the plan, its slots
-// and lights stay as they are, and the other decorations draw as before.
+// one socket of that kind a room (two in a room grown past 12 m, none in the arcade): never the one nearest the
+// doorway's camera, the room's back half or the hero corner's reach first, the farthest from the doorway first, then
+// the room's seed (I5 step 3's review); within its fixture's own footprint wherever the fixture stands (the room
+// editor may move it); the plan, its slots and lights stay as they are, and the other decorations draw as before.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -140,7 +140,7 @@ std::vector<FixtureId> sideboardsOf(const rv::world::WorldPlan& plan, const rv::
 
 /// The placement's rule on `tvs` (I5 step 3's review): never the sideboard nearest the doorway's camera (one alone only
 /// where it is preferred); a preferred one (the back half, or within kSecondaryTvNearHeroMm of the hero corner) first
-/// whenever another than that one is, in the deepest third of the room's depth among them.
+/// whenever another than that one is, the farthest from the doorway's camera among them.
 void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& room,
                     const rv::world::RoomTemplate& roomTemplate, const std::vector<FixtureId>& tvs) {
     const std::vector<FixtureId> sideboards = sideboardsOf(plan, room.id);
@@ -163,11 +163,11 @@ void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& roo
                home.toHero <= rv::world::kSecondaryTvNearHeroMm * rv::world::kSecondaryTvNearHeroMm;
     };
     bool anyPreferred = false;
-    std::int64_t deepest = -1;
+    std::int64_t farthest = -1;
     for (const FixtureId& id : sideboards) {
         if ((id != nearest || sideboards.size() == 1) && preferred(id)) {
             anyPreferred = true;
-            deepest = std::max(deepest, homeOf(room, roomTemplate, id).band());
+            farthest = std::max(farthest, homeOf(room, roomTemplate, id).toDoorway);
         }
     }
     INFO("the room's sideboards " << sideboards.size() << ", the nearest the doorway " << nearest.localText());
@@ -177,8 +177,8 @@ void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& roo
     if (!tvs.empty() && anyPreferred) {
         INFO("the first TV " << tvs.front().localText());
         CHECK(preferred(tvs.front()));
-        // The deepest third of the room's depth from the doorway first.
-        CHECK(homeOf(room, roomTemplate, tvs.front()).band() == deepest);
+        // The farthest from the doorway's camera first.
+        CHECK(homeOf(room, roomTemplate, tvs.front()).toDoorway == farthest);
     }
     CHECK(tvs.empty() == (sideboards.size() == 1 && !anyPreferred));
 }

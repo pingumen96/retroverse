@@ -410,14 +410,14 @@ std::vector<FixtureId> chosenSecondaryTvs(const WorldPlan& plan, const Room& roo
     if (candidates.size() > 1 || !nearest->preferred) {
         candidates.erase(nearest);
     }
-    // The preferred first, the deepest third of the room first among them (the farther from the doorway, the smaller
-    // and dimmer the set it sees), then the seed.
+    // The preferred first, the farthest from the doorway's camera first among them (the farther, the smaller and
+    // dimmer the set the doorway sees: style 15.3's lesser screen), then the seed (sockets mirrored across the room).
     std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
         if (a.preferred != b.preferred) {
             return a.preferred;
         }
-        if (a.band != b.band) {
-            return a.band > b.band;
+        if (a.toDoorway != b.toDoorway) {
+            return a.toDoorway > b.toDoorway;
         }
         return a.draw != b.draw ? a.draw < b.draw : a.id < b.id;
     });
