@@ -646,7 +646,8 @@ struct SecondaryTvParams {
     float depth = 0.36f;     ///< [0.2, 1.5]
     int drawers = 2;         ///< [0, 8], as tv_cabinet's
     float legHeight = 0.08f; ///< [0, 0.5], as tv_cabinet's
-    /// The CRT's width, height and depth: width in [0.2, width], height in [0.2, 1], depth in [0.15, depth - tvSetBack].
+    /// The CRT's width, height and depth: width in [0.2, width], height in [0.2, 1], depth in
+    /// [0.15, depth - tvSetBack].
     glm::vec3 tvSize{0.46f, 0.4f, 0.32f};
     float tvBezel = 0.04f;   ///< the CRT's bezel, as crt's
     float tvOffset = 0.0f;   ///< across the top from its middle (+X), |tvOffset| <= (width - tvSize.x) / 2
