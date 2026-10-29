@@ -166,6 +166,14 @@
       "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
       "normalTexture": "procedural:aged_plastic/normal"
     },
+    // A dark grey set (I5 step 3's review: the 90s collector pack's secondary TV), dark enough to stay grey under the
+    // rooms' warm light, where MAT_Plastic_Gray reads ivory.
+    "MAT_Plastic_Charcoal": {
+      "baseColor": "#4E5054", "metallic": 0.0, "roughness": 0.5,
+      "baseColorTexture": "procedural:aged_plastic/baseColor",
+      "metallicRoughnessTexture": "procedural:aged_plastic/metallicRoughness",
+      "normalTexture": "procedural:aged_plastic/normal"
+    },
     "MAT_Plastic_AgedIvory": {
       "baseColor": "#D6CBAE", "metallic": 0.0, "roughness": 0.48,
       "baseColorTexture": "procedural:aged_plastic/baseColor",
