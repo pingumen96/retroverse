@@ -44,6 +44,15 @@
 //     A hero part the pack leaves out (I6 step 6) is left out only while its socket's CRT is drawn as the pack's
 //     cabinet (resolved, holding its screen, within the guard); otherwise it is drawn as planned, under the CRT.
 //     A showcase is lit inside as a shelf (its kind's "board_light").
+//   - the pack's secondary TV (I5 step 3, ADR-0016 §5, room_look.hpp's "secondary_tv" piece): a look, never the plan's.
+//     The candidates are the room's decoration fixtures of the TV's kind whose own prefab's footprint the TV fits
+//     (centred across it, its back on the prefab's back); the room's seed orders them (core::deriveSeed(room seed,
+//     "secondary_tv", the fixture's local id), then the id), the first is drawn as the TV and, in a room deeper than
+//     12 m, the next one on another wall (else the next one): at most one a room, two past 12 m, none in the arcade.
+//     It stands where its fixture stands, moved by the room editor or not (the guard: within its fixture's own
+//     prefab's footprint there, not its socket's), with the fixture's id; its screen shows the standby pattern until
+//     the app plays a clip on it (app::findScreens() binds it as a secondary screen). The other decorations of the
+//     kind draw the kind's variants as before.
 // The collection's items are not scene objects: collection_layout.hpp places them (ADR-0011 §1).
 
 #include <cstdint>
@@ -111,16 +120,26 @@ struct ScenePiece {
     ScenePrefab prefab;
 };
 
-/// A pack's furniture resolved: the pieces of each hero corner part and the weighted variants of each decoration kind.
+/// A pack's secondary TV resolved (I5 step 3): the decoration kind whose sockets may hold it, and its piece (a prefab
+/// holding a ScreenSurface).
+struct SceneSecondaryTv {
+    std::string kind;
+    ScenePiece piece;
+};
+
+/// A pack's furniture resolved: the pieces of each hero corner part, the weighted variants of each decoration kind and
+/// (I5 step 3) the secondary TV.
 struct SceneFurniture {
     std::map<std::string, std::vector<ScenePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<std::pair<std::uint32_t, ScenePiece>>, std::less<>> decoration;
+    std::optional<SceneSecondaryTv> secondaryTv;
 };
 
 /// Resolves `furniture` (assets::resolvePrefab, then geometry::buildPrefab with the piece's parameters over the
 /// resolved ones). A piece that fails (its manifest unresolved, a model, a generator other than its kind, parameters
 /// the generator refuses) is left out with a warning; a part or kind left without pieces is drawn as the plan has it,
-/// and so is a kind whose variants are left without weight. Never fails.
+/// and so is a kind whose variants are left without weight. A secondary TV
+/// that fails, or whose prefab holds no ScreenSurface, is left out with a warning (no room draws one). Never fails.
 [[nodiscard]] SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot,
                                                    const assets::PrefabFamilies& families,
                                                    const ThemeFurniture& furniture);
@@ -174,6 +193,16 @@ struct SceneBuild {
 /// `data` lacks; ValidationFailed for a dressed level or slot the fixture's prefab lacks, or more lights than the
 /// scene format takes.
 [[nodiscard]] Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& room, const SceneData& data);
+
+/// How many secondary TVs a room holds at most (I5 step 3, ADR-0016 §5): one, two in a room grown past 12 m.
+inline constexpr std::int64_t kSecondaryTvTwoPastDepthMm = 12000;
+
+/// The decoration fixtures of `room` that its scene draws as the pack's secondary TV (I5 step 3, ADR-0016 §5; see the
+/// file comment), in the order they were chosen: none without a pack's TV, in the arcade, or in a room without a
+/// decoration of the TV's kind it fits; else one, two in a room deeper than kSecondaryTvTwoPastDepthMm. Errors: NotFound
+/// for a room the plan lacks.
+[[nodiscard]] Expected<std::vector<FixtureId>> secondaryTvFixtures(const WorldPlan& plan, const RoomId& room,
+                                                                   const SceneData& data);
 
 /// The fixtures of `room` as its scene draws them (I6 step 3b): a fixture the pack's furniture replaces covers the box
 /// around its pieces as drawn (in the room's frame, rounded outwards to millimetres; its yaw 0, its prefab the first

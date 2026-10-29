@@ -63,6 +63,14 @@
 //                                                    // (never "sign" or "console": the reader refuses them; "crt"
 //                                                    // only as arcade cabinets, I6 step 6, below)
 //       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
+//   I5 step 3 (ADR-0016 §5, amending ADR-0014 §1's rule): a decoration kind's list may also hold the pack's one
+//   secondary TV, a piece of prefab kind "secondary_tv" without a weight ({"prefab": {"manifest":
+//   "furniture.secondary_tv.generic", "kind": "secondary_tv"}, "params": {...}}); it is no weighted variant: the scene
+//   builder stands it in at most one socket of that kind a room (two in a room grown past 12 m, none in the arcade),
+//   the others drawing that kind's variants (or the plan's prefab when the list holds the TV alone). Its materials are
+//   the pack's "tv_cabinet" kind's and "crt" kind's, under a "secondary_tv" kind's when the pack lists one, under the
+//   piece's. The reader refuses a second one, one with a weight, one among a hero part's pieces, and a decoration piece
+//   of kind "crt" (a TV outside the hero corner is a secondary_tv).
 //   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
 //   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
 //   (a scene pattern, scene::kTexturePatternNames, drawn with an invented title and the piece's seed), and for a hero
@@ -365,13 +373,27 @@ struct FurnitureVariant {
     bool operator==(const FurnitureVariant&) const = default;
 };
 
+/// The prefab kind of a room's secondary TV (I5 step 3, ADR-0016 §5): a sideboard carrying a small CRT whose screen is
+/// a ScreenSurface (geometry::SecondaryTvParams), the only TV a pack may list outside the arcade's hero cabinet.
+inline constexpr std::string_view kSecondaryTvKind = "secondary_tv";
+
+/// A pack's secondary TV (I5 step 3, ADR-0016 §5): its piece, listed in the decoration list of `kind`, whose sockets the
+/// scene builder stands it in (at most one a room, two in a room grown past 12 m; scene_builder.hpp).
+struct SecondaryTvPiece {
+    std::string kind;
+    FurniturePiece piece;
+
+    bool operator==(const SecondaryTvPiece&) const = default;
+};
+
 /// A pack's furniture variants: the pieces that replace a hero corner's part (by its role; none: the part is not drawn,
-/// I6 step 6), and the weighted variants of a decoration (by its prefab kind).
+/// I6 step 6), the weighted variants of a decoration (by its prefab kind) and (I5 step 3) its secondary TV.
 struct ThemeFurniture {
     std::map<std::string, std::vector<FurniturePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<FurnitureVariant>, std::less<>> decoration;
+    std::optional<SecondaryTvPiece> secondaryTv;
 
-    [[nodiscard]] bool empty() const noexcept { return heroParts.empty() && decoration.empty(); }
+    [[nodiscard]] bool empty() const noexcept { return heroParts.empty() && decoration.empty() && !secondaryTv; }
     bool operator==(const ThemeFurniture&) const = default;
 };
 

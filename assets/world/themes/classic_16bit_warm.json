@@ -96,5 +96,13 @@
   "labelPalette": ["#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"],
   "neon": "#B34DCE",
   "neonGlow": {"intensity": 4.0, "range": 3.5},
-  "lightTints": {}
+  "lightTints": {},
+  // I5 step 3 (ADR-0016 §5): the room's secondary TV, a walnut sideboard carrying a small ivory CRT (the kinds'
+  // materials), in one of the sideboards' sockets (two in a room grown past 12 m); the other sideboards as planned.
+  "furniture": {
+    "decoration": {
+      "tv_cabinet": [
+        {"prefab": {"manifest": "furniture.secondary_tv.generic", "kind": "secondary_tv"}}]
+    }
+  }
 }

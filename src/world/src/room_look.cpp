@@ -373,23 +373,56 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
                 continue;
             }
             std::uint32_t total = 0;
+            std::size_t variants = 0;
             for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
                 const std::string elementAt = at + "/" + std::to_string(i);
+                // I5 step 3 (ADR-0016 §5): the pack's secondary TV, in a decoration kind's list, placed by the room's
+                // rule rather than drawn by weight.
+                const bool secondaryTv = list[i].is_object() && list[i].contains("prefab") &&
+                                         list[i]["prefab"].is_object() &&
+                                         list[i]["prefab"].value("kind", std::string()) == kSecondaryTvKind;
+                if (secondaryTv && hero) {
+                    document.fail(elementAt + "/prefab", "a secondary TV stands in a decoration socket, not in the "
+                                                         "hero corner");
+                    return;
+                }
+                if (secondaryTv && list[i].contains("weight")) {
+                    document.fail(elementAt + "/weight",
+                                  "a secondary TV takes no weight: the room's rule places it (one a room)");
+                    return;
+                }
+                if (secondaryTv && theme.furniture.secondaryTv) {
+                    document.fail(elementAt, "a pack lists one secondary TV (already under decoration/" +
+                                                 theme.furniture.secondaryTv->kind + ")");
+                    return;
+                }
                 std::uint32_t weight = 1000;
-                FurniturePiece piece = readPiece(document, list[i], elementAt, hero, !hero, &weight);
-                if (hero && name == "crt" && !document.failed() && piece.prefab.kind != kHeroCabinetKind) {
+                FurniturePiece piece =
+                    readPiece(document, list[i], elementAt, hero, !hero && !secondaryTv, &weight);
+                if (document.failed()) {
+                    return;
+                }
+                if (hero && name == "crt" && piece.prefab.kind != kHeroCabinetKind) {
                     document.fail(elementAt + "/prefab",
                                   "the hero corner's crt is the room's video: only an arcade cabinet stands for it");
                     return;
                 }
+                // A TV outside the hero corner is a secondary TV (ADR-0014 §1's rule as ADR-0016 §5 amends it).
+                if (!hero && piece.prefab.kind == kHeroTvPart) {
+                    document.fail(elementAt + "/prefab", "a TV in a decoration socket is a secondary_tv piece");
+                    return;
+                }
                 if (hero) {
                     theme.furniture.heroParts[name].push_back(std::move(piece));
+                } else if (secondaryTv) {
+                    theme.furniture.secondaryTv = SecondaryTvPiece{name, std::move(piece)};
                 } else {
                     total += weight;
+                    ++variants;
                     theme.furniture.decoration[name].push_back(FurnitureVariant{weight, std::move(piece)});
                 }
             }
-            if (!document.failed() && !hero && total == 0) {
+            if (!document.failed() && !hero && variants > 0 && total == 0) {
                 document.fail(at, "expected a weight above 0 among the variants");
                 return;
             }
@@ -726,6 +759,10 @@ ThemeMaterials builtInTheme() {
     theme.labelPalette = {"#683D42", "#4C8BC9", "#6EAF93", "#B34DCE", "#76513A", "#252A2E", "#FFC88A", "#F4EFE6"};
     theme.neon = "#B34DCE";
     theme.neonGlow = NeonGlow{4.0, 3.5};
+    // I5 step 3's secondary TV, in a sideboard's socket.
+    FurniturePiece secondaryTv;
+    secondaryTv.prefab = PrefabRef{"furniture.secondary_tv.generic", std::string(kSecondaryTvKind)};
+    theme.furniture.secondaryTv = SecondaryTvPiece{"tv_cabinet", std::move(secondaryTv)};
     return theme;
 }
 

@@ -109,7 +109,7 @@ json coverTexture(std::uint64_t seed) {
 /// sign's neon lettering (I6 step 3: a neon panel in the pack's accent, its material's colour), an arcade cabinet's
 /// marquees and idle screens (I6 step 6: generic words on a lit panel, in neon).
 json themeTextures(std::string_view kind, bool sign, const PlatformManifest& platform, std::uint64_t seed) {
-    if (kind == "crt") {
+    if (kind == "crt" || kind == kSecondaryTvKind) {
         return json{{"screen", json{{"pattern", "standby"}}}};
     }
     if (kind == "poster_frame") {
@@ -282,11 +282,82 @@ struct DrawnPiece {
     std::int64_t zMm = 0;
     std::int32_t yawCdeg = 0;
     std::uint64_t seed = 0;
+    /// The pack's secondary TV (I5 step 3): judged within its fixture's own prefab's footprint where it stands.
+    bool secondaryTv = false;
 };
+
+/// Where a decoration's piece stands in its fixture's frame (I6 step 3b): its back on the plan's prefab's back and
+/// centred across it, as the plan's prefab stood in its socket. Millimetres (dx, dz).
+std::pair<std::int64_t, std::int64_t> pieceOffset(const ScenePrefab& planned, const ScenePiece& piece) noexcept {
+    const core::Aabb& own = planned.prefab->bounds;
+    const core::Aabb& drawn = piece.prefab.prefab->bounds;
+    return {toMm(0.5f * (own.min.x + own.max.x)) - toMm(0.5f * (drawn.min.x + drawn.max.x)),
+            toMm(own.min.z) - toMm(drawn.min.z)};
+}
+
+/// The pack's secondary TV fits `fixture`'s own prefab's footprint, standing as a decoration's piece stands (I5 step
+/// 3): the plan's fixture keeps its collisions and navigation wherever it stands.
+bool secondaryTvFits(const Fixture& fixture, const SceneData& data) {
+    const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+    if (!data.furniture.secondaryTv || own == nullptr || !own->prefab) {
+        return false;
+    }
+    const ScenePiece& tv = data.furniture.secondaryTv->piece;
+    const auto [dx, dz] = pieceOffset(*own, tv);
+    const core::Aabb& planned = own->prefab->bounds;
+    const core::Aabb& drawn = tv.prefab.prefab->bounds;
+    // A millimetre of rounding forgiven.
+    return toMm(drawn.min.x) + dx >= toMm(planned.min.x) - 1 && toMm(drawn.max.x) + dx <= toMm(planned.max.x) + 1 &&
+           toMm(drawn.min.z) + dz >= toMm(planned.min.z) - 1 && toMm(drawn.max.z) + dz <= toMm(planned.max.z) + 1;
+}
+
+/// The decoration fixtures of `room` drawn as the pack's secondary TV (scene_builder.hpp's secondaryTvFixtures()).
+std::vector<FixtureId> chosenSecondaryTvs(const WorldPlan& plan, const Room& room, const SceneData& data) {
+    std::vector<FixtureId> chosen;
+    if (!data.furniture.secondaryTv || room.kind == RoomKind::Arcade) {
+        return chosen;
+    }
+    struct Candidate {
+        std::uint64_t draw = 0;
+        std::string id;
+        const Fixture* fixture = nullptr;
+    };
+    std::vector<Candidate> candidates;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room.id || fixture.role != FixtureRole::Decoration ||
+            fixture.prefab.kind != data.furniture.secondaryTv->kind || !secondaryTvFits(fixture, data)) {
+            continue;
+        }
+        std::string id = fixture.id.localText();
+        const std::uint64_t draw = core::deriveSeed(room.seed, "secondary_tv", id);
+        candidates.push_back({draw, std::move(id), &fixture});
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+        return a.draw != b.draw ? a.draw < b.draw : a.id < b.id;
+    });
+    if (candidates.empty()) {
+        return chosen;
+    }
+    chosen.push_back(candidates.front().fixture->id);
+    if (room.maxZMm - room.minZMm <= kSecondaryTvTwoPastDepthMm || candidates.size() < 2) {
+        return chosen;
+    }
+    // The second on another wall than the first's (its socket's), else the next one.
+    const auto wallOf = [&](const Fixture& fixture) {
+        const TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+        return socket != nullptr ? socket->wall : Wall::None;
+    };
+    const Wall first = wallOf(*candidates.front().fixture);
+    const auto other = std::find_if(candidates.begin() + 1, candidates.end(),
+                                    [&](const Candidate& candidate) { return wallOf(*candidate.fixture) != first; });
+    chosen.push_back(other != candidates.end() ? other->fixture->id : candidates[1].fixture->id);
+    return chosen;
+}
 
 /// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard; nothing: the plan's
 /// prefab draws it; none: it is not drawn (a hero part the pack leaves out, I6 step 6).
-std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data) {
+std::optional<std::vector<DrawnPiece>> placedPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
+                                                    const SceneData& data) {
     std::vector<DrawnPiece> pieces;
     const std::uint64_t seed = fixtureSeed(room.seed, fixture.id);
     if (fixture.role == FixtureRole::HeroCorner) {
@@ -329,8 +400,29 @@ std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixt
     if (fixture.role != FixtureRole::Decoration) {
         return std::nullopt;
     }
-    const auto found = data.furniture.decoration.find(fixture.prefab.kind);
     const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+    // The pack's secondary TV (I5 step 3), in the sockets the room's seed picks, where its fixture stands.
+    if (data.furniture.secondaryTv && fixture.prefab.kind == data.furniture.secondaryTv->kind && own != nullptr &&
+        own->prefab) {
+        const std::vector<FixtureId> tvs = chosenSecondaryTvs(plan, room, data);
+        if (std::find(tvs.begin(), tvs.end(), fixture.id) != tvs.end()) {
+            const ScenePiece& tv = data.furniture.secondaryTv->piece;
+            const auto [dx, dz] = pieceOffset(*own, tv);
+            const auto [roomX, roomZ] = turned(dx, dz, fixture.yawCdeg);
+            DrawnPiece drawn;
+            drawn.piece = &tv;
+            drawn.id = fixture.id.localText();
+            drawn.xMm = fixture.xMm + roomX;
+            drawn.yMm = fixture.yMm;
+            drawn.zMm = fixture.zMm + roomZ;
+            drawn.yawCdeg = fixture.yawCdeg;
+            drawn.seed = seed;
+            drawn.secondaryTv = true;
+            pieces.push_back(std::move(drawn));
+            return pieces;
+        }
+    }
+    const auto found = data.furniture.decoration.find(fixture.prefab.kind);
     if (found == data.furniture.decoration.end() || own == nullptr || !own->prefab) {
         return std::nullopt;
     }
@@ -353,11 +445,7 @@ std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixt
         draw -= weight;
     }
     // Its back on the socket's back edge and centred across it, where the plan's prefab stands.
-    const core::Aabb& planned = own->prefab->bounds;
-    const core::Aabb& drawnBounds = chosen->prefab.prefab->bounds;
-    const std::int64_t dx =
-        toMm(0.5f * (planned.min.x + planned.max.x)) - toMm(0.5f * (drawnBounds.min.x + drawnBounds.max.x));
-    const std::int64_t dz = toMm(planned.min.z) - toMm(drawnBounds.min.z);
+    const auto [dx, dz] = pieceOffset(*own, *chosen);
     const auto [roomX, roomZ] = turned(dx, dz, fixture.yawCdeg);
     DrawnPiece drawn;
     drawn.piece = chosen;
@@ -395,7 +483,7 @@ bool heroCrtSubstituted(const WorldPlan& plan, const Room& room, const Fixture& 
 /// lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once.
 std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
                                                    const SceneData& data) {
-    std::optional<std::vector<DrawnPiece>> placed = placedPieces(room, fixture, data);
+    std::optional<std::vector<DrawnPiece>> placed = placedPieces(plan, room, fixture, data);
     if (placed && placed->empty() && !heroCrtSubstituted(plan, room, fixture, data)) {
         warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " kept",
                  fmt::format("World: the pack {} leaves out {}, but its CRT is not drawn as the pack's cabinet; the "
@@ -409,6 +497,16 @@ std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const 
     }
     const std::vector<DrawnPiece>& pieces = *placed;
     Footprint allowed = socketFootprint(data.roomTemplate, *socket, room.growthSteps);
+    // The secondary TV (I5 step 3) within its fixture's own prefab's footprint where the fixture stands: it follows a
+    // sideboard the room editor moved.
+    if (pieces.front().secondaryTv) {
+        if (const ScenePrefab* own = data.prefabs.find(fixture.prefab); own != nullptr && own->prefab) {
+            glm::vec3 low(std::numeric_limits<float>::max());
+            glm::vec3 high(std::numeric_limits<float>::lowest());
+            extendBy(low, high, own->prefab->bounds, fixture.xMm, fixture.yMm, fixture.zMm, fixture.yawCdeg);
+            allowed = floorOf(low, high);
+        }
+    }
     if (fixture.role == FixtureRole::HeroCorner) {
         if (const ScenePrefab* own = data.prefabs.find(fixture.prefab); own != nullptr && own->prefab) {
             glm::vec3 low(std::numeric_limits<float>::max());
@@ -439,12 +537,26 @@ std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const 
     return placed;
 }
 
+/// The secondary TV's materials (I5 step 3, room_look.hpp): the pack's sideboard's and CRT's, under a "secondary_tv"
+/// kind's when the pack lists one.
+std::map<std::string, std::string> secondaryTvMaterials(const ThemeMaterials& theme) {
+    std::map<std::string, std::string> materials = theme.materials("tv_cabinet");
+    for (const auto& [role, material] : theme.materials(kHeroTvPart)) {
+        materials[role] = material;
+    }
+    for (const auto& [role, material] : theme.materials(kSecondaryTvKind)) {
+        materials[role] = material;
+    }
+    return materials;
+}
+
 /// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
-/// is of the part's kind) under its own, the kind's pictures under its patterns.
+/// is of the part's kind; the secondary TV's, I5 step 3) under its own, the kind's pictures under its patterns.
 json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_view heroPart, const SceneData& data) {
     const ScenePiece& piece = *drawn.piece;
     const ScenePrefab& prefab = piece.prefab;
-    std::map<std::string, std::string> materials = piece.piece.prefab.kind == fixture.prefab.kind
+    std::map<std::string, std::string> materials = drawn.secondaryTv ? secondaryTvMaterials(data.theme)
+                                                   : piece.piece.prefab.kind == fixture.prefab.kind
                                                        ? data.theme.materials(prefab.generator, heroPart)
                                                        : data.theme.materials(prefab.generator);
     for (const auto& [role, material] : piece.piece.materials) {
@@ -949,6 +1061,17 @@ SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot, con
             result.decoration.emplace(kind, std::move(resolved));
         }
     }
+    // The secondary TV (I5 step 3): its screen plays the room's clips, so it must hold one.
+    if (furniture.secondaryTv) {
+        if (auto scenePiece = resolve(furniture.secondaryTv->piece)) {
+            if (geometry::findSocket(scenePiece->prefab.prefab->sockets, "ScreenSurface") != nullptr) {
+                result.secondaryTv = SceneSecondaryTv{furniture.secondaryTv->kind, std::move(*scenePiece)};
+            } else {
+                spdlog::warn("World: the secondary TV {} has no screen surface; no room draws it",
+                             furniture.secondaryTv->piece.prefab.manifest);
+            }
+        }
+    }
     return result;
 }
 
@@ -1183,6 +1306,15 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                            {"lights", std::move(lights)},
                            {"objects", std::move(objects)}};
     return build;
+}
+
+Expected<std::vector<FixtureId>> secondaryTvFixtures(const WorldPlan& plan, const RoomId& roomId,
+                                                     const SceneData& data) {
+    const Room* room = findRoom(plan, roomId);
+    if (room == nullptr) {
+        return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
+    }
+    return chosenSecondaryTvs(plan, *room, data);
 }
 
 Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId& roomId, const SceneData& data) {
