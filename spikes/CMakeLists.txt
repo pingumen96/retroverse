@@ -5,8 +5,9 @@
 #   spikes/video   two FFmpeg-decoded videos uploaded through persistently mapped PBOs (rv_media, gl::VideoTexture)
 #   spikes/ui      an RmlUi screen navigated by gamepad (rv_ui)
 #   spikes/launch  emulator launch and return to a borderless fullscreen window (rv_launcher, rv_platform)
+#   spikes/xr      I10 step 0: an OpenXR session on an OpenGL context, a stereo room in the headset (RV_ENABLE_XR)
 
-foreach(spike IN ITEMS video ui launch)
+foreach(spike IN ITEMS video ui launch xr)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${spike}/CMakeLists.txt")
         add_subdirectory(${spike})
     endif()
