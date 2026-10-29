@@ -361,6 +361,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.migratedRooms = {{"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
                            {"room:amiga", "big_box", "big_box_v2", 139}};
     world.needsConfirmation = {"migrate room:saturn from disc_case_cd to disc_case_cd_v2: a pin names the room"};
+    world.roomsAdded = {"room:amiga:2"}; // I4b step 8
     // I6 step 5: the rooms re-placed onto the hub, the totem's prompt, the favourites' showcase.
     world.replacedRooms = {{"area:arcade", 7650, -8150, 9000, -12150}};
     world.totemPromptFrames = 14;
@@ -410,6 +411,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         edit.backMs = 140.25;
         edit.liveUpdateDeferred = true;
         edit.probes = 7; // I4b step 4
+        edit.rooms = {"room:snes", "room:snes:2"}; // I4b step 8
         rv::app::WorldEditRecord open;
         open.room = "area:arcade";
         open.via = "card";
@@ -579,11 +581,16 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
                                                             [](nlohmann::json& edited) {
                                                                 edited["world"].erase("migratedRooms");
                                                                 edited["world"].erase("needsConfirmation");
+                                                                edited["world"].erase("roomsAdded");
+                                                                edited["world"]["edits"][0].erase("rooms");
                                                             }),
                                                "r.json");
     REQUIRE(older.has_value());
     CHECK(older->world.migratedRooms.empty());
     CHECK(older->world.needsConfirmation.empty());
+    CHECK(older->world.roomsAdded.empty()); // I4b step 8: before it, no room added was named
+    CHECK(older->world.edits.at(0).rooms.empty());
+    CHECK(json.at("world").at("roomsAdded") == nlohmann::json::array({"room:amiga:2"}));
     CHECK(json.at("world").at("placements").at("featured") == 44);
     const auto missing = rv::app::parseRunReport(
         editedReport(report, [](nlohmann::json& edited) { edited["world"]["unplaced"].erase("capacity"); }), "r.json");

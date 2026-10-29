@@ -992,7 +992,8 @@ Json editsToJson(const std::vector<WorldEditRecord>& edits) {
                      {"snapshot", edit.snapshot},
                      {"planDigest", edit.planDigest},
                      {"liveUpdateDeferred", edit.liveUpdateDeferred},
-                     {"probes", edit.probes}};
+                     {"probes", edit.probes},
+                     {"rooms", edit.rooms}};
         if (edit.readyFrame) {
             session["readyFrame"] = *edit.readyFrame;
         }
@@ -1044,6 +1045,7 @@ std::vector<WorldEditRecord> readEdits(FieldReader& fields) {
         edit.backMs = session.optionalNumber("backMs");
         edit.liveUpdateDeferred = session.boolean("liveUpdateDeferred");
         edit.probes = session.optionalCount("probes").value_or(0);
+        edit.rooms = session.optionalStringArray("rooms");
         edits.push_back(std::move(edit));
     }
     return edits;

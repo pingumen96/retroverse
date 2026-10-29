@@ -109,6 +109,8 @@ struct EditBarContent {
     /// The edited room's title (its system's full name, or the shared room's kind: "shared", "arcade" in `roomKind`).
     std::string roomTitle;
     std::string roomKind;
+    /// I4b step 8: the edited room's number in its chain (1 the head; the walker carries games across the chain).
+    std::uint32_t roomNumber = 1;
     /// The target under the reticle: none, a game ("game": its title, pinned or not), or an empty slot ("slot": bare,
     /// or "dressed"); whether it shows face-out.
     std::string target;

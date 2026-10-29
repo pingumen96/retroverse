@@ -870,6 +870,8 @@ struct WorldEditRecord {
     std::optional<double> backMs;
     /// A live update (a refreshed catalog's building job) waited for the session's end (it starts then).
     bool liveUpdateDeferred = false;
+    /// I4b step 8: the rooms of its chain the session edited, in the order the walker entered them (its room first).
+    std::vector<std::string> rooms;
 
     bool operator==(const WorldEditRecord&) const = default;
 };

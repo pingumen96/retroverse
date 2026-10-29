@@ -419,7 +419,12 @@ private:
     /// fallback); false when it cannot be.
     [[nodiscard]] bool commitEditFloor(const world::WorldPlan* plan, const std::string& digest, bool* committedFloor);
     /// The edited room's targets from the session's floor shown.
-    void bindEditRoom();
+    /// `entered` (I4b step 8): the walker entered another room of the chain (the interaction lets go of its targets).
+    void bindEditRoom(bool entered = false);
+    /// I4b step 8: the edited room becomes `room`, another of the session's chain the walker entered.
+    void enterEditRoom(const world::RoomId& room);
+    /// The collection of room `room` of the floor shown, if it has one.
+    [[nodiscard]] CollectionInstance* editCollectionOf(const world::RoomId& room) const;
     /// The held item's static records hidden, the target outlined (every frame), or both cleared.
     void syncEditFlags();
     void clearEditFlags();
