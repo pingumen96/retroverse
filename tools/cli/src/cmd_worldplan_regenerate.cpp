@@ -238,9 +238,10 @@ ExitCode runWorldPlanRegenerate(CommandContext& context, std::span<const std::st
     // The scope's systems, whose selections are required.
     std::vector<catalog::SystemName> required;
     if (roomOption) {
-        const world::RoomId head = scope.room.head();
+        // The room named must stand, an expansion too (its number is not taken for its head's chain); its sections are
+        // its chain's (ADR-0015 §7).
         const auto room = std::find_if(previous.rooms.begin(), previous.rooms.end(),
-                                       [&](const world::Room& candidate) { return candidate.id == head; });
+                                       [&](const world::Room& candidate) { return candidate.id == scope.room; });
         if (room == previous.rooms.end()) {
             context.err.writeLine(fmt::format("{}: the plan holds no room {}", kName, scope.room.toString()));
             return ExitCode::ProblemsFound;
