@@ -140,7 +140,7 @@ std::vector<FixtureId> sideboardsOf(const rv::world::WorldPlan& plan, const rv::
 
 /// The placement's rule on `tvs` (I5 step 3's review): never the sideboard nearest the doorway's camera (one alone only
 /// where it is preferred); a preferred one (the back half, or within kSecondaryTvNearHeroMm of the hero corner) first
-/// whenever another than that one is.
+/// whenever another than that one is, in the deepest third of the room's depth among them.
 void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& room,
                     const rv::world::RoomTemplate& roomTemplate, const std::vector<FixtureId>& tvs) {
     const std::vector<FixtureId> sideboards = sideboardsOf(plan, room.id);
@@ -163,8 +163,12 @@ void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& roo
                home.toHero <= rv::world::kSecondaryTvNearHeroMm * rv::world::kSecondaryTvNearHeroMm;
     };
     bool anyPreferred = false;
+    std::int64_t deepest = -1;
     for (const FixtureId& id : sideboards) {
-        anyPreferred = anyPreferred || ((id != nearest || sideboards.size() == 1) && preferred(id));
+        if ((id != nearest || sideboards.size() == 1) && preferred(id)) {
+            anyPreferred = true;
+            deepest = std::max(deepest, homeOf(room, roomTemplate, id).band());
+        }
     }
     INFO("the room's sideboards " << sideboards.size() << ", the nearest the doorway " << nearest.localText());
     if (sideboards.size() > 1) {
@@ -173,6 +177,8 @@ void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& roo
     if (!tvs.empty() && anyPreferred) {
         INFO("the first TV " << tvs.front().localText());
         CHECK(preferred(tvs.front()));
+        // The deepest third of the room's depth from the doorway first.
+        CHECK(homeOf(room, roomTemplate, tvs.front()).band() == deepest);
     }
     CHECK(tvs.empty() == (sideboards.size() == 1 && !anyPreferred));
 }
