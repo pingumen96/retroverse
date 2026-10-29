@@ -66,7 +66,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   (14b), `world_live_plan` (15b; room by room since I4 step 6b, `layout_difference.hpp` its comparison of a room's
   items), `hub_showcase` (I6 step 5: the hub's favourites' proxies, their content made on the pool), `world_edit_draft`
   (I4b step 3: the editor's draft, its save replayed under the world lock, the edit data, the rooms laid out again;
-  since step 4 a room's static part rebuilt alone, `roomStaticPart`). `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
+  since step 4 a room's static part rebuilt alone, `roomStaticPart`), `world_regenerate_job` (I4b step 6,
+  `world_regenerate.hpp`: the catalog's inputs of a regeneration, the preview's dry run and its content, the commit
+  under the world lock, the undo's preview and commit, the rooms' items written again).
+  `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
   `world_hover` and `world_label_panel` (13a), `world_inspection` (13b), `world_card` (14a), `game_screens_panel`
@@ -74,7 +77,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   teleports, the ride's floor swap), `elevator_prompt_panel` (7b; the hub's totem's prompt since I6 step 5) and
   `world_showcase` (I6 step 5: the hub's favourites' showcase drawn, hovered and opened), `world_edit` and
   `edit_bar_panel` (I4b step 3: the editor's session, its jobs, what it shows, the bar; since step 4 a held fixture, its
-  probes, a room's static part replaced in place through `scene_instance`'s `replaceObjects`); the outline pass's
+  probes, a room's static part replaced in place through `scene_instance`'s `replaceObjects`), `world_regenerate`
+  (I4b step 6: the regenerations' and the undo's state, `world_regenerate_state.hpp`, their jobs, the floor shown
+  again and the walker at its doorway, the notice's offer); the outline pass's
   dimming shader `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
@@ -138,7 +143,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   conversion of ES-DE's local `<lastplayed>` to UTC) and `ICatalogQuery::favoritesAndRecent`, which `SqliteCatalogQuery`
   answers in one read (`src/catalog_db/src/recent_query.cpp`); `rv_ui_model` `directory_model` (the directory's
   floors, rooms, games, card and commands, from plain data the app fills) and `rv_ui` `directory_screen`
-  (`assets/ui/directory.rml`).
+  (`assets/ui/directory.rml`; its "Modifiche" tab since I4b step 6). I4b step 6: `rv_ui_model`
+  `regenerate_preview_model` (the impact preview of a regeneration or an undo: its states, buttons, the drop's second
+  confirmation, its commands) and `rv_ui` `regenerate_preview_screen` (`assets/ui/regenerate_preview.rml`).
 - `tools/asset-preview`: `retroverse-asset-preview.exe` on `rv_app` and `rv_devui` (built only with `RV_DEV_UI`), and
   its GPU-free core `rv_preview_core` (`include/rv/preview/*.hpp`, namespace `rv::preview`), built in every
   configuration and tested by `tests/unit/preview`.

@@ -195,6 +195,18 @@ walker kept.
 - **After.** The result is saved behind a snapshot (§6) and the resident floor reconciled room by room; a walker in a
   regenerated room stands at its doorway, facing in.
 
+*Amended on 2026-10-29 (I4b step 6):* the preview and the choices are one panel (`regenerate_preview.rml`), opened by
+the directory's "Modifiche" tab ("Rigenera stanza / piano / mondo", "Annulla ultima modifica") and by the update's
+notice (§3: confirm, Enter or the pad's Start, while it shows). The commit takes the preview's own result when the plan
+and the overrides read again under the lock are those it read and the overrides are kept; otherwise (the drop, or
+another writer meanwhile) it regenerates the scope again under the lock with the consent's choice. The floor shown then
+follows the plan stored through the live update's path: room by room when its static part stands, else committed again
+with the walker kept, which is what a regeneration that changes a room's fixtures does (the room's static part rebuilt
+alone, step 4's path, is a follow-up in `BACKLOG.md`); a walker in a room the regeneration removed (a floor's system
+gone to the shared room) stands at the floor's elevator. The rooms' items files are written again from the catalog's
+snapshot (a game placed anew has its title and cover) and the building stamp removed, so that the next start runs the
+building job. While a preview shows or a commit runs, rides, the editor and live updates wait.
+
 ### 6. Snapshots, transactions and undo
 
 - **Snapshots.** Before every explicit action (an editor save, a regeneration, an undo, a CLI edit), the plan and the
@@ -208,6 +220,12 @@ walker kept.
   snapshot not yet undone, marks it undone, and keeps the state it replaced as a snapshot of kind `undo`, which undo
   never offers: undo walks back up to the kept snapshots, and redo is not offered. The catalog's changes since then
   come back through the next update as usual. Incremental updates are not undoable actions (their plan backups stay).
+
+*Amended on 2026-10-29 (I4b step 6):* in the app "Annulla ultima modifica" is the directory's (its "Modifiche" tab):
+it first names the action it would undo (its kind, its scope, its time, read from the snapshots without the lock) with
+"Annulla la modifica" and "Indietro", since no redo brings it back; the undo is made only when the snapshot it restores
+under the lock is still that one. The editor's menu keeps its session's own "Annulla ultima azione" (§4), which takes
+back the draft's last operation and touches no snapshot: a stored action is undone from the directory or the CLI.
 
 ### 7. Expansion rooms (amends ADR-0013 §8; generator 1.5)
 

@@ -605,6 +605,25 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   and span sections (a shared room's); the app's notice names the expansions an update added (ADR-0015 §7's
   "`roomsAdded` and the app's notice name the new rooms").
 
+### Regeneration and undo in the app (I4b step 6)
+
+- **A regenerated room shown alone:** a regeneration's commit and an undo show the floor through the live update's
+  path, which commits the whole floor again as soon as a room's static part changed (a regeneration's fixtures and
+  dressing almost always do; the walker kept, then put at the room's doorway). "Rigenera stanza" keeps a room's id, x
+  and yaw: when its depth is unchanged too, step 4's path (its static part rebuilt alone through
+  `SceneInstance::replaceObjects`, its collection applied in place) would show it at a room's cost, the floor's build
+  on the pool narrowed to the room (`docs/i4b/step-6.md`'s figures: the floor's build and commit are most of the room
+  shown again).
+- **The notice offers one room:** an update whose needsConfirmation names several rooms offers the preview of the
+  first the sentences name; the others are offered by the next update that still needs them, or from the directory.
+- **The preview lists five conflicts:** the panel names the first five customizations a regeneration cannot honour
+  and counts the others ("e altre N"); a scrolling list, or the editor showing them in the room (ADR-0015 §3: "shown by
+  the editor"), would name them all.
+- **The catalog's inputs held for the session:** the directory's "Modifiche" tab reads the catalog's building snapshot
+  and every system's selection ahead (about 1.3 s on the reference library) and keeps them until a refresh, so that a
+  preview is within its 2 s; they stay in memory meanwhile (every system's snapshot entries and selection). Dropping
+  them after a while without a preview would give that memory back.
+
 ### The editor
 
 - **The in-place apply in very large rooms (I4b step 3):** a game's move or swap shown in place lays the room's
