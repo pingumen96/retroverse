@@ -22,7 +22,7 @@ fs::path buildAssets() {
 } // namespace
 
 PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms, std::string_view fixtureName,
-                                 const std::function<void(const test::Fixture&)>& prepare)
+                                 const std::function<void(const test::Fixture&)>& prepare, std::string_view worldJson)
     : fixture(test::Fixture::materialize(std::string(fixtureName)).value()), dir(freshCaseDir(caseName)),
       data(dir / "data") {
     if (prepare) {
@@ -30,7 +30,9 @@ PlannedBuilding::PlannedBuilding(std::string_view caseName, bool consoleRooms, s
     }
     cli("library", {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
     cli("import", {"import"});
-    if (consoleRooms) {
+    if (!worldJson.empty()) {
+        REQUIRE(core::writeTextFileAtomic(data / "config" / "world.json", std::string(worldJson)).has_value());
+    } else if (consoleRooms) {
         const auto preset = core::readTextFile(buildAssets() / "world/presets/retro_museum_cozy.json");
         REQUIRE(preset.has_value());
         if (preset->find("sharedRoomMinTitles") != std::string::npos) {

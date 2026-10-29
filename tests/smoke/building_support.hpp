@@ -31,10 +31,13 @@ struct PlannedBuilding {
     /// shared rooms take the systems under its threshold otherwise), so that the fixture's small systems keep their
     /// families' rooms.
     /// `fixtureName`: the ES-DE fixture planned (tests/fixtures/<name>). `prepare` (I5 step 7) changes the materialized
-    /// fixture before its import (a variant without some of its clips).
+    /// fixture before its import (a variant without some of its clips). `worldJson` (I4b step 7's review): the text of
+    /// the data directory's config/world.json written before the plan, in place of `consoleRooms`'s (a bench's room at
+    /// its template's limit: growthReservePermille 0).
     explicit PlannedBuilding(std::string_view caseName, bool consoleRooms = true,
                              std::string_view fixtureName = "esde/building",
-                             const std::function<void(const test::Fixture&)>& prepare = {});
+                             const std::function<void(const test::Fixture&)>& prepare = {},
+                             std::string_view worldJson = {});
 
     /// retroverse-cli --data-dir <data> `arguments`, which must exit 0.
     AppRun cli(std::string_view name, std::vector<std::string> arguments) const;
@@ -44,6 +47,12 @@ struct PlannedBuilding {
     /// The id of the room that holds `system` (its sections), which the plan must have.
     [[nodiscard]] std::string roomOf(std::string_view system) const;
 };
+
+/// The world.json of a bench's room at its template's limit (I4b step 7's review): no growth reserve, so that the
+/// overflow fixture's 1,700 big boxes stand in one room (`room:amiga`, grown to its limit: the largest room a plan can
+/// hold, as generator 1.4's room migrated by generator 1.5 holds them) instead of generator 1.5's two rooms of 850.
+inline constexpr std::string_view kRoomAtLimitWorldJson =
+    "{\"sharedRoomMinTitles\": 0, \"growthReservePermille\": 0}\n";
 
 /// The room of `plan` whose id is `room` (REQUIREd).
 [[nodiscard]] const world::Room& roomIn(const world::WorldPlan& plan, std::string_view room);
