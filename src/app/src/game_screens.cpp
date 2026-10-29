@@ -72,7 +72,8 @@ Expected<assets::ImageData> viewerPicture(const std::filesystem::path& mediaRoot
     if (!bytes) {
         return propagate(bytes.error());
     }
-    auto image = assets::decodeImage(std::as_bytes(std::span(bytes->data(), bytes->size())), 4, relativePath);
+    auto image =
+        assets::decodeUprightImage(std::as_bytes(std::span(bytes->data(), bytes->size())), 4, relativePath);
     if (!image) {
         return propagate(image.error());
     }

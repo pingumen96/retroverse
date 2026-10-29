@@ -15,6 +15,7 @@ add_library(rv_assets STATIC
     src/image_decode.cpp
     src/image_encode.cpp
     src/image_io.cpp
+    src/image_orientation.cpp
     src/json_util.cpp
     src/material_library.cpp
     src/mip_chain.cpp
