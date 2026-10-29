@@ -1,5 +1,5 @@
-// The real library's busiest floor with both decoder slots playing (I5 step 3, ADR-0016 §5 and §12: the hero CRT and a
-// secondary TV, GPU memory within the acceptable 512 MiB). Hidden ([.real-library]): ctest never runs it;
+// The real library's busiest floor with both decoder slots playing (I5 step 3, ADR-0016 §5 and §12: the hero CRT and
+// a secondary TV, GPU memory within the acceptable 512 MiB). Hidden ([.real-library]): ctest never runs it;
 // scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the library before and after, the folders
 // in the RV_REAL_* variables (or the script's parameters) and RV_AUDIO=null:
 //   ./scripts/real-library.ps1 -Filter '[real-library][secondary_tv]'
@@ -12,7 +12,8 @@
 //     secondary both stand in view, 300 frames, cold (the floor's covers derived in that run) and warm: both screens
 //     playing their clips on the two slots, the floor's GPU memory at its peak within 512 MiB (runs without
 //     --screenshot, whose render targets the window never has); then the same with a screenshot, and without clips
-//     (informative).
+//     (informative: the frame times with and without the two decoders). Every run in a 1920 x 1080 window (I5 step
+//     3's review: the render targets follow the window's size, and the default window is 1280 x 720).
 // The figures are printed (the lines starting "Real secondary TV:"); the runs' reports and screenshots stay in the
 // build tree (they show the user's covers and clips: never committed).
 
@@ -80,12 +81,12 @@ double mib(std::uint64_t bytes) {
 }
 
 /// retroverse.exe with `arguments` on `data`, hidden, its output in <folder>/<name>.log and its report in
-/// <folder>/<name>.json; the report read back.
+/// <folder>/<name>.json; the report read back. A 1920 x 1080 window (the measurement's: a full-HD screen's targets).
 rv::app::RunReport runApp(const fs::path& folder, const fs::path& data, const std::string& name,
                           std::vector<std::string> arguments) {
     const fs::path report = folder / (name + ".json");
-    arguments.insert(arguments.end(), {"--hidden", "--data-dir", rv::core::pathToUtf8(data), "--run-report",
-                                       rv::core::pathToUtf8(report)});
+    arguments.insert(arguments.end(), {"--width", "1920", "--height", "1080", "--hidden", "--data-dir",
+                                       rv::core::pathToUtf8(data), "--run-report", rv::core::pathToUtf8(report)});
     rv::test::ChildRequest request;
     request.executable = rv::test::testProgramsDir() / "retroverse.exe";
     request.arguments = std::move(arguments);
@@ -308,10 +309,12 @@ TEST_CASE("app/world: the real library's busiest floor with the hero CRT and a s
         }
         std::cout << fmt::format(
             "Real secondary TV: {}: {} ({} items on the floor {}), the hero {}, the secondary {} {}; at most {} "
-            "decoder(s) open; GPU memory at its peak {:.1f} MiB (video {:.1f} MiB at the end), frame p50 {:.2f} ms\n",
+            "decoder(s) open; GPU memory at its peak {:.1f} MiB (video {:.1f} MiB at the end), frame p50 {:.2f} ms, "
+            "p99 {:.2f} ms\n",
             name, roomId, run.world.items, busiest->id, describe(hero), secondary, describe(tv), video.maxOpenDecoders,
             mib(run.gpuMemory.peakTotalBytes), mib(run.gpuMemory.usage(rv::gl::GpuMemoryKind::Video).bytes),
-            run.frameTimes.times ? run.frameTimes.times->p50Ms : 0.0);
+            run.frameTimes.times ? run.frameTimes.times->p50Ms : 0.0,
+            run.frameTimes.times ? run.frameTimes.times->p99Ms : 0.0);
         std::cout << fmt::format("Real secondary TV: {}: procedural surfaces {:.1f} MiB, collection arrays {:.1f} MiB, "
                                  "hero textures {:.1f} MiB, targets {:.1f} MiB, scene textures {:.1f} MiB, buffers "
                                  "{:.1f} MiB\n",
@@ -333,7 +336,11 @@ TEST_CASE("app/world: the real library's busiest floor with the hero CRT and a s
                 "0.016667"});
     fs::remove(videoJson, removed);
     CHECK(stills.video.decodersStarted == 0u);
-    std::cout << fmt::format("Real secondary TV: clips-off: GPU memory at its peak {:.1f} MiB (video {:.1f} MiB)\n",
+    std::cout << fmt::format("Real secondary TV: clips-off: GPU memory at its peak {:.1f} MiB (video {:.1f} MiB), "
+                             "targets {:.1f} MiB, frame p50 {:.2f} ms, p99 {:.2f} ms\n",
                              mib(stills.gpuMemory.peakTotalBytes),
-                             mib(stills.gpuMemory.usage(rv::gl::GpuMemoryKind::Video).bytes));
+                             mib(stills.gpuMemory.usage(rv::gl::GpuMemoryKind::Video).bytes),
+                             mib(stills.gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes),
+                             stills.frameTimes.times ? stills.frameTimes.times->p50Ms : 0.0,
+                             stills.frameTimes.times ? stills.frameTimes.times->p99Ms : 0.0);
 }
