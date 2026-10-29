@@ -171,7 +171,9 @@ The step's review found four bugs, missing tests and benches, and nits; each was
 - **The GPU benches** measured 850 boxes since the split: `[.bench][edit]` and `[.bench][furniture]` now plan the
   overflow fixture with `world.json`'s `growthReservePermille` 0 (`kRoomAtLimitWorldJson`), so that its 1,700 big boxes
   stand in one room at its template's limit, the largest room a plan holds (a generator-1.4 room migrated by 1.5 holds
-  as many), and require it.
+  as many), and require it. Release, once: the two swaps shown 65 and 79 ms after their request and the unpin 90 ms
+  (0.25 s), the module moved shown in 60 ms; Salva 2.8 s in the edit bench (the room back 2.9 s after it, within the
+  3 s row) and 0.09 s in the furniture bench.
 - **Nits**: the impact counts a new expansion of a room scope among `roomsAdded` only (`roomsRegenerated`: the scope's
   rooms in both plans); `expansion-chain` accepts gaps, which decision 2's numbering makes after a shrink (documented
   in `validation.hpp`, tested); the legacy fixture's README; `BACKLOG.md`; lines over 120 characters; `cli.md`'s stray
