@@ -642,6 +642,12 @@ private:
     void keepPlan(const WorldBuild& build);
     /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
     void syncDirectory(ProductUi& product);
+    /// I4b step 8: the chains' ranges of the plan shown asked for (once per plan digest) and taken when they come.
+    void followChainRanges();
+    /// I4b step 8: the notice naming the expansion rooms an update added, once the floor shows and no other notice does.
+    void followRoomsAdded(ProductUi& product);
+    /// Lockstep: the ranges of the plan shown are on their way.
+    [[nodiscard]] bool chainRangesWait() const noexcept;
     /// The interaction's index of the room `room` of the floor shown, if it has a collection.
     [[nodiscard]] std::optional<std::size_t> interactionRoomOf(std::string_view room) const;
     /// A building's result for another floor than the one shown (a ride happened since its floor was asked): its floor
@@ -760,6 +766,19 @@ private:
     std::map<std::string, scene::CameraSetup> m_doorways;
     ui::DirectoryBuilding m_directoryBuilding;
     std::string m_directoryPlan;
+    /// I4b step 8 (ADR-0015 §7): the ranges of the chains' rooms of the plan shown, read on the pool from the rooms'
+    /// items files (chainRangesOf()): what they were asked for and are held for (the plan's digest and the builds that
+    /// wrote the items files: a first start writes them after its plan shows), their mailbox.
+    struct ChainRangesBox {
+        std::mutex mutex;
+        std::optional<std::pair<std::string, std::map<world::RoomId, ChainRoomRanges>>> answer;
+        std::function<void()> wake;
+    };
+    std::shared_ptr<ChainRangesBox> m_rangesBox;
+    std::string m_rangesAsked;
+    std::string m_rangesDigest;
+    std::uint64_t m_itemsWrites = 0;
+    std::map<world::RoomId, ChainRoomRanges> m_ranges;
     /// The ride, when it was asked (the steady clock), the directory's command that asked it, the destination built.
     std::unique_ptr<ElevatorRide> m_ride;
     Clock::time_point m_rideStart;

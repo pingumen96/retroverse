@@ -126,14 +126,81 @@ void WorldSession::keepPlan(const WorldBuild& build) {
     m_planState->screenMediaRoot = build.screenMediaRoot;
 }
 
+void WorldSession::followChainRanges() {
+    if (!m_rangesBox) {
+        m_rangesBox = std::make_shared<ChainRangesBox>();
+        m_rangesBox->wake = m_context.wakeCallback();
+    }
+    {
+        const std::lock_guard lock(m_rangesBox->mutex);
+        if (m_rangesBox->answer) {
+            if (m_rangesBox->answer->first == m_rangesAsked) {
+                m_ranges = std::move(m_rangesBox->answer->second);
+                m_rangesDigest = m_rangesBox->answer->first;
+                spdlog::info("Frame {}: the directory's ranges of {} chain room(s) are known", m_context.frameIndex(),
+                             m_ranges.size());
+            }
+            m_rangesBox->answer.reset();
+        }
+    }
+    const std::string key = m_planState ? fmt::format("{}/{}", m_planState->digest, m_itemsWrites) : std::string();
+    if (!m_planState || !m_planState->plan || key == m_rangesAsked) {
+        return;
+    }
+    // I4b step 8 (ADR-0015 §7): each room of a chain shows its titles' ranges, from the rooms' items files (the
+    // building job writes them before its result), read off the main thread; a plan without a chain reads nothing.
+    m_rangesAsked = key;
+    std::vector<catalog::SystemName> systems = chainSystemsOf(*m_planState->plan);
+    if (systems.empty()) {
+        m_ranges.clear();
+        m_rangesDigest = m_rangesAsked;
+        return;
+    }
+    const Status submitted = m_pool.submit(
+        [box = m_rangesBox, digest = m_rangesAsked, plan = m_planState->plan, cacheDir = m_options.paths.cacheDir,
+         library = m_planState->library, systems = std::move(systems)](const core::JobContext& job) {
+            if (job.cancelled()) {
+                return;
+            }
+            const std::map<catalog::GameId, ChainTitle> titles = chainTitlesOf(cacheDir, library, systems);
+            std::map<world::RoomId, ChainRoomRanges> ranges =
+                chainRangesOf(*plan, [&titles](const catalog::GameId& game) -> std::optional<ChainTitle> {
+                    const auto found = titles.find(game);
+                    return found != titles.end() ? std::optional<ChainTitle>(found->second) : std::nullopt;
+                });
+            std::function<void()> wake;
+            {
+                const std::lock_guard lock(box->mutex);
+                box->answer.emplace(digest, std::move(ranges));
+                wake = box->wake;
+            }
+            if (wake) {
+                wake();
+            }
+        });
+    if (!submitted) {
+        spdlog::warn("World: the directory's ranges cannot be read: {}", submitted.error().toString());
+        m_rangesDigest = m_rangesAsked; // shown without ranges
+        m_ranges.clear();
+    }
+}
+
+bool WorldSession::chainRangesWait() const noexcept {
+    return m_planState && !m_rangesAsked.empty() && m_rangesDigest != m_rangesAsked;
+}
+
 void WorldSession::syncDirectory(ProductUi& product) {
     if (m_planState) {
-        const std::string key = fmt::format("{}/{}", m_planState->digest, product.catalogRevision());
+        followChainRanges();
+        const bool rangesKnown = m_rangesDigest.starts_with(m_planState->digest + "/");
+        const std::string key = fmt::format("{}/{}/{}", m_planState->digest, product.catalogRevision(),
+                                            rangesKnown ? m_rangesDigest : std::string("pending"));
         if (key != m_directoryPlan) {
             AppCatalog& catalog = product.catalog();
-            m_directoryBuilding = directoryBuildingOf(*m_planState->plan, [&catalog](const catalog::SystemName& system) {
-                return catalog.systemFullName(system);
-            });
+            m_directoryBuilding = directoryBuildingOf(
+                *m_planState->plan,
+                [&catalog](const catalog::SystemName& system) { return catalog.systemFullName(system); },
+                rangesKnown ? &m_ranges : nullptr);
             m_directoryPlan = key;
         }
     }

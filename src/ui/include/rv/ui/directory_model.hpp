@@ -35,6 +35,9 @@
 // does nothing), "Rigenera piano" (the walker's floor), "Rigenera mondo" and "Annulla ultima modifica"; Activate asks
 // the app for it (RegenerateRoom, RegenerateFloor, RegenerateWorld, Undo, EditRoom) and closes the panel: the app opens
 // the preview (rv/ui/regenerate_preview_model.hpp). The shoulders and the tab bar's Left and Right walk the three tabs.
+// I4b step 8 (ADR-0015 §7): a chain's rooms (a room past its capacity and its expansions, "room:<system>:<n>") are rows
+// of their floor like any room, listed together under the head (DirectoryRoom::chainIndex), each with its titles'
+// ranges ("A – K"); ChooseRoom goes to any of them.
 // What the model asks of the app (step 7b) besides its commands: a new gamesRequest() asks for the games list (the
 // panel opened on the games, or the games tab entered), a new cardRequest() asks for the content of cardGameId()'s
 // card (a card opened, the same game's again included). A command the app refuses for now (a ride) is undone with
@@ -114,9 +117,20 @@ struct DirectorySystem {
     bool operator==(const DirectorySystem&) const = default;
 };
 
+/// I4b step 8 (ADR-0015 §7): the titles a room of a chain holds of one of its sections, as the directory shows them:
+/// the initials of the first and the last in the chain's alphabetical order ("A" and "K": "A – K").
+struct DirectoryRange {
+    /// The section's system: its name and the full name shown (as DirectoryRoom::systems has it).
+    DirectorySystem system;
+    std::string first;
+    std::string last;
+
+    bool operator==(const DirectoryRange&) const = default;
+};
+
 /// A room of a floor, as the app reads it from the plan (step 7b).
 struct DirectoryRoom {
-    /// The room's id ("room:snes", "area:shared:gen4", "area:arcade"), which ChooseRoom names.
+    /// The room's id ("room:snes", "area:shared:gen4", "area:arcade", "room:amiga:2"), which ChooseRoom names.
     std::string id;
     /// One of directory::kRoomKinds.
     std::string kind;
@@ -124,6 +138,17 @@ struct DirectoryRoom {
     std::vector<DirectorySystem> systems;
     /// The games it places.
     std::uint32_t games = 0;
+    /// I4b step 8 (ADR-0015 §7): its place in its chain (1 the head, n "room:<system>:<n>"; the numbers may leave a
+    /// gap) and how many rooms the chain has in the plan (1: a room alone, which shows no range). A floor lists a
+    /// chain's rooms together, the head first, then its expansions by number.
+    std::uint32_t chainIndex = 1;
+    std::uint32_t chainRooms = 1;
+    /// I4b step 8: a chain's room: its titles' ranges, one per section it holds titles of, in the room's section order
+    /// (empty while the titles are not known), and whether its titles interleave with another room's of the chain in
+    /// the chain's alphabetical order (an update's additions go after their predecessor wherever it stands, and to the
+    /// chain's next free slot: "Rigenera stanza" splits the chain in order again).
+    std::vector<DirectoryRange> ranges;
+    bool scattered = false;
 
     bool operator==(const DirectoryRoom&) const = default;
 };

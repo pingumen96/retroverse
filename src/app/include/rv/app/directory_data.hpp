@@ -6,6 +6,8 @@
 //  - directoryBuildingOf(): the plan's floors in the elevator's order (building.json's, Floor::order), each floor's rooms
 //    along its hall from the elevator (by their footprint's middle on the floor, the north row first on a tie), each
 //    room's kind, its sections' systems with the catalog's full names and the games it places;
+//    (I4b step 8, ADR-0015 §7: a chain's rooms together, the head first and its expansions by number, each with its
+//    titles' ranges, chainRangesOf());
 //  - floorRecordsOf(): the same floors for the run report (world.floors);
 //  - directoryGameOf(): a favourite or recently played game (catalog::RecentGame) as the games tab shows it, its last
 //    play the machine's local date;
@@ -14,7 +16,9 @@
 //    room the interaction is in, or a refusal with the panel's notice (ui::directory::kNotices). The application then
 //    does it (app::WorldSession).
 
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -38,9 +42,63 @@ inline constexpr std::string_view kNoticeBuildingPending = "building-pending";
 /// A system's full name as the catalog has it ("" none: the directory shows its name).
 using SystemFullName = std::function<std::string(const catalog::SystemName&)>;
 
+/// I4b step 8 (ADR-0015 §7): a placed game as a chain's ranges read it: the system whose section it stands in and its
+/// sort key (catalog::sortKeyOf() of its sort name or title, as the rooms' items files hold it).
+struct ChainTitle {
+    catalog::SystemName system;
+    std::string sortKey;
+
+    bool operator==(const ChainTitle&) const = default;
+};
+
+/// The title of a placed game; nothing when it is not known (an items file not written yet).
+using ChainTitleOf = std::function<std::optional<ChainTitle>(const catalog::GameId&)>;
+
+/// What a room of a chain shows of its titles (ui::DirectoryRoom::ranges and scattered, the systems by name only).
+struct ChainRoomRanges {
+    std::vector<ui::DirectoryRange> ranges;
+    bool scattered = false;
+
+    bool operator==(const ChainRoomRanges&) const = default;
+};
+
+/// The ranges of every room of a chain of more than one room in `plan` (I4b step 8; ADR-0015 §7 as amended on
+/// 2026-10-29): the chain's placed titles whose title is known in the chain's alphabetical order (the sections in the
+/// head's order, then the sort key, then the GameId: the order a fresh split shares them in, chainShares()), and for
+/// each room, section by section in that order, the initials (rangeInitial()) of the first and the last of its titles
+/// there: never a title of the room outside its range. Where one room's range ends on the initial the next one's (in
+/// the order of their first titles) begins on, both ends show two letters (rangePrefix(): "A – Mo", "Mo – Y"). A room's titles interleave with another room's (`scattered`)
+/// when another room of the chain holds a title between its first and its last in that order: an update's additions
+/// (a new title goes after its alphabetical predecessor wherever that stands, else to the chain's next free slot,
+/// wrapping to the head), never a fresh split. A room alone has no entry; a room of a chain none of whose titles is
+/// known has an empty entry.
+[[nodiscard]] std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& plan,
+                                                                     const ChainTitleOf& titleOf);
+
+/// The initial a range shows of a sort key: its first character, an ASCII letter upper-cased ("a" gives "A"), a digit
+/// as itself, anything else (a sign, a letter beyond ASCII, nothing) "#".
+[[nodiscard]] std::string rangeInitial(std::string_view sortKey);
+/// The initial and, when it is a letter or a digit of ASCII, the sort key's second character in lower case ("mossy"
+/// gives "Mo", "m-1" gives "M"): a boundary two rooms share the initial of.
+[[nodiscard]] std::string rangePrefix(std::string_view sortKey);
+
+/// The systems of `plan`'s rooms of a chain of more than one room (their sections), each once in order: the items
+/// files chainTitlesOf() reads.
+[[nodiscard]] std::vector<catalog::SystemName> chainSystemsOf(const world::WorldPlan& plan);
+
+/// The titles of the placed games of `systems` from their rooms' items files under `cacheDir` (room_items.hpp; the
+/// screen data's sort key, else catalog::sortKeyOf() of the title): read on the worker pool when the plan shown holds
+/// a chain (WorldSession). A file missing or unreadable gives none of its games (logged).
+[[nodiscard]] std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path& cacheDir,
+                                                                  const catalog::LibraryId& library,
+                                                                  const std::vector<catalog::SystemName>& systems);
+
 /// The "Piani" tab's floors and rooms of `plan` (see the file comment), the walker nowhere ("" floor and room: the
-/// caller sets DirectoryBuilding::currentFloor and currentRoom).
-[[nodiscard]] ui::DirectoryBuilding directoryBuildingOf(const world::WorldPlan& plan, const SystemFullName& fullName);
+/// caller sets DirectoryBuilding::currentFloor and currentRoom). `ranges` (I4b step 8): chainRangesOf()'s, the rooms'
+/// ranges once their titles are known (none: no range yet).
+[[nodiscard]] ui::DirectoryBuilding directoryBuildingOf(const world::WorldPlan& plan, const SystemFullName& fullName,
+                                                        const std::map<world::RoomId, ChainRoomRanges>* ranges =
+                                                            nullptr);
 
 /// The plan's floors for the run report, in the elevator's order: their rooms and the games those place.
 [[nodiscard]] std::vector<WorldFloorRecord> floorRecordsOf(const world::WorldPlan& plan);

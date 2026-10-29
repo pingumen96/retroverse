@@ -1125,3 +1125,49 @@ TEST_CASE("ui/directory: the \"Modifiche\" tab's document: its tab, rows and not
     CHECK(contains(rml, "<span class=\"chevron\"></span>"));
     CHECK_FALSE(contains(rml, "sheet"));
 }
+
+TEST_CASE("ui/directory: a chain's rooms, each with its number and ranges, and the expansion chosen (I4b step 8)",
+          "[ui][directory]") {
+    DirectoryBuilding chained;
+    DirectoryRoom head = room("room:amiga", "console", {"amiga"}, 850);
+    head.chainRooms = 2;
+    head.ranges = {rv::ui::DirectoryRange{{"amiga", "amiga full"}, "A", "K"}};
+    DirectoryRoom expansion = room("room:amiga:2", "console", {"amiga"}, 850);
+    expansion.chainIndex = 2;
+    expansion.chainRooms = 2;
+    expansion.ranges = {rv::ui::DirectoryRange{{"amiga", "amiga full"}, "K", "Z"}};
+    expansion.scattered = true;
+    chained.floors.push_back({"computer", 8, {head, expansion, room("room:c64", "console", {"c64"}, 12)}});
+    chained.currentFloor = "computer";
+    chained.currentRoom = "room:amiga:2";
+    DirectoryModel model;
+    model.setBuilding(chained);
+    model.open(DirectoryTab::Floors);
+    REQUIRE_FALSE(model.apply(UiCommand::Activate).has_value());
+    REQUIRE(model.view() == DirectoryView::Rooms);
+    // The walker's room, the expansion, is where the list starts (the hall is row 0, the head row 1).
+    CHECK(model.rowCount() == 4);
+    CHECK(model.selectedRoomRow() == 2);
+    CHECK(model.apply(UiCommand::Activate) == command(DirectoryCommandKind::ChooseRoom, "room:amiga:2"));
+    // A new building keeps the selection on the expansion by id (its head gone from the list above it).
+    model.reopen();
+    DirectoryBuilding shrunk = chained;
+    shrunk.floors[0].rooms.erase(shrunk.floors[0].rooms.begin());
+    model.setBuilding(shrunk);
+    CHECK(model.selectedRoomRow() == 1);
+
+    // The document: the expansion's number after its name, indented; each chain room's ranges, the overlap said.
+    const std::string rml = readAsset(dir::kDocumentPath);
+    for (const std::string_view binding :
+         {"data-class-expansion=\"room.chainIndex > 1\"", "{{ room.title }} {{ room.chainIndex }}",
+          "Sala condivisa {{ room.chainIndex }}", "Sala giochi arcade {{ room.chainIndex }}", "range : room.ranges",
+          "range, i : room.ranges", "{{ range.first }} – {{ range.last }}", "{{ range.system }}", "room.chained",
+          "room.scattered", "in ordine sparso", "editNumber > 1", "actionRoomChain",
+          "Riallestisce tutte le stanze di {{ actionRoomTitle }}"}) {
+        INFO(binding);
+        CHECK(contains(rml, binding));
+    }
+    const std::string rcss = readAsset(dir::kStyleSheetPath);
+    CHECK(contains(rcss, ".row.expansion {"));
+    CHECK(contains(rcss, ".range {"));
+}

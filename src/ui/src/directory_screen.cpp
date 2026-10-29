@@ -41,6 +41,13 @@ struct ShownFloor {
     bool current = false;
 };
 
+/// I4b step 8: a range of a chain's room ("room.ranges"): its section's system as shown, its first and last initials.
+struct RangeRow {
+    Rml::String system;
+    Rml::String first;
+    Rml::String last;
+};
+
 /// A room of the rooms list ("rooms"): row index + 1 (row 0 is the hall).
 struct RoomRow {
     Rml::String elementId;
@@ -53,6 +60,12 @@ struct RoomRow {
     std::vector<Rml::String> systems;
     int games = 0;
     bool current = false;
+    /// I4b step 8: its number in its chain (1 the head), whether its chain has more rooms than it, its ranges, whether
+    /// its titles interleave with another room's of the chain.
+    int chainIndex = 1;
+    bool chained = false;
+    std::vector<RangeRow> ranges;
+    bool scattered = false;
 };
 
 /// A game of the favourites and recent games ("games").
@@ -170,6 +183,12 @@ struct DirectoryScreen::Impl {
             shownFloor.RegisterMember("current", &ShownFloor::current);
         }
         constructor.RegisterArray<std::vector<Rml::String>>();
+        if (auto range = constructor.RegisterStruct<RangeRow>()) {
+            range.RegisterMember("system", &RangeRow::system);
+            range.RegisterMember("first", &RangeRow::first);
+            range.RegisterMember("last", &RangeRow::last);
+        }
+        constructor.RegisterArray<std::vector<RangeRow>>();
         if (auto room = constructor.RegisterStruct<RoomRow>()) {
             room.RegisterMember("elementId", &RoomRow::elementId);
             room.RegisterMember("index", &RoomRow::index);
@@ -179,6 +198,10 @@ struct DirectoryScreen::Impl {
             room.RegisterMember("systems", &RoomRow::systems);
             room.RegisterMember("games", &RoomRow::games);
             room.RegisterMember("current", &RoomRow::current);
+            room.RegisterMember("chainIndex", &RoomRow::chainIndex);
+            room.RegisterMember("chained", &RoomRow::chained);
+            room.RegisterMember("ranges", &RoomRow::ranges);
+            room.RegisterMember("scattered", &RoomRow::scattered);
         }
         constructor.RegisterArray<std::vector<RoomRow>>();
         if (auto game = constructor.RegisterStruct<GameRow>()) {
@@ -226,10 +249,12 @@ struct DirectoryScreen::Impl {
         constructor.Bind("editFocused", &editFocused);
         constructor.Bind("editKind", &editKind);
         constructor.Bind("editTitle", &editTitle);
+        constructor.Bind("editNumber", &editNumber);
         // I4b step 6: the "Modifiche" tab: its rows, the room "Rigenera stanza" names, the walker's floor.
         constructor.Bind("actions", &actions);
         constructor.Bind("actionRoomKind", &actionRoomKind);
         constructor.Bind("actionRoomTitle", &actionRoomTitle);
+        constructor.Bind("actionRoomChain", &actionRoomChain);
         constructor.Bind("actionFloor", &actionFloor);
         constructor.Bind("actionFloorKnown", &actionFloorKnown);
         constructor.BindEventCallback(Rml::String(directory::kEditEvent),
@@ -328,12 +353,14 @@ struct DirectoryScreen::Impl {
         editFocused = model.editFocused();
         editKind.clear();
         editTitle.clear();
+        editNumber = 1;
         if (editShown) {
             for (const DirectoryFloor& floor : building.floors) {
                 for (const DirectoryRoom& room : floor.rooms) {
                     if (room.id == building.editableRoom) {
                         editKind = Rml::String(room.kind);
                         editTitle = room.systems.empty() ? Rml::String(room.id) : shownName(room.systems.front());
+                        editNumber = count(room.chainIndex);
                     }
                 }
             }
@@ -352,16 +379,19 @@ struct DirectoryScreen::Impl {
         }
         actionRoomKind.clear();
         actionRoomTitle.clear();
+        actionRoomChain = false;
         for (const DirectoryFloor& floor : building.floors) {
             for (const DirectoryRoom& room : floor.rooms) {
                 if (!building.regenerableRoom.empty() && room.id == building.regenerableRoom) {
                     actionRoomKind = Rml::String(room.kind);
                     actionRoomTitle = room.systems.empty() ? Rml::String(room.id) : shownName(room.systems.front());
+                    // I4b step 8: an expansion regenerates its chain (ADR-0015 §7), which its head's name names.
+                    actionRoomChain = room.chainRooms > 1;
                 }
             }
         }
         if (actionRoomKind.empty() && !building.regenerableRoom.empty()) {
-            // A room the floors do not list (an expansion, step 8's): named by its id.
+            // A room the floors do not list: named by its id.
             actionRoomKind = "console";
             actionRoomTitle = Rml::String(building.regenerableRoom);
         }
@@ -390,6 +420,13 @@ struct DirectoryScreen::Impl {
                 }
                 row.games = count(room.games);
                 row.current = shown.current && room.id == building.currentRoom;
+                row.chainIndex = count(room.chainIndex);
+                row.chained = room.chainRooms > 1;
+                for (const DirectoryRange& range : room.ranges) {
+                    row.ranges.push_back(
+                        RangeRow{shownName(range.system), Rml::String(range.first), Rml::String(range.last)});
+                }
+                row.scattered = room.scattered;
                 rooms.push_back(std::move(row));
             }
         }
@@ -480,10 +517,14 @@ struct DirectoryScreen::Impl {
     bool editFocused = false;
     Rml::String editKind;
     Rml::String editTitle;
+    /// I4b step 8: its number in its chain (1 the head).
+    int editNumber = 1;
     /// I4b step 6: the "Modifiche" tab.
     std::vector<ActionRow> actions;
     Rml::String actionRoomKind;
     Rml::String actionRoomTitle;
+    /// I4b step 8: the room is of a chain (Rigenera stanza regenerates the chain).
+    bool actionRoomChain = false;
     Rml::String actionFloor;
     bool actionFloorKnown = false;
     std::vector<FloorRow> floors;
