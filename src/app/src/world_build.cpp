@@ -440,6 +440,9 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         const Clock::time_point dataStart = Clock::now();
         std::vector<world::WorldData> rooms;
         for (const world::Room& room : stored->plan.rooms) {
+            if (room.id.isExpansion()) {
+                continue; // I4b step 8: an expansion reads its head's data (ADR-0015 §7), as the CLI's update does
+            }
             const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
             const auto tags = platformTags.find(system);
             auto data = world::loadRoomData(input.paths.assetRoot, room,
