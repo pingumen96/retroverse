@@ -1393,7 +1393,7 @@ struct ScreenService::Impl {
                 screen->policy.setGames(screenedGames);
             }
             // A cabinet whose clip is now left out (or back) lets it go; the others play on.
-            rescreenCabinets(screenedGames);
+            rescreenCabinets(screenedGames, false);
         }
         const scene::Frustum frustum = camera.frustum();
         // The quick catalog's selection, else the world's (app::screenSelection's order).
@@ -1727,8 +1727,9 @@ struct ScreenService::Impl {
 
     /// The room's games screened again (setGames(), the verdicts changed): a cabinet whose game left them, or whose
     /// clip changed (left out, back, another file), lets its clip go and is made afresh at its next request; the others
-    /// play on, their clips and pictures untouched.
-    void rescreenCabinets(const std::vector<ScreenGame>& games) {
+    /// play on, their clips and pictures untouched. Its cover is recorded on this frame (`between`: on the next one,
+    /// setGames() being called between two frames).
+    void rescreenCabinets(const std::vector<ScreenGame>& games, bool between) {
         std::vector<std::unique_ptr<ScreenState>> kept;
         kept.reserve(cabinets.size());
         for (std::unique_ptr<ScreenState>& cabinet : cabinets) {
@@ -1740,7 +1741,7 @@ struct ScreenService::Impl {
                 continue;
             }
             if (cabinet->shownPicture == ScreenPicture::Video) {
-                recordCabinet(*cabinet, "cover", true);
+                recordCabinet(*cabinet, "cover", between);
             }
             spdlog::info("{}: game {}'s clip changed in the room's games; it is asked for again", nameOf(*cabinet),
                          cabinet->policy.targetId());
@@ -2029,7 +2030,7 @@ void ScreenService::setGames(std::vector<ScreenGame> games) {
     for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
         screen->policy.setGames(games);
     }
-    m_impl->rescreenCabinets(games); // a cabinet whose game or clip changed asks again; the others play on
+    m_impl->rescreenCabinets(games, true); // a cabinet whose game or clip changed asks again; the others play on
 }
 
 std::size_t ScreenService::slotCount() const noexcept {
