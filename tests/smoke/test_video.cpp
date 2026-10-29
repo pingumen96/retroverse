@@ -262,9 +262,18 @@ TEST_CASE("video: out of the view the decoder pauses, the picture kept", "[gpu][
     CHECK(video.decoderState == "paused");
     CHECK(video.pauses == 1);
     CHECK(video.decodersStarted == 1);
-    // Frames shown before the turn; none uploaded while paused beyond the one the clock held.
-    CHECK(video.clipFramesUploaded >= 1);
-    CHECK(video.clipFramesUploaded <= 10);
+    // The clip opens on the first frame, whose first picture the lockstep run waits for (I5 step 4's review: it shows
+    // on that frame whatever the decoder thread's pace); the turn takes the screen out of view on frame 2, before the
+    // clip's second frame (1/30 s) is due: one frame uploaded, kept while paused.
+    CHECK(video.firstFrameWaits == 1);
+    CHECK(video.firstFrameWaitTimeouts == 0);
+    REQUIRE(video.slotEvents.size() >= 2);
+    CHECK(video.slotEvents[0].action == "open");
+    CHECK(video.slotEvents[0].frame == 0);
+    CHECK(video.slotEvents[1].action == "pause");
+    CHECK(video.slotEvents[1].reason == "out-of-view");
+    CHECK(video.slotEvents[1].frame == 2);
+    CHECK(video.clipFramesUploaded == 1);
 }
 
 TEST_CASE("video: --video-freeze-pts holds one frame, the same in two runs", "[gpu][video]") {
