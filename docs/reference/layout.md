@@ -68,7 +68,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   (I4b step 3: the editor's draft, its save replayed under the world lock, the edit data, the rooms laid out again;
   since step 4 a room's static part rebuilt alone, `roomStaticPart`), `world_regenerate_job` (I4b step 6,
   `world_regenerate.hpp`: the catalog's inputs of a regeneration, the preview's dry run and its content, the commit
-  under the world lock, the undo's preview and commit, the rooms' items written again).
+  under the world lock, the undo's preview and commit, the rooms' items written again, the rooms a commit changed
+  alone, the job's mailbox); `world_build`'s `rebuildRoomsAlone` (I4b step 6's review: a floor's rooms rebuilt alone
+  from a plan, as `buildFloor` builds them).
   `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
@@ -79,7 +81,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `edit_bar_panel` (I4b step 3: the editor's session, its jobs, what it shows, the bar; since step 4 a held fixture, its
   probes, a room's static part replaced in place through `scene_instance`'s `replaceObjects`), `world_regenerate`
   (I4b step 6: the regenerations' and the undo's state, `world_regenerate_state.hpp`, their jobs, the floor shown
-  again and the walker at its doorway, the notice's offer); the outline pass's
+  again, its rooms alone through `replaceObjects` since the step's review, and the walker at its doorway, the notice's
+  offer); the outline pass's
   dimming shader `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
   `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).

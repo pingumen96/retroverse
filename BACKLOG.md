@@ -607,22 +607,30 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 
 ### Regeneration and undo in the app (I4b step 6)
 
-- **A regenerated room shown alone:** a regeneration's commit and an undo show the floor through the live update's
-  path, which commits the whole floor again as soon as a room's static part changed (a regeneration's fixtures and
-  dressing almost always do; the walker kept, then put at the room's doorway). "Rigenera stanza" keeps a room's id, x
-  and yaw: when its depth is unchanged too, step 4's path (its static part rebuilt alone through
-  `SceneInstance::replaceObjects`, its collection applied in place) would show it at a room's cost, the floor's build
-  on the pool narrowed to the room (`docs/i4b/step-6.md`'s figures: the floor's build and commit are most of the room
-  shown again).
+- **A floor's regeneration that places rooms again (I4b step 6's review):** the rooms a commit changed are shown alone
+  (step 4's path) only while every room of the floor keeps its place, interior and template; a floor's or the world's
+  regeneration that adds, removes or moves a room builds the floor on the pool and commits it whole on the main thread
+  (`docs/i4b/step-6.md`'s figures). The hall's pieces a moved room touches, rebuilt alone with the rooms, would keep it
+  a room's cost.
+- **The building job's snapshot seeding the inputs (I4b step 6's review):** the needs-confirmation notice reads the
+  catalog's inputs ahead when it shows (about 1.2 s on the reference library, on the pool); the building job read the
+  same snapshot moments before (its aliases besides), and handing it to the regenerations' slot would leave only the
+  selections to make. Deferred: the job's result would carry the snapshot (every system's entries) past the build, and
+  a skipped start (the stamp's) has none.
+- **A crowded preview's body (I4b step 6's review):** the preview's body scrolls when it would not fit (the choices and
+  the hints never clipped), by the mouse wheel; the pad and the keys move between the choices only, so a long list of
+  conflicts below the counts is read with the mouse. A focusable body, or the right stick scrolling it, would reach it.
 - **The notice offers one room:** an update whose needsConfirmation names several rooms offers the preview of the
   first the sentences name; the others are offered by the next update that still needs them, or from the directory.
 - **The preview lists five conflicts:** the panel names the first five customizations a regeneration cannot honour
   and counts the others ("e altre N"); a scrolling list, or the editor showing them in the room (ADR-0015 §3: "shown by
   the editor"), would name them all.
-- **The catalog's inputs held for the session:** the directory's "Modifiche" tab reads the catalog's building snapshot
-  and every system's selection ahead (about 1.3 s on the reference library) and keeps them until a refresh, so that a
-  preview is within its 2 s; they stay in memory meanwhile (every system's snapshot entries and selection). Dropping
-  them after a while without a preview would give that memory back.
+- **The catalog's inputs held for the session:** the directory's "Modifiche" tab (and the needs-confirmation notice)
+  reads the catalog's building snapshot and every system's selection ahead (about 1.1 s on the reference library) and
+  keeps them until a refresh, so that a preview is within its 2 s; they stay in memory meanwhile: 224 MiB of private
+  bytes on the reference library (I4b step 6's review), which beside the busiest floor's 472 MiB is over the 512 MiB
+  row while they are kept. Letting them go a minute after the tab or the panel closed without a preview, or keeping
+  the selections with only the titles and items the commit needs of the snapshot's entries, would give it back.
 
 ### The editor
 

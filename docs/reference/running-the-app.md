@@ -499,15 +499,19 @@ build/rvdata`).
   change place, those entering and leaving the display cases, the fixtures, the customizations kept and those that
   cannot be (each with why, kept in `overrides.json`), and the choices: Rigenera (only when something would change),
   Rigenera e scarta le personalizzazioni (only when the scope has some; a second confirmation names how many,
-  "Indietro" focused) and Annulla. The commit runs under the world lock behind a snapshot (action `regenerate`), the
-  floor shown follows the plan stored (room by room, else committed again with the walker kept), and a walker in a
-  regenerated room stands at its doorway (at the elevator when its room is gone). "Annulla ultima modifica" names the
-  action it undoes (a saved edit or a regeneration, its room, floor or the building, when) before "Annulla la
-  modifica"; there is no redo. A preview or a commit refused for now (a floor on its way, a ride, a launch) puts the
+  "Indietro" focused above "Scarta e rigenera") and Annulla; Rigenera focused when it shows, else Annulla, and the
+  hints show the pad's or the keys' glyphs. The commit runs under the world lock behind a snapshot (action
+  `regenerate`; the drop is refused, nothing written, when the plan or the overrides changed since the preview); the
+  rooms it changed are rebuilt alone in place when the floor's other rooms and its hall stand as they did (the run
+  report's path `room`), else the floor follows the plan stored (room by room, `in-place`, else committed again with
+  the walker kept, `floor`); a walker in a regenerated room stands at its doorway (at the elevator when its room is
+  gone, or when it stood in the hall of a regenerated floor). "Annulla ultima modifica" names the action it undoes (a
+  saved edit or a regeneration, its room, floor or the building, when) before "Annulla la modifica" ("Indietro"
+  focused); there is no redo. A preview or a commit refused for now (a floor on its way, a ride, a launch) puts the
   directory back with `change-unavailable`; while one runs, rides, the editor and live updates wait, and lockstep runs
   wait between frames for its jobs. An update that left a room as it stands because it would have moved something
-  pinned shows the notice `needs-confirmation` (12 s): Enter (the pad's Start) in free roam opens the preview of that
-  room's "Rigenera stanza".
+  pinned shows the notice `needs-confirmation` (12 s, after the update's own notice), naming the room: Enter (the pad's
+  Start) in free roam opens the preview of that room's "Rigenera stanza".
 - The hub (I6 step 5, `docs/i6/step-5.md`; ADR-0014 §3): the ground floor's hall, 18 x 14 x 5 m (building.json's
   `layout.hub`), its rooms on its long walls (the arcade room in the middle of the north wall), a balcony on columns
   along three sides (not walkable), the landmark in its middle (a glowing wireframe globe in a railed circular showcase
