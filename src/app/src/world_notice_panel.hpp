@@ -19,6 +19,10 @@ struct WorldNoticeContent {
     std::string state;
     /// The start room (its id, as --start-room gives it; empty without one), for world_notice::kNoGames.
     std::string startRoom;
+    /// The room world_notice::kNeedsConfirmation offers to regenerate (I4b step 6's review): its kind ("console",
+    /// "shared", "arcade") and, a console room's, its system's name.
+    std::string roomKind;
+    std::string roomTitle;
 
     bool operator==(const WorldNoticeContent&) const = default;
 };

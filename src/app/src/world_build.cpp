@@ -1256,6 +1256,93 @@ std::optional<BuildingResult> unchangedBuilding(const WorldPaths& paths, const c
     return result;
 }
 
+namespace {
+
+/// One collection room of a floor (buildFloor()'s; I4b step 6's review: also a room rebuilt alone,
+/// rebuildRoomsAlone()): its layout in the scene's frame (`scenePlacement`), its cover requests (ADR-0011 §1), its
+/// content digest (from `digests`), its CRT's games (I4 step 6b) and its doorway camera, its scene data kept; its
+/// doorway's box is the caller's (the hall's). None when its collection cannot be laid out (logged: the room shows
+/// without it).
+[[nodiscard]] std::optional<RoomCollection> roomCollectionOf(const world::WorldPlan& plan, const world::Room& room,
+                                                             world::SceneData sceneData,
+                                                             const world::RoomPlacement& scenePlacement,
+                                                             const std::vector<world::CollectionTitle>& titles,
+                                                             const std::map<catalog::SystemName, RoomItems>& items,
+                                                             const FloorSources& sources,
+                                                             const std::map<world::RoomId, std::string>& digests) {
+    auto layout = world::collectionLayout(plan, room.id, sceneData, titles);
+    if (!layout) {
+        spdlog::error("World: the collection of {} cannot be laid out: {}; its room shows without it",
+                      room.id.toString(), layout.error().toString());
+        return std::nullopt;
+    }
+    for (const world::SkippedPlacement& skipped : layout->skipped) {
+        spdlog::warn("World collection: {} in {} not drawn: {}", skipped.placement.game.toString(),
+                     skipped.placement.slot.toString(), skipped.reason);
+    }
+    RoomCollection collection;
+    collection.room = room.id;
+    collection.placement = room.placement;
+    collection.scenePlacement = scenePlacement;
+    collection.layout = world::floorCollectionLayout(std::move(*layout), collection.scenePlacement);
+    collection.doorwayCamera = doorwayCameraIn(room, sceneData.roomTemplate, collection.scenePlacement);
+    const std::vector<catalog::SystemName> held = systemsOf(room);
+    // The room's pack's label palette (I6 step 3) for its generated spines and labels.
+    const RoomPalette palette = labelPaletteOf(sceneData.theme);
+    collection.covers.reserve(collection.layout.items.size());
+    for (const world::CollectionItem& item : collection.layout.items) {
+        // A shared or arcade room's game: its own section's text (each section's items hold the others' games with
+        // none).
+        const auto [text, source] = itemTextOf(items, held, item.game);
+        if (text == nullptr) {
+            continue; // nothing known of it: it keeps the pending picture
+        }
+        CoverItem cover;
+        cover.game = item.game;
+        cover.title = item.title;
+        cover.seed = world::placementSeed(room.seed, item.game, room.mediaFamily);
+        cover.palette = palette;
+        cover.frontKey = item.frontLayerKey;
+        cover.spineKey = item.spineLayerKey;
+        // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.
+        cover.label = sceneData.mediaFamily.coverAspect();
+        // Its family's spine label shape (I6 step 4's review): the printed spine of a case or box on its side.
+        cover.spine = sceneData.mediaFamily.spineAspect();
+        cover.systemName = source->systemName;
+        cover.fallbackTitle = text->fallbackTitle;
+        cover.year = text->year;
+        cover.coverPath = text->coverPath;
+        collection.covers.push_back(std::move(cover));
+    }
+    if (const auto digest = digests.find(room.id); digest != digests.end()) {
+        collection.contentDigest = digest->second;
+    }
+    // Its hero CRT plays its placed games (I3 step 10c; ADR-0013 §9): a shared or arcade room's, its sections' in the
+    // room's featured order, each game's data from its own section's items.
+    if (sources.screenMediaRoot) {
+        collection.screenGames = roomScreenGames(
+            collection.layout, [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
+            *sources.screenMediaRoot);
+    }
+    if (sources.lastPlayed) {
+        // The catalog's sessions now, as the building's items will hold them (a game played since they were written:
+        // the CRT's start choice is the building's).
+        for (ScreenGame& game : collection.screenGames) {
+            const auto id = catalog::GameId::parse(game.id);
+            const auto played = id ? sources.lastPlayed->find(*id) : sources.lastPlayed->end();
+            game.lastPlayed =
+                played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second) : std::nullopt;
+        }
+    }
+    if (sources.screenMediaRoot) {
+        addScreenCards(collection.screenGames, collection.covers);
+    }
+    collection.sceneData = std::move(sceneData);
+    return collection;
+}
+
+} // namespace
+
 void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& sources) {
     if (!build.plan) {
         return;
@@ -1425,83 +1512,19 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             if (roomData == data->rooms.end()) {
                 continue;
             }
-            auto layout = world::collectionLayout(plan, room->id, roomData->second, titles);
-            if (!layout) {
-                spdlog::error("World: the collection of {} cannot be laid out: {}; its room shows without it",
-                              room->id.toString(), layout.error().toString());
+            const world::RoomPlacement scenePlacement =
+                startPlacement ? relativePlacement(room->placement, *startPlacement) : room->placement;
+            std::optional<RoomCollection> collection = roomCollectionOf(
+                plan, *room, std::move(roomData->second), scenePlacement, titles, items, sources, digests);
+            if (!collection) {
                 continue;
             }
-            for (const world::SkippedPlacement& skipped : layout->skipped) {
-                spdlog::warn("World collection: {} in {} not drawn: {}", skipped.placement.game.toString(),
-                             skipped.placement.slot.toString(), skipped.reason);
-            }
-            RoomCollection collection;
-            collection.room = room->id;
-            collection.placement = room->placement;
-            collection.scenePlacement =
-                startPlacement ? relativePlacement(room->placement, *startPlacement) : room->placement;
-            collection.layout = world::floorCollectionLayout(std::move(*layout), collection.scenePlacement);
-            collection.doorway = doorwayBox(sceneBuild->hall, room->id, startPlacement);
-            collection.doorwayCamera =
-                doorwayCameraIn(*room, roomData->second.roomTemplate, collection.scenePlacement);
-            const std::vector<catalog::SystemName> held = systemsOf(*room);
-            // The room's pack's label palette (I6 step 3) for its generated spines and labels.
-            const RoomPalette palette = labelPaletteOf(roomData->second.theme);
-            collection.covers.reserve(collection.layout.items.size());
-            for (const world::CollectionItem& item : collection.layout.items) {
-                // A shared or arcade room's game: its own section's text (each section's items hold the others' games
-                // with none).
-                const auto [text, source] = itemTextOf(items, held, item.game);
-                if (text == nullptr) {
-                    continue; // nothing known of it: it keeps the pending picture
-                }
-                CoverItem cover;
-                cover.game = item.game;
-                cover.title = item.title;
-                cover.seed = world::placementSeed(room->seed, item.game, room->mediaFamily);
-                cover.palette = palette;
-                cover.frontKey = item.frontLayerKey;
-                cover.spineKey = item.spineLayerKey;
-                // The room's family's label shape (ADR-0013 §4): the 16-bit cartridges keep I3's fit.
-                cover.label = roomData->second.mediaFamily.coverAspect();
-                // Its family's spine label shape (I6 step 4's review): the printed spine of a case or box on its side.
-                cover.spine = roomData->second.mediaFamily.spineAspect();
-                cover.systemName = source->systemName;
-                cover.fallbackTitle = text->fallbackTitle;
-                cover.year = text->year;
-                cover.coverPath = text->coverPath;
-                collection.covers.push_back(std::move(cover));
-            }
-            build.itemsRead += collection.covers.size();
-            if (const auto digest = digests.find(room->id); digest != digests.end()) {
-                collection.contentDigest = digest->second;
-            }
-            // Its hero CRT plays its placed games (I3 step 10c; ADR-0013 §9): a shared or arcade room's, its sections'
-            // in the room's featured order, each game's data from its own section's items.
-            if (sources.screenMediaRoot) {
-                collection.screenGames = roomScreenGames(
-                    collection.layout,
-                    [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
-                    *sources.screenMediaRoot);
-            }
-            if (sources.lastPlayed) {
-                // The catalog's sessions now, as the building's items will hold them (a game played since they were
-                // written: the CRT's start choice is the building's).
-                for (ScreenGame& game : collection.screenGames) {
-                    const auto id = catalog::GameId::parse(game.id);
-                    const auto played = id ? sources.lastPlayed->find(*id) : sources.lastPlayed->end();
-                    game.lastPlayed = played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second)
-                                                                          : std::nullopt;
-                }
-            }
-            if (sources.screenMediaRoot) {
-                addScreenCards(collection.screenGames, collection.covers);
-            }
+            collection->doorway = doorwayBox(sceneBuild->hall, room->id, startPlacement);
+            build.itemsRead += collection->covers.size();
             if (build.startRoom && room->id == *build.startRoom) {
-                build.screenGames = collection.screenGames;
+                build.screenGames = collection->screenGames;
             }
-            collection.sceneData = std::move(roomData->second);
-            build.rooms.push_back(std::move(collection));
+            build.rooms.push_back(std::move(*collection));
         }
         build.layoutMs = millisecondsSince(layoutStart);
         build.floorMs = millisecondsSince(start);
@@ -1516,6 +1539,78 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         noPlan(build, world_notice::kFailed, std::string("the floor could not be made: ") + error.what());
     }
     build.milliseconds += millisecondsSince(start);
+}
+
+Status rebuildRoomsAlone(const WorldPaths& paths, WorldBuild& build, std::span<const world::RoomId> rooms,
+                         const FloorSources& sources) {
+    if (!build.plan) {
+        return makeError(ErrorCode::InvalidArgument, "no plan to rebuild the rooms from", "rebuildRoomsAlone");
+    }
+    const Clock::time_point start = Clock::now();
+    try {
+        world::WorldPlan& plan = *build.plan;
+        // As buildFloor() draws a stored building's ground floor (nothing written).
+        if (auto building = world::loadBuildingData(paths.assetRoot)) {
+            static_cast<void>(world::placeOnHub(plan.rooms, building->layout));
+        }
+        std::vector<const world::Room*> records;
+        for (const world::RoomId& id : rooms) {
+            const auto record = std::find_if(plan.rooms.begin(), plan.rooms.end(),
+                                             [&](const world::Room& room) { return room.id == id; });
+            if (record == plan.rooms.end() || record->floor != build.floor) {
+                return makeError(ErrorCode::NotFound, "the plan holds no such room on the floor " + build.floor,
+                                 id.toString());
+            }
+            records.push_back(&*record);
+        }
+        const std::map<catalog::SystemName, RoomItems> items = floorItems(paths, build, records, sources);
+        const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
+        std::map<world::RoomId, std::string> digests;
+        if (auto computed = world::roomContentDigests(plan)) {
+            digests = std::move(*computed);
+        } else {
+            spdlog::warn("World: the rooms' content digests: {}; every room is compared whole",
+                         computed.error().toString());
+        }
+        const world::LightingProfile lighting = world::roomLightingProfile(paths.assetRoot, paths.configDir);
+        for (const world::Room* room : records) {
+            const auto shown =
+                std::find_if(build.rooms.begin(), build.rooms.end(),
+                             [&](const RoomCollection& collection) { return collection.room == room->id; });
+            if (shown == build.rooms.end()) {
+                return makeError(ErrorCode::NotFound, "the floor shown has no collection of the room",
+                                 room->id.toString());
+            }
+            // Its scene data as loadFloorSceneData() reads it: the profile, its first system's platform tags.
+            const catalog::SystemName system = room->sections.empty() ? room->id.system() : room->sections.front();
+            const auto known = items.find(system);
+            const std::span<const std::string> tags = known != items.end()
+                                                          ? std::span<const std::string>(known->second.platforms)
+                                                          : std::span<const std::string>();
+            auto data = world::loadSceneData(paths.assetRoot, plan, room->id, lighting, tags);
+            if (!data) {
+                return propagate(data.error());
+            }
+            std::optional<RoomCollection> collection =
+                roomCollectionOf(plan, *room, std::move(*data), shown->scenePlacement, titles, items, sources, digests);
+            if (!collection) {
+                return makeError(ErrorCode::InvalidArgument, "the room's collection cannot be laid out",
+                                 room->id.toString());
+            }
+            collection->doorway = shown->doorway;
+            if (build.startRoom && room->id == *build.startRoom) {
+                build.screenGames = collection->screenGames;
+            }
+            *shown = std::move(*collection);
+        }
+    } catch (const std::exception& error) {
+        return makeError(ErrorCode::InvalidArgument, std::string("the rooms could not be made: ") + error.what(),
+                         "rebuildRoomsAlone");
+    }
+    build.layoutMs = millisecondsSince(start);
+    build.floorMs = build.layoutMs;
+    build.milliseconds += build.layoutMs;
+    return ok();
 }
 
 WorldBuild buildWorld(const WorldBuildInput& input, const core::JobContext& job) {

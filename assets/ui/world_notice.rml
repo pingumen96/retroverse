@@ -16,7 +16,8 @@
 		"Rigenera stanza" while it shows).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
-		for no-games; empty without one. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
+		for no-games; empty without one. roomKind (console, shared, arcade) and roomTitle (a console room's system's
+		name): the room needs-confirmation offers to regenerate. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
 		no input: the quick catalog (Tab) is where to act.
 	-->
 	<title>Stanza</title>
@@ -64,8 +65,8 @@
 
 		<div data-if="notice == 'regeneration'">
 			<h1>La stanza resta com'era</h1>
-			<p>La configurazione del mondo è cambiata: "Rigenera stanza" o "Rigenera mondo" nell'indice (M, scheda
-				Modifiche) la allestisce di nuovo, dopo averne conservato una copia.</p>
+			<p>La configurazione del mondo è cambiata: "Rigenera stanza" o "Rigenera mondo" nell'indice (M o Select, scheda
+				Modifiche) la riallestisce, dopo averne conservato una copia.</p>
 		</div>
 
 		<div data-if="notice == 'refused'">
@@ -93,8 +94,11 @@
 
 		<div data-if="notice == 'needs-confirmation'">
 			<h1>Una stanza attende la tua conferma</h1>
-			<p>Per accogliere i giochi nuovi la stanza dovrebbe spostare qualcosa che hai fissato, e per ora resta com'è.
-				Premi Invio (Start sul controller) per vedere cosa cambierebbe rigenerandola.</p>
+			<p>Una stanza resta com'è per non spostare ciò che hai fissato.</p>
+			<p class="room-name" data-if="roomKind == 'console'">{{ roomTitle }}</p>
+			<p class="room-name" data-if="roomKind == 'shared'">Sala condivisa</p>
+			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade</p>
+			<p>Premi Invio (Start sul controller) per vedere cosa cambierebbe rigenerandola.</p>
 		</div>
 
 		<div data-if="notice == 'rooms-migrated'">

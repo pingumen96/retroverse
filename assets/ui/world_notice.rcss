@@ -48,3 +48,9 @@ p {
 	line-height: 1.35em;
 	margin-bottom: 10dp;
 }
+
+/* I4b step 6's review: the room needs-confirmation offers, named on a line of its own. */
+.room-name {
+	font-weight: bold;
+	margin-top: -4dp;
+}

@@ -15,11 +15,13 @@
 //     world::regenerate() of the scope, the overrides kept: its impact as the panel's content (previewContentOf()).
 //   the commit (under the world lock)
 //     the plan and the overrides read again: the preview's own result committed when they are what it read and the
-//     overrides are kept, else the scope regenerated again (with the consent's dropOverrides); a plan that breaks a
-//     hard rule is never written; world::commitWorld() behind a snapshot (action "regenerate", the scope's text), which
-//     "Annulla ultima modifica" and `worldplan undo` restore; the rooms' items files written again for the new plan (a
-//     game placed anew has its title and cover for the floors' builds) and the building stamp removed (the next start
-//     runs the building job: the plan is not the one the stamp names).
+//     overrides are kept; the drop refused (changed) when either differs from what the preview showed (the consent to
+//     drop is to the customizations it named); else the scope regenerated again with the overrides kept; a plan that
+//     breaks a hard rule is never written; world::commitWorld() behind a snapshot (action "regenerate", the scope's
+//     text), which "Annulla ultima modifica" and `worldplan undo` restore; the plan committed is the regeneration's own
+//     (its digest the commit's: nothing read back); when it changed anything, the rooms' items files written again for
+//     the new plan (a game placed anew has its title and cover for the floors' builds) and the building stamp removed
+//     (the next start runs the building job: the plan is not the one the stamp names).
 //   the undo
 //     its preview reads the snapshots (world::scanSnapshots(), no lock): the snapshot undo restores next, or why there
 //     is none (nothing to undo, a damaged folder, an action in progress); its commit, under the lock, undoes it
@@ -30,9 +32,11 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <rv/app/room_items.hpp>
@@ -62,8 +66,8 @@ inline constexpr std::string_view kFailed = "failed";
 } // namespace regenerate_failure
 
 /// What a regeneration reads besides the world's files: the catalog's building snapshot and each system's selection,
-/// the world's configuration and data, the rooms' data through one caching loader. Immutable once made (the loader
-/// keeps its own cache: one job at a time calls it).
+/// the world's configuration and data, the rooms' data through one caching loader. Immutable once made; the loader
+/// keeps its own cache behind a mutex (a cancelled job may still run beside the next one).
 struct RegenerationInputs {
     catalog::LibraryId library;
     std::shared_ptr<const BuildingSnapshot> snapshot;
@@ -133,7 +137,9 @@ struct RegenerationCommit {
     /// Why nothing was written ("" it went through: regenerate_failure's key), and the error for the log.
     std::string failure;
     std::string error;
-    /// The plan or the overrides were written (false: the folder held them already), behind the snapshot named.
+    /// The regeneration changed the plan or the overrides (false: nothing to write, no items files written, no stamp
+    /// removed); they were written (false: the folder held them already), behind the snapshot named.
+    bool changed = false;
     bool written = false;
     std::string snapshot;
     /// The preview's own result was committed (the world as it read it, the overrides kept); else the scope was
@@ -154,7 +160,8 @@ struct RegenerationCommit {
 };
 
 /// Commits `preview`'s scope with the consent `dropOverrides` (ADR-0015 §5), as the file comment says; `writer` names
-/// the program in the snapshot and the meta sidecar.
+/// the program in the snapshot and the meta sidecar. Failures: busy (the lock), no-plan, changed (the drop asked over a
+/// plan or overrides other than the preview's), invalid-plan, failed.
 [[nodiscard]] RegenerationCommit commitRegeneration(const WorldPaths& paths, const RegenerationPreview& preview,
                                                     bool dropOverrides, const RegenerationInputs& inputs,
                                                     std::string_view writer,
@@ -178,12 +185,17 @@ struct UndoPreview {
 
 /// What an undo did.
 struct UndoCommit {
+    /// Why nothing was restored ("" it was: regenerate_failure's key); for the log, the error (also of a plan restored
+    /// that cannot be read back: `written` set, no plan).
     std::string failure;
     std::string error;
+    /// The snapshot was restored (the plan and the overrides written).
+    bool written = false;
     /// The snapshot restored and the one kept of the state it replaced.
     std::string restored;
     std::string kept;
-    /// The plan stored now (lifted when the snapshot held a schema-1 plan) and its digest.
+    /// The plan stored now (lifted when the snapshot held a schema-1 plan) and its digest; none when it cannot be read
+    /// back (the floor then follows the stored plan through a live update).
     std::shared_ptr<const world::WorldPlan> plan;
     std::string planDigest;
     std::map<catalog::SystemName, RoomItems> items;
@@ -194,8 +206,9 @@ struct UndoCommit {
 };
 
 /// Undoes the last explicit action under the world lock when the snapshot it restores is still `expected` (else
-/// changed, nothing written), then writes the rooms' items again from `snapshot` (when given: the catalog's) and
-/// removes the building stamp.
+/// changed, nothing written), reads the plan restored, then writes the rooms' items again from `snapshot` (the
+/// catalog's: the app's inputs, waited for) and removes the building stamp (whenever the undo wrote, even when the plan
+/// cannot be read back).
 [[nodiscard]] UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library,
                                     std::string_view expected, std::string_view writer,
                                     const BuildingSnapshot* snapshot,
@@ -210,15 +223,59 @@ struct UndoCommit {
                                                                      const world::WorldPlan& plan);
 
 /// The area that holds the walker (`area`: a room's id, "hall:<floor>") is one an action of `scope` changes (a room
-/// scope covers its chain; "floor:<id>" the rooms `before` holds on that floor; "world" every room), so that the walker
-/// stands at its doorway after it (ADR-0015 §5). A hall never is.
+/// scope covers its chain; "floor:<id>" the rooms `before` holds on that floor and that floor's hall, whose rooms are
+/// placed again; "world" every room and every hall), so that the walker stands at its doorway, or at the elevator
+/// (ADR-0015 §5). A room scope never covers a hall.
 [[nodiscard]] bool regenerationCovers(std::string_view area, std::string_view scope, const world::WorldPlan* before);
 
-/// The first room of `plan` that one of an update's needsConfirmation sentences names (a pin's slot or fixture,
-/// "room:snes/fx:w01 ...", a room not migrated "migrate room:saturn ..."), the room whose "Rigenera stanza" the
-/// notice offers; none when they name no room of the plan.
-[[nodiscard]] std::optional<world::RoomId> confirmationRoomOf(const std::vector<std::string>& sentences,
+/// The room whose "Rigenera stanza" the update's needs-confirmation notice offers: the first of `rooms` (the change
+/// report's needsConfirmationRooms, in its sentences' order) that `plan` holds; none when it holds none of them.
+[[nodiscard]] std::optional<world::RoomId> confirmationRoomOf(const std::vector<world::RoomId>& rooms,
                                                               const world::WorldPlan& plan);
+
+/// The rooms of `floor` a commit changed when it changed nothing else of the floor (I4b step 6's review: shown alone,
+/// step 4's path): the floor's rooms in `before` and `after` are the same, each record the same but its generator
+/// version (its id, kind, sections, place, interior, template and its version, family and pack: the hall is the same),
+/// and the rooms returned are those whose content digest differs (world::roomContentDigests()). None when the floor's
+/// rooms changed otherwise (added, removed, moved, grown: the floor is built again) or a digest cannot be computed.
+[[nodiscard]] std::optional<std::vector<world::RoomId>> roomsChangedAlone(const world::WorldPlan& before,
+                                                                          const world::WorldPlan& after,
+                                                                          std::string_view floor);
+
+/// A job's mailbox (I4b step 6's review): the job asked last wins. reset() before a job is submitted names its
+/// generation and empties the box; post() keeps an answer only from that generation or a later one (a cancelled job's
+/// late answer never overwrites the next job's); take() gives the answer of the generation asked for, once.
+template <class Answer>
+class JobMailbox {
+public:
+    void reset(std::uint64_t generation) {
+        const std::lock_guard lock(m_mutex);
+        m_answer.reset();
+        m_generation = generation;
+    }
+    /// Whether the answer was kept.
+    bool post(std::uint64_t generation, Answer answer) {
+        const std::lock_guard lock(m_mutex);
+        if (generation < m_generation) {
+            return false;
+        }
+        m_answer = std::move(answer);
+        m_generation = generation;
+        return true;
+    }
+    [[nodiscard]] std::optional<Answer> take(std::uint64_t generation) {
+        const std::lock_guard lock(m_mutex);
+        if (!m_answer || m_generation != generation) {
+            return std::nullopt;
+        }
+        return std::exchange(m_answer, std::nullopt);
+    }
+
+private:
+    std::mutex m_mutex;
+    std::optional<Answer> m_answer;
+    std::uint64_t m_generation = 0;
+};
 
 /// "dd/mm/yyyy hh:mm" of a snapshot's UTC time ("2026-10-29T10:15:30.123Z") in the machine's local time; empty for a
 /// time that does not read.

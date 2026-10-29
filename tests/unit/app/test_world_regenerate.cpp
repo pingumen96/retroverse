@@ -3,7 +3,10 @@
 // written, its content), the commit of its own result behind a snapshot, a commit that regenerates again over a world
 // changed meanwhile, the drop of the room's overrides, the undo's preview and commit (the plan's SHA-256 back, a stale
 // one refused), the failures (an action in progress, nothing to undo), the scope of a walker's room and the room an
-// update's needsConfirmation names.
+// update's needsConfirmation names. Since the step's review: the drop refused over overrides changed since the preview,
+// a commit that changes nothing writes nothing (no items, the stamp kept), the room of the generator's own
+// needs-confirmation (a pinned south-wall poster refusing a growth), a late job answer never taking a newer one's
+// place, the rooms a commit changed alone.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,6 +35,7 @@
 #include <rv/world/world_snapshots.hpp>
 #include <rv/world/world_store.hpp>
 
+#include "../world/world_update_support.hpp"
 #include "catalog_test_support.hpp"
 
 namespace fs = std::filesystem;
@@ -190,6 +194,14 @@ TEST_CASE("app/world_regenerate: a room's preview writes nothing; Rigenera commi
     CHECK(content.overrides == 1);
     CHECK(content.gamesMoved == preview.regeneration->impact.gamesMoved.size());
     CHECK(content.gamesMoved > 0);
+    // The room alone changed on its floor (its place, size and template kept), or the floor whole.
+    const std::string floor = preview.previous->rooms.front().floor;
+    if (const auto alone =
+            rv::app::roomsChangedAlone(*preview.previous, preview.regeneration->result.plan, floor)) {
+        CHECK(*alone == std::vector<rv::world::RoomId>{kSnesRoom});
+    }
+    CHECK(rv::app::roomsChangedAlone(*preview.previous, *preview.previous, floor) ==
+          std::vector<rv::world::RoomId>{});
 
     // Rigenera: the preview's own result (the world as it read it), behind a snapshot; the pin kept.
     const rv::app::RegenerationCommit commit =
@@ -197,12 +209,15 @@ TEST_CASE("app/world_regenerate: a room's preview writes nothing; Rigenera commi
     INFO(commit.error);
     REQUIRE(commit.failure.empty());
     CHECK(commit.reused);
+    CHECK(commit.changed);
     CHECK(commit.written);
     CHECK_FALSE(commit.snapshot.empty());
     REQUIRE(commit.plan);
     const auto after = rv::world::readStoredPlan(files.plan);
     REQUIRE(after.has_value());
+    // The plan committed is the regeneration's, its digest the commit's (nothing read back), the file's.
     CHECK(after->digest == commit.planDigest);
+    CHECK(*commit.plan == after->plan);
     CHECK(after->digest != edited);
     CHECK(after->plan == preview.regeneration->result.plan);
     const auto placement = std::find_if(after->plan.placements.begin(), after->plan.placements.end(),
@@ -227,6 +242,7 @@ TEST_CASE("app/world_regenerate: a room's preview writes nothing; Rigenera commi
                                                            "retroverse (test)", inputs.inputs->snapshot.get());
     INFO(undone.error);
     REQUIRE(undone.failure.empty());
+    CHECK(undone.written);
     CHECK(undone.restored == commit.snapshot);
     CHECK_FALSE(undone.kept.empty());
     CHECK(undone.planDigest == edited);
@@ -274,12 +290,48 @@ TEST_CASE("app/world_regenerate: a world changed since the preview is regenerate
     REQUIRE(second.failure.empty());
     CHECK_FALSE(second.content.changed); // the pins are honoured as they stand
     CHECK(second.content.overrides == 2);
-    const rv::app::RegenerationCommit dropped =
+
+    // "Rigenera" of a preview with nothing to change: nothing written, no items files, the building stamp kept.
+    const fs::path stamp = rv::app::buildingStampFile(paths.cacheDir, inputs.inputs->library);
+    REQUIRE(rv::app::writeBuildingStamp(stamp, rv::app::BuildingStamp{"plan", "catalog", "inputs", 0}).has_value());
+    const std::string planBefore = rv::world::readStoredPlan(files.plan).value().digest;
+    const rv::app::RegenerationCommit nothing =
+        rv::app::commitRegeneration(paths, second, false, *inputs.inputs, "retroverse (test)");
+    INFO(nothing.error);
+    REQUIRE(nothing.failure.empty());
+    CHECK(nothing.reused);
+    CHECK_FALSE(nothing.changed);
+    CHECK_FALSE(nothing.written);
+    CHECK(nothing.items.empty());
+    CHECK(nothing.planDigest == planBefore);
+    CHECK(fs::exists(stamp));
+
+    // The drop is consented to for the customizations the preview named: once overrides.json changed alone (a pin of
+    // the room added beside the plan, as another program would write it; the plan the same), it is refused (changed)
+    // and nothing is written.
+    rv::world::WorldOverrides added = rv::world::loadOverrides(files.overrides).value();
+    added.gamePins.push_back({rv::catalog::GameId::fromValue(0x123456789).value(),
+                              rv::world::SlotId::parse("room:snes/fx:w01/s:0.0").value()});
+    REQUIRE(rv::core::writeTextFileAtomic(files.overrides, rv::world::writeOverrides(added).value()).has_value());
+    const std::optional<std::string> overridesBefore = fileText(files.overrides);
+    const rv::app::RegenerationCommit stale =
         rv::app::commitRegeneration(paths, second, true, *inputs.inputs, "retroverse (test)");
+    CHECK(stale.failure == rv::app::regenerate_failure::kChanged);
+    CHECK_FALSE(stale.written);
+    CHECK(rv::world::readStoredPlan(files.plan).value().digest == planBefore);
+    CHECK(fileText(files.overrides) == overridesBefore);
+    // Its preview again (the overrides as they are now), then the drop.
+    const rv::app::RegenerationPreview third =
+        rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *inputs.inputs);
+    REQUIRE(third.failure.empty());
+    CHECK(third.content.overrides >= 2);
+    const rv::app::RegenerationCommit dropped =
+        rv::app::commitRegeneration(paths, third, true, *inputs.inputs, "retroverse (test)");
     INFO(dropped.error);
     REQUIRE(dropped.failure.empty());
     CHECK_FALSE(dropped.reused);
-    CHECK(dropped.impact.overridesDropped.size() == 2);
+    CHECK(dropped.changed);
+    CHECK(dropped.impact.overridesDropped.size() >= 2);
     CHECK(rv::world::loadOverrides(files.overrides).value().empty());
     CHECK(rv::world::readStoredPlan(files.plan).value().digest == first.planDigest);
 }
@@ -341,17 +393,96 @@ TEST_CASE("app/world_regenerate: the walker's room in a scope; the room a needsC
     CHECK(rv::app::regenerationCovers("room:snes", "floor:gen4", &plan));
     CHECK_FALSE(rv::app::regenerationCovers("area:shared:handheld", "floor:gen4", &plan));
     CHECK(rv::app::regenerationCovers("area:shared:handheld", "world", &plan));
-    CHECK_FALSE(rv::app::regenerationCovers("hall:gen4", "world", &plan));
-    // The update's sentences (a pin's slot, a fixture, a room not migrated): the first room of the plan named.
-    CHECK(rv::app::confirmationRoomOf({"room:snes/fx:w01: a side-wall module would overlap room:snes/fx:dc01"}, plan) ==
-          kSnesRoom);
-    CHECK(rv::app::confirmationRoomOf({"fixture area:shared:handheld/fx:e02 pinned at x 100 z 200 mm, yaw 0 cdeg"},
-                                      plan) == shared.id);
-    CHECK(rv::app::confirmationRoomOf({"migrate room:psx from a to b: a pin names the room",
-                                       "game 0123456789abcdef pinned to room:snes/fx:dc01/l0/s2"},
-                                      plan) == kSnesRoom);
-    CHECK_FALSE(rv::app::confirmationRoomOf({"migrate room:psx from a to b: a pin names the room"}, plan).has_value());
+    // A hall: its floor's regeneration places its rooms again, the world's every floor's; a room's never.
+    CHECK(rv::app::regenerationCovers("hall:gen4", "world", &plan));
+    CHECK(rv::app::regenerationCovers("hall:gen4", "floor:gen4", &plan));
+    CHECK_FALSE(rv::app::regenerationCovers("hall:gen4", "floor:handheld", &plan));
+    CHECK_FALSE(rv::app::regenerationCovers("hall:gen4", "room:snes", &plan));
+    // The room an update's needs-confirmation offers: the first of its rooms the plan holds, in its sentences' order.
+    const rv::world::RoomId psx = rv::world::RoomId::parse("room:psx").value();
+    CHECK(rv::app::confirmationRoomOf({psx, shared.id, kSnesRoom}, plan) == shared.id);
+    CHECK_FALSE(rv::app::confirmationRoomOf({psx}, plan).has_value());
+    CHECK_FALSE(rv::app::confirmationRoomOf({}, plan).has_value());
     CHECK(rv::app::localSnapshotTime("not a time").empty());
     CHECK(std::regex_match(rv::app::localSnapshotTime("2026-10-29T10:15:30.123Z"),
                            std::regex(R"(\d\d/\d\d/2026 \d\d:\d\d)")));
+}
+
+TEST_CASE("app/world_regenerate: the notice offers the room of the generator's own needs-confirmation",
+          "[app][world_regenerate]") {
+    using namespace rv::test::world;
+    constexpr std::uint64_t kSelection = 20261018;
+    constexpr std::uint64_t kWorld = 102938;
+    // A room with a fixture pinned on its south wall: an update with more titles than its slots would grow it and
+    // move that fixture, so the growth is refused and said so (incremental.cpp's sentence names the head's socket,
+    // not its room: the room comes beside it).
+    const rv::world::RoomSelection big = makeSelection(3205, kSelection);
+    const rv::world::WorldPlan full = generateSelection(big, kWorld).plan;
+    rv::world::WorldOverrides south;
+    for (const rv::world::Fixture& fixture : full.fixtures) {
+        const rv::world::TemplateSocket* socket = snesData().roomTemplate.socket(fixture.id.socket());
+        if (socket != nullptr && socket->wall == rv::world::Wall::South && south.fixturePins.empty()) {
+            south.fixturePins.push_back({fixture.id, std::nullopt});
+        }
+    }
+    REQUIRE_FALSE(south.fixturePins.empty());
+    rv::world::RoomSelection more = big;
+    std::set<std::uint64_t> taken = gameValuesOf(big);
+    rv::core::Random random(77);
+    const SpineCounts counts = countSpine(full);
+    for (std::uint64_t i = 0; i < counts.freeSlots + counts.dressedSlots + 3; ++i) {
+        addTitle(more, random, taken);
+    }
+    const rv::world::GenerationResult held = updateRoom(full, more, kWorld, south);
+    REQUIRE(held.changes.needsConfirmation.size() == 1);
+    INFO(held.changes.needsConfirmation.front());
+    CHECK(held.changes.needsConfirmation.front().find("room:snes") == std::string::npos);
+    REQUIRE(held.changes.needsConfirmationRooms.size() == 1);
+    CHECK(rv::app::confirmationRoomOf(held.changes.needsConfirmationRooms, held.plan) == kSnesRoom);
+}
+
+TEST_CASE("app/world_regenerate: a job's late answer never takes a newer job's place", "[app][world_regenerate]") {
+    rv::app::JobMailbox<std::string> box;
+    // The first job is asked (generation 1), then cancelled for a second one (generation 2) before it answers.
+    box.reset(1);
+    box.reset(2);
+    // The second answers first; the first, cancelled but still running, answers late: refused.
+    CHECK(box.post(2, "second"));
+    CHECK_FALSE(box.post(1, "first"));
+    CHECK_FALSE(box.take(1).has_value());
+    CHECK(box.take(2) == std::optional<std::string>("second"));
+    CHECK_FALSE(box.take(2).has_value()); // once
+    // A late answer of the first job before the second's: refused too, the second's still taken.
+    box.reset(3);
+    CHECK_FALSE(box.post(2, "late"));
+    CHECK_FALSE(box.take(3).has_value());
+    CHECK(box.post(3, "third"));
+    CHECK(box.take(3) == std::optional<std::string>("third"));
+}
+
+TEST_CASE("app/world_regenerate: the rooms a commit changed alone on a floor", "[app][world_regenerate]") {
+    using namespace rv::test::world;
+    const rv::world::WorldPlan before = generateSelection(makeSelection(120, 20261018), 102938).plan;
+    REQUIRE(before.rooms.size() == 1);
+    const std::string floor = before.rooms.front().floor;
+    // Nothing changed: no room.
+    CHECK(rv::app::roomsChangedAlone(before, before, floor) == std::vector<rv::world::RoomId>{});
+    // Two games swapped within the room: the room alone.
+    rv::world::WorldPlan moved = before;
+    REQUIRE(moved.placements.size() >= 2);
+    std::swap(moved.placements[0].game, moved.placements[1].game);
+    CHECK(rv::app::roomsChangedAlone(before, moved, floor) == std::vector<rv::world::RoomId>{kSnesRoom});
+    // Another floor's view: nothing of it changed.
+    CHECK(rv::app::roomsChangedAlone(before, moved, "another") == std::vector<rv::world::RoomId>{});
+    // The room moved, or grown: the hall changes, the floor is built again.
+    rv::world::WorldPlan placed = moved;
+    placed.rooms.front().placement.xMm += 1000;
+    CHECK_FALSE(rv::app::roomsChangedAlone(before, placed, floor).has_value());
+    rv::world::WorldPlan grown = moved;
+    grown.rooms.front().maxZMm += 500;
+    CHECK_FALSE(rv::app::roomsChangedAlone(before, grown, floor).has_value());
+    // A room's generator version alone is no change of its place.
+    rv::world::WorldPlan stamped = moved;
+    stamped.rooms.front().generatorVersion = {};
+    CHECK(rv::app::roomsChangedAlone(before, stamped, floor) == std::vector<rv::world::RoomId>{kSnesRoom});
 }

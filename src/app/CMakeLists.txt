@@ -71,9 +71,7 @@ rv_forbid_link(rv_app_cli)
 # reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c), the live update's decision
 # (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b); since I4b
 # the editor's draft (world_edit_draft: step 3) and the regenerations' and the undo's jobs (world_regenerate_job: step
-# 6). Kept
-# apart from rv_app_cli,
-# which the GPU smoke tests link for the run report alone.
+# 6). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp

@@ -189,6 +189,12 @@ struct ProductUi::Impl {
     std::unique_ptr<ui::RegeneratePreviewScreen> previewScreen;
     ui::RegeneratePreviewModel preview;
     std::vector<ui::RegenerateCommandKind> previewCommands;
+    /// The preview's buttons as last seen and when they changed (the run's time): a click within
+    /// kPreviewClickGuardSeconds of a change is the second click of a double-click meant for what showed before (I4b
+    /// step 6's review: never "Scarta e rigenera" by a double-click on "Rigenera e scarta").
+    std::vector<ui::RegenerateButton> previewButtonsSeen;
+    double previewButtonsSince = 0.0;
+    static constexpr double kPreviewClickGuardSeconds = 0.5;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
@@ -1260,6 +1266,17 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.followHandover();
 
     s.commands.clear();
+    if (uiActions != nullptr) {
+        // I4b step 6's review: the preview's hints show the glyphs of the device used last.
+        s.preview.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
+    }
+    const auto followPreviewButtons = [&] {
+        if (std::vector<ui::RegenerateButton> buttons = s.preview.buttons(); buttons != s.previewButtonsSeen) {
+            s.previewButtonsSeen = std::move(buttons);
+            s.previewButtonsSince = timeSeconds;
+        }
+    };
+    followPreviewButtons();
     if (uiActions != nullptr && hasInput()) {
         s.nav.update(*uiActions, deltaSeconds, s.commands);
         for (const ui::UiCommand command : s.commands.commands()) {
@@ -1290,13 +1307,23 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             s.directoryCommand(s.directory.click(*click));
         }
     }
-    // I4b step 6: the preview's clicks.
+    // I4b step 6: the preview's clicks (but the second of a double-click, whose button changed under it).
+    followPreviewButtons();
     if (s.previewScreen) {
         if (const std::optional<ui::RegenerateButton> click = s.previewScreen->takeClicked();
             click && s.previewShown() && !s.panel->visible()) {
-            s.previewCommand(s.preview.click(*click));
+            if (timeSeconds - s.previewButtonsSince < Impl::kPreviewClickGuardSeconds) {
+                spdlog::info("Frame {}: a click on the preview's {} ignored (its buttons changed {:.2f} s ago)",
+                             s.context.frameIndex(), ui::toString(*click), timeSeconds - s.previewButtonsSince);
+            } else {
+                s.previewCommand(s.preview.click(*click));
+            }
         }
     }
+    followPreviewButtons();
+    // This input frame's commands are applied: a content that arrives after them (the world's update) ignores the
+    // next input frame's Activate.
+    s.preview.endInputFrame();
     if (std::exchange(s.refreshRequested, false)) {
         s.requestRefresh(RefreshTrigger::User);
     }

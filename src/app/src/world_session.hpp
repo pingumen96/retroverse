@@ -118,6 +118,7 @@ namespace rv::app {
 class AppContext;
 class CollectionInstance;
 struct RegenerateJobAnswer;
+struct RegenerateShownFloor;
 struct WorldRegenerations;
 enum class RegenerateJob : std::uint8_t;
 class CoverLoader;
@@ -350,15 +351,35 @@ private:
     void beginRegeneration(ProductUi& product, ui::RegenerateKind kind, world::RegenerationScope scope,
                            std::string_view via, const std::optional<ui::DirectoryCommand>& command);
     /// Every update: the state made, the catalog's inputs following its refreshes, the update's needsConfirmation
-    /// offered by the notice, a job's answer taken, the inputs read ahead while the directory shows "Modifiche", the
-    /// panel's choices (a cancel, the commit's job).
+    /// offered by the notice, a job's answer taken, a commit given up after kCommitPatience, the inputs read ahead
+    /// while the directory shows "Modifiche" or the notice offers a preview, the panel's choices (a cancel, the
+    /// commit's job).
     void followRegeneration(ProductUi& product);
-    void followConfirmations();
+    /// A building's result that needs a confirmation (recordBuild()'s rooms): its room offered by the notice once no
+    /// other notice shows (the build's own first), its inputs read ahead.
+    void followConfirmations(ProductUi& product);
     void prewarmRegeneration(ProductUi& product);
     void submitRegenerateJob(RegenerateJob job, std::function<RegenerateJobAnswer(const core::JobContext&)> work);
-    /// A preview shown or failed; a commit's floor shown (room by room, else committed again), the walker of a
-    /// regenerated room at its doorway, the panel closed.
+    /// The panel's choices: a cancel, or the commit's job (its floor built on the pool: the rooms it changed alone,
+    /// else the floor).
+    void followRegenerateChoices(ProductUi& product);
+    /// A preview shown or failed; a commit's floor shown (its rooms alone, room by room, else committed again), the
+    /// plan stored followed whatever shows, the walker of a regenerated room at its doorway, the panel closed.
     void takeRegenerateAnswer(ProductUi& product, RegenerateJobAnswer answer);
+    /// The panel's request ends: its preview, the inputs it held and the undo's preview let go of (the slot keeps the
+    /// inputs until the catalog's refresh).
+    void endRegeneration();
+    /// The floor shown for a commit's job (rebuildRoomsAlone()'s template): its collections, frame, elevator, arrival
+    /// and doorways from what shows, no scene, no plan; none without a floor shown.
+    [[nodiscard]] std::shared_ptr<const RegenerateShownFloor> shownFloorState() const;
+    /// `plan` (digest `digest`, the plan stored now) is the plan shown's from now on: the rides' floors, where-is, the
+    /// card's versions, the directory (the floor shown is followed apart).
+    void adoptPlan(const std::shared_ptr<const world::WorldPlan>& plan, const std::string& digest);
+    /// I4b step 6's review (step 4's path): `build`'s rooms rebuilt alone shown in place, their static parts `statics`
+    /// replaced in the scene and their collections applied, as the editor shows a room rebuilt alone. False (nothing
+    /// changed, unless `replaced` is set: some static parts stand in the scene) when they cannot be.
+    [[nodiscard]] bool showRoomsAlone(WorldBuild& build, std::span<const RoomStaticPart> statics,
+                                      WorldLiveUpdateRecord& record, bool& replaced);
     [[nodiscard]] bool regenerationAllowed(const ProductUi& product) const;
     /// A lockstep run waits for a preview's or a commit's job.
     [[nodiscard]] bool regenerationWaits() const noexcept;
@@ -552,6 +573,8 @@ private:
     /// The room the notices name: the start room's id as --start-room gives it ("room:snes", "area:arcade",
     /// "area:shared:handheld"), else none.
     [[nodiscard]] std::string noticeRoom() const;
+    /// A notice shows now (set, and within its time when timed).
+    [[nodiscard]] bool noticeShowing() const;
 
     // I4 step 7b (world_ride.cpp).
     /// What the world can do now, for the directory's commands and "Mostra nella stanza" (directory_data.hpp).
@@ -676,6 +699,10 @@ private:
     std::optional<double> m_noticeSince;
     bool m_noticeTimed = false;
     WorldRecord m_record;
+    /// The builds recorded (recordBuild()) and the rooms the last one's needsConfirmation sentences are about (I4b
+    /// step 6's review: its notice offers the first that stands).
+    std::uint64_t m_buildsRecorded = 0;
+    std::vector<world::RoomId> m_confirmationRooms;
     std::optional<std::chrono::system_clock::time_point> m_shownAt;
     bool m_coverPhaseOpen = false;
     /// The coverLoad phase waits to open until the frame after m_coverPhaseAfter (commit(), update()).

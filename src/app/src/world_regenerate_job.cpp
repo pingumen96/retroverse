@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <ctime>
+#include <map>
+#include <mutex>
 #include <set>
 #include <utility>
 
@@ -198,7 +200,12 @@ RegenerationInputsResult regenerationInputsOf(const WorldPaths& paths,
         inputs->selections.push_back(std::move(*selection));
     }
     inputs->selectMs = millisecondsSince(selecting);
-    inputs->load = world::assetRootLoader(paths.assetRoot);
+    // One cache for every job of the session's inputs; a cancelled job may still run beside the next one.
+    inputs->load = [load = world::assetRootLoader(paths.assetRoot),
+                    mutex = std::make_shared<std::mutex>()](const world::RoomDataRequest& request) {
+        const std::lock_guard lock(*mutex);
+        return load(request);
+    };
     inputs->snapshot = std::move(snapshot);
     result.inputs = std::move(inputs);
     return result;
@@ -372,13 +379,20 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
     commit.lockMs = millisecondsSince(start);
 
     // ADR-0015 §5 and I4b step 5's note: the preview's own result when the world is as it read it and the consent keeps
-    // the overrides; else the scope regenerated again on the world as it is now, with the consent's choice.
+    // the overrides; else, the overrides kept, the scope regenerated again on the world as it is now. The drop is
+    // consented to for the customizations the preview named: over another plan or other overrides it is refused (I4b
+    // step 6's review), so that it never removes one the user did not see.
+    const bool unchanged = stored->digest == preview.planDigest && *overrides == preview.overrides;
     std::shared_ptr<const world::Regeneration> regeneration;
-    if (!dropOverrides && stored->digest == preview.planDigest && *overrides == preview.overrides) {
+    if (dropOverrides && !unchanged) {
+        return fail(regenerate_failure::kChanged,
+                    "the plan or the overrides changed since the preview; the drop is not made over them");
+    }
+    if (!dropOverrides && unchanged) {
         regeneration = preview.regeneration;
         commit.reused = true;
     } else {
-        if (stored->digest != preview.planDigest || *overrides != preview.overrides) {
+        if (!unchanged) {
             spdlog::warn("Regeneration: the world changed since the preview of {}; it is regenerated again",
                          preview.scope.toString());
         }
@@ -408,6 +422,7 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
         }
     }
     commit.impact = regeneration->impact;
+    commit.changed = regeneration->changed;
     const Clock::time_point committing = Clock::now();
     if (regeneration->changed) {
         world::SaveOptions options;
@@ -423,19 +438,21 @@ RegenerationCommit commitRegeneration(const WorldPaths& paths, const Regeneratio
         if (written->snapshot) {
             commit.snapshot = written->snapshot->name;
         }
+        // The plan stored now is the regeneration's (savePlan()'s text of it, its digest the commit's): nothing is
+        // read back (I4b step 6's review: it cost a read and a parse of the whole plan).
+        commit.planDigest = written->plan.digest;
+        commit.plan = std::make_shared<const world::WorldPlan>(regeneration->result.plan);
+    } else {
+        commit.planDigest = stored->digest;
+        commit.plan = std::make_shared<const world::WorldPlan>(std::move(stored->plan));
     }
     commit.commitMs = millisecondsSince(committing);
-    // The plan as stored now (its digest the file's).
-    auto now = readStored(files, inputs.building, inputs.systems);
-    if (!now) {
-        return fail(regenerate_failure::kFailed, "the plan written: " + now.error().toString());
-    }
-    commit.planDigest = now->digest;
-    commit.plan = std::make_shared<const world::WorldPlan>(std::move(now->plan));
     lock.reset(); // the lock goes before the items (they are the cache's, not the world's)
     const Clock::time_point keeping = Clock::now();
-    if (inputs.snapshot) {
+    if (commit.changed && inputs.snapshot) {
         commit.items = keepRoomItems(paths, inputs.library, *inputs.snapshot, *commit.plan);
+    } else if (commit.changed) {
+        removeBuildingStamp(buildingStampFile(paths.cacheDir, inputs.library));
     }
     commit.itemsMs = millisecondsSince(keeping);
     commit.totalMs = millisecondsSince(start);
@@ -534,28 +551,31 @@ UndoCommit commitUndo(const WorldPaths& paths, const catalog::LibraryId& library
     if (!undone) {
         return fail(regenerate_failure::kFailed, "the undo: " + undone.error().toString());
     }
+    commit.written = true;
     commit.restored = undone->restored.name;
     commit.kept = undone->kept ? undone->kept->name : std::string();
+    // The plan restored, read back: the snapshot held it as text (perhaps of schema 1), not as a plan in memory.
     auto building = world::loadBuildingData(paths.assetRoot);
     auto systems = world::loadSystemsData(paths.assetRoot);
     if (!building || !systems) {
-        return fail(regenerate_failure::kFailed,
-                    "the world's data: " + (!building ? building.error() : systems.error()).toString());
-    }
-    auto now = readStored(files, *building, *systems);
-    if (!now) {
-        // The undo stands (a world without its plan: the first action created it); the floor stays as it shows.
+        commit.error = "the world's data: " + (!building ? building.error() : systems.error()).toString();
+    } else if (auto now = readStored(files, *building, *systems); !now) {
+        // A world without its plan (the first action created it), or one that cannot be read.
         commit.error = "the plan restored: " + now.error().toString();
-        spdlog::warn("Undo: {}", commit.error);
     } else {
         commit.planDigest = now->digest;
         commit.plan = std::make_shared<const world::WorldPlan>(std::move(now->plan));
+    }
+    if (!commit.error.empty()) {
+        // The undo stands, written: the floor follows the stored plan through a live update.
+        spdlog::warn("Undo: written, but {}", commit.error);
     }
     lock.reset();
     const Clock::time_point keeping = Clock::now();
     if (snapshot != nullptr && commit.plan) {
         commit.items = keepRoomItems(paths, library, *snapshot, *commit.plan);
     } else {
+        // The plan is no longer the one the stamp names, whatever could be read of it.
         removeBuildingStamp(buildingStampFile(paths.cacheDir, library));
     }
     commit.itemsMs = millisecondsSince(keeping);
@@ -588,11 +608,13 @@ std::map<catalog::SystemName, RoomItems> keepRoomItems(const WorldPaths& paths, 
 
 bool regenerationCovers(std::string_view area, std::string_view scope, const world::WorldPlan* before) {
     const auto room = world::RoomId::parse(area);
-    if (!room) {
-        return false; // a hall: never moved by a regeneration of its rooms
-    }
     if (scope == "world") {
-        return true;
+        return room.has_value() || area.starts_with("hall:"); // every room, every hall
+    }
+    if (!room) {
+        // A hall: a floor's regeneration places its rooms again (I4b step 6's review: the walker goes to its elevator);
+        // a room's never changes it.
+        return area.starts_with("hall:") && scope.starts_with("floor:") && area.substr(5) == scope.substr(6);
     }
     if (scope.starts_with("floor:")) {
         const std::string_view floor = scope.substr(6);
@@ -607,26 +629,51 @@ bool regenerationCovers(std::string_view area, std::string_view scope, const wor
     return scoped && scoped->head() == room->head(); // a room scope covers its chain (ADR-0015 §7)
 }
 
-std::optional<world::RoomId> confirmationRoomOf(const std::vector<std::string>& sentences,
+std::optional<world::RoomId> confirmationRoomOf(const std::vector<world::RoomId>& rooms,
                                                 const world::WorldPlan& plan) {
-    for (const std::string& sentence : sentences) {
-        for (const std::string_view prefix : {std::string_view("room:"), std::string_view("area:")}) {
-            for (std::size_t at = sentence.find(prefix); at != std::string::npos; at = sentence.find(prefix, at + 1)) {
-                const std::size_t end = sentence.find_first_of(" /,;", at);
-                const std::string_view text =
-                    std::string_view(sentence).substr(at, end == std::string::npos ? std::string::npos : end - at);
-                if (const auto room = world::RoomId::parse(text)) {
-                    const bool standing =
-                        std::any_of(plan.rooms.begin(), plan.rooms.end(),
-                                    [&](const world::Room& candidate) { return candidate.id == *room; });
-                    if (standing) {
-                        return *room;
-                    }
-                }
-            }
+    for (const world::RoomId& room : rooms) {
+        if (std::any_of(plan.rooms.begin(), plan.rooms.end(),
+                        [&](const world::Room& candidate) { return candidate.id == room; })) {
+            return room;
         }
     }
     return std::nullopt;
+}
+
+std::optional<std::vector<world::RoomId>> roomsChangedAlone(const world::WorldPlan& before,
+                                                            const world::WorldPlan& after, std::string_view floor) {
+    // The floor's rooms by id, each record without its generator version (an update or a regeneration stamps it).
+    const auto onFloor = [&](const world::WorldPlan& plan) {
+        std::map<world::RoomId, world::Room> rooms;
+        for (const world::Room& room : plan.rooms) {
+            if (room.floor == floor) {
+                world::Room record = room;
+                record.generatorVersion = {};
+                rooms.emplace(room.id, std::move(record));
+            }
+        }
+        return rooms;
+    };
+    if (onFloor(before) != onFloor(after)) {
+        return std::nullopt; // a room added, removed, moved, grown or of another template: the hall may change
+    }
+    auto digestsBefore = world::roomContentDigests(before);
+    auto digestsAfter = world::roomContentDigests(after);
+    if (!digestsBefore || !digestsAfter) {
+        return std::nullopt;
+    }
+    std::vector<world::RoomId> changed;
+    for (const world::Room& room : after.rooms) {
+        if (room.floor != floor) {
+            continue;
+        }
+        const auto was = digestsBefore->find(room.id);
+        const auto now = digestsAfter->find(room.id);
+        if (was == digestsBefore->end() || now == digestsAfter->end() || was->second != now->second) {
+            changed.push_back(room.id);
+        }
+    }
+    return changed;
 }
 
 std::string localSnapshotTime(std::string_view utc) {

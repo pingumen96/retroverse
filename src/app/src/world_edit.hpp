@@ -34,6 +34,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <glm/vec3.hpp>
@@ -51,6 +52,11 @@
 #include <rv/world/world_edit.hpp>
 
 namespace rv::app {
+
+/// The synthetic scene digest of a floor shown with a room's static part rebuilt alone: "edit-scene:<session>:<n>" by
+/// the editor, "edit-scene:regenerate:<n>" by a regeneration or an undo (I4b step 6's review). The scene shown is its
+/// plan's: the next session takes it; the next live update commits the floor once.
+inline constexpr std::string_view kEditSceneDigest = "edit-scene:";
 
 /// What the session's jobs read besides their own input (WorldSession::editJobContext()).
 struct EditJobContext {

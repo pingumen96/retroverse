@@ -14,7 +14,8 @@ inline constexpr std::string_view kDocumentPath = "ui/world_notice.rml";
 inline constexpr std::string_view kStyleSheetPath = "ui/world_notice.rcss";
 /// The data model: "notice" (one of the keys below), "state" (the catalog's state for kNoCatalog: catalog_worker.hpp's
 /// toString(CatalogState)), "room" (the start room's id as --start-room gives it, "room:snes", "area:arcade" or
-/// "area:shared:<floor>", for kNoGames; empty without --start-room).
+/// "area:shared:<floor>", for kNoGames; empty without --start-room), "roomKind" and "roomTitle" (kNeedsConfirmation's
+/// room: "console", "shared" or "arcade", and a console room's system's name).
 inline constexpr std::string_view kDataModel = "world_notice";
 inline constexpr std::string_view kPanelId = "world-notice";
 

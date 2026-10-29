@@ -198,6 +198,15 @@ void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
     m_record.noticeRoom = m_notice.startRoom;
 }
 
+bool WorldSession::noticeShowing() const {
+    if (m_notice.notice.empty()) {
+        return false;
+    }
+    // A timed notice hides after its time (showNotice()); its time starts at the first showNotice() after it was set.
+    return !m_noticeTimed || !m_noticeSince || !m_lastTime ||
+           *m_lastTime - *m_noticeSince < world_notice::kShownSeconds;
+}
+
 void WorldSession::showNotice(ProductUi& product, double timeSeconds) {
     if (!m_noticeSince) {
         m_noticeSince = timeSeconds;
@@ -651,7 +660,11 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.migratedRooms.clear();
     m_record.replacedRooms.clear();
     m_record.needsConfirmation.clear();
+    // I4b step 6: the rooms the needs-confirmation notice may offer (followConfirmations()).
+    ++m_buildsRecorded;
+    m_confirmationRooms.clear();
     if (build.changes) {
+        m_confirmationRooms = build.changes->needsConfirmationRooms;
         m_record.changeOutcome = std::string(world::toString(build.changes->outcome));
         m_record.rebuild = std::string(world::toString(build.changes->rebuild));
         m_record.added = build.changes->added.size();
