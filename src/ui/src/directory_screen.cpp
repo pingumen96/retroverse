@@ -97,6 +97,16 @@ struct CardData {
     Rml::String room;
 };
 
+/// `element` is `ancestor` or stands within it.
+[[nodiscard]] bool isInside(const Rml::Element* element, const Rml::Element* ancestor) noexcept {
+    for (; element != nullptr; element = element->GetParentNode()) {
+        if (element == ancestor) {
+            return true;
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] bool knownFloor(std::string_view id) noexcept {
     return std::find(directory::kFloorIds.begin(), directory::kFloorIds.end(), id) != directory::kFloorIds.end();
 }
@@ -439,6 +449,12 @@ struct DirectoryScreen::Impl {
         }
         if (element->Focus(true)) {
             element->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest));
+            // A list's first row focused shows whole, the list at its top (I4b step 6's review: "Nearest" left a row
+            // above the focused one half scrolled off).
+            Rml::Element* list = document->GetElementById(Rml::String(directory::kListId));
+            if (list != nullptr && model->selectedRow() == 0 && isInside(element, list)) {
+                list->SetScrollTop(0.0f);
+            }
         }
     }
 

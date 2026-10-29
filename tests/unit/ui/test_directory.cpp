@@ -1060,6 +1060,36 @@ TEST_CASE("ui/directory: the \"Modifiche\" tab asks the regenerations and the un
     CHECK(asked->kind == DirectoryCommandKind::Close);
 }
 
+TEST_CASE("ui/directory: the \"Modifiche\" tab's selection follows its action while \"Modifica stanza\" comes and "
+          "goes (I4b step 6's review)",
+          "[ui][directory]") {
+    DirectoryBuilding walker = building();
+    walker.regenerableRoom = "room:snes";
+    DirectoryBuilding editable = walker;
+    editable.editableRoom = "room:snes";
+    DirectoryModel model;
+    model.setBuilding(walker);
+    model.open(DirectoryTab::Changes);
+    model.apply(UiCommand::Down);
+    model.apply(UiCommand::Down);
+    REQUIRE(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    // "Modifica stanza" arrives above: "Rigenera mondo" stays selected, one row down.
+    model.setBuilding(editable);
+    CHECK(model.selectedAction() == 3);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    CHECK(model.focusedElement() == "dir-action-3");
+    // It goes: the same action, one row up.
+    model.setBuilding(walker);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateWorld);
+    // "Modifica stanza" selected and gone: the first row.
+    model.setBuilding(editable);
+    model.apply(UiCommand::Home);
+    REQUIRE(model.actions()[model.selectedAction()] == DirectoryAction::EditRoom);
+    model.setBuilding(walker);
+    CHECK(model.selectedAction() == 0);
+    CHECK(model.actions()[model.selectedAction()] == DirectoryAction::RegenerateRoom);
+}
+
 TEST_CASE("ui/directory: the \"Modifiche\" tab's document: its tab, rows and notice (I4b step 6)",
           "[ui][directory][documents]") {
     const std::string rml = readAsset(dir::kDocumentPath);
@@ -1079,4 +1109,19 @@ TEST_CASE("ui/directory: the \"Modifiche\" tab's document: its tab, rows and not
         INFO(word);
         CHECK(contains(rml, word));
     }
+    // One short line each (I4b step 6's review: the five rows fit the list), the floor named by the directory's names.
+    for (const std::string_view line :
+         {">Sposta e fissa giochi e arredi<", ">Riallestisce {{ actionRoomTitle }}<", ">Riallestisce tutto l'edificio<",
+          ">Torna a prima dell'ultima modifica<", ">Disponibile fuori dall'ascensore<",
+          ">Riallestisce il piano {{ actionFloor }}<", "!actionFloorKnown"}) {
+        INFO(line);
+        CHECK(contains(rml, line));
+    }
+    for (const std::string_view floor : dir::kFloorIds) {
+        INFO(floor);
+        CHECK(contains(rml, "actionFloor == '" + std::string(floor) + "'"));
+    }
+    // The undo's button is a back chevron, not two sheets (which read as "copy").
+    CHECK(contains(rml, "<span class=\"chevron\"></span>"));
+    CHECK_FALSE(contains(rml, "sheet"));
 }

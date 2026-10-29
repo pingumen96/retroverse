@@ -111,6 +111,7 @@ struct RegeneratePreviewScreen::Impl {
         constructor.Bind("showUndo", &showUndo);
         constructor.Bind("showBack", &showBack);
         constructor.Bind("showCancel", &showCancel);
+        constructor.Bind("device", &device);
         constructor.BindEventCallback(Rml::String(regenerate_preview::kButtonEvent),
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
                                           if (args.empty()) {
@@ -192,6 +193,7 @@ struct RegeneratePreviewScreen::Impl {
         showUndo = has(RegenerateButton::Undo);
         showBack = has(RegenerateButton::Back);
         showCancel = has(RegenerateButton::Cancel);
+        device = Rml::String(model.padDevice() ? regenerate_preview::kDevices[0] : regenerate_preview::kDevices[1]);
         handle.DirtyAllVariables();
     }
 
@@ -258,6 +260,7 @@ struct RegeneratePreviewScreen::Impl {
     bool showUndo = false;
     bool showBack = false;
     bool showCancel = false;
+    Rml::String device;
 };
 
 RegeneratePreviewScreen::RegeneratePreviewScreen(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}

@@ -109,6 +109,7 @@ void RegeneratePreviewModel::open(RegenerateKind kind, RegenerateScopeTitle scop
     m_content = RegeneratePreviewContent{};
     m_failure.clear();
     m_focused = RegenerateButton::Cancel;
+    m_activateHeld = false;
     changed();
 }
 
@@ -118,16 +119,26 @@ void RegeneratePreviewModel::setContent(RegeneratePreviewContent content) {
     }
     m_content = std::move(content);
     m_state = RegenerateState::Ready;
-    if (m_kind == RegenerateKind::Undo) {
-        m_focused = RegenerateButton::Undo;
-    } else if (m_content.changed) {
-        m_focused = RegenerateButton::Regenerate;
-    } else if (m_content.overrides > 0) {
-        m_focused = RegenerateButton::Drop;
-    } else {
-        m_focused = RegenerateButton::Cancel;
-    }
+    // Never a choice that cannot be taken back (I4b step 6's review): "Rigenera" (an undo takes it back), else Annulla
+    // (an undo's "Indietro": no redo brings an undone action back; a preview that only offers the drop).
+    m_focused = m_kind != RegenerateKind::Undo && m_content.changed ? RegenerateButton::Regenerate
+                                                                     : RegenerateButton::Cancel;
+    // A press meant for what showed before (held, or doubled) never lands on a choice.
+    m_activateHeld = true;
     changed();
+}
+
+void RegeneratePreviewModel::endInputFrame() noexcept {
+    // The content arrives between input frames (the world's update follows the product UI's): the first input frame
+    // after it ignored Activate; the next ones take it.
+    m_activateHeld = false;
+}
+
+void RegeneratePreviewModel::setDevice(bool pad) noexcept {
+    if (m_pad != pad) {
+        m_pad = pad;
+        changed();
+    }
 }
 
 void RegeneratePreviewModel::setFailed(std::string failure) {
@@ -171,7 +182,9 @@ std::vector<RegenerateButton> RegeneratePreviewModel::buttons() const {
         return shown;
     }
     case RegenerateState::Confirm:
-        return {RegenerateButton::ConfirmDrop, RegenerateButton::Back};
+        // "Indietro" above "Scarta e rigenera": with the choices at the panel's bottom, the row the drop was in becomes
+        // "Indietro" (a double-click's second press never confirms the drop).
+        return {RegenerateButton::Back, RegenerateButton::ConfirmDrop};
     case RegenerateState::Committing:
         return {};
     }
@@ -255,6 +268,9 @@ std::optional<RegenerateCommandKind> RegeneratePreviewModel::apply(UiCommand com
         return std::nullopt;
     }
     case UiCommand::Activate:
+        if (m_activateHeld) {
+            return std::nullopt; // the content just arrived: a press meant for what showed before
+        }
         return press(m_focused);
     case UiCommand::Back:
         if (m_state == RegenerateState::Committing) {

@@ -1,5 +1,6 @@
 // The impact preview's model and its document (I4b step 6; ADR-0015 §5, §6): rv::ui::RegeneratePreviewModel's states,
-// buttons, focus and commands (the three choices, the second confirmation of the drop, the undo, the failures), and
+// buttons, focus and commands (the three choices, the second confirmation of the drop, the undo, the failures, the
+// focus a content arrives with and the input frame its Activate waits, the device of the hints), and
 // assets/ui/regenerate_preview.rml against the ids, bindings and keys its screen uses.
 
 #include <catch2/catch_test_macros.hpp>
@@ -87,6 +88,7 @@ TEST_CASE("ui/regenerate_preview: the three choices; the drop asks a second conf
     RegeneratePreviewModel model = opened();
     const std::uint64_t computing = model.revision();
     model.setContent(impact(true, 2));
+    model.endInputFrame();
     CHECK(model.revision() > computing);
     CHECK(model.state() == RegenerateState::Ready);
     CHECK(model.content().gamesMoved == 33);
@@ -102,7 +104,8 @@ TEST_CASE("ui/regenerate_preview: the three choices; the drop asks a second conf
     // The drop: no command, the second confirmation with "Indietro" focused.
     CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
     CHECK(model.state() == RegenerateState::Confirm);
-    CHECK(model.buttons() == std::vector<RegenerateButton>{RegenerateButton::ConfirmDrop, RegenerateButton::Back});
+    // "Indietro" above "Scarta e rigenera" (the drop's row, counted from the panel's bottom, is Indietro's).
+    CHECK(model.buttons() == std::vector<RegenerateButton>{RegenerateButton::Back, RegenerateButton::ConfirmDrop});
     CHECK(model.focused() == RegenerateButton::Back);
     CHECK(model.focusedElement() == rp::kBackId);
     // Pressed twice, the button drops nothing: it goes back to the preview, the drop focused.
@@ -117,7 +120,7 @@ TEST_CASE("ui/regenerate_preview: the three choices; the drop asks a second conf
     CHECK(model.state() == RegenerateState::Ready);
     // The drop confirmed: committing, no button, Back ignored.
     CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
-    CHECK_FALSE(model.apply(UiCommand::Left).has_value());
+    CHECK_FALSE(model.apply(UiCommand::Right).has_value());
     CHECK(model.focused() == RegenerateButton::ConfirmDrop);
     CHECK(model.apply(UiCommand::Activate) == RegenerateCommandKind::RegenerateDrop);
     CHECK(model.state() == RegenerateState::Committing);
@@ -134,12 +137,14 @@ TEST_CASE("ui/regenerate_preview: Rigenera keeps the overrides; nothing to chang
           "[ui][regenerate]") {
     RegeneratePreviewModel keep = opened();
     keep.setContent(impact(true, 0));
+    keep.endInputFrame();
     CHECK(keep.buttons() == std::vector<RegenerateButton>{RegenerateButton::Regenerate, RegenerateButton::Cancel});
     CHECK(keep.apply(UiCommand::Activate) == RegenerateCommandKind::Regenerate);
     CHECK(keep.state() == RegenerateState::Committing);
 
     RegeneratePreviewModel unchanged = opened();
     unchanged.setContent(impact(false, 0));
+    unchanged.endInputFrame();
     CHECK(unchanged.buttons() == std::vector<RegenerateButton>{RegenerateButton::Cancel});
     CHECK(unchanged.focused() == RegenerateButton::Cancel);
     CHECK(unchanged.apply(UiCommand::Activate) == RegenerateCommandKind::Cancel);
@@ -148,7 +153,8 @@ TEST_CASE("ui/regenerate_preview: Rigenera keeps the overrides; nothing to chang
     RegeneratePreviewModel pinsOnly = opened();
     pinsOnly.setContent(impact(false, 3));
     CHECK(pinsOnly.buttons() == std::vector<RegenerateButton>{RegenerateButton::Drop, RegenerateButton::Cancel});
-    CHECK(pinsOnly.focused() == RegenerateButton::Drop);
+    // Only the drop: Annulla focused (I4b step 6's review: a focus never rests first on what cannot be undone).
+    CHECK(pinsOnly.focused() == RegenerateButton::Cancel);
     // A click on a button that does not show does nothing.
     CHECK_FALSE(pinsOnly.click(RegenerateButton::Regenerate).has_value());
     CHECK(pinsOnly.state() == RegenerateState::Ready);
@@ -165,8 +171,12 @@ TEST_CASE("ui/regenerate_preview: an undo names its action; a failure shows Chiu
     content.undoScope = "room:snes";
     content.undoWhen = "29/10/2026 10:15";
     undo.setContent(content);
+    undo.endInputFrame();
     CHECK(undo.kind() == RegenerateKind::Undo);
     CHECK(undo.buttons() == std::vector<RegenerateButton>{RegenerateButton::Undo, RegenerateButton::Cancel});
+    // "Indietro" focused: no redo brings an undone action back.
+    CHECK(undo.focused() == RegenerateButton::Cancel);
+    CHECK_FALSE(undo.apply(UiCommand::Up).has_value());
     CHECK(undo.focused() == RegenerateButton::Undo);
     CHECK(undo.apply(UiCommand::Activate) == RegenerateCommandKind::Undo);
     CHECK(undo.state() == RegenerateState::Committing);
@@ -183,6 +193,35 @@ TEST_CASE("ui/regenerate_preview: an undo names its action; a failure shows Chiu
     // Nothing happens to a closed model.
     undo.setFailed("busy");
     CHECK_FALSE(undo.isOpen());
+}
+
+TEST_CASE("ui/regenerate_preview: a press meant for what showed before never lands on a choice; the hints' device",
+          "[ui][regenerate]") {
+    RegeneratePreviewModel model = opened();
+    model.setContent(impact(true, 1));
+    // The first input frame after the content: Activate (held, or doubled from the row that opened it) does nothing.
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    CHECK(model.state() == RegenerateState::Ready);
+    model.endInputFrame();
+    CHECK(model.apply(UiCommand::Activate) == RegenerateCommandKind::Regenerate);
+    // Only the content's arrival holds it: the second confirmation's Activate counts at once (Indietro focused).
+    RegeneratePreviewModel drop = opened();
+    drop.setContent(impact(false, 1));
+    drop.endInputFrame();
+    CHECK_FALSE(drop.apply(UiCommand::Up).has_value());
+    CHECK(drop.focused() == RegenerateButton::Drop);
+    CHECK_FALSE(drop.apply(UiCommand::Activate).has_value());
+    CHECK(drop.state() == RegenerateState::Confirm);
+    CHECK_FALSE(drop.apply(UiCommand::Activate).has_value());
+    CHECK(drop.state() == RegenerateState::Ready);
+    // The device used last: the hints' glyphs.
+    CHECK_FALSE(model.padDevice());
+    const std::uint64_t before = model.revision();
+    model.setDevice(true);
+    CHECK(model.padDevice());
+    CHECK(model.revision() > before);
+    model.setDevice(true);
+    CHECK(model.revision() == before + 1);
 }
 
 TEST_CASE("ui/regenerate_preview: the document has the ids, bindings, events and keys its screen uses",
@@ -223,6 +262,15 @@ TEST_CASE("ui/regenerate_preview: the document has the ids, bindings, events and
         INFO(subject);
         CHECK(contains(rml, "conflict.subject == '" + std::string(subject) + "'"));
     }
+    for (const std::string_view device : rp::kDevices) {
+        INFO(device);
+        CHECK(contains(rml, "device == '" + std::string(device) + "'"));
+    }
+    // The column: a body that scrolls, the choices and the hints after it (I4b step 6's review).
+    CHECK(contains(rml, "id=\"rp-body\""));
+    CHECK(contains(rml, "id=\"rp-hints\""));
+    CHECK(rml.find("id=\"rp-body\"") < rml.find("id=\"rp-actions\""));
+    CHECK(rml.find("id=\"rp-actions\"") < rml.find("id=\"rp-hints\""));
     for (const std::string_view action : rp::kUndoActions) {
         INFO(action);
         CHECK(contains(rml, "undoAction == '" + std::string(action) + "'"));
@@ -251,6 +299,10 @@ TEST_CASE("ui/regenerate_preview: the document has the ids, bindings, events and
     }
     const std::string rcss = readAsset(rp::kStyleSheetPath);
     CHECK(contains(rcss, ".action:focus {"));
+    CHECK(contains(rcss, "#rp-body {\n\tflex: 1 1 auto;"));
+    CHECK(contains(rcss, "overflow-y: auto;"));
+    CHECK(contains(rcss, "#rp-actions {\n\tflex: 0 0 auto;"));
+    CHECK(contains(rcss, "flex-direction: column;"));
     CHECK(contains(rcss, "@media (theme: compact)"));
     CHECK_FALSE(contains(rcss, "transition"));
     CHECK_FALSE(contains(rcss, "px;"));

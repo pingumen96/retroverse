@@ -1,6 +1,7 @@
 #include <rv/ui/directory_model.hpp>
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 
 #include <rv/ui/quick_catalog_room.hpp>
@@ -182,6 +183,11 @@ bool DirectoryModel::actionEnabled(DirectoryAction action) const noexcept {
 }
 
 void DirectoryModel::setBuilding(DirectoryBuilding building) {
+    // I4b step 6's review: the "Modifiche" tab's row follows its action, not its index ("Modifica stanza" comes and
+    // goes above the others).
+    const std::vector<DirectoryAction> actionsBefore = actions();
+    const std::optional<DirectoryAction> selectedAction =
+        m_action < actionsBefore.size() ? std::optional<DirectoryAction>(actionsBefore[m_action]) : std::nullopt;
     const std::vector<DirectoryFloor>& floors = m_building.floors;
     const std::string selected = m_floor < floors.size() ? floors[m_floor].id : std::string();
     const std::string opened = m_openedFloor < floors.size() ? floors[m_openedFloor].id : std::string();
@@ -210,9 +216,16 @@ void DirectoryModel::setBuilding(DirectoryBuilding building) {
             m_view = DirectoryView::Floors;
         }
     }
-    // I4b step 6: the "Modifiche" tab's row stays within its rows ("Modifica stanza" comes and goes above the others).
-    if (const std::size_t rows = actions().size(); m_action >= rows) {
-        m_action = rows - 1;
+    // The action selected stays selected; one gone ("Modifica stanza") leaves the first row selected.
+    const std::vector<DirectoryAction> actionsNow = actions();
+    const auto actionAt = selectedAction ? std::find(actionsNow.begin(), actionsNow.end(), *selectedAction)
+                                         : actionsNow.end();
+    if (actionAt != actionsNow.end()) {
+        m_action = static_cast<std::size_t>(actionAt - actionsNow.begin());
+    } else if (selectedAction) {
+        m_action = 0;
+    } else if (m_action >= actionsNow.size()) {
+        m_action = actionsNow.empty() ? 0 : actionsNow.size() - 1;
     }
     followRows();
     changed();

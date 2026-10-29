@@ -10,15 +10,19 @@
 // removed and moved, the customizations kept and those that cannot be honoured, each with its reason) and the three
 // choices of ADR-0015 §5: "Rigenera" (the customizations kept; only when something would change), "Rigenera e scarta
 // le personalizzazioni" (only when the scope has some) and "Annulla". The second choice asks a second confirmation that
-// names how many customizations go (Confirm: "Scarta e rigenera", "Indietro" focused first, so that a pressed button
-// twice never drops anything). An undo shows the action it would undo (its kind, its scope, when) with "Annulla la
-// modifica" and "Indietro". Once a choice is made the panel waits for the commit (Committing: no button), and a
-// failure is told with "Chiudi".
+// names how many customizations go (Confirm: "Indietro", focused, above "Scarta e rigenera", so that a button pressed
+// twice, or clicked twice, never drops anything: the choices stand at the panel's bottom, the drop's row is
+// Indietro's). An undo shows the action it would undo (its kind, its scope, when) with "Annulla la modifica" and
+// "Indietro". Once a choice is made the panel waits for the commit (Committing: no button), and a
+// failure is told with "Chiudi". The focus a content arrives with never rests on a choice that cannot be taken back
+// (I4b step 6's review): "Rigenera" (an undo takes it back), else "Annulla" (an undo's "Indietro", a preview that
+// only offers the drop).
 //
 // Input (the ui_* actions through NavInput): Up and Left move to the previous button, Down and Right to the next;
-// Activate (or a click) presses the focused button; Back leaves the second confirmation for the preview (Drop focused),
-// else closes the panel (Cancel), never while committing. Every sentence is the document's: the model holds keys and
-// counts only.
+// Activate (or a click) presses the focused button, but for the first input frame after the content arrived (a held or
+// doubled press meant for what was there before never lands on a choice); Back leaves the second confirmation for the
+// preview (Drop focused), else closes the panel (Cancel), never while committing. The hints show the glyphs of the
+// device used last. Every sentence is the document's: the model holds keys and counts only.
 
 #include <array>
 #include <cstddef>
@@ -49,6 +53,8 @@ inline constexpr std::string_view kBackId = "rp-back";
 inline constexpr std::string_view kCancelId = "rp-cancel";
 /// The data event of a click on a button: "button('<regenerate|drop|confirm-drop|undo|back|cancel>')".
 inline constexpr std::string_view kButtonEvent = "button";
+/// The device whose glyphs the hints show ("device"): the pad's buttons, or the keys.
+inline constexpr std::array<std::string_view, 2> kDevices{"pad", "keys"};
 /// What the panel is about (RegenerateKind).
 inline constexpr std::array<std::string_view, 4> kKinds{"room", "floor", "world", "undo"};
 /// Where it stands (RegenerateState).
@@ -159,9 +165,15 @@ class RegeneratePreviewModel {
 public:
     /// Opens the panel on `kind` for `scope`, computing (Annulla focused).
     void open(RegenerateKind kind, RegenerateScopeTitle scope);
-    /// The dry run's answer: Ready, its default button focused ("Rigenera" when it would change something, else the
-    /// drop when there are customizations, else Annulla; "Annulla la modifica" for an undo). Ignored unless computing.
+    /// The dry run's answer: Ready, its default button focused ("Rigenera" when it would change something, else
+    /// Annulla; an undo's "Indietro"), Activate ignored until the next endInputFrame(). Ignored unless computing.
     void setContent(RegeneratePreviewContent content);
+    /// An input frame ended (the product UI's update applied its commands; the content arrives between two of them, in
+    /// the world's update): Activate counts again.
+    void endInputFrame() noexcept;
+    /// The device used last: the hints show the pad's glyphs (`pad`), else the keys'.
+    void setDevice(bool pad) noexcept;
+    [[nodiscard]] bool padDevice() const noexcept { return m_pad; }
     /// The preview or the commit failed (regenerate_preview::kFailures): Failed, Annulla focused (its sentence says
     /// why). Ignored while closed.
     void setFailed(std::string failure);
@@ -200,6 +212,9 @@ private:
     std::string m_failure;
     RegenerateButton m_focused = RegenerateButton::Cancel;
     std::uint64_t m_revision = 0;
+    /// Activate is ignored until the input frame after a content arrived ends; the device used last.
+    bool m_activateHeld = false;
+    bool m_pad = false;
 };
 
 } // namespace rv::ui

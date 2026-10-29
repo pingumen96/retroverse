@@ -13,8 +13,10 @@
 		kind: room, floor, world, undo. state: computing, ready, confirm, committing, failed. failure: busy, changed,
 		media-unknown, invalid-plan, nothing-to-undo, damaged, no-plan, failed. A conflict's reason: room-gone, slot-gone,
 		game-gone, invalid; its subject: game, module, display, decoration. Floors by their building.json id (the
-		directory's names). Every string is written here (CLAUDE.md): the screen binds keys and counts only. The focus is
-		the model's (RegeneratePreviewModel); the input stays with the application, a click presses a button.
+		directory's names). device: pad, keys (the hints' glyphs, the device used last). Every string is written here
+		(CLAUDE.md): the screen binds keys and counts only. The focus is the model's (RegeneratePreviewModel); the input
+		stays with the application, a click presses a button. The panel is a column: the title, then the body (it
+		scrolls when a crowded preview would not fit), then the choices and the hints, always shown whole.
 	-->
 	<title>Anteprima della rigenerazione</title>
 	<link type="text/rcss" href="regenerate_preview.rcss"/>
@@ -40,115 +42,125 @@
 		<p class="scope" data-if="kind == 'floor' && floor == 'computer'">Computer e altro</p>
 		<p class="scope" data-if="kind == 'floor' && !floorKnown">Piano {{ floor }}</p>
 		<p class="scope" data-if="kind == 'world'">Tutto l'edificio</p>
-		<p class="scope" data-if="kind == 'undo'">Le azioni salvate si annullano una alla volta</p>
+		<p class="scope" data-if="kind == 'undo'">Le azioni salvate si annullano una per volta</p>
 
-		<!-- The dry run on its way. -->
-		<div data-if="state == 'computing'">
-			<p class="lead" data-if="kind != 'undo'">Calcolo di cosa cambierebbe...</p>
-			<p class="lead" data-if="kind == 'undo'">Ricerca dell'ultima modifica...</p>
-			<p class="note">Niente viene scritto finché non scegli.</p>
-		</div>
-
-		<!-- A regeneration's impact. -->
-		<div data-if="state == 'ready' && kind != 'undo'">
-			<p class="lead" data-if="changed && kind == 'room'">Gli scaffali e le vetrine della stanza vengono allestiti di nuovo, come in un edificio nuovo.</p>
-			<p class="lead" data-if="changed && kind == 'floor'">Le stanze del piano vengono allestite di nuovo e disposte da capo lungo il corridoio.</p>
-			<p class="lead" data-if="changed && kind == 'world'">Tutto l'edificio viene allestito di nuovo: ogni sistema torna al piano della sua generazione.</p>
-			<p class="lead" data-if="!changed && kind == 'room'">Rigenerare non cambierebbe nulla: la stanza è già come la allestirebbe un edificio nuovo.</p>
-			<p class="lead" data-if="!changed && kind == 'floor'">Rigenerare non cambierebbe nulla: il piano è già come lo allestirebbe un edificio nuovo.</p>
-			<p class="lead" data-if="!changed && kind == 'world'">Rigenerare non cambierebbe nulla: l'edificio è già come lo allestirebbe una generazione nuova.</p>
-			<div class="facts" data-if="changed">
-				<div class="fact"><span class="key">Stanze rigenerate</span><span class="value">{{ roomsRegenerated }}</span></div>
-				<div class="fact" data-if="roomsAdded > 0 || roomsRemoved > 0"><span class="key">Stanze nuove e tolte</span><span class="value">{{ roomsAdded }} nuove · {{ roomsRemoved }} tolte</span></div>
-				<div class="fact" data-if="roomsMoved > 0"><span class="key">Stanze spostate</span><span class="value">{{ roomsMoved }}</span></div>
-				<div class="fact"><span class="key">Giochi che cambiano posto</span><span class="value">{{ gamesMoved }}</span></div>
-				<div class="fact" data-if="faceOutEntering > 0 || faceOutLeaving > 0"><span class="key">In vetrina</span><span class="value">{{ faceOutEntering }} entrano · {{ faceOutLeaving }} escono</span></div>
-				<div class="fact" data-if="newlyPlaced > 0 || newlyUnplaced > 0"><span class="key">Giochi esposti</span><span class="value">{{ newlyPlaced }} in più · {{ newlyUnplaced }} in meno</span></div>
-				<div class="fact" data-if="fixturesAdded > 0 || fixturesRemoved > 0 || fixturesMoved > 0"><span class="key">Arredi</span><span class="value">{{ fixturesAdded }} nuovi · {{ fixturesRemoved }} tolti · {{ fixturesMoved }} spostati</span></div>
+		<div id="rp-body">
+			<!-- The dry run on its way. -->
+			<div data-if="state == 'computing'">
+				<p class="lead" data-if="kind != 'undo'">Calcolo di cosa cambierebbe...</p>
+				<p class="lead" data-if="kind == 'undo'">Ricerca dell'ultima modifica...</p>
+				<p class="note">Niente viene scritto finché non scegli.</p>
 			</div>
-			<!-- The customizations: kept, or kept in overrides.json and reported when they cannot be honoured. -->
-			<p class="pins" data-if="pinsKept == 1">1 personalizzazione rispettata: resta dove l'hai messa.</p>
-			<p class="pins" data-if="pinsKept > 1">{{ pinsKept }} personalizzazioni rispettate: restano dove le hai messe.</p>
-			<div class="conflicts" data-if="conflictCount > 0">
-				<p class="warning" data-if="conflictCount == 1">1 personalizzazione non si può rispettare: resta salvata e segnalata.</p>
-				<p class="warning" data-if="conflictCount > 1">{{ conflictCount }} personalizzazioni non si possono rispettare: restano salvate e segnalate.</p>
-				<div class="conflict" data-for="conflict : conflicts">
-					<p class="subject" data-if="conflict.subject == 'game' && conflict.title != ''">{{ conflict.title }}</p>
-					<p class="subject" data-if="conflict.subject == 'game' && conflict.title == ''">Un gioco</p>
-					<p class="subject" data-if="conflict.subject == 'module'">Uno scaffale</p>
-					<p class="subject" data-if="conflict.subject == 'display'">Una vetrina</p>
-					<p class="subject" data-if="conflict.subject == 'decoration'">Un arredo</p>
-					<p class="reason" data-if="conflict.reason == 'room-gone'">la sua stanza non ci sarebbe più</p>
-					<p class="reason" data-if="conflict.reason == 'slot-gone'">il suo posto non ci sarebbe più</p>
-					<p class="reason" data-if="conflict.reason == 'game-gone'">non è più tra i giochi della stanza</p>
-					<p class="reason" data-if="conflict.reason == 'invalid'">dov'è ora violerebbe una regola della stanza</p>
+
+			<!-- A regeneration's impact. -->
+			<div data-if="state == 'ready' && kind != 'undo'">
+				<p class="lead" data-if="changed && kind == 'room'">Gli scaffali e le vetrine della stanza vengono riallestiti, come in un edificio nuovo.</p>
+				<p class="lead" data-if="changed && kind == 'floor'">Le stanze del piano vengono riallestite e disposte da capo lungo il corridoio.</p>
+				<p class="lead" data-if="changed && kind == 'world'">Tutto l'edificio viene riallestito: ogni sistema va al piano che gli spetta.</p>
+				<p class="lead" data-if="!changed && kind == 'room'">Rigenerare non cambierebbe nulla: la stanza è già come la allestirebbe un edificio nuovo.</p>
+				<p class="lead" data-if="!changed && kind == 'floor'">Rigenerare non cambierebbe nulla: il piano è già come lo allestirebbe un edificio nuovo.</p>
+				<p class="lead" data-if="!changed && kind == 'world'">Rigenerare non cambierebbe nulla: l'edificio è già come un edificio nuovo.</p>
+				<div class="facts" data-if="changed">
+					<div class="fact"><span class="key">Stanze rigenerate</span><span class="value">{{ roomsRegenerated }}</span></div>
+					<div class="fact" data-if="roomsAdded > 0 || roomsRemoved > 0"><span class="key">Stanze nuove e tolte</span><span class="value">{{ roomsAdded }} nuove · {{ roomsRemoved }} tolte</span></div>
+					<div class="fact" data-if="roomsMoved > 0"><span class="key">Stanze spostate</span><span class="value">{{ roomsMoved }}</span></div>
+					<div class="fact"><span class="key">Giochi che cambiano posto</span><span class="value">{{ gamesMoved }}</span></div>
+					<div class="fact" data-if="faceOutEntering > 0 || faceOutLeaving > 0"><span class="key">In vetrina</span><span class="value">{{ faceOutEntering }} entrano · {{ faceOutLeaving }} escono</span></div>
+					<div class="fact" data-if="newlyPlaced > 0 || newlyUnplaced > 0"><span class="key">Giochi esposti</span><span class="value">{{ newlyPlaced }} in più · {{ newlyUnplaced }} in meno</span></div>
+					<div class="fact" data-if="fixturesAdded > 0 || fixturesRemoved > 0 || fixturesMoved > 0"><span class="key">Arredi</span><span class="value">{{ fixturesAdded }} nuovi · {{ fixturesRemoved }} tolti · {{ fixturesMoved }} spostati</span></div>
 				</div>
-				<p class="note" data-if="conflictsMore == 1">e un'altra</p>
-				<p class="note" data-if="conflictsMore > 1">e altre {{ conflictsMore }}</p>
+				<!-- The customizations: kept, or kept in overrides.json and reported when they cannot be honoured. -->
+				<p class="pins" data-if="pinsKept == 1">1 personalizzazione rispettata: resta dove l'hai messa.</p>
+				<p class="pins" data-if="pinsKept > 1">{{ pinsKept }} personalizzazioni rispettate: restano dove le hai messe.</p>
+				<div class="conflicts" data-if="conflictCount > 0">
+					<p class="warning" data-if="conflictCount == 1">1 personalizzazione non si può rispettare: resta salvata e segnalata.</p>
+					<p class="warning" data-if="conflictCount > 1">{{ conflictCount }} personalizzazioni non si possono rispettare: restano salvate e segnalate.</p>
+					<div class="conflict" data-for="conflict : conflicts">
+						<p class="subject" data-if="conflict.subject == 'game' && conflict.title != ''">{{ conflict.title }}</p>
+						<p class="subject" data-if="conflict.subject == 'game' && conflict.title == ''">Un gioco</p>
+						<p class="subject" data-if="conflict.subject == 'module'">Uno scaffale</p>
+						<p class="subject" data-if="conflict.subject == 'display'">Una vetrina</p>
+						<p class="subject" data-if="conflict.subject == 'decoration'">Un arredo</p>
+						<p class="reason" data-if="conflict.reason == 'room-gone'">la sua stanza non ci sarebbe più</p>
+						<p class="reason" data-if="conflict.reason == 'slot-gone'">il suo posto non ci sarebbe più</p>
+						<p class="reason" data-if="conflict.reason == 'game-gone'">non è più tra i giochi della stanza</p>
+						<p class="reason" data-if="conflict.reason == 'invalid'">dove si trova ora non rispetterebbe le regole della stanza</p>
+					</div>
+					<p class="note" data-if="conflictsMore == 1">e un'altra</p>
+					<p class="note" data-if="conflictsMore > 1">e altre {{ conflictsMore }}</p>
+				</div>
+				<p class="note" data-if="!changed && overrides > 0">Puoi solo scartare le personalizzazioni: i giochi e gli arredi fissati tornerebbero dove la generazione li mette.</p>
 			</div>
-			<p class="note" data-if="!changed && overrides > 0">Puoi solo scartare le personalizzazioni: i giochi e gli arredi fissati tornerebbero dove la generazione li mette.</p>
-		</div>
 
-		<!-- The second confirmation of "Rigenera e scarta le personalizzazioni" (ADR-0015 §5). -->
-		<div data-if="state == 'confirm'">
-			<h2 data-if="overrides == 1">Scartare 1 personalizzazione?</h2>
-			<h2 data-if="overrides != 1">Scartare {{ overrides }} personalizzazioni?</h2>
-			<p class="lead">I giochi e gli arredi che hai spostato o fissato tornano dove li mette la generazione, e le personalizzazioni scartate non sono più salvate.</p>
-			<p class="note">Potrai tornare indietro con "Annulla ultima modifica".</p>
-		</div>
+			<!-- The second confirmation of "Rigenera e scarta le personalizzazioni" (ADR-0015 §5). -->
+			<div data-if="state == 'confirm'">
+				<h2 data-if="overrides == 1">Scartare 1 personalizzazione?</h2>
+				<h2 data-if="overrides != 1">Scartare {{ overrides }} personalizzazioni?</h2>
+				<p class="lead">I giochi e gli arredi che hai spostato o fissato tornano dove li mette la generazione. Le personalizzazioni scartate vengono eliminate.</p>
+				<p class="note">Potrai tornare indietro con "Annulla ultima modifica".</p>
+			</div>
 
-		<!-- An undo: the action it takes back. -->
-		<div data-if="state == 'ready' && kind == 'undo'">
-			<p class="lead">Il mondo torna com'era prima di:</p>
-			<p class="undone" data-if="undoAction == 'edit'">le modifiche salvate</p>
-			<p class="undone" data-if="undoAction == 'regenerate'">la rigenerazione</p>
-			<p class="undone" data-if="!undoActionKnown">l'ultima azione ({{ undoAction }})</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'console'">{{ undoRoomTitle }}</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'shared'">Sala condivisa</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'arcade'">Sala giochi arcade</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == ''">{{ undoRoomTitle }}</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'ground'">Piano terra</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen2'">Prime console</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen3'">Console a 8 bit</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen4'">Console a 16 bit</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen5'">Console a 32 e 64 bit</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen6'">Sesta generazione</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen7'">Console moderne</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'handheld'">Console portatili</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'computer'">Computer e altro</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'floor' && !undoFloorKnown">Piano {{ undoFloor }}</p>
-			<p class="undone-scope" data-if="undoScopeKind == 'world'">Tutto l'edificio</p>
-			<p class="note" data-if="undoWhen != ''">Fatta il {{ undoWhen }}. Non si può rifare dopo averla annullata.</p>
-			<p class="note" data-if="undoWhen == ''">Non si può rifare dopo averla annullata.</p>
-		</div>
+			<!-- An undo: the action it takes back. -->
+			<div data-if="state == 'ready' && kind == 'undo'">
+				<p class="lead">Viene annullata:</p>
+				<p class="undone" data-if="undoAction == 'edit'">Le modifiche salvate</p>
+				<p class="undone" data-if="undoAction == 'regenerate'">La rigenerazione</p>
+				<p class="undone" data-if="!undoActionKnown">L'ultima azione ({{ undoAction }})</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'console'">{{ undoRoomTitle }}</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'shared'">Sala condivisa</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == 'arcade'">Sala giochi arcade</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'room' && undoRoomKind == ''">{{ undoRoomTitle }}</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'ground'">Piano terra</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen2'">Prime console</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen3'">Console a 8 bit</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen4'">Console a 16 bit</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen5'">Console a 32 e 64 bit</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen6'">Sesta generazione</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'gen7'">Console moderne</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'handheld'">Console portatili</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && undoFloor == 'computer'">Computer e altro</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'floor' && !undoFloorKnown">Piano {{ undoFloor }}</p>
+				<p class="undone-scope" data-if="undoScopeKind == 'world'">Tutto l'edificio</p>
+				<p class="note" data-if="undoWhen != ''">Del {{ undoWhen }}. L'annullamento è definitivo.</p>
+				<p class="note" data-if="undoWhen == ''">L'annullamento è definitivo.</p>
+			</div>
 
-		<!-- The choice being written and shown. -->
-		<div data-if="state == 'committing'">
-			<p class="lead" data-if="kind != 'undo'">Rigenerazione in corso...</p>
-			<p class="lead" data-if="kind == 'undo'">Ripristino in corso...</p>
-		</div>
+			<!-- The choice being written and shown. -->
+			<div data-if="state == 'committing'">
+				<p class="lead" data-if="kind != 'undo'">Rigenerazione in corso...</p>
+				<p class="lead" data-if="kind == 'undo'">Ripristino in corso...</p>
+			</div>
 
-		<!-- Why nothing could be done. -->
-		<div data-if="state == 'failed'">
-			<p class="warning" data-if="failure == 'busy'">Un'altra modifica è in corso: riprova tra poco. Niente è stato cambiato.</p>
-			<p class="warning" data-if="failure == 'changed'">Il mondo è cambiato mentre si preparava l'anteprima: riaprila per vedere cosa cambierebbe ora. Niente è stato cambiato.</p>
-			<p class="warning" data-if="failure == 'media-unknown'">La cartella dei media di ES-DE non è raggiungibile: senza sapere quali giochi hanno una copertina non si rigenera nulla.</p>
-			<p class="warning" data-if="failure == 'invalid-plan'">La rigenerazione darebbe una stanza che viola una regola: niente è stato cambiato. Il registro di Retroverse dice perché.</p>
-			<p class="warning" data-if="failure == 'nothing-to-undo'">Non c'è nessuna modifica da annullare.</p>
-			<p class="warning" data-if="failure == 'damaged'">Una copia di sicurezza del mondo è danneggiata: niente è stato cambiato. "retroverse-cli worldplan snapshots" dice quale.</p>
-			<p class="warning" data-if="failure == 'no-plan'">L'edificio non ha ancora un piano salvato.</p>
-			<p class="warning" data-if="failure == 'failed'">Non è stato possibile: niente è stato cambiato. Il registro di Retroverse dice perché.</p>
+			<!-- Why nothing could be done. -->
+			<div data-if="state == 'failed'">
+				<p class="warning" data-if="failure == 'busy'">Un'altra modifica è in corso: riprova tra poco. Niente è stato cambiato.</p>
+				<p class="warning" data-if="failure == 'changed'">Il mondo è cambiato mentre si preparava l'anteprima: riaprila per vedere cosa cambierebbe ora. Niente è stato cambiato.</p>
+				<p class="warning" data-if="failure == 'media-unknown'">La cartella dei media di ES-DE non è raggiungibile: senza sapere quali giochi hanno una copertina non si rigenera nulla.</p>
+				<p class="warning" data-if="failure == 'invalid-plan'">La rigenerazione darebbe una stanza che viola una regola: niente è stato cambiato. Il registro di Retroverse dice perché.</p>
+				<p class="warning" data-if="failure == 'nothing-to-undo'">Non c'è nessuna modifica da annullare.</p>
+				<p class="warning" data-if="failure == 'damaged'">Una copia di sicurezza del mondo è danneggiata: niente è stato cambiato. "retroverse-cli worldplan snapshots" dice quale.</p>
+				<p class="warning" data-if="failure == 'no-plan'">L'edificio non ha ancora un piano salvato.</p>
+				<p class="warning" data-if="failure == 'failed'">Non è stato possibile: niente è stato cambiato. Il registro di Retroverse dice perché.</p>
+			</div>
 		</div>
 
 		<!-- The choices, one per row (Up and Down move between them). -->
 		<div id="rp-actions">
 			<button id="rp-regenerate" class="action primary" data-if="showRegenerate" data-event-click="button('regenerate')">Rigenera</button>
 			<button id="rp-drop" class="action danger" data-if="showDrop" data-event-click="button('drop')">Rigenera e scarta le personalizzazioni</button>
+			<!-- The second confirmation: Indietro where the drop was (the choices stand at the panel's bottom). -->
+			<button id="rp-back" class="action" data-if="showBack" data-event-click="button('back')">Indietro</button>
 			<button id="rp-confirm-drop" class="action danger" data-if="showConfirmDrop" data-event-click="button('confirm-drop')">Scarta e rigenera</button>
 			<button id="rp-undo" class="action primary" data-if="showUndo" data-event-click="button('undo')">Annulla la modifica</button>
-			<button id="rp-back" class="action" data-if="showBack" data-event-click="button('back')">Indietro</button>
 			<!-- One element (the focus finds it by its id), its words by the state. -->
 			<button id="rp-cancel" class="action" data-if="showCancel" data-event-click="button('cancel')"><span data-if="state == 'failed' || (state == 'ready' && kind != 'undo' && !changed && overrides == 0)">Chiudi</span><span data-if="state == 'ready' && kind == 'undo'">Indietro</span><span data-if="state == 'computing' || (state == 'ready' && kind != 'undo' && (changed || overrides > 0))">Annulla</span></button>
+		</div>
+		<!-- The pad's or the keys' glyphs, the device used last (as the editor's bar). -->
+		<div id="rp-hints" data-if="state != 'committing'">
+			<span class="hint" data-if="state != 'computing'"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Scegli</span>
+			<span class="hint" data-if="state == 'confirm' || (state == 'ready' && kind == 'undo')"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
+			<span class="hint" data-if="state == 'failed' || (state == 'ready' && kind != 'undo' && !changed && overrides == 0)"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Chiudi</span>
+			<span class="hint" data-if="state == 'computing' || (state == 'ready' && kind != 'undo' && (changed || overrides > 0))"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Annulla</span>
 		</div>
 	</div>
 </body>

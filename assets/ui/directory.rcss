@@ -499,9 +499,29 @@ h2 {
 	.pad-wide { width: auto; }
 }
 
-/* I4b step 6: the "Modifiche" tab's rows. Their buttons are drawn with boxes (the bundled fonts have no symbols): a
-   room, a floor's three rooms, the building's two floors, two sheets for the state before the last change. A row that
-   does nothing now is dimmed; its line says why. */
+/* I4b step 6: the "Modifiche" tab's rows, a little tighter than the floors' so that the five fit in the list. Their
+   buttons are drawn with boxes (the bundled fonts have no symbols): a room, a floor's three rooms, the building's two
+   floors, a back chevron for the undo. A row that does nothing now is dimmed; its line says why. */
+.action-row {
+	padding-top: 4dp;
+	padding-bottom: 4dp;
+	margin-bottom: 2dp;
+}
+
+.action-row .row-title {
+	font-size: 23dp;
+}
+
+.action-row .row-meta {
+	font-size: 18dp;
+	margin-top: 0dp;
+}
+
+@media (theme: compact) {
+	.action-row .row-title { font-size: 20dp; }
+	.action-row .row-meta { font-size: 15dp; }
+}
+
 .glyph {
 	position: relative;
 	line-height: 6dp;
@@ -542,24 +562,16 @@ h2 {
 	margin: 3dp auto 0dp auto;
 }
 
-.sheet {
+/* "Annulla ultima modifica": a back chevron, the top and left borders of a box turned. */
+.chevron {
 	position: absolute;
-	width: 14dp;
-	height: 16dp;
-	border: 2dp #F4EFE6CC;
-	border-radius: 2dp;
-	background-color: #2A2F38;
-}
-
-.sheet.back {
-	left: 11dp;
-	top: 9dp;
-	border-color: #F4EFE680;
-}
-
-.sheet.front {
 	left: 17dp;
-	top: 15dp;
+	top: 13dp;
+	width: 12dp;
+	height: 12dp;
+	border-top: 3dp #F4EFE6CC;
+	border-left: 3dp #F4EFE6CC;
+	transform: rotate(-45deg);
 }
 
 .row.disabled .row-title {

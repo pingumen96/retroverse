@@ -60,9 +60,9 @@
 			<span class="badge edit-badge"><span class="edit-shelf"></span><span class="edit-shelf"></span><span class="edit-shelf"></span></span>
 			<div class="row-text">
 				<p class="row-title">Modifica stanza</p>
-				<p class="row-meta" data-if="editKind == 'console'">Sposta, scambia e fissa i giochi di {{ editTitle }}</p>
-				<p class="row-meta" data-if="editKind == 'shared'">Sposta, scambia e fissa i giochi della sala condivisa</p>
-				<p class="row-meta" data-if="editKind == 'arcade'">Sposta, scambia e fissa i giochi della sala giochi arcade</p>
+				<p class="row-meta" data-if="editKind == 'console'">Sposta, scambia e fissa giochi e arredi di {{ editTitle }}</p>
+				<p class="row-meta" data-if="editKind == 'shared'">Sposta, scambia e fissa giochi e arredi della sala condivisa</p>
+				<p class="row-meta" data-if="editKind == 'arcade'">Sposta, scambia e fissa giochi e arredi della sala giochi arcade</p>
 			</div>
 		</div>
 		<div id="dir-list">
@@ -139,22 +139,31 @@
 						<span class="badge glyph" data-if="action.action == 'regenerate-room'"><span class="cell big"></span></span>
 						<span class="badge glyph rows-1" data-if="action.action == 'regenerate-floor'"><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span></span>
 						<span class="badge glyph rows-2" data-if="action.action == 'regenerate-world'"><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span><span class="cells"><span class="cell"></span><span class="cell"></span><span class="cell"></span></span></span>
-						<span class="badge glyph" data-if="action.action == 'undo'"><span class="sheet back"></span><span class="sheet front"></span></span>
+						<span class="badge glyph" data-if="action.action == 'undo'"><span class="chevron"></span></span>
 						<div class="row-text">
 							<p class="row-title" data-if="action.action == 'edit-room'">Modifica stanza</p>
-							<p class="row-meta" data-if="action.action == 'edit-room'">Sposta, scambia e fissa giochi e arredi della stanza in cui sei</p>
+							<p class="row-meta" data-if="action.action == 'edit-room'">Sposta e fissa giochi e arredi</p>
 							<p class="row-title" data-if="action.action == 'regenerate-room'">Rigenera stanza</p>
 							<p class="row-meta" data-if="action.action == 'regenerate-room' && !action.enabled">Entra in una stanza per rigenerarla</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console'">Riallestisce {{ actionRoomTitle }}; le personalizzazioni restano</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared'">Riallestisce la sala condivisa; le personalizzazioni restano</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade'">Riallestisce la sala giochi arcade; le personalizzazioni restano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console'">Riallestisce {{ actionRoomTitle }}</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared'">Riallestisce la sala condivisa</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade'">Riallestisce la sala giochi arcade</p>
 							<p class="row-title" data-if="action.action == 'regenerate-floor'">Rigenera piano</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-floor' && !action.enabled">Esci dall'ascensore per rigenerare un piano</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled">Riallestisce le stanze di questo piano e le ridispone lungo il corridoio</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && !action.enabled">Disponibile fuori dall'ascensore</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'ground'">Riallestisce Piano terra</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen2'">Riallestisce Prime console</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen3'">Riallestisce Console a 8 bit</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen4'">Riallestisce Console a 16 bit</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen5'">Riallestisce Console a 32 e 64 bit</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen6'">Riallestisce Sesta generazione</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'gen7'">Riallestisce Console moderne</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'handheld'">Riallestisce Console portatili</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'computer'">Riallestisce Computer e altro</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && !actionFloorKnown">Riallestisce il piano {{ actionFloor }}</p>
 							<p class="row-title" data-if="action.action == 'regenerate-world'">Rigenera mondo</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-world'">Riallestisce tutto l'edificio: ogni sistema torna al suo piano</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-world'">Riallestisce tutto l'edificio</p>
 							<p class="row-title" data-if="action.action == 'undo'">Annulla ultima modifica</p>
-							<p class="row-meta" data-if="action.action == 'undo'">Torna a com'era prima dell'ultima modifica salvata o rigenerazione</p>
+							<p class="row-meta" data-if="action.action == 'undo'">Torna a prima dell'ultima modifica</p>
 						</div>
 					</div>
 				</div>
