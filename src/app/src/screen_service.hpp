@@ -8,10 +8,12 @@
 
 #include <glm/vec2.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -38,21 +40,68 @@ struct AudioRecord;
 /// A screen of a scene the service shows pictures on: its object, the material its screen is drawn with (a picture
 /// instance of MAT_Screen_CRT, whose base colour texture the service overrides), its world bounds (the view test that
 /// pauses its decoder) and its room's id (video.json's rooms, the playlist's seeds): the room of a floor ("room:snes"),
-/// else the scene's name (the test room's "m0_testroom"); since I5 step 2 its kind (the hero, or a secondary CRT).
+/// else the scene's name (the test room's "m0_testroom"); since I5 step 2 its kind (the hero, or a secondary CRT); since
+/// I5 step 4 its screen's size (its ScreenSurface's width and height: a clip of another aspect is letterboxed or
+/// pillarboxed, ADR-0016 §7; zero: unknown, the whole screen) and whether it follows the world's selection (the
+/// arcade's hero cabinet does not: the focused or inspected cabinet plays its clip itself, ADR-0016 §6; it follows the
+/// quick catalog's, as every screen does).
 struct ScreenBinding {
     std::string objectId;
     scene::MaterialHandle material;
     core::Aabb bounds;
     std::string roomId;
     ScreenKind kind = ScreenKind::Hero;
+    glm::vec2 screenSize{0.0f};
+    bool followsWorldSelection = true;
+};
+
+/// The games selected on a frame (catalog ids): the item in the world's Focus or Inspect (WorldSession's), and the
+/// quick catalog's while it is open (a game of the eye's room). A screen follows the quick catalog's, else the
+/// world's; the arcade's hero cabinet only the quick catalog's (ScreenBinding::followsWorldSelection).
+struct ScreenSelection {
+    std::optional<std::string_view> world;
+    std::optional<std::string_view> catalog;
+};
+
+/// An arcade cabinet asking for its own clip on this frame (I5 step 4, ADR-0016 §6; app::chooseCabinets): its screen's
+/// id (app::cabinetScreenId(): the scheduler's screen and owner), its game (one of the bound room's), its class (`focus`,
+/// `direct` when inspected, `ambient` in attract), its screen's box in the scene (the view test, the distance to the
+/// eye), and whether it is held in the hand (inspected: in view, at arm's length, whatever its slot's box).
+struct CabinetScreen {
+    std::string id;
+    std::string gameId;
+    ScreenClass screenClass = ScreenClass::Focus;
+    core::Aabb bounds;
+    bool inHand = false;
+
+    bool operator==(const CabinetScreen&) const = default;
+};
+
+/// The pooled video materials of the cabinets' collection (I5 step 4: CollectionInstance::videoMaterials(), one per
+/// decoder slot, slot i's picture on material i) and the size of its screens (the family's label: the clip's aspect is
+/// kept within it).
+struct CabinetPool {
+    std::vector<scene::MaterialHandle> materials;
+    glm::vec2 screenSize{0.0f};
+};
+
+/// A cabinet whose screen shows its clip on this frame: its screen's id, its game and the pooled material that draws it
+/// (its base colour the slot's texture, its picture rectangle the clip's).
+struct CabinetShown {
+    std::string id;
+    std::string gameId;
+    scene::MaterialHandle material;
+
+    bool operator==(const CabinetShown&) const = default;
 };
 
 /// The screens of `description`, the hero first: the first object built from the `crt` prefab, or from the
-/// `arcade_cabinet` prefab that stands for it in the arcade (I6 step 6's hero cabinet), whose screen shows a picture
-/// (its "screen" role has a scene texture, so that its material has a base colour texture to override), with its
-/// screen's material in `materials` (registered by SceneInstance under "<object id>/screen...") and the bounds of its
-/// first instance; then (I5 step 2) every other `crt` object with a picture, as a secondary screen (in a scene with
-/// areas, only those in the hero's area). Empty when the scene has none (the model viewer, scenes without a TV). With
+/// `arcade_cabinet` prefab that stands for it in the arcade (I6 step 6's hero cabinet, which never follows the world's
+/// selection: I5 step 4), whose screen shows a picture (its "screen" role has a scene texture, so that its material
+/// has a base colour texture to override), with its screen's material in `materials` (registered by SceneInstance
+/// under "<object id>/screen..."), the bounds of its first instance and its ScreenSurface's size; then (I5 step 2)
+/// every other `crt` object with a picture, as a secondary screen (in a scene with areas, only those in the hero's
+/// area). Empty when the scene has none (the model viewer, scenes without a TV). With
 /// `idPrefix` (I4 step 5a: a floor's start room, "room:snes/") only objects whose ids start with it count, and the
 /// room's id is the prefix without its "/"; an empty prefix finds none. Without, the room's id is the scene's name.
 [[nodiscard]] std::vector<ScreenBinding> findScreens(const scene::SceneDescription& description,
@@ -64,8 +113,9 @@ struct ScreenServiceOptions {
     /// --video-freeze-pts: every clip opens paused, seeks to this time and holds that frame (the frame is waited for
     /// before the frame that shows it goes on, at most kFreezeWait), for goldens.
     std::optional<double> freezePtsSeconds;
-    /// --fixed-dt (lockstep runs): a still picture being loaded is waited for (at most kStillWait), so that scripted
-    /// runs show the same picture on the same frame.
+    /// --fixed-dt (lockstep runs): a still picture being loaded is waited for (at most kStillWait), and so is the first
+    /// frame of a clip a slot opened for a screen in view (at most kFirstFrameWait, NFR-06's 2 s), so that scripted runs
+    /// show the same picture on the same frame.
     bool lockstep = false;
     /// video.json (I5 step 1, ADR-0016 §4): clips at all, each room's and screen's settings (its playlist,
     /// previewDuration, showOnFocus, the explicit games); since step 2 the budget, the rows and proximityMeters.
@@ -125,6 +175,17 @@ struct ScreenServiceOptions {
 /// waited for on the render loop; the slots open again once they have ended), the previous screens' picture
 /// overrides cleared. Any scene shown in place of another lets go of its screens first (unbind(), the scene's registry
 /// being cleared) and binds the new scene's: one service for the run, and shutdown() only at its end.
+///
+/// Since I5 step 4 (ADR-0016 §6, §7):
+///  - the arcade cabinets that ask for their own clips each frame (setCabinets(): the focused or inspected one, the
+///    attract one) are screens of the scheduler too, of the bound room's games, without a material of their own: the
+///    service sets their slot's picture on their collection's pooled video material and tells which show it
+///    (cabinetsShown()), the world drawing them; the arcade's hero cabinet never follows the world's selection, only
+///    the quick catalog's;
+///  - a clip of another aspect than its screen's fills the rectangle that keeps it (screen_aspect.hpp's pictureRect(),
+///    gl::MaterialRegistry::setPictureRect), its bars the tube's black;
+///  - a bound screen whose slot is taken from a clip it still wants ("needed", "budget") keeps a copy of that clip's
+///    frame (gl::Texture2D::copyOf) until the clip has a slot again, in place of its still.
 class ScreenService {
 public:
     /// The still pictures' size: the screen's 4:3, as the clips.
@@ -137,7 +198,8 @@ public:
     ScreenService(const ScreenService&) = delete;
     ScreenService& operator=(const ScreenService&) = delete;
 
-    /// The room's games changed (ScreenPolicy::setGames on every screen).
+    /// The room's games changed (ScreenPolicy::setGames on every screen; a cabinet whose game or clip changed lets its
+    /// clip go, the others play on).
     void setGames(std::vector<ScreenGame> games);
 
     /// Lets go of the screens (I4 step 6b): the clips stop (never waited for), the stills go, and the screens' picture
@@ -150,9 +212,22 @@ public:
     /// Screens are bound, and the hero's object id ("" none).
     [[nodiscard]] bool bound() const noexcept;
     [[nodiscard]] std::string screenId() const;
+    /// The decoder slots (the budget: --max-decoders or video.json's maxDecoders): the pooled video materials a
+    /// cabinets' room needs.
+    [[nodiscard]] std::size_t slotCount() const noexcept;
 
-    /// One frame (`frame`, at `nowSeconds`: the run's simulated time) seen by `camera`: the item focused or inspected
-    /// (`hovered`, its catalog id), the window `minimized` (every screen out of view: the slots pause, and stop after
+    /// The arcade cabinets that ask for their clips on the next update() (I5 step 4, ADR-0016 §6), and their room's pool
+    /// of video materials. A cabinet asked for again keeps its clip; one no longer asked for lets its clip go (the
+    /// scheduler stops it: "unwanted"); a game of no bound room's, without a playable clip or whose clip failed in the
+    /// run plays nothing (its cover stays). Unbound, none plays.
+    void setCabinets(std::vector<CabinetScreen> cabinets, CabinetPool pool);
+    /// After update(): the cabinets whose screens show their clips now (a frame of it shown), each with the pooled
+    /// material its slot's picture is on. The others show their covers.
+    [[nodiscard]] std::span<const CabinetShown> cabinetsShown() const noexcept;
+
+    /// One frame (`frame`, at `nowSeconds`: the run's simulated time) seen by `camera`: the games selected
+    /// (`selection`: the world's focused or inspected item, the quick catalog's), the window `minimized` (every screen
+    /// out of view: the slots pause, and stop after
     /// kScreenStopAfterSeconds, reason "minimized"); the scheduler's decisions carried out, the frames uploaded, the
     /// stills loaded, the screens' texture overrides set to what they show. An interactive run calls it while minimized
     /// too, after each of the host's waits (IAppLogic::onMinimized), with the waits' time.
@@ -163,7 +238,7 @@ public:
     /// picture's media time, and its decoder decodes its sound; the others fade out (the 300 ms cross-fade) and their
     /// decoders discard their audio packets.
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimized = false, bool eyeInRoom = true);
+                const ScreenSelection& selection, bool minimized = false, bool eyeInRoom = true);
 
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
     void launchStarting();

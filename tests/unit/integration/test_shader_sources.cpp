@@ -510,6 +510,7 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
                     {"float", "uCrtCurvature", offsetof(MaterialUniforms, crtCurvature)},
                     {"float", "uCrtVignette", offsetof(MaterialUniforms, crtVignette)},
                     {"float", "uCrtGlassReflection", offsetof(MaterialUniforms, crtGlassReflection)},
+                    {"vec4", "uPictureRect", offsetof(MaterialUniforms, pictureRect)},
                 },
                 sizeof(MaterialUniforms));
 
@@ -526,6 +527,7 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
         {"RV_MATERIAL_CRT_SCREEN", flags::kCrtScreen},
         {"RV_MATERIAL_LAYERED_BASE_COLOR", flags::kLayeredBaseColor},
         {"RV_MATERIAL_SPINE_LAYER", flags::kSpineLayer},
+        {"RV_MATERIAL_PICTURE_RECT", flags::kPictureRect},
     };
     std::map<std::string, std::uint32_t> glslFlags;
     const std::regex flag("const\\s+uint\\s+(RV_MATERIAL_\\w+)\\s*=\\s*(\\d+)u\\s*;");

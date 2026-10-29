@@ -1,5 +1,6 @@
 #include <rv/render/material_registry.hpp>
 
+#include <cmath>
 #include <cstring>
 #include <utility>
 
@@ -203,6 +204,33 @@ Status MaterialRegistry::setTextureOverride(scene::MaterialHandle handle, Materi
     }
     material.textureOverrides[index] = texture;
     return ok();
+}
+
+Status MaterialRegistry::setPictureRect(scene::MaterialHandle handle, std::optional<glm::vec4> rect) {
+    if (handle.value >= m_materials.size()) {
+        return makeError(ErrorCode::InvalidArgument, "unknown material", fmt::format("material #{}", handle.value));
+    }
+    if (rect && (!std::isfinite(rect->x) || !std::isfinite(rect->y) || !std::isfinite(rect->z) ||
+                 !std::isfinite(rect->w) || rect->z <= 0.0f || rect->w <= 0.0f)) {
+        return makeError(ErrorCode::InvalidArgument, "a picture rectangle without area",
+                         fmt::format("material '{}'", m_materials[handle.value].name));
+    }
+    constexpr glm::vec4 kWhole{0.0f, 0.0f, 1.0f, 1.0f};
+    const bool whole = !rect || *rect == kWhole;
+    GpuMaterial& material = m_materials[handle.value];
+    MaterialUniforms uniforms = material.uniforms;
+    uniforms.pictureRect = whole ? kWhole : *rect;
+    uniforms.flags = whole ? (uniforms.flags & ~material_flags::kPictureRect)
+                           : (uniforms.flags | material_flags::kPictureRect);
+    if (uniforms.pictureRect == material.uniforms.pictureRect && uniforms.flags == material.uniforms.flags) {
+        return ok();
+    }
+    material.uniforms = uniforms;
+    if (handle.value >= m_uploadedCount) {
+        return ok();
+    }
+    return m_buffer.update(handle.value * m_stride,
+                           std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
 }
 
 GLuint MaterialRegistry::textureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot) const noexcept {

@@ -13,12 +13,14 @@
 # side of the hover, the pull-out and Focus and the hover label's keys (step 13a), the held item's pose (step 13b); since
 # I4 step 7b the elevator ride's state machine and the directory's data and command routing; since I5 step 1 the
 # screens' playlists and video.json; since I5 step 2 the decoder scheduler and the process priority's policy; since I5
-# step 5 the sound's policy (the output, the audible screen, its gain and pan, the duck).
+# step 5 the sound's policy (the output, the audible screen, its gain and pan, the duck); since I5 step 4 the picture's
+# aspect on its screen and the arcade cabinets that play.
 # Kept apart from rv_app so that rv_tests can unit-test it without SDL or OpenGL, and the GPU smoke tests can read the
 # reports of the runs they start.
 add_library(rv_app_cli STATIC
     src/audio_policy.cpp
     src/back_action.cpp
+    src/cabinet_screens.cpp
     src/collection_layers.cpp
     src/command_line.cpp
     src/cover_requests.cpp
@@ -39,6 +41,7 @@ add_library(rv_app_cli STATIC
     src/room_items.cpp
     src/run_report.cpp
     src/scene_content_plan.cpp
+    src/screen_aspect.cpp
     src/screen_policy.cpp
     src/screen_room.cpp
     src/screen_scheduler.cpp
@@ -113,6 +116,7 @@ add_library(rv_app STATIC
     src/screen_verdicts.cpp
     src/self_check_canvas.cpp
     src/srgb_self_check.cpp
+    src/world_cabinets.cpp
     src/world_card.cpp
     src/world_hover.cpp
     src/world_inspection.cpp

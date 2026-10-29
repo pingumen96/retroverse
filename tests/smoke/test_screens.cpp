@@ -2,8 +2,10 @@
 // (crt_a the hero, crt_b to crt_d secondaries of the room "screens_four") playing generated clips
 // (media::writeTestVideo, written into the case directory, never committed) of a mock catalog's games, each screen's
 // games named by video.json's rooms.screens_four (explicit playlists of one game). The run reports tell what the
-// scheduler did (the video section's screens, slots' events and upload figures; the process priority's changes).
+// scheduler did (the video section's screens, slots' events and upload figures; the process priority's changes). I5 step 4
+// (ADR-0016 §7): a 16:9 and a portrait clip on the 4:3 tubes, letterboxed and pillarboxed, probed on the screenshot.
 
+#include "image_checks.hpp"
 #include "launch_support.hpp"
 #include "smoke_support.hpp"
 
@@ -12,7 +14,9 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
+#include <rv/geometry/prefabs.hpp>
 #include <rv/media/test_video.hpp>
+#include <rv/scene/scene_description.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -420,4 +424,116 @@ TEST_CASE("screens: the process runs above normal while rendering and normal dur
     REQUIRE(run.report->video.launches.size() == 1);
     CHECK(run.report->video.launches.front().threadsRunning == 0);
     CHECK(run.report->video.budgetDrops.empty());
+}
+
+namespace {
+
+/// The point of crt_<id>'s screen at its texture coordinates (u right, v down: uv (0, 0) its top-left), in the scene:
+/// its prefab's ScreenSurface (the screen's rectangle, a little in front of its rim plane: the tube bulges) at the CRT's
+/// position in screens_four.json.
+glm::vec3 screenPoint(const rv::scene::SceneDescription& scene, std::string_view id, float u, float v) {
+    const auto object = std::find_if(scene.objects.begin(), scene.objects.end(),
+                                     [id](const rv::scene::SceneObject& candidate) { return candidate.id == id; });
+    REQUIRE(object != scene.objects.end());
+    auto crt = rv::geometry::buildCrt(rv::geometry::CrtParams{});
+    REQUIRE(crt.has_value());
+    const rv::geometry::Socket* surface = rv::geometry::findSocket(crt->sockets, "ScreenSurface");
+    REQUIRE(surface != nullptr);
+    const rv::core::Aabb& rect = surface->bounds;
+    const glm::vec3 local(rect.min.x + u * (rect.max.x - rect.min.x), rect.max.y - v * (rect.max.y - rect.min.y),
+                          0.5f * rect.max.z);
+    const glm::mat4 model = object->instanceTransforms().front();
+    return glm::vec3(model * surface->transform * glm::vec4(local, 1.0f));
+}
+
+/// The mean luma of the 7 x 7 window at each of `points` of crt_<id>'s screen (u, v) seen from the scene's camera.
+std::vector<double> screenProbes(const rv::assets::ImageData& image, const rv::scene::SceneDescription& scene,
+                                 std::string_view id, const std::vector<glm::vec2>& points) {
+    std::vector<double> lumas;
+    for (const glm::vec2& point : points) {
+        const std::optional<glm::ivec2> pixel =
+            rv::smoke::projectToPixel(scene.camera, kShotSize, screenPoint(scene, id, point.x, point.y));
+        REQUIRE(pixel.has_value());
+        lumas.push_back(rv::smoke::windowLuma(image, *pixel, 3));
+    }
+    return lumas;
+}
+
+} // namespace
+
+TEST_CASE("screens: a 16:9 clip on a 4:3 tube shows black bars above and below, a portrait one at its sides",
+          "[gpu][video][screens][aspect]") {
+    const std::filesystem::path dir = freshCaseDir("screens/aspect");
+    // crt_a and crt_c the 16:9 clip (1280 x 720, decoded at 480 rows), crt_b and crt_d a portrait 3:4 one (360 x 480);
+    // frozen at 1.0 s so that the probes see one frame.
+    writeClip(dir / "clips" / "wide.mp4", 3.0, 75, {1280, 720});
+    writeClip(dir / "clips" / "tall.mp4", 3.0, 76, {360, 480});
+    writeScreens(dir, kGameA, kGameB, kGameA, kGameB);
+    const std::filesystem::path catalog = writeCatalog(
+        dir, Json::array({game(kGameA, "Arco di Pietra", {{"video", "clips/wide.mp4"}}, "2026-10-01T10:00:00Z"),
+                          game(kGameB, "Bussola d'Ottone", {{"video", "clips/tall.mp4"}})}));
+    const std::filesystem::path shot = dir / "aspect.png";
+    const AppRun run =
+        runScreens(dir, "aspect", catalog, 20, {"--video-freeze-pts", "1", "--screenshot", arg(shot)});
+    const rv::app::VideoRecord& video = requireScreens(run, 2);
+    INFO(run.describe());
+    // ADR-0016 §7: letterboxed (the whole width, 0.75 of the height) and pillarboxed (the whole height, 0.5625 of the
+    // width), centred, never stretched.
+    const auto rectOf = [&](std::string_view id) {
+        const rv::app::VideoScreenRecord& screen = screenOf(video, id);
+        CHECK(screen.picture == "video");
+        REQUIRE(screen.pictureRect.size() == 4u);
+        return screen.pictureRect;
+    };
+    const std::vector<double> wide = rectOf("crt_a");
+    CHECK(wide[0] == 0.0);
+    CHECK(std::abs(wide[1] - 0.125) < 0.002);
+    CHECK(wide[2] == 1.0);
+    CHECK(std::abs(wide[3] - 0.75) < 0.002);
+    const std::vector<double> tall = rectOf("crt_b");
+    CHECK(std::abs(tall[0] - 0.21875) < 0.002);
+    CHECK(tall[1] == 0.0);
+    CHECK(std::abs(tall[2] - 0.5625) < 0.002);
+    CHECK(tall[3] == 1.0);
+    CHECK(rectOf("crt_c") == wide);
+    CHECK(rectOf("crt_d") == tall);
+    // The probes: the bars are the lit tube's off-black (I5 step 4's review: crt.glsl's RV_CRT_BLACK_LEVEL, its glass's
+    // faint sheen over it): dark, yet never a hole; the picture between them lit.
+    const auto scene = rv::scene::loadSceneDescription(sceneFile());
+    REQUIRE(scene.has_value());
+    const rv::assets::ImageData image = requireScreenshot(run, shot, kShotSize);
+    const std::vector<glm::vec2> letterbox{{0.3f, 0.05f}, {0.5f, 0.05f}, {0.7f, 0.05f},
+                                           {0.3f, 0.95f}, {0.5f, 0.95f}, {0.7f, 0.95f}};
+    const std::vector<glm::vec2> pillarbox{{0.07f, 0.4f}, {0.07f, 0.5f}, {0.07f, 0.6f},
+                                           {0.93f, 0.4f}, {0.93f, 0.5f}, {0.93f, 0.6f}};
+    const std::vector<glm::vec2> middle{{0.4f, 0.3f}, {0.5f, 0.3f}, {0.6f, 0.3f}, {0.4f, 0.5f}, {0.5f, 0.5f},
+                                        {0.6f, 0.5f}, {0.4f, 0.7f}, {0.5f, 0.7f}, {0.6f, 0.7f}};
+    for (const std::string_view id : {"crt_a", "crt_c"}) {
+        const std::vector<double> bars = screenProbes(image, *scene, id, letterbox);
+        const std::vector<double> picture = screenProbes(image, *scene, id, middle);
+        const double darkest = *std::max_element(bars.begin(), bars.end());
+        const double faintest = *std::min_element(bars.begin(), bars.end());
+        double lit = 0.0;
+        for (const double luma : picture) {
+            lit += luma / static_cast<double>(picture.size());
+        }
+        WARN(id << ": bars " << faintest << " to " << darkest << " luma, the picture's mean " << lit);
+        CHECK(darkest < 36.0);
+        CHECK(faintest > 6.0);
+        CHECK(lit > 3.0 * darkest);
+    }
+    for (const std::string_view id : {"crt_b", "crt_d"}) {
+        const std::vector<double> bars = screenProbes(image, *scene, id, pillarbox);
+        const std::vector<double> picture = screenProbes(image, *scene, id, middle);
+        const double darkest = *std::max_element(bars.begin(), bars.end());
+        const double faintest = *std::min_element(bars.begin(), bars.end());
+        double lit = 0.0;
+        for (const double luma : picture) {
+            lit += luma / static_cast<double>(picture.size());
+        }
+        WARN(id << ": bars " << faintest << " to " << darkest << " luma, the picture's mean " << lit);
+        CHECK(darkest < 36.0);
+        CHECK(faintest > 6.0);
+        CHECK(lit > 3.0 * darkest);
+    }
 }

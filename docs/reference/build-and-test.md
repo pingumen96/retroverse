@@ -117,7 +117,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `tests/input_scripts/hub_walk_into_arcade.json`), and the clips' verdicts (`gpu.video verdicts: ...`, I5 step 7,
   `test_video_verdicts.cpp`, `[video_verdicts]`, on `tests/fixtures/esde/video-verdicts` with one clip kept: a clip that
   failed opened 0 times at the next run, its screen on its still from the start, opened again once its file changed; a
-  clip played through remembered playable);
+  clip played through remembered playable), and the arcade cabinets (`gpu.cabinets: ...`, I5 step 4,
+  `test_cabinets.cpp`, `[cabinets]`, on `esde/building` with a generated clip for each placed mame title: the inspected
+  cabinet's clip in the hand, in Focus and its cover on Back; attract after its dwell; one decoder, the hero
+  cabinet's kept frame on two screenshots; the editor; since its review a cabinet moved by the editor and saved, a
+  launch from the inspected cabinet with the fake emulator, the quick catalog's selection on the hero cabinet) and the
+  picture's aspect on `screens_four` (`gpu.screens: a 16:9 clip on a 4:3 tube ...`, `[aspect]`, probed);
   the room's test files
   repeat a few helpers each (BACKLOG). Their hidden `[.bench]` cases run by hand in Release,
   `build/msvc-x64-release/bin/rv_smoke_tests.exe "[bench]"`: the snes-stress room's figures, its covers cold and warm,
@@ -260,7 +265,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   over capacity, nothing written by a second start); since I5 step 7 `-Filter '[real-library][videos]'` (the SNES clips
   through `retroverse-cli media --check-videos`, their verdicts per kind and the failures printed, the reports in
   `build/<preset>/real-library/videos`, whose data directory is kept so that a run resumes: delete it to check every
-  clip again) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's clips (hours). `-OutDir <dir>`
+  clip again), since I5 step 4 `-Filter '[real-library][arcade]'` (the whole library imported under
+  `build/<preset>/real-library/arcade`, attract in front of each featured cabinet of the real arcade room, the first
+  that played inspected; "Real arcade:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every
+  system's clips (hours). `-OutDir <dir>`
   moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that script between the first
   snapshot and the tests, with the same variables (Gate M1's measurements). `python -I scripts/snapshot_tree.py snapshot
   <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a difference) work alone (Python

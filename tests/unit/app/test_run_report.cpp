@@ -418,6 +418,9 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         open.failed = "overrides.json: unsupported";
         world.edits = {edit, open};
     }
+    // I5 step 4's review: the cabinets' clips drawn, none over its cover.
+    world.cabinetClipFrames = 120;
+    world.cabinetCoverBeneathFrames = 0;
     world.hardFindings = 0;
     world.softFindings = 2;
     world.objects = 42;
@@ -817,11 +820,26 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     rv::app::VideoScreenRecord shared{"crt_b", "secondary", "ambient", "g000000000000b002", "video", 0, true, 7, true};
     rv::app::VideoScreenRecord still{"crt_d", "secondary", "ambient", "g000000000000b003", "cover", std::nullopt,
                                      false, 9, false};
-    video.screens = {shared, still};
+    // I5 step 4: a 16:9 clip letterboxed on a 4:3 tube; a cabinet's frame kept while another plays.
+    shared.pictureRect = {0.0, 0.125, 1.0, 0.75};
+    still.heldFrame = true;
+    rv::app::VideoScreenRecord cabinet{"area:arcade/cabinet:000000A1", "cabinet", "direct", "g000000000000b006",
+                                       "video", 1, true, 11, true};
+    cabinet.pictureRect = {0.0, 0.219221, 1.0, 0.561558};
+    video.screens = {shared, still, cabinet};
     video.slotEvents = {{3, 0.05, 1, "open", "g000000000000b002", "wanted", {"crt_a", "crt_b"}},
-                        {900, 15.0, 1, "stop", "g000000000000b003", "out-of-view", {}}};
+                        {900, 15.0, 1, "stop", "g000000000000b003", "out-of-view", {}},
+                        {960, 16.0, 1, "open", "g000000000000b003", "wanted", {"crt_d"}, 12.5}};
     video.budgetDrops = {{12.5, 1, "g000000000000b003", 0.075, 42.5}};
     video.slotEventsDropped = 3;
+    video.cabinetEvents = {{70, 1.166, "area:arcade/cabinet:000000A1", "g000000000000b006", "ambient", "video"},
+                           {130, 2.166, "area:arcade/cabinet:000000A1", "g000000000000b006", "direct", "cover"}};
+    video.heldFrameShows = 45;
+    // I5 step 4's review: the events past the list, the lockstep run's waits for a first frame.
+    video.cabinetEventsDropped = 2;
+    video.firstFrameWaits = 4;
+    video.firstFrameWaitMaxMs = 31.5;
+    video.firstFrameWaitTimeouts = 1;
     // I5 step 7: the clips' verdicts.
     video.verdicts.loaded = true;
     video.verdicts.entries = 1470;

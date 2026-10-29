@@ -2,8 +2,10 @@
 #include "screen_verdicts.hpp"
 
 #include <rv/app/audio_policy.hpp>
+#include <rv/app/cabinet_screens.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/scene_instance.hpp>
+#include <rv/app/screen_aspect.hpp>
 #include <rv/audio/audio_engine.hpp>
 #include <rv/audio/audio_ring.hpp>
 #include <rv/assets/collection_labels.hpp>
@@ -57,6 +59,12 @@ constexpr std::size_t kMaxTimelineEntries = 512;
 /// the picture, so that its null mix is the same on every run.
 constexpr std::chrono::milliseconds kAudioWait{100};
 constexpr double kAudioLeadSeconds = 0.04;
+/// A lockstep run's frame waits (at most this long: NFR-06's 2 s from a selection to its first frame) for the first
+/// frame of a clip a slot opened for a screen in view, so that the frame it shows on does not depend on the decoder
+/// thread's pace (I5 step 4's review).
+constexpr std::chrono::seconds kFirstFrameWait{2};
+/// An inspected cabinet's screen is held in the hand: this far from the eye (its sound's distance, its rank's).
+constexpr double kInHandMeters = 0.5;
 
 /// A decoder's sound into a slot's ring (rv_media knows no mixer: ADR-0016 §9).
 class RingSink final : public media::AudioSink {
@@ -219,7 +227,8 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         // The CRT, or (the hero only) the arcade's hero cabinet that stands for it (I6 step 6), with its screen's
         // picture.
         const bool crt = object.kind == "crt";
-        if (object.source != scene::SceneObject::Source::Prefab || !(crt || (screens.empty() && object.kind == "arcade_cabinet")) ||
+        const bool heroCabinet = screens.empty() && object.kind == kCabinetPrefabKind;
+        if (object.source != scene::SceneObject::Source::Prefab || !(crt || heroCabinet) ||
             !object.texturesByRole.contains("screen") || index >= instance.objectBounds().size()) {
             continue;
         }
@@ -237,6 +246,10 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
         screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
         screen.kind = screens.empty() ? ScreenKind::Hero : ScreenKind::Secondary;
+        // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever
+        // the world selects, the focused or inspected cabinet playing its clip itself (§6).
+        screen.screenSize = instance.screenSurfaceSize(index);
+        screen.followsWorldSelection = !heroCabinet;
         if (!instance.areas().empty()) {
             const std::optional<std::size_t> area = scene::areaAt(instance.areas(), screen.bounds.center());
             if (screens.empty()) {
@@ -295,6 +308,21 @@ struct ScreenService::Impl {
         /// The policy was told its target's clip shows (videoShowing()), from the slot `lastSlot`.
         bool videoTold = false;
         std::optional<std::size_t> lastSlot;
+
+        // I5 step 4.
+        /// An arcade cabinet's screen (setCabinets()): no material of its own, its picture on its room's pooled video
+        /// material; held in the hand (inspected).
+        bool cabinet = false;
+        bool inHand = false;
+        /// The rectangle its picture fills (ADR-0016 §7), as last set on its material.
+        glm::vec4 rect = kWholeScreen;
+        /// The frame it showed when its slot was taken from its clip (still asked for: "needed", "budget"), shown while
+        /// that clip waits for a slot again (ADR-0016 §6: the hero cabinet keeps its paused frame), with its game and
+        /// rectangle; and whether it shows now.
+        gl::Texture2D heldFrame;
+        std::string heldFrameGame;
+        glm::vec4 heldFrameRect = kWholeScreen;
+        bool showingHeldFrame = false;
     };
 
     /// One decoder slot: its decoder (open, or stopped with its thread still ending) and its texture.
@@ -320,6 +348,8 @@ struct ScreenService::Impl {
         std::optional<double> firstUploadAt;
         double lastUploadAt = 0.0;
         bool frozenShown = false;
+        /// A lockstep run waited for its first frame already (once per opening: a wait that ran out is not repeated).
+        bool firstFrameWaited = false;
 
         /// The frame waiting for its upload (VideoPlayback::update()'s), and the render frame it began to wait.
         const media::VideoFrame* pending = nullptr;
@@ -358,6 +388,7 @@ struct ScreenService::Impl {
             screens.push_back(std::make_unique<ScreenState>(std::move(binding), ScreenPolicy(games, settings)));
             screens.back()->volume = volume;
         }
+        refreshActive();
         lastScreenId = screens.empty() ? std::string() : screens.front()->binding.objectId;
         if (options.audio != nullptr) {
             for (Slot& slot : slots) {
@@ -370,6 +401,19 @@ struct ScreenService::Impl {
     /// the next bind: the clips that failed stay excluded), and the last hero's id (the record's at the end).
     std::vector<std::unique_ptr<ScreenState>> screens;
     std::vector<ScreenPolicy> sparePolicies;
+    /// I5 step 4: the arcade cabinets asking for their clips (setCabinets()), their room's pooled video materials, those
+    /// whose screens show their clips (cabinetsShown()), the games whose clips failed on a cabinet in the run.
+    std::vector<std::unique_ptr<ScreenState>> cabinets;
+    CabinetPool cabinetPool;
+    std::vector<CabinetShown> shownCabinets;
+    std::set<std::string, std::less<>> failedCabinetGames;
+    std::vector<VideoCabinetEventRecord> pendingCabinetEvents;
+    /// The pooled materials whose base colour override and picture rectangle applyCabinets() set (cleared once no
+    /// cabinet shows on them, when the cabinets go and with the service).
+    std::vector<scene::MaterialHandle> poolMaterialsSet;
+    /// The screens bound and the cabinets, in that order (refreshActive() after each change): this frame's scheduler
+    /// requests, the sound's candidates.
+    std::vector<ScreenState*> active;
     std::string lastScreenId;
     gl::MaterialRegistry& materials;
     ScreenServiceOptions options;
@@ -416,7 +460,23 @@ struct ScreenService::Impl {
     [[nodiscard]] bool isHero(const ScreenState& screen) const noexcept { return hero() == &screen; }
     /// "Hero CRT" or "Screen '<id>'", for the log.
     [[nodiscard]] std::string nameOf(const ScreenState& screen) const {
-        return isHero(screen) ? std::string("Hero CRT") : fmt::format("Screen '{}'", screen.binding.objectId);
+        return isHero(screen)    ? std::string("Hero CRT")
+               : screen.cabinet ? fmt::format("Cabinet '{}'", screen.binding.objectId)
+                                : fmt::format("Screen '{}'", screen.binding.objectId);
+    }
+
+    /// The screens bound, then the cabinets (I5 step 4).
+    [[nodiscard]] const std::vector<ScreenState*>& allScreens() const noexcept { return active; }
+    /// Lists the screens bound and the cabinets again (after either changed).
+    void refreshActive() {
+        active.clear();
+        active.reserve(screens.size() + cabinets.size());
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            active.push_back(screen.get());
+        }
+        for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            active.push_back(cabinet.get());
+        }
     }
 
     /// The slot playing the hero's clip now, else none.
@@ -485,9 +545,9 @@ struct ScreenService::Impl {
     /// The screens asking for `clip` this frame, in their order.
     [[nodiscard]] std::vector<ScreenState*> requesters(std::string_view clip) const {
         std::vector<ScreenState*> found;
-        for (const std::unique_ptr<ScreenState>& screen : screens) {
+        for (ScreenState* screen : allScreens()) {
             if (!clip.empty() && screen->clip == clip) {
-                found.push_back(screen.get());
+                found.push_back(screen);
             }
         }
         return found;
@@ -503,11 +563,11 @@ struct ScreenService::Impl {
     }
 
     void recordEvent(std::size_t slot, SlotAction action, std::string gameId, std::string reason,
-                     std::vector<std::string> shownOn) {
+                     std::vector<std::string> shownOn, std::optional<double> fromSeconds = std::nullopt) {
         if (counters.slotEvents.size() < kMaxTimelineEntries) {
             counters.slotEvents.push_back(VideoSlotEventRecord{frameIndex, now, slot, std::string(toString(action)),
                                                                std::move(gameId), std::move(reason),
-                                                               std::move(shownOn)});
+                                                               std::move(shownOn), fromSeconds});
         } else {
             ++counters.slotEventsDropped;
         }
@@ -533,6 +593,11 @@ struct ScreenService::Impl {
                 resumeAt[slot.clip] = *position;
             }
         }
+        // I5 step 4 (ADR-0016 §6): a slot taken from a clip still asked for leaves its screens their frame, paused,
+        // until the clip has a slot again (with one decoder, the hero cabinet's while a focused cabinet plays).
+        if (reason == "needed" || reason == "budget") {
+            keepFrames(index);
+        }
         slot.playback->decoder().stop();
         if (slot.source) {
             // Its sound fades out (the pause's fade) with what its ring still holds.
@@ -545,6 +610,37 @@ struct ScreenService::Impl {
         slot.frameShown = false;
         recordEvent(index, SlotAction::Stop, slot.gameId, std::string(reason), screenIds(requesters(slot.clip)));
         spdlog::info("Video slot {}: the clip of game {} stops ({})", index, slot.gameId, reason);
+    }
+
+    /// The bound screens showing the picture of slot `index` keep a copy of it (heldFrame), the slot's texture going on
+    /// with another clip.
+    void keepFrames(std::size_t index) {
+        const Slot& slot = slots[index];
+        if (!slot.texture.valid() || !slot.frameShown) {
+            return;
+        }
+        for (const std::unique_ptr<ScreenState>& screen : screens) {
+            if (screen->overrideSlot != index || screen->appliedOverride != slot.texture.textureId() ||
+                screen->shownPicture != ScreenPicture::Video) {
+                continue;
+            }
+            gl::TextureDesc desc;
+            desc.colorSpace = gl::ColorSpace::Srgb;
+            desc.mipmaps = false;
+            desc.sampling.wrap = gl::TextureWrap::ClampToEdge;
+            desc.memoryKind = gl::GpuMemoryKind::HeroTextures;
+            auto copy = gl::Texture2D::copyOf(slot.texture.textureId(), slot.texture.size(), desc, "Screen.HeldFrame");
+            if (!copy) {
+                spdlog::warn("{}: its frame cannot be kept ({}); its still shows until its clip plays again",
+                             nameOf(*screen), copy.error().toString());
+                continue;
+            }
+            screen->heldFrame = std::move(*copy);
+            screen->heldFrameGame = screen->policy.targetId();
+            screen->heldFrameRect = screen->rect;
+            spdlog::info("{}: its slot was taken; it keeps the frame of game {} until its clip plays again",
+                         nameOf(*screen), screen->heldFrameGame);
+        }
     }
 
     void openSlot(std::size_t index, const std::string& clip) {
@@ -617,6 +713,7 @@ struct ScreenService::Impl {
         slot.lastPts.reset();
         slot.firstUploadAt.reset();
         slot.frozenShown = false;
+        slot.firstFrameWaited = false;
         slot.pending = nullptr;
         slot.pendingSince.reset();
         slot.media = first.policy.targetMedia();
@@ -648,7 +745,8 @@ struct ScreenService::Impl {
         } else if (resume) {
             slot.playback->seek(*resume);
         }
-        recordEvent(index, SlotAction::Open, slot.gameId, "wanted", screenIds(on));
+        recordEvent(index, SlotAction::Open, slot.gameId, "wanted", screenIds(on),
+                    options.freezePtsSeconds ? options.freezePtsSeconds : resume);
         spdlog::info("Video slot {}: the video of game {} opens on {} screen(s){}", index, slot.gameId, on.size(),
                      options.freezePtsSeconds
                          ? fmt::format(", held at {:g} s (--video-freeze-pts)", *options.freezePtsSeconds)
@@ -706,8 +804,8 @@ struct ScreenService::Impl {
             }
         }
         std::vector<ScreenRequest> requests;
-        requests.reserve(screens.size());
-        for (const std::unique_ptr<ScreenState>& screen : screens) {
+        requests.reserve(active.size());
+        for (const ScreenState* screen : active) {
             // The hero's own slot is the hero's, whichever room's: a room changed reopens on it (one thread).
             requests.push_back(ScreenRequest{screen->binding.objectId, screen->screenClass, screen->clip,
                                              screen->distance, screen->visible,
@@ -721,8 +819,8 @@ struct ScreenService::Impl {
                          100.0 * drop.ratio, drop.slot, kLateWindowSeconds, kLateDropSeconds);
         }
         applyCommands(result.commands);
-        for (std::size_t index = 0; index < screens.size(); ++index) {
-            screens[index]->assignment = result.screens[index];
+        for (std::size_t index = 0; index < active.size(); ++index) {
+            active[index]->assignment = result.screens[index];
         }
         // NFR-07 (ADR-0016 §2): never more decoders open than the budget, nor more alive than its slots.
         const std::size_t open = scheduler.openSlots();
@@ -805,6 +903,37 @@ struct ScreenService::Impl {
         return true;
     }
 
+    /// A lockstep run (not frozen: that run waits for its own frame): the first frame of a clip a slot opened for a
+    /// screen in view is waited for, at most kFirstFrameWait, once per opening, so that it shows on the frame the slot
+    /// opened whatever the decoder thread's pace (the waits recorded: VideoRecord::firstFrameWaits).
+    void awaitFirstFrame(Slot& slot) {
+        if (!options.lockstep || options.freezePtsSeconds || slot.firstFrameWaited || slot.frameShown ||
+            slot.pending != nullptr || slot.paused || slot.textureFailed || slot.playback->failed()) {
+            return;
+        }
+        const std::vector<ScreenState*> on = requesters(slot.clip);
+        if (std::none_of(on.begin(), on.end(), [](const ScreenState* screen) { return screen->visible; })) {
+            return;
+        }
+        slot.firstFrameWaited = true;
+        const Clock::time_point start = Clock::now();
+        const Clock::time_point deadline = start + kFirstFrameWait;
+        while (slot.pending == nullptr && !slot.playback->failed() && Clock::now() < deadline) {
+            std::this_thread::sleep_for(kPollInterval);
+            slot.pending = slot.playback->update(now).frame;
+        }
+        const double waited = millisecondsSince(start);
+        ++counters.firstFrameWaits;
+        counters.firstFrameWaitMaxMs = std::max(counters.firstFrameWaitMaxMs, waited);
+        if (slot.pending != nullptr) {
+            slot.pendingSince = frameIndex;
+        } else if (!slot.playback->failed()) {
+            ++counters.firstFrameWaitTimeouts;
+            spdlog::warn("Video: the first frame of game {}'s clip did not arrive within {} s (lockstep)", slot.gameId,
+                         kFirstFrameWait.count());
+        }
+    }
+
     /// Takes each open slot's frame of this time, then uploads them within kMaxVideoUploadBytesPerFrame, the longest
     /// pending first (ADR-0016 §2); a frame left over waits for the next render frame (or is superseded).
     void pumpSlots() {
@@ -834,6 +963,7 @@ struct ScreenService::Impl {
                                  *options.freezePtsSeconds, kFreezeWait.count());
                 }
             }
+            awaitFirstFrame(slot);
         }
         std::vector<std::size_t> order;
         for (std::size_t index = 0; index < slots.size(); ++index) {
@@ -882,6 +1012,9 @@ struct ScreenService::Impl {
             for (ScreenState* screen : requesters(slot.clip)) {
                 addFallback(*screen, ScreenPicture::Video, reason);
                 screen->policy.videoFailed();
+                if (screen->cabinet) {
+                    failedCabinetGames.insert(screen->policy.targetId()); // its cover for the rest of the run
+                }
             }
             if (!slot.textureFailed) {
                 // I5 step 7: remembered, so that it is never opened again while its file is unchanged.
@@ -1060,8 +1193,19 @@ struct ScreenService::Impl {
 
     void applyPicture(ScreenState& screen) {
         const ScreenPolicy& policy = screen.policy;
-        const ScreenPicture picture = policy.picture();
+        ScreenPicture picture = policy.picture();
         const bool heroScreen = isHero(screen);
+        // I5 step 4 (ADR-0016 §6): the frame kept when its slot was taken shows while its clip waits for a slot again
+        // (its game still the target, its clip still wanted), in place of its still.
+        const bool keepFrame = screen.heldFrame.valid() && picture != ScreenPicture::Video &&
+                               screen.heldFrameGame == policy.targetId() && policy.wantsDecoder();
+        if (keepFrame && applyHeldFrame(screen)) {
+            screen.held.reset();
+            screen.showingHeldFrame = true;
+            ++counters.heldFrameShows;
+            return;
+        }
+        screen.showingHeldFrame = false;
         if (picture == ScreenPicture::IdlePattern && !policy.targetId().empty()) {
             // Between two games the previous picture stays while the new one can still come, at most
             // kMaxHeldPictureSeconds; then (or when nothing can come) the screen's own pattern.
@@ -1081,11 +1225,16 @@ struct ScreenService::Impl {
             screen.held.reset();
         }
         GLuint texture = 0;
+        glm::vec4 rect = kWholeScreen;
         if (picture == ScreenPicture::Video && screen.lastSlot) {
-            texture = slots[*screen.lastSlot].texture.textureId();
+            const Slot& slot = slots[*screen.lastSlot];
+            texture = slot.texture.textureId();
+            // ADR-0016 §7: the clip keeps its aspect on the screen's (a 4:3 clip on a 4:3 tube: the whole screen).
+            rect = pictureRect(glm::vec2(slot.texture.size()), screen.binding.screenSize);
         } else if (picture != ScreenPicture::IdlePattern && picture != ScreenPicture::Video) {
             texture = screen.still.id();
         }
+        setRect(screen, rect);
         if (picture != screen.shownPicture || policy.targetId() != screen.shownGame) {
             if (heroScreen && counters.shown.size() < kMaxTimelineEntries) {
                 counters.shown.push_back(VideoShownRecord{now, policy.targetId(), std::string(toString(picture))});
@@ -1094,6 +1243,7 @@ struct ScreenService::Impl {
         }
         if (texture == screen.appliedOverride && picture == screen.shownPicture) {
             releaseHeldStill(screen);
+            releaseHeldFrame(screen);
             return;
         }
         if (auto set =
@@ -1115,6 +1265,55 @@ struct ScreenService::Impl {
             screen.overrideClip = slots[*screen.lastSlot].clip;
         }
         releaseHeldStill(screen);
+        releaseHeldFrame(screen);
+    }
+
+    /// The screen's material draws its picture within `rect` (ADR-0016 §7; the whole screen clears the flag).
+    void setRect(ScreenState& screen, const glm::vec4& rect) {
+        if (screen.cabinet || rect == screen.rect) {
+            return;
+        }
+        const std::optional<glm::vec4> set = isWholeScreen(rect) ? std::nullopt : std::optional<glm::vec4>(rect);
+        if (auto done = materials.setPictureRect(screen.binding.material, set); !done) {
+            spdlog::error("{}: the picture's rectangle cannot be set: {}", nameOf(screen), done.error().toString());
+            return;
+        }
+        if (!isWholeScreen(rect)) {
+            spdlog::info("{}: the picture fills ({:.3f}, {:.3f}) {:.3f} x {:.3f} of the screen", nameOf(screen), rect.x,
+                         rect.y, rect.z, rect.w);
+        }
+        screen.rect = rect;
+    }
+
+    /// Shows the frame the screen kept (keepFrames()) with its rectangle; false when its material could not take it
+    /// (the screen's picture stays as it was).
+    bool applyHeldFrame(ScreenState& screen) {
+        const GLuint texture = screen.heldFrame.id();
+        if (texture == screen.appliedOverride) {
+            setRect(screen, screen.heldFrameRect);
+            return true;
+        }
+        if (auto set =
+                materials.setTextureOverride(screen.binding.material, gl::MaterialTextureSlot::BaseColor, texture);
+            !set) {
+            spdlog::error("{}: the screen's picture cannot be set: {}", nameOf(screen), set.error().toString());
+            return false;
+        }
+        setRect(screen, screen.heldFrameRect);
+        screen.appliedOverride = texture;
+        screen.shownPicture = ScreenPicture::Video;
+        screen.overrideSlot.reset();
+        screen.overrideClip.clear();
+        releaseHeldStill(screen);
+        return true;
+    }
+
+    /// The kept frame goes once the screen no longer shows it.
+    static void releaseHeldFrame(ScreenState& screen) {
+        if (screen.heldFrame.valid() && screen.heldFrame.id() != screen.appliedOverride) {
+            screen.heldFrame = gl::Texture2D();
+            screen.heldFrameGame.clear();
+        }
     }
 
     /// The picture the screen holds is still what it showed: a still is its own (heldStill); a video is its slot's
@@ -1171,11 +1370,12 @@ struct ScreenService::Impl {
         return screen.binding.kind == ScreenKind::Hero ? ScreenClass::Room : ScreenClass::Ambient;
     }
 
-    void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                std::optional<std::string_view> hovered, bool minimizedWindow, bool eyeInRoom) {
+    void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera, const ScreenSelection& selection,
+                bool minimizedWindow, bool eyeInRoom) {
         frameIndex = frame;
         now = nowSeconds;
         minimized = minimizedWindow;
+        flushCabinetEvents();
         if (phase == ScreenPhase::Quit) {
             return;
         }
@@ -1192,10 +1392,16 @@ struct ScreenService::Impl {
             for (const std::unique_ptr<ScreenState>& screen : screens) {
                 screen->policy.setGames(screenedGames);
             }
+            // A cabinet whose clip is now left out (or back) lets it go; the others play on.
+            rescreenCabinets(screenedGames, false);
         }
         const scene::Frustum frustum = camera.frustum();
+        // The quick catalog's selection, else the world's (app::screenSelection's order).
+        const std::optional<std::string_view> selected = selection.catalog ? selection.catalog : selection.world;
         for (const std::unique_ptr<ScreenState>& screen : screens) {
-            screen->policy.hover(hovered, now);
+            // I5 step 4: the arcade's hero cabinet never follows the world's selection, the focused cabinet playing its
+            // clip itself (ADR-0016 §6); it follows the quick catalog's.
+            screen->policy.hover(screen->binding.followsWorldSelection ? selected : selection.catalog, now);
             screen->visible = !minimizedWindow && frustum.intersects(screen->binding.bounds);
             screen->policy.setVisible(screen->visible);
             screen->policy.tick(now);
@@ -1208,10 +1414,32 @@ struct ScreenService::Impl {
                                         center.z);
             screen->clip = screen->policy.wantsDecoder() ? clipKey(screen->policy.targetMedia().video) : std::string();
         }
+        // I5 step 4: the cabinets asking for their clips, in view (one in the hand always) and at their distance.
+        for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            cabinet->policy.hover(std::nullopt, now);
+            cabinet->visible = !minimizedWindow && (cabinet->inHand || frustum.intersects(cabinet->binding.bounds));
+            cabinet->policy.setVisible(cabinet->visible);
+            cabinet->policy.tick(now);
+            const glm::vec3 center = cabinet->binding.bounds.center();
+            cabinet->distance = cabinet->inHand ? kInHandMeters : glm::distance(camera.position(), center);
+            const glm::vec3 forward = camera.forward();
+            cabinet->azimuth = cabinet->inHand ? 0.0
+                                               : azimuthOf(camera.position().x, camera.position().z, forward.x,
+                                                           forward.z, center.x, center.z);
+            cabinet->clip =
+                cabinet->policy.wantsDecoder() ? clipKey(cabinet->policy.targetMedia().video) : std::string();
+        }
+        // The screen heard last frame, among this frame's (cabinets come and go).
+        audibleScreen.reset();
+        for (std::size_t index = 0; index < active.size() && !lastAudibleScreen.empty(); ++index) {
+            if (active[index]->binding.objectId == lastAudibleScreen) {
+                audibleScreen = index;
+            }
+        }
         // The clip whose sound a slot opening this frame decodes from the start: the one the audible screen wants.
         intendedAudibleClip.clear();
         if (const std::optional<std::size_t> intended = chooseAudibleScreen(eyeInRoom, true)) {
-            intendedAudibleClip = screens[*intended]->clip;
+            intendedAudibleClip = active[*intended]->clip;
         }
         schedule();
         pumpSlots();
@@ -1221,6 +1449,7 @@ struct ScreenService::Impl {
             updateStills(*screen);
             applyPicture(*screen);
         }
+        applyCabinets();
         updateAudio(eyeInRoom);
         counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
     }
@@ -1248,8 +1477,8 @@ struct ScreenService::Impl {
             return std::nullopt;
         }
         std::vector<AudibleCandidate> candidates;
-        candidates.reserve(screens.size());
-        for (const std::unique_ptr<ScreenState>& screen : screens) {
+        candidates.reserve(active.size());
+        for (const ScreenState* screen : active) {
             const bool playing = wished ? !screen->clip.empty() : playingSlot(*screen).has_value();
             candidates.push_back(AudibleCandidate{screen->binding.objectId, screen->screenClass, screen->distance,
                                                   screen->visible, playing});
@@ -1260,7 +1489,7 @@ struct ScreenService::Impl {
 
     /// The slot the audible screen plays on; none in silence.
     [[nodiscard]] std::optional<std::size_t> audibleSlot() const {
-        return audibleScreen ? playingSlot(*screens[*audibleScreen]) : std::nullopt;
+        return audibleScreen && *audibleScreen < active.size() ? playingSlot(*active[*audibleScreen]) : std::nullopt;
     }
 
     /// The sound's frame: the audible screen chosen, each slot's source given its gain, pan and clock, each decoder's
@@ -1272,7 +1501,7 @@ struct ScreenService::Impl {
         audio::Mixer& mixer = options.audio->mixer();
         audibleScreen = chooseAudibleScreen(eyeInRoom, false);
         const std::optional<std::size_t> heard = audibleSlot();
-        const ScreenState* audible = audibleScreen ? screens[*audibleScreen].get() : nullptr;
+        const ScreenState* audible = audibleScreen ? active[*audibleScreen] : nullptr;
         const SpatialSound spatial =
             audible != nullptr ? spatialSound(audible->distance, audible->azimuth, options.video.proximityMeters)
                                : SpatialSound{};
@@ -1362,9 +1591,10 @@ struct ScreenService::Impl {
             return;
         }
         VideoLaunchRecord stop;
-        stop.decoderRan = std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
-        // Each screen keeps its clip's position for the return.
-        for (const std::unique_ptr<ScreenState>& screen : screens) {
+        stop.decoderRan =
+            std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
+        // Each screen (and cabinet: I5 step 4) keeps its clip's position for the return.
+        for (ScreenState* screen : allScreens()) {
             std::optional<double> position;
             if (screen->videoTold && screen->lastSlot) {
                 const Slot& slot = slots[*screen->lastSlot];
@@ -1404,7 +1634,7 @@ struct ScreenService::Impl {
             return;
         }
         phase = ScreenPhase::Running;
-        for (const std::unique_ptr<ScreenState>& screen : screens) {
+        for (ScreenState* screen : allScreens()) {
             screen->policy.launchEnded();
         }
         reopenPending = true;
@@ -1427,6 +1657,10 @@ struct ScreenService::Impl {
                                   cleared.error().toString());
                 }
             }
+            if (clearOverride && !isWholeScreen(screen->rect)) {
+                // Its own pattern fills the screen again (I5 step 4).
+                static_cast<void>(materials.setPictureRect(screen->binding.material, std::nullopt));
+            }
             spdlog::info("{}: the screen of '{}' let go{}", nameOf(*screen), screen->binding.objectId,
                          draining ? "; its clip's decoder ends on its own" : "");
         }
@@ -1435,6 +1669,251 @@ struct ScreenService::Impl {
             sparePolicies.push_back(std::move(screen->policy));
         }
         screens.clear();
+        // The pooled materials go with the registry when it is cleared (clearOverride false).
+        dropCabinets(clearOverride);
+    }
+
+    // --- the arcade cabinets (I5 step 4, ADR-0016 §6) ---------------------------------------------------------------
+
+    /// Records a cabinet's screen starting or ending to show its clip; `between` frames (setCabinets() before the
+    /// frame's update(), an unbind) on the next frame's update(), the frame whose view shows it.
+    void recordCabinet(const ScreenState& cabinet, std::string_view picture, bool between = false) {
+        VideoCabinetEventRecord event{frameIndex,
+                                      now,
+                                      cabinet.binding.objectId,
+                                      cabinet.policy.targetId(),
+                                      std::string(toString(cabinet.screenClass)),
+                                      std::string(picture)};
+        if (between) {
+            pendingCabinetEvents.push_back(std::move(event));
+        } else if (counters.cabinetEvents.size() < kMaxTimelineEntries) {
+            counters.cabinetEvents.push_back(std::move(event));
+        } else {
+            ++counters.cabinetEventsDropped;
+        }
+        spdlog::info("{}: {} of game {}", nameOf(cabinet), picture == "video" ? "its clip shows" : "its cover again",
+                     cabinet.policy.targetId());
+    }
+
+    /// The events recorded between frames, stamped with this one.
+    void flushCabinetEvents() {
+        for (VideoCabinetEventRecord& event : pendingCabinetEvents) {
+            event.frame = frameIndex;
+            event.atSeconds = now;
+            if (counters.cabinetEvents.size() < kMaxTimelineEntries) {
+                counters.cabinetEvents.push_back(std::move(event));
+            } else {
+                ++counters.cabinetEventsDropped;
+            }
+        }
+        pendingCabinetEvents.clear();
+    }
+
+    /// Every cabinet lets its clip go (the scheduler stops it at its next frame: "unwanted"), those showing it record
+    /// their covers; the pooled materials draw their own white again (`clearPool`; false: the registry is about to be
+    /// cleared, the handles go with it).
+    void dropCabinets(bool clearPool) {
+        for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            if (cabinet->shownPicture == ScreenPicture::Video) {
+                recordCabinet(*cabinet, "cover", true);
+            }
+        }
+        cabinets.clear();
+        shownCabinets.clear();
+        releasePoolMaterials({}, clearPool);
+        refreshActive();
+        audibleScreen.reset();
+    }
+
+    /// The room's games screened again (setGames(), the verdicts changed): a cabinet whose game left them, or whose
+    /// clip changed (left out, back, another file), lets its clip go and is made afresh at its next request; the others
+    /// play on, their clips and pictures untouched. Its cover is recorded on this frame (`between`: on the next one,
+    /// setGames() being called between two frames).
+    void rescreenCabinets(const std::vector<ScreenGame>& games, bool between) {
+        std::vector<std::unique_ptr<ScreenState>> kept;
+        kept.reserve(cabinets.size());
+        for (std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            const auto game = std::find_if(games.begin(), games.end(), [&](const ScreenGame& candidate) {
+                return candidate.id == cabinet->policy.targetId();
+            });
+            if (game != games.end() && game->media == cabinet->policy.targetMedia()) {
+                kept.push_back(std::move(cabinet));
+                continue;
+            }
+            if (cabinet->shownPicture == ScreenPicture::Video) {
+                recordCabinet(*cabinet, "cover", between);
+            }
+            spdlog::info("{}: game {}'s clip changed in the room's games; it is asked for again", nameOf(*cabinet),
+                         cabinet->policy.targetId());
+        }
+        cabinets = std::move(kept);
+        std::erase_if(shownCabinets, [&](const CabinetShown& shown) {
+            return std::none_of(cabinets.begin(), cabinets.end(),
+                                [&](const auto& cabinet) { return cabinet->binding.objectId == shown.id; });
+        });
+        refreshActive();
+        audibleScreen.reset();
+    }
+
+    /// The pooled materials applyCabinets() set and no cabinet shows on now (`inUse`) draw their own white again: the
+    /// base colour override 0, the whole screen (`clear` false: forgotten only, the registry being cleared).
+    void releasePoolMaterials(const std::vector<scene::MaterialHandle>& inUse, bool clear) {
+        std::vector<scene::MaterialHandle> still;
+        for (const scene::MaterialHandle material : poolMaterialsSet) {
+            if (std::find(inUse.begin(), inUse.end(), material) != inUse.end()) {
+                still.push_back(material);
+                continue;
+            }
+            if (!clear) {
+                continue;
+            }
+            if (auto cleared = materials.setTextureOverride(material, gl::MaterialTextureSlot::BaseColor, 0);
+                !cleared) {
+                spdlog::error("Video: a cabinet's pooled picture cannot be cleared: {}", cleared.error().toString());
+            }
+            if (auto whole = materials.setPictureRect(material, std::nullopt); !whole) {
+                spdlog::error("Video: a cabinet's pooled rectangle cannot be cleared: {}", whole.error().toString());
+            }
+        }
+        poolMaterialsSet = std::move(still);
+    }
+
+    void setCabinets(std::vector<CabinetScreen> requests, CabinetPool given) {
+        cabinetPool = std::move(given);
+        if (screens.empty()) {
+            dropCabinets(true); // unbound: the room's games unknown, none plays
+            return;
+        }
+        // During a launch no new cabinet is made (makeCabinet()); one asking through it, its position kept, stays.
+        std::vector<std::unique_ptr<ScreenState>> next;
+        next.reserve(requests.size());
+        for (CabinetScreen& request : requests) {
+            const auto found = std::find_if(cabinets.begin(), cabinets.end(), [&](const auto& cabinet) {
+                return cabinet && cabinet->binding.objectId == request.id &&
+                       cabinet->policy.targetId() == request.gameId;
+            });
+            std::unique_ptr<ScreenState> cabinet;
+            if (found != cabinets.end()) {
+                cabinet = std::move(*found);
+            } else {
+                cabinet = makeCabinet(request);
+                if (!cabinet) {
+                    continue;
+                }
+            }
+            cabinet->binding.bounds = request.bounds;
+            cabinet->binding.screenSize = cabinetPool.screenSize;
+            cabinet->screenClass = request.screenClass;
+            cabinet->inHand = request.inHand;
+            next.push_back(std::move(cabinet));
+        }
+        // Those no longer asked for let their clips go.
+        for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            if (cabinet && cabinet->shownPicture == ScreenPicture::Video) {
+                recordCabinet(*cabinet, "cover", true);
+            }
+        }
+        cabinets = std::move(next);
+        refreshActive();
+        audibleScreen.reset();
+    }
+
+    /// A cabinet's screen for `request`, playing its game's clip from the bound room's games (as the verdicts screen
+    /// them); none for a game the room lacks, one whose clip failed on a cabinet in the run, or during a launch.
+    [[nodiscard]] std::unique_ptr<ScreenState> makeCabinet(const CabinetScreen& request) {
+        const ScreenState* first = hero();
+        if (first == nullptr || phase != ScreenPhase::Running || failedCabinetGames.contains(request.gameId)) {
+            return nullptr;
+        }
+        const std::span<const ScreenGame> games = first->policy.games();
+        const auto game = std::find_if(games.begin(), games.end(),
+                                       [&](const ScreenGame& candidate) { return candidate.id == request.gameId; });
+        if (game == games.end()) {
+            return nullptr;
+        }
+        ScreenGame own = *game;
+        own.startCandidate = true;
+        ScreenBinding binding;
+        binding.objectId = request.id;
+        binding.bounds = request.bounds;
+        binding.roomId = first->binding.roomId;
+        binding.kind = ScreenKind::Cabinet;
+        binding.screenSize = cabinetPool.screenSize;
+        binding.followsWorldSelection = false;
+        // Its own game, from its start, looping: no playlist, nothing selected (video.json's cabinet keys decide whether
+        // it asks at all: app::chooseCabinets).
+        ScreenPlaySettings settings = screenPlaySettings(options, binding);
+        settings.autoplay = true;
+        settings.showOnFocus = false;
+        settings.startChoice = true;
+        settings.previewSeconds = kMaxPreviewSeconds;
+        settings.playlist.explicitGames.clear();
+        const double volume = options.video.screen(ScreenKind::Cabinet, binding.roomId, binding.objectId).volume;
+        auto cabinet = std::make_unique<ScreenState>(std::move(binding), ScreenPolicy({std::move(own)}, settings));
+        cabinet->cabinet = true;
+        cabinet->volume = volume;
+        cabinet->screenClass = request.screenClass;
+        cabinet->shownPicture = ScreenPicture::Cover; // its item's own front
+        return cabinet;
+    }
+
+    /// The cabinets whose clips show (a frame of it in their slot's texture) get their slot's pooled material: its base
+    /// colour the slot's texture, its picture rectangle the clip's on the cabinet's screen; the others show their
+    /// covers. The changes are recorded.
+    void applyCabinets() {
+        std::vector<CabinetShown> shown;
+        for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
+            followSlot(*cabinet);
+            const bool video = cabinet->policy.picture() == ScreenPicture::Video && cabinet->lastSlot &&
+                               *cabinet->lastSlot < cabinetPool.materials.size() &&
+                               slots[*cabinet->lastSlot].texture.valid();
+            if (!video) {
+                if (cabinet->shownPicture == ScreenPicture::Video) {
+                    recordCabinet(*cabinet, "cover");
+                }
+                cabinet->shownPicture = ScreenPicture::Cover;
+                cabinet->appliedOverride = 0;
+                continue;
+            }
+            const std::size_t index = *cabinet->lastSlot;
+            const Slot& slot = slots[index];
+            const scene::MaterialHandle material = cabinetPool.materials[index];
+            const GLuint texture = slot.texture.textureId();
+            if (materials.textureOverride(material, gl::MaterialTextureSlot::BaseColor) != texture) {
+                if (auto set = materials.setTextureOverride(material, gl::MaterialTextureSlot::BaseColor, texture);
+                    !set) {
+                    spdlog::error("{}: the screen's picture cannot be set: {}", nameOf(*cabinet),
+                                  set.error().toString());
+                    continue;
+                }
+            }
+            const glm::vec4 rect = pictureRect(glm::vec2(slot.texture.size()), cabinetPool.screenSize);
+            if (auto done =
+                    materials.setPictureRect(material, isWholeScreen(rect) ? std::nullopt : std::optional(rect));
+                !done) {
+                spdlog::error("{}: the picture's rectangle cannot be set: {}", nameOf(*cabinet),
+                              done.error().toString());
+            }
+            if (std::find(poolMaterialsSet.begin(), poolMaterialsSet.end(), material) == poolMaterialsSet.end()) {
+                poolMaterialsSet.push_back(material);
+            }
+            cabinet->rect = rect;
+            cabinet->appliedOverride = texture;
+            cabinet->overrideSlot = index;
+            if (cabinet->shownPicture != ScreenPicture::Video) {
+                cabinet->shownPicture = ScreenPicture::Video;
+                recordCabinet(*cabinet, "video");
+            }
+            shown.push_back(CabinetShown{cabinet->binding.objectId, cabinet->policy.targetId(), material});
+        }
+        // The pooled materials no cabinet shows on now draw their own white again.
+        std::vector<scene::MaterialHandle> inUse;
+        inUse.reserve(shown.size());
+        for (const CabinetShown& cabinet : shown) {
+            inUse.push_back(cabinet.material);
+        }
+        releasePoolMaterials(inUse, true);
+        shownCabinets = std::move(shown);
     }
 
     void bind(std::vector<ScreenBinding> bindings, std::vector<ScreenGame> games, std::uint64_t frame) {
@@ -1458,6 +1937,7 @@ struct ScreenService::Impl {
             screens.back()->volume = volume;
             logPlaylist(*screens.back());
         }
+        refreshActive();
         sparePolicies.clear();
         reapDrained();
         if (ScreenState* first = hero()) {
@@ -1478,6 +1958,7 @@ struct ScreenService::Impl {
     }
 
     void shutdown() {
+        flushCabinetEvents(); // I5 step 4: a cabinet let go since the last frame
         // The run's verdicts reach the file (I5 step 7); idempotent.
         verdicts.shutdown(kStillWait);
         const bool decoders =
@@ -1532,7 +2013,12 @@ ScreenService::~ScreenService() {
             static_cast<void>(m_impl->materials.setTextureOverride(screen->binding.material,
                                                                    gl::MaterialTextureSlot::BaseColor, 0));
         }
+        if (!isWholeScreen(screen->rect)) {
+            static_cast<void>(m_impl->materials.setPictureRect(screen->binding.material, std::nullopt));
+        }
     }
+    // The cabinets' pooled materials too (their collection's: the registry outlives the service).
+    m_impl->releasePoolMaterials({}, true);
     for (Impl::Slot& slot : m_impl->slots) {
         m_impl->releaseDecoder(slot);
     }
@@ -1544,6 +2030,22 @@ void ScreenService::setGames(std::vector<ScreenGame> games) {
     for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
         screen->policy.setGames(games);
     }
+    m_impl->rescreenCabinets(games, true); // a cabinet whose game or clip changed asks again; the others play on
+}
+
+std::size_t ScreenService::slotCount() const noexcept {
+    return m_impl->slots.size();
+}
+
+void ScreenService::setCabinets(std::vector<CabinetScreen> cabinets, CabinetPool cabinetPool) {
+    if (m_impl->phase == ScreenPhase::Quit) {
+        return;
+    }
+    m_impl->setCabinets(std::move(cabinets), std::move(cabinetPool));
+}
+
+std::span<const CabinetShown> ScreenService::cabinetsShown() const noexcept {
+    return m_impl->shownCabinets;
 }
 
 void ScreenService::unbind(bool clearOverride) {
@@ -1564,8 +2066,8 @@ std::string ScreenService::screenId() const {
 }
 
 void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
-                           std::optional<std::string_view> hovered, bool minimized, bool eyeInRoom) {
-    m_impl->update(frame, nowSeconds, camera, hovered, minimized, eyeInRoom);
+                           const ScreenSelection& selection, bool minimized, bool eyeInRoom) {
+    m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
 }
 
 void ScreenService::launchStarting() {
@@ -1614,9 +2116,10 @@ void ScreenService::record(VideoRecord& record) const {
         record.videoBytes += slot.texture.valid() ? slot.texture.gpuBytes() : 0;
     }
     record.stillBytes = 0;
-    for (const std::unique_ptr<Impl::ScreenState>& screen : s.screens) {
+    for (const Impl::ScreenState* screen : s.allScreens()) {
         record.stillBytes += (screen->still.valid() ? screen->still.estimatedBytes() : 0) +
-                             (screen->heldStill.valid() ? screen->heldStill.estimatedBytes() : 0);
+                             (screen->heldStill.valid() ? screen->heldStill.estimatedBytes() : 0) +
+                             (screen->heldFrame.valid() ? screen->heldFrame.estimatedBytes() : 0);
         VideoScreenRecord entry;
         entry.screen = screen->binding.objectId;
         entry.kind = std::string(toString(screen->binding.kind));
@@ -1629,6 +2132,10 @@ void ScreenService::record(VideoRecord& record) const {
         entry.playing = screen->assignment.playing;
         entry.textureId = screen->appliedOverride;
         entry.visible = screen->visible;
+        if (!isWholeScreen(screen->rect)) {
+            entry.pictureRect = {screen->rect.x, screen->rect.y, screen->rect.z, screen->rect.w};
+        }
+        entry.heldFrame = screen->showingHeldFrame;
         record.screens.push_back(std::move(entry));
     }
     record.maxDecoders = static_cast<std::uint64_t>(s.scheduler.settings().maxDecoders);
@@ -1663,9 +2170,10 @@ std::vector<std::string> ScreenService::statusLines() const {
                                 "at once",
                                 s.screens.size(), s.scheduler.openSlots(), s.slots.size(), s.scheduler.budget(s.now),
                                 s.decoderThreads(), s.counters.decodersStarted, s.counters.maxOpenDecoders));
-    for (const std::unique_ptr<Impl::ScreenState>& screen : s.screens) {
+    for (const Impl::ScreenState* screen : s.allScreens()) {
         lines.push_back(fmt::format(
-            "{} '{}': {}{}{}{}", s.isHero(*screen) ? "Hero" : "Screen", screen->binding.objectId,
+            "{} '{}': {}{}{}{}", s.isHero(*screen) ? "Hero" : screen->cabinet ? "Cabinet" : "Screen",
+            screen->binding.objectId,
             toString(screen->shownPicture),
             screen->policy.targetId().empty() ? std::string() : " of " + screen->policy.targetId(),
             screen->assignment.slot ? fmt::format(", slot {}{}", *screen->assignment.slot,

@@ -24,7 +24,8 @@
 // of I6 step 6 (ADR-0014 §6, concept panels 5 and 6): G15 the arcade room from its doorway (its rows of cabinets, the
 // hero cabinet with the room's video), G16 the handheld room of gb (its counter showcases, stations) from its doorway.
 // Gate D's (I6 step 7): G17 an optical-era lounge room (esde/case-shelves' ps2 on gen6, concept panel 4) from its
-// doorway, G18 the handheld floor's hall from east of its doorways, looking back to the elevator.
+// doorway, G18 the handheld floor's hall from east of its doorways, looking back to the elevator. I5 step 4's G20 (ADR-0016
+// §6): an arcade cabinet of the building playing its clip in Focus, held at 1.0 s.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -1093,5 +1094,62 @@ TEST_CASE("golden/G18: a floor's hall looking back to its elevator", "[gpu][gold
                        "--start-room room:gb --spawn 3.85,0,6.65,270,-4: the floor's x 11.5 m on the hall's centre "
                        "line, facing west (in room:gb's frame)",
                        std::nullopt},
+                      room, run, shot, kFrames);
+}
+
+TEST_CASE("golden/G20: an arcade cabinet playing its clip in Focus", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g20", "esde/building");
+    const rv::app::RunReport first = firstRun(room, "area:arcade");
+    const ShownRoom shown = shownRoom(room, first);
+    const rv::world::WorldPlan& plan = shown.stored.plan;
+    const rv::world::Room& arcade = roomHolding(plan, "mame");
+    // The cabinet of the fixture's one mame clip (Clover Pinwheel's), which the hero cabinet plays too (the room's start
+    // choice, the only game with a clip): one slot, one texture, held at 1.0 s.
+    REQUIRE_FALSE(first.video.gameId.empty());
+    const auto found = std::find_if(shown.layout.items.begin(), shown.layout.items.end(),
+                                    [&](const rv::world::CollectionItem& item) {
+                                        return item.game.toString() == first.video.gameId;
+                                    });
+    REQUIRE(found != shown.layout.items.end());
+    const rv::world::CollectionItem& item = *found;
+    const fs::path shot = room.dir / "g20.png";
+    constexpr std::uint32_t kFrames = 100;
+    const AppRun run = room.app(
+        "g20", startArguments("area:arcade", kFrames, shot,
+                              {"--spawn", spawnArgument(focusSpawn(item, shown.scene.camera)), "--input-script",
+                               arg(inputScript("golden_g20_cabinet_focus.json")), "--video-freeze-pts",
+                               std::string(kFreezePts)}));
+    requireBuildingRun(run, arcade.floor, "area:arcade");
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.interaction.state == "focus");
+    CHECK(report.world.interaction.focusedGame == item.game.toString());
+    // I5 step 4 (ADR-0016 §6): the cabinet's screen plays its game's clip (focus), letterboxed on its portrait screen
+    // (ADR-0016 §7); the hero cabinet keeps the room's start choice, never following the selection.
+    const rv::app::VideoRecord& video = report.video;
+    REQUIRE(video.bound);
+    CHECK(video.screen == "area:arcade/fx:hero.crt");
+    CHECK(video.selections == 0);
+    const auto cabinet = std::find_if(video.screens.begin(), video.screens.end(),
+                                      [](const rv::app::VideoScreenRecord& screen) { return screen.kind == "cabinet"; });
+    REQUIRE(cabinet != video.screens.end());
+    CHECK(cabinet->gameId == item.game.toString());
+    CHECK(cabinet->screenClass == "focus");
+    CHECK(cabinet->picture == "video");
+    REQUIRE(cabinet->pictureRect.size() == 4u);
+    CHECK(cabinet->pictureRect[2] == 1.0);
+    CHECK(std::abs(cabinet->pictureRect[3] - 0.5625) < 0.01);
+    REQUIRE(video.freezePtsSeconds.has_value());
+    CHECK(*video.freezePtsSeconds == 1.0);
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G20", "g20_cabinet_focus_golden",
+                       "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building "
+                       "fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, "
+                       "then in Focus after Indietro, lowered to its pulled-out pose: its generated 4:3 clip held at "
+                       "1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the "
+                       "hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
+                       "--start-room area:arcade --spawn at the cabinet's Focus pose (app::focusPoseFor, the 16:9 "
+                       "window), tests/input_scripts/golden_g20_cabinet_focus.json",
+                       "golden_g20_cabinet_focus.json"},
                       room, run, shot, kFrames);
 }

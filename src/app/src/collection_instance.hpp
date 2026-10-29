@@ -22,6 +22,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
+
 #include <rv/core/expected.hpp>
 #include <rv/render/collection_arrays.hpp>
 #include <rv/render/static_instance_group.hpp>
@@ -139,6 +141,8 @@ public:
     [[nodiscard]] std::vector<world::PickId> hiddenItems() const;
     /// Whether some static record of the item of `pickId` is drawn (not flagged hidden); false for an unknown item.
     [[nodiscard]] bool staticDrawn(world::PickId pickId) const;
+    /// Whether the static front record of item `item` (its cover) is drawn (not flagged hidden); false without one.
+    [[nodiscard]] bool frontDrawn(std::size_t item) const;
     /// The parts of the item of `pickId` as render items at `model` (the item prefab's space to the room, as the
     /// layout's transform), with their records' attributes as written (its layers, its highlight) but the hidden flag:
     /// the item drawn off its slot on the dynamic path; its front with the hero material while the hero texture shows it
@@ -164,6 +168,30 @@ public:
     [[nodiscard]] Status setFrontHidden(std::size_t item, bool hidden);
     [[nodiscard]] Expected<scene::RenderItem> frontRenderItem(std::size_t item, scene::MaterialHandle material) const;
 
+    /// I5 step 4 (ADR-0016 §6): its items are screens that may play their games' clips: the arcade's cabinets, the
+    /// family world::kArcadeRoomFamily (its label material the picture tube of MediaFamily::labelMaterial).
+    [[nodiscard]] bool screenItems() const noexcept { return m_screenItems; }
+    /// The size of its items' screens (the item prefab's "Label" socket: the family's labelWidth and labelHeight,
+    /// meters): the clips keep their aspect within it.
+    [[nodiscard]] glm::vec2 screenSize() const noexcept { return m_screenSize; }
+    /// `count` video materials of the label's, each with a base colour texture of its own that the screen service
+    /// overrides with a decoder slot's picture (CabinetPool), registered the first time they are asked for (keys
+    /// "<prefix>/video[<i>]") and uploaded; the same ones after. None for items that are no screens. Errors: those of
+    /// the registry's upload.
+    [[nodiscard]] Expected<std::vector<scene::MaterialHandle>> videoMaterials(SceneGraphics& graphics, std::size_t count,
+                                                                             int uniformBufferOffsetAlignment);
+    /// The item's front shows a clip with the pooled `material` (none: its own front again): its front record hidden
+    /// meanwhile (over its hero texture's front), its front drawn by the dynamic path (frontRenderItem() with that
+    /// material, or the pulled item's copy: appendRenderItems()). Errors: no item, no front part.
+    [[nodiscard]] Status setVideoFront(std::size_t item, std::optional<scene::MaterialHandle> material);
+    /// The video material the item's front shows, if any.
+    [[nodiscard]] std::optional<scene::MaterialHandle> videoFront(std::size_t item) const noexcept {
+        return item < m_items.size() ? m_items[item].videoFront : std::nullopt;
+    }
+    /// The item's transform (its screen's frame, for a cabinet) and its box in the room, in the layout's order.
+    [[nodiscard]] const glm::mat4& itemTransform(std::size_t item) const { return m_items.at(item).transform; }
+    [[nodiscard]] const core::Aabb& itemBox(std::size_t item) const { return m_items.at(item).bounds; }
+
 private:
     CollectionInstance() = default;
 
@@ -184,6 +212,8 @@ private:
         /// the front record stays hidden while either holds.
         bool pulled = false;
         bool heroFront = false;
+        /// I5 step 4: the pooled video material its front shows a clip with (its front record hidden meanwhile).
+        std::optional<scene::MaterialHandle> videoFront;
     };
 
     /// One layered material per array and class not yet given one.
@@ -224,6 +254,12 @@ private:
     gl::Texture2D m_heroBase;
     scene::MaterialHandle m_heroMaterial;
     scene::ShaderKind m_heroShader = scene::ShaderKind::Pbr;
+    /// I5 step 4: its items are screens, their size, the label material's name and the pooled video materials made so
+    /// far (their base colour the hero front's white, overridden).
+    bool m_screenItems = false;
+    glm::vec2 m_screenSize{0.0f};
+    std::string m_frontMaterialName;
+    std::vector<scene::MaterialHandle> m_videoMaterials;
 };
 
 } // namespace rv::app
