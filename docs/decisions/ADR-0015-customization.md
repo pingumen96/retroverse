@@ -300,6 +300,34 @@ that leave the catalog keep their slots (ADR-0010 §10), so one whose every titl
 regeneration drops it. An update or a regeneration refuses a plan holding an expansion without its head (only a hand
 edit makes one).
 
+*Amended on 2026-10-29 (I4b step 8, the app):* an expansion's sign is its head's with a space and its number
+("HOME COMPUTERS 2", "ARCADE 2"): its portal's plaque, its blade signs and the hub's fascia sign in the hall, and its
+own neon sign in the room. The directory lists a chain's rooms together on their floor: the head where it stands along
+the hall, its expansions after it by number (a gap kept, `:3` after the head), indented and named with their number
+("Lumen Desk Computer 2", "Sala giochi arcade 2"). Each room of a chain of more than one room shows its titles' range:
+the chain's placed titles in its alphabetical order (the head's sections in their order, then the sort key, then the
+GameId: the order a fresh split shares them in), and for each room, section by section, the initials of its first and
+last title there ("A – K"; a digit as itself, any other sign "#"), so that a range never leaves out a title its room
+holds; where one room's range ends on the initial the next one's begins on, both ends show two letters ("A – Mo",
+"Mo – Y"). After updates the ranges may overlap (a new title goes after its predecessor wherever that stands, else to
+the chain's next free slot, wrapping to the head): they are shown as they are, never trimmed, and a room whose titles
+interleave with another room's of its chain says "in ordine sparso" ("Rigenera stanza" splits the chain in order
+again). A shared room's chain shows, in each room, the sections it holds titles of, each with its own range. The ranges
+come from the rooms' items files, read off the main thread whenever the plan or those files change; a room shows none
+until they are read. The editor's session edits the chain of the room it begins in (§4 as amended below). When an
+update that saves the building adds expansions (an update's own or the migration's), the notice names the first ("Sala
+giochi arcade 2", "Lumen Desk Computer 2") and counts the others; a first building's chains and a regeneration's (its
+preview counts them) raise no notice. The app's update reads a chain's data once, its head's, as the CLI does.
+
+*Amended on 2026-10-29 (I4b step 8, the editor, §4):* a session edits the room chain of the collection room that holds
+the walker when it begins (its head and its expansions, which stand on one floor), not that room alone: the room of the
+chain the walker is in is the one edited (its targets, its fixtures, the bar's name and number), so that a game picked
+up in one room is carried through the hall into another and dropped into a free slot there (a move) or onto a game there
+(a swap): one operation of the draft, both rooms laid out again, the game pinned in its new slot as every manual change.
+The walker changes the room edited only while browsing or holding a game; a held fixture, the menu or an edit being
+applied keep the room (furniture never leaves its room). Another chain, or a room of another system, needs a new
+session.
+
 ### 8. Command line
 
 - `worldplan edit move --game <id> --slot <slot>`, `swap --game <id> --with <id>`, `pin | unpin --game <id>`,
