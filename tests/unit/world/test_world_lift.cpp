@@ -4,9 +4,9 @@
 // keeps its room's id, template and version, bounds, height, growth steps, seed, media family and theme pack, and every
 // fixture, placement, dressing, light and unplaced element equal to the oracle's (the 8,000 titles' oracle: its every
 // element kept, its titles unplaced for capacity added to its chain by generator 1.5); a fresh generation gives the
-// oracle's room too, below the template's limit. The lift itself: pure, a valid building (the room on its system's floor at the north row's first
-// position, the ground floor, nothing else), refused for what is not a schema-1 room; a lifted plan updated with
-// nothing new is written once, in schema 2, and then left as it is.
+// oracle's room too, below the template's limit. The lift itself: pure, a valid building (the room on its system's
+// floor at the north row's first position, the ground floor, nothing else), refused for what is not a schema-1 room; a
+// lifted plan updated with nothing new is written once, in schema 2, and then left as it is.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>

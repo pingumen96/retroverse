@@ -557,7 +557,9 @@ TEST_CASE("world/update: a full section takes a dressed level, then a module, th
     CHECK(expansion.growthSteps == 0);
     CHECK(result.changes.roomsAdded == std::vector{expansion.id});
     const auto placed = std::find_if(result.plan.placements.begin(), result.plan.placements.end(),
-                                     [&](const rv::world::Placement& placement) { return placement.game == last.game; });
+                                     [&](const rv::world::Placement& placement) {
+                                         return placement.game == last.game;
+                                     });
     REQUIRE(placed != result.plan.placements.end());
     CHECK(placed->slot.fixture().room() == expansion.id);
     CHECK(placed->slot.fixture().socket() == "hw-w");

@@ -306,7 +306,8 @@ TEST_CASE("world/migration: a new room of a succeeded family takes its successor
     CHECK(entered.changes.migratedRooms.size() == 1);
 }
 
-TEST_CASE("world/migration: a room past its successor's capacity takes an expansion, or shrinks, its z following its depth",
+TEST_CASE("world/migration: a room past its successor's capacity takes an expansion, or shrinks, its z following its "
+          "depth",
           "[world][migration]") {
     BuildingWorld world = shippedWorld(kWorldSeed);
     // amiga's 1,700 big boxes fill the old room grown to 16 m (1,923 of big_box), not the new one (1,561 of big_box_v2:

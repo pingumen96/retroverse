@@ -447,9 +447,10 @@ void checkProperties(const GenerationResult& result, const rv::world::RoomSelect
         CHECK(game.room == head.id);
     }
     std::vector<rv::world::RoomTitle> alphabetical = selection.titles;
-    std::sort(alphabetical.begin(), alphabetical.end(), [](const rv::world::RoomTitle& a, const rv::world::RoomTitle& b) {
-        return std::tie(a.sortKey, a.titleKey, a.game) < std::tie(b.sortKey, b.titleKey, b.game);
-    });
+    std::sort(alphabetical.begin(), alphabetical.end(),
+              [](const rv::world::RoomTitle& a, const rv::world::RoomTitle& b) {
+                  return std::tie(a.sortKey, a.titleKey, a.game) < std::tie(b.sortKey, b.titleKey, b.game);
+              });
     std::size_t next = 0;
     for (std::size_t i = 0; i < rooms; ++i) {
         const std::size_t share = titles / rooms + (i < titles % rooms ? 1 : 0);

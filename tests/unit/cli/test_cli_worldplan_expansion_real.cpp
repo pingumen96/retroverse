@@ -80,7 +80,8 @@ std::size_t capacityEntries(const rv::world::WorldPlan& plan) {
 }
 
 /// `plan` with every generator stamp `version` and the inputs' digest `digest` (what an update rewrites alone).
-rv::world::WorldPlan stamped(rv::world::WorldPlan plan, rv::world::GeneratorVersion version, const std::string& digest) {
+rv::world::WorldPlan stamped(rv::world::WorldPlan plan, rv::world::GeneratorVersion version,
+                             const std::string& digest) {
     plan.generatorVersion = version;
     plan.inputDigest = digest;
     for (rv::world::Room& room : plan.rooms) {
