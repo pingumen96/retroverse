@@ -45,10 +45,14 @@
 //     cabinet (resolved, holding its screen, within the guard); otherwise it is drawn as planned, under the CRT.
 //     A showcase is lit inside as a shelf (its kind's "board_light").
 //   - the pack's secondary TV (I5 step 3, ADR-0016 §5, room_look.hpp's "secondary_tv" piece): a look, never the plan's.
-//     The candidates are the room's decoration fixtures of the TV's kind whose own prefab's footprint the TV fits
-//     (centred across it, its back on the prefab's back); the room's seed orders them (core::deriveSeed(room seed,
-//     "secondary_tv", the fixture's local id), then the id), the first is drawn as the TV and, in a room deeper than
-//     12 m, the next one on another wall (else the next one): at most one a room, two past 12 m, none in the arcade.
+//     The candidates are the room's floor-standing decoration fixtures of the TV's kind whose own prefab's footprint
+//     the TV fits (centred across it, its back on the prefab's back), judged where their sockets stand at home (so that
+//     the style's lesser screen never competes with the hero, I5 step 3's review): never the one nearest the doorway's
+//     camera (with one candidate, it is kept only where it is preferred); the preferred first, those in the room's back
+//     half from the doorway or within kSecondaryTvNearHeroMm of the hero corner; then the room's seed
+//     (core::deriveSeed(room seed, "secondary_tv", the fixture's local id), then the id). The first is drawn as the TV
+//     and, in a room deeper than 12 m, the next one in another third of the room's depth from the doorway (else none:
+//     never a pair mirrored across the room): at most one a room, two past 12 m, none in the arcade.
 //     It stands where its fixture stands, moved by the room editor or not (the guard: within its fixture's own
 //     prefab's footprint there, not its socket's), with the fixture's id; its screen shows the standby pattern until
 //     the app plays a clip on it (app::findScreens() binds it as a secondary screen). The other decorations of the
@@ -196,11 +200,14 @@ struct SceneBuild {
 
 /// How many secondary TVs a room holds at most (I5 step 3, ADR-0016 §5): one, two in a room grown past 12 m.
 inline constexpr std::int64_t kSecondaryTvTwoPastDepthMm = 12000;
+/// A secondary TV's socket this near the hero corner's (its footprint's middle) is preferred, wherever the room's
+/// depth puts it (I5 step 3's review).
+inline constexpr std::int64_t kSecondaryTvNearHeroMm = 3000;
 
 /// The decoration fixtures of `room` that its scene draws as the pack's secondary TV (I5 step 3, ADR-0016 §5; see the
 /// file comment), in the order they were chosen: none without a pack's TV, in the arcade, or in a room without a
-/// decoration of the TV's kind it fits; else one, two in a room deeper than kSecondaryTvTwoPastDepthMm. Errors: NotFound
-/// for a room the plan lacks.
+/// decoration of the TV's kind it fits away from the doorway; else one, two in a room deeper than
+/// kSecondaryTvTwoPastDepthMm. Errors: NotFound for a room the plan lacks.
 [[nodiscard]] Expected<std::vector<FixtureId>> secondaryTvFixtures(const WorldPlan& plan, const RoomId& room,
                                                                    const SceneData& data);
 

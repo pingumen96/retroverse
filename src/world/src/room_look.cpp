@@ -377,13 +377,27 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
             for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
                 const std::string elementAt = at + "/" + std::to_string(i);
                 // I5 step 3 (ADR-0016 §5): the pack's secondary TV, in a decoration kind's list, placed by the room's
-                // rule rather than drawn by weight.
-                const bool secondaryTv = list[i].is_object() && list[i].contains("prefab") &&
-                                         list[i]["prefab"].is_object() &&
-                                         list[i]["prefab"].value("kind", std::string()) == kSecondaryTvKind;
+                // rule rather than drawn by weight. A kind of another type is readPiece()'s to refuse, never a throw.
+                bool secondaryTv = false;
+                if (list[i].is_object()) {
+                    if (const auto prefab = list[i].find("prefab"); prefab != list[i].end() && prefab->is_object()) {
+                        const auto kind = prefab->find("kind");
+                        secondaryTv = kind != prefab->end() && kind->is_string() &&
+                                      kind->get_ref<const std::string&>() == kSecondaryTvKind;
+                    }
+                }
                 if (secondaryTv && hero) {
                     document.fail(elementAt + "/prefab", "a secondary TV stands in a decoration socket, not in the "
                                                          "hero corner");
+                    return;
+                }
+                // It stands on the floor in its sideboard's place: never under a hung decoration's kind (a poster's),
+                // whose sockets' footprints it might fit while it would float.
+                if (secondaryTv && std::find(kFloorStandingDecorationKinds.begin(), kFloorStandingDecorationKinds.end(),
+                                             name) == kFloorStandingDecorationKinds.end()) {
+                    document.fail(elementAt + "/prefab",
+                                  "a secondary TV stands on the floor: expected it under a floor-standing decoration "
+                                  "kind (tv_cabinet, floor_lamp, plant)");
                     return;
                 }
                 if (secondaryTv && list[i].contains("weight")) {

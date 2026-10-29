@@ -67,10 +67,12 @@
 //   secondary TV, a piece of prefab kind "secondary_tv" without a weight ({"prefab": {"manifest":
 //   "furniture.secondary_tv.generic", "kind": "secondary_tv"}, "params": {...}}); it is no weighted variant: the scene
 //   builder stands it in at most one socket of that kind a room (two in a room grown past 12 m, none in the arcade),
-//   the others drawing that kind's variants (or the plan's prefab when the list holds the TV alone). Its materials are
-//   the pack's "tv_cabinet" kind's and "crt" kind's, under a "secondary_tv" kind's when the pack lists one, under the
-//   piece's. The reader refuses a second one, one with a weight, one among a hero part's pieces, and a decoration piece
-//   of kind "crt" (a TV outside the hero corner is a secondary_tv).
+//   the others drawing that kind's variants (or the plan's prefab when the list holds the TV alone). Its materials, a
+//   role's later source winning: the pack's "tv_cabinet" kind's, its "crt" kind's, its "secondary_tv" kind's when it
+//   lists one, then the piece's own "materials" (ThemeMaterials::materials(), scene_builder's pieceObject()). The
+//   reader refuses a second one, one with a weight, one among a hero part's pieces, one under a kind that is not
+//   floor-standing (kFloorStandingDecorationKinds: never a poster's, whose socket hangs on a wall), and a decoration
+//   piece of kind "crt" (a TV outside the hero corner is a secondary_tv).
 //   A piece: {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"}, "params": {...} (merged over the
 //   manifest's), "materials": {"<role>": "MAT_..."} (over the pack's kind's), "textures": {"<role>": "<pattern>"}
 //   (a scene pattern, scene::kTexturePatternNames, drawn with an invented title and the piece's seed), and for a hero
@@ -116,6 +118,7 @@
 //   "cardPerSlot": true (a display case's empty level a riser card per slot, the item's size)}: a look
 //   of the room's upper walls, ceiling and floor, never colliding nor casting shadows (scene_builder.hpp).
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -377,8 +380,12 @@ struct FurnitureVariant {
 /// a ScreenSurface (geometry::SecondaryTvParams), the only TV a pack may list outside the arcade's hero cabinet.
 inline constexpr std::string_view kSecondaryTvKind = "secondary_tv";
 
-/// A pack's secondary TV (I5 step 3, ADR-0016 §5): its piece, listed in the decoration list of `kind`, whose sockets the
-/// scene builder stands it in (at most one a room, two in a room grown past 12 m; scene_builder.hpp).
+/// The decoration kinds standing on the floor (the room template's decorations with no mount height), the only ones a
+/// pack may list its secondary TV under (I5 step 3's review): a TV under a hung kind would float.
+inline constexpr std::array<std::string_view, 3> kFloorStandingDecorationKinds{"floor_lamp", "plant", "tv_cabinet"};
+
+/// A pack's secondary TV (I5 step 3, ADR-0016 §5): its piece, listed in the decoration list of `kind`, whose sockets
+/// the scene builder stands it in (at most one a room, two in a room grown past 12 m; scene_builder.hpp).
 struct SecondaryTvPiece {
     std::string kind;
     FurniturePiece piece;
@@ -422,8 +429,9 @@ struct ThemeMaterials {
     RoomDressing dressing;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
-    /// empty for a kind the theme does not dress. The secondary TV's (kSecondaryTvKind, I5 step 3) are its
-    /// "tv_cabinet" and "crt" kinds', under a "secondary_tv" kind's when the theme lists one.
+    /// empty for a kind the theme does not dress. The secondary TV's (kSecondaryTvKind, I5 step 3) merge, by role and
+    /// a later source winning, its "tv_cabinet" kind's, its "crt" kind's and its "secondary_tv" kind's when it lists
+    /// one (the piece's own materials go over them all where the scene builder draws it).
     [[nodiscard]] std::map<std::string, std::string> materials(std::string_view kind,
                                                                std::string_view heroPart = {}) const;
 

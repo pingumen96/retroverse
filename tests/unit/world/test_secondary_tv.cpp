@@ -1,17 +1,21 @@
 // The rooms' secondary TVs (I5 step 3, ADR-0016 §5): a theme pack's furniture, a look and never the plan's. The reader
-// takes the pack's one secondary TV in a decoration kind's list; the scene builder stands it in at most one socket of
-// that kind a room (two in a room grown past 12 m, none in the arcade), chosen by the room's seed, within its
-// fixture's own footprint wherever the fixture stands (the room editor may move it); the plan, its slots and lights
-// stay as they are, and the other decorations draw as before.
+// takes the pack's one secondary TV in a floor-standing decoration kind's list; the scene builder stands it in at most
+// one socket of that kind a room (two in a room grown past 12 m, none in the arcade), never the one nearest the
+// doorway's camera, the room's back half or the hero corner's reach first, then the room's seed (I5 step 3's review),
+// within its fixture's own footprint wherever the fixture stands (the room editor may move it); the plan, its slots
+// and lights stay as they are, and the other decorations draw as before.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -75,10 +79,102 @@ const Fixture& fixtureOf(const rv::world::WorldPlan& plan, const FixtureId& id) 
     return *found;
 }
 
-std::size_t decorationsOfKind(const rv::world::WorldPlan& plan, const rv::world::RoomId& room, const std::string& kind) {
+std::size_t decorationsOfKind(const rv::world::WorldPlan& plan, const rv::world::RoomId& room,
+                              const std::string& kind) {
     return static_cast<std::size_t>(std::count_if(plan.fixtures.begin(), plan.fixtures.end(), [&](const Fixture& f) {
         return f.id.room() == room && f.role == FixtureRole::Decoration && f.prefab.kind == kind;
     }));
+}
+
+/// Where a fixture's socket stands at home in `room` (its footprint's middle), and what the placement reads of it: its
+/// squared distances to the doorway's camera and to the hero corner, its depth from the doorway and the room's extent
+/// that way (millimetres; the console room's doorway is in its south wall).
+struct Home {
+    std::int64_t x = 0;
+    std::int64_t z = 0;
+    std::int64_t toDoorway = 0;
+    std::int64_t depth = 0;
+    std::int64_t extent = 0;
+    std::int64_t toHero = 0;
+
+    [[nodiscard]] bool backHalf() const { return 2 * depth >= extent; }
+    [[nodiscard]] std::int64_t band() const { return std::clamp<std::int64_t>(3 * depth / extent, 0, 2); }
+};
+
+Home homeOf(const rv::world::Room& room, const rv::world::RoomTemplate& roomTemplate, const FixtureId& id) {
+    REQUIRE(roomTemplate.doorway.wall == rv::world::Wall::South);
+    const rv::world::TemplateSocket* socket = roomTemplate.socket(id.socket());
+    REQUIRE(socket != nullptr);
+    const rv::world::Footprint home = rv::world::socketFootprint(roomTemplate, *socket, room.growthSteps);
+    Home result;
+    result.x = (home.minXMm + home.maxXMm) / 2;
+    result.z = (home.minZMm + home.maxZMm) / 2;
+    const rv::world::DoorwayCamera camera = rv::world::doorwayCamera(room, roomTemplate);
+    const std::int64_t eyeX = std::llround(camera.x * 1000.0);
+    const std::int64_t eyeZ = std::llround(camera.z * 1000.0);
+    result.toDoorway = (result.x - eyeX) * (result.x - eyeX) + (result.z - eyeZ) * (result.z - eyeZ);
+    result.depth = room.maxZMm - result.z;
+    result.extent = room.maxZMm - room.minZMm;
+    for (const rv::world::TemplateSocket& candidate : roomTemplate.sockets) {
+        if (candidate.kind == rv::world::SocketKind::HeroCorner) {
+            const rv::world::Footprint hero = rv::world::socketFootprint(roomTemplate, candidate, room.growthSteps);
+            const std::int64_t dx = result.x - (hero.minXMm + hero.maxXMm) / 2;
+            const std::int64_t dz = result.z - (hero.minZMm + hero.maxZMm) / 2;
+            result.toHero = dx * dx + dz * dz;
+        }
+    }
+    return result;
+}
+
+/// The room's sideboards (its tv_cabinet decorations standing on the floor), by id.
+std::vector<FixtureId> sideboardsOf(const rv::world::WorldPlan& plan, const rv::world::RoomId& room) {
+    std::vector<FixtureId> ids;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() == room && fixture.role == FixtureRole::Decoration && fixture.yMm == 0 &&
+            fixture.prefab.kind == "tv_cabinet") {
+            ids.push_back(fixture.id);
+        }
+    }
+    return ids;
+}
+
+/// The placement's rule on `tvs` (I5 step 3's review): never the sideboard nearest the doorway's camera (one alone only
+/// where it is preferred); a preferred one (the back half, or within kSecondaryTvNearHeroMm of the hero corner) first
+/// whenever another than that one is.
+void checkPlacement(const rv::world::WorldPlan& plan, const rv::world::Room& room,
+                    const rv::world::RoomTemplate& roomTemplate, const std::vector<FixtureId>& tvs) {
+    const std::vector<FixtureId> sideboards = sideboardsOf(plan, room.id);
+    if (sideboards.empty()) {
+        CHECK(tvs.empty());
+        return;
+    }
+    FixtureId nearest = sideboards.front();
+    for (const FixtureId& id : sideboards) {
+        const Home home = homeOf(room, roomTemplate, id);
+        const Home best = homeOf(room, roomTemplate, nearest);
+        if (home.toDoorway < best.toDoorway ||
+            (home.toDoorway == best.toDoorway && id.localText() < nearest.localText())) {
+            nearest = id;
+        }
+    }
+    const auto preferred = [&](const FixtureId& id) {
+        const Home home = homeOf(room, roomTemplate, id);
+        return home.backHalf() ||
+               home.toHero <= rv::world::kSecondaryTvNearHeroMm * rv::world::kSecondaryTvNearHeroMm;
+    };
+    bool anyPreferred = false;
+    for (const FixtureId& id : sideboards) {
+        anyPreferred = anyPreferred || ((id != nearest || sideboards.size() == 1) && preferred(id));
+    }
+    INFO("the room's sideboards " << sideboards.size() << ", the nearest the doorway " << nearest.localText());
+    if (sideboards.size() > 1) {
+        CHECK(std::find(tvs.begin(), tvs.end(), nearest) == tvs.end());
+    }
+    if (!tvs.empty() && anyPreferred) {
+        INFO("the first TV " << tvs.front().localText());
+        CHECK(preferred(tvs.front()));
+    }
+    CHECK(tvs.empty() == (sideboards.size() == 1 && !anyPreferred));
 }
 
 } // namespace
@@ -130,6 +226,21 @@ TEST_CASE("world/secondary TV: the reader takes one secondary TV in a decoration
     CHECK_THAT(refusal(R"({"decoration": {"tv_cabinet": [{"weight": 1, "prefab": {"manifest":
                           "electronics.crt.consumer.generic", "kind": "crt"}}]}})"),
                ContainsSubstring("secondary_tv piece"));
+    // I5 step 3's review: under a hung kind (it would float on a poster's socket), and a prefab kind of another type
+    // refused rather than thrown.
+    CHECK_THAT(refusal(R"({"decoration": {"poster_frame": [)" + tv + "]}}"),
+               ContainsSubstring("/furniture/decoration/poster_frame/0/prefab"));
+    CHECK_THAT(refusal(R"({"decoration": {"poster_frame": [)" + tv + "]}}"), ContainsSubstring("floor-standing"));
+    const auto numeric = parse(R"({"decoration": {"tv_cabinet": [{"weight": 1, "prefab": {"manifest":
+                                   "furniture.secondary_tv.generic", "kind": 5}}]}})");
+    REQUIRE_FALSE(numeric.has_value());
+    CHECK_THAT(numeric.error().message, ContainsSubstring("/furniture/decoration/tv_cabinet/0/prefab"));
+    for (const std::string_view kind : rv::world::kFloorStandingDecorationKinds) {
+        INFO(kind);
+        auto floor = parse(R"({"decoration": {")" + std::string(kind) + R"(": [)" + tv + "]}}");
+        REQUIRE(floor.has_value());
+        CHECK(floor->furniture.secondaryTv->kind == kind);
+    }
 }
 
 TEST_CASE("world/secondary TV: every pack but the arcade's and the hub's stands one in a sideboard's socket",
@@ -164,7 +275,8 @@ TEST_CASE("world/secondary TV: every pack but the arcade's and the hub's stands 
           rv::world::loadThemeMaterials(assets(), "classic_16bit_warm")->furniture.secondaryTv);
 }
 
-TEST_CASE("world/secondary TV: at most one a room, chosen by its seed, in a sideboard's socket, the others as before",
+TEST_CASE("world/secondary TV: at most one a room, away from the doorway, in a sideboard's socket, the others as "
+          "before",
           "[world][secondary_tv]") {
     std::size_t rooms = 0;
     std::size_t withTv = 0;
@@ -176,9 +288,10 @@ TEST_CASE("world/secondary TV: at most one a room, chosen by its seed, in a side
             const rv::world::SceneData data = withPack(entry.data, pack);
             const std::vector<FixtureId> tvs = tvsOf(entry.plan, entry.room, data);
             ++rooms;
-            // One in a room of at most 12 m whenever the room has a sideboard (the golden rooms are 10 and 12 m deep).
+            // At most one in a room of at most 12 m (the golden rooms are 10 and 12 m deep), by the placement's rule.
             REQUIRE(room.maxZMm - room.minZMm <= rv::world::kSecondaryTvTwoPastDepthMm);
-            CHECK(tvs.size() == std::min<std::size_t>(1, decorationsOfKind(entry.plan, entry.room, "tv_cabinet")));
+            CHECK(tvs.size() <= 1);
+            checkPlacement(entry.plan, room, data.roomTemplate, tvs);
             withTv += tvs.empty() ? 0 : 1;
             // The same choice every time.
             CHECK(tvsOf(entry.plan, entry.room, data) == tvs);
@@ -197,10 +310,21 @@ TEST_CASE("world/secondary TV: at most one a room, chosen by its seed, in a side
                 const nlohmann::json& object = objects.at(id.localText());
                 CHECK(object.at("prefab") == "secondary_tv");
                 CHECK(object.at("textures").at("screen").at("pattern") == "standby");
+                // The materials, a later source winning: the kinds' tv_cabinet, crt and secondary_tv, then the
+                // piece's own (the 90s collector's charcoal set).
                 const nlohmann::json& materials = object.at("materials");
-                CHECK(materials.at("screen") == data.theme.materials("crt").at("screen"));
-                CHECK(materials.at("plastic_body") == data.theme.materials("crt").at("plastic_body"));
-                CHECK(materials.at("wood_primary") == data.theme.materials("tv_cabinet").at("wood_primary"));
+                const std::map<std::string, std::string>& own = data.theme.furniture.secondaryTv->piece.materials;
+                const auto expected = [&](const std::string& role, const std::string& kind) {
+                    const auto found = own.find(role);
+                    return found != own.end() ? found->second : data.theme.materials(kind).at(role);
+                };
+                CHECK(materials.at("screen") == expected("screen", "crt"));
+                CHECK(materials.at("plastic_body") == expected("plastic_body", "crt"));
+                CHECK(materials.at("wood_primary") == expected("wood_primary", "tv_cabinet"));
+                if (std::string_view(pack) == "console_90s_collector") {
+                    CHECK(materials.at("plastic_body") == "MAT_Plastic_Charcoal");
+                    CHECK(data.theme.materials("crt").at("plastic_body") == "MAT_Plastic_Gray");
+                }
                 // It stands on the floor where the sideboard stood, turned as it.
                 CHECK(object.at("position")[1] == 0.0);
                 CHECK(object.at("rotationDeg")[1].get<double>() == static_cast<double>(fixture.yawCdeg) / 100.0);
@@ -211,7 +335,8 @@ TEST_CASE("world/secondary TV: at most one a room, chosen by its seed, in a side
             const auto before = objectsOf(entry.plan, entry.room, without);
             REQUIRE(before.size() == objects.size());
             for (const auto& [id, object] : objects) {
-                const bool tv = std::any_of(tvs.begin(), tvs.end(), [&](const FixtureId& f) { return f.localText() == id; });
+                const bool tv =
+                    std::any_of(tvs.begin(), tvs.end(), [&](const FixtureId& f) { return f.localText() == id; });
                 if (!tv) {
                     INFO(id);
                     CHECK(before.at(id) == object);
@@ -225,13 +350,14 @@ TEST_CASE("world/secondary TV: at most one a room, chosen by its seed, in a side
     CHECK(tvsOf(full.plan, full.room, full.data).empty());
 }
 
-TEST_CASE("world/secondary TV: two in a room grown past 12 m, on two walls; none in the arcade",
+TEST_CASE("world/secondary TV: two in a room grown past 12 m, in two thirds of its depth; none in the arcade",
           "[world][secondary_tv]") {
     const rv::test::world::PlanCase& entry = rv::test::world::planCase("plan-0-seed-102938");
     const rv::world::SceneData& data = entry.data;
     REQUIRE(decorationsOfKind(entry.plan, entry.room, "tv_cabinet") >= 2);
     const std::vector<FixtureId> one = tvsOf(entry.plan, entry.room, data);
     REQUIRE(one.size() == 1);
+    checkPlacement(entry.plan, entry.plan.rooms.front(), data.roomTemplate, one);
 
     // The rule reads the room's depth (the generator grows a room south in 2 m steps): 12 m holds one, 14 m two.
     for (const std::int64_t depth : {12000, 14000, 16000}) {
@@ -244,11 +370,10 @@ TEST_CASE("world/secondary TV: two in a room grown past 12 m, on two walls; none
             continue;
         }
         REQUIRE(tvs.size() == 2);
-        CHECK(tvs.front() == one.front()); // the first is the room's one
-        const auto wallOf = [&](const FixtureId& id) {
-            return data.roomTemplate.socket(id.socket())->wall;
-        };
-        CHECK(wallOf(tvs[0]) != wallOf(tvs[1]));
+        // The second in another third of the room's depth from the doorway: never a pair mirrored across the room.
+        const rv::world::Room& deep = grown.rooms.front();
+        CHECK(homeOf(deep, data.roomTemplate, tvs[0]).band() != homeOf(deep, data.roomTemplate, tvs[1]).band());
+        checkPlacement(grown, deep, data.roomTemplate, tvs);
         std::size_t drawn = 0;
         for (const auto& [id, object] : objectsOf(grown, entry.room, data)) {
             drawn += object.value("prefab", "") == "secondary_tv" ? 1 : 0;
@@ -298,7 +423,8 @@ TEST_CASE("world/secondary TV: it follows its sideboard moved by the room editor
     for (const rv::world::WorldPlan* plan : std::vector<const rv::world::WorldPlan*>{&entry.plan, &moved}) {
         auto drawn = rv::world::drawnFixtures(*plan, entry.room, data);
         REQUIRE(drawn.has_value());
-        const Fixture& tv = *std::find_if(drawn->begin(), drawn->end(), [&](const Fixture& f) { return f.id == chosen; });
+        const Fixture& tv =
+            *std::find_if(drawn->begin(), drawn->end(), [&](const Fixture& f) { return f.id == chosen; });
         const Fixture& planned = fixtureOf(*plan, chosen);
         CHECK(tv.prefab.kind == "secondary_tv");
         CHECK(tv.role == FixtureRole::Decoration);
@@ -338,7 +464,8 @@ TEST_CASE("world/secondary TV: it follows its sideboard moved by the room editor
 namespace {
 
 /// A room of 4,300 titles generated with the world seed 1 (world_generation_support.hpp's selection 11): grown to 14 m,
-/// its last growth step's side-wall sockets w11 and e11 holding sideboards.
+/// its side-wall modules filling it from the hero wall, its only sideboards in its last growth step's side-wall sockets
+/// w11 and e11, flanking the doorway.
 const rv::world::GenerationResult& grownRoom() {
     static const rv::world::GenerationResult result = rv::test::world::generateRoom(4300, 11, 1);
     return result;
@@ -346,7 +473,8 @@ const rv::world::GenerationResult& grownRoom() {
 
 } // namespace
 
-TEST_CASE("world/secondary TV: a room the generator grew past 12 m holds two, one on each side wall",
+TEST_CASE("world/secondary TV: a room the generator grew past 12 m, its sideboards flanking the doorway, holds one, "
+          "never the mirrored pair",
           "[world][secondary_tv]") {
     const rv::world::WorldPlan& plan = grownRoom().plan;
     REQUIRE(plan.rooms.size() == 1);
@@ -354,18 +482,23 @@ TEST_CASE("world/secondary TV: a room the generator grew past 12 m holds two, on
     CHECK(room.maxZMm - room.minZMm == 14000);
     auto data = rv::world::loadSceneData(assets(), plan, room.id);
     REQUIRE(data.has_value());
-    const std::vector<FixtureId> tvs = tvsOf(plan, room.id, *data);
-    REQUIRE(tvs.size() == 2);
-    std::set<std::string> ids;
-    for (const FixtureId& id : tvs) {
-        ids.insert(id.localText());
+    std::set<std::string> sideboards;
+    for (const FixtureId& id : sideboardsOf(plan, room.id)) {
+        sideboards.insert(id.localText());
     }
-    CHECK(ids == std::set<std::string>{"fx:e11", "fx:w11"});
+    REQUIRE(sideboards == std::set<std::string>{"fx:e11", "fx:w11"});
+    // I5 step 3's review: the two stand as far from the doorway's camera, e11 counted the nearest (the smaller id);
+    // w11 holds the room's TV, beside the doorway rather than facing it (out of the doorway's view), and no second one
+    // (none in another third of the room's depth).
+    const std::vector<FixtureId> tvs = tvsOf(plan, room.id, *data);
+    REQUIRE(tvs.size() == 1);
+    CHECK(tvs.front().localText() == "fx:w11");
+    checkPlacement(plan, room, data->roomTemplate, tvs);
     std::size_t drawn = 0;
     for (const auto& [id, object] : objectsOf(plan, room.id, *data)) {
         drawn += object.value("prefab", "") == "secondary_tv" ? 1 : 0;
     }
-    CHECK(drawn == 2);
+    CHECK(drawn == 1);
     // The drawn room validates as the plan does.
     rv::world::ValidationContext context;
     context.templates = {data->roomTemplate};
@@ -381,7 +514,7 @@ TEST_CASE("world/secondary TV: a room the generator grew past 12 m holds two, on
 
 TEST_CASE("world/secondary TV: the grown room's scene file, for a look by hand", "[.secondary_tv_look]") {
     // Writes build/i5/step3/grown-room.scene.json under the source tree: retroverse.exe --scene <it> shows the room of
-    // 14 m with its two secondary TVs (standby: a scene file binds no games).
+    // 14 m with its secondary TV beside the doorway (standby: a scene file binds no games).
     const rv::world::WorldPlan& plan = grownRoom().plan;
     const rv::world::Room& room = plan.rooms.front();
     auto data = rv::world::loadSceneData(assets(), plan, room.id);

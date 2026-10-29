@@ -379,30 +379,27 @@
       "id": "fx:dec-se",
       "materials": {
         "metal_trim": "MAT_Metal_Brushed",
-        "plastic_bezel": "MAT_Plastic_Black",
-        "plastic_body": "MAT_Plastic_AgedIvory",
-        "plastic_dark": "MAT_Plastic_Black",
-        "screen": "MAT_Screen_CRT_Room",
         "wood_primary": "MAT_Wood_Walnut",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {},
+      "params": {
+        "depth": 0.36,
+        "drawers": 3,
+        "height": 0.72,
+        "legHeight": 0.08,
+        "width": 0.8
+      },
       "position": [
         2.5,
         0.0,
         4.79
       ],
-      "prefab": "secondary_tv",
+      "prefab": "tv_cabinet",
       "rotationDeg": [
         0.0,
         180.0,
         0.0
-      ],
-      "textures": {
-        "screen": {
-          "pattern": "standby"
-        }
-      }
+      ]
     },
     {
       "id": "fx:e01",
@@ -914,27 +911,30 @@
       "id": "fx:w03",
       "materials": {
         "metal_trim": "MAT_Metal_Brushed",
+        "plastic_bezel": "MAT_Plastic_Black",
+        "plastic_body": "MAT_Plastic_AgedIvory",
+        "plastic_dark": "MAT_Plastic_Black",
+        "screen": "MAT_Screen_CRT_Room",
         "wood_primary": "MAT_Wood_Walnut",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
-      "params": {
-        "depth": 0.36,
-        "drawers": 3,
-        "height": 0.72,
-        "legHeight": 0.08,
-        "width": 0.8
-      },
+      "params": {},
       "position": [
         -4.29,
         0.0,
         -2.0
       ],
-      "prefab": "tv_cabinet",
+      "prefab": "secondary_tv",
       "rotationDeg": [
         0.0,
         90.0,
         0.0
-      ]
+      ],
+      "textures": {
+        "screen": {
+          "pattern": "standby"
+        }
+      }
     },
     {
       "castsShadows": false,
