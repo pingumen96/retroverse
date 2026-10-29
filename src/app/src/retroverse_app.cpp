@@ -693,8 +693,8 @@ struct RetroverseApp::State {
         const auto view = [](const std::optional<std::string>& id) {
             return id ? std::optional<std::string_view>(*id) : std::nullopt;
         };
-        screen->update(frame, simulatedSeconds, camera, ScreenSelection{view(selections.world), view(selections.catalog)},
-                       minimized, world ? world->eyeInScreenRoom() : true);
+        const ScreenSelection selection{view(selections.world), view(selections.catalog)};
+        screen->update(frame, simulatedSeconds, camera, selection, minimized, world ? world->eyeInScreenRoom() : true);
         if (world) {
             world->showCabinets(screen->cabinetsShown());
         }

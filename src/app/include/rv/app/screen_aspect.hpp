@@ -36,8 +36,9 @@ inline constexpr double kLowResAspectTolerance = 0.15;
 inline constexpr glm::vec4 kWholeScreen{0.0f, 0.0f, 1.0f, 1.0f};
 
 /// The rectangle of a screen of `screen` (its width and height, in any unit) that a picture of `picture` (its width and
-/// height as decoded, pixels; shown at displayAspect()) fills, in the screen's texture coordinates (uv (0, 0) top-left):
-/// its corner (x, y) and size (z, w), centred. A wider picture spans the whole width (letterbox), a narrower one the whole height (pillarbox);
+/// height as decoded, pixels; shown at displayAspect()) fills, in the screen's texture coordinates (uv (0, 0)
+/// top-left): its corner (x, y) and size (z, w), centred. A wider picture spans the whole width (letterbox), a narrower
+/// one the whole height (pillarbox);
 /// kWholeScreen when the aspects are within kPictureAspectTolerance of each other, or when a size is empty or not
 /// finite (nothing known: the screen as it is).
 [[nodiscard]] glm::vec4 pictureRect(glm::vec2 picture, glm::vec2 screen) noexcept;

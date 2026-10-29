@@ -246,8 +246,8 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
         screen.bounds = instance.objectBounds()[index].transformed(transforms.front());
         screen.kind = screens.empty() ? ScreenKind::Hero : ScreenKind::Secondary;
-        // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever the
-        // world selects, the focused or inspected cabinet playing its clip itself (§6).
+        // I5 step 4: its screen's aspect (ADR-0016 §7); the arcade's hero cabinet keeps the room's playlist whatever
+        // the world selects, the focused or inspected cabinet playing its clip itself (§6).
         screen.screenSize = instance.screenSurfaceSize(index);
         screen.followsWorldSelection = !heroCabinet;
         if (!instance.areas().empty()) {
@@ -1591,7 +1591,8 @@ struct ScreenService::Impl {
             return;
         }
         VideoLaunchRecord stop;
-        stop.decoderRan = std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
+        stop.decoderRan =
+            std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
         // Each screen (and cabinet: I5 step 4) keeps its clip's position for the return.
         for (ScreenState* screen : allScreens()) {
             std::optional<double> position;
@@ -1787,7 +1788,8 @@ struct ScreenService::Impl {
         next.reserve(requests.size());
         for (CabinetScreen& request : requests) {
             const auto found = std::find_if(cabinets.begin(), cabinets.end(), [&](const auto& cabinet) {
-                return cabinet && cabinet->binding.objectId == request.id && cabinet->policy.targetId() == request.gameId;
+                return cabinet && cabinet->binding.objectId == request.id &&
+                       cabinet->policy.targetId() == request.gameId;
             });
             std::unique_ptr<ScreenState> cabinet;
             if (found != cabinets.end()) {

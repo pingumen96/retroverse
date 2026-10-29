@@ -226,7 +226,8 @@ public:
     [[nodiscard]] std::span<const CabinetShown> cabinetsShown() const noexcept;
 
     /// One frame (`frame`, at `nowSeconds`: the run's simulated time) seen by `camera`: the games selected
-    /// (`selection`: the world's focused or inspected item, the quick catalog's), the window `minimized` (every screen out of view: the slots pause, and stop after
+    /// (`selection`: the world's focused or inspected item, the quick catalog's), the window `minimized` (every screen
+    /// out of view: the slots pause, and stop after
     /// kScreenStopAfterSeconds, reason "minimized"); the scheduler's decisions carried out, the frames uploaded, the
     /// stills loaded, the screens' texture overrides set to what they show. An interactive run calls it while minimized
     /// too, after each of the host's waits (IAppLogic::onMinimized), with the waits' time.
