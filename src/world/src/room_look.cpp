@@ -937,6 +937,18 @@ std::map<std::string, std::string> ThemeMaterials::materials(std::string_view ki
             return part->second;
         }
     }
+    // The secondary TV (I5 step 3): the pack's sideboard's and CRT's, under its own kind's when the pack lists one.
+    if (kind == kSecondaryTvKind) {
+        std::map<std::string, std::string> merged = materials("tv_cabinet");
+        for (const std::string_view part : {std::string_view("crt"), kSecondaryTvKind}) {
+            if (const auto found = kinds.find(part); found != kinds.end()) {
+                for (const auto& [role, material] : found->second) {
+                    merged[role] = material;
+                }
+            }
+        }
+        return merged;
+    }
     if (const auto found = kinds.find(kind); found != kinds.end()) {
         return found->second;
     }

@@ -537,25 +537,12 @@ std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const 
     return placed;
 }
 
-/// The secondary TV's materials (I5 step 3, room_look.hpp): the pack's sideboard's and CRT's, under a "secondary_tv"
-/// kind's when the pack lists one.
-std::map<std::string, std::string> secondaryTvMaterials(const ThemeMaterials& theme) {
-    std::map<std::string, std::string> materials = theme.materials("tv_cabinet");
-    for (const auto& [role, material] : theme.materials(kHeroTvPart)) {
-        materials[role] = material;
-    }
-    for (const auto& [role, material] : theme.materials(kSecondaryTvKind)) {
-        materials[role] = material;
-    }
-    return materials;
-}
-
 /// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
 /// is of the part's kind; the secondary TV's, I5 step 3) under its own, the kind's pictures under its patterns.
 json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_view heroPart, const SceneData& data) {
     const ScenePiece& piece = *drawn.piece;
     const ScenePrefab& prefab = piece.prefab;
-    std::map<std::string, std::string> materials = drawn.secondaryTv ? secondaryTvMaterials(data.theme)
+    std::map<std::string, std::string> materials = drawn.secondaryTv ? data.theme.materials(kSecondaryTvKind)
                                                    : piece.piece.prefab.kind == fixture.prefab.kind
                                                        ? data.theme.materials(prefab.generator, heroPart)
                                                        : data.theme.materials(prefab.generator);

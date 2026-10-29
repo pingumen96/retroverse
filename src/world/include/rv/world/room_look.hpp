@@ -422,7 +422,8 @@ struct ThemeMaterials {
     RoomDressing dressing;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
-    /// empty for a kind the theme does not dress.
+    /// empty for a kind the theme does not dress. The secondary TV's (kSecondaryTvKind, I5 step 3) are its
+    /// "tv_cabinet" and "crt" kinds', under a "secondary_tv" kind's when the theme lists one.
     [[nodiscard]] std::map<std::string, std::string> materials(std::string_view kind,
                                                                std::string_view heroPart = {}) const;
 

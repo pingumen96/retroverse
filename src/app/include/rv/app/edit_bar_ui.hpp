@@ -91,9 +91,10 @@ inline constexpr std::array<std::string_view, 25> kRules{"game-unknown",
                                                          "lights-over-limit",
                                                          "fixture-on-walker"};
 /// The kinds of furniture the bar names (fixtureKindOf()): every name of kFixtureKindNames, then "furniture".
-inline constexpr std::array<std::string_view, 18> kFixtureKinds{
-    "shelf",   "cabinet", "wall-shelf", "display-case", "showcase", "sideboard", "poster", "floor-lamp", "table-lamp",
-    "rug",     "plant",   "sofa",       "armchair",     "desk",     "stool",     "beanbag", "chair",     "furniture"};
+inline constexpr std::array<std::string_view, 19> kFixtureKinds{
+    "shelf", "cabinet", "wall-shelf", "display-case", "showcase", "sideboard", "tv",    "poster",   "floor-lamp",
+    "table-lamp", "rug", "plant",     "sofa",         "armchair", "desk",      "stool", "beanbag", "chair",
+    "furniture"};
 /// The verdicts on a held fixture's place (EditBarContent::verdict).
 inline constexpr std::array<std::string_view, 3> kVerdicts{"checking", "ok", "refused"};
 /// The devices whose glyphs the bar shows ("pad": the pad's buttons, "keys": the keyboard's).
