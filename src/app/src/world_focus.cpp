@@ -47,7 +47,8 @@ constexpr std::array<ui::NavDirection, 4> kDirections{ui::NavDirection::Up, ui::
 [[nodiscard]] glm::mat4 pullInSlot(const world::CollectionItem& item, float progress, float reach) noexcept {
     const float p = std::isfinite(progress) ? std::clamp(progress, 0.0f, 1.0f) : 0.0f;
     const core::Aabb& box = item.slotBox;
-    if (p <= 0.0f || box.isEmpty()) {
+    if (p <= 0.0f || box.isEmpty() || item.inFixture) {
+        // A cabinet's screen stays in its bezel (the fix of 2026-10-29): its "pull" is the dynamic copy at its place.
         return glm::mat4(1.0f);
     }
     const glm::vec3 center = box.center();
@@ -131,8 +132,9 @@ float rowReach(const world::CollectionItem& item, const world::CollectionLayout&
 }
 
 glm::mat4 pulledItemTransform(const world::CollectionItem& item, float progress, float reach) noexcept {
-    if (!(progress > 0.0f)) {
-        return item.transform; // in its slot: the static pose exactly
+    if (!(progress > 0.0f) || item.inFixture) {
+        // In its slot, or part of its fixture (a cabinet's screen): the static pose exactly.
+        return item.transform;
     }
     // The item in its slot's frame, moved there, back to the room.
     return item.slotFrame * pullInSlot(item, progress, reach) * glm::inverse(item.slotFrame) * item.transform;
@@ -197,7 +199,7 @@ std::optional<RoomItem> CollectionRoom::item(world::PickId id) const {
     if (found == nullptr) {
         return std::nullopt;
     }
-    return RoomItem{id, found->game, found->stance == world::ItemStance::FaceOut, sectionOf(id)};
+    return RoomItem{id, found->game, found->stance == world::ItemStance::FaceOut, sectionOf(id), found->inFixture};
 }
 
 scene::WalkerPose CollectionRoom::focusPose(world::PickId id) const {

@@ -848,3 +848,120 @@ TEST_CASE("cabinets: the quick catalog's selection of an arcade game plays on th
     CHECK(std::find(opens.front().screens.begin(), opens.front().screens.end(), std::string(kHeroScreen)) !=
           opens.front().screens.end());
 }
+
+namespace {
+
+/// The pixel box an item's slot box covers in a screenshot from `camera` (its eight corners projected; empty when one
+/// is behind the camera).
+std::optional<std::pair<glm::ivec2, glm::ivec2>> projectedBox(const rv::world::CollectionItem& item,
+                                                              const rv::scene::CameraSetup& camera) {
+    const rv::core::Aabb box = item.worldBounds();
+    glm::ivec2 min(kShotSize);
+    glm::ivec2 max(0);
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 point((corner & 1) != 0 ? box.max.x : box.min.x, (corner & 2) != 0 ? box.max.y : box.min.y,
+                              (corner & 4) != 0 ? box.max.z : box.min.z);
+        const std::optional<glm::ivec2> pixel = projectToPixel(camera, kShotSize, point);
+        if (!pixel) {
+            return std::nullopt;
+        }
+        min = glm::min(min, *pixel);
+        max = glm::max(max, *pixel);
+    }
+    return std::make_pair(min, max);
+}
+
+/// Pixels of `a` and `b` outside the box [min, max] whose channels differ by more than 24.
+std::size_t changedOutside(const rv::assets::ImageData& a, const rv::assets::ImageData& b, glm::ivec2 min,
+                           glm::ivec2 max) {
+    return changedPixels(a, b, glm::ivec2(0), glm::ivec2(a.width - 1, a.height - 1)) - changedPixels(a, b, min, max);
+}
+
+} // namespace
+
+TEST_CASE("cabinets: aiming at a cabinet's screen moves nothing, in free roam and in Focus (fix 2026-10-29)",
+          "[gpu][video][cabinets][aim]") {
+    // The user's report: aimed at, an arcade cabinet's screen moved. It was the face-out pull-out: after the hover's
+    // 150 ms dwell the screen tipped 10 degrees out of its bezel (frames 10 to 24), and stood so in Focus. A cabinet's
+    // screen is part of its fixture now: nothing moves while it is aimed at, and Focus after Indietro shows it where
+    // it stands. No clip here (attract and showOnFocus off): only the cover, so the screenshots compare exactly.
+    ArcadeBuilding building("aim");
+    writeVideoSettings(building, Json{{"cabinet", {{"enabled", false}, {"showOnFocus", false}}}});
+    const FirstRun first = firstRun(building);
+    const rv::world::CollectionItem& item = featuredCabinet(first.shown, first.heroGame);
+    // F12 at 6 (hovered since frame 2, before the dwell ended), 40 and 80 (long after it); interact at 90 (Inspect),
+    // ui_back at 140 (Focus, lowered by 160), F12 at 190.
+    const fs::path script =
+        writeScript(building, "aim.json",
+                    Json::array({step(6, 6, {{"screenshot", 1}}), step(40, 40, {{"screenshot", 1}}),
+                                 step(80, 80, {{"screenshot", 1}}), step(90, 90, {{"interact", 1}}),
+                                 step(140, 140, {{"ui_back", 1}}), step(190, 190, {{"screenshot", 1}})}));
+    const AppRun run =
+        runArcade(building, "aim", 200,
+                  {"--spawn", spawnArgument(focusSpawn(item, first.shown.scene.camera)), "--input-script",
+                   arg(script)});
+    requireArcade(run, 2);
+    INFO(run.describe());
+    const rv::app::InteractionRecord& interaction = run.report->world.interaction;
+    CHECK(interaction.state == "focus");
+    CHECK(interaction.focusedGame == item.game.toString());
+    // Hovered from the first frames on, never pulled out before the interact.
+    bool hovered = false;
+    for (const rv::app::InteractionEventRecord& event : interaction.events) {
+        INFO("frame " << event.frame << ": " << event.event << " " << event.pickId << " " << event.state);
+        if (event.event == "hover" && event.frame <= 6) {
+            hovered = true;
+        }
+        if (event.frame < 90) {
+            CHECK(event.event != "pull-out");
+            CHECK(event.event != "pulled");
+        }
+    }
+    CHECK(hovered);
+    const std::vector<fs::path> shots = takenScreenshots(building);
+    REQUIRE(shots.size() == 4);
+    const rv::assets::ImageData early = readShot(shots[0]);
+    const glm::ivec2 whole(kShotSize.x - 1, kShotSize.y - 1);
+    // Free roam, aimed at: the same picture at 6, 40 and 80 (it used to tip after frame 10).
+    CHECK(changedPixels(early, readShot(shots[1]), glm::ivec2(0), whole) == 0u);
+    CHECK(changedPixels(early, readShot(shots[2]), glm::ivec2(0), whole) == 0u);
+    // In Focus after Indietro the walker stands where it stood (the spawn is the Focus pose) and the screen where it
+    // stands: the cabinet the same (it stood tipped out of its bezel before the fix).
+    const std::size_t focusChanged = changedPixels(early, readShot(shots[3]), glm::ivec2(0), whole);
+    WARN("pixels changed in Focus against free roam: " << focusChanged);
+    CHECK(focusChanged < 200u);
+}
+
+TEST_CASE("cabinets: attract swaps the cover for the clip on the screen alone, nothing around it moves (fix "
+          "2026-10-29)",
+          "[gpu][video][cabinets][aim]") {
+    // The dynamic path's video front stands where the static front stood: across the frame the clip replaces the cover
+    // only the screen's pixels change.
+    ArcadeBuilding building("aim_attract");
+    const FirstRun first = firstRun(building);
+    const rv::world::CollectionItem& item = featuredCabinet(first.shown, first.heroGame);
+    const Viewpoint view = viewpointOf(item, first.shown.scene.camera, 1.6f);
+    // F12 at 50 (the cover, aimed at) and 70 (attract's clip since frame 60).
+    const fs::path script = writeScript(
+        building, "aim_attract.json",
+        Json::array({step(50, 50, {{"screenshot", 1}}), step(70, 70, {{"screenshot", 1}})}));
+    const AppRun run =
+        runArcade(building, "aim_attract", 80, {"--spawn", spawnArgument(view.spawn), "--input-script", arg(script)});
+    const rv::app::VideoRecord& video = requireArcade(run, 2);
+    INFO(run.describe());
+    const std::vector<rv::app::VideoCabinetEventRecord> events =
+        cabinetEvents(video, rv::app::cabinetScreenId(kRoom, item.pickId));
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].picture == "video");
+    CHECK(events[0].frame == static_cast<std::uint64_t>(kDwellFrames));
+    const std::vector<fs::path> shots = takenScreenshots(building);
+    REQUIRE(shots.size() == 2);
+    const auto box = projectedBox(item, view.camera);
+    REQUIRE(box.has_value());
+    const glm::ivec2 margin(4);
+    const rv::assets::ImageData cover = readShot(shots[0]);
+    const rv::assets::ImageData clip = readShot(shots[1]);
+    // The screen changed (the clip), nothing outside its box did.
+    CHECK(changedPixels(cover, clip, box->first, box->second) > 1000u);
+    CHECK(changedOutside(cover, clip, box->first - margin, box->second + margin) == 0u);
+}

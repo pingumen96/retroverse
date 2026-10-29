@@ -102,6 +102,11 @@ struct CollectionItem {
     SlotId slot;
     Section section = Section::Spine;
     ItemStance stance = ItemStance::SpineOut;
+    /// Part of its fixture (a family facing front, SpineFacing::Front: an arcade cabinet's screen in its bezel; the fix
+    /// of 2026-10-29): it never leaves its slot in the room, neither pulled out nor tipped
+    /// (app::pulledItemTransform()), and the hover does not pull it; only Inspect lifts it into the hand. Not part of
+    /// the canonical document.
+    bool inFixture = false;
     /// CollectionCluster::id of its cluster.
     std::uint32_t cluster = 0;
     /// The slot's frame with the placement's offset, local to the room (meters; +Z out of the visible face, the origin

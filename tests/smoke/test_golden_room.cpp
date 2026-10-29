@@ -1177,7 +1177,8 @@ TEST_CASE("golden/G20: an arcade cabinet playing its clip in Focus", "[gpu][gold
     compareWithGolden({"G20", "g20_cabinet_focus_golden",
                        "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building "
                        "fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, "
-                       "then in Focus after Indietro, lowered to its pulled-out pose: its generated 4:3 clip held at "
+                       "then in Focus after Indietro, lowered back into its bezel (since the fix of 2026-10-29 a cabinet's "
+                       "screen no longer tips out when pulled): its generated 4:3 clip held at "
                        "1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the "
                        "hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
                        "--start-room area:arcade --spawn at the cabinet's Focus pose (app::focusPoseFor, the 16:9 "

@@ -370,7 +370,11 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
     if (m_state == WorldState::FreeRoam && m_hover.hovered() != world::kNoPick && m_dwellPulls) {
         m_dwell += dt;
         if (m_dwell >= m_settings.timings.hoverDwell) {
-            pull(m_hover.hovered());
+            // An item that is part of its fixture (a cabinet's screen) stays as it is under the hover.
+            const auto hovered = roomItem(m_hover.hovered());
+            if (!hovered || !hovered->inFixture) {
+                pull(m_hover.hovered());
+            }
             m_dwellPulls = false;
         }
     }

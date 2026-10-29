@@ -7,7 +7,8 @@
 //  - CollectionRoom: the layout as the interaction's InteractionRoom: its items by pick id (face-out from the stance,
 //    the section the item's fixture), each item's Focus pose and the D-pad steps of the layout's navigation runs;
 //  - pulledItemTransform(): where a pulled item stands at a pull's progress: a spine-out cartridge slides out of its
-//    row and turns its front (its cover) to the viewer, a face-out one tips its top towards the viewer;
+//    row and turns its front (its cover) to the viewer, a face-out one tips its top towards the viewer, a cabinet's
+//    screen stays in its bezel (the fix of 2026-10-29);
 //  - focusPoseFor(): the walker 0.9 m in front of the item, the reticle on the middle of its face;
 //  - FocusStepRepeat: a held D-pad direction or arrow key in Focus steps again after a delay, as the quick catalog's
 //    lists do (ui::DirectionRepeater's cadence);
@@ -66,7 +67,9 @@ inline constexpr float kFocusDistance = 0.9f;
 ///    settles to kPullOutDepthShare of its depth out of its slot: never closer to the row than the clearance its turned
 ///    footprint needs, so that it never passes through its neighbours or the fixture (an item at the end of a row whose
 ///    turned footprint would reach a side panel standing out settles that much farther out);
-///  - face-out: it tips its top towards the viewer by kFaceOutTiltDeg about its slot box's bottom front edge.
+///  - face-out: it tips its top towards the viewer by kFaceOutTiltDeg about its slot box's bottom front edge;
+///  - part of its fixture (CollectionItem::inFixture: an arcade cabinet's screen; the fix of 2026-10-29): it stays as
+///    it stands, item.transform at every progress (a screen tipped out of its bezel read as the cabinet moving).
 /// A function of the progress alone: an interrupted pull goes back the way it came.
 [[nodiscard]] glm::mat4 pulledItemTransform(const world::CollectionItem& item, float progress,
                                             float reach = 0.0f) noexcept;
