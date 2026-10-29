@@ -25,7 +25,8 @@
 // hero cabinet with the room's video), G16 the handheld room of gb (its counter showcases, stations) from its doorway.
 // Gate D's (I6 step 7): G17 an optical-era lounge room (esde/case-shelves' ps2 on gen6, concept panel 4) from its
 // doorway, G18 the handheld floor's hall from east of its doorways, looking back to the elevator. I5 step 4's G20 (ADR-0016
-// §6): an arcade cabinet of the building playing its clip in Focus, held at 1.0 s.
+// §6): an arcade cabinet of the building playing its clip in Focus, held at 1.0 s. I5 step 3's G19 (ADR-0016 §5): the
+// snes-room's hero CRT and its secondary TV both playing, held at 1.0 s.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -53,6 +54,7 @@
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/time.hpp>
+#include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
 #include <rv/screenshot_diff/screenshot_diff.hpp>
 #include <rv/world/collection_layout.hpp>
@@ -607,6 +609,12 @@ TEST_CASE("golden/G08b: the hero CRT falls back from the corrupt clip to the gam
           "[gpu][golden][golden_room]") {
     GoldenRoom room("g08b", "esde/snes-room");
     const ShownRoom shown = shownRoom(room, firstRun(room));
+    // The first run's verdicts forgotten (I5 step 3): the room's secondary TV may have played the corrupt clip there,
+    // and a clip known to fail is never opened again (ADR-0016 §8), where this golden shows it failing.
+    std::error_code removed;
+    fs::remove(room.data / "cache" / "media" / "videos.json", removed);
+    REQUIRE_FALSE(removed);
+    room.steps.push_back("delete <case>/data/cache/media/videos.json (the first run's clip verdicts)");
     const fs::path shot = room.dir / "g08b.png";
     constexpr std::uint32_t kFrames = 240;
     const AppRun run = room.app("g08b", roomArguments(kFrames, shot,
@@ -668,7 +676,8 @@ TEST_CASE("golden/G10: G02 after 10 games added, which stand where nothing stood
 
     // Against G02's golden: what differs lies where the ten added items stand: their level of their module, which they
     // took from its dressing (ADR-0010 §10: a full spine-out section takes a dressed level), as the camera sees it (the
-    // items' boxes in height, the module's in width), grown by a margin for shadows, ambient occlusion and FXAA.
+    // items' boxes in height, the module's in width), grown by a margin for shadows, ambient occlusion and FXAA; and
+    // (I5 step 3) on the secondary TV's screen.
     const ShownRoom after = shownRoom(room, *run.report);
     std::set<std::string> earlier;
     for (const rv::world::CollectionItem& item : before.layout.items) {
@@ -723,6 +732,22 @@ TEST_CASE("golden/G10: G02 after 10 games added, which stand where nothing stood
     }
     CHECK(addedItems == 10);
     CHECK_FALSE(added.empty());
+    // I5 step 3: the room's secondary TV plays its own playlist of the room's games, which the ten change: its screen
+    // may show another game's picture.
+    auto tvs = rv::world::secondaryTvFixtures(after.stored.plan, after.stored.plan.rooms.front().id, after.data);
+    REQUIRE(tvs.has_value());
+    for (const rv::world::FixtureId& tv : *tvs) {
+        const rv::scene::SceneObject* object = after.scene.findObject(tv.localText());
+        REQUIRE(object != nullptr);
+        auto prefab = rv::geometry::buildPrefab(object->kind, object->params);
+        REQUIRE(prefab.has_value());
+        // The TV whole: its lit screen glows on its bezel and the sideboard's top.
+        Rect screen;
+        project(screen, object->instanceTransforms().front(), prefab->bounds);
+        if (!screen.empty()) {
+            added.push_back({screen.min - kMargin, screen.max + kMargin});
+        }
+    }
     auto g02 = rv::assets::loadImage(goldenDir() / "g02_snes_room_golden.png", 3);
     REQUIRE(g02.has_value());
     REQUIRE(image.channels >= 3);
@@ -1151,5 +1176,120 @@ TEST_CASE("golden/G20: an arcade cabinet playing its clip in Focus", "[gpu][gold
                        "--start-room area:arcade --spawn at the cabinet's Focus pose (app::focusPoseFor, the 16:9 "
                        "window), tests/input_scripts/golden_g20_cabinet_focus.json",
                        "golden_g20_cabinet_focus.json"},
+                      room, run, shot, kFrames);
+}
+
+namespace {
+
+/// The middle of the screen of the scene's object `id` in the room's frame: its prefab's ScreenSurface (built from the
+/// object's parameters) at the object's transform.
+glm::vec3 screenPointOf(const ShownRoom& shown, std::string_view id) {
+    const rv::scene::SceneObject* object = shown.scene.findObject(id);
+    INFO("the scene object " << id);
+    REQUIRE(object != nullptr);
+    auto prefab = rv::geometry::buildPrefab(object->kind, object->params);
+    REQUIRE(prefab.has_value());
+    const rv::geometry::Socket* surface = rv::geometry::findSocket(prefab->sockets, "ScreenSurface");
+    REQUIRE(surface != nullptr);
+    return glm::vec3(object->instanceTransforms().front() * surface->transform *
+                     glm::vec4(surface->bounds.center(), 1.0f));
+}
+
+/// The walker where two screens stand in view together: in front of the middle of the line between them, inside the
+/// room, far enough that they subtend at most 55 degrees, at eye height, looking at that middle.
+rv::app::SpawnPoint bothInView(const ShownRoom& shown, const glm::vec3& a, const glm::vec3& b) {
+    const rv::world::Room& room = shown.stored.plan.rooms.front();
+    const glm::vec2 middle(0.5f * (a.x + b.x), 0.5f * (a.z + b.z));
+    const glm::vec2 along(b.x - a.x, b.z - a.z);
+    glm::vec2 normal = glm::normalize(glm::vec2(-along.y, along.x));
+    const glm::vec2 centre(0.5f * static_cast<float>(room.minXMm + room.maxXMm) / 1000.0f,
+                           0.5f * static_cast<float>(room.minZMm + room.maxZMm) / 1000.0f);
+    if (glm::dot(centre - middle, normal) < 0.0f) {
+        normal = -normal;
+    }
+    const float distance = 0.5f * glm::length(along) / std::tan(glm::radians(27.5f));
+    glm::vec2 eye = middle + distance * normal;
+    eye.x = std::clamp(eye.x, static_cast<float>(room.minXMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxXMm) / 1000.0f - 0.8f);
+    eye.y = std::clamp(eye.y, static_cast<float>(room.minZMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxZMm) / 1000.0f - 0.8f);
+    const glm::vec3 look(middle.x - eye.x, 0.5f * (a.y + b.y) - kEyeHeight, middle.y - eye.y);
+    rv::app::SpawnPoint spawn;
+    spawn.feet = glm::vec3(eye.x, 0.0f, eye.y);
+    spawn.yawDeg = rv::core::radiansToDegrees(std::atan2(look.x, -look.z));
+    spawn.pitchDeg = rv::core::radiansToDegrees(std::atan2(look.y, std::sqrt(look.x * look.x + look.z * look.z)));
+    return spawn;
+}
+
+} // namespace
+
+TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen at 1.0 s", "[gpu][golden][golden_room]") {
+    GoldenRoom room("g19", "esde/snes-room");
+    const ShownRoom shown = shownRoom(room, firstRun(room));
+    // The room's secondary TV (I5 step 3, ADR-0016 §5): its pack's, in one of its sideboards' sockets.
+    const rv::world::RoomId roomId = shown.stored.plan.rooms.front().id;
+    auto tvs = rv::world::secondaryTvFixtures(shown.stored.plan, roomId, shown.data);
+    REQUIRE(tvs.has_value());
+    REQUIRE(tvs->size() == 1);
+    const std::string secondary = tvs->front().localText();
+    const glm::vec3 hero = screenPointOf(shown, "fx:hero.crt");
+    const glm::vec3 tv = screenPointOf(shown, secondary);
+    // The secondary's playlist one game whose clip is sound (video.json's per-screen keys, for tests): its shuffle's
+    // first game may be one of the fixture's damaged clips (the fallbacks' cases), which shows its cover.
+    room.cli("search", {"search", "Dappled Dovecote", "--json"});
+    auto found = rv::core::readTextFile(room.dir / "cli_search.log");
+    REQUIRE(found.has_value());
+    const Json games = Json::parse(*found).at("games");
+    REQUIRE_FALSE(games.empty());
+    const std::string game = games.front().at("id").get<std::string>();
+    const Json screen{{"playlist", "explicit"}, {"games", Json::array({game})}};
+    const Json settings{{"rooms", {{"room:snes", {{"screens", {{"room:snes/" + secondary, screen}}}}}}}};
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "video.json", settings.dump(2) + "\n").has_value());
+    room.steps.push_back(room.portable("write <case>/data/config/video.json: " + settings.dump()));
+    const fs::path shot = room.dir / "g19.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run =
+        room.app("g19", roomArguments(kFrames, shot,
+                                      {"--spawn", spawnArgument(bothInView(shown, hero, tv)), "--video-freeze-pts",
+                                       std::string(kFreezePts)}));
+    requireGoldenRun(run);
+    INFO(run.describe());
+    CHECK(run.report->world.outcome == "unchanged");
+    // Both screens play their clips held at 1.0 s, each on its own slot: the hero its start choice (room), the
+    // secondary its own playlist's first game (ambient).
+    const rv::app::VideoRecord& video = run.report->video;
+    REQUIRE(video.bound);
+    REQUIRE(video.freezePtsSeconds.has_value());
+    CHECK(*video.freezePtsSeconds == 1.0);
+    CHECK(video.maxOpenDecoders == 2);
+    const auto screenOf = [&](const std::string& id) {
+        const auto found = std::find_if(video.screens.begin(), video.screens.end(),
+                                        [&](const rv::app::VideoScreenRecord& screen) { return screen.screen == id; });
+        INFO("the report's screen " << id);
+        REQUIRE(found != video.screens.end());
+        return *found;
+    };
+    const rv::app::VideoScreenRecord heroScreen = screenOf("room:snes/fx:hero.crt");
+    const rv::app::VideoScreenRecord tvScreen = screenOf("room:snes/" + secondary);
+    CHECK(heroScreen.picture == "video");
+    CHECK(heroScreen.visible);
+    CHECK(heroScreen.slot == std::optional<std::uint64_t>(0));
+    CHECK(tvScreen.kind == "secondary");
+    CHECK(tvScreen.screenClass == "ambient");
+    CHECK(tvScreen.picture == "video");
+    CHECK(tvScreen.visible);
+    CHECK(tvScreen.slot == std::optional<std::uint64_t>(1));
+    CHECK(tvScreen.gameId == game);
+    CHECK(tvScreen.gameId != heroScreen.gameId);
+    requireScreenshot(run, shot, kShotSize);
+    compareWithGolden({"G19", "g19_secondary_tv_golden",
+                       "I5 step 3 golden of a console room's two screens (ADR-0016 §5): the snes-room fixture's room, "
+                       "the hero CRT on its cabinet playing the start choice's generated clip and the room's secondary "
+                       "TV (the classic pack's small CRT on a sideboard, in a sideboard's socket) playing Dappled "
+                       "Dovecote's clip (its playlist one game: video.json's per-screen keys), both held at 1.0 s "
+                       "(--video-freeze-pts), each on its decoder slot.",
+                       "--spawn in front of the middle between the two screens, both in view (inside the room, at eye "
+                       "height, looking at that middle)",
+                       std::nullopt},
                       room, run, shot, kFrames);
 }

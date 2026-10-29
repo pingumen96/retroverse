@@ -1,0 +1,59 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "gitCommit": "7f080a78218d4288c11407a78c705915925b2638",
+    "preset": "msvc-x64-debug",
+    "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "I5 step 3 golden of a console room's two screens (ADR-0016 §5): the snes-room fixture's room, the hero CRT on its cabinet playing the start choice's generated clip and the room's secondary TV (the classic pack's small CRT on a sideboard, in a sideboard's socket) playing Dappled Dovecote's clip (its playlist one game: video.json's per-screen keys), both held at 1.0 s (--video-freeze-pts), each on its decoder slot.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 617.42",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G19",
+  "image": {
+    "file": "g19_secondary_tv_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
+    "height": 1080,
+    "sha256": "0670bcabfb0e4606687c24a908d721655ac449290f643fa82c9751a725160fa2",
+    "width": 1920
+  },
+  "inputs": {
+    "fixture": {
+      "name": "esde/snes-room",
+      "path": "tests/fixtures/esde/snes-room",
+      "rule": "SHA-256 of the lines \"<relative path>\\t<SHA-256 of the file>\\n\", sorted by path",
+      "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
+    },
+    "plan": {
+      "digest": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
+      "fileSha256": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
+      "items": 50,
+      "placements": 50
+    },
+    "worldData": {
+      "path": "assets/world",
+      "sha256": "3f8dff42ba8e74062ff02931b726e9b2841eab1a973a1efb40fbbbdbfe8b7f3c"
+    }
+  },
+  "renderedOn": "2026-10-29",
+  "run": {
+    "capturedFrame": 29,
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G19:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_golden_room.cpp)",
+    "steps": [
+      "materialize tests/fixtures/esde/snes-room into <fixture> (rv::test::Fixture)",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data library create --home <fixture> --install <fixture>/Programs/ES-DE",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data import",
+      "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
+      "build/msvc-x64-debug/bin/retroverse-cli.exe --data-dir <case>/data search \"Dappled Dovecote\" --json",
+      "write <case>/data/config/video.json: {\"rooms\":{\"room:snes\":{\"screens\":{\"room:snes/fx:w02\":{\"games\":[\"g70ee88ad0d9fe874\"],\"playlist\":\"explicit\"}}}}}",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g19.png --screenshot-size 1920x1080 --spawn -1.10906303,0,-0.507223368,-23.0553284,-13.68221 --video-freeze-pts 1 --hidden --data-dir <case>/data"
+    ]
+  },
+  "schemaVersion": 1,
+  "view": "--spawn in front of the middle between the two screens, both in view (inside the room, at eye height, looking at that middle)"
+}

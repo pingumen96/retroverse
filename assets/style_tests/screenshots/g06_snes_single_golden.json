@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "90700fbaf193db92b7db1e5346323159cb2dc295",
+    "gitCommit": "7f080a78218d4288c11407a78c705915925b2638",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g06_snes_single_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "9756d6699122fbf618d2d266485608ade269f558d9a06558563b89ffc249ca4e",
+    "sha256": "5e442121ed827d3fddd2a99f35fae74f6d014dfe18d274498d1c89fdeaf0daaf",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "dab8ebc7c853c9fbf09d99a76a7442d947b0230b0a9365e7e19a50b96b1a61fe"
     },
     "plan": {
-      "digest": "43073500f259b01a56f02d4834f4dc33ddc48ec703cffe274e731c3083aeb121",
-      "fileSha256": "43073500f259b01a56f02d4834f4dc33ddc48ec703cffe274e731c3083aeb121",
+      "digest": "47b9438102dc41d321c5cfbb9602756276beba142de61798431366ada2a6f439",
+      "fileSha256": "47b9438102dc41d321c5cfbb9602756276beba142de61798431366ada2a6f439",
       "items": 1,
       "placements": 1
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "4a1217897ee893d8a75c6004c2827144acb48ab2c3c9c42197a0260ff77d100b"
+      "sha256": "3f8dff42ba8e74062ff02931b726e9b2841eab1a973a1efb40fbbbdbfe8b7f3c"
     }
   },
-  "renderedOn": "2026-10-27",
+  "renderedOn": "2026-10-29",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
