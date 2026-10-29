@@ -631,6 +631,28 @@ struct ArcadeCabinetParams {
     bool sideArt = false;     ///< the row's outer side panels carry "side_art" (a pack naming that role)
 };
 
+/// "secondary_tv", pivot floor, front +Z (I5 step 3, ADR-0016 §5: a room's secondary TV, a theme pack's furniture in
+/// a decoration socket): a low sideboard (tv_cabinet's body: width x height x depth, `drawers`, `legHeight`) carrying
+/// a small consumer CRT on its top (the crt's model at `tvSize`, its bezel `tvBezel`), centred `tvOffset` across from
+/// the top's middle, its front `tvSetBack` behind the top's front edge. Bounds = the union of the two (the CRT's back
+/// within the top's depth).
+/// Roles, in order: the sideboard's "wood_primary", "wood_secondary", "metal_trim", then the CRT's "plastic_body",
+/// "plastic_bezel", "screen", "plastic_dark". Sockets: the CRT's "ScreenSurface" (meshIndex the "screen" part),
+/// "TV_Stand" (on the top, under the CRT), "ScreenLook" and "PowerButton", then the sideboard's "ConsoleShelf". Errors
+/// name "secondary_tv.<key>" (the CRT's own limits as "secondary_tv.tv<Key>", the sideboard's as its keys).
+struct SecondaryTvParams {
+    float width = 0.8f;      ///< the sideboard, [0.4, 4]
+    float height = 0.5f;     ///< the sideboard's top, [0.2, 1.5]
+    float depth = 0.36f;     ///< [0.2, 1.5]
+    int drawers = 2;         ///< [0, 8], as tv_cabinet's
+    float legHeight = 0.08f; ///< [0, 0.5], as tv_cabinet's
+    /// The CRT's width, height and depth: width in [0.2, width], height in [0.2, 1], depth in [0.15, depth - tvSetBack].
+    glm::vec3 tvSize{0.46f, 0.4f, 0.32f};
+    float tvBezel = 0.04f;   ///< the CRT's bezel, as crt's
+    float tvOffset = 0.0f;   ///< across the top from its middle (+X), |tvOffset| <= (width - tvSize.x) / 2
+    float tvSetBack = 0.02f; ///< the CRT's front behind the top's front edge, [0, 0.1]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -663,6 +685,7 @@ struct ArcadeCabinetParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildHubLandmark(const HubLandmarkParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildInfoTotem(const InfoTotemParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildArcadeCabinet(const ArcadeCabinetParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildSecondaryTv(const SecondaryTvParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -687,7 +710,8 @@ struct ArcadeCabinetParams {
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
 /// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
-/// I6 step 5's hub: column, railing, hub_landmark, info_totem, and I6 step 6's arcade_cabinet.
+/// I6 step 5's hub: column, railing, hub_landmark, info_totem, I6 step 6's arcade_cabinet and I5 step 3's
+/// secondary_tv.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

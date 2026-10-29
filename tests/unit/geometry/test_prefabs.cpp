@@ -163,7 +163,8 @@ const std::vector<std::string_view> kExpectedKinds{
     "room_shell", "shelf",        "cartridge",  "crt",         "tv_cabinet",     "console_cartridge", "poster_frame",
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
-    "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet"};
+    "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet",
+    "secondary_tv"};
 
 } // namespace
 
@@ -223,6 +224,9 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"arcade_cabinet",
          {"body", "body_alt", "front", "molding", "molding_alt", "plastic_dark", "metal_trim", "plastic_accent",
           "marquee", "marquee_alt", "screen_back"}},
+        // I5 step 3's secondary TV: the sideboard's roles, then the CRT's.
+        {"secondary_tv",
+         {"wood_primary", "wood_secondary", "metal_trim", "plastic_body", "plastic_bezel", "screen", "plastic_dark"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -350,6 +354,11 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"arcade_cabinet",
          {{"count", 1}, {"width", 0.7}, {"height", 1.85}, {"depth", 0.85}, {"slots", false}},
          box({-0.35f, 0.0f, -0.425f}, {0.35f, 1.85f, 0.425f})},
+        // I5 step 3: the sideboard's footprint, the CRT on its top (0.5 + 0.4 m).
+        {"secondary_tv", nullptr, box({-0.4f, 0.0f, -0.18f}, {0.4f, 0.9f, 0.18f})},
+        {"secondary_tv",
+         {{"width", 1.0}, {"height", 0.6}, {"depth", 0.45}, {"tvSize", {0.5, 0.45, 0.4}}, {"tvOffset", 0.25}},
+         box({-0.5f, 0.0f, -0.225f}, {0.5f, 1.05f, 0.225f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -392,6 +401,12 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"info_totem", {{"Screen", SocketKind::Anchor}}},
         {"arcade_cabinet",
          {{"Level_0", SocketKind::Anchor}, {"Slot_0_0", SocketKind::ShelfSlot}, {"Slot_0_1", SocketKind::ShelfSlot}}},
+        {"secondary_tv",
+         {{"ScreenSurface", SocketKind::ScreenSurface},
+          {"TV_Stand", SocketKind::Anchor},
+          {"ScreenLook", SocketKind::Anchor},
+          {"PowerButton", SocketKind::Other},
+          {"ConsoleShelf", SocketKind::Anchor}}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1917,4 +1932,41 @@ TEST_CASE("geometry/prefabs: the review of I6 step 6: side art, lit handheld scr
     CHECK(tube.bounds.max.y > 1.4f);
     CHECK(tube.bounds.size().x < 0.07f);
     CHECK(drum.bounds.contains(column.bounds));
+}
+
+TEST_CASE("geometry/prefabs: the secondary TV, a sideboard carrying a small CRT (I5 step 3)",
+          "[geometry][prefabs][secondary_tv]") {
+    // The default: the narrow cabinet's footprint (0.8 x 0.36 m), the CRT's 0.4 m on its 0.5 m top.
+    const ProceduralPrefab tv = buildOk("secondary_tv");
+    checkPrefab(tv);
+    CHECK(rv::test::coplanarOverlaps(meshes(tv)) == 0);
+    // The screen is the CRT's own (one consumer CRT model in two sizes, style §15.1): a 4:3 picture on top of the
+    // sideboard, facing +Z, its socket naming the screen part.
+    const Socket& surface = socket(tv, "ScreenSurface");
+    CHECK(surface.kind == SocketKind::ScreenSurface);
+    REQUIRE(surface.meshIndex.has_value());
+    CHECK(tv.parts[*surface.meshIndex].materialRole == "screen");
+    const glm::vec3 screen = part(tv, "screen").mesh.bounds.size();
+    CHECK(screen.x / screen.y == Approx(4.0 / 3.0).epsilon(1e-4));
+    CHECK(position(surface).y > 0.5f);
+    CHECK(position(surface).y < 0.9f);
+    CHECK(axis(surface, 2).z == Approx(1.0f));
+    // The same screen as a CRT of that size standing on the top, its front 2 cm behind the top's front edge.
+    const ProceduralPrefab crt = buildOk("crt", {{"width", 0.46}, {"height", 0.4}, {"depth", 0.32}, {"bezel", 0.04}});
+    const glm::vec3 lifted = position(socket(crt, "ScreenSurface")) + glm::vec3(0.0f, 0.5f, 0.18f - 0.02f - 0.16f);
+    CHECK(closeTo(position(surface), lifted));
+    CHECK(part(tv, "screen").mesh.vertices.size() == part(crt, "screen").mesh.vertices.size());
+    CHECK(position(socket(tv, "TV_Stand")).y == Approx(0.5f));
+    // Moved across the top, wider and deeper; the CRT's back within the top.
+    const ProceduralPrefab offset = buildOk(
+        "secondary_tv", {{"width", 1.2}, {"depth", 0.5}, {"tvSize", {0.5, 0.42, 0.36}}, {"tvOffset", -0.3}});
+    CHECK(position(socket(offset, "ScreenSurface")).x == Approx(-0.3f).margin(1e-5));
+    CHECK(closeTo(offset.bounds, Aabb::fromMinMax({-0.6f, 0.0f, -0.25f}, {0.6f, 0.92f, 0.25f})));
+    // Refusals, named by this kind's parameters.
+    CHECK(buildError("secondary_tv", {{"tvSize", {0.9, 0.4, 0.32}}}).context == "secondary_tv.tvSize");
+    CHECK(buildError("secondary_tv", {{"tvSize", {0.46, 0.4, 0.35}}}).context == "secondary_tv.tvSize");
+    CHECK(buildError("secondary_tv", {{"tvOffset", 0.2}}).context == "secondary_tv.tvOffset");
+    CHECK(buildError("secondary_tv", {{"tvBezel", 0.2}}).context == "secondary_tv.tvBezel");
+    CHECK(buildError("secondary_tv", {{"drawers", 9}}).context == "secondary_tv.drawers");
+    CHECK(buildError("secondary_tv", {{"screen", 1}}).context == "secondary_tv.screen");
 }

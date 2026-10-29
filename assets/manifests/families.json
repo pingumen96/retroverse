@@ -47,6 +47,9 @@
        "plinthHeight": 0.35, "slotSize": [0.02, 0.125, 0.085], "slotGap": 0.004, "slotMargin": 0.03,
        "slotFrontInset": 0.01
      }},
+    // I5 step 3 (ADR-0016 §5): a room's secondary TV, a pack's furniture in a decoration socket.
+    {"id": "furniture.secondary_tv", "generic": "furniture.secondary_tv.generic", "generator": "secondary_tv",
+     "params": {}},
     {"id": "furniture.shelf_modular", "generic": "furniture.shelf_modular.generic", "generator": "shelf",
      "params": {}},
     {"id": "furniture.showcase", "generic": "furniture.showcase.generic", "generator": "showcase", "params": {}},
