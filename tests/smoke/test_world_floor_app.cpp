@@ -1263,6 +1263,12 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     const PlannedBuilding building("world_floor_app/live_gen4", false);
     const std::string snes = building.roomOf("snes");
     CHECK(snes == "room:snes");
+    // The case follows the hero CRT alone, on its own decoder: the room's secondary TV (I5 step 3) is left to
+    // selections (video.json's secondary autoplay off), so that the one-thread guard below holds.
+    fs::create_directories(building.data / "config");
+    REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "video.json",
+                                          "{\"secondary\": {\"enabled\": false}}\n")
+                .has_value());
     const AppRun first = runApp(retroverseExe(), building.dir, "first", floorArguments(snes, 2, std::nullopt));
     skipWithoutOpenGl(first);
     requireCleanRun(first);
@@ -1329,8 +1335,7 @@ TEST_CASE("world floor app: a system entering the resident floor rebuilds it wit
     CHECK(world.screenRoom == snes);
     REQUIRE(report.video.binds.size() == 1);
     CHECK(report.video.binds.front().screen.starts_with(snes + "/"));
-    // The hero CRT and (I5 step 3) the room's secondary TV, within the budget.
-    CHECK(report.video.maxDecoderThreads <= 2);
+    CHECK(report.video.maxDecoderThreads <= 1);
 
     // gen5 at its next start: psx's new titles, saved meanwhile with their items, shown at the first frame from the
     // plan and the items files, then reconciled with nothing to change but the covers' sources checked. gen5 never

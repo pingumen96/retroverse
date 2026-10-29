@@ -580,6 +580,12 @@ TEST_CASE("golden/G07: an inspected cartridge with its card", "[gpu][golden][gol
 
 TEST_CASE("golden/G08a: the hero CRT with its clip frozen at 1.0 s", "[gpu][golden][golden_room]") {
     GoldenRoom room("g08a", "esde/snes-room");
+    // The hero CRT alone on its decoder (I5 step 3's review): the room's secondary TV's autoplay off, whatever it
+    // would play or the clips' verdicts say.
+    const Json secondaryOff{{"secondary", {{"enabled", false}}}};
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "video.json", secondaryOff.dump() + "\n")
+                .has_value());
+    room.steps.push_back("write <case>/data/config/video.json: " + secondaryOff.dump());
     const ShownRoom shown = shownRoom(room, firstRun(room));
     const fs::path shot = room.dir / "g08a.png";
     constexpr std::uint32_t kFrames = 30;
@@ -595,6 +601,7 @@ TEST_CASE("golden/G08a: the hero CRT with its clip frozen at 1.0 s", "[gpu][gold
     REQUIRE(video.freezePtsSeconds.has_value());
     CHECK(*video.freezePtsSeconds == 1.0);
     CHECK(video.maxDecoderThreads <= 1);
+    CHECK(video.maxOpenDecoders == 1);
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G08a", "g08a_crt_frozen_golden",
                        "Gate B golden of the hero CRT's video (style 26.1 8, a TV with its video): the snes-room "
@@ -1223,7 +1230,8 @@ rv::app::SpawnPoint bothInView(const ShownRoom& shown, const glm::vec3& a, const
 
 } // namespace
 
-TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen at 1.0 s", "[gpu][golden][golden_room]") {
+TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen at 1.0 s",
+          "[gpu][golden][golden_room]") {
     GoldenRoom room("g19", "esde/snes-room");
     const ShownRoom shown = shownRoom(room, firstRun(room));
     // The room's secondary TV (I5 step 3, ADR-0016 §5): its pack's, in one of its sideboards' sockets.

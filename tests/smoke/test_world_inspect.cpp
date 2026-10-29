@@ -52,10 +52,10 @@ fs::path retroverseCliExe() {
     return retroverseExe().parent_path() / "retroverse-cli.exe";
 }
 
-/// The snes-room fixture recorded as the library of <caseDir>/data and imported with retroverse-cli.
 /// video.json with the secondary TVs' autoplay off (I5 step 3).
 constexpr std::string_view kSecondaryOff = "{\"secondary\": {\"enabled\": false}}\n";
 
+/// The snes-room fixture recorded as the library of <caseDir>/data and imported with retroverse-cli.
 struct ImportedRoom {
     rv::test::Fixture fixture;
     fs::path dir;
