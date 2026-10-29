@@ -7,8 +7,8 @@
 //  - CollectionRoom: the layout as the interaction's InteractionRoom: its items by pick id (face-out from the stance,
 //    the section the item's fixture), each item's Focus pose and the D-pad steps of the layout's navigation runs;
 //  - pulledItemTransform(): where a pulled item stands at a pull's progress: a spine-out cartridge slides out of its
-//    row and turns its front (its cover) to the viewer, a face-out one tips its top towards the viewer, a cabinet's
-//    screen stays in its bezel (the fix of 2026-10-29);
+//    row and turns its front (its cover) to the viewer, upright, a face-out one tips its top towards the viewer, a
+//    cabinet's screen stays in its bezel (the fix of 2026-10-29);
 //  - focusPoseFor(): the walker 0.9 m in front of the item, the reticle on the middle of its face;
 //  - FocusStepRepeat: a held D-pad direction or arrow key in Focus steps again after a delay, as the quick catalog's
 //    lists do (ui::DirectionRepeater's cadence);
@@ -56,16 +56,18 @@ inline constexpr float kFocusDistance = 0.9f;
 /// How far the row a spine-out item turns in front of reaches past the item's face (meters, along its slot's +Z, from
 /// 0 to kMaxRowReach): the fronts of its neighbours in its cluster (their insets differ) and of the occluders beside it
 /// (a module's side panel at the end of a row) within the reach of its turn and its height; boards it stands on or
-/// under do not count. 0 for a face-out item, which only tips.
+/// under do not count, but for an item that rolls upright as it turns (a cartridge on its end), whose corners sweep
+/// past them (the fix of 2026-10-29). 0 for a face-out item, which only tips.
 [[nodiscard]] float rowReach(const world::CollectionItem& item, const world::CollectionLayout& layout) noexcept;
 
 /// The pose of a pulled item at `progress` (0 in its slot, 1 fully pulled; clamped), from the item prefab's space to
 /// the room's frame, as item.transform is at 0; `reach` is its rowReach():
 ///  - spine-out (ADR-0012 §3): it slides straight out along its slot's +Z until its back clears its row (its face plus
 ///    `reach`) by kPullClearance (the first kPullSlideShare of the progress), then turns a quarter about the slot's +Y
-///    through its centre, its front (its cover: the slot's +X while it stands spine-out) to the slot's +Z, while it
-///    settles to kPullOutDepthShare of its depth out of its slot: never closer to the row than the clearance its turned
-///    footprint needs, so that it never passes through its neighbours or the fixture (an item at the end of a row whose
+///    through its centre, its front (its cover: the slot's +X while it stands spine-out) to the slot's +Z, rolling
+///    meanwhile about the slot's +Z so that the cover stands upright (a cartridge on its end; the fix of 2026-10-29:
+///    its cover showed sideways), while it settles to kPullOutDepthShare of its depth out of its slot: never closer to
+///    the row than the clearance its turned footprint needs, so that it never passes through its neighbours or the fixture (an item at the end of a row whose
 ///    turned footprint would reach a side panel standing out settles that much farther out);
 ///  - face-out: it tips its top towards the viewer by kFaceOutTiltDeg about its slot box's bottom front edge;
 ///  - part of its fixture (CollectionItem::inFixture: an arcade cabinet's screen; the fix of 2026-10-29): it stays as

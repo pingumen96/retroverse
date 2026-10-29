@@ -193,6 +193,14 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
                 CHECK(std::fabs(glm::dot(out.centre - rest.centre, slotOut) - expected) < 1e-4f);
                 CHECK(glm::dot(out.front, slotOut) > 0.9999f);
                 CHECK(glm::dot(rest.front, slotAxis(item, 0)) > 0.9999f);
+                // Pulled out, its cover stands upright to the viewer, not mirrored (the fix of 2026-10-29: a cartridge
+                // on its end showed it sideways, its picture's top to the left): the item's +Y up, its +X to the
+                // viewer's right.
+                const glm::mat4 pulledOut = rv::app::pulledItemTransform(item, 1.0f, reach);
+                CHECK(glm::dot(glm::normalize(glm::vec3(pulledOut * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f))),
+                               slotAxis(item, 1)) > 0.9999f);
+                CHECK(glm::dot(glm::normalize(glm::vec3(pulledOut * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f))),
+                               slotAxis(item, 0)) > 0.9999f);
                 if (side) {
                     // On its side, its -X face (the spine) out at rest, upright all the way like a book.
                     const glm::mat4 restTransform = rv::app::pulledItemTransform(item, 0.0f, reach);
@@ -254,11 +262,15 @@ TEST_CASE("app/world_focus: a pulled item ends as ADR-0012 says and never passes
             CHECK(spineOut > 0);
         }
         CHECK((side || name.starts_with("plan-")));
-        // Most spine-out items settle at 70%: only those at the ends of their rows go farther.
+        // Most spine-out items on their side settle at 70%: only those at the ends of their rows go farther.
         INFO(fartherOut << " of " << spineOut << " spine-out items settle farther out, at most "
                         << farthestShare * 100.0f
                         << "% of their depth");
-        CHECK(fartherOut * 4 <= spineOut);
+        // Cartridges on their end roll upright as they turn (the fix of 2026-10-29): their corners sweep past the
+        // boards above and below, which stand a little proud of the slots, so every one settles that much farther.
+        if (side) {
+            CHECK(fartherOut * 4 <= spineOut);
+        }
         CHECK(farthestShare <= 0.85f);
     }
 }
