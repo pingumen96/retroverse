@@ -193,6 +193,28 @@ step 3's figures, are not measured here). The first measurement of the review, b
 (0.4 s), every room's content digest three times (the whole plan's documents), every system's items files (0.4 s), and
 the undo's commit waiting for the catalog's inputs the tab had asked for less than a second earlier (lockstep frames).
 
+After the follow-up (the inputs let go of while the directory is closed), the same test also opens the room's preview
+in the app a few seconds after the tab showed, as a player would, and checks that it found the inputs read ahead
+(`inputsTaken` false) within 2 s. Its run on 2026-10-29 shared the machine with the other worktree's build and test
+suite (the library imported in 40.7 s instead of 12.4, the read-only snapshots 50 to 60 s instead of 10): every figure
+was about 1.5 to 2 times the quiet run's, the unchanged in-process previews included, so the 2 s checks failed on
+time alone (0 differences):
+
+| What, under the other worktree's load | Measured | The same, quiet (above) |
+|---|---|---|
+| The catalog's inputs | 2,215 ms | 1,138 ms |
+| room:snes's preview again, in the test's process (warm) | 2,375 ms | 1,353 ms |
+| room:snes's preview in the app, after the tab's read-ahead (inputs ready) | 2,413 ms | not measured |
+| room:amstradcpc's preview in the app, after the tab's read-ahead (inputs ready) | 3,160 ms | not measured |
+| Rigenera stanza / its undo, room:snes, the room shown again | 1,475 / 1,355 ms | 1,081 / 1,107 ms |
+| Rigenera stanza / its undo, room:amstradcpc | 1,821 / 1,989 ms | 1,309 / 1,442 ms |
+| Rigenera piano, gen4 | 1,447 ms | 1,258 ms |
+
+The app's warm preview of room:snes costs what the warm dry run costs under the same load (2,413 against 2,375 ms):
+it waits for no input, so the read-ahead keeps it warm after the release. room:amstradcpc (1,646 placed) is about 1.3
+times room:snes's under the same load, which quiet would be about 2 s: its row is to measure again on a quiet machine
+before the gate. The commits stay within their 3 s even under that load.
+
 ## Screenshots
 
 `build/i4b/step6/` (the Release GPU cases' runs of the review, 1920 x 1080, hidden, lockstep): `directory.png` (the
