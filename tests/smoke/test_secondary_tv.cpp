@@ -32,6 +32,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace rv::smoke;
@@ -256,4 +257,74 @@ TEST_CASE("gpu.secondary_tv: with one decoder the hero keeps the slot and the se
     const rv::app::VideoScreenRecord& hero = screenOf(video, kHeroScreen);
     CHECK(hero.slot == std::optional<std::uint64_t>(0));
     CHECK(hero.picture == "video");
+}
+
+namespace {
+
+/// The walker in front of the middle between two screens, both in view (inside the room, at most 55 degrees apart).
+rv::app::SpawnPoint bothInView(const rv::world::Room& room, const glm::vec3& a, const glm::vec3& b) {
+    const glm::vec2 middle(0.5f * (a.x + b.x), 0.5f * (a.z + b.z));
+    const glm::vec2 along(b.x - a.x, b.z - a.z);
+    glm::vec2 normal = glm::normalize(glm::vec2(-along.y, along.x));
+    const glm::vec2 centre(0.5f * static_cast<float>(room.minXMm + room.maxXMm) / 1000.0f,
+                           0.5f * static_cast<float>(room.minZMm + room.maxZMm) / 1000.0f);
+    if (glm::dot(centre - middle, normal) < 0.0f) {
+        normal = -normal;
+    }
+    const float distance = 0.5f * glm::length(along) / std::tan(glm::radians(27.5f));
+    glm::vec2 eye = middle + distance * normal;
+    eye.x = std::clamp(eye.x, static_cast<float>(room.minXMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxXMm) / 1000.0f - 0.8f);
+    eye.y = std::clamp(eye.y, static_cast<float>(room.minZMm) / 1000.0f + 0.8f,
+                       static_cast<float>(room.maxZMm) / 1000.0f - 0.8f);
+    const glm::vec3 look(middle.x - eye.x, 0.5f * (a.y + b.y) - kEyeHeight, middle.y - eye.y);
+    rv::app::SpawnPoint spawn;
+    spawn.feet = glm::vec3(eye.x, 0.0f, eye.y);
+    spawn.yawDeg = rv::core::radiansToDegrees(std::atan2(look.x, -look.z));
+    spawn.pitchDeg = rv::core::radiansToDegrees(std::atan2(look.y, std::sqrt(look.x * look.x + look.z * look.z)));
+    return spawn;
+}
+
+} // namespace
+
+TEST_CASE("gpu.secondary_tv: screenshots for a look by hand", "[.secondary_tv_shots]") {
+    // build/i5/step3/ under the source tree: the console room with the hero and its secondary TV playing (the secondary
+    // on one sound clip through video.json's per-screen keys), and the same view with one decoder (its still).
+    PlannedBuilding building("secondary_tv/shots", true, "esde/snes-room");
+    const SecondaryTv tv = secondaryOf(building);
+    const rv::world::StoredPlan stored = building.plan();
+    const rv::world::RoomId room = rv::world::RoomId::parse(kRoom).value();
+    auto data = rv::world::loadSceneData(buildAssets(), stored.plan, room);
+    REQUIRE(data.has_value());
+    auto scene = rv::world::toSceneDescription(stored.plan, room, *data);
+    REQUIRE(scene.has_value());
+    const rv::scene::SceneObject* hero = scene->findObject("fx:hero.crt");
+    REQUIRE(hero != nullptr);
+    auto heroPrefab = rv::geometry::buildPrefab(hero->kind, hero->params);
+    REQUIRE(heroPrefab.has_value());
+    const rv::geometry::Socket* surface = rv::geometry::findSocket(heroPrefab->sockets, "ScreenSurface");
+    REQUIRE(surface != nullptr);
+    const glm::vec3 heroPoint(hero->instanceTransforms().front() * surface->transform *
+                              glm::vec4(surface->bounds.center(), 1.0f));
+    const AppRun search = building.cli("search", {"search", "Dappled Dovecote", "--json"});
+    auto found = rv::core::readTextFile(search.outputFile);
+    REQUIRE(found.has_value());
+    const std::string game = Json::parse(*found).at("games").front().at("id").get<std::string>();
+    const std::string screen = tv.screen; // "room:snes/fx:..."
+    writeVideoSettings(building,
+                       Json{{"rooms", {{"room:snes", {{"screens", {{screen, {{"playlist", "explicit"},
+                                                                              {"games", Json::array({game})}}}}}}}}}});
+    const fs::path out = sourceDir() / "build" / "i5" / "step3";
+    fs::create_directories(out);
+    const std::string spawn = spawnArgument(bothInView(roomIn(stored.plan, kRoom), heroPoint, tv.screenPoint));
+    for (const auto& [name, extra] : std::vector<std::pair<std::string, std::vector<std::string>>>{
+             {"console_room_hero_and_secondary", {}}, {"secondary_still_one_decoder", {"--max-decoders", "1"}}}) {
+        std::vector<std::string> arguments{"--start-room", std::string(kRoom), "--exit-after-frames", "--frames", "150",
+                                           "--fixed-dt", "0.016667", "--spawn", spawn, "--screenshot",
+                                           arg(out / (name + ".png")), "--screenshot-size", "1920x1080"};
+        arguments.insert(arguments.end(), extra.begin(), extra.end());
+        const AppRun run = runApp(retroverseExe(), building.dir, name, arguments);
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+    }
 }
