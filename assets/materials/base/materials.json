@@ -367,7 +367,8 @@
     // screen's CRT preset (materials/crt_presets.json: video.json's crtEffect and crtPreset, the room's theme pack, the
     // screen's kind); "crt": {} marks the tube and keeps the effect's defaults, the consumer preset's (a 240-line
     // picture with a light aperture grille, a slight barrel curvature with dark rounded corners and a soft vignette,
-    // behind hazy glass), for a view that chooses none (the asset preview's).
+    // behind hazy glass), where no look is applied. The asset preview applies the looks as the app does, without a
+    // video.json or packs: each screen takes its kind's default (a CRT consumer, the presets' file's values).
     "MAT_Screen_CRT": {
       "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 2.0,
       "crt": {}

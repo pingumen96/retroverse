@@ -70,9 +70,12 @@ ADR-0016 §7 is amended (2026-10-30) with what it left open; the rules' order is
   consumer today's values, neutral without effects, arcade deeper, monitor finer, every preset within legible bounds;
   the screen materials' tube; `parseCrtEffect`'s errors; the user's file key by key and never written; a broken user
   file left out whole (8 kinds); a missing or incomplete shipped file leaving the built-in values),
-  `tests/unit/app/test_crt_looks.cpp` (6 cases: the kinds' defaults and vintage's step; the rules' order as a table of
-  18 rows; video.json's screen, room and kind keys and the scene's packs; the screens' rooms and kinds; a floor's
-  material instances given their looks and recorded; a hand-made scene's first crt as its hero),
+  `tests/unit/app/test_crt_looks.cpp` (10 cases: the kinds' defaults and vintage's step; the rules' order as a table of
+  18 rows; video.json's screen, room and kind keys and the scene's packs; a room's or a screen's `""` leaving the
+  kind's key; the screens' rooms and kinds; the hero as the screens' service binds it (`heroScreenIndex()`: by its
+  role, else the first crt, each that can bind); a floor's material instances given their looks and recorded; a
+  hand-made scene's first crt as its hero; a first crt that cannot bind no hero; a room's objects rebuilt forgetting
+  their looks),
   `test_theme_packs.cpp` (the pack's `screenPreset`: read, refused, the shipped packs'), `test_run_report.cpp`
   (`crtLooks`' round trip).
 - GPU (`tests/smoke/test_crt_presets.cpp`, `[crt_presets]`, on `tests/smoke/scenes/crt_presets.json`: four CRTs at
@@ -85,9 +88,11 @@ ADR-0016 §7 is amended (2026-10-30) with what it left open; the rules' order is
     times consumer, monitor below 0.6 times consumer, the four means within 12%;
   - `crtEffect` `off` makes all four neutral, `vintage` steps them (neutral stays, consumer and arcade arcade, monitor
     consumer); without video.json every screen is consumer by its kind; the user's `crt_presets.json` read
-    (`presetsSource` `user`), a broken one left out (`shipped`).
+    (`presetsSource` `user`) and its value on the screen (the consumer's scanlines turned off: the consumer tube's
+    ripple close up below 0.005, the shipped one's above 0.02), a broken one left out (`shipped`).
 - Goldens (`test_golden_room.cpp`): G02's CRT `consumer` by its kind, G15's hero cabinet and cabinets `arcade` by the
-  pack, G17's hero CRT `monitor` by the pack (the reports' `crtLooks`).
+  pack, G17's hero CRT `monitor` by the pack, G20's cabinets and the pooled video material the cabinet in Focus plays
+  through (`collection/<room>/<family>/video`) `arcade` by the pack (the reports' `crtLooks`).
 
 ## Results
 
@@ -97,9 +102,13 @@ ADR-0016 §7 is amended (2026-10-30) with what it left open; the rules' order is
   G02, G02s, G06, G07, G08a, G08b, G10, G11, G12, G13, G14, G16, G18 and G19 **0 pixels apart (largest difference
   0/255)**: every consumer tube, the secondary TVs, the hub and the halls unchanged. Changed on purpose: G17 (the
   lounge's monitor tubes, 1,089 pixels, 0.05%, largest 83/255), G15 (the arcade's screens, 6,953 pixels, 0.34%, largest
-  138/255) and G20 (the cabinet in Focus, 58,873 pixels, 2.8%, largest 185/255). The three were regenerated with
-  `RV_UPDATE_GOLDEN=1` in Debug (their metadata now records driver 621.01) and pass their comparison after; their
-  descriptions name the preset. The other goldens' re-baselining to the new driver is left to main.
+  138/255) and G20 (the cabinet in Focus, 58,873 pixels, 2.8%, largest 185/255). With the goldens' tolerance (6/255,
+  at most 0.5% of the pixels) only G20 would have failed unregenerated: G15 changed 0.335% of its pixels and G17
+  0.053%, both within it. The three were regenerated on purpose all the same, because their screens' look changed
+  (`RV_UPDATE_GOLDEN=1` in Debug: their metadata now records driver 621.01), and pass their comparison after; their
+  descriptions name the preset. G17's image barely tells the monitor preset from the consumer one at its distance:
+  its proof is the report's `crtLooks` check (the lounge's hero CRT `monitor` by the pack). The other goldens'
+  re-baselining to the new driver is left to main.
 - The reports: G02's CRT `consumer` by its kind, G15's hero cabinet and its cabinets `arcade` by the pack, G17's hero
   CRT `monitor` by the pack.
 - Four golden runs of the loaded machine (G02s, G06, G08a, G18: another agent's GPU run, this branch's unit run and its

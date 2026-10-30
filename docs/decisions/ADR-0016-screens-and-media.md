@@ -171,7 +171,9 @@ Specification §9.2's other parameters map as follows:
 ### 5. Secondary TVs: a theme pack's furniture
 
 A secondary TV is a **look, not a plan fact** (ADR-0014 §1). A pack's furniture may list a `secondary_tv` piece (a
-sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under a decoration kind.
+sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under a decoration kind. "Consumer" names
+the model (style §15.1's CRT), not the look: its preset follows its room's pack like every screen's (§7, amended on
+2026-10-30).
 
 - **Where.** The scene builder draws at most one per room (two in a room grown past 12 m), at the sockets of that kind
   that the room's seed picks, within their footprints.
@@ -304,23 +306,6 @@ slot shows its cover, as today; its still is the cover.
 - **Phosphor persistence** needs the previous frame, and is not built (BACKLOG). The "light bloom" is the scene's bloom
   on the emissive screen.
 
-*Amended on 2026-10-30 (I5 step 6), the presets as built (`docs/i5/step-6.md`); the order of the rules is unchanged:*
-- **`consumer`** is the tube every CRT screen drew before the presets, the values `MAT_Screen_CRT` and
-  `MAT_Screen_CRT_Room` carried (240 lines at 0.35, 320 triads at 0.25, curvature 0.06, vignette 0.3, glass 0.25),
-  which `CrtEffect`'s defaults now are (its former defaults were never drawn: every screen material named all seven
-  values). The screen materials keep `"crt": {}`, the mark of a tube; its look is its screen's preset.
-- **Rule 2** is video.json's `crtPreset` for the screen: its screen's (`rooms.<room>.screens.<id>`), else its room's
-  (`rooms.<room>.<kind>`), else its kind's (`hero`, `secondary`, `cabinet`), the shipped `""` being none. A kind's key
-  is the user's choice, as a room's is; **rule 4** is the kind's built-in default: `consumer`, the cabinets `arcade`.
-- **`vintage`** steps `monitor` to `consumer` and `consumer` to `arcade`; `arcade` and `neutral` (the clean video,
-  chosen on purpose) stay. `light` keeps the preset chosen.
-- **The pack's `screenPreset`** is every screen's of its rooms: the hero, the secondaries and the cabinets. The
-  arcade's cabinets take one look per room (their collection's material): a per-screen key does not reach them.
-- **Every screen of the scene shown** takes its look when its material is registered (`app::ScreenLooks`), the bound
-  room's and the others' seen through their doorways alike; nothing changes per frame.
-- **Goldens:** the arcade's screens change with the lounge's on purpose (`arcade` is deeper than the cabinets' former
-  tube): G15 (the arcade room) and G20 (a cabinet in Focus) are regenerated beside G17 (Costs, below).
-
 *Amended on 2026-10-28 (I5 step 4):* the aspect is the clip's frame as decoded (square pixels: the stream's sample
 aspect applied) against its screen's `ScreenSurface` (a cabinet's: its family's label since the step's review). A clip
 within 2% of its screen's aspect fills it (an encoder's crop such as 640 x 478 or 584 x 446 shows no hairline bars);
@@ -338,6 +323,24 @@ as a 4:3 picture on a cabinet's portrait screen. A 256 x 240 frame (20% off) and
 their own aspect. The bars are the lit tube's off-black (`RV_CRT_BLACK_LEVEL`, linear 0.01, through the tube's
 scanlines, mask and vignette), as a powered CRT's black, not 0: they never read as a hole in the screen. A 4:3 clip on
 a 4:3 tube is unchanged (the flag stays clear).
+
+*Amended on 2026-10-30 (I5 step 6), the presets as built (`docs/i5/step-6.md`); the order of the rules is unchanged:*
+- **`consumer`** is the tube every CRT screen drew before the presets, the values `MAT_Screen_CRT` and
+  `MAT_Screen_CRT_Room` carried (240 lines at 0.35, 320 triads at 0.25, curvature 0.06, vignette 0.3, glass 0.25),
+  which `CrtEffect`'s defaults now are (its former defaults were never drawn: every screen material named all seven
+  values). The screen materials keep `"crt": {}`, the mark of a tube; its look is its screen's preset.
+- **Rule 2** is video.json's `crtPreset` for the screen: its screen's (`rooms.<room>.screens.<id>`), else its room's
+  (`rooms.<room>.<kind>`), else its kind's (`hero`, `secondary`, `cabinet`), the shipped `""` being none at every
+  level (a room's or a screen's `""` leaves its kind's key). A kind's key is the user's choice, as a room's is;
+  **rule 4** is the kind's built-in default: `consumer`, the cabinets `arcade`.
+- **`vintage`** steps `monitor` to `consumer` and `consumer` to `arcade`; `arcade` and `neutral` (the clean video,
+  chosen on purpose) stay. `light` keeps the preset chosen.
+- **The pack's `screenPreset`** is every screen's of its rooms: the hero, the secondaries and the cabinets. The
+  arcade's cabinets take one look per room (their collection's material): a per-screen key does not reach them.
+- **Every screen of the scene shown** takes its look when its material is registered (`app::ScreenLooks`), the bound
+  room's and the others' seen through their doorways alike; nothing changes per frame.
+- **Goldens:** the arcade's screens change with the lounge's on purpose (`arcade` is deeper than the cabinets' former
+  tube): G15 (the arcade room) and G20 (a cabinet in Focus) are regenerated beside G17 (Costs, below).
 
 ### 8. Fallbacks and missing media
 
@@ -548,8 +551,8 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **Specification.**
   - **§9.3:** no "Scarica anteprima" (ADR-0003).
   - **§9.7:** interaction sounds and ambience are I8's.
-  - **§9.1:** the "Monitor moderno" is the optical-era pack's `monitor` preset on its hero CRT; the information
-    monitor is the hub's board.
+  - **§9.1:** the "Monitor moderno" is the optical-era pack's `monitor` preset on every screen of the lounge's rooms
+    (the hero CRT and the secondary TVs: §7 as amended on 2026-10-30); the information monitor is the hub's board.
 - **Style §15.1.** One consumer CRT model in two sizes (the hero and the secondary). The LCD and projection screens are
   deferred.
 
@@ -566,7 +569,8 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **New pieces:** a new module and a new dependency (miniaudio), a GPU-free scheduler with many states (unit-tested by
   tables), and a material uniform (the picture rectangle).
 - **Goldens:** those of rooms that gain a secondary TV, and the optical-era lounge's (its preset), are regenerated on
-  purpose; since I5 step 6 (§7 amended) the arcade's too (G15, G20: its preset). Two new goldens: a console room with both screens playing frozen, and a cabinet playing in Focus.
+  purpose; since I5 step 6 (§7 amended) the arcade's too (G15, G20: its preset). Two new goldens: a console room with
+  both screens playing frozen, and a cabinet playing in Focus.
 - **The process** runs above normal priority while it renders.
 
 **Deferred**
