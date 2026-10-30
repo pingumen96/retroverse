@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <glm/vec2.hpp>
 
 #include <rv/app/run_report.hpp>
 
@@ -147,5 +148,55 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
     // Acceptable frame times (Release, 1920 x 1080, --no-vsync).
     CHECK(times.p99Ms <= 33.3);
     CHECK(times.p50Ms <= 16.7);
+#endif
+}
+
+TEST_CASE("world benchmark: the benchmark path in the fake headset at Link's size (I10 step 7)",
+          "[.bench][gpu][world][benchmark][xr]") {
+    // ADR-0017 §9: both eyes at the runtime's recommended size (Link: 2080 x 2096 on a Quest 3S; the fake runtime's
+    // 1024 x 1024 at render scale 2, 2048 x 2048), render scale 1 (frame-limited runs keep it: no dynamic scale), the
+    // fake runtime pacing nothing, the same path as the desktop's; the head stands still, the walker walks and turns.
+    ImportedRoom room("vr_stress");
+    const AppRun prepare = runApp(retroverseExe(), room.dir, "prepare",
+                                  {"--start-room", "room:snes", "--no-vsync", "--width", "1920", "--height",
+                                   "1080", "--exit-after-frames", "--frames", "8000"});
+    skipWithoutOpenGl(prepare);
+    requireCleanRun(prepare);
+    REQUIRE(prepare.report->world.state == "room");
+
+    const AppRun run =
+        runApp(retroverseExe(), room.dir, "benchmark",
+               {"--vr", "--xr-runtime", "fake", "--xr-render-scale", "2", "--start-room", "room:snes", "--no-vsync",
+                "--exit-after-frames", "--frames", "1270", "--fixed-dt", "0.016667", "--input-script",
+                arg(inputScript("bench_snes_room.json"))});
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.world.state == "room");
+    REQUIRE(report.xr);
+    CHECK(report.xr->eyeSize == glm::ivec2(2048, 2048));
+    CHECK(report.xr->framesWithViews == 1270);
+    const rv::app::PhaseRecord* benchmark = phaseOf(report, "benchmark");
+    REQUIRE(benchmark != nullptr);
+    REQUIRE(benchmark->times.has_value());
+    const rv::app::TimeSummary& times = *benchmark->times;
+    // The GPU passes are the last view's (the right eye's): both eyes take about twice the total.
+    const rv::app::GpuPassRecord* total = passOf(benchmark->gpuPasses, "total");
+    REQUIRE(total != nullptr);
+    std::string passes;
+    for (const rv::app::GpuPassRecord& pass : benchmark->gpuPasses) {
+        passes += fmt::format("{}{} p50 {:.3f} p99 {:.3f} ms", passes.empty() ? "" : "; ", pass.name, pass.times.p50Ms,
+                              pass.times.p99Ms);
+    }
+    WARN(fmt::format("VR benchmark ({}, {}): phase {} frames, frame p50 {:.2f} ms, p95 {:.2f} ms, p99 {:.2f} ms, max "
+                     "{:.2f} ms; both eyes' GPU about p50 {:.2f} ms, p99 {:.2f} ms; one eye: {}; the session's CPU p99 "
+                     "{:.2f} ms",
+                     report.buildType, report.context ? report.context->renderer : std::string("?"), times.count,
+                     times.p50Ms, times.p95Ms, times.p99Ms, times.maxMs, 2.0 * total->times.p50Ms,
+                     2.0 * total->times.p99Ms, passes, report.xr->cpuTimes ? report.xr->cpuTimes->p99Ms : -1.0));
+#if defined(NDEBUG)
+    // ADR-0017 §9 at 72 Hz: a frame within the display's period typically, never far beyond it.
+    CHECK(times.p50Ms <= 13.9);
+    CHECK(times.p99Ms <= 20.0);
 #endif
 }
