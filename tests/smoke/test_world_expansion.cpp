@@ -47,6 +47,7 @@
 
 #include "building_support.hpp"
 #include "image_checks.hpp"
+#include "launch_support.hpp"
 #include "smoke_support.hpp"
 
 using namespace rv::smoke;
@@ -270,6 +271,7 @@ TEST_CASE("world_expansion: the chains of a fresh building, every arcade set pla
 
 TEST_CASE("world_expansion: the hall's portals, a walk from the hall into room:amiga:2, a cover inspected there",
           "[world][expansion]") {
+    ensureLaunchAllowList(); // the inspected item's card offers Avvia
     const PlannedBuilding building("world_expansion/walk", true, "esde/overflow");
     const rv::world::StoredPlan stored = building.plan();
     const rv::world::WorldPlan& plan = stored.plan;
@@ -366,6 +368,7 @@ TEST_CASE("world_expansion: the hall's portals, a walk from the hall into room:a
 TEST_CASE("world_expansion: the directory lists the chain; a teleport and \"Mostra nella stanza\" lead into the "
           "expansion",
           "[world][expansion]") {
+    ensureLaunchAllowList(); // the quick catalog's card offers Avvia
     const PlannedBuilding building("world_expansion/directory", true, "esde/overflow");
     const rv::world::StoredPlan stored = building.plan();
     const rv::world::WorldPlan& plan = stored.plan;
@@ -382,6 +385,19 @@ TEST_CASE("world_expansion: the directory lists the chain; a teleport and \"Most
     INFO(directory.describe());
     CHECK(directory.report->directory.open);
     CHECK(directory.report->directory.view == "rooms");
+    // The chain's rooms with their ranges, split inside "M" (the fixture's invented titles): "A – Mo", "Mo – Y".
+    std::map<std::string, rv::app::DirectoryChainRoomRecord> chainRooms;
+    for (const rv::app::DirectoryChainRoomRecord& room : directory.report->directory.chainRooms) {
+        chainRooms[room.room] = room;
+    }
+    REQUIRE(chainRooms.contains(std::string(kHead)));
+    REQUIRE(chainRooms.contains(std::string(kExpansion)));
+    CHECK(chainRooms.at(std::string(kHead)).ranges ==
+          std::vector<rv::app::DirectoryRangeRecord>{{"amiga", "A", "Mo"}});
+    CHECK(chainRooms.at(std::string(kExpansion)).ranges ==
+          std::vector<rv::app::DirectoryRangeRecord>{{"amiga", "Mo", "Y"}});
+    CHECK_FALSE(chainRooms.at(std::string(kHead)).scattered);
+    CHECK_FALSE(chainRooms.at(std::string(kExpansion)).scattered);
     static_cast<void>(requireScreenshot(directory, directoryShot, kShotSize));
 
     // The expansion's row chosen: a teleport to its doorway.
@@ -437,6 +453,7 @@ TEST_CASE("world_expansion: the directory lists the chain; a teleport and \"Most
 
 TEST_CASE("world_expansion: the editor carries a game of the head through the hall into its expansion",
           "[world][expansion][edit]") {
+    ensureLaunchAllowList(); // the card is driven to "Sposta" past Avvia
     const PlannedBuilding building("world_expansion/edit", true, "esde/overflow");
     const rv::world::StoredPlan before = building.plan();
     const rv::world::WorldPlan& plan = before.plan;

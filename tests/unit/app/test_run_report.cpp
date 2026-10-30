@@ -775,6 +775,8 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     directory.cardOutcome = "crashed";
     directory.events = {{5, "open", "floors", "elevator"}, {17, "command", "choose-floor", "gen4"}, {40, "closed", "", ""}};
     directory.eventsDropped = 1;
+    directory.chainRooms = {{"room:amiga", {{"amiga", "A", "Mo"}}, false},
+                            {"area:shared:handheld:2", {{"gb", "N", "Z"}, {"pokemini", "A", "Y"}}, true}};
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->world == world);
@@ -794,6 +796,12 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     CHECK(older->world.floors.empty());
     CHECK(older->world.elevatorPromptFrames == 0);
     CHECK(older->directory == rv::app::DirectoryRecord{});
+    // A report written before I4b step 8 (no chainRooms): no room of a chain listed.
+    const auto noChains = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["directory"].erase("chainRooms"); }), "r.json");
+    REQUIRE(noChains.has_value());
+    CHECK(noChains->directory.chainRooms.empty());
+    CHECK(noChains->directory.events == directory.events);
     // A ride recorded without its kinds' bytes: none of them.
     const auto noKinds = rv::app::parseRunReport(
         editedReport(report, [](nlohmann::json& edited) { edited["world"]["rides"][0].erase("gpuKinds"); }), "r.json");

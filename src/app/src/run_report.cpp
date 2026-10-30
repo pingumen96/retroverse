@@ -863,6 +863,15 @@ Json directoryToJson(const DirectoryRecord& directory) {
     }
     json["events"] = std::move(events);
     json["eventsDropped"] = directory.eventsDropped;
+    Json chainRooms = Json::array();
+    for (const DirectoryChainRoomRecord& room : directory.chainRooms) {
+        Json ranges = Json::array();
+        for (const DirectoryRangeRecord& range : room.ranges) {
+            ranges.push_back(Json{{"system", range.system}, {"first", range.first}, {"last", range.last}});
+        }
+        chainRooms.push_back(Json{{"room", room.room}, {"ranges", std::move(ranges)}, {"scattered", room.scattered}});
+    }
+    json["chainRooms"] = std::move(chainRooms);
     return json;
 }
 
@@ -900,6 +909,17 @@ DirectoryRecord readDirectory(FieldReader& fields) {
         directory.events.push_back(std::move(entry));
     }
     directory.eventsDropped = fields.count("eventsDropped");
+    // I4b step 8: a report written before it lists no room of a chain.
+    for (FieldReader& room : fields.optionalObjectArray("chainRooms")) {
+        DirectoryChainRoomRecord entry;
+        entry.room = room.string("room");
+        for (FieldReader& range : room.objectArray("ranges")) {
+            entry.ranges.push_back(
+                DirectoryRangeRecord{range.string("system"), range.string("first"), range.string("last")});
+        }
+        entry.scattered = room.boolean("scattered");
+        directory.chainRooms.push_back(std::move(entry));
+    }
     return directory;
 }
 

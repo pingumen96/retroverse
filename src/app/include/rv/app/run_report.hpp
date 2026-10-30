@@ -514,6 +514,26 @@ struct DirectoryEventRecord {
 
 /// The directory (I4 step 7b, ADR-0013 §10): how often it opened, what it showed at the end, its favourites and recent
 /// games as listed last, its card, its changes. Empty ({}) in runs without the generated building.
+/// A range of a room of a chain as the directory shows it (I4b step 8): its section's system and the initials it runs
+/// between ("A", "Mo").
+struct DirectoryRangeRecord {
+    std::string system;
+    std::string first;
+    std::string last;
+
+    bool operator==(const DirectoryRangeRecord&) const = default;
+};
+
+/// A room of a chain as the directory's "Piani" tab lists it (I4b step 8): its id, its titles' ranges (none until they
+/// are known) and whether they interleave with another room's ("in ordine sparso").
+struct DirectoryChainRoomRecord {
+    std::string room;
+    std::vector<DirectoryRangeRecord> ranges;
+    bool scattered = false;
+
+    bool operator==(const DirectoryChainRoomRecord&) const = default;
+};
+
 struct DirectoryRecord {
     bool bound = false;
     std::uint64_t opened = 0;
@@ -533,6 +553,8 @@ struct DirectoryRecord {
     /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
     std::vector<DirectoryEventRecord> events;
     std::uint64_t eventsDropped = 0;
+    /// I4b step 8: the rooms of chains as the building given to the directory last listed them, floor by floor.
+    std::vector<DirectoryChainRoomRecord> chainRooms;
 
     bool operator==(const DirectoryRecord&) const = default;
 };

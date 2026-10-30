@@ -109,7 +109,8 @@ build/rvdata`).
   `directory` (`{}` without the building: `opened`, at the end `open`, `tab`, `view`, `notice`, `gamesState`;
   `gamesRequests`, the `games` last listed with `gameId`, `title`, `system`, `favorite`, `played` "YYYY-MM-DD"; the card
   last shown `cardGame`, `cardRoom`, `cardOutcome`; `events` `open` (tab, `elevator` or `map`), `command`, `refused`,
-  `games`, `card`, `launch-ended`, `closed`); also `catalog.refreshes`
+  `games`, `card`, `launch-ended`, `closed`; since I4b step 8 `chainRooms`, each room of a chain as last listed with its
+  `ranges` {`system`, `first`, `last`} and `scattered`); also `catalog.refreshes`
   (one per refresh: trigger, outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
