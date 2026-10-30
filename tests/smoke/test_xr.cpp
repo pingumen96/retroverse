@@ -1,7 +1,8 @@
 // The VR mode (I10 step 2, ADR-0017 §3, §10) with the fake runtime: no headset, two asymmetric eyes at the input
 // script's head poses, a steady 72 Hz with no wait. The session paces the run, the eyes go into the swapchain's
 // images, the screenshot shows both eyes side by side, the window the left eye; a lost session sends the run back to
-// the desktop, and a missing runtime keeps it there. Golden G21: both eyes in the test room from the scene camera's
+// the desktop, and a missing runtime keeps it there. I10 step 3: the stick walks along the head, the right stick snaps a
+// turn and aims the teleport, xr.json seats the user. Golden G21: both eyes in the test room from the scene camera's
 // place (compared on the reference machine only, like G01; RV_UPDATE_GOLDEN=1 rewrites it from this run, then fails).
 //   $env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe "golden/G21:*"
 //   Remove-Item Env:RV_UPDATE_GOLDEN
@@ -15,6 +16,7 @@
 #include <string>
 #include <string_view>
 
+#include <glm/geometric.hpp>
 #include <nlohmann/json.hpp>
 
 #include <rv/core/file_io.hpp>
@@ -126,6 +128,84 @@ TEST_CASE("xr: the fake runtime paces the test room, each eye into its image, th
         CHECK(sample->position.x == Approx(expected.position.x).margin(1e-4));
         CHECK(sample->position.y == Approx(expected.position.y).margin(1e-4));
         CHECK(sample->position.z == Approx(expected.position.z).margin(1e-4));
+    }
+}
+
+TEST_CASE("xr: the stick walks along the head, snaps a turn, and the teleport lands where its arc came down "
+          "(I10 step 3)",
+          "[gpu][xr]") {
+    const fs::path dir = freshCaseDir("xr/walk");
+    const fs::path shot = dir / "eyes.png";
+    std::vector<std::string> arguments = vrArguments(70, shot);
+    arguments.insert(arguments.end(), {"--spawn", "0,0,3.2,0,0", "--input-script",
+                                       arg(sourceDir() / "tests/input_scripts/xr_walk.json")});
+    const AppRun run = runApp(retroverseExe(), dir, "walk", arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.framesWithViews == 70);
+    CHECK(xr.posture == "standing");
+    CHECK(xr.turn == "snap");
+    CHECK(xr.snapTurns == 1);
+    CHECK(xr.teleports == 1);
+    CHECK(xr.pushedFrames == 0);
+
+    // The head turned west in the space: the stick walked it 1.25 m west, not north where the walker faced.
+    const rv::app::XrHeadSample* walked = headAt(xr, 39);
+    REQUIRE(walked != nullptr);
+    CHECK(walked->position.x == Approx(-1.25f).margin(0.01));
+    CHECK(walked->position.z == Approx(3.2f).margin(0.01));
+    CHECK(walked->yawDeg == Approx(-90.0f).margin(0.01));
+    // The snap turn turned the head 30 degrees right about itself.
+    const rv::app::XrHeadSample* turned = headAt(xr, 45);
+    REQUIRE(turned != nullptr);
+    CHECK(turned->yawDeg == Approx(-60.0f).margin(0.01));
+    CHECK(turned->position.x == Approx(walked->position.x).margin(1e-4));
+    CHECK(turned->position.z == Approx(walked->position.z).margin(1e-4));
+    // Let go at frame 60: the head jumped about 1.73 m along its heading, 60 degrees left of north.
+    const rv::app::XrHeadSample* aimed = headAt(xr, 59);
+    const rv::app::XrHeadSample* landed = headAt(xr, 61);
+    REQUIRE(aimed != nullptr);
+    REQUIRE(landed != nullptr);
+    const glm::vec2 jump(landed->position.x - aimed->position.x, landed->position.z - aimed->position.z);
+    CHECK(glm::length(jump) == Approx(1.73f).margin(0.05));
+    const glm::vec2 heading(std::sin(rv::core::degreesToRadians(-60.0f)), -std::cos(rv::core::degreesToRadians(-60.0f)));
+    CHECK(glm::dot(glm::normalize(jump), heading) > 0.999f);
+    CHECK(landed->position.y == Approx(1.65f).margin(1e-4));
+}
+
+TEST_CASE("xr: xr.json seats the user at the walker's eye height, the comfort vignette on (I10 step 3)", "[gpu][xr]") {
+    const fs::path dir = freshCaseDir("xr/seated");
+    fs::create_directories(dir / "data" / "config");
+    REQUIRE(rv::core::writeTextFileAtomic(dir / "data" / "config" / "xr.json",
+                                          "{\"posture\": \"seated\", \"comfort\": {\"turn\": \"smooth\", "
+                                          "\"vignette\": 0.8}}\n")
+                .has_value());
+    const fs::path script = dir / "seated.json";
+    // Seated 1.1 m up, the stick forward for the second half of the run.
+    REQUIRE(rv::core::writeTextFileAtomic(script, R"([
+  {"fromFrame": 0, "toFrame": 9, "headPose": {"position": [0, 1.1, 0]}},
+  {"fromFrame": 10, "toFrame": 19, "headPose": {"position": [0, 1.1, 0]}, "actions": {"move_forward": 1.0}}
+])")
+                .has_value());
+    const fs::path shot = dir / "eyes.png";
+    std::vector<std::string> arguments = vrArguments(20, shot);
+    arguments.insert(arguments.end(), {"--input-script", arg(script)});
+    const AppRun run = runApp(retroverseExe(), dir, "seated", arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    requireScreenshot(run, shot, glm::ivec2(2 * kEyeSize.x, kEyeSize.y));
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.posture == "seated");
+    CHECK(xr.turn == "smooth");
+    for (const std::uint64_t frame : {0u, 19u}) {
+        const rv::app::XrHeadSample* sample = headAt(xr, frame);
+        REQUIRE(sample != nullptr);
+        CHECK(sample->position.y == Approx(1.65f).margin(1e-4));
     }
 }
 
