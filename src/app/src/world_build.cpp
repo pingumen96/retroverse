@@ -206,14 +206,6 @@ void dropFloor(WorldBuild& build) {
     return nullptr;
 }
 
-/// Whether `text` holds what its system's snapshot said of the game. A placed game the snapshot does not list has none
-/// (snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of its other
-/// sections, which each section's items file holds so.
-[[nodiscard]] bool hasText(const RoomItemText& text) noexcept {
-    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
-           text.screen.has_value();
-}
-
 /// The text of `game` among the items of a room's `systems` (its sections, in order) and the items it is of: the first
 /// section's that knows its text (hasText()), else the first that holds it at all (a game no snapshot lists any more
 /// keeps its slot with no text); {nullptr, nullptr} when none holds it.

@@ -88,7 +88,9 @@ struct ChainRoomRanges {
 
 /// The titles of the placed games of `systems` from their rooms' items files under `cacheDir` (room_items.hpp; the
 /// screen data's sort key, else catalog::sortKeyOf() of the title): read on the worker pool when the plan shown holds
-/// a chain (WorldSession). A file missing or unreadable gives none of its games (logged).
+/// a chain (WorldSession). Each game's title is its own section's: a shared or arcade room's items file lists its other
+/// sections' games too, without their text (hasText()), and those listings are skipped. A file missing or unreadable
+/// gives none of its games (logged).
 [[nodiscard]] std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path& cacheDir,
                                                                   const catalog::LibraryId& library,
                                                                   const std::vector<catalog::SystemName>& systems);

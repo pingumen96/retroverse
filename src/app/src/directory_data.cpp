@@ -314,13 +314,18 @@ std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path&
             continue;
         }
         for (const RoomItemText& item : items->items) {
+            // A shared or arcade room's items file lists its other sections' games too, without their text
+            // (snapshotRoomItems()): a game's title is its own section's, never overwritten by another's listing.
+            if (!hasText(item) || titles.contains(item.game)) {
+                continue;
+            }
             std::string sortKey;
             if (item.screen && !item.screen->sortKey.empty()) {
                 sortKey = item.screen->sortKey;
             } else if (auto key = catalog::sortKeyOf(item.title.empty() ? item.fallbackTitle : item.title)) {
                 sortKey = std::move(*key);
             }
-            titles.insert_or_assign(item.game, ChainTitle{system, std::move(sortKey)});
+            titles.emplace(item.game, ChainTitle{system, std::move(sortKey)});
         }
     }
     return titles;

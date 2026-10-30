@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
@@ -127,6 +128,29 @@ struct ChainPlan {
 
 DirectoryRange range(std::string_view name, std::string first, std::string last, std::string fullName = {}) {
     return DirectoryRange{DirectorySystem{std::string(name), std::move(fullName)}, std::move(first), std::move(last)};
+}
+
+/// `system`'s items file as snapshotRoomItems() writes a shared or arcade room's: its own games with their titles, every
+/// placed game of the room's other sections listed without text.
+void writeSectionItems(const std::filesystem::path& cacheDir, const rv::catalog::LibraryId& library,
+                       std::string_view system, const std::vector<std::pair<std::uint64_t, std::string>>& own,
+                       const std::vector<std::uint64_t>& others) {
+    rv::app::RoomItems items;
+    items.systemName = std::string(system);
+    for (const auto& [value, title] : own) {
+        rv::app::RoomItemText text;
+        text.game = game(value);
+        text.title = title;
+        items.items.push_back(std::move(text));
+    }
+    for (const std::uint64_t value : others) {
+        rv::app::RoomItemText text;
+        text.game = game(value);
+        items.items.push_back(std::move(text));
+    }
+    std::sort(items.items.begin(), items.items.end(),
+              [](const rv::app::RoomItemText& a, const rv::app::RoomItemText& b) { return a.game < b.game; });
+    REQUIRE(rv::app::writeRoomItems(rv::app::roomItemsFile(cacheDir, library, systemNamed(system)), items).has_value());
 }
 
 } // namespace
@@ -298,6 +322,48 @@ TEST_CASE("app/directory_chains: the initials, the systems read, the titles from
     CHECK(titles.at(game(1)) == ChainTitle{systemNamed("amiga"), "alpha, the"});
     CHECK(titles.at(game(2)) == ChainTitle{systemNamed("amiga"), "the bravo"});
     CHECK(titles.at(game(3)) == ChainTitle{systemNamed("amiga"), "charlie (europe)"});
+}
+
+TEST_CASE("app/directory_chains: a section's items file never takes the titles of the room's other sections",
+          "[app][directory_data][chains]") {
+    // The shared room's chain of ChainPlan: gb's file lists pokemini's games without text, pokemini's lists gb's; read
+    // in either order, each game keeps its own section's title.
+    const rv::test::TempDir dir("rv-directory-chains-sections");
+    const rv::catalog::LibraryId library;
+    writeSectionItems(dir.path(), library, "gb", {{30, "Apple"}, {31, "Mango"}, {32, "Nectarine"}, {33, "Zucchini"}},
+                      {40, 41});
+    writeSectionItems(dir.path(), library, "pokemini", {{40, "Acorn"}, {41, "Yew"}}, {30, 31, 32, 33});
+    for (const std::vector<SystemName>& order : {std::vector<SystemName>{systemNamed("gb"), systemNamed("pokemini")},
+                                                 std::vector<SystemName>{systemNamed("pokemini"), systemNamed("gb")}}) {
+        const std::map<GameId, ChainTitle> titles = rv::app::chainTitlesOf(dir.path(), library, order);
+        REQUIRE(titles.size() == 6);
+        CHECK(titles.at(game(30)) == ChainTitle{systemNamed("gb"), "apple"});
+        CHECK(titles.at(game(33)) == ChainTitle{systemNamed("gb"), "zucchini"});
+        CHECK(titles.at(game(40)) == ChainTitle{systemNamed("pokemini"), "acorn"});
+        CHECK(titles.at(game(41)) == ChainTitle{systemNamed("pokemini"), "yew"});
+        // The ranges from them: each section's own, nothing scattered.
+        const ChainPlan chain;
+        const auto ranges = rv::app::chainRangesOf(chain.plan, [&](const GameId& id) -> std::optional<ChainTitle> {
+            const auto found = titles.find(id);
+            return found != titles.end() ? std::optional<ChainTitle>(found->second) : std::nullopt;
+        });
+        CHECK(ranges.at(roomId("area:shared:handheld")) == ChainRoomRanges{{range("gb", "A", "M")}, false});
+        CHECK(ranges.at(roomId("area:shared:handheld:2")) ==
+              ChainRoomRanges{{range("gb", "N", "Z"), range("pokemini", "A", "Y")}, false});
+    }
+
+    // An arcade chain of three systems: each file lists the two others' games without text.
+    writeSectionItems(dir.path(), library, "fbneo", {{50, "Aqua Bolt"}, {51, "Zinc Ring"}}, {60, 61, 70});
+    writeSectionItems(dir.path(), library, "mame", {{60, "Brass Comet"}, {61, "Yarrow"}}, {50, 51, 70});
+    writeSectionItems(dir.path(), library, "naomi", {{70, "Cobalt Sky"}}, {50, 51, 60, 61});
+    const std::map<GameId, ChainTitle> arcade = rv::app::chainTitlesOf(
+        dir.path(), library, {systemNamed("fbneo"), systemNamed("mame"), systemNamed("naomi")});
+    REQUIRE(arcade.size() == 5);
+    CHECK(arcade.at(game(50)) == ChainTitle{systemNamed("fbneo"), "aqua bolt"});
+    CHECK(arcade.at(game(51)) == ChainTitle{systemNamed("fbneo"), "zinc ring"});
+    CHECK(arcade.at(game(60)) == ChainTitle{systemNamed("mame"), "brass comet"});
+    CHECK(arcade.at(game(61)) == ChainTitle{systemNamed("mame"), "yarrow"});
+    CHECK(arcade.at(game(70)) == ChainTitle{systemNamed("naomi"), "cobalt sky"});
 }
 
 TEST_CASE("app/directory_chains: a teleport, \"Mostra nella stanza\" and where-is lead into an expansion",
