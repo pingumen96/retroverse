@@ -28,9 +28,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   folders (7), resolves media (8) and translates ES-DE commands (10); `catalog` also holds the import service (11a),
   fingerprints and reconciliation (11b); `catalog_db` holds the database, the catalog store (step 4, with the import's
   writes of 11a and 11b), the queries and search (9) and the session store (12); the system probe's port is in `core`
-  (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more libraries
-  per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`. `rv_app`
-  links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's launches (I2 step A1) and, since step 13,
+  (`rv/core/system_probe.hpp`, ADR-0008 §2); `core`'s `canonical_json.hpp` holds the canonical JSON (ADR-0010 §8) and,
+  since m3/preview-time, `CanonicalTextWriter` (the canonical text written straight from the values, without a
+  document: the regeneration's digests of a whole world); and `rv_forbid_link(<target> EXTRA <library>...)` forbids
+  more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under
+  `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's
+  launches (I2 step A1) and, since step 13,
   `rv_app_catalog` (GPU-free and tools-free, between `rv_app_cli` and `rv_app`: the catalog worker, its
   `ui::CatalogSource`, the app's copy of the CLI's launch library, `AppCatalog` over the ES-DE or the mock catalog; on
   `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`; tested by `tests/unit/app`; since I3 step
@@ -73,8 +76,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   since step 4 a room's static part rebuilt alone, `roomStaticPart`), `world_regenerate_job` (I4b step 6,
   `world_regenerate.hpp`: the catalog's inputs of a regeneration, the preview's dry run and its content, the commit
   under the world lock, the undo's preview and commit, the rooms' items written again, the rooms a commit changed
-  alone, the job's mailbox); `world_build`'s `rebuildRoomsAlone` (I4b step 6's review: a floor's rooms rebuilt alone
-  from a plan, as `buildFloor` builds them).
+  alone, the job's mailbox; since m3/preview-time `KnownPlan`, the plan the app shows standing for its file's when its
+  own digest is the file's, `readRegenerationWorld`, the world read apart from the inputs, and `warmRoomData`, the
+  standing rooms' data read ahead into the inputs' loader while the slot holds them, `slotHolds`); `world_build`'s
+  `rebuildRoomsAlone` (I4b step 6's review: a floor's rooms rebuilt alone from a plan, as `buildFloor` builds them).
   `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),

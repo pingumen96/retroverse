@@ -457,13 +457,15 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   room:amstradcpc 3.61 and 4.10 s (the job's read of the world 0.5 to 0.65 s, the regeneration 1.2 to 2.2 s, the app's
   pool shared with the cover loader), the CLI's dry run of room:snes 1.7 s. The fix: the digests' canonical text is
   written straight from the plan and the inputs (byte-identical: the plan goldens and a comparison of both paths on
-  every world fixture), the app's preview takes the plan as stored instead of parsing the file, and the standing rooms'
-  data are read ahead with the catalog's inputs. The real room previews in the app went to 1.42 to 1.81 s with the
-  machine fully loaded, 1.19 and 1.53 s a third loaded; Gate M3 measures them again on a quiet machine. Left: when the
-  preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to 1.1 s in those runs: the
-  catalog snapshot's SQLite queries, slower beside the floor's cover loads); the validation of the whole plan (about
-  0.15 s) and the digests' SHA-256 over about 25 MB are the largest parts of the dry run now. Seeding the inputs from
-  the building job's snapshot (I4b step 6's follow-up below) would remove most of the read-ahead.
+  every world fixture), the app's preview takes the plan it shows when that is the file's plan instead of parsing it,
+  and the standing rooms' data are read ahead with the catalog's inputs. The real room previews in the app went to
+  1.42 to 1.81 s with the machine fully loaded, 1.19 and 1.53 s a third loaded, 0.93 and 1.25 s after the step's review
+  (the plan shown checked against its file, 83 to 87 ms; the machine loaded); Gate M3 measures them again on a quiet
+  machine. Left: when the preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to
+  1.1 s in those runs: the catalog snapshot's SQLite queries, slower beside the floor's cover loads); the validation of
+  the whole plan (about 0.15 s) and the digests' SHA-256 over about 25 MB are the largest parts of the dry run now.
+  Seeding the inputs from the building job's snapshot (I4b step 6's follow-up below) would remove most of the
+  read-ahead.
 - **Debug GPU cases near their time limits (Gate M3):** `gpu.world floor: light reaches through the doorways ...` takes
   474 to 579 s in Debug against ctest's 600 s; the floor-app cases wait at most 10 s for the building in lockstep and
   `app/world_flow: a start room kept until a regeneration ...` 60 s for a start. Under another session's load Gate M3's
