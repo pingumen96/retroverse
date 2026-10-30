@@ -25,7 +25,10 @@ build/rvdata`).
   version (the driver), debug messages per severity (those `--gl-selftest` provoked included; its `glSelfTest` record
   counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
   (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
-  buffer's capacity, the screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
+  buffer's capacity, the screenshot written (`screenshot`: file, size, and since the memory margin `targets`, `window`
+  when it was drawn through the window's render targets (it has the window's size) or `own` through a set made for it
+  alone), the window (`window`: `drawableWidth`, `drawableHeight`, its drawable at the end of the run, the size asked
+  for times the display's scale), the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
   self-check, the quick catalog (`catalog`: `source` `esde` or `mock`, file, games, times `opened`, `open` at the end,
   the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
   `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,

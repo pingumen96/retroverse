@@ -2715,7 +2715,12 @@ std::string formatRunReport(const RunReport& report) {
     if (report.screenshot) {
         json["screenshot"] = Json{{"file", core::pathToGenericUtf8(report.screenshot->file)},
                                   {"width", report.screenshot->width},
-                                  {"height", report.screenshot->height}};
+                                  {"height", report.screenshot->height},
+                                  {"targets", report.screenshot->targets}};
+    }
+    if (report.window) {
+        json["window"] = Json{{"drawableWidth", report.window->drawableWidth},
+                              {"drawableHeight", report.window->drawableHeight}};
     }
     if (report.finalCamera) {
         json["finalCamera"] = spawnToJson(*report.finalCamera);
@@ -2858,7 +2863,13 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
         const auto extent = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
         report.screenshot = ScreenshotRecord{core::pathFromUtf8(screenshot->string("file")),
                                              static_cast<int>(screenshot->count("width", extent)),
-                                             static_cast<int>(screenshot->count("height", extent))};
+                                             static_cast<int>(screenshot->count("height", extent)),
+                                             screenshot->optionalString("targets").value_or(std::string())};
+    }
+    if (auto window = fields.optionalObject("window")) {
+        const auto extent = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+        report.window = WindowRecord{static_cast<int>(window->count("drawableWidth", extent)),
+                                     static_cast<int>(window->count("drawableHeight", extent))};
     }
     if (auto camera = fields.optionalObject("finalCamera")) {
         report.finalCamera = readSpawn(*camera);

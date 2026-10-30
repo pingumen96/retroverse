@@ -176,44 +176,73 @@ TEST_CASE("measurements/the render targets at 1080p: one set at a time, a screen
     const std::uint64_t set1080 = rv::gl::viewTargetsBytes(glm::ivec2(1920, 1080));
     CHECK(set1080 + shadowMap < kTargetsAt1080);
 
-    // A 1080p screenshot from a window too small to matter: the window's targets are let go of while the screenshot's
-    // exist, so the run's highest is the screenshot's set and the shadow map, exactly, whatever the window's pixels.
-    const std::vector<std::string> scene{"--scene", "m0_testroom", "--spawn", "0,0,3.2,0,-6", "--exit-after-frames",
-                                         "--frames", "3"};
+    const std::vector<std::string> scene{"--scene",    "m0_testroom", "--spawn",
+                                         "0,0,3.2,0,-6", "--fixed-dt", "0.016667",
+                                         "--exit-after-frames", "--frames", "3"};
     auto withScene = [&scene](std::vector<std::string> more) {
         more.insert(more.begin(), scene.begin(), scene.end());
         return more;
     };
-    const AppRun small = runApp(retroverseExe(), caseDir, "small_window",
-                                withScene({"--width", "64", "--height", "64", "--screenshot",
-                                           arg(caseDir / "small_window.png"), "--screenshot-size", "1920x1080"}));
-    skipWithoutOpenGl(small);
-    requireCleanRun(small);
-    INFO(small.describe());
-    CHECK(peakTargetBytes(small) == set1080 + shadowMap);
-    // The window's set made again after it: the run ends holding the shadow map and the small window's targets.
-    CHECK(small.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes < shadowMap + set1080 / 4);
+    const auto drawableOf = [](const AppRun& run) {
+        REQUIRE(run.report->window.has_value());
+        return glm::ivec2(run.report->window->drawableWidth, run.report->window->drawableHeight);
+    };
 
-    // A 1080p window, without a screenshot and with one of its own size: the screenshot takes no targets of its own.
+    // A window asked for at 1920 x 1080, without a screenshot: its drawable (that size times the display's scale, with
+    // highDpi) is what the window's targets are allocated for. The screenshots below take the drawable's size, so that
+    // one of them has the window's size whatever the scale.
     const AppRun window = runApp(retroverseExe(), caseDir, "window_1080",
                                  withScene({"--width", "1920", "--height", "1080"}));
+    skipWithoutOpenGl(window);
     requireCleanRun(window);
     INFO(window.describe());
+    const glm::ivec2 drawable = drawableOf(window);
+    INFO("the window's drawable: " << drawable.x << " x " << drawable.y);
+    REQUIRE(drawable.x > 64);
+    REQUIRE(drawable.y > 64);
+    const std::uint64_t windowSet = rv::gl::viewTargetsBytes(drawable);
+    CHECK(peakTargetBytes(window) == windowSet + shadowMap);
+    if (drawable == glm::ivec2(1920, 1080)) {
+        CHECK(peakTargetBytes(window) <= kTargetsAt1080);
+    }
+    const std::string shotSize = std::to_string(drawable.x) + "x" + std::to_string(drawable.y);
+
+    // A screenshot of that size from a window too small to matter: drawn through targets of its own, with the window's
+    // let go of while they exist, so the run's highest is the screenshot's set and the shadow map, exactly.
+    const AppRun small = runApp(retroverseExe(), caseDir, "small_window",
+                                withScene({"--width", "64", "--height", "64", "--screenshot",
+                                           arg(caseDir / "small_window.png"), "--screenshot-size", shotSize}));
+    requireCleanRun(small);
+    INFO(small.describe());
+    REQUIRE(small.report->screenshot.has_value());
+    REQUIRE(small.report->screenshot->targets == rv::app::kScreenshotOwnTargets);
+    const glm::ivec2 smallDrawable = drawableOf(small);
+    REQUIRE(smallDrawable != drawable);
+    CHECK(peakTargetBytes(small) == windowSet + shadowMap);
+    // The window's set made again after it: the run ends holding the shadow map and the small window's targets.
+    CHECK(small.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes ==
+          rv::gl::viewTargetsBytes(smallDrawable) + shadowMap);
+
+    // The same window with a screenshot of its size: drawn through the window's targets, it takes none of its own.
     const AppRun shot = runApp(retroverseExe(), caseDir, "window_1080_screenshot",
                                withScene({"--width", "1920", "--height", "1080", "--screenshot",
-                                          arg(caseDir / "window_1080.png"), "--screenshot-size", "1920x1080"}));
+                                          arg(caseDir / "window_1080.png"), "--screenshot-size", shotSize}));
     requireCleanRun(shot);
     INFO(shot.describe());
+    REQUIRE(drawableOf(shot) == drawable);
+    REQUIRE(shot.report->screenshot.has_value());
+    REQUIRE(shot.report->screenshot->targets == rv::app::kScreenshotWindowTargets);
     INFO("targets at their highest: window " << peakTargetBytes(window) << " B, with the screenshot "
                                              << peakTargetBytes(shot) << " B");
     CHECK(peakTargetBytes(shot) == peakTargetBytes(window));
-    CHECK(peakTargetBytes(window) <= kTargetsAt1080);
 
     // The screenshot drawn through the window's targets is the one drawn through targets of its own.
     const auto own = rv::assets::loadImage(caseDir / "small_window.png", 3);
     const auto shared = rv::assets::loadImage(caseDir / "window_1080.png", 3);
     REQUIRE(own.has_value());
     REQUIRE(shared.has_value());
+    CHECK(own->width == drawable.x);
+    CHECK(own->height == drawable.y);
     CHECK(own->width == shared->width);
     CHECK(own->height == shared->height);
     CHECK(own->pixels == shared->pixels);

@@ -231,6 +231,9 @@ struct SceneGraphics::State {
     std::optional<glm::ivec2> failedScreenshotSize;
     FrameStatsLog statsLog;
     bool lastFrameCaptured = false; ///< --screenshot written
+    /// The targets the last screenshot was drawn through (kScreenshotWindowTargets or kScreenshotOwnTargets).
+    std::string_view screenshotTargetsUsed;
+    std::string_view lastFrameTargets; ///< those of the --screenshot
     bool viewRendered = false;      ///< a view was rendered during the current frame (window or screenshot)
     bool anyViewRendered = false;   ///< a view was rendered during the run
 
@@ -286,6 +289,7 @@ struct SceneGraphics::State {
         const CommandLineOptions& options = context.options();
         const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
         const bool windowSized = size == context.framebufferSize();
+        screenshotTargetsUsed = windowSized ? kScreenshotWindowTargets : kScreenshotOwnTargets;
         if (!windowSized) {
             windowTargets = gl::ViewTargets{};
         }
@@ -534,6 +538,7 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
     if (options.screenshot && lastFrame) {
         if (auto written = state.captureScreenshot(context, view, *options.screenshot); written) {
             state.lastFrameCaptured = true;
+            state.lastFrameTargets = state.screenshotTargetsUsed;
         } else {
             Error error = written.error();
             error.message = "--screenshot failed: " + error.message;
@@ -593,7 +598,8 @@ void SceneGraphics::finishRun(AppContext& context) {
     }
     report.instanceCapacity = state.renderer->instanceCapacity();
     if (options.screenshot && state.lastFrameCaptured) {
-        report.screenshot = ScreenshotRecord{*options.screenshot, options.screenshotWidth, options.screenshotHeight};
+        report.screenshot = ScreenshotRecord{*options.screenshot, options.screenshotWidth, options.screenshotHeight,
+                                             std::string(state.lastFrameTargets)};
     }
     // The GPU memory accounting (gl::gpuMemoryLedger) records every texture of the cache and the defaults, and nothing
     // else under their kinds: the run report's procedural surfaces and scene textures are what they hold.
