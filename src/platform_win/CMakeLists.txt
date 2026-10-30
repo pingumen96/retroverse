@@ -5,6 +5,7 @@
 # rv_platform's window hand-over (win32_util.hpp). retroverse-cli and rv_tests use them without SDL.
 
 add_library(rv_platform_win STATIC
+    src/foreground.cpp
     src/process_priority.cpp
     src/system_probe.cpp
     src/win32_process_runner.cpp
