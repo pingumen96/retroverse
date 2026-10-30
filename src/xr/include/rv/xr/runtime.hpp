@@ -32,6 +32,11 @@ enum class SessionState : std::uint8_t {
 /// "unknown", "idle", "ready", "synchronized", "visible", "focused", "stopping", "loss-pending" or "exiting".
 [[nodiscard]] std::string_view toString(SessionState state) noexcept;
 
+/// The refresh rate to ask a headset for (XR_FB_display_refresh_rate, I10 step 9): the highest of `offered` that is
+/// not above `requested` (half a hertz of slack: 119.9 counts as 120), else the lowest offered; nothing when nothing is
+/// offered or `requested` is not above 0.
+[[nodiscard]] std::optional<float> chooseRefreshRate(std::span<const float> offered, float requested) noexcept;
+
 /// What a runtime tells its application between frames (xrPollEvent).
 struct RuntimeEvent {
     enum class Kind : std::uint8_t {

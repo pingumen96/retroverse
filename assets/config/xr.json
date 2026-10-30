@@ -12,6 +12,9 @@
   // "standing": the head as high as it is tracked; "seated": made up to the walker's eye height (1.65 m) when the
   // session starts and at each recentering (the headset's own: hold its menu button).
   "posture": "standing",
+  // The eyes' rendering: "full" as on the desktop; "fast" without the ambient occlusion and the anti-aliasing (a third
+  // of the GPU's time per eye); "auto": fast from 110 Hz on (120 Hz), full below.
+  "quality": "auto",
   "comfort": {
     // The right stick turns by "snap" turns or "smooth"ly.
     "turn": "snap",

@@ -529,9 +529,16 @@ Status OpenXrRuntime::createSession(const OpenXrOptions& options) {
             [] { return 0.0f; });
         if (options.refreshRate && m_requestRefreshRate != nullptr) {
             m_description.refreshRateRequested = options.refreshRate;
-            if (const XrResult result = m_requestRefreshRate(m_session, *options.refreshRate); XR_FAILED(result)) {
-                spdlog::warn("OpenXR refresh rate {:g} Hz refused: {}", *options.refreshRate,
-                             resultName(m_instance, result));
+            // I10 step 9: one the headset offers (Link's 120 Hz only once the Meta app's setting allows it).
+            const std::optional<float> rate = chooseRefreshRate(m_description.refreshRates, *options.refreshRate);
+            if (rate && *rate != *options.refreshRate) {
+                spdlog::info("OpenXR refresh rate {:g} Hz not offered: {:g} Hz asked for instead", *options.refreshRate,
+                             *rate);
+            }
+            if (!rate) {
+                spdlog::warn("OpenXR refresh rate {:g} Hz not asked for: the headset lists none", *options.refreshRate);
+            } else if (const XrResult result = m_requestRefreshRate(m_session, *rate); XR_FAILED(result)) {
+                spdlog::warn("OpenXR refresh rate {:g} Hz refused: {}", *rate, resultName(m_instance, result));
             }
         }
     } else if (options.refreshRate) {

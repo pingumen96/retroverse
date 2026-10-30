@@ -36,8 +36,12 @@ FakeRuntime::FakeRuntime(FakeRuntimeConfig config) : m_config(std::move(config))
     m_description.format = glFormatName(kGlSrgb8Alpha8);
     m_description.srgb = true;
     m_description.imagesPerEye = std::max<std::size_t>(1, m_config.imagesPerEye);
-    if (m_config.displayPeriodNs > 0) {
+    m_description.refreshRates = m_config.refreshRates;
+    if (m_description.refreshRates.empty() && m_config.displayPeriodNs > 0) {
         m_description.refreshRates = {static_cast<float>(1.0e9 / static_cast<double>(m_config.displayPeriodNs))};
+    }
+    if (!m_description.refreshRates.empty()) {
+        m_refreshRate = m_description.refreshRates.front();
     }
     std::uint32_t next = 1;
     for (std::vector<std::uint32_t>& images : m_images) {
@@ -51,6 +55,20 @@ FakeRuntime::FakeRuntime(FakeRuntimeConfig config) : m_config(std::move(config))
     }
     queueState(SessionState::Idle);
     queueState(SessionState::Ready);
+    // I10 step 9: the rate asked for, as XR_FB_display_refresh_rate switches it.
+    if (m_config.refreshRate) {
+        m_description.refreshRateRequested = m_config.refreshRate;
+        if (const std::optional<float> chosen = chooseRefreshRate(m_description.refreshRates, *m_config.refreshRate);
+            chosen && m_refreshRate && *chosen != *m_refreshRate) {
+            RuntimeEvent event;
+            event.kind = RuntimeEvent::Kind::RefreshRateChanged;
+            event.fromHz = *m_refreshRate;
+            event.toHz = *chosen;
+            m_events.push_back(event);
+            m_refreshRate = chosen;
+            m_config.displayPeriodNs = static_cast<std::int64_t>(std::llround(1.0e9 / static_cast<double>(*chosen)));
+        }
+    }
 }
 
 FakeRuntime::~FakeRuntime() {
@@ -218,10 +236,7 @@ void FakeRuntime::vibrate(Hand hand, float /*amplitude*/, float /*seconds*/) {
 }
 
 std::optional<float> FakeRuntime::currentRefreshRate() const {
-    if (m_description.refreshRates.empty()) {
-        return std::nullopt;
-    }
-    return m_description.refreshRates.front();
+    return m_refreshRate;
 }
 
 } // namespace rv::xr

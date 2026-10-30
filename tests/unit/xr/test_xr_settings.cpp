@@ -93,3 +93,25 @@ TEST_CASE("xr/settings: the user's file overrides key by key; a bad one is left 
     REQUIRE(array.has_value());
     CHECK(array->issues.size() == 1);
 }
+
+TEST_CASE("xr/settings: the quality profile, fast from 110 Hz when auto (I10 step 9)", "[xr][xr_settings]") {
+    CHECK(rv::xr::fastProfile(rv::xr::XrQuality::Auto, 120.0f));
+    CHECK_FALSE(rv::xr::fastProfile(rv::xr::XrQuality::Auto, 90.0f));
+    CHECK_FALSE(rv::xr::fastProfile(rv::xr::XrQuality::Auto, 72.0f));
+    CHECK(rv::xr::fastProfile(rv::xr::XrQuality::Fast, 72.0f));
+    CHECK_FALSE(rv::xr::fastProfile(rv::xr::XrQuality::Full, 120.0f));
+    CHECK(rv::xr::toString(rv::xr::XrQuality::Fast) == "fast");
+
+    const rv::test::TempDir dir("rv-xr-quality");
+    writeUser(dir, R"({"quality": "full", "refreshRate": 120})");
+    auto loaded = rv::xr::loadXrSettings(assetRoot(), dir.path());
+    REQUIRE(loaded.has_value());
+    CHECK(loaded->issues.empty());
+    CHECK(loaded->settings.quality == rv::xr::XrQuality::Full);
+    CHECK(loaded->settings.refreshRate == 120.0f);
+    writeUser(dir, R"({"quality": "ultra"})");
+    auto refused = rv::xr::loadXrSettings(assetRoot(), dir.path());
+    REQUIRE(refused.has_value());
+    REQUIRE(refused->issues.size() == 1);
+    CHECK(refused->issues.front().message.starts_with("/quality"));
+}

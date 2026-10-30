@@ -27,6 +27,11 @@ struct FakeRuntimeConfig {
     float ipdMeters = scene::kStereoPreviewIpdMeters;
     /// 72 Hz.
     std::int64_t displayPeriodNs = 13'888'889;
+    /// I10 step 9: the refresh rates offered (as XR_FB_display_refresh_rate lists them; empty: the one of
+    /// `displayPeriodNs` alone), and the one asked for (chooseRefreshRate() among them: the display period becomes its,
+    /// a RefreshRateChanged event tells the session).
+    std::vector<float> refreshRates;
+    std::optional<float> refreshRate;
     /// The head's height above the space's origin (LOCAL_FLOOR: the floor) when no pose is given.
     float eyeHeight = 1.65f;
     std::size_t imagesPerEye = 3;
@@ -98,6 +103,7 @@ private:
     std::uint64_t m_framesEnded = 0;
     std::uint64_t m_framesWithViews = 0;
     std::array<std::uint64_t, kHandCount> m_vibrations{};
+    std::optional<float> m_refreshRate;
 };
 
 } // namespace rv::xr

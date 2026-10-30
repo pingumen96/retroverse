@@ -102,6 +102,7 @@ constexpr std::array<std::string_view, 2> kModes = {"desktop", "vr"};
 constexpr std::array<std::string_view, 2> kPostures = {"standing", "seated"};
 constexpr std::array<std::string_view, 2> kTurns = {"snap", "smooth"};
 constexpr std::array<std::string_view, 2> kMoveReferences = {"head", "hand"};
+constexpr std::array<std::string_view, 3> kQualities = {"auto", "full", "fast"};
 
 Json merge(Json base, const Json& overrides) {
     if (!base.is_object() || !overrides.is_object()) {
@@ -120,11 +121,19 @@ Json merge(Json base, const Json& overrides) {
 
 } // namespace
 
+std::string_view toString(XrQuality quality) noexcept {
+    return kQualities[static_cast<std::size_t>(quality) < kQualities.size() ? static_cast<std::size_t>(quality) : 0];
+}
+
+bool fastProfile(XrQuality quality, float refreshHz) noexcept {
+    return quality == XrQuality::Fast || (quality == XrQuality::Auto && std::isfinite(refreshHz) && refreshHz >= kFastFromHz);
+}
+
 Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string_view context) {
     std::optional<Error> error;
     XrSettings settings;
     Reader root(document, "", context, error,
-                {"schemaVersion", "display", "renderScale", "refreshRate", "posture", "comfort"});
+                {"schemaVersion", "display", "renderScale", "refreshRate", "posture", "quality", "comfort"});
     if (const std::optional<double> version = root.number("schemaVersion", 1, 1000);
         version && *version != kXrSettingsSchemaVersion) {
         root.fail("/schemaVersion", fmt::format("expected {}", kXrSettingsSchemaVersion));
@@ -143,6 +152,9 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
     }
     if (const auto posture = root.name("posture", kPostures)) {
         settings.posture = *posture == 1 ? Posture::Seated : Posture::Standing;
+    }
+    if (const auto quality = root.name("quality", kQualities)) {
+        settings.quality = static_cast<XrQuality>(*quality);
     }
     if (const Json* comfort = root.value("comfort")) {
         Reader reader(*comfort, "/comfort", context, error,

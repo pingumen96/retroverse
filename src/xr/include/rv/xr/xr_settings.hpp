@@ -11,10 +11,12 @@
 //     "renderScale": 1,                 // 0.25 to 2: the eyes' size over the runtime's recommendation
 //     "refreshRate": 0,                 // Hz asked of the headset (XR_FB_display_refresh_rate); 0: the runtime's own
 //     "posture": "standing",            // "seated": the head made up to the walker's eye height at each recentering
+//     "quality": "auto",                // "full", "fast" (no SSAO, no FXAA), "auto": fast from 110 Hz (I10 step 9)
 //     "comfort": {"turn": "snap", "snapDegrees": 30, "smoothDegreesPerSecond": 90, "vignette": 0,
 //                 "moveRelativeTo": "head"}   // "hand": the stick walks along the left controller (I10 step 4)
 //   }
 
+#include <cstdint>
 #include <filesystem>
 #include <string_view>
 #include <vector>
@@ -30,6 +32,19 @@ namespace rv::xr {
 inline constexpr std::string_view kXrSettingsFile = "xr.json";
 inline constexpr int kXrSettingsSchemaVersion = 1;
 
+/// The eyes' rendering (I10 step 9): the desktop's, or "fast" without the ambient occlusion and the anti-aliasing (about
+/// a third of an eye's GPU time at Link's size), which "auto" takes from kFastFromHz.
+enum class XrQuality : std::uint8_t { Auto, Full, Fast };
+
+/// "auto", "full" or "fast".
+[[nodiscard]] std::string_view toString(XrQuality quality) noexcept;
+
+/// Auto's fast profile from this refresh rate on (Hz): 120 Hz, not 90.
+inline constexpr float kFastFromHz = 110.0f;
+
+/// The profile of `quality` at `refreshHz`: true for fast.
+[[nodiscard]] bool fastProfile(XrQuality quality, float refreshHz) noexcept;
+
 struct XrSettings {
     static constexpr double kMinRenderScale = 0.25;
     static constexpr double kMaxRenderScale = 2.0;
@@ -42,6 +57,7 @@ struct XrSettings {
     /// 0: the runtime's own.
     float refreshRate = 0.0f;
     Posture posture = Posture::Standing;
+    XrQuality quality = XrQuality::Auto;
     ComfortSettings comfort;
 
     bool operator==(const XrSettings&) const = default;

@@ -1,5 +1,9 @@
 #include <rv/xr/session.hpp>
 
+#include <cmath>
+
+#include <algorithm>
+
 #include <utility>
 
 #include <fmt/format.h>
@@ -32,6 +36,21 @@ std::string_view toString(SessionState state) noexcept {
 }
 
 Runtime::~Runtime() = default;
+
+std::optional<float> chooseRefreshRate(std::span<const float> offered, float requested) noexcept {
+    if (offered.empty() || !std::isfinite(requested) || !(requested > 0.0f)) {
+        return std::nullopt;
+    }
+    std::optional<float> below;
+    float lowest = offered.front();
+    for (const float rate : offered) {
+        lowest = std::min(lowest, rate);
+        if (rate <= requested + 0.5f && (!below || rate > *below)) {
+            below = rate;
+        }
+    }
+    return below ? below : std::optional<float>(lowest);
+}
 
 Session::Session(std::unique_ptr<Runtime> runtime) : m_runtime(std::move(runtime)) {}
 

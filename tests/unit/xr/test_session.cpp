@@ -226,3 +226,30 @@ TEST_CASE("xr/session: the controllers reach a focused frame, the vibrations the
     CHECK(f.runtime->vibrations(rv::xr::Hand::Right) == 2);
     CHECK(f.runtime->vibrations(rv::xr::Hand::Left) == 0);
 }
+
+TEST_CASE("xr/session: the refresh rate asked for, one the headset offers, 120 Hz on the fake (I10 step 9)",
+          "[xr][session]") {
+    const std::vector<float> quest{72.0f, 80.0f, 90.0f, 120.0f};
+    CHECK(rv::xr::chooseRefreshRate(quest, 120.0f) == std::optional<float>(120.0f));
+    CHECK(rv::xr::chooseRefreshRate(quest, 119.9f) == std::optional<float>(120.0f));
+    CHECK(rv::xr::chooseRefreshRate(quest, 100.0f) == std::optional<float>(90.0f));
+    CHECK(rv::xr::chooseRefreshRate(quest, 60.0f) == std::optional<float>(72.0f));
+    CHECK(rv::xr::chooseRefreshRate(quest, 144.0f) == std::optional<float>(120.0f));
+    CHECK_FALSE(rv::xr::chooseRefreshRate({}, 120.0f));
+    CHECK_FALSE(rv::xr::chooseRefreshRate(quest, 0.0f));
+
+    FakeRuntimeConfig config;
+    config.refreshRates = quest;
+    config.refreshRate = 120.0f;
+    Fixture f = makeSession(std::move(config));
+    f.session->pollEvents();
+    auto frame = f.session->beginFrame();
+    REQUIRE(frame.has_value());
+    REQUIRE(frame->has_value());
+    CHECK((*frame)->timing.displayPeriodNs == 8'333'333);
+    REQUIRE(f.session->endFrame(true).has_value());
+    CHECK(f.session->currentRefreshRate() == std::optional<float>(120.0f));
+    const std::vector<std::string> names = eventNames(*f.session);
+    CHECK(std::find(names.begin(), names.end(), "refresh-rate 72 -> 120 Hz") != names.end());
+    CHECK(f.session->description().refreshRateRequested == std::optional<float>(120.0f));
+}
