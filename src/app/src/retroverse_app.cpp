@@ -85,6 +85,7 @@
 #include "screen_service.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
+#include "xr_game.hpp"
 #include "xr_movement.hpp"
 #include "xr_ui.hpp"
 
@@ -496,6 +497,8 @@ struct RetroverseApp::State {
     /// the screenshots then show it through them, not as an overlay).
     XrUi xrUi;
     bool xrUiDrawn = false;
+    /// The launched game on the hero CRT (I10 step 6).
+    XrGame xrGame;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -761,6 +764,14 @@ struct RetroverseApp::State {
         }
     }
 
+    /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
+    /// one; nothing on the desktop, where the game has the screen.
+    void updateXrGame(AppContext& context) {
+        std::optional<XrRecord>& record = context.report().xr;
+        const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
+        xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
+    }
+
     /// The product UI drawn into its panel for the eyes (I10 step 5); the window and the screenshots then leave it
     /// out of their overlay.
     void drawXrUi(AppContext& context, const gl::RenderView& view) {
@@ -769,7 +780,8 @@ struct RetroverseApp::State {
             return;
         }
         xrEyes->panels.clear();
-        if (!product->visible()) {
+        // The game on the CRT (I10 step 6) shows with no panel in front of it.
+        if (!product->visible() || xrGame.showing()) {
             xrUiDrawn = true;
             return;
         }
@@ -1868,6 +1880,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // on the UI's panel the ray is its mouse and the trigger clicks.
     state.updateXrHands(context);
     input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
+    // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends.
+    if (context.vr() && state.product && (state.product->launchActive() || state.product->launchWindow() != 0)) {
+        actions.clear();
+    }
     if (!state.pointXrUi(context)) {
         state.xrHands.applySelect(actions);
     }
@@ -2020,9 +2036,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         const input::ActionState uiActions = actionsFor(InputContext::Ui, actions);
         state.product->update(inputContext == InputContext::Ui && !riding ? &uiActions : nullptr, deltaSeconds,
                               state.simulatedSeconds);
-        // After this frame is presented the host waits: a launch starts, or an emulator has the screen.
+        // After this frame is presented the host waits: a launch starts, or an emulator has the screen. In VR the
+        // headset keeps rendering (ADR-0017 §7, I10 step 6): the launch is followed every frame instead.
         if (state.product->wantsIdle()) {
-            context.setIdle(true);
+            if (context.vr()) {
+                state.product->onIdle();
+            } else {
+                context.setIdle(true);
+            }
         }
     }
     if (state.world) {
@@ -2032,6 +2053,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.world->settle(*state.product);
     }
     state.updateScreens(frame, context.window().isMinimized());
+    state.updateXrGame(context);
     state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
@@ -2058,8 +2080,9 @@ void RetroverseApp::onRender(AppContext& context) {
     }
     if (state.product) {
         state.product->frameRendered();
-        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle).
-        if (state.product->wantsIdle()) {
+        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle). Never in
+        // VR (I10 step 6): the headset renders on, the update follows the launch.
+        if (state.product->wantsIdle() && !context.vr()) {
             context.setIdle(true);
         }
     }

@@ -2672,6 +2672,10 @@ Json xrToJson(const XrRecord& xr) {
     json["uiPanelFrames"] = xr.uiPanelFrames;
     json["uiPointedFrames"] = xr.uiPointedFrames;
     json["uiClicks"] = xr.uiClicks;
+    json["captureStarts"] = xr.captureStarts;
+    json["captureFrames"] = xr.captureFrames;
+    json["captureSize"] = ivec2ToJson(xr.captureSize);
+    json["captureError"] = xr.captureError;
     return json;
 }
 
@@ -2730,6 +2734,10 @@ XrRecord readXr(FieldReader& fields) {
     xr.uiPanelFrames = fields.count("uiPanelFrames");
     xr.uiPointedFrames = fields.count("uiPointedFrames");
     xr.uiClicks = fields.count("uiClicks");
+    xr.captureStarts = fields.count("captureStarts");
+    xr.captureFrames = fields.count("captureFrames");
+    xr.captureSize = readIvec2(fields, "captureSize");
+    xr.captureError = fields.string("captureError");
     return xr;
 }
 

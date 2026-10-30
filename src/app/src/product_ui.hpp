@@ -230,6 +230,8 @@ public:
     [[nodiscard]] bool wantsIdle() const noexcept;
     /// A launch is about to start or a game has the screen (LaunchFlow::pending, LaunchFlow::hostIdle).
     [[nodiscard]] bool launchActive() const noexcept;
+    /// The running launch's emulator window while it shows one (launcher::LaunchSession::window, I10 step 6), else 0.
+    [[nodiscard]] std::uintptr_t launchWindow() const noexcept;
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();

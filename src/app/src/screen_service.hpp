@@ -259,6 +259,11 @@ public:
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
                 const ScreenSelection& selection, bool minimized = false, bool eyeInRoom = true);
 
+    /// I10 step 6 (ADR-0017 §7): the hero screen shows `texture` (the launched game's window captured, `size` texels,
+    /// display-encoded sRGB) in place of its own pictures, its aspect kept on the screen's, until clearGameWindow(),
+    /// which gives the screen its pictures back.
+    void showGameWindow(unsigned texture, glm::ivec2 size);
+    void clearGameWindow();
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
     void launchStarting();
     /// The launch ended, failed to start or was refused: the clips open again at their positions.

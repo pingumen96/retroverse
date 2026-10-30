@@ -456,6 +456,8 @@ struct ScreenService::Impl {
     std::vector<ScreenState*> active;
     std::string lastScreenId;
     gl::MaterialRegistry& materials;
+    /// I10 step 6: the captured game's texture the hero screen shows (showGameWindow()).
+    std::optional<GLuint> gameWindow;
     ScreenServiceOptions options;
     ScreenScheduler scheduler;
     std::vector<Slot> slots;
@@ -1235,6 +1237,10 @@ struct ScreenService::Impl {
         const ScreenPolicy& policy = screen.policy;
         ScreenPicture picture = policy.picture();
         const bool heroScreen = isHero(screen);
+        // I10 step 6: the captured game holds the hero screen.
+        if (heroScreen && gameWindow) {
+            return;
+        }
         // I5 step 4 (ADR-0016 §6): the frame kept when its slot was taken shows while its clip waits for a slot again
         // (its game still the target, its clip still wanted), in place of its still.
         const bool keepFrame = screen.heldFrame.valid() && picture != ScreenPicture::Video &&
@@ -1628,6 +1634,49 @@ struct ScreenService::Impl {
             }
             std::this_thread::sleep_for(kPollInterval);
         }
+    }
+
+    void showGameWindow(GLuint texture, glm::ivec2 size) {
+        ScreenState* screen = hero();
+        if (screen == nullptr || texture == 0 || size.x <= 0 || size.y <= 0) {
+            return;
+        }
+        const bool first = !gameWindow;
+        gameWindow = texture;
+        setRect(*screen, pictureRect(glm::vec2(size), screen->binding.screenSize));
+        if (screen->appliedOverride != texture) {
+            if (auto set = materials.setTextureOverride(screen->binding.material, gl::MaterialTextureSlot::BaseColor,
+                                                        texture);
+                !set) {
+                spdlog::error("{}: the game's window cannot be shown: {}", nameOf(*screen), set.error().toString());
+                return;
+            }
+            screen->appliedOverride = texture;
+        }
+        if (first) {
+            spdlog::info("{} shows the launched game's window ({}x{})", nameOf(*screen), size.x, size.y);
+        }
+    }
+
+    void clearGameWindow() {
+        if (!gameWindow) {
+            return;
+        }
+        gameWindow.reset();
+        ScreenState* screen = hero();
+        if (screen == nullptr) {
+            return;
+        }
+        // The screen's own picture again at the next update.
+        if (auto cleared =
+                materials.setTextureOverride(screen->binding.material, gl::MaterialTextureSlot::BaseColor, 0);
+            !cleared) {
+            spdlog::error("{}: the game's window stays: {}", nameOf(*screen), cleared.error().toString());
+        }
+        screen->appliedOverride = 0;
+        screen->shownPicture = ScreenPicture::IdlePattern;
+        setRect(*screen, kWholeScreen);
+        spdlog::info("{} shows its own pictures again", nameOf(*screen));
     }
 
     void launchStarting() {
@@ -2167,6 +2216,14 @@ std::string ScreenService::screenId() const {
 void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
                            const ScreenSelection& selection, bool minimized, bool eyeInRoom) {
     m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
+}
+
+void ScreenService::showGameWindow(unsigned texture, glm::ivec2 size) {
+    m_impl->showGameWindow(texture, size);
+}
+
+void ScreenService::clearGameWindow() {
+    m_impl->clearGameWindow();
 }
 
 void ScreenService::launchStarting() {

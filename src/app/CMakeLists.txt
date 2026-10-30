@@ -132,6 +132,7 @@ add_library(rv_app STATIC
     src/edit_bar_panel.cpp
     src/world_edit.cpp
     src/world_regenerate.cpp
+    src/xr_game.cpp
     src/xr_movement.cpp
     src/xr_session_driver.cpp
     src/xr_ui.cpp
@@ -143,7 +144,7 @@ target_include_directories(rv_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # Win32 process runner and system probe); rv_devui_model: the mouse's hand-over between the scene and the layers over it
 # (GPU-free, in every build); rv_media: the hero CRT's video decoder (I3, ADR-0012 §7); rv_world: the generated room
 # (I3, ADR-0010); rv_audio: the clips' sound (I5 step 5, ADR-0016 §9), connected to rv_media's decoders here; rv_xr:
-# the VR mode (I10, ADR-0017).
+# the VR mode (I10, ADR-0017), and rv_platform_win_capture its game captured onto the CRT (I10 step 6).
 target_link_libraries(rv_app PUBLIC
     rv_app_cli
     rv_app_catalog
@@ -161,7 +162,8 @@ target_link_libraries(rv_app PUBLIC
     rv_media
     rv_audio
     rv_world
-    rv_xr)
+    rv_xr
+    rv_platform_win_capture)
 
 if(RV_DEV_UI)
     target_link_libraries(rv_app PUBLIC rv_devui)

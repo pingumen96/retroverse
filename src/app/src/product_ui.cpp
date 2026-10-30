@@ -1466,6 +1466,11 @@ void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, b
     }
 }
 
+std::uintptr_t ProductUi::launchWindow() const noexcept {
+    const launcher::LaunchSession* session = m_impl->flow.session();
+    return session != nullptr && !session->finished() ? session->window() : 0;
+}
+
 bool ProductUi::visible() const noexcept {
     return m_impl->visible();
 }
