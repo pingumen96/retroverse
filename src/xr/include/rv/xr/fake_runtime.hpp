@@ -53,6 +53,9 @@ struct FakeRuntimeConfig {
     std::function<std::optional<Pose>(std::uint64_t frame, Hand hand)> handPose;
     /// A hand's trigger at the n-th frame waited for, [0, 1] (I10 step 5); none: released.
     std::function<float(std::uint64_t frame, Hand hand)> handSelect;
+    /// A hand's thumbstick at the n-th frame waited for, [-1, 1] with +y forward (I10 step 10), the pad's stick on that
+    /// side; none: centered.
+    std::function<glm::vec2(std::uint64_t frame, Hand hand)> handStick;
 };
 
 /// A runtime without a headset (ADR-0017 §3, §10): two asymmetric eyes `ipdMeters` apart at the scripted head pose, a

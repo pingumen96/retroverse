@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <nlohmann/json.hpp>
 
@@ -453,4 +454,19 @@ TEST_CASE("input/input_script: steps press the fake runtime's triggers (I10 step
     const rv::Error outOfRange = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightSelect": 2}])");
     CHECK(outOfRange.code == ErrorCode::ValidationFailed);
     CHECK(outOfRange.context == "script.json:/0/rightSelect");
+}
+
+TEST_CASE("input/input_script: steps push the fake runtime's thumbsticks (I10 step 10)", "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 2, "toFrame": 5, "leftStick": [0, -1]},
+        {"fromFrame": 4, "toFrame": 4, "rightStick": [0.5, 0.25]}
+    ])");
+    CHECK(script.handStickAt(1, false) == glm::vec2(0.0f));
+    CHECK(script.handStickAt(2, false) == glm::vec2(0.0f, -1.0f));
+    CHECK(script.handStickAt(4, true) == glm::vec2(0.5f, 0.25f));
+    CHECK(script.handStickAt(5, true) == glm::vec2(0.0f));
+    const rv::Error outOfRange = parseError(R"([{"fromFrame": 0, "toFrame": 0, "leftStick": [0, 1.5]}])");
+    CHECK(outOfRange.code == ErrorCode::ValidationFailed);
+    CHECK(outOfRange.context == "script.json:/0/leftStick");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightStick": [1]}])").context == "script.json:/0/rightStick");
 }

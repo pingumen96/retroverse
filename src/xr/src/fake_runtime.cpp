@@ -215,10 +215,19 @@ Expected<ControllerState> FakeRuntime::syncControllers(std::int64_t /*displayTim
         return tl::unexpected(notRunning("syncControllers"));
     }
     ControllerState state;
+    const std::uint64_t frame = m_framesWaited > 0 ? m_framesWaited - 1 : 0;
+    // I10 step 10: the thumbsticks, as the pad's sticks on their side.
+    if (m_config.handStick) {
+        for (const Hand hand : {Hand::Left, Hand::Right}) {
+            const glm::vec2 stick = m_config.handStick(frame, hand);
+            const bool right = hand == Hand::Right;
+            state.pad.axes[input::toIndex(right ? input::GamepadAxis::RightX : input::GamepadAxis::LeftX)] = stick.x;
+            state.pad.axes[input::toIndex(right ? input::GamepadAxis::RightY : input::GamepadAxis::LeftY)] = stick.y;
+        }
+    }
     if (!m_config.handPose) {
         return state;
     }
-    const std::uint64_t frame = m_framesWaited > 0 ? m_framesWaited - 1 : 0;
     for (const Hand hand : {Hand::Left, Hand::Right}) {
         if (const std::optional<Pose> pose = m_config.handPose(frame, hand)) {
             HandState& held = state.hands[toIndex(hand)];

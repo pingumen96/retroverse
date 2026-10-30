@@ -35,10 +35,11 @@ constexpr std::string_view kLeftHandField = "leftHand";
 constexpr std::string_view kRightHandField = "rightHand";
 constexpr std::string_view kLeftSelectField = "leftSelect";
 constexpr std::string_view kRightSelectField = "rightSelect";
-constexpr std::array<std::string_view, 10> kStepFields{kFromFrameField,  kToFrameField,   kActionsField,
-                                                       kTextField,       kPhaseField,     kHeadPoseField,
-                                                       kLeftHandField,   kRightHandField, kLeftSelectField,
-                                                       kRightSelectField};
+constexpr std::string_view kLeftStickField = "leftStick";
+constexpr std::string_view kRightStickField = "rightStick";
+constexpr std::array<std::string_view, 12> kStepFields{
+    kFromFrameField, kToFrameField,   kActionsField,    kTextField,        kPhaseField,     kHeadPoseField,
+    kLeftHandField,  kRightHandField, kLeftSelectField, kRightSelectField, kLeftStickField, kRightStickField};
 constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
 constexpr float kMaxHeadPitchDeg = 90.0f;
 
@@ -248,12 +249,27 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
             *select = value->get<float>();
         }
     }
+    // I10 step 10: the thumbsticks.
+    for (const auto& [field, stick] : {std::pair{kLeftStickField, &parsed.leftStick},
+                                       std::pair{kRightStickField, &parsed.rightStick}}) {
+        if (const auto value = step.find(field); value != step.end()) {
+            const auto inRange = [](const Json& axis) {
+                return axis.is_number() && std::isfinite(axis.get<double>()) && axis.get<double>() >= -1.0 &&
+                       axis.get<double>() <= 1.0;
+            };
+            if (!value->is_array() || value->size() != 2 || !inRange((*value)[0]) || !inRange((*value)[1])) {
+                return fail(ErrorCode::ValidationFailed, "expected [x, y], each a number from -1 to 1",
+                            at.child(field));
+            }
+            *stick = glm::vec2((*value)[0].get<float>(), (*value)[1].get<float>());
+        }
+    }
 
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
         if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand ||
-            parsed.leftSelect || parsed.rightSelect) {
+            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick) {
             return parsed;
         }
         return fail(ErrorCode::ParseError,
@@ -390,6 +406,17 @@ float InputScript::handSelectAt(std::uint64_t frame, bool right) const {
         }
     }
     return select;
+}
+
+glm::vec2 InputScript::handStickAt(std::uint64_t frame, bool right) const {
+    glm::vec2 stick(0.0f);
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<glm::vec2>& value = right ? step.rightStick : step.leftStick;
+        if (value && step.covers(frame)) {
+            stick = *value;
+        }
+    }
+    return stick;
 }
 
 std::vector<std::string> InputScript::phasesAt(std::uint64_t frame) const {
