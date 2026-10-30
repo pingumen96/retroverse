@@ -647,7 +647,9 @@ struct ScreenService::Impl {
             return;
         }
         // A clip stopped while still asked for opens again where it was.
-        if (reason == "out-of-view" || reason == "minimized" || reason == "needed" || reason == "budget") {
+        // I5 step 8: the world's clips stopped under the media viewer too (ADR-0016 §10).
+        if (reason == "out-of-view" || reason == "minimized" || reason == "viewer" || reason == "needed" ||
+            reason == "budget") {
             if (const std::optional<double> position = clipPosition(slot)) {
                 resumeAt[slot.clip] = *position;
             }
