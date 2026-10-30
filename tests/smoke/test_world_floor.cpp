@@ -555,7 +555,7 @@ Shot renderFloor(const fs::path& dir, const std::string& name, const fs::path& s
 }
 
 /// The floors of esde/building in the elevator's order, each with its own case below.
-const std::vector<std::string> kBuildingFloors{"ground", "computer", "gen4", "gen5", "handheld"};
+const std::vector<std::string> kBuildingFloors{"ground", "gen4", "gen5", "handheld", "computer"};
 
 /// I6 step 1 (ADR-0014 §4) on one floor of esde/building: from its elevator, then for each room from the hall before
 /// its doorway looking in and from 4.5 m inside looking out, with the step's light and with the same scene with only
