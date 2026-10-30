@@ -43,8 +43,10 @@
 		</div>
 		<div id="media-viewer-stage" class="stage">
 			<img id="media-viewer-picture" src="rv-texture:media-viewer-picture" data-if="viewer.state == 'shown' && viewer.kind != 'videos' && viewer.kind != 'manuals'" data-style-width="viewer.width" data-style-height="viewer.height"/>
-			<img id="media-viewer-video" src="rv-texture:media-viewer-video" data-if="viewer.state == 'shown' && viewer.kind == 'videos'" data-style-width="viewer.width" data-style-height="viewer.height"/>
-			<p id="media-video-paused" class="badge" data-if="viewer.state == 'shown' && viewer.kind == 'videos' && viewer.paused">In pausa</p>
+			<div id="media-video-box" class="video-box" data-if="viewer.state == 'shown' && viewer.kind == 'videos'">
+				<img id="media-viewer-video" src="rv-texture:media-viewer-video" data-style-width="viewer.width" data-style-height="viewer.height"/>
+				<p id="media-video-paused" class="badge" data-if="viewer.paused">In pausa</p>
+			</div>
 			<p id="media-loading" class="note" data-if="viewer.state == 'loading' && viewer.kind != 'videos' && viewer.kind != 'manuals'">Caricamento dell'immagine...</p>
 			<p id="media-video-loading" class="note" data-if="viewer.state == 'loading' && viewer.kind == 'videos'">Caricamento del filmato...</p>
 			<div id="media-video-failed" class="fallback" data-if="viewer.state == 'failed' && viewer.kind == 'videos'">
@@ -60,7 +62,7 @@
 				<p class="note" data-if="viewer.reason == 'not-playable'">Il file ha un'estensione che ES-DE non riproduce.</p>
 				<p class="note" data-if="viewer.reason == 'graphics-error'">La scheda video non ha potuto preparare l'immagine del filmato.</p>
 				<p class="note" data-if="!viewer.knownReason">Il filmato non si può riprodurre.</p>
-				<p id="media-video-reason" class="reason">Motivo: {{ viewer.reason }}</p>
+				<p id="media-video-reason" class="reason" data-if="!viewer.knownReason">Motivo: {{ viewer.reason }}</p>
 			</div>
 			<div id="media-manual" class="manual" data-if="viewer.kind == 'manuals'">
 				<p class="fallback-title">Manuale del gioco</p>
@@ -79,7 +81,7 @@
 				<p class="note">Il file c'è, ma non si apre: forse è danneggiato o non è un'immagine PNG o JPEG.</p>
 			</div>
 			<div id="media-none" class="fallback" data-if="viewer.count == 0">
-				<p class="fallback-title">Nessuna immagine</p>
+				<p class="fallback-title">Nessun contenuto</p>
 				<p class="note">Per questo gioco non ci sono copertine, schermate, filmati o manuali nella cartella dei media di ES-DE.</p>
 			</div>
 		</div>
