@@ -50,7 +50,28 @@ Expected<FxaaCheckResult> runFxaaSelfCheck(gl::GLDevice& device, const gl::Textu
     if (!antialiased) {
         return propagate(antialiased.error());
     }
-    return evaluateFxaaCheck(aliased->pixels, antialiased->pixels, kFxaaCheckSize, kFxaaCheckSize);
+    FxaaCheckResult result = evaluateFxaaCheck(aliased->pixels, antialiased->pixels, kFxaaCheckSize, kFxaaCheckSize);
+
+    // The in-place write (docs/i5/memory-margin.md): with the bloom on, the post pass reads the emitted light texel by
+    // texel; with the anti-aliasing after it, it writes over that very storage. Its image must equal, byte for byte,
+    // the one it writes into the output when no anti-aliasing follows.
+    settings.bloomStrength = 0.06f;
+    settings.bloomRadius = 0.7f;
+    settings.antialiasing = false;
+    auto direct = canvas->render(device, unlit, post, settings);
+    if (!direct) {
+        return propagate(direct.error());
+    }
+    settings.antialiasing = true;
+    if (auto bloomed = canvas->render(device, unlit, post, settings); !bloomed) {
+        return propagate(bloomed.error());
+    }
+    auto inPlace = canvas->readTonemapped();
+    if (!inPlace) {
+        return propagate(inPlace.error());
+    }
+    evaluateFxaaInPlaceWrite(result, direct->pixels, inPlace->pixels, kFxaaCheckSize, kFxaaCheckSize);
+    return result;
 }
 
 } // namespace rv::app

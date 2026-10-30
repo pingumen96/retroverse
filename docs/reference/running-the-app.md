@@ -191,7 +191,9 @@ build/rvdata`).
   below the highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must
   glow alike (+-20%) whatever its value and place. `fxaa`: a hard edge slanted 12 degrees between black and white,
   post-processed without dithering, without and then with anti-aliasing: at least half the rows it crosses must get
-  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was. Use `retroverse.exe
+  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was; then with the bloom, the
+  post pass's image written over the emitted light it reads (anti-aliasing on, `docs/i5/memory-margin.md`) must equal
+  byte for byte the one it writes into the output without anti-aliasing. Use `retroverse.exe
   --self-check srgb --smoke --hidden --data-dir build/rvdata` (and `--self-check bloom`, `--self-check fxaa`).
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`) and
   post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the highlights

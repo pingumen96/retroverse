@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 
 #include <rv/core/math.hpp>
@@ -156,6 +157,27 @@ FxaaCheckResult evaluateFxaaCheck(std::span<const std::uint8_t> aliased, std::sp
     result.flatCopied = result.flatPixels > 0 && result.flatChanged == 0;
     result.passed = result.aliasedIsHard && result.edgeBlended && result.flatCopied;
     return result;
+}
+
+void evaluateFxaaInPlaceWrite(FxaaCheckResult& result, std::span<const std::uint8_t> direct,
+                              std::span<const std::uint8_t> inPlace, int width, int height) noexcept {
+    result.inPlacePixels = 0;
+    result.inPlaceChanged = 0;
+    result.inPlaceExact = false;
+    if (width > 0 && height > 0) {
+        const std::size_t pixels = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+        if (direct.size() >= pixels * 4 && inPlace.size() >= pixels * 4) {
+            result.inPlacePixels = pixels;
+            for (std::size_t pixel = 0; pixel < pixels; ++pixel) {
+                const bool same = std::equal(direct.begin() + static_cast<std::ptrdiff_t>(pixel * 4),
+                                             direct.begin() + static_cast<std::ptrdiff_t>(pixel * 4 + 4),
+                                             inPlace.begin() + static_cast<std::ptrdiff_t>(pixel * 4));
+                result.inPlaceChanged += same ? 0 : 1;
+            }
+            result.inPlaceExact = result.inPlaceChanged == 0;
+        }
+    }
+    result.passed = result.passed && result.inPlaceExact;
 }
 
 } // namespace rv::app

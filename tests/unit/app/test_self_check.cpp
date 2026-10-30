@@ -236,3 +236,40 @@ TEST_CASE("app/self_check: the FXAA check fails what made the anti-aliasing wron
     CHECK_FALSE(rv::app::evaluateFxaaCheck(edge, std::span(edge).first(edge.size() - 4), kEdgeSize, kEdgeSize).passed);
     CHECK_FALSE(rv::app::evaluateFxaaCheck(edge, edge, 0, kEdgeSize).passed);
 }
+
+TEST_CASE("app/self_check: the FXAA check needs the in-place write equal to the direct one", "[app][self_check]") {
+    const auto passing = [] {
+        return rv::app::evaluateFxaaCheck(hardEdge(), blendedEdge(kEdgeSize), kEdgeSize, kEdgeSize);
+    };
+    std::vector<std::uint8_t> bloomed = blendedEdge(kEdgeSize);
+    setGrey(bloomed, 2, 3, 17);
+
+    auto equal = passing();
+    REQUIRE(equal.passed);
+    rv::app::evaluateFxaaInPlaceWrite(equal, bloomed, bloomed, kEdgeSize, kEdgeSize);
+    CHECK(equal.inPlacePixels == static_cast<std::size_t>(kEdgeSize * kEdgeSize));
+    CHECK(equal.inPlaceChanged == 0);
+    CHECK(equal.inPlaceExact);
+    CHECK(equal.passed);
+
+    // One byte apart, the alpha (the luma the anti-aliasing reads) included.
+    std::vector<std::uint8_t> alpha = bloomed;
+    alpha[(5 * kEdgeSize + 1) * 4 + 3] = 254;
+    auto differs = passing();
+    rv::app::evaluateFxaaInPlaceWrite(differs, bloomed, alpha, kEdgeSize, kEdgeSize);
+    CHECK(differs.inPlaceChanged == 1);
+    CHECK_FALSE(differs.inPlaceExact);
+    CHECK_FALSE(differs.passed);
+
+    // A failed FXAA check stays failed; read-backs that do not hold the target fail.
+    auto failed = rv::app::evaluateFxaaCheck(hardEdge(), hardEdge(), kEdgeSize, kEdgeSize);
+    rv::app::evaluateFxaaInPlaceWrite(failed, bloomed, bloomed, kEdgeSize, kEdgeSize);
+    CHECK(failed.inPlaceExact);
+    CHECK_FALSE(failed.passed);
+    auto truncated = passing();
+    rv::app::evaluateFxaaInPlaceWrite(truncated, bloomed, std::span(bloomed).first(bloomed.size() - 4), kEdgeSize,
+                                      kEdgeSize);
+    CHECK(truncated.inPlacePixels == 0);
+    CHECK_FALSE(truncated.inPlaceExact);
+    CHECK_FALSE(truncated.passed);
+}

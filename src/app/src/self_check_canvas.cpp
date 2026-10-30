@@ -132,4 +132,10 @@ Expected<assets::ImageData> SelfCheckCanvas::render(gl::GLDevice& device, const 
     return pixels;
 }
 
+Expected<assets::ImageData> SelfCheckCanvas::readTonemapped() const {
+    auto pixels = m_state->targets.tonemapped().readPixels();
+    gl::Framebuffer::unbind();
+    return pixels;
+}
+
 } // namespace rv::app
