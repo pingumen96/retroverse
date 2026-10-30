@@ -188,12 +188,14 @@ TEST_CASE("world benchmark: the benchmark path in the fake headset at Link's siz
         passes += fmt::format("{}{} p50 {:.3f} p99 {:.3f} ms", passes.empty() ? "" : "; ", pass.name, pass.times.p50Ms,
                               pass.times.p99Ms);
     }
-    WARN(fmt::format("VR benchmark ({}, {}): phase {} frames, frame p50 {:.2f} ms, p95 {:.2f} ms, p99 {:.2f} ms, max "
-                     "{:.2f} ms; both eyes' GPU about p50 {:.2f} ms, p99 {:.2f} ms; one eye: {}; the session's CPU p99 "
-                     "{:.2f} ms",
-                     report.buildType, report.context ? report.context->renderer : std::string("?"), times.count,
-                     times.p50Ms, times.p95Ms, times.p99Ms, times.maxMs, 2.0 * total->times.p50Ms,
-                     2.0 * total->times.p99Ms, passes, report.xr->cpuTimes ? report.xr->cpuTimes->p99Ms : -1.0));
+    // The frame's figures first: the gate's row reads the first line of the wrapped message.
+    WARN(fmt::format("VR benchmark at 72 Hz: frame p50 {:.2f} ms, p99 {:.2f} ms ({}, {}; phase {} frames, p95 {:.2f} "
+                     "ms, max {:.2f} ms; both eyes' GPU about p50 {:.2f} ms, p99 {:.2f} ms; one eye: {}; the session's "
+                     "CPU p99 {:.2f} ms)",
+                     times.p50Ms, times.p99Ms, report.buildType,
+                     report.context ? report.context->renderer : std::string("?"), times.count, times.p95Ms,
+                     times.maxMs, 2.0 * total->times.p50Ms, 2.0 * total->times.p99Ms, passes,
+                     report.xr->cpuTimes ? report.xr->cpuTimes->p99Ms : -1.0));
 #if defined(NDEBUG)
     // ADR-0017 §9 at 72 Hz: a frame within the display's period typically, never far beyond it.
     CHECK(times.p50Ms <= 13.9);
@@ -236,11 +238,11 @@ TEST_CASE("world benchmark: the benchmark path in the fake headset at 120 Hz, th
         passes += fmt::format("{}{} p50 {:.3f} p99 {:.3f} ms", passes.empty() ? "" : "; ", pass.name, pass.times.p50Ms,
                               pass.times.p99Ms);
     }
-    WARN(fmt::format("VR benchmark at 120 Hz ({}, {}): phase {} frames, frame p50 {:.2f} ms, p95 {:.2f} ms, p99 {:.2f} "
-                     "ms, max {:.2f} ms; both eyes' GPU about p50 {:.2f} ms, p99 {:.2f} ms; one eye: {}",
-                     report.buildType, report.context ? report.context->renderer : std::string("?"), times.count,
-                     times.p50Ms, times.p95Ms, times.p99Ms, times.maxMs, 2.0 * total->times.p50Ms,
-                     2.0 * total->times.p99Ms, passes));
+    WARN(fmt::format("VR benchmark at 120 Hz: frame p50 {:.2f} ms, p99 {:.2f} ms ({}, {}; phase {} frames, p95 {:.2f} "
+                     "ms, max {:.2f} ms; both eyes' GPU about p50 {:.2f} ms, p99 {:.2f} ms; one eye: {})",
+                     times.p50Ms, times.p99Ms, report.buildType,
+                     report.context ? report.context->renderer : std::string("?"), times.count, times.p95Ms,
+                     times.maxMs, 2.0 * total->times.p50Ms, 2.0 * total->times.p99Ms, passes));
 #if defined(NDEBUG)
     // 120 Hz (the 2026-10-30 amendment to ADR-0017 §9): within the period typically, never below 90 Hz's.
     CHECK(times.p50Ms <= 8.3);

@@ -81,7 +81,8 @@
     the focus watcher; -RealLibrary and the real library's options passed on), then the VR mode's rows:
       9. golden G21 (both eyes in the test room) in Debug and Release, from the GPU runs' verdicts;
      10. the VR benchmark path in Release (tests/smoke/test_world_benchmark.cpp: the snes-stress room, both eyes at
-         Link's 2048 x 2048, the fake runtime) against ADR-0017 §9: frame p50 at most 13.9 ms, p99 at most 20 ms.
+         Link's 2048 x 2048, the fake runtime) against ADR-0017 §9: frame p50 at most 13.9 ms, p99 at most 20 ms; the
+         same path at 120 Hz with the fast profile (I10 step 9): p50 at most 8.3 ms, p99 at most 11.1 ms.
     -TimingOnly (Gate D) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the benchmark
     path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests).
     Gates M1, B, C and D run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
@@ -230,10 +231,10 @@ if ($Gate -eq 'VR') {
         'world benchmark: the benchmark path in the fake headset*' *> $benchLog
     $benchExit = $LASTEXITCODE
     $env:RV_LAUNCH_BACKGROUND = $previous
-    $figures = (Select-String -Path $benchLog -Pattern 'VR benchmark' | Select-Object -First 1).Line
+    $figures = ((Select-String -Path $benchLog -Pattern 'VR benchmark' | ForEach-Object { $_.Line.Trim() }) -join ' | ')
     $result = if ($benchExit -eq 0) { 'passed' } elseif ($benchExit -eq 4) { 'skipped' } else { 'FAILED' }
     Add-Result 'VR benchmark (Release)' $result ($(if ($figures) { $figures.Trim() } else { "exit $benchExit, $benchLog" })) `
-        $timer.Elapsed.TotalSeconds 'frame p50 13.9 ms, p99 20 ms'
+        $timer.Elapsed.TotalSeconds 'frame p50 13.9 / p99 20 ms; 120 Hz 8.3 / 11.1 ms'
     $results | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $resultsFile
     exit (Write-Summary)
 }
