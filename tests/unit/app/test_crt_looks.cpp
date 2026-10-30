@@ -120,7 +120,7 @@ TEST_CASE("app/crt_looks: video.json's keys by screen, room and kind, the scene'
     lounge.screens.emplace("room:gen6/fx:side.secondary_tv", rv::app::ScreenOverrides{.crtPreset = std::string("neutral")});
     video.rooms.emplace("room:gen6", lounge);
     rv::app::RoomVideoOverrides snes;
-    snes.hero = rv::app::ScreenOverrides{.crtPreset = std::string()}; // "" in a room: its kind's own
+    snes.hero = rv::app::ScreenOverrides{.crtPreset = std::string()}; // "" in a room: none, its kind's key
     video.rooms.emplace("room:snes", snes);
 
     ScreenLooks looks;
@@ -159,6 +159,37 @@ TEST_CASE("app/crt_looks: video.json's keys by screen, room and kind, the scene'
     // Each choice's values are its preset's.
     const CrtChoice arcade{CrtPreset::Arcade, CrtPreset::Consumer, CrtRule::Kind};
     CHECK(looks.effect(arcade) == rv::assets::builtInCrtPresets()[CrtPreset::Arcade]);
+}
+
+TEST_CASE("app/crt_looks: a room's or a screen's empty crtPreset leaves the kind's", "[app][crt_looks]") {
+    // ADR-0016 §7: "" is none. The user's kind key (arcade for every hero) stays under a room's and a screen's "".
+    rv::app::VideoSettings video;
+    video.hero.crtPreset = "arcade";
+    rv::app::RoomVideoOverrides snes;
+    snes.hero = rv::app::ScreenOverrides{.crtPreset = std::string()};
+    snes.screens.emplace("room:snes/fx:hero.crt", rv::app::ScreenOverrides{.crtPreset = std::string()});
+    video.rooms.emplace("room:snes", snes);
+    rv::app::RoomVideoOverrides lounge;
+    lounge.screens.emplace("room:gen6/fx:hero.crt", rv::app::ScreenOverrides{.crtPreset = std::string()});
+    video.rooms.emplace("room:gen6", lounge);
+
+    CHECK(video.screen(ScreenKind::Hero, "room:snes").crtPreset == "arcade");
+    CHECK(video.screen(ScreenKind::Hero, "room:snes", "room:snes/fx:hero.crt").crtPreset == "arcade");
+    CHECK(video.screen(ScreenKind::Hero, "room:gen6", "room:gen6/fx:hero.crt").crtPreset == "arcade");
+
+    ScreenLooks looks;
+    looks.setVideo(video);
+    looks.setScene({{"room:snes", "monitor"}, {"room:gen6", "monitor"}});
+    // The kind's key (arcade) over the pack's, whatever the room's and the screen's "".
+    CHECK(looks.choose(ScreenKind::Hero, "room:snes", "room:snes/fx:hero.crt") ==
+          CrtChoice{CrtPreset::Arcade, CrtPreset::Arcade, CrtRule::VideoSettings});
+    CHECK(looks.choose(ScreenKind::Hero, "room:gen6", "room:gen6/fx:hero.crt") ==
+          CrtChoice{CrtPreset::Arcade, CrtPreset::Arcade, CrtRule::VideoSettings});
+    // Without the kind's key, the room's "" leaves the pack's.
+    video.hero.crtPreset.clear();
+    looks.setVideo(video);
+    CHECK(looks.choose(ScreenKind::Hero, "room:snes", "room:snes/fx:hero.crt") ==
+          CrtChoice{CrtPreset::Monitor, CrtPreset::Monitor, CrtRule::Pack});
 }
 
 TEST_CASE("app/crt_looks: a scene's screens and their rooms", "[app][crt_looks]") {

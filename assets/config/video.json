@@ -22,7 +22,8 @@
     "muted": false
   },
   // Per screen kind: autoplay, the playlist ("shuffle", "sequential", "favorites", "recent", "explicit"), the seconds a
-  // clip plays before the next, whether the focused game plays, the volume, the CRT preset ("" for the kind's own).
+  // clip plays before the next, whether the focused game plays, the volume, the CRT preset ("" for none: the room pack's
+  // preset, else the kind's default).
   "hero": {
     "enabled": true,
     "playlist": "shuffle",
