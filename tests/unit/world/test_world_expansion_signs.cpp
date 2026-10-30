@@ -79,15 +79,20 @@ TEST_CASE("world/expansion_signs: an expansion's portal, fascia and neon signs s
     CHECK(computer->rooms.at(roomId("room:amiga:2")).platform.signText == sign + " 2");
     CHECK(titleOf(findObject(hall, "hall:computer/portal:room:amiga/sign")) == sign);
     CHECK(titleOf(findObject(hall, "hall:computer/portal:room:amiga:2/sign")) == sign + " 2");
+    // Its blade signs (one per side the hall's portal shows one on): at least one, each numbered.
+    std::size_t blades = 0;
     for (const std::string_view side : {"east", "west"}) {
         const std::string blade = "hall:computer/portal:room:amiga:2/blade-" + std::string(side);
         if (const nlohmann::json* object = findObject(hall, blade)) {
+            ++blades;
             CHECK(titleOf(object) == sign + " 2");
         }
     }
+    REQUIRE(blades > 0);
     // Each room's own neon sign (its hero corner's): the head's as it was, the expansion's numbered.
     const std::vector<std::string> headNeon = neonTitles(hall, "room:amiga");
     const std::vector<std::string> expansionNeon = neonTitles(hall, "room:amiga:2");
+    REQUIRE_FALSE(headNeon.empty());
     REQUIRE_FALSE(expansionNeon.empty());
     for (const std::string& title : headNeon) {
         CHECK(title == sign);
