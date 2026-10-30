@@ -14,9 +14,9 @@
 //     once, then half a second's ease to the room's from the change of area, one way); --start-room room:snes: the
 //     room's environment and lights at once; the ground floor's lobby from the elevator likewise. The screenshots stay
 //     in build/<preset>/smoke/world_floor for a look;
-//   - light through doorways (I6 step 1, ADR-0014 §4): every floor of the building, each room seen from its hall and
-//     the hall from the room, against the same scene with only the neighbours cut and as I4 lit it, and no leak beside
-//     the doorway (world_floor_light).
+//   - light through doorways (I6 step 1, ADR-0014 §4): every floor of the building in a case of its own, each room seen
+//     from its hall and the hall from the room, against the same scene with only the neighbours cut (and on gen4's
+//     floor as I4 lit it), and no leak beside the doorway (world_floor_light/<floor>).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -554,234 +554,302 @@ Shot renderFloor(const fs::path& dir, const std::string& name, const fs::path& s
     return Shot{*run.report, requireScreenshot(run, shot, {1920, 1080})};
 }
 
-} // namespace
+/// The floors of esde/building in the elevator's order, each with its own case below.
+const std::vector<std::string> kBuildingFloors{"ground", "gen4", "gen5", "handheld", "computer"};
 
-TEST_CASE("world floor: light reaches through the doorways: each room glows seen from its hall, the hall from the room",
-          "[gpu][world_floor]") {
-    // I6 step 1 (ADR-0014 §4): every floor of esde/building, from its elevator, then for each room from the hall before
-    // its doorway looking in and from 4.5 m inside looking out, with the step's light, with the same scene with only
-    // the neighbours cut (withoutNeighbours: the ambient, the fill spot and the hall role kept) and as I4 lit it
-    // (asLitInI4). Through the doorway, between eye height and its head (the far side's upper walls and ceiling): I4
-    // showed about 2 to 10 of 255 there; with the neighbours cut about 11 to 16; with them about 28 to 51 (Debug):
-    // the far area's lights seen through the doorway are what lights it, above 12, twice I4 and a quarter more than
-    // without them. Beside the doorway (the ceilings and floors a little off it, the doorway's wall on both sides)
-    // every probe reads as with the neighbours cut: no light through the wall. The run reports' lights block as
-    // packed: the room's several lights (its key light unshadowed) clipped to the doorway, all whole in a still view.
-    // The key light stays the eye's area's own: none in the hall, the room's from the room. The screenshots stay in
-    // build/<preset>/smoke/world_floor_light for a look.
+/// I6 step 1 (ADR-0014 §4) on one floor of esde/building: from its elevator, then for each room from the hall before
+/// its doorway looking in and from 4.5 m inside looking out, with the step's light and with the same scene with only
+/// the neighbours cut (withoutNeighbours: the ambient, the fill spot and the hall role kept); with `compareWithI4`,
+/// also as I4 lit it (asLitInI4; one floor's case, each run a Debug process). Through the doorway, between eye height
+/// and its head (the far side's upper walls and ceiling): I4 showed about 2 to 10 of 255 there; with the neighbours cut
+/// about 11 to 16; with them about 28 to 51 (Debug): the far area's lights seen through the doorway are what lights it,
+/// above 12, twice I4 and a quarter more than without them. Beside the doorway (the ceilings and floors a little off
+/// it, the doorway's wall on both sides) every probe reads as with the neighbours cut: no light through the wall; the
+/// views tilted up and down that show the ceilings and the hall's floor are taken at the floor's first north and first
+/// south doorway (every doorway of a side has the same section). The run reports' lights block as packed: the room's
+/// several lights (its key light unshadowed) clipped to the doorway, all whole in a still view. The key light stays
+/// the eye's area's own: none in the hall, the room's from the room. The screenshots stay in
+/// build/<preset>/smoke/world_floor_light/<floor> for a look.
+void checkLightThroughDoorways(const std::string& floorId, bool compareWithI4) {
     PlannedBuilding building;
-    const fs::path dir = freshCaseDir("world_floor_light");
+    const fs::path dir = freshCaseDir("world_floor_light/" + floorId);
     const auto stored = rv::world::readStoredPlan(
         rv::world::worldFiles(building.data, rv::catalog::LibraryId::parse("esde").value()).plan);
     REQUIRE(stored.has_value());
-    REQUIRE(stored->plan.floors.size() >= 5);
-    std::size_t rooms = 0;
+    // Every floor of the plan has its case: a floor the fixture gains needs one.
+    std::vector<std::string> floors;
     for (const rv::world::Floor& floor : stored->plan.floors) {
-        INFO(floor.id);
-        const fs::path scene = building.floorScene(floor.id);
-        const auto file = rv::core::readJsonFile(scene);
-        REQUIRE(file.has_value());
-        const fs::path old = dir / (floor.id + ".i4.scene.json");
+        floors.push_back(floor.id);
+    }
+    REQUIRE(floors == kBuildingFloors);
+    INFO(floorId);
+    const fs::path scene = building.floorScene(floorId);
+    const auto file = rv::core::readJsonFile(scene);
+    REQUIRE(file.has_value());
+    const fs::path old = dir / (floorId + ".i4.scene.json");
+    if (compareWithI4) {
         writeSceneVariant(scene, old, asLitInI4);
-        const fs::path cut = dir / (floor.id + ".cut.scene.json");
-        writeSceneVariant(scene, cut, withoutNeighbours);
-        const std::string hall = "hall:" + floor.id;
+    }
+    const fs::path cut = dir / (floorId + ".cut.scene.json");
+    writeSceneVariant(scene, cut, withoutNeighbours);
+    const std::string hall = "hall:" + floorId;
 
-        const Shot elevator = renderFloor(dir, floor.id + "_elevator", scene, std::nullopt);
-        CHECK(elevator.report.sceneAreas->area == hall);
-        CHECK(elevator.report.sceneAreas->keyLight.empty());
+    const Shot elevator = renderFloor(dir, floorId + "_elevator", scene, std::nullopt);
+    CHECK(elevator.report.sceneAreas->area == hall);
+    CHECK(elevator.report.sceneAreas->keyLight.empty());
 
-        const nlohmann::json* hallArea = nullptr;
-        for (const nlohmann::json& area : (*file)["areas"]) {
-            hallArea = area["id"] == hall ? &area : hallArea;
-        }
-        REQUIRE(hallArea != nullptr);
-        const nlohmann::json& hallBox = (*hallArea)["boxes"][0];
-        const float hallHeight = hallBox["max"][1].get<float>();
-        // The ground floor's hub (I6 step 5): a balcony along its walls, its soffit the ceiling beside a doorway.
-        const bool hub = floor.id == rv::world::kGroundFloor;
-        const float hallCeilingHeight =
-            hub ? static_cast<float>(rv::world::kHubBalconyFloorMm - rv::world::kHubBalconySlabMm) / 1000.0f
-                : hallHeight;
-        for (const DoorwayView& door : doorwaysOf(*file)) {
-            INFO(door.room);
-            ++rooms;
-            const float x = (door.passageMin.x + door.passageMax.x) / 2.0f;
-            // From the hall's far side (at most 3 m from the doorway: the ground floor's hub is 14 m wide, its
-            // landmark between its walls, I6 step 5), facing the doorway; from 4.5 m inside the room, facing out.
-            const float hallZ = door.north ? std::min(hallBox["max"][2].get<float>() - 0.4f, door.passageMax.z + 3.0f)
-                                           : std::max(hallBox["min"][2].get<float>() + 0.4f, door.passageMin.z - 3.0f);
-            const float roomZ = door.north ? door.passageMin.z - 4.5f : door.passageMax.z + 4.5f;
-            const float inYaw = door.north ? 0.0f : 180.0f;
-            const float outYaw = door.north ? 180.0f : 0.0f;
-            const rv::app::SpawnPoint fromHall{{x, 0.0f, hallZ}, inYaw, -4.0f};
-            const rv::app::SpawnPoint fromRoom{{x, 0.0f, roomZ}, outYaw, -4.0f};
-            std::string tag = floor.id + "_" + door.room;
-            std::replace(tag.begin(), tag.end(), ':', '_');
-            const Shot inward = renderFloor(dir, tag + "_from_hall", scene, fromHall);
+    const nlohmann::json* hallArea = nullptr;
+    for (const nlohmann::json& area : (*file)["areas"]) {
+        hallArea = area["id"] == hall ? &area : hallArea;
+    }
+    REQUIRE(hallArea != nullptr);
+    const nlohmann::json& hallBox = (*hallArea)["boxes"][0];
+    const float hallHeight = hallBox["max"][1].get<float>();
+    // The ground floor's hub (I6 step 5): a balcony along its walls, its soffit the ceiling beside a doorway.
+    const bool hub = floorId == rv::world::kGroundFloor;
+    const float hallCeilingHeight =
+        hub ? static_cast<float>(rv::world::kHubBalconyFloorMm - rv::world::kHubBalconySlabMm) / 1000.0f : hallHeight;
+    const std::vector<DoorwayView> doors = doorwaysOf(*file);
+    CHECK_FALSE(doors.empty());
+    bool tiltedNorth = false;
+    bool tiltedSouth = false;
+    for (const DoorwayView& door : doors) {
+        INFO(door.room);
+        const float x = (door.passageMin.x + door.passageMax.x) / 2.0f;
+        // From the hall's far side (at most 3 m from the doorway: the ground floor's hub is 14 m wide, its
+        // landmark between its walls, I6 step 5), facing the doorway; from 4.5 m inside the room, facing out.
+        const float hallZ = door.north ? std::min(hallBox["max"][2].get<float>() - 0.4f, door.passageMax.z + 3.0f)
+                                       : std::max(hallBox["min"][2].get<float>() + 0.4f, door.passageMin.z - 3.0f);
+        const float roomZ = door.north ? door.passageMin.z - 4.5f : door.passageMax.z + 4.5f;
+        const float inYaw = door.north ? 0.0f : 180.0f;
+        const float outYaw = door.north ? 180.0f : 0.0f;
+        const rv::app::SpawnPoint fromHall{{x, 0.0f, hallZ}, inYaw, -4.0f};
+        const rv::app::SpawnPoint fromRoom{{x, 0.0f, roomZ}, outYaw, -4.0f};
+        std::string tag = floorId + "_" + door.room;
+        std::replace(tag.begin(), tag.end(), ':', '_');
+        const Shot inward = renderFloor(dir, tag + "_from_hall", scene, fromHall);
+        const Shot outward = renderFloor(dir, tag + "_looking_out", scene, fromRoom);
+        const Shot inwardCut = renderFloor(dir, tag + "_from_hall_cut", cut, fromHall);
+        const Shot outwardCut = renderFloor(dir, tag + "_looking_out_cut", cut, fromRoom);
+
+        const float hallFace = door.north ? door.passageMax.z : door.passageMin.z;
+        const float roomFace = door.north ? door.passageMin.z : door.passageMax.z;
+        const rv::scene::CameraSetup hallCamera = cameraAt(fromHall.feet, inYaw, -4.0f);
+        const rv::scene::CameraSetup roomCamera = cameraAt(fromRoom.feet, outYaw, -4.0f);
+        const double roomSeen = openingLuma(inward.image, hallCamera, door, hallFace);
+        const double hallSeen = openingLuma(outward.image, roomCamera, door, roomFace);
+        INFO("through the doorway, above eye height: the room from the hall " << roomSeen
+                                                                             << ", the hall from the room "
+                                                                             << hallSeen);
+        CHECK(roomSeen > 12.0);
+        CHECK(hallSeen > 12.0);
+        // As I4 lit it (one floor's case): the far side at most half as bright, the room's view its own lights
+        // alone.
+        double roomSeenI4 = -1.0;
+        double hallSeenI4 = -1.0;
+        if (compareWithI4) {
             const Shot inwardI4 = renderFloor(dir, tag + "_from_hall_i4", old, fromHall);
-            const Shot outward = renderFloor(dir, tag + "_looking_out", scene, fromRoom);
             const Shot outwardI4 = renderFloor(dir, tag + "_looking_out_i4", old, fromRoom);
-            const Shot inwardCut = renderFloor(dir, tag + "_from_hall_cut", cut, fromHall);
-            const Shot outwardCut = renderFloor(dir, tag + "_looking_out_cut", cut, fromRoom);
-
-            const float hallFace = door.north ? door.passageMax.z : door.passageMin.z;
-            const float roomFace = door.north ? door.passageMin.z : door.passageMax.z;
-            const rv::scene::CameraSetup hallCamera = cameraAt(fromHall.feet, inYaw, -4.0f);
-            const rv::scene::CameraSetup roomCamera = cameraAt(fromRoom.feet, outYaw, -4.0f);
-            const double roomSeen = openingLuma(inward.image, hallCamera, door, hallFace);
-            const double roomSeenI4 = openingLuma(inwardI4.image, hallCamera, door, hallFace);
-            const double hallSeen = openingLuma(outward.image, roomCamera, door, roomFace);
-            const double hallSeenI4 = openingLuma(outwardI4.image, roomCamera, door, roomFace);
-            INFO("through the doorway, above eye height: the room from the hall " << roomSeen << " (I4: " << roomSeenI4
-                                                                                 << "), the hall from the room "
-                                                                                 << hallSeen << " (I4: " << hallSeenI4
-                                                                                 << ")");
-            CHECK(roomSeen > 12.0);
+            roomSeenI4 = openingLuma(inwardI4.image, hallCamera, door, hallFace);
+            hallSeenI4 = openingLuma(outwardI4.image, roomCamera, door, roomFace);
+            INFO("as I4 lit it: the room from the hall " << roomSeenI4 << ", the hall from the room " << hallSeenI4);
             CHECK(roomSeen > 2.0 * roomSeenI4);
-            CHECK(hallSeen > 12.0);
-            if (!hub) {
+            if (hub) {
+                // The hub seen from a room holds its own light in every variant: the room's view adds the hub's
+                // lights to it, not a multiple of it (I6 step 5, Release: about 24 above I4).
+                CHECK(hallSeen > hallSeenI4 + 12.0);
+            } else {
                 CHECK(hallSeen > 2.0 * hallSeenI4);
             }
-            // The neighbours' share alone: the same scene with only the neighbours cut (the ambient, the fill spot and
-            // the hall role kept) shows the far side darker by a clear margin.
-            const double roomSeenCut = openingLuma(inwardCut.image, hallCamera, door, hallFace);
-            const double hallSeenCut = openingLuma(outwardCut.image, roomCamera, door, roomFace);
-            INFO("with the neighbours cut: the room from the hall " << roomSeenCut << ", the hall from the room "
-                                                                    << hallSeenCut);
-            CHECK(roomSeen > 1.25 * roomSeenCut + 2.0);
-            if (hub) {
-                // The hub seen from a room holds its own light in every variant (the chandelier, the lanterns, the
-                // downlights and the fascia's signs glow; its own lights are brighter than a hall's): the room's view
-                // adds the hub's lights to it, not a multiple of it (I6 step 5, Release: about 24 above I4, 10 above
-                // the cut, 76 in all).
-                CHECK(hallSeen > hallSeenI4 + 12.0);
-                CHECK(hallSeen > hallSeenCut + 5.0);
-            } else {
-                CHECK(hallSeen > 1.25 * hallSeenCut + 2.0);
-            }
-            WARN("light probes " << tag << ": the room from the hall " << roomSeen << " (cut " << roomSeenCut
-                                 << ", I4 " << roomSeenI4 << "), the hall from the room " << hallSeen << " (cut "
-                                 << hallSeenCut << ", I4 " << hallSeenI4 << ")");
+            CHECK(std::all_of(outwardI4.report.sceneAreas->lights.begin(),
+                              outwardI4.report.sceneAreas->lights.end(),
+                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+        }
+        // The neighbours' share alone: the same scene with only the neighbours cut (the ambient, the fill spot and
+        // the hall role kept) shows the far side darker by a clear margin.
+        const double roomSeenCut = openingLuma(inwardCut.image, hallCamera, door, hallFace);
+        const double hallSeenCut = openingLuma(outwardCut.image, roomCamera, door, roomFace);
+        INFO("with the neighbours cut: the room from the hall " << roomSeenCut << ", the hall from the room "
+                                                                << hallSeenCut);
+        CHECK(roomSeen > 1.25 * roomSeenCut + 2.0);
+        if (hub) {
+            // The hub seen from a room holds its own light in every variant (the chandelier, the lanterns, the
+            // downlights and the fascia's signs glow; its own lights are brighter than a hall's): the room's view
+            // adds the hub's lights to it, not a multiple of it (I6 step 5, Release: about 24 above I4, 10 above
+            // the cut, 76 in all).
+            CHECK(hallSeen > hallSeenCut + 5.0);
+        } else {
+            CHECK(hallSeen > 1.25 * hallSeenCut + 2.0);
+        }
+        WARN("light probes " << tag << ": the room from the hall " << roomSeen << " (cut " << roomSeenCut
+                             << ", I4 " << roomSeenI4 << "), the hall from the room " << hallSeen << " (cut "
+                             << hallSeenCut << ", I4 " << hallSeenI4 << ")"
+                             << (compareWithI4 ? "" : "; I4's variant not run on this floor"));
 
-            // No leak through the wall beside the doorway: in the room the ceiling 2 m to each side of the doorway's
-            // middle, 0.3 m from its wall, and the floor 2.5 m to each side, 0.15 m from it; in the hall (narrower, its
-            // view closer) the same 1.5 m to each side: each reads as with the neighbours cut (the neighbours' lights
-            // reach a surface beyond the doorway's plane only through the opening, and no straight line from these
-            // patches to the far side's lights passes through it). Views tilted up and down from the same places.
-            const float roomInward = door.north ? -1.0f : 1.0f;
-            const auto leakViews = [&](const std::string& name, const rv::app::SpawnPoint& at, float pitch) {
-                rv::app::SpawnPoint tilted = at;
-                tilted.pitchDeg = pitch;
-                return std::pair{renderFloor(dir, tag + "_" + name, scene, tilted),
-                                 renderFloor(dir, tag + "_" + name + "_cut", cut, tilted)};
-            };
-            const auto [hallUp, hallUpCut] = leakViews("hall_up", fromHall, 20.0f);
-            const auto [hallDown, hallDownCut] = leakViews("hall_down", fromHall, -20.0f);
-            const auto [roomUp, roomUpCut] = leakViews("room_up", fromRoom, 12.0f);
-            const rv::scene::CameraSetup hallUpCamera = cameraAt(fromHall.feet, inYaw, 20.0f);
-            const rv::scene::CameraSetup hallDownCamera = cameraAt(fromHall.feet, inYaw, -20.0f);
-            const rv::scene::CameraSetup roomUpCamera = cameraAt(fromRoom.feet, outYaw, 12.0f);
-            for (const float side : {-1.0f, 1.0f}) {
-                const glm::vec3 roomCeiling(x + 2.0f * side, door.roomHeight - 0.01f, roomFace + 0.3f * roomInward);
-                const glm::vec3 roomFloor(x + 2.5f * side, 0.01f, roomFace + 0.15f * roomInward);
+        // No leak through the wall beside the doorway: in the room the ceiling 2 m to each side of the doorway's
+        // middle, 0.3 m from its wall, and the floor 2.5 m to each side, 0.15 m from it; in the hall (narrower, its
+        // view closer) the same 1.5 m to each side: each reads as with the neighbours cut (the neighbours' lights
+        // reach a surface beyond the doorway's plane only through the opening, and no straight line from these
+        // patches to the far side's lights passes through it). The ceilings and the hall's floor from views tilted
+        // up and down from the same places, at the floor's first doorway of each side.
+        const float roomInward = door.north ? -1.0f : 1.0f;
+        bool& tiltedSide = door.north ? tiltedNorth : tiltedSouth;
+        const bool tilted = !tiltedSide;
+        tiltedSide = true;
+        const auto leakViews = [&](const std::string& name, const rv::app::SpawnPoint& at, float pitch) {
+            rv::app::SpawnPoint view = at;
+            view.pitchDeg = pitch;
+            return std::pair{renderFloor(dir, tag + "_" + name, scene, view),
+                             renderFloor(dir, tag + "_" + name + "_cut", cut, view)};
+        };
+        std::optional<std::pair<Shot, Shot>> hallUp;
+        std::optional<std::pair<Shot, Shot>> hallDown;
+        std::optional<std::pair<Shot, Shot>> roomUp;
+        if (tilted) {
+            hallUp = leakViews("hall_up", fromHall, 20.0f);
+            hallDown = leakViews("hall_down", fromHall, -20.0f);
+            roomUp = leakViews("room_up", fromRoom, 12.0f);
+        }
+        const rv::scene::CameraSetup hallUpCamera = cameraAt(fromHall.feet, inYaw, 20.0f);
+        const rv::scene::CameraSetup hallDownCamera = cameraAt(fromHall.feet, inYaw, -20.0f);
+        const rv::scene::CameraSetup roomUpCamera = cameraAt(fromRoom.feet, outYaw, 12.0f);
+        for (const float side : {-1.0f, 1.0f}) {
+            const glm::vec3 roomFloor(x + 2.5f * side, 0.01f, roomFace + 0.15f * roomInward);
+            const double roomFloorLuma = levelPatchLuma(outward.image, roomCamera, roomFloor, 0.2f);
+            const double roomFloorCut = levelPatchLuma(outwardCut.image, roomCamera, roomFloor, 0.2f);
+            INFO("beside the doorway (" << side << "): the room's floor " << roomFloorLuma << " (cut "
+                                        << roomFloorCut << ")");
+            CHECK(std::abs(roomFloorLuma - roomFloorCut) <= 1.5);
+            if (tilted) {
+                const glm::vec3 roomCeiling(x + 2.0f * side, door.roomHeight - 0.01f,
+                                            roomFace + 0.3f * roomInward);
                 const glm::vec3 hallCeiling(x + 1.5f * side, hallCeilingHeight - 0.01f,
                                             hallFace - 0.3f * roomInward);
                 const glm::vec3 hallFloor(x + 1.5f * side, 0.01f, hallFace - 0.15f * roomInward);
-                const double roomCeilingLuma = levelPatchLuma(roomUp.image, roomUpCamera, roomCeiling, 0.2f);
-                const double roomCeilingCut = levelPatchLuma(roomUpCut.image, roomUpCamera, roomCeiling, 0.2f);
-                const double roomFloorLuma = levelPatchLuma(outward.image, roomCamera, roomFloor, 0.2f);
-                const double roomFloorCut = levelPatchLuma(outwardCut.image, roomCamera, roomFloor, 0.2f);
-                const double hallCeilingLuma = levelPatchLuma(hallUp.image, hallUpCamera, hallCeiling, 0.1f);
-                const double hallCeilingCut = levelPatchLuma(hallUpCut.image, hallUpCamera, hallCeiling, 0.1f);
-                const double hallFloorLuma = levelPatchLuma(hallDown.image, hallDownCamera, hallFloor, 0.1f);
-                const double hallFloorCut = levelPatchLuma(hallDownCut.image, hallDownCamera, hallFloor, 0.1f);
-                INFO("beside the doorway (" << side << "): the room's ceiling " << roomCeilingLuma << " (cut "
-                                            << roomCeilingCut << "), floor " << roomFloorLuma << " (cut "
-                                            << roomFloorCut << "); the hall's ceiling " << hallCeilingLuma << " (cut "
-                                            << hallCeilingCut << "), floor " << hallFloorLuma << " (cut "
-                                            << hallFloorCut << ")");
+                const double roomCeilingLuma =
+                    levelPatchLuma(roomUp->first.image, roomUpCamera, roomCeiling, 0.2f);
+                const double roomCeilingCut =
+                    levelPatchLuma(roomUp->second.image, roomUpCamera, roomCeiling, 0.2f);
+                const double hallCeilingLuma =
+                    levelPatchLuma(hallUp->first.image, hallUpCamera, hallCeiling, 0.1f);
+                const double hallCeilingCut =
+                    levelPatchLuma(hallUp->second.image, hallUpCamera, hallCeiling, 0.1f);
+                const double hallFloorLuma = levelPatchLuma(hallDown->first.image, hallDownCamera, hallFloor, 0.1f);
+                const double hallFloorCut = levelPatchLuma(hallDown->second.image, hallDownCamera, hallFloor, 0.1f);
+                INFO("the room's ceiling " << roomCeilingLuma << " (cut " << roomCeilingCut
+                                           << "); the hall's ceiling " << hallCeilingLuma << " (cut "
+                                           << hallCeilingCut << "), floor " << hallFloorLuma << " (cut "
+                                           << hallFloorCut << ")");
                 WARN("leak probes " << tag << " (" << side << "): room ceiling " << roomCeilingLuma << "/"
                                     << roomCeilingCut << ", room floor " << roomFloorLuma << "/" << roomFloorCut
                                     << ", hall ceiling " << hallCeilingLuma << "/" << hallCeilingCut
                                     << ", hall floor " << hallFloorLuma << "/" << hallFloorCut);
                 CHECK(std::abs(roomCeilingLuma - roomCeilingCut) <= 1.5);
-                CHECK(std::abs(roomFloorLuma - roomFloorCut) <= 1.5);
                 CHECK(std::abs(hallCeilingLuma - hallCeilingCut) <= 1.5);
                 CHECK(std::abs(hallFloorLuma - hallFloorCut) <= 1.5);
-                // The doorway's wall beside the opening, on each side: the hall's face lies in the portal's plane and
-                // is lit as the hall is, the room's face as the room is (no light of its own side cut off).
-                const glm::vec3 hallWall(x + 1.5f * side, 1.2f, hallFace);
-                const glm::vec3 roomWall(x + 2.0f * side, 1.2f, roomFace);
-                const double hallWallLuma = wallPatchLuma(inward.image, hallCamera, hallWall, 0.15f);
-                const double hallWallCut = wallPatchLuma(inwardCut.image, hallCamera, hallWall, 0.15f);
-                const double roomWallLuma = wallPatchLuma(outward.image, roomCamera, roomWall, 0.2f);
-                const double roomWallCut = wallPatchLuma(outwardCut.image, roomCamera, roomWall, 0.2f);
-                INFO("the doorway's wall: the hall's face " << hallWallLuma << " (cut " << hallWallCut
-                                                            << "), the room's " << roomWallLuma << " (cut "
-                                                            << roomWallCut << ")");
-                CHECK(std::abs(hallWallLuma - hallWallCut) <= 1.5);
-                CHECK(std::abs(roomWallLuma - roomWallCut) <= 1.5);
             }
-
-            // The hall's view packs the hall's lights, then the room's near its doorway; no key light.
-            const rv::app::SceneAreasRecord& hallView = *inward.report.sceneAreas;
-            CHECK(hallView.area == hall);
-            CHECK(hallView.keyLight.empty());
-            CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(),
-                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
-            CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(), [&](const std::string& light) {
-                return light == hall + "/doorway-fill:" + door.room;
-            }));
-            // The lights block as packed: at most 16, every light of the selection whole (a still view), the room's
-            // several of them (its key light, unshadowed) each clipped to the doorway.
-            REQUIRE(hallView.packed.size() == hallView.lights.size());
-            CHECK(hallView.packed.size() <= 16);
-            std::size_t roomPacked = 0;
-            for (std::size_t i = 0; i < hallView.packed.size(); ++i) {
-                const rv::app::PackedLightRecord& light = hallView.packed[i];
-                INFO(light.name);
-                CHECK(light.name == hallView.lights[i]);
-                CHECK(light.weight == 1.0);
-                if (startsWith(light.name, door.room + "/")) {
-                    ++roomPacked;
-                    CHECK(light.clipped);
-                }
-            }
-            CHECK(roomPacked >= 4);
-            CHECK(std::any_of(hallView.packed.begin(), hallView.packed.end(), [&](const rv::app::PackedLightRecord& l) {
-                return l.name == door.room + "/fx:hero.key-light";
-            }));
-            CHECK(hallView.last.fading == 0);
-            // The room's view: its own lights first with its own key light, then the hall's.
-            const rv::app::SceneAreasRecord& roomView = *outward.report.sceneAreas;
-            CHECK(roomView.area == door.room);
-            CHECK(startsWith(roomView.keyLight, door.room + "/"));
-            CHECK(roomView.lights.size() <= 16);
-            const auto firstHall = std::find_if(roomView.lights.begin(), roomView.lights.end(),
-                                                [&](const std::string& light) { return startsWith(light, hall + "/"); });
-            REQUIRE(firstHall != roomView.lights.end());
-            CHECK(std::all_of(roomView.lights.begin(), firstHall,
-                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
-            CHECK(std::all_of(firstHall, roomView.lights.end(),
-                              [&](const std::string& light) { return startsWith(light, hall + "/"); }));
-            REQUIRE(roomView.packed.size() == roomView.lights.size());
-            for (std::size_t i = 0; i < roomView.packed.size(); ++i) {
-                INFO(roomView.packed[i].name);
-                CHECK(roomView.packed[i].name == roomView.lights[i]);
-                CHECK(roomView.packed[i].weight == 1.0);
-                CHECK(roomView.packed[i].clipped); // a room's own lights and the hall's alike: its one doorway
-            }
-            CHECK(std::any_of(roomView.packed.begin(), roomView.packed.end(), [&](const rv::app::PackedLightRecord& l) {
-                return l.name == hall + "/doorway-fill:" + door.room;
-            }));
-            // With the neighbours cut, the room's view holds its own lights alone.
-            CHECK(std::all_of(outwardCut.report.sceneAreas->lights.begin(), outwardCut.report.sceneAreas->lights.end(),
-                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
-            // As I4 lit it, the room's view held its own lights alone.
-            CHECK(std::all_of(outwardI4.report.sceneAreas->lights.begin(), outwardI4.report.sceneAreas->lights.end(),
-                              [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+            // The doorway's wall beside the opening, on each side: the hall's face lies in the portal's plane and
+            // is lit as the hall is, the room's face as the room is (no light of its own side cut off).
+            const glm::vec3 hallWall(x + 1.5f * side, 1.2f, hallFace);
+            const glm::vec3 roomWall(x + 2.0f * side, 1.2f, roomFace);
+            const double hallWallLuma = wallPatchLuma(inward.image, hallCamera, hallWall, 0.15f);
+            const double hallWallCut = wallPatchLuma(inwardCut.image, hallCamera, hallWall, 0.15f);
+            const double roomWallLuma = wallPatchLuma(outward.image, roomCamera, roomWall, 0.2f);
+            const double roomWallCut = wallPatchLuma(outwardCut.image, roomCamera, roomWall, 0.2f);
+            INFO("the doorway's wall: the hall's face " << hallWallLuma << " (cut " << hallWallCut
+                                                        << "), the room's " << roomWallLuma << " (cut "
+                                                        << roomWallCut << ")");
+            CHECK(std::abs(hallWallLuma - hallWallCut) <= 1.5);
+            CHECK(std::abs(roomWallLuma - roomWallCut) <= 1.5);
         }
+
+        // The hall's view packs the hall's lights, then the room's near its doorway; no key light.
+        const rv::app::SceneAreasRecord& hallView = *inward.report.sceneAreas;
+        CHECK(hallView.area == hall);
+        CHECK(hallView.keyLight.empty());
+        CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(),
+                          [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+        CHECK(std::any_of(hallView.lights.begin(), hallView.lights.end(), [&](const std::string& light) {
+            return light == hall + "/doorway-fill:" + door.room;
+        }));
+        // The lights block as packed: at most 16, every light of the selection whole (a still view), the room's
+        // several of them (its key light, unshadowed) each clipped to the doorway.
+        REQUIRE(hallView.packed.size() == hallView.lights.size());
+        CHECK(hallView.packed.size() <= 16);
+        std::size_t roomPacked = 0;
+        for (std::size_t i = 0; i < hallView.packed.size(); ++i) {
+            const rv::app::PackedLightRecord& light = hallView.packed[i];
+            INFO(light.name);
+            CHECK(light.name == hallView.lights[i]);
+            CHECK(light.weight == 1.0);
+            if (startsWith(light.name, door.room + "/")) {
+                ++roomPacked;
+                CHECK(light.clipped);
+            }
+        }
+        CHECK(roomPacked >= 4);
+        CHECK(std::any_of(hallView.packed.begin(), hallView.packed.end(), [&](const rv::app::PackedLightRecord& l) {
+            return l.name == door.room + "/fx:hero.key-light";
+        }));
+        CHECK(hallView.last.fading == 0);
+        // The room's view: its own lights first with its own key light, then the hall's.
+        const rv::app::SceneAreasRecord& roomView = *outward.report.sceneAreas;
+        CHECK(roomView.area == door.room);
+        CHECK(startsWith(roomView.keyLight, door.room + "/"));
+        CHECK(roomView.lights.size() <= 16);
+        const auto firstHall = std::find_if(roomView.lights.begin(), roomView.lights.end(),
+                                            [&](const std::string& light) { return startsWith(light, hall + "/"); });
+        REQUIRE(firstHall != roomView.lights.end());
+        CHECK(std::all_of(roomView.lights.begin(), firstHall,
+                          [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
+        CHECK(std::all_of(firstHall, roomView.lights.end(),
+                          [&](const std::string& light) { return startsWith(light, hall + "/"); }));
+        REQUIRE(roomView.packed.size() == roomView.lights.size());
+        for (std::size_t i = 0; i < roomView.packed.size(); ++i) {
+            INFO(roomView.packed[i].name);
+            CHECK(roomView.packed[i].name == roomView.lights[i]);
+            CHECK(roomView.packed[i].weight == 1.0);
+            CHECK(roomView.packed[i].clipped); // a room's own lights and the hall's alike: its one doorway
+        }
+        CHECK(std::any_of(roomView.packed.begin(), roomView.packed.end(), [&](const rv::app::PackedLightRecord& l) {
+            return l.name == hall + "/doorway-fill:" + door.room;
+        }));
+        // With the neighbours cut, the room's view holds its own lights alone.
+        CHECK(std::all_of(outwardCut.report.sceneAreas->lights.begin(), outwardCut.report.sceneAreas->lights.end(),
+                          [&](const std::string& light) { return startsWith(light, door.room + "/"); }));
     }
-    CHECK(rooms >= 6);
+}
+
+} // namespace
+
+// One case per floor, each with ctest's own timeout. The names keep the gates' filters (scripts/gate.ps1: I4's floors
+// "^gpu\.world floor:", I6's light "^gpu\.world floor: light reaches through the doorways").
+TEST_CASE("world floor: light reaches through the doorways of the ground floor: each room glows seen from its hall, "
+          "the hall from the room",
+          "[gpu][world_floor]") {
+    checkLightThroughDoorways("ground", false);
+}
+
+TEST_CASE("world floor: light reaches through the doorways of the computer floor: each room glows seen from its hall, "
+          "the hall from the room",
+          "[gpu][world_floor]") {
+    checkLightThroughDoorways("computer", false);
+}
+
+TEST_CASE("world floor: light reaches through the doorways of the gen4 floor: each room glows seen from its hall, the "
+          "hall from the room, as I4 lit it at most half as bright",
+          "[gpu][world_floor]") {
+    checkLightThroughDoorways("gen4", true);
+}
+
+TEST_CASE("world floor: light reaches through the doorways of the gen5 floor: each room glows seen from its hall, the "
+          "hall from the room",
+          "[gpu][world_floor]") {
+    checkLightThroughDoorways("gen5", false);
+}
+
+TEST_CASE("world floor: light reaches through the doorways of the handheld floor: each room glows seen from its hall, "
+          "the hall from the room",
+          "[gpu][world_floor]") {
+    checkLightThroughDoorways("handheld", false);
 }

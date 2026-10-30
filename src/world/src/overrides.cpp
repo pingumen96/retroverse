@@ -238,67 +238,175 @@ Expected<std::string> writeOverrides(const WorldOverrides& overrides) {
     return text;
 }
 
-PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
-                   const WorldOverrides& overrides) {
-    PinCheck check;
-    std::map<FixtureId, const Fixture*> fixtures;
-    for (const Fixture& fixture : plan.fixtures) {
-        fixtures.emplace(fixture.id, &fixture);
-    }
-    std::map<catalog::GameId, const SlotId*> placed;
-    for (const Placement& placement : plan.placements) {
-        placed.emplace(placement.game, &placement.slot);
-    }
-    std::set<catalog::GameId> unplaced;
-    for (const UnplacedGame& game : plan.unplaced) {
-        unplaced.insert(game.game);
-    }
-    // The unhonoured pins with their rooms, sorted by their text below.
-    std::vector<std::pair<std::string, RoomId>> unhonoured;
-    for (const GamePin& pin : overrides.gamePins) {
-        const auto stands = placed.find(pin.game);
-        if (stands != placed.end() && *stands->second == pin.slot) {
-            check.honouredOrOrphaned.gamePins.push_back(pin);
-            check.honoured.gamePins.push_back(pin);
-        } else if (!planHoldsSlot(fixtures, pin.slot) || (stands == placed.end() && !unplaced.contains(pin.game))) {
-            check.orphaned.push_back(pinText(pin));
-            check.honouredOrOrphaned.gamePins.push_back(pin);
-        } else if (pin.conflict) {
-            check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
-        } else {
-            unhonoured.emplace_back(pinText(pin), pin.slot.fixture().room());
+namespace {
+
+/// The plan's fixtures, placements and unplaced games by id, and its rooms' templates, for measuring pins.
+class PinJudge {
+public:
+    PinJudge(const WorldPlan& plan, const std::vector<RoomTemplate>& templates) : m_plan(plan), m_templates(templates) {
+        for (const Fixture& fixture : plan.fixtures) {
+            m_fixtures.emplace(fixture.id, &fixture);
+        }
+        for (const Placement& placement : plan.placements) {
+            m_placed.emplace(placement.game, &placement.slot);
+        }
+        for (const UnplacedGame& game : plan.unplaced) {
+            m_unplaced.insert(game.game);
         }
     }
-    for (const FixturePin& pin : overrides.fixturePins) {
+
+    [[nodiscard]] PinMeasure measure(const GamePin& pin) const {
+        PinMeasure result;
+        result.game = true;
+        result.subject = pin.game.toString();
+        result.room = pin.slot.fixture().room();
+        result.pin = pinText(pin);
+        result.recordedConflict = pin.conflict;
+        result.origin = pin.provenance.origin;
+        const auto stands = m_placed.find(pin.game);
+        if (stands != m_placed.end() && *stands->second == pin.slot) {
+            result.status = PinStatus::Honoured;
+            return result;
+        }
+        if (!planHoldsSlot(m_fixtures, pin.slot)) {
+            result.why = "its slot is not one of the plan's";
+        } else if (stands == m_placed.end() && !m_unplaced.contains(pin.game)) {
+            result.why = "its game has no entry in the plan";
+        }
+        const bool gone = !result.why.empty();
+        if (!gone) {
+            result.why = stands != m_placed.end() ? "the game stands in " + stands->second->toString()
+                                                  : std::string("the game is unplaced");
+        }
+        classify(result, gone, pin.conflict);
+        return result;
+    }
+
+    [[nodiscard]] PinMeasure measure(const FixturePin& pin) const {
+        PinMeasure result;
+        result.game = false;
+        result.subject = pin.fixture.toString();
+        result.room = pin.fixture.room();
+        result.pin = pinText(pin);
+        result.recordedConflict = pin.conflict;
+        result.origin = pin.provenance.origin;
         const Room* room = nullptr;
-        for (const Room& candidate : plan.rooms) {
+        for (const Room& candidate : m_plan.rooms) {
             if (candidate.id == pin.fixture.room()) {
                 room = &candidate;
             }
         }
         const RoomTemplate* roomTemplate = nullptr;
-        for (const RoomTemplate& candidate : templates) {
+        for (const RoomTemplate& candidate : m_templates) {
             if (room != nullptr && candidate.id == room->templateId) {
                 roomTemplate = &candidate;
             }
         }
-        const auto fixture = fixtures.find(pin.fixture);
+        const auto fixture = m_fixtures.find(pin.fixture);
         const auto standsAsPinned = [&](const Fixture& standing) {
             return (!pin.prefab || *pin.prefab == standing.prefab) &&
                    (!pin.transform || (pin.transform->xMm == standing.xMm && pin.transform->zMm == standing.zMm &&
                                        pin.transform->yawCdeg == standing.yawCdeg));
         };
-        if (fixture != fixtures.end() && standsAsPinned(*fixture->second)) {
-            check.honouredOrOrphaned.fixturePins.push_back(pin);
-            check.honoured.fixturePins.push_back(pin);
-        } else if (roomTemplate == nullptr || roomTemplate->socket(pin.fixture.socket()) == nullptr) {
-            check.orphaned.push_back(pinText(pin));
-            check.honouredOrOrphaned.fixturePins.push_back(pin);
-        } else if (pin.conflict) {
-            check.orphaned.push_back(pinText(pin)); // a regeneration's conflict: reported, not judged
-        } else {
-            unhonoured.emplace_back(pinText(pin), pin.fixture.room());
+        if (fixture != m_fixtures.end() && standsAsPinned(*fixture->second)) {
+            result.status = PinStatus::Honoured;
+            return result;
         }
+        if (room == nullptr) {
+            result.why = "its room is not in the plan";
+        } else if (roomTemplate == nullptr) {
+            result.why = "its room's template " + room->templateId + " is not known";
+        } else if (roomTemplate->socket(pin.fixture.socket()) == nullptr) {
+            result.why =
+                "its room's template " + room->templateId + " has no socket " + std::string(pin.fixture.socket());
+        }
+        const bool gone = !result.why.empty();
+        if (!gone) {
+            if (fixture == m_fixtures.end()) {
+                result.why = "the fixture is not in the plan";
+            } else if (pin.prefab && *pin.prefab != fixture->second->prefab) {
+                result.why = "the fixture holds " + fixture->second->prefab.manifest;
+            } else {
+                result.why = "the fixture stands at x " + std::to_string(fixture->second->xMm) + " z " +
+                             std::to_string(fixture->second->zMm) + " mm, yaw " +
+                             std::to_string(fixture->second->yawCdeg) + " cdeg";
+            }
+        }
+        classify(result, gone, pin.conflict);
+        return result;
+    }
+
+private:
+    /// A pin not honoured: conflicting when a regeneration recorded a conflict on it, else orphaned when what it names
+    /// is gone, else unhonoured; `gone` kept whatever the status.
+    static void classify(PinMeasure& target, bool gone, const std::optional<ConflictReason>& conflict) {
+        target.gone = gone;
+        if (conflict) {
+            target.status = PinStatus::Conflicting;
+            target.why = "the last regeneration of " + target.room.toString() + " recorded " +
+                         std::string(toString(*conflict)) + "; " + target.why;
+        } else {
+            target.status = gone ? PinStatus::Orphaned : PinStatus::Unhonoured;
+        }
+    }
+
+    const WorldPlan& m_plan;
+    const std::vector<RoomTemplate>& m_templates;
+    std::map<FixtureId, const Fixture*> m_fixtures;
+    std::map<catalog::GameId, const SlotId*> m_placed;
+    std::set<catalog::GameId> m_unplaced;
+};
+
+} // namespace
+
+std::vector<PinMeasure> measurePins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
+                                    const WorldOverrides& overrides) {
+    const PinJudge judge(plan, templates);
+    std::vector<PinMeasure> measures;
+    measures.reserve(overrides.gamePins.size() + overrides.fixturePins.size());
+    for (const GamePin& pin : overrides.gamePins) {
+        measures.push_back(judge.measure(pin));
+    }
+    for (const FixturePin& pin : overrides.fixturePins) {
+        measures.push_back(judge.measure(pin));
+    }
+    return measures;
+}
+
+PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates, const WorldOverrides& overrides) {
+    PinCheck check;
+    const PinJudge judge(plan, templates);
+    // The unhonoured pins with their rooms, sorted by their text below.
+    std::vector<std::pair<std::string, RoomId>> unhonoured;
+    // A pin whose subject is gone is reported as orphaned and judged (the validation's pin-orphaned), a recorded
+    // conflict or not; a recorded conflict on a subject still there is reported as orphaned and never judged (the
+    // validation does not see it, pin-broken would fail the plan).
+    const auto sort = [&](PinMeasure measure, const auto& pin, auto& honoured, auto& judged) {
+        switch (measure.status) {
+        case PinStatus::Honoured:
+            judged.push_back(pin);
+            honoured.push_back(pin);
+            break;
+        case PinStatus::Orphaned:
+            check.orphaned.push_back(std::move(measure.pin));
+            judged.push_back(pin);
+            break;
+        case PinStatus::Conflicting:
+            check.orphaned.push_back(std::move(measure.pin));
+            if (measure.gone) {
+                judged.push_back(pin);
+            }
+            break;
+        case PinStatus::Unhonoured:
+            unhonoured.emplace_back(std::move(measure.pin), measure.room);
+            break;
+        }
+    };
+    for (const GamePin& pin : overrides.gamePins) {
+        sort(judge.measure(pin), pin, check.honoured.gamePins, check.honouredOrOrphaned.gamePins);
+    }
+    for (const FixturePin& pin : overrides.fixturePins) {
+        sort(judge.measure(pin), pin, check.honoured.fixturePins, check.honouredOrOrphaned.fixturePins);
     }
     std::sort(check.orphaned.begin(), check.orphaned.end());
     std::sort(unhonoured.begin(), unhonoured.end());

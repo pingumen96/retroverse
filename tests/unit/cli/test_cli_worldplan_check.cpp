@@ -20,6 +20,7 @@
 #include <rv/core/paths.hpp>
 #include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/room_selection.hpp>
 
@@ -192,6 +193,167 @@ TEST_CASE("cli/worldplan check: a hard rule broken exits 1 with the findings; th
     REQUIRE(ownText.has_value());
     const RunResult own = check.run({validPlan, "--selection", check.writeFile("own.json", *ownText)});
     CHECK(own.code == ExitCode::Ok);
+}
+
+TEST_CASE("cli/worldplan check: the overrides beside the plan, a pin honoured, one orphaned and a recorded conflict",
+          "[cli][worldplan]") {
+    using rv::world::ConflictReason;
+    using rv::world::PinOrigin;
+    CheckRun check;
+    const rv::world::WorldPlan valid = cliPlan();
+    const std::string plan = check.writePlan(valid);
+    rv::world::WorldOverrides overrides;
+    overrides.gamePins = {
+        // Honoured: the game stands in its slot.
+        {valid.placements[0].game, valid.placements[0].slot, {PinOrigin::Editor, "2026-10-30T10:00:00.000Z"}},
+        // Orphaned: a game the plan does not hold.
+        {rv::test::testGameId(300), valid.placements[5].slot, {PinOrigin::Cli, ""}},
+        // A conflict its room's last regeneration recorded.
+        {valid.placements[1].game, valid.placements[2].slot, {}, ConflictReason::SlotGone},
+        // Unhonoured: the game stands elsewhere, no conflict recorded.
+        {valid.placements[3].game, valid.placements[4].slot},
+    };
+    overrides.fixturePins = {
+        {*rv::world::FixtureId::parse("room:snes/fx:w04"), std::nullopt}, // honoured, in its socket
+        {*rv::world::FixtureId::parse("room:snes/fx:nowhere"), std::nullopt}, // orphaned: no such socket
+    };
+    auto overridesText = rv::world::writeOverrides(overrides);
+    REQUIRE(overridesText.has_value());
+    const std::string overridesFile = check.writeFile("overrides.json", *overridesText);
+
+    const RunResult text = check.run({plan});
+    INFO(text.out << text.err);
+    // Pins never fail the check: the orphaned ones are soft findings (pin-orphaned), as an update judges them.
+    CHECK(text.code == ExitCode::Ok);
+    CHECK_THAT(text.out, ContainsSubstring("Overrides: " + overridesFile + " (4 game pin(s), 2 fixture pin(s)): 2 "
+                                           "honoured, 2 orphaned, 1 conflicting, 1 unhonoured\n"));
+    const std::string g300 = rv::test::testGameId(300).toString();
+    CHECK_THAT(text.out, ContainsSubstring("  conflicting game " + valid.placements[1].game.toString() + " pinned to " +
+                                           valid.placements[2].slot.toString() +
+                                           " (file): the last regeneration of room:snes recorded slot-gone; the game "
+                                           "stands in " +
+                                           valid.placements[1].slot.toString() + "\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  orphaned game " + g300 + " pinned to " +
+                                           valid.placements[5].slot.toString() +
+                                           " (cli): its game has no entry in the plan\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  orphaned fixture room:snes/fx:nowhere pinned (file): its room's template "
+                                           "console_room_9x10 has no socket nowhere\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  unhonoured game " + valid.placements[3].game.toString() + " pinned to " +
+                                           valid.placements[4].slot.toString() + " (file): the game stands in " +
+                                           valid.placements[3].slot.toString() + "\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  honoured game " + valid.placements[0].game.toString() + " pinned to " +
+                                           valid.placements[0].slot.toString() + " (editor)\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  honoured fixture room:snes/fx:w04 pinned (file)\n"));
+    // The conflicting pins listed first, the honoured last.
+    CHECK(text.out.find("  conflicting ") < text.out.find("  orphaned "));
+    CHECK(text.out.find("  unhonoured ") < text.out.find("  honoured "));
+    CHECK_THAT(text.out, ContainsSubstring("Findings: 0 hard, 13 soft\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  soft pin-orphaned " + g300 + ": "));
+    CHECK_THAT(text.out, ContainsSubstring("  soft pin-orphaned room:snes/fx:nowhere: "));
+
+    const RunResult json = check.run({plan, "--json"});
+    CHECK(json.code == ExitCode::Ok);
+    const nlohmann::json result = nlohmann::json::parse(json.out)["overrides"];
+    CHECK(result["file"] == overridesFile);
+    CHECK(result["gamePins"] == 4);
+    CHECK(result["fixturePins"] == 2);
+    CHECK(result["honoured"] == 2);
+    CHECK(result["orphaned"] == 2);
+    CHECK(result["conflicting"] == 1);
+    CHECK(result["unhonoured"] == 1);
+    // The pins as read: game pins sorted by game, then fixture pins sorted by fixture.
+    REQUIRE(result["pins"].size() == 6);
+    CHECK(result["pins"][1]["kind"] == "game");
+    CHECK(result["pins"][1]["subject"] == valid.placements[1].game.toString());
+    CHECK(result["pins"][1]["status"] == "conflicting");
+    CHECK(result["pins"][1]["recordedConflict"] == "slot-gone");
+    CHECK(result["pins"][1]["room"] == "room:snes");
+    CHECK(result["pins"][0]["status"] == "honoured");
+    CHECK(result["pins"][0]["origin"] == "editor");
+    CHECK(result["pins"][0]["recordedConflict"].is_null());
+    CHECK(result["pins"][0]["why"] == "");
+    CHECK(result["pins"][4]["kind"] == "fixture");
+    CHECK(result["pins"][4]["subject"] == "room:snes/fx:nowhere");
+    CHECK(result["pins"][4]["status"] == "orphaned");
+    CHECK(result["pins"][5]["status"] == "honoured");
+
+    // --no-overrides measures none; --overrides names another file.
+    const RunResult none = check.run({plan, "--no-overrides"});
+    CHECK(none.code == ExitCode::Ok);
+    CHECK_THAT(none.out, ContainsSubstring("Overrides: none (--no-overrides)\n"));
+    CHECK_THAT(none.out, ContainsSubstring("Findings: 0 hard, 11 soft\n"));
+    rv::world::WorldOverrides honoured;
+    honoured.gamePins = {overrides.gamePins[0]};
+    auto honouredText = rv::world::writeOverrides(honoured);
+    REQUIRE(honouredText.has_value());
+    const std::string other = check.writeFile("other/overrides.json", *honouredText);
+    const RunResult named = check.run({plan, "--overrides", other});
+    CHECK(named.code == ExitCode::Ok);
+    CHECK_THAT(named.out, ContainsSubstring("Overrides: " + other + " (1 game pin(s), 0 fixture pin(s)): 1 honoured, 0 "
+                                            "orphaned, 0 conflicting, 0 unhonoured\n"));
+    // A plan without overrides beside it.
+    const std::string alone = check.writePlan(valid, "alone/world-plan.json");
+    CHECK_THAT(check.run({alone}).out, ContainsSubstring("Overrides: none (no overrides.json beside the plan)\n"));
+
+    // Errors: --overrides naming no file (3), unreadable overrides (3), both options (2).
+    const RunResult absent = check.run({plan, "--overrides", rv::core::pathToUtf8(check.dir().file("absent.json"))});
+    CHECK(absent.code == ExitCode::RuntimeFailure);
+    CHECK_THAT(absent.err, ContainsSubstring("cannot read the overrides"));
+    const std::string broken = check.writeFile("broken/overrides.json", "{");
+    const RunResult unreadable = check.run({plan, "--overrides", broken});
+    CHECK(unreadable.code == ExitCode::RuntimeFailure);
+    CHECK_THAT(unreadable.err, ContainsSubstring("cannot read the overrides"));
+    CHECK(check.run({plan, "--overrides", other, "--no-overrides"}).code == ExitCode::UsageError);
+    CHECK(check.run({plan, "--overrides", ""}).code == ExitCode::UsageError);
+
+    // Nothing written: the overrides as they were.
+    auto after = rv::core::readTextFile(rv::core::pathFromUtf8(overridesFile));
+    REQUIRE(after.has_value());
+    CHECK(*after == *overridesText);
+}
+
+TEST_CASE("cli/worldplan check: the overrides beside the plan, a pin alone unhonoured: listed, never a hard finding",
+          "[cli][worldplan]") {
+    // A pin to a slot the plan holds, other than the one its game stands in (a hand edit of overrides.json): the plan
+    // does not honour it, nothing it names is gone, no conflict recorded. An update would ask a confirmation; the check
+    // lists it and passes (the validation does not judge it, so no pin-broken).
+    CheckRun check;
+    const rv::world::WorldPlan valid = cliPlan();
+    REQUIRE(valid.placements.size() > 4);
+    REQUIRE(valid.placements[4].slot != valid.placements[3].slot);
+    const std::string plan = check.writePlan(valid);
+    rv::world::WorldOverrides overrides;
+    overrides.gamePins = {{valid.placements[3].game, valid.placements[4].slot}};
+    auto overridesText = rv::world::writeOverrides(overrides);
+    REQUIRE(overridesText.has_value());
+    const std::string overridesFile = check.writeFile("overrides.json", *overridesText);
+
+    const RunResult text = check.run({plan});
+    INFO(text.out << text.err);
+    CHECK(text.code == ExitCode::Ok);
+    CHECK_THAT(text.out, ContainsSubstring("Overrides: " + overridesFile + " (1 game pin(s), 0 fixture pin(s)): 0 "
+                                           "honoured, 0 orphaned, 0 conflicting, 1 unhonoured\n"));
+    CHECK_THAT(text.out, ContainsSubstring("  unhonoured game " + valid.placements[3].game.toString() + " pinned to " +
+                                           valid.placements[4].slot.toString() + " (file): the game stands in " +
+                                           valid.placements[3].slot.toString() + "\n"));
+    // The plan's own soft findings alone (as with --no-overrides), no hard one.
+    CHECK_THAT(text.out, ContainsSubstring("Findings: 0 hard, 11 soft\n"));
+    CHECK_THAT(text.out, !ContainsSubstring("pin-broken"));
+    CHECK_THAT(text.out, !ContainsSubstring("pin-orphaned"));
+
+    const RunResult json = check.run({plan, "--json"});
+    INFO(json.out << json.err);
+    CHECK(json.code == ExitCode::Ok);
+    const nlohmann::json result = nlohmann::json::parse(json.out);
+    CHECK(result["passed"] == true);
+    CHECK(result["hardCount"] == 0);
+    CHECK(result["overrides"]["honoured"] == 0);
+    CHECK(result["overrides"]["orphaned"] == 0);
+    CHECK(result["overrides"]["conflicting"] == 0);
+    CHECK(result["overrides"]["unhonoured"] == 1);
+    REQUIRE(result["overrides"]["pins"].size() == 1);
+    CHECK(result["overrides"]["pins"][0]["status"] == "unhonoured");
+    CHECK(result["overrides"]["pins"][0]["recordedConflict"].is_null());
 }
 
 TEST_CASE("cli/worldplan check: a text that is not a plan exits 1, a missing file 3, bad arguments 2",

@@ -26,7 +26,7 @@ area, the benchmark path in Release against the acceptable limits) and adds:
 
   | Area | Unit cases | GPU cases |
   |---|---|---|
-  | Light | `scene/areas`, `render/light_packing`, `world/room_look`, `world/floor`'s doorway cases | `gpu.world floor: light reaches through the doorways ...` |
+  | Light | `scene/areas`, `render/light_packing`, `world/room_look`, `world/floor`'s doorway cases | `gpu.world floor: light reaches through the doorways ...` (one case per floor since Gate M3's review) |
   | Halls | `world/floor`'s hall dressing and materials, `assets/surface_textures`, `assets/test_patterns: a hall's print ...` | |
   | Theme packs | `world/theme packs`, the stale pack of `cli/worldplan`, the lit shelf, neon lettering, the procedural surfaces' memory | `gpu.world look: ...` |
   | Spines | `world/families: cases ...`, `world/migration`, the side spine, the printed spine, `cli/worldplan update: generator 1.3 ...` | `gpu.world families`: the jewel cases on their side, generator 1.3's building migrated once |
