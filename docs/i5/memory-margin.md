@@ -80,7 +80,8 @@ none above 0.07%.
 **Results** (after the review's fixes). Debug (`./scripts/build.ps1`, no warning; `./scripts/test.ps1`): 2216 of 2216
 unit tests passed. Release (`./scripts/build.ps1 -Preset msvc-x64-release`; `./scripts/test.ps1 -Preset
 msvc-x64-release-gpu`): 2384 tests (2216 unit, 168 GPU) passed, one skipped by design (the overlay's pick). G01 to G20
-ran, none skipped: G02 to G20 0/255 from their PNGs, G01 73 pixels beyond 6/255 as before. The reports show a
+ran, none skipped: G02 to G20 0/255 from their PNGs, G01 73 pixels beyond 6/255 as before. The 18 golden cases also pass in Debug, where the
+targets' asserts run (`-Preset msvc-x64-debug-gpu -Filter 'gpu\.golden/'`). The reports show a
 1920 x 1080 drawable, `own` from the small window and `window` from the 1080p one, and the FXAA self-check's in-place
 image 0 of 4,096 pixels apart.
 
