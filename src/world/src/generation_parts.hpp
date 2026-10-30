@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/world/building.hpp>
@@ -60,7 +62,18 @@ struct BuildingDigestInput {
     /// time budget); the same digest.
     bool checkedSelections = true;
 };
+/// The SHA-256 of the canonical text of the inputs' document (generation.cpp's buildingInputDocument()), written
+/// straight from the inputs (its writeBuildingInputText()) unless they hold what only the document can name (then
+/// through it, as before m3/preview-time), or a ScopedDocumentDigests is alive (plan_json.hpp).
 [[nodiscard]] Expected<std::string> buildingInputDigest(const BuildingDigestInput& input);
+
+/// The form of a selection as the reader's check of its document (roomSelectionToJson()) would find it, without the
+/// document: a rule name and a sort-key version, the titles valid and in strict priority order with no game twice,
+/// their ratings 0 to 10, at least as many distinct titles as titles, the unplaced games valid, of the room, sorted
+/// strictly, a representative exactly for a duplicate (the incremental update's check of its inputs since I3 step 9).
+/// It refuses what the reader refuses, and unplaced games out of order (which the document sorts first). Errors:
+/// InvalidArgument naming the problem, with `context`.
+[[nodiscard]] Status checkSelectionForm(const RoomSelection& selection, std::string_view context);
 
 /// The overrides' part of a plan's inputDigest (ADR-0015 §2, I4b step 2): the SHA-256 of the canonical form of the
 /// pins `honoured` holds, provenance left out ({"fixturePins": [{"fixture", "prefab"?, "transform"?}], "gamePins":

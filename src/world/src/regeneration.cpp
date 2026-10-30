@@ -1052,67 +1052,107 @@ RegenerationImpact planDifference(const WorldPlan& before, const WorldPlan& afte
     // In the plans' order (a plan in memory need not be sorted): sorted, as every list.
     std::sort(impact.roomsAdded.begin(), impact.roomsAdded.end());
     std::sort(impact.roomsMoved.begin(), impact.roomsMoved.end());
-    // Where each game stands, and whether face-out (its slot's level is featured or band).
-    const auto standing = [](const WorldPlan& plan) {
-        std::map<FixtureId, const Fixture*> fixtures;
+    // Where each game stands, and whether face-out (its slot's level is featured or band): by game, the first placement
+    // of a game placed twice (sorted vectors, not maps: m3/preview-time, a whole world's placements on each side).
+    struct Standing {
+        const Placement* placement = nullptr;
+        bool faceOut = false;
+    };
+    const auto fixturesById = [](const WorldPlan& plan) {
+        std::vector<const Fixture*> fixtures;
+        fixtures.reserve(plan.fixtures.size());
         for (const Fixture& fixture : plan.fixtures) {
-            fixtures.emplace(fixture.id, &fixture);
+            fixtures.push_back(&fixture);
         }
-        std::map<GameId, std::pair<SlotId, bool>> games;
+        const auto byId = [](const Fixture* a, const Fixture* b) { return a->id < b->id; };
+        std::stable_sort(fixtures.begin(), fixtures.end(), byId);
+        fixtures.erase(std::unique(fixtures.begin(), fixtures.end(),
+                                   [](const Fixture* a, const Fixture* b) { return a->id == b->id; }),
+                       fixtures.end());
+        return fixtures;
+    };
+    const auto findFixture = [](const std::vector<const Fixture*>& fixtures, const FixtureId& id) -> const Fixture* {
+        const auto found = std::lower_bound(fixtures.begin(), fixtures.end(), id,
+                                            [](const Fixture* fixture, const FixtureId& key) { return fixture->id < key; });
+        return found != fixtures.end() && (*found)->id == id ? *found : nullptr;
+    };
+    const auto standing = [&](const WorldPlan& plan, const std::vector<const Fixture*>& fixtures) {
+        std::vector<Standing> games;
+        games.reserve(plan.placements.size());
+        // A sorted plan's placements come fixture by fixture: the last one found is asked first.
+        const FixtureId* lastId = nullptr;
+        const Fixture* last = nullptr;
         for (const Placement& placement : plan.placements) {
             bool faceOut = false;
-            if (const auto fixture = fixtures.find(placement.slot.fixture()); fixture != fixtures.end()) {
-                for (const FixtureLevel& level : fixture->second->levels) {
+            if (lastId == nullptr || !(*lastId == placement.slot.fixture())) {
+                lastId = &placement.slot.fixture();
+                last = findFixture(fixtures, *lastId);
+            }
+            if (const Fixture* fixture = last; fixture != nullptr) {
+                for (const FixtureLevel& level : fixture->levels) {
                     faceOut = faceOut || (level.level == placement.slot.level() && isFaceOut(level.section));
                 }
             }
-            games.emplace(placement.game, std::pair(placement.slot, faceOut));
+            games.push_back({&placement, faceOut});
         }
+        std::stable_sort(games.begin(), games.end(),
+                         [](const Standing& a, const Standing& b) { return a.placement->game < b.placement->game; });
+        games.erase(std::unique(games.begin(), games.end(),
+                                [](const Standing& a, const Standing& b) { return a.placement->game == b.placement->game; }),
+                    games.end());
         return games;
     };
-    const auto gamesBefore = standing(before);
-    const auto gamesAfter = standing(after);
-    for (const auto& [game, at] : gamesAfter) {
-        const auto found = gamesBefore.find(game);
-        if (found == gamesBefore.end()) {
+    const auto findGame = [](const std::vector<Standing>& games, const GameId& game) -> const Standing* {
+        const auto found = std::lower_bound(games.begin(), games.end(), game,
+                                            [](const Standing& standing, const GameId& key) {
+                                                return standing.placement->game < key;
+                                            });
+        return found != games.end() && found->placement->game == game ? &*found : nullptr;
+    };
+    const std::vector<const Fixture*> fixturesBefore = fixturesById(before);
+    const std::vector<Standing> gamesBefore = standing(before, fixturesBefore);
+    const std::vector<Standing> gamesAfter = standing(after, fixturesById(after));
+    for (const Standing& at : gamesAfter) {
+        const GameId& game = at.placement->game;
+        const Standing* found = findGame(gamesBefore, game);
+        if (found == nullptr) {
             impact.newlyPlaced.push_back(game);
-        } else if (found->second.first != at.first) {
-            impact.gamesMoved.push_back({game, found->second.first, at.first});
+        } else if (found->placement->slot != at.placement->slot) {
+            impact.gamesMoved.push_back({game, found->placement->slot, at.placement->slot});
         }
-        if (at.second && (found == gamesBefore.end() || !found->second.second)) {
+        if (at.faceOut && (found == nullptr || !found->faceOut)) {
             impact.faceOutEntering.push_back(game);
         }
     }
-    for (const auto& [game, at] : gamesBefore) {
-        const auto found = gamesAfter.find(game);
-        if (found == gamesAfter.end()) {
+    for (const Standing& at : gamesBefore) {
+        const GameId& game = at.placement->game;
+        const Standing* found = findGame(gamesAfter, game);
+        if (found == nullptr) {
             impact.newlyUnplaced.push_back(game);
         }
-        if (at.second && (found == gamesAfter.end() || !found->second.second)) {
+        if (at.faceOut && (found == nullptr || !found->faceOut)) {
             impact.faceOutLeaving.push_back(game);
         }
     }
     // The fixtures by id: another role or prefab is one removed and one added.
-    std::map<FixtureId, const Fixture*> fixturesBefore;
-    for (const Fixture& fixture : before.fixtures) {
-        fixturesBefore.emplace(fixture.id, &fixture);
-    }
-    std::set<FixtureId> fixturesAfter;
+    std::vector<FixtureId> fixturesAfter;
+    fixturesAfter.reserve(after.fixtures.size());
     for (const Fixture& fixture : after.fixtures) {
-        fixturesAfter.insert(fixture.id);
-        const auto found = fixturesBefore.find(fixture.id);
-        if (found == fixturesBefore.end()) {
+        fixturesAfter.push_back(fixture.id);
+        const Fixture* found = findFixture(fixturesBefore, fixture.id);
+        if (found == nullptr) {
             impact.fixturesAdded.push_back(fixture.id);
-        } else if (found->second->role != fixture.role || found->second->prefab != fixture.prefab) {
+        } else if (found->role != fixture.role || found->prefab != fixture.prefab) {
             impact.fixturesAdded.push_back(fixture.id);
             impact.fixturesRemoved.push_back(fixture.id);
-        } else if (*found->second != fixture) {
+        } else if (*found != fixture) {
             impact.fixturesMoved.push_back(fixture.id);
         }
     }
-    for (const auto& [id, fixture] : fixturesBefore) {
-        if (!fixturesAfter.contains(id)) {
-            impact.fixturesRemoved.push_back(id);
+    std::sort(fixturesAfter.begin(), fixturesAfter.end());
+    for (const Fixture* fixture : fixturesBefore) {
+        if (!std::binary_search(fixturesAfter.begin(), fixturesAfter.end(), fixture->id)) {
+            impact.fixturesRemoved.push_back(fixture->id);
         }
     }
     impact.fixturesAdded = sortedUnique(std::move(impact.fixturesAdded));
@@ -1172,6 +1212,16 @@ std::map<FixtureId, std::string> breakingPins(const ValidationReport& report, st
 }
 
 } // namespace detail
+
+std::vector<RoomDataRequest> standingRoomRequests(const WorldPlan& plan,
+                                                  const std::map<SystemName, std::vector<std::string>>& platformTags) {
+    std::vector<RoomDataRequest> requests;
+    requests.reserve(plan.rooms.size());
+    for (const Room& room : plan.rooms) {
+        requests.push_back(storedRequest(room, platformTags));
+    }
+    return requests;
+}
 
 RoomDataLoader assetRootLoader(const std::filesystem::path& assetRoot) {
     struct Cache {

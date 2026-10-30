@@ -65,47 +65,6 @@ struct Cell {
     std::uint32_t index = 0;
 };
 
-/// The selection's form as readRoomSelection() would accept it (the update computes its input digest without that
-/// reader's check, for its time budget): a rule name and a sort-key version, the titles valid and in strict priority
-/// order with no game twice, the unplaced games valid, of the room, sorted strictly, a representative exactly for a
-/// duplicate. Errors: InvalidArgument naming the problem.
-Status checkSelectionForm(const RoomSelection& selection) {
-    const auto refuse = [](std::string message) {
-        return makeError(ErrorCode::InvalidArgument, std::move(message), "update");
-    };
-    if (!isValidRuleName(selection.titleKeyRule) || selection.catalogSortKeyVersion < 1 ||
-        selection.catalogSortKeyVersion > 999'999 || selection.room.empty()) {
-        return refuse("the selection's room, title-key rule or sort-key version is malformed");
-    }
-    if (selection.distinctTitles < selection.titles.size()) {
-        return refuse("the selection counts fewer distinct titles than titles");
-    }
-    std::vector<GameId> games;
-    for (std::size_t i = 0; i < selection.titles.size(); ++i) {
-        const RoomTitle& title = selection.titles[i];
-        if (!title.game.isValid() || (title.ratingTenths && (*title.ratingTenths < 0 || *title.ratingTenths > 10))) {
-            return refuse("a title of the selection is malformed: " + title.game.toString());
-        }
-        if (i > 0 && !priorityLess(selection.titles[i - 1], title)) {
-            return refuse("the selection's titles are not in priority order at " + title.game.toString());
-        }
-        games.push_back(title.game);
-    }
-    std::sort(games.begin(), games.end());
-    if (std::adjacent_find(games.begin(), games.end()) != games.end()) {
-        return refuse("a game is twice among the selection's titles");
-    }
-    for (std::size_t i = 0; i < selection.unplaced.size(); ++i) {
-        const UnplacedGame& game = selection.unplaced[i];
-        const bool duplicate = game.reason == UnplacedReason::DuplicateTitle;
-        if (!game.game.isValid() || game.room != selection.room || duplicate != game.representative.isValid() ||
-            (i > 0 && !(selection.unplaced[i - 1] < game))) {
-            return refuse("an unplaced game of the selection is malformed or out of order: " + game.game.toString());
-        }
-    }
-    return ok();
-}
-
 /// Why the previous building cannot be updated by these rules at all, or nothing (ADR-0013 §5: the world-level checks
 /// stay global): another generator major, seed, preset, random algorithm or title-key rule, or a room given a
 /// selection whose seed is not the world seed's.
@@ -1100,7 +1059,7 @@ Expected<GenerationResult> updateBuilding(const BuildingUpdateInput& input, cons
     std::set<catalog::SystemName> selected;
     std::vector<const RoomSelection*> newSystems;
     for (const RoomSelection& selection : input.selections) {
-        if (Status status = checkSelectionForm(selection); !status) {
+        if (Status status = detail::checkSelectionForm(selection, "update"); !status) {
             return propagate(status.error());
         }
         if (selection.room.kind() != RoomIdKind::System || selection.room.isExpansion()) {

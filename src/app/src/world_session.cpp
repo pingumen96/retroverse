@@ -159,6 +159,9 @@ WorldSession::~WorldSession() {
     if (m_regenerations) {
         // I4b step 6: a preview's or a commit's job posts into its box harmlessly (a commit under way still ends).
         m_pool.cancel(m_regenerations->generation);
+        if (m_regenerations->slot) {
+            m_regenerations->slot->retired = true; // the rooms' data read ahead stop
+        }
         const std::lock_guard lock(m_regenerations->box->mutex);
         m_regenerations->box->wake = nullptr;
     }

@@ -54,6 +54,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/log.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/world/collection_layout.hpp>
@@ -303,12 +304,19 @@ TEST_CASE("app/world_regenerate: the real library's previews of a room, a floor 
         // The room again, its rooms' data read by the previews before it: a warm preview.
         {rv::world::RegenerationScope::ofRoom(rv::world::RoomId::parse(room).value()), room + " again (warm)",
          kRoomPreviewLimitMs}};
+    // The standing rooms' data, which the tab reads ahead with the inputs (m3/preview-time).
+    const double warmMs = rv::app::warmRoomData(*inputs.inputs, *plan);
+    std::cout << fmt::format("Real app regeneration: the standing rooms' data read ahead in {:.0f} ms\n", warmMs);
+    // The plan as the app holds it (m3/preview-time: the app's preview takes the plan it shows when its file is that
+    // plan, rv::app::KnownPlan).
+    const rv::app::KnownPlan known{std::make_shared<const rv::world::WorldPlan>(*plan), rv::core::sha256Hex(*text)};
     bool first = true;
     for (const Scope& scope : scopes) {
         INFO(scope.name);
         start = Clock::now();
         const rv::app::RegenerationPreview preview =
-            rv::app::previewRegeneration(worldPaths, scope.scope, *inputs.inputs);
+            rv::app::previewRegeneration(worldPaths, scope.scope, *inputs.inputs, &known);
+        CHECK(preview.knownPlan);
         const double wall = milliseconds(start);
         INFO(preview.error);
         REQUIRE(preview.failure.empty());
