@@ -224,13 +224,15 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // bloom_downsample (also with RV_BLOOM_KARIS for the first level), bloom_upsample, post and fxaa. The asset
     // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*). The hover outline marks on
     // pbr.vert (outline_mark, also with RV_ALPHA_TEST) and draws its edge on post/fullscreen.vert (outline_edge), the
-    // inspection's dimming too (outline_dim, I3 step 13b).
+    // inspection's dimming too (outline_dim, I3 step 13b). The VR mode's UI panel (xr_panel, I10 step 5) has stages of
+    // its own.
     CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "debug/inspect.frag",
                                              "depth/depth.frag", "outline/outline_dim.frag", "outline/outline_edge.frag",
                                              "outline/outline_mark.frag", "pbr/pbr.frag", "pbr/pbr.vert",
                                              "post/bloom_downsample.frag", "post/bloom_upsample.frag",
                                              "post/fullscreen.vert", "post/fxaa.frag", "post/post.frag",
-                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag"});
+                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag",
+                                             "xr/panel.frag", "xr/panel.vert"});
 
     // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST,
     // the inspection views with one of RV_INSPECT_*; the self-checks use the programs of the views.

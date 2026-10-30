@@ -57,6 +57,7 @@ add_library(rv_render STATIC
     src/material_registry.cpp
     src/mesh_registry.cpp
     src/outline_pass.cpp
+    src/panel_pass.cpp
     src/post_processor.cpp
     src/render_state_cache.cpp
     src/sampler.cpp
