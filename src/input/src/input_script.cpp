@@ -31,8 +31,11 @@ constexpr std::string_view kActionsField = "actions";
 constexpr std::string_view kTextField = "text";
 constexpr std::string_view kPhaseField = "phase";
 constexpr std::string_view kHeadPoseField = "headPose";
-constexpr std::array<std::string_view, 6> kStepFields{kFromFrameField, kToFrameField, kActionsField,
-                                                      kTextField,      kPhaseField,   kHeadPoseField};
+constexpr std::string_view kLeftHandField = "leftHand";
+constexpr std::string_view kRightHandField = "rightHand";
+constexpr std::array<std::string_view, 8> kStepFields{kFromFrameField, kToFrameField, kActionsField,
+                                                      kTextField,      kPhaseField,   kHeadPoseField,
+                                                      kLeftHandField,  kRightHandField};
 constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
 constexpr float kMaxHeadPitchDeg = 90.0f;
 
@@ -220,14 +223,26 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
         }
         parsed.headPose = *headPose;
     }
+    // I10 step 4: the hands' controllers, posed like the head.
+    for (const auto& [field, hand] : {std::pair{kLeftHandField, &parsed.leftHand}, std::pair{kRightHandField,
+                                                                                             &parsed.rightHand}}) {
+        if (const auto pose = step.find(field); pose != step.end()) {
+            auto handPose = parseHeadPose(*pose, at.child(field));
+            if (!handPose) {
+                return propagate(handPose.error());
+            }
+            *hand = *handPose;
+        }
+    }
 
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
-        if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose) {
+        if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand) {
             return parsed;
         }
-        return fail(ErrorCode::ParseError, "missing field \"actions\" (or \"text\", \"phase\", \"headPose\")",
+        return fail(ErrorCode::ParseError,
+                    "missing field \"actions\" (or \"text\", \"phase\", \"headPose\", \"leftHand\", \"rightHand\")",
                     actionsAt);
     }
     if (!actions->is_object()) {
@@ -335,6 +350,17 @@ std::optional<ScriptedHeadPose> InputScript::headPoseAt(std::uint64_t frame) con
     for (const InputScriptStep& step : m_steps) {
         if (step.headPose && step.covers(frame)) {
             pose = step.headPose;
+        }
+    }
+    return pose;
+}
+
+std::optional<ScriptedHeadPose> InputScript::handPoseAt(std::uint64_t frame, bool right) const {
+    std::optional<ScriptedHeadPose> pose;
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<ScriptedHeadPose>& hand = right ? step.rightHand : step.leftHand;
+        if (hand && step.covers(frame)) {
+            pose = hand;
         }
     }
     return pose;

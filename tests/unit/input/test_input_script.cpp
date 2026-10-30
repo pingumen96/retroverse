@@ -413,3 +413,27 @@ TEST_CASE("input/input_script: steps give the VR mode's fake runtime its head po
           ErrorCode::ValidationFailed);
     CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": 3}])").code == ErrorCode::ParseError);
 }
+
+TEST_CASE("input/input_script: steps give the fake runtime's controllers their poses (I10 step 4)",
+          "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "rightHand": {"yaw": 10, "pitch": -15, "position": [0.2, 1.2, -0.3]}},
+        {"fromFrame": 5, "toFrame": 9, "leftHand": {"yaw": -30}, "actions": {"interact": 1}}
+    ])");
+    const std::optional<rv::input::ScriptedHeadPose> right = script.handPoseAt(2, true);
+    REQUIRE(right);
+    CHECK(right->yawDeg == 10.0f);
+    CHECK(right->pitchDeg == -15.0f);
+    CHECK(right->position == std::optional<glm::vec3>(glm::vec3(0.2f, 1.2f, -0.3f)));
+    CHECK_FALSE(script.handPoseAt(2, false));
+    const std::optional<rv::input::ScriptedHeadPose> left = script.handPoseAt(6, false);
+    REQUIRE(left);
+    CHECK(left->yawDeg == -30.0f);
+    CHECK_FALSE(left->position);
+    CHECK_FALSE(script.handPoseAt(10, true));
+    CHECK_FALSE(script.headPoseAt(2));
+    // A hand alone makes a step; its fields are checked like the head's.
+    CHECK(parseOk(R"([{"fromFrame": 0, "toFrame": 0, "leftHand": {}}])").handPoseAt(0, false));
+    const rv::Error roll = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightHand": {"roll": "x"}}])");
+    CHECK(roll.context == "script.json:/0/rightHand/roll");
+}
