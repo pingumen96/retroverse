@@ -1469,6 +1469,12 @@ struct ScreenService::Impl {
         }
         if (screens.empty() && !viewerScreen) {
             // Unbound (a floor being committed again): the previous clips' threads end on their own meanwhile.
+            // I5 step 8's review: a service made unbound for the media viewer (the lobby, a hall, the quick catalog)
+            // still holds the viewer's clip once the viewer lets it go: no screen asks for it, so the scheduler stops it
+            // ("unwanted": opened again from its beginning) and its sound fades out (stopSlot).
+            if (scheduler.openSlots() > 0) {
+                schedule();
+            }
             reapDrained();
             refreshViewer();
             counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
