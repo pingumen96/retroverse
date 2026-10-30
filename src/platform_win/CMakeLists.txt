@@ -17,3 +17,14 @@ target_include_directories(rv_platform_win PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/i
 # not open).
 target_link_libraries(rv_platform_win PUBLIC rv_core rv_launcher PRIVATE advapi32 ntdll)
 rv_forbid_link(rv_platform_win)
+
+# rv_platform_win_capture (I10 step 6, ADR-0017 §7): a window's picture through Windows.Graphics.Capture (C++/WinRT, the
+# Windows SDK's headers) into a D3D11 texture, for the VR mode's game on the CRT. Apart from rv_platform_win, so that
+# retroverse-cli and rv_tests stay without D3D11 and WinRT; rv_app alone links it.
+add_library(rv_platform_win_capture STATIC
+    src/window_capture.cpp
+)
+add_library(rv::platform_win_capture ALIAS rv_platform_win_capture)
+rv_set_target_defaults(rv_platform_win_capture)
+target_include_directories(rv_platform_win_capture PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(rv_platform_win_capture PUBLIC rv_core glm::glm PRIVATE d3d11 dxgi windowsapp)
