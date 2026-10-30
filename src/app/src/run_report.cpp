@@ -2013,6 +2013,7 @@ Json videoToJson(const VideoRecord& video) {
                           {"height", viewer.height},
                           {"rows", viewer.rows},
                           {"maxGpuBytes", viewer.maxGpuBytes},
+                          {"gpuBytes", viewer.gpuBytes},
                           {"openFrames", viewer.openFrames},
                           {"worldFramesWhileOpen", viewer.worldFramesWhileOpen}};
     return json;
@@ -2346,6 +2347,7 @@ VideoRecord readVideo(FieldReader& fields) {
         record.height = viewer->count("height");
         record.rows = viewer->count("rows");
         record.maxGpuBytes = viewer->count("maxGpuBytes");
+        record.gpuBytes = viewer->optionalCount("gpuBytes").value_or(0); // I5 step 8's review
         record.openFrames = viewer->count("openFrames");
         record.worldFramesWhileOpen = viewer->count("worldFramesWhileOpen");
     }

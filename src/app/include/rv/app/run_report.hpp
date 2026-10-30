@@ -1385,8 +1385,9 @@ struct VideoVerdictsRecord {
 /// the decoders opened for them, their frames uploaded, the page's pauses, the clips a failure verdict left out (never
 /// opened) and those that failed while playing; the last clip's game, state (app::toString(ViewerVideoState)), reason,
 /// frame size and the rows its decoder was given (video.json's viewerMaxRows with two decoders, maxRows with one); the
-/// most GPU bytes its texture and pixel buffer ring held at once; the frames the world's slots uploaded while the viewer
-/// was open (0: the world paused under it).
+/// most GPU bytes its texture and pixel buffer ring held at once, and those they hold at the end of the run (0 once the
+/// viewer let its clip go: I5 step 8's review); the frames the world's slots uploaded while the viewer was open (0: the
+/// world paused under it).
 struct VideoViewerRecord {
     std::uint64_t clips = 0;
     std::uint64_t decodersOpened = 0;
@@ -1401,6 +1402,7 @@ struct VideoViewerRecord {
     std::uint64_t height = 0;
     std::uint64_t rows = 0;
     std::uint64_t maxGpuBytes = 0;
+    std::uint64_t gpuBytes = 0;
     std::uint64_t openFrames = 0;
     std::uint64_t worldFramesWhileOpen = 0;
 

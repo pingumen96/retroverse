@@ -2526,7 +2526,8 @@ void ScreenService::record(VideoRecord& record) const {
     for (const Impl::Slot& slot : s.slots) {
         record.videoBytes += slot.texture.valid() ? slot.texture.gpuBytes() : 0;
     }
-    record.videoBytes += s.viewerTexture.valid() ? s.viewerTexture.gpuBytes() : 0;
+    record.viewer.gpuBytes = s.viewerTexture.valid() ? s.viewerTexture.gpuBytes() : 0;
+    record.videoBytes += record.viewer.gpuBytes;
     record.stillBytes = 0;
     for (const Impl::ScreenState* screen : s.allScreens()) {
         record.stillBytes += (screen->still.valid() ? screen->still.estimatedBytes() : 0) +
