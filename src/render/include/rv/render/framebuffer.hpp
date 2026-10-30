@@ -59,6 +59,19 @@ struct FramebufferDesc {
 /// Framebuffer records as GpuMemoryKind::Targets. 0 for an empty size.
 [[nodiscard]] std::size_t framebufferBytes(const FramebufferDesc& desc) noexcept;
 
+class Framebuffer;
+
+/// The storage an alias framebuffer draws into (Framebuffer::createAlias): a color attachment of `color`, viewed as
+/// `colorFormat`, and optionally the depth/stencil texture of `depthStencil` (FramebufferDesc::depthTexture).
+struct FramebufferAliasDesc {
+    const Framebuffer* color = nullptr;
+    std::size_t colorAttachment = 0;
+    /// Of the view class of that attachment's format (texels of one size: Srgb8Alpha8, Rg16F and their kin).
+    ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
+    /// Of the color's size; none: the alias has no depth/stencil buffer.
+    const Framebuffer* depthStencil = nullptr;
+};
+
 /// Move-only offscreen render target (DSA): one or more color textures with immutable storage (one mip level, linear
 /// filtering, clamped to edge) at GL_COLOR_ATTACHMENT0, 1, ..., all drawn into at once, and an optional
 /// depth24/stencil8 buffer (a renderbuffer, or a texture with FramebufferDesc::depthTexture). The first color
@@ -75,9 +88,18 @@ public:
     /// outside the limits above, GraphicsError when an allocation fails (out of memory) or the driver reports the
     /// framebuffer incomplete.
     [[nodiscard]] static Expected<Framebuffer> create(const FramebufferDesc& desc, std::string_view debugName);
+    /// A framebuffer over the storage of others (`desc`): its color attachment and its depth/stencil texture are
+    /// texture views (glTextureView) of theirs, so drawing into it draws into them, and they keep that storage alive
+    /// whatever is destroyed first. It allocates nothing and records nothing in gpuMemoryLedger(). Its size is its
+    /// sources'; it is sampled, drawn into and read back like any framebuffer (one color attachment), but never
+    /// resized (make it again from its sources). Errors: InvalidArgument for an empty source, a missing attachment or
+    /// depth texture, sizes that differ or a format of another view class; GraphicsError when the driver creates no
+    /// view or reports the framebuffer incomplete.
+    [[nodiscard]] static Expected<Framebuffer> createAlias(const FramebufferAliasDesc& desc,
+                                                           std::string_view debugName);
 
     /// Reallocates the attachments at `size`; their contents are undefined afterwards. No-op for the current size. On
-    /// error the framebuffer keeps its previous attachments.
+    /// error the framebuffer keeps its previous attachments. Errors: InvalidArgument for an alias (createAlias).
     [[nodiscard]] Status resize(glm::ivec2 size);
 
     /// Binds this framebuffer for drawing and reading (glBindFramebuffer(GL_FRAMEBUFFER)). The viewport is the
@@ -108,10 +130,6 @@ public:
     /// without one unbinds the unit. Do not sample it while this framebuffer is bound for drawing.
     void bindStencilTexture(GLuint unit) const;
 
-    /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
-    /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
-    /// and a depth/stencil buffer.
-    void copyDepthStencilTo(const Framebuffer& destination) const;
     /// Copies the color attachment into `destination`'s, stretched to its size: the values are converted to its
     /// format (clamped to [0, 1] for Srgb8Alpha8, and encoded to sRGB while GL_FRAMEBUFFER_SRGB is enabled). Does
     /// nothing for an empty framebuffer.
@@ -140,7 +158,14 @@ public:
     [[nodiscard]] bool valid() const noexcept { return m_framebuffer.valid(); }
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_desc.size; }
     [[nodiscard]] ColorFormat colorFormat() const noexcept { return m_desc.colorFormat; }
+    /// The format of color attachment `attachment`.
+    [[nodiscard]] ColorFormat colorFormat(std::size_t attachment) const noexcept {
+        static_cast<void>(attachment);
+        return m_desc.colorFormat;
+    }
     [[nodiscard]] std::size_t colorAttachments() const noexcept { return m_desc.colorAttachments; }
+    /// True for a framebuffer over the storage of others (createAlias).
+    [[nodiscard]] bool alias() const noexcept { return m_alias; }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:
@@ -159,6 +184,7 @@ private:
     TextureObject m_stencilView;
     FramebufferObject m_framebuffer;
     GpuMemoryAllocation m_memory;
+    bool m_alias = false;
 };
 
 } // namespace rv::gl

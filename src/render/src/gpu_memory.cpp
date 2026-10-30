@@ -24,6 +24,7 @@ constexpr std::size_t bytesPerTexel(GpuFormat format) noexcept {
     case GpuFormat::Rgba8:
     case GpuFormat::Srgb8Alpha8:
     case GpuFormat::Rg16F:
+    case GpuFormat::R11fG11fB10f:
     case GpuFormat::Depth24Stencil8:
     case GpuFormat::Depth32F:
         return 4;
