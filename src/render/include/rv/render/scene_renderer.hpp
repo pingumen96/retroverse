@@ -62,8 +62,11 @@ struct SceneShaders {
 
 /// One view of the scene for SceneRenderer::render().
 struct RenderView {
-    /// Eye and lens; the aspect ratio is taken from the target.
+    /// Eye and lens; the aspect ratio is taken from the target (except in eye mode, whose field is the projection).
     scene::Camera camera;
+    /// The frustum the items and the static groups are culled against; none: the camera's. A headset's eyes cull
+    /// against one frustum enclosing both (scene::Frustum::enclosing), so that both draw the same plan.
+    std::optional<scene::Frustum> cullFrustum;
     /// What to draw; the mesh and material handles belong to the renderer's registries.
     std::span<const scene::RenderItem> items;
     /// Instances planned once (the collection, ADR-0011 §3), drawn besides `items` in every pass of the view: each
@@ -139,6 +142,10 @@ struct RenderView {
 ///    copied into the output's depth buffer first);
 ///  - times the shadow map, the depth pre-pass, the ambient occlusion, the lit pass, the post-processing and the
 ///    outline on the GPU (GpuTimer) and records FrameStats.
+/// Frames (beginFrame()): the views of one frame show one scene (a headset's eyes, the stereo preview's, a screenshot).
+/// A view whose shadow map would be the same as one already drawn in its frame (the same light, depth bias, items and
+/// static groups) reads that map instead of drawing it again, and skips planning its casters (ADR-0017 §4). Without
+/// beginFrame() calls every view draws its own.
 /// The registries must outlive the renderer. Main thread only; destroy it while the GL context is current.
 class SceneRenderer {
 public:
@@ -157,6 +164,8 @@ public:
     /// polygon offset, filled polygons). Batches whose mesh, material or program is unavailable are skipped (never a
     /// crash). Does nothing for empty targets.
     void render(GLDevice& device, const SceneShaders& shaders, const RenderView& view, const ViewTargets& targets);
+    /// Starts a frame: the views rendered until the next call may share their shadow map (above).
+    void beginFrame() noexcept { ++m_frame; }
 
     /// Statistics of the last render() call.
     [[nodiscard]] const FrameStats& stats() const noexcept { return m_stats; }
@@ -264,6 +273,21 @@ private:
     std::vector<scene::StaticDrawList> m_staticShadowDraws;
     /// The highlighted instances of the current view.
     std::vector<OutlineTarget> m_outlineTargets;
+    /// What the shadow map holds: drawn in frame `frame` for this light, depth bias, items and static groups, with
+    /// these counts.
+    struct DrawnShadow {
+        std::uint64_t frame = 0;
+        glm::mat4 viewProjection{1.0f};
+        glm::vec2 depthBias{0.0f};
+        const scene::RenderItem* items = nullptr;
+        std::size_t itemCount = 0;
+        std::vector<const StaticInstanceGroup*> staticGroups;
+        std::size_t drawCalls = 0;
+        std::size_t instances = 0;
+    };
+    std::optional<DrawnShadow> m_drawnShadow;
+    /// Counted by beginFrame(); 0 until the first call (no view shares a shadow map then).
+    std::uint64_t m_frame = 0;
     /// Views not drawn because their instances could not be uploaded, for the log.
     core::FailureStreak m_uploadFailures;
     FrameStats m_stats;

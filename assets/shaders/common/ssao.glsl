@@ -2,7 +2,8 @@
 // the two passes. Mirrors rv::gl::SsaoUniforms, rv::gl::kSsaoSampleCount and rv::gl::SsaoTextureUnit member for member
 // (std140; src/render/include/rv/render/uniform_blocks.hpp), filled by rv::gl::makeSsaoUniforms. Both passes draw the
 // fullscreen triangle of post/fullscreen.vert and read the view's camera from FrameUniforms (common/common.glsl, whose
-// projection is glm's perspectiveRH_NO: symmetric, depth in [-1, 1]).
+// projection is glm's perspectiveRH_NO on the desktop, or the off-axis projection of a headset's eye: depth in [-1, 1]
+// either way, the eye's field shifted by uProjection[2][0] and [2][1], 0 for the desktop's symmetric field).
 //
 //  1. ssao/ssao.frag, at half the resolution of the view: per pixel, the view-space position of the full-resolution
 //     pixel at twice its coordinates and its normal (both from the scene's depth), then kSsaoSampleCount points of the
@@ -44,11 +45,13 @@ float inverseDistance(float depth) {
     return -1.0 / viewZ(depth);
 }
 
-// View-space position of the surface at the center of full-resolution `pixel` with window depth `depth`.
+// View-space position of the surface at the center of full-resolution `pixel` with window depth `depth`: the inverse of
+// ndc.x = (m00 x + m20 z) / -z (and likewise for y), m20 and m21 being 0 for a symmetric field.
 vec3 viewPosition(vec2 pixel, float depth) {
     vec2 ndc = (pixel + 0.5) / vec2(textureSize(uSceneDepth, 0)) * 2.0 - 1.0;
     float z = viewZ(depth);
-    return vec3(ndc.x * -z / uProjection[0][0], ndc.y * -z / uProjection[1][1], z);
+    vec2 shifted = ndc + vec2(uProjection[2][0], uProjection[2][1]);
+    return vec3(shifted.x * -z / uProjection[0][0], shifted.y * -z / uProjection[1][1], z);
 }
 
 // Window depth at full-resolution `pixel`, clamped to the target.

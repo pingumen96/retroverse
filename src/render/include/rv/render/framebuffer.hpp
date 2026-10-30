@@ -116,6 +116,10 @@ public:
     /// format (clamped to [0, 1] for Srgb8Alpha8, and encoded to sRGB while GL_FRAMEBUFFER_SRGB is enabled). Does
     /// nothing for an empty framebuffer.
     void copyColorTo(const Framebuffer& destination) const;
+    /// Copies the color attachment unscaled into `destination`'s with its lower left corner at `offset` (pixels),
+    /// clipped to `destination`: the bytes verbatim while GL_FRAMEBUFFER_SRGB is disabled (two views side by side in
+    /// one image). Does nothing for an empty framebuffer.
+    void copyColorTo(const Framebuffer& destination, glm::ivec2 offset) const;
 
     /// Copies the color attachment to the default framebuffer, stretched over (0, 0)-(windowSize), then binds the
     /// default framebuffer with a matching viewport for overlays. GL_FRAMEBUFFER_SRGB is disabled first, so the stored

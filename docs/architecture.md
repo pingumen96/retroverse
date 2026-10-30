@@ -232,9 +232,9 @@ outside the clip volume by `pbr.vert`, so no program on that stage draws them.
   renderer keeps the planner and both plans, so planning allocates nothing once they have grown to the largest view.
   It copies the instance record of every item of both plans (`scene::InstanceData`, I3 step 0c: the model matrix and
   its attributes, front layer, spine layer, flags and pick id, zero for items that are not collection items) into the
-  `gl::InstanceBuffer` in one write (persistently mapped,
-  coherent, three regions used in turn, each guarded by a fence placed after the draws that read it, grown and
-  re-attached to the meshes when a view needs more) and issues one `glDrawElementsInstancedBaseInstance` per batch,
+  `gl::InstanceBuffer` in one write (persistently mapped, coherent, eight regions used in turn: one per view of two
+  frames, I10 step 1; each guarded by a fence placed after the draws that read it, grown and re-attached to the
+  meshes when a view needs more) and issues one `glDrawElementsInstancedBaseInstance` per batch,
   binding the program and the material (uniform block range, textures, samplers, blend, depth writes, culling) only
   when they change; the depth passes draw opaque batches without binding their material (only its culling) and bind
   it for alpha-masked ones (the alpha test). A view whose instances cannot be written is skipped;

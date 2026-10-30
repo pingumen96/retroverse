@@ -365,6 +365,15 @@ void Framebuffer::copyColorTo(const Framebuffer& destination) const {
                            target.x, target.y, GL_COLOR_BUFFER_BIT, filter);
 }
 
+void Framebuffer::copyColorTo(const Framebuffer& destination, glm::ivec2 offset) const {
+    if (!valid() || !destination.valid()) {
+        return;
+    }
+    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y,
+                           offset.x, offset.y, offset.x + m_desc.size.x, offset.y + m_desc.size.y, GL_COLOR_BUFFER_BIT,
+                           GL_NEAREST);
+}
+
 void Framebuffer::blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) const {
     if (!valid() || windowSize.x <= 0 || windowSize.y <= 0) {
         return;
