@@ -284,6 +284,22 @@ TEST_CASE("app/directory_chains: an update's additions out of order make the ran
     CHECK(tied.at(roomId("room:amiga:2")) == ChainRoomRanges{{range("amiga", "Co", "E")}, false});
 }
 
+TEST_CASE("app/directory_chains: titles of systems outside the head's sections keep a section each",
+          "[app][directory_data][chains]") {
+    // amiga's chain holds titles of cd32 and cdtv (not the head's sections): each system its own section after the
+    // head's, by name; never one merged run (which would interleave :3's cd32 titles with :2's cdtv one).
+    ChainPlan chain;
+    chain.add("room:amiga:3", "cd32", {{81, "beta"}, {83, "omega"}});
+    chain.add("room:amiga:3", "cdtv", {{80, "kappa"}});
+    chain.add("room:amiga:2", "cdtv", {{82, "lima"}});
+    const std::map<RoomId, ChainRoomRanges> ranges = chain.ranges();
+    CHECK(ranges.at(roomId("room:amiga")) == ChainRoomRanges{{range("amiga", "A", "C")}, false});
+    CHECK(ranges.at(roomId("room:amiga:2")) ==
+          ChainRoomRanges{{range("amiga", "D", "E"), range("cdtv", "L", "L")}, false});
+    CHECK(ranges.at(roomId("room:amiga:3")) ==
+          ChainRoomRanges{{range("amiga", "F", "Z"), range("cd32", "B", "O"), range("cdtv", "K", "K")}, false});
+}
+
 TEST_CASE("app/directory_chains: the initials, the systems read, the titles from the items files",
           "[app][directory_data][chains]") {
     CHECK(rv::app::rangeInitial("alpha") == "A");

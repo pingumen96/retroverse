@@ -198,7 +198,8 @@ std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& p
         if (rooms.size() < 2) {
             continue;
         }
-        // The head's sections order the chain (its rooms share them); a title of another system goes last.
+        // The head's sections order the chain (its rooms share them); the titles of a system outside them go after
+        // them, a section of their own per system, by name.
         const auto headRoom =
             std::find_if(rooms.begin(), rooms.end(), [&](const world::Room* room) { return room->id == head; });
         const std::vector<catalog::SystemName> sections =
@@ -223,15 +224,16 @@ std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& p
         // The generator's order (alphabeticalLess(): section, sort key, title key, GameId), so that titles of one sort
         // key at a boundary stand as the split shared them.
         std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-            return std::tie(a.section, a.sortKey, a.titleKey, a.game) <
-                   std::tie(b.section, b.sortKey, b.titleKey, b.game);
+            return std::tie(a.section, a.system, a.sortKey, a.titleKey, a.game) <
+                   std::tie(b.section, b.system, b.sortKey, b.titleKey, b.game);
         });
         // Section by section (the entries stand by section in order): each room's first and last title there, the
         // rooms in the order of their first; a boundary two rooms share the initial of shows two letters.
         std::size_t begin = 0;
         while (begin < entries.size()) {
             std::size_t end = begin;
-            while (end < entries.size() && entries[end].section == entries[begin].section) {
+            while (end < entries.size() && entries[end].section == entries[begin].section &&
+                   entries[end].system == entries[begin].system) {
                 ++end;
             }
             struct Span {

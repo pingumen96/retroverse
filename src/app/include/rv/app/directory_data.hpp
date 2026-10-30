@@ -66,15 +66,15 @@ struct ChainRoomRanges {
 
 /// The ranges of every room of a chain of more than one room in `plan` (I4b step 8; ADR-0015 §7 as amended on
 /// 2026-10-29): the chain's placed titles whose title is known in the chain's alphabetical order (the sections in the
-/// head's order, then the sort key, the title key, the GameId: the generator's alphabeticalLess(), the order a fresh
-/// split shares them in, chainShares()), and for each room, section by section in that order, the initials
-/// (rangeInitial()) of the first and the last of its titles there: never a title of the room outside its range. Where
-/// one room's range ends on the initial the next one's (in the order of their first titles) begins on, both ends show
-/// two letters (rangePrefix(): "A – Mo", "Mo – Y"). A room's titles interleave with another room's (`scattered`) when
-/// another room of the chain holds a title between its first and its last in that order: an update's additions (a new
-/// title goes after its alphabetical predecessor wherever that stands, else to the chain's next free slot, wrapping to
-/// the head), never a fresh split. A room alone has no entry; a room of a chain none of whose titles is known has an
-/// empty entry.
+/// head's order, a system outside them a section of its own after them by name, then the sort key, the title key, the
+/// GameId: the generator's alphabeticalLess(), the order a fresh split shares them in, chainShares()), and for each
+/// room, section by section in that order, the initials (rangeInitial()) of the first and the last of its titles there:
+/// never a title of the room outside its range. Where one room's range ends on the initial the next one's (in the order
+/// of their first titles) begins on, both ends show two letters (rangePrefix(): "A – Mo", "Mo – Y"). A room's titles
+/// interleave with another room's (`scattered`) when another room of the chain holds a title between its first and its
+/// last in that order: an update's additions (a new title goes after its alphabetical predecessor wherever that stands,
+/// else to the chain's next free slot, wrapping to the head), never a fresh split. A room alone has no entry; a room of
+/// a chain none of whose titles is known has an empty entry.
 [[nodiscard]] std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& plan,
                                                                      const ChainTitleOf& titleOf);
 
