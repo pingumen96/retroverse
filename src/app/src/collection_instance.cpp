@@ -114,7 +114,8 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
         const std::string room = layout.room.toString();
         const CrtChoice choice = looks.choose(ScreenKind::Cabinet, room, {}, data.theme.screenPreset);
         instance->m_frontLook = looks.effect(choice);
-        looks.record(ScreenLookApplied{instance->m_keyPrefix, room, ScreenKind::Cabinet, choice});
+        instance->m_frontLookApplied = ScreenLookApplied{instance->m_keyPrefix, room, ScreenKind::Cabinet, choice};
+        looks.record(*instance->m_frontLookApplied);
     }
     if (const geometry::Socket* label = geometry::findSocket(prefab.sockets, "Label")) {
         const glm::vec3 size = label->bounds.max - label->bounds.min;
@@ -501,6 +502,12 @@ Expected<std::vector<scene::MaterialHandle>> CollectionInstance::videoMaterials(
         }
         if (Status uploaded = materials.upload(uniformBufferOffsetAlignment, "MaterialUniforms"); !uploaded) {
             return propagate(uploaded.error());
+        }
+        // I5 step 6: the pool draws through the fronts' tube, with their look (the report's crtLooks says so).
+        if (m_frontLookApplied && labelDesc.crt) {
+            ScreenLookApplied pooled = *m_frontLookApplied;
+            pooled.screen += "/video";
+            graphics.screenLooks().record(std::move(pooled));
         }
     }
     return std::vector<scene::MaterialHandle>(m_videoMaterials.begin(),

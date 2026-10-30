@@ -1207,6 +1207,16 @@ TEST_CASE("golden/G20: an arcade cabinet playing its clip in Focus", "[gpu][gold
     CHECK(std::abs(cabinet->pictureRect[3] - 0.5625) < 0.01);
     REQUIRE(video.freezePtsSeconds.has_value());
     CHECK(*video.freezePtsSeconds == 1.0);
+    // I5 step 6 (ADR-0016 §7): the arcade pack's preset on the cabinets' screens, their static and hero fronts and the
+    // pooled video material the cabinet in Focus plays through.
+    const rv::app::CrtLookRecord cabinets = lookOf(report, "collection/area:arcade/");
+    CHECK(cabinets.kind == "cabinet");
+    CHECK(cabinets.preset == "arcade");
+    CHECK(cabinets.rule == "pack");
+    const rv::app::CrtLookRecord pooled = lookOf(report, cabinets.screen + "/video");
+    CHECK(pooled.kind == "cabinet");
+    CHECK(pooled.preset == "arcade");
+    CHECK(pooled.rule == "pack");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G20", "g20_cabinet_focus_golden",
                        "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building "

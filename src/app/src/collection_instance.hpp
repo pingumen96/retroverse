@@ -24,6 +24,7 @@
 
 #include <glm/vec2.hpp>
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/assets/material_desc.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/collection_arrays.hpp>
@@ -265,6 +266,8 @@ private:
     std::vector<scene::MaterialHandle> m_videoMaterials;
     /// I5 step 6: the CRT look of a front drawn through a picture tube (its room's cabinet preset, crt_looks.hpp).
     std::optional<assets::CrtEffect> m_frontLook;
+    /// Its record (ScreenLooks), recorded again for the pooled video materials once they are made ("<key prefix>/video").
+    std::optional<ScreenLookApplied> m_frontLookApplied;
 };
 
 } // namespace rv::app

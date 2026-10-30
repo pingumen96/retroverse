@@ -96,7 +96,8 @@ struct CrtChoice {
 
 /// A screen's look as it was registered, for the run report (CrtLooksRecord).
 struct ScreenLookApplied {
-    /// The object's id, or "collection/<room id>" for a room's cabinets.
+    /// The object's id, or "collection/<room id>/<family>" for a room's cabinets (their collection's key prefix: their
+    /// static fronts and hero front), ".../video" for their pooled video materials once made.
     std::string screen;
     std::string room;
     ScreenKind kind = ScreenKind::Hero;

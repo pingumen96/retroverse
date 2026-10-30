@@ -341,8 +341,8 @@ build/rvdata`).
   0.4}}}`); a user file that does not load is left out whole, a shipped one that does not load leaves the built-in
   copy (both said in the log). The report's `crtLooks` gives `crtEffect`, `presetsSource` (`shipped`, `user`,
   `built-in`) and `screens` (each screen of the scene shown at the end: `screen`, its object's id or a room's cabinets'
-  `collection/<room>/<family>`; `room`, `kind`, `preset`, `chosen` before `crtEffect`, `rule` `video.json`, `pack` or
-  `kind`). The smoke scene `tests/smoke/scenes/crt_presets.json` (room `crt_presets`) holds four CRTs at eye height
+  `collection/<room>/<family>`, and `collection/<room>/<family>/video` for their pooled video materials once a cabinet
+  played; `room`, `kind`, `preset`, `chosen` before `crtEffect`, `rule` `video.json`, `pack` or `kind`). The smoke scene `tests/smoke/scenes/crt_presets.json` (room `crt_presets`) holds four CRTs at eye height
   showing the colour bars, one per preset with its case's `video.json`.
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
