@@ -252,15 +252,22 @@ build/rvdata`).
   through the collision world, and a head leaning beyond it fades the view, pushed back further than 0.3 m. The space is
   LOCAL_FLOOR, else STAGE, else LOCAL 1.6 m up; `posture: "seated"` makes the head up to the walker's eye height at the
   start and at each recentering (the headset's own, which the head survives in place); every transition of the world
-  is instant (reduceMotion), and `comfort.vignette` darkens the view's edges while the stick moves it. Without a
+  is instant (reduceMotion), and `comfort.vignette` darkens the view's edges while the stick moves it. Controllers
+  (I10 step 4, `docs/i10/step-4.md`): their buttons and sticks act as a gamepad's (`assets/config/xr_bindings.json`
+  per interaction profile: Touch, Index, Vive, WMR, Pico 4, simple; a user's `xr_bindings.json` replaces a profile),
+  either trigger interacts along that hand's laser, Focus pulls the item out where it is and Inspect holds it in the
+  pointing hand, which ticks when the laser comes onto an item; the right controller aims the teleport, and
+  `comfort.moveRelativeTo: "hand"` walks along the left one. The fake runtime's controllers are the input script's
+  `leftHand` and `rightHand` steps. Without a
   runtime or a headset (an interactive run waits 15 s
   for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
   no wait, at the `--input-script`'s `headPose` steps (`tests/input_scripts/xr_look.json`); a frame-limited run's
   screenshot then holds both eyes side by side (2048 x 1024), and `--xr-fake-lose-after <frames>` loses the session.
   The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
-  and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, and the
-  movement's snap turns, teleports and push-backs. While a launched game runs the host
+  and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, the
+  movement's snap turns, teleports and push-backs, and the controllers (the profiles taken and held, the frames
+  tracked and pointing, the vibrations). While a launched game runs the host
   idles and the headset shows the runtime's own frame until the game ends (step 6 keeps the session rendering).
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
