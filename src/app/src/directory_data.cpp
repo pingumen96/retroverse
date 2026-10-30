@@ -13,6 +13,7 @@
 #include <rv/app/room_items.hpp>
 #include <rv/catalog/metadata.hpp>
 #include <rv/world/building.hpp>
+#include <rv/world/title_key.hpp>
 
 namespace rv::app {
 namespace {
@@ -186,10 +187,11 @@ std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& p
     }
     struct Entry {
         std::size_t section = 0;
+        catalog::SystemName system;
         std::string sortKey;
+        std::string titleKey;
         catalog::GameId game;
         world::RoomId room;
-        catalog::SystemName system;
     };
     std::map<world::RoomId, ChainRoomRanges> result;
     for (const auto& [head, rooms] : chains) {
@@ -214,12 +216,15 @@ std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& p
                     continue;
                 }
                 const auto section = std::find(sections.begin(), sections.end(), title->system);
-                entries.push_back(Entry{static_cast<std::size_t>(section - sections.begin()), title->sortKey, game,
-                                        room->id, title->system});
+                entries.push_back(Entry{static_cast<std::size_t>(section - sections.begin()), title->system,
+                                        title->sortKey, title->titleKey, game, room->id});
             }
         }
+        // The generator's order (alphabeticalLess(): section, sort key, title key, GameId), so that titles of one sort
+        // key at a boundary stand as the split shared them.
         std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-            return std::tie(a.section, a.sortKey, a.game) < std::tie(b.section, b.sortKey, b.game);
+            return std::tie(a.section, a.sortKey, a.titleKey, a.game) <
+                   std::tie(b.section, b.sortKey, b.titleKey, b.game);
         });
         // Section by section (the entries stand by section in order): each room's first and last title there, the
         // rooms in the order of their first; a boundary two rooms share the initial of shows two letters.
@@ -319,13 +324,15 @@ std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path&
             if (!hasText(item) || titles.contains(item.game)) {
                 continue;
             }
+            const std::string& shown = item.title.empty() ? item.fallbackTitle : item.title;
             std::string sortKey;
             if (item.screen && !item.screen->sortKey.empty()) {
                 sortKey = item.screen->sortKey;
-            } else if (auto key = catalog::sortKeyOf(item.title.empty() ? item.fallbackTitle : item.title)) {
+            } else if (auto key = catalog::sortKeyOf(shown)) {
                 sortKey = std::move(*key);
             }
-            titles.emplace(item.game, ChainTitle{system, std::move(sortKey)});
+            auto key = world::titleKey(shown);
+            titles.emplace(item.game, ChainTitle{system, std::move(sortKey), key ? std::move(*key) : std::string()});
         }
     }
     return titles;

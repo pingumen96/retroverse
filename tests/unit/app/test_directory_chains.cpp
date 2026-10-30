@@ -271,6 +271,17 @@ TEST_CASE("app/directory_chains: an update's additions out of order make the ran
     CHECK(shared.at(roomId("room:amiga")) == ChainRoomRanges{{range("amiga", "A", "Ch")}, false});
     CHECK(shared.at(roomId("room:amiga:2")) == ChainRoomRanges{{range("amiga", "Co", "E")}, false});
     CHECK(shared.at(roomId("room:amiga:3")) == ChainRoomRanges{{range("amiga", "F", "Z")}, false});
+
+    // Two titles of one sort key at a boundary stand in the generator's order (the title key before the GameId): the
+    // head's "cobra a" (GameId 12) before :2's "cobra b" (GameId 11), no overlap.
+    ChainPlan tie;
+    tie.add("room:amiga", "amiga", {{12, "cobra"}});
+    tie.add("room:amiga:2", "amiga", {{11, "cobra"}});
+    tie.titles.at(game(12)).titleKey = "cobra a";
+    tie.titles.at(game(11)).titleKey = "cobra b";
+    const std::map<RoomId, ChainRoomRanges> tied = tie.ranges();
+    CHECK(tied.at(roomId("room:amiga")) == ChainRoomRanges{{range("amiga", "A", "Co")}, false});
+    CHECK(tied.at(roomId("room:amiga:2")) == ChainRoomRanges{{range("amiga", "Co", "E")}, false});
 }
 
 TEST_CASE("app/directory_chains: the initials, the systems read, the titles from the items files",
@@ -319,9 +330,10 @@ TEST_CASE("app/directory_chains: the initials, the systems read, the titles from
     const std::map<GameId, ChainTitle> titles =
         rv::app::chainTitlesOf(dir.path(), library, {systemNamed("amiga"), systemNamed("gb")});
     REQUIRE(titles.size() == 3);
-    CHECK(titles.at(game(1)) == ChainTitle{systemNamed("amiga"), "alpha, the"});
-    CHECK(titles.at(game(2)) == ChainTitle{systemNamed("amiga"), "the bravo"});
-    CHECK(titles.at(game(3)) == ChainTitle{systemNamed("amiga"), "charlie (europe)"});
+    // Each with its title key (the generator's tie-break): the title's, its groups dropped.
+    CHECK(titles.at(game(1)) == ChainTitle{systemNamed("amiga"), "alpha, the", "alpha"});
+    CHECK(titles.at(game(2)) == ChainTitle{systemNamed("amiga"), "the bravo", "the bravo"});
+    CHECK(titles.at(game(3)) == ChainTitle{systemNamed("amiga"), "charlie (europe)", "charlie"});
 }
 
 TEST_CASE("app/directory_chains: a section's items file never takes the titles of the room's other sections",
@@ -337,10 +349,10 @@ TEST_CASE("app/directory_chains: a section's items file never takes the titles o
                                                  std::vector<SystemName>{systemNamed("pokemini"), systemNamed("gb")}}) {
         const std::map<GameId, ChainTitle> titles = rv::app::chainTitlesOf(dir.path(), library, order);
         REQUIRE(titles.size() == 6);
-        CHECK(titles.at(game(30)) == ChainTitle{systemNamed("gb"), "apple"});
-        CHECK(titles.at(game(33)) == ChainTitle{systemNamed("gb"), "zucchini"});
-        CHECK(titles.at(game(40)) == ChainTitle{systemNamed("pokemini"), "acorn"});
-        CHECK(titles.at(game(41)) == ChainTitle{systemNamed("pokemini"), "yew"});
+        CHECK(titles.at(game(30)) == ChainTitle{systemNamed("gb"), "apple", "apple"});
+        CHECK(titles.at(game(33)) == ChainTitle{systemNamed("gb"), "zucchini", "zucchini"});
+        CHECK(titles.at(game(40)) == ChainTitle{systemNamed("pokemini"), "acorn", "acorn"});
+        CHECK(titles.at(game(41)) == ChainTitle{systemNamed("pokemini"), "yew", "yew"});
         // The ranges from them: each section's own, nothing scattered.
         const ChainPlan chain;
         const auto ranges = rv::app::chainRangesOf(chain.plan, [&](const GameId& id) -> std::optional<ChainTitle> {
@@ -359,11 +371,11 @@ TEST_CASE("app/directory_chains: a section's items file never takes the titles o
     const std::map<GameId, ChainTitle> arcade = rv::app::chainTitlesOf(
         dir.path(), library, {systemNamed("fbneo"), systemNamed("mame"), systemNamed("naomi")});
     REQUIRE(arcade.size() == 5);
-    CHECK(arcade.at(game(50)) == ChainTitle{systemNamed("fbneo"), "aqua bolt"});
-    CHECK(arcade.at(game(51)) == ChainTitle{systemNamed("fbneo"), "zinc ring"});
-    CHECK(arcade.at(game(60)) == ChainTitle{systemNamed("mame"), "brass comet"});
-    CHECK(arcade.at(game(61)) == ChainTitle{systemNamed("mame"), "yarrow"});
-    CHECK(arcade.at(game(70)) == ChainTitle{systemNamed("naomi"), "cobalt sky"});
+    CHECK(arcade.at(game(50)) == ChainTitle{systemNamed("fbneo"), "aqua bolt", "aqua bolt"});
+    CHECK(arcade.at(game(51)) == ChainTitle{systemNamed("fbneo"), "zinc ring", "zinc ring"});
+    CHECK(arcade.at(game(60)) == ChainTitle{systemNamed("mame"), "brass comet", "brass comet"});
+    CHECK(arcade.at(game(61)) == ChainTitle{systemNamed("mame"), "yarrow", "yarrow"});
+    CHECK(arcade.at(game(70)) == ChainTitle{systemNamed("naomi"), "cobalt sky", "cobalt sky"});
 }
 
 TEST_CASE("app/directory_chains: a teleport, \"Mostra nella stanza\" and where-is lead into an expansion",

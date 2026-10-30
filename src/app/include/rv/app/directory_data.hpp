@@ -42,11 +42,13 @@ inline constexpr std::string_view kNoticeBuildingPending = "building-pending";
 /// A system's full name as the catalog has it ("" none: the directory shows its name).
 using SystemFullName = std::function<std::string(const catalog::SystemName&)>;
 
-/// I4b step 8 (ADR-0015 §7): a placed game as a chain's ranges read it: the system whose section it stands in and its
-/// sort key (catalog::sortKeyOf() of its sort name or title, as the rooms' items files hold it).
+/// I4b step 8 (ADR-0015 §7): a placed game as a chain's ranges read it: the system whose section it stands in, its
+/// sort key (catalog::sortKeyOf() of its sort name or title, as the rooms' items files hold it) and its title key
+/// (world::titleKey() of its title: the generator's tie-break between titles of one sort key).
 struct ChainTitle {
     catalog::SystemName system;
     std::string sortKey;
+    std::string titleKey;
 
     bool operator==(const ChainTitle&) const = default;
 };
@@ -64,14 +66,15 @@ struct ChainRoomRanges {
 
 /// The ranges of every room of a chain of more than one room in `plan` (I4b step 8; ADR-0015 §7 as amended on
 /// 2026-10-29): the chain's placed titles whose title is known in the chain's alphabetical order (the sections in the
-/// head's order, then the sort key, then the GameId: the order a fresh split shares them in, chainShares()), and for
-/// each room, section by section in that order, the initials (rangeInitial()) of the first and the last of its titles
-/// there: never a title of the room outside its range. Where one room's range ends on the initial the next one's (in
-/// the order of their first titles) begins on, both ends show two letters (rangePrefix(): "A – Mo", "Mo – Y"). A room's titles interleave with another room's (`scattered`)
-/// when another room of the chain holds a title between its first and its last in that order: an update's additions
-/// (a new title goes after its alphabetical predecessor wherever that stands, else to the chain's next free slot,
-/// wrapping to the head), never a fresh split. A room alone has no entry; a room of a chain none of whose titles is
-/// known has an empty entry.
+/// head's order, then the sort key, the title key, the GameId: the generator's alphabeticalLess(), the order a fresh
+/// split shares them in, chainShares()), and for each room, section by section in that order, the initials
+/// (rangeInitial()) of the first and the last of its titles there: never a title of the room outside its range. Where
+/// one room's range ends on the initial the next one's (in the order of their first titles) begins on, both ends show
+/// two letters (rangePrefix(): "A – Mo", "Mo – Y"). A room's titles interleave with another room's (`scattered`) when
+/// another room of the chain holds a title between its first and its last in that order: an update's additions (a new
+/// title goes after its alphabetical predecessor wherever that stands, else to the chain's next free slot, wrapping to
+/// the head), never a fresh split. A room alone has no entry; a room of a chain none of whose titles is known has an
+/// empty entry.
 [[nodiscard]] std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& plan,
                                                                      const ChainTitleOf& titleOf);
 
