@@ -207,6 +207,7 @@ Expected<ControllerState> FakeRuntime::syncControllers(std::int64_t /*displayTim
             held.tracked = true;
             held.grip = *pose;
             held.aim = *pose;
+            held.select = m_config.handSelect ? m_config.handSelect(frame, hand) : 0.0f;
         }
     }
     return state;

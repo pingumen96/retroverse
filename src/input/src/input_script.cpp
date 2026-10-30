@@ -33,9 +33,12 @@ constexpr std::string_view kPhaseField = "phase";
 constexpr std::string_view kHeadPoseField = "headPose";
 constexpr std::string_view kLeftHandField = "leftHand";
 constexpr std::string_view kRightHandField = "rightHand";
-constexpr std::array<std::string_view, 8> kStepFields{kFromFrameField, kToFrameField, kActionsField,
-                                                      kTextField,      kPhaseField,   kHeadPoseField,
-                                                      kLeftHandField,  kRightHandField};
+constexpr std::string_view kLeftSelectField = "leftSelect";
+constexpr std::string_view kRightSelectField = "rightSelect";
+constexpr std::array<std::string_view, 10> kStepFields{kFromFrameField,  kToFrameField,   kActionsField,
+                                                       kTextField,       kPhaseField,     kHeadPoseField,
+                                                       kLeftHandField,   kRightHandField, kLeftSelectField,
+                                                       kRightSelectField};
 constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
 constexpr float kMaxHeadPitchDeg = 90.0f;
 
@@ -234,11 +237,23 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
             *hand = *handPose;
         }
     }
+    // I10 step 5: the triggers.
+    for (const auto& [field, select] : {std::pair{kLeftSelectField, &parsed.leftSelect},
+                                        std::pair{kRightSelectField, &parsed.rightSelect}}) {
+        if (const auto value = step.find(field); value != step.end()) {
+            if (!value->is_number() || !std::isfinite(value->get<double>()) || value->get<double>() < 0.0 ||
+                value->get<double>() > 1.0) {
+                return fail(ErrorCode::ValidationFailed, "expected a number from 0 to 1", at.child(field));
+            }
+            *select = value->get<float>();
+        }
+    }
 
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
-        if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand) {
+        if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand ||
+            parsed.leftSelect || parsed.rightSelect) {
             return parsed;
         }
         return fail(ErrorCode::ParseError,
@@ -364,6 +379,17 @@ std::optional<ScriptedHeadPose> InputScript::handPoseAt(std::uint64_t frame, boo
         }
     }
     return pose;
+}
+
+float InputScript::handSelectAt(std::uint64_t frame, bool right) const {
+    float select = 0.0f;
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<float>& value = right ? step.rightSelect : step.leftSelect;
+        if (value && step.covers(frame)) {
+            select = *value;
+        }
+    }
+    return select;
 }
 
 std::vector<std::string> InputScript::phasesAt(std::uint64_t frame) const {

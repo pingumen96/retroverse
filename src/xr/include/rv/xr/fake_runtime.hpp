@@ -46,6 +46,8 @@ struct FakeRuntimeConfig {
     /// A hand's controller at the n-th frame waited for (the input script's hand poses, I10 step 4): its grip and aim
     /// poses both there, tracked; nothing: that hand holds none. No buttons: the input script presses the actions.
     std::function<std::optional<Pose>(std::uint64_t frame, Hand hand)> handPose;
+    /// A hand's trigger at the n-th frame waited for, [0, 1] (I10 step 5); none: released.
+    std::function<float(std::uint64_t frame, Hand hand)> handSelect;
 };
 
 /// A runtime without a headset (ADR-0017 §3, §10): two asymmetric eyes `ipdMeters` apart at the scripted head pose, a

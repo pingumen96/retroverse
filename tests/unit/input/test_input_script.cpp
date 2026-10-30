@@ -437,3 +437,20 @@ TEST_CASE("input/input_script: steps give the fake runtime's controllers their p
     const rv::Error roll = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightHand": {"roll": "x"}}])");
     CHECK(roll.context == "script.json:/0/rightHand/roll");
 }
+
+TEST_CASE("input/input_script: steps press the fake runtime's triggers (I10 step 5)", "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "rightHand": {"yaw": 10}},
+        {"fromFrame": 3, "toFrame": 4, "rightSelect": 1},
+        {"fromFrame": 6, "toFrame": 6, "leftSelect": 0.5}
+    ])");
+    CHECK(script.handSelectAt(2, true) == 0.0f);
+    CHECK(script.handSelectAt(3, true) == 1.0f);
+    CHECK(script.handSelectAt(4, true) == 1.0f);
+    CHECK(script.handSelectAt(4, false) == 0.0f);
+    CHECK(script.handSelectAt(6, false) == 0.5f);
+    CHECK(script.handSelectAt(6, true) == 0.0f);
+    const rv::Error outOfRange = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightSelect": 2}])");
+    CHECK(outOfRange.code == ErrorCode::ValidationFailed);
+    CHECK(outOfRange.context == "script.json:/0/rightSelect");
+}

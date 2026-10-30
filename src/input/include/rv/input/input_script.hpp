@@ -53,6 +53,9 @@ struct InputScriptStep {
     /// The left and right controllers' poses (I10 step 4), in the same terms; nothing: that hand holds none.
     std::optional<ScriptedHeadPose> leftHand;
     std::optional<ScriptedHeadPose> rightHand;
+    /// Their triggers on every frame of the step (I10 step 5: "leftSelect", "rightSelect", [0, 1]); nothing: released.
+    std::optional<float> leftSelect;
+    std::optional<float> rightSelect;
 
     [[nodiscard]] bool covers(std::uint64_t frame) const noexcept { return frame >= fromFrame && frame <= toFrame; }
 };
@@ -84,7 +87,8 @@ struct InputScriptStep {
 ///    field optional (angles 0, the fake runtime's standing head), finite, |pitch| at most 90 and |coordinates| at
 ///    most ScriptedHeadPose::kMaxCoordinate.
 ///  - "leftHand", "rightHand" (I10 step 4): a controller's pose in that hand, in the same terms as "headPose" (it
-///    points along its -Z; no position: the fake runtime's resting hand).
+///    points along its -Z; no position: the fake runtime's resting hand); "leftSelect", "rightSelect" (I10 step 5)
+///    its trigger, a number in [0, 1].
 /// A step has at least one of "actions", "text", "phase", "headPose", "leftHand" and "rightHand", and an "actions" it
 /// has is not empty.
 ///  - Steps may overlap. On a frame where several steps set the same action, the step that comes later in the file
@@ -124,6 +128,8 @@ public:
     [[nodiscard]] std::optional<ScriptedHeadPose> headPoseAt(std::uint64_t frame) const;
     /// A hand's controller on `frame` (the right one when `right`): as headPoseAt() for "rightHand" or "leftHand".
     [[nodiscard]] std::optional<ScriptedHeadPose> handPoseAt(std::uint64_t frame, bool right) const;
+    /// A hand's trigger on `frame`: the "rightSelect" or "leftSelect" of the last step that covers it, else 0.
+    [[nodiscard]] float handSelectAt(std::uint64_t frame, bool right) const;
 
 private:
     std::vector<InputScriptStep> m_steps;
