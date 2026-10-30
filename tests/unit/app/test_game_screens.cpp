@@ -72,14 +72,18 @@ TEST_CASE("game screens: the viewer's pages follow its order, the missing and th
     present(details, MediaKind::Screenshot, ".jpg");
     present(details, MediaKind::Box3d, ".png");
     present(details, MediaKind::MixImage, ".png"); // not a page
-    present(details, MediaKind::Video, ".mp4");    // the viewer's videos are I5's
+    present(details, MediaKind::Video, ".mp4");    // I5 step 8: the clip's page, after the title screen's place
+    present(details, MediaKind::Manual, ".pdf");   // I5 step 8: the manual's page, the last
+    present(details, MediaKind::Custom, ".png");   // not a page
     present(details, MediaKind::Marquee, "png");   // no file extension: no path, as ES-DE's resolver refuses it
     const std::vector<MediaPageFile> pages = rv::app::viewerPagesOf(details);
     const std::vector<MediaPageFile> expected{
         {"covers", "snes/covers/Amber Lantern (USA).png"},
         {"3dboxes", "snes/3dboxes/Amber Lantern (USA).png"},
         {"screenshots", "snes/screenshots/Amber Lantern (USA).jpg"},
+        {"videos", "snes/videos/Amber Lantern (USA).mp4"},
         {"fanart", "snes/fanart/Amber Lantern (USA).jpg"},
+        {"manuals", "snes/manuals/Amber Lantern (USA).pdf"},
     };
     CHECK(pages == expected);
 
@@ -214,4 +218,21 @@ TEST_CASE("game screens: Informazioni's content from the catalog's row, the vers
     CHECK(early.title == "room title");
     CHECK(early.description.empty());
     CHECK(early.versionCount == 0);
+}
+
+TEST_CASE("game screens: the viewer's clip states have their names (I5 step 8)", "[app][game_screens]") {
+    using rv::app::ViewerVideoState;
+    CHECK(rv::app::toString(ViewerVideoState::None) == "none");
+    CHECK(rv::app::toString(ViewerVideoState::Waiting) == "waiting");
+    CHECK(rv::app::toString(ViewerVideoState::Playing) == "playing");
+    CHECK(rv::app::toString(ViewerVideoState::Paused) == "paused");
+    CHECK(rv::app::toString(ViewerVideoState::Failed) == "failed");
+    // A request without the viewer open carries no clip; the clip's fields compare as a whole.
+    const rv::app::ViewerRequest closed;
+    CHECK_FALSE(closed.open);
+    CHECK_FALSE(closed.clip.has_value());
+    rv::app::ViewerClip clip{"g0000000000000001", std::filesystem::path(LR"(C:\m\a.mp4)"), "snes/videos/a.mp4", false, 3};
+    rv::app::ViewerClip paused = clip;
+    paused.paused = true;
+    CHECK_FALSE(clip == paused);
 }

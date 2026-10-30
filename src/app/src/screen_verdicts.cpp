@@ -229,6 +229,23 @@ std::vector<ScreenGame> ScreenVerdicts::screened(std::vector<ScreenGame> games) 
     return games;
 }
 
+std::optional<std::string> ScreenVerdicts::leftOutFailure(const ScreenMedia& media) const {
+    if (media.videoKey.empty() || media.video.empty()) {
+        return std::nullopt;
+    }
+    const std::optional<std::string> key = media::verdictKey(media.videoKey);
+    if (!key) {
+        return std::nullopt;
+    }
+    const std::lock_guard lock(m_mutex);
+    const auto screening = m_screened.find(*key);
+    if (screening == m_screened.end() || screening->second == Screening::Changed) {
+        return std::nullopt;
+    }
+    const media::VideoVerdict* failure = m_failures.find(media.videoKey);
+    return failure != nullptr ? std::optional<std::string>(media::verdictName(failure->failure)) : std::nullopt;
+}
+
 void ScreenVerdicts::give(const ScreenMedia& media, const std::string& gameId, media::VideoVerdict verdict) {
     if (m_file.empty() || media.videoKey.empty() || media.video.empty()) {
         return;

@@ -10,6 +10,15 @@
 // the page shown is registered for the document as rv-texture:media-viewer-picture. RmlUi never loads the user's
 // files, and nothing is ever written under the media root. The textures go when the viewer closes. Main thread only;
 // destroy it while the OpenGL context is current.
+//
+// I5 step 8 (ADR-0016 §10): the loader also finds the clip's file (its path below the media root) and the manual's
+// (there or not). The videos page asks the screens' service for its clip (viewerRequest(): the application hands it to
+// ScreenService::setViewer and gives back ScreenService::viewerVideo() through setViewerVideo(), which registers the
+// view of the clip's texture as rv-texture:media-viewer-video while the page shows); Activate pauses it and plays it
+// again; a clip that cannot play shows the page's fallback with its reason. The manuals page's "Apri il manuale" opens
+// the PDF in Windows' default program: launcher::planManualOpen (explorer.exe and the file as its one argument) started
+// through a Win32ProcessRunner of its own (no shell; the automation guard refuses it in automated runs), not followed,
+// no game session: Retroverse keeps running.
 
 #include <cstdint>
 #include <filesystem>
@@ -73,15 +82,23 @@ public:
     [[nodiscard]] const std::string& from() const noexcept { return m_from; }
 
     /// A UI command while a screen shows (Back aside: the application's levels call close()): the viewer pages, the
-    /// body of Informazioni scrolls; Info on the viewer and Media on Informazioni ask for the other screen.
+    /// body of Informazioni scrolls; Info on the viewer and Media on Informazioni ask for the other screen. Since I5
+    /// step 8 Activate on the videos page pauses its clip or plays it again, on the manuals page opens the manual.
     [[nodiscard]] Switch apply(ui::UiCommand command, std::uint64_t frame);
-    /// Once a frame, before the view's update: the clicks (a page, the other screen, close), the pictures the loader
-    /// brought (at most two uploaded), the screen shown bound.
+    /// Once a frame, before the view's update: the clicks (a page, the other screen, close, the clip's pause, the
+    /// manual), the pictures and files the loader brought (at most two pictures uploaded), the screen shown bound.
     [[nodiscard]] Switch update(std::uint64_t frame);
     /// After the view's update: the viewer fits its picture to the stage as laid out; the record's boxes.
     void afterUpdate();
     /// Pictures are being read (lockstep runs wait for them, as for the catalog worker).
     [[nodiscard]] bool loading() const noexcept;
+
+    /// I5 step 8: what the viewer asks of the screens' service on this frame (open; its videos page's clip once its
+    /// file is found, while that page shows and its clip has not failed).
+    [[nodiscard]] ViewerRequest viewerRequest() const;
+    /// I5 step 8: the clip as the service left it after its frame: the page's state, the clip's texture registered as
+    /// rv-texture:media-viewer-video while the videos page shows (emptied otherwise, and before the viewer closes).
+    void setViewerVideo(const ViewerVideo& video, std::uint64_t frame);
 
     [[nodiscard]] const GameScreensRecord& record() const noexcept { return m_record; }
 
@@ -92,6 +109,10 @@ private:
 
     void addEvent(std::uint64_t frame, std::string event, std::string kind = {}, std::string detail = {});
     void showPage(std::uint64_t frame);
+    /// I5 step 8: "Apri il manuale" on the manuals page.
+    void openManual(std::uint64_t frame);
+    /// I5 step 8: the clip's pause toggled on the videos page (the model flipped it).
+    void videoPauseToggled(std::uint64_t frame);
 
     std::unique_ptr<Impl> m_impl;
     std::string m_gameId;

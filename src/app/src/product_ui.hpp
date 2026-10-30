@@ -10,6 +10,7 @@
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/command_line.hpp>
+#include <rv/app/game_screens.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
@@ -209,6 +210,13 @@ public:
     void setVersionLookup(std::function<std::vector<catalog::GameId>(const catalog::GameId&)> lookup);
     /// The media viewer or Informazioni shows.
     [[nodiscard]] bool gameScreenOpen() const noexcept;
+    /// I5 step 8 (ADR-0016 §10): the media viewer shows (the world's screens pause under it, its clip alone sounds).
+    [[nodiscard]] bool mediaViewerOpen() const noexcept;
+    /// I5 step 8: what the viewer asks of the screens' service on this frame (GameScreensPanel::viewerRequest()), and
+    /// the clip as the service left it after its frame (GameScreensPanel::setViewerVideo(): the page's state, its
+    /// texture registered for the document while the videos page shows).
+    [[nodiscard]] ViewerRequest viewerRequest() const;
+    void setViewerVideo(const ViewerVideo& video);
     /// Counts the catalog's changes that show other rows (its opening, a readiness resolved, a refresh): a reader of a
     /// game's row (the world's card) reads it again when it changed.
     [[nodiscard]] std::uint64_t catalogRevision() const noexcept;

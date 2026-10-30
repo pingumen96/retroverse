@@ -454,7 +454,10 @@ struct GameScreenEventRecord {
     std::uint64_t frame = 0;
     /// "media" (the viewer opened on `game` from `from`, "card" or "catalog"; `detail` its pages' kinds joined by ','),
     /// "page" (the page of `kind` shows; `detail` its position from 1), "picture" (`kind`'s picture: `detail`
-    /// "shown <width>x<height>" or "failed"), "info" (Informazioni opened on `game` from `from`; `detail` its other
+    /// "shown <width>x<height>" or "failed"), since I5 step 8 "video" (the clip of the videos page: `detail` "waiting",
+    /// "playing <width>x<height>", "paused", "failed <reason>", or "verdict <reason>" for a clip a failure verdict left
+    /// out), "manual" (the manual's file: `detail` "found <file name>" or "missing <reason>"; "Apri il manuale":
+    /// "opened", "refused", "failed <reason>"), "info" (Informazioni opened on `game` from `from`; `detail` its other
     /// versions, "<title> (<region>)" joined by "; "), "scroll" (`detail` the step), "closed" (`detail` "media" or
     /// "info").
     std::string event;
@@ -479,6 +482,9 @@ struct GameScreensRecord {
     /// view (empty: none).
     std::vector<double> pictureBox;
     std::vector<double> stageBox;
+    /// I5 step 8: the frames the videos page showed a frame of its clip, and the clip's box as last laid out (likewise).
+    std::uint64_t videoFrames = 0;
+    std::vector<double> videoBox;
     /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
     std::vector<GameScreenEventRecord> events;
     std::uint64_t eventsDropped = 0;
@@ -1375,6 +1381,32 @@ struct VideoVerdictsRecord {
 /// decoder, the current clip's first frame and uploads, the fallbacks and the launches. Since I5 step 2 the service
 /// holds several screens (the hero first) and slots: the fields below are the hero screen's, the decoder and upload
 /// counts the whole service's, and `screens`, `slotEvents` and `budgetDrops` the scheduler's.
+/// The media viewer's clips (I5 step 8, ADR-0016 §10): the clips its videos page asked for (each opening of the page),
+/// the decoders opened for them, their frames uploaded, the page's pauses, the clips a failure verdict left out (never
+/// opened) and those that failed while playing; the last clip's game, state (app::toString(ViewerVideoState)), reason,
+/// frame size and the rows its decoder was given (video.json's viewerMaxRows with two decoders, maxRows with one); the
+/// most GPU bytes its texture and pixel buffer ring held at once; the frames the world's slots uploaded while the viewer
+/// was open (0: the world paused under it).
+struct VideoViewerRecord {
+    std::uint64_t clips = 0;
+    std::uint64_t decodersOpened = 0;
+    std::uint64_t framesUploaded = 0;
+    std::uint64_t pauses = 0;
+    std::uint64_t knownBad = 0;
+    std::uint64_t failures = 0;
+    std::string game;
+    std::string state;
+    std::string reason;
+    std::uint64_t width = 0;
+    std::uint64_t height = 0;
+    std::uint64_t rows = 0;
+    std::uint64_t maxGpuBytes = 0;
+    std::uint64_t openFrames = 0;
+    std::uint64_t worldFramesWhileOpen = 0;
+
+    bool operator==(const VideoViewerRecord&) const = default;
+};
+
 struct VideoRecord {
     /// A hero CRT was bound (the scene's first `crt` object with a picture on its screen) and its object id; without
     /// one nothing else is recorded.
@@ -1471,6 +1503,8 @@ struct VideoRecord {
     std::uint64_t firstFrameWaitTimeouts = 0;
     /// The clips' verdicts (I5 step 7).
     VideoVerdictsRecord verdicts;
+    /// The media viewer's clips (I5 step 8).
+    VideoViewerRecord viewer;
 
     bool operator==(const VideoRecord&) const = default;
 };

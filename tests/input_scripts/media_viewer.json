@@ -1,11 +1,11 @@
 // I3 step 14b: the media viewer and Informazioni from the world's card and from the quick catalog, in the generated
 // room of the snes-room fixture. The walker starts at the Focus pose of Amber Lantern (USA)'s item (--spawn), the
-// reticle on it; Amber Lantern has every image kind the viewer pages.
+// reticle on it; Amber Lantern has every image kind the viewer pages, and a clip (no manual).
 //   frame 40   interact: Inspect, the card shows
-//   frame 70   ui_media (the pad's Y): the viewer from the card, on the cover (1 of 8)
-//   frames 76 to 100, every 4: ui_right through the back cover, the physical media, the 3D box (shown at frame 84 to
-//              87), the screenshot, the title screen, the marquee, the fan art (8 of 8)
-//   frame 104  ui_right: nothing (no wrap)                frame 108  ui_left: the marquee
+//   frame 70   ui_media (the pad's Y): the viewer from the card, on the cover (1 of 9)
+//   frames 76 to 104, every 4: ui_right through the back cover, the physical media, the 3D box (shown at frame 84 to
+//              87), the screenshot, the title screen, the clip (I5 step 8), the marquee, the fan art (9 of 9)
+//   frame 108  ui_left: the marquee
 //   frame 112  ui_home: the cover                         frame 116  ui_end: the fan art
 //   frame 120  ui_info (the pad's X): Informazioni of the same game in place of the viewer
 //   frame 126  ui_down: its body scrolls when it is longer than its region

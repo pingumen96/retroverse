@@ -44,8 +44,58 @@ struct MediaPageFile {
 };
 
 /// The viewer's pages of `details` (its stored media), in ui::media_viewer::kKinds' order: the kinds present with a
-/// usable extension; none for an entry without a key. Mix images, videos, manuals and custom files are not pages.
+/// usable extension (since I5 step 8 the clip and the manual too); none for an entry without a key. Mix images and
+/// custom files are not pages.
 [[nodiscard]] std::vector<MediaPageFile> viewerPagesOf(const catalog_db::GameDetails& details);
+
+/// The media viewer's clip, as the viewer asks the screens' service for it on a frame (I5 step 8, ADR-0016 §10): the
+/// game, its clip's file (absolute, a \\?\ path below the media root) and its key below the root ('/' between the
+/// elements: its verdict's key, ScreenMedia::videoKey), whether the page's pause holds it, and the viewer's opening it
+/// belongs to (a clip asked again by another opening starts from its beginning).
+struct ViewerClip {
+    std::string gameId;
+    std::filesystem::path video;
+    std::string videoKey;
+    bool paused = false;
+    std::uint64_t opening = 0;
+
+    bool operator==(const ViewerClip&) const = default;
+};
+
+/// What the viewer asks of the screens' service on a frame: it is open (the world's screens pause under it, whatever
+/// its page), and the clip of its videos page while that page shows (none on the other pages).
+struct ViewerRequest {
+    bool open = false;
+    std::optional<ViewerClip> clip;
+
+    bool operator==(const ViewerRequest&) const = default;
+};
+
+/// Where the viewer's clip stands after the service's frame (I5 step 8).
+enum class ViewerVideoState : std::uint8_t {
+    None,    ///< no clip asked
+    Waiting, ///< asked: its slot opening, or its first frame not shown yet
+    Playing, ///< its frames show (`texture`)
+    Paused,  ///< held on its frame by the page's pause
+    Failed,  ///< it cannot play (`reason`): a failure verdict, the decoder's failure, an extension ES-DE does not play
+};
+/// "none", "waiting", "playing", "paused", "failed".
+[[nodiscard]] std::string_view toString(ViewerVideoState state) noexcept;
+
+/// The viewer's clip after the service's frame: its state; the GL_RGBA8 view of its slot's texture (the encoded sRGB
+/// values, what the UI composites) for rv-texture:media-viewer-video, 0 for none, and its size; why it cannot play
+/// (a video verdict's name, the decoder's failure with dashes, "not-playable", "graphics-error"); whether the reason is
+/// a failure verdict read from cache/media/videos.json (the clip never opened).
+struct ViewerVideo {
+    ViewerVideoState state = ViewerVideoState::None;
+    unsigned texture = 0;
+    int width = 0;
+    int height = 0;
+    std::string reason;
+    bool fromVerdict = false;
+
+    bool operator==(const ViewerVideo&) const = default;
+};
 
 /// The media root ES-DE uses now for the library of `libraryFile` (library.json): its settings read again
 /// (esde::readSettings, esde::resolveMediaRoot: MediaDirectory, the library's override, ES-DE's default). Errors: the

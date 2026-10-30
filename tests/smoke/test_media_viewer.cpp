@@ -265,7 +265,9 @@ TEST_CASE("media viewer: from the card and the quick catalog, the pages in order
     const AppRun run = runApp(retroverseExe(), room.dir, "all", roomArguments(200, room.dir / "end.png", script));
     const rv::app::GameScreensRecord& screens = requireScreens(run);
     INFO(run.describe());
-    const std::string allKinds = "covers,backcovers,physicalmedia,3dboxes,screenshots,titlescreens,marquees,fanart";
+    // I5 step 8: Amber Lantern's clip has its page after the title screen (it has no manual).
+    const std::string allKinds =
+        "covers,backcovers,physicalmedia,3dboxes,screenshots,titlescreens,videos,marquees,fanart";
     // The viewer from the card at 70 (every kind), from the quick catalog at 172 on a Cobalt Compass (the USA release:
     // a cover and its cartridge; the European one: its cover alone; the kinds they lack skipped).
     const std::vector<std::string> media = eventsOf(screens, "media");
@@ -275,15 +277,17 @@ TEST_CASE("media viewer: from the card and the quick catalog, the pages in order
     REQUIRE(fromCatalog != nullptr);
     CHECK(fromCatalog->from == "catalog");
     CHECK((fromCatalog->game == cobaltUsa || fromCatalog->game == cobaltEurope));
-    CHECK(fromCatalog->detail == (fromCatalog->game == cobaltUsa ? "covers,physicalmedia" : "covers"));
+    CHECK(fromCatalog->detail == (fromCatalog->game == cobaltUsa ? "covers,physicalmedia,videos" : "covers"));
     REQUIRE(firstEvent(screens, "media", 70) != nullptr);
     CHECK(firstEvent(screens, "media", 70)->game == amber.toString());
-    // The pages: right through every kind, nothing past the last, left, Home, End; the catalog's viewer on its first.
+    // The pages: right through every kind (the clip's page too, I5 step 8), left, Home, End; the catalog's viewer on
+    // its first.
     const std::vector<std::string> pages = eventsOf(screens, "page");
     const std::vector<std::string> expectedPages{
-        "70:card:covers:1",       "76:card:backcovers:2", "80:card:physicalmedia:3", "84:card:3dboxes:4",
-        "88:card:screenshots:5",  "92:card:titlescreens:6", "96:card:marquees:7",    "100:card:fanart:8",
-        "108:card:marquees:7",    "112:card:covers:1",    "116:card:fanart:8",       "172:catalog:covers:1"};
+        "70:card:covers:1",      "76:card:backcovers:2",   "80:card:physicalmedia:3", "84:card:3dboxes:4",
+        "88:card:screenshots:5", "92:card:titlescreens:6", "96:card:videos:7",        "100:card:marquees:8",
+        "104:card:fanart:9",     "108:card:marquees:8",    "112:card:covers:1",       "116:card:fanart:9",
+        "172:catalog:covers:1"};
     CHECK(pages == expectedPages);
     // Every picture of Amber Lantern shown at its size; none failed.
     std::vector<std::string> pictures;
@@ -344,8 +348,9 @@ TEST_CASE("media viewer: a picture that cannot be decoded shows its fallback", "
     REQUIRE(opened != nullptr);
     CHECK(opened->game == bramble);
     CHECK(opened->from == "catalog");
-    CHECK(opened->detail == "covers,physicalmedia,screenshots");
-    CHECK(eventsOf(screens, "page") == std::vector<std::string>{"56:catalog:covers:1", "60:catalog:screenshots:3"});
+    CHECK(opened->detail == "covers,physicalmedia,screenshots,videos");
+    CHECK(eventsOf(screens, "page") ==
+          std::vector<std::string>{"56:catalog:covers:1", "60:catalog:videos:4", "63:catalog:screenshots:3"});
     std::vector<std::string> pictures;
     for (const rv::app::GameScreenEventRecord& event : screens.events) {
         if (event.event == "picture") {

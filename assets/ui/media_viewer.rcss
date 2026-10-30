@@ -222,6 +222,11 @@ h2 {
 	max-width: 760dp;
 }
 
+.manual .note {
+	margin-left: auto;
+	margin-right: auto;
+}
+
 .manual-name {
 	font-size: 21dp;
 	color: #F4EFE6;

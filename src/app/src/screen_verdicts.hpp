@@ -53,6 +53,10 @@ public:
     /// clip is given while the file is not read yet.
     [[nodiscard]] std::vector<ScreenGame> screened(std::vector<ScreenGame> games);
 
+    /// I5 step 8: the failure verdict's name (media::verdictName()) of a clip that screened() leaves out now (its file
+    /// unchanged since it was judged, or being looked at), for the media viewer's fallback; nothing for a clip it gives.
+    [[nodiscard]] std::optional<std::string> leftOutFailure(const ScreenMedia& media) const;
+
     /// The clip `media` of game `gameId` failed on a screen (a failure of the file: FileNotFound and ReadError give
     /// none).
     void clipFailed(const ScreenMedia& media, const std::string& gameId, media::DecodeFailure failure,
