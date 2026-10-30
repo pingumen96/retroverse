@@ -40,6 +40,8 @@ PostUniforms makePostUniforms(const PostSettings& settings) noexcept {
     uniforms.vignette = unitInterval(settings.vignette);
     uniforms.ditherAmplitude = unitInterval(settings.ditherAmplitude);
     uniforms.fade = unitInterval(settings.fade);
+    uniforms.tunnel = unitInterval(settings.tunnel);
+    uniforms.tunnelCenter = glm::vec2(unitInterval(settings.tunnelCenter.x), unitInterval(settings.tunnelCenter.y));
     return uniforms;
 }
 

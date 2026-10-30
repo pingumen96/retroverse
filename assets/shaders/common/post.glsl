@@ -18,6 +18,8 @@ layout(std140, binding = 3) uniform PostUniforms {
     float uVignette;        // [0, 1]: darkening of the corners
     float uDitherAmplitude; // [0, 1]: peak-to-peak noise added to the sRGB-encoded output (1/255: one 8-bit step)
     float uFade;            // [0, 1]: the view faded to black after the tonemap (its sRGB encoding times 1 - uFade)
+    float uTunnel;          // [0, 1]: a headset eye's comfort vignette around uTunnelCenter; 0 changes nothing
+    vec2 uTunnelCenter;     // where the eye looks straight ahead, in the view's texture coordinates
 };
 
 // The image a pass filters: the radiance of the HDR scene or a bloom level (PostTextureUnit::Source), or the tonemapped
