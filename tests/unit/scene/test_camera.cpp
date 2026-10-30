@@ -2,8 +2,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
+#include <span>
+#include <utility>
+
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <rv/core/aabb.hpp>
 #include <rv/core/math.hpp>
@@ -231,4 +237,153 @@ TEST_CASE("scene/camera: invalid lens, aspect and pose values are rejected", "[s
     CHECK(camera.yaw() == 0.5f);
     CHECK(camera.pitch() == 0.25f);
     CHECK(rv::core::isFinite(camera.viewProjection()));
+}
+
+namespace {
+
+/// The left eye of a headset measured in the I10 spike (Quest 3S over Link): wider outwards than inwards.
+rv::scene::EyeFov questLeftEye() {
+    return {degreesToRadians(-52.0f), degreesToRadians(45.0f), degreesToRadians(48.0f), degreesToRadians(-50.0f)};
+}
+
+} // namespace
+
+TEST_CASE("scene/camera: the off-axis projection puts the field's edges on NDC's (I10 step 1)",
+          "[scene][camera][eye]") {
+    using rv::scene::offAxisProjection;
+    const rv::scene::EyeFov fov = questLeftEye();
+    const glm::mat4 projection = offAxisProjection(fov, 0.05f, 100.0f);
+    const auto ndcOf = [&](float x, float y, float z) {
+        const glm::vec4 clip = projection * glm::vec4(x, y, z, 1.0f);
+        return glm::vec3(clip) / clip.w;
+    };
+    // A point 2 m ahead on each edge of the field.
+    CHECK(ndcOf(2.0f * std::tan(fov.left), 0.0f, -2.0f).x == Approx(-1.0f));
+    CHECK(ndcOf(2.0f * std::tan(fov.right), 0.0f, -2.0f).x == Approx(1.0f));
+    CHECK(ndcOf(0.0f, 2.0f * std::tan(fov.up), -2.0f).y == Approx(1.0f));
+    CHECK(ndcOf(0.0f, 2.0f * std::tan(fov.down), -2.0f).y == Approx(-1.0f));
+    CHECK(ndcOf(0.0f, 0.0f, -0.05f).z == Approx(-1.0f));
+    CHECK(ndcOf(0.0f, 0.0f, -100.0f).z == Approx(1.0f));
+
+    // A symmetric field is glm's perspective (the desktop's projection).
+    const float half = degreesToRadians(30.0f);
+    const glm::mat4 symmetric = offAxisProjection({-half, half, half, -half}, 0.05f, 100.0f);
+    const glm::mat4 reference = glm::perspectiveRH_NO(2.0f * half, 1.0f, 0.05f, 100.0f);
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            CHECK(symmetric[column][row] == Approx(reference[column][row]).margin(1e-6));
+        }
+    }
+}
+
+TEST_CASE("scene/camera: an eye looks along its quaternion with its own field (I10 step 1)", "[scene][camera][eye]") {
+    Camera camera = originCamera();
+    const glm::vec3 position(0.3f, 1.6f, -2.0f);
+    // Turned 90 degrees to the right (towards +X) and rolled 10 degrees.
+    const glm::quat orientation = glm::angleAxis(degreesToRadians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                  glm::angleAxis(degreesToRadians(10.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    camera.setEye(position, orientation, questLeftEye());
+    REQUIRE(camera.eyeFov());
+    CHECK(angleDeg(camera.forward(), glm::vec3(1.0f, 0.0f, 0.0f)) == Approx(0.0f).margin(1e-3));
+    CHECK(radiansToDegrees(camera.yaw()) == Approx(90.0f).margin(1e-3));
+    CHECK(radiansToDegrees(camera.pitch()) == Approx(0.0f).margin(1e-3));
+    // The roll tips up() away from +Y.
+    CHECK(angleDeg(camera.up(), glm::vec3(0.0f, 1.0f, 0.0f)) == Approx(10.0f).margin(1e-2));
+
+    // The view brings the eye to the origin looking down -Z; a point ahead lands ahead.
+    const glm::vec4 eyeInView = camera.view() * glm::vec4(position, 1.0f);
+    CHECK(glm::length(glm::vec3(eyeInView)) == Approx(0.0f).margin(1e-5));
+    const glm::vec4 ahead = camera.view() * glm::vec4(position + glm::vec3(3.0f, 0.0f, 0.0f), 1.0f);
+    CHECK(ahead.z == Approx(-3.0f));
+
+    // The aspect ratio and the lens's field no longer shape the projection.
+    const glm::mat4 before = camera.projection();
+    camera.setAspect(3.0f);
+    camera.setLens(CameraLens{40.0f, 0.05f, 100.0f});
+    CHECK(camera.projection() == before);
+    CHECK(radiansToDegrees(camera.verticalFovRadians()) == Approx(98.0f).margin(1e-3));
+
+    // Rays through NDC match the projection: the ray through a pixel projects back onto it.
+    for (const glm::vec2 ndc : {glm::vec2(0.0f), glm::vec2(-0.9f, 0.4f), glm::vec2(0.7f, -0.8f)}) {
+        const rv::core::Ray ray = camera.rayFromNdc(ndc);
+        CHECK(ray.origin == position);
+        const glm::vec4 clip = camera.viewProjection() * glm::vec4(ray.origin + ray.direction * 5.0f, 1.0f);
+        CHECK(clip.x / clip.w == Approx(ndc.x).margin(1e-4));
+        CHECK(clip.y / clip.w == Approx(ndc.y).margin(1e-4));
+    }
+
+    // setPose returns to the yaw/pitch mode, exactly as a camera that never was an eye.
+    camera.setLens(CameraLens{});
+    camera.setAspect(16.0f / 9.0f);
+    camera.setPose(glm::vec3(0.0f), 0.0f, 0.0f);
+    CHECK_FALSE(camera.eyeFov());
+    CHECK(camera.viewProjection() == originCamera().viewProjection());
+}
+
+TEST_CASE("scene/camera: the yaw/pitch orientation is the quaternion of its basis (I10 step 1)",
+          "[scene][camera][eye]") {
+    Camera camera = originCamera();
+    camera.setPose(glm::vec3(0.0f), degreesToRadians(35.0f), degreesToRadians(-20.0f));
+    const glm::quat orientation = camera.orientation();
+    CHECK(angleDeg(orientation * glm::vec3(0.0f, 0.0f, -1.0f), camera.forward()) == Approx(0.0f).margin(1e-3));
+    CHECK(angleDeg(orientation * glm::vec3(1.0f, 0.0f, 0.0f), camera.right()) == Approx(0.0f).margin(1e-3));
+    CHECK(angleDeg(orientation * glm::vec3(0.0f, 1.0f, 0.0f), camera.up()) == Approx(0.0f).margin(1e-3));
+}
+
+TEST_CASE("scene/camera: invalid eyes are rejected (I10 step 1)", "[scene][camera][eye]") {
+    Camera camera = originCamera();
+    rv::scene::EyeFov backwards = questLeftEye();
+    std::swap(backwards.left, backwards.right);
+    camera.setEye(glm::vec3(1.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), backwards);
+    CHECK_FALSE(camera.eyeFov()); // ignored outside eye mode
+    CHECK(camera.position() == glm::vec3(0.0f));
+
+    camera.setEye(glm::vec3(1.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), questLeftEye());
+    rv::scene::EyeFov tooWide = questLeftEye();
+    tooWide.right = degreesToRadians(95.0f);
+    camera.setEye(glm::vec3(kNaN, 2.0f, 2.0f), glm::quat(0.0f, 0.0f, 0.0f, 0.0f), tooWide);
+    REQUIRE(camera.eyeFov());
+    CHECK(camera.eyeFov()->right == Approx(degreesToRadians(45.0f))); // the previous field
+    CHECK(camera.position() == glm::vec3(1.0f, 2.0f, 2.0f));
+    CHECK(angleDeg(camera.forward(), glm::vec3(0.0f, 0.0f, -1.0f)) == Approx(0.0f).margin(1e-3));
+    CHECK(rv::core::isFinite(camera.viewProjection()));
+}
+
+TEST_CASE("scene/camera: a frustum enclosing both eyes keeps what either sees (I10 step 1)",
+          "[scene][camera][frustum][eye]") {
+    // Two eyes 64 mm apart, mirrored fields, looking down -Z.
+    const rv::scene::EyeFov leftFov = questLeftEye();
+    const rv::scene::EyeFov rightFov{-leftFov.right, -leftFov.left, leftFov.up, leftFov.down};
+    Camera leftEye;
+    Camera rightEye;
+    const glm::quat ahead(1.0f, 0.0f, 0.0f, 0.0f);
+    leftEye.setEye(glm::vec3(-0.032f, 1.6f, 0.0f), ahead, leftFov);
+    rightEye.setEye(glm::vec3(0.032f, 1.6f, 0.0f), ahead, rightFov);
+    const std::array<glm::mat4, 2> both{leftEye.viewProjection(), rightEye.viewProjection()};
+    const Frustum enclosing = Frustum::enclosing(both);
+
+    // Every corner of both frusta is inside.
+    for (const glm::mat4& viewProjection : both) {
+        for (const glm::vec3& corner : Frustum::corners(viewProjection)) {
+            for (const rv::scene::Plane& plane : enclosing.planes) {
+                CHECK(plane.signedDistance(corner) >= -1e-3f);
+            }
+        }
+    }
+    // A box at the far left of the left eye's field, outside the right eye's: kept.
+    const float x = -0.032f + 2.0f * std::tan(leftFov.left) + 0.05f;
+    const Aabb leftOnly{glm::vec3(x, 1.5f, -2.05f), glm::vec3(x + 0.1f, 1.7f, -1.95f)};
+    CHECK(leftEye.frustum().intersects(leftOnly));
+    CHECK_FALSE(rightEye.frustum().intersects(leftOnly));
+    CHECK(enclosing.intersects(leftOnly));
+    // Behind both eyes: culled.
+    CHECK_FALSE(enclosing.intersects(Aabb{glm::vec3(-0.5f, 1.0f, 1.0f), glm::vec3(0.5f, 2.0f, 2.0f)}));
+
+    // One view: its own frustum. None: nothing rejected.
+    const Frustum single = Frustum::enclosing(std::span<const glm::mat4>(both.data(), 1));
+    const Frustum own = leftEye.frustum();
+    for (std::size_t i = 0; i < 6; ++i) {
+        CHECK(single.planes[i].d == own.planes[i].d);
+    }
+    CHECK(Frustum::enclosing({}).intersects(Aabb{glm::vec3(0.0f, 0.0f, 50.0f), glm::vec3(1.0f, 1.0f, 51.0f)}));
 }

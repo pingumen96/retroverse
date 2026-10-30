@@ -1,7 +1,8 @@
 # rv_scene: camera, first-person and orbit controllers and viewpoints, lights, render items and batching plan, scene
 # descriptions, scene content (geometry, models) and collision, debug lines; since I3 (skeletons naming their steps)
 # the eased pose animator and the clusters of static instance groups; since I4 step 3 the scene's areas and the lights
-# a view packs in the area that holds the eye. GPU-free: the renderer consumes its plain data.
+# a view packs in the area that holds the eye; since I10 step 1 the eyes of a stereo view. GPU-free: the renderer
+# consumes its plain data.
 
 add_library(rv_scene STATIC
     src/batch_planner.cpp
@@ -16,6 +17,7 @@ add_library(rv_scene STATIC
     src/scene_areas.cpp
     src/scene_description.cpp
     src/scene_geometry.cpp
+    src/stereo.cpp
     src/viewpoint.cpp
 )
 add_library(rv::scene ALIAS rv_scene)
