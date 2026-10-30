@@ -20,6 +20,52 @@ using Json = nlohmann::json;
 /// this recursive writer.
 constexpr std::size_t kMaxDepth = 64;
 
+/// `text` in quotes with exactly '"', '\' and the control characters escaped (valid UTF-8 already); the runs between
+/// them appended whole.
+void appendQuoted(std::string& out, std::string_view text) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    out += '"';
+    std::size_t run = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const auto byte = static_cast<unsigned char>(text[i]);
+        if (byte >= 0x20 && byte != '"' && byte != '\\') {
+            continue;
+        }
+        out.append(text.data() + run, i - run);
+        run = i + 1;
+        switch (byte) {
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\b':
+            out += "\\b";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\f':
+            out += "\\f";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        default:
+            out += "\\u00";
+            out += kHex[byte >> 4];
+            out += kHex[byte & 0x0F];
+            break;
+        }
+    }
+    out.append(text.data() + run, text.size() - run);
+    out += '"';
+}
+
 /// Writes one document; `m_path` holds the tokens down to the value being written, for the pointer of an error.
 class CanonicalWriter {
 public:
@@ -34,6 +80,9 @@ public:
         }
         return anyValue(value);
     }
+
+    /// `value` as a value nested in a document.
+    Status nested(const Json& value) { return anyValue(value); }
 
 private:
     /// One level deeper while alive.
@@ -92,47 +141,7 @@ private:
         return ok();
     }
 
-    /// `text` in quotes with exactly '"', '\' and the control characters escaped (valid UTF-8 already).
-    void quoted(std::string_view text) {
-        static constexpr char kHex[] = "0123456789abcdef";
-        m_out += '"';
-        for (const char c : text) {
-            const auto byte = static_cast<unsigned char>(c);
-            switch (byte) {
-            case '"':
-                m_out += "\\\"";
-                break;
-            case '\\':
-                m_out += "\\\\";
-                break;
-            case '\b':
-                m_out += "\\b";
-                break;
-            case '\t':
-                m_out += "\\t";
-                break;
-            case '\n':
-                m_out += "\\n";
-                break;
-            case '\f':
-                m_out += "\\f";
-                break;
-            case '\r':
-                m_out += "\\r";
-                break;
-            default:
-                if (byte < 0x20) {
-                    m_out += "\\u00";
-                    m_out += kHex[byte >> 4];
-                    m_out += kHex[byte & 0x0F];
-                } else {
-                    m_out += c;
-                }
-                break;
-            }
-        }
-        m_out += '"';
-    }
+    void quoted(std::string_view text) { appendQuoted(m_out, text); }
 
     Status arrayValue(const Json& array, bool topLevel) {
         const Nesting nesting(m_depth);
@@ -148,7 +157,7 @@ private:
             if (index != 0) {
                 m_out += separator;
             }
-            m_path.push_back(std::to_string(index));
+            m_path.push_back(PathToken{nullptr, index});
             if (auto written = anyValue(element); !written) {
                 return written;
             }
@@ -178,7 +187,7 @@ private:
                 m_out += ',';
             }
             first = false;
-            m_path.push_back(*key);
+            m_path.push_back(PathToken{key, 0});
             if (!isValidUtf8(*key)) {
                 return refused("a key that is not well-formed UTF-8");
             }
@@ -199,8 +208,9 @@ private:
     /// InvalidArgument naming the value being written by its JSON pointer (RFC 6901: '~' as "~0", '/' as "~1").
     Status refused(std::string_view what) const {
         std::string pointer;
-        for (const std::string& token : m_path) {
+        for (const PathToken& step : m_path) {
             pointer += '/';
+            const std::string token = step.key != nullptr ? *step.key : std::to_string(step.index);
             for (const char c : token) {
                 if (c == '~') {
                     pointer += "~0";
@@ -216,8 +226,15 @@ private:
                          isValidUtf8(pointer) ? pointer : std::string("(a pointer through a key that is not UTF-8)"));
     }
 
+    /// A step of the pointer: a member's key (owned by the document being written), else an element's index; the
+    /// pointer's text is made only for an error (m3/preview-time: a string per value was most of a large write).
+    struct PathToken {
+        const std::string* key = nullptr;
+        std::size_t index = 0;
+    };
+
     std::string& m_out;
-    std::vector<std::string> m_path;
+    std::vector<PathToken> m_path;
     std::size_t m_depth = 0;
 };
 
@@ -265,6 +282,186 @@ Expected<nlohmann::json> parseCanonicalJson(std::string_view text, std::string_v
                          std::string(context));
     }
     return value;
+}
+
+void CanonicalTextWriter::fail(std::string message) {
+    if (!m_error) {
+        m_error = makeError(ErrorCode::InvalidArgument, std::move(message), "canonical text").value();
+    }
+}
+
+bool CanonicalTextWriter::beforeValue() {
+    if (m_frames.empty()) {
+        if (m_started) {
+            fail("a second value after the document");
+            return false;
+        }
+        m_started = true;
+        return true;
+    }
+    Frame& frame = m_frames.back();
+    if (frame.object) {
+        if (!frame.valueDue) {
+            fail("a value where a key is due (after \"" + frame.lastKey + "\")");
+            return false;
+        }
+        frame.valueDue = false;
+        return true;
+    }
+    if (frame.count == 0) {
+        if (frame.lines) {
+            m_out += '\n';
+        }
+    } else {
+        m_out += frame.lines ? ",\n" : ",";
+    }
+    ++frame.count;
+    return true;
+}
+
+void CanonicalTextWriter::beginObject() {
+    if (!beforeValue()) {
+        return;
+    }
+    m_out += '{';
+    m_frames.push_back(Frame{true, false, 0, {}, false});
+    if (m_frames.size() > kMaxDepth) {
+        fail("values nested deeper than 64 levels");
+    }
+}
+
+void CanonicalTextWriter::endObject() {
+    if (m_frames.empty() || !m_frames.back().object || m_frames.back().valueDue) {
+        fail("an object ended where none is open, or before its last member's value");
+        return;
+    }
+    m_frames.pop_back();
+    m_out += '}';
+}
+
+void CanonicalTextWriter::beginArray() {
+    // One element per line in a top-level array: the document, or a member of the document's object.
+    const bool lines = m_frames.empty() || (m_frames.size() == 1 && m_frames.front().object);
+    if (!beforeValue()) {
+        return;
+    }
+    m_out += '[';
+    m_frames.push_back(Frame{false, lines, 0, {}, false});
+    if (m_frames.size() > kMaxDepth) {
+        fail("values nested deeper than 64 levels");
+    }
+}
+
+void CanonicalTextWriter::endArray() {
+    if (m_frames.empty() || m_frames.back().object) {
+        fail("an array ended where none is open");
+        return;
+    }
+    const bool lines = m_frames.back().lines && m_frames.back().count > 0;
+    m_frames.pop_back();
+    m_out += lines ? "\n]" : "]";
+}
+
+void CanonicalTextWriter::key(std::string_view name) {
+    if (m_frames.empty() || !m_frames.back().object || m_frames.back().valueDue) {
+        fail("a key where none is due (\"" + std::string(name) + "\")");
+        return;
+    }
+    Frame& frame = m_frames.back();
+    // Code point order is the order of the UTF-8 bytes, which std::string compares as unsigned char.
+    if (frame.count > 0 && !(frame.lastKey < name)) {
+        fail("the key \"" + std::string(name) + "\" after \"" + frame.lastKey + "\" (keys in ascending order, once)");
+        return;
+    }
+    if (!isValidUtf8(name)) {
+        fail("a key that is not well-formed UTF-8");
+        return;
+    }
+    if (frame.count > 0) {
+        m_out += ',';
+    }
+    ++frame.count;
+    frame.lastKey.assign(name);
+    frame.valueDue = true;
+    appendQuoted(m_out, name);
+    m_out += ':';
+}
+
+void CanonicalTextWriter::string(std::string_view text) {
+    if (!beforeValue()) {
+        return;
+    }
+    if (!isValidUtf8(text)) {
+        fail("a string that is not well-formed UTF-8");
+        return;
+    }
+    appendQuoted(m_out, text);
+}
+
+void CanonicalTextWriter::integer(std::int64_t value) {
+    if (!beforeValue()) {
+        return;
+    }
+    char digits[24];
+    const auto written = std::to_chars(digits, digits + sizeof(digits), value);
+    m_out.append(digits, written.ptr);
+}
+
+void CanonicalTextWriter::unsignedInteger(std::uint64_t value) {
+    if (!beforeValue()) {
+        return;
+    }
+    char digits[24];
+    const auto written = std::to_chars(digits, digits + sizeof(digits), value);
+    m_out.append(digits, written.ptr);
+}
+
+void CanonicalTextWriter::boolean(bool value) {
+    if (beforeValue()) {
+        m_out += value ? "true" : "false";
+    }
+}
+
+void CanonicalTextWriter::null() {
+    if (beforeValue()) {
+        m_out += "null";
+    }
+}
+
+void CanonicalTextWriter::value(const nlohmann::json& value) {
+    if (!beforeValue()) {
+        return;
+    }
+    CanonicalWriter writer(m_out);
+    if (Status written = writer.nested(value); !written && !m_error) {
+        m_error = written.error();
+    }
+}
+
+void CanonicalTextWriter::raw(std::string_view text) {
+    if (beforeValue()) {
+        m_out += text;
+    }
+}
+
+Status CanonicalTextWriter::finish() {
+    if (!m_error && (!m_frames.empty() || !m_started)) {
+        fail("an unbalanced document");
+    }
+    if (m_error) {
+        return tl::unexpected<Error>(*m_error);
+    }
+    m_out += '\n';
+    return ok();
+}
+
+Expected<std::string> nestedCanonicalText(const nlohmann::json& value) {
+    std::string out;
+    CanonicalWriter writer(out);
+    if (auto written = writer.nested(value); !written) {
+        return propagate(std::move(written.error()));
+    }
+    return out;
 }
 
 } // namespace rv::core

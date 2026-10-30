@@ -5,13 +5,18 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <rv/core/canonical_json.hpp>
 #include <rv/core/json.hpp>
+#include <rv/core/random.hpp>
 #include <rv/core/sha256.hpp>
 
 using rv::core::canonicalJsonDigest;
@@ -209,4 +214,235 @@ TEST_CASE("core/canonical_json: only canonical texts are read", "[core][canonica
     // The byte where the text departs is named.
     const auto departs = parseCanonicalJson("{\"b\":1,\"a\":2}\n", "plan.json");
     CHECK(departs.error().message.find("at byte 2") != std::string::npos);
+}
+
+namespace {
+
+/// `value` written through a CanonicalTextWriter, its objects' members in key order (as the writers that use it do).
+void writeThrough(rv::core::CanonicalTextWriter& out, const Json& value) {
+    switch (value.type()) {
+    case Json::value_t::object: {
+        std::vector<std::pair<std::string, const Json*>> members;
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            members.emplace_back(it.key(), &it.value());
+        }
+        std::sort(members.begin(), members.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        out.beginObject();
+        for (const auto& [key, member] : members) {
+            out.key(key);
+            writeThrough(out, *member);
+        }
+        out.endObject();
+        break;
+    }
+    case Json::value_t::array:
+        out.beginArray();
+        for (const Json& element : value) {
+            writeThrough(out, element);
+        }
+        out.endArray();
+        break;
+    case Json::value_t::string:
+        out.string(value.get_ref<const std::string&>());
+        break;
+    case Json::value_t::boolean:
+        out.boolean(value.get<bool>());
+        break;
+    case Json::value_t::number_integer:
+        out.integer(value.get<std::int64_t>());
+        break;
+    case Json::value_t::number_unsigned:
+        out.unsignedInteger(value.get<std::uint64_t>());
+        break;
+    default:
+        out.null();
+        break;
+    }
+}
+
+std::string writtenThrough(const Json& value) {
+    std::string text;
+    rv::core::CanonicalTextWriter out(text);
+    writeThrough(out, value);
+    const rv::Status finished = out.finish();
+    INFO((finished ? std::string() : finished.error().toString()));
+    REQUIRE(finished.has_value());
+    return text;
+}
+
+/// A document of every kind of value, `depth` levels deep at most.
+Json randomValue(rv::core::Random& random, int depth) {
+    static const std::vector<std::string> kKeys{"", "a", "A", "aa", "b", "z", "~/", "\xC3\xA9", "\x7F", "levels",
+                                                "slot", "slots", "\xE2\x82\xAC", "\xF0\x9F\x8E\xAE"};
+    static const std::vector<std::string> kStrings{
+        "", "plain", "quote \" and \\ backslash", "tab\tline\nfeed\rreturn\b\f", std::string("nul \0 byte", 10),
+        "\x01\x1F control", "\xC3\xA8 \xE2\x82\xAC \xF0\x9F\x8E\xAE", "slash / and \x7F", "room:snes/fx:w01/s:3.0"};
+    const std::uint64_t kind = random.below(depth > 0 ? 9 : 6);
+    switch (kind) {
+    case 0:
+        return Json(nullptr);
+    case 1:
+        return Json(random.below(2) == 1);
+    case 2: {
+        const std::int64_t picks[] = {0, -1, 1, std::numeric_limits<std::int64_t>::min(),
+                                      std::numeric_limits<std::int64_t>::max(), random.between(-100000, 100000)};
+        return Json(picks[random.below(6)]);
+    }
+    case 3:
+        return Json(random.below(2) == 0 ? std::numeric_limits<std::uint64_t>::max() : random.next());
+    case 4:
+    case 5:
+        return Json(kStrings[random.below(kStrings.size())]);
+    case 6:
+    case 7: {
+        Json object = Json::object();
+        const std::uint64_t members = random.below(5);
+        for (std::uint64_t i = 0; i < members; ++i) {
+            object[kKeys[random.below(kKeys.size())]] = randomValue(random, depth - 1);
+        }
+        return object;
+    }
+    default: {
+        Json array = Json::array();
+        const std::uint64_t elements = random.below(5);
+        for (std::uint64_t i = 0; i < elements; ++i) {
+            array.push_back(randomValue(random, depth - 1));
+        }
+        return array;
+    }
+    }
+}
+
+} // namespace
+
+TEST_CASE("core/canonical_json: the text writer writes the document's canonical text", "[core][canonical_json]") {
+    // The oracle's goldens.
+    for (const CanonicalGolden& row : kCanonical) {
+        INFO(row.input);
+        CHECK(writtenThrough(parsed(row.input)) == row.canonical);
+    }
+    // Random documents (seeded): objects, arrays, a top-level array's lines, nested ones on one line, every escape.
+    rv::core::Random random(20261030);
+    for (int i = 0; i < 2000; ++i) {
+        const Json value = randomValue(random, 4);
+        INFO(i << ": " << value.dump());
+        CHECK(writtenThrough(value) == canonicalOf(value));
+    }
+    // A member given as a document (value()) or as its nested text (raw()) is the same text.
+    const Json nested = Json::parse(R"({"b":[1,[2,{"c":[]}]],"a":{"d":[true,null,"\n"]}})");
+    std::string viaValue;
+    rv::core::CanonicalTextWriter withValue(viaValue);
+    withValue.beginObject();
+    withValue.key("list");
+    withValue.beginArray();
+    withValue.value(nested);
+    withValue.value(nested);
+    withValue.endArray();
+    withValue.key("one");
+    withValue.value(nested);
+    withValue.endObject();
+    REQUIRE(withValue.finish().has_value());
+    const auto nestedText = rv::core::nestedCanonicalText(nested);
+    REQUIRE(nestedText.has_value());
+    CHECK(*nestedText == R"({"a":{"d":[true,null,"\n"]},"b":[1,[2,{"c":[]}]]})");
+    std::string viaRaw;
+    rv::core::CanonicalTextWriter withRaw(viaRaw);
+    withRaw.beginObject();
+    withRaw.key("list");
+    withRaw.beginArray();
+    withRaw.raw(*nestedText);
+    withRaw.raw(*nestedText);
+    withRaw.endArray();
+    withRaw.key("one");
+    withRaw.raw(*nestedText);
+    withRaw.endObject();
+    REQUIRE(withRaw.finish().has_value());
+    const Json document{{"list", Json::array({nested, nested})}, {"one", nested}};
+    CHECK(viaValue == canonicalOf(document));
+    CHECK(viaRaw == viaValue);
+    // A text appended after what the string held.
+    std::string appended = "prefix:";
+    rv::core::CanonicalTextWriter after(appended);
+    after.integer(7);
+    REQUIRE(after.finish().has_value());
+    CHECK(appended == "prefix:7\n");
+}
+
+TEST_CASE("core/canonical_json: the text writer refuses its caller's mistakes and malformed strings",
+          "[core][canonical_json]") {
+    const auto refusal = [](const auto& write) {
+        std::string text;
+        rv::core::CanonicalTextWriter out(text);
+        write(out);
+        const rv::Status finished = out.finish();
+        return finished ? std::optional<rv::ErrorCode>() : std::optional(finished.error().code);
+    };
+    using Writer = rv::core::CanonicalTextWriter;
+    const std::optional<rv::ErrorCode> invalid = rv::ErrorCode::InvalidArgument;
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.key("b");
+              out.integer(1);
+              out.key("a"); // out of order
+              out.integer(2);
+              out.endObject();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.key("a");
+              out.integer(1);
+              out.key("a"); // twice
+              out.integer(2);
+              out.endObject();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.integer(1); // a value where a key is due
+              out.endObject();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.key("a"); // its value never given
+              out.endObject();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginArray();
+              out.key("a"); // a key in an array
+              out.endArray();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.endArray(); // the wrong end
+          }) == invalid);
+    CHECK(refusal([](Writer& out) { out.beginArray(); }) == invalid); // unbalanced
+    CHECK(refusal([](Writer&) {}) == invalid);                         // no document
+    CHECK(refusal([](Writer& out) {
+              out.integer(1);
+              out.integer(2); // a second document
+          }) == invalid);
+    CHECK(refusal([](Writer& out) { out.string("\xFF"); }) == invalid);
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.key("\xC3"); // a key that is not UTF-8
+              out.integer(1);
+              out.endObject();
+          }) == invalid);
+    CHECK(refusal([](Writer& out) { out.value(Json(1.5)); }) == invalid); // what writeCanonicalJson() refuses
+    CHECK(refusal([](Writer& out) {
+              out.beginObject();
+              out.key("a");
+              out.integer(1);
+              out.key("b");
+              out.integer(2);
+              out.endObject();
+          }) == std::nullopt);
+    // Nesting is bounded as the document's is.
+    CHECK(refusal([](Writer& out) {
+              for (int i = 0; i < 65; ++i) {
+                  out.beginArray();
+              }
+              for (int i = 0; i < 65; ++i) {
+                  out.endArray();
+              }
+          }) == invalid);
 }
