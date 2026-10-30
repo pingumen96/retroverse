@@ -248,8 +248,16 @@ TEST_CASE("world/overrides: each pin measured as honoured, orphaned, conflicting
     CHECK(check.unhonoured == unhonoured);
     CHECK(check.honoured.gamePins.size() == 1);
     CHECK(check.honoured.fixturePins.size() == 1);
-    // The judged pins: the honoured and the orphaned, never a recorded conflict.
-    CHECK(check.honouredOrOrphaned.gamePins.size() == 3);
+    // What is gone, whatever the status: the orphaned pins and the room-gone conflict (its slot is not the plan's).
+    std::vector<bool> gone;
+    for (const rv::world::PinMeasure& measure : measures) {
+        gone.push_back(measure.gone);
+    }
+    CHECK(gone == std::vector<bool>{false, true, true, false, false, true, false, true, true, false});
+    // The judged pins: the honoured and every pin whose subject is gone, the room-gone conflict among them (an update
+    // reports it as pin-orphaned); never a recorded conflict whose subject is there.
+    CHECK(check.honouredOrOrphaned.gamePins.size() == 4);
+    CHECK(check.honouredOrOrphaned.gamePins.back().game == overrides.gamePins[5].game);
     CHECK(check.honouredOrOrphaned.fixturePins.size() == 3);
     CHECK(rv::world::toString(PinStatus::Conflicting) == "conflicting");
 }

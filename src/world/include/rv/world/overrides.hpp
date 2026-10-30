@@ -188,8 +188,9 @@ struct PinCheck {
     std::vector<std::string> unhonoured;
     /// The room of each unhonoured pin (its slot's or its fixture's), in `unhonoured`'s order.
     std::vector<RoomId> unhonouredRooms;
-    /// The pins the plan honours, and the orphaned ones but the recorded conflicts (reported, not judged: the
-    /// validation's pin-orphaned and pin-broken rules see these).
+    /// The pins the plan honours and every pin whose subject is gone (PinMeasure::gone), with a recorded conflict or
+    /// not: the validation's pin-orphaned and pin-broken rules see these. A recorded conflict whose subject is still
+    /// there is reported in `orphaned` but not judged.
     WorldOverrides honouredOrOrphaned;
     /// The pins the plan honours (I4b step 2: their canonical form joins the plan's inputDigest, ADR-0015 §2).
     WorldOverrides honoured;
@@ -199,8 +200,10 @@ struct PinCheck {
 /// game stands in its slot, orphaned when the slot is not one of the plan's (fixture, level and index) or the game has
 /// no entry in the plan; a fixture pin is honoured when the plan holds the fixture (with the pin's prefab, when it
 /// names one, at the pin's transform, when it has one), orphaned when its room is not the plan's or its socket is not
-/// in the room's template. Any other pin not honoured is orphaned when it records a regeneration's conflict, else
-/// unhonoured (measurePins() says why of each). Lists sorted.
+/// in the room's template; those are reported in `orphaned` and judged (`honouredOrOrphaned`), whether or not they
+/// record a regeneration's conflict. Any other pin not honoured is reported in `orphaned`, not judged, when it records
+/// a regeneration's conflict, else unhonoured (measurePins() says why of each, and shows a recorded conflict as
+/// conflicting whether its subject is gone or not). Lists sorted.
 [[nodiscard]] PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
                                  const WorldOverrides& overrides);
 
@@ -245,6 +248,9 @@ struct PinMeasure {
     /// Why it is not honoured, in words ("its slot is not one of the plan's", "the game stands in <slot>", ...);
     /// empty when honoured.
     std::string why;
+    /// What it names is gone (its slot, game, room, room's template or socket), whatever its status: a conflicting
+    /// pin may be gone too, and checkPins() then judges it as an orphaned one.
+    bool gone = false;
     PinOrigin origin = PinOrigin::File;
 
     bool operator==(const PinMeasure&) const = default;
@@ -253,7 +259,8 @@ struct PinMeasure {
 /// Every pin of `overrides` measured against `plan` (its rooms' templates in `templates`, by id), game pins first, each
 /// list in the overrides' order (sorted by game and by fixture when read). A pin is honoured, else conflicting when it
 /// records a conflict, else orphaned when what it names is gone, else unhonoured; the orphaned and conflicting pins
-/// are checkPins()'s `orphaned`, the unhonoured its `unhonoured`.
+/// are checkPins()'s `orphaned`, the unhonoured its `unhonoured`; the orphaned ones and the conflicting ones whose
+/// subject is gone are those it judges.
 [[nodiscard]] std::vector<PinMeasure> measurePins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
                                                   const WorldOverrides& overrides);
 

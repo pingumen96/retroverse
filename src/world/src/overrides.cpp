@@ -338,8 +338,9 @@ public:
 
 private:
     /// A pin not honoured: conflicting when a regeneration recorded a conflict on it, else orphaned when what it names
-    /// is gone, else unhonoured.
+    /// is gone, else unhonoured; `gone` kept whatever the status.
     static void classify(PinMeasure& target, bool gone, const std::optional<ConflictReason>& conflict) {
+        target.gone = gone;
         if (conflict) {
             target.status = PinStatus::Conflicting;
             target.why = "the last regeneration of " + target.room.toString() + " recorded " +
@@ -377,8 +378,9 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
     const PinJudge judge(plan, templates);
     // The unhonoured pins with their rooms, sorted by their text below.
     std::vector<std::pair<std::string, RoomId>> unhonoured;
-    // A recorded conflict is reported as orphaned and never judged (the validation does not see it); a pin whose
-    // subject is gone is reported and judged (pin-orphaned).
+    // A pin whose subject is gone is reported as orphaned and judged (the validation's pin-orphaned), a recorded
+    // conflict or not; a recorded conflict on a subject still there is reported as orphaned and never judged (the
+    // validation does not see it, pin-broken would fail the plan).
     const auto sort = [&](PinMeasure measure, const auto& pin, auto& honoured, auto& judged) {
         switch (measure.status) {
         case PinStatus::Honoured:
@@ -391,6 +393,9 @@ PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templ
             break;
         case PinStatus::Conflicting:
             check.orphaned.push_back(std::move(measure.pin));
+            if (measure.gone) {
+                judged.push_back(pin);
+            }
             break;
         case PinStatus::Unhonoured:
             unhonoured.emplace_back(std::move(measure.pin), measure.room);
