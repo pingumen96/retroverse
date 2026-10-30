@@ -159,6 +159,7 @@ A new module between `render` and `app`:
 |---|---|
 | Frame time in VR, a populated room, both eyes at the runtime's recommended size, render scale 1.0 | p50 at most 13.9 ms, p99 at most 20 ms; at most 1% of the refreshes missed (72 Hz); 90 Hz informative |
 | Frame time in VR with a game captured on the CRT | the same limits with the "in game" profile |
+| Frame time in VR at 120 Hz (amended on 2026-10-30, I10 step 9), the same room at render scale 1 with xr.json's fast profile | p50 at most 8.3 ms, p99 at most 11.1 ms; at most 1% of the refreshes missed in the headset |
 
 The VR quality profile (reduced SSAO, fewer bloom levels, FXAA, a dynamic render scale within bounds) is tuned in
 step 7. Correctness and the focus rules are never relaxed.

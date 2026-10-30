@@ -23,7 +23,8 @@ CRT. Then it adds:
 - **The VR benchmark path** in Release (`tests/smoke/test_world_benchmark.cpp`, `[.bench]`): the snes-stress room of
   2,000 titles along `tests/input_scripts/bench_snes_room.json`, both eyes at 2048 x 2048 (the fake runtime at render
   scale 2, about Link's 2080 x 2096 on a Quest 3S), render scale 1, against ADR-0017 §9: frame p50 at most 13.9 ms and
-  p99 at most 20 ms (72 Hz). Both eyes' GPU time is printed (twice the last eye's passes).
+  p99 at most 20 ms (72 Hz). Both eyes' GPU time is printed (twice the last eye's passes). The same path at 120 Hz
+  with the fast profile (I10 step 9): p50 at most 8.3 ms, p99 at most 11.1 ms.
 
 ```powershell
 ./scripts/gate.ps1 -Gate VR
@@ -59,7 +60,8 @@ For 30 minutes, each item checked:
 6. **The game on the CRT:** a SNES game launched from the card, played with the Xbox pad on the room's big CRT while
    walking around it; quitting it in RetroArch brings the room back.
 7. **Comfort and pacing:** 72 Hz without stutter in a populated room (the run report's `xr` section: missed refreshes
-   at most 1%, the dynamic scale's lowest), 90 Hz with `refreshRate: 90` in xr.json.
+   at most 1%, the dynamic scale's lowest), 90 Hz with `refreshRate: 90` in xr.json, 120 Hz with
+   `--xr-refresh-rate 120` once the Meta app allows it.
 
 The user declares I10 done after the session on Meta's runtime and on SteamVR.
 

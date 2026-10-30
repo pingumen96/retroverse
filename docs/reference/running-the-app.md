@@ -266,7 +266,10 @@ build/rvdata`).
   window (borderless, never exclusive fullscreen) is captured onto the room's hero CRT (Windows.Graphics.Capture,
   WGL_NV_DX_interop2), the pad plays it, Retroverse reads no input until it ends. Interactive runs scale the eyes'
   rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
-  frame-limited runs keep 1. Without a
+  frame-limited runs keep 1. 120 Hz (I10 step 9): `--xr-refresh-rate 120` or xr.json's `refreshRate` asks the headset
+  for the highest rate it offers up to that (Link needs 120 Hz turned on in the Meta app); xr.json's `quality`
+  ("auto": from 110 Hz the eyes leave out the ambient occlusion and the anti-aliasing; "full"; "fast") keeps the frame
+  within 8.3 ms. Without a
   runtime or a headset (an interactive run waits 15 s
   for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
