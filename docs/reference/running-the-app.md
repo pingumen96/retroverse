@@ -234,6 +234,12 @@ build/rvdata`).
   clusters per view (`collectionPlanning`). An instance flagged highlighted gets the hover outline after the
   post-processing (a 2 px ring at 1080p in #F4EFE6, scaled with the output's height, its own GPU timer); one flagged
   hidden is not drawn.
+- The stereo preview (I10 step 1, ADR-0017 §4, `docs/i10/step-1.md`): `--stereo-preview` shows a headset's two eyes
+  side by side in the window and in every screenshot, on black. Each eye is an off-axis view of a Quest 3S's field
+  (52 degrees outwards, 45 inwards, 48 up, 50 down), 64 mm from the other, at half the image's width. Both are culled
+  against one frustum enclosing them, and the second reads the shadow map the first drew. It checks the VR mode's
+  rendering (the camera's eye mode, the SSAO of an asymmetric field, the shared shadow map) without a headset; the
+  covers, picking and the audio still follow the desktop's camera.
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
   room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render

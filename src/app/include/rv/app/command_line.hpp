@@ -174,6 +174,10 @@ struct CommandLineOptions {
     /// fallback without the S3TC extensions (ADR-0011 §4; implemented by I3 step 6: gl::chooseCollectionArrayFormat,
     /// SceneGraphics::collectionArrayFormat).
     bool noTextureCompression = false;
+    /// --stereo-preview: the window and the screenshots show a headset's two eyes side by side (I10 step 1, ADR-0017
+    /// §4), each an off-axis view of a Quest 3S's field 64 mm apart, culled once for both and sharing the frame's
+    /// shadow map: the VR mode's rendering checked on the desktop.
+    bool stereoPreview = false;
     /// --start-room <room id>: the room of the building the run starts in (I4 step 5a, ADR-0013 §9: its doorway camera
     /// on its floor; --spawn, the input scripts' poses and the run report's walker poses in its frame), a valid room id
     /// ("room:snes", "area:arcade", ...). Empty: the ground floor's lobby. Only in the generated building's runs.

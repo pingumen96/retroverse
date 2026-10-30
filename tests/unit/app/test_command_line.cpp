@@ -681,6 +681,18 @@ TEST_CASE("app/command_line: --simulate-minimized and --watch-late-frames, for t
     CHECK(helpListsOption(rv::app::commandLineHelp(), "--watch-late-frames"));
 }
 
+TEST_CASE("app/command_line: --stereo-preview shows both eyes side by side (I10 step 1)", "[app][command_line]") {
+    const auto plain = parse({});
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->stereoPreview);
+    const auto stereo = parse({"--smoke", "--frames", "5", "--stereo-preview"});
+    REQUIRE(stereo.has_value());
+    CHECK(stereo->stereoPreview);
+    const auto flagValue = parse({"--stereo-preview=yes"});
+    REQUIRE_FALSE(flagValue.has_value());
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--stereo-preview"));
+}
+
 TEST_CASE("app/command_line: --no-texture-compression keeps the collection's arrays uncompressed (I3 step 6)",
           "[app][command_line]") {
     const auto plain = parse({});

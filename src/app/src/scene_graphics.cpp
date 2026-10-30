@@ -10,7 +10,9 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 #include <spdlog/spdlog.h>
 
 #include <rv/app/app_logic.hpp>
@@ -31,6 +33,7 @@
 #include <rv/render/material_registry.hpp>
 #include <rv/render/mesh_registry.hpp>
 #include <rv/render/post_settings.hpp>
+#include <rv/render/render_state_cache.hpp>
 #include <rv/render/shader_library.hpp>
 #include <rv/render/shader_program.hpp>
 #include <rv/render/texture.hpp>
@@ -38,6 +41,7 @@
 #include <rv/render/texture_cache.hpp>
 #include <rv/render/texture_defaults.hpp>
 #include <rv/render/view_targets.hpp>
+#include <rv/scene/stereo.hpp>
 
 namespace rv::app {
 namespace {
@@ -155,6 +159,34 @@ bool prepareTargets(gl::ViewTargets& targets, glm::ivec2 size, std::string_view 
     return false;
 }
 
+/// Creates the side-by-side image of the stereo preview (`image`) at `size`, or resizes it; failures logged once per
+/// size like prepareTargets().
+bool prepareStereoImage(std::optional<gl::Framebuffer>& image, glm::ivec2 size, std::string_view debugName,
+                        std::optional<glm::ivec2>& failedSize) {
+    Status status = ok();
+    if (!image) {
+        auto created =
+            gl::Framebuffer::create(gl::FramebufferDesc{size, gl::ColorFormat::Srgb8Alpha8, true}, debugName);
+        if (created) {
+            image = std::move(*created);
+        } else {
+            status = propagate(created.error());
+        }
+    } else {
+        status = image->resize(size);
+    }
+    if (status) {
+        failedSize.reset();
+        return true;
+    }
+    if (failedSize != size) {
+        spdlog::error("Stereo image '{}' unavailable at {}x{}: {}", debugName, size.x, size.y,
+                      status.error().toString());
+        failedSize = size;
+    }
+    return false;
+}
+
 /// Index of an inspection view in kInspectionViews.
 std::size_t inspectionIndex(gl::SurfaceView view) noexcept {
     for (std::size_t index = 0; index < kInspectionViews.size(); ++index) {
@@ -209,6 +241,14 @@ struct SceneGraphics::State {
     gl::ViewTargets screenshotTargets;
     std::optional<glm::ivec2> failedWindowSize;
     std::optional<glm::ivec2> failedScreenshotSize;
+    /// --stereo-preview: the eyes' targets (the window's and the screenshots' alike, at the eye size of the image being
+    /// drawn) and the side-by-side images of the window and the screenshots.
+    std::array<gl::ViewTargets, 2> eyeTargets;
+    std::array<std::optional<glm::ivec2>, 2> failedEyeSize;
+    std::optional<gl::Framebuffer> windowStereo;
+    std::optional<gl::Framebuffer> screenshotStereo;
+    std::optional<glm::ivec2> failedWindowStereoSize;
+    std::optional<glm::ivec2> failedScreenshotStereoSize;
     FrameStatsLog statsLog;
     bool lastFrameCaptured = false; ///< --screenshot written
     bool viewRendered = false;      ///< a view was rendered during the current frame (window or screenshot)
@@ -248,6 +288,42 @@ struct SceneGraphics::State {
         anyViewRendered = true;
     }
 
+    /// Renders the eyes of the camera of `view` (scene::stereoEyesFor: the preview's field, 64 mm apart) side by side
+    /// into `image`, on black: both culled against one frustum enclosing them, the second reading the first's shadow
+    /// map. False when the eyes' targets are unavailable (logged).
+    bool renderStereo(gl::GLDevice& device, const gl::RenderView& view, const gl::Framebuffer& image) {
+        const scene::EyeFov field = scene::stereoPreviewLeftField();
+        const scene::StereoLayout layout = scene::stereoLayout(image.size(), field);
+        if (layout.eyeSize.x < 1 || layout.eyeSize.y < 1) {
+            return false;
+        }
+        constexpr std::array<std::string_view, 2> kNames{"StereoLeftTargets", "StereoRightTargets"};
+        for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
+            if (!prepareTargets(eyeTargets[eye], layout.eyeSize, kNames[eye], failedEyeSize[eye])) {
+                return false;
+            }
+        }
+        const scene::StereoEyes eyes = scene::stereoEyesFor(view.camera, scene::kStereoPreviewIpdMeters, field);
+        const std::array<glm::mat4, 2> viewProjections{eyes.left.viewProjection(), eyes.right.viewProjection()};
+        gl::RenderView eyeView = view;
+        eyeView.cullFrustum = scene::Frustum::enclosing(viewProjections);
+        eyeView.camera = eyes.left;
+        render(device, eyeView, eyeTargets[0]);
+        eyeView.camera = eyes.right;
+        render(device, eyeView, eyeTargets[1]);
+
+        gl::RenderStateCache& state = device.state();
+        device.beginPass(image, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        // The eyes' bytes copied as they are: the image is display-ready like each eye's output.
+        state.setFramebufferSrgb(false);
+        eyeTargets[0].output().copyColorTo(image, layout.leftOffset);
+        eyeTargets[1].output().copyColorTo(image, layout.rightOffset);
+        image.bind();
+        state.setViewport(glm::ivec4(0, 0, image.size().x, image.size().y));
+        state.setFramebufferSrgb(true);
+        return true;
+    }
+
     [[nodiscard]] gl::PostShaders postShaders() const {
         gl::PostShaders post;
         post.bloomDownsampleFirst = &shaders->get(programs.bloomDownsampleFirst);
@@ -263,15 +339,27 @@ struct SceneGraphics::State {
     Status captureScreenshot(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path) {
         const CommandLineOptions& options = context.options();
         const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
-        if (!prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize)) {
-            return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot", core::pathToUtf8(path));
+        const gl::Framebuffer* output = nullptr;
+        if (options.stereoPreview) {
+            if (!prepareStereoImage(screenshotStereo, size, "ScreenshotStereo", failedScreenshotStereoSize) ||
+                !renderStereo(context.device(), view, *screenshotStereo)) {
+                return makeError(ErrorCode::GraphicsError, "no render targets for the stereo screenshot",
+                                 core::pathToUtf8(path));
+            }
+            output = &*screenshotStereo;
+        } else {
+            if (!prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize)) {
+                return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot",
+                                 core::pathToUtf8(path));
+            }
+            render(context.device(), view, screenshotTargets);
+            output = &screenshotTargets.output();
         }
-        render(context.device(), view, screenshotTargets);
         if (screenshotOverlay) {
-            screenshotOverlay(context.device(), screenshotTargets.output());
+            screenshotOverlay(context.device(), *output);
         }
         gl::Framebuffer::unbind(); // the frame leaves the default framebuffer bound, also when the window is not drawn
-        auto image = screenshotTargets.output().readPixels();
+        auto image = output->readPixels();
         if (!image) {
             return propagate(image.error());
         }
@@ -473,6 +561,8 @@ void SceneGraphics::setOverlay(std::function<void(gl::GLDevice&)> window,
 void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view, bool screenshotRequested) {
     State& state = *m_state;
     state.viewRendered = false;
+    // The frame's views (a screenshot, the window, the stereo preview's eyes) share one shadow map.
+    state.renderer->beginFrame();
     // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it
     // documents (default framebuffer with the window's viewport, GL_FRAMEBUFFER_SRGB off) for whatever draws next.
     if (screenshotRequested) {
@@ -496,7 +586,14 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
 
     const glm::ivec2 windowSize = context.framebufferSize();
     if (windowSize.x > 0 && windowSize.y > 0) {
-        if (prepareTargets(state.windowTargets, windowSize, "WindowTargets", state.failedWindowSize)) {
+        if (options.stereoPreview) {
+            if (prepareStereoImage(state.windowStereo, windowSize, "WindowStereo", state.failedWindowStereoSize) &&
+                state.renderStereo(context.device(), view, *state.windowStereo)) {
+                state.windowStereo->blitToDefault(context.device().state(), windowSize);
+            } else {
+                gl::Framebuffer::clearDefault(context.device().state(), windowSize);
+            }
+        } else if (prepareTargets(state.windowTargets, windowSize, "WindowTargets", state.failedWindowSize)) {
             state.render(context.device(), view, state.windowTargets);
             state.windowTargets.output().blitToDefault(context.device().state(), windowSize);
         } else {

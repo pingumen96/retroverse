@@ -110,6 +110,8 @@ core::ArgParser makeParser() {
         .flag("no-texture-compression", "Keep the collection's covers and spines in RGBA8 at half the resolution "
                                         "instead of BC1, as without the S3TC extensions (the log names the format "
                                         "and why).")
+        .flag("stereo-preview", "Show a headset's two eyes side by side in the window and the screenshots (off-axis "
+                                "fields of a Quest 3S, 64 mm apart): the VR mode's rendering on the desktop.")
         .option("start-room", "room",
                 "Start in this room of the building (its id: room:snes, area:arcade, ...) at its doorway camera, on "
                 "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
@@ -653,6 +655,7 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.watchLateFrames = args->has("watch-late-frames");
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");
+    options.stereoPreview = args->has("stereo-preview");
     auto startRoom = nonEmptyValue(*args, "start-room");
     if (!startRoom) {
         return propagate(startRoom.error());
