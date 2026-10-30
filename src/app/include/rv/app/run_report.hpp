@@ -1585,6 +1585,11 @@ struct XrRecord {
     std::uint64_t handFrames = 0;
     std::uint64_t pointedFrames = 0;
     std::uint64_t vibrations = 0;
+    /// The UI's panel (I10 step 5): frames it stood in the world (the UI had the input), frames a controller's ray was
+    /// on it, the clicks of its trigger there.
+    std::uint64_t uiPanelFrames = 0;
+    std::uint64_t uiPointedFrames = 0;
+    std::uint64_t uiClicks = 0;
 
     bool operator==(const XrRecord&) const = default;
 };

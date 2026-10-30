@@ -134,6 +134,7 @@ add_library(rv_app STATIC
     src/world_regenerate.cpp
     src/xr_movement.cpp
     src/xr_session_driver.cpp
+    src/xr_ui.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)

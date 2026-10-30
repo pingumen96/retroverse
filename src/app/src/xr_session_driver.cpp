@@ -78,6 +78,10 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
                 }
                 return std::nullopt;
             };
+            // I10 step 5: their triggers.
+            config.handSelect = [script = *loaded](std::uint64_t frame, xr::Hand hand) {
+                return script.handSelectAt(frame, hand == xr::Hand::Right);
+            };
             // I10 step 4: the controllers the script holds, resting at hip height in front of the user.
             config.handPose = [script = std::move(*loaded)](std::uint64_t frame,
                                                             xr::Hand hand) -> std::optional<xr::Pose> {

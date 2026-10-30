@@ -2669,6 +2669,9 @@ Json xrToJson(const XrRecord& xr) {
     json["handFrames"] = xr.handFrames;
     json["pointedFrames"] = xr.pointedFrames;
     json["vibrations"] = xr.vibrations;
+    json["uiPanelFrames"] = xr.uiPanelFrames;
+    json["uiPointedFrames"] = xr.uiPointedFrames;
+    json["uiClicks"] = xr.uiClicks;
     return json;
 }
 
@@ -2724,6 +2727,9 @@ XrRecord readXr(FieldReader& fields) {
     xr.handFrames = fields.count("handFrames");
     xr.pointedFrames = fields.count("pointedFrames");
     xr.vibrations = fields.count("vibrations");
+    xr.uiPanelFrames = fields.count("uiPanelFrames");
+    xr.uiPointedFrames = fields.count("uiPointedFrames");
+    xr.uiClicks = fields.count("uiClicks");
     return xr;
 }
 

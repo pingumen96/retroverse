@@ -86,6 +86,7 @@
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
 #include "xr_movement.hpp"
+#include "xr_ui.hpp"
 
 namespace rv::app {
 namespace {
@@ -491,6 +492,10 @@ struct RetroverseApp::State {
     /// onto another).
     XrHands xrHands;
     world::PickId xrHovered = world::kNoPick;
+    /// The product UI in the headset (I10 step 5): its panel, and whether the eyes drew it this frame (the window and
+    /// the screenshots then show it through them, not as an overlay).
+    XrUi xrUi;
+    bool xrUiDrawn = false;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -636,6 +641,28 @@ struct RetroverseApp::State {
         return true;
     }
 
+    /// The pointing controller's ray on the UI's world panel (I10 step 5): the UI's mouse there, the trigger its button,
+    /// the right stick its wheel. True while it points at the panel (the trigger is then no interact).
+    bool pointXrUi(AppContext& context) {
+        if (!xrMovement || !product) {
+            return false;
+        }
+        const std::optional<XrUi::Pointing> pointing = xrUi.point(xrHands.pointer().ray());
+        if (!pointing) {
+            product->xrPointer(std::nullopt, false, false, 0.0f);
+            return false;
+        }
+        const float stick = xrHands.pad().state().axes[input::toIndex(input::GamepadAxis::RightY)];
+        const float wheel = std::abs(stick) > 0.3f ? -stick * 0.25f : 0.0f;
+        product->xrPointer(pointing->pixel, xrHands.pointer().selectPressed(), xrHands.pointer().selectReleased(),
+                           wheel);
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            ++record->uiPointedFrames;
+            record->uiClicks += xrHands.pointer().selectPressed() ? 1 : 0;
+        }
+        return true;
+    }
+
     /// A VR frame's controllers before its input is read (I10 step 4): none on the desktop or while tracking is lost.
     void updateXrHands(AppContext& context) {
         if (!xrMovement) {
@@ -643,6 +670,19 @@ struct RetroverseApp::State {
         }
         const xr::Frame* frame = context.xrFrame();
         xrHands.update(frame != nullptr && frame->located ? frame : nullptr, xrMovement->locomotion().anchor());
+    }
+
+    /// The UI's panel where the head is after the frame's movement (I10 step 5): in front of it when the UI takes the
+    /// input, on it as a heads-up display otherwise.
+    void placeXrUi(AppContext& context) {
+        if (!xrEyes || !product) {
+            return;
+        }
+        xrUi.place(xr::Pose{camera.orientation(), camera.position()}, product->hasInput(),
+                   context.window().drawableSize());
+        if (std::optional<XrRecord>& record = context.report().xr; record && xrUi.mode() == xr::PanelMode::World) {
+            ++record->uiPanelFrames;
+        }
     }
 
     /// The controllers where the frame's movement put the tracking space (I10 step 4), the inspected item in the
@@ -721,6 +761,28 @@ struct RetroverseApp::State {
         }
     }
 
+    /// The product UI drawn into its panel for the eyes (I10 step 5); the window and the screenshots then leave it
+    /// out of their overlay.
+    void drawXrUi(AppContext& context, const gl::RenderView& view) {
+        xrUiDrawn = false;
+        if (!xrEyes || !product) {
+            return;
+        }
+        xrEyes->panels.clear();
+        if (!product->visible()) {
+            xrUiDrawn = true;
+            return;
+        }
+        if (Status drawn = xrUi.render(context.device(), *product, context.window().drawableSize()); !drawn) {
+            spdlog::error("The VR mode's UI panel cannot be drawn: {}", drawn.error().toString());
+            return;
+        }
+        if (const std::optional<gl::Panel> panel = xrUi.panel(view.post.fade)) {
+            xrEyes->panels.push_back(*panel);
+        }
+        xrUiDrawn = true;
+    }
+
     /// What a VR frame's eyes add to the view (I10 step 3): the movement's fade (a head leaning into a wall, a
     /// teleport's blink) over the ride's, the comfort vignette, the teleport's arc. Nothing on the desktop.
     void addXrView(AppContext& context, gl::RenderView& view) {
@@ -746,6 +808,10 @@ struct RetroverseApp::State {
                     const core::Ray ray{aim->position, glm::normalize(aim->orientation * glm::vec3(0.0f, 0.0f, -1.0f))};
                     reach = xr::castRay(ray, XrProps::kLaserReach, freeRoam->controller().feetPosition().y,
                                         freeRoam->collision());
+                    // I10 step 5: on the UI's world panel it ends there.
+                    if (const std::optional<XrUi::Pointing> pointing = xrUi.point(ray)) {
+                        reach = std::min(reach, pointing->distance);
+                    }
                 }
             }
             const bool onItem = world && world->hovered() != world::kNoPick;
@@ -1521,7 +1587,7 @@ struct RetroverseApp::State {
         std::function<void(gl::GLDevice&, const gl::Framebuffer&)> intoScreenshot;
         if (product || overlayInScreenshots) {
             intoScreenshot = [this, overlayInScreenshots](gl::GLDevice& device, const gl::Framebuffer& target) {
-                if (product) {
+                if (product && !xrUiDrawn) {
                     product->renderTo(device, target);
                 }
 #if defined(RV_DEV_UI)
@@ -1535,7 +1601,7 @@ struct RetroverseApp::State {
         }
         graphics->setOverlay(
             [this](gl::GLDevice& device) {
-                if (product) {
+                if (product && !xrUiDrawn) {
                     product->renderToWindow(device);
                 }
 #if defined(RV_DEV_UI)
@@ -1798,10 +1864,13 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game.
     state.setPriority(frame, processPriorityFor(context.window().isMinimized(),
                                                 state.product != nullptr && state.product->launchActive()));
-    // I10 step 4: a VR frame's controllers drive the pad's actions, the pointing hand's trigger interacts.
+    // I10 step 4: a VR frame's controllers drive the pad's actions, the pointing hand's trigger interacts; step 5:
+    // on the UI's panel the ray is its mouse and the trigger clicks.
     state.updateXrHands(context);
     input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
-    state.xrHands.applySelect(actions);
+    if (!state.pointXrUi(context)) {
+        state.xrHands.applySelect(actions);
+    }
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
     const InputContext inputContext = state.inputContext();
@@ -1916,10 +1985,13 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     }
     state.followHead(context);
     state.followHands(context);
+    state.placeXrUi(context);
     if (state.world && state.product) {
-        // The hover's title label over the item as this frame's camera shows it (none under the product UI).
+        // The hover's title label over the item as this frame's camera shows it (none under the product UI); in VR as
+        // the heads-up display shows it (I10 step 5).
         const bool worldShown = inputContext == InputContext::World && !riding;
-        state.product->setWorldLabel(worldShown ? state.world->label(state.camera, context.window().drawableSize())
+        const scene::Camera labelCamera = state.xrEyes ? state.xrUi.hudCamera(state.camera) : state.camera;
+        state.product->setWorldLabel(worldShown ? state.world->label(labelCamera, context.window().drawableSize())
                                                 : std::nullopt);
         // The card beside the inspected item (I3 step 14a).
         state.world->showCard(worldResult, *state.product);
@@ -1974,6 +2046,7 @@ void RetroverseApp::onRender(AppContext& context) {
     state.followSceneAreas(context.frameIndex());
     gl::RenderView view = state.view();
     state.addXrView(context, view);
+    state.drawXrUi(context, view);
     state.graphics->renderFrame(context, view, state.screenshotRequested, state.xrEyes ? &*state.xrEyes : nullptr);
     state.screenshotRequested = false;
     if (state.world) {

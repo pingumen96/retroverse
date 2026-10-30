@@ -236,6 +236,12 @@ public:
     /// A frame was rendered.
     void frameRendered() noexcept;
 
+    /// I10 step 5: a controller's ray on the VR mode's panel as the UI's mouse: moved to `pixel` (the view's pixels;
+    /// none: off the panel, the mouse leaves), pressed and released (its trigger), `wheel` notches scrolled.
+    void xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, bool released, float wheel);
+    /// Something of the UI shows (what renderTo() draws).
+    [[nodiscard]] bool visible() const noexcept;
+
     /// Draws the UI over the window's frame, and into a screenshot (scaled to fit), when something shows.
     void renderToWindow(gl::GLDevice& device);
     void renderTo(gl::GLDevice& device, const gl::Framebuffer& target);

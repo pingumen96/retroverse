@@ -254,6 +254,10 @@ struct SceneGraphics::State {
     /// VR (I10 step 2): the eyes render into eyeTargets too; framebuffers over the swapchains' images, by texture name;
     /// the side-by-side image of the screenshots.
     std::map<std::uint32_t, gl::TextureTarget> swapchainTargets;
+    /// The VR mode's panels (I10 step 5): their program and pass, loaded when first drawn; a failure is logged once.
+    std::optional<gl::ShaderHandle> panelShader;
+    std::optional<gl::PanelPass> panelPass;
+    bool panelFailed = false;
     std::optional<gl::Framebuffer> xrScreenshot;
     std::optional<glm::ivec2> failedXrScreenshotSize;
     bool swapchainTargetFailed = false;
@@ -352,6 +356,27 @@ struct SceneGraphics::State {
         return &(swapchainTargets[image] = std::move(*created));
     }
 
+    /// The panels' program and pass, loaded once; false (logged once) when they cannot be.
+    bool preparePanels() {
+        if (panelShader && panelPass) {
+            return true;
+        }
+        if (panelFailed) {
+            return false;
+        }
+        auto program = shaders->load(gl::ShaderDesc{"xr_panel", "xr/panel.vert", "xr/panel.frag", {}});
+        auto pass = gl::PanelPass::create();
+        if (!program || !pass) {
+            spdlog::error("The VR mode's UI panel cannot be drawn: {}",
+                          !program ? program.error().toString() : pass.error().toString());
+            panelFailed = true;
+            return false;
+        }
+        panelShader = *program;
+        panelPass = std::move(*pass);
+        return true;
+    }
+
     /// Renders both eyes of a VR frame into their targets (eyeTargets) and copies each into its swapchain image. False
     /// when a target or an image cannot be drawn into (logged).
     bool renderEyes(gl::GLDevice& device, const gl::RenderView& view, const XrEyeTargets& eyes) {
@@ -367,6 +392,7 @@ struct SceneGraphics::State {
         eyeView.cullFrustum = scene::Frustum::enclosing(viewProjections);
         // ADR-0017 §4: no vignette in a headset (the lenses darken their edges already).
         eyeView.post.vignette = 0.0f;
+        const bool panels = !eyes.panels.empty() && preparePanels();
         for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
             eyeView.camera = eyes.cameras[eye];
             // The comfort vignette closes in on where the eye looks straight ahead (I10 step 3).
@@ -375,6 +401,11 @@ struct SceneGraphics::State {
                 glm::vec2(std::tan(-field.left) / (std::tan(field.right) - std::tan(field.left)),
                           std::tan(-field.down) / (std::tan(field.up) - std::tan(field.down)));
             render(device, eyeView, eyeTargets[eye]);
+            // The UI's panel over the eye's display-ready picture (I10 step 5).
+            if (panels) {
+                panelPass->draw(shaders->get(*panelShader), device.state(), eyeTargets[eye].output(),
+                                eyes.cameras[eye].viewProjection(), eyes.panels);
+            }
         }
         gl::RenderStateCache& state = device.state();
         // The eyes' display-ready bytes copied as they are into the sRGB images.

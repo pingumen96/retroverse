@@ -1260,6 +1260,9 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     xr.handFrames = 900;
     xr.pointedFrames = 850;
     xr.vibrations = 6;
+    xr.uiPanelFrames = 300;
+    xr.uiPointedFrames = 120;
+    xr.uiClicks = 4;
     report.xr = xr;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());

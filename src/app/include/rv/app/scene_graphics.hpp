@@ -5,11 +5,13 @@
 #include <functional>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 #include <glm/vec2.hpp>
 
 #include <rv/app/scene_instance.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/render/panel_pass.hpp>
 #include <rv/render/post_processor.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/surface_view.hpp>
@@ -49,6 +51,8 @@ struct XrEyeTargets {
     std::array<scene::Camera, 2> cameras;
     /// The eyes' fields (the comfort vignette's centre, I10 step 3).
     std::array<scene::EyeFov, 2> fields{};
+    /// Drawn into each eye over its post-processing (I10 step 5: the UI's panel).
+    std::vector<gl::Panel> panels;
     std::array<std::uint32_t, 2> images{};
     glm::ivec2 size{0};
 };
