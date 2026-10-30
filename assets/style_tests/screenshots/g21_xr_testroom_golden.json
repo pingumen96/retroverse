@@ -1,0 +1,35 @@
+{
+  "build": {
+    "buildType": "Debug",
+    "preset": "msvc-x64-debug",
+    "sources": "the commit that adds or rewrites this metadata, rendered from its working tree before committing"
+  },
+  "comparison": "Compared by tests/smoke/test_xr.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
+  "description": "I10 step 2's golden of the VR mode: the M0 test room in the fake runtime's headset, both eyes side by side (left, right), each an off-axis view of a Quest 3S's field 64 mm apart, the head standing 1.65 m above the scene camera's feet and facing its yaw; the last frame of a 30-frame run.",
+  "gpu": {
+    "glVersion": "4.5.0 NVIDIA 621.01",
+    "machine": "docs/testing/reference-hardware.md",
+    "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
+    "vendor": "NVIDIA Corporation"
+  },
+  "id": "G21",
+  "image": {
+    "file": "g21_xr_testroom_golden.png",
+    "format": "PNG, 8-bit RGB, sRGB-encoded as the swapchain images hold it",
+    "height": 1024,
+    "sha256": "a75f5b4b24f1be5d17c6c405464d62c04e27095241435f14248cd76a9f806083",
+    "width": 2048
+  },
+  "renderedOn": "2026-10-30",
+  "run": {
+    "capturedFrame": 29,
+    "command": "retroverse.exe --scene m0_testroom --vr --xr-runtime fake --exit-after-frames --frames 30 --fixed-dt 0.016667 --hidden --screenshot <file>",
+    "frames": 30,
+    "regenerate": "$env:RV_UPDATE_GOLDEN=1; build/msvc-x64-debug/bin/rv_smoke_tests.exe \"golden/G21:*\"; Remove-Item Env:RV_UPDATE_GOLDEN (then run it again without the variable; tests/smoke/test_xr.cpp)"
+  },
+  "scene": {
+    "file": "assets/style_tests/reference_scenes/m0_testroom.json",
+    "sha256": "743d63669892f528bd0e8cbccf685a1e8623ca3981e45ea88894cf6d07fbf82b"
+  },
+  "schemaVersion": 1
+}
