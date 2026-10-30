@@ -17,6 +17,7 @@ add_library(rv_launcher STATIC
     src/launch_plan.cpp
     src/launch_request.cpp
     src/launch_session.cpp
+    src/manual_open.cpp
     src/process_runner.cpp
 )
 add_library(rv::launcher ALIAS rv_launcher)
