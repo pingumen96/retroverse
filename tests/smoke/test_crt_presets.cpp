@@ -3,7 +3,8 @@
 // seen together (the screenshot to review) and each close up, where the probes read the luma of a column of the
 // picture's middle bar row by row: the neutral tube's rows have no scanline ripple, the arcade's ripple is deeper than
 // the consumer's, the monitor's fainter. The run reports say which preset each screen took and why (crtLooks); video.json's
-// crtEffect off makes every screen neutral, vintage steps each one stronger.
+// crtEffect off makes every screen neutral, vintage steps each one stronger; the user's crt_presets.json reaches the
+// screens (the consumer's scanlines turned off flatten its tube's rows).
 
 #include "image_checks.hpp"
 #include "smoke_support.hpp"
@@ -157,6 +158,26 @@ Ripple rippleOf(const rv::assets::ImageData& image, const rv::scene::SceneDescri
     return result;
 }
 
+/// A close-up run of `id`'s screen (named `name`, with the case's video.json and crt_presets.json as they are) and the
+/// ripple of its picture.
+struct CloseUp {
+    AppRun run;
+    Ripple ripple;
+};
+
+CloseUp closeUp(const std::filesystem::path& dir, const rv::scene::SceneDescription& scene, std::string_view id,
+                const std::string& name) {
+    rv::scene::CameraSetup camera;
+    const std::filesystem::path closeScene = writeCloseUp(dir, scene, id, camera);
+    const std::filesystem::path shot = dir / rv::core::pathFromUtf8(name + ".png");
+    CloseUp result{runScene(dir, name, closeScene, {"--screenshot", arg(shot), "--screenshot-size", "2560x1440"}), {}};
+    INFO(result.run.describe());
+    const rv::assets::ImageData image = requireScreenshot(result.run, shot, kCloseSize);
+    result.ripple = rippleOf(image, scene, camera, id);
+    WARN(name << ": mean luma " << result.ripple.meanLuma << ", ripple " << result.ripple.ripple);
+    return result;
+}
+
 } // namespace
 
 TEST_CASE("crt presets: each preset on its own tube, the neutral flat, the arcade deeper than the consumer",
@@ -191,15 +212,7 @@ TEST_CASE("crt presets: each preset on its own tube, the neutral flat, the arcad
     // Each close up: the ripple of its rows.
     std::map<std::string, Ripple, std::less<>> ripples;
     for (const auto& [id, preset] : kScreens) {
-        rv::scene::CameraSetup camera;
-        const std::filesystem::path closeScene = writeCloseUp(dir, *scene, id, camera);
-        const std::filesystem::path shot = dir / rv::core::pathFromUtf8("close_" + preset + ".png");
-        const AppRun run = runScene(dir, "close_" + preset, closeScene,
-                                    {"--screenshot", arg(shot), "--screenshot-size", "2560x1440"});
-        INFO(run.describe());
-        const rv::assets::ImageData image = requireScreenshot(run, shot, kCloseSize);
-        const Ripple ripple = rippleOf(image, *scene, camera, id);
-        WARN(preset << ": mean luma " << ripple.meanLuma << ", ripple " << ripple.ripple);
+        const Ripple ripple = closeUp(dir, *scene, id, "close_" + preset).ripple;
         CHECK(ripple.meanLuma > 40.0); // the bar is lit, not the tube's border
         ripples.emplace(preset, ripple);
     }
@@ -246,7 +259,7 @@ TEST_CASE("crt presets: crtEffect off makes every screen neutral, vintage steps 
         }
     }
     // Without video.json's keys every screen is its kind's: consumer, the user's crt_presets.json over the shipped
-    // values (here the consumer's scanlines deeper), and a broken one left out.
+    // values (here the consumer's scanlines off: its screen's rows lose their ripple), and a broken one left out.
     std::filesystem::remove(dir / "data" / "config" / "video.json");
     {
         const AppRun run = runScene(dir, "kinds", sceneFile(), {});
@@ -258,10 +271,25 @@ TEST_CASE("crt presets: crtEffect off makes every screen neutral, vintage steps 
             CHECK(look.rule == "kind");
         }
     }
+    const auto scene = rv::scene::loadSceneDescription(sceneFile());
+    REQUIRE(scene.has_value());
+    const Ripple shipped = closeUp(dir, *scene, "crt_consumer", "kinds_close_consumer").ripple;
     REQUIRE(rv::core::writeTextFileAtomic(dir / "data" / "config" / "crt_presets.json",
-                                          R"({"presets": {"consumer": {"scanlineStrength": 0.4}}})")
+                                          R"({"presets": {"consumer": {"scanlineStrength": 0}}})")
                 .has_value());
-    CHECK(runScene(dir, "user_presets", sceneFile(), {}).report->crtLooks->presetsSource == "user");
+    {
+        // The user's value reaches the screen: the consumer tube's rows as flat as the neutral's, the same tube's
+        // shipped scanlines rippling.
+        const CloseUp user = closeUp(dir, *scene, "crt_consumer", "user_presets");
+        INFO(user.run.describe());
+        CHECK(user.run.report->crtLooks->presetsSource == "user");
+        const auto looks = looksOf(user.run);
+        REQUIRE(looks.contains("crt_consumer"));
+        CHECK(looks.at("crt_consumer").preset == "consumer");
+        CHECK(user.ripple.meanLuma > 40.0);
+        CHECK(shipped.ripple > 0.02);
+        CHECK(user.ripple.ripple < 0.005);
+    }
     REQUIRE(rv::core::writeTextFileAtomic(dir / "data" / "config" / "crt_presets.json",
                                           R"({"presets": {"consumer": {"scanlineStrength": 4}}})")
                 .has_value());
