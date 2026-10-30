@@ -227,3 +227,7 @@ What the steps built where it departs from the text above, each recorded in its 
 - **§2, §7:** the D3D11 bridge as a second graphics binding is not built (Meta's runtime takes OpenGL); the capture's
   D3D11 device and the WGL_NV_DX_interop2 interop serve the game on the CRT alone. The capture is proven by a GPU test
   with the fake emulator's background window, not a desktop test (step 6).
+- **§7:** while a game runs the controllers alone still walk, turn and teleport (the pad and the keyboard are the
+  game's, the emulator never sees the controllers); the inspected item waits in its fixture; the emulator's window is
+  given the foreground once it shows, Retroverse's window rendering on behind it (step 10, asked after the first
+  session in the headset).

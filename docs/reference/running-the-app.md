@@ -264,7 +264,9 @@ build/rvdata`).
   heads-up display on the head (the label over its item, the prompts, the card); the window and the screenshots show
   it through the eyes. A launched game (I10 step 6, `docs/i10/step-6.md`) keeps the headset rendering: its emulator's
   window (borderless, never exclusive fullscreen) is captured onto the room's hero CRT (Windows.Graphics.Capture,
-  WGL_NV_DX_interop2), the pad plays it, Retroverse reads no input until it ends. Interactive runs scale the eyes'
+  WGL_NV_DX_interop2) and given the foreground, the pad plays it, the inspected item waits in its fixture; Retroverse
+  reads only the controllers' walk, turns and teleport until it ends (I10 step 10: input scripts' `leftStick`,
+  `rightStick` push the fake runtime's thumbsticks). Interactive runs scale the eyes'
   rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
   frame-limited runs keep 1. 120 Hz (I10 step 9): `--xr-refresh-rate 120` or xr.json's `refreshRate` asks the headset
   for the highest rate it offers up to that (Link needs 120 Hz turned on in the Meta app); xr.json's `quality`
@@ -278,8 +280,7 @@ build/rvdata`).
   The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
   and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, the
   movement's snap turns, teleports and push-backs, and the controllers (the profiles taken and held, the frames
-  tracked and pointing, the vibrations). While a launched game runs the host
-  idles and the headset shows the runtime's own frame until the game ends (step 6 keeps the session rendering).
+  tracked and pointing, the vibrations), the game's capture and the frames the controllers walked while it ran.
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
   room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render

@@ -16,7 +16,7 @@ warning, the unit tests and the GPU checks of Debug and Release, every golden, t
 cases with the fake runtime (`[xr]`: `tests/smoke/test_xr.cpp`, `test_xr_room.cpp`): the session's pacing, a lost
 session and a missing runtime, the walk, the snap turn and the teleport, the seated posture, a controller's ray
 inspecting a cartridge held in that hand, the quick catalog clicked on its panel, a launched game captured onto the hero
-CRT. Then it adds:
+CRT while the controllers walk. Then it adds:
 
 - **Golden G21** (both eyes in the test room, `assets/style_tests/screenshots/g21_xr_testroom_golden.png`) in Debug and
   Release, read from the GPU runs' verdicts; compared on the golden's GPU and driver only, like the others.
@@ -57,8 +57,9 @@ For 30 minutes, each item checked:
 4. **A room:** a cover pointed at (the laser cyan, the controller ticks), its title over it; the trigger inspects it in
    the hand, the wrist turns it; the card in the heads-up display; B puts it back; a spine-out item pulled out in place.
 5. **The quick catalog:** Y, the ray on a game, the trigger selects, the right stick scrolls, "Avvia".
-6. **The game on the CRT:** a SNES game launched from the card, played with the Xbox pad on the room's big CRT while
-   walking around it; quitting it in RetroArch brings the room back.
+6. **The game on the CRT:** a SNES game launched from the card (the cartridge back on its shelf), played with the Xbox
+   pad on the room's big CRT; a Touch controller picked up walks up to it meanwhile (I10 step 10); quitting it in
+   RetroArch brings the room back.
 7. **Comfort and pacing:** 72 Hz without stutter in a populated room (the run report's `xr` section: missed refreshes
    at most 1%, the dynamic scale's lowest), 90 Hz with `refreshRate: 90` in xr.json, 120 Hz with
    `--xr-refresh-rate 120` once the Meta app allows it.
@@ -69,6 +70,7 @@ The user declares I10 done after the session on Meta's runtime and on SteamVR.
 
 - The UI is drawn into the eyes, not as compositor layers (ADR-0017 §6's fallback); the card stands in the heads-up
   display rather than beside its item (BACKLOG, I10's follow-ups).
-- While a game runs in VR Retroverse reads no input: the return comes with the game's end.
+- While a game runs in VR Retroverse reads only the controllers' walk, turns and teleport: the return comes with the
+  game's end.
 - The D3D11 bridge (ADR-0017 §2's second binding) is not built: Meta's runtime takes OpenGL (step 0); if SteamVR
   refuses it, the session falls back to the desktop and says why.
