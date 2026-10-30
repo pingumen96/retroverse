@@ -12,7 +12,9 @@
 //  - "Apri il manuale" is refused by the automation guard (RV_LAUNCH_ALLOWLIST lists the fake emulator alone): no
 //    window can open.
 // A damaged clip (Opal Oriel's unsupported codec, the world's clips off) shows the page's fallback with its reason: the
-// decoder's on the first run, the verdict's on the next (the clip never opened again).
+// decoder's on the first run, the verdict's on the next (the clip never opened again), from the lobby too.
+// I5 step 8's review: a viewer open longer than 10 s stops the world's clips ("viewer"), which reopen where they were;
+// in the lobby (no screen bound) the viewer's clip stops once its page or the viewer lets it go, and starts over.
 
 #include "building_support.hpp"
 #include "smoke_support.hpp"
@@ -123,14 +125,52 @@ void openViewer(Json& steps, int frame, std::string_view search) {
     steps.push_back(step(frame + 16, {{"ui_media", 1}}));
 }
 
-AppRun runRoom(const PlannedBuilding& building, std::string_view name, int frames, std::vector<std::string> extra) {
-    std::vector<std::string> arguments{"--start-room", building.roomOf("snes"), "--exit-after-frames", "--frames",
-                                       std::to_string(frames), "--fixed-dt", "0.016667", "--audio", "null"};
+AppRun runFrom(const PlannedBuilding& building, std::string_view name, std::vector<std::string> start, int frames,
+               std::vector<std::string> extra) {
+    std::vector<std::string> arguments = std::move(start);
+    for (std::string argument : {std::string("--exit-after-frames"), std::string("--frames"), std::to_string(frames),
+                                 std::string("--fixed-dt"), std::string("0.016667"), std::string("--audio"),
+                                 std::string("null")}) {
+        arguments.push_back(std::move(argument));
+    }
     arguments.insert(arguments.end(), extra.begin(), extra.end());
     AppRun run = runApp(retroverseExe(), building.dir, name, std::move(arguments));
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     return run;
+}
+
+/// A run started at the snes room's doorway.
+AppRun runRoom(const PlannedBuilding& building, std::string_view name, int frames, std::vector<std::string> extra) {
+    return runFrom(building, name, {"--start-room", building.roomOf("snes")}, frames, std::move(extra));
+}
+
+/// A run started in the ground floor's lobby (I5 step 8's review): no screen bound, the screens' service made unbound
+/// for the viewer's clip.
+AppRun runLobby(const PlannedBuilding& building, std::string_view name, int frames, std::vector<std::string> extra) {
+    return runFrom(building, name, {}, frames, std::move(extra));
+}
+
+/// The slot events of `video` with `action` for game `gameId` from frame `from` on.
+std::vector<rv::app::VideoSlotEventRecord> slotEventsFor(const rv::app::VideoRecord& video, std::string_view gameId,
+                                                         std::string_view action, std::uint64_t from = 0) {
+    std::vector<rv::app::VideoSlotEventRecord> found;
+    for (const rv::app::VideoSlotEventRecord& event : video.slotEvents) {
+        if (event.action == action && event.gameId == gameId && event.frame >= from) {
+            found.push_back(event);
+        }
+    }
+    return found;
+}
+
+/// The id of the bound screen of `kind` ("secondary"); empty without one.
+std::string screenOfKind(const rv::app::VideoRecord& video, std::string_view kind) {
+    for (const rv::app::VideoScreenRecord& screen : video.screens) {
+        if (screen.kind == kind) {
+            return screen.screen;
+        }
+    }
+    return {};
 }
 
 /// The F12 screenshots of a run (<data>/screenshots), in the order they were taken (their names).
@@ -339,6 +379,15 @@ TEST_CASE("media viewer: the videos page plays its clip with its sound, the worl
     CHECK(std::find(resumes.begin(), resumes.end(), "420:in-view") != resumes.end());
     CHECK(video.maxOpenDecoders <= 2);
     CHECK(video.maxDecoderThreads <= 2);
+    // The secondary TV's slot taken for the viewer's clip ("needed": it keeps its frame), and the viewer's texture gone
+    // once the viewer closed (I5 step 8's review).
+    const std::string secondary = screenOfKind(video, "secondary");
+    REQUIRE_FALSE(secondary.empty());
+    const std::vector<std::string> secondaryStops = slotEventsOf(video, secondary, "stop");
+    CHECK(std::find_if(secondaryStops.begin(), secondaryStops.end(), [](const std::string& stop) {
+              return stop.ends_with(":needed");
+          }) != secondaryStops.end());
+    CHECK(video.viewer.gpuBytes == 0);
 
     // The mix: the hero's tone heard before; under the viewer only the viewer's clip, at its full volume; silence while
     // it is paused.
@@ -380,6 +429,141 @@ TEST_CASE("media viewer: the videos page plays its clip with its sound, the worl
     REQUIRE(report.catalog.has_value());
     CHECK(report.catalog->open);
     CHECK(report.launches.empty());
+}
+
+TEST_CASE("media viewer: the world's clips stopped under a long-open viewer reopen where they were",
+          "[gpu][world][media_viewer]") {
+    // I5 step 8's review (ADR-0016 §10): open longer than kScreenStopAfterSeconds, the world's slots stop ("viewer")
+    // and keep their clips' positions, as a minimized window's do.
+    const PlannedBuilding building("media_viewer/long_open", true, "esde/snes-room", prepareRoom);
+    const AppRun first = runRoom(building, "first", 2, {});
+    const std::string cobalt = gameOf(*first.report, "Cobalt Compass (USA).sfc");
+    writeVideoJson(building, Json{{"rooms",
+                                   {{building.roomOf("snes"),
+                                     {{"hero",
+                                       {{"playlist", "explicit"},
+                                        {"games", Json::array({cobalt})},
+                                        {"previewDuration", 1},
+                                        {"showOnFocus", false}}}}}}}});
+    // Frame 166: the viewer on Amber Lantern's cover (no clip of its own asked for); frame 900 (12.2 s later): closed.
+    Json steps = Json::array();
+    openViewer(steps, 150, "amber");
+    steps.push_back(step(900, {{"ui_back", 1}}));
+    const fs::path script = writeScript(building, "long_open", steps);
+    const AppRun run = runRoom(building, "long_open", 960, {"--input-script", arg(script)});
+    INFO(run.describe());
+    const rv::app::VideoRecord& video = run.report->video;
+    REQUIRE(video.bound);
+    CHECK(eventsOf(run.report->screens, "closed") == std::vector<std::string>{"900::media"});
+    CHECK(video.viewer.decodersOpened == 0);
+
+    // The hero: paused as the viewer opened, stopped 10 s later ("viewer") at a position it keeps, reopened there once
+    // the viewer closed.
+    const std::vector<std::string> pauses = slotEventsOf(video, video.screen, "pause");
+    CHECK(std::find(pauses.begin(), pauses.end(), "166:viewer") != pauses.end());
+    std::optional<rv::app::VideoSlotEventRecord> stopped;
+    for (const rv::app::VideoSlotEventRecord& event : slotEventsFor(video, cobalt, "stop", 166)) {
+        if (std::find(event.screens.begin(), event.screens.end(), video.screen) != event.screens.end()) {
+            stopped = event;
+            break;
+        }
+    }
+    REQUIRE(stopped.has_value());
+    CHECK(stopped->reason == "viewer");
+    CHECK(stopped->frame >= 166 + 590);
+    CHECK(stopped->frame <= 166 + 610);
+    std::optional<rv::app::VideoSlotEventRecord> reopened;
+    for (const rv::app::VideoSlotEventRecord& event : slotEventsFor(video, cobalt, "open", 900)) {
+        if (std::find(event.screens.begin(), event.screens.end(), video.screen) != event.screens.end()) {
+            reopened = event;
+            break;
+        }
+    }
+    REQUIRE(reopened.has_value());
+    REQUIRE(reopened->fromSeconds.has_value());
+    WARN("the hero's clip stopped under the viewer at frame " << stopped->frame << ", reopened at frame "
+                                                              << reopened->frame << " at " << *reopened->fromSeconds
+                                                              << " s");
+    CHECK(*reopened->fromSeconds > 0.5); // it had played since its start choice, before the viewer opened
+    CHECK(*reopened->fromSeconds < 12.0);
+    CHECK(video.viewer.worldFramesWhileOpen == 0);
+}
+
+TEST_CASE("media viewer: in the lobby the viewer's clip stops once the viewer lets it go, and starts over",
+          "[gpu][world][media_viewer]") {
+    // I5 step 8's review: no screen is bound in the lobby (the service made unbound for the viewer): leaving the videos
+    // page or closing the viewer still stops its decoder, its texture goes and its sound fades out; coming back to the
+    // page opens the clip from its beginning.
+    const PlannedBuilding building("media_viewer/lobby", true, "esde/snes-room", prepareRoom);
+    // Frame 56: the viewer from the quick catalog on Amber Lantern; frames 60 to 75 to its clip (7 of 10); frame 180 the
+    // marquee (the clip let go), frame 215 the clip again, frame 260 the viewer closes.
+    Json steps = Json::array();
+    openViewer(steps, 40, "amber");
+    for (int frame = 60; frame <= 75; frame += 3) {
+        steps.push_back(step(frame, {{"ui_right", 1}}));
+    }
+    steps.push_back(step(180, {{"ui_right", 1}}));
+    steps.push_back(step(215, {{"ui_left", 1}}));
+    steps.push_back(step(260, {{"ui_back", 1}}));
+    const fs::path script = writeScript(building, "lobby", steps);
+    const fs::path mix = building.dir / "mix.wav";
+    const AppRun run = runLobby(building, "lobby", 330, {"--input-script", arg(script), "--audio-capture", arg(mix)});
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    const rv::app::GameScreensRecord& screens = report.screens;
+    const rv::app::VideoRecord& video = report.video;
+    const std::string amber = gameOf(report, "Amber Lantern (USA).sfc");
+    REQUIRE(screens.bound);
+    CHECK(eventsOf(screens, "page") == std::vector<std::string>{"56:covers:1", "60:backcovers:2", "63:physicalmedia:3",
+                                                                "66:3dboxes:4", "69:screenshots:5",
+                                                                "72:titlescreens:6", "75:videos:7", "180:marquees:8",
+                                                                "215:videos:7"});
+    CHECK(eventsOf(screens, "closed") == std::vector<std::string>{"260::media"});
+    // No world screen: the viewer's clip alone, asked twice, a decoder each time.
+    CHECK(video.screens.empty());
+    CHECK(video.viewer.clips == 2);
+    CHECK(video.viewer.decodersOpened == 2);
+    CHECK(video.viewer.game == amber);
+    // Each opening from the clip's beginning; each stopped once the page or the viewer let it go ("unwanted").
+    const std::vector<rv::app::VideoSlotEventRecord> opens = slotEventsFor(video, amber, "open");
+    REQUIRE(opens.size() == 2);
+    CHECK(opens[0].frame >= 75);
+    CHECK(opens[0].frame < 180);
+    CHECK(opens[1].frame >= 215);
+    CHECK(opens[1].frame < 260);
+    CHECK_FALSE(opens[0].fromSeconds.has_value());
+    CHECK_FALSE(opens[1].fromSeconds.has_value());
+    const std::vector<rv::app::VideoSlotEventRecord> stops = slotEventsFor(video, amber, "stop");
+    REQUIRE(stops.size() == 2);
+    CHECK(stops[0].frame >= 180);
+    CHECK(stops[0].frame <= 182);
+    CHECK(stops[0].reason == "unwanted");
+    CHECK(stops[1].frame >= 260);
+    CHECK(stops[1].frame <= 262);
+    CHECK(stops[1].reason == "unwanted");
+    // Its texture gone at the end, nothing else held.
+    CHECK(video.viewer.gpuBytes == 0);
+    CHECK(video.videoBytes == 0);
+    CHECK(video.maxDecoderThreads <= 2);
+    CHECK(video.waitsBeforeExit == 0);
+
+    // The mix: the clip's tone while it plays, silence once its page or the viewer let it go (after the fade).
+    REQUIRE(report.audio.has_value());
+    const rv::app::AudioRecord& audio = *report.audio;
+    REQUIRE(audio.captureStartSeconds.has_value());
+    auto wav = rv::audio::readWavFile(*audio.capture);
+    REQUIRE(wav.has_value());
+    const double start = *audio.captureStartSeconds;
+    const double playing = stereoAmplitude(*wav, start, 2.0, 2.9, kViewerTone);       // frames 120 to 174
+    const double afterLeaving = stereoAmplitude(*wav, start, 3.35, 3.55, kViewerTone); // frames 201 to 213
+    const double again = stereoAmplitude(*wav, start, 3.95, 4.3, kViewerTone);        // frames 237 to 258
+    const double afterClosing = stereoAmplitude(*wav, start, 4.7, 5.4, kViewerTone);  // frames 282 to 324
+    WARN("the viewer's tone playing " << playing << ", after leaving its page " << afterLeaving << ", playing again "
+                                      << again << ", after the close " << afterClosing);
+    CHECK(std::abs(20.0 * std::log10(playing / kToneAmplitude)) < 1.0);
+    CHECK(again > playing * 0.5);
+    CHECK(afterLeaving < playing * 0.01);
+    CHECK(afterClosing < playing * 0.01);
 }
 
 TEST_CASE("media viewer: a damaged clip shows the page's fallback with its reason, from its verdict once known",
@@ -424,4 +608,16 @@ TEST_CASE("media viewer: a damaged clip shows the page's fallback with its reaso
     CHECK(second.report->video.viewer.reason == "unsupported-codec");
     CHECK(second.report->video.decodersStarted == 0);
     static_cast<void>(requireScreenshot(second, secondShot, {1920, 1080}));
+
+    // I5 step 8's review: from the lobby, where no screen ever screened Opal Oriel's game (the service unbound), the
+    // verdict holds just the same (its file looked at for the viewer's clip alone).
+    const AppRun lobby = runLobby(building, "damaged_lobby", 90, {"--input-script", arg(script)});
+    INFO(lobby.describe());
+    CHECK(eventsOf(lobby.report->screens, "media") == std::vector<std::string>{"56::covers,videos"});
+    CHECK(eventsOf(lobby.report->screens, "video") == std::vector<std::string>{"60:videos:verdict unsupported-codec"});
+    CHECK(lobby.report->video.screens.empty());
+    CHECK(lobby.report->video.viewer.decodersOpened == 0);
+    CHECK(lobby.report->video.viewer.knownBad == 1);
+    CHECK(lobby.report->video.viewer.reason == "unsupported-codec");
+    CHECK(lobby.report->video.decodersStarted == 0);
 }
