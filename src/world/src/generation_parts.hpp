@@ -62,19 +62,10 @@ struct BuildingDigestInput {
     /// time budget); the same digest.
     bool checkedSelections = true;
 };
-/// The SHA-256 of the canonical text of the inputs' document (buildingInputDocument()), written straight from the
-/// inputs (writeBuildingInputText()) unless they hold what only the document can name (then through it, as before
-/// m3/preview-time), or a ScopedDocumentDigests is alive (plan_json.hpp).
+/// The SHA-256 of the canonical text of the inputs' document (generation.cpp's buildingInputDocument()), written
+/// straight from the inputs (its writeBuildingInputText()) unless they hold what only the document can name (then
+/// through it, as before m3/preview-time), or a ScopedDocumentDigests is alive (plan_json.hpp).
 [[nodiscard]] Expected<std::string> buildingInputDigest(const BuildingDigestInput& input);
-/// The inputs' document. Errors: those of roomSelectionToJson() (the reader's check of a selection) and of the
-/// documents of the configuration and the building.
-[[nodiscard]] Expected<nlohmann::json> buildingInputDocument(const BuildingDigestInput& input);
-/// The canonical text of buildingInputDocument() appended to `out` straight from the inputs: the selections' titles
-/// and unplaced games, most of the text, written without their documents, each room's data and the building's as
-/// documents (one per room data, however many systems share it). Errors (the caller then takes the document's path,
-/// which names the problem or makes the same digest): a selection that checkSelectionForm() refuses, a string that is
-/// not UTF-8.
-[[nodiscard]] Status writeBuildingInputText(const BuildingDigestInput& input, std::string& out);
 
 /// The form of a selection as the reader's check of its document (roomSelectionToJson()) would find it, without the
 /// document: a rule name and a sort-key version, the titles valid and in strict priority order with no game twice,

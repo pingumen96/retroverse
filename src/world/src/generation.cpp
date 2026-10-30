@@ -762,7 +762,7 @@ Expected<DigestDataTexts> digestDataTexts(const WorldData& data) {
 }
 
 /// roomSelectionDocument()'s text written straight from a selection whose form checkSelectionForm() accepted (its
-/// unplaced games sorted already).
+/// unplaced games sorted already). Mirror any change in room_selection.cpp's documentJson() and titleJson().
 void writeSelectionText(core::CanonicalTextWriter& out, const RoomSelection& selection) {
     out.beginObject();
     out.key("catalogSortKeyVersion");
@@ -858,6 +858,12 @@ Status checkSelectionForm(const RoomSelection& selection, std::string_view conte
     return ok();
 }
 
+namespace {
+
+/// The inputs' document (the digest's path through documents, as before m3/preview-time). Mirror any change in
+/// writeBuildingInputText(), which writes its text straight from the inputs (the regeneration tests compare both on
+/// every world fixture: detail::ScopedDocumentDigests). Errors: those of roomSelectionToJson() (the reader's check of
+/// a selection) and of the documents of the configuration and the building.
 Expected<Json> buildingInputDocument(const BuildingDigestInput& input) {
     auto config = digestConfigurationJson(input.config);
     if (!config) {
@@ -883,6 +889,11 @@ Expected<Json> buildingInputDocument(const BuildingDigestInput& input) {
                 {"worldSeed", input.seed}};
 }
 
+/// The canonical text of buildingInputDocument() appended to `out` straight from the inputs: the selections' titles
+/// and unplaced games, most of the text, written without their documents, each room's data and the building's as
+/// documents (one per room data, however many systems share it). Mirror any change in buildingInputDocument().
+/// Errors (the caller then takes the document's path, which names the problem or makes the same digest): a selection
+/// that checkSelectionForm() refuses, a string that is not UTF-8.
 Status writeBuildingInputText(const BuildingDigestInput& input, std::string& out) {
     auto config = digestConfigurationJson(input.config);
     if (!config) {
@@ -950,6 +961,8 @@ Status writeBuildingInputText(const BuildingDigestInput& input, std::string& out
     text.endObject();
     return text.finish();
 }
+
+} // namespace
 
 Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
     if (!documentDigests()) {

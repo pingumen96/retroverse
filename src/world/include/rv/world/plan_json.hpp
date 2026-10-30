@@ -67,6 +67,10 @@ namespace rv::world {
 /// The plan digest: the SHA-256 of writePlan()'s text, 64 lowercase hexadecimal digits (sha256Hex() of a text already
 /// written gives the same). Errors: those of planToJson().
 [[nodiscard]] Expected<std::string> planDigest(const WorldPlan& plan);
+/// planDigest() of a plan whose lists sortPlan() has sorted already, its text written straight from it (no document, no
+/// reader's check; m3/preview-time: the app's preview checks the plan it shows with it). Errors: InvalidArgument for a
+/// plan not of schema kPlanSchemaVersion; those of core::writeCanonicalJson() (a string that is not UTF-8).
+[[nodiscard]] Expected<std::string> sortedPlanDigest(const WorldPlan& sortedPlan);
 
 /// Reads a plan file's text back: schema 2 as it is, schema 1 as its content (schemaVersion 1, for lift()). Errors
 /// (context `context` and the line, "world-plan.json:12"): ParseError (not JSON), ValidationFailed (a text that is not

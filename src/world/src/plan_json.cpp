@@ -36,6 +36,8 @@ Json prefabJson(const PrefabRef& prefab) {
     return Json{{"kind", prefab.kind}, {"manifest", prefab.manifest}};
 }
 
+// roomJson() and documentJson() are the plan's document; writeDocumentText() below writes its text straight from the
+// plan for the digests (m3/preview-time): mirror any change there.
 Json roomJson(const Room& room) {
     Json sections = Json::array();
     for (const catalog::SystemName& system : room.sections) {
@@ -163,6 +165,7 @@ std::vector<UnplacedGame> readUnplacedList(const ObjectReader& reader, std::stri
 
 namespace {
 
+/// The plan's document (its lists sorted already). Mirror any change in writeDocumentText().
 Json documentJson(const WorldPlan& plan) {
     Json floors = Json::array();
     for (const Floor& floor : plan.floors) {
@@ -314,6 +317,8 @@ void writeUnplaced(core::CanonicalTextWriter& out, const UnplacedGame& unplaced)
     out.endObject();
 }
 
+/// documentJson()'s canonical text written straight from a sorted plan. Mirror any change in documentJson() and
+/// roomJson().
 void writeDocumentText(core::CanonicalTextWriter& out, const WorldPlan& plan) {
     out.beginObject();
     writeMember(out, "catalogSortKeyVersion", plan.catalogSortKeyVersion);
@@ -719,6 +724,16 @@ Expected<std::string> planDigest(const WorldPlan& plan) {
         return propagate(text.error());
     }
     return core::sha256Hex(*text);
+}
+
+Expected<std::string> sortedPlanDigest(const WorldPlan& sortedPlan) {
+    if (sortedPlan.schemaVersion != kPlanSchemaVersion) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "only schema " + std::to_string(kPlanSchemaVersion) + " is written; a plan of schema " +
+                             std::to_string(sortedPlan.schemaVersion) + " is lifted first (lift.hpp)",
+                         "/schemaVersion");
+    }
+    return detail::sortedPlanDigest(sortedPlan);
 }
 
 Expected<std::string> detail::writeSortedPlanText(const WorldPlan& sortedPlan) {
