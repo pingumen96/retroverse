@@ -19,6 +19,7 @@
 #include <rv/catalog/metadata.hpp>
 #include <rv/core/canonical_json.hpp>
 #include <rv/core/random.hpp>
+#include <rv/core/sha256.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/seeds.hpp>
 #include <rv/world/title_key.hpp>
@@ -681,55 +682,288 @@ RoomSelection sectionsSelection(const RoomId& room, std::span<const catalog::Sys
     return merged;
 }
 
-Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
-    auto config = worldConfigToJson(input.config);
-    if (!config) {
-        return propagate(config.error());
+namespace {
+
+/// The digest's configuration: the world's, but the keys that only draw it.
+Expected<Json> digestConfigurationJson(const WorldConfig& config) {
+    auto json = worldConfigToJson(config);
+    if (!json) {
+        return propagate(json.error());
     }
-    config->erase("reduceMotion");
-    config->erase("lightingProfile");
-    Json systems = Json::array();
-    Json rooms = Json::array();
-    // By the selections' rooms (room:<system>), whichever room or section each system stands in, so that a fresh
-    // building and its update hash alike.
+    json->erase("reduceMotion");
+    json->erase("lightingProfile");
+    return json;
+}
+
+/// The digest's rooms by the selections' rooms (room:<system>), whichever room or section each system stands in, so
+/// that a fresh building and its update hash alike.
+std::vector<std::pair<const RoomSelection*, const WorldData*>> sortedDigestRooms(const BuildingDigestInput& input) {
     std::vector<std::pair<const RoomSelection*, const WorldData*>> sorted = input.rooms;
     std::sort(sorted.begin(), sorted.end(),
               [](const auto& a, const auto& b) { return a.first->room < b.first->room; });
-    bool groundFloor = false;
-    for (const auto& [selection, data] : sorted) {
-        const catalog::SystemName& system = selection->room.system();
-        const auto tags = input.platformTags.find(system);
-        const std::vector<std::string> platformTags =
-            tags != input.platformTags.end() ? tags->second : std::vector<std::string>{};
-        const Classification classification = classify(system, platformTags, input.systems, input.building);
-        groundFloor = groundFloor || classification.floor == kGroundFloor;
-        // What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
-        // fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller
-        // knows (a selection file's none, the app's and the CLI's the catalog's), so that one catalog gives one plan.
-        Json row{{"row", systemEntryToJson(classification.entry)}, {"source", toString(classification.source)}};
-        if (classification.source == ClassificationSource::PlatformTag) {
-            row["matched"] = classification.matched.str();
+    return sorted;
+}
+
+/// What decided the system's place (ADR-0013 §2, §5): its own row, or the row its platform tags matched, or the
+/// fallback, the tags then in the row. A system with a row of its own hashes alike whatever tags its caller knows (a
+/// selection file's none, the app's and the CLI's the catalog's), so that one catalog gives one plan. `groundFloor`
+/// set when the system stands on the ground floor.
+Json digestSystemRow(const BuildingDigestInput& input, const RoomSelection& selection, bool& groundFloor) {
+    const catalog::SystemName& system = selection.room.system();
+    const auto tags = input.platformTags.find(system);
+    const std::vector<std::string> platformTags =
+        tags != input.platformTags.end() ? tags->second : std::vector<std::string>{};
+    const Classification classification = classify(system, platformTags, input.systems, input.building);
+    groundFloor = groundFloor || classification.floor == kGroundFloor;
+    Json row{{"row", systemEntryToJson(classification.entry)}, {"source", toString(classification.source)}};
+    if (classification.source == ClassificationSource::PlatformTag) {
+        row["matched"] = classification.matched.str();
+    }
+    return row;
+}
+
+/// The building's document, the hub's layout in it when a room of the ground floor is among the rooms (I6 step 5), so
+/// that the other floors' plans keep their provenance.
+Json digestBuildingJson(const BuildingData& building, bool groundFloor) {
+    Json json = buildingDataToJson(building);
+    if (groundFloor) {
+        json["hub"] = hubLayoutToJson(building.layout.hub);
+    }
+    return json;
+}
+
+/// roomInputJson()'s members taken from the room's data, written once per data as nested texts.
+struct DigestDataTexts {
+    std::string mediaFamily;
+    std::string platform;
+    std::string prefabs;
+    std::string roomTemplate;
+};
+
+Expected<DigestDataTexts> digestDataTexts(const WorldData& data) {
+    // roomInputJson() of an empty selection: the same members of the data.
+    auto room = roomInputJson(RoomSelection{}, data, false);
+    if (!room) {
+        return propagate(room.error());
+    }
+    DigestDataTexts texts;
+    const std::pair<const char*, std::string*> members[] = {{"mediaFamily", &texts.mediaFamily},
+                                                            {"platform", &texts.platform},
+                                                            {"prefabs", &texts.prefabs},
+                                                            {"template", &texts.roomTemplate}};
+    for (const auto& [key, text] : members) {
+        auto written = core::nestedCanonicalText(room->at(key));
+        if (!written) {
+            return propagate(written.error());
         }
-        systems.push_back(std::move(row));
+        *text = std::move(*written);
+    }
+    return texts;
+}
+
+/// roomSelectionDocument()'s text written straight from a selection whose form checkSelectionForm() accepted (its
+/// unplaced games sorted already).
+void writeSelectionText(core::CanonicalTextWriter& out, const RoomSelection& selection) {
+    out.beginObject();
+    out.key("catalogSortKeyVersion");
+    out.unsignedInteger(selection.catalogSortKeyVersion);
+    out.key("distinctTitles");
+    out.unsignedInteger(selection.distinctTitles);
+    out.key("eligibility");
+    out.string(toString(selection.eligibility));
+    out.key("room");
+    out.string(selection.room.toString());
+    out.key("titleKeyRule");
+    out.string(selection.titleKeyRule);
+    out.key("titles");
+    out.beginArray();
+    for (const RoomTitle& title : selection.titles) {
+        out.beginObject();
+        out.key("favorite");
+        out.boolean(title.favorite);
+        out.key("game");
+        out.string(title.game.toString());
+        out.key("playCount");
+        out.unsignedInteger(title.playCount);
+        out.key("rating");
+        if (title.ratingTenths) {
+            out.integer(*title.ratingTenths);
+        } else {
+            out.null();
+        }
+        out.key("sortKey");
+        out.string(title.sortKey);
+        out.key("titleKey");
+        out.string(title.titleKey);
+        out.endObject();
+    }
+    out.endArray();
+    out.key("unplaced");
+    out.beginArray();
+    for (const UnplacedGame& game : selection.unplaced) {
+        out.beginObject();
+        out.key("game");
+        out.string(game.game.toString());
+        out.key("reason");
+        out.string(toString(game.reason));
+        if (game.reason == UnplacedReason::DuplicateTitle || game.representative.isValid()) {
+            out.key("representative");
+            out.string(game.representative.toString());
+        }
+        out.key("room");
+        out.string(game.room.toString());
+        out.endObject();
+    }
+    out.endArray();
+    out.endObject();
+}
+
+} // namespace
+
+Status checkSelectionForm(const RoomSelection& selection, std::string_view context) {
+    const auto refuse = [&](std::string message) {
+        return makeError(ErrorCode::InvalidArgument, std::move(message), std::string(context));
+    };
+    if (!isValidRuleName(selection.titleKeyRule) || selection.catalogSortKeyVersion < 1 ||
+        selection.catalogSortKeyVersion > 999'999 || selection.room.empty()) {
+        return refuse("the selection's room, title-key rule or sort-key version is malformed");
+    }
+    if (selection.distinctTitles < selection.titles.size()) {
+        return refuse("the selection counts fewer distinct titles than titles");
+    }
+    std::vector<catalog::GameId> games;
+    games.reserve(selection.titles.size());
+    for (std::size_t i = 0; i < selection.titles.size(); ++i) {
+        const RoomTitle& title = selection.titles[i];
+        if (!title.game.isValid() || (title.ratingTenths && (*title.ratingTenths < 0 || *title.ratingTenths > 10))) {
+            return refuse("a title of the selection is malformed: " + title.game.toString());
+        }
+        if (i > 0 && !priorityLess(selection.titles[i - 1], title)) {
+            return refuse("the selection's titles are not in priority order at " + title.game.toString());
+        }
+        games.push_back(title.game);
+    }
+    std::sort(games.begin(), games.end());
+    if (std::adjacent_find(games.begin(), games.end()) != games.end()) {
+        return refuse("a game is twice among the selection's titles");
+    }
+    for (std::size_t i = 0; i < selection.unplaced.size(); ++i) {
+        const UnplacedGame& game = selection.unplaced[i];
+        const bool duplicate = game.reason == UnplacedReason::DuplicateTitle;
+        if (!game.game.isValid() || game.room != selection.room || duplicate != game.representative.isValid() ||
+            (i > 0 && !(selection.unplaced[i - 1] < game))) {
+            return refuse("an unplaced game of the selection is malformed or out of order: " + game.game.toString());
+        }
+    }
+    return ok();
+}
+
+Expected<Json> buildingInputDocument(const BuildingDigestInput& input) {
+    auto config = digestConfigurationJson(input.config);
+    if (!config) {
+        return propagate(config.error());
+    }
+    Json systems = Json::array();
+    Json rooms = Json::array();
+    bool groundFloor = false;
+    for (const auto& [selection, data] : sortedDigestRooms(input)) {
+        systems.push_back(digestSystemRow(input, *selection, groundFloor));
         auto room = roomInputJson(*selection, *data, input.checkedSelections);
         if (!room) {
             return propagate(room.error());
         }
         rooms.push_back(std::move(*room));
     }
-    Json document{{"building", buildingDataToJson(input.building)},
-                  {"configuration", std::move(*config)},
-                  {"generatorVersion", kGeneratorVersion.toString()},
-                  {"library", input.library.str()},
-                  {"rooms", std::move(rooms)},
-                  {"systems", std::move(systems)},
-                  {"worldSeed", input.seed}};
-    // The hub places the ground floor's rooms (I6 step 5): hashed when one of them is among the rooms, so that the
-    // other floors' plans keep their provenance.
-    if (groundFloor) {
-        document["building"]["hub"] = hubLayoutToJson(input.building.layout.hub);
+    return Json{{"building", digestBuildingJson(input.building, groundFloor)},
+                {"configuration", std::move(*config)},
+                {"generatorVersion", kGeneratorVersion.toString()},
+                {"library", input.library.str()},
+                {"rooms", std::move(rooms)},
+                {"systems", std::move(systems)},
+                {"worldSeed", input.seed}};
+}
+
+Status writeBuildingInputText(const BuildingDigestInput& input, std::string& out) {
+    auto config = digestConfigurationJson(input.config);
+    if (!config) {
+        return propagate(config.error());
     }
-    return core::canonicalJsonDigest(document);
+    const auto sorted = sortedDigestRooms(input);
+    // The selections' form first: one the reader's check would refuse goes through the document, which names it.
+    for (const auto& [selection, data] : sorted) {
+        if (Status form = checkSelectionForm(*selection, "inputDigest"); !form) {
+            return form;
+        }
+    }
+    Json systems = Json::array();
+    bool groundFloor = false;
+    for (const auto& [selection, data] : sorted) {
+        systems.push_back(digestSystemRow(input, *selection, groundFloor));
+    }
+    std::map<const WorldData*, DigestDataTexts> dataTexts;
+    core::CanonicalTextWriter text(out);
+    text.beginObject();
+    text.key("building");
+    text.value(digestBuildingJson(input.building, groundFloor));
+    text.key("configuration");
+    text.value(*config);
+    text.key("generatorVersion");
+    text.string(kGeneratorVersion.toString());
+    text.key("library");
+    text.string(input.library.str());
+    text.key("rooms");
+    text.beginArray();
+    for (const auto& [selection, data] : sorted) {
+        auto found = dataTexts.find(data);
+        if (found == dataTexts.end()) {
+            auto texts = digestDataTexts(*data);
+            if (!texts) {
+                return propagate(texts.error());
+            }
+            found = dataTexts.emplace(data, std::move(*texts)).first;
+        }
+        const DigestDataTexts& texts = found->second;
+        text.beginObject();
+        text.key("mediaFamily");
+        text.raw(texts.mediaFamily);
+        text.key("platform");
+        text.raw(texts.platform);
+        text.key("prefabs");
+        text.raw(texts.prefabs);
+        text.key("room");
+        text.string(selection->room.toString());
+        text.key("selection");
+        writeSelectionText(text, *selection);
+        text.key("template");
+        text.raw(texts.roomTemplate);
+        text.endObject();
+    }
+    text.endArray();
+    text.key("systems");
+    text.beginArray();
+    for (const Json& row : systems) {
+        text.value(row);
+    }
+    text.endArray();
+    text.key("worldSeed");
+    text.unsignedInteger(input.seed);
+    text.endObject();
+    return text.finish();
+}
+
+Expected<std::string> buildingInputDigest(const BuildingDigestInput& input) {
+    if (!documentDigests()) {
+        std::string text;
+        if (writeBuildingInputText(input, text)) {
+            return core::sha256Hex(text);
+        }
+        // The document names what the direct text could not take, or makes the same digest.
+    }
+    auto document = buildingInputDocument(input);
+    if (!document) {
+        return propagate(document.error());
+    }
+    return core::canonicalJsonDigest(*document);
 }
 
 Expected<std::string> overridesDigestTerm(const WorldOverrides& honoured) {

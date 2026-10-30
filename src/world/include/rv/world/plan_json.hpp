@@ -87,4 +87,30 @@ namespace rv::world {
 [[nodiscard]] Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan,
                                                                          const std::set<RoomId>& rooms);
 
+namespace detail {
+
+// The digests' canonical texts written straight from the plan and the inputs (m3/preview-time, docs/i4b/preview-time.md):
+// a regeneration's digests of a whole world (the plan's, the building's inputs') were most of a room's preview when
+// they built a nlohmann::json document first. The texts are the documents' byte for byte; a value the direct writer
+// cannot take (a string that is not UTF-8, an input the reader's check would refuse) goes through the document, which
+// names the error as before. Public for their tests.
+
+/// writePlan()'s text of a plan whose lists sortPlan() has sorted already, written straight from it (no document, no
+/// reader's check). Errors: InvalidArgument for a string that is not UTF-8 (without the field's pointer).
+[[nodiscard]] Expected<std::string> writeSortedPlanText(const WorldPlan& sortedPlan);
+
+/// While one is alive on a thread, that thread's digests are made through the documents, as before m3/preview-time
+/// (the comparison tests run both paths on every world fixture).
+class ScopedDocumentDigests {
+public:
+    ScopedDocumentDigests() noexcept;
+    ~ScopedDocumentDigests();
+    ScopedDocumentDigests(const ScopedDocumentDigests&) = delete;
+    ScopedDocumentDigests& operator=(const ScopedDocumentDigests&) = delete;
+};
+/// Whether a ScopedDocumentDigests is alive on this thread.
+[[nodiscard]] bool documentDigests() noexcept;
+
+} // namespace detail
+
 } // namespace rv::world

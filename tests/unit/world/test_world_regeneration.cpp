@@ -1314,3 +1314,172 @@ TEST_CASE("world/regeneration: refusals", "[world][regeneration]") {
     CHECK(RegenerationScope::ofWorld().toString() == "world");
     CHECK(RegenerationScope::ofRoom(*RoomId::parse("area:arcade")).toString() == "area:arcade");
 }
+
+// m3/preview-time: the plan's and the inputs' digests are written straight from the plan and the inputs, without their
+// documents; the golden plans prove the generation's, the update's and the regeneration's digests unchanged, and this
+// case compares the two paths (rv::world::detail::ScopedDocumentDigests: the documents', as before) on every world
+// fixture: each golden plan's text, every scope of the golden building and of the SNES room's golden plans with the
+// catalog unchanged, grown and with a pin, the building generated and updated, and the selections the direct path
+// leaves to the documents (a malformed one refused alike).
+TEST_CASE("world/regeneration: the digests written straight from the plan and the inputs are the documents'",
+          "[world][regeneration]") {
+    using rv::world::detail::ScopedDocumentDigests;
+    // Each golden plan's text is its plan written straight from it.
+    std::size_t plans = 0;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(kGoldenDir)) {
+        if (entry.path().extension() != ".json") {
+            continue;
+        }
+        const std::string name = rv::core::pathToUtf8(entry.path().filename());
+        INFO(name);
+        auto text = rv::core::readTextFile(entry.path());
+        REQUIRE(text.has_value());
+        auto plan = rv::world::readPlan(*text, name);
+        REQUIRE(plan.has_value());
+        auto direct = rv::world::detail::writeSortedPlanText(*plan);
+        REQUIRE(direct.has_value());
+        CHECK(*direct == *text);
+        ++plans;
+    }
+    CHECK(plans >= 30);
+
+    const auto compare = [](const WorldPlan& previous, const Inputs& inputs, const RegenerationScope& scope,
+                            const WorldOverrides& overrides) {
+        INFO(scope.toString());
+        const Regeneration direct = regenerateOf(previous, inputs, scope, overrides);
+        const Regeneration documents = [&] {
+            const ScopedDocumentDigests through;
+            REQUIRE(rv::world::detail::documentDigests());
+            return regenerateOf(previous, inputs, scope, overrides);
+        }();
+        CHECK_FALSE(rv::world::detail::documentDigests());
+        CHECK(direct.result.plan.inputDigest == documents.result.plan.inputDigest);
+        CHECK(direct.result.changes.digestBefore == documents.result.changes.digestBefore);
+        CHECK(direct.result.changes.digestAfter == documents.result.changes.digestAfter);
+        CHECK(direct.result.changes.digestAfter == rv::core::sha256Hex(planText(direct.result.plan)));
+        CHECK(planText(direct.result.plan) == planText(documents.result.plan));
+        CHECK(direct.impact == documents.impact);
+        CHECK(direct.overrides == documents.overrides);
+    };
+    // The SNES room's golden plans: unchanged, grown by ten titles, a game pinned where it stands.
+    for (const auto& [titles, seed] : std::vector<std::pair<std::size_t, std::uint64_t>>{
+             {0, 102938}, {15, 102938}, {57, 7}, {890, 102938}, {2000, 0xFFFFFFFFFFFFFFFF}}) {
+        const std::string name = fmt::format("plan-{}-seed-{}.json", titles, seed);
+        INFO(name);
+        auto golden = rv::core::readTextFile(kGoldenDir / name);
+        REQUIRE(golden.has_value());
+        auto plan = rv::world::readPlan(*golden, name);
+        REQUIRE(plan.has_value());
+        Inputs inputs;
+        inputs.selections = {makeSelection(titles, kSelectionSeed)};
+        inputs.config = rv::test::world::roomConfig(seed);
+        Inputs grown = inputs;
+        grown.selections = {makeSelection(titles + 10, kSelectionSeed)};
+        WorldOverrides pinned;
+        if (!plan->placements.empty()) {
+            const Placement& placement = plan->placements[plan->placements.size() / 2];
+            pinned.gamePins.push_back({placement.game, placement.slot, kProvenance, std::nullopt});
+        }
+        for (const RegenerationScope& scope :
+             {RegenerationScope::ofRoom(*RoomId::parse("room:snes")), RegenerationScope::ofFloor("gen4"),
+              RegenerationScope::ofWorld()}) {
+            compare(*plan, inputs, scope, {});
+            compare(*plan, grown, scope, {});
+            compare(*plan, inputs, scope, pinned);
+        }
+    }
+    // The golden building: every room, every floor, the world; and a system grown.
+    auto golden = rv::core::readTextFile(kGoldenDir / "building-esde-seed-102938.json");
+    REQUIRE(golden.has_value());
+    auto building = rv::world::readPlan(*golden, "building-esde-seed-102938.json");
+    REQUIRE(building.has_value());
+    const Inputs inputs = goldenBuildingInputs();
+    Inputs grown = inputs;
+    for (RoomSelection& selection : grown.selections) {
+        if (selection.room == *RoomId::parse("room:psx")) {
+            const RoomId room = selection.room;
+            selection = makeSelection(55, 4005);
+            selection.room = room;
+            for (rv::world::UnplacedGame& game : selection.unplaced) {
+                game.room = room;
+            }
+        }
+    }
+    std::vector<RegenerationScope> scopes{RegenerationScope::ofWorld()};
+    for (const rv::world::Room& room : building->rooms) {
+        scopes.push_back(RegenerationScope::ofRoom(room.id));
+    }
+    for (const rv::world::Floor& floor : building->floors) {
+        scopes.push_back(RegenerationScope::ofFloor(floor.id));
+    }
+    for (const RegenerationScope& scope : scopes) {
+        compare(*building, inputs, scope, {});
+        compare(*building, grown, scope, {});
+    }
+
+    // The building generated and updated (the update's selections taken without the reader's check).
+    const rv::test::world::BuildingWorld world = [] {
+        rv::test::world::BuildingWorld shipped = rv::test::world::shippedWorld(kWorldSeed);
+        shipped.tags[*rv::catalog::SystemName::parse("pocketlab")] = {"gb"};
+        return shipped;
+    }();
+    std::vector<RoomSelection> selections;
+    std::uint64_t selectionSeed = 4000;
+    for (const auto& [system, count] : std::vector<std::pair<std::string_view, std::size_t>>{
+             {"amiga", 20}, {"gb", 30}, {"mame", 15}, {"pocketlab", 6}, {"pokemini", 8}, {"psx", 40}, {"snes", 40}}) {
+        selections.push_back(rv::test::world::systemSelection(system, count, selectionSeed++, system == "mame" ? 25 : 0));
+    }
+    const GenerationResult generated = rv::test::world::generateBuildingOf(world, selections);
+    const GenerationResult generatedThrough = [&] {
+        const ScopedDocumentDigests through;
+        return rv::test::world::generateBuildingOf(world, selections);
+    }();
+    CHECK(planText(generated.plan) == *golden);
+    CHECK(planText(generatedThrough.plan) == *golden);
+    CHECK(generated.changes.digestAfter == generatedThrough.changes.digestAfter);
+    std::vector<RoomSelection> more = selections;
+    more.push_back(rv::test::world::systemSelection("megadrive", 12, 3800));
+    const GenerationResult updated = rv::test::world::updateBuildingOf(world, generated.plan, more);
+    const GenerationResult updatedThrough = [&] {
+        const ScopedDocumentDigests through;
+        return rv::test::world::updateBuildingOf(world, generated.plan, more);
+    }();
+    CHECK(planText(updated.plan) == planText(updatedThrough.plan));
+    CHECK(updated.plan.inputDigest == updatedThrough.plan.inputDigest);
+    CHECK(updated.changes.digestBefore == updatedThrough.changes.digestBefore);
+    CHECK(updated.changes.digestAfter == updatedThrough.changes.digestAfter);
+
+    // Selections the direct path leaves to the documents: unplaced games out of order (the document sorts them: the
+    // same digest), a rating past 10 (the reader's check refuses it: the same error).
+    Inputs unsorted = inputs;
+    for (RoomSelection& selection : unsorted.selections) {
+        std::reverse(selection.unplaced.begin(), selection.unplaced.end());
+    }
+    compare(*building, unsorted, RegenerationScope::ofWorld(), {});
+    const Regeneration sortedFirst = regenerateOf(*building, inputs, RegenerationScope::ofWorld());
+    CHECK(regenerateOf(*building, unsorted, RegenerationScope::ofWorld()).result.plan.inputDigest ==
+          sortedFirst.result.plan.inputDigest);
+    Inputs malformed = inputs;
+    REQUIRE_FALSE(malformed.selections.back().titles.empty());
+    malformed.selections.back().titles.front().ratingTenths = 11;
+    const auto refusedBy = [&](bool throughDocuments) {
+        std::optional<ScopedDocumentDigests> through;
+        if (throughDocuments) {
+            through.emplace();
+        }
+        rv::world::RegenerationInput input;
+        input.scope = RegenerationScope::ofRoom(*RoomId::parse("room:amiga"));
+        input.library = rv::test::world::library();
+        input.selections = malformed.selections;
+        input.platformTags = malformed.tags;
+        input.config = malformed.config;
+        input.previous = *building;
+        return rv::world::regenerate(input, malformed.building, malformed.systems, loader());
+    };
+    const auto refusedDirect = refusedBy(false);
+    const auto refusedThrough = refusedBy(true);
+    REQUIRE_FALSE(refusedDirect.has_value());
+    REQUIRE_FALSE(refusedThrough.has_value());
+    CHECK(refusedDirect.error().toString() == refusedThrough.error().toString());
+    CHECK(refusedDirect.error().code == rv::ErrorCode::InvalidArgument);
+}

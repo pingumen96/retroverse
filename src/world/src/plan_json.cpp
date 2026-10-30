@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #include <rv/core/canonical_json.hpp>
@@ -208,6 +209,192 @@ Json documentJson(const WorldPlan& plan) {
                 {"lights", std::move(lights)},
                 {"unplaced", std::move(unplaced)}};
 }
+
+// documentJson()'s text written straight from the plan (m3/preview-time): each object's members in the order of their
+// keys, as the canonical form sorts them.
+
+template <class Integer>
+void writeInteger(core::CanonicalTextWriter& out, Integer value) {
+    static_assert(std::is_integral_v<Integer> && !std::is_same_v<Integer, bool>);
+    if constexpr (std::is_signed_v<Integer>) {
+        out.integer(static_cast<std::int64_t>(value));
+    } else {
+        out.unsignedInteger(static_cast<std::uint64_t>(value));
+    }
+}
+
+template <class Integer>
+    requires std::is_integral_v<Integer>
+void writeMember(core::CanonicalTextWriter& out, std::string_view key, Integer value) {
+    out.key(key);
+    writeInteger(out, value);
+}
+
+void writeMember(core::CanonicalTextWriter& out, std::string_view key, std::string_view value) {
+    out.key(key);
+    out.string(value);
+}
+
+void writePrefab(core::CanonicalTextWriter& out, const PrefabRef& prefab) {
+    out.beginObject();
+    writeMember(out, "kind", prefab.kind);
+    writeMember(out, "manifest", prefab.manifest);
+    out.endObject();
+}
+
+void writeRoom(core::CanonicalTextWriter& out, const Room& room) {
+    out.beginObject();
+    if (!room.expands.empty()) {
+        writeMember(out, "expands", room.expands.toString());
+    }
+    writeMember(out, "floor", room.floor);
+    writeMember(out, "generatorVersion", room.generatorVersion.toString());
+    writeMember(out, "growthSteps", room.growthSteps);
+    writeMember(out, "heightMm", room.heightMm);
+    writeMember(out, "id", room.id.toString());
+    writeMember(out, "kind", toString(room.kind));
+    writeMember(out, "maxXMm", room.maxXMm);
+    writeMember(out, "maxZMm", room.maxZMm);
+    writeMember(out, "mediaFamily", room.mediaFamily);
+    writeMember(out, "minXMm", room.minXMm);
+    writeMember(out, "minZMm", room.minZMm);
+    out.key("placement");
+    out.beginObject();
+    writeMember(out, "xMm", room.placement.xMm);
+    writeMember(out, "yawHalfTurns", room.placement.yawHalfTurns);
+    writeMember(out, "zMm", room.placement.zMm);
+    out.endObject();
+    out.key("sections");
+    out.beginArray();
+    for (const catalog::SystemName& system : room.sections) {
+        out.string(system.str());
+    }
+    out.endArray();
+    writeMember(out, "seed", room.seed);
+    writeMember(out, "template", room.templateId);
+    writeMember(out, "templateVersion", room.templateVersion);
+    writeMember(out, "themePack", room.themePack);
+    out.endObject();
+}
+
+void writeFixture(core::CanonicalTextWriter& out, const Fixture& fixture) {
+    out.beginObject();
+    writeMember(out, "depthMm", fixture.depthMm);
+    writeMember(out, "heightMm", fixture.heightMm);
+    writeMember(out, "id", fixture.id.toString());
+    out.key("levels");
+    out.beginArray();
+    for (const FixtureLevel& level : fixture.levels) {
+        out.beginObject();
+        writeMember(out, "level", level.level);
+        writeMember(out, "section", toString(level.section));
+        writeMember(out, "slots", level.slots);
+        out.endObject();
+    }
+    out.endArray();
+    out.key("prefab");
+    writePrefab(out, fixture.prefab);
+    writeMember(out, "role", toString(fixture.role));
+    writeMember(out, "widthMm", fixture.widthMm);
+    writeMember(out, "xMm", fixture.xMm);
+    writeMember(out, "yMm", fixture.yMm);
+    writeMember(out, "yawCdeg", fixture.yawCdeg);
+    writeMember(out, "zMm", fixture.zMm);
+    out.endObject();
+}
+
+void writeUnplaced(core::CanonicalTextWriter& out, const UnplacedGame& unplaced) {
+    out.beginObject();
+    writeMember(out, "game", unplaced.game.toString());
+    writeMember(out, "reason", toString(unplaced.reason));
+    if (unplaced.reason == UnplacedReason::DuplicateTitle || unplaced.representative.isValid()) {
+        writeMember(out, "representative", unplaced.representative.toString());
+    }
+    writeMember(out, "room", unplaced.room.toString());
+    out.endObject();
+}
+
+void writeDocumentText(core::CanonicalTextWriter& out, const WorldPlan& plan) {
+    out.beginObject();
+    writeMember(out, "catalogSortKeyVersion", plan.catalogSortKeyVersion);
+    out.key("dressing");
+    out.beginArray();
+    for (const DressedLevel& dressed : plan.dressing) {
+        out.beginObject();
+        writeMember(out, "count", dressed.count);
+        writeMember(out, "firstSlot", dressed.firstSlot);
+        writeMember(out, "level", dressed.level.toString());
+        out.key("prop");
+        writePrefab(out, dressed.prop);
+        out.endObject();
+    }
+    out.endArray();
+    out.key("fixtures");
+    out.beginArray();
+    for (const Fixture& fixture : plan.fixtures) {
+        writeFixture(out, fixture);
+    }
+    out.endArray();
+    out.key("floors");
+    out.beginArray();
+    for (const Floor& floor : plan.floors) {
+        out.beginObject();
+        writeMember(out, "id", floor.id);
+        writeMember(out, "order", floor.order);
+        out.endObject();
+    }
+    out.endArray();
+    writeMember(out, "generatorVersion", plan.generatorVersion.toString());
+    writeMember(out, "inputDigest", plan.inputDigest);
+    writeMember(out, "library", plan.library.str());
+    out.key("lights");
+    out.beginArray();
+    for (const PlanLight& light : plan.lights) {
+        out.beginObject();
+        writeMember(out, "id", light.id.toString());
+        writeMember(out, "role", toString(light.role));
+        writeMember(out, "spanMm", light.spanMm);
+        writeMember(out, "targetXMm", light.targetXMm);
+        writeMember(out, "targetYMm", light.targetYMm);
+        writeMember(out, "targetZMm", light.targetZMm);
+        writeMember(out, "xMm", light.xMm);
+        writeMember(out, "yMm", light.yMm);
+        writeMember(out, "zMm", light.zMm);
+        out.endObject();
+    }
+    out.endArray();
+    out.key("placements");
+    out.beginArray();
+    for (const Placement& placement : plan.placements) {
+        out.beginObject();
+        writeMember(out, "game", placement.game.toString());
+        writeMember(out, "insetMm", placement.insetMm);
+        writeMember(out, "slot", placement.slot.toString());
+        writeMember(out, "yawCdeg", placement.yawCdeg);
+        out.endObject();
+    }
+    out.endArray();
+    writeMember(out, "preset", plan.preset);
+    writeMember(out, "randomAlgorithm", plan.randomAlgorithm);
+    out.key("rooms");
+    out.beginArray();
+    for (const Room& room : plan.rooms) {
+        writeRoom(out, room);
+    }
+    out.endArray();
+    writeMember(out, "schemaVersion", plan.schemaVersion);
+    writeMember(out, "seed", plan.seed);
+    writeMember(out, "titleKeyRule", plan.titleKeyRule);
+    out.key("unplaced");
+    out.beginArray();
+    for (const UnplacedGame& game : plan.unplaced) {
+        writeUnplaced(out, game);
+    }
+    out.endArray();
+    out.endObject();
+}
+
+thread_local int t_documentDigests = 0;
 
 /// The keys of a room of each schema.
 const std::initializer_list<std::string_view> kRoomKeysV1{"growthSteps", "heightMm", "id", "maxXMm", "maxZMm",
@@ -534,8 +721,36 @@ Expected<std::string> planDigest(const WorldPlan& plan) {
     return core::sha256Hex(*text);
 }
 
+Expected<std::string> detail::writeSortedPlanText(const WorldPlan& sortedPlan) {
+    std::string text;
+    core::CanonicalTextWriter out(text);
+    writeDocumentText(out, sortedPlan);
+    if (Status written = out.finish(); !written) {
+        return propagate(written.error());
+    }
+    return text;
+}
+
 Expected<std::string> detail::sortedPlanDigest(const WorldPlan& sortedPlan) {
+    if (!documentDigests()) {
+        if (auto text = writeSortedPlanText(sortedPlan)) {
+            return core::sha256Hex(*text);
+        }
+        // The document names what the direct text could not take.
+    }
     return core::canonicalJsonDigest(documentJson(sortedPlan));
+}
+
+detail::ScopedDocumentDigests::ScopedDocumentDigests() noexcept {
+    ++t_documentDigests;
+}
+
+detail::ScopedDocumentDigests::~ScopedDocumentDigests() {
+    --t_documentDigests;
+}
+
+bool detail::documentDigests() noexcept {
+    return t_documentDigests > 0;
 }
 
 Expected<WorldPlan> readPlan(std::string_view text, std::string_view context) {
