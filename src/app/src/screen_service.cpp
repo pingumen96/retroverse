@@ -233,8 +233,8 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
     // so that its material has a base colour texture to override), of the room asked for.
     const auto binding = [&](std::size_t index, ScreenKind kind) -> std::optional<ScreenBinding> {
         const scene::SceneObject& object = description.objects[index];
-        if (object.source != scene::SceneObject::Source::Prefab || !object.texturesByRole.contains("screen") ||
-            index >= instance.objectBounds().size() || (idPrefix && !object.id.starts_with(*idPrefix))) {
+        if (!screenShowsPictures(object) || index >= instance.objectBounds().size() ||
+            (idPrefix && !object.id.starts_with(*idPrefix))) {
             return std::nullopt;
         }
         const std::optional<scene::MaterialHandle> material = screenMaterial(object, instance, materials);
@@ -257,24 +257,13 @@ std::vector<ScreenBinding> findScreens(const scene::SceneDescription& descriptio
     // The hero by its role (I5 step 3): the hero corner's CRT ("...fx:<socket>.crt", or the arcade's hero cabinet that
     // stands for it with the part's id, I6 step 6), else the first CRT (a hand-made scene's: the test room's,
     // screens_four's). The kind and the id first: an arcade's hundreds of cabinets are never bound to be refused.
-    std::optional<std::size_t> heroIndex;
+    // heroScreenIndex() is the rule the screens' CRT looks follow too (I5 step 6's review: crt_looks.hpp).
+    const std::optional<std::size_t> heroIndex = heroScreenIndex(description.objects, [&](std::size_t index) {
+        return binding(index, ScreenKind::Hero).has_value();
+    });
     std::optional<ScreenBinding> hero;
-    for (std::size_t index = 0; index < description.objects.size(); ++index) {
-        const scene::SceneObject& object = description.objects[index];
-        const bool byRole = (object.kind == "crt" || object.kind == kCabinetPrefabKind) &&
-                            object.id.ends_with(kHeroCrtIdSuffix);
-        if (!byRole && (heroIndex || object.kind != "crt")) {
-            continue;
-        }
-        std::optional<ScreenBinding> found = binding(index, ScreenKind::Hero);
-        if (!found) {
-            continue;
-        }
-        heroIndex = index;
-        hero = std::move(found);
-        if (byRole) {
-            break;
-        }
+    if (heroIndex) {
+        hero = binding(*heroIndex, ScreenKind::Hero);
     }
     if (!hero) {
         return screens;

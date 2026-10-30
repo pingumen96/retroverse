@@ -1,6 +1,8 @@
 #include <rv/app/crt_looks.hpp>
 
 #include <cstddef>
+#include <set>
+#include <string>
 #include <utility>
 
 #include <rv/app/cabinet_screens.hpp>
@@ -92,10 +94,32 @@ std::string screenRoomOf(std::string_view objectId, std::string_view sceneName) 
     return std::string(slash == std::string_view::npos || slash == 0 ? sceneName : objectId.substr(0, slash));
 }
 
-std::optional<ScreenKind> screenKindOf(const scene::SceneObject& object, bool firstCrt) {
-    const bool heroRole = (object.kind == "crt" || object.kind == kCabinetPrefabKind) &&
-                          object.id.ends_with(kHeroCrtIdSuffix);
-    if (heroRole || (object.kind == "crt" && firstCrt)) {
+bool holdsHeroRole(const scene::SceneObject& object) noexcept {
+    return (object.kind == "crt" || object.kind == kCabinetPrefabKind) && object.id.ends_with(kHeroCrtIdSuffix);
+}
+
+bool screenShowsPictures(const scene::SceneObject& object) noexcept {
+    return object.source == scene::SceneObject::Source::Prefab && object.texturesByRole.contains("screen");
+}
+
+std::optional<std::size_t> heroScreenIndex(std::span<const scene::SceneObject> objects,
+                                           const std::function<bool(std::size_t)>& canBind) {
+    std::optional<std::size_t> firstCrt;
+    for (std::size_t index = 0; index < objects.size(); ++index) {
+        const scene::SceneObject& object = objects[index];
+        if (holdsHeroRole(object)) {
+            if (canBind(index)) {
+                return index;
+            }
+        } else if (!firstCrt && object.kind == "crt" && canBind(index)) {
+            firstCrt = index;
+        }
+    }
+    return firstCrt;
+}
+
+std::optional<ScreenKind> screenKindOf(const scene::SceneObject& object, bool hero) {
+    if (hero) {
         return ScreenKind::Hero;
     }
     if (object.kind == "crt" || object.kind == world::kSecondaryTvKind) {
@@ -137,23 +161,6 @@ std::vector<ScreenLookApplied> ScreenLooks::applied() const {
 
 std::size_t applyScreenLooks(SceneContentPlan& plan, std::span<const scene::SceneObject> objects,
                              std::string_view sceneName, ScreenLooks& looks) {
-    // A hand-made scene's hero is its first crt, unless an object holds the hero's role (findScreens()).
-    bool heroByRole = false;
-    for (const scene::SceneObject& object : objects) {
-        if ((object.kind == "crt" || object.kind == kCabinetPrefabKind) && object.id.ends_with(kHeroCrtIdSuffix)) {
-            heroByRole = true;
-            break;
-        }
-    }
-    std::optional<std::size_t> firstCrt;
-    if (!heroByRole) {
-        for (std::size_t index = 0; index < objects.size(); ++index) {
-            if (objects[index].kind == "crt") {
-                firstCrt = index;
-                break;
-            }
-        }
-    }
     // Each material instance's object: the first item drawn with it (an instance is one object's part).
     std::vector<std::optional<std::size_t>> objectOf(plan.materials.size());
     for (const PlannedItem& item : plan.items) {
@@ -161,18 +168,48 @@ std::size_t applyScreenLooks(SceneContentPlan& plan, std::span<const scene::Scen
             objectOf[item.material] = item.object;
         }
     }
+    // The material instance of a screen, if `index` is one: "<object id>/screen..." drawn by that object.
+    const auto screenOf = [&](std::size_t index) -> std::optional<std::size_t> {
+        const std::optional<std::size_t> owner = objectOf[index];
+        if (!owner || *owner >= objects.size()) {
+            return std::nullopt;
+        }
+        const std::optional<std::string_view> id = screenObjectOf(plan.materials[index].key);
+        return id && *id == objects[*owner].id ? owner : std::nullopt;
+    };
+    // The objects the screens' service can bind (findScreens()): a screen that shows pictures, drawn with a screen
+    // instance that has its picture (the base colour texture the service overrides), by room.
+    std::vector<bool> bindable(objects.size(), false);
+    std::set<std::string, std::less<>> rooms;
+    for (std::size_t index = 0; index < plan.materials.size(); ++index) {
+        const std::optional<std::size_t> owner = screenOf(index);
+        if (owner && plan.materials[index].picture && screenShowsPictures(objects[*owner])) {
+            bindable[*owner] = true;
+            rooms.insert(screenRoomOf(objects[*owner].id, sceneName));
+        }
+    }
+    // Each room's hero, as the service binds it: by its role, else its first crt.
+    std::vector<bool> hero(objects.size(), false);
+    for (const std::string& room : rooms) {
+        const std::optional<std::size_t> found = heroScreenIndex(objects, [&](std::size_t index) {
+            return bindable[index] && screenRoomOf(objects[index].id, sceneName) == room;
+        });
+        if (found) {
+            hero[*found] = true;
+        }
+    }
     std::size_t changed = 0;
     for (std::size_t index = 0; index < plan.materials.size(); ++index) {
         PlannedMaterial& planned = plan.materials[index];
-        if (!planned.material.crt || !planned.picture || !objectOf[index] || *objectOf[index] >= objects.size()) {
+        if (!planned.material.crt || !planned.picture) {
             continue;
         }
-        const scene::SceneObject& object = objects[*objectOf[index]];
-        const std::optional<std::string_view> id = screenObjectOf(planned.key);
-        if (!id || *id != object.id) {
+        const std::optional<std::size_t> owner = screenOf(index);
+        if (!owner) {
             continue;
         }
-        const std::optional<ScreenKind> kind = screenKindOf(object, firstCrt == *objectOf[index]);
+        const scene::SceneObject& object = objects[*owner];
+        const std::optional<ScreenKind> kind = screenKindOf(object, hero[*owner]);
         if (!kind) {
             continue;
         }

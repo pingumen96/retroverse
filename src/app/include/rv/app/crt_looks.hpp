@@ -77,11 +77,22 @@ struct CrtChoice {
 /// name: "m0_testroom", "screens_four").
 [[nodiscard]] std::string screenRoomOf(std::string_view objectId, std::string_view sceneName);
 
-/// The kind of `object` as a screen (findScreens()'s roles): the hero for a `crt` or an arcade cabinet whose id ends
-/// with kHeroCrtIdSuffix, and for a hand-made scene's first `crt` (`firstCrt`: no object of the scene ends with the
-/// suffix and none before it is a `crt`); a secondary for world::kSecondaryTvKind and every other `crt`; none for any
-/// other object.
-[[nodiscard]] std::optional<ScreenKind> screenKindOf(const scene::SceneObject& object, bool firstCrt);
+/// Whether `object` holds the hero's role by its id (I5 step 3): a `crt`, or the arcade's hero cabinet that stands for
+/// it, whose id ends with kHeroCrtIdSuffix.
+[[nodiscard]] bool holdsHeroRole(const scene::SceneObject& object) noexcept;
+/// Whether `object`'s screen can show pictures, findScreens()'s test before its material's: a prefab whose "screen"
+/// role has a scene texture (so that its screen's material instance has a base colour texture to override).
+[[nodiscard]] bool screenShowsPictures(const scene::SceneObject& object) noexcept;
+/// The hero among `objects`, as findScreens() binds it: the first object holding the hero's role (holdsHeroRole())
+/// whose screen `canBind`, else the first `crt` whose screen `canBind` (a hand-made scene's); none without either.
+/// `canBind` (an object's index) is asked only of a role's holder and of the `crt`s before the first that binds: an
+/// arcade's hundreds of cabinets are never asked.
+[[nodiscard]] std::optional<std::size_t> heroScreenIndex(std::span<const scene::SceneObject> objects,
+                                                         const std::function<bool(std::size_t)>& canBind);
+
+/// The kind of `object` as a screen (findScreens()'s roles): the hero when it is its room's (`hero`: heroScreenIndex()'s);
+/// else a secondary for world::kSecondaryTvKind and every other `crt`; none for any other object.
+[[nodiscard]] std::optional<ScreenKind> screenKindOf(const scene::SceneObject& object, bool hero);
 
 /// A screen's look as it was registered, for the run report (CrtLooksRecord).
 struct ScreenLookApplied {
@@ -138,7 +149,9 @@ private:
 /// Gives the screens among `plan`'s materials their looks: each material instance of a screen (key "<object id>/screen",
 /// optionally "@<w>x<h>") whose description has a CRT effect (MaterialDesc::crt) takes the effect of its object's
 /// choice (`objects` are the scene's objects the plan was made from, in their order: SceneGeometry's; `sceneName` the
-/// scene's name), recorded in `looks`. Other materials are left as they are. Returns how many it changed.
+/// scene's name), recorded in `looks`. Each room's hero (screenRoomOf()) is heroScreenIndex()'s among its objects
+/// whose screen shows pictures (screenShowsPictures()) through such an instance with a picture: the screen the
+/// screens' service binds as the hero. Other materials are left as they are. Returns how many it changed.
 std::size_t applyScreenLooks(SceneContentPlan& plan, std::span<const scene::SceneObject> objects,
                              std::string_view sceneName, ScreenLooks& looks);
 

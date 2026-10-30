@@ -6,6 +6,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -20,11 +22,18 @@ using rv::assets::CrtPreset;
 
 namespace {
 
-rv::scene::SceneObject object(std::string id, std::string kind) {
+/// A prefab object; with `screenPicture` its "screen" role has a scene texture (its screen shows pictures).
+rv::scene::SceneObject object(std::string id, std::string kind, bool screenPicture = true) {
     rv::scene::SceneObject result;
     result.id = std::move(id);
     result.kind = std::move(kind);
     result.source = rv::scene::SceneObject::Source::Prefab;
+    if (screenPicture) {
+        rv::scene::TextureSource source;
+        source.kind = rv::scene::TextureSource::Kind::Pattern;
+        source.pattern = "standby";
+        result.texturesByRole.emplace("screen", source);
+    }
     return result;
 }
 
@@ -198,13 +207,53 @@ TEST_CASE("app/crt_looks: a scene's screens and their rooms", "[app][crt_looks]"
     CHECK(rv::app::screenRoomOf("fx:hero.crt", "room:snes") == "room:snes");
     CHECK(rv::app::screenRoomOf("crt_a", "screens_four") == "screens_four");
 
-    CHECK(rv::app::screenKindOf(object("room:snes/fx:hero.crt", "crt"), false) == ScreenKind::Hero);
-    CHECK(rv::app::screenKindOf(object("area:arcade/fx:hero.crt", "arcade_cabinet"), false) == ScreenKind::Hero);
+    CHECK(rv::app::holdsHeroRole(object("room:snes/fx:hero.crt", "crt")));
+    CHECK(rv::app::holdsHeroRole(object("area:arcade/fx:hero.crt", "arcade_cabinet")));
+    CHECK_FALSE(rv::app::holdsHeroRole(object("crt_a", "crt")));
+    CHECK_FALSE(rv::app::holdsHeroRole(object("room:snes/fx:hero.crt", "desk")));
+    CHECK(rv::app::screenShowsPictures(object("crt_a", "crt")));
+    CHECK_FALSE(rv::app::screenShowsPictures(object("crt_a", "crt", false)));
+    rv::scene::SceneObject primitive = object("crt_a", "crt");
+    primitive.source = rv::scene::SceneObject::Source::Primitive;
+    CHECK_FALSE(rv::app::screenShowsPictures(primitive));
+
+    CHECK(rv::app::screenKindOf(object("room:snes/fx:hero.crt", "crt"), true) == ScreenKind::Hero);
+    CHECK(rv::app::screenKindOf(object("area:arcade/fx:hero.crt", "arcade_cabinet"), true) == ScreenKind::Hero);
     CHECK(rv::app::screenKindOf(object("crt_a", "crt"), true) == ScreenKind::Hero);
     CHECK(rv::app::screenKindOf(object("crt_b", "crt"), false) == ScreenKind::Secondary);
+    CHECK(rv::app::screenKindOf(object("room:snes/fx:hero.crt", "crt"), false) == ScreenKind::Secondary);
     CHECK(rv::app::screenKindOf(object("room:snes/fx:side.0", "secondary_tv"), false) == ScreenKind::Secondary);
+    CHECK_FALSE(rv::app::screenKindOf(object("area:arcade/fx:hero.crt", "arcade_cabinet"), false).has_value());
     CHECK_FALSE(rv::app::screenKindOf(object("area:arcade/fx:row.0", "arcade_cabinet"), false).has_value());
     CHECK_FALSE(rv::app::screenKindOf(object("room:snes/fx:desk", "desk"), false).has_value());
+}
+
+TEST_CASE("app/crt_looks: the hero is the first screen that binds, by its role, else the first crt",
+          "[app][crt_looks]") {
+    const std::vector<rv::scene::SceneObject> objects = {
+        object("crt_a", "crt"),                           // 0: a crt before the role's holder
+        object("area:arcade/fx:row.0", "arcade_cabinet"), // 1: never asked
+        object("fx:hero.crt", "crt"),                     // 2: the role's holder
+        object("crt_b", "crt"),                           // 3
+    };
+    std::vector<std::size_t> asked;
+    const auto binds = [&asked](std::vector<std::size_t> bound) {
+        return [&asked, bound](std::size_t index) {
+            asked.push_back(index);
+            return std::find(bound.begin(), bound.end(), index) != bound.end();
+        };
+    };
+    // The role's holder that binds, over a crt before it.
+    CHECK(rv::app::heroScreenIndex(objects, binds({0, 2, 3})) == std::optional<std::size_t>(2));
+    CHECK(asked == std::vector<std::size_t>{0, 2});
+    // The role's holder that cannot bind: the first crt that binds.
+    asked.clear();
+    CHECK(rv::app::heroScreenIndex(objects, binds({3})) == std::optional<std::size_t>(3));
+    CHECK(asked == std::vector<std::size_t>{0, 2, 3});
+    // None binds: none.
+    asked.clear();
+    CHECK_FALSE(rv::app::heroScreenIndex(objects, binds({})).has_value());
+    CHECK(asked == std::vector<std::size_t>{0, 2, 3});
 }
 
 TEST_CASE("app/crt_looks: the screens' material instances take their looks", "[app][crt_looks]") {
@@ -282,4 +331,55 @@ TEST_CASE("app/crt_looks: a hand-made scene's first crt is its hero", "[app][crt
     CHECK(applied[0].room == "screens_four");
     CHECK(applied[0].kind == ScreenKind::Hero);
     CHECK(applied[1].kind == ScreenKind::Secondary);
+}
+
+TEST_CASE("app/crt_looks: a first crt that cannot bind is no hero", "[app][crt_looks]") {
+    // A hand-made scene whose first crt's screen shows no picture (no "screen" texture: the screens' service never
+    // binds it), then two crts that bind: the hero is the second object, as findScreens() binds it. On a floor, a room
+    // whose role's holder cannot bind takes its first crt that binds; another room keeps its role's holder.
+    const std::vector<rv::scene::SceneObject> objects = {
+        object("room", "room_shell"),
+        object("crt_a", "crt", false),
+        object("crt_b", "crt"),
+        object("crt_c", "crt"),
+    };
+    rv::app::SceneContentPlan plan;
+    addMaterial(plan, "crt_a/screen@640x480", 1, true);
+    addMaterial(plan, "crt_b/screen@640x480", 2, true);
+    addMaterial(plan, "crt_c/screen@640x480", 3, true);
+    rv::app::VideoSettings video;
+    video.hero.crtPreset = "neutral";
+    video.secondary.crtPreset = "arcade";
+    ScreenLooks looks;
+    looks.setVideo(video);
+    CHECK(rv::app::applyScreenLooks(plan, objects, "screens_four", looks) == 3);
+    const rv::assets::CrtPresets& presets = rv::assets::builtInCrtPresets();
+    CHECK(plan.materials[0].material.crt == presets[CrtPreset::Arcade]);
+    CHECK(plan.materials[1].material.crt == presets[CrtPreset::Neutral]);
+    CHECK(plan.materials[2].material.crt == presets[CrtPreset::Arcade]);
+    const std::vector<rv::app::ScreenLookApplied> applied = looks.applied();
+    REQUIRE(applied.size() == 3);
+    CHECK(applied[0].screen == "crt_a");
+    CHECK(applied[0].kind == ScreenKind::Secondary);
+    CHECK(applied[1].screen == "crt_b");
+    CHECK(applied[1].kind == ScreenKind::Hero);
+    CHECK(applied[2].kind == ScreenKind::Secondary);
+
+    const std::vector<rv::scene::SceneObject> floor = {
+        object("room:gen6/fx:hero.crt", "crt", false),
+        object("room:gen6/fx:side.crt_extra", "crt"),
+        object("room:snes/fx:side.0", "crt"),
+        object("room:snes/fx:hero.crt", "crt"),
+    };
+    rv::app::SceneContentPlan floorPlan;
+    addMaterial(floorPlan, "room:gen6/fx:hero.crt/screen@640x480", 0, true);
+    addMaterial(floorPlan, "room:gen6/fx:side.crt_extra/screen@640x480", 1, true);
+    addMaterial(floorPlan, "room:snes/fx:side.0/screen@640x480", 2, true);
+    addMaterial(floorPlan, "room:snes/fx:hero.crt/screen@640x480", 3, true);
+    looks.setScene({});
+    CHECK(rv::app::applyScreenLooks(floorPlan, floor, "gen6", looks) == 4);
+    CHECK(floorPlan.materials[0].material.crt == presets[CrtPreset::Arcade]);  // its role's, unbound: a secondary
+    CHECK(floorPlan.materials[1].material.crt == presets[CrtPreset::Neutral]); // its room's first crt that binds
+    CHECK(floorPlan.materials[2].material.crt == presets[CrtPreset::Arcade]);  // a crt before its room's hero
+    CHECK(floorPlan.materials[3].material.crt == presets[CrtPreset::Neutral]); // its room's role's holder
 }
