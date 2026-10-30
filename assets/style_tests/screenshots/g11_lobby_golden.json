@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "Gate D golden of the building's hub (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1; its look as the step's review left it): the esde/building fixture planned under the shipped threshold, the walker a step north of the elevator's arrival point looking east across the 18 x 14 x 5 m hub: the arcade room's portal on the left under its pink neon on the balcony's fascia (its own small plaque on the entablature, the purple room beyond), the glowing wireframe globe, the brightest thing below the ceiling, low on its pedestal in the railed circular showcase of generic consoles and boxed games on a bordeaux counter, the main entrance's blue signs beside it at the far end, walnut columns under the balcony on three sides with its railing and large posters on the gallery's walls, the coffered ceiling with its downlights, the chandelier's ring of bulbs and the lanterns over the core, lit bookcases of warm bindings, a darker oak floor and darker rugs; lit by the hub's own lights, the globe's cool light and the sign's glow.",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
