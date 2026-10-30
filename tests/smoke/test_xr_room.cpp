@@ -3,7 +3,9 @@
 // planning the room, then retroverse.exe --vr --xr-runtime fake from the Focus pose of the hero wall's band item
 // fx:hw-w/s:5.4, standing still. The input script's right controller points at the item from the hip; interact at
 // frame 40 inspects it, and it is lifted into the right hand: held 12 cm in front of the controller's grip, not in
-// front of the eyes. The ray rested on the item, so the controller vibrated; the walker never moved. Helpers repeat
+// front of the eyes. The ray rested on the item, so the controller vibrated; the walker never moved. I10 step 6: Avvia
+// on it launches the fake emulator of this build (in the background: a small window that never takes the focus),
+// whose window the headset's run captures onto the hero CRT while it shows, the frames going on. Helpers repeat
 // test_world_card.cpp's.
 
 #include <catch2/catch_approx.hpp>
@@ -19,6 +21,7 @@
 
 #include <fmt/format.h>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
@@ -31,6 +34,7 @@
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
 
+#include "launch_support.hpp"
 #include "smoke_support.hpp"
 #include "support/fixture.hpp"
 
@@ -56,12 +60,28 @@ struct ImportedRoom {
     fs::path dir;
     fs::path data;
 
-    explicit ImportedRoom(std::string_view name)
+    /// `launches`: Avvia starts this build's fake emulator (a "fake-return" profile with a window, test_world_card.cpp's
+    /// with --frames).
+    explicit ImportedRoom(std::string_view name, bool launches = false)
         : fixture(rv::test::Fixture::materialize("esde/snes-room").value()),
           dir(freshCaseDir(std::string("xr_room/") + std::string(name))), data(dir / "data") {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
+        if (launches) {
+            const nlohmann::json profile{
+                {"id", "fake-return"},
+                {"executable", arg(fakeEmulatorExe())},
+                // A window for 150 frames (about 2.5 s), which the headset's run captures.
+                {"arguments", {"--frames", "150", "--exit-timeout-ms", "30000", "--", "{rom}"}},
+                {"windowTimeoutSeconds", 0},
+                {"hideConsoleWindow", true},
+                {"systems", {{"snes", nlohmann::json::object()}}}};
+            const nlohmann::json document{{"schemaVersion", 1}, {"profiles", nlohmann::json::array({profile})}};
+            REQUIRE(rv::core::writeTextFileAtomic(data / "config" / "emulators.json", document.dump(2) + "\n")
+                        .has_value());
+            cli("assign", {"assign", "snes", "--profile", "fake-return"});
+        }
     }
 
     void cli(std::string_view name, std::vector<std::string> arguments) const {
@@ -189,4 +209,58 @@ TEST_CASE("xr: the right controller's ray inspects a cartridge, held in that han
     REQUIRE(xr.head.size() >= 90);
     CHECK(glm::length(xr.head[89].position - xr.head[0].position) < 1e-4f);
     CHECK(glm::length(glm::vec2(xr.head[0].position.x - spawn.feet.x, xr.head[0].position.z - spawn.feet.z)) < 1e-4f);
+}
+
+TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured from its window (I10 step 6)",
+          "[gpu][xr]") {
+    ensureLaunchAllowList();
+    const ImportedRoom room("launch", true);
+    const AppRun first = runApp(retroverseExe(), room.dir, "first",
+                                {"--start-room", "room:snes", "--exit-after-frames", "--frames", "3", "--fixed-dt",
+                                 "0.016667", "--screenshot", arg(room.dir / "first.png")});
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    const ShownRoom shown = shownRoom(room, *first.report);
+    const rv::world::CollectionItem& item = itemIn(shown, "fx:hw-w/s:5.4");
+    const rv::scene::WalkerPose spawn = focusPose(item, shown.camera);
+    const glm::vec3 itemCenter(item.slotFrame * glm::vec4(item.slotBox.center(), 1.0f));
+    const glm::vec3 handWorld = spawn.feet + turned(kRightHand, spawn.yaw);
+    const glm::vec3 toItem = glm::normalize(itemCenter - handWorld);
+    const glm::vec3 local(toItem.x * std::cos(spawn.yaw) + toItem.z * std::sin(spawn.yaw), toItem.y,
+                          -toItem.x * std::sin(spawn.yaw) + toItem.z * std::cos(spawn.yaw));
+    const std::string hand = fmt::format(R"("rightHand": {{"yaw": {}, "pitch": {}, "position": [{}, {}, {}]}})",
+                                         rv::core::radiansToDegrees(std::atan2(local.x, -local.z)),
+                                         rv::core::radiansToDegrees(std::asin(std::clamp(local.y, -1.0f, 1.0f))),
+                                         kRightHand.x, kRightHand.y, kRightHand.z);
+    // Inspected at frame 40, Avvia (the pad's Start) at frame 70; the game's window shows about 2.5 s, captured
+    // meanwhile.
+    const fs::path script = room.dir / "launch.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, fmt::format(R"([
+  {{"fromFrame": 0, "toFrame": 899, "headPose": {{"position": [0, 1.65, 0]}}, {0}}},
+  {{"fromFrame": 40, "toFrame": 40, "actions": {{"interact": 1}}}},
+  {{"fromFrame": 70, "toFrame": 70, "actions": {{"confirm": 1}}}}
+])",
+                                                              hand))
+                .has_value());
+    rv::app::SpawnPoint spawnPoint;
+    spawnPoint.feet = spawn.feet;
+    spawnPoint.yawDeg = rv::core::radiansToDegrees(spawn.yaw);
+    spawnPoint.pitchDeg = 0.0f;
+    const AppRun run = runApp(retroverseExe(), room.dir, "vr",
+                              {"--vr", "--xr-runtime", "fake", "--start-room", "room:snes", "--spawn",
+                               spawnArgument(spawnPoint), "--input-script", arg(script), "--exit-after-frames",
+                               "--frames", "900", "--fixed-dt", "0.016667"});
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    CHECK(run.report->launches.front().profile == "fake-return");
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    // The headset never stopped: every frame submitted with both eyes, the game's window captured onto the CRT.
+    CHECK(xr.framesWithViews == 900);
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureStarts == 1);
+    CHECK(xr.captureFrames > 0);
+    CHECK(xr.captureSize.x > 0);
+    CHECK(xr.captureSize.y > 0);
 }
