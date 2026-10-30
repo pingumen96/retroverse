@@ -43,6 +43,7 @@
 #include <rv/core/aabb.hpp>
 #include <rv/input/action_state.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/pose_animator.hpp>
 #include <rv/scene/render_item.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/pick_index.hpp>
@@ -116,6 +117,9 @@ public:
                                                                const scene::Camera& camera);
     /// The inspection's dimming of the frame's view (WorldInspection::apply).
     void applyInspection(gl::RenderView& view) { m_inspection.apply(m_interaction, view); }
+    /// In VR (I10 step 4) the inspected item is held in this pose (the pointing controller's grip in the room) instead
+    /// of in front of the camera; none: the camera's.
+    void setHeldHand(const std::optional<scene::RigidPose>& hand) noexcept { m_heldHand = hand; }
     /// The inspection (the held pose, the dimming, its record).
     [[nodiscard]] WorldInspection& inspection() noexcept { return m_inspection; }
     /// The GameId text of the item in Focus or Inspect (the hero CRT's selection, screenSelection()), "" for none.
@@ -189,6 +193,7 @@ private:
     std::vector<PulledItem> m_lastPulled;
     InteractionRecord m_record;
     WorldInspection m_inspection;
+    std::optional<scene::RigidPose> m_heldHand;
 };
 
 } // namespace rv::app

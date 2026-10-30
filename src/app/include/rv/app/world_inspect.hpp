@@ -23,6 +23,7 @@
 #include <rv/app/world_interaction.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/pose_animator.hpp>
 #include <rv/world/collection_layout.hpp>
 
 namespace rv::app {
@@ -41,6 +42,9 @@ inline constexpr float kHeldMinDistance = 0.2f;
 /// the part of the view the card (on the right) leaves free, as tangents of the view's right and up (x right, y up):
 /// at a 75-degree horizontal field of view its centre sits about a third of the way from the centre to the left edge.
 inline constexpr glm::vec2 kHeldViewOffset{-0.25f, -0.08f};
+/// In VR (I10 step 4, ADR-0017 §5) the item is held this far (meters) in front of the controller's grip, along its
+/// pointing axis.
+inline constexpr float kHandHoldDistance = 0.12f;
 
 /// The held item's centre at `distance` along the view from `camera`'s eye: moved sideways by kHeldViewOffset times
 /// the distance up to InspectSettings' default distance (0.45 m), the offset then fading linearly to none at its
@@ -66,9 +70,13 @@ inline constexpr glm::vec2 kHeldViewOffset{-0.25f, -0.08f};
 /// towards the eye: upright and facing it), turned by `view.yaw` about the camera's up (positive turns its front to
 /// the viewer's right) and then by `view.pitch` about the camera's right (positive tilts its front up); in between, its
 /// centre along the straight line and its orientation along the shorter arc (scene::interpolatePose), the lift's easing being the interaction's. The
-/// prefab's scale in `pulled` is kept. A non-finite lift counts as 0.
+/// prefab's scale in `pulled` is kept. A non-finite lift counts as 0. With `hand` (VR, I10 step 4: the grip pose of the
+/// pointing controller in the room) the item is held in that hand instead: its centre kHandHoldDistance along the
+/// hand's -Z, its axes the hand's turned by the view's yaw and pitch, so that the wrist turns it; `distance` and the
+/// camera are then left out.
 [[nodiscard]] glm::mat4 heldItemTransform(const glm::mat4& pulled, const InspectView& view,
-                                          const scene::Camera& camera, float distance) noexcept;
+                                          const scene::Camera& camera, float distance,
+                                          const std::optional<scene::RigidPose>& hand = std::nullopt) noexcept;
 
 /// The dimming of the scene behind a held item at `lift` (clamped to [0, 1]; non-finite counts as 0): the share of the
 /// light taken away outside its silhouette (gl::OutlineSettings::dimOutside) and the view's vignette (`baseVignette`,

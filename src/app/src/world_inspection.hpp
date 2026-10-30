@@ -35,10 +35,12 @@ public:
 
     /// The pose of `item` this frame: `pulled` (its pulled-out pose) unless it is the interaction's focused item with a
     /// lift above 0, which goes into the hand in front of `camera` (heldItemTransform() at heldDistance(), limited by
-    /// `room`'s cluster of the item); recorded as the frame's held pose.
+    /// `room`'s cluster of the item), or in VR into `hand` (the pointing controller's grip, I10 step 4); recorded as
+    /// the frame's held pose.
     [[nodiscard]] glm::mat4 itemModel(const WorldInteraction& interaction, const CollectionRoom& room,
                                       const world::CollectionItem& item, const glm::mat4& pulled,
-                                      const scene::Camera& camera);
+                                      const scene::Camera& camera,
+                                      const std::optional<scene::RigidPose>& hand = std::nullopt);
     /// Whether the held item's front shows its hero texture this frame (WorldSession knows the hero item).
     void setHeroFront(bool shown) noexcept { m_heroFront = shown; }
 

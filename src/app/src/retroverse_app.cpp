@@ -487,6 +487,10 @@ struct RetroverseApp::State {
     XrProps xrProps;
     std::vector<scene::RenderItem> xrItems;
     bool xrPropsFailed = false;
+    /// The VR frame's controllers (I10 step 4) and the item their ray rested on last frame (a vibration when it moves
+    /// onto another).
+    XrHands xrHands;
+    world::PickId xrHovered = world::kNoPick;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -628,8 +632,50 @@ struct RetroverseApp::State {
         if (frame == nullptr || !frame->located || !freeRoam || !xrMovement) {
             return false;
         }
-        xrMovement->update(*frame, actions, static_cast<float>(deltaSeconds), *freeRoam, camera);
+        xrMovement->update(*frame, actions, xrHands, static_cast<float>(deltaSeconds), *freeRoam, camera);
         return true;
+    }
+
+    /// A VR frame's controllers before its input is read (I10 step 4): none on the desktop or while tracking is lost.
+    void updateXrHands(AppContext& context) {
+        if (!xrMovement) {
+            return;
+        }
+        const xr::Frame* frame = context.xrFrame();
+        xrHands.update(frame != nullptr && frame->located ? frame : nullptr, xrMovement->locomotion().anchor());
+    }
+
+    /// The controllers where the frame's movement put the tracking space (I10 step 4), the inspected item in the
+    /// pointing hand, a vibration when the ray came onto another item.
+    void followHands(AppContext& context) {
+        if (!xrMovement) {
+            return;
+        }
+        if (world) {
+            const world::PickId hovered = world->hovered();
+            if (hovered != world::kNoPick && hovered != xrHovered) {
+                if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                    context.vibrate(*hand, 0.35f, 0.02f);
+                }
+            }
+            xrHovered = hovered;
+        }
+        const xr::Frame* frame = context.xrFrame();
+        std::optional<scene::RigidPose> held;
+        if (frame != nullptr && frame->located) {
+            xrHands.follow(xrMovement->locomotion().anchor());
+            if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                if (const std::optional<xr::Pose>& grip = xrHands.grip(*hand)) {
+                    held = scene::RigidPose{grip->position, grip->orientation};
+                }
+            }
+            if (std::optional<XrRecord>& record = context.report().xr; record && xrHands.anyTracked()) {
+                ++record->handFrames;
+            }
+        }
+        if (world) {
+            world->setHeldHand(held);
+        }
     }
 
     /// A VR frame (AppContext::xrFrame, I10 step 2) places the tracking space where the movement anchored it (ADR-0017
@@ -684,17 +730,33 @@ struct RetroverseApp::State {
         const xr::Locomotion& locomotion = xrMovement->locomotion();
         view.post.fade = std::max(view.post.fade, locomotion.fade());
         view.post.tunnel = locomotion.tunnel();
-        if (const std::optional<xr::TeleportArc>& arc = locomotion.arc(); arc && !xrPropsFailed) {
-            xrItems.assign(view.items.begin(), view.items.end());
-            if (Status added = xrProps.append(*arc, *graphics, context.device().caps().uniformBufferOffsetAlignment,
-                                              xrItems);
-                !added) {
-                spdlog::error("The teleport's arc cannot be drawn: {}", added.error().toString());
-                xrPropsFailed = true;
-                return;
-            }
-            view.items = xrItems;
+        const std::optional<xr::TeleportArc>& arc = locomotion.arc();
+        const bool hands = xrHands.anyTracked();
+        if ((!arc && !hands) || xrPropsFailed) {
+            return;
         }
+        xrItems.assign(view.items.begin(), view.items.end());
+        const int alignment = context.device().caps().uniformBufferOffsetAlignment;
+        Status added = arc ? xrProps.appendArc(*arc, *graphics, alignment, xrItems) : ok();
+        if (added && hands) {
+            // I10 step 4: the controllers, the pointing hand's laser to the first collider or the floor.
+            float reach = 0.0f;
+            if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                if (const std::optional<xr::Pose>& aim = xrHands.aim(*hand)) {
+                    const core::Ray ray{aim->position, glm::normalize(aim->orientation * glm::vec3(0.0f, 0.0f, -1.0f))};
+                    reach = xr::castRay(ray, XrProps::kLaserReach, freeRoam->controller().feetPosition().y,
+                                        freeRoam->collision());
+                }
+            }
+            const bool onItem = world && world->hovered() != world::kNoPick;
+            added = xrProps.appendHands(xrHands, reach, onItem, *graphics, alignment, xrItems);
+        }
+        if (!added) {
+            spdlog::error("The VR mode's props cannot be drawn: {}", added.error().toString());
+            xrPropsFailed = true;
+            return;
+        }
+        view.items = xrItems;
     }
 
     /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
@@ -748,6 +810,13 @@ struct RetroverseApp::State {
                 SDL_GetMouseState(&cursor.x, &cursor.y);
             }
             frame.ray = pickRay(camera, frame.raySource, cursor, windowSize);
+            // I10 step 4: in VR the pointing controller's ray.
+            if (const std::optional<core::Ray>& ray = xrHands.pointer().ray(); ray && xrMovement) {
+                frame.ray = *ray;
+                if (std::optional<XrRecord>& record = context.report().xr) {
+                    ++record->pointedFrames;
+                }
+            }
         }
         return world->interact(frame);
     }
@@ -1729,7 +1798,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game.
     state.setPriority(frame, processPriorityFor(context.window().isMinimized(),
                                                 state.product != nullptr && state.product->launchActive()));
-    const input::ActionState actions = state.input->update(frame);
+    // I10 step 4: a VR frame's controllers drive the pad's actions, the pointing hand's trigger interacts.
+    state.updateXrHands(context);
+    input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
+    state.xrHands.applySelect(actions);
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
     const InputContext inputContext = state.inputContext();
@@ -1843,6 +1915,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         state.freeRoam->update(walkerActions, static_cast<float>(deltaSeconds), state.camera);
     }
     state.followHead(context);
+    state.followHands(context);
     if (state.world && state.product) {
         // The hover's title label over the item as this frame's camera shows it (none under the product UI).
         const bool worldShown = inputContext == InputContext::World && !riding;

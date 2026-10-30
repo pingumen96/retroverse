@@ -6,6 +6,7 @@
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/run_report.hpp>
+#include <rv/core/paths.hpp>
 #include <rv/xr/session.hpp>
 #include <rv/xr/xr_settings.hpp>
 
@@ -25,7 +26,8 @@ public:
     /// Starts the session, or returns nothing when VR is unavailable (no runtime, no headset, OpenGL refused, a build
     /// without the OpenXR loader): logged, and recorded in `record` (XrRecord::unavailable).
     [[nodiscard]] static std::unique_ptr<XrSessionDriver> start(const CommandLineOptions& options,
-                                                                const xr::XrSettings& settings, XrRecord& record);
+                                                                const xr::XrSettings& settings,
+                                                                const core::Paths& paths, XrRecord& record);
     ~XrSessionDriver();
     XrSessionDriver(const XrSessionDriver&) = delete;
     XrSessionDriver& operator=(const XrSessionDriver&) = delete;
@@ -41,6 +43,8 @@ public:
     void endFrame(bool rendered);
     /// Asks the runtime to end the session (the run quits).
     void requestExit();
+    /// A controller's vibration (I10 step 4).
+    void vibrate(xr::Hand hand, float amplitude, float seconds);
     /// The session's description, frames and events into `record`.
     void finish(XrRecord& record) const;
 
@@ -50,6 +54,7 @@ private:
     std::unique_ptr<xr::Session> m_session;
     /// The fake runtime under the session, for its counts; null with OpenXR.
     const xr::FakeRuntime* m_fake = nullptr;
+    std::uint64_t m_vibrations = 0;
 };
 
 } // namespace rv::app

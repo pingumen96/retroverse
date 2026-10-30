@@ -104,6 +104,13 @@ public:
     [[nodiscard]] bool vr() const noexcept { return m_vr; }
     /// xr.json as the run read it (its shipped defaults when the user's file was left out).
     [[nodiscard]] const xr::XrSettings& xrSettings() const noexcept { return m_xrSettings; }
+    /// Vibrates `hand`'s controller at `amplitude` ([0, 1]) for `seconds` (I10 step 4): the host passes it to the VR
+    /// session after the frame's update; nothing on the desktop.
+    void vibrate(xr::Hand hand, float amplitude, float seconds) {
+        if (m_vr) {
+            m_xrVibrations.push_back(XrVibration{hand, amplitude, seconds});
+        }
+    }
 
 private:
     friend class AppHost;
@@ -131,6 +138,12 @@ private:
     bool m_xrViewsRendered = false;
     bool m_vr = false;
     xr::XrSettings m_xrSettings;
+    struct XrVibration {
+        xr::Hand hand = xr::Hand::Right;
+        float amplitude = 0.0f;
+        float seconds = 0.0f;
+    };
+    std::vector<XrVibration> m_xrVibrations;
     std::optional<Error> m_failure;
     ExitCode m_failureCode = ExitCode::RuntimeFailure;
 };

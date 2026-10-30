@@ -71,8 +71,11 @@ void AppInput::handleEvent(const SDL_Event& event) {
     }
 }
 
-input::ActionState AppInput::update(std::uint64_t frameIndex) {
-    const input::RawInputFrame raw = m_collector.endFrame();
+input::ActionState AppInput::update(std::uint64_t frameIndex, const xr::VirtualPad* controllers) {
+    input::RawInputFrame raw = m_collector.endFrame();
+    if (controllers != nullptr) {
+        controllers->mergeInto(raw);
+    }
     m_mouseWheel = std::isfinite(raw.mouseWheel) ? raw.mouseWheel : 0.0f;
     input::ActionState actions = m_system.resolve(raw);
     if (m_script) {

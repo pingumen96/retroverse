@@ -932,3 +932,26 @@ TEST_CASE("app/world_interaction: the card's presses wait for the item in the ha
     lifting.press(CardAction::Back);
     CHECK(lifting.interaction.state() == WorldState::Focus);
 }
+
+TEST_CASE("app/world_interaction: in VR Focus and its steps leave the walker where it stands (I10 step 4)",
+          "[app][world_interaction][transitions]") {
+    rv::app::InteractionSettings settings;
+    settings.keepWalker = true;
+    InteractionHarness harness = hovering(settings);
+    const rv::scene::WalkerPose start = harness.pose();
+    const PickId item = harness.room.at(0, 4, 16);
+    rv::app::InteractionResult result = harness.frame(pressing({Action::Interact}));
+    CHECK(harness.interaction.state() == WorldState::Focus);
+    CHECK(harness.interaction.focused() == item);
+    CHECK_FALSE(result.walker.has_value());
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    harness.idle(30);
+    CHECK(sameWalker(harness.pose(), start));
+    // The item comes out where it is; a D-pad step moves the focus, not the walker.
+    CHECK(harness.interaction.pullOf(item) == 1.0f);
+    harness.frame(pressing({Action::UiRight}));
+    CHECK(harness.interaction.focused() == harness.room.at(0, 4, 17));
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    harness.idle(30);
+    CHECK(sameWalker(harness.pose(), start));
+}

@@ -1253,6 +1253,13 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     xr.teleports = 2;
     xr.pushedFrames = 14;
     xr.largestHeadOffset = 0.375f;
+    xr.interactionProfiles = {"/interaction_profiles/oculus/touch_controller",
+                              "/interaction_profiles/khr/simple_controller"};
+    xr.leftController = "/interaction_profiles/oculus/touch_controller";
+    xr.rightController = "";
+    xr.handFrames = 900;
+    xr.pointedFrames = 850;
+    xr.vibrations = 6;
     report.xr = xr;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());

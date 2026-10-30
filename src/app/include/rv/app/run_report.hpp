@@ -1576,6 +1576,15 @@ struct XrRecord {
     std::uint64_t teleports = 0;
     std::uint64_t pushedFrames = 0;
     float largestHeadOffset = 0.0f;
+    /// The controllers (I10 step 4): the interaction profiles whose bindings the runtime took, the profile in each hand
+    /// at the end ("" none), the frames a controller was tracked and those whose pick ray came from a hand, the
+    /// vibrations asked for.
+    std::vector<std::string> interactionProfiles;
+    std::string leftController;
+    std::string rightController;
+    std::uint64_t handFrames = 0;
+    std::uint64_t pointedFrames = 0;
+    std::uint64_t vibrations = 0;
 
     bool operator==(const XrRecord&) const = default;
 };

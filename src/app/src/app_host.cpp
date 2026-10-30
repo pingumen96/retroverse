@@ -412,7 +412,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     std::unique_ptr<XrSessionDriver> xr;
     if (m_options.xr.enabled || (xrSettings.vr && !m_options.stereoPreview)) {
         m_report.xr = XrRecord{};
-        xr = XrSessionDriver::start(m_options, xrSettings, *m_report.xr);
+        xr = XrSessionDriver::start(m_options, xrSettings, *paths, *m_report.xr);
         if (xr) {
             // The runtime paces the frames: the mirror's swap must not wait for the monitor too.
             if (auto vsync = window->setVsync(false); !vsync) {
@@ -629,6 +629,12 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context, XrSessionDriv
             }
         }
         logic.onUpdate(context, m_options.fixedDeltaSeconds.value_or(clock.clampedDeltaSeconds()));
+        if (xr != nullptr) {
+            for (const AppContext::XrVibration& vibration : context.m_xrVibrations) {
+                xr->vibrate(vibration.hand, vibration.amplitude, vibration.seconds);
+            }
+        }
+        context.m_xrVibrations.clear();
         logic.onRender(context);
         if (context.m_xrFrame) {
             xr->endFrame(context.m_xrViewsRendered);

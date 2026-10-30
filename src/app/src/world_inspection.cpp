@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <fmt/format.h>
 
@@ -50,15 +51,17 @@ world::PickId WorldInspection::markedItem(const WorldInteraction& interaction) n
 
 glm::mat4 WorldInspection::itemModel(const WorldInteraction& interaction, const CollectionRoom& room,
                                      const world::CollectionItem& item, const glm::mat4& pulled,
-                                     const scene::Camera& camera) {
+                                     const scene::Camera& camera, const std::optional<scene::RigidPose>& hand) {
     const InspectView view = interaction.inspectView();
     if (item.pickId != interaction.focused() || !(view.lift > 0.0f)) {
         return pulled;
     }
-    const float limit =
-        heldDistanceLimit(clusterBounds(room.layout(), item), heldRadius(item), camera.position(), camera.forward());
+    // In the hand (VR) the item stands where the hand holds it: no fixture limits it.
+    const float limit = hand ? std::numeric_limits<float>::infinity()
+                             : heldDistanceLimit(clusterBounds(room.layout(), item), heldRadius(item),
+                                                 camera.position(), camera.forward());
     const float drawn = heldDistance(view.distance, limit);
-    const glm::mat4 model = heldItemTransform(pulled, view, camera, drawn);
+    const glm::mat4 model = heldItemTransform(pulled, view, camera, drawn, hand);
 
     // The frame's record: the pose in the camera's frame (x right, y up, z towards the viewer).
     const glm::mat4 toCamera = camera.view();

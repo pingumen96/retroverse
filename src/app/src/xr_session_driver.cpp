@@ -11,6 +11,7 @@
 #include <rv/input/input_script.hpp>
 #include <rv/xr/fake_runtime.hpp>
 #include <rv/xr/gl_images.hpp>
+#include <rv/xr/xr_bindings.hpp>
 #if defined(RV_XR_OPENXR)
 #include <rv/xr/openxr_runtime.hpp>
 #endif
@@ -46,7 +47,8 @@ void describe(const xr::RuntimeDescription& description, XrRecord& record) {
 } // namespace
 
 std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions& options,
-                                                        const xr::XrSettings& settings, XrRecord& record) {
+                                                        const xr::XrSettings& settings, const core::Paths& paths,
+                                                        XrRecord& record) {
     const XrOptions& xrOptions = options.xr;
     const double renderScale = xrOptions.renderScale.value_or(settings.renderScale);
     record.runtimeChoice = std::string(toString(xrOptions.runtime));
@@ -69,10 +71,22 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
             if (!loaded) {
                 return unavailable("the input script's head poses: " + loaded.error().toString());
             }
-            config.headPose = [script = std::move(*loaded),
+            config.headPose = [script = *loaded,
                                height = config.eyeHeight](std::uint64_t frame) -> std::optional<xr::Pose> {
                 if (const std::optional<input::ScriptedHeadPose> pose = script.headPoseAt(frame)) {
                     return headPoseOf(*pose, height);
+                }
+                return std::nullopt;
+            };
+            // I10 step 4: the controllers the script holds, resting at hip height in front of the user.
+            config.handPose = [script = std::move(*loaded)](std::uint64_t frame,
+                                                            xr::Hand hand) -> std::optional<xr::Pose> {
+                const bool right = hand == xr::Hand::Right;
+                if (const std::optional<input::ScriptedHeadPose> pose = script.handPoseAt(frame, right)) {
+                    const glm::vec3 resting(right ? 0.2f : -0.2f, 1.1f, -0.3f);
+                    return headPoseOf(input::ScriptedHeadPose{pose->yawDeg, pose->pitchDeg, pose->rollDeg,
+                                                              pose->position.value_or(resting)},
+                                      0.0f);
                 }
                 return std::nullopt;
             };
@@ -89,6 +103,15 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
         openXr.runtimeJson = xrOptions.runtimeJson.value_or(std::filesystem::path());
         openXr.headsetWait = options.frameLimit ? std::chrono::milliseconds(0) : kInteractiveHeadsetWait;
         openXr.renderScale = renderScale;
+        // The controllers' bindings (xr_bindings.json, I10 step 4); without them the pad alone drives the mode.
+        if (auto bindings = xr::loadXrBindings(paths.assetRoot(), paths.configDir())) {
+            for (const Error& issue : bindings->issues) {
+                spdlog::warn("The user's xr_bindings.json is left out, its defaults used: {}", issue.toString());
+            }
+            openXr.bindings = std::move(bindings->bindings);
+        } else {
+            spdlog::warn("xr_bindings.json could not be read, no controller is read: {}", bindings.error().toString());
+        }
         if (settings.refreshRate > 0.0f) {
             openXr.refreshRate = settings.refreshRate;
         }
@@ -140,6 +163,11 @@ void XrSessionDriver::requestExit() {
     m_session->requestExit();
 }
 
+void XrSessionDriver::vibrate(xr::Hand hand, float amplitude, float seconds) {
+    ++m_vibrations;
+    m_session->vibrate(hand, amplitude, seconds);
+}
+
 void XrSessionDriver::finish(XrRecord& record) const {
     describe(m_session->description(), record);
     record.refreshRate = m_session->currentRefreshRate();
@@ -155,6 +183,10 @@ void XrSessionDriver::finish(XrRecord& record) const {
         record.cpuTimes = TimeSummary{summary.cpu.count, summary.cpu.p50Ms, summary.cpu.p95Ms, summary.cpu.p99Ms,
                                       summary.cpu.maxMs};
     }
+    record.interactionProfiles = m_session->description().interactionProfiles;
+    record.leftController = m_session->profiles()[0];
+    record.rightController = m_session->profiles()[1];
+    record.vibrations = m_vibrations;
     record.events.clear();
     for (const xr::SessionEvent& event : m_session->events()) {
         record.events.push_back(fmt::format("{}: {}", event.frame, event.what));

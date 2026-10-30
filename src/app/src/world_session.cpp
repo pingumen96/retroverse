@@ -117,6 +117,8 @@ WorldSession::WorldSession(AppContext& context, Options options, core::WorkerPoo
         interaction.reduceMotion = true;
         spdlog::info("World: reduceMotion forced by the VR mode: every transition of the room is instant");
     }
+    // ADR-0017 §5 (I10 step 4): in a headset Focus leaves the walker where the user stands.
+    interaction.keepWalker = context.vr();
     m_reduceMotion = interaction.reduceMotion;
     m_interaction = std::make_unique<WorldHover>(context, interaction);
     // I4 step 7b: the rides' floor-build jobs post here and wake the host.

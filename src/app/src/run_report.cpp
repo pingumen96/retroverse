@@ -2663,6 +2663,12 @@ Json xrToJson(const XrRecord& xr) {
     json["teleports"] = xr.teleports;
     json["pushedFrames"] = xr.pushedFrames;
     json["largestHeadOffset"] = static_cast<double>(xr.largestHeadOffset);
+    json["interactionProfiles"] = xr.interactionProfiles;
+    json["leftController"] = xr.leftController;
+    json["rightController"] = xr.rightController;
+    json["handFrames"] = xr.handFrames;
+    json["pointedFrames"] = xr.pointedFrames;
+    json["vibrations"] = xr.vibrations;
     return json;
 }
 
@@ -2712,6 +2718,12 @@ XrRecord readXr(FieldReader& fields) {
     xr.teleports = fields.count("teleports");
     xr.pushedFrames = fields.count("pushedFrames");
     xr.largestHeadOffset = static_cast<float>(fields.number("largestHeadOffset"));
+    xr.interactionProfiles = fields.stringArray("interactionProfiles");
+    xr.leftController = fields.string("leftController");
+    xr.rightController = fields.string("rightController");
+    xr.handFrames = fields.count("handFrames");
+    xr.pointedFrames = fields.count("pointedFrames");
+    xr.vibrations = fields.count("vibrations");
     return xr;
 }
 

@@ -416,7 +416,7 @@ void WorldInteraction::readFreeRoam(const input::ActionState& actions, Interacti
     if (item->faceOut) {
         enterInspect(target, *item);
     } else {
-        enterFocus(target, *item, m_settings.timings.focusEase);
+        enterFocus(target, *item, m_settings.timings.focusEase, !m_settings.keepWalker);
     }
 }
 
@@ -444,7 +444,7 @@ void WorldInteraction::readFocus(const input::ActionState& actions, InteractionR
     if (const auto direction = stepPressed(actions); direction && m_room != nullptr) {
         if (const auto next = m_room->step(m_focused, *direction)) {
             if (const auto item = roomItem(*next)) {
-                moveFocus(*next, *item, true);
+                moveFocus(*next, *item, !m_settings.keepWalker);
             }
         }
     }
@@ -620,7 +620,7 @@ bool WorldInteraction::showInRoom(world::PickId id, const scene::WalkerPose& wal
         return false;
     }
     m_walkerNow = walker;
-    enterFocus(id, *item, m_settings.timings.showInRoomEase);
+    enterFocus(id, *item, m_settings.timings.showInRoomEase, true);
     return true;
 }
 
@@ -632,13 +632,15 @@ void WorldInteraction::launchEnded(const LaunchMessage& outcome) {
     m_launchOutcome = outcome;
 }
 
-void WorldInteraction::enterFocus(world::PickId id, const RoomItem& item, float easeSeconds) {
+void WorldInteraction::enterFocus(world::PickId id, const RoomItem& item, float easeSeconds, bool easeWalker) {
     m_state = WorldState::Focus;
     m_focused = id;
     m_focusedSection = item.section;
     pull(id);
     pushBackAllBut(id);
-    easeWalkerTo(m_room->focusPose(id), easeSeconds);
+    if (easeWalker) {
+        easeWalkerTo(m_room->focusPose(id), easeSeconds);
+    }
     m_interactSkips = true;
     clearNotice();
 }
