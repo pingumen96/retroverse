@@ -25,7 +25,7 @@ enum class ColorFormat : std::uint8_t {
     /// GL_SRGB8_ALPHA8: with GL_FRAMEBUFFER_SRGB enabled, linear shader output is encoded to sRGB on write, so the
     /// stored bytes are display-ready (window presentation, screenshots).
     Srgb8Alpha8,
-    /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene and its bloom before tonemapping.
+    /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene's radiance before tonemapping.
     Rgba16F,
     /// GL_R8: one channel in [0, 1], 8 bits (the ambient occlusion the lit shader reads).
     R8,
@@ -173,8 +173,9 @@ public:
         return colorFormatOf(m_desc, attachment);
     }
     [[nodiscard]] std::size_t colorAttachments() const noexcept { return m_desc.colorAttachments; }
-    /// True for a framebuffer over the storage of others (createAlias).
-    [[nodiscard]] bool alias() const noexcept { return m_alias; }
+    /// The bytes it records as GpuMemoryKind::Targets: framebufferBytes() of its attachments, 0 for an alias
+    /// (createAlias) or an empty framebuffer.
+    [[nodiscard]] std::uint64_t recordedBytes() const noexcept { return m_memory.bytes(); }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:

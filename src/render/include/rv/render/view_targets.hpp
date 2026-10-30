@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -76,6 +77,8 @@ private:
     [[nodiscard]] const Framebuffer& storageOf(ViewImage image, std::size_t& attachment) const noexcept;
     /// The target of `image` for an output of `size`: its own storage, or a view of the image it takes over.
     [[nodiscard]] Expected<Framebuffer> createImage(ViewImage image, glm::ivec2 size) const;
+    /// The bytes the framebuffers record as GpuMemoryKind::Targets: viewTargetsBytes(size()) (asserted by create()).
+    [[nodiscard]] std::uint64_t recordedBytes() const noexcept;
 
     Framebuffer m_hdr;
     Framebuffer m_ambientOcclusionRaw;
