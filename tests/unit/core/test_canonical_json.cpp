@@ -445,4 +445,33 @@ TEST_CASE("core/canonical_json: the text writer refuses its caller's mistakes an
                   out.endArray();
               }
           }) == invalid);
+    // A value given as a document counts its levels from the writer's (m3/preview-time's review): 62 arrays open and
+    // a value two deep make 64, written; three deep, 65, refused, as writeCanonicalJson() refuses the document.
+    const auto nestedIn = [&](int open, int levels) {
+        Json value = 0;
+        for (int i = 0; i < levels; ++i) {
+            value = Json::array({value});
+        }
+        return refusal([&](Writer& out) {
+            for (int i = 0; i < open; ++i) {
+                out.beginArray();
+            }
+            out.value(value);
+            for (int i = 0; i < open; ++i) {
+                out.endArray();
+            }
+        });
+    };
+    CHECK(nestedIn(62, 2) == std::nullopt);
+    CHECK(nestedIn(62, 3) == invalid);
+    CHECK(nestedIn(0, 64) == std::nullopt);
+    CHECK(nestedIn(0, 65) == invalid);
+    // A top-level array given through value() is written on one line (the document's writer puts its elements on
+    // lines): such an array goes through beginArray().
+    std::string oneLine;
+    rv::core::CanonicalTextWriter top(oneLine);
+    top.value(Json::array({1, 2}));
+    REQUIRE(top.finish().has_value());
+    CHECK(oneLine == "[1,2]\n");
+    CHECK(canonicalOf(Json::array({1, 2})) == "[\n1,\n2\n]\n");
 }

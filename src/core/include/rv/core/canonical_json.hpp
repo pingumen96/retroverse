@@ -53,8 +53,10 @@ public:
     void unsignedInteger(std::uint64_t value);
     void boolean(bool value);
     void null();
-    /// A value given as a document, written as a value nested in this one (an array in it never on lines). Errors:
-    /// those of writeCanonicalJson().
+    /// A value given as a document, written as a value nested in this one: every array in it on one line, also an
+    /// array given as the document itself or as a member of the document's object, which writeCanonicalJson() writes
+    /// one element per line (give such an array with beginArray()). Its levels count from the document's root (the 64
+    /// levels of writeCanonicalJson()). Errors: those of writeCanonicalJson(), without the value's pointer.
     void value(const nlohmann::json& value);
     /// A value already written by nestedCanonicalText(), as it is.
     void raw(std::string_view text);

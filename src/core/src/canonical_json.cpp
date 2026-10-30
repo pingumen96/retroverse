@@ -69,7 +69,9 @@ void appendQuoted(std::string& out, std::string_view text) {
 /// Writes one document; `m_path` holds the tokens down to the value being written, for the pointer of an error.
 class CanonicalWriter {
 public:
-    explicit CanonicalWriter(std::string& out) : m_out(out) {}
+    /// `depth`: the levels the value written is nested in (CanonicalTextWriter::value(): its open arrays and objects),
+    /// so that the 64 levels count from the document's root.
+    explicit CanonicalWriter(std::string& out, std::size_t depth = 0) : m_out(out), m_depth(depth) {}
 
     Status document(const Json& value) {
         if (value.is_array()) {
@@ -432,7 +434,7 @@ void CanonicalTextWriter::value(const nlohmann::json& value) {
     if (!beforeValue()) {
         return;
     }
-    CanonicalWriter writer(m_out);
+    CanonicalWriter writer(m_out, m_frames.size());
     if (Status written = writer.nested(value); !written && !m_error) {
         m_error = written.error();
     }
