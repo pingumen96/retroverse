@@ -236,15 +236,27 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   room's flat and blade signs at each doorway, beams every 3 m and over the doorways, sconces washing their wall and prints in turn, benches
   with a plant beside them, the runner), the areas whose lights the app packs
   (each room's interior with its doorway's passage, the hall), a camera in front of the elevator facing east.
-  `worldplan check <plan.json> [--selection <file>] [--json]` validates a plan against its templates, the prefabs' slots,
+  `worldplan check <plan.json> [--selection <file>] [--overrides <file> | --no-overrides] [--json]` validates a plan
+  against its templates, the prefabs' slots,
   the world's configuration and the building's data (39 rules, `rv/world/validation.hpp`: the ground floor, the rooms'
   floors, no two rooms of a floor overlapping, every system in one room or chain; since I4b step 7 every expansion's
   head in the plan, of its floor, kind, sections, family and template, `expansion-chain`, a chain's numbers possibly
   leaving gaps; since I4 step 3 each floor's derived hall: no room overlapping it, every doorway in its room's doorway
   wall on the hall's edge, every room walked to from the elevator on the floor's navigation grid; a room of an older
-  template version or another generator major judged as kept; the plan's lights counted, no pins judged: exit 1 a
+  template version or another generator major judged as kept; the plan's lights counted; since I4b step 9
+  (ADR-0015 §8, `docs/testing/gate-m3.md`) the world's overrides measured against the plan: `overrides.json` beside the
+  plan (`--overrides <file>` another, `--no-overrides` none; `world::measurePins()`), "Overrides: <file> (<n> game pin(s),
+  <n> fixture pin(s)): <n> honoured, <n> orphaned, <n> conflicting, <n> unhonoured" and a line per pin, conflicting
+  first and honoured last, with its origin and why: orphaned when what it names is gone (its slot not one of the
+  plan's, its game without an entry, its room not in the plan, its socket not in the room's template), conflicting
+  when its room's last regeneration recorded a conflict on it (`room-gone`, `slot-gone`, `game-gone`, `invalid`,
+  named), unhonoured when what it names is there but stands otherwise ("the game stands in <slot>", an update's
+  confirmation); the honoured and orphaned pins judged as an update judges them (`pin-orphaned`, soft), so pins never
+  fail the check by themselves (JSON `overrides` {`file`, `gamePins`, `fixturePins`, `honoured`, `orphaned`,
+  `conflicting`, `unhonoured`, `pins` [{`kind`, `subject`, `room`, `pin`, `status`, `recordedConflict`, `why`,
+  `origin`}]}): exit 1 a
   hard rule broken or not a plan this program reads, soft findings and the LayoutScore reported; 2 usage; 3
-  unreadable). Every subcommand takes `--output <file>`.
+  the plan, the configuration or the overrides unreadable). Every subcommand takes `--output <file>`.
   `worldplan snapshots [--library <id>] [--json]` (I4b step 1, ADR-0015 §6) lists the world's snapshots newest first:
   each folder's name, its action and scope, when and by whom it was taken, the plan's and the overrides' digests
   (shortened; "none" for a file it did not hold), "undone" or, for an undo's own snapshot, the snapshot it undid; then

@@ -928,6 +928,64 @@ TEST_CASE("world/regeneration: a conflict recorded on its pin, reported as orpha
     CHECK(stands->slot == chosen->slot);
 }
 
+TEST_CASE("world/regeneration: a conflict recorded on a pin whose game then leaves the library is judged as "
+          "orphaned (pin-orphaned) at the update",
+          "[world][regeneration]") {
+    SnesWorld world = snesWorld(150, 44);
+    std::set<GameId> duplicated;
+    for (const rv::world::UnplacedGame& game : world.inputs.selections.front().unplaced) {
+        duplicated.insert(game.representative);
+    }
+    const Placement* chosen = nullptr;
+    for (const Placement& placement : world.plan.placements) {
+        if (chosen == nullptr && !duplicated.contains(placement.game)) {
+            chosen = &placement;
+        }
+    }
+    REQUIRE(chosen != nullptr);
+    const GameId game = chosen->game;
+    EditedWorld edited{world.plan, {}};
+    edit(edited, EditOperation::pin(game));
+    // The pinned game loses its cover: the regeneration unplaces it and records game-gone on its pin.
+    Inputs inputs = world.inputs;
+    RoomSelection& selection = inputs.selections.front();
+    std::erase_if(selection.titles, [&](const rv::world::RoomTitle& title) { return title.game == game; });
+    selection.unplaced.push_back({game, selection.room, rv::world::UnplacedReason::NoCover, {}});
+    std::sort(selection.unplaced.begin(), selection.unplaced.end());
+    selection.distinctTitles = selection.titles.size();
+    const RegenerationScope scope = RegenerationScope::ofRoom(*RoomId::parse("room:snes"));
+    const Regeneration regeneration = regenerateOf(edited.plan, inputs, scope, edited.overrides);
+    REQUIRE(regeneration.overrides.gamePins.size() == 1);
+    REQUIRE(regeneration.overrides.gamePins.front().conflict == rv::world::ConflictReason::GameGone);
+    const std::string pin = rv::world::pinText(regeneration.overrides.gamePins.front());
+    // The game then leaves the library: no entry in the plan, the pin's subject gone with its conflict still recorded.
+    std::erase_if(selection.unplaced, [&](const rv::world::UnplacedGame& unplaced) { return unplaced.game == game; });
+    const GenerationResult update = updateRoom(regeneration.result.plan, selection, kWorldSeed, regeneration.overrides);
+    INFO(failedFindings(update.validation));
+    CHECK(update.validation.passed());
+    CHECK(std::none_of(update.plan.unplaced.begin(), update.plan.unplaced.end(),
+                       [&](const rv::world::UnplacedGame& unplaced) { return unplaced.game == game; }));
+    CHECK(update.changes.needsConfirmation.empty());
+    CHECK(update.changes.orphanedPins == std::vector<std::string>{pin});
+    // Judged as an orphaned pin, as before measurePins() named it conflicting: one soft pin-orphaned finding.
+    std::vector<const rv::world::ValidationFinding*> orphaned;
+    for (const rv::world::ValidationFinding& finding : update.validation.findings) {
+        if (finding.rule == rv::world::rule::kPinOrphaned) {
+            orphaned.push_back(&finding);
+        }
+    }
+    REQUIRE(orphaned.size() == 1);
+    CHECK(orphaned.front()->severity == rv::world::Severity::Soft);
+    CHECK(orphaned.front()->subject == game.toString());
+    // worldplan check shows it as conflicting, with its reason, and gone.
+    const std::vector<rv::world::PinMeasure> measures =
+        rv::world::measurePins(update.plan, {snesData().roomTemplate}, regeneration.overrides);
+    REQUIRE(measures.size() == 1);
+    CHECK(measures.front().status == rv::world::PinStatus::Conflicting);
+    CHECK(measures.front().gone);
+    CHECK(measures.front().why.find("recorded game-gone; its game has no entry in the plan") != std::string::npos);
+}
+
 TEST_CASE("world/regeneration: a hung decoration on the south wall follows it to the room's new depth",
           "[world][regeneration]") {
     // A room grown by a step, a poster of the south wall slid along it (pinned at its transform), then the collection

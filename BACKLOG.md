@@ -312,7 +312,8 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; these come from the I2 steps.
 
-- **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1` set
+- **The gate and test scripts under the automation guard** (ADR-0008 §8; Gate M3 tried it for its whole run and the two
+  runner tests named below failed, refused first: `docs/testing/gate-m3.md`): `scripts/gate.ps1` and `scripts/test.ps1` set
   no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in the runner, launcher and spike unit tests and in the
   `desktop.launch.*` cases of `spike_launch`, which start the fake emulator unguarded (the `retroverse-cli launch` tests
   set it for their own duration since I2 step 12, `ScopedLaunchAllowList`); the GPU smoke tests of `rv_smoke_tests`
@@ -446,20 +447,28 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 - **The busiest floor's GPU memory at 1080p, to be measured (I5 step 3's review):** at 1920 x 1080 with both
   screens playing the busiest real floor held 505.8 MiB (`docs/i5/step-3.md`'s review; Gate D's 471.8 was at
   1280 x 720), 6.2 MiB under the acceptable 512. The memory margin (`docs/i5/memory-margin.md`) took 28.3 MiB out of
-  the 1080p render targets and a screenshot's second set, so about 477.5 MiB is expected; still open: Gates M3 / M4
-  measure the real floor at 1080p with every screen playing, on a quiet machine. If it is over the limit again, the next
-  remedy is per-floor residency of the procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing
-  intermediates at reduced resolution (they change the look).
-- **The regeneration preview's time (done, `docs/i4b/preview-time.md`):** the digests' canonical text is written
-  straight from the plan and the inputs (byte-identical: the plan goldens and a comparison of both paths on every world
-  fixture), the app's preview takes the plan it shows instead of parsing the file, and the standing rooms' data are
-  read ahead with the catalog's inputs. The real room previews in the app went from 2.65 to 4.10 s (Gate M3) to 1.42 to
-  1.81 s with the machine fully loaded, 1.19 and 1.53 s a third loaded; Gate M3 measures them again on a quiet machine.
-  Left: when the preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to 1.1 s in those
-  runs: the catalog snapshot's
-  SQLite queries, slower beside the floor's cover loads); the validation of the whole plan (about 0.15 s) and the
-  digests' SHA-256 over about 25 MB are the largest parts of the dry run now. Seeding the inputs from the building
-  job's snapshot (I4b step 6's follow-up below) would remove most of the read-ahead.
+  the 1080p render targets and a screenshot's second set, so about 477.5 MiB is expected. Gate M3 measured it
+  (`docs/testing/gate-m3.md`): **477.5 MiB** at 1920 x 1080 with both screens playing, cold, warm and with a
+  screenshot, 34.5 MiB under the limit. If a later step takes it over, the next remedy is per-floor residency of the
+  procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing intermediates at reduced resolution (they
+  change the look).
+- **The regeneration preview's time (done, `docs/i4b/preview-time.md`):** Gate M3 measured it over ADR-0015 §9's 2 s
+  (`docs/testing/gate-m3.md`, on a loaded machine): the in-app previews of room:snes 2.65 and 3.27 s and of
+  room:amstradcpc 3.61 and 4.10 s (the job's read of the world 0.5 to 0.65 s, the regeneration 1.2 to 2.2 s, the app's
+  pool shared with the cover loader), the CLI's dry run of room:snes 1.7 s. The fix: the digests' canonical text is
+  written straight from the plan and the inputs (byte-identical: the plan goldens and a comparison of both paths on
+  every world fixture), the app's preview takes the plan as stored instead of parsing the file, and the standing rooms'
+  data are read ahead with the catalog's inputs. The real room previews in the app went to 1.42 to 1.81 s with the
+  machine fully loaded, 1.19 and 1.53 s a third loaded; Gate M3 measures them again on a quiet machine. Left: when the
+  preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to 1.1 s in those runs: the
+  catalog snapshot's SQLite queries, slower beside the floor's cover loads); the validation of the whole plan (about
+  0.15 s) and the digests' SHA-256 over about 25 MB are the largest parts of the dry run now. Seeding the inputs from
+  the building job's snapshot (I4b step 6's follow-up below) would remove most of the read-ahead.
+- **Debug GPU cases near their time limits (Gate M3):** `gpu.world floor: light reaches through the doorways ...` takes
+  474 to 579 s in Debug against ctest's 600 s; the floor-app cases wait at most 10 s for the building in lockstep and
+  `app/world_flow: a start room kept until a regeneration ...` 60 s for a start. Under another session's load Gate M3's
+  run failed all four on time alone (`docs/testing/gate-m3.md`). A longer ctest timeout for the light case (or fewer
+  probe runs in Debug) and a lockstep wait scaled for Debug would keep a loaded gate from failing on them.
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
