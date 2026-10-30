@@ -251,6 +251,20 @@ itemTextOf(const std::map<catalog::SystemName, RoomItems>& items, std::span<cons
 
 } // namespace
 
+std::vector<world::RoomId> expansionsAddedBy(const WorldBuild& build) {
+    std::vector<world::RoomId> added;
+    if (build.preview || build.outcome != WorldOutcome::Updated || !build.written || build.saveError ||
+        !build.changes) {
+        return added;
+    }
+    for (const world::RoomId& room : build.changes->roomsAdded) {
+        if (room.isExpansion()) {
+            added.push_back(room);
+        }
+    }
+    return added;
+}
+
 RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan) {
     RoomItems items;
     items.systemName = snapshot.systemFullName;

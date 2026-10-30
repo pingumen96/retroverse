@@ -723,19 +723,13 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                                               replaced.to.xMm, replaced.to.zMm});
         }
         m_record.needsConfirmation = build.changes->needsConfirmation;
-        // I4b step 8 (ADR-0015 §7): the expansions an update added (a first building's are no news), named by a notice.
-        if (build.outcome == WorldOutcome::Updated && !build.preview) {
-            std::vector<world::RoomId> added;
-            for (const world::RoomId& room : build.changes->roomsAdded) {
-                if (room.isExpansion()) {
-                    added.push_back(room);
-                    m_record.roomsAdded.push_back(room.toString());
-                }
+        // I4b step 8 (ADR-0015 §7): the expansions an update that saved the building added, named by a notice.
+        if (std::vector<world::RoomId> added = expansionsAddedBy(build); !added.empty()) {
+            for (const world::RoomId& room : added) {
+                m_record.roomsAdded.push_back(room.toString());
             }
-            if (!added.empty()) {
-                m_addedRooms = std::move(added);
-                m_addedRoomsPending = true;
-            }
+            m_addedRooms = std::move(added);
+            m_addedRoomsPending = true;
         }
     }
     m_record.planDigest = build.planDigest;
