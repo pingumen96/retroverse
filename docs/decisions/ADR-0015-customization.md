@@ -141,16 +141,16 @@ A light editor, in the product UI (RmlUi, Italian strings in `assets/ui`), pad a
 - **The command line** offers the same operations (§8), so tests and scripts edit without a window.
 
 *Amended on 2026-10-28 (I4b step 3's review):* a session edits the collection room that holds the walker when it begins
-("Modifica stanza", or "Sposta" on the card of a game of that room); another room needs a new session. A game's move or
-swap is shown by laying the room's collection out again in place. A move into a slot that a dressed level covers makes
-the dressing give way by building the resident floor again from the draft, until the room's static part can be rebuilt
-alone (I4b step 4, which also needs it for fixture moves); until then such an edit may exceed §9's 0.25 s on a large
-floor (2.0 s from the request to the frame that shows it on the reference library's computer floor, 5,314
-placements: the floor's job 1.4 s), and step 4 brings it within. The floor's live update does not start during a
-session: a refresh that ends during one starts it when the session ends. *Amended on 2026-10-28 (I4b step 4's
-review):* a move into a dressed slot now rebuilds the room's static part alone, like a fixture move, and no longer
-builds the floor again: on the reference library's computer floor it shows in 0.15 s (was 2.0 s), within §9; the
-exception above is closed.
+("Modifica stanza", or "Sposta" on the card of a game of that room); another room needs a new session (superseded within
+a chain by the step-8 amendment below). A game's move or swap is shown by laying the room's collection out again in
+place. A move into a slot that a dressed level covers makes the dressing give way by building the resident floor again
+from the draft, until the room's static part can be rebuilt alone (I4b step 4, which also needs it for fixture moves);
+until then such an edit may exceed §9's 0.25 s on a large floor (2.0 s from the request to the frame that shows it on
+the reference library's computer floor, 5,314 placements: the floor's job 1.4 s), and step 4 brings it within. The
+floor's live update does not start during a session: a refresh that ends during one starts it when the session ends.
+*Amended on 2026-10-28 (I4b step 4's review):* a move into a dressed slot now rebuilds the room's static part alone,
+like a fixture move, and no longer builds the floor again: on the reference library's computer floor it shows in 0.15 s
+(was 2.0 s), within §9; the exception above is closed.
 
 *Amended on 2026-10-28 (I4b step 4's review):* a fixture is targeted by the reticle where no game or slot is, within
 4 m, unless the hero corner or a hero-wall module stands before it, never by the D-pad's steps; it is held where the
@@ -300,24 +300,26 @@ that leave the catalog keep their slots (ADR-0010 §10), so one whose every titl
 regeneration drops it. An update or a regeneration refuses a plan holding an expansion without its head (only a hand
 edit makes one).
 
-*Amended on 2026-10-29 (I4b step 8, the app):* an expansion's sign is its head's with a space and its number
-("HOME COMPUTERS 2", "ARCADE 2"): its portal's plaque, its blade signs and the hub's fascia sign in the hall, and its
-own neon sign in the room. The directory lists a chain's rooms together on their floor: the head where it stands along
-the hall, its expansions after it by number (a gap kept, `:3` after the head), indented and named with their number
-("Lumen Desk Computer 2", "Sala giochi arcade 2"). Each room of a chain of more than one room shows its titles' range:
-the chain's placed titles in its alphabetical order (the head's sections in their order, then the sort key, then the
-GameId: the order a fresh split shares them in), and for each room, section by section, the initials of its first and
-last title there ("A – K"; a digit as itself, any other sign "#"), so that a range never leaves out a title its room
-holds; where one room's range ends on the initial the next one's begins on, both ends show two letters ("A – Mo",
-"Mo – Y"). After updates the ranges may overlap (a new title goes after its predecessor wherever that stands, else to
-the chain's next free slot, wrapping to the head): they are shown as they are, never trimmed, and a room whose titles
-interleave with another room's of its chain says "in ordine sparso" ("Rigenera stanza" splits the chain in order
-again). A shared room's chain shows, in each room, the sections it holds titles of, each with its own range. The ranges
-come from the rooms' items files, read off the main thread whenever the plan or those files change; a room shows none
-until they are read. The editor's session edits the chain of the room it begins in (§4 as amended below). When an
-update that saves the building adds expansions (an update's own or the migration's), the notice names the first ("Sala
-giochi arcade 2", "Lumen Desk Computer 2") and counts the others; a first building's chains and a regeneration's (its
-preview counts them) raise no notice. The app's update reads a chain's data once, its head's, as the CLI does.
+*Amended on 2026-10-29 (I4b step 8, the app):* an expansion's sign is its head's with a space and its number ("HOME
+COMPUTERS 2", "ARCADE 2"): its portal's plaque, its blade signs and the hub's fascia sign in the hall, and its own neon
+sign in the room. The directory lists a chain's rooms together on their floor: the head where it stands along the hall,
+its expansions after it by number (a gap kept, `:3` after the head), indented and named with their number ("Lumen Desk
+Computer 2", "Sala giochi arcade 2"). Each room of a chain of more than one room shows its titles' range: the chain's
+placed titles in its alphabetical order (the head's sections in their order, then the sort key, the title key, the
+GameId: the generator's order, in which a fresh split shares them), and for each room, section by section, the initials
+of its first and last title there ("A – K"; a digit as itself, any other sign "#"), so that a range never leaves out a
+title its room holds; where one room's range ends on the initial the next one's begins on, both ends show two letters
+("A – Mo", "Mo – Y"). After updates the ranges may overlap (a new title goes after its predecessor wherever that stands,
+else to the chain's next free slot, wrapping to the head), and so may they after the editor's moves within a chain (a
+game carried into another room of it stands where the user put it): they are shown as they are, never trimmed, and a
+room whose titles interleave with another room's of its chain says "in ordine sparso" ("Rigenera stanza" splits the
+chain in order again). A shared room's chain shows, in each room, the sections it holds titles of, each with its own
+range. The ranges come from the rooms' items files, read off the main thread whenever the plan or those files change; a
+room shows none until they are read. The editor's session edits the chain of the room it begins in (§4 as amended
+below). When an update that saves the building adds expansions (an update's own or the migration's), the notice names
+the first ("Sala giochi arcade 2", "Lumen Desk Computer 2") and counts the others; a first building's chains and a
+regeneration's (its preview counts them) raise no notice. The app's update reads a chain's data once, its head's, as the
+CLI does.
 
 *Amended on 2026-10-29 (I4b step 8, the editor, §4):* a session edits the room chain of the collection room that holds
 the walker when it begins (its head and its expansions, which stand on one floor), not that room alone: the room of the

@@ -205,16 +205,18 @@ games, the long title selected and ending in an ellipsis) and `card.png` (a game
 stanza", beside the favourites: a long system name after its date); `--width 1280 --height 720` shows the compact
 theme. The model is `tests/ui_probe/directory_fixture.hpp`'s (invented systems and titles).
 
-Expansion rooms (I4b step 8, `docs/i4b/step-8.md`): `rv_smoke_tests.exe "world_expansion: *"` plans the
-`esde/overflow` fixture fresh (room:amiga and room:amiga:2 facing each other across the computer floor's hall,
-area:arcade and area:arcade:2 on the hub) and leaves its runs and screenshots under
-`build/<preset>/smoke/world_expansion/<case>/`: `walk/hall-portals.png` (both portals, "HOME COMPUTERS" and "HOME
-COMPUTERS 2" on their plaques and blade signs, from 4 m down the hall), `walk/inside-expansion.png` (its neon sign, its
-CRT), `walk/inspect-expansion.png`, `chains/arcade-expansion.png` ("ARCADE 2"), `directory/directory-chain.png` (the
-computer floor's rooms: the chain with its ranges), `edit/carried-into-expansion.png` and
-`edit/holding-over-free-slot.png` (the editor's bar "Modifica stanza · Lumen Desk Computer 2", a game of the head in
-the hand), `notice/notice-rooms-added.png` (the lobby's notice naming "Sala giochi arcade 2"). The poses are in the
-start room's frame (`--start-room room:amiga`; the test computes them from the plan).
+Expansion rooms (I4b step 8, `docs/i4b/step-8.md`): `rv_smoke_tests.exe "world_expansion: *"` plans the `esde/overflow`
+fixture fresh (room:amiga and room:amiga:2 facing each other across the computer floor's hall, area:arcade and
+area:arcade:2 on the hub) and leaves its runs and screenshots under `build/<preset>/smoke/world_expansion/<case>/`:
+`walk/hall-portals.png` (both portals, "HOME COMPUTERS" and "HOME COMPUTERS 2" on their plaques and blade signs, from
+4 m down the hall), `walk/inside-expansion.png` (its neon sign, its CRT), `walk/inspect-expansion.png`,
+`chains/arcade-expansion.png` ("ARCADE 2"), `directory/directory-chain.png` (the computer floor's rooms: the chain with
+its ranges), `edit/carried-into-expansion.png` and `edit/holding-over-free-slot.png` (the editor's bar "Modifica
+stanza · Lumen Desk Computer 2", a game of the head in the hand), `edit/moved-into-expansion.png` (the game dropped into
+the expansion's free slot, its title and cover), `directory/show-in-expansion.png` ("Mostra nella stanza" from the head:
+the game's Focus pose in the expansion), `notice/notice-rooms-added.png` (the lobby's notice naming
+"Sala giochi arcade 2"). The poses are in the start room's frame (`--start-room room:amiga`; the test computes them from
+the plan).
 
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),

@@ -36,11 +36,12 @@ Roadmap row: I4b step 8. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
 ## Decisions beyond ADR-0015
 
 - **How ranges show** (ADR-0015 §7 as amended): the initials of each room's first and last title in the chain's
-  alphabetical order (the head's sections, the sort key, the GameId), so that a range never leaves out a title its room
-  holds; two letters where two rooms meet on one initial (the overflow fixture's invented titles split inside "M": "A –
-  Mo", "Mo – Y"); overlapping ranges after updates shown as they are, never trimmed to a "main run" (which would send a
-  reader to the wrong room), with "in ordine sparso" on a room whose titles interleave with another's; a shared room's
-  chain per section, only the sections a room holds titles of.
+  alphabetical order (the generator's: the head's sections, the sort key, the title key, the GameId; a system outside
+  the head's sections a section of its own), so that a range never leaves out a title its room holds; two letters where
+  two rooms meet on one initial (the overflow fixture's invented titles split inside "M": "A – Mo", "Mo – Y");
+  overlapping ranges after updates or the editor's moves within a chain shown as they are, never trimmed to a "main run"
+  (which would send a reader to the wrong room), with "in ordine sparso" on a room whose titles interleave with
+  another's; a shared room's chain per section, only the sections a room holds titles of.
 - **The editor's scope is the chain**, not the room the session began in (ADR-0015 §4 as amended): the plan's risk 4
   ("games move only within their room chain") is met by carrying the game through the hall, the way a user would; no
   menu action "move to the next room" was added. Furniture keeps its room: a held fixture, the menu or an edit being
@@ -52,25 +53,29 @@ Roadmap row: I4b step 8. Decision: [ADR-0015](../decisions/ADR-0015-customizatio
 
 ## Proofs
 
-- Unit (`tests/unit/app/test_directory_chains.cpp`, 5 cases): a chain together under its head on a plan made in the
-  test (expansions by number wherever they stand, a gap kept, a room alone as before); each room's ranges, a shared
-  room's per section, the catalog's full names; an unknown title left out; an update's addition making two rooms'
-  ranges overlap, "scattered" on both; a boundary on one initial in two letters; the initials and prefixes; the systems
-  read and the titles from an items file; the directory's teleport, "Mostra nella stanza" and where-is into an
-  expansion. `test_world_expansion_signs.cpp` (2 cases): `chainSignText()`, and on the overflow counts' fresh building
-  the computer floor's plaque and blade signs and each room's neon, the hub's fascia and portal signs of
-  `area:arcade:2`. `test_world_edit.cpp`: a game carried into another room of its chain (held from no slot there, a
-  swap and a move into the expansion, back in the head its own slot again, a game an undo moved let go of as before).
+- Unit (`tests/unit/app/test_directory_chains.cpp`, 8 cases): a chain together under its head on a plan made in the test
+  (expansions by number wherever they stand, a gap kept, a room alone as before); each room's ranges, a shared room's
+  per section, the catalog's full names; an unknown title left out; an update's addition making two rooms' ranges
+  overlap, "scattered" on both; a boundary on one initial in two letters; the initials and prefixes; the systems read
+  and the titles from an items file, a section's file never taking the titles of its room's other sections (a shared and
+  an arcade chain); a tie of sort keys at a boundary in the generator's order; a section per system outside the head's;
+  the ranges' mailbox keeping only the answer last asked; the directory's teleport, "Mostra nella stanza" and where-is
+  into an expansion. `test_world_expansion_signs.cpp` (2 cases): `chainSignText()`, and on the overflow counts' fresh
+  building the computer floor's plaque and blade signs and each room's neon, the hub's fascia and portal signs of
+  `area:arcade:2`. `test_world_edit.cpp`: a game carried into another room of its chain (held from no slot there, a swap
+  and a move into the expansion, back in the head its own slot again, a game an undo moved let go of as before).
   `test_directory.cpp`: a chain's rows and the expansion chosen, the selection kept by id; the document's bindings.
-  `test_world_notice_document.cpp`: the `rooms-added` block. `test_run_report.cpp`: `roomsAdded`, `edits[].rooms`.
+  `test_world_notice_document.cpp`: the `rooms-added` block (the atrium or the floor's hall). `test_world_build.cpp`:
+  the expansions named only after an update that saved the building. `test_run_report.cpp`: `roomsAdded`,
+  `edits[].rooms`, `directory.chainRooms`.
 - GPU (`tests/smoke/test_world_expansion.cpp`, 5 cases on `esde/overflow` planned fresh): the arcade's 60 sets placed
   (30 and 30, none for capacity), `area:arcade:2` a start room; the hall's portals, a walk from the hall into
   `room:amiga:2` (the eye's room, its CRT's playlist of its own games), a face-out cover of it inspected (the hero
-  texture on the item in the hand); the directory's chain, the teleport from its row, "Mostra nella stanza" of an
-  expansion's game from the head (a teleport, then its Focus pose); the editor carrying a display case's game from
-  `room:amiga` through the hall into a free slot of `room:amiga:2` and saving it (the stored plan 849 and 851, one pin
-  of the editor); an update adding 20 arcade sets over a room at its limit (`area:arcade:2` added, the notice
-  `rooms-added`, the next start silent).
+  texture on the item in the hand); the directory's chain (the report's `chainRooms`: "A – Mo", "Mo – Y"), the teleport
+  from its row, "Mostra nella stanza" of an expansion's game from the head (a teleport, then its Focus pose); the editor
+  carrying a display case's game from `room:amiga` through the hall into a free slot of `room:amiga:2` and saving it
+  (the stored plan 849 and 851, one pin of the editor); an update adding 20 arcade sets over a room at its limit
+  (`area:arcade:2` added, the notice `rooms-added`, the next start silent).
 
 ## Screenshots
 
@@ -84,17 +89,12 @@ game in the hand), `moved-into-expansion.png` (the game dropped there with its t
 
 ## Real library
 
-`./scripts/real-library.ps1 -Filter '[real-library][building]'` in Release, ES-DE closed, 0 differences among 542,120
-entries. Nothing changed for the reference library, which has no chain: its directory lists 44 rooms on 9 floors, each
-alone without a range, no items file read for ranges, no room added (`world.roomsAdded` empty at every start); the
-building planned twice gives one plan digest and one file SHA-256 (19,985 placements, 71,290 unplaced), the unchanged
-starts plan nothing (skipped by the stamp) and the update writes nothing. The timings did not hold this time: the run
-shared the machine with two other worktrees' GPU suites and a build (the CPU at 100%, the import 40.0 s against step
-7's 12.4 s), and the lobby showed 5.5 s and 9.0 s after the process started (the quick catalog's first page 4.0 s and
-7.6 s; the 5 s row), and the cold ride back to the lobby reported its arrays before the arcade room's second array came
-in (2.5 MiB against 5.0 MiB; the run's end equal). The step changes nothing those runs execute on a plan without a
-chain (the signs of rooms alone, the ranges' read skipped, the update's data unchanged), so these are the load's; the
-row is to be measured again on a quiet machine (the gate's run).
+`./scripts/real-library.ps1 -Filter '[real-library][building]'` in Release, ES-DE closed: 0 differences among 542,120
+entries. The reference library has no chain, so nothing changed for it: its 44 rooms on 9 floors listed alone without a
+range, no items file read for ranges, `world.roomsAdded` empty at every start; the building planned twice gives one plan
+digest and one file SHA-256. The run shared the machine with other worktrees' GPU suites and a build (the CPU at 100%):
+the lobby showed 5.5 s and 9.0 s after the process started, past the 5 s limit. The step changes nothing a plan without
+a chain runs, so the load's; the row is measured again on a quiet machine before Gate M3.
 
 ## Release
 
