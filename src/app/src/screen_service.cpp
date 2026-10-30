@@ -1,5 +1,4 @@
 #include "screen_service.hpp"
-#include "screen_verdicts.hpp"
 
 #include <rv/app/audio_policy.hpp>
 #include <rv/app/cabinet_screens.hpp>
@@ -7,6 +6,7 @@
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/screen_aspect.hpp>
 #include <rv/app/screen_room.hpp>
+#include <rv/app/screen_verdicts.hpp>
 #include <rv/audio/audio_engine.hpp>
 #include <rv/audio/audio_ring.hpp>
 #include <rv/assets/collection_labels.hpp>
@@ -502,6 +502,8 @@ struct ScreenService::Impl {
     GLuint viewerViewSource = 0;
     std::string viewerFailure;
     bool viewerFromVerdict = false;
+    /// The verdicts look at the viewer's clip's file (a failure verdict met for the first time): not opened meanwhile.
+    bool viewerLooking = false;
     ViewerVideo viewerShown;
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
@@ -1522,7 +1524,11 @@ struct ScreenService::Impl {
             cabinet->clip =
                 cabinet->policy.wantsDecoder() ? clipKey(cabinet->policy.targetMedia().video) : std::string();
         }
-        // I5 step 8: the media viewer's clip, at the eye, in view unless the window is minimized.
+        // I5 step 8: the media viewer's clip, at the eye, in view unless the window is minimized; not asked for while
+        // the verdicts look at its file (I5 step 8's review).
+        if (viewerLooking) {
+            screenViewer();
+        }
         if (viewerScreen) {
             ScreenState& viewer = *viewerScreen;
             viewer.policy.hover(std::nullopt, now);
@@ -1532,7 +1538,7 @@ struct ScreenService::Impl {
             viewer.screenClass = ScreenClass::Direct;
             viewer.distance = 0.0;
             viewer.azimuth = 0.0;
-            viewer.clip = viewer.policy.wantsDecoder() ? viewerKey() : std::string();
+            viewer.clip = viewer.policy.wantsDecoder() && !viewerLooking ? viewerKey() : std::string();
         }
         if (viewerOpen) {
             ++counters.viewer.openFrames;
@@ -1730,8 +1736,10 @@ struct ScreenService::Impl {
     }
 
     /// The viewer's clip screened by the verdicts (I5 step 7): one a failure verdict leaves out is let go, never
-    /// opened, with the verdict's name as its reason.
+    /// opened, with the verdict's name as its reason; one whose file is being looked at waits (viewerLooking). The
+    /// verdicts answer for the clip itself (screenClip()), whether or not the world screened its game.
     void screenViewer() {
+        viewerLooking = false;
         if (!viewerScreen || !viewerClip) {
             return;
         }
@@ -1739,14 +1747,18 @@ struct ScreenService::Impl {
         if (media.video.empty()) {
             return;
         }
-        const std::optional<std::string> failure = verdicts.leftOutFailure(media);
-        if (!failure) {
+        const ScreenVerdicts::ClipScreening screening = verdicts.screenClip(media, viewerClip->gameId);
+        if (screening.state == ScreenVerdicts::ClipScreening::State::Looking) {
+            viewerLooking = true;
+            return;
+        }
+        if (screening.state != ScreenVerdicts::ClipScreening::State::LeftOut) {
             return;
         }
         viewerScreen.reset();
         refreshActive();
         audibleScreen.reset();
-        viewerFailure = *failure;
+        viewerFailure = screening.failure;
         viewerFromVerdict = true;
         ++counters.viewer.knownBad;
         spdlog::info("Media viewer: the clip of game {} is known to fail ({}): never opened", viewerClip->gameId,
@@ -1762,6 +1774,7 @@ struct ScreenService::Impl {
         viewerClip.reset();
         viewerFailure.clear();
         viewerFromVerdict = false;
+        viewerLooking = false;
         refreshActive();
         audibleScreen.reset();
         releaseViewerTexture();

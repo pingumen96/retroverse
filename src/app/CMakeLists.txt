@@ -72,7 +72,8 @@ rv_forbid_link(rv_app_cli)
 # reconciliation and the hero CRT's games of the room (world_reconcile, room_screen: step 10c), the live update's decision
 # (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b); since I4b
 # the editor's draft (world_edit_draft: step 3) and the regenerations' and the undo's jobs (world_regenerate_job: step
-# 6). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
+# 6); since I5 step 8's review the screens' verdicts (screen_verdicts: I5 step 7, over rv_media's verdicts file, unit
+# tested). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
@@ -83,6 +84,7 @@ add_library(rv_app_catalog STATIC
     src/library_refresh.cpp
     src/room_screen.cpp
     src/room_snapshot.cpp
+    src/screen_verdicts.cpp
     src/world_build.cpp
     src/world_live_plan.cpp
     src/world_reconcile.cpp
@@ -93,7 +95,7 @@ add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)
 target_include_directories(rv_app_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(rv_app_catalog PUBLIC
-    rv_app_cli rv_core rv_launcher rv_ui_model rv_catalog rv_esde rv_catalog_db rv_platform_win)
+    rv_app_cli rv_core rv_launcher rv_ui_model rv_catalog rv_esde rv_catalog_db rv_platform_win rv_media)
 rv_forbid_link(rv_app_catalog)
 
 add_library(rv_app STATIC
@@ -115,7 +117,6 @@ add_library(rv_app STATIC
     src/scene_graphics.cpp
     src/scene_instance.cpp
     src/screen_service.cpp
-    src/screen_verdicts.cpp
     src/self_check_canvas.cpp
     src/srgb_self_check.cpp
     src/world_cabinets.cpp

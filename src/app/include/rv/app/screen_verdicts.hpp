@@ -53,9 +53,23 @@ public:
     /// clip is given while the file is not read yet.
     [[nodiscard]] std::vector<ScreenGame> screened(std::vector<ScreenGame> games);
 
-    /// I5 step 8: the failure verdict's name (media::verdictName()) of a clip that screened() leaves out now (its file
-    /// unchanged since it was judged, or being looked at), for the media viewer's fallback; nothing for a clip it gives.
-    [[nodiscard]] std::optional<std::string> leftOutFailure(const ScreenMedia& media) const;
+    /// What the verdicts say of one clip (screenClip()).
+    struct ClipScreening {
+        enum class State : std::uint8_t {
+            Given,   ///< no failure verdict for its file as it is now (or the file not read yet): open it
+            Looking, ///< a failure verdict whose file is being looked at: not opened yet, asked again later
+            LeftOut, ///< a failure verdict for its file as it is now: never opened
+        };
+        State state = State::Given;
+        /// LeftOut: the failure verdict's name (media::verdictName()).
+        std::string failure;
+    };
+    /// I5 step 8's review: one clip asked for outside the screens' games (the media viewer's, whose game the world may
+    /// never have screened: an unbound service, a game of the quick catalog outside the bound room), answered from the
+    /// failure verdicts and the files' facts by screened()'s rule: a failure verdict's clip met for the first time is
+    /// looked at by the thread (Looking meanwhile; a lockstep run waits for it). It never resets takeChanged()'s flag,
+    /// so the world's pending changes are never swallowed.
+    [[nodiscard]] ClipScreening screenClip(const ScreenMedia& media, const std::string& gameId);
 
     /// The clip `media` of game `gameId` failed on a screen (a failure of the file: FileNotFound and ReadError give
     /// none).
