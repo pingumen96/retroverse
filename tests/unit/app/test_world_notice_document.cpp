@@ -85,3 +85,26 @@ TEST_CASE("app/world_notice_document: the test room of a catalog without rooms s
         CHECK(block.compare(paragraph, guarded.size(), guarded) == 0);
     }
 }
+
+TEST_CASE("app/world_notice_document: the rooms an update added are named with their number (I4b step 8)",
+          "[app][documents]") {
+    const std::string rml = readAsset(wn::kDocumentPath);
+    const std::string opening = "<div data-if=\"notice == '" + std::string(wn::kRoomsAdded) + "'\">";
+    const std::size_t begin = rml.find(opening);
+    REQUIRE(begin != std::string::npos);
+    const std::size_t end = rml.find("</div>", begin);
+    REQUIRE(end != std::string::npos);
+    const std::string block = rml.substr(begin, end - begin);
+    // The first new room by its kind's name and its number in its chain, the others counted.
+    CHECK(contains(block, "data-if=\"roomKind == 'console'\">{{ roomTitle }} {{ roomNumber }}</p>"));
+    CHECK(contains(block, "Sala condivisa {{ roomNumber }}"));
+    CHECK(contains(block, "Sala giochi arcade {{ roomNumber }}"));
+    CHECK(contains(block, "data-if=\"moreRooms == 0\""));
+    CHECK(contains(block, "data-if=\"moreRooms == 1\""));
+    CHECK(contains(block, "{{ moreRooms }}"));
+    CHECK(contains(block, "nell'indice dell'edificio (M)"));
+    // Where to find it: the ground floor's atrium, any other floor's hall.
+    CHECK(contains(block, "<p data-if=\"groundFloor\">La trovi dall'atrio e nell'indice dell'edificio (M).</p>"));
+    CHECK(contains(block, "<p data-if=\"!groundFloor\">La trovi dal corridoio del suo piano"));
+    CHECK_FALSE(contains(block, "atrio del suo piano"));
+}

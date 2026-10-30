@@ -174,10 +174,16 @@ struct SceneData {
 /// (themedLighting()). Errors: NotFound for a
 /// room the plan lacks; those of the readers; a template whose version is not the room's (ValidationFailed); a media
 /// family the registry lacks (NotFound).
+/// I4b step 8 (ADR-0015 §7): an expansion's platform sign is its head's with its number ("HOME COMPUTERS 2"), so that
+/// its neon sign in the room and its portal's and fascia's signs in the hall say which room of the chain it is.
 [[nodiscard]] Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan,
                                                 const RoomId& room,
                                                 const std::optional<LightingProfile>& lighting = std::nullopt,
                                                 std::span<const std::string> platformTags = {});
+
+/// The sign of `room` of a chain whose head's sign is `sign` (I4b step 8, ADR-0015 §7): `sign` for a head, else `sign`,
+/// a space and the room's number ("HOME COMPUTERS" and room:amiga:2 give "HOME COMPUTERS 2"; an empty sign gives "2").
+[[nodiscard]] std::string chainSignText(std::string_view sign, const RoomId& room);
 
 /// A dressed span the scene leaves bare, and why.
 struct UndressedSpan {

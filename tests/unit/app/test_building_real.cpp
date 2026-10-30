@@ -312,6 +312,24 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
             }
         }
         CHECK(first.world.replacedRooms.empty());
+        // I4b step 8: the reference library has no chain (no room past its capacity, I6 step 4): its directory lists
+        // every room alone as before, without a range, and the ranges read no items file; no room added was named.
+        const rv::ui::DirectoryBuilding directory = rv::app::directoryBuildingOf(plan->plan, {});
+        std::size_t listed = 0;
+        for (const rv::ui::DirectoryFloor& floor : directory.floors) {
+            for (const rv::ui::DirectoryRoom& room : floor.rooms) {
+                INFO(room.id);
+                ++listed;
+                CHECK(room.chainIndex == 1);
+                CHECK(room.chainRooms == 1);
+                CHECK(room.ranges.empty());
+            }
+        }
+        CHECK(listed == plan->plan.rooms.size());
+        CHECK(rv::app::chainSystemsOf(plan->plan).empty());
+        CHECK(first.world.roomsAdded.empty());
+        std::cout << fmt::format("Real building: the directory lists {} rooms on {} floors, no chain\n", listed,
+                                 directory.floors.size());
     }
 
     // Gate C: the building planned twice. The plans' folder removed, the same catalog planned again from nothing: one
@@ -358,6 +376,8 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
         CHECK(world.state == "room");
         CHECK(world.outcome == "unchanged");
         CHECK_FALSE(world.planWritten);
+        CHECK(world.roomsAdded.empty());
+        CHECK(world.notice != "rooms-added");
         CHECK(world.planDigest == first.world.planDigest);
         REQUIRE(world.preview.has_value());
         REQUIRE(world.preview->committedAtMs.has_value());

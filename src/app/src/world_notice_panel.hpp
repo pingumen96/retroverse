@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,6 +24,11 @@ struct WorldNoticeContent {
     /// "shared", "arcade") and, a console room's, its system's name.
     std::string roomKind;
     std::string roomTitle;
+    /// I4b step 8: world_notice::kRoomsAdded's room's number in its chain and the other rooms the update added.
+    std::uint32_t roomNumber = 1;
+    std::uint32_t moreRooms = 0;
+    /// That room stands on the ground floor (reached from its hub, the atrium) rather than off a floor's hall.
+    bool groundFloor = false;
 
     bool operator==(const WorldNoticeContent&) const = default;
 };

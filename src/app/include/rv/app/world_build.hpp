@@ -299,6 +299,12 @@ struct FloorSources {
     std::optional<std::map<catalog::GameId, std::int64_t>> lastPlayed;
 };
 
+/// The expansion rooms that `build`'s update added to the building, by id (I4b step 8, ADR-0015 §7: the rooms-added
+/// notice and the run report's world.roomsAdded): none unless it is the building's result (not a preview), an update
+/// (a first building's chains are no news) and its plan was written (an update whose save failed, the world's lock
+/// held by another program, is made again at the next start and names its rooms then).
+[[nodiscard]] std::vector<world::RoomId> expansionsAddedBy(const WorldBuild& build);
+
 /// What the building job's last plan was made from (see the file comment): SHA-256 digests of the plan, of the
 /// catalog's stamp and of the world's inputs.
 struct BuildingStamp {

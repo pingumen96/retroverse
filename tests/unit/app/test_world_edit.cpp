@@ -367,6 +367,97 @@ TEST_CASE("app/world_edit: the editor picks up, moves, swaps, pins, and puts bac
     CHECK(editor.mode() == EditMode::Browse);
 }
 
+/// `layout` as the layout of another room of its chain (I4b step 8): its slots and clusters in `room` (an expansion
+/// stands as its head, of its template: the same pick ids), its games others (their ids moved by a constant).
+rv::world::CollectionLayout inRoom(rv::world::CollectionLayout layout, const rv::world::RoomId& room) {
+    const auto moved = [&](const SlotId& slot) {
+        const auto fixture =
+            rv::world::FixtureId::make(room, slot.fixture().socket(), slot.fixture().part()).value();
+        return SlotId::make(fixture, slot.level(), slot.index()).value();
+    };
+    layout.room = room;
+    for (rv::world::CollectionItem& item : layout.items) {
+        item.slot = moved(item.slot);
+        item.game = GameId::fromValue(item.game.value() ^ 0x0100'0000'0000'0000ull).value();
+    }
+    for (rv::world::FreeSlot& free : layout.freeSlots) {
+        free.slot = moved(free.slot);
+    }
+    for (rv::world::CollectionCluster& cluster : layout.clusters) {
+        cluster.fixture =
+            rv::world::FixtureId::make(room, cluster.fixture.socket(), cluster.fixture.part()).value();
+    }
+    return layout;
+}
+
+TEST_CASE("app/world_edit: a game carried into another room of its chain moves or swaps there (I4b step 8)",
+          "[app][world_edit]") {
+    const std::unique_ptr<EditRoom> head = editRoomOf(room80().plan);
+    const rv::world::RoomId expansionId = rv::world::RoomId::parse("room:snes:2").value();
+    auto built = EditRoom::build(
+        std::make_shared<const rv::world::CollectionLayout>(inRoom(layoutOf(room80().plan), expansionId)));
+    REQUIRE(built.has_value());
+    const std::unique_ptr<EditRoom> expansion = std::move(*built);
+    const auto [item, free] = itemBesideFree(*head);
+    const GameId game = head->target(item)->game.value();
+    EditInteraction editor({}, true);
+    editor.begin(std::nullopt);
+    editor.setRoom(head.get());
+    editor.ready();
+    aim(editor, item);
+    static_cast<void>(pressOn(editor, {Action::Interact}, item));
+    REQUIRE(editor.mode() == EditMode::Holding);
+    CHECK(editor.heldSlot() == head->target(item)->slot);
+
+    // The walker enters the expansion: the game stays in the hand, from no slot of the room edited now; the target
+    // and the hover are let go of (their pick ids were the head's).
+    editor.enterRoom(expansion.get());
+    CHECK(editor.mode() == EditMode::Holding);
+    CHECK(editor.held() == game);
+    CHECK(editor.heldFrom() == rv::world::kNoPick);
+    CHECK(editor.heldSlot().fixture().room().toString() == "room:snes");
+    CHECK_FALSE(editor.target().has_value());
+    // The expansion's slot of the head's own pick id is not the game's own slot: interact there is no put-back.
+    aim(editor, item);
+    EditFrameResult result = pressOn(editor, {Action::Interact}, item);
+    REQUIRE(result.apply.has_value());
+    CHECK(*result.apply == EditOperation::swap(game, expansion->target(item)->game.value()));
+    editor.applied(false); // refused: still in the hand, still from the head
+    CHECK(editor.mode() == EditMode::Holding);
+    CHECK(editor.heldFrom() == rv::world::kNoPick);
+    // Dropped into a free slot of the expansion: a move there.
+    aim(editor, free);
+    result = pressOn(editor, {Action::Interact}, free);
+    REQUIRE(result.apply.has_value());
+    CHECK(*result.apply == EditOperation::move(game, expansion->target(free)->slot));
+    CHECK(result.apply->slot.fixture().room() == expansionId);
+    editor.applied(false);
+
+    // Carried back into the head: its own slot again, where interact puts it back.
+    editor.enterRoom(head.get());
+    CHECK(editor.heldFrom() == item);
+    aim(editor, item);
+    result = pressOn(editor, {Action::Interact}, item);
+    CHECK_FALSE(result.apply.has_value());
+    CHECK(editor.mode() == EditMode::Browse);
+    CHECK_FALSE(editor.held().has_value());
+
+    // A game held in a room that no longer holds it (an undo moved it) is let go of, as before.
+    aim(editor, item);
+    static_cast<void>(pressOn(editor, {Action::Interact}, item));
+    REQUIRE(editor.mode() == EditMode::Holding);
+    auto emptied = layoutOf(room80().plan);
+    emptied.items.erase(std::remove_if(emptied.items.begin(), emptied.items.end(),
+                                       [&](const rv::world::CollectionItem& entry) { return entry.game == game; }),
+                        emptied.items.end());
+    auto without = EditRoom::build(std::make_shared<const rv::world::CollectionLayout>(std::move(emptied)));
+    REQUIRE(without.has_value());
+    editor.setRoom(without->get());
+    CHECK(editor.mode() == EditMode::Browse);
+    CHECK_FALSE(editor.held().has_value());
+    editor.setRoom(head.get());
+}
+
 TEST_CASE("app/world_edit: the D-pad steps over every slot, empty ones included, and the reticle takes back",
           "[app][world_edit]") {
     const std::unique_ptr<EditRoom> room = editRoomOf(room80().plan);

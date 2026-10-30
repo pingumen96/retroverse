@@ -38,9 +38,12 @@
 	<div id="edit-bar">
 		<div class="bar-header">
 			<span class="mark"><span class="shelf"></span><span class="shelf"></span><span class="shelf"></span></span>
-			<p class="bar-title" data-if="roomKind == 'console'">Modifica stanza · {{ roomTitle }}</p>
-			<p class="bar-title" data-if="roomKind == 'shared'">Modifica stanza · Sala condivisa</p>
-			<p class="bar-title" data-if="roomKind == 'arcade'">Modifica stanza · Sala giochi arcade</p>
+			<p class="bar-title" data-if="roomKind == 'console' && roomNumber == 1">Modifica stanza · {{ roomTitle }}</p>
+			<p class="bar-title" data-if="roomKind == 'console' && roomNumber > 1">Modifica stanza · {{ roomTitle }} {{ roomNumber }}</p>
+			<p class="bar-title" data-if="roomKind == 'shared' && roomNumber == 1">Modifica stanza · Sala condivisa</p>
+			<p class="bar-title" data-if="roomKind == 'shared' && roomNumber > 1">Modifica stanza · Sala condivisa {{ roomNumber }}</p>
+			<p class="bar-title" data-if="roomKind == 'arcade' && roomNumber == 1">Modifica stanza · Sala giochi arcade</p>
+			<p class="bar-title" data-if="roomKind == 'arcade' && roomNumber > 1">Modifica stanza · Sala giochi arcade {{ roomNumber }}</p>
 			<span class="pending" data-if="pending == 0">Nessuna modifica</span>
 			<span class="pending changed" data-if="pending == 1">1 modifica</span>
 			<span class="pending changed" data-if="pending > 1">{{ pending }} modifiche</span>

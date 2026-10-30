@@ -101,8 +101,7 @@ void EditInteraction::ready() {
     if (m_heldAtStart && m_room != nullptr) {
         const world::PickId pick = m_room->pickOf(*m_heldAtStart);
         if (pick != world::kNoPick) {
-            m_held = m_heldAtStart;
-            m_heldFrom = pick;
+            hold(*m_heldAtStart, pick);
             m_mode = EditMode::Holding;
         }
     }
@@ -116,8 +115,7 @@ void EditInteraction::end() {
     m_hover.reset();
     m_target.reset();
     m_stepped = false;
-    m_held.reset();
-    m_heldFrom = world::kNoPick;
+    letGo();
     m_heldAtStart.reset();
     m_menuFocus = EditMenuButton::Save;
     if (m_walker.animating()) {
@@ -147,11 +145,16 @@ void EditInteraction::setRoom(const EditRoom* room) {
         m_stepped = false;
         return;
     }
-    // The held game where it stands now (a refused or an undone edit leaves it where it was).
+    // The held game where it stands now (a refused or an undone edit leaves it where it was); one carried from another
+    // room of the chain stays held (I4b step 8).
     if (m_held) {
-        m_heldFrom = m_room->pickOf(*m_held);
-        if (m_heldFrom == world::kNoPick) {
-            m_held.reset();
+        const world::PickId pick = m_room->pickOf(*m_held);
+        if (pick != world::kNoPick) {
+            hold(*m_held, pick);
+        } else if (!m_heldSlot.empty() && m_heldSlot.fixture().room() != m_room->room()) {
+            m_heldFrom = world::kNoPick;
+        } else {
+            letGo();
             if (m_mode == EditMode::Holding) {
                 m_mode = EditMode::Browse;
             }
@@ -174,6 +177,31 @@ void EditInteraction::setRoom(const EditRoom* room) {
     if (m_hover.hovered() != world::kNoPick && !m_room->target(m_hover.hovered())) {
         m_hover.reset();
     }
+}
+
+void EditInteraction::enterRoom(const EditRoom* room) {
+    m_hover.reset();
+    m_target.reset();
+    m_stepped = false;
+    m_probedPick = world::kNoPick;
+    setRoom(room);
+}
+
+void EditInteraction::hold(const catalog::GameId& game, world::PickId pick) {
+    m_held = game;
+    m_heldFrom = pick;
+    m_heldSlot = world::SlotId{};
+    if (m_room != nullptr) {
+        if (const std::optional<EditTarget> target = m_room->target(pick)) {
+            m_heldSlot = target->slot;
+        }
+    }
+}
+
+void EditInteraction::letGo() noexcept {
+    m_held.reset();
+    m_heldFrom = world::kNoPick;
+    m_heldSlot = world::SlotId{};
 }
 
 bool EditInteraction::targetPinned() const {
@@ -297,8 +325,7 @@ void EditInteraction::back(const BackState& shell, EditFrameResult& result) {
     switch (m_mode) {
     case EditMode::Holding:
         // Put back: it never left its slot in the draft.
-        m_held.reset();
-        m_heldFrom = world::kNoPick;
+        letGo();
         m_mode = EditMode::Browse;
         return;
     case EditMode::Moving:
@@ -326,8 +353,7 @@ void EditInteraction::back(const BackState& shell, EditFrameResult& result) {
 }
 
 void EditInteraction::openMenu() {
-    m_held.reset();
-    m_heldFrom = world::kNoPick;
+    letGo();
     m_fixture.reset();
     m_menuFocus = EditMenuButton::Save;
     m_mode = EditMode::Menu;
@@ -353,8 +379,7 @@ void EditInteraction::readBrowse(const input::ActionState& actions, const EditFr
         return;
     }
     if (actions.pressed(Action::Interact)) {
-        m_held = m_target->game;
-        m_heldFrom = m_target->pick;
+        hold(*m_target->game, m_target->pick);
         m_mode = EditMode::Holding;
         return;
     }
@@ -519,8 +544,7 @@ void EditInteraction::readHolding(const input::ActionState& actions, EditFrameRe
     }
     if (m_target->pick == m_heldFrom) {
         // Its own slot: put back.
-        m_held.reset();
-        m_heldFrom = world::kNoPick;
+        letGo();
         m_mode = EditMode::Browse;
         return;
     }
@@ -661,8 +685,7 @@ void EditInteraction::applied(bool accepted) {
         return;
     }
     if (accepted || !m_held) {
-        m_held.reset();
-        m_heldFrom = world::kNoPick;
+        letGo();
         m_mode = EditMode::Browse;
         return;
     }

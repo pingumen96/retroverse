@@ -67,7 +67,9 @@ build/rvdata`).
   `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
   `snapshot`, `planDigest` (the plan shown at the end),
-  `saveMs`, `backMs`, `liveUpdateDeferred`); `regenerationInputsReleased` (I4b step 6's review: the times the
+  `saveMs`, `backMs`, `liveUpdateDeferred`, `rooms`: I4b step 8, the rooms of its chain the session edited, in the
+  order the walker entered them); `roomsAdded` (I4b step 8: the expansion rooms the update that saved the building
+  added, which the notice `rooms-added` names); `regenerationInputsReleased` (I4b step 6's review: the times the
   regenerations' inputs were let go of, the directory closed with nothing pending); `regenerations` (I4b step 6: one
   per preview asked, `kind` `room`,
   `floor`, `world` or `undo`, `scope`, `via` `directory` or `notice`, `requestFrame`, `previewFrame`, `previewMs` (from
@@ -107,7 +109,8 @@ build/rvdata`).
   `directory` (`{}` without the building: `opened`, at the end `open`, `tab`, `view`, `notice`, `gamesState`;
   `gamesRequests`, the `games` last listed with `gameId`, `title`, `system`, `favorite`, `played` "YYYY-MM-DD"; the card
   last shown `cardGame`, `cardRoom`, `cardOutcome`; `events` `open` (tab, `elevator` or `map`), `command`, `refused`,
-  `games`, `card`, `launch-ended`, `closed`); also `catalog.refreshes`
+  `games`, `card`, `launch-ended`, `closed`; since I4b step 8 `chainRooms`, each room of a chain as last listed with its
+  `ranges` {`system`, `first`, `last`} and `scattered`); also `catalog.refreshes`
   (one per refresh: trigger, outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
@@ -339,8 +342,9 @@ build/rvdata`).
   or arcade room lacking a section's selection held as it is, logged; a new system with a placeable title enters, its
   own room or a section, logged, since I4 step 6b), saves it
   under `<user data>/worlds/<library id>/` (generator 1.5, schema 2: since I4b step 7 a room past its template's
-  capacity is a chain of a head and expansion rooms, `room:<system>:<n>`, which the app shows as rooms of their floor
-  until step 8 signs them; a stored schema-1 plan of I3 is read lifted and
+  capacity is a chain of a head and expansion rooms, `room:<system>:<n>`, rooms of their floor signed with their
+  head's sign and number since I4b step 8 (an update that adds one says so with the notice `rooms-added`, naming the
+  first new room; the update reads a chain's data once, its head's); a stored schema-1 plan of I3 is read lifted and
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
   with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
   planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run
@@ -441,9 +445,14 @@ build/rvdata`).
   Back/Select) opens it anywhere in free roam (not in Focus, Inspect, a launch or a ride, nor in the frame an interact
   takes an item) and closes it again. It has the UI's input (the world stands still) and Esc / B leaves one level (the
   card to the games, a floor's rooms to the floors, then it closes). "Piani" lists the plan's floors in the elevator's order (the walker's marked), a floor its hall
-  ("Corridoio e ascensore") and its rooms along the hall with their games; "Preferiti e recenti" (the shoulders, or Left
-  and Right on the tabs) the catalog's favourites, then its most recently played games (Retroverse's sessions and
-  ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's launch, its outcome on the card)
+  ("Corridoio e ascensore") and its rooms along the hall with their games (I4b step 8: a chain's rooms together, the
+  head where it stands and its expansions after it by number, indented and named with it, "Lumen Desk Computer 2";
+  each with its titles' range, "850 giochi · A – Mo", the initials of its first and last title in the chain's order,
+  two letters where two rooms meet on one, a shared room's per section, "in ordine sparso" when an update's additions
+  interleave the rooms; read from the rooms' items files on the pool, none until they are); "Preferiti e recenti"
+  (the shoulders, or Left and Right on the tabs) the catalog's favourites, then its most recently played games
+  (Retroverse's sessions and ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's
+  launch, its outcome on the card)
   and "Mostra nella stanza". Choosing another floor's hall rides there, the walker's own floor's hall puts the walker
   back at its elevator; a room of the walker's floor teleports to its doorway, one of another floor rides there first.
   A ride: the view fades out in 250 ms (instant with `reduceMotion`; the post pass dims the tonemapped view's sRGB
@@ -477,8 +486,12 @@ build/rvdata`).
   (B) puts it back; P (the pad's X) pins or unpins the game targeted in place. Every move and swap pins its games
   (`overrides.json`, origin `editor`). Each edit is applied on the pool to a draft of the plan and validated; a refusal
   ("Quello spazio è già occupato", ...) leaves the game in the hand. The reticle and the D-pad target only while the eye
-  is in the edited room. Enter or Start opens the menu (Esc with pending changes too; Start again closes it, the walker
-  stands still while it is open): Salva (the session's operations saved under the world lock behind a snapshot, action `edit`, which
+  is in the edited room. I4b step 8: a session edits the chain of the room it began in (its head and expansions):
+  walking into another room of it while browsing or holding a game edits that room (the bar's name with its number),
+  so a game picked up in the head is carried through the hall and dropped into a free slot of the expansion or onto a
+  game there (one operation; both rooms laid out again); a held fixture keeps its room. Enter or Start opens the menu
+  (Esc with pending changes too; Start again closes it, the walker stands still while it is open): Salva (the session's
+  operations saved under the world lock behind a snapshot, action `edit`, which
   `retroverse-cli worldplan undo` undoes; replayed onto the stored plan if it changed meanwhile, refused with nothing
   written when one no longer applies), Annulla ultima azione (the draft's last), Esci senza salvare (the room as stored
   again), Continua. Esc with nothing pending leaves the editor. The quick catalog, the directory and rides wait, and a

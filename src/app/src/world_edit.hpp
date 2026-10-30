@@ -26,6 +26,11 @@
 // edit whose static part changed (a fixture moved, dressing giving way) rebuilds the edited room's static part alone
 // (roomStaticPart(): its scene objects, dressing, wall-washers, lamps' lights and colliders, in place on the floor
 // shown through the host's replaceObjects()), then lays its collection out again in place: never the whole floor.
+//
+// I4b step 8 (ADR-0015 §4, §7 as amended): a session edits the room chain of the room it began in (the head and its
+// expansions, on one floor): the room that holds the walker among them is the edited one (`room`, its targets
+// `editRoom`), so that a game picked up in one room is carried through the hall into another and dropped there (a move
+// or a swap across the chain, one operation of the draft that lays both rooms out again).
 
 #include <chrono>
 #include <cstdint>
@@ -144,7 +149,10 @@ struct EditProbeBox {
 struct WorldEditState {
     explicit WorldEditState(InteractionTimings timings, bool reduceMotion) : interaction(timings, reduceMotion) {}
 
+    /// The room edited now (the one that holds the walker among the chain's), and the chain's rooms on the floor shown
+    /// (I4b step 8: the room the session began in first, then the others of its chain).
     world::RoomId room;
+    std::vector<world::RoomId> chain;
     EditInteraction interaction;
     /// The edited room's targets (from the floor shown), the draft (once prepared), the floor as shown now without its
     /// scene (the template the fast path lays rooms out on).
@@ -176,9 +184,15 @@ struct WorldEditState {
     bool saveRefused = false;
     std::string ending;
     /// The collection's flags the editor set: the held items' static records hidden (a game, or a held fixture's
-    /// games), the outlined target.
-    std::vector<world::PickId> hidden;
+    /// games), each in its room's collection (I4b step 8: a game carried to another room of the chain stays hidden in
+    /// its own), the outlined target (in the edited room's).
+    std::vector<std::pair<world::RoomId, world::PickId>> hidden;
     world::PickId outlined = world::kNoPick;
+    world::RoomId outlinedRoom;
+    /// I4b step 8: the held game's item and room as it stands (drawn in the hand from its own room's collection while
+    /// it is carried in another room of the chain).
+    std::optional<world::CollectionItem> heldItem;
+    world::RoomId heldRoom;
     /// I4b step 4: the floor's scene digest when the session began (the stored plan's static part: shown again by an
     /// undo to the base or a discard; a rebuilt room's floor has a synthetic one, `edit-scene:<session>:<n>`).
     std::string baseSceneDigest;
