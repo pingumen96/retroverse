@@ -450,12 +450,16 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   measure the real floor at 1080p with every screen playing, on a quiet machine. If it is over the limit again, the next
   remedy is per-floor residency of the procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing
   intermediates at reduced resolution (they change the look).
-- **The regeneration preview's digests written straight from the plan** (the memory margin's second part,
-  `docs/i5/memory-margin.md`): `buildingInputDigest` and `sortedPlanDigest` build a nlohmann::json document of the
-  whole world, then write it canonically and hash it, about a third of a large room's preview on `esde/snes-stress`
-  (the plan's parse a sixth). Writing the canonical text directly (outputs byte-identical, the plan goldens prove it)
-  would shorten the real library's room preview (1.6 s quiet, 3.2 s under load against 2 s), if Gate M3's quiet
-  measurement is still over.
+- **The regeneration preview's time (done, `docs/i4b/preview-time.md`):** the digests' canonical text is written
+  straight from the plan and the inputs (byte-identical: the plan goldens and a comparison of both paths on every world
+  fixture), the app's preview takes the plan it shows instead of parsing the file, and the standing rooms' data are
+  read ahead with the catalog's inputs. The real room previews in the app went from 2.65 to 4.10 s (Gate M3) to 1.42 to
+  1.81 s with the machine fully loaded, 1.19 and 1.53 s a third loaded; Gate M3 measures them again on a quiet machine.
+  Left: when the preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to 1.1 s in those
+  runs: the catalog snapshot's
+  SQLite queries, slower beside the floor's cover loads); the validation of the whole plan (about 0.15 s) and the
+  digests' SHA-256 over about 25 MB are the largest parts of the dry run now. Seeding the inputs from the building
+  job's snapshot (I4b step 6's follow-up below) would remove most of the read-ahead.
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
