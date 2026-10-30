@@ -544,7 +544,8 @@ void WorldInteraction::track(const world::HoverSample& sample) {
 
 void WorldInteraction::finishReturn() {
     const WorldLaunchRecord record = m_launch.value_or(WorldLaunchRecord{});
-    m_walker.jumpTo(record.walker);
+    // In VR (I10 step 10) the user may have walked while the game ran: the walker stays where they stand.
+    m_walker.jumpTo(m_settings.keepWalker ? m_walkerNow : record.walker);
     m_walkerPlaced = true;
     const std::optional<LaunchMessage> outcome = std::move(m_launchOutcome);
     m_launchOutcome.reset();

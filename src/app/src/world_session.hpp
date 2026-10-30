@@ -229,6 +229,8 @@ public:
     /// In VR (I10 step 4) the inspected item is held in `hand` (the pointing controller's grip in the room); none: in
     /// front of the camera.
     void setHeldHand(const std::optional<scene::RigidPose>& hand) { m_interaction->setHeldHand(hand); }
+    /// While a game runs in VR (I10 step 10): the inspected item back at its pulled-out pose, the view undimmed.
+    void setHeldAside(bool aside) { m_interaction->setHeldAside(aside); }
     /// The item the frame's ray rests on (the room's), or world::kNoPick.
     [[nodiscard]] world::PickId hovered() const noexcept { return m_interaction->hovered(); }
     void applyInspection(gl::RenderView& view) {

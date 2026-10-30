@@ -233,12 +233,14 @@ TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured fr
                                          rv::core::radiansToDegrees(std::asin(std::clamp(local.y, -1.0f, 1.0f))),
                                          kRightHand.x, kRightHand.y, kRightHand.z);
     // Inspected at frame 40, Avvia (the pad's Start) at frame 70; the game's window shows about 2.5 s, captured
-    // meanwhile.
+    // meanwhile. I10 step 10: from frame 75 to 100, while the game runs, the left controller's stick pulled back walks
+    // the user back from the shelf.
     const fs::path script = room.dir / "launch.json";
     REQUIRE(rv::core::writeTextFileAtomic(script, fmt::format(R"([
   {{"fromFrame": 0, "toFrame": 899, "headPose": {{"position": [0, 1.65, 0]}}, {0}}},
   {{"fromFrame": 40, "toFrame": 40, "actions": {{"interact": 1}}}},
-  {{"fromFrame": 70, "toFrame": 70, "actions": {{"confirm": 1}}}}
+  {{"fromFrame": 70, "toFrame": 70, "actions": {{"confirm": 1}}}},
+  {{"fromFrame": 75, "toFrame": 100, "leftStick": [0, -1]}}
 ])",
                                                               hand))
                 .has_value());
@@ -263,4 +265,15 @@ TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured fr
     CHECK(xr.captureFrames > 0);
     CHECK(xr.captureSize.x > 0);
     CHECK(xr.captureSize.y > 0);
+    // The controllers walked while the game ran (the pad's actions were the game's).
+    CHECK(xr.playingWalkFrames > 0);
+    const auto headAt = [&xr](std::uint64_t frame) {
+        const auto sample = std::find_if(xr.head.begin(), xr.head.end(),
+                                         [frame](const rv::app::XrHeadSample& head) { return head.frame == frame; });
+        REQUIRE(sample != xr.head.end());
+        return sample->position;
+    };
+    const glm::vec3 before = headAt(74);
+    const glm::vec3 after = headAt(101);
+    CHECK(glm::length(glm::vec2(after.x - before.x, after.z - before.z)) > 0.2f);
 }

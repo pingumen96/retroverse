@@ -54,6 +54,8 @@
 #include <rv/launcher/emulator_profile.hpp>
 #include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
+#include <rv/platform/window_handover.hpp>
+#include <rv/platform_win/foreground.hpp>
 #include <rv/platform_win/process_priority.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/framebuffer.hpp>
@@ -108,6 +110,31 @@ constexpr DebugGrid kSceneDebugGrid{10.0f, 1.0f};
 /// Width / height of a viewport, 16:9 for an empty one.
 float aspectOf(glm::ivec2 size) noexcept {
     return size.x > 0 && size.y > 0 ? static_cast<float>(size.x) / static_cast<float>(size.y) : 16.0f / 9.0f;
+}
+
+/// The walk of a VR frame's controllers while a game runs (I10 step 10): the stick's walk and sprint, the turn and the
+/// teleport's aim, nothing that presses a button of the world or the UI.
+input::ActionState walkOf(const input::ActionState& controllers) noexcept {
+    input::ActionState walk;
+    for (const input::Action action :
+         {input::Action::MoveRight, input::Action::MoveForward, input::Action::LookX, input::Action::LookY}) {
+        walk.setAxis(action, controllers.axis(action));
+    }
+    walk.setButton(input::Action::Sprint, controllers.held(input::Action::Sprint),
+                   controllers.pressed(input::Action::Sprint), controllers.released(input::Action::Sprint));
+    walk.setActiveDevice(controllers.activeDevice());
+    return walk;
+}
+
+/// True when `walk` moves the walker, turns it or aims its teleport.
+bool walks(const input::ActionState& walk) noexcept {
+    for (const input::Action action :
+         {input::Action::MoveRight, input::Action::MoveForward, input::Action::LookX, input::Action::LookY}) {
+        if (walk.axis(action) != 0.0f) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// "world grid (1 m cells out to 10 m), object bounds" for the kinds of `selection`.
@@ -500,6 +527,9 @@ struct RetroverseApp::State {
     bool xrUiDrawn = false;
     /// The launched game on the hero CRT (I10 step 6).
     XrGame xrGame;
+    /// I10 step 10: the game's window given the foreground, and the foreground last logged while a game ran in VR.
+    std::uintptr_t xrForegroundGiven = 0;
+    platform_win::ForegroundWindow xrForeground;
     /// The eyes' dynamic render scale (I10 step 7): interactive runs only, so that frame-limited runs render alike.
     xr::RenderScale renderScale;
     std::unique_ptr<AppInput> input;
@@ -721,7 +751,13 @@ struct RetroverseApp::State {
         }
         if (world) {
             world->setHeldHand(held);
+            world->setHeldAside(playingInXr(context));
         }
+    }
+
+    /// A game runs in VR (I10 step 6): the pad plays it, Retroverse reads only the controllers' walk (step 10).
+    [[nodiscard]] bool playingInXr(const AppContext& context) const {
+        return context.vr() && product && (product->launchActive() || product->launchWindow() != 0);
     }
 
     /// A VR frame (AppContext::xrFrame, I10 step 2) places the tracking space where the movement anchored it (ADR-0017
@@ -808,6 +844,35 @@ struct RetroverseApp::State {
         std::optional<XrRecord>& record = context.report().xr;
         const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
         xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
+        followXrForeground(context, window);
+    }
+
+    /// I10 step 10: the game's window takes the foreground once it shows, as on the desktop, where Retroverse's window
+    /// steps back (most emulators read the pad only in front); never in hidden or background runs. Each change of the
+    /// foreground while it runs is logged.
+    void followXrForeground(AppContext& context, std::uintptr_t window) {
+        if (window == 0) {
+            xrForegroundGiven = 0;
+            xrForeground = {};
+            return;
+        }
+        if (window != xrForegroundGiven && !context.options().hidden && !platform_win::backgroundLaunchesRequested()) {
+            xrForegroundGiven = window;
+            const bool given = platform_win::giveForeground(window);
+            spdlog::info("VR: the game's window {} the foreground", given ? "takes" : "could not take");
+        }
+        const platform_win::ForegroundWindow foreground = platform_win::foregroundWindow();
+        if (foreground != xrForeground) {
+            xrForeground = foreground;
+            const auto ours =
+                reinterpret_cast<std::uintptr_t>(platform::nativeWindowHandle(context.window().handle()));
+            spdlog::info("VR: the foreground is {} (process {})",
+                         foreground.window == window ? "the game's window"
+                         : foreground.window == ours  ? "Retroverse's window"
+                         : foreground.window == 0     ? "no window"
+                                                      : "another window",
+                         foreground.processId);
+        }
     }
 
     /// The product UI drawn into its panel for the eyes (I10 step 5); the window and the screenshots then leave it
@@ -1918,11 +1983,17 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // on the UI's panel the ray is its mouse and the trigger clicks.
     state.updateXrHands(context);
     input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
-    // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends.
-    if (context.vr() && state.product && (state.product->launchActive() || state.product->launchWindow() != 0)) {
+    // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends, but (I10 step 10)
+    // the controllers' walk, turns and teleport, which the emulator never sees: the user goes up to the CRT.
+    const bool playingInXr = state.playingInXr(context);
+    input::ActionState playingWalk;
+    if (playingInXr) {
         actions.clear();
+        if (state.xrMovement) {
+            playingWalk = walkOf(state.input->controllersAlone(state.xrHands.pad()));
+        }
     }
-    if (!state.pointXrUi(context)) {
+    if (!state.pointXrUi(context) && !playingInXr) {
         state.xrHands.applySelect(actions);
     }
     state.syncScriptPhases(context.frameTiming(), frame);
@@ -2032,9 +2103,16 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     } else if (!state.world) {
         walkerActions = actionsFor(inputContext, actions);
     }
+    if (playingInXr && !worldResult.walker) {
+        walkerActions = playingWalk;
+    }
     // In a VR frame the head's movement moves the walker (I10 step 3), then the head, where the walker now stands,
     // takes the view (I10 step 2).
-    if (!state.moveInXr(context, walkerActions, deltaSeconds) && !worldResult.walker) {
+    if (state.moveInXr(context, walkerActions, deltaSeconds)) {
+        if (std::optional<XrRecord>& record = context.report().xr; record && playingInXr && walks(walkerActions)) {
+            ++record->playingWalkFrames;
+        }
+    } else if (!worldResult.walker) {
         state.freeRoam->update(walkerActions, static_cast<float>(deltaSeconds), state.camera);
     }
     state.followHead(context);

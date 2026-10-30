@@ -2676,6 +2676,7 @@ Json xrToJson(const XrRecord& xr) {
     json["captureFrames"] = xr.captureFrames;
     json["captureSize"] = ivec2ToJson(xr.captureSize);
     json["captureError"] = xr.captureError;
+    json["playingWalkFrames"] = xr.playingWalkFrames;
     json["dynamicScale"] = xr.dynamicScale;
     json["quality"] = xr.quality;
     json["scaleChanges"] = xr.scaleChanges;
@@ -2743,6 +2744,7 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureFrames = fields.count("captureFrames");
     xr.captureSize = readIvec2(fields, "captureSize");
     xr.captureError = fields.string("captureError");
+    xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");
     xr.quality = fields.string("quality");
     xr.scaleChanges = fields.count("scaleChanges");
