@@ -89,7 +89,8 @@ screenshots: `docs/reference/visual-verification.md`.
   (miniaudio only inside, never `media`), `launcher` (GPU-free) -> `catalog` (domain and ports) -> `esde` (pugixml
   private), `catalog_db` (SQLite private),
   `world` (the generator, GPU-free), `platform_win` -> `platform` (SDL3) -> `render` (OpenGL through glad, no SDL)
-  -> `devui` (Dear ImGui, developer builds), `ui` (RmlUi) -> `app` (composition root) -> `retroverse.exe`. Forbidden
+  -> `devui` (Dear ImGui, developer builds), `ui` (RmlUi), `xr` (VR, the OpenXR loader only inside; I10) -> `app`
+  (composition root) -> `retroverse.exe`. Forbidden
   links are enforced at configure time (`cmake/LayerRules.cmake`, `rv_forbid_link`); GPU-free parts of the app live in
   `rv_app_cli` and `rv_app_catalog`. What each module holds: `docs/reference/layout.md`.
 - Tools: `tools/cli`, `tools/asset-preview`, `tools/screenshot-diff`, each with a GPU-free core tested by `rv_tests`.

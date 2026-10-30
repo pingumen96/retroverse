@@ -22,7 +22,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   since I5 step 2 `process_priority.hpp` (the process's priority class); on
   `core` and `launcher`) -> `platform` (SDL3; the window hand-over; links `platform_win`) -> `render` (OpenGL through
   glad; never includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always
-  built), `ui` (RmlUi product UI; its GPU-free part `rv_ui_model` is always built) -> `app` (composition root) ->
+  built), `ui` (RmlUi product UI; its GPU-free part `rv_ui_model` is always built), `xr` (I10, ADR-0017: the VR mode;
+  its GPU-free part `rv_xr_model`, always built and kept from the OpenXR loader, holds the poses, the runtime's
+  interface, the session and the fake runtime; `rv_xr` adds the fake's GL images and, with `RV_ENABLE_XR`, the OpenXR
+  runtime) -> `app` (composition root) ->
   `retroverse.exe`. `catalog` holds the domain, the identities, one header per port (I2 step 1), the media coverage (8)
   and the launch resolution (10); `esde` reads ES-DE's configuration and gamelists (steps 2 and 3), scans the ROM
   folders (7), resolves media (8) and translates ES-DE commands (10); `catalog` also holds the import service (11a),

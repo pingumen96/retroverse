@@ -240,6 +240,19 @@ build/rvdata`).
   against one frustum enclosing them, and the second reads the shadow map the first drew. It checks the VR mode's
   rendering (the camera's eye mode, the SSAO of an asymmetric field, the shared shadow map) without a headset; the
   covers, picking and the audio still follow the desktop's camera.
+- The VR mode (I10 step 2, ADR-0017 §3, §8, `docs/i10/step-2.md`): `--vr` renders in a headset through the system's
+  OpenXR runtime (Meta Horizon Link over the cable or Air Link, SteamVR), `--xr-runtime-json <manifest>` another
+  runtime for this process only. The runtime paces the frames (72 Hz on a Quest), each eye renders at the runtime's
+  recommended size times `--xr-render-scale` (0.25 to 2) into its sRGB swapchain, and the window mirrors the left eye
+  without vsync. The head is tracked on the walker's feet and yaw (LOCAL_FLOOR, else STAGE, else LOCAL 1.6 m up); the
+  pad and the keyboard still walk and turn the walker. Without a runtime or a headset (an interactive run waits 15 s
+  for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
+  the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
+  no wait, at the `--input-script`'s `headPose` steps (`tests/input_scripts/xr_look.json`); a frame-limited run's
+  screenshot then holds both eyes side by side (2048 x 1024), and `--xr-fake-lose-after <frames>` loses the session.
+  The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
+  and submitted, the missed refreshes, the session's events and the head's poses. While a launched game runs the host
+  idles and the headset shows the runtime's own frame until the game ends (step 6 keeps the session rendering).
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
   room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render
