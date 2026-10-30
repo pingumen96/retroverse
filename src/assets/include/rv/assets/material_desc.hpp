@@ -28,21 +28,23 @@ struct TextureRef {
 /// The CRT_Subtle screen effect (style §15.2, §25) of an unlit screen material: its picture is shown the way a picture
 /// tube shows it, on the emissive path, without hurting legibility. Scanlines and the phosphor mask keep the mean
 /// brightness and fade out as they shrink below a few pixels (no moiré at a distance), so the picture stays readable
-/// from any distance. The material parser enforces the ranges below.
+/// from any distance. The material parser enforces the ranges below. The defaults are the consumer preset's built-in
+/// values (I5 step 6, rv/assets/crt_presets.hpp: the look every CRT of the world showed before the presets); the world's
+/// screens take their preset's values (app::ScreenLooks), whatever their material's own.
 struct CrtEffect {
     /// Scanlines over the picture's height, [16, 2048] (240: the picture of a 16-bit console).
     float lineCount = 240.0f;
     /// [0, 1]: depth of the dark gaps between scanlines.
-    float scanlineStrength = 0.3f;
+    float scanlineStrength = 0.35f;
     /// RGB phosphor triads across the picture's width (the aperture grille), [16, 4096].
     float maskTriadCount = 320.0f;
     /// [0, 1]: how strongly each triad separates red, green and blue.
-    float maskStrength = 0.2f;
+    float maskStrength = 0.25f;
     /// [0, 0.5]: barrel curvature: the picture bows out and its corners round off into the tube's dark border (the
     /// corner radius grows with it; a flat tube has square corners).
-    float curvature = 0.05f;
+    float curvature = 0.06f;
     /// [0, 1]: darkening of the picture towards its edges.
-    float vignette = 0.25f;
+    float vignette = 0.3f;
     /// [0, 1]: scale of the scene's lights and ambient reflected by the screen's hazy glass (a dielectric, 4% at
     /// normal incidence). 0.25 gives a faint sheen that shows on the tube's dark border and leaves the picture legible
     /// under a nearby lamp; 1 reflects lamps as bright patches that wash out the picture around them.
