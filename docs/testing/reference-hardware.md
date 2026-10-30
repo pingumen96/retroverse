@@ -26,6 +26,12 @@ and the `assets/world` hash that I5 step 6's presets had moved), G01's gpu field
 update mode). Every golden, G01 to G20, then passed in Debug and Release with none skipped. The measurements below
 were taken under 617.42 and stay as recorded.
 
+**G01 under the memory margin's formats (October 30, 2026).** The memory margin (`docs/i5/memory-margin.md`) stores
+the emitted light and the bloom in `GL_R11F_G11F_B10F`; the room goldens G02 to G20 were rendered again on purpose,
+G01 was not. G01's PNG is still the one rendered with `GL_RGBA16F` there: the test room renders 73 pixels beyond 6/255
+from it (at most 38/255, 0.004%, on the edges of the neon sign and the lamp), within its tolerance (0.5%), so it
+passes as is. A later change that moves G01 on purpose rewrites it under the new formats.
+
 ## First populated room (specification §18.1; Gate B, October 19, 2026)
 
 Measured in Release at 1920 x 1080 with `--no-vsync` on the benchmark path (`tests/input_scripts/bench_snes_room.json`,
