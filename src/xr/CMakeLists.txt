@@ -4,8 +4,8 @@
 # with the world, the runtime's interface and the session's state machine and frame loop over it, the fake runtime,
 # the frame statistics (missed refreshes), the swapchain format's choice; since step 3 the movement in VR (turns, the
 # teleport's arc, the head through the collision world) and xr.json; since step 4 the controllers (the virtual pad, the
-# pointing hand) and xr_bindings.json; since step 5 where the UI's panel stands and the ray on it. No OpenGL, no SDL, no
-# OpenXR loader.
+# pointing hand) and xr_bindings.json; since step 5 where the UI's panel stands and the ray on it; since step 7 the
+# eyes' dynamic render scale. No OpenGL, no SDL, no OpenXR loader.
 add_library(rv_xr_model STATIC
     src/controllers.cpp
     src/fake_runtime.cpp
@@ -13,6 +13,7 @@ add_library(rv_xr_model STATIC
     src/locomotion.cpp
     src/panels.cpp
     src/pose.cpp
+    src/render_scale.cpp
     src/session.cpp
     src/swapchain_format.cpp
     src/xr_bindings.cpp
