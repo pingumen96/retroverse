@@ -161,6 +161,8 @@ public:
     /// The running process, or nullptr before it started or when it could not.
     [[nodiscard]] const IRunningProcess* process() const noexcept { return m_process.get(); }
     [[nodiscard]] std::uint32_t processId() const noexcept;
+    /// The emulator's window while one shows (ProcessEvent::window, I10 step 6), else 0.
+    [[nodiscard]] std::uintptr_t window() const noexcept { return m_window; }
     /// Processes of the tree known to run (the started one included until it exits).
     [[nodiscard]] std::size_t liveProcessCount() const noexcept;
     /// The processes of the tree other than the started one known to run, in the order they were noticed (cleared
@@ -206,6 +208,7 @@ private:
     std::vector<TreeProcess> m_liveChildren;
     bool m_treeEmpty = false;
     bool m_windowVisible = false;
+    std::uintptr_t m_window = 0;
     LaunchClock::time_point m_windowClockStart{};
 };
 
