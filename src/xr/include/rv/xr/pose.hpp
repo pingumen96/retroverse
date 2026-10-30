@@ -25,12 +25,12 @@ struct EyeView {
 /// The left eye, then the right.
 using EyeViews = std::array<EyeView, 2>;
 
-/// Where the tracking space sits in the world (ADR-0017 §5): its origin on the walker's feet, turned by the walker's
-/// yaw, and raised by `floorOffset` when the space's origin is not on the floor (LOCAL: the head's height when the
-/// session started, assumed).
+/// Where the tracking space sits in the world (ADR-0017 §5): its origin on the walker's floor, turned about +Y, and
+/// raised by `floorOffset` (LOCAL's origin at the head's height when the session started, a seated user's height made
+/// up to the walker's eye height: Locomotion).
 struct TrackingAnchor {
-    glm::vec3 feet{0.0f};
-    /// The walker's yaw (scene::Camera's: 0 looks along -Z, positive turns right).
+    glm::vec3 origin{0.0f};
+    /// The turn (scene::Camera's yaw: 0 looks along -Z, positive turns right).
     float yawRadians = 0.0f;
     float floorOffset = 0.0f;
 };

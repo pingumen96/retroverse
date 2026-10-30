@@ -31,6 +31,9 @@ struct Frame {
     /// The images are decoded as sRGB: the renderer's display-ready bytes go in verbatim.
     bool srgb = true;
     float floorOffset = 0.0f;
+    /// The runtime moved the reference space's origin since the last located frame (the user recentered: a
+    /// ReferenceSpaceChangePending event): the poses jumped.
+    bool spaceChanged = false;
 
     /// The eyes are to be rendered into `images`.
     [[nodiscard]] bool wantsViews() const noexcept { return images[0] != 0 && images[1] != 0; }
@@ -98,6 +101,8 @@ private:
     bool m_running = false;
     bool m_ended = false;
     bool m_reachedFocused = false;
+    /// A ReferenceSpaceChangePending event not yet passed on with a located frame.
+    bool m_spaceChanged = false;
     std::string m_endReason;
     std::uint64_t m_framesWaited = 0;
     std::vector<SessionEvent> m_events;

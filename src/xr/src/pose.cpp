@@ -19,7 +19,7 @@ glm::quat yawRotation(float yawRadians) noexcept {
 Pose toWorld(const TrackingAnchor& anchor, const Pose& tracked) noexcept {
     const glm::quat turn = yawRotation(anchor.yawRadians);
     const glm::vec3 offset = tracked.position + glm::vec3(0.0f, anchor.floorOffset, 0.0f);
-    return Pose{glm::normalize(turn * tracked.orientation), anchor.feet + turn * offset};
+    return Pose{glm::normalize(turn * tracked.orientation), anchor.origin + turn * offset};
 }
 
 Pose headOf(const EyeViews& eyes) noexcept {

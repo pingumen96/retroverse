@@ -107,6 +107,7 @@ void Session::pollEvents() {
             break;
         case RuntimeEvent::Kind::ReferenceSpaceChangePending:
             record("reference-space-change");
+            m_spaceChanged = true;
             break;
         case RuntimeEvent::Kind::RefreshRateChanged:
             record(fmt::format("refresh-rate {:g} -> {:g} Hz", event->fromHz, event->toHz));
@@ -143,6 +144,11 @@ Expected<std::optional<Frame>> Session::beginFrame() {
         return tl::unexpected(fail(located.error()));
     }
     frame.located = *located;
+    // The recentering reaches the first frame located after it (a lost frame keeps it for the next).
+    if (m_spaceChanged && frame.located) {
+        frame.spaceChanged = true;
+        m_spaceChanged = false;
+    }
     if (frame.timing.shouldRender && frame.located) {
         for (int eye = 0; eye < 2; ++eye) {
             auto index = m_runtime->acquireImage(eye);

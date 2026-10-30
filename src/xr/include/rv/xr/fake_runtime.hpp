@@ -41,6 +41,8 @@ struct FakeRuntimeConfig {
     std::optional<std::uint64_t> loseAfterFrames;
     /// Tracking is lost on these frames (locateViews says so): frames with no layer.
     std::vector<std::uint64_t> untrackedFrames;
+    /// The user recenters on these frames (a ReferenceSpaceChangePending event once the frame is waited for).
+    std::vector<std::uint64_t> recenterFrames;
 };
 
 /// A runtime without a headset (ADR-0017 §3, §10): two asymmetric eyes `ipdMeters` apart at the scripted head pose, a

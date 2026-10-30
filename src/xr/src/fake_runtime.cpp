@@ -116,6 +116,12 @@ Expected<FrameTiming> FakeRuntime::waitFrame() {
     if (m_config.loseAfterFrames && m_framesWaited == *m_config.loseAfterFrames) {
         queueState(SessionState::LossPending);
     }
+    if (std::find(m_config.recenterFrames.begin(), m_config.recenterFrames.end(), m_framesWaited - 1) !=
+        m_config.recenterFrames.end()) {
+        RuntimeEvent event;
+        event.kind = RuntimeEvent::Kind::ReferenceSpaceChangePending;
+        m_events.push_back(event);
+    }
     const bool shown = m_state == SessionState::Visible || m_state == SessionState::Focused;
     return FrameTiming{shown, m_displayTimeNs, m_config.displayPeriodNs};
 }

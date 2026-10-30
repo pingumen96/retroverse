@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -174,4 +175,27 @@ TEST_CASE("xr/session: a failed call ends the session with its reason (I10 step 
     REQUIRE_FALSE(again.has_value());
     CHECK(f.session->ended());
     CHECK(f.session->endReason().find("acquireImage") != std::string::npos);
+}
+
+TEST_CASE("xr/session: a recentering reaches the next located frame once (I10 step 3)", "[xr][session]") {
+    FakeRuntimeConfig config;
+    config.recenterFrames = {2};
+    config.untrackedFrames = {3};
+    Fixture f = makeSession(std::move(config));
+    std::vector<bool> changed;
+    std::vector<bool> located;
+    for (int i = 0; i < 6; ++i) {
+        f.session->pollEvents();
+        auto frame = f.session->beginFrame();
+        REQUIRE(frame.has_value());
+        REQUIRE(frame->has_value());
+        changed.push_back((*frame)->spaceChanged);
+        located.push_back((*frame)->located);
+        REQUIRE(f.session->endFrame((*frame)->wantsViews()).has_value());
+    }
+    // Waited for at frame 2, polled before frame 3, which is not located: frame 4 carries it.
+    CHECK(located == std::vector<bool>{true, true, true, false, true, true});
+    CHECK(changed == std::vector<bool>{false, false, false, false, true, false});
+    const std::vector<std::string> names = eventNames(*f.session);
+    CHECK(std::count(names.begin(), names.end(), "reference-space-change") == 1);
 }
