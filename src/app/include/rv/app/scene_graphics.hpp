@@ -53,6 +53,8 @@ struct XrEyeTargets {
     std::array<scene::EyeFov, 2> fields{};
     /// Drawn into each eye over its post-processing (I10 step 5: the UI's panel).
     std::vector<gl::Panel> panels;
+    /// The share of `size` the eyes render at, scaled up into their images (I10 step 7's dynamic render scale).
+    float renderScale = 1.0f;
     std::array<std::uint32_t, 2> images{};
     glm::ivec2 size{0};
 };

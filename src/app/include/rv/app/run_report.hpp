@@ -1596,6 +1596,12 @@ struct XrRecord {
     std::uint64_t captureFrames = 0;
     glm::ivec2 captureSize{0};
     std::string captureError;
+    /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the
+    /// GPU's time of a frame's eyes as it smoothed it last (milliseconds).
+    bool dynamicScale = false;
+    std::uint64_t scaleChanges = 0;
+    float lowestScale = 1.0f;
+    double eyesGpuMilliseconds = 0.0;
 
     bool operator==(const XrRecord&) const = default;
 };

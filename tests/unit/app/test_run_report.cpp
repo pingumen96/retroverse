@@ -1267,6 +1267,10 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     xr.captureFrames = 2400;
     xr.captureSize = glm::ivec2(1280, 960);
     xr.captureError = "";
+    xr.dynamicScale = true;
+    xr.scaleChanges = 3;
+    xr.lowestScale = 0.85f;
+    xr.eyesGpuMilliseconds = 9.75;
     report.xr = xr;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());

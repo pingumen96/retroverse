@@ -65,6 +65,7 @@
 #include <rv/render/texture_cache.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/xr/pose.hpp>
+#include <rv/xr/render_scale.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
@@ -499,6 +500,8 @@ struct RetroverseApp::State {
     bool xrUiDrawn = false;
     /// The launched game on the hero CRT (I10 step 6).
     XrGame xrGame;
+    /// The eyes' dynamic render scale (I10 step 7): interactive runs only, so that frame-limited runs render alike.
+    xr::RenderScale renderScale;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -761,6 +764,33 @@ struct RetroverseApp::State {
             eyes.images = frame->images;
             eyes.size = frame->eyeSize;
             xrEyes = eyes;
+        }
+    }
+
+    /// The eyes' render scale (I10 step 7, ADR-0017 §9): from the GPU's time of the last frames' eyes against the
+    /// display's period, lowered while it leaves too little room, raised again; at most 0.8 while a game shows on the
+    /// CRT (the "in game" profile: the GPU shared with the emulator and the capture). 1 in frame-limited runs.
+    void scaleXrEyes(AppContext& context) {
+        const xr::Frame* frame = context.xrFrame();
+        if (!xrEyes || frame == nullptr || context.options().frameLimit) {
+            return;
+        }
+        renderScale.setMax(xrGame.showing() ? 0.8f : 1.0f);
+        const gl::FrameStats& stats = graphics->renderStats();
+        double eye = 0.0;
+        for (const std::optional<double>& pass : {stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds,
+                                                  stats.sceneGpuMilliseconds, stats.postGpuMilliseconds,
+                                                  stats.outlineGpuMilliseconds}) {
+            eye += pass.value_or(0.0);
+        }
+        const double gpu = 2.0 * eye + stats.shadowGpuMilliseconds.value_or(0.0);
+        const double period = static_cast<double>(frame->timing.displayPeriodNs) / 1e6;
+        xrEyes->renderScale = renderScale.update(gpu, period);
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            record->dynamicScale = true;
+            record->scaleChanges = renderScale.changes();
+            record->lowestScale = renderScale.lowest();
+            record->eyesGpuMilliseconds = renderScale.smoothedMilliseconds();
         }
     }
 
@@ -2069,6 +2099,7 @@ void RetroverseApp::onRender(AppContext& context) {
     gl::RenderView view = state.view();
     state.addXrView(context, view);
     state.drawXrUi(context, view);
+    state.scaleXrEyes(context);
     state.graphics->renderFrame(context, view, state.screenshotRequested, state.xrEyes ? &*state.xrEyes : nullptr);
     state.screenshotRequested = false;
     if (state.world) {

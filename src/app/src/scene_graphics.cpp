@@ -1,5 +1,6 @@
 #include <rv/app/scene_graphics.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -381,8 +382,12 @@ struct SceneGraphics::State {
     /// when a target or an image cannot be drawn into (logged).
     bool renderEyes(gl::GLDevice& device, const gl::RenderView& view, const XrEyeTargets& eyes) {
         constexpr std::array<std::string_view, 2> kNames{"XrLeftTargets", "XrRightTargets"};
+        // I10 step 7: the eyes at the dynamic render scale, scaled up into the images (copyColorTo filters then).
+        const float scale = std::clamp(std::isfinite(eyes.renderScale) ? eyes.renderScale : 1.0f, 0.1f, 1.0f);
+        const glm::ivec2 rendered =
+            scale < 1.0f ? glm::max(glm::ivec2(glm::round(glm::vec2(eyes.size) * scale)), glm::ivec2(16)) : eyes.size;
         for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
-            if (!prepareTargets(eyeTargets[eye], eyes.size, kNames[eye], failedEyeSize[eye])) {
+            if (!prepareTargets(eyeTargets[eye], rendered, kNames[eye], failedEyeSize[eye])) {
                 return false;
             }
         }
