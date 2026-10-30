@@ -443,11 +443,19 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 
 ### Measurement
 
-- **Gate D's GPU memory at 1080p (I5 step 3's review):** Gate D's 471.8 MiB for the busiest real floor was measured in
-  the default 1280 x 720 window, as I5 step 3's first figures were; the render targets follow the window's size
-  (40.3 MiB more at 1920 x 1080: the busiest floor with both screens playing holds 505.8 MiB there,
-  `docs/i5/step-3.md`'s review). Gate M4 measures the busiest floor again at 1080p with every screen playing; over 512
-  MiB, the proposed remedy is in the targets (post-processing intermediates at reduced resolution, shared buffers).
+- **The busiest floor's GPU memory at 1080p, to be measured (I5 step 3's review):** at 1920 x 1080 with both
+  screens playing the busiest real floor held 505.8 MiB (`docs/i5/step-3.md`'s review; Gate D's 471.8 was at
+  1280 x 720), 6.2 MiB under the acceptable 512. The memory margin (`docs/i5/memory-margin.md`) took 28.3 MiB out of
+  the 1080p render targets and a screenshot's second set, so about 477.5 MiB is expected; still open: Gates M3 / M4
+  measure the real floor at 1080p with every screen playing, on a quiet machine. If it is over the limit again, the next
+  remedy is per-floor residency of the procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing
+  intermediates at reduced resolution (they change the look).
+- **The regeneration preview's digests written straight from the plan** (the memory margin's second part,
+  `docs/i5/memory-margin.md`): `buildingInputDigest` and `sortedPlanDigest` build a nlohmann::json document of the
+  whole world, then write it canonically and hash it, about a third of a large room's preview on `esde/snes-stress`
+  (the plan's parse a sixth). Writing the canonical text directly (outputs byte-identical, the plan goldens prove it)
+  would shorten the real library's room preview (1.6 s quiet, 3.2 s under load against 2 s), if Gate M3's quiet
+  measurement is still over.
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.

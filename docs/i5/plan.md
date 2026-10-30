@@ -162,8 +162,11 @@ Each of these was decided on the user's behalf. The ADR records the decision; he
   settings.
 
 **Risks**
-- **GPU memory near the limit.** Two slots and the viewer's add about 24 MiB to the busiest floor's 471.8 MiB. The
-  remedy is per-floor residency of the procedural surfaces (BACKLOG), not lower video quality.
+- **GPU memory near the limit.** Two slots and the viewer's add about 24 MiB to the busiest floor's 471.8 MiB (at 720p;
+  505.8 MiB at 1080p, step 3's review). The memory margin ([memory-margin.md](memory-margin.md)) took 28.3 MiB out of
+  the 1080p render targets (88.5 to 60.2 MiB) and a screenshot's own set (161.0 to 60.2 MiB at the window's size): about
+  477.5 MiB expected at 1080p, measured again at the gate. The next remedy is per-floor residency of the procedural
+  surfaces (BACKLOG), not lower video quality.
 - **Late frames under load.** The late-frame drop to one decoder and the priority boost are the answers. If Gate M4's
   frame rows still fail, the contingencies are zero-copy conversion into the PBO, then YUV planes (ADR-0004).
 - **Badly interleaved or variable frame rate clips** may starve the audio ring. Silence is padded and the video never

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g13_shared_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "4aa63da4fdbdb40db77e320d93d2108f32554a472e11cb719f2a57d2823a5e80",
+    "sha256": "fe6396e79fd13e7072eee280073330bd76902b112b5456b315c1295bc6f31fb6",
     "width": 1920
   },
   "inputs": {

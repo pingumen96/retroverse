@@ -314,10 +314,12 @@ void runFxaaCheck(AppContext& context, const SceneGraphics& graphics) {
     }
     const std::string summary = fmt::format(
         "without anti-aliasing the edge is hard ({}); with it {} of {} rows crossed by the edge hold blended pixels "
-        "({}, at least {:g}%), {} of {} pixels of flat areas changed ({})",
+        "({}, at least {:g}%), {} of {} pixels of flat areas changed ({}); with the bloom, {} of {} pixels of the "
+        "image written over the emitted light differ from the one written into the output ({})",
         result->aliasedIsHard ? "ok" : "FAILED", result->blendedEdgeRows, result->edgeRows,
         result->edgeBlended ? "ok" : "FAILED", 100.0f * kFxaaCheckMinBlendedShare, result->flatChanged,
-        result->flatPixels, result->flatCopied ? "ok" : "FAILED");
+        result->flatPixels, result->flatCopied ? "ok" : "FAILED", result->inPlaceChanged, result->inPlacePixels,
+        result->inPlaceExact ? "ok" : "FAILED");
     context.report().selfCheck = SelfCheckRecord{SelfCheck::Fxaa, result->passed, summary};
     if (result->passed) {
         spdlog::info("FXAA self-check passed: {}", summary);

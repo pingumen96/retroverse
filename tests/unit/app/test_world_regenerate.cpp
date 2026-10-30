@@ -522,3 +522,33 @@ TEST_CASE("app/world_regenerate: the inputs let go of while nothing needs them; 
     REQUIRE(preview.failure.empty());
     CHECK(preview.content == held.content);
 }
+
+// The time of a large room's preview (the memory margin's second part, docs/i5/memory-margin.md; I4b step 6 measured
+// the real room:amstradcpc's at 1.6 s quiet and 3.2 s under load, against 2 s): esde/snes-stress (2,000 titles, 300 of
+// them twice, generated at test time) imported and planned, then room:snes previewed three times on one set of inputs
+// (the first with its rooms' data read, the others from the loader's cache), each preview's read, regeneration and
+// whole printed. Informative, by hand in Release:
+//   build/msvc-x64-release/bin/rv_tests.exe "app/bench: a large room's preview*"
+TEST_CASE("app/bench: a large room's preview, its read and its regeneration", "[.bench]") {
+    const ImportedFixture imported("world-regenerate-bench", true, "esde/snes-stress");
+    const auto reader = readerOf(imported);
+    static_cast<void>(planned(imported, *reader));
+    const rv::app::WorldPaths paths = worldPathsOf(imported);
+    const rv::app::RegenerationInputsResult inputs = rv::app::takeRegenerationInputs(paths, *reader);
+    INFO(inputs.error);
+    REQUIRE(inputs.inputs);
+    const auto stored = rv::world::readStoredPlan(filesOf(imported).plan);
+    REQUIRE(stored.has_value());
+    WARN("inputs: snapshot " << inputs.inputs->snapshotMs << " ms, selections " << inputs.inputs->selectMs
+                             << " ms; the plan places " << stored->plan.placements.size() << " in "
+                             << stored->plan.rooms.size() << " room(s)");
+    for (int run = 0; run < 3; ++run) {
+        const rv::app::RegenerationPreview preview =
+            rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *inputs.inputs);
+        INFO(preview.error);
+        REQUIRE(preview.failure.empty());
+        WARN("preview " << run << ": read " << preview.readMs << " ms, regeneration " << preview.regenerateMs
+                        << " ms, whole " << preview.totalMs << " ms (" << preview.content.gamesMoved
+                        << " game(s) moved)");
+    }
+}

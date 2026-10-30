@@ -47,13 +47,28 @@ struct DebugMessageCounts {
     bool operator==(const DebugMessageCounts&) const = default;
 };
 
+/// The render targets a screenshot was drawn through (ScreenshotRecord::targets, docs/i5/memory-margin.md).
+inline constexpr std::string_view kScreenshotWindowTargets = "window"; ///< the window's: the screenshot has its size
+inline constexpr std::string_view kScreenshotOwnTargets = "own";       ///< a set made for the screenshot alone
+
 /// The --screenshot a run wrote.
 struct ScreenshotRecord {
     std::filesystem::path file; ///< as given on the command line
     int width = 0;
     int height = 0;
+    /// kScreenshotWindowTargets or kScreenshotOwnTargets.
+    std::string targets;
 
     bool operator==(const ScreenshotRecord&) const = default;
+};
+
+/// The window of a run: its drawable size in pixels when the run ended (with display scaling, the size the window
+/// was asked for times the display's scale: what the window's render targets are allocated for).
+struct WindowRecord {
+    int drawableWidth = 0;
+    int drawableHeight = 0;
+
+    bool operator==(const WindowRecord&) const = default;
 };
 
 /// The outcome of a --self-check.
@@ -1859,6 +1874,8 @@ struct RunReport {
     std::size_t instanceCapacity = 0;
     /// The --screenshot of the last frame, when it was written.
     std::optional<ScreenshotRecord> screenshot;
+    /// The window; absent when none was created.
+    std::optional<WindowRecord> window;
     /// Where the walker of retroverse.exe ended, as --spawn takes it (feet, yaw and pitch): a run started with that
     /// --spawn and no input sees the same view up to float rounding (the yaw goes through radians and back, so a few
     /// edges may move by a fraction of a pixel).

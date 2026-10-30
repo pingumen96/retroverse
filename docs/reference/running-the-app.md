@@ -25,7 +25,10 @@ build/rvdata`).
   version (the driver), debug messages per severity (those `--gl-selftest` provoked included; its `glSelfTest` record
   counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
   (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
-  buffer's capacity, the screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
+  buffer's capacity, the screenshot written (`screenshot`: file, size, and since the memory margin `targets`, `window`
+  when it was drawn through the window's render targets (it has the window's size) or `own` through a set made for it
+  alone), the window (`window`: `drawableWidth`, `drawableHeight`, its drawable at the end of the run, the size asked
+  for times the display's scale), the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
   self-check, the quick catalog (`catalog`: `source` `esde` or `mock`, file, games, times `opened`, `open` at the end,
   the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
   `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,
@@ -189,7 +192,9 @@ build/rvdata`).
   below the highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must
   glow alike (+-20%) whatever its value and place. `fxaa`: a hard edge slanted 12 degrees between black and white,
   post-processed without dithering, without and then with anti-aliasing: at least half the rows it crosses must get
-  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was. Use `retroverse.exe
+  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was; then with the bloom, the
+  post pass's image written over the emitted light it reads (anti-aliasing on, `docs/i5/memory-margin.md`) must equal
+  byte for byte the one it writes into the output without anti-aliasing. Use `retroverse.exe
   --self-check srgb --smoke --hidden --data-dir build/rvdata` (and `--self-check bloom`, `--self-check fxaa`).
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`) and
   post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the highlights

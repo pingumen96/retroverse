@@ -135,8 +135,8 @@ struct RenderView {
 ///  - draws the hover outline (OutlinePass) around the instances flagged scene::instance_flags::kHighlighted, of the
 ///    plan and of the static groups: their visible silhouettes into the HDR target's stencil, then the edge into the
 ///    output, scissored to their projected bounds; nothing when no instance is highlighted;
-///  - draws the debug lines of the view, if any, over the output, depth-tested against the scene (whose depth is
-///    copied into the output's depth buffer first);
+///  - draws the debug lines of the view, if any, over the output, depth-tested against the scene's depth
+///    (ViewTargets::outputWithSceneDepth);
 ///  - times the shadow map, the depth pre-pass, the ambient occlusion, the lit pass, the post-processing and the
 ///    outline on the GPU (GpuTimer) and records FrameStats.
 /// The registries must outlive the renderer. Main thread only; destroy it while the GL context is current.

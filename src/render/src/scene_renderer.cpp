@@ -594,9 +594,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         // Over the tonemapped image, in their own colors (encoded by the sRGB output), hidden where the scene is in
         // front of them.
         const ScopedDebugGroup lines(device, "DebugLines");
-        const Framebuffer& output = targets.output();
-        targets.hdr().copyDepthStencilTo(output);
-        output.bind();
+        targets.outputWithSceneDepth().bind();
         state.setViewport(glm::ivec4(0, 0, size.x, size.y));
         state.setFramebufferSrgb(true);
         view.debugDraw->draw(*shaders.debugLines, state);

@@ -537,6 +537,9 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
   - The busiest real floor rises from 471.8 to about 495 MiB with everything playing.
   - If a step measures it over 512 MiB, the first remedy is per-floor residency of the procedural surfaces (about
     34 MiB, BACKLOG), not the video.
+  - *Amended on 2026-10-30 (`docs/i5/memory-margin.md`):* at 1920 x 1080 with both screens playing it measured
+    505.8 MiB (I5 step 3's review); the memory margin trimmed the render targets to about 477.5 MiB estimated, to be
+    measured at the gate.
 - **CPU.** Two 480p decoders use about 15 to 20% of one core. Uploads stay within 4 MiB per frame (§2).
 - **New rows in the roadmap's "Acceptable performance".** Video's "first frame within 2 s" stands.
 

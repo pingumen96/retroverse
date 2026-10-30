@@ -26,7 +26,9 @@ enum class SelfCheck : std::uint8_t {
     Bloom,
     /// Anti-aliasing pass (FXAA): a hard slanted edge between black and an emitter, taken through the post-processing
     /// without dithering, once without and once with anti-aliasing, must come out as documented (evaluateFxaaCheck):
-    /// pixels along the edge get intermediate values, flat areas are copied exactly.
+    /// pixels along the edge get intermediate values, flat areas are copied exactly; and with the bloom on, the post
+    /// pass's image written over the emitted light it reads equals the one written into the output
+    /// (evaluateFxaaInPlaceWrite).
     Fxaa,
 };
 
@@ -116,6 +118,13 @@ struct FxaaCheckResult {
     std::size_t flatChanged = 0;
     /// flatPixels is not 0 and flatChanged is 0: flat areas are copied exactly.
     bool flatCopied = false;
+    /// The in-place write (evaluateFxaaInPlaceWrite): the edge taken through the post-processing with its bloom, the
+    /// post pass's image written over the emitted light it reads (anti-aliasing on, gl::viewTargetPlan()) against the
+    /// one written into the output (anti-aliasing off): its pixels, and how many of them differ in any byte.
+    std::size_t inPlacePixels = 0;
+    std::size_t inPlaceChanged = 0;
+    /// inPlacePixels is not 0 and inPlaceChanged is 0.
+    bool inPlaceExact = false;
 };
 
 /// Evaluates the FXAA check: `aliased` and `antialiased` are tightly packed RGBA8 read-backs of a `width` x `height`
@@ -125,5 +134,11 @@ struct FxaaCheckResult {
 [[nodiscard]] FxaaCheckResult evaluateFxaaCheck(std::span<const std::uint8_t> aliased,
                                                 std::span<const std::uint8_t> antialiased, int width,
                                                 int height) noexcept;
+/// Adds the in-place write to `result`: `direct` (the post pass into the output) and `inPlace` (the post pass over the
+/// emitted light's storage), tightly packed RGBA8 read-backs of a `width` x `height` target, must be equal byte for
+/// byte, alpha (the luma the anti-aliasing reads) included; `result` passes only if they are. Read-backs smaller than
+/// width x height pixels fail.
+void evaluateFxaaInPlaceWrite(FxaaCheckResult& result, std::span<const std::uint8_t> direct,
+                              std::span<const std::uint8_t> inPlace, int width, int height) noexcept;
 
 } // namespace rv::app

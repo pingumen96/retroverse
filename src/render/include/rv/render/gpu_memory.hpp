@@ -63,6 +63,7 @@ enum class GpuFormat : std::uint8_t {
     R8,              ///< GL_R8, 1 byte
     Rg8,             ///< GL_RG8, 2 bytes
     Rg16F,           ///< GL_RG16F, 4 bytes
+    R11fG11fB10f,    ///< GL_R11F_G11F_B10F, 4 bytes: three unsigned small floats, no alpha
     Depth24Stencil8, ///< GL_DEPTH24_STENCIL8, 4 bytes
     Depth32F,        ///< GL_DEPTH_COMPONENT32F, 4 bytes
     /// GL_COMPRESSED_RGB_S3TC_DXT1_EXT / GL_COMPRESSED_SRGB_S3TC_DXT1_EXT and their alpha variants: blocks of 4 x 4

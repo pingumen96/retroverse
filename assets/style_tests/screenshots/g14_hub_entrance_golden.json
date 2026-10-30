@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g14_hub_entrance_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "f98f1d12f67e4ab510036bc64f1c5a167858df3ed57c1b12d78fab9b2025b595",
+    "sha256": "a7a92a1cbf2b130c961e80231bae489f8c99cf72f21dd7475c4a746aa3728577",
     "width": 1920
   },
   "inputs": {

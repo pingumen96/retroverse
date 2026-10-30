@@ -28,7 +28,7 @@ layout(binding = 5) uniform sampler2D uSource;
 // it by the first bloom downsample and the post pass.
 layout(binding = 7) uniform sampler2D uEmission;
 
-// Largest finite half float, the format of the HDR targets.
+// Largest finite half float, the format of the HDR radiance (the emitted light, R11F_G11F_B10F, holds up to 65024).
 const float RV_MAX_RADIANCE = 65504.0;
 
 // Weights of the 13-tap downsample: five overlapping 2 x 2 boxes of bilinear taps, the central box weighted 0.5 and the

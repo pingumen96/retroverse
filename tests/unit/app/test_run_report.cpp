@@ -62,7 +62,9 @@ RunReport fullReport() {
     view.sceneGpuMilliseconds = 0.33;
     report.lastView = view;
     report.instanceCapacity = 2048;
-    report.screenshot = rv::app::ScreenshotRecord{rv::core::pathFromUtf8("build/screenshots/room.png"), 1920, 1080};
+    report.screenshot = rv::app::ScreenshotRecord{rv::core::pathFromUtf8("build/screenshots/room.png"), 1920, 1080,
+                                                  std::string(rv::app::kScreenshotWindowTargets)};
+    report.window = rv::app::WindowRecord{2880, 1620};
     rv::app::SpawnPoint pose;
     pose.feet = glm::vec3(0.1f, 0.0f, -3.2000003f);
     pose.yawDeg = -179.99998f;

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g06_snes_single_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "98eb9a8d66004627e94da93ae322dba668f9dd70d5b96499b7f210f1780310f9",
+    "sha256": "23b4aa397549b5d4137d2203ecb2c42acfbe80eac87f53b81da320fd7c8a4d13",
     "width": 1920
   },
   "inputs": {

@@ -6,7 +6,8 @@
 // elevator ride's fade), dithered against banding. The output is linear; the sRGB target encodes it
 // (GL_FRAMEBUFFER_SRGB). Its alpha is the perceptual luma of the pixel (the sRGB encoding of its luminance, before
 // dithering), which the anti-aliasing pass finds edges with (post/fxaa.frag). The sRGB self-check takes a grey through
-// this very pass (rv::app::runSrgbSelfCheck).
+// this very pass (rv::app::runSrgbSelfCheck). When the anti-aliasing follows, its target (the tonemapped image) takes
+// the storage of uEmission (rv::gl::viewTargetPlan): uEmission is read at this fragment's own texel only, never around.
 #include "common/common.glsl"
 #include "common/post.glsl"
 #include "common/srgb.glsl"

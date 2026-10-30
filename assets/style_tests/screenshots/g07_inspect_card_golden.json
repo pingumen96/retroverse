@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g07_inspect_card_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "471f2aac7749a32cc0c519b29902c260f500c68666f65344e8d33988b0b5f4da",
+    "sha256": "cbd83551be94fa915b40aa18a0b19db5dd1c0f19f4c8e135bf13142296cdbd19",
     "width": 1920
   },
   "inputs": {
