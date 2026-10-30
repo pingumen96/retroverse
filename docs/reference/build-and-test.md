@@ -28,6 +28,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary   # the timing parts alone (Release), a quiet-machine rerun
 ./scripts/gate.ps1 -Gate M3                           # Gate M3: Gate A + every golden to G20, the I4b checks, section 9
 ./scripts/gate.ps1 -Gate M3 -RealLibrary              # also the real building, regenerations, a CLI edit session, both screens
+./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary  # section 9's rows and the timing parts again, a quiet-machine rerun
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -209,7 +210,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   unit and GPU runs of Debug and Release, every golden (G01 to G20; a golden that skips fails the gate, as one missing
   does), the benchmark path in Release and, per Debug and Release, a row per I4b area counted from the unit and GPU runs
   (`$i4bAreas`: the overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their
-  preview, undo, the expansion rooms in the world and in the app), then in Release ADR-0015 §9's rows read from the run
+  preview, undo, the expansion rooms in the world and in the app; an area with a skipped GPU case fails, as a skipped
+  golden does), then in Release ADR-0015 §9's rows read from the run
   reports the editor's and regenerations' GPU cases leave under `build/msvc-x64-release/smoke` (an edit shown 0.25 s,
   the preview 2 s a room and 15 s a floor or the world, the room shown again after a save, a commit or an undo 3 s),
   the whole gate under `scripts/focus_watch.py`. `-RealLibrary` adds one `scripts/real-library.ps1 -Filter
@@ -222,7 +224,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   a fixture moved as one `--script` session, `worldplan check` with every pin honoured, an update writing nothing, an
   undo restoring the plan's SHA-256) and the busiest floor at 1920 x 1080 with both screens playing (512 MiB), read
   from the tests' printed lines ("Real expansion:", "Real regeneration:", "Real app regeneration:", "Real edit:",
-  "Real secondary TV:"). `-TimingOnly` as Gate D's.
+  "Real secondary TV:"), every time against §9's limits written in the script, never the figure a test prints.
+  `-TimingOnly` builds Release alone, runs the editor's and regenerations' Release GPU cases again
+  (`$m3TimingGpuFilter`) with ADR-0015 §9's fixture rows, the benchmark path and, with `-RealLibrary`, the real
+  library's run. Gate M3's verdict is a full run plus a `-TimingOnly -RealLibrary` run on a quiet machine.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
