@@ -339,7 +339,7 @@ void WorldSession::beginRegeneration(ProductUi& product, ui::RegenerateKind kind
         RegenerateJobAnswer answer;
         answer.kind = RegenerateJobAnswer::Kind::Preview;
         // The world first, while the inputs the directory's tab reads ahead may still be on their way (m3/preview-time).
-        const RegenerationWorld world = readRegenerationWorld(paths, library, &known);
+        RegenerationWorld world = readRegenerationWorld(paths, library, &known);
         const Clock::time_point start = Clock::now();
         const RegenerationInputsResult inputs = regenerationInputsFor(*slot, paths, reader.get(), answer.inputsTaken);
         answer.inputsMs = millisecondsSince(start);
@@ -351,6 +351,10 @@ void WorldSession::beginRegeneration(ProductUi& product, ui::RegenerateKind kind
         answer.inputs = inputs.inputs;
         if (job.cancelled()) {
             return answer;
+        }
+        if (world.failure == regenerate_failure::kBusy) {
+            // Read before the wait for the inputs: an action that was writing the world may have ended since.
+            world = readRegenerationWorld(paths, library, &known);
         }
         answer.preview = previewRegeneration(world, scope, *inputs.inputs);
         return answer;
@@ -375,9 +379,12 @@ void WorldSession::prewarmRegeneration(ProductUi& product) {
         const RegenerationInputsResult inputs = regenerationInputsFor(*slot, paths, reader.get(), taken);
         answer.inputsTaken = taken;
         // Then the standing rooms' data (m3/preview-time), even once a preview was asked (its job's cancellation): a
-        // preview reads the same through the inputs' loader, each room once, whichever reads it first.
+        // preview reads the same through the inputs' loader, each room once, whichever reads it first. It stops once
+        // the slot no longer holds these inputs (the directory closed and nothing needs them, a refresh of the
+        // catalog, the session's end).
         if (inputs.inputs && plan) {
-            static_cast<void>(warmRoomData(*inputs.inputs, *plan));
+            static_cast<void>(warmRoomData(*inputs.inputs, *plan,
+                                           [slot, held = inputs.inputs] { return slotHolds(*slot, held); }));
         }
         return answer;
     });
@@ -429,6 +436,9 @@ void WorldSession::followRegeneration(ProductUi& product) {
     const std::string key = fmt::format("{}/{}", m_planState ? m_planState->library.str() : std::string(),
                                         m_lastRefresh.value_or(std::string()));
     if (!state.slot || key != state.slotKey) {
+        if (state.slot) {
+            state.slot->retired = true; // a read-ahead into the old inputs stops
+        }
         state.slot = std::make_shared<RegenerationInputsSlot>();
         state.slotKey = key;
         state.prewarmed = false;

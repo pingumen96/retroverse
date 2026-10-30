@@ -27,10 +27,12 @@
 //     is none (nothing to undo, a damaged folder, an action in progress); its commit, under the lock, undoes it
 //     (world::undoLastAction()) when it is still that one, then the items files and the stamp as above.
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -111,7 +113,13 @@ struct RegenerationInputsSlot {
     std::optional<RegenerationInputsResult> result;
     /// How long they took (milliseconds), when made.
     double milliseconds = 0.0;
+    /// The app let go of the slot (a refresh of the catalog makes a new one; the session ends): a read-ahead of the
+    /// rooms' data into its inputs stops (slotHolds()).
+    std::atomic<bool> retired = false;
 };
+
+/// `slot` holds `inputs` still: not retired, not emptied (releaseIdleInputs()), not made again.
+[[nodiscard]] bool slotHolds(RegenerationInputsSlot& slot, const std::shared_ptr<const RegenerationInputs>& inputs);
 
 /// The slot's inputs: made by this call (`taken` set) unless they are made or being made (then waited for).
 [[nodiscard]] RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
@@ -120,8 +128,10 @@ struct RegenerationInputsSlot {
 /// Reads the data of `plan`'s standing rooms into `inputs`' caching loader (world::standingRoomRequests()), as the
 /// directory's tab reads the inputs ahead (m3/preview-time: a regeneration reads every room outside its scope; cold,
 /// about half a second of a room's first preview on the reference library). A room whose data cannot be read is left
-/// to the preview, which reports it. Milliseconds taken.
-double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan);
+/// to the preview, which reports it. `keepGoing`, when given, is asked before each room: false stops the reading (the
+/// app's job: its slot no longer holds the inputs). Milliseconds taken.
+double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan,
+                    const std::function<bool()>& keepGoing = {});
 
 /// Lets go of `slot`'s inputs when nothing needs them now (`wanted` false: the directory closed, no notice offering a
 /// preview, no preview or commit asked or running; I4b step 6's review: they hold about 224 MiB of private bytes on the

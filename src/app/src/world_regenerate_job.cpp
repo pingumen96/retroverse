@@ -246,18 +246,35 @@ RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, con
     return result;
 }
 
-double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan) {
+bool slotHolds(RegenerationInputsSlot& slot, const std::shared_ptr<const RegenerationInputs>& inputs) {
+    if (slot.retired.load()) {
+        return false;
+    }
+    const std::lock_guard lock(slot.mutex);
+    return slot.result && slot.result->inputs == inputs;
+}
+
+double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan,
+                    const std::function<bool()>& keepGoing) {
     const Clock::time_point start = Clock::now();
     std::size_t failed = 0;
+    std::size_t read = 0;
     const std::vector<world::RoomDataRequest> requests = world::standingRoomRequests(plan, inputs.platformTags);
     for (const world::RoomDataRequest& request : requests) {
+        if (keepGoing && !keepGoing()) {
+            break;
+        }
         if (!inputs.load(request)) {
             ++failed;
         }
+        ++read;
     }
     const double milliseconds = millisecondsSince(start);
-    spdlog::info("Regeneration: the data of {} standing room(s) read ahead in {:.0f} ms{}", requests.size(),
-                 milliseconds, failed > 0 ? fmt::format(" ({} not read)", failed) : std::string());
+    spdlog::info("Regeneration: the data of {} standing room(s) read ahead in {:.0f} ms{}{}", read, milliseconds,
+                 failed > 0 ? fmt::format(" ({} not read)", failed) : std::string(),
+                 read < requests.size()
+                     ? fmt::format("; the other {} left (the inputs let go of)", requests.size() - read)
+                     : std::string());
     return milliseconds;
 }
 

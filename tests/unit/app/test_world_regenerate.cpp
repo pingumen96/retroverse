@@ -508,12 +508,14 @@ TEST_CASE("app/world_regenerate: the inputs let go of while nothing needs them; 
     CHECK(taken);
     CHECK(rv::app::regenerationInputsFor(slot, paths, reader.get(), taken).inputs == first.inputs);
     CHECK_FALSE(taken);
+    CHECK(rv::app::slotHolds(slot, first.inputs));
     // Needed (the directory open, a preview or a commit asked or running): kept.
     CHECK_FALSE(rv::app::releaseIdleInputs(slot, true));
     CHECK(slot.result.has_value());
     // The directory closed with nothing running: the slot is empty; a job that took them keeps them.
     CHECK(rv::app::releaseIdleInputs(slot, false));
     CHECK_FALSE(slot.result.has_value());
+    CHECK_FALSE(rv::app::slotHolds(slot, first.inputs)); // a read-ahead into them stops
     CHECK_FALSE(rv::app::releaseIdleInputs(slot, false));
     const rv::app::RegenerationPreview held =
         rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *first.inputs);
@@ -523,6 +525,11 @@ TEST_CASE("app/world_regenerate: the inputs let go of while nothing needs them; 
     REQUIRE(again.inputs);
     CHECK(taken);
     CHECK(again.inputs != first.inputs);
+    CHECK(rv::app::slotHolds(slot, again.inputs));
+    CHECK_FALSE(rv::app::slotHolds(slot, first.inputs));
+    // A slot the app let go of (a refresh of the catalog, the session's end) holds none.
+    slot.retired = true;
+    CHECK_FALSE(rv::app::slotHolds(slot, again.inputs));
     const rv::app::RegenerationPreview preview =
         rv::app::previewRegeneration(paths, rv::world::RegenerationScope::ofRoom(kSnesRoom), *again.inputs);
     INFO(preview.error);
@@ -574,7 +581,19 @@ TEST_CASE("app/world_regenerate: a preview takes the plan shown when its file is
     // The standing rooms' data read ahead into the inputs' loader: the same preview.
     CHECK(rv::world::standingRoomRequests(stored->plan, inputs.inputs->platformTags).size() ==
           stored->plan.rooms.size());
-    static_cast<void>(rv::app::warmRoomData(*inputs.inputs, stored->plan));
+    // A read-ahead stopped before its first room reads nothing; one asked to go on, every room.
+    std::size_t asked = 0;
+    static_cast<void>(rv::app::warmRoomData(*inputs.inputs, stored->plan, [&] {
+        ++asked;
+        return false;
+    }));
+    CHECK(asked == 1);
+    asked = 0;
+    static_cast<void>(rv::app::warmRoomData(*inputs.inputs, stored->plan, [&] {
+        ++asked;
+        return true;
+    }));
+    CHECK(asked == stored->plan.rooms.size());
     same(rv::app::previewRegeneration(paths, scope, *inputs.inputs, &shown));
 
     // The plan shown with its lists in another order (a plan in memory need not be sorted): sorted first.
