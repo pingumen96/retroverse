@@ -307,26 +307,25 @@ RegenerationWorld readRegenerationWorld(const WorldPaths& paths, const catalog::
                     "the world's files: " + read.error().toString());
     }
     world.planDigest = read->planDigest;
-    if (known != nullptr && known->plan && known->digest == read->planDigest) {
-        // The file is the plan the app shows (its canonical text's SHA-256): not parsed again.
-        world.plan = known->plan;
-        world.knownPlan = true;
-#ifndef NDEBUG
-        // Debug builds check it: the plan known, sorted, is the file's (a schema-1 file's is lifted, not compared).
-        if (auto parsed = world::readPlan(read->plan, "world-plan.json");
-            parsed && parsed->schemaVersion == world::kPlanSchemaVersion) {
-            world::WorldPlan sorted = *known->plan;
-            world::sortPlan(sorted);
-            if (!(sorted == *parsed)) {
-                spdlog::error("Regeneration: the plan the app shows is not its file's, though their digests are "
-                              "one ({}): the file's is previewed",
-                              read->planDigest);
-                world.plan = std::make_shared<const world::WorldPlan>(std::move(*parsed));
-                world.knownPlan = false;
-            }
+    // The plan the app shows stands for the file's only when its own digest is the file's (m3/preview-time's review):
+    // the app may show a stored building's ground-floor rooms at I4's lobby drawn on the hub under the stored digest
+    // (buildFloor(), the editor's asShown()), and a preview of that plan would have its commit write the re-placement.
+    // Its canonical text is written straight from it, sorted (a fraction of the file's parse).
+    if (known != nullptr && known->plan && known->digest == read->planDigest &&
+        known->plan->schemaVersion == world::kPlanSchemaVersion) {
+        const Clock::time_point checking = Clock::now();
+        auto sorted = std::make_shared<world::WorldPlan>(*known->plan);
+        world::sortPlan(*sorted);
+        if (auto digest = world::sortedPlanDigest(*sorted); digest && *digest == read->planDigest) {
+            world.plan = std::move(sorted);
+            world.knownPlan = true;
+        } else {
+            spdlog::info("Regeneration: the plan shown is not its file's ({}): the file is read",
+                         digest ? "another digest" : digest.error().toString());
         }
-#endif
-    } else {
+        world.checkMs = millisecondsSince(checking);
+    }
+    if (!world.plan) {
         auto plan = world::readPlan(read->plan, "world-plan.json");
         if (!plan) {
             return fail(regenerate_failure::kFailed, "the plan: " + plan.error().toString());
@@ -355,6 +354,7 @@ RegenerationPreview previewRegeneration(const RegenerationWorld& world, const wo
     preview.scope = scope;
     preview.readMs = world.readMs;
     preview.knownPlan = world.knownPlan;
+    preview.checkMs = world.checkMs;
     const auto fail = [&](std::string_view failure, std::string error) {
         preview.failure = std::string(failure);
         preview.error = std::move(error);
@@ -412,7 +412,8 @@ RegenerationPreview previewRegeneration(const RegenerationWorld& world, const wo
     preview.totalMs = world.readMs + millisecondsSince(start);
     spdlog::info("Regeneration: the preview of {} in {:.0f} ms (read {:.0f}{}, regeneration {:.0f}): {} room(s) "
                  "regenerated, {} game(s) moved, {} entering and {} leaving face-out, {} pin(s) kept, {} conflict(s){}",
-                 scope.toString(), preview.totalMs, preview.readMs, preview.knownPlan ? ", the plan shown" : "",
+                 scope.toString(), preview.totalMs, preview.readMs,
+                 preview.knownPlan ? fmt::format(", the plan shown, checked in {:.0f}", preview.checkMs) : std::string(),
                  preview.regenerateMs, preview.content.roomsRegenerated, preview.content.gamesMoved,
                  preview.content.faceOutEntering, preview.content.faceOutLeaving, preview.content.pinsKept,
                  preview.content.conflictCount, preview.content.changed ? "" : "; nothing to change");

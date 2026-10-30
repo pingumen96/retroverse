@@ -129,16 +129,19 @@ double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& pl
 /// shared_ptr; the next one that needs them makes them again. True when they were let go of.
 bool releaseIdleInputs(RegenerationInputsSlot& slot, bool wanted);
 
-/// The plan the app shows and its digest (the SHA-256 of its canonical text: the file it was read from or written as).
-/// A preview whose plan file has that digest takes it instead of parsing the file (m3/preview-time: the parse was about
-/// a third of a room's preview on the reference library); its lists are sorted first, so that it is the file's plan.
+/// The plan the app shows and the digest of the file it was read from or written as. A preview whose plan file has that
+/// digest takes it instead of parsing the file (m3/preview-time: the parse was about a third of a room's preview on the
+/// reference library) when the plan, its lists sorted, is the file's: its own digest (sortedPlanDigest()) is the file's.
+/// The plan shown need not be the plan as stored (m3/preview-time's review): buildFloor() and the editor draw a stored
+/// building's ground-floor rooms standing at I4's lobby on the hub under the stored digest; such a plan has the file
+/// read, so that a commit never writes their re-placement (ADR-0015 §5, §6).
 struct KnownPlan {
     std::shared_ptr<const world::WorldPlan> plan;
     std::string digest;
 };
 
 /// The world as a preview reads it (world::readWorldUnlocked(): no lock, nothing written): the plan file's digest, its
-/// plan (`known`'s when that is its digest, else the file parsed; not lifted), the overrides.
+/// plan (`known`'s, sorted, when it is the file's plan, else the file parsed; not lifted), the overrides.
 struct RegenerationWorld {
     /// Why it could not be read ("" it was: regenerate_failure's key), and the error for the log.
     std::string failure;
@@ -149,7 +152,9 @@ struct RegenerationWorld {
     world::WorldOverrides overrides;
     /// The plan was `known`'s (the file not parsed).
     bool knownPlan = false;
+    /// Milliseconds: the whole read; of it, the check of `known`'s plan against the file's digest (0 without one).
     double readMs = 0.0;
+    double checkMs = 0.0;
 };
 
 /// Reads `library`'s world for a preview. Failures: busy (an action in progress or interrupted, the world changing
@@ -173,9 +178,10 @@ struct RegenerationPreview {
     ui::RegeneratePreviewContent content;
     /// The world's plan was the one the app shows (KnownPlan): not parsed.
     bool knownPlan = false;
-    /// Milliseconds: the world read, the regeneration (its rooms' data included), the whole preview (the read and
-    /// what follows it, not a wait between them).
+    /// Milliseconds: the world read (and of it the check of the plan shown), the regeneration (its rooms' data
+    /// included), the whole preview (the read and what follows it, not a wait between them).
     double readMs = 0.0;
+    double checkMs = 0.0;
     double regenerateMs = 0.0;
     double totalMs = 0.0;
 };

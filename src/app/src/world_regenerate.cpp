@@ -330,7 +330,8 @@ void WorldSession::beginRegeneration(ProductUi& product, ui::RegenerateKind kind
                             });
         return;
     }
-    // The plan shown: the preview takes it when its file is that plan (m3/preview-time: not parsed again).
+    // The plan shown: the preview takes it when it is its file's plan, its own digest the file's (m3/preview-time: not
+    // parsed again). It may draw a stored building's lobby rooms on the hub (buildFloor()): then the file is read.
     const KnownPlan known{m_planState->plan, m_planState->digest};
     submitRegenerateJob(RegenerateJob::Preview, [paths, scope, library, known, slot = state.slot,
                                                  reader =
