@@ -17,6 +17,7 @@
 #include <string_view>
 
 #include <glm/geometric.hpp>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <rv/core/file_io.hpp>
@@ -342,4 +343,46 @@ TEST_CASE("golden/G21: the test room in the fake headset, both eyes from the sce
     INFO(verdict);
     INFO("heatmap of the differences: " << rv::core::pathToUtf8(heatmap));
     CHECK(comparison->matches);
+}
+
+TEST_CASE("xr: the quick catalog stands in front of the user, the controller's ray its mouse (I10 step 5)",
+          "[gpu][xr]") {
+    const fs::path dir = freshCaseDir("xr/catalog");
+    // The right controller at the hip points at the panel's left half, a little above its middle: the panel stands
+    // 1.3 m in front of the eyes, 0.12 m below them, 1.8 m wide at the window's 16:9.
+    const glm::vec3 hand(0.2f, 1.25f, -0.3f);
+    const glm::vec3 target(-0.25f * 1.8f, 1.65f - 0.12f + 0.05f * 1.8f / (16.0f / 9.0f), -1.3f);
+    const glm::vec3 toTarget = glm::normalize(target - hand);
+    const float yawDeg = rv::core::radiansToDegrees(std::atan2(toTarget.x, -toTarget.z));
+    const float pitchDeg = rv::core::radiansToDegrees(std::asin(toTarget.y));
+    const std::string pose = fmt::format(R"("rightHand": {{"yaw": {}, "pitch": {}, "position": [{}, {}, {}]}})",
+                                         yawDeg, pitchDeg, hand.x, hand.y, hand.z);
+    const fs::path script = dir / "catalog.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, fmt::format(R"([
+  {{"fromFrame": 0, "toFrame": 59, "headPose": {{"position": [0, 1.65, 0]}}}},
+  {{"fromFrame": 5, "toFrame": 5, "actions": {{"quick_catalog": 1}}}},
+  {{"fromFrame": 10, "toFrame": 59, {0}}},
+  {{"fromFrame": 30, "toFrame": 33, "rightSelect": 1}}
+])",
+                                                              pose))
+                .has_value());
+    const fs::path shot = dir / "eyes.png";
+    std::vector<std::string> arguments = vrArguments(60, shot);
+    arguments.insert(arguments.end(),
+                     {"--mock-catalog", arg(sourceDir() / "tests/smoke/catalogs/fake_emulator_games.json"),
+                      "--input-script", arg(script)});
+    const AppRun run = runApp(retroverseExe(), dir, "catalog", arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    requireScreenshot(run, shot, glm::ivec2(2 * kEyeSize.x, kEyeSize.y));
+    REQUIRE(run.report->catalog);
+    CHECK(run.report->catalog->opened == 1);
+    CHECK(run.report->catalog->open);
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    // The panel stood in the world from the catalog's opening, the ray on it from frame 10, one click.
+    CHECK(xr.uiPanelFrames >= 50);
+    CHECK(xr.uiPointedFrames >= 45);
+    CHECK(xr.uiClicks == 1);
 }
