@@ -72,6 +72,7 @@
 				<p id="media-manual-opened" class="note" data-if="viewer.manual == 'opened'">Il manuale si apre nel programma predefinito di Windows per i PDF.</p>
 				<p id="media-manual-refused" class="note" data-if="viewer.manual == 'refused'">Apertura bloccata: in questa esecuzione automatica Retroverse non avvia altri programmi.</p>
 				<p id="media-manual-failed" class="note" data-if="viewer.manual == 'failed'">Il manuale non si è aperto: Windows non ha potuto avviare il programma predefinito.</p>
+				<p id="media-manual-unsupported" class="note" data-if="viewer.manual == 'unsupported'">Retroverse non apre questo manuale: il percorso del file contiene una virgola, due punti o un nome che Windows leggerebbe in un altro modo.</p>
 			</div>
 			<div id="media-failed" class="fallback" data-if="viewer.state == 'failed' && viewer.kind != 'videos' && viewer.kind != 'manuals'">
 				<p class="fallback-title">Immagine non leggibile</p>

@@ -1,6 +1,7 @@
 #include "game_screens_panel.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -29,6 +30,12 @@ namespace {
 
 /// Pictures uploaded in one frame, at most.
 constexpr std::size_t kUploadsPerFrame = 2;
+
+/// The media viewer model's clock for the manual's second Activate (wall time: it guards against another explorer.exe,
+/// whatever the run's simulated time).
+[[nodiscard]] double monotonicSeconds() noexcept {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 /// What a loader job reads: a page's picture, or (I5 step 8) where the clip's or the manual's file is.
 enum class JobKind : std::uint8_t { Picture, Video, Manual };
@@ -406,7 +413,7 @@ GameScreensPanel::Switch GameScreensPanel::apply(ui::UiCommand command, std::uin
         if (command == ui::UiCommand::Back) {
             return Switch::None;
         }
-        switch (impl.model.apply(command)) {
+        switch (impl.model.apply(command, monotonicSeconds())) {
         case ui::ViewerStep::Moved:
             showPage(frame);
             break;
@@ -452,7 +459,7 @@ GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
         case ui::ViewerClick::Pause:
         case ui::ViewerClick::Manual:
             // The page's own button: Activate's step on it.
-            if (const ui::ViewerStep step = impl.model.apply(ui::UiCommand::Activate);
+            if (const ui::ViewerStep step = impl.model.apply(ui::UiCommand::Activate, monotonicSeconds());
                 step == ui::ViewerStep::TogglePause) {
                 videoPauseToggled(frame);
             } else if (step == ui::ViewerStep::OpenManual) {
@@ -641,14 +648,20 @@ void GameScreensPanel::openManual(std::uint64_t frame) {
     Impl& impl = *m_impl;
     const std::size_t index = impl.model.index();
     if (impl.manualFile.empty()) {
+        impl.model.setManualOutcome(index, ui::ManualState::Ready); // asked again once its file is there
         return;
     }
     const std::string label = fmt::format("the manual of {}", m_gameId);
     auto request = launcher::planManualOpen(impl.manualFile, impl.probe, label);
     if (!request) {
-        impl.model.setManualOutcome(index, ui::ManualState::Failed, std::string(toString(request.error().code)));
+        // I5 step 8's review: a path the plan refuses (Unsupported, or not UTF-8) is no failure of Windows: its own
+        // sentence; explorer.exe missing (the Windows folder unknown, the program not there) is a failure.
+        const ErrorCode code = request.error().code;
+        const bool unsupported = code == ErrorCode::Unsupported || code == ErrorCode::InvalidArgument;
+        impl.model.setManualOutcome(index, unsupported ? ui::ManualState::Unsupported : ui::ManualState::Failed,
+                                    std::string(toString(code)));
         addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind),
-                 "failed " + std::string(toString(request.error().code)));
+                 (unsupported ? "unsupported " : "failed ") + std::string(toString(code)));
         // The message may name the user's file: at debug level only.
         spdlog::debug("Media viewer: the manual of {} cannot be opened: {}", m_gameId, request.error().toString());
         spdlog::info("Frame {}: the manual of {} cannot be opened by explorer.exe", frame, m_gameId);
@@ -675,7 +688,7 @@ void GameScreensPanel::openManual(std::uint64_t frame) {
         return;
     }
     (*started)->stopWatching();
-    impl.model.setManualOutcome(index, ui::ManualState::Opened);
+    impl.model.setManualOutcome(index, ui::ManualState::Opened, {}, monotonicSeconds());
     addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind), "opened");
     spdlog::info("Frame {}: the manual of {} opens in Windows' default program (explorer.exe, process {})", frame,
                  m_gameId, (*started)->processId());

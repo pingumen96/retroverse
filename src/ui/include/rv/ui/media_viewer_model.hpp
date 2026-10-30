@@ -15,7 +15,8 @@
 // (rv-texture:media-viewer-video, the application's view of the decoder slot's texture), Activate pausing it and
 // playing it again, a clip that cannot play showing the page's fallback with its reason (a video verdict's name, or the
 // decoder's failure); the `manuals` page, the last, names the manual and opens it in Windows' default program with
-// Activate ("Apri il manuale"), its outcome shown (opened, refused by the automation guard, failed).
+// Activate ("Apri il manuale"), its outcome shown (opened, refused by the automation guard, failed, a path the plan
+// refuses), a second Activate ignored while the first starts and for kManualReopenSeconds after it opened.
 
 #include <array>
 #include <cstddef>
@@ -73,6 +74,9 @@ inline constexpr std::array<std::string_view, 10> kVideoReasons{
     "truncated",      "decoder-error", "read-error",      "not-playable",      "graphics-error"};
 /// The most a picture is enlarged to fill the stage (a 16 px picture stays small).
 inline constexpr float kMaxEnlargement = 4.0f;
+/// I5 step 8's review: after a manual opened, Activate on its page asks for it again only this many seconds later (each
+/// ask starts another explorer.exe, and the PDF program's window takes a moment to show).
+inline constexpr double kManualReopenSeconds = 2.0;
 } // namespace media_viewer
 
 /// Where a page's picture stands.
@@ -90,10 +94,15 @@ enum class ManualState : std::uint8_t {
     Ready,   ///< not asked yet
     Opened,  ///< explorer.exe started with the manual: Windows' default program opens it
     Refused, ///< the automation guard refused it (RV_LAUNCH_ALLOWLIST: an automated run never opens a window)
-    Failed,  ///< it could not be started (a path explorer.exe cannot read, the program missing, ...)
+    Failed,  ///< it could not be started (explorer.exe missing or failing, ...)
+    /// I5 step 8's review: asked for (Activate), its start not done yet; Activate does nothing meanwhile.
+    Opening,
+    /// I5 step 8's review: the plan refused the manual's path (one explorer.exe would misread: a comma, a device name, a
+    /// colon, a name Windows would change, ...): nothing started.
+    Unsupported,
 };
 
-/// "ready", "opened", "refused", "failed".
+/// "ready", "opened", "refused", "failed", "opening", "unsupported".
 [[nodiscard]] std::string_view toString(ManualState state) noexcept;
 
 /// True for the kinds whose page shows a picture (not the clip, not the manual).
@@ -116,6 +125,8 @@ struct MediaPage {
     std::string reason;
     std::string name;
     ManualState manual = ManualState::Ready;
+    /// When the manual opened (setManualOutcome()'s `nowSeconds`): Activate waits kManualReopenSeconds from it.
+    double manualOpenedAt = 0.0;
 
     bool operator==(const MediaPage&) const = default;
 };
@@ -144,8 +155,10 @@ public:
     /// Left, PageUp and FilterPrevious show the previous page, Right, PageDown, FilterNext and Activate the next one
     /// (no wrap), Home the first, End the last; Back closes. Since I5 step 8 Activate on the videos page toggles its
     /// pause (TogglePause, the page's `paused` flipped; None until its clip shows), on the manuals page asks for the
-    /// manual (OpenManual once its file is found, None before). Other commands: None.
-    ViewerStep apply(UiCommand command) noexcept;
+    /// manual (OpenManual once its file is found, None before; the page's manual then Opening until setManualOutcome(),
+    /// None meanwhile and for kManualReopenSeconds after it opened, `nowSeconds` being the caller's monotonic clock).
+    /// Other commands: None.
+    ViewerStep apply(UiCommand command, double nowSeconds = 0.0) noexcept;
     /// Shows page `index` (Moved; the page left loses its pause), None when it is the page shown or out of range.
     ViewerStep select(std::size_t index) noexcept;
 
@@ -156,8 +169,9 @@ public:
     void setVideo(std::size_t index, PictureState state, int width = 0, int height = 0, std::string reason = {});
     /// I5 step 8: the manual's file was looked for (Shown: there, its file name `name`; Failed with `reason`).
     void setManualFile(std::size_t index, PictureState state, std::string name, std::string reason = {});
-    /// I5 step 8: what "Apri il manuale" did (`reason`: why it was refused or failed).
-    void setManualOutcome(std::size_t index, ManualState outcome, std::string reason = {});
+    /// I5 step 8: what "Apri il manuale" did (`reason`: why it was refused, failed or unsupported; `nowSeconds`: when,
+    /// on apply()'s clock).
+    void setManualOutcome(std::size_t index, ManualState outcome, std::string reason = {}, double nowSeconds = 0.0);
 
     [[nodiscard]] const std::string& gameId() const noexcept { return m_gameId; }
     [[nodiscard]] const std::string& title() const noexcept { return m_title; }

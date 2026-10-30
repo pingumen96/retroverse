@@ -15,6 +15,10 @@ std::string_view toString(ManualState state) noexcept {
         return "refused";
     case ManualState::Failed:
         return "failed";
+    case ManualState::Opening:
+        return "opening";
+    case ManualState::Unsupported:
+        return "unsupported";
     }
     return "unknown";
 }
@@ -55,7 +59,7 @@ void MediaViewerModel::close() noexcept {
     m_open = false;
 }
 
-ViewerStep MediaViewerModel::apply(UiCommand command) noexcept {
+ViewerStep MediaViewerModel::apply(UiCommand command, double nowSeconds) noexcept {
     if (!m_open) {
         return ViewerStep::None;
     }
@@ -77,7 +81,15 @@ ViewerStep MediaViewerModel::apply(UiCommand command) noexcept {
                 return ViewerStep::TogglePause;
             }
             if (page.kind == media_viewer::kManualsKind) {
-                return page.state == PictureState::Shown ? ViewerStep::OpenManual : ViewerStep::None;
+                // I5 step 8's review: one explorer.exe at a time, and none again right after the manual opened.
+                if (page.state != PictureState::Shown || page.manual == ManualState::Opening ||
+                    (page.manual == ManualState::Opened &&
+                     nowSeconds - page.manualOpenedAt < media_viewer::kManualReopenSeconds)) {
+                    return ViewerStep::None;
+                }
+                page.manual = ManualState::Opening;
+                page.reason.clear();
+                return ViewerStep::OpenManual;
             }
         }
         return select(m_index + 1);
@@ -139,14 +151,20 @@ void MediaViewerModel::setManualFile(std::size_t index, PictureState state, std:
     page.reason = state == PictureState::Failed ? std::move(reason) : std::string();
 }
 
-void MediaViewerModel::setManualOutcome(std::size_t index, ManualState outcome, std::string reason) {
+void MediaViewerModel::setManualOutcome(std::size_t index, ManualState outcome, std::string reason,
+                                        double nowSeconds) {
     if (index >= m_pages.size() || m_pages[index].kind != media_viewer::kManualsKind) {
         return;
     }
     MediaPage& page = m_pages[index];
     page.manual = outcome;
-    page.reason = outcome == ManualState::Refused || outcome == ManualState::Failed ? std::move(reason)
-                                                                                    : std::string();
+    page.reason = outcome == ManualState::Refused || outcome == ManualState::Failed ||
+                          outcome == ManualState::Unsupported
+                      ? std::move(reason)
+                      : std::string();
+    if (outcome == ManualState::Opened) {
+        page.manualOpenedAt = nowSeconds;
+    }
 }
 
 const MediaPage* MediaViewerModel::current() const noexcept {

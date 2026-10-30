@@ -184,12 +184,18 @@ TEST_CASE("media viewer: the videos page pauses its clip with Activate, the manu
     CHECK(model.current()->name == "Amber Lantern (USA).pdf");
     CHECK(model.apply(UiCommand::Activate) == ViewerStep::None);
     model.setManualFile(2, PictureState::Shown, "Amber Lantern (USA).pdf");
-    CHECK(model.apply(UiCommand::Activate) == ViewerStep::OpenManual);
+    CHECK(model.apply(UiCommand::Activate, 10.0) == ViewerStep::OpenManual);
     CHECK(model.index() == 2); // no page past the last
     model.setManualOutcome(2, rv::ui::ManualState::Refused, "guard");
     CHECK(model.current()->manual == rv::ui::ManualState::Refused);
     CHECK(model.current()->reason == "guard");
-    model.setManualOutcome(2, rv::ui::ManualState::Opened, "ignored");
+    // A refusal, a failure or an unsupported path: asked again at once.
+    CHECK(model.apply(UiCommand::Activate, 10.1) == ViewerStep::OpenManual);
+    model.setManualOutcome(2, rv::ui::ManualState::Unsupported, "unsupported");
+    CHECK(model.current()->manual == rv::ui::ManualState::Unsupported);
+    CHECK(model.current()->reason == "unsupported");
+    CHECK(model.apply(UiCommand::Activate, 10.2) == ViewerStep::OpenManual);
+    model.setManualOutcome(2, rv::ui::ManualState::Opened, "ignored", 10.3);
     CHECK(model.current()->manual == rv::ui::ManualState::Opened);
     CHECK(model.current()->reason.empty());
     model.setManualFile(2, PictureState::Failed, "Amber Lantern (USA).pdf", "file-not-found");
@@ -198,6 +204,37 @@ TEST_CASE("media viewer: the videos page pauses its clip with Activate, the manu
     CHECK(rv::ui::toString(rv::ui::ManualState::Opened) == "opened");
     CHECK(rv::ui::toString(rv::ui::ManualState::Refused) == "refused");
     CHECK(rv::ui::toString(rv::ui::ManualState::Failed) == "failed");
+    CHECK(rv::ui::toString(rv::ui::ManualState::Opening) == "opening");
+    CHECK(rv::ui::toString(rv::ui::ManualState::Unsupported) == "unsupported");
+}
+
+TEST_CASE("media viewer: one explorer.exe at a time for the manual, none again right after it opened",
+          "[ui][media_viewer]") {
+    MediaViewerModel model;
+    const std::vector<std::string> kinds{"manuals"};
+    model.open("g0000000000000001", "Amber Lantern", "P", kinds);
+    model.setManualFile(0, PictureState::Shown, "Amber Lantern (USA).pdf");
+    // The first Activate asks for it: the page's manual is opening, and another Activate (a click, a repeat) does
+    // nothing until its outcome comes.
+    CHECK(model.apply(UiCommand::Activate, 100.0) == ViewerStep::OpenManual);
+    CHECK(model.current()->manual == rv::ui::ManualState::Opening);
+    CHECK(model.apply(UiCommand::Activate, 100.0) == ViewerStep::None);
+    CHECK(model.apply(UiCommand::Activate, 105.0) == ViewerStep::None);
+    // Opened at 105: nothing for kManualReopenSeconds, then asked again.
+    model.setManualOutcome(0, rv::ui::ManualState::Opened, {}, 105.0);
+    CHECK(model.apply(UiCommand::Activate, 105.5) == ViewerStep::None);
+    CHECK(model.apply(UiCommand::Activate, 105.0 + rv::ui::media_viewer::kManualReopenSeconds - 0.01) ==
+          ViewerStep::None);
+    CHECK(model.current()->manual == rv::ui::ManualState::Opened);
+    CHECK(model.apply(UiCommand::Activate, 105.0 + rv::ui::media_viewer::kManualReopenSeconds) ==
+          ViewerStep::OpenManual);
+    CHECK(model.current()->manual == rv::ui::ManualState::Opening);
+    // A failed start: asked again at once.
+    model.setManualOutcome(0, rv::ui::ManualState::Failed, "process-failed");
+    CHECK(model.apply(UiCommand::Activate, 107.5) == ViewerStep::OpenManual);
+    // Paging never asks for it.
+    CHECK(model.apply(UiCommand::Right, 200.0) == ViewerStep::None);
+    CHECK(rv::ui::media_viewer::kManualReopenSeconds == 2.0);
 }
 
 TEST_CASE("media viewer: the picture fits the stage without stretching, enlarged at most four times",
@@ -296,7 +333,8 @@ TEST_CASE("media viewer's document: ids, data model, the rv-texture picture, a l
         INFO(part);
         CHECK(contains(rml, part));
     }
-    for (const auto outcome : {rv::ui::ManualState::Opened, rv::ui::ManualState::Refused, rv::ui::ManualState::Failed}) {
+    for (const auto outcome : {rv::ui::ManualState::Opened, rv::ui::ManualState::Refused, rv::ui::ManualState::Failed,
+                               rv::ui::ManualState::Unsupported}) {
         CHECK(contains(rml, "viewer.manual == '" + std::string(rv::ui::toString(outcome)) + "'"));
     }
     const std::string rcss = readAsset(mv::kStyleSheetPath);
