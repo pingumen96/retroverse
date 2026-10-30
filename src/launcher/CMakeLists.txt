@@ -3,7 +3,8 @@
 # process runner port (IProcessRunner) and the launch session state machine; since I2 (ADR-0008 §8) Retroverse's own
 # argument templates, emulator profiles (shipped in assets/launcher/emulators.json, the user's in
 # <user data>/config/emulators.json) with their executables located through rv_core's ISystemProbe, launch plans (a
-# neutral target and a profile become a request or a blocker) and the automation guard (RV_LAUNCH_ALLOWLIST). The Win32
+# neutral target and a profile become a request or a blocker) and the automation guard (RV_LAUNCH_ALLOWLIST); since I5
+# step 8 the plan that opens a game's manual through explorer.exe (manual_open.hpp, ADR-0016 §10). The Win32
 # process runner lives in rv_platform_win (Win32ProcessRunner, which applies the guard), the window hand-over in
 # rv_platform (WindowHandover). Depends on rv_core only: the catalog's launch resolution calls into it.
 

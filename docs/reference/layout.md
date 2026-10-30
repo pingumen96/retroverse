@@ -89,7 +89,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   offer); the outline pass's
   dimming shader `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
-  `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
+  `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a). Since I5 step 8 the
+  viewer's videos and manuals pages: the model's `ManualState` and page states, the document's
+  `rv-texture:media-viewer-video`; `rv_app`'s `game_screens_panel.cpp` carries the clip between the viewer and
+  `ScreenService::setViewer()` / `viewerVideo()` (the clip's own texture and its `GL_RGBA8` view in
+  `screen_service.cpp`) and opens the manual through `rv_launcher`'s `manual_open.hpp` (`planManualOpen`: explorer.exe
+  and the file as its one argument) on a `platform_win::Win32ProcessRunner` of its own.
 - `rv_world` (`src/world`, `docs/i3/`, `docs/i4/`): ids (`room:snes/fx:w03/s:3.12`; since I4 step 1 the room ids'
   four forms, `room:<system>[:<n>]`, `area:shared:<floor>[:<n>]`, `area:arcade[:<n>]`), the WorldPlan and its canonical
   JSON (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`, `roomContentDigest`; schema 2 written, schema 1 read; a

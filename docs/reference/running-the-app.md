@@ -105,7 +105,8 @@ build/rvdata`).
   format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
   `retries`, `hero`), `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
-  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog) and, since I4 step 7b,
+  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog; since I5 step 8
+  `videoFrames`, `videoBox` and the `video` and `manual` events, below) and, since I4 step 7b,
   `directory` (`{}` without the building: `opened`, at the end `open`, `tab`, `view`, `notice`, `gamesState`;
   `gamesRequests`, the `games` last listed with `gameId`, `title`, `system`, `favorite`, `played` "YYYY-MM-DD"; the card
   last shown `cardGame`, `cardRoom`, `cardOutcome`; `events` `open` (tab, `elevator` or `map`), `command`, `refused`,
@@ -428,8 +429,9 @@ build/rvdata`).
   and Start are Vedi media, Informazioni and Avvia; Esc / B leaves
   one level (Inspect to Focus to free roam). The hero CRT plays the clip of the item focused or inspected for 300 ms.
   Vedi media (the card's button, Y; the quick catalog's too) opens the media viewer: the game's images one page per kind
-  (cover, back cover, physical media, 3D box, screenshot, title screen, marquee, fan art; the missing kinds skipped),
-  left and right page, Home and End jump, Back closes; a file that cannot be read shows its fallback. Informazioni (X)
+  (cover, back cover, physical media, 3D box, screenshot, title screen, since I5 step 8 the clip, marquee, fan art and
+  the manual last; the missing kinds skipped), left and right page, Home and End jump, Back closes; a file that cannot
+  be read shows its fallback; A pauses the clip, or opens the manual (below). Informazioni (X)
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
   and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
   stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
@@ -613,6 +615,25 @@ build/rvdata`).
   `video.verdicts`: `loaded` (the file was read: a missing file is no verdict), `entries`, `knownBad` (the games whose
   clips were left out: `gameId`, `verdict`), `given` (the run's verdicts, one per clip), `written` (those merged into
   the file), `writeFailures`.
+- The media viewer's clip and manual (I5 step 8, ADR-0016 §10, `docs/i5/step-8.md`): the viewer's `videos` page (after
+  the title screen) plays the game's clip with its sound, at `viewerMaxRows` (720) with two decoders and `maxRows` with
+  one, in the `direct` class under a key of its own (never a world screen's slot), into a texture of its own while it
+  plays, shown through a `GL_RGBA8` view as `rv-texture:media-viewer-video`; A or Enter (`ui_activate`) pauses it and
+  plays it again; a clip that cannot play shows "Filmato non riproducibile" with its reason (a failure verdict's: never
+  opened; the decoder's, which gives a verdict). While the viewer is open, on any page, the world's screens and cabinets
+  count as out of view (their slots pause, reason `viewer`, and stop after 10 s; a slot the clip takes keeps its
+  screen's frame) and the sound is the viewer's clip alone at full volume (no duck over the card or the quick catalog,
+  wherever the eye is); they play again when it closes. A run that has shown no screen yet makes the screens' service
+  for the clip. The `manuals` page (the last) names the manual's file; "Apri il manuale" (A, Enter, or its button) starts
+  explorer.exe with the file as its one argument through a Win32 process runner (`launcher::planManualOpen`: no shell;
+  plain paths only, `.pdf`, within `MAX_PATH`), which hands it to Windows' default PDF program: no game session, nothing
+  waits, Retroverse keeps running; under `RV_LAUNCH_ALLOWLIST` (every automated run) the guard refuses it ("Apertura
+  bloccata"). video.json's `enabled: false` turns the world's clips off, not the viewer's. The report's `video.viewer`
+  (`clips`, `decodersOpened`, `framesUploaded`, `pauses`, `knownBad`, `failures`, the last clip's `game`, `state`,
+  `reason`, `width`, `height`, `rows`, `maxGpuBytes`, `openFrames`, `worldFramesWhileOpen`), the viewer among
+  `video.screens` (kind `media-viewer`), `screens.videoFrames`, `screens.videoBox` and the screens' events `video`
+  (`waiting`, `playing <w>x<h>`, `paused`, `failed <reason>`, `verdict <reason>`) and `manual` (`found <file>`,
+  `missing <reason>`, `opened`, `refused`, `failed <reason>`).
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the

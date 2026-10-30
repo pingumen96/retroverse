@@ -1,0 +1,127 @@
+# I5 step 8: videos and manuals in the media viewer
+
+Roadmap row: I5 step 8. Decision: [ADR-0016](../decisions/ADR-0016-screens-and-media.md) §10 (the `videos` page, the
+`manuals` page), with §2 (the `direct` class, the viewer's 720 rows), §9 (the viewer's clip at full volume) and §12 (the
+viewer's clip in the GPU memory row). No amendment.
+
+## What was built
+
+- **The pages** (`rv_ui_model`, `media_viewer_model.hpp`): `media_viewer::kKinds` gains `videos` after the title screen
+  and `manuals` last, so `app::viewerPagesOf()` gives them (the clip and the manual a usable extension, as for the other
+  kinds). Activate on the videos page pauses the clip and plays it again (`ViewerStep::TogglePause`, once its first frame
+  shows; leaving the page drops the pause), on the manuals page asks for the manual (`ViewerStep::OpenManual`, once its
+  file is found); on a picture's page it pages on, as before. A page holds the clip's or the manual's state, its reason,
+  the manual's file name and what "Apri il manuale" did (`ManualState`: ready, opened, refused, failed).
+- **The document** (`assets/ui/media_viewer.rml`, `.rcss`): the clip as `<img src="rv-texture:media-viewer-video">`,
+  fitted to the stage like a picture; "Caricamento del filmato..."; "In pausa" and the hint "A Pausa/Riprendi" (a button
+  too); the fallback "Filmato non riproducibile" with a sentence per reason (`media_viewer::kVideoReasons`: the verdicts'
+  names, `not-playable`, `graphics-error`, a generic one otherwise) and "Motivo: <reason>"; the manual's page with its
+  file name, "Apri il manuale", "Ricerca del manuale...", "Il file del manuale non c'è..." and a sentence per outcome.
+- **The clip** (`rv_app`, `screen_service.cpp`): `ScreenService::setViewer()` takes the viewer's request each frame
+  (`app::ViewerRequest` in `game_screens.hpp`: open, and the videos page's clip). The clip is a screen of the scheduler:
+  `direct` class, at the eye, in view unless the window is minimized, under its own key (`viewer:<opening>:<file>`, so
+  it never shares a world screen's 480-row slot). Its slot decodes at `viewerMaxRows` (720) with two decoders, `maxRows`
+  with one, into a `gl::VideoTexture` of the viewer's own (allocated with its first frame, gone when the viewer lets the
+  clip go); `viewerVideo()` gives its state and a `GL_RGBA8` view of that texture (`gl::createRgba8View`), which the
+  panel registers as `rv-texture:media-viewer-video` while the page shows. The page's pause holds the slot on its
+  frame. A clip a failure verdict leaves out is never opened (`ScreenVerdicts::leftOutFailure()` gives the verdict's
+  name); one that fails gives its decoder's reason and a verdict, as on a world screen.
+- **The world under it**: while the viewer is open (any page) every bound screen and cabinet counts as out of view:
+  their slots pause at once (reason `viewer`), stop after 10 s like a minimized window's, and a slot the viewer's clip
+  takes (`needed`) leaves its screen its frame; once the viewer closes they play again (a stopped clip where it stopped).
+  The sound is the viewer's clip alone, at full volume (the master and video bus apply; no spatial gain, no duck:
+  `audioDucked(..., viewerOpen)`), whatever room holds the eye.
+- **The manual** (`rv_launcher`, `manual_open.hpp`): `planManualOpen()` gives explorer.exe of the Windows folder
+  (`ISystemProbe::windowsFolder()`) with the manual's plain path as its one argument, run in the Windows folder, no
+  startup grace and no window timeout, validated by `validateLaunchRequest()`. `GameScreensPanel` starts it through a
+  `Win32ProcessRunner` of its own (no shell; the automation guard first), drops the running process at once
+  (`stopWatching()`: no session, nothing waits, Retroverse keeps running) and shows the outcome; a refusal of the guard
+  is "refused" (`Apertura bloccata`), anything else "failed".
+- **The panel** (`game_screens_panel.cpp`): the loader thread also finds the clip's file (its `\\?\` path below the
+  media root) and the manual's (there or not, never opened); `viewerRequest()` and `setViewerVideo()` carry the clip to
+  and from the service (`ProductUi` passes them through; `retroverse_app.cpp` calls them around `ScreenService::update`
+  and makes the service, unbound, for a run that has shown no screen yet).
+- **The report**: `video.viewer` (`clips`, `decodersOpened`, `framesUploaded`, `pauses`, `knownBad`, `failures`, `game`,
+  `state`, `reason`, `width`, `height`, `rows`, `maxGpuBytes`, `openFrames`, `worldFramesWhileOpen`), the viewer in
+  `video.screens` (kind `media-viewer`), `screens.videoFrames` and `screens.videoBox`, and the screens' events `video`
+  and `manual`.
+
+## Decisions beyond ADR-0016
+
+- **The plain path for explorer.exe.** The media root's paths are `\\?\` paths; explorer.exe gets the drive or UNC path
+  they stand for, and the plan refuses what it would misread: a relative or device path, another extension than `.pdf`,
+  a path past `MAX_PATH`, an element ending with a dot or a space (Windows would name another file), a comma in an
+  argument left unquoted (explorer.exe splits it there; a path with a space is quoted). `&`, `%`, `^`, `!`, `'`, `;`,
+  `$( )` and non-ASCII names stay in the one argument (the unit table, read back by `CommandLineToArgvW`).
+- **No session for the manual.** explorer.exe hands the file to the shell and exits at once, often with exit code 1, so
+  it is not followed: a process started is "opened". The PDF program is the shell's, outside Retroverse's job.
+- **Which page asks for the clip.** Only the videos page: the clip opens when it shows and goes when it is left (coming
+  back starts it from its beginning); the world pauses as soon as the viewer opens, on any page.
+- **The viewer's volume** is 1, not a kind's `volume` from video.json (ADR-0016 §1: the viewer is not configured per
+  kind); video.json's `enabled: false` turns the world's clips off but not the viewer's, which the user asked for.
+- **The reasons.** A verdict's name or the decoder's failure with dashes (as the report and the verdicts name them),
+  `not-playable` for an extension ES-DE does not play, `graphics-error` for a texture or view that cannot be made, and
+  `file-not-found` when the loader cannot place the clip below the media root.
+
+## Proofs
+
+- Unit (`rv_tests`):
+  - `[manual_open]`: explorer.exe of the Windows folder with one argument for eight names (hostile ones included),
+    each read back as one argument by `CommandLineToArgvW`; the `\\?\` forms given back; twelve paths refused, a long
+    one, a Windows folder without explorer.exe; under `RV_LAUNCH_ALLOWLIST` naming the fake emulator the guard's
+    verdict is `not listed`, `checkLaunchGuard` and `Win32ProcessRunner::start` refuse it (no process: the test stops
+    before the start if the guard would allow it).
+  - `[media_viewer]`: the pages' order with the clip and the manual, Activate's steps on each page, the states, the
+    document's ids, sources, events and a sentence for every reason and outcome. `[game_screens]`: the clip and the
+    manual among the pages. `[audio_policy]`: no duck under the viewer.
+- GPU (`tests/smoke/test_media_viewer_video.cpp`, `esde/snes-room` with Amber Lantern's clip 1280 x 720 with a 1000 Hz
+  tone and a manual, Cobalt Compass's clip with a 440 Hz tone on the hero's playlist):
+  - frames advance on the page: the clip's counter read from F12 screenshots in the report's `videoBox` at frames 230,
+    290, 330, 350 and 390: 22, 52 (1 s later: 30 frames), 56, 56 (paused at 300), 72 (playing again from 360);
+  - the clip at 720 rows into its own 1280 x 720 texture; the world paused: the hero's slot paused (`viewer`) at 166,
+    the room's secondary TV's slot taken (`needed`) at 185 for the clip, no frame of the world uploaded while the viewer
+    was open (`worldFramesWhileOpen` 0), the hero resumed and the secondary reopened where it stopped (2.73 s) at the
+    close (420);
+  - the offline mix: the hero's 440 Hz heard before (0.078 amplitude), under the viewer its 1000 Hz at 0.49999 (the
+    clip's 0.5: 0.0 dB, no duck over the quick catalog, no spatial loss) and the 440 Hz at 3.8e-11 (far below -40 dB),
+    silence while paused;
+  - "Apri il manuale": its file found, `refused` by the guard (the test requires `RV_LAUNCH_ALLOWLIST` to name the fake
+    emulator and not explorer.exe before it runs);
+  - a damaged clip (Opal Oriel's unknown codec, the world's clips off): the first run's page `failed
+    unsupported-codec` (one decoder, a verdict given), the next run's `verdict unsupported-codec` (0 decoders).
+  - `test_media_viewer.cpp`'s cases follow the new pages (Amber Lantern's clip at 7 of 9, Bramble Burrow Rally's at 4).
+- GPU memory: the viewer's 720p clip holds 14.06 MiB at most (its texture and three-buffer ring, `maxGpuBytes`
+  14,745,600 bytes), allocated only while it plays; with the hero and the secondary TV slots the video peak was 24.6 MiB
+  and the fixture room's whole GPU peak 272.9 MiB at 1920 x 1080. On the busiest real floor (465.5 MiB with both slots
+  playing at step 3) the viewer adds those 14.1 MiB while the world's slots keep theirs: about 480 MiB, within 512 MiB
+  (computed, not measured on the real library).
+
+## Results
+
+- Debug unit tests (`./scripts/test.ps1`): 2217 of 2217 passed (the build clean, no warning).
+- Debug GPU, the four `media viewer` cases (`./scripts/test.ps1 -Preset msvc-x64-debug-gpu -Filter "media viewer"`):
+  all passed.
+- Release unit and GPU (`./scripts/test.ps1 -Preset msvc-x64-release-gpu`, the Release build without a warning): 2386
+  tests (2217 unit, 169 GPU), all passed; 16 skipped: the 15 goldens still recording driver 617.42 (the machine runs
+  621.01; their re-baselining is another branch's) and, as always, the overlay's pick. G15, G17 and G20 compared and
+  passed. No golden was rewritten: the viewer appears in none.
+- The figures above are the Debug run's; the Release run passed the same checks.
+
+## Screenshots
+
+Hidden, frame-limited Debug runs of the GPU cases (`build/i5/step8/`, 1920 x 1080, the window 1280 x 720):
+- `videos_playing_f230.png`, `videos_playing_f290.png`: "Filmato, 7 di 10", the 16:9 clip filling the stage's height
+  without stretching, its counter row and burned-in "A 0052" readable, the hints "A Pausa".
+- `videos_paused_f330.png`, `videos_paused_f350.png`: the same frame (0056) twice, the amber "In pausa" badge at the
+  stage's corner, the hint "A Riprendi"; `videos_playing_again_f390.png` the clip moving on (0072).
+- `manuals_refused_f412.png`: "Manuale, 10 di 10", "Manuale del gioco", the file name, the green "Apri il manuale" and
+  "Apertura bloccata: in questa esecuzione automatica Retroverse non avvia altri programmi."
+- `damaged_decoder_failure.png`, `damaged_known_verdict.png`: "Opal Oriel, Filmato, 2 di 2", "Filmato non
+  riproducibile", "Il filmato usa un formato video che Retroverse non sa decodificare." and "Motivo:
+  unsupported-codec", no pause hint.
+
+## Open issues
+
+- A real manual opened by hand (the user's PDF program, where its window opens over Retroverse's) and a real clip in
+  the viewer are the user's to try; no automated run may open either. The real library was not run for this step.
+- In-app manual pages still need a permissive PDF renderer and an ADR (BACKLOG).
