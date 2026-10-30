@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "Gate D golden of a handheld room (I6 step 6, ADR-0014 §6, style 5.5 and 14.5, concept panel 6): the esde/building fixture's gb room on the handheld floor under its cyan neon, its invented titles as handheld cartridges on lit walnut shelves and face-out in the two low counter showcases (lit inside, generic handhelds on stands behind the glass of their bases) and the featured wall shelf, stations (a generic handheld in a small lit vitrine on a pedestal) along the walls, the one-seat lounge chair on the sage rug, console-art posters; since the step's review the counters lined in ivory under brighter glass, their handhelds' displays lit, a card per empty slot, a warm cove along the side walls, posters high over the shelves, a handheld pictogram beside the neon; from the doorway (the room's doorway camera), the hero CRT's clip held at 1.0 s.",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,
