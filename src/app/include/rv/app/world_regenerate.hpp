@@ -117,11 +117,45 @@ struct RegenerationInputsSlot {
 [[nodiscard]] RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, const WorldPaths& paths,
                                                              WorldCatalogReader* reader, bool& taken);
 
+/// Reads the data of `plan`'s standing rooms into `inputs`' caching loader (world::standingRoomRequests()), as the
+/// directory's tab reads the inputs ahead (m3/preview-time: a regeneration reads every room outside its scope; cold,
+/// about half a second of a room's first preview on the reference library). A room whose data cannot be read is left
+/// to the preview, which reports it. Milliseconds taken.
+double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan);
+
 /// Lets go of `slot`'s inputs when nothing needs them now (`wanted` false: the directory closed, no notice offering a
 /// preview, no preview or commit asked or running; I4b step 6's review: they hold about 224 MiB of private bytes on the
 /// reference library), unless a job is making them. A job or a preview that took them keeps them through its
 /// shared_ptr; the next one that needs them makes them again. True when they were let go of.
 bool releaseIdleInputs(RegenerationInputsSlot& slot, bool wanted);
+
+/// The plan the app shows and its digest (the SHA-256 of its canonical text: the file it was read from or written as).
+/// A preview whose plan file has that digest takes it instead of parsing the file (m3/preview-time: the parse was about
+/// a third of a room's preview on the reference library); its lists are sorted first, so that it is the file's plan.
+struct KnownPlan {
+    std::shared_ptr<const world::WorldPlan> plan;
+    std::string digest;
+};
+
+/// The world as a preview reads it (world::readWorldUnlocked(): no lock, nothing written): the plan file's digest, its
+/// plan (`known`'s when that is its digest, else the file parsed; not lifted), the overrides.
+struct RegenerationWorld {
+    /// Why it could not be read ("" it was: regenerate_failure's key), and the error for the log.
+    std::string failure;
+    std::string error;
+    catalog::LibraryId library;
+    std::string planDigest;
+    std::shared_ptr<const world::WorldPlan> plan;
+    world::WorldOverrides overrides;
+    /// The plan was `known`'s (the file not parsed).
+    bool knownPlan = false;
+    double readMs = 0.0;
+};
+
+/// Reads `library`'s world for a preview. Failures: busy (an action in progress or interrupted, the world changing
+/// while it is read), no-plan, failed (the plan or overrides.json refused).
+[[nodiscard]] RegenerationWorld readRegenerationWorld(const WorldPaths& paths, const catalog::LibraryId& library,
+                                                      const KnownPlan* known = nullptr);
 
 /// A preview: the scope's dry run on the world as it was read, and the panel's content.
 struct RegenerationPreview {
@@ -137,17 +171,26 @@ struct RegenerationPreview {
     /// The systems whose selections were left out (no data yet for a room they would enter), as the CLI leaves them.
     std::vector<std::string> leftOut;
     ui::RegeneratePreviewContent content;
-    /// Milliseconds: the world read, the regeneration (its rooms' data included), the whole preview.
+    /// The world's plan was the one the app shows (KnownPlan): not parsed.
+    bool knownPlan = false;
+    /// Milliseconds: the world read, the regeneration (its rooms' data included), the whole preview (the read and
+    /// what follows it, not a wait between them).
     double readMs = 0.0;
     double regenerateMs = 0.0;
     double totalMs = 0.0;
 };
 
-/// The dry run of `scope` on the world as world::readWorldUnlocked() reads it (writing nothing), with `inputs`.
-/// Failures: busy (an action in progress or interrupted, the world changing while it is read), no-plan, failed (the
-/// plan refused, the room or floor not in the plan, a scope the plan needs the world for, the regeneration's errors);
-/// a preview whose regenerated plan breaks a hard rule is invalid-plan (nothing could be committed).
+/// The dry run of `scope` on the world as world::readWorldUnlocked() reads it (writing nothing), with `inputs`:
+/// readRegenerationWorld() of the inputs' library, then the preview of that world. Failures: those of the read; failed
+/// (the plan refused, the room or floor not in the plan, a scope the plan needs the world for, the regeneration's
+/// errors); a preview whose regenerated plan breaks a hard rule is invalid-plan (nothing could be committed).
 [[nodiscard]] RegenerationPreview previewRegeneration(const WorldPaths& paths, const world::RegenerationScope& scope,
+                                                      const RegenerationInputs& inputs,
+                                                      const KnownPlan* known = nullptr);
+/// The dry run of `scope` on `world` (readRegenerationWorld(), which the app's job reads while the inputs are made):
+/// its failure if it has one; failed for a world of another library than the inputs'.
+[[nodiscard]] RegenerationPreview previewRegeneration(const RegenerationWorld& world,
+                                                      const world::RegenerationScope& scope,
                                                       const RegenerationInputs& inputs);
 
 /// The panel's content of a regeneration (its impact's counts, its conflicts with their games' titles from `inputs`'

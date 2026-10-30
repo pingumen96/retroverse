@@ -330,11 +330,15 @@ void WorldSession::beginRegeneration(ProductUi& product, ui::RegenerateKind kind
                             });
         return;
     }
-    submitRegenerateJob(RegenerateJob::Preview, [paths, scope, slot = state.slot,
+    // The plan shown: the preview takes it when its file is that plan (m3/preview-time: not parsed again).
+    const KnownPlan known{m_planState->plan, m_planState->digest};
+    submitRegenerateJob(RegenerateJob::Preview, [paths, scope, library, known, slot = state.slot,
                                                  reader =
                                                      product.catalog().worldReader()](const core::JobContext& job) {
         RegenerateJobAnswer answer;
         answer.kind = RegenerateJobAnswer::Kind::Preview;
+        // The world first, while the inputs the directory's tab reads ahead may still be on their way (m3/preview-time).
+        const RegenerationWorld world = readRegenerationWorld(paths, library, &known);
         const Clock::time_point start = Clock::now();
         const RegenerationInputsResult inputs = regenerationInputsFor(*slot, paths, reader.get(), answer.inputsTaken);
         answer.inputsMs = millisecondsSince(start);
@@ -347,7 +351,7 @@ void WorldSession::beginRegeneration(ProductUi& product, ui::RegenerateKind kind
         if (job.cancelled()) {
             return answer;
         }
-        answer.preview = previewRegeneration(paths, scope, *inputs.inputs);
+        answer.preview = previewRegeneration(world, scope, *inputs.inputs);
         return answer;
     });
 }
@@ -363,14 +367,19 @@ void WorldSession::prewarmRegeneration(ProductUi& product) {
     }
     state.prewarmed = true;
     spdlog::info("Frame {}: the regenerations' inputs are read ahead", m_context.frameIndex());
-    submitRegenerateJob(RegenerateJob::Prewarm,
-                        [paths = m_options.paths, slot = state.slot, reader](const core::JobContext&) {
-                            RegenerateJobAnswer answer;
-                            bool taken = false;
-                            static_cast<void>(regenerationInputsFor(*slot, paths, reader.get(), taken));
-                            answer.inputsTaken = taken;
-                            return answer;
-                        });
+    submitRegenerateJob(RegenerateJob::Prewarm, [paths = m_options.paths, slot = state.slot, reader,
+                                                 plan = m_planState->plan](const core::JobContext&) {
+        RegenerateJobAnswer answer;
+        bool taken = false;
+        const RegenerationInputsResult inputs = regenerationInputsFor(*slot, paths, reader.get(), taken);
+        answer.inputsTaken = taken;
+        // Then the standing rooms' data (m3/preview-time), even once a preview was asked (its job's cancellation): a
+        // preview reads the same through the inputs' loader, each room once, whichever reads it first.
+        if (inputs.inputs && plan) {
+            static_cast<void>(warmRoomData(*inputs.inputs, *plan));
+        }
+        return answer;
+    });
 }
 
 void WorldSession::followConfirmations(ProductUi& product) {
@@ -796,11 +805,14 @@ void WorldSession::takeRegenerateAnswer(ProductUi& product, RegenerateJobAnswer 
         product.setRegeneratePreview(preview.content);
         state.inputs = answer.inputs;
         state.preview = std::move(preview);
-        spdlog::info("Frame {}: the preview of {} shown ({:.0f} ms after the request; the job {:.0f} ms, its inputs "
-                     "{})",
+        spdlog::info("Frame {}: the preview of {} shown ({:.0f} ms after the request; the job {:.0f} ms: the world "
+                     "read {:.0f} ms{}, its inputs {}, the dry run {:.0f} ms)",
                      frame, state.preview->scope.toString(), record != nullptr ? record->previewMs.value_or(0.0) : 0.0,
-                     answer.milliseconds,
-                     answer.inputsTaken ? fmt::format("taken in {:.0f} ms", answer.inputsMs) : std::string("ready"));
+                     answer.milliseconds, state.preview->readMs, state.preview->knownPlan ? " (the plan shown)" : "",
+                     answer.inputsTaken      ? fmt::format("taken in {:.0f} ms", answer.inputsMs)
+                     : answer.inputsMs >= 1.0 ? fmt::format("waited for {:.0f} ms (read ahead)", answer.inputsMs)
+                                              : std::string("ready"),
+                     state.preview->totalMs - state.preview->readMs);
         return;
     }
 

@@ -24,6 +24,7 @@
 #include <rv/app/world_build.hpp>
 #include <rv/app/world_regenerate.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
+#include <rv/catalog_db/database.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/file_io.hpp>
@@ -37,6 +38,8 @@
 
 #include "../world/world_update_support.hpp"
 #include "catalog_test_support.hpp"
+#include "support/catalog_generator.hpp"
+#include "support/temp_dir.hpp"
 
 namespace fs = std::filesystem;
 
@@ -523,6 +526,91 @@ TEST_CASE("app/world_regenerate: the inputs let go of while nothing needs them; 
     CHECK(preview.content == held.content);
 }
 
+TEST_CASE("app/world_regenerate: a preview takes the plan shown when its file is that plan, in any order; another "
+          "plan's digest has the file read",
+          "[app][world_regenerate]") {
+    const ImportedFixture imported("world-regenerate-known", true, "esde/snes-room");
+    const auto reader = readerOf(imported);
+    const rv::app::WorldBuild build = planned(imported, *reader);
+    static_cast<void>(moveOne(imported)); // a pin: the preview changes the room
+    const rv::world::WorldFiles files = filesOf(imported);
+    const auto stored = rv::world::readStoredPlan(files.plan);
+    REQUIRE(stored.has_value());
+    const rv::app::WorldPaths paths = worldPathsOf(imported);
+    const rv::app::RegenerationInputsResult inputs = rv::app::takeRegenerationInputs(paths, *reader);
+    INFO(inputs.error);
+    REQUIRE(inputs.inputs);
+    const rv::world::RegenerationScope scope = rv::world::RegenerationScope::ofRoom(kSnesRoom);
+
+    // The file read: what every other preview is compared with.
+    const rv::app::RegenerationPreview read = rv::app::previewRegeneration(paths, scope, *inputs.inputs);
+    INFO(read.error);
+    REQUIRE(read.failure.empty());
+    CHECK_FALSE(read.knownPlan);
+    REQUIRE(read.regeneration);
+    const std::string expected = rv::world::writePlan(read.regeneration->result.plan).value();
+    const auto same = [&](const rv::app::RegenerationPreview& preview) {
+        INFO(preview.error);
+        REQUIRE(preview.failure.empty());
+        REQUIRE(preview.regeneration);
+        CHECK(preview.content == read.content);
+        CHECK(preview.planDigest == read.planDigest);
+        CHECK(*preview.previous == *read.previous);
+        CHECK(rv::world::writePlan(preview.regeneration->result.plan).value() == expected);
+        CHECK(preview.regeneration->result.changes.digestBefore == read.regeneration->result.changes.digestBefore);
+        CHECK(preview.regeneration->result.changes.digestAfter == read.regeneration->result.changes.digestAfter);
+        CHECK(preview.regeneration->impact == read.regeneration->impact);
+    };
+
+    // The plan shown, its file's digest: taken, not parsed.
+    const rv::app::KnownPlan shown{std::make_shared<const rv::world::WorldPlan>(stored->plan), stored->digest};
+    const rv::app::RegenerationPreview taken = rv::app::previewRegeneration(paths, scope, *inputs.inputs, &shown);
+    CHECK(taken.knownPlan);
+    same(taken);
+    // The standing rooms' data read ahead into the inputs' loader: the same preview.
+    CHECK(rv::world::standingRoomRequests(stored->plan, inputs.inputs->platformTags).size() ==
+          stored->plan.rooms.size());
+    static_cast<void>(rv::app::warmRoomData(*inputs.inputs, stored->plan));
+    same(rv::app::previewRegeneration(paths, scope, *inputs.inputs, &shown));
+
+    // The plan shown with its lists in another order (a plan in memory need not be sorted): sorted first.
+    rv::world::WorldPlan reordered = stored->plan;
+    std::reverse(reordered.rooms.begin(), reordered.rooms.end());
+    std::reverse(reordered.fixtures.begin(), reordered.fixtures.end());
+    std::reverse(reordered.placements.begin(), reordered.placements.end());
+    std::reverse(reordered.lights.begin(), reordered.lights.end());
+    std::reverse(reordered.unplaced.begin(), reordered.unplaced.end());
+    REQUIRE_FALSE(reordered == stored->plan);
+    REQUIRE(rv::world::planDigest(reordered).value() == stored->digest);
+    const rv::app::KnownPlan unsorted{std::make_shared<const rv::world::WorldPlan>(reordered), stored->digest};
+    const rv::app::RegenerationPreview sorted = rv::app::previewRegeneration(paths, scope, *inputs.inputs, &unsorted);
+    CHECK(sorted.knownPlan);
+    same(sorted);
+
+    // The building's plan from before the move: another digest, the file read.
+    REQUIRE(build.plan.has_value());
+    REQUIRE(build.planDigest != stored->digest);
+    const rv::app::KnownPlan older{std::make_shared<const rv::world::WorldPlan>(*build.plan), build.planDigest};
+    const rv::app::RegenerationPreview again = rv::app::previewRegeneration(paths, scope, *inputs.inputs, &older);
+    CHECK_FALSE(again.knownPlan);
+    same(again);
+
+    // The world read apart (as the app's job reads it before it waits for the inputs), then previewed.
+    const rv::app::RegenerationWorld world =
+        rv::app::readRegenerationWorld(paths, inputs.inputs->library, &shown);
+    CHECK(world.failure.empty());
+    CHECK(world.knownPlan);
+    CHECK(world.planDigest == stored->digest);
+    same(rv::app::previewRegeneration(world, scope, *inputs.inputs));
+    // A world of another library than the inputs' is refused.
+    rv::app::RegenerationWorld other = world;
+    other.library = rv::catalog::LibraryId::parse("other").value();
+    CHECK(rv::app::previewRegeneration(other, scope, *inputs.inputs).failure == rv::app::regenerate_failure::kFailed);
+    // A library without a world: no plan.
+    CHECK(rv::app::readRegenerationWorld(paths, other.library, &shown).failure ==
+          rv::app::regenerate_failure::kNoPlan);
+}
+
 // The time of a large room's preview (the memory margin's second part, docs/i5/memory-margin.md; I4b step 6 measured
 // the real room:amstradcpc's at 1.6 s quiet and 3.2 s under load, against 2 s): esde/snes-stress (2,000 titles, 300 of
 // them twice, generated at test time) imported and planned, then room:snes previewed three times on one set of inputs
@@ -550,5 +638,69 @@ TEST_CASE("app/bench: a large room's preview, its read and its regeneration", "[
         WARN("preview " << run << ": read " << preview.readMs << " ms, regeneration " << preview.regenerateMs
                         << " ms, whole " << preview.totalMs << " ms (" << preview.content.gamesMoved
                         << " game(s) moved)");
+    }
+}
+
+// The time of a room's preview in a large building (m3/preview-time, docs/i4b/preview-time.md): Gate M3 measured the
+// real library's room previews at 2.3 to 4.1 s against 2 s, the cost being the world around the room (a large room
+// alone previews in a tenth of a second, the bench above). A catalog of 90,000 generated entries
+// (tests/support/catalog_generator.hpp, about the reference library's size) planned by the building job, then its
+// largest room previewed three times on one set of inputs, each preview's read, regeneration and whole printed.
+// Informative, by hand in Release:
+//   build/msvc-x64-release/bin/rv_tests.exe "app/bench: a room's preview in a building*"
+TEST_CASE("app/bench: a room's preview in a building of 90,000 generated entries", "[.bench]") {
+    const rv::test::TempDir dir("rv-regenerate-bench");
+    rv::test::CatalogGeneratorOptions options;
+    options.entries = 90'000;
+    auto generated = rv::test::generateCatalogDatabase(dir.file("retroverse.sqlite"), options, false);
+    REQUIRE(generated.has_value());
+    auto database = rv::catalog_db::openCatalogDatabase(dir.file("retroverse.sqlite"));
+    REQUIRE(database.has_value());
+    rv::app::WorldCatalogReader reader;
+    reader.query = rv::catalog_db::SqliteCatalogQuery::open(database->openReader().value()).value();
+    reader.profile = generated->library;
+    reader.profile.esdeHome = dir.file("ES-DE");
+    reader.profile.mediaRoot = dir.file("media");
+    fs::create_directories(*reader.profile.mediaRoot);
+    const rv::app::WorldPaths paths{rv::core::pathFromUtf8(RV_TEST_ASSET_DIR), dir.file("data"),
+                                    dir.file("data/config"), dir.file("data/cache")};
+    rv::app::WorldBuildInput input;
+    input.paths = paths;
+    input.library = reader.profile.id;
+    input.writer = "retroverse (bench)";
+    input.snapshot = rv::app::takeBuildingSnapshot(reader, {}, rv::app::roomSystemsFilter(paths.assetRoot));
+    const rv::app::BuildingResult built = rv::app::planBuilding(input, rv::core::JobContext{});
+    REQUIRE(built.build.plan.has_value());
+    const rv::world::WorldPlan& plan = *built.build.plan;
+    std::map<rv::world::RoomId, std::size_t> placed;
+    for (const rv::world::Placement& placement : plan.placements) {
+        ++placed[placement.slot.fixture().room()];
+    }
+    REQUIRE_FALSE(placed.empty());
+    const rv::world::RoomId room =
+        std::max_element(placed.begin(), placed.end(), [](const auto& a, const auto& b) {
+            return a.second < b.second;
+        })->first;
+    const rv::app::RegenerationInputsResult inputs = rv::app::takeRegenerationInputs(paths, reader);
+    INFO(inputs.error);
+    REQUIRE(inputs.inputs);
+    WARN("inputs: snapshot " << inputs.inputs->snapshotMs << " ms, selections " << inputs.inputs->selectMs
+                             << " ms; the plan places " << plan.placements.size() << " in " << plan.rooms.size()
+                             << " room(s), " << plan.unplaced.size() << " unplaced; " << room.toString() << " places "
+                             << placed[room]);
+    // The standing rooms' data read ahead with the inputs, as the directory's tab reads them.
+    WARN("the standing rooms' data read ahead in " << rv::app::warmRoomData(*inputs.inputs, plan) << " ms");
+    // Three previews reading the plan's file, then three taking the plan as the app holds it (rv::app::KnownPlan).
+    const rv::app::KnownPlan known{std::make_shared<const rv::world::WorldPlan>(plan), built.build.planDigest};
+    for (int run = 0; run < 6; ++run) {
+        const rv::app::RegenerationPreview preview = rv::app::previewRegeneration(
+            paths, rv::world::RegenerationScope::ofRoom(room), *inputs.inputs, run < 3 ? nullptr : &known);
+        INFO(preview.error);
+        REQUIRE(preview.failure.empty());
+        CHECK_FALSE(preview.content.changed);
+        CHECK(preview.knownPlan == (run >= 3));
+        WARN("preview " << run << (preview.knownPlan ? " (the plan shown)" : " (the file parsed)") << ": read "
+                        << preview.readMs << " ms, regeneration " << preview.regenerateMs << " ms, whole "
+                        << preview.totalMs << " ms");
     }
 }

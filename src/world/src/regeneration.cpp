@@ -1213,6 +1213,16 @@ std::map<FixtureId, std::string> breakingPins(const ValidationReport& report, st
 
 } // namespace detail
 
+std::vector<RoomDataRequest> standingRoomRequests(const WorldPlan& plan,
+                                                  const std::map<SystemName, std::vector<std::string>>& platformTags) {
+    std::vector<RoomDataRequest> requests;
+    requests.reserve(plan.rooms.size());
+    for (const Room& room : plan.rooms) {
+        requests.push_back(storedRequest(room, platformTags));
+    }
+    return requests;
+}
+
 RoomDataLoader assetRootLoader(const std::filesystem::path& assetRoot) {
     struct Cache {
         std::mutex mutex;

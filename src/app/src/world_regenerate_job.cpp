@@ -246,6 +246,21 @@ RegenerationInputsResult regenerationInputsFor(RegenerationInputsSlot& slot, con
     return result;
 }
 
+double warmRoomData(const RegenerationInputs& inputs, const world::WorldPlan& plan) {
+    const Clock::time_point start = Clock::now();
+    std::size_t failed = 0;
+    const std::vector<world::RoomDataRequest> requests = world::standingRoomRequests(plan, inputs.platformTags);
+    for (const world::RoomDataRequest& request : requests) {
+        if (!inputs.load(request)) {
+            ++failed;
+        }
+    }
+    const double milliseconds = millisecondsSince(start);
+    spdlog::info("Regeneration: the data of {} standing room(s) read ahead in {:.0f} ms{}", requests.size(),
+                 milliseconds, failed > 0 ? fmt::format(" ({} not read)", failed) : std::string());
+    return milliseconds;
+}
+
 bool releaseIdleInputs(RegenerationInputsSlot& slot, bool wanted) {
     if (wanted) {
         return false;
@@ -272,40 +287,95 @@ RegenerationInputsResult takeRegenerationInputs(const WorldPaths& paths, WorldCa
     return regenerationInputsOf(paths, std::move(snapshot));
 }
 
-RegenerationPreview previewRegeneration(const WorldPaths& paths, const world::RegenerationScope& scope,
-                                        const RegenerationInputs& inputs) {
+RegenerationWorld readRegenerationWorld(const WorldPaths& paths, const catalog::LibraryId& library,
+                                        const KnownPlan* known) {
     const Clock::time_point start = Clock::now();
-    RegenerationPreview preview;
-    preview.scope = scope;
+    RegenerationWorld world;
+    world.library = library;
     const auto fail = [&](std::string_view failure, std::string error) {
-        preview.failure = std::string(failure);
-        preview.error = std::move(error);
-        preview.totalMs = millisecondsSince(start);
-        spdlog::warn("Regeneration: the preview of {} failed ({}): {}", scope.toString(), preview.failure,
-                     preview.error);
-        return preview;
+        world.failure = std::string(failure);
+        world.error = std::move(error);
+        world.plan.reset();
+        world.readMs = millisecondsSince(start);
+        return world;
     };
     // The world as one reading saw it, without the lock (ADR-0015 §5: the preview writes nothing, not even world.lock).
-    const world::WorldFiles files = world::worldFiles(paths.userDataRoot, inputs.library);
+    const world::WorldFiles files = world::worldFiles(paths.userDataRoot, library);
     auto read = world::readWorldUnlocked(files);
     if (!read) {
         return fail(read.error().code == ErrorCode::NotFound ? regenerate_failure::kNoPlan : failureOf(read.error()),
                     "the world's files: " + read.error().toString());
     }
-    auto plan = world::readPlan(read->plan, "world-plan.json");
-    if (!plan) {
-        return fail(regenerate_failure::kFailed, "the plan: " + plan.error().toString());
-    }
-    auto previous = lifted(std::move(*plan), inputs.building, inputs.systems);
-    if (!previous) {
-        return fail(regenerate_failure::kFailed, "the plan's lift: " + previous.error().toString());
+    world.planDigest = read->planDigest;
+    if (known != nullptr && known->plan && known->digest == read->planDigest) {
+        // The file is the plan the app shows (its canonical text's SHA-256): not parsed again.
+        world.plan = known->plan;
+        world.knownPlan = true;
+#ifndef NDEBUG
+        // Debug builds check it: the plan known, sorted, is the file's (a schema-1 file's is lifted, not compared).
+        if (auto parsed = world::readPlan(read->plan, "world-plan.json");
+            parsed && parsed->schemaVersion == world::kPlanSchemaVersion) {
+            world::WorldPlan sorted = *known->plan;
+            world::sortPlan(sorted);
+            if (!(sorted == *parsed)) {
+                spdlog::error("Regeneration: the plan the app shows is not its file's, though their digests are "
+                              "one ({}): the file's is previewed",
+                              read->planDigest);
+                world.plan = std::make_shared<const world::WorldPlan>(std::move(*parsed));
+                world.knownPlan = false;
+            }
+        }
+#endif
+    } else {
+        auto plan = world::readPlan(read->plan, "world-plan.json");
+        if (!plan) {
+            return fail(regenerate_failure::kFailed, "the plan: " + plan.error().toString());
+        }
+        world.plan = std::make_shared<const world::WorldPlan>(std::move(*plan));
     }
     auto overrides = read->overrides ? world::parseOverrides(*read->overrides, "overrides.json")
                                      : Expected<world::WorldOverrides>(world::WorldOverrides{});
     if (!overrides) {
         return fail(regenerate_failure::kFailed, "overrides.json: " + overrides.error().toString());
     }
-    preview.readMs = millisecondsSince(start);
+    world.overrides = std::move(*overrides);
+    world.readMs = millisecondsSince(start);
+    return world;
+}
+
+RegenerationPreview previewRegeneration(const WorldPaths& paths, const world::RegenerationScope& scope,
+                                        const RegenerationInputs& inputs, const KnownPlan* known) {
+    return previewRegeneration(readRegenerationWorld(paths, inputs.library, known), scope, inputs);
+}
+
+RegenerationPreview previewRegeneration(const RegenerationWorld& world, const world::RegenerationScope& scope,
+                                        const RegenerationInputs& inputs) {
+    const Clock::time_point start = Clock::now();
+    RegenerationPreview preview;
+    preview.scope = scope;
+    preview.readMs = world.readMs;
+    preview.knownPlan = world.knownPlan;
+    const auto fail = [&](std::string_view failure, std::string error) {
+        preview.failure = std::string(failure);
+        preview.error = std::move(error);
+        preview.totalMs = world.readMs + millisecondsSince(start);
+        spdlog::warn("Regeneration: the preview of {} failed ({}): {}", scope.toString(), preview.failure,
+                     preview.error);
+        return preview;
+    };
+    if (!world.failure.empty() || !world.plan) {
+        return fail(world.failure.empty() ? regenerate_failure::kFailed : world.failure, world.error);
+    }
+    if (world.library != inputs.library) {
+        return fail(regenerate_failure::kFailed, "the world read is of the library " + world.library.str() +
+                                                     ", the catalog's inputs of " + inputs.library.str());
+    }
+    auto previous = lifted(*world.plan, inputs.building, inputs.systems);
+    if (!previous) {
+        return fail(regenerate_failure::kFailed, "the plan's lift: " + previous.error().toString());
+    }
+    // A plan the app shows may hold its lists in another order than its file (a scan when they are sorted).
+    world::sortPlan(*previous);
 
     world::RegenerationInput input;
     input.scope = scope;
@@ -314,9 +384,9 @@ RegenerationPreview previewRegeneration(const WorldPaths& paths, const world::Re
     input.selections = scopeSelections(inputs, *previous, scope, preview.leftOut);
     input.platformTags = inputs.platformTags;
     input.config = inputs.config;
-    input.overrides = *overrides;
+    input.overrides = world.overrides;
     input.previous = *previous;
-    input.previousDigest = read->planDigest;
+    input.previousDigest = world.planDigest;
     const Clock::time_point regenerating = Clock::now();
     auto regeneration = world::regenerate(input, inputs.building, inputs.systems, inputs.load);
     preview.regenerateMs = millisecondsSince(regenerating);
@@ -335,17 +405,17 @@ RegenerationPreview previewRegeneration(const WorldPaths& paths, const world::Re
         return fail(regenerate_failure::kInvalidPlan, fmt::format("{} hard finding(s)", hard));
     }
     preview.content = previewContentOf(*regeneration, *previous, &inputs);
-    preview.planDigest = read->planDigest;
-    preview.overrides = std::move(*overrides);
+    preview.planDigest = world.planDigest;
+    preview.overrides = world.overrides;
     preview.previous = std::make_shared<const world::WorldPlan>(std::move(*previous));
     preview.regeneration = std::make_shared<const world::Regeneration>(std::move(*regeneration));
-    preview.totalMs = millisecondsSince(start);
-    spdlog::info("Regeneration: the preview of {} in {:.0f} ms (read {:.0f}, regeneration {:.0f}): {} room(s) "
+    preview.totalMs = world.readMs + millisecondsSince(start);
+    spdlog::info("Regeneration: the preview of {} in {:.0f} ms (read {:.0f}{}, regeneration {:.0f}): {} room(s) "
                  "regenerated, {} game(s) moved, {} entering and {} leaving face-out, {} pin(s) kept, {} conflict(s){}",
-                 scope.toString(), preview.totalMs, preview.readMs, preview.regenerateMs,
-                 preview.content.roomsRegenerated, preview.content.gamesMoved, preview.content.faceOutEntering,
-                 preview.content.faceOutLeaving, preview.content.pinsKept, preview.content.conflictCount,
-                 preview.content.changed ? "" : "; nothing to change");
+                 scope.toString(), preview.totalMs, preview.readMs, preview.knownPlan ? ", the plan shown" : "",
+                 preview.regenerateMs, preview.content.roomsRegenerated, preview.content.gamesMoved,
+                 preview.content.faceOutEntering, preview.content.faceOutLeaving, preview.content.pinsKept,
+                 preview.content.conflictCount, preview.content.changed ? "" : "; nothing to change");
     return preview;
 }
 
