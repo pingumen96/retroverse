@@ -154,8 +154,7 @@ WorldSession::~WorldSession() {
         m_showcaseBox->wake = nullptr;
     }
     if (m_rangesBox) {
-        const std::lock_guard lock(m_rangesBox->mutex);
-        m_rangesBox->wake = nullptr;
+        m_rangesBox->setWake(nullptr);
     }
     if (m_regenerations) {
         // I4b step 6: a preview's or a commit's job posts into its box harmlessly (a commit under way still ends).

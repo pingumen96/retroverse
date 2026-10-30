@@ -128,20 +128,16 @@ void WorldSession::keepPlan(const WorldBuild& build) {
 
 void WorldSession::followChainRanges() {
     if (!m_rangesBox) {
-        m_rangesBox = std::make_shared<ChainRangesBox>();
-        m_rangesBox->wake = m_context.wakeCallback();
+        m_rangesBox = std::make_shared<ChainRangesMailbox>();
+        m_rangesBox->setWake(m_context.wakeCallback());
     }
-    {
-        const std::lock_guard lock(m_rangesBox->mutex);
-        if (m_rangesBox->answer) {
-            if (m_rangesBox->answer->first == m_rangesAsked) {
-                m_ranges = std::move(m_rangesBox->answer->second);
-                m_rangesDigest = m_rangesBox->answer->first;
-                spdlog::info("Frame {}: the directory's ranges of {} chain room(s) are known", m_context.frameIndex(),
-                             m_ranges.size());
-            }
-            m_rangesBox->answer.reset();
-        }
+    // The box keeps only the answer of the key asked last (an earlier job finishing late is dropped there).
+    std::optional<ChainRangesMailbox::Answer> answer = m_rangesBox->take();
+    if (answer && answer->first == m_rangesAsked) {
+        m_ranges = std::move(answer->second);
+        m_rangesDigest = std::move(answer->first);
+        spdlog::info("Frame {}: the directory's ranges of {} chain room(s) are known", m_context.frameIndex(),
+                     m_ranges.size());
     }
     const std::string key = m_planState ? fmt::format("{}/{}", m_planState->digest, m_itemsWrites) : std::string();
     if (!m_planState || !m_planState->plan || key == m_rangesAsked) {
@@ -149,15 +145,16 @@ void WorldSession::followChainRanges() {
     }
     // I4b step 8 (ADR-0015 §7): each room of a chain shows its titles' ranges, from the rooms' items files (the
     // building job writes them before its result), read off the main thread; a plan without a chain reads nothing.
-    m_rangesAsked = key;
+    m_rangesBox->ask(key);
     std::vector<catalog::SystemName> systems = chainSystemsOf(*m_planState->plan);
     if (systems.empty()) {
+        m_rangesAsked = key;
         m_ranges.clear();
         m_rangesDigest = m_rangesAsked;
         return;
     }
     const Status submitted = m_pool.submit(
-        [box = m_rangesBox, digest = m_rangesAsked, plan = m_planState->plan, cacheDir = m_options.paths.cacheDir,
+        [box = m_rangesBox, digest = key, plan = m_planState->plan, cacheDir = m_options.paths.cacheDir,
          library = m_planState->library, systems = std::move(systems)](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
@@ -168,21 +165,17 @@ void WorldSession::followChainRanges() {
                     const auto found = titles.find(game);
                     return found != titles.end() ? std::optional<ChainTitle>(found->second) : std::nullopt;
                 });
-            std::function<void()> wake;
-            {
-                const std::lock_guard lock(box->mutex);
-                box->answer.emplace(digest, std::move(ranges));
-                wake = box->wake;
-            }
-            if (wake) {
-                wake();
-            }
+            static_cast<void>(box->post(digest, std::move(ranges)));
         });
     if (!submitted) {
-        spdlog::warn("World: the directory's ranges cannot be read: {}", submitted.error().toString());
-        m_rangesDigest = m_rangesAsked; // shown without ranges
-        m_ranges.clear();
+        // Asked again on a later frame (m_rangesAsked unchanged); the ranges shown meanwhile are the last known.
+        if (m_rangesRefused != key) {
+            spdlog::warn("World: the directory's ranges cannot be read yet: {}", submitted.error().toString());
+            m_rangesRefused = key;
+        }
+        return;
     }
+    m_rangesAsked = key;
 }
 
 bool WorldSession::chainRangesWait() const noexcept {

@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -97,6 +98,30 @@ struct ChainRoomRanges {
 [[nodiscard]] std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path& cacheDir,
                                                                   const catalog::LibraryId& library,
                                                                   const std::vector<catalog::SystemName>& systems);
+
+/// The mailbox of the chains' ranges read on the worker pool (WorldSession): the key last asked (the plan's digest and
+/// the builds that wrote the items files) and the answer waiting for it. An answer for any other key (a job of an
+/// earlier ask that finished after a later one's) is dropped, never overwriting the current one's. Thread-safe.
+class ChainRangesMailbox {
+public:
+    using Answer = std::pair<std::string, std::map<world::RoomId, ChainRoomRanges>>;
+
+    /// The main thread: the key the next answer must carry; an answer waiting for an earlier key is dropped.
+    void ask(std::string key);
+    /// A job: `ranges` for `key`, kept (and the wake callback called, outside the lock) when `key` is the one asked
+    /// last; false when it was dropped.
+    bool post(const std::string& key, std::map<world::RoomId, ChainRoomRanges> ranges);
+    /// The main thread: the answer waiting, if any (taken out of the box).
+    [[nodiscard]] std::optional<Answer> take();
+    /// What post() calls when it keeps an answer (none: nothing).
+    void setWake(std::function<void()> wake);
+
+private:
+    std::mutex m_mutex;
+    std::string m_asked;
+    std::optional<Answer> m_answer;
+    std::function<void()> m_wake;
+};
 
 /// The "Piani" tab's floors and rooms of `plan` (see the file comment), the walker nowhere ("" floor and room: the
 /// caller sets DirectoryBuilding::currentFloor and currentRoom). `ranges` (I4b step 8): chainRangesOf()'s, the rooms'

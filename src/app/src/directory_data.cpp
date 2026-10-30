@@ -340,6 +340,42 @@ std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path&
     return titles;
 }
 
+void ChainRangesMailbox::ask(std::string key) {
+    const std::lock_guard lock(m_mutex);
+    m_asked = std::move(key);
+    if (m_answer && m_answer->first != m_asked) {
+        m_answer.reset();
+    }
+}
+
+bool ChainRangesMailbox::post(const std::string& key, std::map<world::RoomId, ChainRoomRanges> ranges) {
+    std::function<void()> wake;
+    {
+        const std::lock_guard lock(m_mutex);
+        if (key != m_asked) {
+            return false;
+        }
+        m_answer.emplace(key, std::move(ranges));
+        wake = m_wake;
+    }
+    if (wake) {
+        wake();
+    }
+    return true;
+}
+
+std::optional<ChainRangesMailbox::Answer> ChainRangesMailbox::take() {
+    const std::lock_guard lock(m_mutex);
+    std::optional<Answer> answer = std::move(m_answer);
+    m_answer.reset();
+    return answer;
+}
+
+void ChainRangesMailbox::setWake(std::function<void()> wake) {
+    const std::lock_guard lock(m_mutex);
+    m_wake = std::move(wake);
+}
+
 ui::DirectoryBuilding directoryBuildingOf(const world::WorldPlan& plan, const SystemFullName& fullName,
                                           const std::map<world::RoomId, ChainRoomRanges>* ranges) {
     const std::map<world::RoomId, std::uint32_t> placed = placedPerRoom(plan);

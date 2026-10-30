@@ -776,15 +776,12 @@ private:
     ui::DirectoryBuilding m_directoryBuilding;
     std::string m_directoryPlan;
     /// I4b step 8 (ADR-0015 §7): the ranges of the chains' rooms of the plan shown, read on the pool from the rooms'
-    /// items files (chainRangesOf()): what they were asked for and are held for (the plan's digest and the builds that
-    /// wrote the items files: a first start writes them after its plan shows), their mailbox.
-    struct ChainRangesBox {
-        std::mutex mutex;
-        std::optional<std::pair<std::string, std::map<world::RoomId, ChainRoomRanges>>> answer;
-        std::function<void()> wake;
-    };
-    std::shared_ptr<ChainRangesBox> m_rangesBox;
+    /// items files (chainRangesOf()): their mailbox, what they were asked for and are held for (the plan's digest and
+    /// the builds that wrote the items files: a first start writes them after its plan shows), the key whose job could
+    /// not be submitted (asked again on a later frame, its warning logged once).
+    std::shared_ptr<ChainRangesMailbox> m_rangesBox;
     std::string m_rangesAsked;
+    std::string m_rangesRefused;
     std::string m_rangesDigest;
     std::uint64_t m_itemsWrites = 0;
     std::map<world::RoomId, ChainRoomRanges> m_ranges;

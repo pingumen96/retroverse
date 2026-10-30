@@ -130,8 +130,8 @@ DirectoryRange range(std::string_view name, std::string first, std::string last,
     return DirectoryRange{DirectorySystem{std::string(name), std::move(fullName)}, std::move(first), std::move(last)};
 }
 
-/// `system`'s items file as snapshotRoomItems() writes a shared or arcade room's: its own games with their titles, every
-/// placed game of the room's other sections listed without text.
+/// `system`'s items file as snapshotRoomItems() writes a shared or arcade room's: its own games with their titles,
+/// every placed game of the room's other sections listed without text.
 void writeSectionItems(const std::filesystem::path& cacheDir, const rv::catalog::LibraryId& library,
                        std::string_view system, const std::vector<std::pair<std::uint64_t, std::string>>& own,
                        const std::vector<std::uint64_t>& others) {
@@ -430,4 +430,46 @@ TEST_CASE("app/directory_chains: a teleport, \"Mostra nella stanza\" and where-i
     move = rv::app::routeShowInRoom(game(7), ready, &index, "ground", "");
     CHECK(move.kind == rv::app::WorldMoveKind::Ride);
     CHECK(move.room == "room:amiga:3");
+}
+
+TEST_CASE("app/directory_chains: the ranges' mailbox keeps only the answer of the key asked last",
+          "[app][directory_data][chains]") {
+    rv::app::ChainRangesMailbox box;
+    int wakes = 0;
+    box.setWake([&wakes] { ++wakes; });
+    std::map<RoomId, ChainRoomRanges> older;
+    older[roomId("room:amiga")] = ChainRoomRanges{{range("amiga", "A", "C")}, false};
+    std::map<RoomId, ChainRoomRanges> current;
+    current[roomId("room:amiga")] = ChainRoomRanges{{range("amiga", "A", "Mo")}, false};
+    // Two jobs asked one after the other: the current one finishes first, the earlier one after it. The late answer
+    // is dropped, never overwriting the current one's.
+    box.ask("plan/1");
+    box.ask("plan/2");
+    CHECK(box.post("plan/2", current));
+    CHECK_FALSE(box.post("plan/1", older));
+    CHECK(wakes == 1);
+    std::optional<rv::app::ChainRangesMailbox::Answer> answer = box.take();
+    REQUIRE(answer.has_value());
+    CHECK(answer->first == "plan/2");
+    CHECK(answer->second == current);
+    CHECK_FALSE(box.take().has_value());
+    // In the other order: the earlier job's answer dropped, the current one's kept.
+    box.ask("plan/3");
+    box.ask("plan/4");
+    CHECK_FALSE(box.post("plan/3", older));
+    CHECK_FALSE(box.take().has_value());
+    CHECK(box.post("plan/4", current));
+    answer = box.take();
+    REQUIRE(answer.has_value());
+    CHECK(answer->first == "plan/4");
+    // A new ask drops an answer still waiting for the earlier key.
+    box.ask("plan/5");
+    CHECK(box.post("plan/5", current));
+    box.ask("plan/6");
+    CHECK_FALSE(box.take().has_value());
+    CHECK(wakes == 3);
+    // Without a wake callback the answer is kept all the same.
+    box.setWake(nullptr);
+    CHECK(box.post("plan/6", older));
+    CHECK(box.take().has_value());
 }
