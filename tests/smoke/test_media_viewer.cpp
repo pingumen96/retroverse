@@ -280,8 +280,8 @@ TEST_CASE("media viewer: from the card and the quick catalog, the pages in order
     CHECK(fromCatalog->detail == (fromCatalog->game == cobaltUsa ? "covers,physicalmedia,videos" : "covers"));
     REQUIRE(firstEvent(screens, "media", 70) != nullptr);
     CHECK(firstEvent(screens, "media", 70)->game == amber.toString());
-    // The pages: right through every kind (the clip's page too, I5 step 8), left, Home, End; the catalog's viewer on
-    // its first.
+    // The pages: right through every kind (the clip's page too, I5 step 8), nothing past the last (106), left, Home,
+    // End; the catalog's viewer on its first.
     const std::vector<std::string> pages = eventsOf(screens, "page");
     const std::vector<std::string> expectedPages{
         "70:card:covers:1",      "76:card:backcovers:2",   "80:card:physicalmedia:3", "84:card:3dboxes:4",
