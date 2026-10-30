@@ -44,8 +44,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
   `world_launch_ui.hpp` (15a), `screen_room.hpp` (I4 step 6b: which room's CRT is the hero CRT), `elevator_ride.hpp`
   (I4 step 7b: the ride's state machine), `directory_data.hpp` (7b: the directory's building and games, where its
-  commands lead) and `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its
-  title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
+  commands lead; since I4b step 8 its chains with their titles' ranges from the items files) and
+  `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its title card's text),
+  `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
   defaults `assets/config/video.json`); since I5 step 2 `screen_scheduler.hpp` (the decoder scheduler) and
   `process_priority.hpp` (which priority class a frame wants); since I4b step 3 `world_edit_room.hpp` (the edited room's
   items and free slots as targets and steps; its movable fixtures and the points a held one follows since step 4),

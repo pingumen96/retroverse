@@ -361,6 +361,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
     world.migratedRooms = {{"room:psx", "disc_case_cd", "disc_case_cd_v2", 0},
                            {"room:amiga", "big_box", "big_box_v2", 139}};
     world.needsConfirmation = {"migrate room:saturn from disc_case_cd to disc_case_cd_v2: a pin names the room"};
+    world.roomsAdded = {"room:amiga:2"}; // I4b step 8
     // I6 step 5: the rooms re-placed onto the hub, the totem's prompt, the favourites' showcase.
     world.replacedRooms = {{"area:arcade", 7650, -8150, 9000, -12150}};
     world.totemPromptFrames = 14;
@@ -410,6 +411,7 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
         edit.backMs = 140.25;
         edit.liveUpdateDeferred = true;
         edit.probes = 7; // I4b step 4
+        edit.rooms = {"room:snes", "room:snes:2"}; // I4b step 8
         rv::app::WorldEditRecord open;
         open.room = "area:arcade";
         open.via = "card";
@@ -579,11 +581,16 @@ TEST_CASE("app/run_report: the generated room and its layers read back field for
                                                             [](nlohmann::json& edited) {
                                                                 edited["world"].erase("migratedRooms");
                                                                 edited["world"].erase("needsConfirmation");
+                                                                edited["world"].erase("roomsAdded");
+                                                                edited["world"]["edits"][0].erase("rooms");
                                                             }),
                                                "r.json");
     REQUIRE(older.has_value());
     CHECK(older->world.migratedRooms.empty());
     CHECK(older->world.needsConfirmation.empty());
+    CHECK(older->world.roomsAdded.empty()); // I4b step 8: before it, no room added was named
+    CHECK(older->world.edits.at(0).rooms.empty());
+    CHECK(json.at("world").at("roomsAdded") == nlohmann::json::array({"room:amiga:2"}));
     CHECK(json.at("world").at("placements").at("featured") == 44);
     const auto missing = rv::app::parseRunReport(
         editedReport(report, [](nlohmann::json& edited) { edited["world"]["unplaced"].erase("capacity"); }), "r.json");
@@ -768,6 +775,8 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     directory.cardOutcome = "crashed";
     directory.events = {{5, "open", "floors", "elevator"}, {17, "command", "choose-floor", "gen4"}, {40, "closed", "", ""}};
     directory.eventsDropped = 1;
+    directory.chainRooms = {{"room:amiga", {{"amiga", "A", "Mo"}}, false},
+                            {"area:shared:handheld:2", {{"gb", "N", "Z"}, {"pokemini", "A", "Y"}}, true}};
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());
     CHECK(parsed->world == world);
@@ -787,6 +796,12 @@ TEST_CASE("app/run_report: the floors, the rides, the teleports and the director
     CHECK(older->world.floors.empty());
     CHECK(older->world.elevatorPromptFrames == 0);
     CHECK(older->directory == rv::app::DirectoryRecord{});
+    // A report written before I4b step 8 (no chainRooms): no room of a chain listed.
+    const auto noChains = rv::app::parseRunReport(
+        editedReport(report, [](nlohmann::json& edited) { edited["directory"].erase("chainRooms"); }), "r.json");
+    REQUIRE(noChains.has_value());
+    CHECK(noChains->directory.chainRooms.empty());
+    CHECK(noChains->directory.events == directory.events);
     // A ride recorded without its kinds' bytes: none of them.
     const auto noKinds = rv::app::parseRunReport(
         editedReport(report, [](nlohmann::json& edited) { edited["world"]["rides"][0].erase("gpuKinds"); }), "r.json");

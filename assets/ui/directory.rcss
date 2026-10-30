@@ -198,6 +198,15 @@ h2 {
 	border-radius: 8dp;
 }
 
+/* I4b step 8: an expansion stands under its chain's head, indented; a range of titles in the tungsten accent. */
+.row.expansion {
+	margin-left: 36dp;
+}
+
+.range {
+	color: #FFC88A;
+}
+
 /* The hall's row: the elevator's two doors in its button. */
 .door {
 	display: inline-block;

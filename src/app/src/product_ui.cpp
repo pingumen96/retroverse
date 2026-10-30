@@ -1074,6 +1074,20 @@ void ProductUi::setDirectoryBuilding(ui::DirectoryBuilding building) {
     Impl& s = *m_impl;
     s.directoryRecord.bound = true;
     if (s.directory.building() != building) {
+        // I4b step 8: the chains' rooms as listed, their ranges as shown (the run report).
+        s.directoryRecord.chainRooms.clear();
+        for (const ui::DirectoryFloor& floor : building.floors) {
+            for (const ui::DirectoryRoom& room : floor.rooms) {
+                if (room.chainRooms < 2) {
+                    continue;
+                }
+                DirectoryChainRoomRecord record{room.id, {}, room.scattered};
+                for (const ui::DirectoryRange& range : room.ranges) {
+                    record.ranges.push_back(DirectoryRangeRecord{range.system.name, range.first, range.last});
+                }
+                s.directoryRecord.chainRooms.push_back(std::move(record));
+            }
+        }
         s.directory.setBuilding(std::move(building));
     }
 }

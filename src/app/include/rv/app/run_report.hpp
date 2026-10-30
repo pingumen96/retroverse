@@ -514,6 +514,26 @@ struct DirectoryEventRecord {
 
 /// The directory (I4 step 7b, ADR-0013 §10): how often it opened, what it showed at the end, its favourites and recent
 /// games as listed last, its card, its changes. Empty ({}) in runs without the generated building.
+/// A range of a room of a chain as the directory shows it (I4b step 8): its section's system and the initials it runs
+/// between ("A", "Mo").
+struct DirectoryRangeRecord {
+    std::string system;
+    std::string first;
+    std::string last;
+
+    bool operator==(const DirectoryRangeRecord&) const = default;
+};
+
+/// A room of a chain as the directory's "Piani" tab lists it (I4b step 8): its id, its titles' ranges (none until they
+/// are known) and whether they interleave with another room's ("in ordine sparso").
+struct DirectoryChainRoomRecord {
+    std::string room;
+    std::vector<DirectoryRangeRecord> ranges;
+    bool scattered = false;
+
+    bool operator==(const DirectoryChainRoomRecord&) const = default;
+};
+
 struct DirectoryRecord {
     bool bound = false;
     std::uint64_t opened = 0;
@@ -533,6 +553,8 @@ struct DirectoryRecord {
     /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
     std::vector<DirectoryEventRecord> events;
     std::uint64_t eventsDropped = 0;
+    /// I4b step 8: the rooms of chains as the building given to the directory last listed them, floor by floor.
+    std::vector<DirectoryChainRoomRecord> chainRooms;
 
     bool operator==(const DirectoryRecord&) const = default;
 };
@@ -870,6 +892,8 @@ struct WorldEditRecord {
     std::optional<double> backMs;
     /// A live update (a refreshed catalog's building job) waited for the session's end (it starts then).
     bool liveUpdateDeferred = false;
+    /// I4b step 8: the rooms of its chain the session edited, in the order the walker entered them (its room first).
+    std::vector<std::string> rooms;
 
     bool operator==(const WorldEditRecord&) const = default;
 };
@@ -988,6 +1012,9 @@ struct WorldRecord {
     /// What the update left undone because it would have moved something pinned (world::ChangeReport's
     /// needsConfirmation: an unhonoured pin, a pinned room not migrated), as the report words it.
     std::vector<std::string> needsConfirmation;
+    /// I4b step 8 (ADR-0015 §7): the expansion rooms the update that saved the building added (the change report's
+    /// roomsAdded of a chain), which its notice names.
+    std::vector<std::string> roomsAdded;
     /// The validation's findings of the plan made (a hard one keeps the plan from showing).
     std::uint64_t hardFindings = 0;
     std::uint64_t softFindings = 0;

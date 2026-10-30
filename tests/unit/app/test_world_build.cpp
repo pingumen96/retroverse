@@ -1986,3 +1986,31 @@ TEST_CASE("app/world_build: the shared and arcade rooms in the app: their sectio
     CHECK(again.out.find("is up to date") != std::string::npos);
     CHECK(rv::core::readTextFile(planFile).value() == addedText);
 }
+
+TEST_CASE("app/world_build: the expansions an update added are named only once it saved the building (I4b step 8)",
+          "[app][world_build][expansion]") {
+    const auto room = [](std::string_view id) { return rv::world::RoomId::parse(id).value(); };
+    WorldBuild build;
+    build.outcome = WorldOutcome::Updated;
+    build.written = true;
+    build.changes.emplace();
+    build.changes->roomsAdded = {room("area:arcade:2"), room("room:snes"), room("room:amiga:2")};
+    // The expansions only: a room alone the update added is no chain's news.
+    CHECK(rv::app::expansionsAddedBy(build) ==
+          std::vector<rv::world::RoomId>{room("area:arcade:2"), room("room:amiga:2")});
+    // The save failed (the world's lock held by the CLI): nothing named; the next start's update names them.
+    WorldBuild unsaved = build;
+    unsaved.written = false;
+    unsaved.saveError = rv::Error{rv::ErrorCode::Conflict, "the world's lock is held by another program", {}};
+    CHECK(rv::app::expansionsAddedBy(unsaved).empty());
+    // A first building, a preview, no change report: none.
+    WorldBuild generated = build;
+    generated.outcome = WorldOutcome::Generated;
+    CHECK(rv::app::expansionsAddedBy(generated).empty());
+    WorldBuild preview = build;
+    preview.preview = true;
+    CHECK(rv::app::expansionsAddedBy(preview).empty());
+    WorldBuild none = build;
+    none.changes.reset();
+    CHECK(rv::app::expansionsAddedBy(none).empty());
+}

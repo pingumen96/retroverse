@@ -16,6 +16,7 @@
 #include <rv/world/floor_scene.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/seeds.hpp>
 #include <rv/world/world_config.hpp>
 #include <rv/world/world_snapshots.hpp>
 
@@ -304,31 +305,45 @@ Expected<WorldBuild> editedRoomCollections(const WorldBuild& shown, const world:
     WorldBuild build = shown;
     build.plan = plan;
     build.planDigest = std::move(planDigest);
+    // The titles and covers the rooms' items showed (an edit changes no title), gathered over every room laid out
+    // again: a game moved or swapped across a room chain (I4b step 8) takes its own into the room it enters.
+    std::vector<RoomCollection*> edited;
+    std::vector<world::CollectionTitle> titles;
+    std::map<catalog::GameId, CoverItem> covers;
     for (const world::RoomId& id : rooms) {
         const auto room = std::find_if(build.rooms.begin(), build.rooms.end(),
                                        [&](const RoomCollection& candidate) { return candidate.room == id; });
         if (room == build.rooms.end()) {
             return makeError(ErrorCode::NotFound, "the floor shown has no such room", id.toString());
         }
-        // The titles the room's items showed (an edit changes no title).
-        std::vector<world::CollectionTitle> titles;
-        titles.reserve(room->layout.items.size());
+        if (std::find(edited.begin(), edited.end(), &*room) != edited.end()) {
+            continue;
+        }
+        edited.push_back(&*room);
         for (const world::CollectionItem& item : room->layout.items) {
             titles.push_back(world::CollectionTitle{item.game, item.title,
                                                     (item.flags & scene::instance_flags::kUnavailable) == 0});
         }
-        auto layout = world::collectionLayout(plan, id, room->sceneData, titles);
-        if (!layout) {
-            return propagate(layout.error());
-        }
-        std::map<catalog::GameId, CoverItem> covers;
         for (CoverItem& cover : room->covers) {
             covers.emplace(cover.game, std::move(cover));
         }
+    }
+    for (RoomCollection* room : edited) {
+        auto layout = world::collectionLayout(plan, room->room, room->sceneData, titles);
+        if (!layout) {
+            return propagate(layout.error());
+        }
         room->layout = world::floorCollectionLayout(std::move(*layout), room->scenePlacement);
         room->covers.clear();
+        const auto planned = std::find_if(plan.rooms.begin(), plan.rooms.end(),
+                                          [&](const world::Room& candidate) { return candidate.id == room->room; });
         for (const world::CollectionItem& item : room->layout.items) {
             if (auto found = covers.find(item.game); found != covers.end()) {
+                // Its generated pictures drawn from the seed of the room it stands in (buildFloor()'s), the same for
+                // a game of the room, its new room's for one that entered from another room of the chain.
+                if (planned != plan.rooms.end()) {
+                    found->second.seed = world::placementSeed(planned->seed, item.game, planned->mediaFamily);
+                }
                 room->covers.push_back(std::move(found->second));
             }
         }

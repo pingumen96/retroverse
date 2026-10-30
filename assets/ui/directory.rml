@@ -60,9 +60,12 @@
 			<span class="badge edit-badge"><span class="edit-shelf"></span><span class="edit-shelf"></span><span class="edit-shelf"></span></span>
 			<div class="row-text">
 				<p class="row-title">Modifica stanza</p>
-				<p class="row-meta" data-if="editKind == 'console'">Sposta, scambia e fissa giochi e arredi di {{ editTitle }}</p>
-				<p class="row-meta" data-if="editKind == 'shared'">Sposta, scambia e fissa giochi e arredi della sala condivisa</p>
-				<p class="row-meta" data-if="editKind == 'arcade'">Sposta, scambia e fissa giochi e arredi della sala giochi arcade</p>
+				<p class="row-meta" data-if="editKind == 'console' && editNumber == 1">Sposta, scambia e fissa giochi e arredi di {{ editTitle }}</p>
+				<p class="row-meta" data-if="editKind == 'console' && editNumber > 1">Sposta, scambia e fissa giochi e arredi di {{ editTitle }} {{ editNumber }}</p>
+				<p class="row-meta" data-if="editKind == 'shared' && editNumber == 1">Sposta, scambia e fissa giochi e arredi della sala condivisa</p>
+				<p class="row-meta" data-if="editKind == 'shared' && editNumber > 1">Sposta, scambia e fissa giochi e arredi della sala condivisa {{ editNumber }}</p>
+				<p class="row-meta" data-if="editKind == 'arcade' && editNumber == 1">Sposta, scambia e fissa giochi e arredi della sala giochi arcade</p>
+				<p class="row-meta" data-if="editKind == 'arcade' && editNumber > 1">Sposta, scambia e fissa giochi e arredi della sala giochi arcade {{ editNumber }}</p>
 			</div>
 		</div>
 		<div id="dir-list">
@@ -113,18 +116,30 @@
 					</div>
 					<span class="here" data-if="hallCurrent">Sei qui</span>
 				</div>
+				<!-- I4b step 8 (ADR-0015 §7): a chain's rooms (a room past its capacity and its expansions) stand together, the
+				     head first, each expansion indented under it with its number; each room of a chain says which titles it
+				     holds, the initials of its first and last in the chain's alphabetical order ("A – K"), section by
+				     section in a shared room; titles an update added out of their order (they go after their predecessor
+				     wherever it stands) make the ranges overlap: the row says so, and "Rigenera stanza" orders them again. -->
 				<div class="slot" data-for="room : rooms">
-					<div class="row room" data-attr-id="room.elementId" data-event-click="row(room.index)">
+					<div class="row room" data-class-expansion="room.chainIndex > 1" data-attr-id="room.elementId" data-event-click="row(room.index)">
 						<span class="badge room-badge">{{ room.index }}</span>
 						<div class="row-text">
-							<p class="row-title" data-if="room.kind == 'console'">{{ room.title }}</p>
-							<p class="row-title" data-if="room.kind == 'shared'">Sala condivisa</p>
-							<p class="row-title" data-if="room.kind == 'arcade'">Sala giochi arcade</p>
-							<p class="row-meta" data-if="room.kind == 'console' && room.games == 0">nessun gioco esposto</p>
-							<p class="row-meta" data-if="room.kind == 'console' && room.games == 1">1 gioco</p>
-							<p class="row-meta" data-if="room.kind == 'console' && room.games > 1">{{ room.games }} giochi</p>
-							<!-- A shared or arcade room: its count, then every section's system, on as many lines as they take. -->
-							<p class="row-meta wrap" data-if="room.kind != 'console'"><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span><span class="dot" data-if="room.systems.size > 0">·</span><span data-for="system, i : room.systems"><span data-if="i > 0">, </span>{{ system }}</span></p>
+							<p class="row-title" data-if="room.kind == 'console' && room.chainIndex == 1">{{ room.title }}</p>
+							<p class="row-title" data-if="room.kind == 'console' && room.chainIndex > 1">{{ room.title }} {{ room.chainIndex }}</p>
+							<p class="row-title" data-if="room.kind == 'shared' && room.chainIndex == 1">Sala condivisa</p>
+							<p class="row-title" data-if="room.kind == 'shared' && room.chainIndex > 1">Sala condivisa {{ room.chainIndex }}</p>
+							<p class="row-title" data-if="room.kind == 'arcade' && room.chainIndex == 1">Sala giochi arcade</p>
+							<p class="row-title" data-if="room.kind == 'arcade' && room.chainIndex > 1">Sala giochi arcade {{ room.chainIndex }}</p>
+							<p class="row-meta" data-if="room.kind == 'console' && !room.chained && room.games == 0">nessun gioco esposto</p>
+							<p class="row-meta" data-if="room.kind == 'console' && !room.chained && room.games == 1">1 gioco</p>
+							<p class="row-meta" data-if="room.kind == 'console' && !room.chained && room.games > 1">{{ room.games }} giochi</p>
+							<!-- A console room of a chain: its count, then its titles' range. -->
+							<p class="row-meta wrap" data-if="room.kind == 'console' && room.chained"><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span><span data-for="range : room.ranges"><span class="dot">·</span><span class="range">{{ range.first }} – {{ range.last }}</span></span><span data-if="room.scattered"><span class="dot">·</span>in ordine sparso</span></p>
+							<!-- A shared or arcade room: its count, then every section's system, on as many lines as they take; in
+							     a chain, the sections it holds titles of, each with its range. -->
+							<p class="row-meta wrap" data-if="room.kind != 'console' && (!room.chained || room.ranges.size == 0)"><span data-if="room.games == 0">nessun gioco esposto</span><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span><span class="dot" data-if="room.systems.size > 0">·</span><span data-for="system, i : room.systems"><span data-if="i > 0">, </span>{{ system }}</span></p>
+							<p class="row-meta wrap" data-if="room.kind != 'console' && room.chained && room.ranges.size > 0"><span data-if="room.games == 1">1 gioco</span><span data-if="room.games > 1">{{ room.games }} giochi</span><span class="dot">·</span><span data-for="range, i : room.ranges"><span data-if="i > 0">, </span>{{ range.system }} <span class="range">{{ range.first }} – {{ range.last }}</span></span><span data-if="room.scattered"><span class="dot">·</span>in ordine sparso</span></p>
 						</div>
 						<span class="here" data-if="room.current">Sei qui</span>
 					</div>
@@ -145,9 +160,12 @@
 							<p class="row-meta" data-if="action.action == 'edit-room'">Sposta e fissa giochi e arredi</p>
 							<p class="row-title" data-if="action.action == 'regenerate-room'">Rigenera stanza</p>
 							<p class="row-meta" data-if="action.action == 'regenerate-room' && !action.enabled">Entra in una stanza per rigenerarla</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console'">Riallestisce {{ actionRoomTitle }}</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared'">Riallestisce la sala condivisa</p>
-							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade'">Riallestisce la sala giochi arcade</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console' && !actionRoomChain">Riallestisce {{ actionRoomTitle }}</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'console' && actionRoomChain">Riallestisce tutte le stanze di {{ actionRoomTitle }}</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared' && !actionRoomChain">Riallestisce la sala condivisa</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'shared' && actionRoomChain">Riallestisce tutte le stanze della sala condivisa</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade' && !actionRoomChain">Riallestisce la sala giochi arcade</p>
+							<p class="row-meta" data-if="action.action == 'regenerate-room' && action.enabled && actionRoomKind == 'arcade' && actionRoomChain">Riallestisce tutte le stanze della sala giochi arcade</p>
 							<p class="row-title" data-if="action.action == 'regenerate-floor'">Rigenera piano</p>
 							<p class="row-meta" data-if="action.action == 'regenerate-floor' && !action.enabled">Disponibile fuori dall'ascensore</p>
 							<p class="row-meta" data-if="action.action == 'regenerate-floor' && action.enabled && actionFloor == 'ground'">Riallestisce Piano terra</p>

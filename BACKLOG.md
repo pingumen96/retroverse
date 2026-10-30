@@ -605,19 +605,33 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   again, and `video.json`'s `rooms.<id>` settings would then apply to the new room. A plan field listing the retired
   numbers of each chain (schema 3), or `video.json` settings keyed by something stabler than the room id, would close
   it.
-- **The app's update reads every expansion's data (I4b step 7):** the app's update loads the data of every room of the
-  plan, an expansion's like its head's (`src/app/src/world_build.cpp`), while the CLI skips them; loading a chain's data
-  once (by its head) would save a load per expansion.
+- **The app's update reads every expansion's data (I4b step 7):** done in I4b step 8: the app's update reads a chain's
+  data once, its head's, as the CLI does (`docs/i4b/step-8.md`).
 - **Capacity entries after a migration on a full floor (I4b step 7):** generator 1.4's capacity entries migrate once
   (the head's reserve, then expansions while the floor has room); those left on a full floor stay unplaced for capacity
   even once the floor gains room (another room regenerated away, a floor regenerated), until "Rigenera stanza" of the
   chain. An update that retried them only when the floor's rooms changed would place them without a regeneration and
   still leave an update of an unchanged catalog writing nothing.
-- **What step 8 needs from the chains:** the directory groups a chain by `RoomId::head()` (its numbers may leave gaps:
+- **What step 8 needs from the chains:** done in I4b step 8 (`docs/i4b/step-8.md`, ADR-0015 §7 as amended on
+  2026-10-29: the chains together, the ranges, the `rooms-added` notice). It read: the directory groups a chain by
+  `RoomId::head()` (its numbers may leave gaps:
   `:3` without `:2` after a shrink); each room's title range ("A – K") comes from its items, and after updates the
   ranges may overlap (a new title goes after its predecessor anywhere in the chain, wrapping to the head's free slots)
   and span sections (a shared room's); the app's notice names the expansions an update added (ADR-0015 §7's
   "`roomsAdded` and the app's notice name the new rooms").
+
+### Expansion rooms in the app (I4b step 8)
+
+- **Ranges before the items files (I4b step 8):** a chain's rooms show their titles' ranges from the rooms' items files
+  (`app::chainTitlesOf()`); a start whose items files are missing (a data directory planned by the CLI alone, before
+  the app's first building job writes them) lists the chain without ranges until they are written. The catalog's world
+  reader could give the titles instead.
+- **Ranges at the initial's grain (I4b step 8):** two letters show only where two rooms meet on one initial; a chain of
+  many rooms split inside one prefix ("Mos" in each) still reads "Mo – Mo". Longer prefixes where needed (as an
+  encyclopedia's volumes) would close it.
+- **Furniture across a chain (I4b step 8, ADR-0015 §4 as amended):** the editor carries a game across the rooms of a
+  chain, never a fixture: a display case moved from the head into an expansion needs the plan's sockets of both rooms
+  and a new kind of operation.
 
 ### Regeneration and undo in the app (I4b step 6)
 

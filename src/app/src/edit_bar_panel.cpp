@@ -36,6 +36,7 @@ struct EditBarPanel::Impl {
         constructor.Bind("mode", &mode);
         constructor.Bind("roomTitle", &roomTitle);
         constructor.Bind("roomKind", &roomKind);
+        constructor.Bind("roomNumber", &roomNumber);
         constructor.Bind("target", &target);
         constructor.Bind("targetTitle", &targetTitle);
         constructor.Bind("targetPinned", &targetPinned);
@@ -74,6 +75,7 @@ struct EditBarPanel::Impl {
         mode = Rml::String(value.mode);
         roomTitle = Rml::String(value.roomTitle);
         roomKind = Rml::String(value.roomKind);
+        roomNumber = static_cast<int>(std::min<std::uint32_t>(value.roomNumber, 1'000'000));
         target = Rml::String(value.target);
         targetTitle = Rml::String(value.targetTitle);
         targetPinned = value.targetPinned;
@@ -107,6 +109,7 @@ struct EditBarPanel::Impl {
     Rml::String mode;
     Rml::String roomTitle;
     Rml::String roomKind;
+    int roomNumber = 1;
     Rml::String target;
     Rml::String targetTitle;
     bool targetPinned = false;

@@ -206,14 +206,6 @@ void dropFloor(WorldBuild& build) {
     return nullptr;
 }
 
-/// Whether `text` holds what its system's snapshot said of the game. A placed game the snapshot does not list has none
-/// (snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of its other
-/// sections, which each section's items file holds so.
-[[nodiscard]] bool hasText(const RoomItemText& text) noexcept {
-    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
-           text.screen.has_value();
-}
-
 /// The text of `game` among the items of a room's `systems` (its sections, in order) and the items it is of: the first
 /// section's that knows its text (hasText()), else the first that holds it at all (a game no snapshot lists any more
 /// keeps its slot with no text); {nullptr, nullptr} when none holds it.
@@ -258,6 +250,20 @@ itemTextOf(const std::map<catalog::SystemName, RoomItems>& items, std::span<cons
 }
 
 } // namespace
+
+std::vector<world::RoomId> expansionsAddedBy(const WorldBuild& build) {
+    std::vector<world::RoomId> added;
+    if (build.preview || build.outcome != WorldOutcome::Updated || !build.written || build.saveError ||
+        !build.changes) {
+        return added;
+    }
+    for (const world::RoomId& room : build.changes->roomsAdded) {
+        if (room.isExpansion()) {
+            added.push_back(room);
+        }
+    }
+    return added;
+}
 
 RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::WorldPlan& plan) {
     RoomItems items;
@@ -440,6 +446,9 @@ void makePlan(const WorldBuildInput& input, const core::JobContext& job, WorldBu
         const Clock::time_point dataStart = Clock::now();
         std::vector<world::WorldData> rooms;
         for (const world::Room& room : stored->plan.rooms) {
+            if (room.id.isExpansion()) {
+                continue; // I4b step 8: an expansion reads its head's data (ADR-0015 §7), as the CLI's update does
+            }
             const catalog::SystemName system = room.sections.empty() ? room.id.system() : room.sections.front();
             const auto tags = platformTags.find(system);
             auto data = world::loadRoomData(input.paths.assetRoot, room,
