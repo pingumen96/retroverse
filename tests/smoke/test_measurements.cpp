@@ -1,6 +1,7 @@
 // The measurements of the budgets (I3 step 0d) in the run report of retroverse.exe: the frame times of the run with the
 // warm-up left out, the phases an input script opens, the main thread's CPU sections, the renderer's GPU memory per
-// kind.
+// kind; since the memory margin (docs/i5/memory-margin.md) the render targets' bytes at 1080p, with and without a
+// screenshot.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,10 +11,13 @@
 #include <vector>
 
 #include <rv/app/frame_timing.hpp>
+#include <rv/assets/image_io.hpp>
 #include <rv/assets/surface_textures.hpp>
 #include <rv/core/cpu_timers.hpp>
 #include <rv/render/gpu_memory.hpp>
+#include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_memory.hpp>
+#include <rv/render/view_target_plan.hpp>
 
 #include "smoke_support.hpp"
 
@@ -54,6 +58,11 @@ void checkOrdered(const rv::app::TimeSummary& times) {
     CHECK(times.p50Ms <= times.p95Ms);
     CHECK(times.p95Ms <= times.p99Ms);
     CHECK(times.p99Ms <= times.maxMs);
+}
+
+/// The render targets' bytes of a run at their highest.
+std::uint64_t peakTargetBytes(const AppRun& run) {
+    return run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).peakBytes;
 }
 
 const rv::app::CpuSectionRecord* findSection(const rv::app::RunReport& report, std::string_view name) {
@@ -153,4 +162,59 @@ TEST_CASE("measurements/the test room reports its frame times, scripted phases, 
     CHECK(shortRun.report->frameTimes == rv::app::FrameTimesRecord{rv::app::kFrameTimeWarmUpFrames, std::nullopt});
     CHECK(shortRun.report->gpuMemory.usage(rv::gl::GpuMemoryKind::ProceduralSurfaces) ==
           memory.usage(rv::gl::GpuMemoryKind::ProceduralSurfaces));
+}
+
+TEST_CASE("measurements/the render targets at 1080p: one set at a time, a screenshot at the window's size through "
+          "the window's",
+          "[gpu][measurements][targets]") {
+    const std::filesystem::path caseDir = freshCaseDir("measurements_targets");
+    // The memory margin's figure: the view targets of a 1920 x 1080 output (44.2 MiB) and the key light's shadow map
+    // (16 MiB) under 64 MiB (88.5 MiB before it, 161.0 with a screenshot of the window's size).
+    constexpr std::uint64_t kTargetsAt1080 = std::uint64_t{64} * 1024 * 1024;
+    const std::uint64_t shadowMap = rv::gl::textureBytes(rv::gl::GpuFormat::Depth32F,
+                                                         glm::ivec2(rv::gl::kShadowMapResolution), 1);
+    const std::uint64_t set1080 = rv::gl::viewTargetsBytes(glm::ivec2(1920, 1080));
+    CHECK(set1080 + shadowMap < kTargetsAt1080);
+
+    // A 1080p screenshot from a window too small to matter: the window's targets are let go of while the screenshot's
+    // exist, so the run's highest is the screenshot's set and the shadow map, exactly, whatever the window's pixels.
+    const std::vector<std::string> scene{"--scene", "m0_testroom", "--spawn", "0,0,3.2,0,-6", "--exit-after-frames",
+                                         "--frames", "3"};
+    auto withScene = [&scene](std::vector<std::string> more) {
+        more.insert(more.begin(), scene.begin(), scene.end());
+        return more;
+    };
+    const AppRun small = runApp(retroverseExe(), caseDir, "small_window",
+                                withScene({"--width", "64", "--height", "64", "--screenshot",
+                                           arg(caseDir / "small_window.png"), "--screenshot-size", "1920x1080"}));
+    skipWithoutOpenGl(small);
+    requireCleanRun(small);
+    INFO(small.describe());
+    CHECK(peakTargetBytes(small) == set1080 + shadowMap);
+    // The window's set made again after it: the run ends holding the shadow map and the small window's targets.
+    CHECK(small.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes < shadowMap + set1080 / 4);
+
+    // A 1080p window, without a screenshot and with one of its own size: the screenshot takes no targets of its own.
+    const AppRun window = runApp(retroverseExe(), caseDir, "window_1080",
+                                 withScene({"--width", "1920", "--height", "1080"}));
+    requireCleanRun(window);
+    INFO(window.describe());
+    const AppRun shot = runApp(retroverseExe(), caseDir, "window_1080_screenshot",
+                               withScene({"--width", "1920", "--height", "1080", "--screenshot",
+                                          arg(caseDir / "window_1080.png"), "--screenshot-size", "1920x1080"}));
+    requireCleanRun(shot);
+    INFO(shot.describe());
+    INFO("targets at their highest: window " << peakTargetBytes(window) << " B, with the screenshot "
+                                             << peakTargetBytes(shot) << " B");
+    CHECK(peakTargetBytes(shot) == peakTargetBytes(window));
+    CHECK(peakTargetBytes(window) <= kTargetsAt1080);
+
+    // The screenshot drawn through the window's targets is the one drawn through targets of its own.
+    const auto own = rv::assets::loadImage(caseDir / "small_window.png", 3);
+    const auto shared = rv::assets::loadImage(caseDir / "window_1080.png", 3);
+    REQUIRE(own.has_value());
+    REQUIRE(shared.has_value());
+    CHECK(own->width == shared->width);
+    CHECK(own->height == shared->height);
+    CHECK(own->pixels == shared->pixels);
 }

@@ -223,7 +223,8 @@ struct SceneGraphics::State {
     bool debugLinesShown = false;
     std::function<void(gl::GLDevice&)> windowOverlay;
     std::function<void(gl::GLDevice&, const gl::Framebuffer&)> screenshotOverlay;
-    /// Render targets of the window's view and of screenshots, each kept at its size (allocated on first use).
+    /// Render targets of the window's view, kept at its size (allocated on first use), and of a screenshot of another
+    /// size, made for it alone: one set is held at any time (captureScreenshot()).
     gl::ViewTargets windowTargets;
     gl::ViewTargets screenshotTargets;
     std::optional<glm::ivec2> failedWindowSize;
@@ -277,20 +278,42 @@ struct SceneGraphics::State {
         return post;
     }
 
-    /// Renders `view` at --screenshot-size into the screenshot targets, with the overlay when it shows in screenshots,
-    /// and writes it as an RGB PNG.
+    /// Renders `view` at --screenshot-size, with the overlay when it shows in screenshots, and writes it as an RGB PNG.
+    /// At the window's size it is drawn through the window's targets, which the window's view draws anew right after;
+    /// at another size through targets made for it alone, with the window's let go of first (the window's view makes
+    /// them again): one set of targets is held at any time (docs/i5/memory-margin.md).
     Status captureScreenshot(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path) {
         const CommandLineOptions& options = context.options();
         const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
-        if (!prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize)) {
+        const bool windowSized = size == context.framebufferSize();
+        if (!windowSized) {
+            windowTargets = gl::ViewTargets{};
+        }
+        Status captured = captureInto(context, view, path, windowSized);
+        if (!windowSized) {
+            screenshotTargets = gl::ViewTargets{};
+        }
+        return captured;
+    }
+
+    /// captureScreenshot() through the window's targets (`windowSized`) or the screenshot's.
+    Status captureInto(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path,
+                       bool windowSized) {
+        const CommandLineOptions& options = context.options();
+        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
+        gl::ViewTargets& targets = windowSized ? windowTargets : screenshotTargets;
+        const bool prepared = windowSized
+                                  ? prepareTargets(windowTargets, size, "WindowTargets", failedWindowSize)
+                                  : prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize);
+        if (!prepared) {
             return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot", core::pathToUtf8(path));
         }
-        render(context.device(), view, screenshotTargets);
+        render(context.device(), view, targets);
         if (screenshotOverlay) {
-            screenshotOverlay(context.device(), screenshotTargets.output());
+            screenshotOverlay(context.device(), targets.output());
         }
         gl::Framebuffer::unbind(); // the frame leaves the default framebuffer bound, also when the window is not drawn
-        auto image = screenshotTargets.output().readPixels();
+        auto image = targets.output().readPixels();
         if (!image) {
             return propagate(image.error());
         }

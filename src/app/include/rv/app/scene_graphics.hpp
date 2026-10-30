@@ -111,7 +111,8 @@ public:
     ///     <user data>/screenshots/retroverse-<timestamp>.png, a failure logged; on the last frame of a frame-limited
     ///     run with --screenshot that file, a failure failing the run (AppContext::failRun). Both at
     ///     --screenshot-size, with the overlay when one is set for screenshots, written as RGB PNG (the window is
-    ///     opaque);
+    ///     opaque); through the window's targets when they have that size, else through targets made for it alone
+    ///     while the window's are let go of (one set held at any time: the window's view makes them again);
     ///  2. the window: the view into the window's targets, copied to the window (black when the targets cannot be
     ///     allocated), then the overlay;
     ///  3. the frame statistics (and, in developer builds, their summary once per second).

@@ -15,7 +15,8 @@ namespace rv::app {
 /// screen-space ambient occlusion after a depth pre-pass) as linear radiance into an HDR target, post-processed (bloom,
 /// exposure, vignette, ACES tonemapping, dithering: the post-processing of the scene's environment) into an sRGB target
 /// that is copied to the window, from a first-person camera walking the scene (FreeRoam: starts at the scene camera,
-/// collides with the walls and furniture). The window and the screenshots each have their own gl::ViewTargets.
+/// collides with the walls and furniture). A screenshot of the window's size is drawn through the window's
+/// gl::ViewTargets, one of another size through targets made for it alone (SceneGraphics::renderFrame).
 /// --debug-draw adds debug lines over the scene: object bounds, socket axes and a world grid.
 ///
 /// Frame statistics (gl::FrameStats: draw calls, instances, triangles, batches, shader switches, culled items, GPU
