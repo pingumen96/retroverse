@@ -775,6 +775,8 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     }
     show.heroScreenPrefix = screenRoom ? *screenRoom + "/" : std::string();
     show.screenGames = screenGames;
+    // The rooms' packs' screen presets, taken once for the floor shown: a room's pack changes only with a full floor
+    // rebuild (this function again), so SceneInstance::replaceObjects() keeps them (I5 step 6).
     for (const RoomCollection& room : build.rooms) {
         if (!room.sceneData.theme.screenPreset.empty()) {
             show.screenPresets.emplace(room.room.toString(), room.sceneData.theme.screenPreset);

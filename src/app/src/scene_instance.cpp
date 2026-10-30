@@ -557,7 +557,11 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     const scene::SceneGeometry geometry = scene::buildSceneGeometry(fresh, library, loadModel);
     SceneContentPlan plan = planSceneContent(geometry);
     if (resources.screenLooks != nullptr) {
-        // The room's screens as create() gave them their looks (I5 step 6): its hero by its role.
+        // The room's screens as create() gave them their looks (I5 step 6): its hero by its role. The looks recorded
+        // for the objects replaced go first (a screen removed or no longer one leaves the report). The packs' presets
+        // are the floor's as ScreenLooks::setScene() took them: a room's pack changes only with a full floor rebuild
+        // (a new scene shown), never through replaceObjects().
+        resources.screenLooks->forget(change.prefix);
         applyScreenLooks(plan, fresh.objects, description.name, *resources.screenLooks);
     }
     std::vector<scene::RenderItem> freshItems;

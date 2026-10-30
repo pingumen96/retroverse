@@ -150,6 +150,12 @@ void ScreenLooks::record(ScreenLookApplied applied) {
     m_applied.insert_or_assign(std::move(key), std::move(applied));
 }
 
+void ScreenLooks::forget(std::string_view prefix) {
+    for (auto look = m_applied.lower_bound(prefix); look != m_applied.end() && look->first.starts_with(prefix);) {
+        look = m_applied.erase(look);
+    }
+}
+
 std::vector<ScreenLookApplied> ScreenLooks::applied() const {
     std::vector<ScreenLookApplied> looks;
     looks.reserve(m_applied.size());

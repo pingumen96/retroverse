@@ -383,3 +383,35 @@ TEST_CASE("app/crt_looks: a first crt that cannot bind is no hero", "[app][crt_l
     CHECK(floorPlan.materials[2].material.crt == presets[CrtPreset::Arcade]);  // a crt before its room's hero
     CHECK(floorPlan.materials[3].material.crt == presets[CrtPreset::Neutral]); // its room's role's holder
 }
+
+TEST_CASE("app/crt_looks: a room's objects rebuilt forget their looks", "[app][crt_looks]") {
+    ScreenLooks looks;
+    const CrtChoice consumer{CrtPreset::Consumer, CrtPreset::Consumer, CrtRule::Kind};
+    const CrtChoice arcade{CrtPreset::Arcade, CrtPreset::Arcade, CrtRule::Kind};
+    looks.record({"room:snes/fx:hero.crt", "room:snes", ScreenKind::Hero, consumer});
+    looks.record({"room:snes/fx:side.secondary_tv", "room:snes", ScreenKind::Secondary, consumer});
+    looks.record({"room:snes2/fx:hero.crt", "room:snes2", ScreenKind::Hero, consumer});
+    looks.record({"room:gen6/fx:hero.crt", "room:gen6", ScreenKind::Hero, consumer});
+    looks.record({"collection/room:snes/arcade", "room:snes", ScreenKind::Cabinet, arcade});
+    const auto screens = [&looks] {
+        std::vector<std::string> ids;
+        for (const rv::app::ScreenLookApplied& look : looks.applied()) {
+            ids.push_back(look.screen);
+        }
+        return ids;
+    };
+
+    // SceneInstance::replaceObjects() of "room:snes/": the room's objects' looks go, the others' stay (its cabinets'
+    // record too: their collection is laid out again, keeping its look).
+    looks.forget("room:snes/");
+    CHECK(screens() == std::vector<std::string>{"collection/room:snes/arcade", "room:gen6/fx:hero.crt",
+                                                "room:snes2/fx:hero.crt"});
+
+    // The rebuilt room's screens recorded again: the secondary TV gone stays gone.
+    const std::vector<rv::scene::SceneObject> objects = {object("room:snes/fx:hero.crt", "crt")};
+    rv::app::SceneContentPlan plan;
+    addMaterial(plan, "room:snes/fx:hero.crt/screen@640x480", 0, true);
+    CHECK(rv::app::applyScreenLooks(plan, objects, "gen4", looks) == 1);
+    CHECK(screens() == std::vector<std::string>{"collection/room:snes/arcade", "room:gen6/fx:hero.crt",
+                                                "room:snes/fx:hero.crt", "room:snes2/fx:hero.crt"});
+}

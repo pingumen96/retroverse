@@ -135,6 +135,10 @@ public:
 
     /// Records a screen's look (one per screen id: a screen registered again replaces its record).
     void record(ScreenLookApplied applied);
+    /// Drops the looks recorded for the screens whose id starts with `prefix` ("room:snes/": a room's objects about to
+    /// be rebuilt, SceneInstance::replaceObjects()); its cabinets' record ("collection/...") stays: their collection
+    /// is laid out again (CollectionInstance::applyLayout()), never made again, and keeps its look.
+    void forget(std::string_view prefix);
     /// The looks of the scene shown, by screen id.
     [[nodiscard]] std::vector<ScreenLookApplied> applied() const;
 
