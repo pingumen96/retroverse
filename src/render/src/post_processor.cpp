@@ -137,7 +137,10 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
         glBindSampler(kSourceUnit, m_sampler.id());
         glBindSampler(kBloomUnit, m_sampler.id());
         glBindSampler(kEmissionUnit, m_sampler.id());
-        // The emitted light, read by the first downsample and the post pass.
+        // The emitted light, read by the first downsample and the post pass. These units hold images that share
+        // storage (viewTargetPlan() gives their lifetimes): the tonemapped image is written over the emission, the
+        // first bloom level over the raw occlusion. Reading the emission after the post pass is forbidden; the units
+        // are unbound below.
         targets.hdr().bindColorTexture(kEmissionUnit, kEmissionAttachment);
         if (uniforms.bloomMix > 0.0f) {
             bloom(device, shaders, bloomScatter(settings.bloomRadius), targets);
@@ -160,6 +163,11 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
         if (antialiasing) {
             const ScopedDebugGroup antialiasingGroup(device, "AntiAliasing");
             drawPass(device, *shaders.antialiasing, targets.tonemapped(), output);
+        }
+        // The units hold views of storage the next frame's ambient occlusion and lit pass write (viewTargetPlan()):
+        // unbound, so that no shader that declares them samples what it draws into.
+        for (const GLuint unit : {kSourceUnit, kBloomUnit, kEmissionUnit}) {
+            glBindTextureUnit(unit, 0);
         }
     } else {
         // The scene as it is, clamped and encoded by the output, so that it stays visible.
