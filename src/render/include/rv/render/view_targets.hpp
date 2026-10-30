@@ -20,16 +20,18 @@ namespace rv::gl {
 /// takes over from an image whose last pass is over):
 ///  - hdr(): two color attachments + a depth24/stencil8 texture. The scene pass writes the fragment outputs of the
 ///    scene shaders into them (SceneOutput, SceneRenderer): the linear radiance (GL_RGBA16F, the first attachment, the
-///    one copies and readbacks take) and its emitted part, the light the bloom always spreads (PostProcessor). Its
-///    depth, written by the depth pre-pass, is what the ambient occlusion is estimated from
+///    one copies and readbacks take) and its emitted part (GL_R11F_G11F_B10F), the light the bloom always spreads
+///    (PostProcessor). Its depth, written by the depth pre-pass, is what the ambient occlusion is estimated from
 ///    (Framebuffer::bindDepthTexture), what the outline's mark and the debug lines are tested against.
 ///  - ambientOcclusionRaw(): GL_RG16F at ssaoTargetSize(size()), half the resolution: the ambient occlusion estimate
 ///    and the distance it was taken at (SsaoPass).
 ///  - ambientOcclusion(): GL_R8 at size(): the blurred ambient occlusion the lit shader reads, 1 where nothing occludes
 ///    (SsaoPass).
-///  - bloomLevels(): kBloomLevelCount targets of bloomLevelSizes(size()), the bloom chain (PostProcessor).
+///  - bloomLevels(): kBloomLevelCount GL_R11F_G11F_B10F targets of bloomLevelSizes(size()), the bloom chain
+///    (PostProcessor); the first in ambientOcclusionRaw()'s storage, whose blur is over before the bloom starts.
 ///  - tonemapped(): GL_SRGB8_ALPHA8 at size(), no depth: the tonemapped image with the perceptual luma of each pixel in
-///    its alpha, which the post pass writes into it when the anti-aliasing pass follows (PostProcessor).
+///    its alpha, which the post pass writes into it when the anti-aliasing pass follows (PostProcessor), in the
+///    storage of hdr()'s emitted part, which that pass reads texel by texel where it writes.
 ///  - output(): GL_SRGB8_ALPHA8, no depth. The post pass (or the anti-aliasing pass after it) writes the tonemapped
 ///    image into it, the outline and overlays are drawn over it; it is what the window shows
 ///    (Framebuffer::blitToDefault) and what screenshots read (Framebuffer::readPixels). Its alpha is not meant to be

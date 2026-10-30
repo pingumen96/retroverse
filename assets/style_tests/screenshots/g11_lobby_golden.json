@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g11_lobby_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "23cde21441838942163e6c490491ccff2dfd605c3f5b1cfe13b0ca62ea566afb",
+    "sha256": "4e482caf336e64ec06ff13f82630aa8bd4f7f7cae0289878ad81e8b4de23574c",
     "width": 1920
   },
   "inputs": {

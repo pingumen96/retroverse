@@ -9,7 +9,7 @@ namespace rv::gl {
 namespace {
 
 /// The color format of a color image of the plan.
-ColorFormat colorFormatOf(GpuFormat format) noexcept {
+ColorFormat colorFormatFor(GpuFormat format) noexcept {
     switch (format) {
     case GpuFormat::Rgba16F:
         return ColorFormat::Rgba16F;
@@ -17,6 +17,8 @@ ColorFormat colorFormatOf(GpuFormat format) noexcept {
         return ColorFormat::R8;
     case GpuFormat::Rg16F:
         return ColorFormat::Rg16F;
+    case GpuFormat::R11fG11fB10f:
+        return ColorFormat::R11fG11fB10f;
     default:
         return ColorFormat::Srgb8Alpha8;
     }
@@ -53,10 +55,10 @@ Expected<Framebuffer> ViewTargets::createImage(ViewImage image, glm::ivec2 size)
         // A view of the storage of an image made before it (the plan's images own storage made in ViewImage order).
         FramebufferAliasDesc alias;
         alias.color = &storageOf(*plan.storageOf, alias.colorAttachment);
-        alias.colorFormat = colorFormatOf(plan.format);
+        alias.colorFormat = colorFormatFor(plan.format);
         return Framebuffer::createAlias(alias, label);
     }
-    return Framebuffer::create(FramebufferDesc{viewImageSize(plan, size), colorFormatOf(plan.format), false}, label);
+    return Framebuffer::create(FramebufferDesc{viewImageSize(plan, size), colorFormatFor(plan.format), false}, label);
 }
 
 Expected<ViewTargets> ViewTargets::create(glm::ivec2 size, std::string_view debugName) {
@@ -65,9 +67,10 @@ Expected<ViewTargets> ViewTargets::create(glm::ivec2 size, std::string_view debu
     // The HDR target: the radiance, its emitted part and the scene's depth.
     static_assert(kSceneOutputCount == 2, "the HDR target's attachments are the radiance and the emission");
     const ViewImagePlan& radiance = viewImagePlan(ViewImage::Radiance);
-    auto hdr = Framebuffer::create(
-        FramebufferDesc{viewImageSize(radiance, size), colorFormatOf(radiance.format), true, kSceneOutputCount, true},
-        targets.m_debugName + ".hdr");
+    FramebufferDesc hdrDesc{viewImageSize(radiance, size), colorFormatFor(radiance.format), true, kSceneOutputCount,
+                            true};
+    hdrDesc.laterColorFormat = colorFormatFor(viewImagePlan(ViewImage::Emission).format);
+    auto hdr = Framebuffer::create(hdrDesc, targets.m_debugName + ".hdr");
     if (!hdr) {
         return propagate(hdr.error());
     }

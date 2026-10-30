@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,9 +31,12 @@ enum class ColorFormat : std::uint8_t {
     R8,
     /// GL_RG16F: two half floats (the half-resolution ambient occlusion and the distance it was estimated at).
     Rg16F,
+    /// GL_R11F_G11F_B10F: three unsigned floats in 32 bits (up to 65024, 6 and 5 bits of mantissa), no alpha: the
+    /// emitted light of the HDR scene and the bloom.
+    R11fG11fB10f,
 };
 
-/// "srgb8_alpha8", "rgba16f", "r8" or "rg16f".
+/// "srgb8_alpha8", "rgba16f", "r8", "rg16f" or "r11f_g11f_b10f".
 [[nodiscard]] std::string_view toString(ColorFormat format) noexcept;
 /// The storage format of `format`, for the memory accounting.
 [[nodiscard]] GpuFormat gpuFormat(ColorFormat format) noexcept;
@@ -44,7 +48,7 @@ struct FramebufferDesc {
     /// Pixels; each side in [1, min(GL_MAX_FRAMEBUFFER_WIDTH/HEIGHT, GL_MAX_TEXTURE_SIZE, GL_MAX_RENDERBUFFER_SIZE)]
     /// (at least 16384 on any OpenGL 4.5 implementation).
     glm::ivec2 size{0};
-    /// Format of every color attachment.
+    /// Format of the first color attachment, and of the others unless laterColorFormat says otherwise.
     ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
     /// Adds a GL_DEPTH24_STENCIL8 buffer at GL_DEPTH_STENCIL_ATTACHMENT.
     bool depthStencil = true;
@@ -53,7 +57,12 @@ struct FramebufferDesc {
     /// With depthStencil: the depth/stencil buffer is a texture that later passes can sample (bindDepthTexture():
     /// window depth in [0, 1], nearest filtering unless a sampler says otherwise) instead of a renderbuffer.
     bool depthTexture = false;
+    /// Format of the color attachments after the first; none: colorFormat.
+    std::optional<ColorFormat> laterColorFormat;
 };
+
+/// The format of color attachment `attachment` of `desc`.
+[[nodiscard]] ColorFormat colorFormatOf(const FramebufferDesc& desc, std::size_t attachment) noexcept;
 
 /// Bytes of the attachments of `desc` (every color attachment and the depth/stencil buffer, one level each): what a
 /// Framebuffer records as GpuMemoryKind::Targets. 0 for an empty size.
@@ -150,9 +159,10 @@ public:
     /// them; the other formats return their values clamped to [0, 1] (channels they lack read 0, alpha 1). Waits for
     /// pending rendering (a pipeline stall: meant for screenshots and tests, not for every frame).
     [[nodiscard]] Expected<assets::ImageData> readPixels() const;
-    /// Reads the first color attachment of an Rgba16F framebuffer back as linear RGBA, bottom row first (texel order),
-    /// the values as stored. A pipeline stall like readPixels(): meant for checks and tests. Errors: InvalidArgument
-    /// for an empty or Srgb8Alpha8 framebuffer, OutOfRange when the pixels do not fit one readback.
+    /// Reads the first color attachment of an Rgba16F or R11fG11fB10f framebuffer back as linear RGBA, bottom row
+    /// first (texel order), the values as stored (alpha 1 where the format has none). A pipeline stall like
+    /// readPixels(): meant for checks and tests. Errors: InvalidArgument for an empty framebuffer or another format,
+    /// OutOfRange when the pixels do not fit one readback.
     [[nodiscard]] Expected<std::vector<glm::vec4>> readLinearPixels() const;
 
     [[nodiscard]] bool valid() const noexcept { return m_framebuffer.valid(); }
@@ -160,8 +170,7 @@ public:
     [[nodiscard]] ColorFormat colorFormat() const noexcept { return m_desc.colorFormat; }
     /// The format of color attachment `attachment`.
     [[nodiscard]] ColorFormat colorFormat(std::size_t attachment) const noexcept {
-        static_cast<void>(attachment);
-        return m_desc.colorFormat;
+        return colorFormatOf(m_desc, attachment);
     }
     [[nodiscard]] std::size_t colorAttachments() const noexcept { return m_desc.colorAttachments; }
     /// True for a framebuffer over the storage of others (createAlias).

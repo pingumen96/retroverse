@@ -145,6 +145,11 @@ void PostProcessor::apply(GLDevice& device, const PostShaders& shaders, const Po
         const bool antialiasing = settings.antialiasing && usable(shaders.antialiasing);
         {
             const ScopedDebugGroup postGroup(device, "PostPass");
+            if (antialiasing) {
+                // The tonemapped image takes the emitted light's storage (viewTargetPlan()): the pass reads each
+                // texel of the emission only where it writes the same texel, which the barrier makes defined.
+                glTextureBarrier();
+            }
             bindTarget(state, antialiasing ? targets.tonemapped() : output);
             state.setFramebufferSrgb(true);
             targets.hdr().bindColorTexture(kSourceUnit);

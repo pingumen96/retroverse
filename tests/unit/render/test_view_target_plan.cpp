@@ -98,15 +98,15 @@ TEST_CASE("render/view_target_plan: the views of one storage share a texel size"
 }
 
 TEST_CASE("render/view_target_plan: the targets' bytes at 720p and 1080p", "[render][view_targets]") {
-    // 1080p: the HDR target (radiance RGBA16F, emission RGBA16F, depth/stencil), the occlusion at half and full
-    // resolution, six RGBA16F bloom levels, the tonemapped image and the output (no depth of its own).
+    // 1080p: the HDR target (radiance RGBA16F, emission R11F_G11F_B10F, depth/stencil), the occlusion at half and full
+    // resolution, five R11F_G11F_B10F bloom levels (the first takes the half-resolution occlusion's storage) and the
+    // output (no depth of its own); the tonemapped image takes the emission's storage.
     constexpr std::size_t kPixels1080 = 1920u * 1080u;
-    constexpr std::size_t kBloom1080 =
-        (960u * 540u + 480u * 270u + 240u * 135u + 120u * 68u + 60u * 34u + 30u * 17u) * 8u;
+    constexpr std::size_t kBloom1080 = (480u * 270u + 240u * 135u + 120u * 68u + 60u * 34u + 30u * 17u) * 4u;
     CHECK(rv::gl::viewTargetsBytes(glm::ivec2(1920, 1080)) ==
-          kPixels1080 * (8 + 8 + 4) + 960u * 540u * 4u + kPixels1080 + kBloom1080 + kPixels1080 * 4 * 2);
-    CHECK(rv::gl::viewTargetsBytes(glm::ivec2(1920, 1080)) == 67736880u); // 64.6 MiB (72.5 before the margin)
-    CHECK(rv::gl::viewTargetsBytes(glm::ivec2(1280, 720)) == 30105280u);  // 28.7 MiB (32.2)
+          kPixels1080 * (8 + 4 + 4) + 960u * 540u * 4u + kPixels1080 + kBloom1080 + kPixels1080 * 4);
+    CHECK(rv::gl::viewTargetsBytes(glm::ivec2(1920, 1080)) == 46310040u); // 44.2 MiB (72.5 before the margin)
+    CHECK(rv::gl::viewTargetsBytes(glm::ivec2(1280, 720)) == 20582240u);  // 19.6 MiB (32.2)
     // Every image with storage of its own counts, at its size.
     std::size_t bytes = 0;
     for (const ViewImagePlan& image : rv::gl::viewTargetPlan()) {

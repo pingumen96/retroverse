@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "6338e017ef266e2824e93592772b35f85302b40d",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g16_handheld_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "c3f8dc6ef3d37d055b4b6588557a678c7ed2d0b470e452b1b1a13665588e619a",
+    "sha256": "9c5435a61c54bd3603d46fe392d81a2dabeca22d04b4f267835db54e493da094",
     "width": 1920
   },
   "inputs": {

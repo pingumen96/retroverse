@@ -19,32 +19,34 @@ constexpr ViewImagePlan image(ViewImage which, std::string_view name, GpuFormat 
 }
 
 constexpr ViewImagePlan bloomLevel(ViewImage which, std::string_view name, std::size_t level) {
-    return image(which, name, GpuFormat::Rgba16F, ViewImageScale::BloomLevel, ViewPass::Bloom, ViewPass::Bloom,
+    return image(which, name, GpuFormat::R11fG11fB10f, ViewImageScale::BloomLevel, ViewPass::Bloom, ViewPass::Bloom,
                  level);
 }
 
 // The memory margin (docs/i5/memory-margin.md): the output has no depth buffer of its own (the debug lines test and
-// write the scene's, the last pass that reads it).
+// write the scene's, the last pass that reads it), the emitted light and the bloom are R11F_G11F_B10F, the tonemapped
+// image takes the emitted light's storage (the post pass reads it texel by texel where it writes) and the first bloom
+// level the half-resolution occlusion's (over before the bloom starts).
 constexpr std::array<ViewImagePlan, kViewImageCount> kPlan{
     image(ViewImage::SceneDepth, "hdr.depthStencil", GpuFormat::Depth24Stencil8, ViewImageScale::Full,
           ViewPass::DepthPrePass, ViewPass::DebugLines),
     image(ViewImage::Radiance, "hdr.color", GpuFormat::Rgba16F, ViewImageScale::Full, ViewPass::DepthPrePass,
           ViewPass::PostPass),
-    image(ViewImage::Emission, "hdr.color1", GpuFormat::Rgba16F, ViewImageScale::Full, ViewPass::DepthPrePass,
+    image(ViewImage::Emission, "hdr.color1", GpuFormat::R11fG11fB10f, ViewImageScale::Full, ViewPass::DepthPrePass,
           ViewPass::PostPass),
     image(ViewImage::AmbientOcclusionRaw, "ssaoRaw", GpuFormat::Rg16F, ViewImageScale::Half,
           ViewPass::AmbientOcclusion, ViewPass::AmbientOcclusionBlur),
     image(ViewImage::AmbientOcclusion, "ssao", GpuFormat::R8, ViewImageScale::Full, ViewPass::AmbientOcclusion,
           ViewPass::LitPass),
-    image(ViewImage::BloomLevel0, "bloom0", GpuFormat::Rgba16F, ViewImageScale::BloomLevel, ViewPass::Bloom,
-          ViewPass::PostPass),
+    image(ViewImage::BloomLevel0, "bloom0", GpuFormat::R11fG11fB10f, ViewImageScale::BloomLevel, ViewPass::Bloom,
+          ViewPass::PostPass, 0, ViewImage::AmbientOcclusionRaw),
     bloomLevel(ViewImage::BloomLevel1, "bloom1", 1),
     bloomLevel(ViewImage::BloomLevel2, "bloom2", 2),
     bloomLevel(ViewImage::BloomLevel3, "bloom3", 3),
     bloomLevel(ViewImage::BloomLevel4, "bloom4", 4),
     bloomLevel(ViewImage::BloomLevel5, "bloom5", 5),
     image(ViewImage::Tonemapped, "tonemapped", GpuFormat::Srgb8Alpha8, ViewImageScale::Full, ViewPass::PostPass,
-          ViewPass::AntiAliasing),
+          ViewPass::AntiAliasing, 0, ViewImage::Emission, true),
     // The post pass writes it when no anti-aliasing follows.
     image(ViewImage::Output, "output", GpuFormat::Srgb8Alpha8, ViewImageScale::Full, ViewPass::PostPass,
           ViewPass::Present),

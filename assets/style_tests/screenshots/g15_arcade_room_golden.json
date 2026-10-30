@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "15a8fe87ad58a1461a49c80af802b01bc422df8b",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g15_arcade_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "f65cb8fd683eb4a418ce638bfa398a08a74777c0cb1d44022d17eb56d4703d3b",
+    "sha256": "f22a9c786aa7159b5a9b0097d6dfdaee31abd4284513bc91c486ee7c14ec12ac",
     "width": 1920
   },
   "inputs": {
