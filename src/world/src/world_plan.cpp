@@ -1,6 +1,7 @@
 #include <rv/world/world_plan.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <tuple>
 
 namespace rv::world {
@@ -22,20 +23,34 @@ std::optional<GeneratorVersion> GeneratorVersion::parse(std::string_view text) n
     return GeneratorVersion{*major, *minor};
 }
 
-void sortPlan(WorldPlan& plan) {
-    std::sort(plan.floors.begin(), plan.floors.end(),
-              [](const Floor& a, const Floor& b) { return std::tie(a.order, a.id) < std::tie(b.order, b.id); });
-    std::sort(plan.rooms.begin(), plan.rooms.end(), [](const Room& a, const Room& b) { return a.id < b.id; });
-    for (Fixture& fixture : plan.fixtures) {
-        std::sort(fixture.levels.begin(), fixture.levels.end());
+namespace {
+
+/// std::sort of a list, unless it is in strictly ascending order already (m3/preview-time: a plan read back is sorted,
+/// and a regeneration sorts its whole world): such a list has one sorted order, the one it is in, so the result is
+/// the sort's whatever the list holds; a list with two elements in one place is sorted as before.
+template <class Range, class Less = std::less<>>
+void sortList(Range& range, Less less = {}) {
+    const auto unordered =
+        std::adjacent_find(range.begin(), range.end(), [&](const auto& a, const auto& b) { return !less(a, b); });
+    if (unordered != range.end()) {
+        std::sort(range.begin(), range.end(), less);
     }
-    std::sort(plan.fixtures.begin(), plan.fixtures.end(),
-              [](const Fixture& a, const Fixture& b) { return a.id < b.id; });
-    std::sort(plan.placements.begin(), plan.placements.end());
-    std::sort(plan.dressing.begin(), plan.dressing.end());
-    std::sort(plan.lights.begin(), plan.lights.end(),
-              [](const PlanLight& a, const PlanLight& b) { return a.id < b.id; });
-    std::sort(plan.unplaced.begin(), plan.unplaced.end());
+}
+
+} // namespace
+
+void sortPlan(WorldPlan& plan) {
+    sortList(plan.floors,
+             [](const Floor& a, const Floor& b) { return std::tie(a.order, a.id) < std::tie(b.order, b.id); });
+    sortList(plan.rooms, [](const Room& a, const Room& b) { return a.id < b.id; });
+    for (Fixture& fixture : plan.fixtures) {
+        sortList(fixture.levels);
+    }
+    sortList(plan.fixtures, [](const Fixture& a, const Fixture& b) { return a.id < b.id; });
+    sortList(plan.placements);
+    sortList(plan.dressing);
+    sortList(plan.lights, [](const PlanLight& a, const PlanLight& b) { return a.id < b.id; });
+    sortList(plan.unplaced);
 }
 
 bool isSha256Hex(std::string_view text) noexcept {
