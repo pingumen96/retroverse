@@ -39,6 +39,36 @@ namespace {
            !isSeparator(path[2]);
 }
 
+/// A reserved DOS device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9, and COM and LPT with a superscript ¹, ² or ³:
+/// Microsoft's list of names never to give a file, COM0 and LPT0 included),
+/// ignoring ASCII case: Windows opens the device for an element whose stem (up to its first dot) is one, whatever its
+/// extension ("nul.pdf" is NUL). Trailing spaces of the stem are refused elsewhere (an element never ends with one, but
+/// "CON .pdf" is CON too): they are dropped here.
+[[nodiscard]] bool isReservedDeviceName(std::string_view element) noexcept {
+    std::string_view stem = element.substr(0, std::min(element.find('.'), element.size()));
+    while (!stem.empty() && stem.back() == ' ') {
+        stem.remove_suffix(1);
+    }
+    for (const std::string_view name : {"CON", "PRN", "AUX", "NUL"}) {
+        if (equalsIgnoringAsciiCase(stem, name)) {
+            return true;
+        }
+    }
+    if (stem.size() < 4) {
+        return false;
+    }
+    const std::string_view prefix = stem.substr(0, 3);
+    if (!equalsIgnoringAsciiCase(prefix, "COM") && !equalsIgnoringAsciiCase(prefix, "LPT")) {
+        return false;
+    }
+    const std::string_view digit = stem.substr(3);
+    if (digit.size() == 1) {
+        return digit[0] >= '0' && digit[0] <= '9';
+    }
+    // U+00B9, U+00B2, U+00B3 in UTF-8.
+    return digit == "\xC2\xB9" || digit == "\xC2\xB2" || digit == "\xC2\xB3";
+}
+
 } // namespace
 
 Expected<std::string> manualArgument(const std::filesystem::path& manual) {
@@ -68,7 +98,12 @@ Expected<std::string> manualArgument(const std::filesystem::path& manual) {
         return unsupported(
             fmt::format("the manual's path is longer than the {} characters explorer.exe reads", kMaxManualPathUnits));
     }
-    // An element Windows would change when it normalizes the plain path (a trailing dot or space) names another file.
+    // A colon past the drive's names an alternate data stream (or a device: "COM1:").
+    if (path.find(':', isDrivePath(path) ? 2 : 0) != std::string::npos) {
+        return unsupported("the manual's path holds a colon past its drive");
+    }
+    // An element Windows would change when it normalizes the plain path (a trailing dot or space) names another file;
+    // one whose stem is a reserved device name names a device.
     std::size_t start = isUncPath(path) ? 2 : 3;
     while (start < path.size()) {
         std::size_t end = start;
@@ -82,12 +117,16 @@ Expected<std::string> manualArgument(const std::filesystem::path& manual) {
         if (last == '.' || last == ' ') {
             return unsupported("an element of the manual's path ends with a dot or a space");
         }
+        if (isReservedDeviceName(std::string_view(path).substr(start, end - start))) {
+            return unsupported("an element of the manual's path is a reserved device name");
+        }
         start = end + 1;
     }
-    // explorer.exe splits an unquoted argument at its commas (its own switches' syntax); appendQuotedArgument() quotes
-    // an argument that holds a space or a tab.
-    if (path.find(',') != std::string::npos && path.find_first_of(" \t") == std::string::npos) {
-        return unsupported("the manual's path holds a comma and no space, which explorer.exe would split");
+    // explorer.exe splits an argument at its commas (its own switches' syntax). The plan always quotes the argument
+    // (quoteEveryArgument), but whether explorer.exe keeps a quoted comma cannot be proved without opening a window: a
+    // comma is refused anyway.
+    if (path.find(',') != std::string::npos) {
+        return unsupported("the manual's path holds a comma, which explorer.exe may split");
     }
     return path;
 }
@@ -107,6 +146,8 @@ Expected<LaunchRequest> planManualOpen(const std::filesystem::path& manual, cons
     request.arguments.push_back(std::move(*argument));
     request.workingDirectory = windows;
     request.waitStrategy = WaitStrategy::DirectProcess;
+    // In double quotes whatever it holds: explorer.exe reads an unquoted argument its own way.
+    request.quoteEveryArgument = true;
     // It hands the file to the shell and exits at once (with exit code 1 as often as 0): no grace, no window to wait for.
     request.timeouts.startupGrace = std::chrono::milliseconds{0};
     request.timeouts.windowTimeout = std::chrono::milliseconds{0};

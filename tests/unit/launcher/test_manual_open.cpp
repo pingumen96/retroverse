@@ -76,7 +76,10 @@ TEST_CASE("launcher/manual_open: explorer.exe with the manual as its one argumen
              "C:\\Media\\snes\\manuals\\Amber Lantern (USA).pdf",
              "C:\\Media\\snes\\manuals\\Plain.pdf",
              "C:\\Media\\snes\\manuals\\a & b | c > d ^e %PATH% !x! (World).pdf",
-             "C:\\Media\\snes\\manuals\\Legend, The - Quest (USA).PDF",
+             "C:\\Media\\snes\\manuals\\Legend - The Quest (USA).PDF",
+             "C:\\Media\\snes\\manuals\\COM10 CONSOLE AUXILIARY NULL.pdf",
+             "C:\\Media\\snes\\manuals\\CON-tra.pdf",
+             "C:\\Media\\snes\\manuals\\LPT.pdf",
              "C:\\Media\\snes\\manuals\\\xC3\xA8 un caf\xC3\xA8 \xE6\x97\xA5\xE6\x9C\xAC.pdf",
              "C:\\Media\\snes\\manuals\\end with backslash\\x.pdf",
              "C:\\Media\\snes\\manuals\\'quotes'; and $(subst) `ticks`.pdf",
@@ -94,9 +97,12 @@ TEST_CASE("launcher/manual_open: explorer.exe with the manual as its one argumen
         CHECK(request->timeouts.windowTimeout.count() == 0);
         CHECK(request->environment.empty());
         CHECK(request->label == "the manual of g0000000000000001");
-        // The command line gives it back as one argument after the program, as explorer.exe's own parser reads it.
+        // The command line gives it back as one argument after the program, as explorer.exe's own parser reads it,
+        // always in double quotes (a name without a space too).
+        CHECK(request->quoteEveryArgument);
         const auto commandLine = rv::launcher::commandLineOf(*request);
         REQUIRE(commandLine.has_value());
+        CHECK(commandLine->ends_with(" \"" + std::string(manual) + "\""));
         const std::vector<std::string> argv = commandLineToArgv(*commandLine);
         REQUIRE(argv.size() == 2);
         CHECK(path(argv[0]) == windows / "explorer.exe");
@@ -129,6 +135,26 @@ TEST_CASE("launcher/manual_open: what explorer.exe would misread is refused", "[
              "C:\\Media\\trailing space \\x.pdf",
              "C:\\Media\\\\double.pdf",
              "C:\\Media\\a,b.pdf",
+             "C:\\Media\\snes\\manuals\\Legend, The - Quest (USA).pdf",
+             "\\\\server\\share,x\\B.pdf",
+             // Reserved device names, whatever their case and extension (I5 step 8's review).
+             "C:\\Media\\CON.pdf",
+             "C:\\Media\\nul.pdf",
+             "C:\\Media\\Prn.manual.pdf",
+             "C:\\Media\\aux .pdf",
+             "C:\\Media\\com1.pdf",
+             "C:\\Media\\COM9.pdf",
+             "C:\\Media\\LPT0.pdf",
+             "C:\\Media\\lpt5.pdf",
+             "C:\\Media\\COM\xC2\xB9.pdf",
+             "C:\\Media\\lpt\xC2\xB2.pdf",
+             "C:\\Media\\LPT\xC2\xB3.pdf",
+             "C:\\Media\\nul\\x.pdf",
+             // A colon past the drive's: an alternate data stream, or a device.
+             "C:\\Media\\x.pdf:stream.pdf",
+             "C:\\Media\\a:b.pdf",
+             "C:\\Media\\COM1:.pdf",
+             "\\\\server\\share\\a:b.pdf",
          }) {
         INFO(manual);
         const auto argument = manualArgument(path(manual));

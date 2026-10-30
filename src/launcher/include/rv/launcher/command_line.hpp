@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,16 +31,28 @@ using core::isValidUtf8;
 /// own parsing (`%`, `^`, `&`, `|`, `<`, `>`) differs.
 void appendQuotedArgument(std::string& commandLine, std::string_view argument);
 
+/// appendQuotedArgument()'s quoted form whatever `argument` holds (I5 step 8's review): for a program that reads its
+/// command line its own way, where an unquoted argument splits at other characters than CommandLineToArgvW's
+/// (explorer.exe at its commas). CommandLineToArgvW gives it back verbatim just the same.
+void appendAlwaysQuotedArgument(std::string& commandLine, std::string_view argument);
+
 /// appendQuotedArgument() into a new string.
 [[nodiscard]] std::string quoteWindowsArgument(std::string_view argument);
 
-/// The command line of a process: `program` (argv[0]) followed by every argument quoted by appendQuotedArgument(),
-/// separated by one space. The program name is always put in double quotes, as CommandLineToArgvW reads argv[0] up to
-/// the next double quote without escape sequences (so a program path ending in a backslash stays intact). Inverse of
-/// CommandLineToArgvW for every list of arguments it accepts (tested against it in tests/unit/launcher).
-/// Errors (ValidationFailed, context naming the offending item): an empty program name, a program name with a double
-/// quote (no Windows path holds one), NUL characters or malformed UTF-8 anywhere, a result longer than
-/// kMaxCommandLineUnits UTF-16 code units.
-[[nodiscard]] Expected<std::string> buildCommandLine(std::string_view program, std::span<const std::string> arguments);
+/// How buildCommandLine() quotes the arguments.
+enum class ArgumentQuoting : std::uint8_t {
+    WhenNeeded, ///< appendQuotedArgument()
+    Always,     ///< appendAlwaysQuotedArgument()
+};
+
+/// The command line of a process: `program` (argv[0]) followed by every argument quoted by appendQuotedArgument() (or
+/// appendAlwaysQuotedArgument(): `quoting`), separated by one space. The program name is always put in double quotes, as
+/// CommandLineToArgvW reads argv[0] up to the next double quote without escape sequences (so a program path ending in a
+/// backslash stays intact). Inverse of CommandLineToArgvW for every list of arguments it accepts (tested against it in
+/// tests/unit/launcher). Errors (ValidationFailed, context naming the offending item): an empty program name, a program
+/// name with a double quote (no Windows path holds one), NUL characters or malformed UTF-8 anywhere, a result longer
+/// than kMaxCommandLineUnits UTF-16 code units.
+[[nodiscard]] Expected<std::string> buildCommandLine(std::string_view program, std::span<const std::string> arguments,
+                                                     ArgumentQuoting quoting = ArgumentQuoting::WhenNeeded);
 
 } // namespace rv::launcher

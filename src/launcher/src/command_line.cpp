@@ -32,6 +32,10 @@ void appendQuotedArgument(std::string& commandLine, std::string_view argument) {
         commandLine.append(argument);
         return;
     }
+    appendAlwaysQuotedArgument(commandLine, argument);
+}
+
+void appendAlwaysQuotedArgument(std::string& commandLine, std::string_view argument) {
     commandLine.push_back('"');
     std::size_t i = 0;
     while (true) {
@@ -64,7 +68,8 @@ std::string quoteWindowsArgument(std::string_view argument) {
     return quoted;
 }
 
-Expected<std::string> buildCommandLine(std::string_view program, std::span<const std::string> arguments) {
+Expected<std::string> buildCommandLine(std::string_view program, std::span<const std::string> arguments,
+                                       ArgumentQuoting quoting) {
     if (program.empty()) {
         return makeError(ErrorCode::ValidationFailed, "the program name is empty", "argv[0]");
     }
@@ -96,7 +101,11 @@ Expected<std::string> buildCommandLine(std::string_view program, std::span<const
     commandLine.push_back('"');
     for (const std::string& argument : arguments) {
         commandLine.push_back(' ');
-        appendQuotedArgument(commandLine, argument);
+        if (quoting == ArgumentQuoting::Always) {
+            appendAlwaysQuotedArgument(commandLine, argument);
+        } else {
+            appendQuotedArgument(commandLine, argument);
+        }
     }
     if (const std::size_t units = utf16Length(commandLine); units > kMaxCommandLineUnits) {
         return makeError(ErrorCode::ValidationFailed,

@@ -61,6 +61,9 @@ struct LaunchRequest {
     /// window, as when ES-DE starts it, or without one when true (CREATE_NO_WINDOW, what ES-DE's %HIDEWINDOW% does).
     /// No effect on windowed (GUI) programs.
     bool hideConsoleWindow = false;
+    /// Every argument in double quotes, whatever it holds (ArgumentQuoting::Always): for a program that splits an
+    /// unquoted argument its own way (a manual's explorer.exe, I5 step 8's review).
+    bool quoteEveryArgument = false;
     /// Names the launch in logs and reports ("Mole Mania with RetroArch (gambatte)").
     std::string label;
 };
@@ -79,7 +82,8 @@ struct LaunchRequest {
 /// Paths must be representable in UTF-8.
 [[nodiscard]] Status validateLaunchRequest(const LaunchRequest& request);
 
-/// The command line of a request: buildCommandLine(executable, arguments), in UTF-8.
+/// The command line of a request: buildCommandLine(executable, arguments), every argument quoted when
+/// quoteEveryArgument, in UTF-8.
 [[nodiscard]] Expected<std::string> commandLineOf(const LaunchRequest& request);
 
 /// The directory a request runs in: the given one, else the executable's directory.
