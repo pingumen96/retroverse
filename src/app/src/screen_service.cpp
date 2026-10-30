@@ -1,5 +1,4 @@
 #include "screen_service.hpp"
-#include "screen_verdicts.hpp"
 
 #include <rv/app/audio_policy.hpp>
 #include <rv/app/cabinet_screens.hpp>
@@ -7,6 +6,7 @@
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/screen_aspect.hpp>
 #include <rv/app/screen_room.hpp>
+#include <rv/app/screen_verdicts.hpp>
 #include <rv/audio/audio_engine.hpp>
 #include <rv/audio/audio_ring.hpp>
 #include <rv/assets/collection_labels.hpp>
@@ -67,6 +67,10 @@ constexpr double kAudioLeadSeconds = 0.04;
 constexpr std::chrono::seconds kFirstFrameWait{2};
 /// An inspected cabinet's screen is held in the hand: this far from the eye (its sound's distance, its rank's).
 constexpr double kInHandMeters = 0.5;
+/// I5 step 8: the media viewer's screen (the scheduler's screen and owner, the sound's), and its clips' keys' prefix
+/// (never one of a world screen's: the viewer decodes at its own rows into its own texture).
+constexpr std::string_view kViewerScreenId = "media-viewer";
+constexpr std::string_view kViewerClipPrefix = "viewer:";
 
 /// A decoder's sound into a slot's ring (rv_media knows no mixer: ADR-0016 §9).
 class RingSink final : public media::AudioSink {
@@ -352,6 +356,9 @@ struct ScreenService::Impl {
         std::string heldFrameGame;
         glm::vec4 heldFrameRect = kWholeScreen;
         bool showingHeldFrame = false;
+
+        // I5 step 8: the media viewer's clip (setViewer()): no material, its frames in the viewer's own texture.
+        bool viewer = false;
     };
 
     /// One decoder slot: its decoder (open, or stopped with its thread still ending) and its texture.
@@ -394,6 +401,9 @@ struct ScreenService::Impl {
         ScreenMedia media;
         bool fromStart = false;
         bool passChecked = false;
+
+        // I5 step 8: open for the media viewer's clip (its frames go to the viewer's texture, not the slot's).
+        bool viewer = false;
     };
 
     Impl(std::vector<ScreenBinding> bindings, gl::MaterialRegistry& registry, std::vector<ScreenGame> games,
@@ -480,6 +490,22 @@ struct ScreenService::Impl {
     /// Frames the rings of earlier clips could not keep.
     std::uint64_t pastOverflowFrames = 0;
 
+    // I5 step 8: the media viewer. It is open (the world's screens out of view under it); its clip's screen (none
+    // without a clip asked, or for one a failure verdict leaves out) and the clip as asked; the texture its slot's frames
+    // go to and the GL_RGBA8 view of it the viewer shows (made again when the texture is); its clip's failure (a
+    // verdict's name, the decoder's) and whether a verdict gave it; what viewerVideo() gives.
+    bool viewerOpen = false;
+    std::unique_ptr<ScreenState> viewerScreen;
+    std::optional<ViewerClip> viewerClip;
+    gl::VideoTexture viewerTexture;
+    gl::TextureObject viewerView;
+    GLuint viewerViewSource = 0;
+    std::string viewerFailure;
+    bool viewerFromVerdict = false;
+    /// The verdicts look at the viewer's clip's file (a failure verdict met for the first time): not opened meanwhile.
+    bool viewerLooking = false;
+    ViewerVideo viewerShown;
+
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
     VideoRecord counters;
     std::optional<std::string> endPhase;
@@ -490,21 +516,25 @@ struct ScreenService::Impl {
     /// "Hero CRT" or "Screen '<id>'", for the log.
     [[nodiscard]] std::string nameOf(const ScreenState& screen) const {
         return isHero(screen)    ? std::string("Hero CRT")
+               : screen.viewer  ? std::string("Media viewer")
                : screen.cabinet ? fmt::format("Cabinet '{}'", screen.binding.objectId)
                                 : fmt::format("Screen '{}'", screen.binding.objectId);
     }
 
-    /// The screens bound, then the cabinets (I5 step 4).
+    /// The screens bound, then the cabinets (I5 step 4), then the media viewer's clip (I5 step 8).
     [[nodiscard]] const std::vector<ScreenState*>& allScreens() const noexcept { return active; }
     /// Lists the screens bound and the cabinets again (after either changed).
     void refreshActive() {
         active.clear();
-        active.reserve(screens.size() + cabinets.size());
+        active.reserve(screens.size() + cabinets.size() + 1);
         for (const std::unique_ptr<ScreenState>& screen : screens) {
             active.push_back(screen.get());
         }
         for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
             active.push_back(cabinet.get());
+        }
+        if (viewerScreen) {
+            active.push_back(viewerScreen.get()); // I5 step 8: last
         }
     }
 
@@ -617,7 +647,9 @@ struct ScreenService::Impl {
             return;
         }
         // A clip stopped while still asked for opens again where it was.
-        if (reason == "out-of-view" || reason == "minimized" || reason == "needed" || reason == "budget") {
+        // I5 step 8: the world's clips stopped under the media viewer too (ADR-0016 §10).
+        if (reason == "out-of-view" || reason == "minimized" || reason == "viewer" || reason == "needed" ||
+            reason == "budget") {
             if (const std::optional<double> position = clipPosition(slot)) {
                 resumeAt[slot.clip] = *position;
             }
@@ -645,7 +677,7 @@ struct ScreenService::Impl {
     /// with another clip.
     void keepFrames(std::size_t index) {
         const Slot& slot = slots[index];
-        if (!slot.texture.valid() || !slot.frameShown) {
+        if (slot.viewer || !slot.texture.valid() || !slot.frameShown) {
             return;
         }
         for (const std::unique_ptr<ScreenState>& screen : screens) {
@@ -693,11 +725,14 @@ struct ScreenService::Impl {
             return;
         }
         ScreenState& first = *on.front();
+        // I5 step 8: the viewer's clip at viewerMaxRows with two decoders, the world's rows with one (ADR-0016 §2).
+        const bool forViewer = first.viewer;
         media::DecoderSettings settings;
-        settings.maxHeight = options.video.maxRows;
+        settings.maxHeight = forViewer && scheduler.settings().maxDecoders >= 2 ? options.video.viewerMaxRows
+                                                                                : options.video.maxRows;
         settings.loop = true;
         settings.startPaused = options.freezePtsSeconds.has_value();
-        settings.name = fmt::format("screen-{}", index);
+        settings.name = forViewer ? std::string("viewer") : fmt::format("screen-{}", index);
         std::shared_ptr<audio::AudioRing> ring;
         if (slot.source) {
             // The clip's sound into a fresh ring; decoded from the start when its screen is the one to be heard.
@@ -706,14 +741,23 @@ struct ScreenService::Impl {
             settings.audioSampleRate = options.audio->mixer().settings().sampleRate;
             settings.audioEnabled = clip == intendedAudibleClip && !options.freezePtsSeconds;
         }
+        const int rows = settings.maxHeight;
         auto decoder = media::VideoDecoder::start(first.policy.targetMedia().video, std::move(settings));
         if (!decoder) {
             for (ScreenState* screen : on) {
                 addFallback(*screen, ScreenPicture::Video, std::string(toString(decoder.error().code)));
                 screen->policy.videoFailed();
+                if (screen->viewer) {
+                    viewerFailed(std::string(toString(decoder.error().code)));
+                }
             }
             scheduler.openFailed(index);
             return;
+        }
+        slot.viewer = forViewer;
+        if (forViewer) {
+            ++counters.viewer.decodersOpened;
+            counters.viewer.rows = static_cast<std::uint64_t>(rows);
         }
         g_liveDecoders.fetch_add(1, std::memory_order_relaxed);
         ++counters.decodersStarted;
@@ -788,8 +832,11 @@ struct ScreenService::Impl {
         for (const SlotCommand& command : commands) {
             Slot& slot = slots[command.slot];
             // While the window is minimized every screen is out of view: its pauses and stops are the window's.
-            const std::string reason =
-                minimized && command.reason == "out-of-view" ? std::string("minimized") : command.reason;
+            // I5 step 8: while the media viewer is open the world's screens are out of view under it.
+            const std::string reason = minimized && command.reason == "out-of-view" ? std::string("minimized")
+                                       : viewerOpen && !slot.viewer && command.reason == "out-of-view"
+                                           ? std::string("viewer")
+                                           : command.reason;
             switch (command.action) {
             case SlotAction::Stop:
                 stopSlot(command.slot, reason);
@@ -871,20 +918,23 @@ struct ScreenService::Impl {
         Slot& slot = slots[index];
         const media::VideoFrame& frame = *slot.pending;
         const glm::ivec2 size(frame.width(), frame.height());
+        // I5 step 8: the viewer's clip into the viewer's own texture (the slot's keeps the world's last frame).
+        gl::VideoTexture& texture = slot.viewer ? viewerTexture : slot.texture;
         // The texture and its ring are made once, outside the section: it times the uploads.
-        if (!slot.texture.valid()) {
-            auto created = gl::VideoTexture::create(size, fmt::format("Screen.Video{}", index));
+        if (!texture.valid()) {
+            auto created = gl::VideoTexture::create(
+                size, slot.viewer ? std::string("Viewer.Video") : fmt::format("Screen.Video{}", index));
             if (!created) {
                 spdlog::error("Video slot {}: no video texture: {}", index, created.error().toString());
                 slot.textureFailed = true;
                 return false;
             }
-            slot.texture = std::move(*created);
+            texture = std::move(*created);
         }
         Expected<gl::VideoUpload> uploaded = gl::VideoUpload::RingBusy;
         {
             const core::CpuSectionScope timing(core::cpu_section::kVideoUpload);
-            uploaded = slot.texture.upload(frame.bytes(), size, frame.strideBytes());
+            uploaded = texture.upload(frame.bytes(), size, frame.strideBytes());
         }
         if (!uploaded) {
             spdlog::error("Video slot {}: a video frame was not uploaded: {}", index, uploaded.error().toString());
@@ -902,6 +952,12 @@ struct ScreenService::Impl {
         slot.pendingSince.reset();
         ++counters.framesUploaded;
         ++slot.frames;
+        if (slot.viewer) {
+            ++counters.viewer.framesUploaded;
+            counters.viewer.maxGpuBytes = std::max<std::uint64_t>(counters.viewer.maxGpuBytes, texture.gpuBytes());
+        } else if (viewerOpen) {
+            ++counters.viewer.worldFramesWhileOpen;
+        }
         if (const std::optional<media::FrameTiming>& timing = slot.playback->clock().current()) {
             if (!slot.firstPts) {
                 slot.firstPts = timing->ptsSeconds;
@@ -1043,6 +1099,9 @@ struct ScreenService::Impl {
                 screen->policy.videoFailed();
                 if (screen->cabinet) {
                     failedCabinetGames.insert(screen->policy.targetId()); // its cover for the rest of the run
+                }
+                if (screen->viewer) {
+                    viewerFailed(reason);
                 }
             }
             if (!slot.textureFailed) {
@@ -1408,9 +1467,16 @@ struct ScreenService::Impl {
         if (phase == ScreenPhase::Quit) {
             return;
         }
-        if (screens.empty()) {
+        if (screens.empty() && !viewerScreen) {
             // Unbound (a floor being committed again): the previous clips' threads end on their own meanwhile.
+            // I5 step 8's review: a service made unbound for the media viewer (the lobby, a hall, the quick catalog)
+            // still holds the viewer's clip once the viewer lets it go: no screen asks for it, so the scheduler stops it
+            // ("unwanted": opened again from its beginning) and its sound fades out (stopSlot).
+            if (scheduler.openSlots() > 0) {
+                schedule();
+            }
             reapDrained();
+            refreshViewer();
             counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
             return;
         }
@@ -1423,6 +1489,8 @@ struct ScreenService::Impl {
             }
             // A cabinet whose clip is now left out (or back) lets it go; the others play on.
             rescreenCabinets(screenedGames, false);
+            // I5 step 8: the viewer's clip too (a failure verdict read after it was asked for).
+            screenViewer();
         }
         const scene::Frustum frustum = camera.frustum();
         // The quick catalog's selection, else the world's (app::screenSelection's order).
@@ -1431,7 +1499,8 @@ struct ScreenService::Impl {
             // I5 step 4: the arcade's hero cabinet never follows the world's selection, the focused cabinet playing its
             // clip itself (ADR-0016 §6); it follows the quick catalog's.
             screen->policy.hover(screen->binding.followsWorldSelection ? selected : selection.catalog, now);
-            screen->visible = !minimizedWindow && frustum.intersects(screen->binding.bounds);
+            // I5 step 8: out of view under the media viewer.
+            screen->visible = !minimizedWindow && !viewerOpen && frustum.intersects(screen->binding.bounds);
             screen->policy.setVisible(screen->visible);
             screen->policy.tick(now);
             followTarget(*screen);
@@ -1450,7 +1519,8 @@ struct ScreenService::Impl {
         // I5 step 4: the cabinets asking for their clips, in view (one in the hand always) and at their distance.
         for (const std::unique_ptr<ScreenState>& cabinet : cabinets) {
             cabinet->policy.hover(std::nullopt, now);
-            cabinet->visible = !minimizedWindow && (cabinet->inHand || frustum.intersects(cabinet->binding.bounds));
+            cabinet->visible = !minimizedWindow && !viewerOpen &&
+                               (cabinet->inHand || frustum.intersects(cabinet->binding.bounds));
             cabinet->policy.setVisible(cabinet->visible);
             cabinet->policy.tick(now);
             const glm::vec3 center = cabinet->binding.bounds.center();
@@ -1461,6 +1531,25 @@ struct ScreenService::Impl {
                                                            forward.z, center.x, center.z);
             cabinet->clip =
                 cabinet->policy.wantsDecoder() ? clipKey(cabinet->policy.targetMedia().video) : std::string();
+        }
+        // I5 step 8: the media viewer's clip, at the eye, in view unless the window is minimized; not asked for while
+        // the verdicts look at its file (I5 step 8's review).
+        if (viewerLooking) {
+            screenViewer();
+        }
+        if (viewerScreen) {
+            ScreenState& viewer = *viewerScreen;
+            viewer.policy.hover(std::nullopt, now);
+            viewer.visible = !minimizedWindow;
+            viewer.policy.setVisible(viewer.visible);
+            viewer.policy.tick(now);
+            viewer.screenClass = ScreenClass::Direct;
+            viewer.distance = 0.0;
+            viewer.azimuth = 0.0;
+            viewer.clip = viewer.policy.wantsDecoder() && !viewerLooking ? viewerKey() : std::string();
+        }
+        if (viewerOpen) {
+            ++counters.viewer.openFrames;
         }
         // The screen heard last frame, among this frame's (cabinets come and go).
         audibleScreen.reset();
@@ -1475,6 +1564,7 @@ struct ScreenService::Impl {
             intendedAudibleClip = active[*intended]->clip;
         }
         schedule();
+        holdViewer();
         pumpSlots();
         checkFailures();
         for (const std::unique_ptr<ScreenState>& screen : screens) {
@@ -1483,6 +1573,10 @@ struct ScreenService::Impl {
             applyPicture(*screen);
         }
         applyCabinets();
+        if (viewerScreen) {
+            followSlot(*viewerScreen);
+        }
+        refreshViewer();
         updateAudio(eyeInRoom);
         counters.maxDecoderThreads = std::max(counters.maxDecoderThreads, decoderThreads());
     }
@@ -1505,8 +1599,19 @@ struct ScreenService::Impl {
     /// decisions); otherwise among those playing one. None while the eye is outside the bound room, without an
     /// engine, with video.json's audio mode off, or in a frozen run.
     [[nodiscard]] std::optional<std::size_t> chooseAudibleScreen(bool eyeInRoom, bool wished) const {
-        if (options.audio == nullptr || !eyeInRoom || options.freezePtsSeconds ||
-            options.video.audio.mode == AudioMode::Off) {
+        if (options.audio == nullptr || options.freezePtsSeconds || options.video.audio.mode == AudioMode::Off) {
+            return std::nullopt;
+        }
+        // I5 step 8: under the media viewer only its clip sounds, whichever room holds the eye.
+        if (viewerOpen) {
+            if (!viewerScreen || active.empty() || active.back() != viewerScreen.get()) {
+                return std::nullopt;
+            }
+            const ScreenState& viewer = *viewerScreen;
+            const bool playing = wished ? !viewer.clip.empty() : playingSlot(viewer).has_value();
+            return playing && viewer.visible ? std::optional<std::size_t>(active.size() - 1) : std::nullopt;
+        }
+        if (!eyeInRoom) {
             return std::nullopt;
         }
         std::vector<AudibleCandidate> candidates;
@@ -1617,6 +1722,216 @@ struct ScreenService::Impl {
             }
             std::this_thread::sleep_for(kPollInterval);
         }
+    }
+
+    // --- the media viewer (I5 step 8, ADR-0016 §10) ------------------------------------------------------------
+
+    /// The scheduler's key of the viewer's clip: its own (its opening's), never a world screen's.
+    [[nodiscard]] std::string viewerKey() const {
+        return viewerClip ? fmt::format("{}{}:{}", kViewerClipPrefix, viewerClip->opening, clipKey(viewerClip->video))
+                          : std::string();
+    }
+
+    /// The viewer's clip cannot play (`reason`): it is let go (its slot stops at the next frame: "unwanted").
+    void viewerFailed(std::string reason) {
+        if (!viewerFailure.empty()) {
+            return;
+        }
+        viewerFailure = std::move(reason);
+        ++counters.viewer.failures;
+        spdlog::info("Media viewer: the clip of game {} cannot play ({})",
+                     viewerClip ? viewerClip->gameId : std::string(), viewerFailure);
+    }
+
+    /// The viewer's clip screened by the verdicts (I5 step 7): one a failure verdict leaves out is let go, never
+    /// opened, with the verdict's name as its reason; one whose file is being looked at waits (viewerLooking). The
+    /// verdicts answer for the clip itself (screenClip()), whether or not the world screened its game.
+    void screenViewer() {
+        viewerLooking = false;
+        if (!viewerScreen || !viewerClip) {
+            return;
+        }
+        const ScreenMedia& media = viewerScreen->policy.targetMedia();
+        if (media.video.empty()) {
+            return;
+        }
+        const ScreenVerdicts::ClipScreening screening = verdicts.screenClip(media, viewerClip->gameId);
+        if (screening.state == ScreenVerdicts::ClipScreening::State::Looking) {
+            viewerLooking = true;
+            return;
+        }
+        if (screening.state != ScreenVerdicts::ClipScreening::State::LeftOut) {
+            return;
+        }
+        viewerScreen.reset();
+        refreshActive();
+        audibleScreen.reset();
+        viewerFailure = screening.failure;
+        viewerFromVerdict = true;
+        ++counters.viewer.knownBad;
+        spdlog::info("Media viewer: the clip of game {} is known to fail ({}): never opened", viewerClip->gameId,
+                     viewerFailure);
+    }
+
+    /// The viewer's clip let go: its slot stops at the next frame (no screen asks for it), its texture goes.
+    void dropViewer() {
+        if (viewerScreen) {
+            pool.cancel(viewerScreen->stillJobs);
+        }
+        viewerScreen.reset();
+        viewerClip.reset();
+        viewerFailure.clear();
+        viewerFromVerdict = false;
+        viewerLooking = false;
+        refreshActive();
+        audibleScreen.reset();
+        releaseViewerTexture();
+    }
+
+    void releaseViewerTexture() {
+        viewerView = gl::TextureObject();
+        viewerViewSource = 0;
+        viewerTexture = gl::VideoTexture();
+        viewerShown.texture = 0;
+    }
+
+    void setViewer(const ViewerRequest& request) {
+        if (phase == ScreenPhase::Quit) {
+            return;
+        }
+        if (request.open != viewerOpen) {
+            spdlog::info("Media viewer: {}", request.open ? "open, the world's screens pause under it"
+                                                          : "closed, the world's screens play again");
+        }
+        viewerOpen = request.open;
+        const std::optional<ViewerClip>& asked = request.open ? request.clip : std::nullopt;
+        if (!asked) {
+            if (viewerClip) {
+                dropViewer();
+            }
+            return;
+        }
+        if (viewerClip && viewerClip->gameId == asked->gameId && viewerClip->video == asked->video &&
+            viewerClip->opening == asked->opening) {
+            if (viewerClip->paused != asked->paused) {
+                spdlog::info("Media viewer: the clip of game {} {}", asked->gameId,
+                             asked->paused ? "pauses" : "plays again");
+                if (asked->paused) {
+                    ++counters.viewer.pauses;
+                }
+            }
+            viewerClip->paused = asked->paused;
+            return;
+        }
+        dropViewer();
+        viewerClip = *asked;
+        ++counters.viewer.clips;
+        counters.viewer.game = asked->gameId;
+        counters.viewer.reason.clear();
+        ScreenGame own;
+        own.id = asked->gameId;
+        own.media.video = asked->video;
+        own.media.videoKey = asked->videoKey;
+        own.startCandidate = true;
+        if (!isPlayableVideoFile(own.media.video)) {
+            viewerFailed("not-playable");
+            return;
+        }
+        ScreenBinding binding;
+        binding.objectId = std::string(kViewerScreenId);
+        binding.roomId = std::string(kViewerScreenId);
+        binding.kind = ScreenKind::Cabinet; // no CRT look, no playlist of a kind: its own game, looping
+        binding.followsWorldSelection = false;
+        ScreenPlaySettings settings;
+        settings.autoplay = true;
+        settings.showOnFocus = false;
+        settings.clips = true; // the user asked for this clip: video.json's "enabled" is the world's screens'
+        settings.startChoice = true;
+        settings.previewSeconds = kMaxPreviewSeconds;
+        settings.playlist.roomId = binding.roomId;
+        settings.playlist.screenId = binding.objectId;
+        settings.frozen = options.freezePtsSeconds.has_value();
+        viewerScreen = std::make_unique<ScreenState>(std::move(binding), ScreenPolicy({own}, settings));
+        viewerScreen->viewer = true;
+        viewerScreen->volume = 1.0; // ADR-0016 §9: full volume, the world paused
+        viewerScreen->screenClass = ScreenClass::Direct;
+        refreshActive();
+        spdlog::info("Media viewer: the clip of game {} is asked for", asked->gameId);
+        screenViewer();
+    }
+
+    /// The page's pause (or a minimized window) holds the viewer's slot on its frame; it plays again once let go.
+    void holdViewer() {
+        if (!viewerScreen || !viewerClip || !viewerScreen->assignment.playing || !viewerScreen->assignment.slot) {
+            return;
+        }
+        Slot& slot = slots[*viewerScreen->assignment.slot];
+        if (!slot.playback || slot.draining || slot.clip != viewerScreen->clip || options.freezePtsSeconds) {
+            return;
+        }
+        const bool hold = viewerClip->paused || minimized;
+        if (hold && !slot.paused) {
+            slot.playback->pause(now);
+            slot.paused = true;
+            recordEvent(*viewerScreen->assignment.slot, SlotAction::Pause, slot.gameId,
+                        minimized ? "minimized" : "viewer-paused", {std::string(kViewerScreenId)});
+        } else if (!hold && slot.paused) {
+            slot.playback->resume(now);
+            slot.paused = false;
+            recordEvent(*viewerScreen->assignment.slot, SlotAction::Resume, slot.gameId, "viewer-playing",
+                        {std::string(kViewerScreenId)});
+        }
+    }
+
+    /// viewerVideo() after the frame: the clip's state, the view of its texture (made again when the texture is).
+    void refreshViewer() {
+        ViewerVideo next;
+        if (viewerClip) {
+            next.state = ViewerVideoState::Waiting;
+            const Slot* slot = viewerScreen && viewerScreen->assignment.playing && viewerScreen->assignment.slot
+                                   ? &slots[*viewerScreen->assignment.slot]
+                                   : nullptr;
+            const bool showing = slot != nullptr && slot->viewer && slot->playback && !slot->draining &&
+                                 slot->clip == viewerScreen->clip && slot->frameShown;
+            if (!viewerFailure.empty()) {
+                next.state = ViewerVideoState::Failed;
+                next.reason = viewerFailure;
+                next.fromVerdict = viewerFromVerdict;
+            } else if (showing && viewerTexture.valid()) {
+                if (viewerViewSource != viewerTexture.textureId() || !viewerView.valid()) {
+                    viewerView = gl::createRgba8View(viewerTexture.textureId(), 1);
+                    viewerViewSource = viewerTexture.textureId();
+                    if (viewerView.valid()) {
+                        glTextureParameteri(viewerView.id(), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                        glTextureParameteri(viewerView.id(), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                        const std::string label = "Viewer.Video.Rgba8View";
+                        glObjectLabel(GL_TEXTURE, viewerView.id(), static_cast<GLsizei>(label.size()),
+                                      label.c_str());
+                    }
+                }
+                if (viewerView.valid()) {
+                    next.state = slot->paused ? ViewerVideoState::Paused : ViewerVideoState::Playing;
+                    next.texture = viewerView.id();
+                    next.width = viewerTexture.size().x;
+                    next.height = viewerTexture.size().y;
+                } else {
+                    viewerFailed(std::string(toString(ErrorCode::GraphicsError)));
+                    next.state = ViewerVideoState::Failed;
+                    next.reason = viewerFailure;
+                }
+            }
+        }
+        // The record keeps the last clip's outcome (the page lets a failed clip go at once).
+        if (next.state != ViewerVideoState::None &&
+            (next.state != viewerShown.state || next.reason != viewerShown.reason)) {
+            counters.viewer.state = std::string(toString(next.state));
+            counters.viewer.reason = next.reason;
+        }
+        if (next.width > 0) {
+            counters.viewer.width = static_cast<std::uint64_t>(next.width);
+            counters.viewer.height = static_cast<std::uint64_t>(next.height);
+        }
+        viewerShown = std::move(next);
     }
 
     void launchStarting() {
@@ -2158,6 +2473,14 @@ void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::
     m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
 }
 
+void ScreenService::setViewer(const ViewerRequest& request) {
+    m_impl->setViewer(request);
+}
+
+const ViewerVideo& ScreenService::viewerVideo() const noexcept {
+    return m_impl->viewerShown;
+}
+
 void ScreenService::launchStarting() {
     m_impl->launchStarting();
 }
@@ -2203,6 +2526,8 @@ void ScreenService::record(VideoRecord& record) const {
     for (const Impl::Slot& slot : s.slots) {
         record.videoBytes += slot.texture.valid() ? slot.texture.gpuBytes() : 0;
     }
+    record.viewer.gpuBytes = s.viewerTexture.valid() ? s.viewerTexture.gpuBytes() : 0;
+    record.videoBytes += record.viewer.gpuBytes;
     record.stillBytes = 0;
     for (const Impl::ScreenState* screen : s.allScreens()) {
         record.stillBytes += (screen->still.valid() ? screen->still.estimatedBytes() : 0) +
@@ -2210,7 +2535,7 @@ void ScreenService::record(VideoRecord& record) const {
                              (screen->heldFrame.valid() ? screen->heldFrame.estimatedBytes() : 0);
         VideoScreenRecord entry;
         entry.screen = screen->binding.objectId;
-        entry.kind = std::string(toString(screen->binding.kind));
+        entry.kind = screen->viewer ? std::string(kViewerScreenId) : std::string(toString(screen->binding.kind));
         entry.screenClass = std::string(toString(screen->screenClass));
         entry.gameId = screen->policy.targetId();
         entry.picture = std::string(toString(screen->shownPicture));
@@ -2262,7 +2587,8 @@ std::vector<std::string> ScreenService::statusLines() const {
                                 s.decoderThreads(), s.counters.decodersStarted, s.counters.maxOpenDecoders));
     for (const Impl::ScreenState* screen : s.allScreens()) {
         lines.push_back(fmt::format(
-            "{} '{}': {}{}{}{}", s.isHero(*screen) ? "Hero" : screen->cabinet ? "Cabinet" : "Screen",
+            "{} '{}': {}{}{}{}",
+            s.isHero(*screen) ? "Hero" : screen->viewer ? "Viewer" : screen->cabinet ? "Cabinet" : "Screen",
             screen->binding.objectId,
             toString(screen->shownPicture),
             screen->policy.targetId().empty() ? std::string() : " of " + screen->policy.targetId(),

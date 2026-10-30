@@ -692,10 +692,19 @@ struct RetroverseApp::State {
     /// catalog while it is open, else the item in the world's Focus or Inspect (I3 step 13b), after its dwell. I5 step 4:
     /// the arcade cabinets asking for their clips, and those showing them drawn by the world; the two selections go
     /// apart, the arcade's hero cabinet following the quick catalog's alone (its focused cabinet plays itself).
-    void updateScreens(std::uint64_t frame, bool minimized) {
+    void updateScreens(const AppContext& context, bool minimized) {
+        const std::uint64_t frame = context.frameIndex();
+        // I5 step 8 (ADR-0016 §10): the media viewer's clip is the screens' service's, which a run that has shown no
+        // screen yet (a lobby, a hall) makes for it, unbound.
+        const ViewerRequest viewerRequest = product ? product->viewerRequest() : ViewerRequest{};
+        if (!screen && viewerRequest.clip) {
+            screen = std::make_unique<ScreenService>(std::vector<ScreenBinding>{}, graphics->materials(),
+                                                     std::vector<ScreenGame>{}, screenServiceOptions(context));
+        }
         if (!screen) {
             return;
         }
+        screen->setViewer(viewerRequest);
         const std::optional<std::string> catalogSelection =
             product ? product->selectedGameId() : std::optional<std::string>();
         WorldSession::ScreenSelections selections{std::nullopt, catalogSelection};
@@ -713,6 +722,9 @@ struct RetroverseApp::State {
         screen->update(frame, simulatedSeconds, camera, selection, minimized, world ? world->eyeInScreenRoom() : true);
         if (world) {
             world->showCabinets(screen->cabinetsShown());
+        }
+        if (product) {
+            product->setViewerVideo(screen->viewerVideo());
         }
     }
 
@@ -789,8 +801,8 @@ struct RetroverseApp::State {
             }
         }
         const bool card = world && world->context() == WorldContext::Inspect;
-        const bool duck =
-            audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen());
+        const bool duck = audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen(),
+                                      product && product->mediaViewerOpen());
         if (duck != ducked) {
             ducked = duck;
             ++audioRecord.duckChanges;
@@ -869,6 +881,24 @@ struct RetroverseApp::State {
                                                         std::string(choice.reason), set.has_value()});
     }
 
+    /// The options of the run's screens' service.
+    ScreenServiceOptions screenServiceOptions(const AppContext& context) {
+        const CommandLineOptions& options = context.options();
+        ScreenServiceOptions screenOptions;
+        screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
+        screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
+        // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget; step 5: the sound.
+        screenOptions.video = videoSettings(context);
+        screenOptions.audio = audio.get();
+        screenOptions.recordPresentedFrames = options.audioCapture.has_value();
+        screenOptions.maxDecoders = options.maxDecoders;
+        screenOptions.watchLateFrames = options.watchLateFrames;
+        screenOptions.assetRoot = context.paths().assetRoot();
+        // I5 step 7: the clips' verdicts, in the user data's cache.
+        screenOptions.verdictsFile = media::videoVerdictsFile(context.paths().cacheDir());
+        return screenOptions;
+    }
+
     /// The screens' service on the scene's CRTs (`heroScreenPrefix`: those whose object ids start with it, none for an
     /// empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has any (not in the model viewer);
     /// the run's service, kept unbound across a scene shown in place of another, is bound to them instead
@@ -886,20 +916,8 @@ struct RetroverseApp::State {
                 screen->bind(std::move(screens), std::move(games), context.frameIndex());
                 return;
             }
-            ScreenServiceOptions screenOptions;
-            screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
-            screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
-            // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget; step 5: the sound.
-            screenOptions.video = videoSettings(context);
-            screenOptions.audio = audio.get();
-            screenOptions.recordPresentedFrames = options.audioCapture.has_value();
-            screenOptions.maxDecoders = options.maxDecoders;
-            screenOptions.watchLateFrames = options.watchLateFrames;
-            screenOptions.assetRoot = context.paths().assetRoot();
-            // I5 step 7: the clips' verdicts, in the user data's cache.
-            screenOptions.verdictsFile = media::videoVerdictsFile(context.paths().cacheDir());
             screen = std::make_unique<ScreenService>(std::move(screens), graphics->materials(), std::move(games),
-                                                     screenOptions);
+                                                     screenServiceOptions(context));
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {
             spdlog::info("Scene '{}': no hero CRT bound yet (the CRT of the room that holds the eye, once it stays in "
                          "one)",
@@ -1812,7 +1830,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }
-    state.updateScreens(frame, context.window().isMinimized());
+    state.updateScreens(context, context.window().isMinimized());
     state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
@@ -1871,7 +1889,7 @@ void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
     state.simulatedSeconds += elapsedSeconds;
     state.setPriority(context.frameIndex(),
                       processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
-    state.updateScreens(context.frameIndex(), true);
+    state.updateScreens(context, true);
     state.updateAudio(nullptr);
 }
 

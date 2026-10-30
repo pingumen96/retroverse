@@ -5,6 +5,29 @@
 
 namespace rv::ui {
 
+std::string_view toString(ManualState state) noexcept {
+    switch (state) {
+    case ManualState::Ready:
+        return "ready";
+    case ManualState::Opened:
+        return "opened";
+    case ManualState::Refused:
+        return "refused";
+    case ManualState::Failed:
+        return "failed";
+    case ManualState::Opening:
+        return "opening";
+    case ManualState::Unsupported:
+        return "unsupported";
+    }
+    return "unknown";
+}
+
+bool isPictureKind(std::string_view kind) noexcept {
+    return kind != media_viewer::kVideosKind && kind != media_viewer::kManualsKind &&
+           std::find(media_viewer::kKinds.begin(), media_viewer::kKinds.end(), kind) != media_viewer::kKinds.end();
+}
+
 std::string_view toString(PictureState state) noexcept {
     switch (state) {
     case PictureState::Loading:
@@ -36,7 +59,7 @@ void MediaViewerModel::close() noexcept {
     m_open = false;
 }
 
-ViewerStep MediaViewerModel::apply(UiCommand command) noexcept {
+ViewerStep MediaViewerModel::apply(UiCommand command, double nowSeconds) noexcept {
     if (!m_open) {
         return ViewerStep::None;
     }
@@ -47,10 +70,32 @@ ViewerStep MediaViewerModel::apply(UiCommand command) noexcept {
     case UiCommand::PageUp:
     case UiCommand::FilterPrevious:
         return m_index > 0 ? select(m_index - 1) : ViewerStep::None;
+    case UiCommand::Activate:
+        if (m_index < m_pages.size()) {
+            MediaPage& page = m_pages[m_index];
+            if (page.kind == media_viewer::kVideosKind) {
+                if (page.state != PictureState::Shown) {
+                    return ViewerStep::None;
+                }
+                page.paused = !page.paused;
+                return ViewerStep::TogglePause;
+            }
+            if (page.kind == media_viewer::kManualsKind) {
+                // I5 step 8's review: one explorer.exe at a time, and none again right after the manual opened.
+                if (page.state != PictureState::Shown || page.manual == ManualState::Opening ||
+                    (page.manual == ManualState::Opened &&
+                     nowSeconds - page.manualOpenedAt < media_viewer::kManualReopenSeconds)) {
+                    return ViewerStep::None;
+                }
+                page.manual = ManualState::Opening;
+                page.reason.clear();
+                return ViewerStep::OpenManual;
+            }
+        }
+        return select(m_index + 1);
     case UiCommand::Right:
     case UiCommand::PageDown:
     case UiCommand::FilterNext:
-    case UiCommand::Activate:
         return select(m_index + 1);
     case UiCommand::Home:
         return select(0);
@@ -65,6 +110,9 @@ ViewerStep MediaViewerModel::select(std::size_t index) noexcept {
     if (!m_open || index >= m_pages.size() || index == m_index) {
         return ViewerStep::None;
     }
+    if (m_index < m_pages.size()) {
+        m_pages[m_index].paused = false; // a clip shown again starts playing
+    }
     m_index = index;
     return ViewerStep::Moved;
 }
@@ -77,6 +125,46 @@ void MediaViewerModel::setPicture(std::size_t index, PictureState state, int wid
     page.state = state;
     page.width = state == PictureState::Shown ? width : 0;
     page.height = state == PictureState::Shown ? height : 0;
+}
+
+void MediaViewerModel::setVideo(std::size_t index, PictureState state, int width, int height, std::string reason) {
+    if (index >= m_pages.size() || m_pages[index].kind != media_viewer::kVideosKind) {
+        return;
+    }
+    MediaPage& page = m_pages[index];
+    page.state = state;
+    page.width = state == PictureState::Shown ? width : 0;
+    page.height = state == PictureState::Shown ? height : 0;
+    page.reason = state == PictureState::Failed ? std::move(reason) : std::string();
+    if (state == PictureState::Failed) {
+        page.paused = false;
+    }
+}
+
+void MediaViewerModel::setManualFile(std::size_t index, PictureState state, std::string name, std::string reason) {
+    if (index >= m_pages.size() || m_pages[index].kind != media_viewer::kManualsKind) {
+        return;
+    }
+    MediaPage& page = m_pages[index];
+    page.state = state;
+    page.name = std::move(name);
+    page.reason = state == PictureState::Failed ? std::move(reason) : std::string();
+}
+
+void MediaViewerModel::setManualOutcome(std::size_t index, ManualState outcome, std::string reason,
+                                        double nowSeconds) {
+    if (index >= m_pages.size() || m_pages[index].kind != media_viewer::kManualsKind) {
+        return;
+    }
+    MediaPage& page = m_pages[index];
+    page.manual = outcome;
+    page.reason = outcome == ManualState::Refused || outcome == ManualState::Failed ||
+                          outcome == ManualState::Unsupported
+                      ? std::move(reason)
+                      : std::string();
+    if (outcome == ManualState::Opened) {
+        page.manualOpenedAt = nowSeconds;
+    }
 }
 
 const MediaPage* MediaViewerModel::current() const noexcept {

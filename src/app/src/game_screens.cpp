@@ -17,6 +17,22 @@
 
 namespace rv::app {
 
+std::string_view toString(ViewerVideoState state) noexcept {
+    switch (state) {
+    case ViewerVideoState::None:
+        return "none";
+    case ViewerVideoState::Waiting:
+        return "waiting";
+    case ViewerVideoState::Playing:
+        return "playing";
+    case ViewerVideoState::Paused:
+        return "paused";
+    case ViewerVideoState::Failed:
+        return "failed";
+    }
+    return "unknown";
+}
+
 std::vector<MediaPageFile> viewerPagesOf(const catalog_db::GameDetails& details) {
     const catalog::CatalogEntry& entry = details.indexed.entry;
     if (entry.key.empty()) {

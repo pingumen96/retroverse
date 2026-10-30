@@ -1,6 +1,7 @@
 #pragma once
 
 #include <rv/app/crt_looks.hpp>
+#include <rv/app/game_screens.hpp>
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_scheduler.hpp>
 #include <rv/app/video_settings.hpp>
@@ -195,12 +196,23 @@ struct ScreenServiceOptions {
 ///    gl::MaterialRegistry::setPictureRect), its bars the tube's black;
 ///  - a bound screen whose slot is taken from a clip it still wants ("needed", "budget") keeps a copy of that clip's
 ///    frame (gl::Texture2D::copyOf) until the clip has a slot again, in place of its still.
+///
+/// Since I5 step 8 (ADR-0016 §10) the media viewer's clip (setViewer()) is a screen of the scheduler too, of the
+/// `direct` class, in view while the window is not minimized, at the eye: its own key (never sharing a world screen's
+/// slot, whose texture keeps 480 rows), decoded at video.json's viewerMaxRows with two decoders (maxRows with one), its
+/// frames uploaded into a texture of its own (allocated while it plays, gone when the viewer lets it go) whose GL_RGBA8
+/// view the viewer shows (viewerVideo()). While the viewer is open every screen of the world and every cabinet counts as
+/// out of view (their slots pause at once, reason "viewer", and stop after kScreenStopAfterSeconds; one taken for the
+/// viewer's clip, "needed", keeps its frame), and the sound is the viewer's clip alone, at its full volume, whatever
+/// room holds the eye. A clip a failure verdict leaves out is never opened, its reason given; one that fails gives its
+/// decoder's. The page's pause holds its slot on its frame.
 class ScreenService {
 public:
     /// The still pictures' size: the screen's 4:3, as the clips.
     static constexpr glm::ivec2 kStillSize{640, 480};
 
-    /// `screens` (findScreens(): not empty, the hero first).
+    /// `screens` (findScreens(): the hero first; empty, I5 step 8, for the media viewer's clip before any scene had
+    /// screens: unbound until bind()).
     ScreenService(std::vector<ScreenBinding> screens, gl::MaterialRegistry& materials, std::vector<ScreenGame> games,
                   ScreenServiceOptions options);
     ~ScreenService();
@@ -257,6 +269,12 @@ public:
     /// decoders discard their audio packets.
     void update(std::uint64_t frame, double nowSeconds, const scene::Camera& camera,
                 const ScreenSelection& selection, bool minimized = false, bool eyeInRoom = true);
+
+    /// The media viewer on the next update() (I5 step 8): open or not, and its videos page's clip. A clip asked again
+    /// (the same game, file and opening) keeps playing, its pause as asked; another one replaces it from its start.
+    void setViewer(const ViewerRequest& request);
+    /// After update(): the viewer's clip (its state, its texture's view, its reason).
+    [[nodiscard]] const ViewerVideo& viewerVideo() const noexcept;
 
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
     void launchStarting();

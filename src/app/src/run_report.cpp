@@ -780,6 +780,8 @@ Json screensToJson(const GameScreensRecord& screens) {
     json["failures"] = screens.failures;
     json["pictureBox"] = screens.pictureBox;
     json["stageBox"] = screens.stageBox;
+    json["videoFrames"] = screens.videoFrames;
+    json["videoBox"] = screens.videoBox;
     Json events = Json::array();
     for (const GameScreenEventRecord& event : screens.events) {
         Json entry{{"frame", event.frame}, {"event", event.event}};
@@ -810,6 +812,11 @@ GameScreensRecord readScreens(FieldReader& fields) {
     screens.failures = fields.count("failures");
     screens.pictureBox = fields.numberArray("pictureBox");
     screens.stageBox = fields.numberArray("stageBox");
+    // I5 step 8 (absent from earlier reports).
+    screens.videoFrames = fields.optionalCount("videoFrames").value_or(0);
+    if (fields.has("videoBox")) {
+        screens.videoBox = fields.numberArray("videoBox");
+    }
     for (FieldReader& event : fields.objectArray("events")) {
         GameScreenEventRecord entry;
         entry.frame = event.count("frame");
@@ -1992,6 +1999,23 @@ Json videoToJson(const VideoRecord& video) {
                             {"given", verdictList(video.verdicts.given)},
                             {"written", video.verdicts.written},
                             {"writeFailures", video.verdicts.writeFailures}};
+    const VideoViewerRecord& viewer = video.viewer;
+    json["viewer"] = Json{{"clips", viewer.clips},
+                          {"decodersOpened", viewer.decodersOpened},
+                          {"framesUploaded", viewer.framesUploaded},
+                          {"pauses", viewer.pauses},
+                          {"knownBad", viewer.knownBad},
+                          {"failures", viewer.failures},
+                          {"game", viewer.game},
+                          {"state", viewer.state},
+                          {"reason", viewer.reason},
+                          {"width", viewer.width},
+                          {"height", viewer.height},
+                          {"rows", viewer.rows},
+                          {"maxGpuBytes", viewer.maxGpuBytes},
+                          {"gpuBytes", viewer.gpuBytes},
+                          {"openFrames", viewer.openFrames},
+                          {"worldFramesWhileOpen", viewer.worldFramesWhileOpen}};
     return json;
 }
 
@@ -2306,6 +2330,26 @@ VideoRecord readVideo(FieldReader& fields) {
         }
         video.verdicts.written = verdicts->count("written");
         video.verdicts.writeFailures = verdicts->count("writeFailures");
+    }
+    // I5 step 8 (absent from earlier reports).
+    if (std::optional<FieldReader> viewer = fields.optionalObject("viewer")) {
+        VideoViewerRecord& record = video.viewer;
+        record.clips = viewer->count("clips");
+        record.decodersOpened = viewer->count("decodersOpened");
+        record.framesUploaded = viewer->count("framesUploaded");
+        record.pauses = viewer->count("pauses");
+        record.knownBad = viewer->count("knownBad");
+        record.failures = viewer->count("failures");
+        record.game = viewer->string("game");
+        record.state = viewer->string("state");
+        record.reason = viewer->string("reason");
+        record.width = viewer->count("width");
+        record.height = viewer->count("height");
+        record.rows = viewer->count("rows");
+        record.maxGpuBytes = viewer->count("maxGpuBytes");
+        record.gpuBytes = viewer->optionalCount("gpuBytes").value_or(0); // I5 step 8's review
+        record.openFrames = viewer->count("openFrames");
+        record.worldFramesWhileOpen = viewer->count("worldFramesWhileOpen");
     }
     return video;
 }

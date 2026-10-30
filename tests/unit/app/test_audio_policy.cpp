@@ -151,4 +151,8 @@ TEST_CASE("app/audio_policy: the azimuth from the eye, the spatial sound, the du
     CHECK(rv::app::audioDucked(true, false, false));
     CHECK(rv::app::audioDucked(false, true, false));
     CHECK(rv::app::audioDucked(false, false, true));
+    // I5 step 8: never under the media viewer (its clip at full volume, over the card or the quick catalog).
+    CHECK_FALSE(rv::app::audioDucked(true, false, false, true));
+    CHECK_FALSE(rv::app::audioDucked(false, true, true, true));
+    CHECK_FALSE(rv::app::audioDucked(false, false, false, true));
 }

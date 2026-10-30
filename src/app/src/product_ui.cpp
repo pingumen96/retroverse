@@ -1241,6 +1241,20 @@ bool ProductUi::gameScreenOpen() const noexcept {
     return m_impl->screensOpen();
 }
 
+bool ProductUi::mediaViewerOpen() const noexcept {
+    return m_impl->screens && m_impl->screens->viewerOpen();
+}
+
+ViewerRequest ProductUi::viewerRequest() const {
+    return m_impl->screens ? m_impl->screens->viewerRequest() : ViewerRequest{};
+}
+
+void ProductUi::setViewerVideo(const ViewerVideo& video) {
+    if (m_impl->screens) {
+        m_impl->screens->setViewerVideo(video, m_impl->context.frameIndex());
+    }
+}
+
 std::uint64_t ProductUi::catalogRevision() const noexcept {
     return m_impl->catalogRevision;
 }

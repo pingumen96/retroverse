@@ -1,5 +1,6 @@
 #include <rv/ui/media_viewer_screen.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
@@ -30,6 +31,14 @@ struct ViewerData {
     Rml::String height;
     bool hasPrevious = false;
     bool hasNext = false;
+    /// I5 step 8: the clip paused; why the clip cannot play or the manual did not open (media_viewer::kVideoReasons, a
+    /// failure's code); the manual's file name; what "Apri il manuale" did (toString(ManualState)).
+    bool paused = false;
+    Rml::String reason;
+    /// The reason is one the document has a sentence for (else its generic one, the reason's code shown).
+    bool knownReason = false;
+    Rml::String name;
+    Rml::String manual;
 
     bool operator==(const ViewerData&) const = default;
 };
@@ -48,12 +57,17 @@ std::string_view toString(ViewerClick click) noexcept {
         return "next";
     case ViewerClick::Close:
         return "close";
+    case ViewerClick::Pause:
+        return "pause";
+    case ViewerClick::Manual:
+        return "manual";
     }
     return "unknown";
 }
 
 std::optional<ViewerClick> viewerClickFromName(std::string_view name) noexcept {
-    for (const ViewerClick click : {ViewerClick::Previous, ViewerClick::Next, ViewerClick::Close}) {
+    for (const ViewerClick click :
+         {ViewerClick::Previous, ViewerClick::Next, ViewerClick::Close, ViewerClick::Pause, ViewerClick::Manual}) {
         if (toString(click) == name) {
             return click;
         }
@@ -94,6 +108,11 @@ struct MediaViewerScreen::Impl {
             viewer.RegisterMember("height", &ViewerData::height);
             viewer.RegisterMember("hasPrevious", &ViewerData::hasPrevious);
             viewer.RegisterMember("hasNext", &ViewerData::hasNext);
+            viewer.RegisterMember("paused", &ViewerData::paused);
+            viewer.RegisterMember("reason", &ViewerData::reason);
+            viewer.RegisterMember("knownReason", &ViewerData::knownReason);
+            viewer.RegisterMember("name", &ViewerData::name);
+            viewer.RegisterMember("manual", &ViewerData::manual);
         }
         constructor.Bind("viewer", &data);
         constructor.BindEventCallback(Rml::String(media_viewer::kPageEvent),
@@ -132,6 +151,12 @@ struct MediaViewerScreen::Impl {
             const PictureFit fit = fitPicture(stage.x / ratio, stage.y / ratio, page->width, page->height);
             next.width = dp(std::floor(fit.width));
             next.height = dp(std::floor(fit.height));
+            next.paused = page->paused;
+            next.reason = Rml::String(page->reason);
+            next.knownReason = std::find(media_viewer::kVideoReasons.begin(), media_viewer::kVideoReasons.end(),
+                                         page->reason) != media_viewer::kVideoReasons.end();
+            next.name = Rml::String(page->name);
+            next.manual = Rml::String(toString(page->manual));
         }
         return next;
     }
@@ -224,10 +249,20 @@ std::optional<ViewerClick> MediaViewerScreen::takeClicked() noexcept {
 
 std::optional<glm::vec4> MediaViewerScreen::pictureBox() const {
     const Impl& impl = *m_impl;
-    if (!impl.shown || impl.data.state != Rml::String(toString(PictureState::Shown))) {
+    if (!impl.shown || impl.data.state != Rml::String(toString(PictureState::Shown)) ||
+        !isPictureKind(std::string_view(impl.data.kind.data(), impl.data.kind.size()))) {
         return std::nullopt;
     }
     return impl.view.elementBox(media_viewer::kPictureId);
+}
+
+std::optional<glm::vec4> MediaViewerScreen::videoBox() const {
+    const Impl& impl = *m_impl;
+    if (!impl.shown || impl.data.state != Rml::String(toString(PictureState::Shown)) ||
+        impl.data.kind != Rml::String(media_viewer::kVideosKind)) {
+        return std::nullopt;
+    }
+    return impl.view.elementBox(media_viewer::kVideoId);
 }
 
 std::optional<glm::vec4> MediaViewerScreen::stageBox() const {
