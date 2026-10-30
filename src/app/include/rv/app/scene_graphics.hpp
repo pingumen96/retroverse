@@ -55,6 +55,8 @@ struct XrEyeTargets {
     std::vector<gl::Panel> panels;
     /// The share of `size` the eyes render at, scaled up into their images (I10 step 7's dynamic render scale).
     float renderScale = 1.0f;
+    /// xr.json's fast profile (I10 step 9): the eyes without the ambient occlusion and the anti-aliasing.
+    bool fast = false;
     std::array<std::uint32_t, 2> images{};
     glm::ivec2 size{0};
 };

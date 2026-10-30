@@ -51,6 +51,11 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
                                                         XrRecord& record) {
     const XrOptions& xrOptions = options.xr;
     const double renderScale = xrOptions.renderScale.value_or(settings.renderScale);
+    // I10 step 9: the refresh rate asked for, --xr-refresh-rate's over xr.json's (0 there: the runtime's own).
+    std::optional<float> refreshRate = xrOptions.refreshRate;
+    if (!refreshRate && settings.refreshRate > 0.0f) {
+        refreshRate = settings.refreshRate;
+    }
     record.runtimeChoice = std::string(toString(xrOptions.runtime));
     record.posture = std::string(xr::toString(settings.posture));
     record.turn = std::string(xr::toString(settings.comfort.turn));
@@ -65,6 +70,9 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
     if (xrOptions.runtime == XrRuntimeChoice::Fake) {
         xr::FakeRuntimeConfig config;
         config.renderScale = renderScale;
+        // A Quest 3S's rates (XR_FB_display_refresh_rate), 72 Hz until another is asked for.
+        config.refreshRates = {72.0f, 80.0f, 90.0f, 120.0f};
+        config.refreshRate = refreshRate;
         config.loseAfterFrames = xrOptions.fakeLoseAfterFrames;
         if (options.inputScript) {
             auto loaded = input::InputScript::loadFromFile(*options.inputScript);
@@ -116,9 +124,7 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
         } else {
             spdlog::warn("xr_bindings.json could not be read, no controller is read: {}", bindings.error().toString());
         }
-        if (settings.refreshRate > 0.0f) {
-            openXr.refreshRate = settings.refreshRate;
-        }
+        openXr.refreshRate = refreshRate;
         auto created = xr::createOpenXrRuntime(openXr);
         if (!created) {
             return unavailable(created.error().toString());

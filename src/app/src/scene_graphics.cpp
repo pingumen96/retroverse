@@ -397,6 +397,11 @@ struct SceneGraphics::State {
         eyeView.cullFrustum = scene::Frustum::enclosing(viewProjections);
         // ADR-0017 §4: no vignette in a headset (the lenses darken their edges already).
         eyeView.post.vignette = 0.0f;
+        // I10 step 9: the fast profile (120 Hz) leaves out the passes that cost the most for the least seen.
+        if (eyes.fast) {
+            eyeView.ssao.enabled = false;
+            eyeView.post.antialiasing = false;
+        }
         const bool panels = !eyes.panels.empty() && preparePanels();
         for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
             eyeView.camera = eyes.cameras[eye];

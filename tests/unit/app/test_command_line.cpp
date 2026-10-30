@@ -816,6 +816,13 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "0.1"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--stereo-preview"}).has_value());
+    // I10 step 9: the refresh rate asked for, with --vr only, 1 to 240 Hz.
+    const auto rate = parse({"--vr", "--xr-refresh-rate", "120"});
+    REQUIRE(rate.has_value());
+    CHECK(rate->xr.refreshRate == std::optional<float>(120.0f));
+    CHECK_FALSE(parse({"--xr-refresh-rate", "120"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "0"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "500"}).has_value());
     for (const char* option : {"--vr", "--xr-runtime", "--xr-runtime-json", "--xr-render-scale",
                                "--xr-fake-lose-after"}) {
         CHECK(helpListsOption(rv::app::commandLineHelp(), option));

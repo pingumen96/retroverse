@@ -1599,6 +1599,8 @@ struct XrRecord {
     /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the
     /// GPU's time of a frame's eyes as it smoothed it last (milliseconds).
     bool dynamicScale = false;
+    /// The eyes' profile of the last frame (xr.json's quality at the refresh rate, I10 step 9): "full" or "fast".
+    std::string quality;
     std::uint64_t scaleChanges = 0;
     float lowestScale = 1.0f;
     double eyesGpuMilliseconds = 0.0;

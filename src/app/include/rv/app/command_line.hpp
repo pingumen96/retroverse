@@ -84,6 +84,8 @@ struct XrOptions {
     /// --xr-render-scale: the eyes' size over the runtime's recommendation, in [kMinRenderScale, kMaxRenderScale]; none:
     /// xr.json's.
     std::optional<double> renderScale;
+    /// --xr-refresh-rate <Hz>: the refresh rate asked of the headset (I10 step 9), over xr.json's; none: xr.json's.
+    std::optional<float> refreshRate;
     /// --xr-fake-lose-after <frames>: the fake runtime loses its session after this many frames (the desktop
     /// fallback's tests).
     std::optional<std::uint64_t> fakeLoseAfterFrames;

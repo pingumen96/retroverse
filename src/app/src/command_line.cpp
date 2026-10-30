@@ -122,6 +122,9 @@ core::ArgParser makeParser() {
                 "(XR_RUNTIME_JSON for this process only).")
         .option("xr-render-scale", "scale",
                 "With --vr: the eyes' size over the runtime's recommendation, 0.25 to 2 (default 1).")
+        .option("xr-refresh-rate", "hz",
+                "With --vr: the refresh rate asked of the headset (72, 90, 120 on a Quest), over xr.json's; the "
+                "highest one offered that is not above it.")
         .option("xr-fake-lose-after", "frames",
                 "For tests, with --xr-runtime fake: the fake runtime loses its session after this many frames.")
         .option("start-room", "room",
@@ -307,7 +310,8 @@ Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& op
 Status applyXr(const core::ParsedArgs& args, CommandLineOptions& options) {
     XrOptions& xr = options.xr;
     xr.enabled = args.has("vr");
-    for (const std::string_view name : {"xr-runtime", "xr-runtime-json", "xr-render-scale", "xr-fake-lose-after"}) {
+    for (const std::string_view name :
+         {"xr-runtime", "xr-runtime-json", "xr-render-scale", "xr-refresh-rate", "xr-fake-lose-after"}) {
         if (args.has(name) && !xr.enabled) {
             return makeError(ErrorCode::InvalidArgument, "only valid with --vr", "--" + std::string(name));
         }
@@ -348,6 +352,17 @@ Status applyXr(const core::ParsedArgs& args, CommandLineOptions& options) {
                              "--xr-render-scale=" + args.value("xr-render-scale").value_or(""));
         }
         xr.renderScale = *scale;
+    }
+    if (args.has("xr-refresh-rate")) {
+        auto rate = args.doubleValue("xr-refresh-rate", 0.0);
+        if (!rate) {
+            return propagate(rate.error());
+        }
+        if (!std::isfinite(*rate) || *rate < 1.0 || *rate > 240.0) {
+            return makeError(ErrorCode::OutOfRange, "must be from 1 to 240 Hz",
+                             "--xr-refresh-rate=" + args.value("xr-refresh-rate").value_or(""));
+        }
+        xr.refreshRate = static_cast<float>(*rate);
     }
     if (args.has("xr-fake-lose-after")) {
         if (xr.runtime != XrRuntimeChoice::Fake) {

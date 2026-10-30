@@ -763,6 +763,14 @@ struct RetroverseApp::State {
         if (frame->wantsViews()) {
             eyes.images = frame->images;
             eyes.size = frame->eyeSize;
+            // I10 step 9: xr.json's quality at the session's refresh rate.
+            const float refreshHz = frame->timing.displayPeriodNs > 0
+                                        ? static_cast<float>(1.0e9 / static_cast<double>(frame->timing.displayPeriodNs))
+                                        : 0.0f;
+            eyes.fast = xr::fastProfile(context.xrSettings().quality, refreshHz);
+            if (std::optional<XrRecord>& record = context.report().xr) {
+                record->quality = eyes.fast ? "fast" : "full";
+            }
             xrEyes = eyes;
         }
     }
