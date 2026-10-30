@@ -103,4 +103,8 @@ TEST_CASE("app/world_notice_document: the rooms an update added are named with t
     CHECK(contains(block, "data-if=\"moreRooms == 1\""));
     CHECK(contains(block, "{{ moreRooms }}"));
     CHECK(contains(block, "nell'indice dell'edificio (M)"));
+    // Where to find it: the ground floor's atrium, any other floor's hall.
+    CHECK(contains(block, "<p data-if=\"groundFloor\">La trovi dall'atrio e nell'indice dell'edificio (M).</p>"));
+    CHECK(contains(block, "<p data-if=\"!groundFloor\">La trovi dal corridoio del suo piano"));
+    CHECK_FALSE(contains(block, "atrio del suo piano"));
 }

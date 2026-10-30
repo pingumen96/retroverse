@@ -113,7 +113,8 @@
 			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade {{ roomNumber }}</p>
 			<p data-if="moreRooms == 1">E un'altra stanza.</p>
 			<p data-if="moreRooms > 1">E altre {{ moreRooms }} stanze.</p>
-			<p>La trovi dall'atrio del suo piano e nell'indice dell'edificio (M).</p>
+			<p data-if="groundFloor">La trovi dall'atrio e nell'indice dell'edificio (M).</p>
+			<p data-if="!groundFloor">La trovi dal corridoio del suo piano e nell'indice dell'edificio (M).</p>
 		</div>
 
 		<div data-if="notice == 'rooms-migrated'">

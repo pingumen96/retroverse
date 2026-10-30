@@ -16,7 +16,8 @@ inline constexpr std::string_view kStyleSheetPath = "ui/world_notice.rcss";
 /// toString(CatalogState)), "room" (the start room's id as --start-room gives it, "room:snes", "area:arcade" or
 /// "area:shared:<floor>", for kNoGames; empty without --start-room), "roomKind" and "roomTitle" (kNeedsConfirmation's
 /// and kRoomsAdded's room: "console", "shared" or "arcade", and a console room's system's name), "roomNumber" and
-/// "moreRooms" (kRoomsAdded: the new room's number in its chain, and how many other rooms the update added).
+/// "moreRooms" (kRoomsAdded: the new room's number in its chain, and how many other rooms the update added),
+/// "groundFloor" (kRoomsAdded: the new room stands on the ground floor, reached from its atrium, not a floor's hall).
 inline constexpr std::string_view kDataModel = "world_notice";
 inline constexpr std::string_view kPanelId = "world-notice";
 

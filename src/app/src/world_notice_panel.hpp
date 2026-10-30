@@ -27,6 +27,8 @@ struct WorldNoticeContent {
     /// I4b step 8: world_notice::kRoomsAdded's room's number in its chain and the other rooms the update added.
     std::uint32_t roomNumber = 1;
     std::uint32_t moreRooms = 0;
+    /// That room stands on the ground floor (reached from its hub, the atrium) rather than off a floor's hall.
+    bool groundFloor = false;
 
     bool operator==(const WorldNoticeContent&) const = default;
 };

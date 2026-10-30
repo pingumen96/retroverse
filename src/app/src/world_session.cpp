@@ -688,6 +688,9 @@ void WorldSession::followRoomsAdded(ProductUi& product) {
     }
     notice.roomNumber = first.index();
     notice.moreRooms = static_cast<std::uint32_t>(standing.size() - 1);
+    notice.groundFloor = std::any_of(plan.rooms.begin(), plan.rooms.end(), [&](const world::Room& planned) {
+        return planned.id == first && planned.floor == world::kGroundFloor;
+    });
     spdlog::info("Frame {}: the notice names the expansion room {} the update added ({} more)",
                  m_context.frameIndex(), first.toString(), notice.moreRooms);
     setNotice(std::move(notice), true);
