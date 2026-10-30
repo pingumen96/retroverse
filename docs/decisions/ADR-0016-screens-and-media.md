@@ -60,6 +60,11 @@ instance whose base colour the service overrides (ADR-0012 §7's binding, genera
 The hub's information screens and the totem stay boards; neon and signs are no screens. A screen belongs to an area;
 only screens of the area that holds the eye (ADR-0013 §9) ask for video.
 
+*Amended on 2026-10-30 (I5 step 8's review):* the `viewer` kind is named **`media-viewer`** wherever Retroverse writes
+it: the run report's `video.screens` (its screen id and kind, `app::kViewerScreenId`) and the audible screen's id. The
+report's field came first (I5 step 8) and nothing else names the kind, so the table's name yields to it. `viewer` stays
+the reason the world's slots pause and stop under the viewer (§2, §10).
+
 ### 2. The decoder scheduler
 
 `app::ScreenScheduler`, GPU-free in `rv_app_cli`, decides each frame from the screens' requests. `app::ScreenService`
@@ -117,6 +122,14 @@ generated room's object ids come from the generator and are not a user-facing na
 a late-frame drop, open plus reserved slots never exceed the budget, and a lockstep run (`--fixed-dt`) does not watch
 late frames unless `--watch-late-frames` asks (its frames are presented on simulated time, decoded on the wall clock).
 
+*Amended on 2026-10-30 (I5 step 8's review):* while the media viewer is open every bound screen and cabinet counts as
+out of view, as under a minimized window: their slots pause at once and **stop after 10 s** (reason `viewer`), keeping
+their clips' positions, and **reopen where they were** once the viewer closes. A slot the viewer's clip takes from a
+clip still wanted is `needed` (its screen keeps its frame). The viewer's own clip is the scheduler's like any screen's: a
+clip no screen asks for any more (its page left, the viewer closed) stops at once (`unwanted`, no position kept: its
+page shown again plays it from its beginning), whether or not a room's screens are bound (the lobby, a hall, the quick
+catalog before any room).
+
 ### 3. Playlists
 
 `app::Playlist` is GPU-free. It draws its games from the room's items (ADR-0013 §9's items files: the clip, the stills,
@@ -167,6 +180,14 @@ Specification §9.2's other parameters map as follows:
 - `loop` is the playlist's cycle;
 - `maxResolution` is the rows;
 - `fallbackImageType` is the chain of §8, which is not configurable.
+
+*Amended on 2026-10-30 (I5 step 8's review):* the keys that reach the **media viewer's clip** (§10), as built:
+- `enabled: false` turns off the world's clips only: the viewer plays the clip the user asked for;
+- `maxDecoders` is the viewer's budget too (its clip is a request of the scheduler, `direct`): with 2 it decodes at
+  `viewerMaxRows`, with 1 at `maxRows`, taking the world's slot;
+- `audio.mode: off` silences it as it silences the world's screens; `audio.master`, `audio.video` and `muted` apply;
+- the per-kind and per-room keys (`volume`, `playlist`, `previewDuration`, `showOnFocus`, `crtPreset`, `games`) do not:
+  the viewer is no kind of `video.json`, its volume is 1 (§9), it loops its one clip and has no CRT look.
 
 ### 5. Secondary TVs: a theme pack's furniture
 
@@ -480,6 +501,19 @@ shared period) is not compensated.
 
   In-app pages need a permissive PDF renderer outside the pinned baseline, which needs a new ADR (BACKLOG).
 - **Not built in I5:** a video preview in the quick catalog's card (I7, BACKLOG).
+
+*Amended on 2026-10-30 (I5 step 8's review):*
+- **The world under the viewer** pauses as the viewer opens, on any page, then stops after 10 s (reason `viewer`) and
+  reopens where it was once the viewer closes (§2 as amended on 2026-10-30). Which `video.json` keys reach the viewer's
+  clip: §4 as amended on 2026-10-30.
+- **A clip's verdict** is asked for the viewer's clip itself, from the failure verdicts and its file's facts (§8), whether
+  or not a room's screens screened its game: a clip known to fail is never opened from the lobby or the quick catalog
+  either.
+- **The manual's plan** also refuses a path element whose stem is a reserved device name (`CON`, `PRN`, `AUX`, `NUL`,
+  `COM0` to `COM9`, `LPT0` to `LPT9`, `COM` and `LPT` with `¹`, `²` or `³`, any case and extension), a colon past the
+  drive's, and any comma; its argument is always quoted. A refused path has its own sentence ("Retroverse non apre
+  questo manuale..."), distinct from a start that failed. Activate is ignored while the start runs and for 2 s after
+  the manual opened, so one press opens one window.
 
 ### 11. The insertion animation (style §16.2, specification §8.3)
 

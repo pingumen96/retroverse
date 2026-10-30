@@ -223,7 +223,8 @@ page*"` plans `esde/snes-room` with a 720p clip and a manual for Amber Lantern a
 `build/<preset>/smoke/media_viewer/videos/data/screenshots/` the F12 screenshots of its videos page (frames 230, 290:
 playing; 330, 350: "In pausa", the same counter; 390: playing again) and of the manual's page refused by the guard
 (412); `"media viewer: a damaged clip*"` leaves `media_viewer/damaged/damaged_first.png` and `damaged_known.png` (Opal
-Oriel's "Filmato non riproducibile", "Motivo: unsupported-codec"). The clip's burned-in counter reads in the screenshot
+Oriel's "Filmato non riproducibile" and its sentence for `unsupported-codec`; "Motivo: <reason>" shows only beside the
+generic sentence of a reason the document does not know). The clip's burned-in counter reads in the screenshot
 ("A 0052"); `tests/smoke/test_media_viewer_video.cpp`'s `counterIn()` decodes its block row from the report's
 `screens.videoBox`. No automated run may open the manual for real.
 

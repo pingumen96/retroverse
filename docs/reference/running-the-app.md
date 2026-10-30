@@ -621,19 +621,21 @@ build/rvdata`).
   plays, shown through a `GL_RGBA8` view as `rv-texture:media-viewer-video`; A or Enter (`ui_activate`) pauses it and
   plays it again; a clip that cannot play shows "Filmato non riproducibile" with its reason (a failure verdict's: never
   opened; the decoder's, which gives a verdict). While the viewer is open, on any page, the world's screens and cabinets
-  count as out of view (their slots pause, reason `viewer`, and stop after 10 s; a slot the clip takes keeps its
-  screen's frame) and the sound is the viewer's clip alone at full volume (no duck over the card or the quick catalog,
+  count as out of view (their slots pause, reason `viewer`, and stop after 10 s, reopening where they were; a slot the
+  clip takes keeps its screen's frame) and the sound is the viewer's clip alone at full volume (no duck over the card or the quick catalog,
   wherever the eye is); they play again when it closes. A run that has shown no screen yet makes the screens' service
-  for the clip. The `manuals` page (the last) names the manual's file; "Apri il manuale" (A, Enter, or its button) starts
+  for the clip; there too the clip stops once its page or the viewer lets it go, and its failure verdict holds. The `manuals` page (the last) names the manual's file; "Apri il manuale" (A, Enter, or its button) starts
   explorer.exe with the file as its one argument through a Win32 process runner (`launcher::planManualOpen`: no shell;
-  plain paths only, `.pdf`, within `MAX_PATH`), which hands it to Windows' default PDF program: no game session, nothing
+  plain paths only, `.pdf`, within `MAX_PATH`, no comma, colon or device name, always quoted; a refused path says
+  "Retroverse non apre questo manuale..."; another A within 2 s of an opening is ignored), which hands it to Windows' default PDF program: no game session, nothing
   waits, Retroverse keeps running; under `RV_LAUNCH_ALLOWLIST` (every automated run) the guard refuses it ("Apertura
-  bloccata"). video.json's `enabled: false` turns the world's clips off, not the viewer's. The report's `video.viewer`
+  bloccata"). video.json's `enabled: false` turns the world's clips off, not the viewer's (`maxDecoders`,
+  `viewerMaxRows` and `audio.mode: off` reach it: ADR-0016 §4 as amended). The report's `video.viewer`
   (`clips`, `decodersOpened`, `framesUploaded`, `pauses`, `knownBad`, `failures`, the last clip's `game`, `state`,
-  `reason`, `width`, `height`, `rows`, `maxGpuBytes`, `openFrames`, `worldFramesWhileOpen`), the viewer among
-  `video.screens` (kind `media-viewer`), `screens.videoFrames`, `screens.videoBox` and the screens' events `video`
+  `reason`, `width`, `height`, `rows`, `maxGpuBytes`, `gpuBytes` at the end, `openFrames`, `worldFramesWhileOpen`),
+  the viewer among `video.screens` (kind `media-viewer`), `screens.videoFrames`, `screens.videoBox` and the screens' events `video`
   (`waiting`, `playing <w>x<h>`, `paused`, `failed <reason>`, `verdict <reason>`) and `manual` (`found <file>`,
-  `missing <reason>`, `opened`, `refused`, `failed <reason>`).
+  `missing <reason>`, `opened`, `refused`, `unsupported <reason>`, `failed <reason>`).
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
