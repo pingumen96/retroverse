@@ -76,6 +76,12 @@
          build/msvc-x64-release/real-library/migration (the rooms of succeeded families migrated once, the others byte
          for byte, none over capacity, the ground floor's rooms re-placed onto the hub in the same update, a second
          start and the whole job writing nothing).
+    Gate VR (I10, VR through OpenXR, ADR-0017; docs/testing/gate-vr.md): Gate D whole, run as a gate of its own (its
+    build matrix, unit and GPU runs with the fake runtime's VR cases among them, every golden, the benchmark path, under
+    the focus watcher; -RealLibrary and the real library's options passed on), then the VR mode's rows:
+      9. golden G21 (both eyes in the test room) in Debug and Release, from the GPU runs' verdicts;
+     10. the VR benchmark path in Release (tests/smoke/test_world_benchmark.cpp: the snes-stress room, both eyes at
+         Link's 2048 x 2048, the fake runtime) against ADR-0017 §9: frame p50 at most 13.9 ms, p99 at most 20 ms.
     -TimingOnly (Gate D) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the benchmark
     path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests).
     Gates M1, B, C and D run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
@@ -102,10 +108,11 @@
     ./scripts/gate.ps1 -Gate D
     ./scripts/gate.ps1 -Gate D -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # ES-DE closed
     ./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary     # the timing parts again, on a quiet machine
+    ./scripts/gate.ps1 -Gate VR                             # Gate D, then G21 and the VR benchmark path
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'M1', 'B', 'C', 'D')]
+    [ValidateSet('A', 'M1', 'B', 'C', 'D', 'VR')]
     [string]$Gate,
     [switch]$Clean,
     [switch]$RealLibrary,
@@ -133,7 +140,7 @@ if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
     Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C and D, -FullHashPass to -Gate M1' -ForegroundColor Red
     exit 2
 }
-if ($Benchmarks -and $Gate -notin @('B', 'C', 'D')) {
+if ($Benchmarks -and $Gate -notin @('B', 'C', 'D', 'VR')) {
     Write-Host 'gate: -Benchmarks belongs to -Gate B, C and D' -ForegroundColor Red
     exit 2
 }
@@ -188,6 +195,48 @@ function Write-Summary {
 }
 
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+
+# --- Gate VR: Gate D, then the VR mode's rows ----------------------------------------------------------------------------
+if ($Gate -eq 'VR') {
+    $forward = @('-Gate', 'D')
+    foreach ($switch in @(@('-Clean', $Clean), @('-RealLibrary', $RealLibrary), @('-Benchmarks', $Benchmarks))) {
+        if ($switch[1]) { $forward += $switch[0] }
+    }
+    foreach ($pair in @(@('-EsdeHome', $EsdeHome), @('-EsdeInstall', $EsdeInstall), @('-RomRoot', $RomRoot),
+                        @('-MediaRoot', $MediaRoot), @('-RetroArchExe', $RetroArchExe), @('-LegacyCli', $LegacyCli))) {
+        if ($pair[1]) { $forward += @($pair[0], $pair[1]) }
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    & pwsh -NoProfile -File $PSCommandPath @forward
+    $gateD = $LASTEXITCODE
+    Add-Result 'Gate D' ($(if ($gateD -eq 0) { 'passed' } else { 'FAILED' })) "exit $gateD (its rows: build/gate-d/)" `
+        $timer.Elapsed.TotalSeconds
+    foreach ($preset in @('msvc-x64-debug', 'msvc-x64-release')) {
+        $verdictFile = Join-Path $root "build/$preset/smoke/golden_g21/comparison.txt"
+        if (Test-Path $verdictFile) {
+            $verdict = (Get-Content -Raw $verdictFile).Trim()
+            $result = if ($verdict -like 'skipped*') { 'skipped' } elseif ($verdict -match ': match') { 'passed' }
+                      else { 'FAILED' }
+            Add-Result "G21 $preset" $result $verdict 0
+        } else {
+            Add-Result "G21 $preset" 'not run' 'no verdict: the GPU run did not reach golden/G21' 0
+        }
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $benchLog = Join-Path $logDir 'vr-benchmark.log'
+    $previous = $env:RV_LAUNCH_BACKGROUND
+    $env:RV_LAUNCH_BACKGROUND = '1'
+    & (Join-Path $root 'build/msvc-x64-release/bin/rv_smoke_tests.exe') `
+        'world benchmark: the benchmark path in the fake headset*' *> $benchLog
+    $benchExit = $LASTEXITCODE
+    $env:RV_LAUNCH_BACKGROUND = $previous
+    $figures = (Select-String -Path $benchLog -Pattern 'VR benchmark' | Select-Object -First 1).Line
+    $result = if ($benchExit -eq 0) { 'passed' } elseif ($benchExit -eq 4) { 'skipped' } else { 'FAILED' }
+    Add-Result 'VR benchmark (Release)' $result ($(if ($figures) { $figures.Trim() } else { "exit $benchExit, $benchLog" })) `
+        $timer.Elapsed.TotalSeconds 'frame p50 13.9 ms, p99 20 ms'
+    $results | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $resultsFile
+    exit (Write-Summary)
+}
 
 # --- Gates M1, B and C under the focus watcher -------------------------------------------------------------------------
 # The outer run starts the gate again under scripts/focus_watch.py, with RV_GATE_INNER set; the inner run does the work
