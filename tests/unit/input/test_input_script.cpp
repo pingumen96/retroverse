@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <glm/vec3.hpp>
 #include <nlohmann/json.hpp>
 
 #include <rv/core/file_io.hpp>
@@ -372,4 +374,42 @@ TEST_CASE("input/input_script: steps hold a named phase open on their frames", "
     CHECK(notString.code == ErrorCode::ParseError);
     CHECK(notString.context == "script.json:/0/phase");
     CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "phase": ""}])").code == ErrorCode::ValidationFailed);
+}
+
+TEST_CASE("input/input_script: steps give the VR mode's fake runtime its head poses (I10 step 2)",
+          "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "headPose": {"yaw": -40, "position": [0, 1.65, 0]}},
+        {"fromFrame": 5, "toFrame": 14, "headPose": {"pitch": -20, "roll": 10}, "actions": {"move_forward": 1}}
+    ])");
+    REQUIRE(script.steps().size() == 2);
+    const std::optional<rv::input::ScriptedHeadPose> first = script.headPoseAt(0);
+    REQUIRE(first);
+    CHECK(first->yawDeg == -40.0f);
+    CHECK(first->pitchDeg == 0.0f);
+    CHECK(first->position == std::optional<glm::vec3>(glm::vec3(0.0f, 1.65f, 0.0f)));
+    // The later step wins where both cover the frame; a pose without a position leaves the fake's standing head.
+    const std::optional<rv::input::ScriptedHeadPose> later = script.headPoseAt(7);
+    REQUIRE(later);
+    CHECK(later->yawDeg == 0.0f);
+    CHECK(later->pitchDeg == -20.0f);
+    CHECK(later->rollDeg == 10.0f);
+    CHECK_FALSE(later->position);
+    CHECK_FALSE(script.headPoseAt(15));
+    CHECK(script.valueAt(7, Action::MoveForward) == 1.0f);
+
+    // A pose alone makes a step; its fields are checked.
+    CHECK(parseOk(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {}}])").headPoseAt(0));
+    const rv::Error pitch = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"pitch": 95}}])");
+    CHECK(pitch.code == ErrorCode::ValidationFailed);
+    CHECK(pitch.context == "script.json:/0/headPose/pitch");
+    const rv::Error unknown = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"yaww": 5}}])");
+    CHECK(unknown.code == ErrorCode::ParseError);
+    CHECK(unknown.context == "script.json:/0/headPose/yaww");
+    const rv::Error position = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"position": [0, 1]}}])");
+    CHECK(position.code == ErrorCode::ParseError);
+    CHECK(position.context == "script.json:/0/headPose/position");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"position": [0, 1000, 0]}}])").code ==
+          ErrorCode::ValidationFailed);
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": 3}])").code == ErrorCode::ParseError);
 }
