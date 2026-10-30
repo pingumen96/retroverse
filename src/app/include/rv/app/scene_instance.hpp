@@ -32,6 +32,8 @@ class TextureCache;
 
 namespace rv::app {
 
+class ScreenLooks;
+
 /// Where a SceneInstance registers its content. Everything must outlive the instance.
 struct SceneResources {
     gl::MeshRegistry& meshes;
@@ -39,6 +41,9 @@ struct SceneResources {
     gl::TextureCache& textures;
     /// GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT (GLCapabilities), for the material blocks.
     int uniformBufferOffsetAlignment = 256;
+    /// The screens' CRT looks (I5 step 6, crt_looks.hpp): each screen's material instance takes its preset's values
+    /// before it is registered, and is recorded there; none: the materials' own values.
+    ScreenLooks* screenLooks = nullptr;
 };
 
 /// What SceneInstance::replaceObjects() changes.

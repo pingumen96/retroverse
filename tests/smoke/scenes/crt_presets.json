@@ -1,0 +1,68 @@
+// GPU smoke test scene (tests/smoke/test_crt_presets.cpp, I5 step 6, ADR-0016 §7): four CRTs on pedestals along the
+// north wall of a small room, their screens at eye height showing the colour bars, one for each CRT preset of
+// assets/materials/crt_presets.json as the case's video.json names them (rooms.crt_presets.screens.<id>.crtPreset; the
+// room's id is the scene's name): crt_neutral (the first, the hero), crt_consumer, crt_arcade and crt_monitor
+// (secondaries). The camera stands 4.9 m from the wall facing it, all four screens in view; the test's close-ups stand
+// the camera 0.64 m in front of one screen (its picture about 1,150 rows of a 2560 x 1440 screenshot: a scanline over
+// about 4.8 pixels). Room interior 8 x 7 m centred on the origin (x in [-4, 4], z in [-3.5, 3.5]), doorway in the south
+// wall. Run it on its own (without the case's video.json every tube is the consumer one) with
+//   retroverse.exe --scene tests/smoke/scenes/crt_presets.json --exit-after-frames --frames 5 --hidden
+//     --screenshot build/screenshots/crt_presets.png --data-dir build/rvdata
+{
+  "schemaVersion": 1,
+  "name": "crt_presets",
+  "camera": {"position": [0.0, 1.65, 1.4], "yawDeg": 0.0, "pitchDeg": -4.0, "horizontalFovDeg": 75.0,
+             "near": 0.05, "far": 100.0},
+  "environment": {
+    "clearColor": "#221E1A",
+    "ambientSky": "#E6E2DC",
+    "ambientGround": "#4A4642",
+    "ambientIntensity": 0.3,
+    "exposure": 1.5,
+    "bloomStrength": 0.18,
+    "bloomRadius": 0.5,
+    "vignette": 0.05,
+    "ssao": {"enabled": true, "radius": 0.4, "intensity": 1.0}
+  },
+  "lights": [
+    {"name": "ceiling_key", "type": "spot", "position": [0.0, 2.92, -1.0], "target": [0.0, 0.5, -3.5],
+     "color": "#FFE0C0", "intensity": 50.0, "range": 10.0, "innerConeDeg": 30.0, "outerConeDeg": 55.0,
+     "castsShadows": true},
+    {"name": "room_fill", "type": "point", "position": [0.0, 2.3, 0.8], "color": "#FFE0C0", "intensity": 12.0,
+     "range": 9.0}
+  ],
+  "objects": [
+    {"id": "room", "prefab": "room_shell",
+     "params": {"size": [8.0, 7.0], "wallHeight": 3.0, "wallThickness": 0.15, "metersPerTile": 2.0, "ceiling": true,
+                "baseboardHeight": 0.1, "wainscotHeight": 1.0,
+                "doorway": {"wall": "south", "offset": 0.0, "width": 1.6, "height": 2.3}},
+     "materials": {"floor": "MAT_Floor_OakPlanks", "wall": "MAT_Wall_Painted", "ceiling": "MAT_Wall_Painted",
+                   "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished"}},
+
+    {"id": "crt_neutral", "prefab": "crt", "position": [-2.1, 1.345, -3.18],
+     "materials": {"plastic_body": "MAT_Plastic_Black", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT_Room", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "color_bars"}}},
+    {"id": "crt_consumer", "prefab": "crt", "position": [-0.7, 1.345, -3.18],
+     "materials": {"plastic_body": "MAT_Plastic_Black", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT_Room", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "color_bars"}}},
+    {"id": "crt_arcade", "prefab": "crt", "position": [0.7, 1.345, -3.18],
+     "materials": {"plastic_body": "MAT_Plastic_Black", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT_Room", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "color_bars"}}},
+    {"id": "crt_monitor", "prefab": "crt", "position": [2.1, 1.345, -3.18],
+     "materials": {"plastic_body": "MAT_Plastic_Black", "plastic_bezel": "MAT_Plastic_Black",
+                   "screen": "MAT_Screen_CRT_Room", "plastic_dark": "MAT_Plastic_Black"},
+     "textures": {"screen": {"pattern": "color_bars"}}},
+
+    {"id": "pedestal_neutral", "primitive": "box", "params": {"size": [0.8, 1.345, 0.62]},
+     "position": [-2.1, 0.6725, -3.18], "material": "MAT_Wood_Walnut"},
+    {"id": "pedestal_consumer", "primitive": "box", "params": {"size": [0.8, 1.345, 0.62]},
+     "position": [-0.7, 0.6725, -3.18], "material": "MAT_Wood_Walnut"},
+    {"id": "pedestal_arcade", "primitive": "box", "params": {"size": [0.8, 1.345, 0.62]},
+     "position": [0.7, 0.6725, -3.18], "material": "MAT_Wood_Walnut"},
+    {"id": "pedestal_monitor", "primitive": "box", "params": {"size": [0.8, 1.345, 0.62]},
+     "position": [2.1, 0.6725, -3.18], "material": "MAT_Wood_Walnut"}
+  ]
+}

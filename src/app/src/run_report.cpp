@@ -2015,6 +2015,31 @@ ProcessPriorityRecord readProcessPriority(FieldReader& fields) {
     return priority;
 }
 
+Json crtLooksToJson(const CrtLooksRecord& looks) {
+    Json screens = Json::array();
+    for (const CrtLookRecord& screen : looks.screens) {
+        screens.push_back(Json{{"screen", screen.screen},
+                               {"room", screen.room},
+                               {"kind", screen.kind},
+                               {"preset", screen.preset},
+                               {"chosen", screen.chosen},
+                               {"rule", screen.rule}});
+    }
+    return Json{{"crtEffect", looks.crtEffect}, {"presetsSource", looks.presetsSource}, {"screens", std::move(screens)}};
+}
+
+CrtLooksRecord readCrtLooks(FieldReader& fields) {
+    CrtLooksRecord looks;
+    looks.crtEffect = fields.string("crtEffect");
+    looks.presetsSource = fields.string("presetsSource");
+    for (FieldReader& screen : fields.objectArray("screens")) {
+        looks.screens.push_back(CrtLookRecord{screen.string("screen"), screen.string("room"), screen.string("kind"),
+                                              screen.string("preset"), screen.string("chosen"),
+                                              screen.string("rule")});
+    }
+    return looks;
+}
+
 Json audioToJson(const AudioRecord& audio) {
     Json json;
     json["device"] = audio.device;
@@ -2755,6 +2780,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.processPriority) {
         json["processPriority"] = processPriorityToJson(*report.processPriority);
     }
+    if (report.crtLooks) {
+        json["crtLooks"] = crtLooksToJson(*report.crtLooks);
+    }
     json["screens"] = screensToJson(report.screens);
     json["directory"] = directoryToJson(report.directory);
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
@@ -2902,6 +2930,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto priority = fields.optionalObject("processPriority")) {
         report.processPriority = readProcessPriority(*priority);
+    }
+    if (auto looks = fields.optionalObject("crtLooks")) {
+        report.crtLooks = readCrtLooks(*looks);
     }
     if (auto screens = fields.optionalObject("screens")) {
         report.screens = readScreens(*screens);

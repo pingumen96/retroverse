@@ -1,5 +1,6 @@
 #pragma once
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_scheduler.hpp>
 #include <rv/app/video_settings.hpp>
@@ -98,9 +99,7 @@ struct CabinetShown {
     bool operator==(const CabinetShown&) const = default;
 };
 
-/// The id's end of a generated room's hero CRT, the hero corner's "crt" part ("room:snes/fx:hero.crt"), which the
-/// arcade's hero cabinet keeps.
-inline constexpr std::string_view kHeroCrtIdSuffix = ".crt";
+// kHeroCrtIdSuffix: rv/app/crt_looks.hpp (I5 step 6: the screens' looks find the hero by it too).
 
 /// The screens of `description`, the hero first: by its role since I5 step 3, the object whose id ends with
 /// kHeroCrtIdSuffix built from the `crt` prefab, or from the `arcade_cabinet` prefab that stands for it in the arcade

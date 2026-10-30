@@ -913,6 +913,12 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     video.verdicts.writeFailures = 0;
     report.processPriority = rv::app::ProcessPriorityRecord{
         {{1, "above-normal", "rendering", true}, {37, "normal", "launch", true}, {200, "normal", "exit", true}}};
+    // I5 step 6: the screens' CRT looks.
+    report.crtLooks = rv::app::CrtLooksRecord{
+        "vintage",
+        "user",
+        {{"room:gen6/fx:hero.crt", "room:gen6", "hero", "consumer", "monitor", "pack"},
+         {"collection/area:arcade/arcade", "area:arcade", "cabinet", "arcade", "arcade", "kind"}}};
     // I5 step 5: the clips' sound, written last.
     rv::app::AudioRecord audio;
     audio.device = "null";
@@ -948,6 +954,7 @@ TEST_CASE("app/run_report: the hero CRT's video reads back field for field (I3 s
     REQUIRE(parsed.has_value());
     CHECK(parsed->video == video);
     CHECK(parsed->processPriority == report.processPriority);
+    CHECK(parsed->crtLooks == report.crtLooks);
     CHECK(parsed->audio == report.audio);
     const nlohmann::ordered_json written = nlohmann::ordered_json::parse(rv::app::formatRunReport(report));
     CHECK(std::prev(written.end()).key() == "audio"); // appended

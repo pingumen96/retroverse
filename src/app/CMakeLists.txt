@@ -24,6 +24,7 @@ add_library(rv_app_cli STATIC
     src/collection_layers.cpp
     src/command_line.cpp
     src/cover_requests.cpp
+    src/crt_looks.cpp
     src/debug_line_selection.cpp
     src/directory_data.cpp
     src/elevator_ride.cpp

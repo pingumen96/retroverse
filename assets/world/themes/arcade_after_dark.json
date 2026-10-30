@@ -142,5 +142,8 @@
   "neon": "#F0509E",
   "neonGlow": {"intensity": 4.5, "range": 3.5},
   "bloomStrength": 0.28,
-  "lightTints": {"key": "#FFE4F2", "pendant": "#E0A8FF", "wallWasher": "#50D0FF"}
+  "lightTints": {"key": "#FFE4F2", "pendant": "#E0A8FF", "wallWasher": "#50D0FF"},
+  // I5 step 6 (ADR-0016 §7): the hero cabinet's and the cabinets' tubes are arcade monitors (deeper scanlines, a
+  // stronger mask, more curvature: assets/materials/crt_presets.json).
+  "screenPreset": "arcade"
 }

@@ -331,6 +331,22 @@ build/rvdata`).
   screen in view, so that it shows on the frame the slot opened (`video.firstFrameWaits`, `firstFrameWaitMaxMs`,
   `firstFrameWaitTimeouts`); a slot's `open` event gives the position it opened at (`fromSeconds`; absent: the
   clip's start).
+- The CRT presets (I5 step 6, ADR-0016 §7, `docs/i5/step-6.md`): every screen's tube (scanlines, phosphor mask,
+  curvature, vignette, the glass's sheen) is one of `assets/materials/crt_presets.json`'s presets, `neutral` (the clean
+  video), `consumer` (the look every CRT had before), `arcade` (deeper scanlines, a stronger and coarser mask, more
+  curvature) and `monitor` (a fine mask, little curvature), chosen when the scene's screen materials are registered:
+  `video.json`'s `crtEffect` `off` makes every screen `neutral` and `vintage` steps each one stronger (`monitor` to
+  `consumer`, `consumer` to `arcade`); else `video.json`'s `crtPreset` for the screen (`rooms.<room>.screens.<object
+  id>`, then `rooms.<room>.<kind>`, then the kind's own key; `""` is none); else the room's theme pack's
+  `screenPreset` (the optical-era lounge's `monitor`, the arcade's `arcade`); else the kind's (`consumer`, the
+  cabinets `arcade`). The arcade's cabinets take one look per room. `<user data>/config/crt_presets.json` (read, never
+  written) overrides the presets' values key by key (`{"schemaVersion": 1, "presets": {"arcade": {"scanlineStrength":
+  0.4}}}`); a user file that does not load is left out whole, a shipped one that does not load leaves the built-in
+  copy (both said in the log). The report's `crtLooks` gives `crtEffect`, `presetsSource` (`shipped`, `user`,
+  `built-in`) and `screens` (each screen of the scene shown at the end: `screen`, its object's id or a room's cabinets'
+  `collection/<room>/<family>`, and `collection/<room>/<family>/video` for their pooled video materials once a cabinet
+  played; `room`, `kind`, `preset`, `chosen` before `crtEffect`, `rule` `video.json`, `pack` or `kind`). The smoke scene `tests/smoke/scenes/crt_presets.json` (room `crt_presets`) holds four CRTs at eye height
+  showing the colour bars, one per preset with its case's `video.json`.
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every

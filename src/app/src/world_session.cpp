@@ -834,6 +834,13 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     }
     show.heroScreenPrefix = screenRoom ? *screenRoom + "/" : std::string();
     show.screenGames = screenGames;
+    // The rooms' packs' screen presets, taken once for the floor shown: a room's pack changes only with a full floor
+    // rebuild (this function again), so SceneInstance::replaceObjects() keeps them (I5 step 6).
+    for (const RoomCollection& room : build.rooms) {
+        if (!room.sceneData.theme.screenPreset.empty()) {
+            show.screenPresets.emplace(room.room.toString(), room.sceneData.theme.screenPreset);
+        }
+    }
     if (Status shown = m_host.showScene(std::move(*build.scene), show); !shown) {
         spdlog::error("World: the floor's scene cannot be shown: {}; the test room instead", shown.error().toString());
         if (Status fallback = m_host.showTestRoom(); !fallback) {

@@ -1,0 +1,30 @@
+// The CRT presets (I5 step 6, ADR-0016 §7, specification §9.6; src/assets/include/rv/assets/crt_presets.hpp): the
+// picture tube's looks the world's screens take, each a set of the screen effect's values (CrtEffect: scanlines over
+// the picture's height, their depth; phosphor triads across its width, their strength; the barrel curvature, which also
+// rounds the picture's corners; the vignette; the glass's reflection of the room's lights). An effect at 0 is off.
+// Scanlines and the mask keep the picture's mean brightness and fade out below a few pixels, so every preset stays
+// legible at any distance. A screen's preset: video.json's crtEffect over the user's per-screen, per-room or per-kind
+// "crtPreset", else its room's theme pack's "screenPreset", else its kind's (consumer; arcade for cabinets). The user's
+// <user data>/config/crt_presets.json overrides these values key by key and is never written by Retroverse.
+{
+  "schemaVersion": 1,
+  "presets": {
+    // The clean video (specification §9.6's "video pulito"): no scanlines, mask, curvature or vignette; the glass in
+    // front of it stays (the room's lamps on the screen).
+    "neutral": {"lineCount": 240, "scanlineStrength": 0, "maskTriadCount": 320, "maskStrength": 0,
+                "curvature": 0, "vignette": 0, "glassReflection": 0.25},
+    // A consumer television (style 15.2, CRT_Subtle of style 25): a 240-line picture with a light aperture grille, a
+    // slight curvature with rounded corners and a soft vignette behind hazy glass. Exactly the tube every CRT of the
+    // world showed before the presets.
+    "consumer": {"lineCount": 240, "scanlineStrength": 0.35, "maskTriadCount": 320, "maskStrength": 0.25,
+                 "curvature": 0.06, "vignette": 0.3, "glassReflection": 0.25},
+    // An arcade monitor (the arcade's cabinets): deeper scanline gaps, a stronger and coarser shadow mask, a rounder
+    // tube, its glass set back in the cabinet's bezel.
+    "arcade": {"lineCount": 240, "scanlineStrength": 0.5, "maskTriadCount": 240, "maskStrength": 0.35,
+               "curvature": 0.09, "vignette": 0.3, "glassReflection": 0.2},
+    // A high-quality computer monitor (the optical-era lounge's "Monitor moderno", specification §9.1): twice the
+    // lines and a fine grille, both faint, a nearly flat tube with a light vignette.
+    "monitor": {"lineCount": 480, "scanlineStrength": 0.12, "maskTriadCount": 640, "maskStrength": 0.1,
+                "curvature": 0.02, "vignette": 0.12, "glassReflection": 0.25}
+  }
+}

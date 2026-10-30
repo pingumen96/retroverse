@@ -54,7 +54,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `edit_bar_ui.hpp` (the bar's document contract); since I5 step 5 `audio_policy.hpp` (the run's audio output, the
   audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio_model`); since I5 step 4
   `screen_aspect.hpp` (the rectangle a clip fills on its screen) and `cabinet_screens.hpp` (which arcade cabinets play:
-  attract's choice and dwell, the focused and inspected one, none in the editor). `rv_app`'s `world_cabinets.cpp`
+  attract's choice and dwell, the focused and inspected one, none in the editor); since I5 step 6 `crt_looks.hpp`
+  (which CRT preset each screen takes: `crtEffect`, `video.json`'s `crtPreset`, the pack's `screenPreset`, the kind;
+  `ScreenLooks`, held by `SceneGraphics` and applied to a scene's screen materials before they are registered).
+  `rv_app`'s `world_cabinets.cpp`
   (I5 step 4) is the world's side of the cabinets: their requests to `ScreenService::setCabinets()`, their fronts drawn
   with the collection's pooled video materials (`CollectionInstance::videoMaterials`, `setVideoFront`). `rv_media`'s
   `audio_sink.hpp`
@@ -134,7 +137,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's
   object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:
   `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
-  `collection_labels`, `rvtex`, `derived_texture_cache`); `rv_scene` the 80-byte `InstanceData` (0c), the eased
+  `collection_labels`, `rvtex`, `derived_texture_cache`; since I5 step 6 `crt_presets.hpp`, the CRT presets' file and
+  `CrtEffect`'s reader); `rv_scene` the 80-byte `InstanceData` (0c), the eased
   `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8), and since
   I4 step 3 the scene's areas (`scene_areas.hpp`: the area that holds the eye, the lights a view packs there, since
   I6 step 1 with its neighbours' seen through the doorways, each faded in and out and clipped to its doorway, and the
@@ -232,7 +236,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `assets/world/presets/<id>.json` under `world.json` (per key: `preset` names another preset, `seed` a seed or null,
   integers only, millimetres and permille, since I4 step 4 `sharedRoomMinTitles`, the distinct titles a system entering
   the building needs for a room of its own, 30, 0 giving every system one; a broken file is left out whole with one
-  issue). The world's data, read
+  issue), since I5 step 1 `assets/config/video.json` under `video.json` (`video_settings.hpp`), and since I5 step 6
+  `assets/materials/crt_presets.json` under `crt_presets.json` (the CRT presets' values, `rv/assets/crt_presets.hpp`:
+  per key over the shipped ones; a broken user file is left out whole, a broken shipped one leaves the built-in copy).
+  The world's data, read
   strictly (unknown or duplicate keys and fractions refused with their line): `assets/world/templates/` (the room
   template `console_room_9x10.json`), `platforms/`, `media_families.json`, `lighting/` (the profiles `evening` and
   `afternoon`), `themes/` (the room's materials); prefab families in

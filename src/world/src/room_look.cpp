@@ -8,6 +8,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <rv/assets/crt_presets.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
@@ -240,6 +241,15 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
     }
     if (!document.failed() && reader.has("bloomStrength")) {
         theme.bloomStrength = reader.number("bloomStrength", 0.0, 1.0);
+    }
+    if (!document.failed() && reader.has("screenPreset")) {
+        // I5 step 6 (ADR-0016 §7): the CRT preset of the pack's rooms' screens.
+        theme.screenPreset = reader.string("screenPreset");
+        if (!document.failed() && !assets::crtPresetFromName(theme.screenPreset)) {
+            document.fail(reader.pointer("screenPreset"),
+                          "unknown CRT preset \"" + theme.screenPreset +
+                              "\" (expected \"neutral\", \"consumer\", \"arcade\" or \"monitor\")");
+        }
     }
     if (!document.failed() && reader.has("lightTints")) {
         const Json& tints = reader.value("lightTints");
@@ -977,7 +987,7 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
                               {"accents", "bloomStrength", "furniture", "heroParts", "id", "kinds", "labelPalette",
-                               "lightTints", "name", "neon", "neonGlow", "roomDressing", "schemaVersion"});
+                               "lightTints", "name", "neon", "neonGlow", "roomDressing", "schemaVersion", "screenPreset"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
     theme.id = reader.dataId("id");

@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "15a8fe87ad58a1461a49c80af802b01bc422df8b",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style 14.3, concept panel 4): the esde/case-shelves fixture's ps2 room on gen6 under the optical_era_lounge pack (dark blue walls over the walnut wainscot, a discreet blue against warm lamps), its 100 invented titles as DVD keep cases (disc_case_dvd_v2): the featured ones face-out in the two lit glass display cases and on the featured wall shelf, the hero modules' bookcases lit inside with a face-out band and cases standing on their side with their spines upright; the pack's era furniture: a low sofa facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no clip: I5 step 1, ADR-0016 §3).",
+  "description": "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style 14.3, concept panel 4): the esde/case-shelves fixture's ps2 room on gen6 under the optical_era_lounge pack (dark blue walls over the walnut wainscot, a discreet blue against warm lamps), its 100 invented titles as DVD keep cases (disc_case_dvd_v2): the featured ones face-out in the two lit glass display cases and on the featured wall shelf, the hero modules' bookcases lit inside with a face-out band and cases standing on their side with their spines upright; the pack's era furniture: a low sofa facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no clip: I5 step 1, ADR-0016 §3). Since I5 step 6 its screens through the pack's monitor CRT preset (a fine mask, little curvature).",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -18,7 +18,7 @@
     "file": "g17_optical_era_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "057956febd4668bb77d6fe96d434ebef74350c17c30712871a05f0e45771f678",
+    "sha256": "438d310690db98e06dafd9a6efacfab69b33fb757c4f88ba55528e7b88b0e9d0",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

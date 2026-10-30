@@ -9,6 +9,12 @@
       "notes": "Parametric PBR presets derived from the style guide palette (style.md section 3); their textures are procedural surfaces generated in code (src/assets/include/rv/assets/surface_textures.hpp), no image files. Since I6 step 4 also the dark shells of cases and boxes standing on their side (MAT_Case_Jewel_Smoke, MAT_Case_Keep_Black, MAT_Case_Plastic_Dark, MAT_Cardboard_BigBox), original presets; since I6 step 6 the arcade cabinets' laminate, paints, lit mouldings and marquees and their screens (MAT_Cabinet_*, MAT_Molding_*, MAT_Marquee_*, MAT_Screen_Off, MAT_Screen_Idle, MAT_Screen_Arcade) and the handhelds' teal plastic (MAT_Plastic_Teal), original presets; since I5 step 3's review the secondary TV's charcoal plastic (MAT_Plastic_Charcoal), an original preset."
     },
     {
+      "path": "materials/crt_presets.json",
+      "kind": "material-presets",
+      "provenance": "retroverse-original",
+      "notes": "The CRT presets of the world's screens (I5 step 6, ADR-0016 section 7, specification section 9.6): neutral, consumer, arcade and monitor, each a set of the picture tube's effect values (src/assets/include/rv/assets/crt_presets.hpp), original values; no image files."
+    },
+    {
       "path": "ui/fonts/AtkinsonHyperlegible-Regular.ttf",
       "kind": "font",
       "provenance": "atkinson-hyperlegible",
