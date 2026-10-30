@@ -1247,6 +1247,12 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     xr.events = {"0: idle", "0: ready", "1200: loss-pending"};
     xr.head = {{0, glm::vec3(-0.6f, 1.65f, 0.9f), 9.0f, 0.0f, 0.0f},
                {1, glm::vec3(-0.5f, 1.6f, 0.8f), -31.0f, -20.0f, 10.0f}};
+    xr.posture = "seated";
+    xr.turn = "snap";
+    xr.snapTurns = 3;
+    xr.teleports = 2;
+    xr.pushedFrames = 14;
+    xr.largestHeadOffset = 0.375f;
     report.xr = xr;
     const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
     REQUIRE(parsed.has_value());

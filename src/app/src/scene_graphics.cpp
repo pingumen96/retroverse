@@ -1,6 +1,7 @@
 #include <rv/app/scene_graphics.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -368,6 +369,11 @@ struct SceneGraphics::State {
         eyeView.post.vignette = 0.0f;
         for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
             eyeView.camera = eyes.cameras[eye];
+            // The comfort vignette closes in on where the eye looks straight ahead (I10 step 3).
+            const scene::EyeFov& field = eyes.fields[eye];
+            eyeView.post.tunnelCenter =
+                glm::vec2(std::tan(-field.left) / (std::tan(field.right) - std::tan(field.left)),
+                          std::tan(-field.down) / (std::tan(field.up) - std::tan(field.down)));
             render(device, eyeView, eyeTargets[eye]);
         }
         gl::RenderStateCache& state = device.state();

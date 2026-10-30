@@ -47,6 +47,8 @@ class AppContext;
 /// they go into, GL textures of `size` pixels (xr::Frame::images).
 struct XrEyeTargets {
     std::array<scene::Camera, 2> cameras;
+    /// The eyes' fields (the comfort vignette's centre, I10 step 3).
+    std::array<scene::EyeFov, 2> fields{};
     std::array<std::uint32_t, 2> images{};
     glm::ivec2 size{0};
 };

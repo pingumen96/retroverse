@@ -790,7 +790,7 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     REQUIRE(vr.has_value());
     CHECK(vr->xr.enabled);
     CHECK(vr->xr.runtime == rv::app::XrRuntimeChoice::OpenXr);
-    CHECK(vr->xr.renderScale == 1.0);
+    CHECK_FALSE(vr->xr.renderScale);
     CHECK_FALSE(vr->xr.runtimeJson);
 
     const auto fake = parse({"--smoke", "--frames", "5", "--vr", "--xr-runtime", "fake", "--xr-render-scale", "0.5",

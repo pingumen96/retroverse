@@ -85,6 +85,7 @@
 #include "screen_service.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
+#include "xr_movement.hpp"
 
 namespace rv::app {
 namespace {
@@ -480,6 +481,12 @@ struct RetroverseApp::State {
     /// The VR frame's eyes in the world, for onRender (followHead(); none on the desktop).
     std::optional<XrEyeTargets> xrEyes;
     std::optional<FreeRoam> freeRoam;
+    /// The walker's movement in VR (I10 step 3; none on the desktop), and what it adds to the view (the teleport's
+    /// arc): the view's items copied with the arc's after them.
+    std::optional<XrMovement> xrMovement;
+    XrProps xrProps;
+    std::vector<scene::RenderItem> xrItems;
+    bool xrPropsFailed = false;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -614,23 +621,35 @@ struct RetroverseApp::State {
         return record;
     }
 
-    /// A VR frame (AppContext::xrFrame, I10 step 2) puts the tracking space on the walker's feet and yaw (ADR-0017 §5):
-    /// the eyes' cameras for the render, and the head's as the view camera for everything that follows it (culling,
-    /// covers, labels, the audio listener). The head's pose goes into the run report. Nothing on the desktop or while
-    /// tracking is lost (the walker's camera stays).
+    /// The walker's actions of a located VR frame move it through the head's movement (I10 step 3, XrMovement); false
+    /// on the desktop and while tracking is lost (the walker moves as on the desktop, or stays).
+    bool moveInXr(AppContext& context, const input::ActionState& actions, double deltaSeconds) {
+        const xr::Frame* frame = context.xrFrame();
+        if (frame == nullptr || !frame->located || !freeRoam || !xrMovement) {
+            return false;
+        }
+        xrMovement->update(*frame, actions, static_cast<float>(deltaSeconds), *freeRoam, camera);
+        return true;
+    }
+
+    /// A VR frame (AppContext::xrFrame, I10 step 2) places the tracking space where the movement anchored it (ADR-0017
+    /// §5, I10 step 3): the eyes' cameras for the render, and the head's as the view camera for everything that follows
+    /// it (culling, covers, labels, the audio listener). The head's pose and the movement's counters go into the run
+    /// report. Nothing on the desktop or while tracking is lost (the walker's camera stays).
     void followHead(AppContext& context) {
         xrEyes.reset();
         const xr::Frame* frame = context.xrFrame();
-        if (frame == nullptr || !frame->located || !freeRoam) {
+        if (frame == nullptr || !frame->located || !freeRoam || !xrMovement) {
             return;
         }
-        const scene::FirstPersonController& walker = freeRoam->controller();
-        const xr::TrackingAnchor anchor{walker.feetPosition(), walker.yaw(), frame->floorOffset};
+        const xr::Locomotion& locomotion = xrMovement->locomotion();
+        const xr::TrackingAnchor anchor = locomotion.anchor();
         XrEyeTargets eyes;
         for (std::size_t eye = 0; eye < eyes.cameras.size(); ++eye) {
             const xr::Pose pose = xr::toWorld(anchor, frame->eyes[eye].pose);
             eyes.cameras[eye] = camera;
             eyes.cameras[eye].setEye(pose.position, pose.orientation, frame->eyes[eye].fov);
+            eyes.fields[eye] = frame->eyes[eye].fov;
         }
         const xr::Pose head = xr::toWorld(anchor, xr::headOf(frame->eyes));
         camera.setEye(head.position, head.orientation, xr::combinedField(frame->eyes));
@@ -642,10 +661,39 @@ struct RetroverseApp::State {
                                                 core::radiansToDegrees(angles.pitch),
                                                 core::radiansToDegrees(angles.roll)});
         }
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            const xr::LocomotionCounters& counters = locomotion.counters();
+            record->snapTurns = counters.snapTurns;
+            record->teleports = counters.teleports;
+            record->pushedFrames = counters.pushedFrames;
+            record->largestHeadOffset = counters.largestHeadOffset;
+        }
         if (frame->wantsViews()) {
             eyes.images = frame->images;
             eyes.size = frame->eyeSize;
             xrEyes = eyes;
+        }
+    }
+
+    /// What a VR frame's eyes add to the view (I10 step 3): the movement's fade (a head leaning into a wall, a
+    /// teleport's blink) over the ride's, the comfort vignette, the teleport's arc. Nothing on the desktop.
+    void addXrView(AppContext& context, gl::RenderView& view) {
+        if (!xrEyes || !xrMovement) {
+            return;
+        }
+        const xr::Locomotion& locomotion = xrMovement->locomotion();
+        view.post.fade = std::max(view.post.fade, locomotion.fade());
+        view.post.tunnel = locomotion.tunnel();
+        if (const std::optional<xr::TeleportArc>& arc = locomotion.arc(); arc && !xrPropsFailed) {
+            xrItems.assign(view.items.begin(), view.items.end());
+            if (Status added = xrProps.append(*arc, *graphics, context.device().caps().uniformBufferOffsetAlignment,
+                                              xrItems);
+                !added) {
+                spdlog::error("The teleport's arc cannot be drawn: {}", added.error().toString());
+                xrPropsFailed = true;
+                return;
+            }
+            view.items = xrItems;
         }
     }
 
@@ -1536,6 +1584,9 @@ Status RetroverseApp::onInit(AppContext& context) {
     state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
                           core::degreesToRadians(camera.pitchDeg));
     state->freeRoam.emplace(state->description, state->scene->collisionWorld(), options.spawn);
+    if (context.vr()) {
+        state->xrMovement.emplace(state->freeRoam->controller().settings(), context.xrSettings());
+    }
 
     input::ActionMap bindings = loadBindings(paths);
     state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
@@ -1772,22 +1823,25 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         spdlog::error("Debug lines unavailable: {}", shown.error().toString());
     }
     state.freeRoam->setCollisionEnabled(state.collision);
+    // The walker's actions of the frame: none while an ease of the world drives it or a ride runs.
+    input::ActionState walkerActions;
     if (worldResult.walker) {
         state.placeWalker(*worldResult.walker); // an ease of the world drives the walker: no actions this frame
-    } else if (riding) {
-        state.freeRoam->update(input::ActionState{}, static_cast<float>(deltaSeconds), state.camera);
-    } else if (state.world) {
+    } else if (state.world && !riding) {
         // I4b step 3: the world's context sees the arrows too (the editor's walker does not walk while one steps); the
         // editor's menu holds the walker (its arrows choose a button).
         const WorldContext walkerContext = state.world->editHoldsWalker() ? WorldContext::Suspended : worldContext;
-        state.freeRoam->update(walkerActionsFor(walkerContext, inputContext == InputContext::World
-                                                                   ? actions
-                                                                   : actionsFor(inputContext, actions)),
-                               static_cast<float>(deltaSeconds), state.camera);
-    } else {
-        state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
+        walkerActions = walkerActionsFor(walkerContext, inputContext == InputContext::World
+                                                            ? actions
+                                                            : actionsFor(inputContext, actions));
+    } else if (!state.world) {
+        walkerActions = actionsFor(inputContext, actions);
     }
-    // In a VR frame the head, where the walker now stands, takes the view (I10 step 2).
+    // In a VR frame the head's movement moves the walker (I10 step 3), then the head, where the walker now stands,
+    // takes the view (I10 step 2).
+    if (!state.moveInXr(context, walkerActions, deltaSeconds) && !worldResult.walker) {
+        state.freeRoam->update(walkerActions, static_cast<float>(deltaSeconds), state.camera);
+    }
     state.followHead(context);
     if (state.world && state.product) {
         // The hover's title label over the item as this frame's camera shows it (none under the product UI).
@@ -1845,8 +1899,9 @@ void RetroverseApp::onRender(AppContext& context) {
     }
     State& state = *m_state;
     state.followSceneAreas(context.frameIndex());
-    state.graphics->renderFrame(context, state.view(), state.screenshotRequested,
-                                state.xrEyes ? &*state.xrEyes : nullptr);
+    gl::RenderView view = state.view();
+    state.addXrView(context, view);
+    state.graphics->renderFrame(context, view, state.screenshotRequested, state.xrEyes ? &*state.xrEyes : nullptr);
     state.screenshotRequested = false;
     if (state.world) {
         state.world->frameRendered();

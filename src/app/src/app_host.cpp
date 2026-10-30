@@ -398,11 +398,21 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     const DebugMessageRecorder debugMessages(**device, m_report);
 
     // --- VR (I10 step 2): the session on this context, before the logic that renders for it --------------------------
-    // Declared before the logic's shutdown guard: destroyed after onShutdown, while the context is current.
+    // Declared before the logic's shutdown guard: destroyed after onShutdown, while the context is current. xr.json
+    // (I10 step 3) may turn it on without --vr, and gives the logic its comfort settings.
+    xr::XrSettings xrSettings;
+    if (auto loaded = xr::loadXrSettings(paths->assetRoot(), paths->configDir())) {
+        xrSettings = loaded->settings;
+        for (const Error& issue : loaded->issues) {
+            spdlog::warn("The user's xr.json is left out, its defaults used: {}", issue.toString());
+        }
+    } else {
+        spdlog::warn("xr.json's defaults could not be read, the VR mode takes its own: {}", loaded.error().toString());
+    }
     std::unique_ptr<XrSessionDriver> xr;
-    if (m_options.xr.enabled) {
+    if (m_options.xr.enabled || (xrSettings.vr && !m_options.stereoPreview)) {
         m_report.xr = XrRecord{};
-        xr = XrSessionDriver::start(m_options, *m_report.xr);
+        xr = XrSessionDriver::start(m_options, xrSettings, *m_report.xr);
         if (xr) {
             // The runtime paces the frames: the mirror's swap must not wait for the monitor too.
             if (auto vsync = window->setVsync(false); !vsync) {
@@ -415,6 +425,8 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     core::FrameClock clock;
     AppContext context(m_options, *paths, *window, **device, clock, m_report, m_frameTiming);
     context.m_framebufferSize = window->drawableSize();
+    context.m_xrSettings = xrSettings;
+    context.m_vr = xr != nullptr;
     // The wake event of the idle mode: pushed from any thread (SDL_PushEvent is thread-safe), kept by the host.
     context.m_wakeEvent = SDL_RegisterEvents(1);
     if (context.m_wakeEvent != 0) {
@@ -526,6 +538,7 @@ void AppHost::leaveXr(AppContext& context, std::uint64_t desktopFrame) {
     m_report.xr->desktopFromFrame = desktopFrame;
     spdlog::warn("Frame {}: the VR session ended, the run goes on on the desktop", desktopFrame);
     context.m_xrFrame.reset();
+    context.m_vr = false;
     if (auto vsync = context.m_window.setVsync(m_options.vsync); !vsync) {
         spdlog::warn("Vsync not restored after the VR session: {}", vsync.error().toString());
     }

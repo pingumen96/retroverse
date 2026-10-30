@@ -7,6 +7,7 @@
 #include <rv/app/command_line.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/xr/session.hpp>
+#include <rv/xr/xr_settings.hpp>
 
 namespace rv::xr {
 class FakeRuntime;
@@ -14,8 +15,8 @@ class FakeRuntime;
 
 namespace rv::app {
 
-/// The VR mode's session in a run (I10 step 2, ADR-0017 §3, §8): the runtime --vr asks for on the GL context current
-/// on the main thread (the system's OpenXR runtime, or xr::FakeRuntime with its swapchain images as GL textures and
+/// The VR mode's session in a run (I10 step 2, ADR-0017 §3, §8): the runtime --vr (or xr.json) asks for, at xr.json's
+/// render scale (--xr-render-scale's when given) and refresh rate, on the GL context current on the main thread (the system's OpenXR runtime, or xr::FakeRuntime with its swapchain images as GL textures and
 /// the --input-script's head poses), its events and its frames. AppHost drives it: pollEvents() every loop, then
 /// beginFrame() before the logic's update, endFrame() after its render. The session ending (exited, lost, a failed
 /// call) sends the run back to the desktop. Main thread only; destroy it before the GL context.
@@ -23,7 +24,8 @@ class XrSessionDriver {
 public:
     /// Starts the session, or returns nothing when VR is unavailable (no runtime, no headset, OpenGL refused, a build
     /// without the OpenXR loader): logged, and recorded in `record` (XrRecord::unavailable).
-    [[nodiscard]] static std::unique_ptr<XrSessionDriver> start(const CommandLineOptions& options, XrRecord& record);
+    [[nodiscard]] static std::unique_ptr<XrSessionDriver> start(const CommandLineOptions& options,
+                                                                const xr::XrSettings& settings, XrRecord& record);
     ~XrSessionDriver();
     XrSessionDriver(const XrSessionDriver&) = delete;
     XrSessionDriver& operator=(const XrSessionDriver&) = delete;

@@ -1567,6 +1567,15 @@ struct XrRecord {
     std::vector<std::string> events;
     /// The head in the world on the first kMaxHeadSamples frames that located the eyes.
     std::vector<XrHeadSample> head;
+    /// xr.json's posture ("standing", "seated") and turn ("snap", "smooth") (I10 step 3).
+    std::string posture;
+    std::string turn;
+    /// The movement (xr::LocomotionCounters): snap turns, teleports, frames the head leaned too far beyond the capsule
+    /// and was pushed back, the farthest it leaned (meters).
+    std::uint64_t snapTurns = 0;
+    std::uint64_t teleports = 0;
+    std::uint64_t pushedFrames = 0;
+    float largestHeadOffset = 0.0f;
 
     bool operator==(const XrRecord&) const = default;
 };

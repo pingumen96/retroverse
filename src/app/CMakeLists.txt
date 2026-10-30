@@ -132,6 +132,7 @@ add_library(rv_app STATIC
     src/edit_bar_panel.cpp
     src/world_edit.cpp
     src/world_regenerate.cpp
+    src/xr_movement.cpp
     src/xr_session_driver.cpp
 )
 add_library(rv::app ALIAS rv_app)

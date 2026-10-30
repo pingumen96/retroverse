@@ -81,8 +81,9 @@ struct XrOptions {
     bool enabled = false;
     XrRuntimeChoice runtime = XrRuntimeChoice::OpenXr; ///< --xr-runtime openxr|fake
     std::optional<std::filesystem::path> runtimeJson;   ///< --xr-runtime-json: a runtime's manifest (XR_RUNTIME_JSON)
-    /// --xr-render-scale: the eyes' size over the runtime's recommendation, in [kMinRenderScale, kMaxRenderScale].
-    double renderScale = 1.0;
+    /// --xr-render-scale: the eyes' size over the runtime's recommendation, in [kMinRenderScale, kMaxRenderScale]; none:
+    /// xr.json's.
+    std::optional<double> renderScale;
     /// --xr-fake-lose-after <frames>: the fake runtime loses its session after this many frames (the desktop
     /// fallback's tests).
     std::optional<std::uint64_t> fakeLoseAfterFrames;

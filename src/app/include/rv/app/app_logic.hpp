@@ -13,6 +13,7 @@
 #include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/xr/session.hpp>
+#include <rv/xr/xr_settings.hpp>
 
 union SDL_Event;
 
@@ -98,6 +99,11 @@ public:
     [[nodiscard]] const xr::Frame* xrFrame() const noexcept { return m_xrFrame ? &*m_xrFrame : nullptr; }
     /// The logic rendered both eyes into the frame's images (xr::Frame::images): the host submits them with it.
     void setXrViewsRendered() noexcept { m_xrViewsRendered = true; }
+    /// The run is in VR (--vr, or xr.json's display.mode; I10 step 3): its session started before onInit and has not
+    /// ended. False on the desktop, and once the run went back to it.
+    [[nodiscard]] bool vr() const noexcept { return m_vr; }
+    /// xr.json as the run read it (its shipped defaults when the user's file was left out).
+    [[nodiscard]] const xr::XrSettings& xrSettings() const noexcept { return m_xrSettings; }
 
 private:
     friend class AppHost;
@@ -123,6 +129,8 @@ private:
     std::function<void()> m_wake = [] {};
     std::optional<xr::Frame> m_xrFrame;
     bool m_xrViewsRendered = false;
+    bool m_vr = false;
+    xr::XrSettings m_xrSettings;
     std::optional<Error> m_failure;
     ExitCode m_failureCode = ExitCode::RuntimeFailure;
 };

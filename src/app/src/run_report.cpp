@@ -2657,6 +2657,12 @@ Json xrToJson(const XrRecord& xr) {
                             {"rollDeg", static_cast<double>(sample.rollDeg)}});
     }
     json["head"] = std::move(head);
+    json["posture"] = xr.posture;
+    json["turn"] = xr.turn;
+    json["snapTurns"] = xr.snapTurns;
+    json["teleports"] = xr.teleports;
+    json["pushedFrames"] = xr.pushedFrames;
+    json["largestHeadOffset"] = static_cast<double>(xr.largestHeadOffset);
     return json;
 }
 
@@ -2700,6 +2706,12 @@ XrRecord readXr(FieldReader& fields) {
                                        static_cast<float>(sample.number("pitchDeg")),
                                        static_cast<float>(sample.number("rollDeg"))});
     }
+    xr.posture = fields.string("posture");
+    xr.turn = fields.string("turn");
+    xr.snapTurns = fields.count("snapTurns");
+    xr.teleports = fields.count("teleports");
+    xr.pushedFrames = fields.count("pushedFrames");
+    xr.largestHeadOffset = static_cast<float>(fields.number("largestHeadOffset"));
     return xr;
 }
 

@@ -45,9 +45,13 @@ void describe(const xr::RuntimeDescription& description, XrRecord& record) {
 
 } // namespace
 
-std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions& options, XrRecord& record) {
+std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions& options,
+                                                        const xr::XrSettings& settings, XrRecord& record) {
     const XrOptions& xrOptions = options.xr;
+    const double renderScale = xrOptions.renderScale.value_or(settings.renderScale);
     record.runtimeChoice = std::string(toString(xrOptions.runtime));
+    record.posture = std::string(xr::toString(settings.posture));
+    record.turn = std::string(xr::toString(settings.comfort.turn));
     const auto unavailable = [&](std::string why) -> std::unique_ptr<XrSessionDriver> {
         spdlog::warn("VR unavailable, the run stays on the desktop: {}", why);
         record.unavailable = std::move(why);
@@ -58,7 +62,7 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
     const xr::FakeRuntime* fake = nullptr;
     if (xrOptions.runtime == XrRuntimeChoice::Fake) {
         xr::FakeRuntimeConfig config;
-        config.renderScale = xrOptions.renderScale;
+        config.renderScale = renderScale;
         config.loseAfterFrames = xrOptions.fakeLoseAfterFrames;
         if (options.inputScript) {
             auto loaded = input::InputScript::loadFromFile(*options.inputScript);
@@ -84,7 +88,10 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
         xr::OpenXrOptions openXr;
         openXr.runtimeJson = xrOptions.runtimeJson.value_or(std::filesystem::path());
         openXr.headsetWait = options.frameLimit ? std::chrono::milliseconds(0) : kInteractiveHeadsetWait;
-        openXr.renderScale = xrOptions.renderScale;
+        openXr.renderScale = renderScale;
+        if (settings.refreshRate > 0.0f) {
+            openXr.refreshRate = settings.refreshRate;
+        }
         auto created = xr::createOpenXrRuntime(openXr);
         if (!created) {
             return unavailable(created.error().toString());
