@@ -24,6 +24,8 @@ add_subdirectory(render)
 add_subdirectory(ui)       # RmlUi product UI; its GPU-free model always (I1 spike d)
 # Developer overlay: its GPU-free model always, the Dear ImGui overlay itself only with RV_DEV_UI.
 add_subdirectory(devui)
+# VR through OpenXR (I10, ADR-0017): its GPU-free model always, the OpenXR runtime only with RV_ENABLE_XR.
+add_subdirectory(xr)
 
 # Composition root
 add_subdirectory(app)
