@@ -262,7 +262,11 @@ build/rvdata`).
   `docs/i10/step-5.md`): one panel drawn into the eyes, in front of the user where a UI that takes the input opened
   (the catalog, the directory, the viewer: the ray is its mouse, the trigger clicks, the right stick scrolls), else a
   heads-up display on the head (the label over its item, the prompts, the card); the window and the screenshots show
-  it through the eyes. Without a
+  it through the eyes. A launched game (I10 step 6, `docs/i10/step-6.md`) keeps the headset rendering: its emulator's
+  window (borderless, never exclusive fullscreen) is captured onto the room's hero CRT (Windows.Graphics.Capture,
+  WGL_NV_DX_interop2), the pad plays it, Retroverse reads no input until it ends. Interactive runs scale the eyes'
+  rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
+  frame-limited runs keep 1. Without a
   runtime or a headset (an interactive run waits 15 s
   for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with

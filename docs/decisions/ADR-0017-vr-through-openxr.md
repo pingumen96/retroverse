@@ -210,3 +210,19 @@ step 7. Correctness and the focus rules are never relaxed.
 - **Air Link:** adds latency the app does not control (49 to 65 ms motion to photon in the spike). It can also turn
   spacewarp on, which paces the app at half rate. The limits are measured on the cable, and the run report records
   the runtime's spacewarp state.
+
+## Implementation notes (I10 steps 2 to 8)
+
+What the steps built where it departs from the text above, each recorded in its step's note:
+
+- **§3:** the `FramePacer` is a branch of `AppHost`'s loop (`XrSessionDriver`), not an interface: one place, the
+  desktop's path unchanged (step 2).
+- **§5:** the controllers drive the action map as a gamepad (`xr_bindings.json` maps each profile's inputs onto a pad's
+  buttons and sticks), so that a user's `bindings.json` reaches them too; a hand's trigger selects along its ray (step
+  4).
+- **§6:** the UI's panel is drawn into each eye over its post-processing on every runtime (the section's fallback), not
+  as compositor quad layers; the card shows in a heads-up display locked to the head, not beside its item in the world
+  (step 5). Both are parked in the BACKLOG.
+- **§2, §7:** the D3D11 bridge as a second graphics binding is not built (Meta's runtime takes OpenGL); the capture's
+  D3D11 device and the WGL_NV_DX_interop2 interop serve the game on the CRT alone. The capture is proven by a GPU test
+  with the fake emulator's background window, not a desktop test (step 6).

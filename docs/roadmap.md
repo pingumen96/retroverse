@@ -349,14 +349,15 @@ worktree beside I4b and I5; its logic lives in new files with small hooks in `rv
 | 4 | Controllers: action sets onto `input::Action`, hand poses and the ray, bindings for the Touch, Index, Vive, WMR, Pico and simple controllers, generic controller models, the ray into `pickRay()`, Focus without moving, Inspect in the hand, haptics | 3 | Unit: the bindings' JSON per profile; GPU: a scripted hand ray inspects a cover; by hand: point, inspect, open the card | built: the scripted hand's ray inspects a cartridge held in that hand, the bindings of six profiles; the headset's trial is the user's ([i10/step-4.md](i10/step-4.md)) |
 | 5 | The UI in VR: the documents and the devui through `renderTo` into quad layers placed in the world, the ray into RmlUi's mouse at the quad's UV, the card beside its item, labels and prompts as small quads, the in-scene fallback | 4 | Unit: ray against quad; GPU: the quick catalog driven by a scripted ray; by hand: the catalog, the directory and the card with the Touch controllers only, then with the pad only | built: the catalog's panel in the world clicked by a scripted ray, the heads-up display; drawn into the eyes, not as compositor layers ([i10/step-5.md](i10/step-5.md)) |
 | 6 | The game on the CRT: Windows.Graphics.Capture of the emulator's window, the D3D11 to GL interop, the captured texture on the hero CRT (or a large quad), the launch flow keeping the session, the "in game" profile, the return; the D3D11 bridge as the second graphics binding | 5 | Desktop test: the fake emulator's window captured; by hand: an SNES game in RetroArch (isolated configuration under `build/`, borderless) played with the pad on the CRT | built: the fake emulator's background window captured onto the hero CRT in a GPU test (no desktop test needed), the headset rendering through the launch; the D3D11 bridge waits for a runtime that refuses OpenGL ([i10/step-6.md](i10/step-6.md)) |
-| 7 | Performance: the VR quality profile, the dynamic render scale, 72 and 90 Hz, the benchmark path with the fake runtime at Link's size, the room and the captured game measured | 6 | ADR-0017 §9's rows in Release | |
-| 8 | Gate VR: `scripts/gate.ps1 -Gate VR` (and `-RealLibrary`), `docs/testing/gate-vr.md` | 7 | The gate passes; the user's 30-minute session in the headset on Meta's runtime and on SteamVR | |
+| 7 | Performance: the VR quality profile, the dynamic render scale, 72 and 90 Hz, the benchmark path with the fake runtime at Link's size, the room and the captured game measured | 6 | ADR-0017 §9's rows in Release | done: the dynamic render scale; the VR benchmark path at Link's size in Release, frame p50 7.2 ms and p99 8.6 ms against 13.9 and 20 ms ([i10/step-7.md](i10/step-7.md)) |
+| 8 | Gate VR: `scripts/gate.ps1 -Gate VR` (and `-RealLibrary`), `docs/testing/gate-vr.md` | 7 | The gate passes; the user's 30-minute session in the headset on Meta's runtime and on SteamVR | built: `-Gate VR` (Gate D, G21, the VR benchmark path), [testing/gate-vr.md](testing/gate-vr.md); the run and the session are the user's |
 
 ### Gate VR
 
-`scripts/gate.ps1 -Gate VR` runs the build matrix, the unit tests and the GPU smoke tests in Debug and Release, every
-golden (none rewritten), the smoke tests with the fake runtime, the VR benchmark path in Release against ADR-0017 §9,
-under `scripts/focus_watch.py`; `-RealLibrary` adds the SNES room in VR with the fake runtime. Then the user plays a
+`scripts/gate.ps1 -Gate VR` runs Gate D whole (the build matrix, the unit tests and the GPU smoke tests in Debug and
+Release, every golden, none rewritten, the smoke tests with the fake runtime among them, under
+`scripts/focus_watch.py`), then golden G21 and the VR benchmark path in Release against ADR-0017 §9; `-RealLibrary`
+passes the real library on to Gate D, and the real library in the headset is the session's. Then the user plays a
 30-minute session in the headset (the lobby, the elevator, a room, a cover, the card, a game launched onto the CRT and
 the return), on Meta's runtime and on SteamVR, and declares I10 done.
 

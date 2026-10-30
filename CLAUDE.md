@@ -27,6 +27,7 @@ tools).
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also the GPU smoke tests (label "gpu")
 ./scripts/gate.ps1 -Gate D                            # the latest gate: build matrix, tests, goldens, benchmark path
 ./scripts/gate.ps1 -Gate D -RealLibrary               # also the real library's building, migrations and SNES room
+./scripts/gate.ps1 -Gate VR                           # I10: Gate D, then golden G21 and the VR benchmark path
 ./scripts/real-library.ps1 -Filter '[real-library][building]'   # the real library, ES-DE closed (see Safety)
 ```
 
