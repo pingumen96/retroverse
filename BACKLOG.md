@@ -687,3 +687,6 @@ Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
 - **The Touch controllers as the emulator's pad:** a virtual XInput pad needs a third-party kernel driver (ViGEmBus, a
   retired project) installed by hand; the physical pad plays the game instead.
 - **A Linux runtime** (Monado), with the Linux build.
+- **The UI as compositor layers** (I10 step 5): ADR-0017 §6's `XrCompositionLayerQuad` per panel, sharper text than the
+  panel drawn into the eyes; the card beside its item in the world and the labels as small quads of their own, which
+  need the UI's documents drawn apart.

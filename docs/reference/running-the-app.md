@@ -258,7 +258,11 @@ build/rvdata`).
   either trigger interacts along that hand's laser, Focus pulls the item out where it is and Inspect holds it in the
   pointing hand, which ticks when the laser comes onto an item; the right controller aims the teleport, and
   `comfort.moveRelativeTo: "hand"` walks along the left one. The fake runtime's controllers are the input script's
-  `leftHand` and `rightHand` steps. Without a
+  `leftHand` and `rightHand` steps (`leftSelect`, `rightSelect` their triggers). The UI (I10 step 5,
+  `docs/i10/step-5.md`): one panel drawn into the eyes, in front of the user where a UI that takes the input opened
+  (the catalog, the directory, the viewer: the ray is its mouse, the trigger clicks, the right stick scrolls), else a
+  heads-up display on the head (the label over its item, the prompts, the card); the window and the screenshots show
+  it through the eyes. Without a
   runtime or a headset (an interactive run waits 15 s
   for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
