@@ -780,3 +780,44 @@ TEST_CASE("app/command_line: --audio, --mute and --audio-capture (I5 step 5)", "
         CHECK(helpListsOption(rv::app::commandLineHelp(), option));
     }
 }
+
+TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][command_line]") {
+    const auto plain = parse({});
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(plain->xr.enabled);
+
+    const auto vr = parse({"--vr"});
+    REQUIRE(vr.has_value());
+    CHECK(vr->xr.enabled);
+    CHECK(vr->xr.runtime == rv::app::XrRuntimeChoice::OpenXr);
+    CHECK(vr->xr.renderScale == 1.0);
+    CHECK_FALSE(vr->xr.runtimeJson);
+
+    const auto fake = parse({"--smoke", "--frames", "5", "--vr", "--xr-runtime", "fake", "--xr-render-scale", "0.5",
+                             "--xr-fake-lose-after", "3"});
+    REQUIRE(fake.has_value());
+    CHECK(fake->xr.runtime == rv::app::XrRuntimeChoice::Fake);
+    CHECK(fake->xr.renderScale == 0.5);
+    CHECK(fake->xr.fakeLoseAfterFrames == std::optional<std::uint64_t>(3));
+    CHECK(rv::app::toString(fake->xr.runtime) == "fake");
+
+    const auto manifest = parse({"--vr", "--xr-runtime-json", "C:/runtimes/steamvr.json"});
+    REQUIRE(manifest.has_value());
+    REQUIRE(manifest->xr.runtimeJson);
+    CHECK(*manifest->xr.runtimeJson == std::filesystem::path("C:/runtimes/steamvr.json"));
+
+    // Each --xr-* option needs --vr; the manifest goes with OpenXR, the loss with the fake runtime.
+    CHECK_FALSE(parse({"--xr-runtime", "fake"}).has_value());
+    CHECK_FALSE(parse({"--xr-render-scale", "1.5"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-runtime", "steamvr"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-runtime-json", "a.json"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-fake-lose-after", "3"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-fake-lose-after", "0"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-render-scale", "0.1"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-render-scale", "3"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--stereo-preview"}).has_value());
+    for (const char* option : {"--vr", "--xr-runtime", "--xr-runtime-json", "--xr-render-scale",
+                               "--xr-fake-lose-after"}) {
+        CHECK(helpListsOption(rv::app::commandLineHelp(), option));
+    }
+}

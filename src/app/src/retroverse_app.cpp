@@ -64,6 +64,7 @@
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/xr/pose.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
@@ -474,8 +475,10 @@ struct RetroverseApp::State {
     gl::ShadowSettings shadowSettings;
     /// ToggleDevUI pressed in a run without the overlay: logged once.
     bool overlayNoticeLogged = false;
-    /// The view camera: the scene camera's lens and pose, then driven by free roam.
+    /// The view camera: the scene camera's lens and pose, then driven by free roam; in a VR frame the head's.
     scene::Camera camera;
+    /// The VR frame's eyes in the world, for onRender (followHead(); none on the desktop).
+    std::optional<XrEyeTargets> xrEyes;
     std::optional<FreeRoam> freeRoam;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
@@ -609,6 +612,41 @@ struct RetroverseApp::State {
         record.last = lastLighting;
         record.samples = lightingSamples;
         return record;
+    }
+
+    /// A VR frame (AppContext::xrFrame, I10 step 2) puts the tracking space on the walker's feet and yaw (ADR-0017 §5):
+    /// the eyes' cameras for the render, and the head's as the view camera for everything that follows it (culling,
+    /// covers, labels, the audio listener). The head's pose goes into the run report. Nothing on the desktop or while
+    /// tracking is lost (the walker's camera stays).
+    void followHead(AppContext& context) {
+        xrEyes.reset();
+        const xr::Frame* frame = context.xrFrame();
+        if (frame == nullptr || !frame->located || !freeRoam) {
+            return;
+        }
+        const scene::FirstPersonController& walker = freeRoam->controller();
+        const xr::TrackingAnchor anchor{walker.feetPosition(), walker.yaw(), frame->floorOffset};
+        XrEyeTargets eyes;
+        for (std::size_t eye = 0; eye < eyes.cameras.size(); ++eye) {
+            const xr::Pose pose = xr::toWorld(anchor, frame->eyes[eye].pose);
+            eyes.cameras[eye] = camera;
+            eyes.cameras[eye].setEye(pose.position, pose.orientation, frame->eyes[eye].fov);
+        }
+        const xr::Pose head = xr::toWorld(anchor, xr::headOf(frame->eyes));
+        camera.setEye(head.position, head.orientation, xr::combinedField(frame->eyes));
+        if (std::optional<XrRecord>& record = context.report().xr;
+            record && record->head.size() < XrRecord::kMaxHeadSamples) {
+            const xr::Angles angles = xr::anglesOf(head.orientation);
+            record->head.push_back(XrHeadSample{context.frameIndex(), head.position,
+                                                core::radiansToDegrees(angles.yaw),
+                                                core::radiansToDegrees(angles.pitch),
+                                                core::radiansToDegrees(angles.roll)});
+        }
+        if (frame->wantsViews()) {
+            eyes.images = frame->images;
+            eyes.size = frame->eyeSize;
+            xrEyes = eyes;
+        }
     }
 
     /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
@@ -1749,6 +1787,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     } else {
         state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
     }
+    // In a VR frame the head, where the walker now stands, takes the view (I10 step 2).
+    state.followHead(context);
     if (state.world && state.product) {
         // The hover's title label over the item as this frame's camera shows it (none under the product UI).
         const bool worldShown = inputContext == InputContext::World && !riding;
@@ -1805,7 +1845,8 @@ void RetroverseApp::onRender(AppContext& context) {
     }
     State& state = *m_state;
     state.followSceneAreas(context.frameIndex());
-    state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
+    state.graphics->renderFrame(context, state.view(), state.screenshotRequested,
+                                state.xrEyes ? &*state.xrEyes : nullptr);
     state.screenshotRequested = false;
     if (state.world) {
         state.world->frameRendered();

@@ -2598,6 +2598,111 @@ LaunchRecord readLaunch(FieldReader& fields) {
     return launch;
 }
 
+/// A size as the report's vectors are written: three numbers (FieldReader::vec3), the third 0.
+Json ivec2ToJson(const glm::ivec2& value) {
+    return Json::array({value.x, value.y, 0});
+}
+
+glm::ivec2 readIvec2(FieldReader& fields, std::string_view key) {
+    const glm::vec3 padded = fields.vec3(key);
+    return glm::ivec2(static_cast<int>(padded.x), static_cast<int>(padded.y));
+}
+
+Json xrToJson(const XrRecord& xr) {
+    Json json;
+    json["runtimeChoice"] = xr.runtimeChoice;
+    json["started"] = xr.started;
+    if (xr.unavailable) {
+        json["unavailable"] = *xr.unavailable;
+    }
+    json["runtime"] = xr.runtime;
+    json["runtimeVersion"] = xr.runtimeVersion;
+    json["system"] = xr.system;
+    json["extensions"] = xr.extensions;
+    json["space"] = xr.space;
+    json["recommendedEyeSize"] = ivec2ToJson(xr.recommendedEyeSize);
+    json["eyeSize"] = ivec2ToJson(xr.eyeSize);
+    json["renderScale"] = xr.renderScale;
+    json["format"] = xr.format;
+    json["srgb"] = xr.srgb;
+    json["imagesPerEye"] = xr.imagesPerEye;
+    Json rates = Json::array();
+    for (const float rate : xr.refreshRates) {
+        rates.push_back(static_cast<double>(rate));
+    }
+    json["refreshRates"] = std::move(rates);
+    if (xr.refreshRate) {
+        json["refreshRate"] = static_cast<double>(*xr.refreshRate);
+    }
+    json["reachedFocused"] = xr.reachedFocused;
+    json["endReason"] = xr.endReason;
+    if (xr.desktopFromFrame) {
+        json["desktopFromFrame"] = *xr.desktopFromFrame;
+    }
+    json["framesWaited"] = xr.framesWaited;
+    json["framesWithViews"] = xr.framesWithViews;
+    json["refreshHz"] = xr.refreshHz;
+    json["missedRefreshes"] = xr.missedRefreshes;
+    json["missedFraction"] = xr.missedFraction;
+    Json cpu;
+    putTimes(cpu, xr.cpuTimes);
+    json["cpuTimes"] = std::move(cpu);
+    json["events"] = xr.events;
+    Json head = Json::array();
+    for (const XrHeadSample& sample : xr.head) {
+        head.push_back(Json{{"frame", sample.frame},
+                            {"position", vec3ToJson(sample.position)},
+                            {"yawDeg", static_cast<double>(sample.yawDeg)},
+                            {"pitchDeg", static_cast<double>(sample.pitchDeg)},
+                            {"rollDeg", static_cast<double>(sample.rollDeg)}});
+    }
+    json["head"] = std::move(head);
+    return json;
+}
+
+XrRecord readXr(FieldReader& fields) {
+    XrRecord xr;
+    xr.runtimeChoice = fields.string("runtimeChoice");
+    xr.started = fields.boolean("started");
+    xr.unavailable = fields.optionalString("unavailable");
+    xr.runtime = fields.string("runtime");
+    xr.runtimeVersion = fields.string("runtimeVersion");
+    xr.system = fields.string("system");
+    xr.extensions = fields.stringArray("extensions");
+    xr.space = fields.string("space");
+    xr.recommendedEyeSize = readIvec2(fields, "recommendedEyeSize");
+    xr.eyeSize = readIvec2(fields, "eyeSize");
+    xr.renderScale = fields.number("renderScale");
+    xr.format = fields.string("format");
+    xr.srgb = fields.boolean("srgb");
+    xr.imagesPerEye = static_cast<std::size_t>(fields.count("imagesPerEye", kMaxSize));
+    for (const double rate : fields.numberArray("refreshRates")) {
+        xr.refreshRates.push_back(static_cast<float>(rate));
+    }
+    if (const auto rate = fields.optionalNumber("refreshRate")) {
+        xr.refreshRate = static_cast<float>(*rate);
+    }
+    xr.reachedFocused = fields.boolean("reachedFocused");
+    xr.endReason = fields.string("endReason");
+    xr.desktopFromFrame = fields.optionalCount("desktopFromFrame");
+    xr.framesWaited = fields.count("framesWaited");
+    xr.framesWithViews = fields.count("framesWithViews");
+    xr.refreshHz = fields.number("refreshHz");
+    xr.missedRefreshes = fields.count("missedRefreshes");
+    xr.missedFraction = fields.number("missedFraction");
+    if (auto cpu = fields.optionalObject("cpuTimes")) {
+        xr.cpuTimes = readOptionalTimes(*cpu);
+    }
+    xr.events = fields.stringArray("events");
+    for (FieldReader& sample : fields.objectArray("head")) {
+        xr.head.push_back(XrHeadSample{sample.count("frame"), sample.vec3("position"),
+                                       static_cast<float>(sample.number("yawDeg")),
+                                       static_cast<float>(sample.number("pitchDeg")),
+                                       static_cast<float>(sample.number("rollDeg"))});
+    }
+    return xr;
+}
+
 } // namespace
 
 std::optional<TimeSummary> summarizeTimes(std::vector<double>& milliseconds) {
@@ -2747,6 +2852,9 @@ std::string formatRunReport(const RunReport& report) {
     json["gpuMemory"] = gpuMemoryToJson(report.gpuMemory);
     if (report.audio) {
         json["audio"] = audioToJson(*report.audio);
+    }
+    if (report.xr) {
+        json["xr"] = xrToJson(*report.xr);
     }
     return json.dump(2) + "\n";
 }
@@ -2901,6 +3009,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto audio = fields.optionalObject("audio")) {
         report.audio = readAudio(*audio);
+    }
+    if (auto xr = fields.optionalObject("xr")) {
+        report.xr = readXr(*xr);
     }
     if (error) {
         return propagate(std::move(*error));

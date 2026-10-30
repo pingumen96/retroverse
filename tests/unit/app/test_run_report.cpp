@@ -1213,3 +1213,53 @@ TEST_CASE("app/run_report: the static groups and the outline of a view read back
     REQUIRE_FALSE(wrong.has_value());
     CHECK(wrong.error().context == "r.json:/lastView/staticGroups/clusters");
 }
+TEST_CASE("app/run_report: the VR mode reads back field for field, absent without --vr (I10 step 2)",
+          "[app][run_report]") {
+    RunReport report = fullReport();
+    const nlohmann::json without = nlohmann::json::parse(rv::app::formatRunReport(report));
+    CHECK_FALSE(without.contains("xr"));
+
+    rv::app::XrRecord xr;
+    xr.runtimeChoice = "openxr";
+    xr.started = true;
+    xr.runtime = "Oculus";
+    xr.runtimeVersion = "1.208.0";
+    xr.system = "Meta Quest 3S";
+    xr.extensions = {"XR_KHR_opengl_enable", "XR_EXT_local_floor"};
+    xr.space = "local-floor";
+    xr.recommendedEyeSize = glm::ivec2(1824, 1920);
+    xr.eyeSize = glm::ivec2(1368, 1440);
+    xr.renderScale = 0.75;
+    xr.format = "GL_SRGB8_ALPHA8";
+    xr.srgb = true;
+    xr.imagesPerEye = 3;
+    xr.refreshRates = {72.0f, 90.0f, 120.0f};
+    xr.refreshRate = 72.0f;
+    xr.reachedFocused = true;
+    xr.endReason = "lost";
+    xr.desktopFromFrame = 1201;
+    xr.framesWaited = 1200;
+    xr.framesWithViews = 1198;
+    xr.refreshHz = 72.0;
+    xr.missedRefreshes = 2;
+    xr.missedFraction = 0.0016;
+    xr.cpuTimes = rv::app::TimeSummary{1200, 4.5, 6.25, 8.0, 12.5};
+    xr.events = {"0: idle", "0: ready", "1200: loss-pending"};
+    xr.head = {{0, glm::vec3(-0.6f, 1.65f, 0.9f), 9.0f, 0.0f, 0.0f},
+               {1, glm::vec3(-0.5f, 1.6f, 0.8f), -31.0f, -20.0f, 10.0f}};
+    report.xr = xr;
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->xr == report.xr);
+    const nlohmann::ordered_json written = nlohmann::ordered_json::parse(rv::app::formatRunReport(report));
+    CHECK(std::prev(written.end()).key() == "xr"); // appended
+
+    // A run that stayed on the desktop: why, and no session's fields to speak of.
+    rv::app::XrRecord unavailable;
+    unavailable.runtimeChoice = "openxr";
+    unavailable.unavailable = "Unavailable: xrEnumerateInstanceExtensionProperties (no runtime?) failed";
+    report.xr = unavailable;
+    const auto desktop = rv::app::parseRunReport(rv::app::formatRunReport(report), "r.json");
+    REQUIRE(desktop.has_value());
+    CHECK(desktop->xr == report.xr);
+}

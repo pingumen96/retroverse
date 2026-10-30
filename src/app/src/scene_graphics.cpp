@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -249,6 +250,14 @@ struct SceneGraphics::State {
     std::optional<gl::Framebuffer> screenshotStereo;
     std::optional<glm::ivec2> failedWindowStereoSize;
     std::optional<glm::ivec2> failedScreenshotStereoSize;
+    /// VR (I10 step 2): the eyes render into eyeTargets too; framebuffers over the swapchains' images, by texture name;
+    /// the side-by-side image of the screenshots.
+    std::map<std::uint32_t, gl::TextureTarget> swapchainTargets;
+    std::optional<gl::Framebuffer> xrScreenshot;
+    std::optional<glm::ivec2> failedXrScreenshotSize;
+    bool swapchainTargetFailed = false;
+    /// The size of the last screenshot written (the VR mode's differs from --screenshot-size).
+    glm::ivec2 lastScreenshotSize{0};
     FrameStatsLog statsLog;
     bool lastFrameCaptured = false; ///< --screenshot written
     bool viewRendered = false;      ///< a view was rendered during the current frame (window or screenshot)
@@ -324,6 +333,77 @@ struct SceneGraphics::State {
         return true;
     }
 
+    /// The framebuffer over the swapchain image `image` of `size`, created when first used (and again for another
+    /// size); null when it cannot be (logged once).
+    gl::TextureTarget* swapchainTarget(std::uint32_t image, glm::ivec2 size) {
+        auto found = swapchainTargets.find(image);
+        if (found != swapchainTargets.end() && found->second.size() == size) {
+            return &found->second;
+        }
+        auto created = gl::TextureTarget::create(image, size, fmt::format("XrSwapchainImage{}", image));
+        if (!created) {
+            if (!swapchainTargetFailed) {
+                spdlog::error("VR swapchain image {} cannot be drawn into: {}", image, created.error().toString());
+                swapchainTargetFailed = true;
+            }
+            return nullptr;
+        }
+        return &(swapchainTargets[image] = std::move(*created));
+    }
+
+    /// Renders both eyes of a VR frame into their targets (eyeTargets) and copies each into its swapchain image. False
+    /// when a target or an image cannot be drawn into (logged).
+    bool renderEyes(gl::GLDevice& device, const gl::RenderView& view, const XrEyeTargets& eyes) {
+        constexpr std::array<std::string_view, 2> kNames{"XrLeftTargets", "XrRightTargets"};
+        for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
+            if (!prepareTargets(eyeTargets[eye], eyes.size, kNames[eye], failedEyeSize[eye])) {
+                return false;
+            }
+        }
+        const std::array<glm::mat4, 2> viewProjections{eyes.cameras[0].viewProjection(),
+                                                       eyes.cameras[1].viewProjection()};
+        gl::RenderView eyeView = view;
+        eyeView.cullFrustum = scene::Frustum::enclosing(viewProjections);
+        // ADR-0017 §4: no vignette in a headset (the lenses darken their edges already).
+        eyeView.post.vignette = 0.0f;
+        for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
+            eyeView.camera = eyes.cameras[eye];
+            render(device, eyeView, eyeTargets[eye]);
+        }
+        gl::RenderStateCache& state = device.state();
+        // The eyes' display-ready bytes copied as they are into the sRGB images.
+        state.setFramebufferSrgb(false);
+        bool copied = true;
+        for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {
+            gl::TextureTarget* target = swapchainTarget(eyes.images[eye], eyes.size);
+            if (target == nullptr) {
+                copied = false;
+                continue;
+            }
+            eyeTargets[eye].output().copyColorTo(*target);
+        }
+        state.setFramebufferSrgb(true);
+        return copied;
+    }
+
+    /// The VR screenshot: both eyes, as renderEyes() left them, side by side at their size. False when the image cannot
+    /// be allocated (logged).
+    bool composeEyes(gl::GLDevice& device) {
+        const glm::ivec2 eye = eyeTargets[0].output().size();
+        if (!prepareStereoImage(xrScreenshot, glm::ivec2(2 * eye.x, eye.y), "XrScreenshot", failedXrScreenshotSize)) {
+            return false;
+        }
+        gl::RenderStateCache& state = device.state();
+        device.beginPass(*xrScreenshot, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        state.setFramebufferSrgb(false);
+        eyeTargets[0].output().copyColorTo(*xrScreenshot, glm::ivec2(0));
+        eyeTargets[1].output().copyColorTo(*xrScreenshot, glm::ivec2(eye.x, 0));
+        xrScreenshot->bind();
+        state.setViewport(glm::ivec4(0, 0, xrScreenshot->size().x, xrScreenshot->size().y));
+        state.setFramebufferSrgb(true);
+        return true;
+    }
+
     [[nodiscard]] gl::PostShaders postShaders() const {
         gl::PostShaders post;
         post.bloomDownsampleFirst = &shaders->get(programs.bloomDownsampleFirst);
@@ -335,12 +415,19 @@ struct SceneGraphics::State {
     }
 
     /// Renders `view` at --screenshot-size into the screenshot targets, with the overlay when it shows in screenshots,
-    /// and writes it as an RGB PNG.
-    Status captureScreenshot(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path) {
+    /// and writes it as an RGB PNG; a VR frame's (`xrEyes`: its eyes rendered) is both eyes side by side.
+    Status captureScreenshot(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path,
+                             bool xrEyes) {
         const CommandLineOptions& options = context.options();
-        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
+        glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
         const gl::Framebuffer* output = nullptr;
-        if (options.stereoPreview) {
+        if (xrEyes) {
+            if (!composeEyes(context.device())) {
+                return makeError(ErrorCode::GraphicsError, "no image for the VR screenshot", core::pathToUtf8(path));
+            }
+            output = &*xrScreenshot;
+            size = xrScreenshot->size();
+        } else if (options.stereoPreview) {
             if (!prepareStereoImage(screenshotStereo, size, "ScreenshotStereo", failedScreenshotStereoSize) ||
                 !renderStereo(context.device(), view, *screenshotStereo)) {
                 return makeError(ErrorCode::GraphicsError, "no render targets for the stereo screenshot",
@@ -369,6 +456,7 @@ struct SceneGraphics::State {
             return propagate(written.error());
         }
         spdlog::info("Screenshot written: {} ({}x{})", core::pathToUtf8(path), size.x, size.y);
+        lastScreenshotSize = size;
         return ok();
     }
 
@@ -438,7 +526,12 @@ Expected<std::unique_ptr<SceneGraphics>> SceneGraphics::create(AppContext& conte
     const glm::ivec2 spine = gl::layerSize(gl::CollectionClass::Spine, arrays.format);
     spdlog::info("Collection texture arrays: {} ({}x{} fronts, {}x{} spines): {}", gl::toString(arrays.format), front.x,
                  front.y, spine.x, spine.y, arrays.reason);
-    if (options.screenshot && options.frameLimit) {
+    if (options.screenshot && options.frameLimit && options.xr.enabled) {
+        spdlog::info("Screenshot of the last frame (frame {}, counted from 0) will be written to {}: both eyes side by "
+                     "side in VR, else {}x{}",
+                     *options.frameLimit - 1, core::pathToUtf8(*options.screenshot), options.screenshotWidth,
+                     options.screenshotHeight);
+    } else if (options.screenshot && options.frameLimit) {
         spdlog::info("Screenshot of the last frame (frame {}, counted from 0) at {}x{} will be written to {}",
                      *options.frameLimit - 1, options.screenshotWidth, options.screenshotHeight,
                      core::pathToUtf8(*options.screenshot));
@@ -558,24 +651,33 @@ void SceneGraphics::setOverlay(std::function<void(gl::GLDevice&)> window,
     m_state->screenshotOverlay = std::move(screenshot);
 }
 
-void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view, bool screenshotRequested) {
+void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view, bool screenshotRequested,
+                                const XrEyeTargets* eyes) {
     State& state = *m_state;
     state.viewRendered = false;
-    // The frame's views (a screenshot, the window, the stereo preview's eyes) share one shadow map.
+    // The frame's views (a screenshot, the window, the stereo preview's or the headset's eyes) share one shadow map.
     state.renderer->beginFrame();
+    // A VR frame's eyes first: the screenshots and the window show them.
+    bool eyesRendered = false;
+    if (eyes != nullptr) {
+        eyesRendered = state.renderEyes(context.device(), view, *eyes);
+        if (eyesRendered) {
+            context.setXrViewsRendered();
+        }
+    }
     // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it
     // documents (default framebuffer with the window's viewport, GL_FRAMEBUFFER_SRGB off) for whatever draws next.
     if (screenshotRequested) {
         const std::filesystem::path path =
             context.paths().screenshotsDir() / screenshotFileName(currentLocalTimestamp());
-        if (auto written = state.captureScreenshot(context, view, path); !written) {
+        if (auto written = state.captureScreenshot(context, view, path, eyesRendered); !written) {
             spdlog::error("Screenshot failed: {}", written.error().toString());
         }
     }
     const CommandLineOptions& options = context.options();
     const bool lastFrame = options.frameLimit && context.frameIndex() + 1 == *options.frameLimit;
     if (options.screenshot && lastFrame) {
-        if (auto written = state.captureScreenshot(context, view, *options.screenshot); written) {
+        if (auto written = state.captureScreenshot(context, view, *options.screenshot, eyesRendered); written) {
             state.lastFrameCaptured = true;
         } else {
             Error error = written.error();
@@ -586,7 +688,14 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
 
     const glm::ivec2 windowSize = context.framebufferSize();
     if (windowSize.x > 0 && windowSize.y > 0) {
-        if (options.stereoPreview) {
+        if (eyes != nullptr) {
+            // The mirror: the left eye, already rendered.
+            if (eyesRendered) {
+                state.eyeTargets[0].output().blitToDefaultFilled(context.device().state(), windowSize);
+            } else {
+                gl::Framebuffer::clearDefault(context.device().state(), windowSize);
+            }
+        } else if (options.stereoPreview) {
             if (prepareStereoImage(state.windowStereo, windowSize, "WindowStereo", state.failedWindowStereoSize) &&
                 state.renderStereo(context.device(), view, *state.windowStereo)) {
                 state.windowStereo->blitToDefault(context.device().state(), windowSize);
@@ -643,7 +752,8 @@ void SceneGraphics::finishRun(AppContext& context) {
     }
     report.instanceCapacity = state.renderer->instanceCapacity();
     if (options.screenshot && state.lastFrameCaptured) {
-        report.screenshot = ScreenshotRecord{*options.screenshot, options.screenshotWidth, options.screenshotHeight};
+        report.screenshot =
+            ScreenshotRecord{*options.screenshot, state.lastScreenshotSize.x, state.lastScreenshotSize.y};
     }
     // The GPU memory accounting (gl::gpuMemoryLedger) records every texture of the cache and the defaults, and nothing
     // else under their kinds: the run report's procedural surfaces and scene textures are what they hold.

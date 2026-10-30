@@ -63,6 +63,36 @@ struct SpawnPoint {
 /// number, OutOfRange for a coordinate beyond kMaxCoordinate, a non-finite angle or a pitch beyond kMaxPitchDeg.
 [[nodiscard]] Expected<SpawnPoint> parseSpawnPoint(std::string_view text);
 
+/// The runtime the VR mode talks to (--xr-runtime).
+enum class XrRuntimeChoice : std::uint8_t {
+    /// The system's OpenXR runtime (Meta Horizon Link, SteamVR, ...), or the one --xr-runtime-json names.
+    OpenXr,
+    /// No headset: xr::FakeRuntime, for tests and for trying the VR path on the desktop.
+    Fake,
+};
+
+/// --vr and its options (I10 step 2, ADR-0017 §8).
+struct XrOptions {
+    static constexpr double kMinRenderScale = 0.25;
+    static constexpr double kMaxRenderScale = 2.0;
+
+    /// --vr: the run renders in a headset, the window mirroring the left eye; without a runtime or a headset it stays
+    /// on the desktop (logged).
+    bool enabled = false;
+    XrRuntimeChoice runtime = XrRuntimeChoice::OpenXr; ///< --xr-runtime openxr|fake
+    std::optional<std::filesystem::path> runtimeJson;   ///< --xr-runtime-json: a runtime's manifest (XR_RUNTIME_JSON)
+    /// --xr-render-scale: the eyes' size over the runtime's recommendation, in [kMinRenderScale, kMaxRenderScale].
+    double renderScale = 1.0;
+    /// --xr-fake-lose-after <frames>: the fake runtime loses its session after this many frames (the desktop
+    /// fallback's tests).
+    std::optional<std::uint64_t> fakeLoseAfterFrames;
+
+    bool operator==(const XrOptions&) const = default;
+};
+
+/// "openxr" or "fake".
+[[nodiscard]] std::string_view toString(XrRuntimeChoice runtime) noexcept;
+
 /// Validated retroverse.exe command line. Defaults describe an interactive run in a 1280x720 window.
 struct CommandLineOptions {
     static constexpr int kDefaultWindowWidth = 1280;
@@ -178,6 +208,8 @@ struct CommandLineOptions {
     /// §4), each an off-axis view of a Quest 3S's field 64 mm apart, culled once for both and sharing the frame's
     /// shadow map: the VR mode's rendering checked on the desktop.
     bool stereoPreview = false;
+    /// --vr and the --xr-* options (I10 step 2): the VR mode.
+    XrOptions xr;
     /// --start-room <room id>: the room of the building the run starts in (I4 step 5a, ADR-0013 §9: its doorway camera
     /// on its floor; --spawn, the input scripts' poses and the run report's walker poses in its frame), a valid room id
     /// ("room:snes", "area:arcade", ...). Empty: the ground floor's lobby. Only in the generated building's runs.

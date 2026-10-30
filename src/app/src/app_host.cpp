@@ -3,6 +3,7 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -13,6 +14,7 @@
 
 #include <rv/app/app_logic.hpp>
 #include <rv/app/exit_code.hpp>
+#include <rv/app/xr_session_driver.hpp>
 #include <rv/core/cpu_timers.hpp>
 #include <rv/core/frame_clock.hpp>
 #include <rv/core/log.hpp>
@@ -395,6 +397,20 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     m_report.context = RunReportContext{caps.vendor, caps.renderer, caps.version, caps.glslVersion};
     const DebugMessageRecorder debugMessages(**device, m_report);
 
+    // --- VR (I10 step 2): the session on this context, before the logic that renders for it --------------------------
+    // Declared before the logic's shutdown guard: destroyed after onShutdown, while the context is current.
+    std::unique_ptr<XrSessionDriver> xr;
+    if (m_options.xr.enabled) {
+        m_report.xr = XrRecord{};
+        xr = XrSessionDriver::start(m_options, *m_report.xr);
+        if (xr) {
+            // The runtime paces the frames: the mirror's swap must not wait for the monitor too.
+            if (auto vsync = window->setVsync(false); !vsync) {
+                spdlog::warn("Vsync not turned off for the VR mirror: {}", vsync.error().toString());
+            }
+        }
+    }
+
     // --- Application logic -------------------------------------------------------------------------------------------
     core::FrameClock clock;
     AppContext context(m_options, *paths, *window, **device, clock, m_report, m_frameTiming);
@@ -422,7 +438,10 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
         m_report.glSelfTest = selfTest;
     }
 
-    const Status loop = runMainLoop(logic, context);
+    const Status loop = runMainLoop(logic, context, xr.get());
+    if (xr) {
+        xr->finish(*m_report.xr);
+    }
     // What the last frame had allocated, before the logic releases it.
     m_report.gpuMemory = gpuMemoryRecord(gl::gpuMemoryLedger());
     m_gpuMemoryRecorded = true;
@@ -500,7 +519,19 @@ void AppHost::reportFailure(std::string_view logPrefix, std::string_view headlin
     }
 }
 
-Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
+void AppHost::leaveXr(AppContext& context, std::uint64_t desktopFrame) {
+    if (!m_report.xr || m_report.xr->desktopFromFrame) {
+        return;
+    }
+    m_report.xr->desktopFromFrame = desktopFrame;
+    spdlog::warn("Frame {}: the VR session ended, the run goes on on the desktop", desktopFrame);
+    context.m_xrFrame.reset();
+    if (auto vsync = context.m_window.setVsync(m_options.vsync); !vsync) {
+        spdlog::warn("Vsync not restored after the VR session: {}", vsync.error().toString());
+    }
+}
+
+Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context, XrSessionDriver* xr) {
     using Clock = std::chrono::steady_clock;
     platform::EventPump events;
     platform::GraphicsWindow& window = context.m_window;
@@ -522,6 +553,13 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
         if (context.m_quitRequested) {
             break;
         }
+        if (xr != nullptr && !xr->ended()) {
+            xr->pollEvents();
+            if (xr->ended()) {
+                leaveXr(context, context.m_frameIndex);
+            }
+        }
+        const bool xrActive = xr != nullptr && !xr->ended();
         // Idle (an emulator has the screen): no update, no render, no swap, no frame. The logic follows its launch after
         // every wait; a wait ends with any event, the wake event among them, or after kIdleWait.
         if (context.m_idle) {
@@ -548,7 +586,7 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
         const bool simulatedMinimized = m_options.simulateMinimized &&
                                         context.m_frameIndex == m_options.simulateMinimized->frame &&
                                         simulatedMinimizedSeconds < m_options.simulateMinimized->seconds;
-        if ((!m_options.frameLimit && window.isMinimized()) || simulatedMinimized) {
+        if ((!m_options.frameLimit && !xrActive && window.isMinimized()) || simulatedMinimized) {
             const Clock::time_point waitStart = Clock::now();
             const bool countedWait = simulatedMinimized && m_options.fixedDeltaSeconds.has_value();
             events.waitForEvents(countedWait ? std::chrono::milliseconds(0) : kMinimizedWait);
@@ -569,8 +607,23 @@ Status AppHost::runMainLoop(IAppLogic& logic, AppContext& context) {
         }
 
         clock.tick();
+        // A VR frame: the runtime's wait, then its eyes for the logic's update and render.
+        if (xrActive) {
+            context.m_xrFrame = xr->beginFrame();
+            context.m_xrViewsRendered = false;
+            if (xr->ended()) {
+                leaveXr(context, context.m_frameIndex);
+            }
+        }
         logic.onUpdate(context, m_options.fixedDeltaSeconds.value_or(clock.clampedDeltaSeconds()));
         logic.onRender(context);
+        if (context.m_xrFrame) {
+            xr->endFrame(context.m_xrViewsRendered);
+            context.m_xrFrame.reset();
+            if (xr->ended()) {
+                leaveXr(context, context.m_frameIndex + 1);
+            }
+        }
         if (auto presented = window.swap(); !presented) {
             return propagate(presented.error());
         }

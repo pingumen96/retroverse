@@ -132,6 +132,7 @@ add_library(rv_app STATIC
     src/edit_bar_panel.cpp
     src/world_edit.cpp
     src/world_regenerate.cpp
+    src/xr_session_driver.cpp
 )
 add_library(rv::app ALIAS rv_app)
 rv_set_target_defaults(rv_app)
@@ -139,7 +140,8 @@ target_include_directories(rv_app PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # rv_ui: the product UI (RmlUi); rv_launcher and rv_platform_win: launches from the quick catalog (plans, sessions, the
 # Win32 process runner and system probe); rv_devui_model: the mouse's hand-over between the scene and the layers over it
 # (GPU-free, in every build); rv_media: the hero CRT's video decoder (I3, ADR-0012 §7); rv_world: the generated room
-# (I3, ADR-0010); rv_audio: the clips' sound (I5 step 5, ADR-0016 §9), connected to rv_media's decoders here.
+# (I3, ADR-0010); rv_audio: the clips' sound (I5 step 5, ADR-0016 §9), connected to rv_media's decoders here; rv_xr:
+# the VR mode (I10, ADR-0017).
 target_link_libraries(rv_app PUBLIC
     rv_app_cli
     rv_app_catalog
@@ -156,7 +158,8 @@ target_link_libraries(rv_app PUBLIC
     rv_devui_model
     rv_media
     rv_audio
-    rv_world)
+    rv_world
+    rv_xr)
 
 if(RV_DEV_UI)
     target_link_libraries(rv_app PUBLIC rv_devui)

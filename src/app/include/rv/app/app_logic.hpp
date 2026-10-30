@@ -12,6 +12,7 @@
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/xr/session.hpp>
 
 union SDL_Event;
 
@@ -91,6 +92,13 @@ public:
     /// had no event type left to register.
     [[nodiscard]] const std::function<void()>& wakeCallback() const noexcept { return m_wake; }
 
+    /// The VR frame being updated and rendered (--vr, I10 step 2, ADR-0017 §3): the eyes the runtime located for its
+    /// display time, in the tracking space, and the swapchain images to render them into. Null on the desktop, while
+    /// the session does not run yet, and once it has ended (the run is back on the desktop).
+    [[nodiscard]] const xr::Frame* xrFrame() const noexcept { return m_xrFrame ? &*m_xrFrame : nullptr; }
+    /// The logic rendered both eyes into the frame's images (xr::Frame::images): the host submits them with it.
+    void setXrViewsRendered() noexcept { m_xrViewsRendered = true; }
+
 private:
     friend class AppHost;
 
@@ -113,6 +121,8 @@ private:
     /// The host's wake event (SDL_RegisterEvents; 0: none) and the callback that pushes it.
     std::uint32_t m_wakeEvent = 0;
     std::function<void()> m_wake = [] {};
+    std::optional<xr::Frame> m_xrFrame;
+    bool m_xrViewsRendered = false;
     std::optional<Error> m_failure;
     ExitCode m_failureCode = ExitCode::RuntimeFailure;
 };

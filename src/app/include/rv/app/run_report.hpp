@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <rv/app/command_line.hpp>
@@ -1510,6 +1511,66 @@ struct AudioClipRecord {
     bool operator==(const AudioClipRecord&) const = default;
 };
 
+/// Where the head was in the world on a frame of the VR mode (I10 step 2): the middle of the eyes, and where it looked
+/// (degrees, the camera's yaw and pitch, and the roll: positive tilts to the right).
+struct XrHeadSample {
+    std::uint64_t frame = 0;
+    glm::vec3 position{0.0f};
+    float yawDeg = 0.0f;
+    float pitchDeg = 0.0f;
+    float rollDeg = 0.0f;
+
+    bool operator==(const XrHeadSample&) const = default;
+};
+
+/// The VR mode of a run (--vr; I10 step 2, ADR-0017 §8): the runtime and its session, the frames it paced, the head's
+/// poses. Absent without --vr.
+struct XrRecord {
+    /// The head samples kept at most: one per frame of the first frames.
+    static constexpr std::size_t kMaxHeadSamples = 600;
+
+    /// --xr-runtime: "openxr" or "fake".
+    std::string runtimeChoice;
+    /// A session was created; otherwise `unavailable` says why and the run stayed on the desktop.
+    bool started = false;
+    std::optional<std::string> unavailable;
+    /// xr::RuntimeDescription: what the runtime and its session are.
+    std::string runtime;
+    std::string runtimeVersion;
+    std::string system;
+    std::vector<std::string> extensions;
+    std::string space;
+    glm::ivec2 recommendedEyeSize{0};
+    glm::ivec2 eyeSize{0};
+    double renderScale = 1.0;
+    std::string format;
+    bool srgb = false;
+    std::size_t imagesPerEye = 0;
+    std::vector<float> refreshRates;
+    /// The refresh rate the runtime reported at the end, when it tells it.
+    std::optional<float> refreshRate;
+    /// The session was focused at least once.
+    bool reachedFocused = false;
+    /// Why the session ended ("exited", "lost", a failed call); empty when it still ran at the end.
+    std::string endReason;
+    /// The first frame rendered on the desktop after the session ended or failed; absent while it ran to the end.
+    std::optional<std::uint64_t> desktopFromFrame;
+    /// The frames the session waited for and those it submitted with both eyes, and xr::FrameSummary's pacing.
+    std::uint64_t framesWaited = 0;
+    std::uint64_t framesWithViews = 0;
+    double refreshHz = 0.0;
+    std::uint64_t missedRefreshes = 0;
+    double missedFraction = 0.0;
+    /// CPU time from xrWaitFrame's return to xrEndFrame's return, milliseconds.
+    std::optional<TimeSummary> cpuTimes;
+    /// The session's state changes and events, "<frame>: <what>".
+    std::vector<std::string> events;
+    /// The head in the world on the first kMaxHeadSamples frames that located the eyes.
+    std::vector<XrHeadSample> head;
+
+    bool operator==(const XrRecord&) const = default;
+};
+
 /// The clips' sound over the run (I5 step 5, ADR-0016 §9; retroverse.exe). `device`: the output used ("device", "null",
 /// "off": every smoke test asserts null or off), `reason`: why (app::resolveAudioOutput's: "RV_AUDIO", "--audio",
 /// "frame-limited", "interactive"; "device-failed" when the device did not open and the null output took over).
@@ -1804,6 +1865,8 @@ struct RunReport {
     /// The clips' sound (I5 step 5, ADR-0016 §9; "audio", written last): absent in runs without the application's
     /// sound (the asset preview).
     std::optional<AudioRecord> audio;
+    /// The VR mode (I10 step 2; "xr", after "audio"): absent without --vr.
+    std::optional<XrRecord> xr;
 };
 
 /// The report as JSON text (two-space indented, keys in the order of RunReport, absent optionals left out, paths

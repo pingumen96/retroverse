@@ -112,6 +112,18 @@ core::ArgParser makeParser() {
                                         "and why).")
         .flag("stereo-preview", "Show a headset's two eyes side by side in the window and the screenshots (off-axis "
                                 "fields of a Quest 3S, 64 mm apart): the VR mode's rendering on the desktop.")
+        .flag("vr", "Render in a headset through OpenXR, the window mirroring the left eye; without a runtime or a "
+                    "headset the run stays on the desktop (the log says why).")
+        .option("xr-runtime", "openxr|fake",
+                "With --vr: the system's OpenXR runtime (the default), or a fake runtime without a headset (two "
+                "asymmetric eyes at the input script's head poses, for tests).")
+        .option("xr-runtime-json", "json",
+                "With --vr and the OpenXR runtime: this runtime's manifest instead of the system's active runtime "
+                "(XR_RUNTIME_JSON for this process only).")
+        .option("xr-render-scale", "scale",
+                "With --vr: the eyes' size over the runtime's recommendation, 0.25 to 2 (default 1).")
+        .option("xr-fake-lose-after", "frames",
+                "For tests, with --xr-runtime fake: the fake runtime loses its session after this many frames.")
         .option("start-room", "room",
                 "Start in this room of the building (its id: room:snes, area:arcade, ...) at its doorway camera, on "
                 "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
@@ -287,6 +299,70 @@ Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& op
                          "--launch-wait-limit=" + args.value("launch-wait-limit").value_or(""));
     }
     options.launchWaitLimitSeconds = *seconds;
+    return ok();
+}
+
+/// --vr and the --xr-* options: each --xr-* option needs --vr; --xr-runtime-json goes with the OpenXR runtime and
+/// --xr-fake-lose-after with the fake one; not with --stereo-preview (the VR mode shows its own eyes).
+Status applyXr(const core::ParsedArgs& args, CommandLineOptions& options) {
+    XrOptions& xr = options.xr;
+    xr.enabled = args.has("vr");
+    for (const std::string_view name : {"xr-runtime", "xr-runtime-json", "xr-render-scale", "xr-fake-lose-after"}) {
+        if (args.has(name) && !xr.enabled) {
+            return makeError(ErrorCode::InvalidArgument, "only valid with --vr", "--" + std::string(name));
+        }
+    }
+    if (!xr.enabled) {
+        return ok();
+    }
+    if (options.stereoPreview) {
+        return makeError(ErrorCode::InvalidArgument, "not with --vr", "--stereo-preview");
+    }
+    if (args.has("xr-runtime")) {
+        const std::string text = args.value("xr-runtime").value_or("");
+        if (text == "openxr") {
+            xr.runtime = XrRuntimeChoice::OpenXr;
+        } else if (text == "fake") {
+            xr.runtime = XrRuntimeChoice::Fake;
+        } else {
+            return makeError(ErrorCode::InvalidArgument, "expected openxr or fake", "--xr-runtime=" + text);
+        }
+    }
+    auto manifest = pathValue(args, "xr-runtime-json");
+    if (!manifest) {
+        return propagate(manifest.error());
+    }
+    if (*manifest && xr.runtime != XrRuntimeChoice::OpenXr) {
+        return makeError(ErrorCode::InvalidArgument, "only with the OpenXR runtime", "--xr-runtime-json");
+    }
+    xr.runtimeJson = *manifest;
+    if (args.has("xr-render-scale")) {
+        auto scale = args.doubleValue("xr-render-scale", 1.0);
+        if (!scale) {
+            return propagate(scale.error());
+        }
+        if (!std::isfinite(*scale) || *scale < XrOptions::kMinRenderScale || *scale > XrOptions::kMaxRenderScale) {
+            return makeError(ErrorCode::OutOfRange,
+                             fmt::format("must be from {:g} to {:g}", XrOptions::kMinRenderScale,
+                                         XrOptions::kMaxRenderScale),
+                             "--xr-render-scale=" + args.value("xr-render-scale").value_or(""));
+        }
+        xr.renderScale = *scale;
+    }
+    if (args.has("xr-fake-lose-after")) {
+        if (xr.runtime != XrRuntimeChoice::Fake) {
+            return makeError(ErrorCode::InvalidArgument, "only with --xr-runtime fake", "--xr-fake-lose-after");
+        }
+        auto frames = args.intValue("xr-fake-lose-after", 0);
+        if (!frames) {
+            return propagate(frames.error());
+        }
+        if (*frames < 1) {
+            return makeError(ErrorCode::OutOfRange, "must be at least 1",
+                             fmt::format("--xr-fake-lose-after={}", *frames));
+        }
+        xr.fakeLoseAfterFrames = static_cast<std::uint64_t>(*frames);
+    }
     return ok();
 }
 
@@ -656,6 +732,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     options.refreshLibrary = args->has("refresh-library");
     options.noTextureCompression = args->has("no-texture-compression");
     options.stereoPreview = args->has("stereo-preview");
+    if (auto xr = applyXr(*args, options); !xr) {
+        return propagate(xr.error());
+    }
     auto startRoom = nonEmptyValue(*args, "start-room");
     if (!startRoom) {
         return propagate(startRoom.error());
@@ -766,6 +845,10 @@ std::filesystem::path resolveScenePath(const std::optional<std::string>& scene,
     }
     return (assetRoot / core::pathFromUtf8(kSceneDirectory) / core::pathFromUtf8(std::string(value) + ".json"))
         .lexically_normal();
+}
+
+std::string_view toString(XrRuntimeChoice runtime) noexcept {
+    return runtime == XrRuntimeChoice::Fake ? "fake" : "openxr";
 }
 
 } // namespace rv::app
