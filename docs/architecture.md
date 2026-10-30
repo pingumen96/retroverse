@@ -417,15 +417,22 @@ outside the clip volume by `pbr.vert`, so no program on that stage draws them.
   (`PostSettings::tonemap`: the asset preview's inspection views, whose shaders write display colors) take that copy
   on purpose.
   At 1920x1080 the post-processing takes about 0.45 ms on the reference GPU, FXAA 0.1 to 0.15 ms of it.
-- **Frames:** every view is rendered through a `gl::ViewTargets`, the targets of one output, all of its size: the HDR
-  scene target (two `GL_RGBA16F` color attachments, the radiance and its emitted part, `gl::SceneOutput`, + a
-  depth24/stencil8 texture, which the ambient occlusion reads, `Framebuffer::bindDepthTexture`), the half-resolution
-  ambient occlusion estimate (`GL_RG16F`, `gl::ssaoTargetSize`) and the ambient occlusion the lit pass reads (`GL_R8`),
-  the 6 bloom levels (`GL_RGBA16F`, `gl::bloomLevelSizes`), the tonemapped image the FXAA pass reads (`GL_SRGB8_ALPHA8`)
-  and the output (`GL_SRGB8_ALPHA8` color + depth24/stencil8), which the post or the FXAA pass writes with
-  `GL_FRAMEBUFFER_SRGB` enabled, so shaders output linear values and the targets store sRGB. The window and the
-  screenshots each keep their own `ViewTargets`, reallocated only when their size changes (a complete new set first, so
-  a failure keeps the old one). The window frame's output is copied to the default framebuffer with a raw blit
+- **Frames:** every view is rendered through a `gl::ViewTargets`, the targets of one output, all of its size, allocated
+  from `gl::viewTargetPlan()` (`view_target_plan.hpp`, GPU-free: each image's format, size, the passes of a frame it
+  lives through and the storage it takes over; `gl::viewTargetsBytes()` their bytes): the HDR scene target (the
+  radiance, `GL_RGBA16F`, and its emitted part, `GL_R11F_G11F_B10F`, `gl::SceneOutput`, + a depth24/stencil8 texture,
+  which the ambient occlusion reads, `Framebuffer::bindDepthTexture`), the half-resolution ambient occlusion estimate
+  (`GL_RG16F`, `gl::ssaoTargetSize`) and the ambient occlusion the lit pass reads (`GL_R8`), the 6 bloom levels
+  (`GL_R11F_G11F_B10F`, `gl::bloomLevelSizes`), the tonemapped image the FXAA pass reads (`GL_SRGB8_ALPHA8`) and the
+  output (`GL_SRGB8_ALPHA8`, no depth of its own), which the post or the FXAA pass writes with `GL_FRAMEBUFFER_SRGB`
+  enabled, so shaders output linear values and the targets store sRGB. Since the memory margin
+  (`docs/i5/memory-margin.md`) three images take storage another image is done with, through texture views
+  (`Framebuffer::createAlias`): the first bloom level the half-resolution occlusion's (its blur is over before the
+  bloom starts), the tonemapped image the emitted light's (the post pass reads that texel by texel where it writes,
+  after `glTextureBarrier`), and the debug lines draw into the output over the scene's depth
+  (`ViewTargets::outputWithSceneDepth`); 1920x1080 targets take 44.2 MiB, the shadow map 16. The window keeps its
+  `ViewTargets`, reallocated only when its size changes (a complete new set first, so a failure keeps the old one). The
+  window frame's output is copied to the default framebuffer with a raw blit
   (`GL_FRAMEBUFFER_SRGB` disabled), so the window shows exactly the stored bytes whatever its own encoding. The
   developer overlay is drawn last, into the default framebuffer, with `GL_FRAMEBUFFER_SRGB` disabled (Dear ImGui's
   colors are sRGB already); the backend changes GL state behind the `RenderStateCache`, which is invalidated afterwards.
@@ -448,9 +455,12 @@ outside the clip volume by `pbr.vert`, so no program on that stage draws them.
   (`Framebuffer::readLinearPixels`): a lit square just below the highlight knee must not bloom at all, an emitter square
   must keep its energy within 5% (98.6% on the reference GPU), and a single pixel 100 and 1000 times brighter than
   white, at the four places of a 2x2 pixel block, must bloom alike within 20% (2.6%).
-- **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view through a second
-  `ViewTargets` at `--screenshot-size` (default 1920x1080, independent of the window; the bloom levels scale with it,
-  so the glow covers the same share of the image), read the output back through an `RGBA8` texture view
+- **Screenshots:** `--screenshot` (last frame of a frame-limited run) and F12 render the same view at
+  `--screenshot-size` (default 1920x1080, independent of the window; the bloom levels scale with it, so the glow covers
+  the same share of the image): through the window's `ViewTargets` when it is the window's size (the window's view
+  draws them anew right after), else through a `ViewTargets` made for that screenshot alone, the window's let go of
+  first and made again by the window's view, so that one set is held at any time; they read the output back through an
+  `RGBA8` texture view
   (raw sRGB bytes on every driver), flip the rows to top-first (ADR-0002) and write an RGB PNG (the window is opaque, so
   the alpha channel is dropped). They show the scene and, since I2 step A1, the product UI while it is open (the quick
   catalog, the game-session panel); with `--screenshot-include-ui` the open developer overlay is drawn over them too,

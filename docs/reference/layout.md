@@ -148,7 +148,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   the media left unknown (2); `rv_esde` `checkRoomMedia` and `roomMediaPaths` (`media_resolver.hpp`, 2); `rv_render`
   the texture arrays (`Texture2DArray`, `CollectionArrays`; their layout, allocator and budget in
   `rv_render_uniforms`'s `texture_array_layout.hpp`; 6), the static instance groups and the outline pass (8), a
-  material's texture override (11), and in `rv_render_uniforms` the GPU memory accounting (`gpu_memory.hpp`, 0d).
+  material's texture override (11), and in `rv_render_uniforms` the GPU memory accounting (`gpu_memory.hpp`, 0d)
+  and, since I5's memory margin, the view targets' plan (`view_target_plan.hpp`: each target's format, size, the
+  passes it lives through and the storage it takes over; `Framebuffer::createAlias` makes those texture views).
   I4 step 7a: `rv_catalog` `recent_games.hpp` (the directory's favourites and recent games, their order and the
   conversion of ES-DE's local `<lastplayed>` to UTC) and `ICatalogQuery::favoritesAndRecent`, which `SqliteCatalogQuery`
   answers in one read (`src/catalog_db/src/recent_query.cpp`); `rv_ui_model` `directory_model` (the directory's
