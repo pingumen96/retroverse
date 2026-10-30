@@ -18,6 +18,8 @@
     "snapDegrees": 30,
     "smoothDegreesPerSecond": 90,
     // 0 to 1: how far the view's edges darken while the stick walks or turns smoothly; 0 is off.
-    "vignette": 0
+    "vignette": 0,
+    // "head": the left stick walks where the head looks; "hand": where the left controller points.
+    "moveRelativeTo": "head"
   }
 }

@@ -11,7 +11,8 @@
 //     "renderScale": 1,                 // 0.25 to 2: the eyes' size over the runtime's recommendation
 //     "refreshRate": 0,                 // Hz asked of the headset (XR_FB_display_refresh_rate); 0: the runtime's own
 //     "posture": "standing",            // "seated": the head made up to the walker's eye height at each recentering
-//     "comfort": {"turn": "snap", "snapDegrees": 30, "smoothDegreesPerSecond": 90, "vignette": 0}
+//     "comfort": {"turn": "snap", "snapDegrees": 30, "smoothDegreesPerSecond": 90, "vignette": 0,
+//                 "moveRelativeTo": "head"}   // "hand": the stick walks along the left controller (I10 step 4)
 //   }
 
 #include <filesystem>

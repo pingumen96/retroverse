@@ -34,6 +34,9 @@ struct Frame {
     /// The runtime moved the reference space's origin since the last located frame (the user recentered: a
     /// ReferenceSpaceChangePending event): the poses jumped.
     bool spaceChanged = false;
+    /// The controllers at the frame's display time (I10 step 4), in the reference space: nothing while the session is
+    /// not focused.
+    ControllerState controllers;
 
     /// The eyes are to be rendered into `images`.
     [[nodiscard]] bool wantsViews() const noexcept { return images[0] != 0 && images[1] != 0; }
@@ -83,6 +86,10 @@ public:
     [[nodiscard]] Status endFrame(bool rendered);
     /// Asks the runtime to end the session (when the app quits).
     void requestExit();
+    /// Vibrates `hand`'s controller (I10 step 4), while the session runs.
+    void vibrate(Hand hand, float amplitude, float seconds);
+    /// Each hand's interaction profile as the runtime last told it (empty: none).
+    [[nodiscard]] const std::array<std::string, kHandCount>& profiles() const noexcept { return m_profiles; }
 
     /// The frames waited for so far.
     [[nodiscard]] std::uint64_t framesWaited() const noexcept { return m_framesWaited; }
@@ -103,6 +110,9 @@ private:
     bool m_reachedFocused = false;
     /// A ReferenceSpaceChangePending event not yet passed on with a located frame.
     bool m_spaceChanged = false;
+    std::array<std::string, kHandCount> m_profiles;
+    /// A failed sync of the controllers is logged once (the frames go on without them).
+    bool m_controllersFailed = false;
     std::string m_endReason;
     std::uint64_t m_framesWaited = 0;
     std::vector<SessionEvent> m_events;

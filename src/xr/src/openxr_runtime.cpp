@@ -133,6 +133,22 @@ Pose toPose(const XrPosef& pose) noexcept {
                 glm::vec3(pose.position.x, pose.position.y, pose.position.z)};
 }
 
+XrActionType actionType(ControllerActionKind kind) noexcept {
+    switch (kind) {
+    case ControllerActionKind::Boolean:
+        return XR_ACTION_TYPE_BOOLEAN_INPUT;
+    case ControllerActionKind::Float:
+        return XR_ACTION_TYPE_FLOAT_INPUT;
+    case ControllerActionKind::Vector2:
+        return XR_ACTION_TYPE_VECTOR2F_INPUT;
+    case ControllerActionKind::Pose:
+        return XR_ACTION_TYPE_POSE_INPUT;
+    case ControllerActionKind::Vibration:
+        return XR_ACTION_TYPE_VIBRATION_OUTPUT;
+    }
+    return XR_ACTION_TYPE_BOOLEAN_INPUT;
+}
+
 class OpenXrRuntime final : public Runtime {
 public:
     OpenXrRuntime() = default;
@@ -141,6 +157,9 @@ public:
     [[nodiscard]] Status createInstance(const OpenXrOptions& options);
     [[nodiscard]] Status findSystem(std::chrono::milliseconds wait);
     [[nodiscard]] Status createSession(const OpenXrOptions& options);
+    /// The action set, its actions, the profiles' suggested bindings and the hands' pose spaces (I10 step 4). A
+    /// failure leaves the session without controllers (logged).
+    void createActions(const XrBindings& bindings);
 
     [[nodiscard]] const RuntimeDescription& description() const noexcept override { return m_description; }
     [[nodiscard]] std::optional<RuntimeEvent> pollEvent() override;
@@ -153,10 +172,17 @@ public:
     [[nodiscard]] Expected<std::uint32_t> acquireImage(int eye) override;
     [[nodiscard]] Status releaseImage(int eye) override;
     [[nodiscard]] Status endFrame(const FrameTiming& timing, bool withViews) override;
+    [[nodiscard]] Expected<ControllerState> syncControllers(std::int64_t displayTimeNs) override;
+    void vibrate(Hand hand, float amplitude, float seconds) override;
     [[nodiscard]] std::span<const std::uint32_t> images(int eye) const override;
     [[nodiscard]] std::optional<float> currentRefreshRate() const override;
 
 private:
+    /// A hand's interaction profile now ("" for none).
+    [[nodiscard]] std::string currentProfile(Hand hand) const;
+    /// `space` located in the reference space at `time`, when both its orientation and position are valid.
+    [[nodiscard]] std::optional<Pose> locate(XrSpace space, XrTime time) const;
+
     template <class Pfn>
     void load(const char* name, Pfn& pfn) const {
         PFN_xrVoidFunction function = nullptr;
@@ -177,6 +203,14 @@ private:
     std::array<std::vector<std::uint32_t>, 2> m_images;
     bool m_refreshRateExtension = false;
     bool m_localFloorExtension = false;
+    /// The instance extensions enabled for the controllers' profiles (xr_bindings.json's "extension").
+    std::vector<std::string> m_profileExtensions;
+    XrActionSet m_actionSet = XR_NULL_HANDLE;
+    std::array<XrAction, kControllerActionCount> m_actions{};
+    std::array<XrPath, kHandCount> m_handPaths{};
+    std::array<XrSpace, kHandCount> m_gripSpaces{XR_NULL_HANDLE, XR_NULL_HANDLE};
+    std::array<XrSpace, kHandCount> m_aimSpaces{XR_NULL_HANDLE, XR_NULL_HANDLE};
+    bool m_actionsReady = false;
     PFN_xrGetOpenGLGraphicsRequirementsKHR m_getGraphicsRequirements = nullptr;
     PFN_xrEnumerateDisplayRefreshRatesFB m_enumerateRefreshRates = nullptr;
     PFN_xrGetDisplayRefreshRateFB m_getRefreshRate = nullptr;
@@ -184,6 +218,16 @@ private:
 };
 
 OpenXrRuntime::~OpenXrRuntime() {
+    for (const auto& spaces : {m_gripSpaces, m_aimSpaces}) {
+        for (const XrSpace space : spaces) {
+            if (space != XR_NULL_HANDLE) {
+                xrDestroySpace(space);
+            }
+        }
+    }
+    if (m_actionSet != XR_NULL_HANDLE) {
+        xrDestroyActionSet(m_actionSet); // its actions with it
+    }
     for (XrSwapchain& swapchain : m_swapchains) {
         if (swapchain != XR_NULL_HANDLE) {
             xrDestroySwapchain(swapchain);
@@ -235,6 +279,17 @@ Status OpenXrRuntime::createInstance(const OpenXrOptions& options) {
     if (offers(kLocalFloorExtension)) {
         enabled.push_back(kLocalFloorExtension);
         m_localFloorExtension = true;
+    }
+    // The controllers' profiles that need an extension (the Pico 4's), when the runtime offers it.
+    for (const InteractionProfile& profile : options.bindings.profiles) {
+        if (profile.extension && offers(*profile.extension) &&
+            std::find(m_profileExtensions.begin(), m_profileExtensions.end(), *profile.extension) ==
+                m_profileExtensions.end()) {
+            m_profileExtensions.push_back(*profile.extension);
+        }
+    }
+    for (const std::string& name : m_profileExtensions) {
+        enabled.push_back(name.c_str());
     }
     for (const char* name : enabled) {
         m_description.extensions.emplace_back(name);
@@ -408,6 +463,7 @@ Status OpenXrRuntime::createSession(const OpenXrOptions& options) {
     }
     m_description.space = spaceName(chosen);
     m_description.floorOffset = chosen == XR_REFERENCE_SPACE_TYPE_LOCAL ? kAssumedEyeHeight : 0.0f;
+    createActions(options.bindings);
 
     // The eyes' format and size.
     std::vector<std::int64_t> formats;
@@ -488,6 +544,208 @@ Status OpenXrRuntime::createSession(const OpenXrOptions& options) {
     return ok();
 }
 
+void OpenXrRuntime::createActions(const XrBindings& bindings) {
+    if (bindings.profiles.empty()) {
+        spdlog::info("XR controllers: no bindings, none read");
+        return;
+    }
+    const auto failed = [&](std::string_view call, XrResult result) {
+        spdlog::warn("XR controllers unavailable ({} failed: {}): the pad alone drives the VR mode", call,
+                     resultName(m_instance, result));
+    };
+    for (const Hand hand : {Hand::Left, Hand::Right}) {
+        const std::string path = fmt::format("/user/hand/{}", toString(hand));
+        if (const XrResult result = xrStringToPath(m_instance, path.c_str(), &m_handPaths[toIndex(hand)]);
+            XR_FAILED(result)) {
+            failed("xrStringToPath", result);
+            return;
+        }
+    }
+    XrActionSetCreateInfo setInfo = typed<XrActionSetCreateInfo>(XR_TYPE_ACTION_SET_CREATE_INFO);
+    std::strncpy(setInfo.actionSetName, "retroverse", XR_MAX_ACTION_SET_NAME_SIZE - 1);
+    std::strncpy(setInfo.localizedActionSetName, "Retroverse", XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+    if (const XrResult result = xrCreateActionSet(m_instance, &setInfo, &m_actionSet); XR_FAILED(result)) {
+        failed("xrCreateActionSet", result);
+        return;
+    }
+    for (std::size_t index = 0; index < kControllerActionCount; ++index) {
+        const ControllerActionInfo& info = infoOf(static_cast<ControllerAction>(index));
+        XrActionCreateInfo create = typed<XrActionCreateInfo>(XR_TYPE_ACTION_CREATE_INFO);
+        std::strncpy(create.actionName, std::string(info.name).c_str(), XR_MAX_ACTION_NAME_SIZE - 1);
+        std::strncpy(create.localizedActionName, std::string(info.localizedName).c_str(),
+                     XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+        create.actionType = actionType(info.kind);
+        if (info.perHand) {
+            create.countSubactionPaths = static_cast<std::uint32_t>(m_handPaths.size());
+            create.subactionPaths = m_handPaths.data();
+        }
+        if (const XrResult result = xrCreateAction(m_actionSet, &create, &m_actions[index]); XR_FAILED(result)) {
+            failed("xrCreateAction", result);
+            return;
+        }
+    }
+    for (const InteractionProfile& profile : bindings.profiles) {
+        if (profile.extension && std::find(m_profileExtensions.begin(), m_profileExtensions.end(),
+                                           *profile.extension) == m_profileExtensions.end()) {
+            spdlog::info("XR controllers: {} left out (the runtime offers no {})", profile.path, *profile.extension);
+            continue;
+        }
+        XrPath profilePath = XR_NULL_PATH;
+        std::vector<XrActionSuggestedBinding> suggested;
+        bool pathsKnown = XR_SUCCEEDED(xrStringToPath(m_instance, profile.path.c_str(), &profilePath));
+        for (const ProfileBinding& binding : profile.bindings) {
+            XrPath path = XR_NULL_PATH;
+            pathsKnown = pathsKnown && XR_SUCCEEDED(xrStringToPath(m_instance, binding.path.c_str(), &path));
+            suggested.push_back(XrActionSuggestedBinding{m_actions[static_cast<std::size_t>(binding.action)], path});
+        }
+        if (!pathsKnown) {
+            spdlog::warn("XR controllers: {} left out (a path the runtime cannot read)", profile.path);
+            continue;
+        }
+        XrInteractionProfileSuggestedBinding suggestion =
+            typed<XrInteractionProfileSuggestedBinding>(XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING);
+        suggestion.interactionProfile = profilePath;
+        suggestion.countSuggestedBindings = static_cast<std::uint32_t>(suggested.size());
+        suggestion.suggestedBindings = suggested.data();
+        if (const XrResult result = xrSuggestInteractionProfileBindings(m_instance, &suggestion); XR_FAILED(result)) {
+            spdlog::warn("XR controllers: {} refused by the runtime: {}", profile.path, resultName(m_instance, result));
+            continue;
+        }
+        m_description.interactionProfiles.push_back(profile.path);
+    }
+    XrSessionActionSetsAttachInfo attach =
+        typed<XrSessionActionSetsAttachInfo>(XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO);
+    attach.countActionSets = 1;
+    attach.actionSets = &m_actionSet;
+    if (const XrResult result = xrAttachSessionActionSets(m_session, &attach); XR_FAILED(result)) {
+        failed("xrAttachSessionActionSets", result);
+        return;
+    }
+    for (const Hand hand : {Hand::Left, Hand::Right}) {
+        for (const auto& [action, space] :
+             {std::pair{ControllerAction::Grip, &m_gripSpaces[toIndex(hand)]},
+              std::pair{ControllerAction::Aim, &m_aimSpaces[toIndex(hand)]}}) {
+            XrActionSpaceCreateInfo create = typed<XrActionSpaceCreateInfo>(XR_TYPE_ACTION_SPACE_CREATE_INFO);
+            create.action = m_actions[static_cast<std::size_t>(action)];
+            create.subactionPath = m_handPaths[toIndex(hand)];
+            create.poseInActionSpace.orientation.w = 1.0f;
+            if (const XrResult result = xrCreateActionSpace(m_session, &create, space); XR_FAILED(result)) {
+                failed("xrCreateActionSpace", result);
+                return;
+            }
+        }
+    }
+    m_actionsReady = true;
+    spdlog::info("XR controllers: bindings for {}", fmt::join(m_description.interactionProfiles, ", "));
+}
+
+std::string OpenXrRuntime::currentProfile(Hand hand) const {
+    XrInteractionProfileState state = typed<XrInteractionProfileState>(XR_TYPE_INTERACTION_PROFILE_STATE);
+    if (XR_FAILED(xrGetCurrentInteractionProfile(m_session, m_handPaths[toIndex(hand)], &state)) ||
+        state.interactionProfile == XR_NULL_PATH) {
+        return {};
+    }
+    char buffer[XR_MAX_PATH_LENGTH] = {};
+    std::uint32_t length = 0;
+    if (XR_FAILED(xrPathToString(m_instance, state.interactionProfile, XR_MAX_PATH_LENGTH, &length, buffer))) {
+        return {};
+    }
+    return buffer;
+}
+
+std::optional<Pose> OpenXrRuntime::locate(XrSpace space, XrTime time) const {
+    XrSpaceLocation location = typed<XrSpaceLocation>(XR_TYPE_SPACE_LOCATION);
+    if (space == XR_NULL_HANDLE || XR_FAILED(xrLocateSpace(space, m_space, time, &location))) {
+        return std::nullopt;
+    }
+    constexpr XrSpaceLocationFlags kValid =
+        XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+    if ((location.locationFlags & kValid) != kValid) {
+        return std::nullopt;
+    }
+    return toPose(location.pose);
+}
+
+Expected<ControllerState> OpenXrRuntime::syncControllers(std::int64_t displayTimeNs) {
+    ControllerState state;
+    if (!m_actionsReady) {
+        return state;
+    }
+    const XrActiveActionSet active{m_actionSet, XR_NULL_PATH};
+    XrActionsSyncInfo sync = typed<XrActionsSyncInfo>(XR_TYPE_ACTIONS_SYNC_INFO);
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+    const XrResult synced = xrSyncActions(m_session, &sync);
+    if (synced == XR_SESSION_NOT_FOCUSED) {
+        return state; // the runtime's own menu has the input
+    }
+    if (XR_FAILED(synced)) {
+        return tl::unexpected(xrError(m_instance, synced, "xrSyncActions"));
+    }
+    for (std::size_t index = 0; index < kControllerActionCount; ++index) {
+        const ControllerActionInfo& info = infoOf(static_cast<ControllerAction>(index));
+        if (info.perHand) {
+            continue;
+        }
+        XrActionStateGetInfo get = typed<XrActionStateGetInfo>(XR_TYPE_ACTION_STATE_GET_INFO);
+        get.action = m_actions[index];
+        if (info.kind == ControllerActionKind::Boolean && info.button) {
+            XrActionStateBoolean value = typed<XrActionStateBoolean>(XR_TYPE_ACTION_STATE_BOOLEAN);
+            if (XR_SUCCEEDED(xrGetActionStateBoolean(m_session, &get, &value)) && value.isActive &&
+                value.currentState) {
+                state.pad.buttons.set(input::toIndex(*info.button));
+            }
+        } else if (info.kind == ControllerActionKind::Float && info.axisX) {
+            XrActionStateFloat value = typed<XrActionStateFloat>(XR_TYPE_ACTION_STATE_FLOAT);
+            if (XR_SUCCEEDED(xrGetActionStateFloat(m_session, &get, &value)) && value.isActive) {
+                state.pad.axes[input::toIndex(*info.axisX)] = value.currentState;
+            }
+        } else if (info.kind == ControllerActionKind::Vector2 && info.axisX && info.axisY) {
+            XrActionStateVector2f value = typed<XrActionStateVector2f>(XR_TYPE_ACTION_STATE_VECTOR2F);
+            if (XR_SUCCEEDED(xrGetActionStateVector2f(m_session, &get, &value)) && value.isActive) {
+                state.pad.axes[input::toIndex(*info.axisX)] = value.currentState.x;
+                state.pad.axes[input::toIndex(*info.axisY)] = value.currentState.y;
+            }
+        }
+    }
+    for (const Hand hand : {Hand::Left, Hand::Right}) {
+        HandState& held = state.hands[toIndex(hand)];
+        XrActionStateGetInfo get = typed<XrActionStateGetInfo>(XR_TYPE_ACTION_STATE_GET_INFO);
+        get.subactionPath = m_handPaths[toIndex(hand)];
+        get.action = m_actions[static_cast<std::size_t>(ControllerAction::Select)];
+        XrActionStateFloat select = typed<XrActionStateFloat>(XR_TYPE_ACTION_STATE_FLOAT);
+        if (XR_SUCCEEDED(xrGetActionStateFloat(m_session, &get, &select)) && select.isActive) {
+            held.select = select.currentState;
+        }
+        get.action = m_actions[static_cast<std::size_t>(ControllerAction::Grip)];
+        XrActionStatePose pose = typed<XrActionStatePose>(XR_TYPE_ACTION_STATE_POSE);
+        if (XR_SUCCEEDED(xrGetActionStatePose(m_session, &get, &pose)) && pose.isActive) {
+            held.grip = locate(m_gripSpaces[toIndex(hand)], displayTimeNs);
+            held.aim = locate(m_aimSpaces[toIndex(hand)], displayTimeNs);
+        }
+        held.tracked = held.grip.has_value() || held.aim.has_value();
+    }
+    return state;
+}
+
+void OpenXrRuntime::vibrate(Hand hand, float amplitude, float seconds) {
+    if (!m_actionsReady) {
+        return;
+    }
+    XrHapticVibration vibration = typed<XrHapticVibration>(XR_TYPE_HAPTIC_VIBRATION);
+    vibration.amplitude = std::clamp(std::isfinite(amplitude) ? amplitude : 0.0f, 0.0f, 1.0f);
+    vibration.duration = static_cast<XrDuration>(std::clamp(std::isfinite(seconds) ? seconds : 0.0f, 0.0f, 1.0f) * 1e9);
+    vibration.frequency = XR_FREQUENCY_UNSPECIFIED;
+    XrHapticActionInfo info = typed<XrHapticActionInfo>(XR_TYPE_HAPTIC_ACTION_INFO);
+    info.action = m_actions[static_cast<std::size_t>(ControllerAction::Haptic)];
+    info.subactionPath = m_handPaths[toIndex(hand)];
+    if (const XrResult result =
+            xrApplyHapticFeedback(m_session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
+        XR_FAILED(result)) {
+        spdlog::debug("xrApplyHapticFeedback failed: {}", resultName(m_instance, result));
+    }
+}
+
 std::optional<RuntimeEvent> OpenXrRuntime::pollEvent() {
     for (;;) {
         XrEventDataBuffer event = typed<XrEventDataBuffer>(XR_TYPE_EVENT_DATA_BUFFER);
@@ -517,8 +775,12 @@ std::optional<RuntimeEvent> OpenXrRuntime::pollEvent() {
             out.kind = RuntimeEvent::Kind::EventsLost;
             out.count = reinterpret_cast<const XrEventDataEventsLost&>(event).lostEventCount;
             return out;
+        case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED:
+            out.kind = RuntimeEvent::Kind::InteractionProfileChanged;
+            out.profiles = {currentProfile(Hand::Left), currentProfile(Hand::Right)};
+            return out;
         default:
-            break; // events the session does not follow (interaction profiles: step 4)
+            break; // events the session does not follow
         }
     }
 }

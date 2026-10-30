@@ -116,6 +116,11 @@ void Session::pollEvents() {
         case RuntimeEvent::Kind::EventsLost:
             record(fmt::format("events-lost {}", event->count));
             break;
+        case RuntimeEvent::Kind::InteractionProfileChanged:
+            m_profiles = event->profiles;
+            record(fmt::format("interaction-profile left '{}' right '{}'", m_profiles[0], m_profiles[1]));
+            spdlog::info("XR controllers: left '{}', right '{}'", m_profiles[0], m_profiles[1]);
+            break;
         }
     }
 }
@@ -148,6 +153,15 @@ Expected<std::optional<Frame>> Session::beginFrame() {
     if (m_spaceChanged && frame.located) {
         frame.spaceChanged = true;
         m_spaceChanged = false;
+    }
+    if (m_state == SessionState::Focused) {
+        if (auto controllers = m_runtime->syncControllers(timing->displayTimeNs)) {
+            frame.controllers = *controllers;
+        } else if (!m_controllersFailed) {
+            m_controllersFailed = true;
+            spdlog::warn("XR controllers not read (the frames go on without them): {}",
+                         controllers.error().toString());
+        }
     }
     if (frame.timing.shouldRender && frame.located) {
         for (int eye = 0; eye < 2; ++eye) {
@@ -188,6 +202,12 @@ Status Session::endFrame(bool rendered) {
     m_frames.push_back(
         FrameRecord{frame.timing.displayTimeNs, frame.timing.displayPeriodNs, withViews, cpuMs, std::nullopt});
     return ok();
+}
+
+void Session::vibrate(Hand hand, float amplitude, float seconds) {
+    if (m_running) {
+        m_runtime->vibrate(hand, amplitude, seconds);
+    }
 }
 
 void Session::requestExit() {

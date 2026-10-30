@@ -199,3 +199,30 @@ TEST_CASE("xr/session: a recentering reaches the next located frame once (I10 st
     const std::vector<std::string> names = eventNames(*f.session);
     CHECK(std::count(names.begin(), names.end(), "reference-space-change") == 1);
 }
+
+TEST_CASE("xr/session: the controllers reach a focused frame, the vibrations the runtime (I10 step 4)",
+          "[xr][session]") {
+    FakeRuntimeConfig config;
+    config.handPose = [](std::uint64_t frame, rv::xr::Hand hand) -> std::optional<rv::xr::Pose> {
+        if (hand == rv::xr::Hand::Left || frame < 2) {
+            return std::nullopt;
+        }
+        return rv::xr::Pose{glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(0.2f, 1.1f, -0.3f)};
+    };
+    Fixture f = makeSession(std::move(config));
+    std::vector<bool> right;
+    for (int i = 0; i < 4; ++i) {
+        f.session->pollEvents();
+        auto frame = f.session->beginFrame();
+        REQUIRE(frame.has_value());
+        REQUIRE(frame->has_value());
+        CHECK_FALSE((*frame)->controllers.hands[0].tracked);
+        right.push_back((*frame)->controllers.hands[1].tracked);
+        REQUIRE(f.session->endFrame((*frame)->wantsViews()).has_value());
+    }
+    CHECK(right == std::vector<bool>{false, false, true, true});
+    f.session->vibrate(rv::xr::Hand::Right, 0.5f, 0.02f);
+    f.session->vibrate(rv::xr::Hand::Right, 0.5f, 0.02f);
+    CHECK(f.runtime->vibrations(rv::xr::Hand::Right) == 2);
+    CHECK(f.runtime->vibrations(rv::xr::Hand::Left) == 0);
+}

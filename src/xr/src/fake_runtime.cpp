@@ -192,6 +192,30 @@ std::span<const std::uint32_t> FakeRuntime::images(int eye) const {
     return index < m_images.size() ? std::span<const std::uint32_t>(m_images[index]) : std::span<const std::uint32_t>{};
 }
 
+Expected<ControllerState> FakeRuntime::syncControllers(std::int64_t /*displayTimeNs*/) {
+    if (!m_begun) {
+        return tl::unexpected(notRunning("syncControllers"));
+    }
+    ControllerState state;
+    if (!m_config.handPose) {
+        return state;
+    }
+    const std::uint64_t frame = m_framesWaited > 0 ? m_framesWaited - 1 : 0;
+    for (const Hand hand : {Hand::Left, Hand::Right}) {
+        if (const std::optional<Pose> pose = m_config.handPose(frame, hand)) {
+            HandState& held = state.hands[toIndex(hand)];
+            held.tracked = true;
+            held.grip = *pose;
+            held.aim = *pose;
+        }
+    }
+    return state;
+}
+
+void FakeRuntime::vibrate(Hand hand, float /*amplitude*/, float /*seconds*/) {
+    ++m_vibrations[toIndex(hand)];
+}
+
 std::optional<float> FakeRuntime::currentRefreshRate() const {
     if (m_description.refreshRates.empty()) {
         return std::nullopt;

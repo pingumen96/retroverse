@@ -43,6 +43,9 @@ struct FakeRuntimeConfig {
     std::vector<std::uint64_t> untrackedFrames;
     /// The user recenters on these frames (a ReferenceSpaceChangePending event once the frame is waited for).
     std::vector<std::uint64_t> recenterFrames;
+    /// A hand's controller at the n-th frame waited for (the input script's hand poses, I10 step 4): its grip and aim
+    /// poses both there, tracked; nothing: that hand holds none. No buttons: the input script presses the actions.
+    std::function<std::optional<Pose>(std::uint64_t frame, Hand hand)> handPose;
 };
 
 /// A runtime without a headset (ADR-0017 §3, §10): two asymmetric eyes `ipdMeters` apart at the scripted head pose, a
@@ -65,12 +68,16 @@ public:
     [[nodiscard]] Expected<std::uint32_t> acquireImage(int eye) override;
     [[nodiscard]] Status releaseImage(int eye) override;
     [[nodiscard]] Status endFrame(const FrameTiming& timing, bool withViews) override;
+    [[nodiscard]] Expected<ControllerState> syncControllers(std::int64_t displayTimeNs) override;
+    void vibrate(Hand hand, float amplitude, float seconds) override;
     [[nodiscard]] std::span<const std::uint32_t> images(int eye) const override;
     [[nodiscard]] std::optional<float> currentRefreshRate() const override;
 
     /// What the app submitted: frames ended, and those with both eyes.
     [[nodiscard]] std::uint64_t framesEnded() const noexcept { return m_framesEnded; }
     [[nodiscard]] std::uint64_t framesWithViews() const noexcept { return m_framesWithViews; }
+    /// The vibrations asked for, per hand (I10 step 4).
+    [[nodiscard]] std::uint64_t vibrations(Hand hand) const noexcept { return m_vibrations[toIndex(hand)]; }
 
 private:
     void queueState(SessionState state);
@@ -88,6 +95,7 @@ private:
     std::array<bool, 2> m_acquired{};
     std::uint64_t m_framesEnded = 0;
     std::uint64_t m_framesWithViews = 0;
+    std::array<std::uint64_t, kHandCount> m_vibrations{};
 };
 
 } // namespace rv::xr

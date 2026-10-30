@@ -77,7 +77,8 @@ std::optional<float> firstCollider(const glm::vec3& from, const glm::vec3& to, f
         if (collider.box.isEmpty() || collider.box.max.y <= floorY + kArcFloorTolerance) {
             continue;
         }
-        if (const std::optional<float> enters = entersBox(from, to, collider.box); enters && (!first || *enters < *first)) {
+        const std::optional<float> enters = entersBox(from, to, collider.box);
+        if (enters && (!first || *enters < *first)) {
             first = enters;
         }
     }
@@ -146,6 +147,23 @@ TeleportArc computeTeleportArc(const glm::vec3& start, const glm::vec3& directio
         previous = next;
     }
     return arc;
+}
+
+float castRay(const core::Ray& ray, float maxDistance, float floorY, const scene::CollisionWorld* collision) noexcept {
+    if (collision == nullptr || !core::isFinite(ray.origin) || !core::isFinite(ray.direction) ||
+        !std::isfinite(maxDistance) || !std::isfinite(floorY)) {
+        return maxDistance;
+    }
+    float reach = maxDistance;
+    // Down to the floor at most.
+    if (ray.direction.y < 0.0f && ray.origin.y > floorY) {
+        reach = std::min(reach, (floorY - ray.origin.y) / ray.direction.y);
+    }
+    const glm::vec3 end = ray.origin + ray.direction * reach;
+    if (const std::optional<float> hit = firstCollider(ray.origin, end, floorY, *collision)) {
+        return *hit * reach;
+    }
+    return reach;
 }
 
 void Locomotion::setSettings(const LocomotionSettings& settings) noexcept {
@@ -244,14 +262,18 @@ void Locomotion::update(const Pose& head, float floorOffset, const LocomotionInp
     m_heading = wrapYaw(m_yaw + tracked.yaw);
     m_pitch = tracked.pitch;
 
-    // The stick walks along the head's heading, through the capsule, carrying the anchor.
+    // The stick walks along the head's heading (or the left controller's), through the capsule, carrying the anchor.
+    float walkHeading = m_heading;
+    if (m_settings.comfort.moveWithHand && input.moveAlong && finitePose(*input.moveAlong)) {
+        walkHeading = wrapYaw(m_yaw + anglesOf(input.moveAlong->orientation).yaw);
+    }
     glm::vec2 move(finiteOr(input.move.x, 0.0f), finiteOr(input.move.y, 0.0f));
     if (const float length = glm::length(move); length > 1.0f) {
         move /= length;
     }
     const float speed = input.sprint ? m_settings.sprintSpeed : m_settings.walkSpeed;
-    const glm::vec3 forward(std::sin(m_heading), 0.0f, -std::cos(m_heading));
-    const glm::vec3 right(std::cos(m_heading), 0.0f, std::sin(m_heading));
+    const glm::vec3 forward(std::sin(walkHeading), 0.0f, -std::cos(walkHeading));
+    const glm::vec3 right(std::cos(walkHeading), 0.0f, std::sin(walkHeading));
     const glm::vec3 step = (forward * move.y + right * move.x) * (speed * seconds);
     const bool walking = (step.x != 0.0f || step.z != 0.0f) && core::isFinite(step);
     if (walking) {
@@ -297,9 +319,15 @@ void Locomotion::update(const Pose& head, float floorOffset, const LocomotionInp
         m_aiming = false;
         m_arc.reset();
     } else if (m_aiming) {
-        const glm::quat orientation = yawRotation(m_yaw) * head.orientation;
-        m_arc = computeTeleportArc(headWorld - glm::vec3(0.0f, kArcBelowHead, 0.0f), orientation * kForward,
-                                   m_feet.y, collision, capsule);
+        if (input.arcFrom && finitePose(*input.arcFrom)) {
+            const glm::quat orientation = yawRotation(m_yaw) * input.arcFrom->orientation;
+            m_arc = computeTeleportArc(worldOf(input.arcFrom->position), orientation * kForward, m_feet.y, collision,
+                                       capsule);
+        } else {
+            const glm::quat orientation = yawRotation(m_yaw) * head.orientation;
+            m_arc = computeTeleportArc(headWorld - glm::vec3(0.0f, kArcBelowHead, 0.0f), orientation * kForward,
+                                       m_feet.y, collision, capsule);
+        }
     }
 
     // The comfort vignette closes in while the stick walks or turns the user smoothly.

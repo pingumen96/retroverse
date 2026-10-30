@@ -11,6 +11,7 @@
 #include <glm/vec2.hpp>
 
 #include <rv/core/expected.hpp>
+#include <rv/xr/controllers.hpp>
 #include <rv/xr/pose.hpp>
 
 namespace rv::xr {
@@ -42,6 +43,9 @@ struct RuntimeEvent {
         RefreshRateChanged,
         /// The runtime's queue overflowed and dropped `count` events.
         EventsLost,
+        /// The controllers in the hands changed (I10 step 4): `profiles` holds each hand's interaction profile now
+        /// (empty: none).
+        InteractionProfileChanged,
     };
     Kind kind = Kind::StateChanged;
     /// StateChanged: the new state.
@@ -51,6 +55,8 @@ struct RuntimeEvent {
     float toHz = 0.0f;
     /// EventsLost: how many.
     std::uint32_t count = 0;
+    /// InteractionProfileChanged: the left hand's, then the right's.
+    std::array<std::string, kHandCount> profiles;
 };
 
 /// What xrWaitFrame predicted for the frame about to be rendered.
@@ -87,6 +93,8 @@ struct RuntimeDescription {
     /// The refresh rates the headset offers (XR_FB_display_refresh_rate; empty without it), the one asked for.
     std::vector<float> refreshRates;
     std::optional<float> refreshRateRequested;
+    /// The interaction profiles whose bindings the runtime took (xr_bindings.json's, I10 step 4).
+    std::vector<std::string> interactionProfiles;
 };
 
 /// A headset's runtime with its session created (ADR-0017 §3): the calls of the session's lifecycle and frame loop,
@@ -117,6 +125,12 @@ public:
     [[nodiscard]] virtual Status releaseImage(int eye) = 0;
     /// xrEndFrame: both eyes as located last, or no layer without `withViews`.
     [[nodiscard]] virtual Status endFrame(const FrameTiming& timing, bool withViews) = 0;
+
+    /// Syncs the controllers' actions and locates the hands at `displayTimeNs` (xrSyncActions, xrLocateSpace; I10
+    /// step 4). The runtime gives input to a focused session only: nothing held or tracked otherwise.
+    [[nodiscard]] virtual Expected<ControllerState> syncControllers(std::int64_t displayTimeNs) = 0;
+    /// Vibrates `hand`'s controller at `amplitude` ([0, 1]) for `seconds` (xrApplyHapticFeedback).
+    virtual void vibrate(Hand hand, float amplitude, float seconds) = 0;
 
     /// The GL texture names of `eye`'s swapchain images.
     [[nodiscard]] virtual std::span<const std::uint32_t> images(int eye) const = 0;

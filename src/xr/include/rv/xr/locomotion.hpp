@@ -8,6 +8,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <rv/core/math.hpp>
 #include <rv/scene/collision.hpp>
 #include <rv/xr/pose.hpp>
 
@@ -43,6 +44,8 @@ struct ComfortSettings {
     float smoothDegreesPerSecond = 90.0f;
     /// [0, 1]: how far the comfort vignette closes in while the stick walks or turns the user; 0 turns it off.
     float vignette = 0.0f;
+    /// The stick walks along the left controller's heading (I10 step 4) instead of the head's, while it is tracked.
+    bool moveWithHand = false;
 
     bool operator==(const ComfortSettings&) const = default;
 };
@@ -59,6 +62,11 @@ struct LocomotionInput {
     /// LookY, [-1, 1]: pushed up past Locomotion::kAimPress, the teleport's arc follows where the head looks; let go
     /// below Locomotion::kAimRelease, the walker lands where it came down.
     float aim = 0.0f;
+    /// I10 step 4, in the tracking space: the controller the arc starts from and follows (the right hand's aim pose,
+    /// which holds the stick), and the one the stick walks along (the left hand's, with ComfortSettings::moveWithHand).
+    /// None: the head.
+    std::optional<Pose> arcFrom;
+    std::optional<Pose> moveAlong;
 };
 
 /// The teleport's arc (computeTeleportArc).
@@ -78,12 +86,18 @@ inline constexpr float kArcMaxSeconds = 2.0f;
 inline constexpr float kArcFloorTolerance = 0.05f;
 
 /// The ballistic arc from `start` along `direction` at kArcSpeed, sampled every kArcStepSeconds. It ends where it first
-/// comes down through the plane y = floorY: a landing when the capsule standing there overlaps no collider (none with no
-/// collision world). Or where it first enters a collider standing above the floor (a wall, a shelf, a table: no
-/// landing), a turned collider taken as the box around it. Or after kArcMaxSeconds (no landing). A direction that is
-/// not finite or is zero, or a start that is not finite, gives no point at all.
+/// comes down through the plane y = floorY: a landing when the capsule standing there overlaps no collider (any landing
+/// with no collision world). Or where it first enters a collider standing above the floor (a wall, a shelf, a table:
+/// no landing), a turned collider taken as the box around it. Or after kArcMaxSeconds (no landing). A direction that
+/// is not finite or is zero, or a start that is not finite, gives no point at all.
 [[nodiscard]] TeleportArc computeTeleportArc(const glm::vec3& start, const glm::vec3& direction, float floorY,
                                              const scene::CollisionWorld* collision, const scene::Capsule& capsule);
+
+/// How far `ray` (a unit direction) runs before it enters a collider standing above `floorY` (a turned collider taken
+/// as the box around it) or comes down to the floor, at most `maxDistance`: where a controller's laser ends (I10 step
+/// 4). `maxDistance` with no collision world, or a ray that is not finite.
+[[nodiscard]] float castRay(const core::Ray& ray, float maxDistance, float floorY,
+                            const scene::CollisionWorld* collision) noexcept;
 
 /// The walker's tuning that the movement in VR shares (scene::FirstPersonSettings), and the comfort options.
 struct LocomotionSettings {

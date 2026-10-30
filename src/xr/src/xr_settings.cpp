@@ -101,6 +101,7 @@ private:
 constexpr std::array<std::string_view, 2> kModes = {"desktop", "vr"};
 constexpr std::array<std::string_view, 2> kPostures = {"standing", "seated"};
 constexpr std::array<std::string_view, 2> kTurns = {"snap", "smooth"};
+constexpr std::array<std::string_view, 2> kMoveReferences = {"head", "hand"};
 
 Json merge(Json base, const Json& overrides) {
     if (!base.is_object() || !overrides.is_object()) {
@@ -145,7 +146,7 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
     }
     if (const Json* comfort = root.value("comfort")) {
         Reader reader(*comfort, "/comfort", context, error,
-                      {"turn", "snapDegrees", "smoothDegreesPerSecond", "vignette"});
+                      {"turn", "snapDegrees", "smoothDegreesPerSecond", "vignette", "moveRelativeTo"});
         if (const auto turn = reader.name("turn", kTurns)) {
             settings.comfort.turn = *turn == 1 ? TurnMode::Smooth : TurnMode::Snap;
         }
@@ -157,6 +158,9 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
         }
         if (const auto vignette = reader.number("vignette", 0.0, 1.0)) {
             settings.comfort.vignette = static_cast<float>(*vignette);
+        }
+        if (const auto reference = reader.name("moveRelativeTo", kMoveReferences)) {
+            settings.comfort.moveWithHand = *reference == 1;
         }
     }
     if (error) {

@@ -8,6 +8,7 @@
 
 #include <rv/core/expected.hpp>
 #include <rv/xr/runtime.hpp>
+#include <rv/xr/xr_bindings.hpp>
 
 namespace rv::xr {
 
@@ -30,6 +31,8 @@ struct OpenXrOptions {
     /// A refresh rate to ask for (XR_FB_display_refresh_rate, when the runtime offers it).
     std::optional<float> refreshRate;
     SpaceChoice space = SpaceChoice::Auto;
+    /// The controllers' bindings to suggest (xr_bindings.json, I10 step 4); none: no controller is read.
+    XrBindings bindings;
 };
 
 /// The system's OpenXR runtime (ADR-0017 §1, §2): an instance with XR_KHR_opengl_enable and the optional extensions
