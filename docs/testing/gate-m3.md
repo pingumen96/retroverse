@@ -6,15 +6,17 @@ mondo" with an impact preview and consent, snapshots and undo, and linked expans
 (generator 1.5). Its milestone is M3: "a heterogeneous collection generated automatically, navigable and customizable
 without manual per-game work" (roadmap, I4b). What each step built is in [docs/i4b/](../i4b/). This page says what the
 gate checks, how to run it, the figures of its runs on the reference machine, where ADR-0015 and M3 part 2's
-requirements are proven, the follow-ups, and how to try the editor, a regeneration and an undo.
+requirements are proven and the follow-ups. How to try the editor, a regeneration and an undo:
+[running-the-app.md](../reference/running-the-app.md#try-the-editor-a-regeneration-and-an-undo).
 
 **Status: not passed yet** (October 30, 2026, reference machine; the runs below), **the user's trial pending**. Every
 correctness check passed: the build matrix, both test suites, every golden, every I4b area, the real library's snapshots
 (0 differences), the CLI edit session, generator 1.5's update, the dry runs, the commits and undos, the focus watch. Two
 things failed: three Debug GPU cases ran out of time under another session's load (they pass when run again, one only
-without ctest's timeout), and the regeneration preview of a room in the app takes 2.6 to 4.1 s on the real library
-against ADR-0015 §9's 2 s, with the machine loaded. The preview's limit is the user's decision (fix the preview, or
-accept it); the gate must then run once on a quiet machine.
+without ctest's timeout; that one is now five cases, one per floor), and the regeneration preview of a room in the app
+takes 2.6 to 4.1 s on the real library against ADR-0015 §9's 2 s, with the machine loaded. The preview is being made
+faster on another branch (`m3/preview-time`); after it merges, the gate's verdict is one full run and one `-TimingOnly
+-RealLibrary` run on a quiet machine, neither done yet.
 
 ## What the gate checks
 
@@ -28,7 +30,9 @@ or showing a window where the user sees it fails the gate):
   for any the run does not report and, new at this gate, for any that skips (another GPU or driver than the golden's,
   no OpenGL 4.5 context): no golden may pass unproven. I4b added none (the look did not change); G19 and G20 are I5's.
 - **The I4b checks**, per Debug and Release, one row per area counted from the unit and GPU runs (`scripts/gate.ps1`'s
-  `$i4bAreas`; a case counts in one area only):
+  `$i4bAreas`; a case counts in one area only). An area with a skipped GPU case fails, as a skipped golden does (the
+  one case every Release run skips, the overlay's cursor case, lies in no I4b area; `$m3SkipExempt` would name a case
+  skipped by design, with why):
 
   | Area | Unit cases | GPU cases |
   |---|---|---|
@@ -46,7 +50,8 @@ or showing a window where the user sees it fails the gate):
 - **ADR-0015 §9's rows** in Release, read from the run reports the editor's and the regenerations' GPU cases leave in
   `build/msvc-x64-release/smoke/<case>/<run>.json` during the gate's GPU run: every edit shown (0.25 s), every impact
   preview (a room 2 s, a floor and the world 15 s; an undo's preview judged as a room's), the room shown again after
-  every save, commit and undo (3 s).
+  every save, commit and undo (3 s). The limits are written in the script, for the real library's rows too: a test's
+  printed "acceptable" figure is shown when it differs, never judged by.
 - **With `-RealLibrary`** (ES-DE closed; the folders from `-EsdeHome`, `-EsdeInstall`, `-RomRoot`, `-MediaRoot` or the
   `RV_REAL_*` variables): one `scripts/real-library.ps1` run, read-only snapshots before and after with 0 differences,
   `RV_LAUNCH_ALLOWLIST` naming the build's fake emulator alone, of
@@ -60,8 +65,11 @@ or showing a window where the user sees it fails the gate):
   | `[real-library][edit-cli]` | `tests/unit/cli/test_cli_worldplan_edit_real.cpp` (new) | a CLI edit session on the real plan (a move, a swap, a pin and a fixture moved, one `--script` session behind one snapshot), `worldplan check` (every pin honoured), an update moving nothing, an undo restoring the plan's SHA-256 |
   | `[real-library][secondary_tv]` | `tests/unit/app/test_secondary_tv_real.cpp` | the busiest floor's largest room with a secondary TV at 1920 x 1080, both screens playing, cold and warm: GPU memory at its peak (512 MiB) |
 
-- **`-TimingOnly`** (as Gate D's): the Release build, the benchmark path and, with `-RealLibrary`, the real library's
-  run with its correctness rows: a quiet-machine rerun.
+- **`-TimingOnly`**: the Release build, the editor's and regenerations' Release GPU cases alone
+  (`$m3TimingGpuFilter`: `gpu.world_edit`, `gpu.world_regenerate` and the editor's cases of `gpu.world_expansion`,
+  `gpu.cabinets` and `gpu.secondary_tv`) with ADR-0015 §9's fixture rows from their reports, the benchmark path and,
+  with `-RealLibrary`, the real library's run with its correctness rows: a quiet-machine rerun. **The gate's verdict is
+  a full run plus a `-TimingOnly -RealLibrary` run on a quiet machine.**
 
 The gate sets `RV_LAUNCH_BACKGROUND=1` and `RV_AUDIO=null` for everything it runs. Every GPU case runs with
 `RV_LAUNCH_ALLOWLIST` naming its build's fake emulator alone (ctest `ENVIRONMENT`), and so does the real library's run
@@ -76,7 +84,7 @@ and Catch2 reports, `results.json`, `focus_watch.json`, `real-library.log` and `
 ```powershell
 ./scripts/gate.ps1 -Gate M3                              # fixtures only
 ./scripts/gate.ps1 -Gate M3 -RealLibrary                 # also the real library, ES-DE closed
-./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary     # the timing parts again, on a quiet machine
+./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary     # section 9's rows and the timing parts, quiet machine
 ```
 
 Close ES-DE first (`Get-Process ES-DE` must find nothing). The gate exits 0 when no step failed, 1 otherwise, 2 when it
@@ -89,7 +97,9 @@ cores, 64 GB, RTX 2080 SUPER with OpenGL 4.5.0 NVIDIA 621.01, Windows 11 Home 10
 commit 09a96918 (run 1 with the same `gate.ps1` before it was committed). **The machine was not quiet**: other agent
 sessions ran beside every run (another worktree's Debug and Release test suites during run 1; during runs 2 and 3 two
 recursive `grep` searches of another project, each holding a core at 100% for hours, besides the editors), so the
-timing figures below are this load's, not a quiet machine's. Nothing else of this project ran meanwhile.
+timing figures below are this load's, not a quiet machine's. Nothing else of this project ran meanwhile. The runs
+predate the review's changes to the gate: `-TimingOnly` measured no fixture row of §9 then, and the real
+library's rows judged by the limits the tests print (the same figures).
 
 **Run 1**, `./scripts/gate.ps1 -Gate M3` (68 steps, 12,206 s, logs in `build/gate-m3-run1`): **FAILED**, 1 failed
 row, 0 skipped; every correctness row passed.
@@ -167,20 +177,6 @@ floors, 19,985 placements; nothing derived from the titles is written here):
 | Real busiest floor, both screens playing | passed | <= 512 MiB | room:amstradcpc at 1920 x 1080, two decoders: **477.5 MiB** at its peak cold and warm (and with a screenshot); procedural surfaces 84.9, collection arrays 210.9, scene textures 106.0, targets 60.2, buffers 6.5, hero textures 3.1 MiB; frame p99 108.3 ms cold, 15.2 ms warm | 477.5 MiB; p99 30.3 and 6.6 ms |
 | Focus watch (whole gate) | passed | no finding | 0 foreground changes; 1 window shown, 0 visible of test processes | 1 change, 0 to test processes; 0 visible |
 
-### The open measurements against their limits
-
-| Measurement (where it was open) | Limit | Measured now | Verdict |
-|---|---|---|---|
-| The lobby after the start (step 8: 5.5 and 9.0 s under load) | 5 s | 3.7 to 4.2 s (four starts) | within, with less room than Gate D's 2.8 to 2.9 s |
-| The quick catalog's first page (step 8: 7.6 s under load) | 5 s | 2.3 to 2.7 s | within |
-| The cold ride (and its collection arrays) | 10 s | 2.51 and 2.73 s, the destination's arrays checked | within |
-| The warm ride | 3 s | 2.24 and 2.48 s | within |
-| room:amstradcpc's regeneration preview in the app (step 6: 1.6 s quiet, 3.2 s under load) | 2 s | **3.61 and 4.10 s** | **over** |
-| room:snes's preview in the app | 2 s | **3.27 and 2.65 s** | **over** |
-| The busiest floor at 1920 x 1080, both screens playing (the memory margin's estimate: about 477.5 MiB) | 512 MiB | **477.5 MiB**, as estimated | within (34.5 MiB to spare) |
-| A commit or an undo, the room shown again | 3 s | 1.23 to 2.49 s (ten commits and undos) | within |
-| A CLI edit session saved | (3 s) | 1.9 and 2.1 s | within |
-
 **The room preview is over its limit.** The breakdown the runs give: the catalog's inputs (1.5 to 1.8 s) are read
 ahead by the directory's tab and not counted; the preview's own job reads the world (0.5 to 0.65 s: the plan parsed
 and its overrides) and regenerates (1.2 to 2.2 s for one room; a large room alone, `esde/snes-stress`'s 2,000 titles,
@@ -189,9 +185,9 @@ and the building's inputs and plans digested whole); the same job in the app tak
 pool with the cover loader and the frame. A warm second preview in the test's process is within (1.68 and 1.75 s), so
 are the CLI's dry runs (1.69 to 1.73 s; room:amstradcpc's by hand 2.11 s), and the commits are within 3 s. The load
 stretched Gate D's quiet figures by 1.3 to 1.4 times in these runs; on a quiet machine the in-app previews would still
-be about 2 to 3 s, over. Nothing was changed: the candidate fix (BACKLOG, "Measurement": the digests' canonical text
-written straight from the plan instead of through a JSON document of the whole world) is not a small change, and the
-plan's parse in the preview's read is the next cost. Left for the user to decide.
+be about 2 to 3 s, over. The fix (BACKLOG, "Measurement": the digests' canonical text written straight from the plan
+instead of through a JSON document of the whole world, the plan's copies, the preview's job on the pool) is being made
+on the branch `m3/preview-time`; its figures replace these after the quiet rerun.
 
 ## Where ADR-0015's decisions are proven
 
@@ -199,12 +195,12 @@ plan's parse in the preview's read is the next cost. Left for the user to decide
 |---|---|---|
 | §1 | The plan is the truth, overrides the user's claims, every manual change pinned | `world/edit: a game moved into a free slot is pinned there ...`, `world/edit: games swapped, pinned and unpinned ...`, `world/edit: fixtures moved on the grid and turned, pinned where put ...`, `world/edit: random edit sessions keep the plan valid, every manual change pinned ...` |
 | §2 | `overrides.json` schema 2, provenance, the schema-1 lift, the digest | `world/overrides: schema 2 written and read back, schema 1 lifted`, `world/overrides: pins read from overrides.json`, `world/edit: the overrides join the inputDigest; a world without overrides keeps its digest`, `world/snapshots: overrides saved under the world lock` |
-| §3 | Updates keep every placement and moved fixture, regenerations honour the overrides, conflicts with reasons never dropped silently | `world/edit: an update with additions keeps every pin and moved fixture ...`, `world/edit: a fixture moved by the user is never moved by the room's growth`, `world/regeneration: the overrides honoured, never dropped without the consent`, `world/regeneration: conflicts with their reasons, kept in the overrides`, `world/regeneration: a conflict recorded on its pin, reported as orphaned at every update ...`, `world/regeneration: the pin wins the representative`; `worldplan check` listing each pin honoured, orphaned or conflicting with its reason (`world/overrides: each pin measured as ...`, `cli/worldplan check: the overrides beside the plan ...`); the real session's check (gate) |
+| §3 | Updates keep every placement and moved fixture, regenerations honour the overrides, conflicts with reasons never dropped silently | `world/edit: an update with additions keeps every pin and moved fixture ...`, `world/edit: a fixture moved by the user is never moved by the room's growth`, `world/regeneration: the overrides honoured, never dropped without the consent`, `world/regeneration: conflicts with their reasons, kept in the overrides`, `world/regeneration: a conflict recorded on its pin, reported as orphaned at every update ...`, `world/regeneration: a conflict recorded on a pin whose game then leaves the library is judged as orphaned (pin-orphaned) ...`, `world/regeneration: the pin wins the representative`; `worldplan check` listing each pin honoured, orphaned, conflicting with its reason or unhonoured (`world/overrides: each pin measured as ...`, `cli/worldplan check: the overrides beside the plan, a pin honoured, one orphaned and a recorded conflict`, `cli/worldplan check: the overrides beside the plan, a pin alone unhonoured: listed, never a hard finding`); the real session's check (gate) |
 | §4 | The editor: games and furniture, the bar, the draft replayed on save, the room's static part rebuilt alone | `app/world_edit: ...`, `app/world_edit_furniture: ...`, `app/edit_bar_document: ...`, `gpu.world_edit: ...` (four cases), `gpu.world_expansion: the editor carries a game of the head through the hall into its expansion` |
 | §5 | Explicit regeneration of a room, a floor or the world with an impact preview and consent; the drop's second confirmation | `world/regeneration: ...`, `ui/regenerate_preview: ...`, `app/world_regenerate: ...`, `gpu.world_regenerate: ...` (five cases); the real dry runs (gate) |
 | §6 | Snapshots, the journal, undo of explicit actions, no redo | `world/snapshots: ...` (ten cases), `cli/worldplan undo: a regeneration undone ...`, `gpu.world_regenerate: a room regenerated with its pin kept, then undone to the plan's SHA-256`; the real undo restoring the plan's SHA-256 (gate) |
 | §7 | Expansion rooms, generator 1.5, the migration of capacity entries | `world/expansion: ...`, `world/expansion chains: ...`, `cli/worldplan update: generator 1.4's titles unplaced for capacity enter their chains`, `gpu.world_expansion: ...` (five cases); the real building updated by 1.5 (gate) |
-| §8 | The command line: `edit`, `regenerate`, `snapshots`, `undo`, `check` | `cli/worldplan edit: ...`, `cli/worldplan regenerate: ...`, `cli/worldplan undo: ...`, `cli/worldplan check: the overrides beside the plan, a pin honoured, one orphaned and a recorded conflict`; the real CLI session (gate) |
+| §8 | The command line: `edit`, `regenerate`, `snapshots`, `undo`, `check` | `cli/worldplan edit: ...`, `cli/worldplan regenerate: ...`, `cli/worldplan undo: ...`, `cli/worldplan check: the overrides beside the plan, a pin honoured, one orphaned and a recorded conflict`, `cli/worldplan check: the overrides beside the plan, a pin alone unhonoured ...` (exit 0, no hard finding); the real CLI session (gate) |
 | §9 | The acceptable rows: an edit shown, the preview, a save, commit or undo | ADR-0015 §9's rows on the fixtures and the real library's rows (gate) |
 
 ## Where M3 part 2's requirements are proven
@@ -223,78 +219,22 @@ plan's parse in the preview's read is the next cost. Left for the user to decide
 Gathered in `BACKLOG.md`, "Follow-ups from I4b" and "Measurement":
 
 - **The room's regeneration preview on the real library** (ADR-0015 §9's 2 s): 2.6 to 4.1 s in the app under load,
-  about 1.7 s for the CLI's dry run (above). The candidate fixes: the digests' canonical text written straight from
-  the plan (the BACKLOG's), the plan's parse shared with the app's own copy, the preview's job ahead of the cover
-  loader on the pool.
-- **The Debug GPU cases that are close to their time limits under load**: `gpu.world floor: light reaches through the
-  doorways ...` (474 to 579 s in Debug against ctest's 600 s), the floor-app cases' 10 s lockstep wait for the
-  building, `app/world_flow: a start room kept ...`'s 60 s; a gate on a loaded machine fails them on time alone.
+  about 1.7 s for the CLI's dry run (above); being fixed on `m3/preview-time` (the digests' canonical text written
+  straight from the plan, the plan's copies, the preview's job on the pool).
+- **The Debug GPU cases that are close to their time limits under load**: the floor-app cases' 10 s lockstep wait for
+  the building, `app/world_flow: a start room kept ...`'s 60 s; a gate on a loaded machine fails them on time alone.
+  `gpu.world floor: light reaches through the doorways ...` (474 to 579 s in Debug against ctest's 600 s) is now one
+  case per floor, each with its own timeout: the tilted leak probes at a floor's first north and first south doorway,
+  the comparison as I4 lit it on gen4's floor alone.
 - **`RV_LAUNCH_ALLOWLIST` for the unit run**: the runner's tests start copies of the fake under temporary names, so a
   list naming the builds' fakes refuses them; the gate leaves the variable to the GPU cases and the real library's run
   (`docs/reference/safety.md`'s BACKLOG item stays open).
 - **The lobby's margin**: 3.7 to 4.2 s under this load against 5 s (Gate D's quiet 2.8 to 2.9 s); the hub's build is
   the cost (Gate D).
 - **`worldplan check` and unhonoured pins**: a pin the plan does not honour although what it names is there (a hand
-  edit) is listed, never a failure; the app's editor does not show the check's list (the preview shows the conflicts).
+  edit) is listed, never a failure (`cli/worldplan check: ... a pin alone unhonoured ...`); the app's editor does not
+  show the check's list (the preview shows the conflicts).
 - From the steps' notes, unchanged: the in-place apply's long frame in a large room (step 3), Salva's per-room digests
   (step 4), a floor's or the world's regeneration that places rooms again built whole (step 6), a fixture never moving
   between the rooms of a chain and the ranges of a chain without its items files (step 8); ADR-0015's "Deferred"
   (redo, undo of updates, moving games between systems, the hero corner).
-
-## Try the editor, a regeneration and an undo
-
-On the reference machine, with ES-DE closed. Retroverse only reads the library: the catalog, the plan, its overrides
-and snapshots, the derived covers and the logs go to the data directory, here `build/rvdata` (any folder outside
-ES-DE's works; the programs refuse one inside them). From a PowerShell in the repository, after
-`./scripts/build.ps1 -Preset msvc-x64-release`:
-
-```powershell
-$bin = './build/msvc-x64-release/bin'; $data = 'build/rvdata'
-& "$bin/retroverse-cli.exe" --data-dir $data library create   # finds ES-DE as ES-DE finds itself (once)
-& "$bin/retroverse-cli.exe" --data-dir $data import           # the whole library (about 20 s; again to refresh)
-& "$bin/retroverse.exe" --data-dir $data --fullscreen --start-room room:snes   # the building, at room:snes's doorway
-```
-
-Games launch with ES-DE's own commands from a PowerShell where `RV_LAUNCH_ALLOWLIST` is not set; to try the editor
-without any emulator starting, set it to the build's fake first (`$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path
-"$bin/rv_fake_emulator.exe").Path`).
-
-**The editor** (games and furniture):
-
-1. In room:snes, M opens the directory; its third tab "Modifiche" (the shoulders, or Right on the tab bar) lists
-   "Modifica stanza". Or point at a cartridge, E twice to inspect it, and "Sposta" on its card (it starts the editor
-   with that game in the hand).
-2. In the editor the bar at the bottom names the room and what the reticle targets. E picks up the game under the
-   reticle; E on an empty slot moves it there (a ghost of it shows where it would stand, outlined warm white, red when
-   a rule refuses it), E on another game swaps them, E on its own slot or Esc puts it back. P (the pad's X) pins or
-   unpins the game targeted. The D-pad (the arrows) steps over every slot, empty ones included.
-3. Where no game or slot is under the reticle it targets a side-wall module, a display case or a decoration: E picks
-   it up, it follows the floor (a poster its wall) on the 100 mm grid, Q and R (the shoulders) turn it, the arrows
-   nudge it by 10 cm; E drops it (refused with the rule named on the bar), Esc puts it back.
-4. Enter (Start) opens the menu: **Salva**, Annulla ultima azione, Esci senza salvare, Continua. Salva writes the plan
-   and `overrides.json` behind a snapshot; the room shows again at once.
-5. Quit and start again with the same command: the games and the furniture stand where you put them.
-
-**A regeneration**: M, "Modifiche", "Rigenera stanza" (the room you stand in; "Rigenera piano" the floor, "Rigenera
-mondo" the building). The preview lists what would change (rooms, games that change place, the display cases,
-fixtures), the customizations kept and those that cannot be, with why. **Rigenera** keeps every customization;
-**Rigenera e scarta le personalizzazioni** asks a second confirmation ("Indietro" focused) before dropping them;
-**Annulla** writes nothing. After Rigenera the room is rebuilt and you stand at its doorway.
-
-**An undo**: M, "Modifiche", "Annulla ultima modifica" names what it would undo (the saved edits or the regeneration,
-its room and time); "Annulla la modifica" restores the plan and the overrides as they were, byte for byte. There is no
-redo; undo walks back through the explicit actions (the last 20 kept).
-
-The same from the command line, on the same data directory (each prints what it did; `--dry-run` writes nothing):
-
-```powershell
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan show                     # the floors and rooms
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan edit pin --game <GameId>  # where-is <GameId> finds a game
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan check (Join-Path $data 'worlds/esde/world-plan.json')
-                                              # the pins: honoured, orphaned, conflicting (with why), unhonoured
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan regenerate --room room:snes --dry-run   # the impact
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan snapshots                # the actions undo can restore
-& "$bin/retroverse-cli.exe" --data-dir $data worldplan undo                     # the last one, byte for byte
-```
-
-(`worlds/esde` is the world of the library `library create` names `esde`; `worldplan show` prints the plan's path.)

@@ -739,3 +739,60 @@ build/rvdata`).
   tests/input_scripts/quick_catalog_launch.json --exit-after-frames --frames 50 --hidden --fixed-dt 0.016667
   --data-dir build/rvdata --run-report build/a1/run.json`.
 
+## Try the editor, a regeneration and an undo
+
+The user's trial of Gate M3 (`docs/testing/gate-m3.md`), with ES-DE closed. Retroverse only reads the library: the
+catalog, the plan, its overrides and snapshots, the derived covers and the logs go to the data directory, here
+`build/rvdata` (any folder outside ES-DE's works; the programs refuse one inside them). From a PowerShell in the
+repository, after `./scripts/build.ps1 -Preset msvc-x64-release`:
+
+```powershell
+$bin = './build/msvc-x64-release/bin'; $data = 'build/rvdata'
+& "$bin/retroverse-cli.exe" --data-dir $data library create   # finds ES-DE as ES-DE finds itself (once)
+& "$bin/retroverse-cli.exe" --data-dir $data import           # the whole library (about 20 s; again to refresh)
+& "$bin/retroverse.exe" --data-dir $data --fullscreen --start-room room:snes   # the building, at room:snes's doorway
+```
+
+Games launch with ES-DE's own commands from a PowerShell where `RV_LAUNCH_ALLOWLIST` is not set; to try the editor
+without any emulator starting, set it to the build's fake first (`$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path
+"$bin/rv_fake_emulator.exe").Path`).
+
+**The editor** (games and furniture):
+
+1. In room:snes, M opens the directory; its third tab "Modifiche" (the shoulders, or Right on the tab bar) lists
+   "Modifica stanza". Or point at a cartridge, E twice to inspect it, and "Sposta" on its card (it starts the editor
+   with that game in the hand).
+2. In the editor the bar at the bottom names the room and what the reticle targets. E picks up the game under the
+   reticle; E on an empty slot moves it there (a ghost of it shows where it would stand, outlined warm white, red when
+   a rule refuses it), E on another game swaps them, E on its own slot or Esc puts it back. P (the pad's X) pins or
+   unpins the game targeted. The D-pad (the arrows) steps over every slot, empty ones included.
+3. Where no game or slot is under the reticle it targets a side-wall module, a display case or a decoration: E picks
+   it up, it follows the floor (a poster its wall) on the 100 mm grid, Q and R (the shoulders) turn it, the arrows
+   nudge it by 10 cm; E drops it (refused with the rule named on the bar), Esc puts it back.
+4. Enter (Start) opens the menu: **Salva**, Annulla ultima azione, Esci senza salvare, Continua. Salva writes the plan
+   and `overrides.json` behind a snapshot; the room shows again at once.
+5. Quit and start again with the same command: the games and the furniture stand where you put them.
+
+**A regeneration**: M, "Modifiche", "Rigenera stanza" (the room you stand in; "Rigenera piano" the floor, "Rigenera
+mondo" the building). The preview lists what would change (rooms, games that change place, the display cases,
+fixtures), the customizations kept and those that cannot be, with why. **Rigenera** keeps every customization;
+**Rigenera e scarta le personalizzazioni** asks a second confirmation ("Indietro" focused) before dropping them;
+**Annulla** writes nothing. After Rigenera the room is rebuilt and you stand at its doorway.
+
+**An undo**: M, "Modifiche", "Annulla ultima modifica" names what it would undo (the saved edits or the regeneration,
+its room and time); "Annulla la modifica" restores the plan and the overrides as they were, byte for byte. There is no
+redo; undo walks back through the explicit actions (the last 20 kept).
+
+The same from the command line, on the same data directory (each prints what it did; `--dry-run` writes nothing):
+
+```powershell
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan show                     # the floors and rooms
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan edit pin --game <GameId>  # where-is <GameId> finds a game
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan check (Join-Path $data 'worlds/esde/world-plan.json')
+                                              # the pins: honoured, orphaned, conflicting (with why), unhonoured
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan regenerate --room room:snes --dry-run   # the impact
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan snapshots                # the actions undo can restore
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan undo                     # the last one, byte for byte
+```
+
+(`worlds/esde` is the world of the library `library create` names `esde`; `worldplan show` prints the plan's path.)
