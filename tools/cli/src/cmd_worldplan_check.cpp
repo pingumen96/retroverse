@@ -7,8 +7,12 @@
 // A room made from an older version of its template or by another generator major is judged as a kept room
 // (room-kept). Exit 1 when a hard rule fails. It writes nothing but its results and the log.
 //
-// The rooms' lights are the plan's (I3 step 3), counted per room. Not judged yet, since nothing holds them: pins
-// (overrides.json, I3 step 9).
+// The rooms' lights are the plan's (I3 step 3), counted per room. Since I4b step 9 (ADR-0015 §8) it also measures the
+// world's overrides against the plan: overrides.json beside the plan (or --overrides <file>; --no-overrides none), each
+// pin listed as honoured, orphaned (what it names is gone), conflicting (with the conflict its room's last regeneration
+// recorded on it) or unhonoured (what it names is there but stands otherwise: an update's confirmation). The honoured
+// and orphaned pins are judged by the validation as an update judges them (pin-orphaned, soft); the pins never change
+// the exit code by themselves.
 
 #include <algorithm>
 #include <cstddef>
@@ -19,6 +23,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -36,11 +41,13 @@
 #include <rv/world/building.hpp>
 #include <rv/world/generation.hpp>
 #include <rv/world/lift.hpp>
+#include <rv/world/overrides.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/room_selection.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/validation.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/world/world_store.hpp>
 
 #include "commands.hpp"
 
@@ -48,24 +55,28 @@ namespace rv::cli {
 namespace {
 
 constexpr std::string_view kUsage =
-    "Usage: retroverse-cli [global options] worldplan check <plan.json> [--selection <file>] [--json]\n"
-    "                      [--output <file>]\n"
+    "Usage: retroverse-cli [global options] worldplan check <plan.json> [--selection <file>]\n"
+    "                      [--overrides <file> | --no-overrides] [--json] [--output <file>]\n"
     "\n"
     "Validates a room plan: the hard rules (a plan that breaks one is never saved or shown) and the soft ones\n"
     "(reported), and the LayoutScore as a diagnostic. The plan is judged against the templates of its rooms and the\n"
     "prefabs' slots under the asset root, and the passages and decoration density of the world's configuration (the\n"
     "plan's preset, with <user data>/config/world.json over it).\n"
+    "The world's overrides (overrides.json beside the plan) are measured against it: each pin honoured, orphaned\n"
+    "(what it names is gone), conflicting (the conflict its room's last regeneration recorded) or unhonoured.\n"
     "\n"
     "Options:\n"
     "  --selection <file>  A room selection (canonical JSON): every game it names must have a placement or an\n"
     "                      unplaced entry in the plan. Without it, missing games are not checked.\n"
+    "  --overrides <file>  The overrides to measure (default: overrides.json beside the plan, when it exists).\n"
+    "  --no-overrides      Measure no overrides.\n"
     "  --json              Write the results as JSON.\n"
     "  --output <file>     Write the results to this file (UTF-8) instead of stdout.\n"
     "  -h, --help          Show this help and exit.\n"
     "\n"
     "Exit codes: 0 no hard rule fails; 1 a hard rule fails, or the file is not a plan this program reads;\n"
-    "2 usage error (a selection that cannot be read); 3 the plan file, the configuration or the results could not be\n"
-    "read or written.\n";
+    "2 usage error (a selection that cannot be read, --overrides with --no-overrides); 3 the plan file, the\n"
+    "configuration, the overrides or the results could not be read or written.\n";
 
 constexpr std::string_view kName = "retroverse-cli worldplan check";
 
@@ -143,12 +154,78 @@ std::vector<world::RoomTemplate> templatesFor(const CommandContext& context, con
     return templates;
 }
 
+/// The overrides measured: the file read (none: no file, or --no-overrides) and each pin's measure.
+struct OverridesSummary {
+    std::optional<std::string> file;
+    /// Why no file was read, when none was.
+    std::string none;
+    std::size_t gamePins = 0;
+    std::size_t fixturePins = 0;
+    std::vector<world::PinMeasure> pins;
+
+    [[nodiscard]] std::size_t count(world::PinStatus status) const {
+        return static_cast<std::size_t>(std::count_if(
+            pins.begin(), pins.end(), [&](const world::PinMeasure& pin) { return pin.status == status; }));
+    }
+};
+
+constexpr world::PinStatus kStatuses[] = {world::PinStatus::Honoured, world::PinStatus::Orphaned,
+                                          world::PinStatus::Conflicting, world::PinStatus::Unhonoured};
+
+Json overridesJson(const OverridesSummary& overrides) {
+    Json pins = Json::array();
+    for (const world::PinMeasure& pin : overrides.pins) {
+        pins.push_back(
+            {{"kind", pin.game ? "game" : "fixture"},
+             {"subject", pin.subject},
+             {"room", pin.room.toString()},
+             {"pin", pin.pin},
+             {"status", world::toString(pin.status)},
+             {"recordedConflict", pin.recordedConflict ? Json(world::toString(*pin.recordedConflict)) : Json(nullptr)},
+             {"why", pin.why},
+             {"origin", world::toString(pin.origin)}});
+    }
+    Json json{{"file", overrides.file ? Json(*overrides.file) : Json(nullptr)},
+              {"gamePins", overrides.gamePins},
+              {"fixturePins", overrides.fixturePins},
+              {"pins", pins}};
+    for (const world::PinStatus status : kStatuses) {
+        json[std::string(world::toString(status))] = overrides.count(status);
+    }
+    return json;
+}
+
+std::string overridesText(const OverridesSummary& overrides) {
+    if (!overrides.file) {
+        return fmt::format("Overrides: none ({})\n", overrides.none);
+    }
+    std::string text =
+        fmt::format("Overrides: {} ({} game pin(s), {} fixture pin(s)): {} honoured, {} orphaned, {} "
+                    "conflicting, {} unhonoured\n",
+                    *overrides.file, overrides.gamePins, overrides.fixturePins,
+                    overrides.count(world::PinStatus::Honoured), overrides.count(world::PinStatus::Orphaned),
+                    overrides.count(world::PinStatus::Conflicting), overrides.count(world::PinStatus::Unhonoured));
+    // The pins by status, honoured last (the others are what the user may act on).
+    for (const world::PinStatus status : {world::PinStatus::Conflicting, world::PinStatus::Orphaned,
+                                          world::PinStatus::Unhonoured, world::PinStatus::Honoured}) {
+        for (const world::PinMeasure& pin : overrides.pins) {
+            if (pin.status != status) {
+                continue;
+            }
+            text += fmt::format("  {} {} ({}){}{}\n", world::toString(pin.status), pin.pin, world::toString(pin.origin),
+                                pin.why.empty() ? "" : ": ", pin.why);
+        }
+    }
+    return text;
+}
+
 struct CheckSummary {
     std::string planPath;
     std::string digest;
     std::optional<std::string> selectionPath;
     const world::WorldPlan* plan = nullptr;
     const world::ValidationReport* report = nullptr;
+    const OverridesSummary* overrides = nullptr;
     std::size_t hard = 0;
     std::size_t soft = 0;
 };
@@ -190,6 +267,7 @@ Json resultJson(const CheckSummary& summary) {
                 {"softCount", summary.soft},
                 {"layoutScorePermille",
                  summary.report->layoutScorePermille ? Json(*summary.report->layoutScorePermille) : Json(nullptr)},
+                {"overrides", overridesJson(*summary.overrides)},
                 {"findings", findings}};
 }
 
@@ -212,6 +290,7 @@ std::string resultText(const CheckSummary& summary) {
     if (summary.report->layoutScorePermille) {
         text += fmt::format("LayoutScore: {} permille\n", *summary.report->layoutScorePermille);
     }
+    text += overridesText(*summary.overrides);
     text += fmt::format("Findings: {} hard, {} soft\n", summary.hard, summary.soft);
     std::map<std::string, std::size_t> listed;
     std::vector<std::pair<std::string, std::size_t>> omitted;
@@ -257,6 +336,8 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
     core::ArgParser parser{std::string(kName)};
     parser.positional("plan", "The plan file (world-plan.json).", true);
     parser.option("selection", "file", "A room selection whose every game must have an entry in the plan.");
+    parser.option("overrides", "file", "The overrides to measure (default: overrides.json beside the plan).");
+    parser.flag("no-overrides", "Measure no overrides.");
     parser.flag("json", "Write the results as JSON.");
     addOutputOption(parser);
     auto args = parser.parse(arguments);
@@ -276,6 +357,12 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
         return usageError(context, "the plan file is empty");
     }
     const bool json = args->has("json");
+    if (args->has("overrides") && args->has("no-overrides")) {
+        return usageError(context, "--overrides and --no-overrides exclude each other");
+    }
+    if (args->has("overrides") && args->value("overrides").value_or("").empty()) {
+        return usageError(context, "--overrides names no file");
+    }
 
     world::ValidationContext validation;
     std::optional<std::string> selectionPath;
@@ -367,6 +454,38 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
         validation.lights.push_back({room.id, static_cast<std::uint32_t>(lights)});
     }
 
+    // The world's overrides (ADR-0015 §8): measured against the plan; the honoured and orphaned pins judged as an
+    // update judges them (incremental.hpp: pin-broken never fires for those, pin-orphaned reports the orphaned).
+    OverridesSummary overrides;
+    if (args->has("no-overrides")) {
+        overrides.none = "--no-overrides";
+    } else {
+        const std::filesystem::path overridesPath =
+            args->has("overrides") ? core::pathFromUtf8(args->value("overrides").value_or(""))
+                                   : planPath.parent_path() / std::string(world::kOverridesFileName);
+        std::error_code error;
+        const bool exists = std::filesystem::is_regular_file(overridesPath, error);
+        if (!exists && args->has("overrides")) {
+            return runtimeFailure(context, "cannot read the overrides",
+                                  Error{ErrorCode::NotFound, "no such file", core::pathToUtf8Lossy(overridesPath)});
+        }
+        if (!exists) {
+            overrides.none = fmt::format("no {} beside the plan", world::kOverridesFileName);
+        } else {
+            auto loaded = world::loadOverrides(overridesPath);
+            if (!loaded) {
+                return runtimeFailure(context, "cannot read the overrides", loaded.error());
+            }
+            overrides.file = core::pathToUtf8Lossy(overridesPath);
+            overrides.gamePins = loaded->gamePins.size();
+            overrides.fixturePins = loaded->fixturePins.size();
+            overrides.pins = world::measurePins(*plan, validation.templates, *loaded);
+            const world::PinCheck judged = world::checkPins(*plan, validation.templates, *loaded);
+            validation.gamePins = judged.honouredOrOrphaned.gamePins;
+            validation.fixturePins = judged.honouredOrOrphaned.fixturePins;
+        }
+    }
+
     const world::ValidationReport report = world::validatePlan(*plan, validation);
     CheckSummary summary;
     summary.planPath = planText;
@@ -374,11 +493,15 @@ ExitCode runWorldPlanCheck(CommandContext& context, std::span<const std::string>
     summary.selectionPath = selectionPath;
     summary.plan = &*plan;
     summary.report = &report;
+    summary.overrides = &overrides;
     for (const world::ValidationFinding& finding : report.findings) {
         (finding.severity == world::Severity::Hard ? summary.hard : summary.soft) += 1;
     }
-    spdlog::info("worldplan check: {} hard and {} soft findings, LayoutScore {}", summary.hard, summary.soft,
-                 report.layoutScorePermille.value_or(0));
+    spdlog::info("worldplan check: {} hard and {} soft findings, LayoutScore {}; pins {} honoured, {} orphaned, {} "
+                 "conflicting, {} unhonoured",
+                 summary.hard, summary.soft, report.layoutScorePermille.value_or(0),
+                 overrides.count(world::PinStatus::Honoured), overrides.count(world::PinStatus::Orphaned),
+                 overrides.count(world::PinStatus::Conflicting), overrides.count(world::PinStatus::Unhonoured));
     const std::string result = json ? jsonText(resultJson(summary)) : resultText(summary);
     return deliver(context, *file, result, report.passed() ? ExitCode::Ok : ExitCode::ProblemsFound);
 }

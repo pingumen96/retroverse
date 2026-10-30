@@ -200,9 +200,62 @@ struct PinCheck {
 /// no entry in the plan; a fixture pin is honoured when the plan holds the fixture (with the pin's prefab, when it
 /// names one, at the pin's transform, when it has one), orphaned when its room is not the plan's or its socket is not
 /// in the room's template. Any other pin not honoured is orphaned when it records a regeneration's conflict, else
-/// unhonoured. Lists sorted.
+/// unhonoured (measurePins() says why of each). Lists sorted.
 [[nodiscard]] PinCheck checkPins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
                                  const WorldOverrides& overrides);
+
+/// What `worldplan check` says of a pin (ADR-0015 §8; I4b step 9): honoured, orphaned, conflicting with its recorded
+/// reason, or not honoured although what it names is there.
+enum class PinStatus : std::uint8_t {
+    Honoured, ///< the plan holds it as pinned
+    Orphaned, ///< it names a game, slot, room, fixture or socket that the plan or its room's template no longer holds
+    Conflicting, ///< not honoured, with the conflict the last regeneration of its room recorded on it
+    Unhonoured,  ///< not honoured although what it names is there, no conflict recorded (an update's confirmation)
+};
+
+/// "honoured", "orphaned", "conflicting", "unhonoured".
+[[nodiscard]] constexpr std::string_view toString(PinStatus status) noexcept {
+    switch (status) {
+    case PinStatus::Honoured:
+        return "honoured";
+    case PinStatus::Orphaned:
+        return "orphaned";
+    case PinStatus::Conflicting:
+        return "conflicting";
+    case PinStatus::Unhonoured:
+        return "unhonoured";
+    }
+    return "unknown";
+}
+
+/// One pin measured against a plan.
+struct PinMeasure {
+    /// A game pin (else a fixture pin).
+    bool game = true;
+    /// The pinned game's GameId or the pinned fixture's id.
+    std::string subject;
+    /// The room the pin names (its slot's or its fixture's).
+    RoomId room;
+    /// pinText() of the pin.
+    std::string pin;
+    PinStatus status = PinStatus::Honoured;
+    /// The conflict recorded on the pin (GamePin::conflict, FixturePin::conflict), whatever its status: a honoured pin
+    /// may still carry one until its room's next regeneration clears it.
+    std::optional<ConflictReason> recordedConflict;
+    /// Why it is not honoured, in words ("its slot is not one of the plan's", "the game stands in <slot>", ...);
+    /// empty when honoured.
+    std::string why;
+    PinOrigin origin = PinOrigin::File;
+
+    bool operator==(const PinMeasure&) const = default;
+};
+
+/// Every pin of `overrides` measured against `plan` (its rooms' templates in `templates`, by id), game pins first, each
+/// list in the overrides' order (sorted by game and by fixture when read). A pin is honoured, else conflicting when it
+/// records a conflict, else orphaned when what it names is gone, else unhonoured; the orphaned and conflicting pins
+/// are checkPins()'s `orphaned`, the unhonoured its `unhonoured`.
+[[nodiscard]] std::vector<PinMeasure> measurePins(const WorldPlan& plan, const std::vector<RoomTemplate>& templates,
+                                                  const WorldOverrides& overrides);
 
 /// "game g0123456789abcdef pinned to room:snes/fx:w01/s:3.12", "fixture room:snes/fx:w05 pinned" (with " as
 /// <manifest>" when the pin names a prefab, " at x <x> z <z> mm, yaw <yaw> cdeg" when it has a transform).
