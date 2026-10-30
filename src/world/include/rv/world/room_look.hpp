@@ -42,6 +42,7 @@
 //    "neonGlow": {"intensity": 4, "range": 3.5},  // optional: the neon's glow on the wall
 //    "bloomStrength": 0.28,                 // optional: the room's bloom
 //    "lightTints": {"key": "#E6EEFF"},      // optional: the profile's roles tinted
+//    "screenPreset": "monitor",             // optional (I5 step 6): its rooms' screens' CRT preset
 //    "furniture": {...}}                    // optional: the pack's furniture variants (I6 step 3b, below)
 //   (all of them I6 step 3; a pack leaving one out takes classic_16bit_warm's: its palette, its magenta, the profile's
 //   glow and bloom, no tints, no variants). A hero corner part listed under heroParts takes those materials instead of
@@ -54,7 +55,11 @@
 //   profile's when left out; the room's area's in a floor's scene, eased like its other terms). "lightTints" multiply,
 //   in linear light, the colours of the profile's roles in the pack's rooms ("key", "pendant", "lamp", "picture",
 //   "wallWasher") and halls ("hall", the ceiling lights, and "doorwayFill"): an evening's tungsten cooler in the
-//   optical era, magenta and cyan in the arcade; a role not listed keeps the profile's colour.
+//   optical era, magenta and cyan in the arcade; a role not listed keeps the profile's colour. "screenPreset" (I5 step
+//   6, ADR-0016 §7) names the CRT preset (assets/materials/crt_presets.json: "neutral", "consumer", "arcade",
+//   "monitor") of every screen of the pack's rooms (the hero, the secondaries, the cabinets) that neither the user's
+//   crtEffect nor video.json's crtPreset decides (app/crt_looks.hpp); a pack leaving it out leaves each screen its
+//   kind's.
 //   "furniture" (I6 step 3b, ADR-0014 §1 amended: rooms that differ by more than colour) draws the hero corner's parts
 //   and the decoration as the pack's era has them, within their footprints; the plan's fixtures, slots and lights stay
 //   as they are (the scene builder, scene_builder.hpp, places the pieces):
@@ -418,6 +423,9 @@ struct ThemeMaterials {
     std::optional<NeonGlow> neonGlow;
     /// The bloom of its rooms, [0, 1]; none: the profile's.
     std::optional<double> bloomStrength;
+    /// The CRT preset of its rooms' screens (I5 step 6, ADR-0016 §7: assets::CrtPreset's names, "monitor" in the
+    /// optical-era lounge, "arcade" in the arcade); empty: each screen's kind's. A look: it moves nothing.
+    std::string screenPreset;
     /// By role ("key", "pendant", "lamp", "picture", "wallWasher", "hall", "doorwayFill"): sRGB tints multiplied, in
     /// linear light, into the profile's colours.
     std::map<std::string, std::string, std::less<>> lightTints;

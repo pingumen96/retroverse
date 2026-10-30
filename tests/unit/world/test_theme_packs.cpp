@@ -207,6 +207,38 @@ TEST_CASE("world/theme packs: the reader refuses a broken palette, neon, glow, b
                ContainsSubstring("/kinds/wall_shelf/board_glow"));
 }
 
+TEST_CASE("world/theme packs: a pack's screen preset (I5 step 6), the lounge's monitor, the arcade's arcade",
+          "[world][theme_packs][crt_looks]") {
+    const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {})";
+    const auto parse = [&](const std::string& tail) {
+        return rv::world::parseThemeMaterials(head + tail + "}", "t.json");
+    };
+    for (const std::string preset : {"neutral", "consumer", "arcade", "monitor"}) {
+        auto parsed = parse(R"(, "screenPreset": ")" + preset + R"(")");
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->screenPreset == preset);
+    }
+    auto bare = parse("");
+    REQUIRE(bare.has_value());
+    CHECK(bare->screenPreset.empty());
+    for (const std::string bad : {R"("vintage")", R"("Monitor")", R"("")", "1"}) {
+        INFO(bad);
+        auto parsed = parse(R"(, "screenPreset": )" + bad);
+        REQUIRE_FALSE(parsed.has_value());
+        CHECK_THAT(parsed.error().message, ContainsSubstring("/screenPreset"));
+    }
+    // The shipped packs: the optical-era lounge's screens are monitors, the arcade's arcade monitors, every other
+    // pack's screens their kinds' (none named).
+    for (const std::string& id : rv::world::themePackIds(assets())) {
+        INFO(id);
+        auto theme = rv::world::loadThemeMaterials(assets(), id);
+        REQUIRE(theme.has_value());
+        const std::string expected = id == "optical_era_lounge" ? "monitor" : id == "arcade_after_dark" ? "arcade" : "";
+        CHECK(theme->screenPreset == expected);
+    }
+    CHECK(rv::world::builtInThemeMaterials().screenPreset.empty());
+}
+
 TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by its kind", "[world][theme_packs]") {
     // building.json's floors (ADR-0014 §5).
     const std::vector<std::pair<std::string, std::string>> floors = {

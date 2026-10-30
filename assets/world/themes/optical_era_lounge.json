@@ -105,5 +105,8 @@
   "labelPalette": ["#2B3A55", "#4C8BC9", "#252A2E", "#5A6470", "#8A93A0", "#683D42", "#1C2430", "#C8CED6"],
   "neon": "#4C8BC9",
   "neonGlow": {"intensity": 4.0, "range": 3.5},
-  "lightTints": {"key": "#E6EEFF", "pendant": "#C8D6FF", "wallWasher": "#B8C8FF"}
+  "lightTints": {"key": "#E6EEFF", "pendant": "#C8D6FF", "wallWasher": "#B8C8FF"},
+  // I5 step 6 (ADR-0016 §7, specification §9.1's "Monitor moderno"): the lounge's screens are a high-quality monitor's
+  // (a fine mask, little curvature: assets/materials/crt_presets.json).
+  "screenPreset": "monitor"
 }
