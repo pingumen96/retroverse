@@ -74,6 +74,23 @@ assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
     return builtin;
 }
 
+/// The CRT presets (I5 step 6): assets/materials/crt_presets.json with the user's over it; a file that does not load
+/// is said in the log (the user's left out, the shipped one's built-in copy used).
+ScreenLooks loadScreenLooks(const core::Paths& paths) {
+    assets::LoadedCrtPresets loaded = assets::loadCrtPresets(paths.assetRoot(), paths.configDir());
+    for (const Error& issue : loaded.issues) {
+        if (loaded.source == "built-in") {
+            spdlog::error("CRT presets: the shipped crt_presets.json does not load, the built-in values are used: {}",
+                          issue.toString());
+        } else {
+            spdlog::warn("CRT presets: the user's crt_presets.json is left out, the shipped values used: {}",
+                         issue.toString());
+        }
+    }
+    spdlog::info("CRT presets: the {} values", loaded.source);
+    return ScreenLooks(loaded.presets, std::string(loaded.source));
+}
+
 /// The programs of the scene, its shadow and ambient occlusion, its post-processing and the hover outline
 /// (ShaderLibrary handles), loaded at startup.
 struct ScenePrograms {
@@ -186,6 +203,8 @@ struct SceneGraphics::State {
     explicit State(assets::MaterialLibrary materialLibrary) : library(std::move(materialLibrary)) {}
 
     assets::MaterialLibrary library;
+    /// The screens' CRT looks (I5 step 6), which the scene instances' screens take.
+    ScreenLooks looks;
     std::unique_ptr<gl::ShaderLibrary> shaders;
     ScenePrograms programs;
     std::optional<gl::ShaderHandle> debugShader; ///< loaded when debug lines are first set
@@ -313,6 +332,7 @@ SceneGraphics::~SceneGraphics() = default;
 Expected<std::unique_ptr<SceneGraphics>> SceneGraphics::create(AppContext& context) {
     const core::Paths& paths = context.paths();
     auto state = std::make_unique<State>(loadMaterials(paths));
+    state->looks = loadScreenLooks(paths);
     state->shaders = std::make_unique<gl::ShaderLibrary>(paths.assetRoot() / "shaders");
     auto programs = loadScenePrograms(*state->shaders);
     if (!programs) {
@@ -364,7 +384,11 @@ const assets::MaterialLibrary& SceneGraphics::materialLibrary() const noexcept {
 
 SceneResources SceneGraphics::resources() noexcept {
     return SceneResources{m_state->meshes, m_state->materials, *m_state->textures,
-                          m_state->uniformBufferOffsetAlignment};
+                          m_state->uniformBufferOffsetAlignment, &m_state->looks};
+}
+
+ScreenLooks& SceneGraphics::screenLooks() noexcept {
+    return m_state->looks;
 }
 
 void SceneGraphics::clearContent() noexcept {

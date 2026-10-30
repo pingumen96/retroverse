@@ -18,6 +18,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/scene_content_plan.hpp>
 #include <rv/render/gpu_model.hpp>
 #include <rv/render/light_packing.hpp>
@@ -188,7 +189,10 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                                               const assets::MaterialLibrary& library,
                                               const scene::ModelLoader& loadModel, const SceneResources& resources) {
     const scene::SceneGeometry geometry = scene::buildSceneGeometry(description, library, loadModel);
-    const SceneContentPlan plan = planSceneContent(geometry);
+    SceneContentPlan plan = planSceneContent(geometry);
+    if (resources.screenLooks != nullptr) {
+        applyScreenLooks(plan, description.objects, description.name, *resources.screenLooks);
+    }
 
     SceneInstance instance;
     instance.m_name = description.name;
@@ -551,7 +555,11 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     changed.removed = replacedCount - keptOld.size();
 
     const scene::SceneGeometry geometry = scene::buildSceneGeometry(fresh, library, loadModel);
-    const SceneContentPlan plan = planSceneContent(geometry);
+    SceneContentPlan plan = planSceneContent(geometry);
+    if (resources.screenLooks != nullptr) {
+        // The room's screens as create() gave them their looks (I5 step 6): its hero by its role.
+        applyScreenLooks(plan, fresh.objects, description.name, *resources.screenLooks);
+    }
     std::vector<scene::RenderItem> freshItems;
     std::vector<std::uint32_t> freshObjects;
     std::vector<bool> freshModels;

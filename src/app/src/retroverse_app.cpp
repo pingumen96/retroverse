@@ -25,6 +25,7 @@
 #include <rv/app/audio_policy.hpp>
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/debug_line_selection.hpp>
 #include <rv/app/elevator_prompt_ui.hpp>
 #include <rv/app/input_context.hpp>
@@ -419,6 +420,20 @@ VideoSettings videoSettingsOf(const core::Paths& paths) {
         spdlog::warn("Video: the user's video.json is left out, the defaults used: {}", issue.toString());
     }
     return loaded->settings;
+}
+
+/// The screens' CRT looks of the scene shown (I5 step 6), for the run report.
+CrtLooksRecord crtLooksRecord(const ScreenLooks& looks) {
+    CrtLooksRecord record;
+    record.crtEffect = std::string(toString(looks.video().crtEffect));
+    record.presetsSource = looks.presetsSource();
+    for (const ScreenLookApplied& look : looks.applied()) {
+        record.screens.push_back(CrtLookRecord{look.screen, look.room, std::string(toString(look.kind)),
+                                               std::string(assets::toString(look.choice.preset)),
+                                               std::string(assets::toString(look.choice.chosen)),
+                                               std::string(toString(look.choice.rule))});
+    }
+    return record;
 }
 
 } // namespace
@@ -922,7 +937,7 @@ struct RetroverseApp::State {
         host.showScene = [this, &context](scene::SceneDescription next, const WorldSession::SceneShow& show) {
             return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()),
                                 show.keepWalker, show.heroScreenPrefix, show.walkerMove, show.screenGames,
-                                show.atCamera);
+                                show.atCamera, show.screenPresets);
         };
         // I4 step 7b: the teleports on the floor shown (the walker at a room's doorway, at the elevator).
         host.teleport = [this](const scene::CameraSetup& at) {
@@ -1075,7 +1090,8 @@ struct RetroverseApp::State {
     Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
                         bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt,
                         const std::optional<FrameMove>& walkerMove = std::nullopt,
-                        std::vector<ScreenGame> screenGames = {}, bool atCamera = false) {
+                        std::vector<ScreenGame> screenGames = {}, bool atCamera = false,
+                        std::map<std::string, std::string, std::less<>> screenPresets = {}) {
         // A ride's destination puts the walker at its camera (I4 step 7b), whatever --spawn said for the start.
         std::optional<SpawnPoint> spawn = keepWalker ? std::optional<SpawnPoint>(freeRoam->pose())
                                           : atCamera ? std::nullopt
@@ -1094,6 +1110,8 @@ struct RetroverseApp::State {
             screen->unbind(false); // the registry is cleared below: its material goes with it
         }
         graphics->clearContent();
+        // I5 step 6: the new scene's screens take their rooms' packs' CRT presets.
+        graphics->screenLooks().setScene(std::move(screenPresets));
         // The overlay's panels refer to members of the scene instance (its environment, its lights' packing): the new
         // instance takes the old one's place in the same storage, which they keep referring to.
         scene.reset();
@@ -1473,6 +1491,8 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(graphics.error());
     }
     state->graphics = std::move(*graphics);
+    // I5 step 6: the screens' CRT presets follow video.json's crtEffect and crtPreset keys.
+    state->graphics->screenLooks().setVideo(state->videoSettings(context));
     auto sceneInstance = SceneInstance::create(state->description, state->graphics->materialLibrary(),
                                                state->loadModel, state->graphics->resources());
     if (!sceneInstance) {
@@ -1879,6 +1899,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
         // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});
         context.report().processPriority = m_state->priority;
+        context.report().crtLooks = crtLooksRecord(m_state->graphics->screenLooks());
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }

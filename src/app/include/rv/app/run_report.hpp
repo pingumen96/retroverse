@@ -1467,6 +1467,33 @@ struct ProcessPriorityRecord {
     bool operator==(const ProcessPriorityRecord&) const = default;
 };
 
+/// A screen's CRT look (I5 step 6, ADR-0016 §7, app/crt_looks.hpp) as its material was registered: the screen (its
+/// object's id, or a room's cabinets' "collection/<room id>/<family>"), its room, its kind ("hero", "secondary",
+/// "cabinet"), the preset it draws with and the one the rules chose before the user's crtEffect
+/// (assets::toString(CrtPreset): "neutral", "consumer", "arcade", "monitor"), and the rule ("video.json", "pack",
+/// "kind").
+struct CrtLookRecord {
+    std::string screen;
+    std::string room;
+    std::string kind;
+    std::string preset;
+    std::string chosen;
+    std::string rule;
+
+    bool operator==(const CrtLookRecord&) const = default;
+};
+
+/// The screens' CRT looks of the scene shown at the end (retroverse.exe): video.json's crtEffect ("off", "light",
+/// "vintage"), where the presets' values came from (assets::LoadedCrtPresets::source: "shipped", "user", "built-in")
+/// and each screen's look, by screen.
+struct CrtLooksRecord {
+    std::string crtEffect;
+    std::string presetsSource;
+    std::vector<CrtLookRecord> screens;
+
+    bool operator==(const CrtLooksRecord&) const = default;
+};
+
 /// A change of the audible screen (I5 step 5, ADR-0016 §9): the frame, the run's simulated time, the screen (""
 /// none: silence) and the game it plays.
 struct AudioAudibleRecord {
@@ -1791,6 +1818,8 @@ struct RunReport {
     VideoRecord video;
     /// The process priority's changes (I5 step 2); absent in runs that change none (the asset preview).
     std::optional<ProcessPriorityRecord> processPriority;
+    /// The screens' CRT looks (I5 step 6); absent in runs that record none (the asset preview).
+    std::optional<CrtLooksRecord> crtLooks;
     /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
     GameScreensRecord screens;
     /// The directory (I4 step 7b; the product UI), always written ("directory").

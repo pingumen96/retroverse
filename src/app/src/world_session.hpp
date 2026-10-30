@@ -145,6 +145,9 @@ public:
         bool atCamera = false;
         /// The games the hero CRT binds with (its room's).
         std::vector<ScreenGame> screenGames;
+        /// The theme packs' CRT presets of the floor's rooms, by room id (I5 step 6: world::ThemeMaterials::
+        /// screenPreset, rooms without one left out), which their screens take (crt_looks.hpp).
+        std::map<std::string, std::string, std::less<>> screenPresets;
     };
 
     /// What the session asks of the application at a frame boundary.
