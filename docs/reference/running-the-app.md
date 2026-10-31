@@ -438,9 +438,12 @@ build/rvdata`).
   the manual last; the missing kinds skipped), left and right page, Home and End jump, Back closes; a file that cannot
   be read shows its fallback; A pauses the clip, or opens the manual (below). Informazioni (X)
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
-  and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
-  stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
-  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the building places (the walker
+  and Y switch between the two. Avvia launches as the quick catalog's does; in a room with a console (I5 step 9) the
+  item first goes from the hand into the console's cartridge slot in 450 ms, the eye turning to it, while the screens'
+  decoders stop and the hero shows the game's title card (any button skips it; none under `reduceMotion`, in the arcade
+  or a shared room); after the return the walker stands where it stood and the item is in the hand again; the hero
+  CRT's decoder stops before the launch and reopens at the clip's position after it (the report's
+  `world.interaction.insertion` and `video.launches` `stopFrame`, `waitMs`, `handOverFrame`). The quick catalog's card offers "Mostra nella stanza" for a game the building places (the walker
   eased to its item's Focus pose; since I4 step 7b in any room: teleported to the room's doorway first on the same
   floor, a ride first to another floor, below) and says why for one it does not: one of a system without a room is not
   on display (`not-in-room`), an unplaced one gives its reason. After "Aggiorna

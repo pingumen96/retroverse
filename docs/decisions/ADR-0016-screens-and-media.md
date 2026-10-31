@@ -529,6 +529,26 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **Failures and the return.** A refused or failed launch returns to Inspect with the item in the hand. The return is
   ADR-0012 §6's: Inspect, the item back on its shelf.
 
+*Amended on 2026-10-31 (I5 step 9):* what the step built where this section left it open.
+- **The socket** is the `console_cartridge` prefab's `CartridgeSlot`, the hero corner's only console prefab: no prefab
+  changed. The item's centre ends at the opening's middle, half of it down in the console, scaled to fit 90% of the
+  opening's width and depth and at most 11 cm tall ("shrinks into it"). A room's console is the scene object
+  `<room>/fx:<socket>.console` (`app::consoleSocketOf()`); the arcade and the shared rooms have none.
+- **The eye turns to the socket** over the same 450 ms, the feet kept (the console stands out of view of most items'
+  Focus poses); the return restores the pose recorded at Avvia. The scene's Inspect dimming fades out meanwhile.
+- **The stop begins at Avvia.** The launch is resolved on the catalog worker during the insertion (a ready decision
+  waits for its end, a refusal is told at once); the screens' slots stop and the mix starts fading as it begins, the
+  hero showing the game's title card when that game is its target. The hand-over waits only for what remains of §2's
+  1 s bound, counted from the stop's start.
+- **"Any button"** is every button action but the look and walking axes, the UI's analog navigation and the global
+  actions (screenshot, overlay, shader reload, mute). A skip puts the item in the socket and the eye on it at once; the
+  launch's request follows within the frame.
+- **"Instant under `reduceMotion`"** means no frame of it: Avvia launches at once as in a room without a console (the
+  item stays in the hand, the eye where it is).
+- **A launch refused during the insertion** (not ready, busy) comes back to Inspect at once, the item in the hand and
+  the walker as Avvia found it; the screens reopen where they stopped (the run report's `video.launches` entry
+  `cancelled`).
+
 ### 12. Budgets and acceptable performance
 
 - **GPU memory.** The world's video is at most two 480-row slots (texture and ring, about 4.8 MiB each). The viewer's
