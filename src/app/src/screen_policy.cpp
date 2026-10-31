@@ -433,6 +433,8 @@ void ScreenPolicy::launchStarting(std::optional<double> clipPosition, bool title
         // The game's title card while the item goes into the console (ADR-0016 §11): the chain's end, at once.
         const auto card = std::find(m_chain.begin(), m_chain.end(), ScreenPicture::TitleCard);
         if (card != m_chain.end()) {
+            m_chainBeforeCard = m_chainIndex;
+            m_stillBeforeCard = m_readyStill;
             m_chainIndex = static_cast<std::size_t>(card - m_chain.begin());
             m_readyStill.reset();
             m_videoShowing = false;
@@ -446,6 +448,13 @@ void ScreenPolicy::launchEnded() noexcept {
     }
     m_phase = ScreenPhase::Running;
     m_resumePosition = std::exchange(m_launchPosition, std::nullopt);
+    if (const std::optional<std::size_t> chain = std::exchange(m_chainBeforeCard, std::nullopt)) {
+        // The forced card undone: the chain where it stood. The still it showed then is asked for again (the screen's
+        // one still texture holds the card now); one that was the card already stays ready.
+        const std::optional<ScreenPicture> still = std::exchange(m_stillBeforeCard, std::nullopt);
+        m_chainIndex = std::min(*chain, m_chain.size());
+        m_readyStill = still == ScreenPicture::TitleCard ? still : std::nullopt;
+    }
 }
 
 std::optional<double> ScreenPolicy::takeResumePosition() noexcept {
@@ -465,6 +474,8 @@ void ScreenPolicy::retarget(std::string id, ScreenOrigin origin) {
     }
     m_chainIndex = 0;
     m_readyStill.reset();
+    m_chainBeforeCard.reset();
+    m_stillBeforeCard.reset();
     m_videoShowing = false;
     m_videoFailed = false;
     m_elapsed = 0.0;
