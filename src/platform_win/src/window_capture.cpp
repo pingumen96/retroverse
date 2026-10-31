@@ -6,6 +6,7 @@
 #include <unknwn.h>
 
 #include <d3d11.h>
+#include <dwmapi.h>
 #include <dxgi.h>
 
 #pragma warning(push, 0)
@@ -18,7 +19,9 @@
 #include <windows.graphics.directx.direct3d11.interop.h>
 #pragma warning(pop)
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -222,6 +225,32 @@ bool WindowCapture::closed() const noexcept {
 
 std::uint64_t WindowCapture::frames() const noexcept {
     return m_impl->frames;
+}
+
+glm::ivec4 clientAreaInCapture(std::uintptr_t window, glm::ivec2 captureSize) noexcept {
+    const glm::ivec4 whole(0, 0, captureSize.x, captureSize.y);
+    const HWND handle = reinterpret_cast<HWND>(window);
+    RECT frame{};
+    RECT client{};
+    POINT origin{0, 0};
+    if (handle == nullptr || captureSize.x <= 0 || captureSize.y <= 0 || !IsWindow(handle) ||
+        FAILED(DwmGetWindowAttribute(handle, DWMWA_EXTENDED_FRAME_BOUNDS, &frame, sizeof(frame))) ||
+        !GetClientRect(handle, &client) || !ClientToScreen(handle, &origin)) {
+        return whole;
+    }
+    const int frameWidth = frame.right - frame.left;
+    const int frameHeight = frame.bottom - frame.top;
+    if (frameWidth <= 0 || frameHeight <= 0 || client.right <= 0 || client.bottom <= 0) {
+        return whole;
+    }
+    // The capture is the frame's bounds (scaled, should the capture's size differ from them).
+    const double scaleX = static_cast<double>(captureSize.x) / frameWidth;
+    const double scaleY = static_cast<double>(captureSize.y) / frameHeight;
+    const int x = std::clamp(static_cast<int>(std::lround((origin.x - frame.left) * scaleX)), 0, captureSize.x - 1);
+    const int y = std::clamp(static_cast<int>(std::lround((origin.y - frame.top) * scaleY)), 0, captureSize.y - 1);
+    const int width = std::clamp(static_cast<int>(std::lround(client.right * scaleX)), 1, captureSize.x - x);
+    const int height = std::clamp(static_cast<int>(std::lround(client.bottom * scaleY)), 1, captureSize.y - y);
+    return {x, y, width, height};
 }
 
 } // namespace rv::platform_win

@@ -59,6 +59,7 @@ add_library(rv_render STATIC
     src/outline_pass.cpp
     src/panel_pass.cpp
     src/dx_interop.cpp
+    src/picture_probe.cpp
     src/post_processor.cpp
     src/render_state_cache.cpp
     src/sampler.cpp

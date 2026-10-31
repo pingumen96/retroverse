@@ -4,6 +4,7 @@
 #include <memory>
 
 #include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 
 #include <rv/core/expected.hpp>
 
@@ -45,5 +46,11 @@ private:
     explicit WindowCapture(std::unique_ptr<Impl> impl) noexcept;
     std::unique_ptr<Impl> m_impl;
 };
+
+/// The window's client area in its captured picture (I10 step 11): the frame and the title bar of a windowed emulator
+/// left out. Pixels of a capture of `captureSize` (the window's extended frame bounds, as Windows.Graphics.Capture
+/// takes it): corner (x, y) and size (z, w). The whole capture when the window has no frame, is gone, or its areas
+/// cannot be read.
+[[nodiscard]] glm::ivec4 clientAreaInCapture(std::uintptr_t window, glm::ivec2 captureSize) noexcept;
 
 } // namespace rv::platform_win

@@ -28,4 +28,4 @@ add_library(rv_platform_win_capture STATIC
 add_library(rv::platform_win_capture ALIAS rv_platform_win_capture)
 rv_set_target_defaults(rv_platform_win_capture)
 target_include_directories(rv_platform_win_capture PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(rv_platform_win_capture PUBLIC rv_core glm::glm PRIVATE d3d11 dxgi windowsapp)
+target_link_libraries(rv_platform_win_capture PUBLIC rv_core glm::glm PRIVATE d3d11 dwmapi dxgi windowsapp)
