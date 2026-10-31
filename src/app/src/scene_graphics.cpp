@@ -792,6 +792,11 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
         eyesRendered = state.renderEyes(context.device(), view, *eyes);
         if (eyesRendered) {
             context.setXrViewsRendered();
+            // A session's frames before its first views (a real runtime's first ones have shouldRender false) went the
+            // desktop's way below and made the window's targets: the mirror is the left eye, so they go.
+            if (state.windowTargets.valid()) {
+                state.windowTargets = gl::ViewTargets{};
+            }
         }
     }
     // Screenshots are rendered before the window view, so the frame ends with the window blit and the state it

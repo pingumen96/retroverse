@@ -292,7 +292,8 @@ build/rvdata`).
   for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
   no wait, at the `--input-script`'s `headPose` steps (`tests/input_scripts/xr_look.json`); a frame-limited run's
-  screenshot then holds both eyes side by side (2048 x 1024), and `--xr-fake-lose-after <frames>` loses the session.
+  screenshot then holds both eyes side by side (2048 x 1024), `--xr-fake-lose-after <frames>` loses the session, and
+  `--xr-fake-untracked-frames <frames>` gives its first frames no eyes, as a real runtime's first frames ask for no views.
   The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
   and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, the
   movement's snap turns, teleports and push-backs, and the controllers (the profiles taken and held, the frames

@@ -74,6 +74,9 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
         config.refreshRates = {72.0f, 80.0f, 90.0f, 120.0f};
         config.refreshRate = refreshRate;
         config.loseAfterFrames = xrOptions.fakeLoseAfterFrames;
+        for (std::uint64_t frame = 0; frame < xrOptions.fakeUntrackedFrames.value_or(0); ++frame) {
+            config.untrackedFrames.push_back(frame);
+        }
         if (options.inputScript) {
             auto loaded = input::InputScript::loadFromFile(*options.inputScript);
             if (!loaded) {

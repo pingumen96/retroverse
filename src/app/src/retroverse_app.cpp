@@ -896,6 +896,9 @@ struct RetroverseApp::State {
     /// out of their overlay.
     void drawXrUi(AppContext& context, const gl::RenderView& view) {
         xrUiDrawn = false;
+        if (!context.vr()) {
+            xrUi.release(); // a session that ended: like the eyes' targets
+        }
         if (!xrEyes || !product) {
             return;
         }

@@ -104,4 +104,12 @@ std::optional<gl::Panel> XrUi::panel(float fade) const {
     return gl::Panel{m_texture->id(), m_pose.model(), 1.0f - fade};
 }
 
+void XrUi::release() {
+    m_rendered = false;
+    m_canvas = glm::ivec2(0);
+    m_textureTarget.reset();
+    m_texture.reset();
+    m_target.reset();
+}
+
 } // namespace rv::app

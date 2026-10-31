@@ -47,6 +47,9 @@ public:
     [[nodiscard]] Status render(gl::GLDevice& device, ProductUi& product, glm::ivec2 canvas);
     /// The panel to draw into the eyes, faded by `fade` (the view's): nothing before the first render().
     [[nodiscard]] std::optional<gl::Panel> panel(float fade) const;
+    /// Back on the desktop: the canvas and the panel's picture are let go of (kept through a session, from the first
+    /// render() on, the UI opening and closing in it).
+    void release();
 
     [[nodiscard]] xr::PanelMode mode() const noexcept { return m_mode; }
     [[nodiscard]] const xr::PanelPose& pose() const noexcept { return m_pose; }

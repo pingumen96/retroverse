@@ -246,5 +246,8 @@ What the steps built where it departs from the text above, each recorded in its 
 - **§4, the eyes' render targets** go through `gl::ViewTargets` and `view_target_plan.hpp` like the window's: one set
   per eye at the rendered size, no depth of the output, the plan's aliasing; a screenshot in VR or the stereo preview
   is composed from them (the run report's `screenshot.targets` is `eyes`), its side-by-side image without depth and
-  let go of once written. Back on the desktop the eyes' targets are released, so that the window's set is the only one
-  held.
+  let go of once written. A session's frames before its first views (a real runtime's first ones have `shouldRender`
+  false) go the desktop's way and make the window's set, which is let go of once the eyes have rendered. Back on the
+  desktop the eyes' targets are released, and the window's set is then the only one of views held. The UI's panel is
+  apart from these: its canvas and picture at the window's size (about 18 MiB at 1080p) are held from the panel's first
+  draw until the session ends, then released too.

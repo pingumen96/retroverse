@@ -89,6 +89,9 @@ struct XrOptions {
     /// --xr-fake-lose-after <frames>: the fake runtime loses its session after this many frames (the desktop
     /// fallback's tests).
     std::optional<std::uint64_t> fakeLoseAfterFrames;
+    /// --xr-fake-untracked-frames <frames>: the fake runtime's first frames locate no eyes, as a real runtime's first
+    /// ones ask for no views: the render targets' test.
+    std::optional<std::uint64_t> fakeUntrackedFrames;
 
     bool operator==(const XrOptions&) const = default;
 };

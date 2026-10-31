@@ -255,6 +255,54 @@ TEST_CASE("xr: a lost session sends the run back to the desktop, which renders o
           rv::gl::viewTargetsBytes(drawable) + shadowMapBytes());
 }
 
+TEST_CASE("xr: the window's targets of the frames before the first views go once the eyes render", "[gpu][xr]") {
+    // A real runtime's first frames ask for no views: they go the desktop's way, whose targets were then held beside
+    // the eyes' for the whole session.
+    const fs::path dir = freshCaseDir("xr/first_views");
+    const fs::path shot = dir / "eyes.png";
+    std::vector<std::string> arguments = vrArguments(20, shot);
+    arguments.insert(arguments.end(), {"--xr-fake-untracked-frames", "3"});
+    const AppRun run = runApp(retroverseExe(), dir, "first_views", arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    requireScreenshot(run, shot, glm::ivec2(2 * kEyeSize.x, kEyeSize.y));
+    REQUIRE(run.report->xr);
+    CHECK(run.report->xr->framesWaited == 20);
+    CHECK(run.report->xr->framesWithViews == 17);
+    REQUIRE(run.report->window.has_value());
+    const glm::ivec2 drawable(run.report->window->drawableWidth, run.report->window->drawableHeight);
+    // Both were held in the frame that swapped them, the eyes' alone since.
+    const std::uint64_t eyes = 2 * rv::gl::viewTargetsBytes(kEyeSize) + shadowMapBytes();
+    const rv::gl::GpuMemoryUsage& targets = run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets);
+    CHECK(targets.bytes == eyes);
+    CHECK(targets.peakBytes >= eyes + rv::gl::viewTargetsBytes(drawable));
+}
+
+TEST_CASE("xr: a lost session lets the UI's panel go too", "[gpu][xr]") {
+    // The quick catalog drew into the panel's canvas and picture, which back on the desktop nothing shows.
+    const fs::path dir = freshCaseDir("xr/lost_panel");
+    const fs::path shot = dir / "desktop.png";
+    const fs::path script = dir / "catalog.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, R"([{"fromFrame": 3, "toFrame": 3, "actions": {"quick_catalog": 1}}])")
+                .has_value());
+    std::vector<std::string> arguments = vrArguments(30, shot);
+    arguments.insert(arguments.end(),
+                     {"--mock-catalog", arg(sourceDir() / "tests/smoke/catalogs/fake_emulator_games.json"),
+                      "--input-script", arg(script), "--xr-fake-lose-after", "15"});
+    const AppRun run = runApp(retroverseExe(), dir, "lost_panel", arguments);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->xr);
+    CHECK(run.report->xr->uiPanelFrames > 0);
+    CHECK(run.report->xr->endReason == "lost");
+    REQUIRE(run.report->window.has_value());
+    const glm::ivec2 drawable(run.report->window->drawableWidth, run.report->window->drawableHeight);
+    CHECK(run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes ==
+          rv::gl::viewTargetsBytes(drawable) + shadowMapBytes());
+}
+
 TEST_CASE("xr: the stereo preview draws both eyes through the eyes' targets, into the window and the screenshot "
           "(I10 step 1)",
           "[gpu][xr]") {

@@ -794,11 +794,12 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(vr->xr.runtimeJson);
 
     const auto fake = parse({"--smoke", "--frames", "5", "--vr", "--xr-runtime", "fake", "--xr-render-scale", "0.5",
-                             "--xr-fake-lose-after", "3"});
+                             "--xr-fake-lose-after", "3", "--xr-fake-untracked-frames", "2"});
     REQUIRE(fake.has_value());
     CHECK(fake->xr.runtime == rv::app::XrRuntimeChoice::Fake);
     CHECK(fake->xr.renderScale == 0.5);
     CHECK(fake->xr.fakeLoseAfterFrames == std::optional<std::uint64_t>(3));
+    CHECK(fake->xr.fakeUntrackedFrames == std::optional<std::uint64_t>(2));
     CHECK(rv::app::toString(fake->xr.runtime) == "fake");
 
     const auto manifest = parse({"--vr", "--xr-runtime-json", "C:/runtimes/steamvr.json"});
@@ -813,6 +814,9 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-runtime-json", "a.json"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-fake-lose-after", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-fake-lose-after", "0"}).has_value());
+    CHECK_FALSE(parse({"--xr-fake-untracked-frames", "3"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-fake-untracked-frames", "3"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-fake-untracked-frames", "0"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "0.1"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--stereo-preview"}).has_value());
@@ -824,7 +828,7 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "0"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "500"}).has_value());
     for (const char* option : {"--vr", "--xr-runtime", "--xr-runtime-json", "--xr-render-scale",
-                               "--xr-fake-lose-after"}) {
+                               "--xr-fake-lose-after", "--xr-fake-untracked-frames"}) {
         CHECK(helpListsOption(rv::app::commandLineHelp(), option));
     }
 }
