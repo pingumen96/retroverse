@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "Gate B golden of the P0 single-ROM room (style 26.1 6, style 21): the snes-single fixture's one ROM without any media, its cartridge face-out with a generated label, the room furnished from the template alone, the hero CRT showing the game's title card (no media: I5 step 1, ADR-0016 §8), from the doorway (the plan's scene camera).",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -18,7 +18,7 @@
     "file": "g06_snes_single_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "98eb9a8d66004627e94da93ae322dba668f9dd70d5b96499b7f210f1780310f9",
+    "sha256": "23b4aa397549b5d4137d2203ecb2c42acfbe80eac87f53b81da320fd7c8a4d13",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

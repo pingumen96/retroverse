@@ -31,9 +31,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   folders (7), resolves media (8) and translates ES-DE commands (10); `catalog` also holds the import service (11a),
   fingerprints and reconciliation (11b); `catalog_db` holds the database, the catalog store (step 4, with the import's
   writes of 11a and 11b), the queries and search (9) and the session store (12); the system probe's port is in `core`
-  (`rv/core/system_probe.hpp`, ADR-0008 §2), and `rv_forbid_link(<target> EXTRA <library>...)` forbids more libraries
-  per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under `#if defined(RV_DEV_UI)`. `rv_app`
-  links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's launches (I2 step A1) and, since step 13,
+  (`rv/core/system_probe.hpp`, ADR-0008 §2); `core`'s `canonical_json.hpp` holds the canonical JSON (ADR-0010 §8) and,
+  since m3/preview-time, `CanonicalTextWriter` (the canonical text written straight from the values, without a
+  document: the regeneration's digests of a whole world); and `rv_forbid_link(<target> EXTRA <library>...)` forbids
+  more libraries per target (`cmake/LayerRules.cmake`). Code for the overlay in `rv_app` sits under
+  `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's
+  launches (I2 step A1) and, since step 13,
   `rv_app_catalog` (GPU-free and tools-free, between `rv_app_cli` and `rv_app`: the catalog worker, its
   `ui::CatalogSource`, the app's copy of the CLI's launch library, `AppCatalog` over the ES-DE or the mock catalog; on
   `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`; tested by `tests/unit/app`; since I3 step
@@ -47,8 +50,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `world_inspect.hpp` (the held pose, the dimming, the CRT's selection; 13b), `world_card_ui.hpp` (14a),
   `world_launch_ui.hpp` (15a), `screen_room.hpp` (I4 step 6b: which room's CRT is the hero CRT), `elevator_ride.hpp`
   (I4 step 7b: the ride's state machine), `directory_data.hpp` (7b: the directory's building and games, where its
-  commands lead) and `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its
-  title card's text), `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
+  commands lead; since I4b step 8 its chains with their titles' ranges from the items files) and
+  `elevator_prompt_ui.hpp` (7b); since I5 step 1 `screen_game.hpp` (a game as a screen sees it, its title card's text),
+  `playlist.hpp` (the screens' playlists) and `video_settings.hpp` (`video.json`, its shipped
   defaults `assets/config/video.json`); since I5 step 2 `screen_scheduler.hpp` (the decoder scheduler) and
   `process_priority.hpp` (which priority class a frame wants); since I4b step 3 `world_edit_room.hpp` (the edited room's
   items and free slots as targets and steps; its movable fixtures and the points a held one follows since step 4),
@@ -56,7 +60,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `edit_bar_ui.hpp` (the bar's document contract); since I5 step 5 `audio_policy.hpp` (the run's audio output, the
   audible screen, its spatial sound, the duck; `rv_app_cli` links `rv_audio_model`); since I5 step 4
   `screen_aspect.hpp` (the rectangle a clip fills on its screen) and `cabinet_screens.hpp` (which arcade cabinets play:
-  attract's choice and dwell, the focused and inspected one, none in the editor). `rv_app`'s `world_cabinets.cpp`
+  attract's choice and dwell, the focused and inspected one, none in the editor); since I5 step 6 `crt_looks.hpp`
+  (which CRT preset each screen takes: `crtEffect`, `video.json`'s `crtPreset`, the pack's `screenPreset`, the kind;
+  `ScreenLooks`, held by `SceneGraphics` and applied to a scene's screen materials before they are registered).
+  `rv_app`'s `world_cabinets.cpp`
   (I5 step 4) is the world's side of the cabinets: their requests to `ScreenService::setCabinets()`, their fronts drawn
   with the collection's pooled video materials (`CollectionInstance::videoMaterials`, `setVideoFront`). `rv_media`'s
   `audio_sink.hpp`
@@ -72,8 +79,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   since step 4 a room's static part rebuilt alone, `roomStaticPart`), `world_regenerate_job` (I4b step 6,
   `world_regenerate.hpp`: the catalog's inputs of a regeneration, the preview's dry run and its content, the commit
   under the world lock, the undo's preview and commit, the rooms' items written again, the rooms a commit changed
-  alone, the job's mailbox); `world_build`'s `rebuildRoomsAlone` (I4b step 6's review: a floor's rooms rebuilt alone
-  from a plan, as `buildFloor` builds them).
+  alone, the job's mailbox; since m3/preview-time `KnownPlan`, the plan the app shows standing for its file's when its
+  own digest is the file's, `readRegenerationWorld`, the world read apart from the inputs, and `warmRoomData`, the
+  standing rooms' data read ahead into the inputs' loader while the slot holds them, `slotHolds`); `world_build`'s
+  `rebuildRoomsAlone` (I4b step 6's review: a floor's rooms rebuilt alone from a plan, as `buildFloor` builds them).
   `rv_catalog_db`'s `catalog_stamp.hpp` (I4 step 6b) gives the catalog's stamp the building stamp holds.
   `rv_app` holds what draws: `world_session` (the flow, the commit, the notice, the lockstep wait, the records),
   `collection_instance`, `cover_loader`, `world_notice_panel` (10b), `world_start` (10c), `hero_textures` (12),
@@ -88,7 +97,12 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   offer); the outline pass's
   dimming shader `assets/shaders/outline/outline_dim.frag` (13b). `rv_ui_model` holds `game_card_model` (14a), `media_viewer_model`,
   `game_info_model` (14b) and `quick_catalog_room.hpp` (15a); `rv_ui` `game_card_screen`, `media_viewer_screen`,
-  `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a).
+  `game_info_screen` and the vendored renderer's `rv-texture:` images (`UiSystem::setTexture`, 14a). Since I5 step 8 the
+  viewer's videos and manuals pages: the model's `ManualState` and page states, the document's
+  `rv-texture:media-viewer-video`; `rv_app`'s `game_screens_panel.cpp` carries the clip between the viewer and
+  `ScreenService::setViewer()` / `viewerVideo()` (the clip's own texture and its `GL_RGBA8` view in
+  `screen_service.cpp`) and opens the manual through `rv_launcher`'s `manual_open.hpp` (`planManualOpen`: explorer.exe
+  and the file as its one argument) on a `platform_win::Win32ProcessRunner` of its own.
 - `rv_world` (`src/world`, `docs/i3/`, `docs/i4/`): ids (`room:snes/fx:w03/s:3.12`; since I4 step 1 the room ids'
   four forms, `room:<system>[:<n>]`, `area:shared:<floor>[:<n>]`, `area:arcade[:<n>]`), the WorldPlan and its canonical
   JSON (`plan_json.hpp`: `writePlan`, `readPlan`, `planDigest`, `roomContentDigest`; schema 2 written, schema 1 read; a
@@ -136,7 +150,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `slotLevels`; 1b); `rv_assets` the prefab families (`assets/manifests/families.json`, `resolvePrefab`: style §21's
   object fallbacks, one warning each; 1b) and the collection's layers (5, GPU-free, safe on the worker pool:
   `cover_fit`, `mip_chain`, `bc1`, `text_raster`,
-  `collection_labels`, `rvtex`, `derived_texture_cache`); `rv_scene` the 80-byte `InstanceData` (0c), the eased
+  `collection_labels`, `rvtex`, `derived_texture_cache`; since I5 step 6 `crt_presets.hpp`, the CRT presets' file and
+  `CrtEffect`'s reader); `rv_scene` the 80-byte `InstanceData` (0c), the eased
   `PoseAnimator` (7) and the static groups' layout and the outline's geometry (`instance_clusters.hpp`, 8), and since
   I4 step 3 the scene's areas (`scene_areas.hpp`: the area that holds the eye, the lights a view packs there, since
   I6 step 1 with its neighbours' seen through the doorways, each faded in and out and clipped to its doorway, and the
@@ -146,7 +161,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   the media left unknown (2); `rv_esde` `checkRoomMedia` and `roomMediaPaths` (`media_resolver.hpp`, 2); `rv_render`
   the texture arrays (`Texture2DArray`, `CollectionArrays`; their layout, allocator and budget in
   `rv_render_uniforms`'s `texture_array_layout.hpp`; 6), the static instance groups and the outline pass (8), a
-  material's texture override (11), and in `rv_render_uniforms` the GPU memory accounting (`gpu_memory.hpp`, 0d).
+  material's texture override (11), and in `rv_render_uniforms` the GPU memory accounting (`gpu_memory.hpp`, 0d)
+  and, since I5's memory margin, the view targets' plan (`view_target_plan.hpp`: each target's format, size, the
+  passes it lives through and the storage it takes over; `Framebuffer::createAlias` makes those texture views).
   I4 step 7a: `rv_catalog` `recent_games.hpp` (the directory's favourites and recent games, their order and the
   conversion of ES-DE's local `<lastplayed>` to UTC) and `ICatalogQuery::favoritesAndRecent`, which `SqliteCatalogQuery`
   answers in one read (`src/catalog_db/src/recent_query.cpp`); `rv_ui_model` `directory_model` (the directory's
@@ -234,7 +251,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `assets/world/presets/<id>.json` under `world.json` (per key: `preset` names another preset, `seed` a seed or null,
   integers only, millimetres and permille, since I4 step 4 `sharedRoomMinTitles`, the distinct titles a system entering
   the building needs for a room of its own, 30, 0 giving every system one; a broken file is left out whole with one
-  issue). The world's data, read
+  issue), since I5 step 1 `assets/config/video.json` under `video.json` (`video_settings.hpp`), and since I5 step 6
+  `assets/materials/crt_presets.json` under `crt_presets.json` (the CRT presets' values, `rv/assets/crt_presets.hpp`:
+  per key over the shipped ones; a broken user file is left out whole, a broken shipped one leaves the built-in copy).
+  The world's data, read
   strictly (unknown or duplicate keys and fractions refused with their line): `assets/world/templates/` (the room
   template `console_room_9x10.json`), `platforms/`, `media_families.json`, `lighting/` (the profiles `evening` and
   `afternoon`), `themes/` (the room's materials); prefab families in

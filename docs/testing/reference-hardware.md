@@ -6,13 +6,31 @@ compared on it, with the driver version recorded next to each image.
 | Component | Value |
 |---|---|
 | CPU | Intel Core i7-9700K @ 3.60 GHz (8 cores) |
-| GPU (primary) | NVIDIA GeForce RTX 2080 SUPER, driver 32.0.16.1742 |
+| GPU (primary) | NVIDIA GeForce RTX 2080 SUPER, driver 32.0.16.2101 (621.01; until October 29, 2026 32.0.16.1742, 617.42) |
 | GPU (integrated) | Intel UHD Graphics 630, driver 26.20.100.7642 (must not be selected; executables export `NvOptimusEnablement`) |
 | RAM | 64 GB |
 | OS | Windows 11 Home 10.0.29671 |
 | Display target | 1920 x 1080, 60 Hz, VSync on |
 
 Low-profile targets (style §20.1: 30 FPS on integrated graphics) are measured in iteration I8.
+
+## The goldens re-baselined to driver 621.01 (October 30, 2026)
+
+The driver went from 617.42 to 621.01. The goldens compare only on the GL_VERSION their JSON records, so the 15 still
+recording 617.42 were skipped here (G15, G17 and G20 had been rendered under 621.01 in I5 step 6). Each was rendered
+again from main at 6338e017 in `msvc-x64-debug` and compared with its committed PNG through
+`retroverse-screenshot-diff` (6/255, at most 0.5% of the pixels): G01, G02, G02s, G06, G07, G08a, G08b, G10, G11,
+G12, G13, G14, G16, G18 and G19 all identical, 0 pixels differing, the largest difference 0/255, every PNG the same
+byte for byte. The room goldens' JSONs were rewritten with `RV_UPDATE_GOLDEN=1` (glVersion, renderedOn, gitCommit,
+and the `assets/world` hash that I5 step 6's presets had moved), G01's gpu fields by hand (`test_golden.cpp` has no
+update mode). Every golden, G01 to G20, then passed in Debug and Release with none skipped. The measurements below
+were taken under 617.42 and stay as recorded.
+
+**G01 under the memory margin's formats (October 30, 2026).** The memory margin (`docs/i5/memory-margin.md`) stores
+the emitted light and the bloom in `GL_R11F_G11F_B10F`; the room goldens G02 to G20 were rendered again on purpose,
+G01 was not. G01's PNG is still the one rendered with `GL_RGBA16F` there: the test room renders 73 pixels beyond 6/255
+from it (at most 38/255, 0.004%, on the edges of the neon sign and the lamp), within its tolerance (0.5%), so it
+passes as is. A later change that moves G01 on purpose rewrites it under the new formats.
 
 ## First populated room (specification §18.1; Gate B, October 19, 2026)
 

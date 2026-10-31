@@ -32,6 +32,24 @@ inline constexpr std::uintmax_t kMaxImageFileBytes = 256ull * 1024ull * 1024ull;
 [[nodiscard]] Expected<ImageData> decodeImage(std::span<const std::byte> bytes, int desiredChannels,
                                               std::string_view context);
 
+/// The EXIF orientation of a PNG or JPEG image held in memory (TIFF tag 274 in IFD0 of a JPEG's APP1 "Exif" segment
+/// or of a PNG's eXIf chunk): 1 to 8, as the camera or editor recorded how the stored rows are to be turned to stand
+/// upright. 1 (as stored) when the file carries no orientation, an unknown value or an unreadable EXIF block; never
+/// fails and reads at most the segments before the first scan (JPEG) or image data chunk (PNG).
+[[nodiscard]] int exifOrientation(std::span<const std::byte> bytes) noexcept;
+
+/// `image` turned upright for an EXIF `orientation`: 2 mirrored left to right, 3 turned 180 degrees, 4 mirrored top to
+/// bottom, 5 transposed (mirrored about the main diagonal), 6 turned 90 degrees clockwise, 7 transversed (mirrored
+/// about the other diagonal), 8 turned 90 degrees counter-clockwise; 5 to 8 swap the width and the height. A copy for
+/// 1, a value outside 1..8 or an invalid image.
+[[nodiscard]] ImageData orientImage(const ImageData& image, int orientation);
+
+/// decodeImage(), then the file's exifOrientation() applied (orientImage()): the user's media (covers, stills, the
+/// card's and the viewer's pictures; the fix of 2026-10-29) stand as image viewers and ES-DE show them. The bundled
+/// assets and glTF images keep decodeImage()'s rows as encoded (ADR-0002). Errors: those of decodeImage().
+[[nodiscard]] Expected<ImageData> decodeUprightImage(std::span<const std::byte> bytes, int desiredChannels,
+                                                     std::string_view context);
+
 /// Reads a PNG or JPEG file (Unicode paths supported, size limited to kMaxImageFileBytes) and decodes it
 /// like decodeImage(). Errors carry the UTF-8 path as context.
 [[nodiscard]] Expected<ImageData> loadImage(const std::filesystem::path& path, int desiredChannels = 0);

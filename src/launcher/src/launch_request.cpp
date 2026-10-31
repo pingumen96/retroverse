@@ -89,7 +89,8 @@ Expected<std::string> commandLineOf(const LaunchRequest& request) {
     if (!program) {
         return propagate(program.error());
     }
-    return buildCommandLine(*program, request.arguments);
+    return buildCommandLine(*program, request.arguments,
+                            request.quoteEveryArgument ? ArgumentQuoting::Always : ArgumentQuoting::WhenNeeded);
 }
 
 std::filesystem::path workingDirectoryOf(const LaunchRequest& request) {

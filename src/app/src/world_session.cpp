@@ -159,9 +159,15 @@ WorldSession::~WorldSession() {
         const std::lock_guard lock(m_showcaseBox->mutex);
         m_showcaseBox->wake = nullptr;
     }
+    if (m_rangesBox) {
+        m_rangesBox->setWake(nullptr);
+    }
     if (m_regenerations) {
         // I4b step 6: a preview's or a commit's job posts into its box harmlessly (a commit under way still ends).
         m_pool.cancel(m_regenerations->generation);
+        if (m_regenerations->slot) {
+            m_regenerations->slot->retired = true; // the rooms' data read ahead stop
+        }
         const std::lock_guard lock(m_regenerations->box->mutex);
         m_regenerations->box->wake = nullptr;
     }
@@ -243,6 +249,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
             m_coverPhaseOpen = true;
         }
     }
+    m_launchHeld = launchHolds(product);
     if (m_flow) {
         m_flow->update(product.catalog());
         // I3 step 10c: the stored plan's floor shows first (world_start.cpp); the building's result waits until a
@@ -250,10 +257,11 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         if (std::optional<WorldBuild> preview = m_flow->takePreview()) {
             commitPreview(std::move(*preview));
         }
-        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6); I4 step 7b: a result
-        // waits for a ride to end (ADR-0013 §10), and one built for another floor than the one shown is built again
-        // for it first.
-        if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive()) && !m_ride && !m_retargetPending) {
+        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6), and since I5 step 9's
+        // review from Avvia on (the insertion) to the return to Inspect (launchHolds()); I4 step 7b: a result waits
+        // for a ride to end (ADR-0013 §10), and one built for another floor than the one shown is built again for it
+        // first.
+        if (!m_previewAwaitingFrame && !(m_liveFlow && m_launchHeld) && !m_ride && !m_retargetPending) {
             if (std::optional<WorldResult> result = m_flow->takeResult()) {
                 if (retargetResult(*result, product.catalog().worldReader())) {
                     m_liveFlow = false;
@@ -282,6 +290,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
+    followRoomsAdded(product);   // I4b step 8
     followEdit(product);         // I4b step 3
     followRegeneration(product); // I4b step 6
 }
@@ -655,6 +664,49 @@ void WorldSession::commit(WorldResult result) {
     finishCommit(build, start);
 }
 
+void WorldSession::followRoomsAdded(ProductUi& product) {
+    // After the build's own notice (rooms migrated, a room kept...), over the floor of the plan that holds the room.
+    if (!m_addedRoomsPending || m_state != "room" || noticeShowing() || !m_planState || !m_planState->plan) {
+        return;
+    }
+    m_addedRoomsPending = false;
+    const world::WorldPlan& plan = *m_planState->plan;
+    std::vector<world::RoomId> standing;
+    for (const world::RoomId& room : m_addedRooms) {
+        if (std::any_of(plan.rooms.begin(), plan.rooms.end(),
+                        [&](const world::Room& planned) { return planned.id == room; })) {
+            standing.push_back(room);
+        }
+    }
+    if (standing.empty()) {
+        return;
+    }
+    const world::RoomId& first = standing.front();
+    WorldNoticeContent notice{std::string(world_notice::kRoomsAdded), {}, noticeRoom()};
+    switch (first.kind()) {
+    case world::RoomIdKind::System: {
+        notice.roomKind = "console";
+        const std::string fullName = product.catalog().systemFullName(first.system());
+        notice.roomTitle = fullName.empty() ? first.system().str() : fullName;
+        break;
+    }
+    case world::RoomIdKind::Shared:
+        notice.roomKind = "shared";
+        break;
+    case world::RoomIdKind::Arcade:
+        notice.roomKind = "arcade";
+        break;
+    }
+    notice.roomNumber = first.index();
+    notice.moreRooms = static_cast<std::uint32_t>(standing.size() - 1);
+    notice.groundFloor = std::any_of(plan.rooms.begin(), plan.rooms.end(), [&](const world::Room& planned) {
+        return planned.id == first && planned.floor == world::kGroundFloor;
+    });
+    spdlog::info("Frame {}: the notice names the expansion room {} the update added ({} more)",
+                 m_context.frameIndex(), first.toString(), notice.moreRooms);
+    setNotice(std::move(notice), true);
+}
+
 void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.reason = build.reason;
     m_record.library = build.library.str();
@@ -666,6 +718,7 @@ void WorldSession::recordBuild(const WorldBuild& build) {
     m_record.migratedRooms.clear();
     m_record.replacedRooms.clear();
     m_record.needsConfirmation.clear();
+    m_record.roomsAdded.clear();
     // I4b step 6: the rooms the needs-confirmation notice may offer (followConfirmations()).
     ++m_buildsRecorded;
     m_confirmationRooms.clear();
@@ -684,6 +737,14 @@ void WorldSession::recordBuild(const WorldBuild& build) {
                                               replaced.to.xMm, replaced.to.zMm});
         }
         m_record.needsConfirmation = build.changes->needsConfirmation;
+        // I4b step 8 (ADR-0015 §7): the expansions an update that saved the building added, named by a notice.
+        if (std::vector<world::RoomId> added = expansionsAddedBy(build); !added.empty()) {
+            for (const world::RoomId& room : added) {
+                m_record.roomsAdded.push_back(room.toString());
+            }
+            m_addedRooms = std::move(added);
+            m_addedRoomsPending = true;
+        }
     }
     m_record.planDigest = build.planDigest;
     m_record.planWritten = build.written;
@@ -708,6 +769,9 @@ void WorldSession::recordBuild(const WorldBuild& build) {
         m_mediaRootPath = build.mediaRootPath; // the cover loader's retry after a refresh (I3 step 12)
     }
     m_record.itemsWritten = build.itemsWritten;
+    if (build.itemsWritten) {
+        ++m_itemsWrites; // I4b step 8: the directory's ranges read them again
+    }
     m_record.objectFallbacks.clear();
     for (const ObjectFallback& fallback : build.objectFallbacks) {
         m_record.objectFallbacks.push_back(ObjectFallbackRecord{fallback.prefab, fallback.source, fallback.reason});
@@ -781,6 +845,19 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     }
     show.heroScreenPrefix = screenRoom ? *screenRoom + "/" : std::string();
     show.screenGames = screenGames;
+    // The rooms' packs' screen presets, taken once for the floor shown: a room's pack changes only with a full floor
+    // rebuild (this function again), so SceneInstance::replaceObjects() keeps them (I5 step 6).
+    for (const RoomCollection& room : build.rooms) {
+        if (!room.sceneData.theme.screenPreset.empty()) {
+            show.screenPresets.emplace(room.room.toString(), room.sceneData.theme.screenPreset);
+        }
+    }
+    // I5 step 9 (ADR-0016 §11): each room's console socket, which the insertion after Avvia goes to (none without a
+    // console: the arcade, a shared room), found before the scene goes to the host.
+    std::vector<std::optional<ConsoleSocket>> consoles;
+    for (const RoomCollection& room : build.rooms) {
+        consoles.push_back(consoleSocketOf(*build.scene, room.room.toString() + "/"));
+    }
     if (Status shown = m_host.showScene(std::move(*build.scene), show); !shown) {
         spdlog::error("World: the floor's scene cannot be shown: {}; the test room instead", shown.error().toString());
         if (Status fallback = m_host.showTestRoom(); !fallback) {
@@ -814,10 +891,12 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     // hover, the pull-out and Focus over each (I3 step 13a: its pick targets and navigation; a copy, as the persisted
     // start keeps the shown build's layouts to reconcile them, I3 step 10c).
     std::size_t interactionRooms = 0;
-    for (RoomCollection& room : build.rooms) {
+    for (std::size_t roomIndex = 0; roomIndex < build.rooms.size(); ++roomIndex) {
+        RoomCollection& room = build.rooms[roomIndex];
         FloorRoom floorRoom;
         floorRoom.id = room.room;
         floorRoom.doorway = room.doorway;
+        floorRoom.console = consoles[roomIndex];
         m_record.items += room.layout.items.size();
         m_record.clusters += room.layout.clusters.size();
         m_record.skipped += room.layout.skipped.size();
@@ -841,7 +920,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
         // The interaction's rooms are those with a collection, in the floor's order.
         if (floorRoom.collection) {
             floorRoom.interactionRoom = interactionRooms++;
-            m_record.pickTargets += m_interaction->addRoom(room.layout, floorRoom.collection.get());
+            m_record.pickTargets += m_interaction->addRoom(room.layout, floorRoom.collection.get(), floorRoom.console);
         }
         m_rooms.push_back(std::move(floorRoom));
     }
@@ -1122,6 +1201,11 @@ void WorldSession::frameRendered() {
     }
 }
 
+bool WorldSession::launchHolds(const ProductUi& product) const noexcept {
+    return product.launchActive() || product.worldLaunchInFlight() ||
+           (m_interaction && worldLaunchInFlight(m_interaction->interaction().state()));
+}
+
 bool WorldSession::waits() const {
     if (!m_options.lockstep) {
         return false;
@@ -1134,12 +1218,12 @@ bool WorldSession::waits() const {
     const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
     const bool ridePending =
         m_ride && (m_ride->awaitsFloor() || (m_ride->phase() == RidePhase::AwaitingView && !rideViewResident()));
-    // A result that waits for the ride to end is no reason to wait.
-    const bool flowPending =
-        m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
+    // A result that waits for the ride to end, or a live one for a launch's end, is no reason to wait.
+    const bool flowPending = m_flow && m_flow->phase() != WorldPhase::Done &&
+                             !((m_ride || (m_liveFlow && m_launchHeld)) && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
                          ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled() || editWaits() ||
-                         regenerationWaits();
+                         regenerationWaits() || chainRangesWait();
     if (!pending) {
         return false;
     }

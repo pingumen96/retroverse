@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "I5 step 3 golden of a console room's two screens (ADR-0016 §5): the snes-room fixture's room, the hero CRT on its cabinet playing the start choice's generated clip and the room's secondary TV (the classic pack's small CRT on a sideboard, in a sideboard's socket) playing Dappled Dovecote's clip (its playlist one game: video.json's per-screen keys), both held at 1.0 s (--video-freeze-pts), each on its decoder slot.",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -18,7 +18,7 @@
     "file": "g19_secondary_tv_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "f9c37748df787a6ef57464c4a22fd039152eeb24cd83d5eaff6194b13cf97551",
+    "sha256": "40e168a4e4d16b600c45d212cc99ae95c180fa3b28a08dec8e995d8e0fe4f63c",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

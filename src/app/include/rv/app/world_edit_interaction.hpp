@@ -37,6 +37,12 @@
 // its slot exactly and eases the walker to its pose (InteractionTimings::focusEase, instant under reduceMotion), until
 // the player looks or walks again. Back takes the shell's levels first (worldBackAction()): a popup, a panel; the
 // editor's own level always comes before the shell's ReleaseMouse, CloseOverlay and Quit.
+//
+// I4b step 8 (ADR-0015 §4, §7 as amended): a session edits a room chain (a room past its capacity and its expansions,
+// all on one floor): the walker entering another room of it makes that room the edited one (enterRoom()), a game held
+// staying in the hand, so that it drops into a slot of that room (a move into the expansion) or onto a game there (a
+// swap across the chain). The held game is known by its slot (heldSlot()), which names its room; heldFrom() is its pick
+// id in the room edited now, kNoPick while it is carried in another room of the chain.
 
 #include <cstdint>
 #include <functional>
@@ -162,8 +168,12 @@ public:
     /// The room's data is read and shown: Browse, or Holding the game begin() named (Browse when the room lacks it).
     void ready();
     /// The edited room (it must outlive its use; nullptr: none), set again after every shown edit: the target and the
-    /// held game are kept by game and slot, the hover by its pick id when the room still has it.
+    /// held game are kept by game and slot, the hover by its pick id when the room still has it. A held game the room
+    /// lacks stays held when its slot is in another room (carried there from a room of the chain, I4b step 8).
     void setRoom(const EditRoom* room);
+    /// I4b step 8: the walker entered another room of the session's chain: `room` is the edited room from now on, the
+    /// hover, the target and a D-pad step let go of (their pick ids were the other room's), a held game kept.
+    void enterRoom(const EditRoom* room);
     /// How many operations the draft holds (Back with pending edits asks: the menu), and whether a game is pinned (the
     /// overrides of the draft: edit_pin pins an unpinned game, unpins a pinned one).
     void setPending(std::size_t operations) noexcept { m_pending = operations; }
@@ -199,6 +209,8 @@ public:
     /// The game held (Holding, and Busy over a move or a swap), and the pick id of its slot when it was picked up.
     [[nodiscard]] const std::optional<catalog::GameId>& held() const noexcept { return m_held; }
     [[nodiscard]] world::PickId heldFrom() const noexcept { return m_heldFrom; }
+    /// I4b step 8: the slot the held game stands in (its room's: kNoPick heldFrom() in another room of the chain).
+    [[nodiscard]] const world::SlotId& heldSlot() const noexcept { return m_heldSlot; }
     [[nodiscard]] EditMenuButton menuFocus() const noexcept { return m_menuFocus; }
     /// The game held is pinned now (for the bar).
     [[nodiscard]] bool targetPinned() const;
@@ -237,6 +249,11 @@ private:
     bool m_stepped = false;
     std::optional<catalog::GameId> m_held;
     world::PickId m_heldFrom = world::kNoPick;
+    world::SlotId m_heldSlot;
+    /// Holds `game` from the slot of `pick` in the room edited now.
+    void hold(const catalog::GameId& game, world::PickId pick);
+    /// Lets go of the held game (it stays where it stands in the draft).
+    void letGo() noexcept;
     /// The game "Sposta" asked to hold once ready().
     std::optional<catalog::GameId> m_heldAtStart;
     EditMenuButton m_menuFocus = EditMenuButton::Save;

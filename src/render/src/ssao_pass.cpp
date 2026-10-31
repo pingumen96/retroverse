@@ -116,11 +116,14 @@ void SsaoPass::apply(GLDevice& device, const SsaoShaders& shaders, const scene::
     shaders.occlusion->use();
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    // 2. The depth-aware blur to the resolution of the view.
+    // 2. The depth-aware blur to the resolution of the view. The raw occlusion's storage is the first bloom level's
+    // once the blur is over (viewTargetPlan() gives the lifetimes): reading the raw occlusion after this pass is
+    // forbidden, and its unit is unbound right after it.
     raw.bindColorTexture(kRawUnit);
     bindTarget(state, occlusion);
     shaders.blur->use();
     glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindTextureUnit(kRawUnit, 0);
 
     state.setDepthTest(true);
     state.setCullFace(true);

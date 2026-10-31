@@ -76,6 +76,45 @@
          build/msvc-x64-release/real-library/migration (the rooms of succeeded families migrated once, the others byte
          for byte, none over capacity, the ground floor's rooms re-placed onto the hub in the same update, a second
          start and the whole job writing nothing).
+    Gate M3 (milestone M3 part 2, customization, ADR-0015; docs/testing/gate-m3.md): Gate A's build matrix, the unit
+    tests and the GPU smoke tests of Debug and Release, every golden in both (G01 to G20: a golden skipped fails the
+    gate, as one missing does), Gate B's benchmark path in Release against the acceptable limits, and
+      9. per Debug and Release, rows for the I4b test cases counted from the unit and GPU runs, one per area (the
+         overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their preview,
+         undo, the expansion rooms in the world and in the app): an area with a skipped GPU case fails, as a skipped
+         golden does;
+     10. in Release, ADR-0015 section 9's rows on the fixtures, read from the run reports the editor's and the
+         regenerations' GPU cases leave in build/msvc-x64-release/smoke: an edit shown (0.25 s), the impact preview (a
+         room 2 s, a floor and the world 15 s), the room shown again after a save, a commit or an undo (3 s);
+     11. with -RealLibrary, one scripts/real-library.ps1 run (ES-DE closed, read-only snapshots before and after, 0
+         differences, RV_LAUNCH_ALLOWLIST naming the fake emulator alone) of [real-library][building] without the
+         migrations (Gate C's rows: the lobby, the busiest floor, the rides), [expansion] (generator 1.5's update: no
+         capacity entry, every room's elements byte for byte), [regenerate] (the dry runs of a room, a floor and the
+         world: nothing written, their impact, the preview's time), [regenerate-app] (the app's previews, commits and
+         undos), [edit-cli] (a CLI edit session on the real plan: a move, a swap, a pin and a fixture moved, worldplan
+         check, an update moving nothing, an undo restoring the plan's SHA-256) and [secondary_tv] (the busiest floor
+         at 1920 x 1080 with both screens playing, 512 MiB).
+    Gate M4 (milestone M4, screens and media, ADR-0016; docs/testing/gate-m4.md): everything Gate D runs (Gate A's build
+    matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G20, a golden
+    skipped failing the gate as for Gate M3, the I4 and I6 rows per area, the benchmark path in Release), and
+     12. per Debug and Release, rows for the I5 test cases counted from the unit and GPU runs, one per area (the
+         playlists and fallbacks, the scheduler, the secondary TVs, the cabinets, the audio, the CRT presets, the video
+         verdicts, the media viewer's clip and manual, the insertion); an area (I4's, I6's or I5's) with a skipped GPU
+         case fails, as a skipped golden does;
+     13. in Release, the benchmark path's frames while two clips play (its "two-clips" phase, past the room's secondary
+         TV: both decoder slots playing on every frame of it, read from the run report's slot events) against ADR-0016
+         section 12's acceptable rows;
+     14. with -RealLibrary, one scripts/real-library.ps1 run (ES-DE closed, RV_AUDIO=null, read-only snapshots before
+         and after, 0 differences, RV_LAUNCH_ALLOWLIST naming the fake emulator alone) of [real-library][screens]
+         (every collection room of the real building started at its doorway: its hero screen on a clip or its chain's
+         still, never standby, at most 2 decoders; NFR-06's first frame within 2 s), [secondary_tv] (the busiest floor
+         with both slots playing, 512 MiB), [arcade] (the cabinets playing), [audio] (a 96 kHz clip's sound within 80
+         ms of its picture at p95), [videos] (the SNES clips' verdicts, checked from nothing; every system's with
+         -FullVideoScan, hours) and Gate D's real rows ([building] with the migrations, -LegacyCli or RV_LEGACY_CLI,
+         and [room-real]); the limits are written in this script, never read from what a test prints;
+     15. with -Soak, rv_smoke_tests "[soak]" in Release (an hour of four screens playing and switching clips): the
+         private bytes' growth after the first 5 minutes (32 MiB), its slope, the handles and threads, from the case's
+         memory.csv (copied into the gate's logs).
     Gate VR (I10, VR through OpenXR, ADR-0017; docs/testing/gate-vr.md): Gate D whole, run as a gate of its own (its
     build matrix, unit and GPU runs with the fake runtime's VR cases among them, every golden, the benchmark path, under
     the focus watcher; -RealLibrary and the real library's options passed on), then the VR mode's rows:
@@ -83,10 +122,14 @@
      10. the VR benchmark path in Release (tests/smoke/test_world_benchmark.cpp: the snes-stress room, both eyes at
          Link's 2048 x 2048, the fake runtime) against ADR-0017 §9: frame p50 at most 13.9 ms, p99 at most 20 ms; the
          same path at 120 Hz with the fast profile (I10 step 9): p50 at most 8.3 ms, p99 at most 11.1 ms.
-    -TimingOnly (Gate D) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the benchmark
-    path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests).
-    Gates M1, B, C and D run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
-    shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
+    -TimingOnly (Gates D, M3 and M4) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the
+    benchmark path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests);
+    for Gate M3 also the Release GPU cases of the editor and the regenerations (gpu.world_edit, gpu.world_regenerate,
+    the editor's cases of gpu.world_expansion, gpu.cabinets and gpu.secondary_tv) and ADR-0015 section 9's rows on the
+    fixtures from their run reports. Gate M3's verdict is a full run plus a -TimingOnly -RealLibrary run on a quiet
+    machine, Gate M4's the same and the soak.
+    Gates M1, B, C, D, M3, M4 (and VR, through its Gate D) run under scripts/focus_watch.py (--watch build): a test
+    process that takes the foreground or shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
     a failing program of the user's (a WerFault or loader box) against the run too: its row names the rule that
     matched, so such a finding can be told from a test's.
 
@@ -109,11 +152,18 @@
     ./scripts/gate.ps1 -Gate D
     ./scripts/gate.ps1 -Gate D -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # ES-DE closed
     ./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary     # the timing parts again, on a quiet machine
+    ./scripts/gate.ps1 -Gate M3
+    ./scripts/gate.ps1 -Gate M3 -RealLibrary    # also the real library's building, regenerations and edits, ES-DE closed
+    ./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary    # ADR-0015 section 9's rows and the timing parts, quiet
+    ./scripts/gate.ps1 -Gate M4
+    ./scripts/gate.ps1 -Gate M4 -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # ES-DE closed
+    ./scripts/gate.ps1 -Gate M4 -TimingOnly -RealLibrary -Soak    # the timing parts again and the soak hour, quiet
+    ./scripts/gate.ps1 -Gate M4 -RealLibrary -FullVideoScan       # also every clip's verdict (hours)
     ./scripts/gate.ps1 -Gate VR                             # Gate D, then G21 and the VR benchmark path
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'M1', 'B', 'C', 'D', 'VR')]
+    [ValidateSet('A', 'M1', 'B', 'C', 'D', 'M3', 'M4', 'VR')]
     [string]$Gate,
     [switch]$Clean,
     [switch]$RealLibrary,
@@ -125,7 +175,9 @@ param(
     [switch]$FullHashPass,
     [switch]$Benchmarks,
     [string]$LegacyCli = $env:RV_LEGACY_CLI,
-    [switch]$TimingOnly
+    [switch]$TimingOnly,
+    [switch]$FullVideoScan,
+    [switch]$Soak
 )
 $ErrorActionPreference = 'Stop'
 # Numbers in the summary are formatted with the invariant culture: an Italian Windows would print 1235 s as "1.235 s".
@@ -138,15 +190,23 @@ $resultsFile = Join-Path $logDir 'results.json'
 $focusReport = Join-Path $logDir 'focus_watch.json'
 
 if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
-    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C and D, -FullHashPass to -Gate M1' -ForegroundColor Red
+    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C, D, M3, M4 and VR, -FullHashPass to -Gate M1' -ForegroundColor Red
     exit 2
 }
-if ($Benchmarks -and $Gate -notin @('B', 'C', 'D', 'VR')) {
-    Write-Host 'gate: -Benchmarks belongs to -Gate B, C and D' -ForegroundColor Red
+if ($Benchmarks -and $Gate -notin @('B', 'C', 'D', 'M3', 'M4', 'VR')) {
+    Write-Host 'gate: -Benchmarks belongs to -Gate B, C, D, M3, M4 and VR' -ForegroundColor Red
     exit 2
 }
-if ($TimingOnly -and $Gate -ne 'D') {
-    Write-Host 'gate: -TimingOnly belongs to -Gate D' -ForegroundColor Red
+if ($TimingOnly -and $Gate -notin @('D', 'M3', 'M4')) {
+    Write-Host 'gate: -TimingOnly belongs to -Gate D, M3 and M4' -ForegroundColor Red
+    exit 2
+}
+if (($FullVideoScan -or $Soak) -and $Gate -ne 'M4') {
+    Write-Host 'gate: -FullVideoScan and -Soak belong to -Gate M4' -ForegroundColor Red
+    exit 2
+}
+if ($FullVideoScan -and -not $RealLibrary) {
+    Write-Host 'gate: -FullVideoScan needs -RealLibrary' -ForegroundColor Red
     exit 2
 }
 if ($FullHashPass -and -not $RealLibrary) {
@@ -239,10 +299,10 @@ if ($Gate -eq 'VR') {
     exit (Write-Summary)
 }
 
-# --- Gates M1, B and C under the focus watcher -------------------------------------------------------------------------
+# --- Gates M1, B, C, D, M3 and M4 under the focus watcher -------------------------------------------------------------
 # The outer run starts the gate again under scripts/focus_watch.py, with RV_GATE_INNER set; the inner run does the work
 # and leaves its rows in results.json, which the outer one prints with the watcher's verdict.
-if ($Gate -in @('M1', 'B', 'C', 'D') -and $env:RV_GATE_INNER -ne '1') {
+if ($Gate -in @('M1', 'B', 'C', 'D', 'M3', 'M4') -and $env:RV_GATE_INNER -ne '1') {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if (-not $python) {
         Write-Host 'gate: Python 3.10 or later (python) is not on PATH: scripts/focus_watch.py needs it.' -ForegroundColor Red
@@ -263,6 +323,8 @@ if ($Gate -in @('M1', 'B', 'C', 'D') -and $env:RV_GATE_INNER -ne '1') {
     if ($Benchmarks) { $arguments += '-Benchmarks' }
     if ($LegacyCli) { $arguments += @('-LegacyCli', $LegacyCli) }
     if ($TimingOnly) { $arguments += '-TimingOnly' }
+    if ($FullVideoScan) { $arguments += '-FullVideoScan' }
+    if ($Soak) { $arguments += '-Soak' }
     $shell = (Get-Process -Id $PID).Path
     Write-Host "Gate $Gate under scripts/focus_watch.py (logs in $logDir)"
     $env:RV_GATE_INNER = '1'
@@ -370,18 +432,20 @@ function Invoke-Tests([string]$Step, [string]$Name, [string]$Preset, [string[]]$
     return [pscustomobject]@{ Result = $result; Cases = $cases }
 }
 
-# The golden comparisons (G01 alone for Gates A and M1, every golden for Gates B and C): one row per golden, its ctest result
-# with the verdict its case writes next to its screenshot (G01's in smoke/golden_g01, the rooms' in
+# The golden comparisons (G01 alone for Gates A and M1, every golden for Gates B, C, D and M3): one row per golden, its
+# ctest result with the verdict its case writes next to its screenshot (G01's in smoke/golden_g01, the rooms' in
 # smoke/golden_room/<case>), and a failed row for each golden the gate expects that the run does not report; the run's
-# own row stays only when it holds no golden case (a failure before any ran).
+# own row stays only when it holds no golden case (a failure before any ran). Gate M3 fails a golden that skips (another
+# GPU or driver than the golden's, no OpenGL 4.5 context): none may be left unproven.
 function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     $smokeDir = Join-Path $root "build/$Preset/smoke"
     $verdictOf = { param($id) if ($id -eq 'G01') { Join-Path $smokeDir 'golden_g01/comparison.txt' }
+                   elseif ($id -eq 'G21') { Join-Path $smokeDir 'golden_g21/comparison.txt' }
                    else { Join-Path $smokeDir ('golden_room/{0}/comparison.txt' -f $id.ToLowerInvariant()) } }
     Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt')
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
-    $pattern = if ($Gate -in @('B', 'C', 'D')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
+    $pattern = if ($Gate -in @('B', 'C', 'D', 'M3', 'M4')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
     # The goldens the gate's page promises: one that the run does not report (renamed, untagged, not discovered) is a
     # failed row, never a row that silently disappears.
     $expected = switch ($Gate) {
@@ -389,6 +453,8 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         'C' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13') }
         'D' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15', 'G16',
                 'G17', 'G18') }
+        { $_ -in @('M3', 'M4') } { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13',
+                'G14', 'G15', 'G16', 'G17', 'G18', 'G19', 'G20') }
         default { @('G01') }
     }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)
@@ -399,6 +465,7 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         $id = [regex]::Match($case.name, '^gpu\.golden/(\w+):').Groups[1].Value
         $counts = Get-CaseCounts $case
         $result = if ($counts.Failed -gt 0) { 'FAILED' } elseif ($counts.Passed -eq 0) { 'skipped' } else { 'passed' }
+        if ($Gate -in @('M3', 'M4') -and $result -eq 'skipped') { $result = 'FAILED' }
         $verdictFile = & $verdictOf $id
         $details = if (Test-Path $verdictFile) { (Get-Content -Raw $verdictFile).Trim() }
                    else { "no comparison written, see $(Join-Path $logDir "golden-$Preset.log")" }
@@ -724,6 +791,9 @@ function Invoke-Benchmarks {
     }
     Add-BenchmarkRows 'Benchmark path, snes-stress (2,000)' `
         (Join-Path $root 'build/msvc-x64-release/smoke/world_benchmark/stress/benchmark.json')
+    if ($Gate -eq 'M4') {
+        Add-TwoClipsRows (Join-Path $root 'build/msvc-x64-release/smoke/world_benchmark/stress/benchmark.json')
+    }
 }
 
 # The real SNES room through scripts/real-library.ps1 (tests/unit/app/test_room_real.cpp, [real-library][room-real]),
@@ -844,14 +914,24 @@ $i4Areas = [ordered]@{
         'the quick catalog''s selection)'
 }
 
-# A row per area of $Areas (I4's or I6's): its unit and GPU cases of the preset's runs.
+# The GPU cases a Gate M3 area may skip by design, by name (none: the one GPU case every Release run skips, "world
+# focus: with the developer overlay open the cursor's ray picks", has no developer overlay to open there and lies in
+# no I4b area). A case added here needs a comment saying why it cannot run.
+$m3SkipExempt = @()
+
+# A row per area of $Areas (I4's, I6's or I4b's): its unit and GPU cases of the preset's runs. Gate M3 fails an area
+# with a skipped GPU case (no OpenGL 4.5 context, a case skipped by its own check), as it fails a skipped golden: none
+# may pass unproven.
 function Add-AreaRows([string]$Label, $Areas, [string]$Preset, $UnitCases, $GpuCases) {
     foreach ($area in $Areas.Keys) {
         $pattern = $Areas[$area]
         $unit = @($UnitCases | Where-Object { $_.name -match $pattern })
         $gpu = @($GpuCases | Where-Object { $_.name -match $pattern })
         $counts = Get-CaseCounts (@($unit) + @($gpu))
+        $skippedGpu = @($gpu | Where-Object { ($_.status -eq 'notrun' -or $_.skipped) -and $_.name -cnotin $m3SkipExempt } |
+                ForEach-Object { $_.name })
         $result = if ($counts.Total -eq 0 -or $counts.Failed -gt 0) { 'FAILED' }
+                  elseif ($Gate -in @('M3', 'M4') -and $skippedGpu.Count -gt 0) { 'FAILED' }
                   elseif ($counts.Passed -eq 0) { 'skipped' }
                   else { 'passed' }
         $time = (@($unit) + @($gpu) | ForEach-Object { [double]$_.time } | Measure-Object -Sum).Sum
@@ -860,6 +940,7 @@ function Add-AreaRows([string]$Label, $Areas, [string]$Preset, $UnitCases, $GpuC
         $details = '{0} passed, {1} failed, {2} skipped ({3} unit, {4} GPU)' -f $counts.Passed, $counts.Failed,
             $counts.Skipped, $unit.Count, $gpu.Count
         if ($failedNames.Count -gt 0) { $details += ': ' + ($failedNames -join '; ') }
+        if ($Gate -in @('M3', 'M4') -and $skippedGpu.Count -gt 0) { $details += '; GPU skipped: ' + ($skippedGpu -join '; ') }
         Add-Result "$Label $area $Preset" $result $details $time
     }
 }
@@ -1055,7 +1136,643 @@ function Add-RealMigrationRows([string]$migrationDir, [string]$testLog) {
         ('{0} ground-floor room(s) re-placed in the migrating update: {1}' -f $replaced.Count, $placed) 0 'in the same update'
 }
 
+# --- Gate M3: the I4b checks ---------------------------------------------------------------------------------------------
+# The I4b test cases among the unit and GPU runs, by area (the step that made them; docs/i4b/step-*.md). A case counts in
+# one I4b area only; the goldens have their own rows.
+$i4bAreas = [ordered]@{
+    'overrides and snapshots' = '^unit\.(world/overrides:|world/snapshots: (?!20 actions|undo restores|an undo interrupted)|' +
+        'world/validation: pins|world/update: pins are kept|cli/worldplan check: the overrides)'
+    'edits'                   = '^unit\.(world/edit:|cli/worldplan edit:)'
+    'editor games'            = '^unit\.(app/world_edit: (?!a game carried into another room)|' +
+        'app/edit_bar_document: (?!every piece of furniture)|ui/directory: "Modifica stanza"|ui/game_card: "Sposta")|' +
+        '^gpu\.world_edit: (?!a poster)'
+    'editor furniture'        = '^unit\.(app/world_edit_furniture:|app/edit_bar_document: every piece of furniture|' +
+        'world/secondary TV: it follows|app/cabinets: no cabinet plays while the room editor)|' +
+        '^gpu\.(world_edit: a poster|cabinets: (a cabinet moved by the editor|no cabinet plays while the room editor)|' +
+        'gpu\.secondary_tv: the room editor)'
+    'regenerations'           = '^unit\.(world/regeneration:|app/world_regenerate: (?!a room''s preview writes nothing)|' +
+        'ui/regenerate_preview:|cli/worldplan regenerate:|cli/worldplan generate --replace:)|' +
+        '^gpu\.world_regenerate: (?!a room regenerated with its pin kept)'
+    'undo'                    = '^unit\.(world/snapshots: (20 actions|undo restores|an undo interrupted)|' +
+        'cli/worldplan undo:|app/world_regenerate: a room''s preview writes nothing)|' +
+        '^gpu\.world_regenerate: a room regenerated with its pin kept'
+    'expansion world'         = '^unit\.(world/expansion:|world/expansion chains:|world/migration: a room past its successor|' +
+        'cli/worldplan update: generator 1\.4|cli/worldplan: the overflow fixture|esde/overflow_fixture:|' +
+        'world/plan_json: shared, arcade and expansion)'
+    'expansion app'           = '^unit\.(app/directory_chains:|world/expansion_signs:|ui/directory: a chain''s rooms|' +
+        'app/world_build: the expansions an update added|app/world_edit: a game carried into another room)|' +
+        '^gpu\.world_expansion:'
+}
+
+# ADR-0015 section 9's rows on the fixtures (Release): the run reports the editor's and the regenerations' GPU cases left
+# in build/<preset>/smoke/<case>/<run>.json during this gate's GPU run (written since $Since), their edits shown, the
+# previews and the rooms shown again after a save, a commit or an undo, against the acceptable limits.
+function Add-CustomizationRows([string]$Preset, [datetime]$Since) {
+    $smoke = Join-Path $root "build/$Preset/smoke"
+    $files = @(Get-ChildItem -Path $smoke -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -Directory -ErrorAction SilentlyContinue } | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -Filter '*.json' -File -ErrorAction SilentlyContinue } |
+        Where-Object { $_.LastWriteTime -ge $Since })
+    $edits = [System.Collections.Generic.List[object]]::new()
+    $regenerations = [System.Collections.Generic.List[object]]::new()
+    foreach ($file in $files) {
+        $report = try { Read-Report $file.FullName } catch { $null }
+        if (-not $report -or -not $report.world) { continue }
+        foreach ($edit in @($report.world.edits)) { if ($edit) { $edits.Add($edit) } }
+        foreach ($record in @($report.world.regenerations)) { if ($record) { $regenerations.Add($record) } }
+    }
+    # An edit shown (a move, a swap, a fixture moved): 0.25 s.
+    $shown = @($edits | ForEach-Object { @($_.operations) } | Where-Object { $_ -and $null -ne $_.shownMs } |
+            ForEach-Object { [double]$_.shownMs })
+    $worst = ($shown | Measure-Object -Maximum).Maximum
+    Add-Result "ADR-0015 9: an edit shown $Preset" ($(if ($shown.Count -gt 0 -and $worst -le 250) { 'passed' } else { 'FAILED' })) `
+        ('{0} edits shown over {1} sessions of the GPU cases: at most {2}, median {3}' -f $shown.Count, $edits.Count,
+            (Format-Ms $worst), (Format-Ms (Get-Median $shown))) 0 '<= 250 ms'
+    # The impact preview: a room 2 s, a floor and the world 15 s.
+    $texts = @()
+    $previewOk = $true
+    foreach ($kind in @(@('room', 2000), @('floor', 15000), @('world', 15000), @('undo', 2000))) {
+        $name, $limit = $kind
+        $times = @($regenerations | Where-Object { $_.kind -eq $name -and $null -ne $_.previewMs } |
+                ForEach-Object { [double]$_.previewMs })
+        if ($times.Count -eq 0) {
+            if ($name -ne 'undo') { $previewOk = $false }
+            $texts += "$name none"
+            continue
+        }
+        $max = ($times | Measure-Object -Maximum).Maximum
+        if ($max -gt $limit) { $previewOk = $false }
+        $texts += '{0} {1} at most ({2} previews)' -f $name, (Format-Ms $max), $times.Count
+    }
+    Add-Result "ADR-0015 9: the impact preview $Preset" ($(if ($previewOk) { 'passed' } else { 'FAILED' })) `
+        (($texts -join ', ') + ' (an undo''s preview judged as a room''s)') 0 'room <= 2 s, floor and world <= 15 s'
+    # A save, a regeneration's commit or an undo: the room shown again within 3 s.
+    $saves = @($edits | Where-Object { $_.end -eq 'saved' -and $null -ne $_.backMs } | ForEach-Object { [double]$_.backMs })
+    $commits = @($regenerations | Where-Object { $_.end -eq 'committed' -and $null -ne $_.backMs } |
+            ForEach-Object { [pscustomobject]@{ Kind = $_.kind; Ms = [double]$_.backMs } })
+    $all = @($saves) + @($commits | ForEach-Object { $_.Ms })
+    $maxAll = ($all | Measure-Object -Maximum).Maximum
+    $undoTimes = @($commits | Where-Object { $_.Kind -eq 'undo' } | ForEach-Object { $_.Ms })
+    $regenTimes = @($commits | Where-Object { $_.Kind -ne 'undo' } | ForEach-Object { $_.Ms })
+    Add-Result "ADR-0015 9: a save, a commit or an undo $Preset" ($(if ($saves.Count -gt 0 -and $regenTimes.Count -gt 0 -and $undoTimes.Count -gt 0 -and $maxAll -le 3000) { 'passed' } else { 'FAILED' })) `
+        ('the room shown again: {0} saves at most {1}, {2} commits at most {3}, {4} undos at most {5}' -f $saves.Count,
+            (Format-Ms ($saves | Measure-Object -Maximum).Maximum), $regenTimes.Count,
+            (Format-Ms ($regenTimes | Measure-Object -Maximum).Maximum), $undoTimes.Count,
+            (Format-Ms ($undoTimes | Measure-Object -Maximum).Maximum)) 0 '<= 3 s'
+}
+
+# The Release GPU cases whose run reports ADR-0015 section 9's fixture rows read (the I4b editor's and regenerations'
+# cases that open the editor or a preview), run alone under -TimingOnly (a ctest -R regular expression).
+$m3TimingGpuFilter = '^gpu\.(world_edit|world_regenerate|world_expansion: the editor|' +
+    'cabinets: (a cabinet moved by the editor|no cabinet plays while the room editor)|gpu\.secondary_tv: the room editor)'
+
+function Get-Median([double[]]$Values) {
+    if (-not $Values -or $Values.Count -eq 0) { return $null }
+    $sorted = @($Values | Sort-Object)
+    return $sorted[[int][math]::Floor(($sorted.Count - 1) / 2)]
+}
+
+# The real library for Gate M3: one scripts/real-library.ps1 run (one pair of snapshots, 0 differences) of the
+# building's case without the migrations (Gate C's rows: the lobby, the busiest floor, the rides), generator 1.5's
+# update ([expansion]), the dry runs of a room, a floor and the world ([regenerate]), the app's previews, commits and
+# undos ([regenerate-app]), a CLI edit session, its check, an update and its undo ([edit-cli]) and the busiest floor
+# with both screens playing at 1920 x 1080 ([secondary_tv]); the figures read from the building's run reports and the
+# lines the tests print.
+$m3RealFilter = '[real-library][building]~[migration],[real-library][expansion],[real-library][regenerate],' +
+    '[real-library][regenerate-app],[real-library][edit-cli],[real-library][secondary_tv]'
+
+function Invoke-RealCustomization {
+    $preset = 'msvc-x64-release'
+    $realDir = Join-Path $logDir 'real-library'
+    $buildingDir = Join-Path $root "build/$preset/real-library/building"
+    $realLog = Join-Path $logDir 'real-library.log'
+    $testLog = Join-Path $realDir 'tests.log'
+    # An earlier run's reports must not stand for this run's.
+    Remove-Item -LiteralPath $testLog -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $buildingDir -Filter '*.json' -ErrorAction SilentlyContinue | Remove-Item
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
+        -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir -Filter $m3RealFilter *> $realLog
+    $realCode = $LASTEXITCODE
+    $firstRow = $results.Count
+    if (Add-RealLibraryCheckRows $preset $realLog $testLog $realCode $timer.Elapsed.TotalSeconds `
+            '[building] [expansion] [regenerate] [regenerate-app] [edit-cli] [secondary_tv]') {
+        Add-RealBuildingRows $buildingDir $testLog
+        Add-RealCustomizationRows $testLog
+    }
+    if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
+        Add-Result 'Real library' 'FAILED' "scripts/real-library.ps1 exited $realCode, see $realLog" 0
+    }
+}
+
+# The lines of $Log matching $Pattern (the tests' printed figures), each a Match.
+function Select-Lines([string]$Log, [string]$Pattern) {
+    if (-not (Test-Path -LiteralPath $Log)) { return @() }
+    return @(Select-String -LiteralPath $Log -Pattern $Pattern | ForEach-Object { $_.Matches[0] })
+}
+
+# ADR-0015 section 9's limits, in ms, kept here as Add-CustomizationRows keeps them: the impact preview of a room 2 s,
+# of a floor or the world 15 s (the floor's by the amendment of 2026-10-28); a room shown again after a save, a
+# regeneration's commit or an undo 3 s. The gate judges against these, never against the "acceptable" figure a test
+# prints (a test with a looser figure still fails here; its own figure is shown when it differs).
+$adr15RoomPreviewMs = 2000
+$adr15WorldPreviewMs = 15000
+$adr15ShownAgainMs = 3000
+
+# The preview's limit of a scope as the real tests print it: "floor <id> (...)" and "the world (...)" 15 s, a room 2 s.
+function Get-PreviewLimitMs([string]$Scope) {
+    if ($Scope -match '^(floor |the world)') { return $adr15WorldPreviewMs }
+    return $adr15RoomPreviewMs
+}
+
+# ' (the test printed <n> ms as acceptable)' when a test's printed figure is not the gate's limit, else ''.
+function Format-PrintedLimit([string]$Printed, [double]$Limit) {
+    if ([double]$Printed -eq $Limit) { return '' }
+    return " (the test printed $Printed ms as acceptable)"
+}
+
+# The I4b rows of the real library: generator 1.5's update, the dry runs, the app's previews, commits and undos, the CLI
+# edit session, the busiest floor with both screens playing. Nothing derived from the user's titles is printed: ids,
+# counts and times.
+function Add-RealCustomizationRows([string]$testLog) {
+    # Generator 1.5's update of the building as 1.4 stored it: no capacity entry, every room's elements byte for byte.
+    $update = Select-Lines $testLog 'Real expansion: generator 1\.4''s plan updated by (\S+) in ([\d.]+) s: (\d+) of (\d+) rooms'' elements byte for byte, (\d+) capacity entries before and (\d+) after' |
+        Select-Object -Last 1
+    $generated = Select-Lines $testLog 'Real expansion: the building generated in ([\d.]+) s: (.*)$' | Select-Object -Last 1
+    if ($update) {
+        $g = $update.Groups
+        $ok = $g[3].Value -eq $g[4].Value -and [int]$g[5].Value -eq 0 -and [int]$g[6].Value -eq 0
+        Add-Result 'Real library: the building updated by generator 1.5' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('generator 1.4''s stored plan updated by {0} in {1} s: {2} of {3} rooms'' elements byte for byte, {4} capacity entries before and {5} after, nothing added, unplaced or moved (the test checks it); fresh: {6}' -f
+                $g[1].Value, $g[2].Value, $g[3].Value, $g[4].Value, $g[5].Value, $g[6].Value,
+                $(if ($generated) { $generated.Groups[2].Value } else { 'no line' })) ([double]$g[2].Value) `
+            'no capacity entry, every room byte for byte'
+    }
+    else {
+        Add-Result 'Real library: the building updated by generator 1.5' 'FAILED' "no 'Real expansion:' line in $testLog" 0 `
+            'no capacity entry, every room byte for byte'
+    }
+
+    # The dry runs of "Rigenera stanza / piano / mondo" through the CLI: nothing written, every impact count 0 (the
+    # catalog unchanged since the generation; the test checks the counts and the world's folder byte for byte).
+    $dryRuns = Select-Lines $testLog 'Real regeneration: (.+?) dry run in ([\d.]+) s: the preview (\d+) ms \(data (\d+) ms, regeneration (\d+) ms; selections (\d+) ms apart\), (\d+) room\(s\) regenerated, acceptable (\d+) ms'
+    if ($dryRuns.Count -ne 3) {
+        Add-Result 'Real regeneration: dry runs' 'FAILED' ("{0} dry run line(s) in $testLog, 3 expected" -f $dryRuns.Count) 0 `
+            'room <= 2 s, floor and world <= 15 s'
+    }
+    foreach ($line in $dryRuns) {
+        $g = $line.Groups
+        $limit = Get-PreviewLimitMs $g[1].Value
+        $ok = [double]$g[3].Value -le $limit
+        Add-Result ('Real regeneration: dry run of ' + ($g[1].Value -replace ' \(\d+ placed\)', '')) ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('{0}: the preview {1} ms (data {2} ms, regeneration {3} ms; the selections {4} ms apart), {5} room(s) regenerated, nothing written, every impact count 0; the command {6} s{7}' -f
+                $g[1].Value, $g[3].Value, $g[4].Value, $g[5].Value, $g[6].Value, $g[7].Value, $g[2].Value,
+                (Format-PrintedLimit $g[8].Value $limit)) `
+            ([double]$g[2].Value) ('<= {0:N0} ms' -f $limit)
+    }
+
+    # The app's previews on the pool (the job the directory's "Modifiche" tab runs), then in the app itself.
+    $inputs = Select-Lines $testLog 'Real app regeneration: the catalog''s inputs in (\d+) ms (.*)$' | Select-Object -Last 1
+    if ($inputs) {
+        Add-Result 'Real app regeneration: the catalog''s inputs' 'info' ('{0} ms {1}' -f $inputs.Groups[1].Value,
+            $inputs.Groups[2].Value) 0
+    }
+    foreach ($line in (Select-Lines $testLog 'Real app regeneration: (.+?) previewed in (\d+) ms \(read (\d+) ms, regeneration (\d+) ms\)(.*?), (\d+) room\(s\) regenerated, acceptable (\d+) ms')) {
+        $g = $line.Groups
+        $limit = Get-PreviewLimitMs $g[1].Value
+        $ok = [double]$g[2].Value -le $limit
+        Add-Result ('Real app preview: ' + ($g[1].Value -replace ' \(\d+ placed\)', '')) ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('{0}: {1} ms (read {2} ms, regeneration {3} ms){4}, {5} room(s) regenerated, nothing written{6}' -f $g[1].Value,
+                $g[2].Value, $g[3].Value, $g[4].Value, $g[5].Value, $g[6].Value, (Format-PrintedLimit $g[7].Value $limit)) 0 `
+            ('<= {0:N0} ms' -f $limit)
+    }
+    $inApp = Select-Lines $testLog 'Real app regeneration: in the app, the preview of (\S+) shown (-?\d+) ms after the request \(its job (-?\d+) ms, the inputs (.+?)\), acceptable (\d+) ms'
+    if ($inApp.Count -eq 0) {
+        Add-Result 'Real app preview in the app' 'FAILED' "no 'in the app' line in $testLog" 0 '<= 2,000 ms'
+    }
+    foreach ($line in $inApp) {
+        $g = $line.Groups
+        # "Rigenera stanza": a room's preview.
+        $ok = [double]$g[2].Value -ge 0 -and [double]$g[2].Value -le $adr15RoomPreviewMs
+        Add-Result "Real app preview in the app: $($g[1].Value)" ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('"Rigenera stanza" of {0}: the preview shown {1} ms after the request (its job {2} ms; the inputs {3}){4}' -f
+                $g[1].Value, $g[2].Value, $g[3].Value, $g[4].Value, (Format-PrintedLimit $g[5].Value $adr15RoomPreviewMs)) 0 `
+            ('<= {0:N0} ms' -f $adr15RoomPreviewMs)
+    }
+    $commits = Select-Lines $testLog 'Real app regeneration: (Rigenera stanza|Annulla ultima modifica|Rigenera piano) of (\S+): the commit''s job (-?\d+) ms, the room shown again (-?\d+) ms after the choice \(path (\S*)\), acceptable (\d+) ms'
+    if ($commits.Count -eq 0) {
+        Add-Result 'Real app commit or undo' 'FAILED' "no commit line in $testLog" 0 '<= 3,000 ms'
+    }
+    foreach ($line in $commits) {
+        $g = $line.Groups
+        $ok = [double]$g[4].Value -ge 0 -and [double]$g[4].Value -le $adr15ShownAgainMs
+        Add-Result "Real app: $($g[1].Value) of $($g[2].Value)" ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('the room shown again {0} ms after the choice (the commit''s job {1} ms, path {2}){3}' -f $g[4].Value,
+                $g[3].Value, $g[5].Value, (Format-PrintedLimit $g[6].Value $adr15ShownAgainMs)) 0 `
+            ('<= {0:N0} ms' -f $adr15ShownAgainMs)
+    }
+
+    # The CLI edit session on the real plan: a move, a swap, a pin, a fixture moved; its check; an update moving
+    # nothing; the undo restoring the plan's SHA-256.
+    $chosen = Select-Lines $testLog 'Real edit: (\S+) \((\d+) placed\): (\d+) of its (\d+) movable fixtures'' places tried by dry runs in ([\d.]+) s, (\S+) moved to x (-?\d+) z (-?\d+) mm' |
+        Select-Object -Last 1
+    $session = Select-Lines $testLog 'Real edit: the session \(a move, a swap, a pin, a fixture moved\) saved in ([\d.]+) s behind the snapshot (\S+)' |
+        Select-Object -Last 1
+    if ($session -and $chosen) {
+        Add-Result 'Real edit: a CLI session' 'passed' `
+            ('worldplan edit --script on {0} ({1} placed): a move, a swap, a pin and {2} moved to x {3} z {4} mm (its place found by {5} dry runs in {6} s), saved in {7} s behind the snapshot {8}' -f
+                $chosen.Groups[1].Value, $chosen.Groups[2].Value, $chosen.Groups[6].Value, $chosen.Groups[7].Value,
+                $chosen.Groups[8].Value, $chosen.Groups[3].Value, $chosen.Groups[5].Value, $session.Groups[1].Value,
+                $session.Groups[2].Value) ([double]$session.Groups[1].Value) 'written, one snapshot'
+    }
+    else {
+        Add-Result 'Real edit: a CLI session' 'FAILED' "no session line in $testLog" 0 'written, one snapshot'
+    }
+    $check = Select-Lines $testLog 'Real edit: worldplan check in ([\d.]+) s: (\d+) hard and (\d+) soft findings; pins (\d+) honoured, (\d+) orphaned, (\d+) conflicting, (\d+) unhonoured' |
+        Select-Object -Last 1
+    if ($check) {
+        $g = $check.Groups
+        $ok = [int]$g[2].Value -eq 0 -and [int]$g[4].Value -eq 5 -and [int]$g[5].Value -eq 0 -and [int]$g[6].Value -eq 0 -and
+            [int]$g[7].Value -eq 0
+        Add-Result 'Real edit: worldplan check' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('{0} s: {1} hard and {2} soft findings; pins {3} honoured, {4} orphaned, {5} conflicting, {6} unhonoured' -f
+                $g[1].Value, $g[2].Value, $g[3].Value, $g[4].Value, $g[5].Value, $g[6].Value, $g[7].Value) `
+            ([double]$g[1].Value) '5 honoured, 0 hard'
+    }
+    else {
+        Add-Result 'Real edit: worldplan check' 'FAILED' "no check line in $testLog" 0 '5 honoured, 0 hard'
+    }
+    $updated = Select-Lines $testLog 'Real edit: the update after the session in ([\d.]+) s: up to date, nothing written' |
+        Select-Object -Last 1
+    Add-Result 'Real edit: an update moving nothing' ($(if ($updated) { 'passed' } else { 'FAILED' })) `
+        ($(if ($updated) { 'worldplan update in {0} s: up to date, the plan and overrides.json byte for byte' -f $updated.Groups[1].Value }
+           else { "no update line in $testLog" })) ($(if ($updated) { [double]$updated.Groups[1].Value } else { 0 })) 'nothing written'
+    $undone = Select-Lines $testLog 'Real edit: undone in ([\d.]+) s: the plan''s SHA-256 (equal to|NOT equal to) the generated one, overrides\.json (removed|still there)' |
+        Select-Object -Last 1
+    $undoOk = $undone -and $undone.Groups[2].Value -eq 'equal to' -and $undone.Groups[3].Value -eq 'removed'
+    Add-Result 'Real edit: undo restoring the plan''s SHA-256' ($(if ($undoOk) { 'passed' } else { 'FAILED' })) `
+        ($(if ($undone) { 'worldplan undo in {0} s: the plan''s SHA-256 {1} the generated one, overrides.json {2}' -f
+                $undone.Groups[1].Value, $undone.Groups[2].Value, $undone.Groups[3].Value }
+           else { "no undo line in $testLog" })) ($(if ($undone) { [double]$undone.Groups[1].Value } else { 0 })) 'one SHA-256'
+
+    Add-RealSecondaryTvRow $testLog
+}
+
+# The busiest floor with both screens playing, in a 1920 x 1080 window (I5 step 3; the memory margin's estimate;
+# tests/unit/app/test_secondary_tv_real.cpp, [real-library][secondary_tv]): Gates M3 and M4.
+function Add-RealSecondaryTvRow([string]$testLog) {
+    $tv = Select-Lines $testLog 'Real secondary TV: (both-cold|both-warm|both-screenshot): (\S+) \((\d+) items on the floor (\S+)\), .*?; at most (\d+) decoder\(s\) open; GPU memory at its peak ([\d.]+) MiB \(video ([\d.]+) MiB at the end\), frame p50 ([\d.]+) ms, p99 ([\d.]+) ms'
+    $parts = Select-Lines $testLog 'Real secondary TV: (both-cold|both-warm): procedural surfaces ([\d.]+) MiB, collection arrays ([\d.]+) MiB, hero textures ([\d.]+) MiB, targets ([\d.]+) MiB, scene textures ([\d.]+) MiB, buffers ([\d.]+) MiB'
+    $measured = @($tv | Where-Object { $_.Groups[1].Value -ne 'both-screenshot' })
+    if ($measured.Count -eq 2) {
+        $peaks = @($measured | ForEach-Object { [double]$_.Groups[6].Value })
+        $max = ($peaks | Measure-Object -Maximum).Maximum
+        $first = $measured[0].Groups
+        $shot = @($tv | Where-Object { $_.Groups[1].Value -eq 'both-screenshot' }) | Select-Object -First 1
+        $breakdown = if ($parts.Count -gt 0) {
+            $p = $parts[0].Groups
+            '; cold: procedural surfaces {0}, collection arrays {1}, hero textures {2}, targets {3}, scene textures {4}, buffers {5} MiB' -f
+                $p[2].Value, $p[3].Value, $p[4].Value, $p[5].Value, $p[6].Value, $p[7].Value
+        }
+        else { '' }
+        Add-Result 'Real busiest floor, both screens playing' ($(if ($max -le 512 -and [int]$first[5].Value -eq 2) { 'passed' } else { 'FAILED' })) `
+            ('{0} on the {1} floor ({2} items), 1920 x 1080, two decoders: GPU memory at its peak {3} MiB cold, {4} MiB warm (with a screenshot {5}); frame p99 {6} and {7} ms{8}' -f
+                $first[2].Value, $first[4].Value, $first[3].Value, $measured[0].Groups[6].Value, $measured[1].Groups[6].Value,
+                $(if ($shot) { $shot.Groups[6].Value + ' MiB' } else { 'n/a' }), $measured[0].Groups[9].Value,
+                $measured[1].Groups[9].Value, $breakdown) 0 'all <= 512 MiB'
+    }
+    else {
+        Add-Result 'Real busiest floor, both screens playing' 'FAILED' ("{0} cold or warm line(s) in $testLog, 2 expected" -f $measured.Count) 0 'all <= 512 MiB'
+    }
+}
+
+# --- Gate M4: the I5 checks ----------------------------------------------------------------------------------------------
+# The I5 test cases among the unit and GPU runs, by area (the step that made them; docs/i5/step-*.md). A case counts in
+# one I5 area only, and may count in an I4 or I6 row too; the goldens have their own rows.
+$i5Areas = [ordered]@{
+    'playlists'     = '^unit\.(app/playlist:|app/screen_policy: (?!the title card forced)|app/video_settings:)|' +
+        '^gpu\.video:'
+    'scheduler'     = '^unit\.(app/screen_scheduler:|app/process_priority:|platform_win/process_priority:)|' +
+        '^gpu\.(screens: (?!a 16:9)|world launch: on the product''s video settings)'
+    'secondary TVs' = '^unit\.world/secondary TV:|^gpu\.gpu\.secondary_tv:'
+    'cabinets'      = '^unit\.(app/cabinets:|app/screen aspect:)|^gpu\.(cabinets:|screens: a 16:9)'
+    'audio'         = '^unit\.(audio/|app/audio_policy:|media/audio:)|^gpu\.audio:'
+    'presets'       = '^unit\.(assets/crt_presets:|app/crt_looks:)|^gpu\.crt presets:'
+    'verdicts'      = '^unit\.(media/video_verdicts:|media/video_check:|cli/media --check-videos:|' +
+        'app/screen_verdicts:)|^gpu\.video verdicts:'
+    'viewer'        = '^unit\.(media viewer: (the videos page|one explorer)|launcher/manual_open:)|' +
+        '^gpu\.media viewer: (a damaged clip|the world''s clips|in the lobby|the videos page)'
+    'insertion'     = '^unit\.(app/world_interaction: (.*insertion|Avvia in a room with a console)|' +
+        'app/screen_policy: the title card forced)|^gpu\.world launch: (Avvia on the card|a button skips)'
+}
+
+# ADR-0016 section 12's acceptable rows, NFR-06 and NFR-07, kept here as ADR-0015 section 9's are above: the gate
+# judges against these, never against a figure a test prints.
+$adr16FrameP50Ms = 16.7          # frame time with two clips playing (the benchmark path past a secondary TV)
+$adr16FrameP99Ms = 33.3
+$adr16GpuMiB = 512               # all textures with the screens playing (the busiest floor, two slots)
+$adr16SyncP95Ms = 80             # a clip's sound against its picture, at p95
+$nfr06FirstFrameMs = 2000        # the first frame of a clip within 2 s of its decoder's start (the selection's)
+$nfr07Decoders = 2               # at most 2 decoders in the Balanced profile
+$soakGrowthMiB = 32              # the soak: the private bytes' growth after the first 5 minutes (test_soak.cpp)
+$soakFullSeconds = 3500          # a soak shorter than this (RV_SOAK_SECONDS) is informative
+
+# The frames [From, To] of a run on which both decoder slots played (opened or resumed, not paused or stopped), from
+# its report's slot events (in order; an open out of view is paused on its own frame).
+function Get-BothPlayingFrames($Video, [int]$From, [int]$To) {
+    $events = @($Video.slotEvents)
+    $playing = @{ 0 = $false; 1 = $false }
+    $next = 0
+    $both = 0
+    for ($frame = 0; $frame -le $To; $frame++) {
+        while ($next -lt $events.Count -and [int]$events[$next].frame -le $frame) {
+            $playing[[int]$events[$next].slot] = [string]$events[$next].action -in @('open', 'resume')
+            $next++
+        }
+        if ($frame -ge $From -and $playing[0] -and $playing[1]) { $both++ }
+    }
+    return $both
+}
+
+# The step of an input script (JSON with // comment lines) holding phase $Name: its fromFrame and toFrame.
+function Get-ScriptPhase([string]$File, [string]$Name) {
+    if (-not (Test-Path -LiteralPath $File)) { return $null }
+    $json = (Get-Content -LiteralPath $File | Where-Object { $_ -notmatch '^\s*//' }) -join "`n"
+    return @($json | ConvertFrom-Json | Where-Object { $_.phase -eq $Name }) | Select-Object -First 1
+}
+
+# The benchmark path's frames while two clips play (Gate M4, ADR-0016 section 12): the "two-clips" phase of
+# tests/input_scripts/bench_snes_room.json, the snes-stress room's hero CRT and its secondary TV in view, both decoder
+# slots playing on every frame of it (read from the run report's slot events), against the acceptable frame times.
+function Add-TwoClipsRows([string]$ReportFile) {
+    $limit = 'p99 <= {0} ms, p50 <= {1} ms' -f $adr16FrameP99Ms, $adr16FrameP50Ms
+    $report = Read-Report $ReportFile
+    $phase = Get-Phase $report 'two-clips'
+    $step = Get-ScriptPhase (Join-Path $root 'tests/input_scripts/bench_snes_room.json') 'two-clips'
+    if (-not $phase -or [int]$phase.count -eq 0 -or -not $step) {
+        Add-Result 'Benchmark path, two clips playing' 'FAILED' "no two-clips phase in $ReportFile" 0 $limit
+        return
+    }
+    $video = $report.video
+    $from = [int]$step.fromFrame
+    $to = [int]$step.toFrame
+    $both = Get-BothPlayingFrames $video $from $to
+    $secondary = @($video.screens | Where-Object { $_.kind -eq 'secondary' } | ForEach-Object { $_.screen }) -join ', '
+    $frames = $to - $from + 1
+    $ok = $both -eq $frames -and [int]$video.maxOpenDecoders -eq 2 -and $secondary -and
+        [double]$phase.p99Ms -le $adr16FrameP99Ms -and [double]$phase.p50Ms -le $adr16FrameP50Ms
+    Add-Result 'Benchmark path, two clips playing' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+        ('p50 {0}, p95 {1}, p99 {2}, max {3} over the {4} frames {5} to {6}, both slots playing on {7} of them (the hero CRT and the secondary TV {8}); the whole path: {9} decoders started, at most {10} open, both playing on {11} of its frames' -f
+            (Format-Ms $phase.p50Ms), (Format-Ms $phase.p95Ms), (Format-Ms $phase.p99Ms), (Format-Ms $phase.maxMs),
+            $phase.count, $from, $to, $both, $(if ($secondary) { $secondary } else { 'NONE' }), $video.decodersStarted,
+            $video.maxOpenDecoders, (Get-BothPlayingFrames $video 30 1259)) 0 $limit
+}
+
+# The real library for Gate M4: one scripts/real-library.ps1 run (one pair of snapshots, 0 differences) of every
+# collection room's hero screen ([screens]), the busiest floor with both slots playing ([secondary_tv]), the arcade's
+# cabinets ([arcade]), a 96 kHz clip's sync ([audio]), the SNES clips' verdicts ([videos], every system's with
+# -FullVideoScan) and Gate D's real rows ([building] with the migrations, [room-real]).
+$m4RealFilter = '[real-library][screens],[real-library][secondary_tv],[real-library][arcade],' +
+    '[real-library][audio],[real-library][videos],[real-library][building],[real-library][room-real]'
+
+function Invoke-RealScreens {
+    $preset = 'msvc-x64-release'
+    $realDir = Join-Path $logDir 'real-library'
+    $buildingDir = Join-Path $root "build/$preset/real-library/building"
+    $roomDir = Join-Path $root "build/$preset/real-library/room"
+    $migrationDir = Join-Path $root "build/$preset/real-library/migration"
+    $videosDir = Join-Path $root "build/$preset/real-library/videos"
+    $realLog = Join-Path $logDir 'real-library.log'
+    $testLog = Join-Path $realDir 'tests.log'
+    # An earlier run's reports must not stand for this run's; the clips' verdicts are checked from nothing (the videos
+    # case keeps its data directory so that a scan resumes: here every verdict is this build's).
+    Remove-Item -LiteralPath $testLog -ErrorAction SilentlyContinue
+    foreach ($dir in @($buildingDir, $roomDir, $migrationDir)) {
+        Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue | Remove-Item
+    }
+    if (Test-Path -LiteralPath $videosDir) { Remove-Item -LiteralPath $videosDir -Recurse -Force }
+    $savedLegacy = $env:RV_LEGACY_CLI
+    if ($LegacyCli) { $env:RV_LEGACY_CLI = $LegacyCli }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $extra = @{}
+        if ($FullVideoScan) { $extra.FullVideoScan = $true }
+        & (Join-Path $PSScriptRoot 'real-library.ps1') -EsdeHome $EsdeHome -EsdeInstall $EsdeInstall -RomRoot $RomRoot `
+            -MediaRoot $MediaRoot -RetroArchExe $RetroArchExe -Preset $preset -OutDir $realDir -Filter $m4RealFilter `
+            @extra *> $realLog
+        $realCode = $LASTEXITCODE
+    }
+    finally {
+        $env:RV_LEGACY_CLI = $savedLegacy
+    }
+    $firstRow = $results.Count
+    if (Add-RealLibraryCheckRows $preset $realLog $testLog $realCode $timer.Elapsed.TotalSeconds `
+            '[screens] [secondary_tv] [arcade] [audio] [videos] [building] [room-real]') {
+        Add-RealScreensRows $testLog
+        Add-RealSecondaryTvRow $testLog
+        Add-RealArcadeRow $testLog
+        Add-RealAudioRow $testLog
+        Add-RealVideosRow $testLog
+        Add-RealBuildingRows $buildingDir $testLog
+        Add-RealMigrationRows $migrationDir $testLog
+        Add-RealRoomRows $roomDir $testLog
+    }
+    if ($realCode -ne 0 -and -not (@($results | Select-Object -Skip $firstRow) | Where-Object { $_.Result -eq 'FAILED' })) {
+        Add-Result 'Real library' 'FAILED' "scripts/real-library.ps1 exited $realCode, see $realLog" 0
+    }
+}
+
+# Every collection room's hero screen (tests/unit/app/test_screens_real.cpp): a clip or its chain's still at the end of
+# 4 s at its doorway, never standby once a picture showed, within the decoder budget (NFR-07, specification section
+# 9.1); the clips' first frames against NFR-06.
+function Add-RealScreensRows([string]$testLog) {
+    $limit = 'a clip or a still, never standby; <= {0} decoders' -f $nfr07Decoders
+    $rooms = Select-Lines $testLog 'Real screens: (\S+) \((\w+), (\S+), (\d+) placed\): the hero (\S+) shows (\S+) at the end \(shown: (.*?)\); (\d+) decoder\(s\) started, at most (\d+) open, (\d+) thread\(s\); first frame (.+?); (\d+) fallback\(s\), (\d+) idle frame\(s\) before its first picture; the run ([\d.]+) s'
+    $summary = Select-Lines $testLog 'Real screens: (\d+) collection room\(s\) of (\d+) started: (.*)$' | Select-Object -Last 1
+    if ($rooms.Count -eq 0 -or -not $summary) {
+        Add-Result 'Real rooms: the hero screens' 'FAILED' "no 'Real screens:' lines in $testLog" 0 $limit
+        Add-Result 'NFR-06 on the real rooms' 'FAILED' 'no room started' 0 ('<= {0:N0} ms' -f $nfr06FirstFrameMs)
+        return
+    }
+    $stills = @('screenshot', 'title-screen', 'cover', 'title-card')
+    $bad = @()
+    $byPicture = [ordered]@{}
+    $byKind = [ordered]@{}
+    $onStill = @()
+    $mostOpen = 0
+    $mostThreads = 0
+    $firstFrames = @()
+    foreach ($line in $rooms) {
+        $g = $line.Groups
+        $id = $g[1].Value
+        $picture = $g[6].Value
+        $shown = @($g[7].Value -split ', ' | Where-Object { $_ -and $_ -ne 'nothing' })
+        $pictured = $false
+        $standbyAfter = $false
+        foreach ($entry in $shown) {
+            if ($entry -eq 'idle-pattern') { if ($pictured) { $standbyAfter = $true } } else { $pictured = $true }
+        }
+        $open = [int]$g[9].Value
+        $threads = [int]$g[10].Value
+        $mostOpen = [math]::Max($mostOpen, $open)
+        $mostThreads = [math]::Max($mostThreads, $threads)
+        if (($picture -ne 'video' -and $picture -notin $stills) -or $standbyAfter -or $open -gt $nfr07Decoders -or
+            $threads -gt $nfr07Decoders -or -not $g[5].Value.StartsWith("$id/")) {
+            $bad += "$id ($picture)"
+        }
+        $byPicture[$picture] = 1 + [int]$byPicture[$picture]
+        $byKind[$g[2].Value] = 1 + [int]$byKind[$g[2].Value]
+        if ($picture -in $stills) { $onStill += "$id ($picture)" }
+        $first = [regex]::Match($g[11].Value, '^(\d+) ms')
+        if ($first.Success) { $firstFrames += [pscustomobject]@{ Room = $id; Ms = [double]$first.Groups[1].Value } }
+    }
+    $started = [int]$summary.Groups[1].Value
+    $ok = $bad.Count -eq 0 -and $rooms.Count -eq $started
+    $pictures = @($byPicture.Keys | ForEach-Object { "$_ $($byPicture[$_])" }) -join ', '
+    $kinds = @($byKind.Keys | ForEach-Object { "$($byKind[$_]) $_" }) -join ', '
+    Add-Result 'Real rooms: the hero screens' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+        ('{0} collection rooms of the {1} the plan holds ({2}), each started at its doorway for 4 s: at the end {3}; never standby once a picture showed; at most {4} decoders open and {5} threads in any run{6}{7}' -f
+            $rooms.Count, $summary.Groups[2].Value, $kinds, $pictures, $mostOpen, $mostThreads,
+            $(if ($onStill.Count -gt 0) { '; on a still: ' + ($onStill -join ', ') } else { '' }),
+            $(if ($bad.Count -gt 0) { '; NOT SHOWING: ' + ($bad -join ', ') } else { '' })) 0 $limit
+    if ($firstFrames.Count -eq 0) {
+        Add-Result 'NFR-06 on the real rooms' 'FAILED' 'no clip''s first frame in any room' 0 ('<= {0:N0} ms' -f $nfr06FirstFrameMs)
+        return
+    }
+    $worst = $firstFrames | Sort-Object Ms -Descending | Select-Object -First 1
+    $median = Get-Median @($firstFrames | ForEach-Object { $_.Ms })
+    Add-Result 'NFR-06 on the real rooms' ($(if ($worst.Ms -le $nfr06FirstFrameMs) { 'passed' } else { 'FAILED' })) `
+        ('the hero''s first clip frame {0:N0} ms at most after its decoder started ({1}), median {2:N0} ms, over the {3} rooms that opened a clip (cold: the run''s first read of each file)' -f
+            $worst.Ms, $worst.Room, $median, $firstFrames.Count) 0 ('<= {0:N0} ms' -f $nfr06FirstFrameMs)
+}
+
+# The real arcade room's cabinets (tests/unit/app/test_arcade_real.cpp): attract in front of each featured cabinet, the
+# first that played inspected with its clip in the hand.
+function Add-RealArcadeRow([string]$testLog) {
+    $placed = Select-Lines $testLog 'Real arcade: (\d+) cabinet screen\(s\) placed; the hero cabinet plays (\S+) \((\S+)\)' | Select-Object -Last 1
+    $attract = Select-Lines $testLog 'Real arcade: attract played on (\d+) of the (\d+) featured cabinet\(s\)' | Select-Object -Last 1
+    $inspected = Select-Lines $testLog 'Real arcade: inspected, its clip in the hand from frame (\d+) \(interact at (\d+)\)' | Select-Object -Last 1
+    if (-not ($placed -and $attract -and $inspected)) {
+        Add-Result 'Real arcade: the cabinets playing' 'FAILED' "no 'Real arcade:' lines in $testLog" 0 'clips on the cabinets'
+        return
+    }
+    $ok = [int]$attract.Groups[1].Value -gt 0
+    Add-Result 'Real arcade: the cabinets playing' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+        ('area:arcade, {0} cabinets placed, the hero cabinet on {1}; attract played on {2} of the {3} featured cabinets (each with the walker 0.9 m in front, 2.5 s); the first that played inspected: its clip in the hand from frame {4} (interact at {5})' -f
+            $placed.Groups[1].Value, $placed.Groups[3].Value, $attract.Groups[1].Value, $attract.Groups[2].Value,
+            $inspected.Groups[1].Value, $inspected.Groups[2].Value) 0 'clips on the cabinets'
+}
+
+# A real 96 kHz SNES clip's sound against its picture (tests/unit/media/test_audio_real.cpp, [real-library][audio]).
+function Add-RealAudioRow([string]$testLog) {
+    $limit = 'p95 <= {0} ms' -f $adr16SyncP95Ms
+    $line = Select-Lines $testLog 'Real 96 kHz clip \(I5 step 5\): (\S+) (\d+) Hz, (\d+) channel\(s\), video (\S+) (\S+) (\S+) fps, (\S+) s .*?; 8 s played: (\d+) frames shown, .*?; sound against picture over (\d+) frames: p50 (\S+) ms, p95 (\S+) ms, max (\S+) ms; the mixer''s sync p95 (\S+) ms, (\d+) resync\(s\)' |
+        Select-Object -Last 1
+    if (-not $line) {
+        Add-Result 'Real 96 kHz clip: sound against picture' 'FAILED' "no 'Real 96 kHz clip' line in $testLog" 0 $limit
+        return
+    }
+    $g = $line.Groups
+    $p95 = [double]$g[11].Value
+    $ok = [int]$g[2].Value -eq 96000 -and $p95 -le $adr16SyncP95Ms
+    Add-Result 'Real 96 kHz clip: sound against picture' ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+        ('a SNES clip, {0} {1} Hz {2} channel(s), video {3} {4}, {5} s; 8 s played ({6} frames shown): p50 {7:N1} ms, p95 {8:N1} ms, max {9:N1} ms over {10} frames; the mixer''s own sync p95 {11:N1} ms, {12} resync(s)' -f
+            $g[1].Value, $g[2].Value, $g[3].Value, $g[4].Value, $g[5].Value, $g[7].Value, $g[8].Value,
+            [double]$g[10].Value, $p95, [double]$g[12].Value, $g[9].Value, [double]$g[13].Value, $g[14].Value) 0 $limit
+}
+
+# The clips' verdicts (tests/unit/cli/test_cli_media_videos_real.cpp, [real-library][videos]): the SNES ones, or every
+# system's with -FullVideoScan, checked from nothing; every clip given a verdict, the failures counted.
+function Add-RealVideosRow([string]$testLog) {
+    $scope = if ($FullVideoScan) { 'library' } else { 'snes' }
+    $step = if ($FullVideoScan) { 'Real videos: every system''s clips' } else { 'Real videos: the SNES clips' }
+    $total = Select-Lines $testLog ('Real videos \({0}\): (\d+) clip\(s\), (\d+) checked now in ([\d.]+) s, (\d+) known, (\d+) without a verdict' -f $scope) |
+        Select-Object -Last 1
+    $verdicts = @(Select-Lines $testLog ('^Real videos \({0}\): ([a-z-]+) (\d+)\s*$' -f $scope))
+    if (-not $total) {
+        Add-Result $step 'FAILED' "no 'Real videos ($scope)' line in $testLog" 0 'every clip a verdict'
+    }
+    else {
+        $g = $total.Groups
+        $counts = @($verdicts | ForEach-Object { '{0} {1}' -f $_.Groups[1].Value, $_.Groups[2].Value }) -join ', '
+        $ok = [int]$g[1].Value -gt 0 -and [int]$g[5].Value -eq 0
+        Add-Result $step ($(if ($ok) { 'passed' } else { 'FAILED' })) `
+            ('{0} clips, {1} checked now in {2} s ({3} known before), {4} without a verdict: {5}' -f $g[1].Value,
+                $g[2].Value, $g[3].Value, $g[4].Value, $g[5].Value, $counts) ([double]$g[3].Value) 'every clip a verdict'
+    }
+    if (-not $FullVideoScan) {
+        Add-Result 'Real videos: every system''s clips' 'off' 'not run: -FullVideoScan runs it (about two hours with 3 jobs)' 0
+    }
+}
+
+# The soak (tests/smoke/test_soak.cpp, rv_smoke_tests "[soak]" in Release): an hour of tests/smoke/scenes/
+# screens_four.json's four CRTs playing and switching clips every 4 s; its memory.csv (copied into the gate's logs)
+# read here: the private bytes' growth after the first 5 minutes (the mean of the last 5 minutes against minutes 5 to
+# 10, the case's own rule), their slope from minute 10 on, the handles and threads.
+function Invoke-Soak {
+    $bin = Join-Path $root 'build/msvc-x64-release/bin'
+    $cases = Invoke-Catch 'Soak, four screens for an hour (Release)' 'soak' (Join-Path $bin 'rv_smoke_tests.exe') '[soak]'
+    $csvFile = Join-Path $root 'build/msvc-x64-release/smoke/soak/memory.csv'
+    $limit = '< {0} MiB after the first 5 minutes' -f $soakGrowthMiB
+    if (@($cases).Count -eq 0 -or -not (Test-Path -LiteralPath $csvFile)) {
+        Add-Result 'Soak: the private bytes' 'FAILED' "no memory.csv ($csvFile)" 0 $limit
+        return
+    }
+    Copy-Item -LiteralPath $csvFile -Destination (Join-Path $logDir 'soak-memory.csv') -Force
+    $samples = @(Import-Csv -LiteralPath $csvFile | ForEach-Object {
+            [pscustomobject]@{ Seconds = [double]$_.seconds; Private = [double]$_.private_bytes / 1MB
+                Handles = [int]$_.handles; Threads = [int]$_.threads } })
+    $end = ($samples | Measure-Object -Property Seconds -Maximum).Maximum
+    $warm = @($samples | Where-Object { $_.Seconds -ge 300 -and $_.Seconds -lt 600 })
+    $last = @($samples | Where-Object { $_.Seconds -ge $end - 300 })
+    $warmMean = ($warm | Measure-Object -Property Private -Average).Average
+    $lastMean = ($last | Measure-Object -Property Private -Average).Average
+    $peak = ($samples | Measure-Object -Property Private -Maximum).Maximum
+    # The least-squares slope from minute 10 on, in MiB an hour.
+    $fit = @($samples | Where-Object { $_.Seconds -ge 600 })
+    $slope = $null
+    if ($fit.Count -ge 2) {
+        $mx = ($fit | Measure-Object -Property Seconds -Average).Average
+        $my = ($fit | Measure-Object -Property Private -Average).Average
+        $sxy = ($fit | ForEach-Object { ($_.Seconds - $mx) * ($_.Private - $my) } | Measure-Object -Sum).Sum
+        $sxx = ($fit | ForEach-Object { ($_.Seconds - $mx) * ($_.Seconds - $mx) } | Measure-Object -Sum).Sum
+        if ($sxx -gt 0) { $slope = 3600.0 * $sxy / $sxx }
+    }
+    $steady = @($samples | Where-Object { $_.Seconds -ge 300 })
+    $handles = $steady | Measure-Object -Property Handles -Minimum -Maximum
+    $threads = $steady | Measure-Object -Property Threads -Minimum -Maximum
+    $line = Select-Lines (Join-Path $logDir 'soak.log') 'Soak: .*?(\d+) decoders started, at most (\d+) open, (\d+) fallback\(s\), frames (\d+)' |
+        Select-Object -Last 1
+    $growth = if ($null -ne $warmMean -and $null -ne $lastMean) { $lastMean - $warmMean } else { $null }
+    $caseOk = @($cases | Where-Object { $_.OverallResult.success -ne 'true' }).Count -eq 0
+    $result = if (-not $caseOk -or $null -eq $growth) { 'FAILED' }
+              elseif ($end -lt $soakFullSeconds) { 'info' }
+              elseif ($growth -lt $soakGrowthMiB) { 'passed' }
+              else { 'FAILED' }
+    Add-Result 'Soak: the private bytes' $result `
+        ('{0:N0} s, {1} samples: {2:N1} MiB (minutes 5 to 10) to {3:N1} MiB (the last 5), {4:+0.0;-0.0} MiB; peak {5:N1} MiB; slope from minute 10 {6} MiB an hour (memory.csv in {7})' -f
+            $end, $samples.Count, $warmMean, $lastMean, $growth, $peak,
+            $(if ($null -ne $slope) { '{0:+0.0;-0.0}' -f $slope } else { 'n/a' }), $logDir) $end $limit
+    $decoders = if ($line) {
+        '; {0} decoders started, at most {1} open, {2} fallbacks (the cut clip), {3} frames' -f $line.Groups[1].Value,
+            $line.Groups[2].Value, $line.Groups[3].Value, $line.Groups[4].Value
+    }
+    else { '; no Soak line in the log' }
+    $decodersOk = $line -and [int]$line.Groups[2].Value -le $nfr07Decoders
+    Add-Result 'Soak: handles, threads and decoders' ($(if ($decodersOk) { 'passed' } else { 'FAILED' })) `
+        ('after minute 5: handles {0} to {1}, threads {2} to {3}{4}' -f $handles.Minimum, $handles.Maximum,
+            $threads.Minimum, $threads.Maximum, $decoders) 0 ('<= {0} decoders' -f $nfr07Decoders)
+}
+
 Write-Host "Gate $Gate (logs in $logDir)"
+if ($Gate -in @('M3', 'M4')) {
+    # Whatever the gate starts runs in the background and no clip's sound reaches the system's audio (ADR-0016 section
+    # 9). RV_LAUNCH_ALLOWLIST is not set here: the GPU cases set it themselves (ctest ENVIRONMENT, the build's fake
+    # emulator alone) and so does scripts/real-library.ps1, while the runner's unit tests start copies of the fake under
+    # temporary names, which a list naming the builds' fakes would refuse (docs/reference/safety.md).
+    $env:RV_LAUNCH_BACKGROUND = '1'
+    $env:RV_AUDIO = 'null'
+}
 Push-Location $root
 try {
     $built = @{}
@@ -1064,6 +1781,19 @@ try {
                     else { @('msvc-x64-debug', 'msvc-x64-relwithdebinfo', 'msvc-x64-release') }
     foreach ($preset in $buildPresets) {
         $built[$preset] = Invoke-Build $preset
+    }
+    if ($TimingOnly -and $Gate -eq 'M3') {
+        # ADR-0015 section 9's rows on the fixtures measured again: the editor's and the regenerations' GPU cases alone.
+        if ($built['msvc-x64-release']) {
+            $gpuStart = Get-Date
+            $timing = Invoke-Tests 'GPU editor and regeneration cases msvc-x64-release' 'gpu-customization-msvc-x64-release' `
+                'msvc-x64-release-gpu' @('-L', 'gpu', '-R', $m3TimingGpuFilter)
+            if (@($timing.Cases).Count -eq 0) {
+                Add-Result 'ADR-0015 9: the fixture rows msvc-x64-release' 'FAILED' 'no GPU case of the editor or the regenerations ran' 0
+            }
+            else { Add-CustomizationRows 'msvc-x64-release' $gpuStart }
+        }
+        else { Add-Result 'ADR-0015 9: the fixture rows msvc-x64-release' 'not run' 'the Release build failed' 0 }
     }
     foreach ($preset in $(if ($TimingOnly) { @() } else { @('msvc-x64-debug', 'msvc-x64-release') })) {
         if (-not $built[$preset]) {
@@ -1074,6 +1804,7 @@ try {
             continue
         }
         $unit = Invoke-Tests "Unit tests $preset" "unit-$preset" $preset @()
+        $gpuStart = Get-Date
         $gpu = Invoke-Tests "GPU smoke tests $preset" "gpu-$preset" "$preset-gpu" @('-L', 'gpu', '-E', 'golden')
         Invoke-Goldens $preset "$preset-gpu"
         if ($Gate -eq 'M1') {
@@ -1085,14 +1816,22 @@ try {
             Add-CaseRow "I3 unit tests $preset" $unit.Cases $i3UnitPattern 'world, the room in the app, covers, interaction, card and screens; of the unit run'
             Add-CaseRow "I3 GPU cases $preset" $gpu.Cases $i3GpuPattern 'gpu.world*, covers, media viewer, refresh, arrays, static groups, video; of the GPU run'
         }
-        if ($Gate -in @('C', 'D')) {
+        if ($Gate -in @('C', 'D', 'M4')) {
             Add-AreaRows 'I4' $i4Areas $preset $unit.Cases $gpu.Cases
         }
-        if ($Gate -eq 'D') {
+        if ($Gate -in @('D', 'M4')) {
             Add-AreaRows 'I6' $i6Areas $preset $unit.Cases $gpu.Cases
         }
+        if ($Gate -eq 'M4') {
+            Add-AreaRows 'I5' $i5Areas $preset $unit.Cases $gpu.Cases
+        }
+        if ($Gate -eq 'M3') {
+            Add-AreaRows 'I4b' $i4bAreas $preset $unit.Cases $gpu.Cases
+            # The acceptable limits hold in Release (docs/roadmap.md, "Acceptable performance").
+            if ($preset -eq 'msvc-x64-release') { Add-CustomizationRows $preset $gpuStart }
+        }
     }
-    if ($Gate -in @('B', 'C', 'D')) {
+    if ($Gate -in @('B', 'C', 'D', 'M3', 'M4')) {
         if ($built['msvc-x64-release']) {
             try { Invoke-Benchmarks }
             catch { Add-Result 'Benchmarks (Release)' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
@@ -1108,11 +1847,21 @@ try {
                     'B' { Invoke-RealRoom }
                     'C' { Invoke-RealBuilding }
                     'D' { Invoke-RealBuilding -Migration }
+                    'M3' { Invoke-RealCustomization }
+                    'M4' { Invoke-RealScreens }
                 }
             }
             catch { Add-Result 'Real library' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
         }
         else { Add-Result 'Real library' 'not run' 'the Release build failed' 0 }
+    }
+    if ($Soak) {
+        # Last: the hour runs once the rest of the gate is done, on a machine otherwise quiet.
+        if ($built['msvc-x64-release']) {
+            try { Invoke-Soak }
+            catch { Add-Result 'Soak' 'FAILED' "stopped: $($_.Exception.Message)" 0 }
+        }
+        else { Add-Result 'Soak' 'not run' 'the Release build failed' 0 }
     }
 }
 finally {

@@ -74,6 +74,11 @@ struct RoomItemText {
     bool operator==(const RoomItemText&) const = default;
 };
 
+/// Whether `text` holds what its system's snapshot said of the game. A placed game the snapshot does not list has none
+/// (world_build.cpp's snapshotRoomItems()): one no snapshot lists any more, and in a shared or arcade room every game of
+/// its other sections, which each section's items file holds so.
+[[nodiscard]] bool hasText(const RoomItemText& text) noexcept;
+
 struct RoomItems {
     /// The system's full name (CoverItem::systemName).
     std::string systemName;

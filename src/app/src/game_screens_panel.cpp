@@ -1,15 +1,23 @@
 #include "game_screens_panel.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <system_error>
 #include <thread>
 #include <utility>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/core/file_io.hpp>
+#include <rv/core/utf8.hpp>
+#include <rv/launcher/launch_guard.hpp>
+#include <rv/launcher/manual_open.hpp>
+#include <rv/platform_win/system_probe.hpp>
+#include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/ui/game_info_screen.hpp>
 #include <rv/ui/media_viewer_model.hpp>
@@ -23,6 +31,27 @@ namespace {
 /// Pictures uploaded in one frame, at most.
 constexpr std::size_t kUploadsPerFrame = 2;
 
+/// The media viewer model's clock for the manual's second Activate (wall time: it guards against another explorer.exe,
+/// whatever the run's simulated time).
+[[nodiscard]] double monotonicSeconds() noexcept {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+/// What a loader job reads: a page's picture, or (I5 step 8) where the clip's or the manual's file is.
+enum class JobKind : std::uint8_t { Picture, Video, Manual };
+
+[[nodiscard]] JobKind jobKindOf(std::string_view kind) noexcept {
+    return kind == ui::media_viewer::kVideosKind    ? JobKind::Video
+           : kind == ui::media_viewer::kManualsKind ? JobKind::Manual
+                                                    : JobKind::Picture;
+}
+
+/// The last element of a '/'-separated path below the media root (the manual's file name, shown on its page).
+[[nodiscard]] std::string fileNameOf(std::string_view relativePath) {
+    const std::size_t slash = relativePath.find_last_of("/\\");
+    return std::string(slash == std::string_view::npos ? relativePath : relativePath.substr(slash + 1));
+}
+
 /// The viewer's pictures, read and decoded on a thread of their own (the main thread never reads the user's files).
 class PictureLoader {
 public:
@@ -30,11 +59,15 @@ public:
         std::uint64_t serial = 0;
         std::size_t index = 0;
         std::string relativePath;
+        JobKind kind = JobKind::Picture;
     };
     struct Result {
         std::uint64_t serial = 0;
         std::size_t index = 0;
+        JobKind kind = JobKind::Picture;
         std::optional<assets::ImageData> picture;
+        /// I5 step 8: the clip's or the manual's file below the media root (a \\?\ path).
+        std::filesystem::path file;
         std::optional<Error> error;
     };
 
@@ -111,8 +144,20 @@ private:
             Result result;
             result.serial = job.serial;
             result.index = job.index;
+            result.kind = job.kind;
             if (!*root) {
                 result.error = root->error();
+            } else if (job.kind != JobKind::Picture) {
+                // I5 step 8: the clip's file (the decoder says what it finds there) or the manual's (there or not).
+                if (auto file = core::extendedLengthPathBelow(**root, job.relativePath); !file) {
+                    result.error = file.error();
+                } else {
+                    std::error_code error;
+                    if (job.kind == JobKind::Manual && !std::filesystem::is_regular_file(*file, error)) {
+                        result.error = Error{ErrorCode::NotFound, "the manual's file is not there", "manual"};
+                    }
+                    result.file = std::move(*file);
+                }
             } else if (auto picture = viewerPicture(**root, job.relativePath); !picture) {
                 result.error = picture.error();
             } else {
@@ -153,7 +198,10 @@ struct GameScreensPanel::Impl {
          std::function<void()> wake)
         : view(view), system(system), loader(std::move(libraryFile), std::move(wake)) {}
 
-    ~Impl() { dropTextures(); }
+    ~Impl() {
+        dropTextures();
+        registerVideo(0, {});
+    }
 
     Impl(const Impl&) = delete;
     Impl& operator=(const Impl&) = delete;
@@ -173,6 +221,15 @@ struct GameScreensPanel::Impl {
         }
     }
 
+    /// I5 step 8: the clip's texture (the service's view of it) registered for the document (0: the key emptied).
+    void registerVideo(unsigned id, glm::ivec2 size) {
+        if (id != registeredVideo || (id != 0 && size != registeredVideoSize)) {
+            system.setTexture(ui::media_viewer::kVideoTexture, id, size);
+            registeredVideo = id;
+            registeredVideoSize = size;
+        }
+    }
+
     void dropTextures() {
         if (registered != 0) {
             system.setTexture(ui::media_viewer::kPictureTexture, 0, {});
@@ -180,6 +237,13 @@ struct GameScreensPanel::Impl {
         }
         textures.clear();
         waiting.clear();
+    }
+
+    /// The page of `kind`, if the game has one.
+    [[nodiscard]] std::optional<std::size_t> pageOf(std::string_view kind) const { return model.indexOf(kind); }
+    [[nodiscard]] bool showing(std::string_view kind) const {
+        const ui::MediaPage* page = model.current();
+        return viewer && viewer->visible() && page != nullptr && page->kind == kind;
     }
 
     ui::UiView& view;
@@ -195,6 +259,20 @@ struct GameScreensPanel::Impl {
     unsigned registered = 0;
     /// The page whose "page" event was recorded last.
     std::optional<std::size_t> recordedPage;
+
+    // I5 step 8: the clip's file and its key below the media root (the loader found it), the clip's state the service
+    // gave last (its "video" event recorded once per change) and its registered view; the manual's file; the manual's
+    // runner and the machine's Windows folder (explorer.exe).
+    std::filesystem::path videoFile;
+    std::string videoKey;
+    ViewerVideo lastVideo;
+    std::string lastVideoEvent;
+    unsigned registeredVideo = 0;
+    glm::ivec2 registeredVideoSize{0, 0};
+    std::filesystem::path manualFile;
+    platform_win::Win32ProcessRunner manualRunner;
+    platform_win::Win32SystemProbe probe;
+
     PictureLoader loader;
 };
 
@@ -252,11 +330,21 @@ void GameScreensPanel::openMedia(MediaRequest request, std::uint64_t frame) {
     }
     impl.model.open(request.gameId, request.title, request.platform, kinds);
     std::vector<PictureLoader::Job> jobs;
+    impl.videoFile.clear();
+    impl.videoKey.clear();
+    impl.manualFile.clear();
+    impl.lastVideo = ViewerVideo{};
+    impl.lastVideoEvent.clear();
     for (std::size_t index = 0; index < impl.model.pages().size(); ++index) {
         const std::string& kind = impl.model.pages()[index].kind;
         const auto file = std::find_if(request.pages.begin(), request.pages.end(),
                                        [&](const MediaPageFile& page) { return page.kind == kind; });
-        jobs.push_back(PictureLoader::Job{impl.serial + 1, index, file->relativePath});
+        jobs.push_back(PictureLoader::Job{impl.serial + 1, index, file->relativePath, jobKindOf(kind)});
+        if (kind == ui::media_viewer::kVideosKind) {
+            impl.videoKey = file->relativePath;
+        } else if (kind == ui::media_viewer::kManualsKind) {
+            impl.model.setManualFile(index, ui::PictureState::Loading, fileNameOf(file->relativePath));
+        }
         listed += (listed.empty() ? "" : ",") + kind;
     }
     ++impl.serial;
@@ -300,6 +388,11 @@ void GameScreensPanel::close(std::uint64_t frame) {
         ++impl.serial;
         impl.loader.cancel(impl.serial);
         impl.dropTextures();
+        // I5 step 8: the clip's view is the service's; its key is emptied before the service lets it go.
+        impl.registerVideo(0, {});
+        impl.videoFile.clear();
+        impl.videoKey.clear();
+        impl.manualFile.clear();
         addEvent(frame, "closed", {}, "media");
         spdlog::info("Frame {}: the media viewer closed", frame);
     }
@@ -317,8 +410,22 @@ GameScreensPanel::Switch GameScreensPanel::apply(ui::UiCommand command, std::uin
         if (command == ui::UiCommand::Info) {
             return Switch::Info;
         }
-        if (command != ui::UiCommand::Back && impl.model.apply(command) == ui::ViewerStep::Moved) {
+        if (command == ui::UiCommand::Back) {
+            return Switch::None;
+        }
+        switch (impl.model.apply(command, monotonicSeconds())) {
+        case ui::ViewerStep::Moved:
             showPage(frame);
+            break;
+        case ui::ViewerStep::TogglePause:
+            videoPauseToggled(frame);
+            break;
+        case ui::ViewerStep::OpenManual:
+            openManual(frame);
+            break;
+        case ui::ViewerStep::None:
+        case ui::ViewerStep::Close:
+            break;
         }
         return Switch::None;
     }
@@ -338,12 +445,27 @@ GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
     Impl& impl = *m_impl;
     Switch asked = Switch::None;
     if (const std::optional<ui::ViewerClick> click = impl.viewer->takeClicked(); click && viewerOpen()) {
-        if (*click == ui::ViewerClick::Close) {
+        switch (*click) {
+        case ui::ViewerClick::Close:
             close(frame);
-        } else if (impl.model.apply(*click == ui::ViewerClick::Previous ? ui::UiCommand::Left
-                                                                        : ui::UiCommand::Right) ==
-                   ui::ViewerStep::Moved) {
-            showPage(frame);
+            break;
+        case ui::ViewerClick::Previous:
+        case ui::ViewerClick::Next:
+            if (impl.model.apply(*click == ui::ViewerClick::Previous ? ui::UiCommand::Left : ui::UiCommand::Right) ==
+                ui::ViewerStep::Moved) {
+                showPage(frame);
+            }
+            break;
+        case ui::ViewerClick::Pause:
+        case ui::ViewerClick::Manual:
+            // The page's own button: Activate's step on it.
+            if (const ui::ViewerStep step = impl.model.apply(ui::UiCommand::Activate, monotonicSeconds());
+                step == ui::ViewerStep::TogglePause) {
+                videoPauseToggled(frame);
+            } else if (step == ui::ViewerStep::OpenManual) {
+                openManual(frame);
+            }
+            break;
         }
     }
     if (const std::optional<ui::InfoStep> click = impl.info->takeClicked(); click && infoOpen()) {
@@ -355,7 +477,32 @@ GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
     }
     if (viewerOpen()) {
         for (PictureLoader::Result& result : impl.loader.take()) {
-            if (result.serial == impl.serial) {
+            if (result.serial != impl.serial || result.index >= impl.model.pages().size()) {
+                continue;
+            }
+            if (result.kind == JobKind::Video) {
+                // I5 step 8: the clip's file: the service opens it once the page shows.
+                if (result.error) {
+                    impl.model.setVideo(result.index, ui::PictureState::Failed, 0, 0, "file-not-found");
+                    addEvent(frame, "video", std::string(ui::media_viewer::kVideosKind), "failed file-not-found");
+                    spdlog::debug("Media viewer: the clip of {} cannot be found: {}", m_gameId,
+                                  result.error->toString());
+                } else {
+                    impl.videoFile = std::move(result.file);
+                }
+            } else if (result.kind == JobKind::Manual) {
+                const ui::MediaPage& page = impl.model.pages()[result.index];
+                if (result.error) {
+                    impl.model.setManualFile(result.index, ui::PictureState::Failed, page.name, "file-not-found");
+                    addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind), "missing file-not-found");
+                    spdlog::debug("Media viewer: the manual of {} cannot be found: {}", m_gameId,
+                                  result.error->toString());
+                } else {
+                    impl.manualFile = std::move(result.file);
+                    impl.model.setManualFile(result.index, ui::PictureState::Shown, page.name);
+                    addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind), "found " + page.name);
+                }
+            } else {
                 impl.waiting.push_back(std::move(result));
             }
         }
@@ -423,6 +570,129 @@ void GameScreensPanel::afterUpdate() {
             m_record.stageBox = {stage->x, stage->y, stage->z, stage->w};
         }
     }
+    if (const std::optional<glm::vec4> box = impl.viewer->videoBox()) {
+        m_record.videoBox = {box->x, box->y, box->z, box->w};
+    }
+}
+
+ViewerRequest GameScreensPanel::viewerRequest() const {
+    const Impl& impl = *m_impl;
+    ViewerRequest request;
+    request.open = viewerOpen();
+    const ui::MediaPage* page = impl.model.current();
+    if (!request.open || page == nullptr || page->kind != ui::media_viewer::kVideosKind ||
+        page->state == ui::PictureState::Failed || impl.videoFile.empty()) {
+        return request;
+    }
+    request.clip = ViewerClip{m_gameId, impl.videoFile, impl.videoKey, page->paused, impl.serial};
+    return request;
+}
+
+void GameScreensPanel::setViewerVideo(const ViewerVideo& video, std::uint64_t frame) {
+    Impl& impl = *m_impl;
+    const std::optional<std::size_t> index = impl.pageOf(ui::media_viewer::kVideosKind);
+    const bool shown = viewerOpen() && index && impl.showing(ui::media_viewer::kVideosKind);
+    if (!shown) {
+        impl.registerVideo(0, {});
+        return;
+    }
+    const ui::MediaPage& page = impl.model.pages()[*index];
+    std::string event;
+    switch (video.state) {
+    case ViewerVideoState::Playing:
+    case ViewerVideoState::Paused:
+        impl.model.setVideo(*index, ui::PictureState::Shown, video.width, video.height);
+        impl.registerVideo(video.texture, {video.width, video.height});
+        event = video.state == ViewerVideoState::Paused ? std::string("paused")
+                                                         : fmt::format("playing {}x{}", video.width, video.height);
+        ++m_record.videoFrames;
+        break;
+    case ViewerVideoState::Failed:
+        impl.model.setVideo(*index, ui::PictureState::Failed, 0, 0, video.reason);
+        impl.registerVideo(0, {});
+        event = (video.fromVerdict ? "verdict " : "failed ") + video.reason;
+        break;
+    case ViewerVideoState::Waiting:
+    case ViewerVideoState::None:
+        if (page.state != ui::PictureState::Failed) {
+            impl.model.setVideo(*index, ui::PictureState::Loading);
+            event = "waiting";
+        }
+        impl.registerVideo(0, {});
+        break;
+    }
+    if (!event.empty() && event != impl.lastVideoEvent) {
+        impl.lastVideoEvent = event;
+        addEvent(frame, "video", std::string(ui::media_viewer::kVideosKind), event);
+        if (video.state == ViewerVideoState::Failed) {
+            spdlog::info("Frame {}: the media viewer's clip of {} cannot play ({}): its fallback shows", frame,
+                         m_gameId, video.reason);
+        }
+    }
+    impl.lastVideo = video;
+    impl.viewer->show(impl.model);
+}
+
+void GameScreensPanel::videoPauseToggled(std::uint64_t frame) {
+    const Impl& impl = *m_impl;
+    const ui::MediaPage* page = impl.model.current();
+    if (page == nullptr) {
+        return;
+    }
+    spdlog::info("Frame {}: the media viewer's clip of {} {}", frame, m_gameId,
+                 page->paused ? "pauses" : "plays again");
+    impl.viewer->show(impl.model);
+}
+
+void GameScreensPanel::openManual(std::uint64_t frame) {
+    Impl& impl = *m_impl;
+    const std::size_t index = impl.model.index();
+    if (impl.manualFile.empty()) {
+        impl.model.setManualOutcome(index, ui::ManualState::Ready); // asked again once its file is there
+        return;
+    }
+    const std::string label = fmt::format("the manual of {}", m_gameId);
+    auto request = launcher::planManualOpen(impl.manualFile, impl.probe, label);
+    if (!request) {
+        // I5 step 8's review: a path the plan refuses (Unsupported, or not UTF-8) is no failure of Windows: its own
+        // sentence; explorer.exe missing (the Windows folder unknown, the program not there) is a failure.
+        const ErrorCode code = request.error().code;
+        const bool unsupported = code == ErrorCode::Unsupported || code == ErrorCode::InvalidArgument;
+        impl.model.setManualOutcome(index, unsupported ? ui::ManualState::Unsupported : ui::ManualState::Failed,
+                                    std::string(toString(code)));
+        addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind),
+                 (unsupported ? "unsupported " : "failed ") + std::string(toString(code)));
+        // The message may name the user's file: at debug level only.
+        spdlog::debug("Media viewer: the manual of {} cannot be opened: {}", m_gameId, request.error().toString());
+        spdlog::info("Frame {}: the manual of {} cannot be opened by explorer.exe", frame, m_gameId);
+        impl.viewer->show(impl.model);
+        return;
+    }
+    // Started, never followed: no game session, Retroverse keeps running (ADR-0016 §10).
+    auto started = impl.manualRunner.start(*request, {});
+    if (!started) {
+        const bool refused = launcher::isGuardRefusal(started.error());
+        impl.model.setManualOutcome(index, refused ? ui::ManualState::Refused : ui::ManualState::Failed,
+                                    refused ? std::string("guard") : std::string(toString(started.error().code)));
+        addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind),
+                 refused ? std::string("refused") : "failed " + std::string(toString(started.error().code)));
+        if (refused) {
+            spdlog::info("Frame {}: the manual of {} was not opened: the automation guard refused explorer.exe ({})",
+                         frame, m_gameId, launcher::kLaunchAllowListVariable);
+        } else {
+            spdlog::debug("Media viewer: the manual of {} did not open: {}", m_gameId, started.error().toString());
+            spdlog::warn("Frame {}: the manual of {} did not open ({})", frame, m_gameId,
+                         toString(started.error().code));
+        }
+        impl.viewer->show(impl.model);
+        return;
+    }
+    (*started)->stopWatching();
+    impl.model.setManualOutcome(index, ui::ManualState::Opened, {}, monotonicSeconds());
+    addEvent(frame, "manual", std::string(ui::media_viewer::kManualsKind), "opened");
+    spdlog::info("Frame {}: the manual of {} opens in Windows' default program (explorer.exe, process {})", frame,
+                 m_gameId, (*started)->processId());
+    impl.viewer->show(impl.model);
 }
 
 void GameScreensPanel::showPage(std::uint64_t frame) {
@@ -433,6 +703,10 @@ void GameScreensPanel::showPage(std::uint64_t frame) {
     }
     impl.recordedPage = impl.model.index();
     addEvent(frame, "page", page->kind, std::to_string(impl.model.index() + 1));
+    if (page->kind != ui::media_viewer::kVideosKind) {
+        impl.registerVideo(0, {}); // the service lets the clip go at its next frame
+        impl.lastVideoEvent.clear();
+    }
     impl.viewer->show(impl.model);
     impl.registerPicture();
 }

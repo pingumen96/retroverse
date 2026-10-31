@@ -9,17 +9,18 @@
 //   frame 106  ui_media: Vedi media (the pad's Y)       frame 112  ui_info: Informazioni (the pad's X)
 //              (since I3 step 14b Vedi media and Informazioni open their screens over the card: ui_back on frames
 //              79, 97, 109 and 115 closes each, back to Inspect with the card)
-//   frame 118  confirm: Avvia (the pad's Start)         frame 130  ui_activate: Avvia pressed on the card
-//              (I3 step 15a: each launches the game, decided on the next frame; Inspect of the same item comes back
-//              the frame after, with the card on Avvia)
-//   frame 150  ui_right: Vedi media focused             frame 156  ui_down: Indietro focused
-//   frame 170  ui_activate: Indietro pressed: Focus of the same item, the card gone
-//   frame 200  interact: Inspect again, the card again on Avvia
-//   frame 230  ui_back (Esc, B): Focus, the card gone
-// tests/smoke/test_world_card.cpp checks the run report's world.card events and takes screenshots at frame 145 (the
+//   frame 118  confirm: Avvia (the pad's Start)         frame 175  ui_activate: Avvia pressed on the card
+//              (I3 step 15a: each launches the game, decided on the next frame; since I5 step 9 the item goes into
+//              the console first, 27 frames, and is seen seated 6 more, the hand-over on the last (150, 207); Inspect
+//              of the same item comes back the frame after (151, 208), with the card on Avvia)
+//   frame 225  ui_right: Vedi media focused             frame 231  ui_down: Indietro focused
+//   frame 245  ui_activate: Indietro pressed: Focus of the same item, the card gone
+//   frame 275  interact: Inspect again, the card again on Avvia
+//   frame 305  ui_back (Esc, B): Focus, the card gone
+// tests/smoke/test_world_card.cpp checks the run report's world.card events and takes screenshots at frame 170 (the
 // card with Avvia focused) and at the end.
 //   retroverse --spawn <fx:hw-w/s:5.4's Focus pose> --input-script tests/input_scripts/world_card.json
-//     --exit-after-frames --frames 260 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
+//     --exit-after-frames --frames 335 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture>
 [
   {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
   {"fromFrame": 70, "toFrame": 70, "actions": {"ui_right": 1}},
@@ -35,10 +36,10 @@
   {"fromFrame": 112, "toFrame": 112, "actions": {"ui_info": 1}},
   {"fromFrame": 115, "toFrame": 115, "actions": {"ui_back": 1}},
   {"fromFrame": 118, "toFrame": 118, "actions": {"confirm": 1}},
-  {"fromFrame": 130, "toFrame": 130, "actions": {"ui_activate": 1}},
-  {"fromFrame": 150, "toFrame": 150, "actions": {"ui_right": 1}},
-  {"fromFrame": 156, "toFrame": 156, "actions": {"ui_down": 1}},
-  {"fromFrame": 170, "toFrame": 170, "actions": {"ui_activate": 1}},
-  {"fromFrame": 200, "toFrame": 200, "actions": {"interact": 1}},
-  {"fromFrame": 230, "toFrame": 230, "actions": {"ui_back": 1}}
+  {"fromFrame": 175, "toFrame": 175, "actions": {"ui_activate": 1}},
+  {"fromFrame": 225, "toFrame": 225, "actions": {"ui_right": 1}},
+  {"fromFrame": 231, "toFrame": 231, "actions": {"ui_down": 1}},
+  {"fromFrame": 245, "toFrame": 245, "actions": {"ui_activate": 1}},
+  {"fromFrame": 275, "toFrame": 275, "actions": {"interact": 1}},
+  {"fromFrame": 305, "toFrame": 305, "actions": {"ui_back": 1}}
 ]

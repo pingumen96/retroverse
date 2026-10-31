@@ -48,12 +48,12 @@ using Clock = std::chrono::steady_clock;
     return plan;
 }
 
-/// The floor shown kept for the fast path: `build` without its scene, the scene data of every room but `room` dropped
-/// (only the edited room is laid out again).
-[[nodiscard]] std::shared_ptr<const WorldBuild> templateOf(WorldBuild build, const world::RoomId& room) {
+/// The floor shown kept for the fast path: `build` without its scene, the scene data of every room but the session's
+/// chain's dropped (only the edited rooms are laid out again: I4b step 8, a move across the chain lays out two).
+[[nodiscard]] std::shared_ptr<const WorldBuild> templateOf(WorldBuild build, std::span<const world::RoomId> chain) {
     build.scene.reset();
     for (RoomCollection& collection : build.rooms) {
-        if (collection.room != room) {
+        if (std::find(chain.begin(), chain.end(), collection.room) == chain.end()) {
             collection.sceneData = world::SceneData{};
         }
     }
@@ -180,7 +180,7 @@ constexpr float kHeldScale = 0.7f;
 
 std::optional<std::string> WorldSession::editableRoom(const ProductUi& product) const {
     if (m_edit || regenerating() || m_state != "room" || !m_shown || !m_planState || m_ride || m_retargetPending ||
-        m_retargetResult || m_shownPreview || m_previewAwaitingFrame || product.launchActive() ||
+        m_retargetResult || m_shownPreview || m_previewAwaitingFrame || launchHolds(product) ||
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return std::nullopt;
     }
@@ -211,6 +211,13 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
     m_edit = std::make_unique<WorldEditState>(settings.timings, m_reduceMotion);
     WorldEditState& edit = *m_edit;
     edit.room = room;
+    // I4b step 8 (ADR-0015 §4, §7): the session edits the room's chain, its rooms on the floor shown (one floor).
+    edit.chain.push_back(room);
+    for (const FloorRoom& floorRoom : m_rooms) {
+        if (floorRoom.id != room && floorRoom.id.head() == room.head() && floorRoom.collection) {
+            edit.chain.push_back(floorRoom.id);
+        }
+    }
     edit.session = ++m_editSessions;
     edit.box = std::make_shared<EditJobBox>();
     edit.box->wake = m_context.wakeCallback();
@@ -219,11 +226,13 @@ void WorldSession::beginEdit(ProductUi& product, const world::RoomId& room, std:
     edit.reader = product.catalog().worldReader();
     edit.interaction.begin(held);
     edit.record.room = room.toString();
+    edit.record.rooms.push_back(room.toString());
     edit.record.via = std::string(via);
     edit.record.enterFrame = frame;
     edit.record.heldAtStart = held ? held->toString() : std::string();
-    spdlog::info("Frame {}: the editor begins in {} ({}{})", frame, room.toString(), via,
-                 held ? ", " + held->toString() + " held" : std::string());
+    spdlog::info("Frame {}: the editor begins in {} ({}{}{})", frame, room.toString(), via,
+                 held ? ", " + held->toString() + " held" : std::string(),
+                 edit.chain.size() > 1 ? fmt::format(", its chain's {} rooms", edit.chain.size()) : std::string());
 
     // The plan as stored (the draft's base), the world's data for the floor, the overrides, the floor of the stored
     // plan (the fast path's template). The base is never the plan as shown: a stored building's lobby rooms are drawn
@@ -336,15 +345,35 @@ bool WorldSession::editWaits() const noexcept {
 }
 
 CollectionInstance* WorldSession::editCollection() const {
-    if (!m_edit) {
-        return nullptr;
-    }
+    return m_edit ? editCollectionOf(m_edit->room) : nullptr;
+}
+
+CollectionInstance* WorldSession::editCollectionOf(const world::RoomId& id) const {
     for (const FloorRoom& room : m_rooms) {
-        if (room.id == m_edit->room) {
+        if (room.id == id) {
             return room.collection.get();
         }
     }
     return nullptr;
+}
+
+void WorldSession::enterEditRoom(const world::RoomId& room) {
+    WorldEditState& edit = *m_edit;
+    // The outline is the room left's; the held game stays hidden in its own room's collection (syncEditFlags()).
+    if (edit.outlined != world::kNoPick) {
+        if (CollectionInstance* collection = editCollectionOf(edit.outlinedRoom)) {
+            static_cast<void>(collection->setHovered(world::kNoPick));
+        }
+        edit.outlined = world::kNoPick;
+    }
+    const world::RoomId left = std::exchange(edit.room, room);
+    if (std::find(edit.record.rooms.begin(), edit.record.rooms.end(), room.toString()) == edit.record.rooms.end()) {
+        edit.record.rooms.push_back(room.toString());
+    }
+    bindEditRoom(true);
+    spdlog::info("Frame {}: the editor edits {} of its chain (from {}){}", m_context.frameIndex(), room.toString(),
+                 left.toString(),
+                 edit.interaction.held() ? ", " + edit.interaction.held()->toString() + " carried" : std::string());
 }
 
 InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
@@ -362,6 +391,13 @@ InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
     // The edited room's targets only from inside it (its walls occlude them; its doorway would not): outside, nothing
     // under the reticle and no step.
     const std::optional<std::size_t> eye = eyeRoom();
+    // I4b step 8 (ADR-0015 §4, §7): the walker entering another room of the session's chain edits that room, a held game
+    // carried along (never while an edit is applied, the menu shows or a fixture is held).
+    if (eye && m_rooms[*eye].id != edit.room && edit.draft && edit.job == EditJob::None &&
+        (edit.interaction.mode() == EditMode::Browse || edit.interaction.mode() == EditMode::Holding) &&
+        std::find(edit.chain.begin(), edit.chain.end(), m_rooms[*eye].id) != edit.chain.end()) {
+        enterEditRoom(m_rooms[*eye].id);
+    }
     input.inRoom = eye && m_rooms[*eye].id == edit.room;
     if (edit.editRoom && frame.ray) {
         // A held game's ray passes the dressing that gives way where it lands (I4b step 4: dressed free slots from
@@ -585,6 +621,7 @@ void WorldSession::followEdit(ProductUi& product) {
         break;
     }
     bar.roomTitle = edit.room.toString();
+    bar.roomNumber = edit.room.index(); // I4b step 8: the room of the chain the walker is in
     if (edit.room.kind() == world::RoomIdKind::System) {
         const std::string fullName = product.catalog().systemFullName(edit.room.system());
         bar.roomTitle = fullName.empty() ? edit.room.system().str() : fullName;
@@ -624,6 +661,9 @@ void WorldSession::followEdit(ProductUi& product) {
             if (const world::CollectionItem* item = edit.editRoom->item(edit.interaction.heldFrom())) {
                 bar.heldTitle = item->title;
             }
+        }
+        if (bar.heldTitle.empty() && edit.heldItem) {
+            bar.heldTitle = edit.heldItem->title; // carried from another room of the chain
         }
         if (bar.heldTitle.empty()) {
             bar.heldTitle = held->toString();
@@ -689,7 +729,7 @@ void WorldSession::takeEditAnswer(EditJobAnswer answer) {
                     spdlog::warn("Editor: the floor read for the session is not the floor shown (its scene differs)");
                 }
             }
-            edit.shown = templateOf(std::move(*answer.build), edit.room);
+            edit.shown = templateOf(std::move(*answer.build), edit.chain);
             bindEditRoom();
         }
         edit.baseSceneDigest = edit.shown ? edit.shown->sceneDigest : std::string();
@@ -977,7 +1017,7 @@ bool WorldSession::showEditBuild(WorldBuild& build, bool fullFloor, std::span<co
         m_shown->sceneDigest = build.sceneDigest;
     }
     if (m_edit) {
-        m_edit->shown = templateOf(std::move(build), m_edit->room);
+        m_edit->shown = templateOf(std::move(build), m_edit->chain);
         bindEditRoom();
     }
     return true;
@@ -1006,7 +1046,7 @@ bool WorldSession::commitEditFloor(const world::WorldPlan* plan, const std::stri
     return true;
 }
 
-void WorldSession::bindEditRoom() {
+void WorldSession::bindEditRoom(bool entered) {
     WorldEditState& edit = *m_edit;
     const RoomCollection* room = edit.shown ? edit.shown->findRoom(edit.room) : nullptr;
     if (room == nullptr) {
@@ -1062,7 +1102,11 @@ void WorldSession::bindEditRoom() {
     // The interaction lets go of the old room before it goes.
     std::unique_ptr<EditRoom> previous = std::move(edit.editRoom);
     edit.editRoom = std::move(*built);
-    edit.interaction.setRoom(edit.editRoom.get());
+    if (entered) {
+        edit.interaction.enterRoom(edit.editRoom.get());
+    } else {
+        edit.interaction.setRoom(edit.editRoom.get());
+    }
     previous.reset();
     edit.itemSize = room->layout.groups.empty() ? glm::vec3(0.0f) : room->layout.groups.front().itemSize;
     edit.spineFacing = room->sceneData.mediaFamily.spineFacing;
@@ -1092,11 +1136,13 @@ void WorldSession::clearEditFlags() {
     if (!m_edit) {
         return;
     }
-    if (CollectionInstance* collection = editCollection()) {
-        for (const world::PickId pick : m_edit->hidden) {
+    for (const auto& [room, pick] : m_edit->hidden) {
+        if (CollectionInstance* collection = editCollectionOf(room)) {
             static_cast<void>(collection->setHidden(pick, false));
         }
-        if (m_edit->outlined != world::kNoPick) {
+    }
+    if (m_edit->outlined != world::kNoPick) {
+        if (CollectionInstance* collection = editCollectionOf(m_edit->outlinedRoom)) {
             static_cast<void>(collection->setHovered(world::kNoPick));
         }
     }
@@ -1116,22 +1162,38 @@ void WorldSession::syncEditFlags() {
         return;
     }
     // The held game leaves its slot (drawn in the hand: editViewItems()), a held fixture's games theirs (drawn where it
-    // would stand); a game targeted is outlined (the swap's other, the game to pick up).
+    // would stand); a game targeted is outlined (the swap's other, the game to pick up). I4b step 8: the held game's
+    // item and room as it stands, so that it stays hidden there and in the hand while it is carried across the chain.
     syncHeldFixture();
-    std::vector<world::PickId> hidden;
-    if (edit.interaction.held() && edit.interaction.heldFrom() != world::kNoPick) {
-        hidden.push_back(edit.interaction.heldFrom());
+    if (!edit.interaction.held()) {
+        edit.heldItem.reset();
+        edit.heldRoom = world::RoomId{};
+    } else if (edit.interaction.heldFrom() != world::kNoPick && edit.editRoom) {
+        if (const world::CollectionItem* item = edit.editRoom->item(edit.interaction.heldFrom())) {
+            edit.heldItem = *item;
+            edit.heldRoom = edit.room;
+        }
     }
-    hidden.insert(hidden.end(), edit.heldGames.begin(), edit.heldGames.end());
+    std::vector<std::pair<world::RoomId, world::PickId>> hidden;
+    if (edit.interaction.held() && edit.heldItem) {
+        hidden.emplace_back(edit.heldRoom, edit.heldItem->pickId);
+    }
+    for (const world::PickId pick : edit.heldGames) {
+        hidden.emplace_back(edit.room, pick);
+    }
     if (hidden != edit.hidden) {
-        for (const world::PickId pick : edit.hidden) {
-            if (std::find(hidden.begin(), hidden.end(), pick) == hidden.end()) {
-                static_cast<void>(collection->setHidden(pick, false));
+        for (const auto& entry : edit.hidden) {
+            if (std::find(hidden.begin(), hidden.end(), entry) == hidden.end()) {
+                if (CollectionInstance* owner = editCollectionOf(entry.first)) {
+                    static_cast<void>(owner->setHidden(entry.second, false));
+                }
             }
         }
-        for (const world::PickId pick : hidden) {
-            if (std::find(edit.hidden.begin(), edit.hidden.end(), pick) == edit.hidden.end()) {
-                static_cast<void>(collection->setHidden(pick, true));
+        for (const auto& entry : hidden) {
+            if (std::find(edit.hidden.begin(), edit.hidden.end(), entry) == edit.hidden.end()) {
+                if (CollectionInstance* owner = editCollectionOf(entry.first)) {
+                    static_cast<void>(owner->setHidden(entry.second, true));
+                }
             }
         }
         edit.hidden = std::move(hidden);
@@ -1141,11 +1203,12 @@ void WorldSession::syncEditFlags() {
     const bool browsing = edit.interaction.mode() == EditMode::Browse || edit.interaction.mode() == EditMode::Holding;
     const world::PickId outlined =
         browsing && target && target->game && target->pick != heldGame ? target->pick : world::kNoPick;
-    if (outlined != edit.outlined) {
+    if (outlined != edit.outlined || (outlined != world::kNoPick && edit.outlinedRoom != edit.room)) {
         if (Status set = collection->setHovered(outlined); !set) {
             spdlog::error("Editor: the target's outline: {}", set.error().toString());
         }
         edit.outlined = outlined;
+        edit.outlinedRoom = edit.room;
     }
 }
 
@@ -1157,12 +1220,16 @@ std::span<const scene::RenderItem> WorldSession::editViewItems(std::span<const s
         appendHeldFixture(sceneItems, *collection);
         return m_viewItems;
     }
-    if (collection == nullptr || !edit.editRoom || !edit.interaction.held() ||
-        edit.interaction.heldFrom() == world::kNoPick) {
+    if (collection == nullptr || !edit.editRoom || !edit.interaction.held()) {
         return sceneItems;
     }
-    const world::CollectionItem* held = edit.editRoom->item(edit.interaction.heldFrom());
-    if (held == nullptr) {
+    // In its own room, the edited room's item; carried into another room of the chain (I4b step 8), the item as it
+    // stood, drawn from its own room's collection.
+    const bool carried = edit.interaction.heldFrom() == world::kNoPick;
+    const world::CollectionItem* held = carried ? (edit.heldItem ? &*edit.heldItem : nullptr)
+                                                : edit.editRoom->item(edit.interaction.heldFrom());
+    CollectionInstance* source = carried ? editCollectionOf(edit.heldRoom) : collection;
+    if (held == nullptr || source == nullptr) {
         return sceneItems;
     }
     m_viewItems.assign(sceneItems.begin(), sceneItems.end());
@@ -1171,19 +1238,19 @@ std::span<const scene::RenderItem> WorldSession::editViewItems(std::span<const s
     const glm::mat4 hand = heldItemTransform(held->transform, view, camera, kHeldDistance) *
                            glm::scale(glm::mat4(1.0f), glm::vec3(kHeldScale));
     std::size_t first = m_viewItems.size();
-    collection->appendRenderItems(held->pickId, hand, m_viewItems);
+    source->appendRenderItems(held->pickId, hand, m_viewItems);
     for (std::size_t index = first; index < m_viewItems.size(); ++index) {
         m_viewItems[index].attributes.flags &= ~scene::instance_flags::kHighlighted;
         m_viewItems[index].castsShadow = false;
     }
     // Where it would stand: in the empty slot targeted, outlined in the theme's warm white.
     const std::optional<EditTarget>& target = edit.interaction.target();
-    if (target && target->free() && target->pick != held->pickId) {
+    if (target && target->free() && target->pick != edit.interaction.heldFrom()) {
         if (const world::FreeSlot* free = edit.editRoom->freeSlot(target->pick)) {
             const glm::mat4 standing =
                 free->slotFrame * geometry::slotItemTransform(facingOf(free->stance, edit.spineFacing), edit.itemSize);
             first = m_viewItems.size();
-            collection->appendRenderItems(held->pickId, standing, m_viewItems);
+            source->appendRenderItems(held->pickId, standing, m_viewItems);
             for (std::size_t index = first; index < m_viewItems.size(); ++index) {
                 m_viewItems[index].attributes.flags |= scene::instance_flags::kHighlighted;
             }

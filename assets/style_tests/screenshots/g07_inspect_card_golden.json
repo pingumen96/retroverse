@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "Gate B golden of the inspection (style 26.1 7): the snes-room fixture's band item fx:hw-w/s:5.4 held in the hand, turned 15 degrees, the scene behind dimmed, its card beside it (the product UI, laid out for the 1280x720 window and drawn into the screenshot), the hero CRT's clip held at 1.0 s.",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -18,7 +18,7 @@
     "file": "g07_inspect_card_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "471f2aac7749a32cc0c519b29902c260f500c68666f65344e8d33988b0b5f4da",
+    "sha256": "cbd83551be94fa915b40aa18a0b19db5dd1c0f19f4c8e135bf13142296cdbd19",
     "width": 1920
   },
   "inputs": {
@@ -40,10 +40,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 89,
     "frames": 90,

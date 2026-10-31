@@ -248,6 +248,64 @@ TEST_CASE("app/screen_policy: the fallback chain goes screenshot, title screen, 
     }
 }
 
+TEST_CASE("app/screen_policy: the title card forced for the insertion is undone after the return or a refusal",
+          "[app][screen][insertion]") {
+    // I5 step 9's review: launchStarting(..., true) moved the still chain to the card; launchEnded() puts it back.
+    ScreenGame carded = withStills(game("a", "a.mp4"), true, false, true);
+    carded.card.title = "Lanterna";
+    SECTION("a clip showing: the card meanwhile, the chain where it stood after, the clip again") {
+        ScreenPolicy policy({carded});
+        REQUIRE(policy.wantedStill() == ScreenPicture::Screenshot);
+        policy.stillReady();
+        policy.videoShowing();
+        policy.launchStarting(4.5, true);
+        CHECK(policy.wantedStill() == ScreenPicture::TitleCard);
+        CHECK(policy.picture() == ScreenPicture::IdlePattern); // the screen holds its last picture until it is drawn
+        policy.stillReady();
+        CHECK(policy.picture() == ScreenPicture::TitleCard);
+        policy.launchEnded();
+        CHECK(policy.wantsDecoder());
+        CHECK(policy.takeResumePosition() == 4.5);
+        // The screenshot asked for again (the one still texture holds the card), the clip on its first frame.
+        CHECK(policy.wantedStill() == ScreenPicture::Screenshot);
+        policy.stillReady();
+        CHECK(policy.picture() == ScreenPicture::Screenshot);
+        policy.videoShowing();
+        CHECK(policy.picture() == ScreenPicture::Video);
+    }
+    SECTION("no clip: its still again, not the card for the rest of its turn") {
+        ScreenGame still = carded;
+        still.media.video.clear();
+        ScreenPolicy policy({still});
+        REQUIRE(policy.wantedStill() == ScreenPicture::Screenshot);
+        policy.stillReady();
+        policy.launchStarting(std::nullopt, true);
+        policy.stillReady();
+        REQUIRE(policy.picture() == ScreenPicture::TitleCard);
+        policy.launchEnded(); // a refusal during the insertion
+        CHECK(policy.wantedStill() == ScreenPicture::Screenshot);
+        policy.stillReady();
+        CHECK(policy.picture() == ScreenPicture::Screenshot);
+        // Once: a later launch without the card changes nothing.
+        policy.launchStarting(std::nullopt);
+        policy.launchEnded();
+        CHECK(policy.picture() == ScreenPicture::Screenshot);
+        CHECK_FALSE(policy.wantedStill().has_value());
+    }
+    SECTION("a chain already at the card stays there") {
+        ScreenGame cardOnly = game("a");
+        cardOnly.card.title = "Lanterna";
+        ScreenPolicy policy({cardOnly});
+        REQUIRE(policy.wantedStill() == ScreenPicture::TitleCard);
+        policy.stillReady();
+        policy.launchStarting(std::nullopt, true);
+        policy.stillReady();
+        policy.launchEnded();
+        CHECK(policy.picture() == ScreenPicture::TitleCard);
+        CHECK_FALSE(policy.wantedStill().has_value());
+    }
+}
+
 TEST_CASE("app/screen_policy: the decoder stops for a launch and reopens at its position after it", "[app][screen]") {
     SECTION("the return") {
         ScreenPolicy policy({game("a", "a.mp4")});

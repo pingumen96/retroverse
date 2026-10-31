@@ -3,11 +3,16 @@
 // an emulators.json whose "fake-return" profile runs the fake emulator of this build (about 2.5 s), assigned to snes;
 // retroverse.exe without --scene, lockstep (--fixed-dt), hidden, the automation guard listing the fake alone
 // (RV_LAUNCH_ALLOWLIST) and every launch in the background (RV_LAUNCH_BACKGROUND, main.cpp).
-//  - Avvia on the inspected item's card (world_launch.json from the Focus pose of Amber Lantern, which has a clip the
-//    hero CRT plays while it is inspected; the secondary TV's autoplay off): the launch resolved on the catalog worker,
-//    Returned, its play session recorded and verified; the walker's pose and Inspect of the same item restored, the
-//    card shown again; the hero CRT's decoder stopped with its thread ended before the hand-over and opened again
+//  - Avvia on the inspected item's card (world_insertion.json from the Focus pose of Amber Lantern, which has a clip the
+//    hero CRT plays while it is inspected; the secondary TV's autoplay off): I5 step 9's insertion, the item eased
+//    into the console's media socket in 450 ms (the socket the shown scene's console's), seen seated 100 ms, the hero
+//    CRT's decoder stopped as it began with its thread ended before the hand-over; the launch resolved on the catalog
+//    worker meanwhile, its hand-over after the insertion, Returned, its play session recorded and verified; the walker's
+//    pose
+//    and Inspect of the same item restored, the item on its shelf, the card shown again; the decoder opened again
 //    after the return, at the clip's position; the cover loader paused, no frame rendered while the game ran.
+//  - The insertion skipped by a button (world_insertion_skip.json): the item in the socket at once, the launch within
+//    the frame.
 //  - The same launch on the product's video settings (I5 step 3's review): the hero CRT's and the secondary TV's
 //    decoders both stopped before the hand-over, and the TV's clip open again where it stopped once in view.
 //  - "Mostra nella stanza" on the quick catalog's card of a placed game (world_show_in_room.json: Acorn Errands): the
@@ -27,15 +32,18 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <fmt/format.h>
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/session_store.hpp>
+#include <rv/core/aabb.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -146,6 +154,10 @@ std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& sho
 struct ShownRoom {
     rv::scene::CameraSetup camera;
     rv::world::CollectionLayout layout;
+    /// I5 step 9: the console's media socket in the room's scene (app::consoleSocketOf()) and the console's bounds
+    /// there (its prefab's, through its instance).
+    std::optional<rv::app::ConsoleSocket> console;
+    rv::core::Aabb consoleBounds;
     /// The room's secondary TV (I5 step 3): its screen's id and its bounds' middle (the screen service's distance and
     /// view test read its bounds).
     std::string secondaryScreen;
@@ -164,7 +176,15 @@ ShownRoom shownRoom(const ImportedRoom& room, const rv::app::RunReport& report) 
     REQUIRE(scene.has_value());
     auto layout = rv::world::collectionLayout(stored->plan, roomId, *data, {});
     REQUIRE(layout.has_value());
-    ShownRoom shown{scene->camera, std::move(*layout), {}, glm::vec3(0.0f)};
+    ShownRoom shown{scene->camera, std::move(*layout), std::nullopt, rv::core::Aabb{}, {}, glm::vec3(0.0f)};
+    shown.console = rv::app::consoleSocketOf(*scene, "");
+    for (const rv::scene::SceneObject& object : scene->objects) {
+        if (object.id.ends_with(rv::app::kConsoleIdSuffix)) {
+            auto prefab = rv::geometry::buildPrefab(object.kind, object.params);
+            REQUIRE(prefab.has_value());
+            shown.consoleBounds = prefab->bounds.transformed(object.instanceTransforms().front());
+        }
+    }
     auto tvs = rv::world::secondaryTvFixtures(stored->plan, roomId, *data);
     REQUIRE(tvs.has_value());
     if (!tvs->empty()) {
@@ -229,9 +249,33 @@ ShownRoom firstRun(const ImportedRoom& room) {
 
 } // namespace
 
-TEST_CASE("world launch: Avvia on the card launches the game and the room comes back as it was, the hero CRT's "
-          "decoder stopped and reopened",
-          "[gpu][world][world_launch]") {
+namespace {
+
+/// The F12 screenshots of a run (<data>/screenshots), in the order they were taken (their names).
+std::vector<fs::path> takenScreenshots(const ImportedRoom& room) {
+    std::vector<fs::path> files;
+    std::error_code error;
+    for (const auto& entry : fs::directory_iterator(room.data / "screenshots", error)) {
+        if (entry.path().extension() == ".png") {
+            files.push_back(entry.path());
+        }
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+/// The insertion's frame `frame` of `insertion` (the record's frames), or null.
+const rv::app::InsertionFrameRecord* insertionFrame(const rv::app::InsertionRecord& insertion, std::uint64_t frame) {
+    const auto found = std::find_if(insertion.frames.begin(), insertion.frames.end(),
+                                    [&](const rv::app::InsertionFrameRecord& entry) { return entry.frame == frame; });
+    return found != insertion.frames.end() ? &*found : nullptr;
+}
+
+} // namespace
+
+TEST_CASE("world launch: Avvia on the card puts the item into the console, launches the game after the decoders "
+          "stopped and the room comes back as it was",
+          "[gpu][world][world_launch][insertion]") {
     ensureLaunchAllowList();
     ImportedRoom room("avvia");
     const ShownRoom shown = firstRun(room);
@@ -243,12 +287,64 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     const AppRun run = runApp(retroverseExe(), room.dir, "avvia",
                               roomArguments(120, shot,
                                             {"--spawn", spawnArgument(spawnOf(focusPose(item, shown.camera))),
-                                             "--input-script", arg(inputScript("world_launch.json"))}));
+                                             "--input-script", arg(inputScript("world_insertion.json"))}));
     const rv::app::RunReport& report = requireRoom(run);
     INFO(run.describe());
     requireScreenshot(run, shot, {1920, 1080});
 
-    // The launch: the product UI's, resolved on the catalog worker (the request the frame after Avvia), Returned.
+    // I5 step 9: the insertion, from Avvia (80) for 450 ms: 27 frames at 60 Hz, its last (106) with the item in the
+    // console's media socket, the eye on the console since 97 (300 ms); then seen seated 100 ms (6 frames) before the
+    // hand-over is released (112).
+    const rv::app::InsertionRecord& insertion = report.world.interaction.insertion;
+    WARN("insertion: " << insertion.seconds << " s, frames " << insertion.startFrame.value_or(0) << ", seated "
+                       << insertion.seatedFrame.value_or(0) << ", released " << insertion.endFrame.value_or(0)
+                       << ", the item " << insertion.distance << " m from the socket, scale " << insertion.scale);
+    CHECK(insertion.started == 1);
+    CHECK(insertion.arrived == 1);
+    CHECK(insertion.skipped == 0);
+    CHECK(insertion.refused == 0);
+    CHECK(insertion.end == "arrived");
+    CHECK(insertion.pickId == fmt::format("{:08X}", item.pickId));
+    CHECK(insertion.startFrame == std::optional<std::uint64_t>(80));
+    CHECK(insertion.seatedFrame == std::optional<std::uint64_t>(106));
+    CHECK(insertion.endFrame == std::optional<std::uint64_t>(112));
+    CHECK(std::abs(insertion.seconds - 0.55) < 0.5 * 0.016667);
+    CHECK(insertion.seconds <= 0.65); // style §16.2
+    CHECK(insertion.distance < 0.01);
+    CHECK(insertion.scale > 0.3);
+    CHECK(insertion.scale <= 1.0);
+    // The socket is the shown room's console's (the scene's frame is the start room's: --start-room), on that console.
+    REQUIRE(shown.console.has_value());
+    WARN("socket " << insertion.socket.x << ", " << insertion.socket.y << ", " << insertion.socket.z << "; the scene's "
+                   << shown.console->position().x << ", " << shown.console->position().y << ", "
+                   << shown.console->position().z);
+    CHECK(glm::length(insertion.socket - shown.console->position()) < 1e-4f);
+    const rv::core::Aabb consoleBox = shown.consoleBounds.inflated(0.001f);
+    CHECK(consoleBox.contains(insertion.socket));
+    const rv::app::InsertionFrameRecord* first = insertionFrame(insertion, 80);
+    const rv::app::InsertionFrameRecord* middle = insertionFrame(insertion, 93);
+    const rv::app::InsertionFrameRecord* last = insertionFrame(insertion, 106);
+    REQUIRE(first != nullptr);
+    REQUIRE(middle != nullptr);
+    REQUIRE(last != nullptr);
+    CHECK(first->progress > 0.0);
+    CHECK(first->progress < 0.05);
+    CHECK(first->distance > 0.05);
+    CHECK(middle->progress > 0.3);
+    CHECK(middle->progress < 0.7);
+    CHECK(last->progress == 1.0);
+    CHECK(last->distance < 0.01);
+    CHECK(insertion.movingFrames >= 26);
+    CHECK(insertion.socketFrames >= 7);
+    // The frames between come closer each frame.
+    for (std::size_t index = 1; index < insertion.frames.size(); ++index) {
+        CHECK(insertion.frames[index].distance <= insertion.frames[index - 1].distance + 1e-3);
+    }
+    // Its screenshots: the start, the middle, the item in the socket.
+    CHECK(takenScreenshots(room).size() == 3);
+
+    // The launch: the product UI's, resolved on the catalog worker during the insertion, its request (the flow's: the
+    // game-session panel and the hand-over) on the hold's last frame, started on the next, Returned.
     REQUIRE(report.launches.size() == 1);
     const rv::app::LaunchRecord& launch = report.launches.front();
     CHECK(launch.gameId == game);
@@ -256,7 +352,8 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     CHECK(launch.state == "Returned");
     CHECK(launch.outcome == "returned");
     CHECK(launch.exitCode == 0u);
-    CHECK(launch.requestFrame == 81);
+    CHECK(launch.requestFrame == 112);
+    CHECK(launch.startFrame == std::optional<std::uint64_t>(113));
     CHECK(launch.framesWhileRunning == 0);
     REQUIRE(launch.runMs.has_value());
     CHECK(*launch.runMs >= 2400.0);
@@ -277,27 +374,37 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     CHECK(session.choice.value == "fake-return");
     CHECK(rv::catalog::returnedNormally(session));
 
-    // The room's side: asked at Avvia, ended returned, Inspect of the same item restored with the walker's pose.
+    // The room's side: asked at Avvia, inserted, ended returned, Inspect of the same item restored with the walker's
+    // pose.
     const rv::app::RoomLaunchRecord& world = report.world.launch;
     CHECK(world.launches == 1);
     CHECK(world.returned == 1);
     CHECK(world.notReturned == 0);
     const std::vector<std::string> events = launchEvents(world);
-    REQUIRE(events.size() == 3);
+    REQUIRE(events.size() == 4);
     CHECK(events[0] == "80:launch");
-    CHECK(events[1].ends_with(":ended"));
-    CHECK(events[2].ends_with(":restored"));
-    CHECK(world.events[1].frame == world.events[2].frame);
+    CHECK(events[1] == "112:inserted");
+    CHECK(events[2].ends_with(":ended"));
+    CHECK(events[3].ends_with(":restored"));
+    CHECK(world.events[2].frame == world.events[3].frame);
     CHECK(world.events[0].game == game);
-    CHECK(world.events[1].outcome == "returned");
-    CHECK(world.events[2].state == "inspect");
-    CHECK(world.events[2].pickId == world.events[0].pickId);
+    CHECK(world.events[2].outcome == "returned");
+    CHECK(world.events[3].state == "inspect");
+    CHECK(world.events[3].pickId == world.events[0].pickId);
     CHECK(world.poseRestored);
     CHECK(world.walkerAfter == world.walkerBefore);
     CHECK(world.walkerBefore == launch.before->camera);
     CHECK(report.world.interaction.state == "inspect");
     CHECK(report.world.interaction.focusedGame == game);
     CHECK(report.finalCamera == launch.before->camera);
+    // Back in the hand (the inspection drawn held after the return, out of the console), the item's place on its shelf
+    // the plan's still: the launch moved nothing.
+    CHECK(report.world.interaction.inspect.pickId == insertion.pickId);
+    CHECK(report.world.interaction.inspect.lift == 1.0);
+    CHECK(report.world.interaction.pulled == std::vector<std::string>{insertion.pickId});
+    const ShownRoom after = shownRoom(room, report);
+    CHECK(itemOf(after, item.game).slot == item.slot);
+    CHECK(itemOf(after, item.game).transform == item.transform);
     // The card: hidden while the game ran, shown again after the return on the same game.
     std::vector<std::uint64_t> shownFrames;
     std::vector<std::uint64_t> hiddenFrames;
@@ -310,24 +417,46 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     }
     REQUIRE(shownFrames.size() == 2);
     CHECK(shownFrames[0] == 40);
-    CHECK(shownFrames[1] == world.events[2].frame);
+    CHECK(shownFrames[1] == world.events[3].frame);
     CHECK(hiddenFrames == std::vector<std::uint64_t>{80});
     CHECK(report.world.card.game == game);
 
-    // The hero CRT: its decoder stopped and its thread ended before the hand-over, opened again after the return at
-    // the clip's position; never more than one decoder (the secondary TV's autoplay off here).
+    // The hero CRT: its decoder stopped as the insertion began, its thread ended before the hand-over (which had no
+    // more to wait for), opened again after the return at the clip's position; never more than one decoder (the
+    // secondary TV's autoplay off here).
     const rv::app::VideoRecord& video = report.video;
     REQUIRE(video.bound);
     REQUIRE(video.launches.size() == 1);
     const rv::app::VideoLaunchRecord& stop = video.launches.front();
-    WARN("decoder at the launch: ran " << stop.decoderRan << ", stopped in " << stop.stopMs << " ms, position "
+    WARN("decoder at the launch: ran " << stop.decoderRan << ", stopped in " << stop.stopMs << " ms (the hand-over "
+                                       << "waited " << stop.waitMs << " ms), position "
                                        << stop.positionSeconds.value_or(-1.0));
     CHECK(video.gameId == game);
     CHECK(video.maxDecoderThreads <= 1);
     CHECK(stop.decoderRan);
+    CHECK(stop.stopFrame == std::optional<std::uint64_t>(80));
+    REQUIRE(stop.handOverFrame.has_value());
+    CHECK(*stop.handOverFrame >= 112);
+    CHECK(*stop.handOverFrame < *launch.startFrame);
+    CHECK_FALSE(stop.cancelled);
     CHECK(stop.stopMs < 1000.0);
     CHECK(stop.threadsRunning == 0);
     CHECK(stop.reopened);
+    const auto heroStop = std::find_if(video.slotEvents.begin(), video.slotEvents.end(), [](const auto& event) {
+        return event.action == "stop" && event.reason == "launch";
+    });
+    REQUIRE(heroStop != video.slotEvents.end());
+    CHECK(heroStop->frame == 80);
+    CHECK(heroStop->gameId == game);
+    // Meanwhile the hero shows the game's title card (ADR-0016 §11), from the insertion's first frames (80 at 60 Hz is
+    // 1.333 s of the run's time) to its clip's first frame after the return.
+    const auto card = std::find_if(video.shown.begin(), video.shown.end(), [&](const auto& shown) {
+        return shown.picture == "title-card" && shown.gameId == game;
+    });
+    REQUIRE(card != video.shown.end());
+    WARN("the hero's title card from " << card->atSeconds << " s");
+    CHECK(card->atSeconds >= 80 * 0.016667 - 1e-3);
+    CHECK(card->atSeconds <= 84 * 0.016667);
     if (stop.positionSeconds) {
         REQUIRE(stop.reopenedAtSeconds.has_value());
         CHECK(std::abs(*stop.reopenedAtSeconds - *stop.positionSeconds) < 1e-6);
@@ -339,6 +468,58 @@ TEST_CASE("world launch: Avvia on the card launches the game and the room comes 
     WARN("cover rounds paused: " << report.residency.pausedRounds);
 }
 
+TEST_CASE("world launch: a button skips the insertion and the game launches within the frame",
+          "[gpu][world][world_launch][insertion]") {
+    ensureLaunchAllowList();
+    ImportedRoom room("skip");
+    const ShownRoom shown = firstRun(room);
+    const rv::world::CollectionItem& item = itemOf(shown, room.gameAt("Amber Lantern (USA).sfc"));
+    const fs::path shot = room.dir / "skipped.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "skip",
+                              roomArguments(120, shot,
+                                            {"--spawn", spawnArgument(spawnOf(focusPose(item, shown.camera))),
+                                             "--input-script", arg(inputScript("world_insertion_skip.json"))}));
+    const rv::app::RunReport& report = requireRoom(run);
+    INFO(run.describe());
+    // Skipped on 86: the item in the socket on that frame, the launch's request on it and its start on the next.
+    const rv::app::InsertionRecord& insertion = report.world.interaction.insertion;
+    CHECK(insertion.started == 1);
+    CHECK(insertion.skipped == 1);
+    CHECK(insertion.arrived == 0);
+    CHECK(insertion.end == "skipped");
+    CHECK(insertion.startFrame == std::optional<std::uint64_t>(80));
+    CHECK(insertion.seatedFrame == std::optional<std::uint64_t>(86));
+    CHECK(insertion.endFrame == std::optional<std::uint64_t>(86));
+    const rv::app::InsertionFrameRecord* skipped = insertionFrame(insertion, 86);
+    REQUIRE(skipped != nullptr);
+    CHECK(skipped->progress == 1.0);
+    CHECK(skipped->distance < 0.01);
+    CHECK(insertion.distance < 0.01);
+    REQUIRE(report.launches.size() == 1);
+    const rv::app::LaunchRecord& launch = report.launches.front();
+    CHECK(launch.gameId == item.game.toString());
+    CHECK(launch.outcome == "returned");
+    CHECK(launch.requestFrame == 86);
+    REQUIRE(launch.startFrame.has_value());
+    CHECK(*launch.startFrame - 86 <= 1);
+    const std::vector<std::string> events = launchEvents(report.world.launch);
+    REQUIRE(events.size() == 4);
+    CHECK(events[1] == "86:insertion-skipped");
+    // The decoders' stop began with the insertion; the hand-over waited for what remained of it, within the bound.
+    REQUIRE(report.video.launches.size() == 1);
+    const rv::app::VideoLaunchRecord& stop = report.video.launches.front();
+    WARN("decoder at the skipped launch: stopped in " << stop.stopMs << " ms, the hand-over waited " << stop.waitMs
+                                                      << " ms");
+    CHECK(stop.stopFrame == std::optional<std::uint64_t>(80));
+    CHECK(stop.threadsRunning == 0);
+    CHECK(stop.stopMs < 1000.0);
+    CHECK(stop.reopened);
+    // Back in Inspect of the same item, the walker as Avvia found it.
+    CHECK(report.world.interaction.state == "inspect");
+    CHECK(report.world.interaction.focusedGame == item.game.toString());
+    CHECK(report.world.launch.poseRestored);
+}
+
 TEST_CASE("world launch: on the product's video settings, the hero CRT's and the secondary TV's decoders both stop "
           "before the hand-over and play again after the return",
           "[gpu][world][world_launch]") {
@@ -346,8 +527,9 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
     // turned towards the TV, which opens its clip in view (an ambient screen opens a slot only in view); turned back
     // onto the item (the TV paused out of view, keeping its slot), inspected (the hero CRT plays the game's clip),
     // Avvia: both slots stop and their threads end before the hand-over. After the return Inspect comes back as it
-    // was, the TV out of view and so without a slot; Indietro (Focus), back (free roam), turned towards the TV, which
-    // opens its clip again where it stopped.
+    // was, the TV out of view and so without a slot (I5 step 9: the insertion and its hold first, 80 to 112; the game
+    // from 113); Indietro (Focus), back (free roam), turned towards the TV, which opens its clip again where it
+    // stopped.
     ensureLaunchAllowList();
     ImportedRoom room("both_screens", false);
     const ShownRoom shown = firstRun(room);
@@ -377,9 +559,9 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
             {"look_delta_y", (focus.pitch - tvPitch) / kRadiansPerPixel}}}},
          {{"fromFrame", 40}, {"toFrame", 40}, {"actions", {{"interact", 1}}}},
          {{"fromFrame", 80}, {"toFrame", 80}, {"actions", {{"confirm", 1}}}},
-         {{"fromFrame", 110}, {"toFrame", 110}, {"actions", {{"ui_back", 1}}}},
-         {{"fromFrame", 130}, {"toFrame", 130}, {"actions", {{"back", 1}}}},
-         {{"fromFrame", 150}, {"toFrame", 150},
+         {{"fromFrame", 116}, {"toFrame", 116}, {"actions", {{"ui_back", 1}}}},
+         {{"fromFrame", 136}, {"toFrame", 136}, {"actions", {{"back", 1}}}},
+         {{"fromFrame", 156}, {"toFrame", 156},
           {"actions",
            {{"look_delta_x", -turn / kRadiansPerPixel},
             {"look_delta_y", (tvPitch - focus.pitch) / kRadiansPerPixel}}}}});
@@ -432,8 +614,8 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
                std::find(event.screens.begin(), event.screens.end(), shown.secondaryScreen) != event.screens.end();
     });
     REQUIRE(resumed != video.slotEvents.end());
-    CHECK(resumed->frame >= 150);
-    CHECK(resumed->frame <= 154);
+    CHECK(resumed->frame >= 156);
+    CHECK(resumed->frame <= 160);
     REQUIRE(resumed->fromSeconds.has_value());
     CHECK(*resumed->fromSeconds > 0.0);
     // The hero CRT's clip opened again after the return.

@@ -1,14 +1,14 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "be4309acf7751a3dd9bb14d92910dfca2881e316",
+    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
   "description": "Gate D golden of the building's hub from its entrance (I6 step 5, ADR-0014 §3, style 5.2, concept panel 1; its look as the step's review left it): the esde/building fixture planned under the shipped threshold, the walker before the closed entrance doors at the hub's east end, a step south of its middle, facing west: the landmark's glowing globe beside the elevator's portal and its green floor sign, the directory's totem's back beside it, the favourites' showcase with its proxies' covers and the information screen's list on the left (south), the oxblood sofas on their rugs, lit bookcases along both walls under the balcony, its columns and railings, posters on the gallery's walls, the coffered ceiling with the chandelier's bulbs.",
   "gpu": {
-    "glVersion": "4.5.0 NVIDIA 617.42",
+    "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
     "vendor": "NVIDIA Corporation"
@@ -18,7 +18,7 @@
     "file": "g14_hub_entrance_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "f98f1d12f67e4ab510036bc64f1c5a167858df3ed57c1b12d78fab9b2025b595",
+    "sha256": "a7a92a1cbf2b130c961e80231bae489f8c99cf72f21dd7475c4a746aa3728577",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "584567b2a0c97f5e0e47677afa9a83c9f2ec3c32db93985bee68a59bd589755b"
+      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
     }
   },
-  "renderedOn": "2026-10-29",
+  "renderedOn": "2026-10-30",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

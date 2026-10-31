@@ -49,13 +49,30 @@ struct DebugMessageCounts {
     bool operator==(const DebugMessageCounts&) const = default;
 };
 
+/// The render targets a screenshot was drawn through (ScreenshotRecord::targets, docs/i5/memory-margin.md).
+inline constexpr std::string_view kScreenshotWindowTargets = "window"; ///< the window's: the screenshot has its size
+inline constexpr std::string_view kScreenshotOwnTargets = "own";       ///< a set made for the screenshot alone
+/// Both eyes side by side from the eyes' own targets: a VR frame's (I10 step 2) or the stereo preview's (I10 step 1).
+inline constexpr std::string_view kScreenshotEyesTargets = "eyes";
+
 /// The --screenshot a run wrote.
 struct ScreenshotRecord {
     std::filesystem::path file; ///< as given on the command line
     int width = 0;
     int height = 0;
+    /// kScreenshotWindowTargets, kScreenshotOwnTargets or kScreenshotEyesTargets.
+    std::string targets;
 
     bool operator==(const ScreenshotRecord&) const = default;
+};
+
+/// The window of a run: its drawable size in pixels when the run ended (with display scaling, the size the window
+/// was asked for times the display's scale: what the window's render targets are allocated for).
+struct WindowRecord {
+    int drawableWidth = 0;
+    int drawableHeight = 0;
+
+    bool operator==(const WindowRecord&) const = default;
 };
 
 /// The outcome of a --self-check.
@@ -318,6 +335,55 @@ struct InspectRecord {
     bool operator==(const InspectRecord&) const = default;
 };
 
+/// One frame drawn during the last insertion (InsertionRecord::frames).
+struct InsertionFrameRecord {
+    std::uint64_t frame = 0;
+    /// The interaction's eased progress (0 in the hand, 1 in the socket) and the item's centre's distance from the
+    /// socket (meters).
+    double progress = 0.0;
+    double distance = 0.0;
+
+    bool operator==(const InsertionFrameRecord&) const = default;
+};
+
+/// The most insertion frames a run report keeps (an insertion lasts 27 frames at 60 Hz).
+inline constexpr std::size_t kMaxInsertionFrames = 120;
+
+/// The insertion into the console (I5 step 9; ADR-0016 §11): the held item eased into the console's media socket
+/// after Avvia, before the launch's hand-over.
+struct InsertionRecord {
+    /// Insertions begun (Avvia in a room with a console, not under reduceMotion), and how they ended: the item in the
+    /// socket, skipped by a button, the launch refused or failed meanwhile (back to Inspect).
+    std::uint64_t started = 0;
+    std::uint64_t arrived = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t refused = 0;
+    /// Frames drawn with the item on its way (progress between 0 and 1) and in the socket (1: the frame it seated, its
+    /// hold before the hand-over and the launch's frame "Gioco in corso").
+    std::uint64_t movingFrames = 0;
+    std::uint64_t socketFrames = 0;
+    /// The last insertion: its item (pick id in hexadecimal), the frames it began on, the item seated in the socket on
+    /// (progress 1; the skip's frame when skipped) and it ended on (the hand-over released: InsertionEnd, after the
+    /// hold), the frame times from its start to its end (its first frame's included: the interaction's own clock), how
+    /// it ended ("arrived", "skipped", "refused"; "" while it runs).
+    std::string pickId;
+    std::optional<std::uint64_t> startFrame;
+    std::optional<std::uint64_t> seatedFrame;
+    std::optional<std::uint64_t> endFrame;
+    double seconds = 0.0;
+    std::string end;
+    /// The console's media socket (the scene's frame), the item's centre and scale factor (insertedScale()) on the last
+    /// frame drawn, and that centre's distance from the socket (meters).
+    glm::vec3 socket{0.0f};
+    glm::vec3 center{0.0f};
+    double scale = 1.0;
+    double distance = 0.0;
+    /// The frames drawn during the last insertion, in order (at most kMaxInsertionFrames).
+    std::vector<InsertionFrameRecord> frames;
+
+    bool operator==(const InsertionRecord&) const = default;
+};
+
 /// The world's interaction (I3 step 13a; ADR-0012 §1-§3): the hover with its outline and label, the pull-out on the
 /// dynamic path, Focus and its D-pad steps; the inspection (I3 step 13b). Empty ({}) in runs without a room's
 /// collection.
@@ -355,6 +421,8 @@ struct InteractionRecord {
     std::vector<InteractionEventRecord> events;
     std::uint64_t eventsDropped = 0;
     InspectRecord inspect;
+    /// I5 step 9.
+    InsertionRecord insertion;
 
     bool operator==(const InteractionRecord&) const = default;
 };
@@ -408,6 +476,7 @@ struct CardRecord {
 struct RoomLaunchEventRecord {
     std::uint64_t frame = 0;
     /// "launch" (Avvia asked: game, pickId, walker), "refused" (the product UI took no launch now: outcome, reason),
+    /// "inserted" and "insertion-skipped" (I5 step 9: the insertion into the console ended, the hand-over may begin),
     /// "ended" (the launch's outcome, reason), "restored" (the frame the interaction came back: state, pickId, walker),
     /// "show-in-room" (game, pickId), "show-in-room-failed" (game; reason: the card's room key, "item-unavailable" or
     /// "state").
@@ -456,7 +525,10 @@ struct GameScreenEventRecord {
     std::uint64_t frame = 0;
     /// "media" (the viewer opened on `game` from `from`, "card" or "catalog"; `detail` its pages' kinds joined by ','),
     /// "page" (the page of `kind` shows; `detail` its position from 1), "picture" (`kind`'s picture: `detail`
-    /// "shown <width>x<height>" or "failed"), "info" (Informazioni opened on `game` from `from`; `detail` its other
+    /// "shown <width>x<height>" or "failed"), since I5 step 8 "video" (the clip of the videos page: `detail` "waiting",
+    /// "playing <width>x<height>", "paused", "failed <reason>", or "verdict <reason>" for a clip a failure verdict left
+    /// out), "manual" (the manual's file: `detail` "found <file name>" or "missing <reason>"; "Apri il manuale":
+    /// "opened", "refused", "failed <reason>"), "info" (Informazioni opened on `game` from `from`; `detail` its other
     /// versions, "<title> (<region>)" joined by "; "), "scroll" (`detail` the step), "closed" (`detail` "media" or
     /// "info").
     std::string event;
@@ -481,6 +553,9 @@ struct GameScreensRecord {
     /// view (empty: none).
     std::vector<double> pictureBox;
     std::vector<double> stageBox;
+    /// I5 step 8: the frames the videos page showed a frame of its clip, and the clip's box as last laid out (likewise).
+    std::uint64_t videoFrames = 0;
+    std::vector<double> videoBox;
     /// The changes, in order (at most kMaxInteractionEvents; `eventsDropped` past them).
     std::vector<GameScreenEventRecord> events;
     std::uint64_t eventsDropped = 0;
@@ -516,6 +591,26 @@ struct DirectoryEventRecord {
 
 /// The directory (I4 step 7b, ADR-0013 §10): how often it opened, what it showed at the end, its favourites and recent
 /// games as listed last, its card, its changes. Empty ({}) in runs without the generated building.
+/// A range of a room of a chain as the directory shows it (I4b step 8): its section's system and the initials it runs
+/// between ("A", "Mo").
+struct DirectoryRangeRecord {
+    std::string system;
+    std::string first;
+    std::string last;
+
+    bool operator==(const DirectoryRangeRecord&) const = default;
+};
+
+/// A room of a chain as the directory's "Piani" tab lists it (I4b step 8): its id, its titles' ranges (none until they
+/// are known) and whether they interleave with another room's ("in ordine sparso").
+struct DirectoryChainRoomRecord {
+    std::string room;
+    std::vector<DirectoryRangeRecord> ranges;
+    bool scattered = false;
+
+    bool operator==(const DirectoryChainRoomRecord&) const = default;
+};
+
 struct DirectoryRecord {
     bool bound = false;
     std::uint64_t opened = 0;
@@ -535,6 +630,8 @@ struct DirectoryRecord {
     /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
     std::vector<DirectoryEventRecord> events;
     std::uint64_t eventsDropped = 0;
+    /// I4b step 8: the rooms of chains as the building given to the directory last listed them, floor by floor.
+    std::vector<DirectoryChainRoomRecord> chainRooms;
 
     bool operator==(const DirectoryRecord&) const = default;
 };
@@ -872,6 +969,8 @@ struct WorldEditRecord {
     std::optional<double> backMs;
     /// A live update (a refreshed catalog's building job) waited for the session's end (it starts then).
     bool liveUpdateDeferred = false;
+    /// I4b step 8: the rooms of its chain the session edited, in the order the walker entered them (its room first).
+    std::vector<std::string> rooms;
 
     bool operator==(const WorldEditRecord&) const = default;
 };
@@ -990,6 +1089,9 @@ struct WorldRecord {
     /// What the update left undone because it would have moved something pinned (world::ChangeReport's
     /// needsConfirmation: an unhonoured pin, a pinned room not migrated), as the report words it.
     std::vector<std::string> needsConfirmation;
+    /// I4b step 8 (ADR-0015 §7): the expansion rooms the update that saved the building added (the change report's
+    /// roomsAdded of a chain), which its notice names.
+    std::vector<std::string> roomsAdded;
     /// The validation's findings of the plan made (a hard one keeps the plan from showing).
     std::uint64_t hardFindings = 0;
     std::uint64_t softFindings = 0;
@@ -1203,6 +1305,15 @@ struct VideoLaunchRecord {
     double stopMs = 0.0;
     /// Decoder threads still running when the hand-over began: 0 unless the bound passed.
     std::uint64_t threadsRunning = 0;
+    /// I5 step 9 (ADR-0016 §11): the stop began with the insertion, before the hand-over (ScreenService::
+    /// prepareLaunch()), on this frame; absent when it began at the hand-over. The milliseconds the hand-over itself
+    /// waited for the threads (0 when they had ended during the insertion).
+    std::optional<std::uint64_t> stopFrame;
+    double waitMs = 0.0;
+    /// The frame the hand-over began on (ScreenService::launchStarting()), and whether the launch never started (a
+    /// launch refused during the insertion: the screens reopened without a hand-over).
+    std::optional<std::uint64_t> handOverFrame;
+    bool cancelled = false;
     /// Seconds into the clip shown when it stopped (absent when no frame of a video showed).
     std::optional<double> positionSeconds;
     /// The decoder opened again after the launch ended, seeking to this position (absent: not reopened, or from the
@@ -1350,6 +1461,34 @@ struct VideoVerdictsRecord {
 /// decoder, the current clip's first frame and uploads, the fallbacks and the launches. Since I5 step 2 the service
 /// holds several screens (the hero first) and slots: the fields below are the hero screen's, the decoder and upload
 /// counts the whole service's, and `screens`, `slotEvents` and `budgetDrops` the scheduler's.
+/// The media viewer's clips (I5 step 8, ADR-0016 §10): the clips its videos page asked for (each opening of the page),
+/// the decoders opened for them, their frames uploaded, the page's pauses, the clips a failure verdict left out (never
+/// opened) and those that failed while playing; the last clip's game, state (app::toString(ViewerVideoState)), reason,
+/// frame size and the rows its decoder was given (video.json's viewerMaxRows with two decoders, maxRows with one); the
+/// most GPU bytes its texture and pixel buffer ring held at once, and those they hold at the end of the run (0 once the
+/// viewer let its clip go: I5 step 8's review); the frames the world's slots uploaded while the viewer was open (0: the
+/// world paused under it).
+struct VideoViewerRecord {
+    std::uint64_t clips = 0;
+    std::uint64_t decodersOpened = 0;
+    std::uint64_t framesUploaded = 0;
+    std::uint64_t pauses = 0;
+    std::uint64_t knownBad = 0;
+    std::uint64_t failures = 0;
+    std::string game;
+    std::string state;
+    std::string reason;
+    std::uint64_t width = 0;
+    std::uint64_t height = 0;
+    std::uint64_t rows = 0;
+    std::uint64_t maxGpuBytes = 0;
+    std::uint64_t gpuBytes = 0;
+    std::uint64_t openFrames = 0;
+    std::uint64_t worldFramesWhileOpen = 0;
+
+    bool operator==(const VideoViewerRecord&) const = default;
+};
+
 struct VideoRecord {
     /// A hero CRT was bound (the scene's first `crt` object with a picture on its screen) and its object id; without
     /// one nothing else is recorded.
@@ -1446,6 +1585,8 @@ struct VideoRecord {
     std::uint64_t firstFrameWaitTimeouts = 0;
     /// The clips' verdicts (I5 step 7).
     VideoVerdictsRecord verdicts;
+    /// The media viewer's clips (I5 step 8).
+    VideoViewerRecord viewer;
 
     bool operator==(const VideoRecord&) const = default;
 };
@@ -1467,6 +1608,33 @@ struct ProcessPriorityRecord {
     std::vector<PriorityChangeRecord> changes;
 
     bool operator==(const ProcessPriorityRecord&) const = default;
+};
+
+/// A screen's CRT look (I5 step 6, ADR-0016 §7, app/crt_looks.hpp) as its material was registered: the screen (its
+/// object's id, or a room's cabinets' "collection/<room id>/<family>"), its room, its kind ("hero", "secondary",
+/// "cabinet"), the preset it draws with and the one the rules chose before the user's crtEffect
+/// (assets::toString(CrtPreset): "neutral", "consumer", "arcade", "monitor"), and the rule ("video.json", "pack",
+/// "kind").
+struct CrtLookRecord {
+    std::string screen;
+    std::string room;
+    std::string kind;
+    std::string preset;
+    std::string chosen;
+    std::string rule;
+
+    bool operator==(const CrtLookRecord&) const = default;
+};
+
+/// The screens' CRT looks of the scene shown at the end (retroverse.exe): video.json's crtEffect ("off", "light",
+/// "vintage"), where the presets' values came from (assets::LoadedCrtPresets::source: "shipped", "user", "built-in")
+/// and each screen's look, by screen.
+struct CrtLooksRecord {
+    std::string crtEffect;
+    std::string presetsSource;
+    std::vector<CrtLookRecord> screens;
+
+    bool operator==(const CrtLooksRecord&) const = default;
 };
 
 /// A change of the audible screen (I5 step 5, ADR-0016 §9): the frame, the run's simulated time, the screen (""
@@ -1875,6 +2043,8 @@ struct RunReport {
     std::size_t instanceCapacity = 0;
     /// The --screenshot of the last frame, when it was written.
     std::optional<ScreenshotRecord> screenshot;
+    /// The window; absent when none was created.
+    std::optional<WindowRecord> window;
     /// Where the walker of retroverse.exe ended, as --spawn takes it (feet, yaw and pitch): a run started with that
     /// --spawn and no input sees the same view up to float rounding (the yaw goes through radians and back, so a few
     /// edges may move by a fraction of a pixel).
@@ -1897,6 +2067,8 @@ struct RunReport {
     VideoRecord video;
     /// The process priority's changes (I5 step 2); absent in runs that change none (the asset preview).
     std::optional<ProcessPriorityRecord> processPriority;
+    /// The screens' CRT looks (I5 step 6); absent in runs that record none (the asset preview).
+    std::optional<CrtLooksRecord> crtLooks;
     /// The media viewer and Informazioni (I3 step 14b; the product UI), always written ("screens").
     GameScreensRecord screens;
     /// The directory (I4 step 7b; the product UI), always written ("directory").

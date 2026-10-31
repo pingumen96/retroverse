@@ -427,6 +427,7 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     context.m_framebufferSize = window->drawableSize();
     context.m_xrSettings = xrSettings;
     context.m_vr = xr != nullptr;
+    m_report.window = WindowRecord{context.m_framebufferSize.x, context.m_framebufferSize.y};
     // The wake event of the idle mode: pushed from any thread (SDL_PushEvent is thread-safe), kept by the host.
     context.m_wakeEvent = SDL_RegisterEvents(1);
     if (context.m_wakeEvent != 0) {
@@ -701,6 +702,7 @@ bool AppHost::handleHostEvent(AppContext& context, const SDL_Event& event) const
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         if (event.window.windowID == window.id()) {
             context.m_framebufferSize = window.drawableSize();
+            context.report().window = WindowRecord{context.m_framebufferSize.x, context.m_framebufferSize.y};
             spdlog::debug("Framebuffer resized to {}x{}", context.m_framebufferSize.x, context.m_framebufferSize.y);
         }
         break;

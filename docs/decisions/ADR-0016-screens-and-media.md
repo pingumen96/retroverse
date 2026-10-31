@@ -60,6 +60,11 @@ instance whose base colour the service overrides (ADR-0012 §7's binding, genera
 The hub's information screens and the totem stay boards; neon and signs are no screens. A screen belongs to an area;
 only screens of the area that holds the eye (ADR-0013 §9) ask for video.
 
+*Amended on 2026-10-30 (I5 step 8's review):* the `viewer` kind is named **`media-viewer`** wherever Retroverse writes
+it: the run report's `video.screens` (its screen id and kind, `app::kViewerScreenId`) and the audible screen's id. The
+report's field came first (I5 step 8) and nothing else names the kind, so the table's name yields to it. `viewer` stays
+the reason the world's slots pause and stop under the viewer (§2, §10).
+
 ### 2. The decoder scheduler
 
 `app::ScreenScheduler`, GPU-free in `rv_app_cli`, decides each frame from the screens' requests. `app::ScreenService`
@@ -117,6 +122,14 @@ generated room's object ids come from the generator and are not a user-facing na
 a late-frame drop, open plus reserved slots never exceed the budget, and a lockstep run (`--fixed-dt`) does not watch
 late frames unless `--watch-late-frames` asks (its frames are presented on simulated time, decoded on the wall clock).
 
+*Amended on 2026-10-30 (I5 step 8's review):* while the media viewer is open every bound screen and cabinet counts as
+out of view, as under a minimized window: their slots pause at once and **stop after 10 s** (reason `viewer`), keeping
+their clips' positions, and **reopen where they were** once the viewer closes. A slot the viewer's clip takes from a
+clip still wanted is `needed` (its screen keeps its frame). The viewer's own clip is the scheduler's like any screen's: a
+clip no screen asks for any more (its page left, the viewer closed) stops at once (`unwanted`, no position kept: its
+page shown again plays it from its beginning), whether or not a room's screens are bound (the lobby, a hall, the quick
+catalog before any room).
+
 ### 3. Playlists
 
 `app::Playlist` is GPU-free. It draws its games from the room's items (ADR-0013 §9's items files: the clip, the stills,
@@ -168,10 +181,20 @@ Specification §9.2's other parameters map as follows:
 - `maxResolution` is the rows;
 - `fallbackImageType` is the chain of §8, which is not configurable.
 
+*Amended on 2026-10-30 (I5 step 8's review):* the keys that reach the **media viewer's clip** (§10), as built:
+- `enabled: false` turns off the world's clips only: the viewer plays the clip the user asked for;
+- `maxDecoders` is the viewer's budget too (its clip is a request of the scheduler, `direct`): with 2 it decodes at
+  `viewerMaxRows`, with 1 at `maxRows`, taking the world's slot;
+- `audio.mode: off` silences it as it silences the world's screens; `audio.master`, `audio.video` and `muted` apply;
+- the per-kind and per-room keys (`volume`, `playlist`, `previewDuration`, `showOnFocus`, `crtPreset`, `games`) do not:
+  the viewer is no kind of `video.json`, its volume is 1 (§9), it loops its one clip and has no CRT look.
+
 ### 5. Secondary TVs: a theme pack's furniture
 
 A secondary TV is a **look, not a plan fact** (ADR-0014 §1). A pack's furniture may list a `secondary_tv` piece (a
-sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under a decoration kind.
+sideboard carrying a small consumer CRT whose screen is a `ScreenSurface`) under a decoration kind. "Consumer" names
+the model (style §15.1's CRT), not the look: its preset follows its room's pack like every screen's (§7, amended on
+2026-10-30).
 
 - **Where.** The scene builder draws at most one per room (two in a room grown past 12 m), at the sockets of that kind
   that the room's seed picks, within their footprints.
@@ -322,6 +345,24 @@ their own aspect. The bars are the lit tube's off-black (`RV_CRT_BLACK_LEVEL`, l
 scanlines, mask and vignette), as a powered CRT's black, not 0: they never read as a hole in the screen. A 4:3 clip on
 a 4:3 tube is unchanged (the flag stays clear).
 
+*Amended on 2026-10-30 (I5 step 6), the presets as built (`docs/i5/step-6.md`); the order of the rules is unchanged:*
+- **`consumer`** is the tube every CRT screen drew before the presets, the values `MAT_Screen_CRT` and
+  `MAT_Screen_CRT_Room` carried (240 lines at 0.35, 320 triads at 0.25, curvature 0.06, vignette 0.3, glass 0.25),
+  which `CrtEffect`'s defaults now are (its former defaults were never drawn: every screen material named all seven
+  values). The screen materials keep `"crt": {}`, the mark of a tube; its look is its screen's preset.
+- **Rule 2** is video.json's `crtPreset` for the screen: its screen's (`rooms.<room>.screens.<id>`), else its room's
+  (`rooms.<room>.<kind>`), else its kind's (`hero`, `secondary`, `cabinet`), the shipped `""` being none at every
+  level (a room's or a screen's `""` leaves its kind's key). A kind's key is the user's choice, as a room's is;
+  **rule 4** is the kind's built-in default: `consumer`, the cabinets `arcade`.
+- **`vintage`** steps `monitor` to `consumer` and `consumer` to `arcade`; `arcade` and `neutral` (the clean video,
+  chosen on purpose) stay. `light` keeps the preset chosen.
+- **The pack's `screenPreset`** is every screen's of its rooms: the hero, the secondaries and the cabinets. The
+  arcade's cabinets take one look per room (their collection's material): a per-screen key does not reach them.
+- **Every screen of the scene shown** takes its look when its material is registered (`app::ScreenLooks`), the bound
+  room's and the others' seen through their doorways alike; nothing changes per frame.
+- **Goldens:** the arcade's screens change with the lounge's on purpose (`arcade` is deeper than the cabinets' former
+  tube): G15 (the arcade room) and G20 (a cabinet in Focus) are regenerated beside G17 (Costs, below).
+
 ### 8. Fallbacks and missing media
 
 - **The chain** (style §21, SC-08): clip, screenshot, title screen, cover, then a **generated title card**. The card
@@ -461,6 +502,19 @@ shared period) is not compensated.
   In-app pages need a permissive PDF renderer outside the pinned baseline, which needs a new ADR (BACKLOG).
 - **Not built in I5:** a video preview in the quick catalog's card (I7, BACKLOG).
 
+*Amended on 2026-10-30 (I5 step 8's review):*
+- **The world under the viewer** pauses as the viewer opens, on any page, then stops after 10 s (reason `viewer`) and
+  reopens where it was once the viewer closes (§2 as amended on 2026-10-30). Which `video.json` keys reach the viewer's
+  clip: §4 as amended on 2026-10-30.
+- **A clip's verdict** is asked for the viewer's clip itself, from the failure verdicts and its file's facts (§8), whether
+  or not a room's screens screened its game: a clip known to fail is never opened from the lobby or the quick catalog
+  either.
+- **The manual's plan** also refuses a path element whose stem is a reserved device name (`CON`, `PRN`, `AUX`, `NUL`,
+  `COM0` to `COM9`, `LPT0` to `LPT9`, `COM` and `LPT` with `¹`, `²` or `³`, any case and extension), a colon past the
+  drive's, and any comma; its argument is always quoted. A refused path has its own sentence ("Retroverse non apre
+  questo manuale..."), distinct from a start that failed. Activate is ignored while the start runs and for 2 s after
+  the manual opened, so one press opens one window.
+
 ### 11. The insertion animation (style §16.2, specification §8.3)
 
 Included, as `AnimatingToConsole` between Inspect and Launching:
@@ -475,6 +529,48 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **Failures and the return.** A refused or failed launch returns to Inspect with the item in the hand. The return is
   ADR-0012 §6's: Inspect, the item back on its shelf.
 
+*Amended on 2026-10-31 (I5 step 9, and its review the same day):* what the step built where this section left it open.
+- **The socket** is the `console_cartridge` prefab's `CartridgeSlot`, the hero corner's only console prefab: no prefab
+  changed. The item's centre ends at the opening's middle, half of it down in the console, scaled to fit 90% of the
+  opening's width and depth and at most 11 cm tall ("shrinks into it"). A room's console is the scene object
+  `<room>/fx:<socket>.console` (`app::consoleSocketOf()`); the arcade and the shared rooms have none.
+- **Disc games** go into the same cartridge slot: every console room's hero corner holds the cartridge console (the
+  systems' defaults), so a disc system's case is pushed into its slot, shrunk to fit. A disc console prefab with its
+  own tray socket is a later look change (BACKLOG).
+- **The camera leads.** The eye turns to the console in 300 ms, eased out, the feet kept, while the item keeps its
+  450 ms ease in and out: the held pose is the camera's, so the item rides along and drops into a console already
+  framed. When the hero CRT's screen faces the eye, the eye aims between the socket and the screen's centre, so the
+  game's title card shows above the console; otherwise the socket stands on the lower third's line. The eye never
+  looks down more than 30 degrees. The return restores the pose recorded at Avvia. The scene's Inspect dimming fades
+  out meanwhile.
+- **A short hold.** The seated item is seen for 100 ms (6 frames at 60 Hz) before the hand-over and its "Gioco in
+  corso" panel: 550 ms from Avvia, within style §16.2's 300 to 650 ms.
+- **The stop begins at Avvia.** The launch is resolved on the catalog worker during the insertion (a ready decision
+  waits for its end, a refusal is told at once); the screens' slots stop and the mix starts fading as it begins, the
+  hero showing the game's title card when that game is its target (undone after the return or a refusal: the still
+  chain back where it stood). The hand-over waits only for what remains of §2's 1 s bound, counted from the stop's
+  start.
+- **The sound fades with the stop, not over the insertion.** The slots stop at Avvia so that their threads end during
+  the insertion; a stopped slot's sound fades in the mixer's pause fade (30 ms), whatever the master fade's length. A
+  fade over the 450 ms would keep the audible slot's decoder running into the insertion, giving back the wait the
+  animation hides, so the mix keeps its 50 ms fade, begun at Avvia.
+- **"Any button" is a deliberate action button:** activate (interact, ui_activate), confirm and start (confirm,
+  menu), back and cancel (back, ui_back). Nothing the player may still hold from walking or looking skips it: the
+  walking and look axes, sprint, the arrows (bound to both walking and ui_up..ui_right), the D-pad; nor the quick
+  catalog's and the map's buttons, nor the global actions (screenshot, overlay, shader reload, mute). A skip seats the
+  item at once and stops the eye where its turn had taken it (no snap); the launch's request follows within the frame.
+- **"Instant under `reduceMotion`"** means no frame of it: Avvia launches at once as in a room without a console (the
+  item stays in the hand, the eye where it is).
+- **The room holds still.** From Avvia to the return to Inspect (the insertion, the launch, the return) a live
+  update's, a regeneration's or a retargeted building's result waits and the editor does not open, as they already
+  waited while the game ran (ADR-0012 §6), so that the room the item was taken from is there when it comes back.
+- **A launch refused during the insertion** (not ready, busy) comes back to Inspect at once, the item in the hand and
+  the walker as Avvia found it; the screens reopen where they stopped (the run report's `video.launches` entry
+  `cancelled`).
+
+*Amended on 2026-10-31 (I10 brought together with main):* no insertion in VR (ADR-0017 §5 as amended that day): the
+eye's turn would drive the user's head, so Avvia in a headset launches at once, as under `reduceMotion`.
+
 ### 12. Budgets and acceptable performance
 
 - **GPU memory.** The world's video is at most two 480-row slots (texture and ring, about 4.8 MiB each). The viewer's
@@ -483,6 +579,9 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
   - The busiest real floor rises from 471.8 to about 495 MiB with everything playing.
   - If a step measures it over 512 MiB, the first remedy is per-floor residency of the procedural surfaces (about
     34 MiB, BACKLOG), not the video.
+  - *Amended on 2026-10-30 (`docs/i5/memory-margin.md`):* at 1920 x 1080 with both screens playing it measured
+    505.8 MiB (I5 step 3's review); the memory margin trimmed the render targets to about 477.5 MiB estimated, to be
+    measured at the gate.
 - **CPU.** Two 480p decoders use about 15 to 20% of one core. Uploads stay within 4 MiB per frame (§2).
 - **New rows in the roadmap's "Acceptable performance".** Video's "first frame within 2 s" stands.
 
@@ -531,8 +630,8 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **Specification.**
   - **§9.3:** no "Scarica anteprima" (ADR-0003).
   - **§9.7:** interaction sounds and ambience are I8's.
-  - **§9.1:** the "Monitor moderno" is the optical-era pack's `monitor` preset on its hero CRT; the information
-    monitor is the hub's board.
+  - **§9.1:** the "Monitor moderno" is the optical-era pack's `monitor` preset on every screen of the lounge's rooms
+    (the hero CRT and the secondary TVs: §7 as amended on 2026-10-30); the information monitor is the hub's board.
 - **Style §15.1.** One consumer CRT model in two sizes (the hero and the secondary). The LCD and projection screens are
   deferred.
 
@@ -549,7 +648,8 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
 - **New pieces:** a new module and a new dependency (miniaudio), a GPU-free scheduler with many states (unit-tested by
   tables), and a material uniform (the picture rectangle).
 - **Goldens:** those of rooms that gain a secondary TV, and the optical-era lounge's (its preset), are regenerated on
-  purpose. Two new goldens: a console room with both screens playing frozen, and a cabinet playing in Focus.
+  purpose; since I5 step 6 (§7 amended) the arcade's too (G15, G20: its preset). Two new goldens: a console room with
+  both screens playing frozen, and a cabinet playing in Focus.
 - **The process** runs above normal priority while it renders.
 
 **Deferred**

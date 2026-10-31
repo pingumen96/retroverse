@@ -23,7 +23,8 @@
 //
 // Per screen kind: "enabled" (autoplay: false leaves the screen to selections), "playlist" (playlist.hpp's modes),
 // "previewDuration" (seconds a clip plays before the next, 1 to 3600), "showOnFocus" (the focused or inspected game
-// plays), "volume" (0 to 1), "crtPreset" ("" for the kind's default, else "neutral", "consumer", "arcade", "monitor").
+// plays), "volume" (0 to 1), "crtPreset" ("" for none: the room pack's preset, else the kind's default; else "neutral",
+// "consumer", "arcade", "monitor"; a room's or a screen's "" leaves its kind's key, I5 step 6, ADR-0016 §7).
 // Per room ("rooms.<room id>.<kind>"): the same keys, each optional, and "games" (the explicit mode's GameIds); per
 // screen of a room ("rooms.<room id>.screens.<screen's object id>", I5 step 2) the same again, over its kind's. Step 1
 // uses "enabled", the hero's keys and the rooms'; step 2 "maxDecoders", "maxRows", "proximityMeters", the secondary

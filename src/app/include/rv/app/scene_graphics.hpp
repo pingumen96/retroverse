@@ -9,6 +9,7 @@
 
 #include <glm/vec2.hpp>
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/panel_pass.hpp>
@@ -63,7 +64,8 @@ struct XrEyeTargets {
 
 /// What every view of a SceneInstance needs on the GPU, shared by the applications built on rv_app (RetroverseApp, the
 /// asset preview tool), and the frame they render with it:
-///  - the material library (assets/materials/base/materials.json, or the built-in fallback when it cannot be loaded);
+///  - the material library (assets/materials/base/materials.json, or the built-in fallback when it cannot be loaded),
+///    and the screens' CRT looks (screenLooks());
 ///  - the shader library with the programs of the views (lit, unlit emissive, depth, ambient occlusion,
 ///    post-processing; the debug lines and the inspection views of gl::SurfaceView when first used), reloaded by
 ///    reloadShaders() (F5) and, in developer builds (RV_DEV_ASSET_ROOT), by pollShaderReload() when their files change;
@@ -85,8 +87,12 @@ public:
     SceneGraphics& operator=(const SceneGraphics&) = delete;
 
     [[nodiscard]] const assets::MaterialLibrary& materialLibrary() const noexcept;
-    /// Where a SceneInstance registers its content.
+    /// Where a SceneInstance registers its content (its screens' looks: screenLooks()).
     [[nodiscard]] SceneResources resources() noexcept;
+    /// The screens' CRT looks (I5 step 6, crt_looks.hpp): the presets (assets/materials/crt_presets.json, the user's
+    /// <user data>/config/crt_presets.json over it, loaded at creation), the run's video.json and the packs of the
+    /// scene shown (set by its owner), and the looks registered.
+    [[nodiscard]] ScreenLooks& screenLooks() noexcept;
     /// Releases every mesh, material and texture registered so far except the procedural surface maps, which no
     /// content changes (gl::TextureCache::clearContent): the render items of the previous SceneInstance must not be
     /// drawn any more. For new content in the same run (the asset preview loads another file).
@@ -132,7 +138,8 @@ public:
     ///     <user data>/screenshots/retroverse-<timestamp>.png, a failure logged; on the last frame of a frame-limited
     ///     run with --screenshot that file, a failure failing the run (AppContext::failRun). Both at
     ///     --screenshot-size, with the overlay when one is set for screenshots, written as RGB PNG (the window is
-    ///     opaque);
+    ///     opaque); through the window's targets when they have that size, else through targets made for it alone
+    ///     while the window's are let go of (one set held at any time: the window's view makes them again);
     ///  2. the window: the view into the window's targets, copied to the window (black when the targets cannot be
     ///     allocated), then the overlay;
     ///  3. the frame statistics (and, in developer builds, their summary once per second).

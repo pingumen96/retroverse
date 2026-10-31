@@ -182,6 +182,74 @@ h2 {
 }
 
 .pad-dpad { background-color: #F4EFE6; }
+.pad-a { background-color: #6EAF93; }
+
+/* I5 step 8: the clip's pause as a button among the hints, its badge, the reason of a clip that cannot play, the
+   manual's page. */
+.hint-button {
+	display: inline;
+	padding: 0dp;
+	background-color: #00000000;
+}
+
+.hint-button:hover {
+	color: #F4EFE6;
+}
+
+/* The clip and its pause's badge, at the clip's corner whatever its aspect (the box is the clip's size). */
+.video-box {
+	position: relative;
+}
+
+.badge {
+	position: absolute;
+	right: 12dp;
+	bottom: 12dp;
+	padding: 4dp 14dp;
+	border-radius: 12dp;
+	font-size: 19dp;
+	color: #171B22;
+	background-color: #FFC88A;
+}
+
+.reason {
+	font-size: 17dp;
+	color: #F4EFE680;
+	margin-top: 10dp;
+}
+
+.manual {
+	text-align: center;
+	padding: 28dp 40dp;
+	border: 2dp #F4EFE633;
+	border-radius: 12dp;
+	background-color: #FFFFFF0A;
+}
+
+/* The fallbacks and the manual's page one width (I5 step 8's review), their sentences as wide as the box. */
+.fallback, .manual {
+	box-sizing: border-box;
+	width: 760dp;
+	max-width: 100%;
+}
+
+.fallback .note, .manual .note {
+	max-width: none;
+}
+
+.manual-name {
+	font-size: 21dp;
+	color: #F4EFE6;
+	margin-bottom: 18dp;
+}
+
+.action.open {
+	display: block;
+	width: 280dp;
+	margin: 6dp auto 14dp auto;
+	color: #171B22;
+	background-color: #6EAF93;
+}
 .pad-x { background-color: #4C8BC9; }
 .pad-b { background-color: #C8645A; }
 

@@ -171,6 +171,19 @@ std::string gitHead() {
     return {};
 }
 
+/// I5 step 6 (ADR-0016 §7): the CRT look the report gives the screen `screen` (an object's id, or the start of a
+/// room's cabinets' "collection/<room id>/...").
+rv::app::CrtLookRecord lookOf(const rv::app::RunReport& report, std::string_view screen) {
+    REQUIRE(report.crtLooks.has_value());
+    const std::vector<rv::app::CrtLookRecord>& looks = report.crtLooks->screens;
+    const auto found = std::find_if(looks.begin(), looks.end(), [screen](const rv::app::CrtLookRecord& look) {
+        return look.screen == screen || (screen.starts_with("collection/") && look.screen.starts_with(screen));
+    });
+    INFO("the CRT look of " << screen);
+    REQUIRE(found != looks.end());
+    return *found;
+}
+
 /// A fixture recorded as the library of <caseDir>/data and imported with retroverse-cli; every command the golden's
 /// runs take recorded, with the case's and the fixture's folders as <case> and <fixture>.
 struct GoldenRoom {
@@ -493,6 +506,10 @@ TEST_CASE("golden/G02: the snes-room's 50 titles, all face-out, from the doorway
     CHECK(run.report->world.items == 50);
     CHECK(run.report->world.spine == 0);
     CHECK(run.report->residency.frontsResident == 50);
+    // I5 step 6: the console room's CRT is the consumer tube, its kind's (the pack names none): its pixels as before.
+    const rv::app::CrtLookRecord look = lookOf(*run.report, "room:snes/fx:hero.crt");
+    CHECK(look.preset == "consumer");
+    CHECK(look.rule == "kind");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G02", "g02_snes_room_golden",
                        "Gate B golden of the generated room (style 26.1 2): the snes-room fixture's 50 invented titles, "
@@ -997,6 +1014,15 @@ TEST_CASE("golden/G15: the building's arcade room from its doorway", "[gpu][gold
     REQUIRE(report.video.bound);
     CHECK(report.video.screen == "area:arcade/fx:hero.crt");
     CHECK(report.video.picture == "video");
+    // I5 step 6 (ADR-0016 §7): the arcade pack's preset on the hero cabinet and on the cabinets' screens.
+    const rv::app::CrtLookRecord hero = lookOf(report, "area:arcade/fx:hero.crt");
+    CHECK(hero.kind == "hero");
+    CHECK(hero.preset == "arcade");
+    CHECK(hero.rule == "pack");
+    const rv::app::CrtLookRecord cabinets = lookOf(report, "collection/area:arcade/");
+    CHECK(cabinets.kind == "cabinet");
+    CHECK(cabinets.preset == "arcade");
+    CHECK(cabinets.rule == "pack");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G15", "g15_arcade_room_golden",
                        "Gate D golden of the arcade room (I6 step 6, ADR-0014 §6, style 5.4 and 14.4, concept panel 5): "
@@ -1010,7 +1036,8 @@ TEST_CASE("golden/G15: the building's arcade room from its doorway", "[gpu][gold
                        "ceiling, the aisle's pairs lit cyan and red; the hero cabinet carrying the room's clip held at "
                        "1.0 s where the TV stood, red bar stools by its side, the dark red runner leading to it, a "
                        "floor lamp, showcases of three boxes each, plants; from the doorway (the room's doorway "
-                       "camera).",
+                       "camera). Since I5 step 6 the hero cabinet's and the cabinets' screens through the arcade CRT "
+                       "preset (deeper scanlines, a stronger mask, more curvature).",
                        "--start-room area:arcade: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -1073,6 +1100,11 @@ TEST_CASE("golden/G17: an optical-era lounge room from its doorway", "[gpu][gold
     REQUIRE(report.video.bound);
     CHECK(report.video.screen == "room:ps2/fx:hero.crt");
     CHECK(report.video.picture == "cover"); // no clip in the room: its first game's cover (I5 step 1)
+    // I5 step 6 (ADR-0016 §7, specification §9.1's "Monitor moderno"): the lounge pack's monitor preset.
+    const rv::app::CrtLookRecord look = lookOf(report, "room:ps2/fx:hero.crt");
+    CHECK(look.kind == "hero");
+    CHECK(look.preset == "monitor");
+    CHECK(look.rule == "pack");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G17", "g17_optical_era_room_golden",
                        "Gate D golden of an optical-era lounge room (I6 steps 3, 3b and 4, ADR-0014 §1 and §2, style "
@@ -1084,7 +1116,9 @@ TEST_CASE("golden/G17: an optical-era lounge room from its doorway", "[gpu][gold
                        "upright; the pack's era furniture: a low sofa "
                        "facing the CRT, its back to the doorway, floor lamps, glass showcases of generic consoles on "
                        "sideboards, a large framed poster, a small blue rug; the DVD HOME neon in the pack's blue; from "
-                       "the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no clip: I5 step 1, ADR-0016 §3).",
+                       "the doorway (the room's doorway camera), the hero CRT showing its first game's cover (no clip: I5 step 1, ADR-0016 §3). "
+                       "Since I5 step 6 its screens through the pack's monitor CRT preset (a fine mask, little "
+                       "curvature).",
                        "--start-room room:ps2: the room's doorway camera (no --spawn)", std::nullopt},
                       room, run, shot, kFrames);
 }
@@ -1173,13 +1207,26 @@ TEST_CASE("golden/G20: an arcade cabinet playing its clip in Focus", "[gpu][gold
     CHECK(std::abs(cabinet->pictureRect[3] - 0.5625) < 0.01);
     REQUIRE(video.freezePtsSeconds.has_value());
     CHECK(*video.freezePtsSeconds == 1.0);
+    // I5 step 6 (ADR-0016 §7): the arcade pack's preset on the cabinets' screens, their static and hero fronts and the
+    // pooled video material the cabinet in Focus plays through.
+    const rv::app::CrtLookRecord cabinets = lookOf(report, "collection/area:arcade/");
+    CHECK(cabinets.kind == "cabinet");
+    CHECK(cabinets.preset == "arcade");
+    CHECK(cabinets.rule == "pack");
+    const rv::app::CrtLookRecord pooled = lookOf(report, cabinets.screen + "/video");
+    CHECK(pooled.kind == "cabinet");
+    CHECK(pooled.preset == "arcade");
+    CHECK(pooled.rule == "pack");
     requireScreenshot(run, shot, kShotSize);
     compareWithGolden({"G20", "g20_cabinet_focus_golden",
                        "I5 step 4 golden of an arcade cabinet playing its clip (ADR-0016 §6 and §7): the esde/building "
                        "fixture's arcade room, the cabinet of Clover Pinwheel (the fixture's one mame clip) inspected, "
-                       "then in Focus after Indietro, lowered to its pulled-out pose: its generated 4:3 clip held at "
+                       "then in Focus after Indietro, lowered back into its bezel (since the fix of 2026-10-29 a cabinet's "
+                       "screen no longer tips out when pulled): its generated 4:3 clip held at "
                        "1.0 s on its portrait screen through the picture tube, letterboxed in the tube's black, the "
-                       "hover's outline and title label over it, the neighbouring cabinets' covers beside it.",
+                       "hover's outline and title label over it, the neighbouring cabinets' covers beside it. "
+                       "Since I5 step 6 the cabinets' screens through the arcade CRT preset (deeper scanlines, a "
+                       "stronger mask, more curvature).",
                        "--start-room area:arcade --spawn at the cabinet's Focus pose (app::focusPoseFor, the 16:9 "
                        "window), tests/input_scripts/golden_g20_cabinet_focus.json",
                        "golden_g20_cabinet_focus.json"},

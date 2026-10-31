@@ -12,6 +12,7 @@
 #include <rv/assets/image_io.hpp>
 #include <rv/render/render_state_cache.hpp>
 #include <rv/render/texture.hpp>
+#include <rv/render/view_target_plan.hpp>
 
 #include "gl_object_label.hpp"
 
@@ -41,6 +42,8 @@ GLenum internalFormat(ColorFormat format) noexcept {
         return GL_R8;
     case ColorFormat::Rg16F:
         return GL_RG16F;
+    case ColorFormat::R11fG11fB10f:
+        return GL_R11F_G11F_B10F;
     }
     return GL_SRGB8_ALPHA8;
 }
@@ -102,9 +105,9 @@ Expected<TextureObject> createDepthStencilTexture(const FramebufferDesc& desc, c
     return texture;
 }
 
-/// A view of the depth/stencil texture `depth` that samples its stencil as unsigned integers (nearest, clamped to
-/// edge), labeled `label`.
-Expected<TextureObject> createStencilView(GLuint depth, const std::string& label) {
+/// A view of the depth/stencil texture `depth` that samples its depth (`mode` GL_DEPTH_COMPONENT) or its stencil as
+/// unsigned integers (GL_STENCIL_INDEX), nearest, clamped to edge, labeled `label`.
+Expected<TextureObject> createDepthStencilView(GLuint depth, GLenum mode, const std::string& label) {
     GLuint viewId = 0;
     glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
     TextureObject view(viewId);
@@ -112,7 +115,7 @@ Expected<TextureObject> createStencilView(GLuint depth, const std::string& label
         return makeError(ErrorCode::GraphicsError, "glGenTextures returned no texture", label);
     }
     glTextureView(viewId, GL_TEXTURE_2D, depth, GL_DEPTH24_STENCIL8, 0, 1, 0, 1);
-    glTextureParameteri(viewId, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_STENCIL_INDEX);
+    glTextureParameteri(viewId, GL_DEPTH_STENCIL_TEXTURE_MODE, mode);
     glTextureParameteri(viewId, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTextureParameteri(viewId, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTextureParameteri(viewId, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -121,22 +124,52 @@ Expected<TextureObject> createStencilView(GLuint depth, const std::string& label
     return view;
 }
 
-/// Creates a color texture of `desc` with immutable storage, labeled `label`.
-Expected<TextureObject> createColorTexture(const FramebufferDesc& desc, const std::string& label) {
+/// A view of the color texture `color` as `format` (of its view class), with the sampling of a color attachment
+/// (linear filtering, clamped to edge), labeled `label`.
+Expected<TextureObject> createColorView(GLuint color, ColorFormat format, const std::string& label) {
+    GLuint viewId = 0;
+    glGenTextures(1, &viewId); // glTextureView needs a name that has never been bound: not glCreateTextures
+    TextureObject view(viewId);
+    if (viewId == 0) {
+        return makeError(ErrorCode::GraphicsError, "glGenTextures returned no texture", label);
+    }
+    glTextureView(viewId, GL_TEXTURE_2D, color, internalFormat(format), 0, 1, 0, 1);
+    glTextureParameteri(viewId, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(viewId, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(viewId, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTextureParameteri(viewId, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    detail::setObjectLabel(GL_TEXTURE, viewId, label);
+    return view;
+}
+
+/// Checks the completeness of `framebuffer`, then labels it `debugName`.
+Status checkComplete(GLuint framebuffer, const std::string& debugName) {
+    const GLenum status = glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        return makeError(ErrorCode::GraphicsError,
+                         fmt::format("framebuffer is incomplete: {} (0x{:04X})", statusName(status), status),
+                         debugName);
+    }
+    detail::setObjectLabel(GL_FRAMEBUFFER, framebuffer, debugName);
+    return ok();
+}
+
+/// Creates a color texture of `desc`'s size in `format` with immutable storage, labeled `label`.
+Expected<TextureObject> createColorTexture(const FramebufferDesc& desc, ColorFormat format, const std::string& label) {
     GLuint color = 0;
     glCreateTextures(GL_TEXTURE_2D, 1, &color);
     TextureObject texture(color);
     if (color == 0) {
         return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", label);
     }
-    glTextureStorage2D(color, 1, internalFormat(desc.colorFormat), desc.size.x, desc.size.y);
+    glTextureStorage2D(color, 1, internalFormat(format), desc.size.x, desc.size.y);
     // Storage only becomes immutable when the allocation succeeded (GL_OUT_OF_MEMORY otherwise).
     GLint immutable = GL_FALSE;
     glGetTextureParameteriv(color, GL_TEXTURE_IMMUTABLE_FORMAT, &immutable);
     if (immutable == GL_FALSE) {
         return makeError(ErrorCode::GraphicsError,
                          fmt::format("could not allocate a {}x{} {} color texture", desc.size.x, desc.size.y,
-                                     toString(desc.colorFormat)),
+                                     toString(format)),
                          label);
     }
     glTextureParameteri(color, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -173,7 +206,7 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
     for (std::size_t index = 0; index < desc.colorAttachments; ++index) {
         // The first attachment keeps the plain ".color" label of single-attachment framebuffers.
         const std::string label = index == 0 ? debugName + ".color" : fmt::format("{}.color{}", debugName, index);
-        auto color = createColorTexture(desc, label);
+        auto color = createColorTexture(desc, colorFormatOf(desc, index), label);
         if (!color) {
             return propagate(color.error());
         }
@@ -188,7 +221,7 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
             return propagate(depth.error());
         }
         glNamedFramebufferTexture(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, depth->id(), 0);
-        auto stencil = createStencilView(depth->id(), debugName + ".stencil");
+        auto stencil = createDepthStencilView(depth->id(), GL_STENCIL_INDEX, debugName + ".stencil");
         if (!stencil) {
             return propagate(stencil.error());
         }
@@ -215,13 +248,9 @@ Expected<Attachments> allocate(const FramebufferDesc& desc, const std::string& d
 
     glNamedFramebufferDrawBuffers(framebuffer, static_cast<GLsizei>(desc.colorAttachments), drawBuffers.data());
     glNamedFramebufferReadBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
-    const GLenum status = glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
-        return makeError(ErrorCode::GraphicsError,
-                         fmt::format("framebuffer is incomplete: {} (0x{:04X})", statusName(status), status),
-                         debugName);
+    if (Status complete = checkComplete(framebuffer, debugName); !complete) {
+        return propagate(complete.error());
     }
-    detail::setObjectLabel(GL_FRAMEBUFFER, framebuffer, debugName);
     return attachments;
 }
 
@@ -237,12 +266,21 @@ GpuFormat gpuFormat(ColorFormat format) noexcept {
         return GpuFormat::R8;
     case ColorFormat::Rg16F:
         return GpuFormat::Rg16F;
+    case ColorFormat::R11fG11fB10f:
+        return GpuFormat::R11fG11fB10f;
     }
     return GpuFormat::Srgb8Alpha8;
 }
 
+ColorFormat colorFormatOf(const FramebufferDesc& desc, std::size_t attachment) noexcept {
+    return attachment > 0 && desc.laterColorFormat ? *desc.laterColorFormat : desc.colorFormat;
+}
+
 std::size_t framebufferBytes(const FramebufferDesc& desc) noexcept {
-    std::size_t bytes = desc.colorAttachments * textureBytes(gpuFormat(desc.colorFormat), desc.size, 1);
+    std::size_t bytes = 0;
+    for (std::size_t index = 0; index < desc.colorAttachments; ++index) {
+        bytes += textureBytes(gpuFormat(colorFormatOf(desc, index)), desc.size, 1);
+    }
     if (desc.depthStencil) {
         bytes += textureBytes(GpuFormat::Depth24Stencil8, desc.size, 1);
     }
@@ -259,6 +297,8 @@ std::string_view toString(ColorFormat format) noexcept {
         return "r8";
     case ColorFormat::Rg16F:
         return "rg16f";
+    case ColorFormat::R11fG11fB10f:
+        return "r11f_g11f_b10f";
     }
     return "unknown";
 }
@@ -281,9 +321,70 @@ Expected<Framebuffer> Framebuffer::create(const FramebufferDesc& desc, std::stri
     return framebuffer;
 }
 
+Expected<Framebuffer> Framebuffer::createAlias(const FramebufferAliasDesc& desc, std::string_view debugName) {
+    std::string name(debugName);
+    const Framebuffer* color = desc.color;
+    if (color == nullptr || !color->valid() || desc.colorAttachment >= color->m_desc.colorAttachments) {
+        return makeError(ErrorCode::InvalidArgument, "an alias needs a color attachment to view", name);
+    }
+    const ColorFormat sourceFormat = color->colorFormat(desc.colorAttachment);
+    if (!sameViewClass(gpuFormat(sourceFormat), gpuFormat(desc.colorFormat))) {
+        return makeError(ErrorCode::InvalidArgument,
+                         fmt::format("{} cannot view {} storage", toString(desc.colorFormat), toString(sourceFormat)),
+                         name);
+    }
+    const Framebuffer* depth = desc.depthStencil;
+    if (depth != nullptr && (!depth->m_depthStencilTexture.valid() || depth->size() != color->size())) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "the depth/stencil of an alias must be a depth texture of the size of its color", name);
+    }
+
+    Attachments attachments;
+    GLuint framebuffer = 0;
+    glCreateFramebuffers(1, &framebuffer);
+    attachments.framebuffer = FramebufferObject(framebuffer);
+    if (framebuffer == 0) {
+        return makeError(ErrorCode::GraphicsError, "glCreateFramebuffers returned no framebuffer", name);
+    }
+    auto colorView = createColorView(color->m_colors[desc.colorAttachment].id(), desc.colorFormat, name + ".color");
+    if (!colorView) {
+        return propagate(colorView.error());
+    }
+    glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, colorView->id(), 0);
+    attachments.colors[0] = std::move(*colorView);
+    if (depth != nullptr) {
+        auto depthView =
+            createDepthStencilView(depth->m_depthStencilTexture.id(), GL_DEPTH_COMPONENT, name + ".depthStencil");
+        if (!depthView) {
+            return propagate(depthView.error());
+        }
+        glNamedFramebufferTexture(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, depthView->id(), 0);
+        attachments.depthStencilTexture = std::move(*depthView);
+    }
+    constexpr GLenum kDrawBuffer = GL_COLOR_ATTACHMENT0;
+    glNamedFramebufferDrawBuffers(framebuffer, 1, &kDrawBuffer);
+    glNamedFramebufferReadBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+    if (Status complete = checkComplete(framebuffer, name); !complete) {
+        return propagate(complete.error());
+    }
+
+    Framebuffer alias;
+    alias.m_desc = FramebufferDesc{color->size(), desc.colorFormat, depth != nullptr, 1, depth != nullptr};
+    alias.m_debugName = std::move(name);
+    alias.m_colors = std::move(attachments.colors);
+    alias.m_depthStencilTexture = std::move(attachments.depthStencilTexture);
+    alias.m_framebuffer = std::move(attachments.framebuffer);
+    alias.m_alias = true; // m_memory records nothing: the storage is the sources'
+    return alias;
+}
+
 Status Framebuffer::resize(glm::ivec2 size) {
     if (!valid()) {
         return makeError(ErrorCode::InvalidArgument, "cannot resize an empty framebuffer", m_debugName);
+    }
+    if (m_alias) {
+        return makeError(ErrorCode::InvalidArgument, "an alias has the size of its sources: create it again",
+                         m_debugName);
     }
     if (size == m_desc.size) {
         return ok();
@@ -345,14 +446,6 @@ void Framebuffer::bindDepthTexture(GLuint unit) const {
 
 void Framebuffer::bindStencilTexture(GLuint unit) const {
     glBindTextureUnit(unit, m_stencilView.id());
-}
-
-void Framebuffer::copyDepthStencilTo(const Framebuffer& destination) const {
-    if (!hasDepthStencil() || !destination.hasDepthStencil() || m_desc.size != destination.m_desc.size) {
-        return;
-    }
-    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y, 0, 0,
-                           m_desc.size.x, m_desc.size.y, GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
 }
 
 void Framebuffer::copyColorTo(const Framebuffer& destination) const {
@@ -467,9 +560,10 @@ Expected<assets::ImageData> Framebuffer::readPixels() const {
 }
 
 Expected<std::vector<glm::vec4>> Framebuffer::readLinearPixels() const {
-    if (!valid() || m_desc.colorFormat != ColorFormat::Rgba16F) {
-        return makeError(ErrorCode::InvalidArgument, "linear pixels are read from rgba16f framebuffers only",
-                         m_debugName);
+    if (!valid() ||
+        (m_desc.colorFormat != ColorFormat::Rgba16F && m_desc.colorFormat != ColorFormat::R11fG11fB10f)) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "linear pixels are read from rgba16f or r11f_g11f_b10f framebuffers only", m_debugName);
     }
     const std::size_t pixelCount = static_cast<std::size_t>(m_desc.size.x) * static_cast<std::size_t>(m_desc.size.y);
     const std::size_t byteCount = pixelCount * sizeof(glm::vec4);

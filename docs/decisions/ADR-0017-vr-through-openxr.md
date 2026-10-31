@@ -234,3 +234,17 @@ What the steps built where it departs from the text above, each recorded in its 
 - **§7:** the CRT shows the captured window's client area without its black bars (an emulator's pillarbox in a window
   as wide as the monitor), found in a small read-back four times a second and kept steady, at the crop's own aspect
   (step 11).
+
+*Amended on 2026-10-31 (I10 brought together with main: I5 step 9's insertion and the memory margin):*
+- **§5, the insertion into the console** (ADR-0016 §11, built on main while I10 ran): it does not run in VR. Its eye
+  leads by turning the walker to the console, and in a headset the walker's yaw is the user's head; animating the item
+  alone from the hand would leave the user's gaze wherever it was, so the insertion would be mostly unseen. The VR
+  mode already forces `reduceMotion`, which ADR-0016 §11 defines as "no frame of it", and `InteractionSettings::
+  keepWalker` (the VR mode) now leaves it out too, whatever `reduceMotion` says: Avvia launches at once, the item set
+  aside in its fixture while the game shows on the CRT (I10 step 10), the launch's stop bounded as for any launch
+  without an insertion (ADR-0016 §2).
+- **§4, the eyes' render targets** go through `gl::ViewTargets` and `view_target_plan.hpp` like the window's: one set
+  per eye at the rendered size, no depth of the output, the plan's aliasing; a screenshot in VR or the stereo preview
+  is composed from them (the run report's `screenshot.targets` is `eyes`), its side-by-side image without depth and
+  let go of once written. Back on the desktop the eyes' targets are released, so that the window's set is the only one
+  held.

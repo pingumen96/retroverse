@@ -15,7 +15,8 @@
 #                           texture mip chains (texture_memory.hpp); the inspection views and the defines of their
 #                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only);
 #                           since I3 the GPU memory accounting (gpu_memory.hpp) and the collection arrays' classes,
-#                           sizes, layer images, layer allocation and upload budget (texture_array_layout.hpp)
+#                           sizes, layer images, layer allocation and upload budget (texture_array_layout.hpp);
+#                           the view targets' formats, sizes, lifetimes and shared storage (view_target_plan.hpp)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -36,6 +37,7 @@ add_library(rv_render_uniforms STATIC
     src/texture_array_layout.cpp
     src/texture_memory.cpp
     src/tonemap.cpp
+    src/view_target_plan.cpp
 )
 add_library(rv::render_uniforms ALIAS rv_render_uniforms)
 rv_set_target_defaults(rv_render_uniforms)

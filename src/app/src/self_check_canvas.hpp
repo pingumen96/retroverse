@@ -48,6 +48,10 @@ public:
     /// The default framebuffer is bound afterwards. Errors: the read-back.
     [[nodiscard]] Expected<assets::ImageData> render(gl::GLDevice& device, const gl::ShaderProgram& unlit,
                                                      const gl::PostShaders& post, const gl::PostSettings& settings);
+    /// Reads back, like render(), the tonemapped image the last render() wrote before its anti-aliasing
+    /// (gl::ViewTargets::tonemapped(): written over the emitted light's storage, docs/i5/memory-margin.md). Meaningful
+    /// only after a render() with anti-aliasing. Errors: the read-back.
+    [[nodiscard]] Expected<assets::ImageData> readTonemapped() const;
 
 private:
     struct State;

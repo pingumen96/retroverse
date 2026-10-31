@@ -18,6 +18,11 @@
 //   frames 1050-1199   walking back 6.25 m towards the doorway
 //   frames 1200-1259   standing
 //   frames 1260-1269   standing, past the phase: it closes before the run ends (the report's "open" is false)
+// Gate M4 (ADR-0016 section 12, "frame time with two clips playing, the benchmark path past a secondary TV"): the
+// "two-clips" phase, frames 64 to 115, while the pan left holds both the hero CRT and the snes-stress room's secondary
+// TV in view, both decoder slots playing (the secondary's slot opens on frame 62, its first frame's lockstep wait left
+// out, and pauses on frame 117 as the pan right turns it out of view); scripts/gate.ps1 checks against the run
+// report's slot events that both played on every frame of it.
 //   retroverse.exe --width 1920 --height 1080 --no-vsync --hidden --exit-after-frames --frames 1270
 //     --fixed-dt 0.016667 --input-script tests/input_scripts/bench_snes_room.json --run-report <report.json> --data-dir <a data directory
 //     whose library is the snes-stress fixture, imported>
@@ -25,6 +30,7 @@
 // ("[real-library]") in the real room; both read the phase's frame times and GPU passes from the run report.
 [
   {"fromFrame": 30, "toFrame": 1259, "phase": "benchmark"},
+  {"fromFrame": 64, "toFrame": 115, "phase": "two-clips"},
   {"fromFrame": 30, "toFrame": 89, "actions": {"look_delta_x": -4.63}},
   {"fromFrame": 90, "toFrame": 209, "actions": {"look_delta_x": 4.63}},
   {"fromFrame": 210, "toFrame": 269, "actions": {"look_delta_x": -4.63}},

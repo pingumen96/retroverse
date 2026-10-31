@@ -95,7 +95,9 @@ void WorldLaunch::afterInteraction(const InteractionResult& result, ProductUi& p
     if (result.launch) {
         const world::CollectionItem* item = hover.item(result.launch->item);
         const std::string title = item != nullptr ? item->title : std::string();
-        const bool accepted = !m_launching && product.launchWorldGame(result.launch->game, title);
+        // I5 step 9: a held launch (the insertion runs) is resolved meanwhile, its hand-over waiting for the insertion.
+        const bool accepted =
+            !m_launching && product.launchWorldGame(result.launch->game, title, result.launch->held);
         // The walker as Avvia found it: the pose the return restores (WorldInteraction::launchRecord()).
         const scene::WalkerPose before =
             hover.interaction().launchRecord() ? hover.interaction().launchRecord()->walker : walker;
@@ -109,6 +111,15 @@ void WorldLaunch::afterInteraction(const InteractionResult& result, ProductUi& p
                          result.launch->game.toString());
             m_log.launchEnded(refusal, frame);
             hover.launchEnded(refusal);
+        }
+    }
+    if (result.insertionEnded) {
+        // The insertion ended (arrived or skipped): the launch's hand-over may begin, once its decoders stopped.
+        spdlog::info("Frame {}: the insertion into the console {}: the launch goes on", frame,
+                     *result.insertionEnded == InsertionEnd::Arrived ? "arrived" : "was skipped");
+        m_log.insertionEnded(*result.insertionEnded, frame);
+        if (m_launching) {
+            product.releaseWorldLaunch();
         }
     }
     const WorldInteraction& interaction = hover.interaction();

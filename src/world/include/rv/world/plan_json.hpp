@@ -67,6 +67,10 @@ namespace rv::world {
 /// The plan digest: the SHA-256 of writePlan()'s text, 64 lowercase hexadecimal digits (sha256Hex() of a text already
 /// written gives the same). Errors: those of planToJson().
 [[nodiscard]] Expected<std::string> planDigest(const WorldPlan& plan);
+/// planDigest() of a plan whose lists sortPlan() has sorted already, its text written straight from it (no document, no
+/// reader's check; m3/preview-time: the app's preview checks the plan it shows with it). Errors: InvalidArgument for a
+/// plan not of schema kPlanSchemaVersion; those of core::writeCanonicalJson() (a string that is not UTF-8).
+[[nodiscard]] Expected<std::string> sortedPlanDigest(const WorldPlan& sortedPlan);
 
 /// Reads a plan file's text back: schema 2 as it is, schema 1 as its content (schemaVersion 1, for lift()). Errors
 /// (context `context` and the line, "world-plan.json:12"): ParseError (not JSON), ValidationFailed (a text that is not
@@ -86,5 +90,31 @@ namespace rv::world {
 /// whole plan's documents), each equal to roomContentDigests()'s. Errors: those of core::canonicalJsonDigest.
 [[nodiscard]] Expected<std::map<RoomId, std::string>> roomContentDigests(const WorldPlan& plan,
                                                                          const std::set<RoomId>& rooms);
+
+namespace detail {
+
+// The digests' canonical texts written straight from the plan and the inputs (m3/preview-time, docs/i4b/preview-time.md):
+// a regeneration's digests of a whole world (the plan's, the building's inputs') were most of a room's preview when
+// they built a nlohmann::json document first. The texts are the documents' byte for byte; a value the direct writer
+// cannot take (a string that is not UTF-8, an input the reader's check would refuse) goes through the document, which
+// names the error as before. Public for their tests.
+
+/// writePlan()'s text of a plan whose lists sortPlan() has sorted already, written straight from it (no document, no
+/// reader's check). Errors: InvalidArgument for a string that is not UTF-8 (without the field's pointer).
+[[nodiscard]] Expected<std::string> writeSortedPlanText(const WorldPlan& sortedPlan);
+
+/// While one is alive on a thread, that thread's digests are made through the documents, as before m3/preview-time
+/// (the comparison tests run both paths on every world fixture).
+class ScopedDocumentDigests {
+public:
+    ScopedDocumentDigests() noexcept;
+    ~ScopedDocumentDigests();
+    ScopedDocumentDigests(const ScopedDocumentDigests&) = delete;
+    ScopedDocumentDigests& operator=(const ScopedDocumentDigests&) = delete;
+};
+/// Whether a ScopedDocumentDigests is alive on this thread.
+[[nodiscard]] bool documentDigests() noexcept;
+
+} // namespace detail
 
 } // namespace rv::world

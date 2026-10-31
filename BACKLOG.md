@@ -313,7 +313,8 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 
 The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; these come from the I2 steps.
 
-- **The gate and test scripts under the automation guard** (ADR-0008 §8): `scripts/gate.ps1` and `scripts/test.ps1` set
+- **The gate and test scripts under the automation guard** (ADR-0008 §8; Gate M3 tried it for its whole run and the two
+  runner tests named below failed, refused first: `docs/testing/gate-m3.md`): `scripts/gate.ps1` and `scripts/test.ps1` set
   no `RV_LAUNCH_ALLOWLIST`, so the guard does nothing in the runner, launcher and spike unit tests and in the
   `desktop.launch.*` cases of `spike_launch`, which start the fake emulator unguarded (the `retroverse-cli launch` tests
   set it for their own duration since I2 step 12, `ScopedLaunchAllowList`); the GPU smoke tests of `rv_smoke_tests`
@@ -444,11 +445,33 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
 
 ### Measurement
 
-- **Gate D's GPU memory at 1080p (I5 step 3's review):** Gate D's 471.8 MiB for the busiest real floor was measured in
-  the default 1280 x 720 window, as I5 step 3's first figures were; the render targets follow the window's size
-  (40.3 MiB more at 1920 x 1080: the busiest floor with both screens playing holds 505.8 MiB there,
-  `docs/i5/step-3.md`'s review). Gate M4 measures the busiest floor again at 1080p with every screen playing; over 512
-  MiB, the proposed remedy is in the targets (post-processing intermediates at reduced resolution, shared buffers).
+- **The busiest floor's GPU memory at 1080p, to be measured (I5 step 3's review):** at 1920 x 1080 with both
+  screens playing the busiest real floor held 505.8 MiB (`docs/i5/step-3.md`'s review; Gate D's 471.8 was at
+  1280 x 720), 6.2 MiB under the acceptable 512. The memory margin (`docs/i5/memory-margin.md`) took 28.3 MiB out of
+  the 1080p render targets and a screenshot's second set, so about 477.5 MiB is expected. Gate M3 measured it
+  (`docs/testing/gate-m3.md`): **477.5 MiB** at 1920 x 1080 with both screens playing, cold, warm and with a
+  screenshot, 34.5 MiB under the limit. If a later step takes it over, the next remedy is per-floor residency of the
+  procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing intermediates at reduced resolution (they
+  change the look).
+- **The regeneration preview's time (done, `docs/i4b/preview-time.md`):** Gate M3 measured it over ADR-0015 §9's 2 s
+  (`docs/testing/gate-m3.md`, on a loaded machine): the in-app previews of room:snes 2.65 and 3.27 s and of
+  room:amstradcpc 3.61 and 4.10 s (the job's read of the world 0.5 to 0.65 s, the regeneration 1.2 to 2.2 s, the app's
+  pool shared with the cover loader), the CLI's dry run of room:snes 1.7 s. The fix: the digests' canonical text is
+  written straight from the plan and the inputs (byte-identical: the plan goldens and a comparison of both paths on
+  every world fixture), the app's preview takes the plan it shows when that is the file's plan instead of parsing it,
+  and the standing rooms' data are read ahead with the catalog's inputs. The real room previews in the app went to
+  1.42 to 1.81 s with the machine fully loaded, 1.19 and 1.53 s a third loaded, 0.93 and 1.25 s after the step's review
+  (the plan shown checked against its file, 83 to 87 ms; the machine loaded); Gate M3 measures them again on a quiet
+  machine. Left: when the preview is asked before the tab's read-ahead ends, it waits for the rest of it (0.26 to
+  1.1 s in those runs: the catalog snapshot's SQLite queries, slower beside the floor's cover loads); the validation of
+  the whole plan (about 0.15 s) and the digests' SHA-256 over about 25 MB are the largest parts of the dry run now.
+  Seeding the inputs from the building job's snapshot (I4b step 6's follow-up below) would remove most of the
+  read-ahead.
+- **Debug GPU cases near their time limits (Gate M3):** `gpu.world floor: light reaches through the doorways ...` takes
+  474 to 579 s in Debug against ctest's 600 s; the floor-app cases wait at most 10 s for the building in lockstep and
+  `app/world_flow: a start room kept until a regeneration ...` 60 s for a start. Under another session's load Gate M3's
+  run failed all four on time alone (`docs/testing/gate-m3.md`). A longer ctest timeout for the light case (or fewer
+  probe runs in Debug) and a lockstep wait scaled for Debug would keep a loaded gate from failing on them.
 - **An option ending a frame-limited run once every layer is resident** (I3 step 17b): the real room's cold and warm
   runs wait out their frame count (20,000 and 8,000 frames, about 60 s and 25 s on a quiet machine) because nothing ends
   a run when the room is whole.
@@ -606,19 +629,33 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   again, and `video.json`'s `rooms.<id>` settings would then apply to the new room. A plan field listing the retired
   numbers of each chain (schema 3), or `video.json` settings keyed by something stabler than the room id, would close
   it.
-- **The app's update reads every expansion's data (I4b step 7):** the app's update loads the data of every room of the
-  plan, an expansion's like its head's (`src/app/src/world_build.cpp`), while the CLI skips them; loading a chain's data
-  once (by its head) would save a load per expansion.
+- **The app's update reads every expansion's data (I4b step 7):** done in I4b step 8: the app's update reads a chain's
+  data once, its head's, as the CLI does (`docs/i4b/step-8.md`).
 - **Capacity entries after a migration on a full floor (I4b step 7):** generator 1.4's capacity entries migrate once
   (the head's reserve, then expansions while the floor has room); those left on a full floor stay unplaced for capacity
   even once the floor gains room (another room regenerated away, a floor regenerated), until "Rigenera stanza" of the
   chain. An update that retried them only when the floor's rooms changed would place them without a regeneration and
   still leave an update of an unchanged catalog writing nothing.
-- **What step 8 needs from the chains:** the directory groups a chain by `RoomId::head()` (its numbers may leave gaps:
+- **What step 8 needs from the chains:** done in I4b step 8 (`docs/i4b/step-8.md`, ADR-0015 §7 as amended on
+  2026-10-29: the chains together, the ranges, the `rooms-added` notice). It read: the directory groups a chain by
+  `RoomId::head()` (its numbers may leave gaps:
   `:3` without `:2` after a shrink); each room's title range ("A – K") comes from its items, and after updates the
   ranges may overlap (a new title goes after its predecessor anywhere in the chain, wrapping to the head's free slots)
   and span sections (a shared room's); the app's notice names the expansions an update added (ADR-0015 §7's
   "`roomsAdded` and the app's notice name the new rooms").
+
+### Expansion rooms in the app (I4b step 8)
+
+- **Ranges before the items files (I4b step 8):** a chain's rooms show their titles' ranges from the rooms' items files
+  (`app::chainTitlesOf()`); a start whose items files are missing (a data directory planned by the CLI alone, before
+  the app's first building job writes them) lists the chain without ranges until they are written. The catalog's world
+  reader could give the titles instead.
+- **Ranges at the initial's grain (I4b step 8):** two letters show only where two rooms meet on one initial; a chain of
+  many rooms split inside one prefix ("Mos" in each) still reads "Mo – Mo". Longer prefixes where needed (as an
+  encyclopedia's volumes) would close it.
+- **Furniture across a chain (I4b step 8, ADR-0015 §4 as amended):** the editor carries a game across the rooms of a
+  chain, never a fixture: a display case moved from the head into an expansion needs the plan's sockets of both rooms
+  and a new kind of operation.
 
 ### Regeneration and undo in the app (I4b step 6)
 
@@ -690,3 +727,42 @@ Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
 - **The UI as compositor layers** (I10 step 5): ADR-0017 §6's `XrCompositionLayerQuad` per panel, sharper text than the
   panel drawn into the eyes; the card beside its item in the world and the labels as small quads of their own, which
   need the UI's documents drawn apart.
+- **The insertion in VR** (the merge with main, 2026-10-31): I5 step 9's insertion into the console does not run in a
+  headset, because its eye leads by turning the walker, which is the user's head there (ADR-0017's amendment of
+  2026-10-31). The item could still fly from the hand into the socket with the head left alone, and with a hint
+  (a glow on the console, a haptic tick) when the console is out of view; it needs the held pose from the hand (I10
+  step 4) composed with `insertedItemTransform()`, and a trial in the headset.
+
+## Follow-ups from I5
+
+### The insertion into the console (I5 step 9)
+
+- **A disc console with its own tray:** every console room's hero corner holds the `console_cartridge` prefab (the
+  systems' defaults), so a disc system's case is pushed into the cartridge slot, shrunk to fit (ADR-0016 §11's
+  amendment). A disc console prefab with a tray socket of its own (a lid or a drawer the case or the disc goes into),
+  chosen by the system's media kind, would match the item to its console; a look change for a later pack, no plan
+  change (a socket is none).
+- **The sound over the insertion:** the mix fades in 50 ms at Avvia and each stopped slot's sound in the pause fade
+  (30 ms), because the slots stop as the insertion begins (their threads end while it runs). A fade over the 450 ms
+  would keep the audible slot's decoder running until the hand-over and stop it there, with the wait the animation
+  hides now (`docs/i5/step-9.md`).
+
+### Gate M4 (I5 step 10)
+
+- **The ride's record against the hub's showcase:** in Gate M4's second run (`docs/testing/gate-m4.md`), on a loaded
+  machine, the cold ride back to the ground floor arrived 51 ms before the hub's showcase (its favourites' and recent
+  games' proxies, an array of their own) was built, so the ride's record counted 2.4 MiB of collection arrays where a
+  direct start holds 4.8 MiB and `test_building_real.cpp`'s check of it failed (the run's end held the 4.8 MiB). Take
+  the record once the showcase is in, or have the ground floor's arrival wait for it as it waits for the covers in
+  view; the showcase popping in a few frames after the view comes back is the visible side.
+- **A room without clips shows its first game's title card:** area:shared:gen5, room:switch and room:trs-80 hold no
+  playable clip, and their hero screens end on the title card of the start choice (`chooseStillGame()`: the first
+  candidate with a still or a title card, so the first game). Preferring the first game that has a still file
+  (screenshot, title screen, cover) would show a picture where the room has one; whether these rooms have any was not
+  checked.
+- **The soak's last few MiB:** +3.3 MiB in the hour after minute 5, a slope of 5.5 MiB an hour from minute 10 falling
+  to 3.8 from minute 30; a census of the process's regions (as I5 step 7's review made) would tell the allocator's
+  fragmentation from the driver's.
+- **The two-clips phase is tied to frames:** `bench_snes_room.json`'s `two-clips` phase (frames 64 to 115) follows
+  where the scheduler opens and pauses the secondary's slot on that path; the gate checks every frame against the slot
+  events and fails the row when they part, at which point the phase moves with them.

@@ -8,6 +8,10 @@
 //    waits and runs, and the launch's end (the return, a failure, a refusal: ProductUi::takeWorldLaunchEnded) goes back
 //    to it (WorldInteraction::launchEnded), which restores the walker's pose and Inspect of the same item on its next
 //    update. An Avvia the product UI cannot take now ends at once (busyLaunchRefusal()), the card saying so.
+//  - I5 step 9 (ADR-0016 §11): in a room with a console Avvia's request is held (WorldLaunchRequest::held): the product
+//    UI resolves it at once and the screens' decoders begin to stop (LaunchHooks::preparing), but its hand-over waits
+//    until the interaction's insertion ended (InteractionResult::insertionEnded: ProductUi::releaseWorldLaunch()); a
+//    launch refused meanwhile comes back to the interaction as any other end.
 //  - Around the launch, the product UI's hooks do the rest (retroverse_app.cpp): the hero CRT's decoder stopped and its
 //    thread waited for before the hand-over, opened again at the clip's position after the return
 //    (ScreenService::launchStarting, launchEnded), and the cover loader paused while it runs (WorldSession::coverRound

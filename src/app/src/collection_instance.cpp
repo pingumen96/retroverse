@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/scene_graphics.hpp>
 #include <rv/assets/material_library.hpp>
 #include <rv/assets/mip_chain.hpp>
@@ -106,6 +107,16 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     // screens, the item's label quad (its "Label" socket: the family's labelWidth and labelHeight).
     instance->m_frontMaterialName = frontMaterial;
     instance->m_screenItems = family.mediaFamily == world::kArcadeRoomFamily;
+    // I5 step 6 (ADR-0016 §7): a front drawn through a picture tube (the cabinets' screens) takes its room's cabinet
+    // look, one for the room's cabinets (its static fronts, its hero front, its pooled video materials).
+    if (library.getOrFallback(frontMaterial).crt) {
+        ScreenLooks& looks = graphics.screenLooks();
+        const std::string room = layout.room.toString();
+        const CrtChoice choice = looks.choose(ScreenKind::Cabinet, room, {}, data.theme.screenPreset);
+        instance->m_frontLook = looks.effect(choice);
+        instance->m_frontLookApplied = ScreenLookApplied{instance->m_keyPrefix, room, ScreenKind::Cabinet, choice};
+        looks.record(*instance->m_frontLookApplied);
+    }
     if (const geometry::Socket* label = geometry::findSocket(prefab.sockets, "Label")) {
         const glm::vec3 size = label->bounds.max - label->bounds.min;
         instance->m_screenSize = glm::vec2(size.x, size.y);
@@ -158,7 +169,7 @@ Expected<std::unique_ptr<CollectionInstance>> CollectionInstance::create(const w
     // The hero textures' front (I3 step 12): the label's material with a base colour texture of its own (white), which
     // the hero texture shown overrides.
     {
-        const assets::MaterialDesc& labelDesc = library.getOrFallback(frontMaterial);
+        const assets::MaterialDesc labelDesc = instance->frontDesc(library, frontMaterial);
         // Clamped like a picture: the sampler bound with the override follows this texture's wrap mode.
         assets::ImageData white;
         white.width = 1;
@@ -227,12 +238,21 @@ CollectionPictures CollectionInstance::takePictures() {
     return pictures;
 }
 
+assets::MaterialDesc CollectionInstance::frontDesc(const assets::MaterialLibrary& library,
+                                                   std::string_view name) const {
+    assets::MaterialDesc desc = library.getOrFallback(name);
+    if (m_frontLook && desc.crt && name == m_frontMaterialName) {
+        desc.crt = *m_frontLook;
+    }
+    return desc;
+}
+
 void CollectionInstance::addLayeredMaterials(SceneGraphics& graphics) {
     const assets::MaterialLibrary& library = graphics.materialLibrary();
     gl::MaterialRegistry& materials = graphics.materials();
     for (const gl::CollectionClass cls : gl::kCollectionClasses) {
         const bool spine = cls == gl::CollectionClass::Spine;
-        const assets::MaterialDesc& labelDesc = library.getOrFallback(m_labelMaterials[gl::toIndex(cls)]);
+        const assets::MaterialDesc labelDesc = frontDesc(library, m_labelMaterials[gl::toIndex(cls)]);
         std::vector<scene::MaterialHandle>& layered = m_layered[gl::toIndex(cls)];
         for (std::size_t index = layered.size(); index < m_arrays.arrayCount(cls); ++index) {
             const std::string key = fmt::format("{}/{}[{}]", m_keyPrefix, gl::toString(cls), index);
@@ -473,7 +493,7 @@ Expected<std::vector<scene::MaterialHandle>> CollectionInstance::videoMaterials(
         // The label's picture tube with a base colour texture of its own (white, as the hero front's), which the screen
         // service overrides with its slot's picture; appended to the registry: no handle moves.
         gl::MaterialRegistry& materials = graphics.materials();
-        const assets::MaterialDesc& labelDesc = graphics.materialLibrary().getOrFallback(m_frontMaterialName);
+        const assets::MaterialDesc labelDesc = frontDesc(graphics.materialLibrary(), m_frontMaterialName);
         gl::MaterialTextures textures = gl::resolveMaterialTextures(labelDesc, graphics.textures());
         textures[static_cast<std::size_t>(gl::MaterialTextureSlot::BaseColor)] = &m_heroBase;
         for (std::size_t index = m_videoMaterials.size(); index < count; ++index) {
@@ -482,6 +502,12 @@ Expected<std::vector<scene::MaterialHandle>> CollectionInstance::videoMaterials(
         }
         if (Status uploaded = materials.upload(uniformBufferOffsetAlignment, "MaterialUniforms"); !uploaded) {
             return propagate(uploaded.error());
+        }
+        // I5 step 6: the pool draws through the fronts' tube, with their look (the report's crtLooks says so).
+        if (m_frontLookApplied && labelDesc.crt) {
+            ScreenLookApplied pooled = *m_frontLookApplied;
+            pooled.screen += "/video";
+            graphics.screenLooks().record(std::move(pooled));
         }
     }
     return std::vector<scene::MaterialHandle>(m_videoMaterials.begin(),

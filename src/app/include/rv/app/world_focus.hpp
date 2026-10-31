@@ -7,8 +7,10 @@
 //  - CollectionRoom: the layout as the interaction's InteractionRoom: its items by pick id (face-out from the stance,
 //    the section the item's fixture), each item's Focus pose and the D-pad steps of the layout's navigation runs;
 //  - pulledItemTransform(): where a pulled item stands at a pull's progress: a spine-out cartridge slides out of its
-//    row and turns its front (its cover) to the viewer, a face-out one tips its top towards the viewer;
+//    row and turns its front (its cover) to the viewer, upright, a face-out one tips its top towards the viewer, a
+//    cabinet's screen stays in its bezel (the fix of 2026-10-29);
 //  - focusPoseFor(): the walker 0.9 m in front of the item, the reticle on the middle of its face;
+//  - consoleViewPose(): the eye turned to the room's console for the insertion (I5 step 9);
 //  - FocusStepRepeat: a held D-pad direction or arrow key in Focus steps again after a delay, as the quick catalog's
 //    lists do (ui::DirectionRepeater's cadence);
 //  - pickRay(): the frame's pick ray from the reticle or from the cursor (pickRaySource());
@@ -24,6 +26,7 @@
 
 #include <glm/glm.hpp>
 
+#include <rv/app/world_inspect.hpp>
 #include <rv/app/world_interaction.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -55,18 +58,22 @@ inline constexpr float kFocusDistance = 0.9f;
 /// How far the row a spine-out item turns in front of reaches past the item's face (meters, along its slot's +Z, from
 /// 0 to kMaxRowReach): the fronts of its neighbours in its cluster (their insets differ) and of the occluders beside it
 /// (a module's side panel at the end of a row) within the reach of its turn and its height; boards it stands on or
-/// under do not count. 0 for a face-out item, which only tips.
+/// under do not count, but for an item that rolls upright as it turns (a cartridge on its end), whose corners sweep
+/// past them (the fix of 2026-10-29). 0 for a face-out item, which only tips.
 [[nodiscard]] float rowReach(const world::CollectionItem& item, const world::CollectionLayout& layout) noexcept;
 
 /// The pose of a pulled item at `progress` (0 in its slot, 1 fully pulled; clamped), from the item prefab's space to
 /// the room's frame, as item.transform is at 0; `reach` is its rowReach():
 ///  - spine-out (ADR-0012 §3): it slides straight out along its slot's +Z until its back clears its row (its face plus
 ///    `reach`) by kPullClearance (the first kPullSlideShare of the progress), then turns a quarter about the slot's +Y
-///    through its centre, its front (its cover: the slot's +X while it stands spine-out) to the slot's +Z, while it
-///    settles to kPullOutDepthShare of its depth out of its slot: never closer to the row than the clearance its turned
-///    footprint needs, so that it never passes through its neighbours or the fixture (an item at the end of a row whose
+///    through its centre, its front (its cover: the slot's +X while it stands spine-out) to the slot's +Z, rolling
+///    meanwhile about the slot's +Z so that the cover stands upright (a cartridge on its end; the fix of 2026-10-29:
+///    its cover showed sideways), while it settles to kPullOutDepthShare of its depth out of its slot: never closer to
+///    the row than the clearance its turned footprint needs, so that it never passes through its neighbours or the fixture (an item at the end of a row whose
 ///    turned footprint would reach a side panel standing out settles that much farther out);
-///  - face-out: it tips its top towards the viewer by kFaceOutTiltDeg about its slot box's bottom front edge.
+///  - face-out: it tips its top towards the viewer by kFaceOutTiltDeg about its slot box's bottom front edge;
+///  - part of its fixture (CollectionItem::inFixture: an arcade cabinet's screen; the fix of 2026-10-29): it stays as
+///    it stands, item.transform at every progress (a screen tipped out of its bezel read as the cabinet moving).
 /// A function of the progress alone: an interrupted pull goes back the way it came.
 [[nodiscard]] glm::mat4 pulledItemTransform(const world::CollectionItem& item, float progress,
                                             float reach = 0.0f) noexcept;
@@ -97,6 +104,21 @@ struct FocusViewer {
 /// item stands just in front of), so the hover stays on the focused item while the stick is still.
 [[nodiscard]] scene::WalkerPose focusPoseFor(const world::CollectionItem& item, const FocusViewer& viewer) noexcept;
 
+/// I5 step 9's review: where the console's media socket stands in the view the eye turns to for the insertion (normalized
+/// device coordinates, as scene::ViewArea): on the lower third's line, so that the console sits low in the view with
+/// the room above it rather than the bare wall or the floor.
+inline constexpr float kConsoleViewY = -1.0f / 3.0f;
+/// The lowest the eye looks down at the console (radians, about -30 degrees): never a view of the rug.
+inline constexpr float kConsoleViewMinPitch = -0.5236f;
+
+/// I5 step 9 (ADR-0016 §11, as amended by its review): the walker at `from`'s feet (its eye `viewer.eyeHeight` above
+/// them) turned to the console's media socket for the insertion. When the room's hero screen (`socket.heroScreen`)
+/// faces the eye (its normal against the direction from the eye to it), the eye aims between the socket and the
+/// screen's centre, so that the game's title card shows above the console; otherwise the socket stands on the lower
+/// third's line (kConsoleViewY, scene::aimAt's area). The pitch is at least kConsoleViewMinPitch.
+[[nodiscard]] scene::WalkerPose consoleViewPose(const ConsoleSocket& socket, const scene::WalkerPose& from,
+                                                const FocusViewer& viewer) noexcept;
+
 /// The collection's layout as WorldInteraction's room (ADR-0012 §1): an item per pick id (its GameId, face-out from its
 /// stance, its section its fixture: the pick id's socket, so that looking in Focus moves within one module, display
 /// case or wall shelf), its Focus pose (focusPoseFor() with the viewer set last) and the D-pad steps of the layout's
@@ -111,6 +133,14 @@ public:
     [[nodiscard]] scene::WalkerPose focusPose(world::PickId id) const override;
     [[nodiscard]] std::optional<world::PickId> step(world::PickId from,
                                                     world::StepDirection direction) const override;
+    /// I5 step 9: the walker at `from`'s feet turned to the console's media socket (consoleSocket()) for the viewer
+    /// (consoleViewPose()); nothing without a console.
+    [[nodiscard]] std::optional<scene::WalkerPose> consolePose(const scene::WalkerPose& from) const override;
+
+    /// I5 step 9 (ADR-0016 §11): the media socket of the room's console in the scene's frame
+    /// (app::consoleSocketOf()), or none (the arcade, a shared room).
+    void setConsoleSocket(std::optional<ConsoleSocket> socket) noexcept { m_consoleSocket = socket; }
+    [[nodiscard]] const std::optional<ConsoleSocket>& consoleSocket() const noexcept { return m_consoleSocket; }
 
     /// The viewer the next focusPose() calls frame for.
     void setViewer(const FocusViewer& viewer) noexcept { m_viewer = viewer; }
@@ -133,6 +163,7 @@ private:
     std::vector<float> m_reach;
     world::SlotNavigation m_navigation;
     FocusViewer m_viewer;
+    std::optional<ConsoleSocket> m_consoleSocket;
 };
 
 /// The D-pad and the arrow keys in Focus (I3 step 13a's choice; step 7 steps once per press): a direction held steps at

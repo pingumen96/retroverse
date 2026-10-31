@@ -77,6 +77,11 @@ Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view contex
 
 } // namespace
 
+bool hasText(const RoomItemText& text) noexcept {
+    return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
+           text.screen.has_value();
+}
+
 const RoomItemText* RoomItems::find(const catalog::GameId& game) const noexcept {
     const auto found =
         std::lower_bound(items.begin(), items.end(), game,

@@ -158,6 +158,110 @@ TEST_CASE("world/overrides: pins measured against a plan", "[world][overrides]")
     CHECK(broken == 4);
 }
 
+TEST_CASE("world/overrides: each pin measured as honoured, orphaned, conflicting or unhonoured, with why",
+          "[world][overrides]") {
+    using rv::world::ConflictReason;
+    using rv::world::PinOrigin;
+    using rv::world::PinStatus;
+    const rv::world::WorldPlan plan = rv::test::world::generateRoom(890, 4242, 102938).plan;
+    const Placement& placed = plan.placements[10];
+    const Placement& other = plan.placements[11];
+    const rv::world::Fixture& poster = *std::find_if(plan.fixtures.begin(), plan.fixtures.end(), [](const auto& f) {
+        return f.role == rv::world::FixtureRole::Decoration;
+    });
+    WorldOverrides overrides;
+    overrides.gamePins = {
+        {placed.game, placed.slot, {PinOrigin::Editor, "2026-10-30T10:00:00.000Z"}},           // honoured
+        {game("g0000000000000123"), slot("room:snes/fx:w01/s:0.0")},                           // orphaned: no game
+        {plan.placements[12].game, slot("room:snes/fx:w01/s:6.33")},                           // orphaned: no slot
+        {other.game, placed.slot, {PinOrigin::Cli, ""}, ConflictReason::SlotGone},             // conflicting
+        {plan.placements[13].game, plan.placements[14].slot},                                  // unhonoured
+        {game("g0000000000000456"), slot("room:nes/fx:w01/s:0.0"), {}, ConflictReason::RoomGone}, // conflicting
+    };
+    overrides.fixturePins = {
+        {poster.id, std::nullopt, std::nullopt, {PinOrigin::Editor, ""}},                      // honoured
+        {fixture("room:snes/fx:nowhere"), std::nullopt},                                       // orphaned: no socket
+        {fixture("room:nes/fx:w01"), std::nullopt},                                            // orphaned: no room
+        {poster.id, std::nullopt, rv::world::FixtureTransform{poster.xMm + 100, poster.zMm, poster.yawCdeg}, {},
+         ConflictReason::Invalid},                                                             // conflicting
+    };
+    // A fixture pinned twice cannot be read from a file; measured here as two pins of one fixture.
+    const std::vector<rv::world::RoomTemplate> templates{rv::test::world::snesData().roomTemplate};
+    const std::vector<rv::world::PinMeasure> measures = rv::world::measurePins(plan, templates, overrides);
+    REQUIRE(measures.size() == 10);
+    const auto status = [&](std::size_t index) { return measures[index].status; };
+    CHECK(status(0) == PinStatus::Honoured);
+    CHECK(status(1) == PinStatus::Orphaned);
+    CHECK(status(2) == PinStatus::Orphaned);
+    CHECK(status(3) == PinStatus::Conflicting);
+    CHECK(status(4) == PinStatus::Unhonoured);
+    CHECK(status(5) == PinStatus::Conflicting);
+    CHECK(status(6) == PinStatus::Honoured);
+    CHECK(status(7) == PinStatus::Orphaned);
+    CHECK(status(8) == PinStatus::Orphaned);
+    CHECK(status(9) == PinStatus::Conflicting);
+
+    // What each says: the subject, the room, the pin's text, the origin, why.
+    CHECK(measures[0].game);
+    CHECK(measures[0].subject == placed.game.toString());
+    CHECK(measures[0].room.toString() == "room:snes");
+    CHECK(measures[0].pin == rv::world::pinText(overrides.gamePins[0]));
+    CHECK(measures[0].origin == PinOrigin::Editor);
+    CHECK(measures[0].why.empty());
+    CHECK_FALSE(measures[0].recordedConflict.has_value());
+    CHECK(measures[1].why == "its game has no entry in the plan");
+    CHECK(measures[2].why == "its slot is not one of the plan's");
+    CHECK(measures[3].recordedConflict == ConflictReason::SlotGone);
+    CHECK(measures[3].origin == PinOrigin::Cli);
+    CHECK(measures[3].why ==
+          "the last regeneration of room:snes recorded slot-gone; the game stands in " + other.slot.toString());
+    CHECK(measures[4].why == "the game stands in " + plan.placements[13].slot.toString());
+    CHECK_FALSE(measures[4].recordedConflict.has_value());
+    CHECK(measures[5].room.toString() == "room:nes");
+    CHECK(measures[5].why == "the last regeneration of room:nes recorded room-gone; its slot is not one of the plan's");
+    CHECK_FALSE(measures[6].game);
+    CHECK(measures[6].subject == poster.id.toString());
+    CHECK(measures[7].why == "its room's template " + plan.rooms.front().templateId + " has no socket nowhere");
+    CHECK(measures[8].why == "its room is not in the plan");
+    CHECK_THAT(measures[9].why, ContainsSubstring("recorded invalid; the fixture stands at x " +
+                                                  std::to_string(poster.xMm) + " z "));
+    CHECK(measures[9].origin == PinOrigin::File);
+
+    // Without the room's template, a fixture pin's socket cannot be judged: orphaned, saying so.
+    const std::vector<rv::world::PinMeasure> untemplated = rv::world::measurePins(plan, {}, overrides);
+    CHECK(untemplated[7].why == "its room's template " + plan.rooms.front().templateId + " is not known");
+    CHECK(untemplated[6].status == PinStatus::Honoured);
+
+    // checkPins() agrees: the orphaned and conflicting pins are its orphaned, the unhonoured its unhonoured.
+    const rv::world::PinCheck check = rv::world::checkPins(plan, templates, overrides);
+    std::vector<std::string> orphaned;
+    std::vector<std::string> unhonoured;
+    for (const rv::world::PinMeasure& measure : measures) {
+        if (measure.status == PinStatus::Orphaned || measure.status == PinStatus::Conflicting) {
+            orphaned.push_back(measure.pin);
+        } else if (measure.status == PinStatus::Unhonoured) {
+            unhonoured.push_back(measure.pin);
+        }
+    }
+    std::sort(orphaned.begin(), orphaned.end());
+    CHECK(check.orphaned == orphaned);
+    CHECK(check.unhonoured == unhonoured);
+    CHECK(check.honoured.gamePins.size() == 1);
+    CHECK(check.honoured.fixturePins.size() == 1);
+    // What is gone, whatever the status: the orphaned pins and the room-gone conflict (its slot is not the plan's).
+    std::vector<bool> gone;
+    for (const rv::world::PinMeasure& measure : measures) {
+        gone.push_back(measure.gone);
+    }
+    CHECK(gone == std::vector<bool>{false, true, true, false, false, true, false, true, true, false});
+    // The judged pins: the honoured and every pin whose subject is gone, the room-gone conflict among them (an update
+    // reports it as pin-orphaned); never a recorded conflict whose subject is there.
+    CHECK(check.honouredOrOrphaned.gamePins.size() == 4);
+    CHECK(check.honouredOrOrphaned.gamePins.back().game == overrides.gamePins[5].game);
+    CHECK(check.honouredOrOrphaned.fixturePins.size() == 3);
+    CHECK(rv::world::toString(PinStatus::Conflicting) == "conflicting");
+}
+
 TEST_CASE("world/overrides: schema 2 written and read back, schema 1 lifted", "[world][overrides]") {
     using rv::world::FixtureTransform;
     using rv::world::PinOrigin;

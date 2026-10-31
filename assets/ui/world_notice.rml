@@ -13,11 +13,13 @@
 		rooms-migrated (I6 step 4: the rooms of cases and boxes were rearranged once, their spines now out),
 		edit-unavailable (I4b step 3: the editor cannot edit the room now), needs-confirmation (I4b step 6: the update left
 		a room as it stands because it would have moved something the user pinned; confirm opens the preview of
-		"Rigenera stanza" while it shows).
+		"Rigenera stanza" while it shows), rooms-added (I4b step 8: the update added a room to a collection past its
+		room's capacity: the first new room named, the others counted).
 		state: the catalog's state for no-catalog (no-library, no-database, data-directory, library-mismatch,
 		unavailable). room: the start room's id as --start-room gives it (room:snes, area:arcade, area:shared:<floor>),
 		for no-games; empty without one. roomKind (console, shared, arcade) and roomTitle (a console room's system's
-		name): the room needs-confirmation offers to regenerate. Every string is written here (CLAUDE.md): the panel binds keys only. It takes
+		name): the room needs-confirmation offers to regenerate, or the room rooms-added names (with roomNumber, its
+		number in its chain, and moreRooms, the other rooms added). Every string is written here (CLAUDE.md): the panel binds keys only. It takes
 		no input: the quick catalog (Tab) is where to act.
 	-->
 	<title>Stanza</title>
@@ -99,6 +101,20 @@
 			<p class="room-name" data-if="roomKind == 'shared'">Sala condivisa</p>
 			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade</p>
 			<p>Premi Invio (Start sul controller) per vedere cosa cambierebbe rigenerandola.</p>
+		</div>
+
+		<div data-if="notice == 'rooms-added'">
+			<h1 data-if="moreRooms == 0">Una nuova stanza per la collezione</h1>
+			<h1 data-if="moreRooms > 0">Nuove stanze per la collezione</h1>
+			<p>I giochi aggiunti non entravano più: la collezione continua in una stanza nuova, con la stessa insegna e il
+				suo numero.</p>
+			<p class="room-name" data-if="roomKind == 'console'">{{ roomTitle }} {{ roomNumber }}</p>
+			<p class="room-name" data-if="roomKind == 'shared'">Sala condivisa {{ roomNumber }}</p>
+			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade {{ roomNumber }}</p>
+			<p data-if="moreRooms == 1">E un'altra stanza.</p>
+			<p data-if="moreRooms > 1">E altre {{ moreRooms }} stanze.</p>
+			<p data-if="groundFloor">La trovi dall'atrio e nell'indice dell'edificio (M).</p>
+			<p data-if="!groundFloor">La trovi dal corridoio del suo piano e nell'indice dell'edificio (M).</p>
 		</div>
 
 		<div data-if="notice == 'rooms-migrated'">

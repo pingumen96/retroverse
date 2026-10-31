@@ -28,10 +28,11 @@
   "gpu": {
     "vendor": "NVIDIA Corporation",
     "renderer": "NVIDIA GeForce RTX 2080 SUPER/PCIe/SSE2",
-    "glVersion": "4.5.0 NVIDIA 617.42",
-    "driver": "617.42 (Windows driver 32.0.16.1742)",
+    "glVersion": "4.5.0 NVIDIA 621.01",
+    "driver": "621.01 (Windows driver 32.0.16.2101)",
     "machine": "docs/testing/reference-hardware.md"
   },
   "renderedOn": "2026-10-15",
+  "rebaselined": "2026-10-30: driver 621.01 (was 617.42) rendered the same bytes (equal SHA-256) from commit 6338e017 with tests/smoke/test_golden.cpp's run; the gpu fields were updated by hand (test_golden.cpp has no RV_UPDATE_GOLDEN), the image and the build it names are unchanged",
   "comparison": "The same build, driver and scene give the same bytes (two runs matched, and msvc-x64-release writes the same bytes as msvc-x64-debug). Another driver or GPU can move pixels by an 8-bit step or two (dither, texture filtering, FXAA): compare with a tolerance."
 }

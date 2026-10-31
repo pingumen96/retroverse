@@ -1,4 +1,4 @@
-#include "screen_verdicts.hpp"
+#include <rv/app/screen_verdicts.hpp>
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/utf8.hpp>
@@ -227,6 +227,45 @@ std::vector<ScreenGame> ScreenVerdicts::screened(std::vector<ScreenGame> games) 
         }
     }
     return games;
+}
+
+ScreenVerdicts::ClipScreening ScreenVerdicts::screenClip(const ScreenMedia& media, const std::string& gameId) {
+    ClipScreening answer;
+    if (media.videoKey.empty() || media.video.empty()) {
+        return answer;
+    }
+    const std::optional<std::string> key = media::verdictKey(media.videoKey);
+    if (!key) {
+        return answer;
+    }
+    std::unique_lock lock(m_mutex);
+    if (!m_loaded) {
+        return answer; // every clip is given while the file is not read yet (screened()'s rule)
+    }
+    if (m_failures.find(media.videoKey) == nullptr) {
+        return answer;
+    }
+    if (m_screened.try_emplace(*key, Screening::Looking).second) {
+        // Met for the first time in the run: its file looked at by the thread, as screened() does for the world's.
+        m_looks.push_back(Look{*key, media.video, gameId, *m_failures.find(media.videoKey)});
+        m_wake.notify_all();
+        if (m_settle) {
+            m_wake.wait_for(lock, m_settleBound, [this] { return m_looks.empty() && !m_busy; });
+        }
+    }
+    // The verdict looked up again: the thread may have written meanwhile.
+    const media::VideoVerdict* failure = m_failures.find(media.videoKey);
+    const auto screening = m_screened.find(*key);
+    if (failure == nullptr || screening == m_screened.end() || screening->second == Screening::Changed) {
+        return answer;
+    }
+    if (screening->second == Screening::Looking) {
+        answer.state = ClipScreening::State::Looking;
+        return answer;
+    }
+    answer.state = ClipScreening::State::LeftOut;
+    answer.failure = media::verdictName(failure->failure);
+    return answer;
 }
 
 void ScreenVerdicts::give(const ScreenMedia& media, const std::string& gameId, media::VideoVerdict verdict) {

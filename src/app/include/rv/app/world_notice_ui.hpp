@@ -15,7 +15,9 @@ inline constexpr std::string_view kStyleSheetPath = "ui/world_notice.rcss";
 /// The data model: "notice" (one of the keys below), "state" (the catalog's state for kNoCatalog: catalog_worker.hpp's
 /// toString(CatalogState)), "room" (the start room's id as --start-room gives it, "room:snes", "area:arcade" or
 /// "area:shared:<floor>", for kNoGames; empty without --start-room), "roomKind" and "roomTitle" (kNeedsConfirmation's
-/// room: "console", "shared" or "arcade", and a console room's system's name).
+/// and kRoomsAdded's room: "console", "shared" or "arcade", and a console room's system's name), "roomNumber" and
+/// "moreRooms" (kRoomsAdded: the new room's number in its chain, and how many other rooms the update added),
+/// "groundFloor" (kRoomsAdded: the new room stands on the ground floor, reached from its atrium, not a floor's hall).
 inline constexpr std::string_view kDataModel = "world_notice";
 inline constexpr std::string_view kPanelId = "world-notice";
 
@@ -56,10 +58,17 @@ inline constexpr std::string_view kEditUnavailable = "edit-unavailable";
 /// roam.
 inline constexpr std::string_view kNeedsConfirmation = "needs-confirmation";
 
+/// I4b step 8 (ADR-0015 §7): the update that saved the building added an expansion room to a chain whose rooms stood
+/// at their limit (its titles past their capacity, or capacity entries of an earlier generator migrated): the notice
+/// names the first new room ("roomKind", "roomTitle", "roomNumber") and counts the others ("moreRooms"), shown over
+/// the floor for kShownSeconds, once.
+inline constexpr std::string_view kRoomsAdded = "rooms-added";
+
 /// Every key with a sentence of its own.
-inline constexpr std::array<std::string_view, 12> kNotices{
-    kGenerating, kNoCatalog, kNoGames,         kMediaUnknown,  kMediaUnknownKept, kRegeneration,
-    kRefused,    kFailed,    kRoomUnreachable, kRoomsMigrated, kEditUnavailable,  kNeedsConfirmation};
+inline constexpr std::array<std::string_view, 13> kNotices{
+    kGenerating,    kNoCatalog,       kNoGames,           kMediaUnknown, kMediaUnknownKept,
+    kRegeneration,  kRefused,         kFailed,            kRoomUnreachable,
+    kRoomsMigrated, kEditUnavailable, kNeedsConfirmation, kRoomsAdded};
 /// The catalog states kNoCatalog has a sentence for (CatalogState but Ready and Opening).
 inline constexpr std::array<std::string_view, 5> kCatalogStates{"no-library", "no-database", "data-directory",
                                                                 "library-mismatch", "unavailable"};

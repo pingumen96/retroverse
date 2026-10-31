@@ -1,0 +1,11 @@
+// I5 step 9 (ADR-0016 §11): the insertion skipped. As world_insertion.json, then interact during the insertion:
+//   frame 40   interact: Amber Lantern's item inspected
+//   frame 80   confirm: Avvia, the insertion begins
+//   frame 86   interact: the insertion skipped, the item in the console's socket at once (the eye stopped where its
+//              turn had taken it) and the launch's hand-over within the frame (the fake emulator about 2.5 s)
+// tests/smoke/test_world_launch.cpp checks the run report.
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 80, "toFrame": 80, "actions": {"confirm": 1}},
+  {"fromFrame": 86, "toFrame": 86, "actions": {"interact": 1, "screenshot": 1}}
+]

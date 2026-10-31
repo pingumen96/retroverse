@@ -1,5 +1,7 @@
 #pragma once
 
+#include <rv/app/crt_looks.hpp>
+#include <rv/app/game_screens.hpp>
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_scheduler.hpp>
 #include <rv/app/video_settings.hpp>
@@ -98,9 +100,7 @@ struct CabinetShown {
     bool operator==(const CabinetShown&) const = default;
 };
 
-/// The id's end of a generated room's hero CRT, the hero corner's "crt" part ("room:snes/fx:hero.crt"), which the
-/// arcade's hero cabinet keeps.
-inline constexpr std::string_view kHeroCrtIdSuffix = ".crt";
+// kHeroCrtIdSuffix: rv/app/crt_looks.hpp (I5 step 6: the screens' looks find the hero by it too).
 
 /// The screens of `description`, the hero first: by its role since I5 step 3, the object whose id ends with
 /// kHeroCrtIdSuffix built from the `crt` prefab, or from the `arcade_cabinet` prefab that stands for it in the arcade
@@ -196,12 +196,23 @@ struct ScreenServiceOptions {
 ///    gl::MaterialRegistry::setPictureRect), its bars the tube's black;
 ///  - a bound screen whose slot is taken from a clip it still wants ("needed", "budget") keeps a copy of that clip's
 ///    frame (gl::Texture2D::copyOf) until the clip has a slot again, in place of its still.
+///
+/// Since I5 step 8 (ADR-0016 §10) the media viewer's clip (setViewer()) is a screen of the scheduler too, of the
+/// `direct` class, in view while the window is not minimized, at the eye: its own key (never sharing a world screen's
+/// slot, whose texture keeps 480 rows), decoded at video.json's viewerMaxRows with two decoders (maxRows with one), its
+/// frames uploaded into a texture of its own (allocated while it plays, gone when the viewer lets it go) whose GL_RGBA8
+/// view the viewer shows (viewerVideo()). While the viewer is open every screen of the world and every cabinet counts as
+/// out of view (their slots pause at once, reason "viewer", and stop after kScreenStopAfterSeconds; one taken for the
+/// viewer's clip, "needed", keeps its frame), and the sound is the viewer's clip alone, at its full volume, whatever
+/// room holds the eye. A clip a failure verdict leaves out is never opened, its reason given; one that fails gives its
+/// decoder's. The page's pause holds its slot on its frame.
 class ScreenService {
 public:
     /// The still pictures' size: the screen's 4:3, as the clips.
     static constexpr glm::ivec2 kStillSize{640, 480};
 
-    /// `screens` (findScreens(): not empty, the hero first).
+    /// `screens` (findScreens(): the hero first; empty, I5 step 8, for the media viewer's clip before any scene had
+    /// screens: unbound until bind()).
     ScreenService(std::vector<ScreenBinding> screens, gl::MaterialRegistry& materials, std::vector<ScreenGame> games,
                   ScreenServiceOptions options);
     ~ScreenService();
@@ -266,8 +277,22 @@ public:
     void showGameWindow(unsigned texture, glm::ivec2 size, const glm::vec4& crop = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
     void clearGameWindow();
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
+    /// The media viewer on the next update() (I5 step 8): open or not, and its videos page's clip. A clip asked again
+    /// (the same game, file and opening) keeps playing, its pause as asked; another one replaces it from its start.
+    void setViewer(const ViewerRequest& request);
+    /// After update(): the viewer's clip (its state, its texture's view, its reason).
+    [[nodiscard]] const ViewerVideo& viewerVideo() const noexcept;
+
+    /// I5 step 9 (ADR-0016 §11): the insertion into the console begins: every decoder stops now (each screen keeping
+    /// its clip's position), never waited for here, its thread ending while the insertion runs; the hero shows the
+    /// title card of `gameId` when that game is its target; `frame` is Avvia's (the stop's events and record).
+    /// launchStarting() follows before the hand-over, or launchEnded() when the launch never starts.
+    void prepareLaunch(const std::string& gameId, std::uint64_t frame);
+    /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for, at most
+    /// kScreenStopBoundSeconds from the stop's start (prepareLaunch()'s when it came first).
     void launchStarting();
-    /// The launch ended, failed to start or was refused: the clips open again at their positions.
+    /// The launch ended, failed to start or was refused (a prepared one too, recorded `cancelled`): the clips open
+    /// again at their positions.
     void launchEnded();
     /// The end of the run: the decoders stay stopped, every decoder thread is waited for, the worker ends.
     void shutdown();

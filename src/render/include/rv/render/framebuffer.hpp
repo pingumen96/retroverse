@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,15 +26,18 @@ enum class ColorFormat : std::uint8_t {
     /// GL_SRGB8_ALPHA8: with GL_FRAMEBUFFER_SRGB enabled, linear shader output is encoded to sRGB on write, so the
     /// stored bytes are display-ready (window presentation, screenshots).
     Srgb8Alpha8,
-    /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene and its bloom before tonemapping.
+    /// GL_RGBA16F: linear values beyond [0, 1] (up to 65504), the HDR scene's radiance before tonemapping.
     Rgba16F,
     /// GL_R8: one channel in [0, 1], 8 bits (the ambient occlusion the lit shader reads).
     R8,
     /// GL_RG16F: two half floats (the half-resolution ambient occlusion and the distance it was estimated at).
     Rg16F,
+    /// GL_R11F_G11F_B10F: three unsigned floats in 32 bits (up to 65024, 6 and 5 bits of mantissa), no alpha: the
+    /// emitted light of the HDR scene and the bloom.
+    R11fG11fB10f,
 };
 
-/// "srgb8_alpha8", "rgba16f", "r8" or "rg16f".
+/// "srgb8_alpha8", "rgba16f", "r8", "rg16f" or "r11f_g11f_b10f".
 [[nodiscard]] std::string_view toString(ColorFormat format) noexcept;
 /// The storage format of `format`, for the memory accounting.
 [[nodiscard]] GpuFormat gpuFormat(ColorFormat format) noexcept;
@@ -45,7 +49,7 @@ struct FramebufferDesc {
     /// Pixels; each side in [1, min(GL_MAX_FRAMEBUFFER_WIDTH/HEIGHT, GL_MAX_TEXTURE_SIZE, GL_MAX_RENDERBUFFER_SIZE)]
     /// (at least 16384 on any OpenGL 4.5 implementation).
     glm::ivec2 size{0};
-    /// Format of every color attachment.
+    /// Format of the first color attachment, and of the others unless laterColorFormat says otherwise.
     ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
     /// Adds a GL_DEPTH24_STENCIL8 buffer at GL_DEPTH_STENCIL_ATTACHMENT.
     bool depthStencil = true;
@@ -54,11 +58,29 @@ struct FramebufferDesc {
     /// With depthStencil: the depth/stencil buffer is a texture that later passes can sample (bindDepthTexture():
     /// window depth in [0, 1], nearest filtering unless a sampler says otherwise) instead of a renderbuffer.
     bool depthTexture = false;
+    /// Format of the color attachments after the first; none: colorFormat.
+    std::optional<ColorFormat> laterColorFormat;
 };
+
+/// The format of color attachment `attachment` of `desc`.
+[[nodiscard]] ColorFormat colorFormatOf(const FramebufferDesc& desc, std::size_t attachment) noexcept;
 
 /// Bytes of the attachments of `desc` (every color attachment and the depth/stencil buffer, one level each): what a
 /// Framebuffer records as GpuMemoryKind::Targets. 0 for an empty size.
 [[nodiscard]] std::size_t framebufferBytes(const FramebufferDesc& desc) noexcept;
+
+class Framebuffer;
+
+/// The storage an alias framebuffer draws into (Framebuffer::createAlias): a color attachment of `color`, viewed as
+/// `colorFormat`, and optionally the depth/stencil texture of `depthStencil` (FramebufferDesc::depthTexture).
+struct FramebufferAliasDesc {
+    const Framebuffer* color = nullptr;
+    std::size_t colorAttachment = 0;
+    /// Of the view class of that attachment's format (texels of one size: Srgb8Alpha8, Rg16F and their kin).
+    ColorFormat colorFormat = ColorFormat::Srgb8Alpha8;
+    /// Of the color's size; none: the alias has no depth/stencil buffer.
+    const Framebuffer* depthStencil = nullptr;
+};
 
 /// Move-only offscreen render target (DSA): one or more color textures with immutable storage (one mip level, linear
 /// filtering, clamped to edge) at GL_COLOR_ATTACHMENT0, 1, ..., all drawn into at once, and an optional
@@ -76,9 +98,18 @@ public:
     /// outside the limits above, GraphicsError when an allocation fails (out of memory) or the driver reports the
     /// framebuffer incomplete.
     [[nodiscard]] static Expected<Framebuffer> create(const FramebufferDesc& desc, std::string_view debugName);
+    /// A framebuffer over the storage of others (`desc`): its color attachment and its depth/stencil texture are
+    /// texture views (glTextureView) of theirs, so drawing into it draws into them, and they keep that storage alive
+    /// whatever is destroyed first. It allocates nothing and records nothing in gpuMemoryLedger(). Its size is its
+    /// sources'; it is sampled, drawn into and read back like any framebuffer (one color attachment), but never
+    /// resized (make it again from its sources). Errors: InvalidArgument for an empty source, a missing attachment or
+    /// depth texture, sizes that differ or a format of another view class; GraphicsError when the driver creates no
+    /// view or reports the framebuffer incomplete.
+    [[nodiscard]] static Expected<Framebuffer> createAlias(const FramebufferAliasDesc& desc,
+                                                           std::string_view debugName);
 
     /// Reallocates the attachments at `size`; their contents are undefined afterwards. No-op for the current size. On
-    /// error the framebuffer keeps its previous attachments.
+    /// error the framebuffer keeps its previous attachments. Errors: InvalidArgument for an alias (createAlias).
     [[nodiscard]] Status resize(glm::ivec2 size);
 
     /// Binds this framebuffer for drawing and reading (glBindFramebuffer(GL_FRAMEBUFFER)). The viewport is the
@@ -109,10 +140,6 @@ public:
     /// without one unbinds the unit. Do not sample it while this framebuffer is bound for drawing.
     void bindStencilTexture(GLuint unit) const;
 
-    /// Copies the depth and stencil values into `destination`'s (glBlitNamedFramebuffer, exact), so that what is drawn
-    /// there afterwards is depth-tested against this framebuffer's scene. Does nothing unless both have the same size
-    /// and a depth/stencil buffer.
-    void copyDepthStencilTo(const Framebuffer& destination) const;
     /// Copies the color attachment into `destination`'s, stretched to its size: the values are converted to its
     /// format (clamped to [0, 1] for Srgb8Alpha8, and encoded to sRGB while GL_FRAMEBUFFER_SRGB is enabled). Does
     /// nothing for an empty framebuffer.
@@ -144,15 +171,23 @@ public:
     /// them; the other formats return their values clamped to [0, 1] (channels they lack read 0, alpha 1). Waits for
     /// pending rendering (a pipeline stall: meant for screenshots and tests, not for every frame).
     [[nodiscard]] Expected<assets::ImageData> readPixels() const;
-    /// Reads the first color attachment of an Rgba16F framebuffer back as linear RGBA, bottom row first (texel order),
-    /// the values as stored. A pipeline stall like readPixels(): meant for checks and tests. Errors: InvalidArgument
-    /// for an empty or Srgb8Alpha8 framebuffer, OutOfRange when the pixels do not fit one readback.
+    /// Reads the first color attachment of an Rgba16F or R11fG11fB10f framebuffer back as linear RGBA, bottom row
+    /// first (texel order), the values as stored (alpha 1 where the format has none). A pipeline stall like
+    /// readPixels(): meant for checks and tests. Errors: InvalidArgument for an empty framebuffer or another format,
+    /// OutOfRange when the pixels do not fit one readback.
     [[nodiscard]] Expected<std::vector<glm::vec4>> readLinearPixels() const;
 
     [[nodiscard]] bool valid() const noexcept { return m_framebuffer.valid(); }
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_desc.size; }
     [[nodiscard]] ColorFormat colorFormat() const noexcept { return m_desc.colorFormat; }
+    /// The format of color attachment `attachment`.
+    [[nodiscard]] ColorFormat colorFormat(std::size_t attachment) const noexcept {
+        return colorFormatOf(m_desc, attachment);
+    }
     [[nodiscard]] std::size_t colorAttachments() const noexcept { return m_desc.colorAttachments; }
+    /// The bytes it records as GpuMemoryKind::Targets: framebufferBytes() of its attachments, 0 for an alias
+    /// (createAlias) or an empty framebuffer.
+    [[nodiscard]] std::uint64_t recordedBytes() const noexcept { return m_memory.bytes(); }
     [[nodiscard]] const std::string& debugName() const noexcept { return m_debugName; }
 
 private:
@@ -171,6 +206,7 @@ private:
     TextureObject m_stencilView;
     FramebufferObject m_framebuffer;
     GpuMemoryAllocation m_memory;
+    bool m_alias = false;
 };
 
 /// A framebuffer that draws into a color texture someone else owns (an XR swapchain's image, ADR-0017 §2): one color

@@ -21,7 +21,9 @@
 #pragma comment(lib, "shell32.lib")
 #endif
 
+using rv::launcher::appendAlwaysQuotedArgument;
 using rv::launcher::appendQuotedArgument;
+using rv::launcher::ArgumentQuoting;
 using rv::launcher::buildCommandLine;
 using rv::launcher::isValidUtf8;
 using rv::launcher::kMaxCommandLineUnits;
@@ -96,6 +98,32 @@ TEST_CASE("launcher/command_line: arguments are quoted only when they must be", 
     std::string line = "prefix";
     appendQuotedArgument(line, "a b");
     CHECK(line == "prefix\"a b\"");
+}
+
+TEST_CASE("launcher/command_line: arguments quoted whatever they hold", "[launcher][command_line]") {
+    struct Case {
+        std::string_view argument;
+        std::string_view quoted;
+    };
+    const Case cases[] = {
+        {"", R"("")"},
+        {"plain", R"("plain")"},
+        {"a,b", R"("a,b")"},
+        {R"(C:\Media\manuals\Legend, The.pdf)", R"("C:\Media\manuals\Legend, The.pdf")"},
+        {R"(trailing\)", R"("trailing\\")"}, // doubled before the closing quote
+        {R"(say "hi")", R"("say \"hi\"")"},
+        {R"(a\"b)", R"("a\\\"b")"},
+    };
+    for (const Case& c : cases) {
+        INFO("argument [" << c.argument << "]");
+        std::string line;
+        appendAlwaysQuotedArgument(line, c.argument);
+        CHECK(line == c.quoted);
+    }
+    const std::vector<std::string> arguments{R"(C:\Media\manuals\Plain.pdf)", "two words"};
+    const auto line = buildCommandLine(R"(C:\Windows\explorer.exe)", arguments, ArgumentQuoting::Always);
+    REQUIRE(line.has_value());
+    CHECK(*line == R"("C:\Windows\explorer.exe" "C:\Media\manuals\Plain.pdf" "two words")");
 }
 
 TEST_CASE("launcher/command_line: the command line of a program and its arguments", "[launcher][command_line]") {
@@ -215,12 +243,14 @@ TEST_CASE("launcher/command_line: random arguments survive CommandLineToArgvW", 
                 argument += pieces[pick(random)];
             }
         }
-        const auto line = buildCommandLine(program, arguments);
-        REQUIRE(line.has_value());
         std::vector<std::string> expected{program};
         expected.insert(expected.end(), arguments.begin(), arguments.end());
-        INFO("iteration " << iteration << ": " << *line);
-        REQUIRE(commandLineToArgv(*line) == expected);
+        for (const ArgumentQuoting quoting : {ArgumentQuoting::WhenNeeded, ArgumentQuoting::Always}) {
+            const auto line = buildCommandLine(program, arguments, quoting);
+            REQUIRE(line.has_value());
+            INFO("iteration " << iteration << ": " << *line);
+            REQUIRE(commandLineToArgv(*line) == expected);
+        }
     }
 }
 

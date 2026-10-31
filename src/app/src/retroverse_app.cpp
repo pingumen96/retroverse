@@ -25,6 +25,7 @@
 #include <rv/app/audio_policy.hpp>
 #include <rv/app/back_action.hpp>
 #include <rv/app/command_line.hpp>
+#include <rv/app/crt_looks.hpp>
 #include <rv/app/debug_line_selection.hpp>
 #include <rv/app/elevator_prompt_ui.hpp>
 #include <rv/app/input_context.hpp>
@@ -345,10 +346,12 @@ void runFxaaCheck(AppContext& context, const SceneGraphics& graphics) {
     }
     const std::string summary = fmt::format(
         "without anti-aliasing the edge is hard ({}); with it {} of {} rows crossed by the edge hold blended pixels "
-        "({}, at least {:g}%), {} of {} pixels of flat areas changed ({})",
+        "({}, at least {:g}%), {} of {} pixels of flat areas changed ({}); with the bloom, {} of {} pixels of the "
+        "image written over the emitted light differ from the one written into the output ({})",
         result->aliasedIsHard ? "ok" : "FAILED", result->blendedEdgeRows, result->edgeRows,
         result->edgeBlended ? "ok" : "FAILED", 100.0f * kFxaaCheckMinBlendedShare, result->flatChanged,
-        result->flatPixels, result->flatCopied ? "ok" : "FAILED");
+        result->flatPixels, result->flatCopied ? "ok" : "FAILED", result->inPlaceChanged, result->inPlacePixels,
+        result->inPlaceExact ? "ok" : "FAILED");
     context.report().selfCheck = SelfCheckRecord{SelfCheck::Fxaa, result->passed, summary};
     if (result->passed) {
         spdlog::info("FXAA self-check passed: {}", summary);
@@ -451,6 +454,20 @@ VideoSettings videoSettingsOf(const core::Paths& paths) {
         spdlog::warn("Video: the user's video.json is left out, the defaults used: {}", issue.toString());
     }
     return loaded->settings;
+}
+
+/// The screens' CRT looks of the scene shown (I5 step 6), for the run report.
+CrtLooksRecord crtLooksRecord(const ScreenLooks& looks) {
+    CrtLooksRecord record;
+    record.crtEffect = std::string(toString(looks.video().crtEffect));
+    record.presetsSource = looks.presetsSource();
+    for (const ScreenLookApplied& look : looks.applied()) {
+        record.screens.push_back(CrtLookRecord{look.screen, look.room, std::string(toString(look.kind)),
+                                               std::string(assets::toString(look.choice.preset)),
+                                               std::string(assets::toString(look.choice.chosen)),
+                                               std::string(toString(look.choice.rule))});
+    }
+    return record;
 }
 
 } // namespace
@@ -1013,10 +1030,19 @@ struct RetroverseApp::State {
     /// catalog while it is open, else the item in the world's Focus or Inspect (I3 step 13b), after its dwell. I5 step 4:
     /// the arcade cabinets asking for their clips, and those showing them drawn by the world; the two selections go
     /// apart, the arcade's hero cabinet following the quick catalog's alone (its focused cabinet plays itself).
-    void updateScreens(std::uint64_t frame, bool minimized) {
+    void updateScreens(const AppContext& context, bool minimized) {
+        const std::uint64_t frame = context.frameIndex();
+        // I5 step 8 (ADR-0016 §10): the media viewer's clip is the screens' service's, which a run that has shown no
+        // screen yet (a lobby, a hall) makes for it, unbound.
+        const ViewerRequest viewerRequest = product ? product->viewerRequest() : ViewerRequest{};
+        if (!screen && viewerRequest.clip) {
+            screen = std::make_unique<ScreenService>(std::vector<ScreenBinding>{}, graphics->materials(),
+                                                     std::vector<ScreenGame>{}, screenServiceOptions(context));
+        }
         if (!screen) {
             return;
         }
+        screen->setViewer(viewerRequest);
         const std::optional<std::string> catalogSelection =
             product ? product->selectedGameId() : std::optional<std::string>();
         WorldSession::ScreenSelections selections{std::nullopt, catalogSelection};
@@ -1034,6 +1060,9 @@ struct RetroverseApp::State {
         screen->update(frame, simulatedSeconds, camera, selection, minimized, world ? world->eyeInScreenRoom() : true);
         if (world) {
             world->showCabinets(screen->cabinetsShown());
+        }
+        if (product) {
+            product->setViewerVideo(screen->viewerVideo());
         }
     }
 
@@ -1110,8 +1139,8 @@ struct RetroverseApp::State {
             }
         }
         const bool card = world && world->context() == WorldContext::Inspect;
-        const bool duck =
-            audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen());
+        const bool duck = audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen(),
+                                      product && product->mediaViewerOpen());
         if (duck != ducked) {
             ducked = duck;
             ++audioRecord.duckChanges;
@@ -1190,6 +1219,24 @@ struct RetroverseApp::State {
                                                         std::string(choice.reason), set.has_value()});
     }
 
+    /// The options of the run's screens' service.
+    ScreenServiceOptions screenServiceOptions(const AppContext& context) {
+        const CommandLineOptions& options = context.options();
+        ScreenServiceOptions screenOptions;
+        screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
+        screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
+        // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget; step 5: the sound.
+        screenOptions.video = videoSettings(context);
+        screenOptions.audio = audio.get();
+        screenOptions.recordPresentedFrames = options.audioCapture.has_value();
+        screenOptions.maxDecoders = options.maxDecoders;
+        screenOptions.watchLateFrames = options.watchLateFrames;
+        screenOptions.assetRoot = context.paths().assetRoot();
+        // I5 step 7: the clips' verdicts, in the user data's cache.
+        screenOptions.verdictsFile = media::videoVerdictsFile(context.paths().cacheDir());
+        return screenOptions;
+    }
+
     /// The screens' service on the scene's CRTs (`heroScreenPrefix`: those whose object ids start with it, none for an
     /// empty one: a floor whose eye's room has no CRT bound yet, I4 step 6b), if it has any (not in the model viewer);
     /// the run's service, kept unbound across a scene shown in place of another, is bound to them instead
@@ -1207,20 +1254,8 @@ struct RetroverseApp::State {
                 screen->bind(std::move(screens), std::move(games), context.frameIndex());
                 return;
             }
-            ScreenServiceOptions screenOptions;
-            screenOptions.freezePtsSeconds = options.videoFreezePtsSeconds;
-            screenOptions.lockstep = options.fixedDeltaSeconds.has_value();
-            // I5 step 1: the rooms' playlists and the title cards' fonts; step 2: the decoder budget; step 5: the sound.
-            screenOptions.video = videoSettings(context);
-            screenOptions.audio = audio.get();
-            screenOptions.recordPresentedFrames = options.audioCapture.has_value();
-            screenOptions.maxDecoders = options.maxDecoders;
-            screenOptions.watchLateFrames = options.watchLateFrames;
-            screenOptions.assetRoot = context.paths().assetRoot();
-            // I5 step 7: the clips' verdicts, in the user data's cache.
-            screenOptions.verdictsFile = media::videoVerdictsFile(context.paths().cacheDir());
             screen = std::make_unique<ScreenService>(std::move(screens), graphics->materials(), std::move(games),
-                                                     screenOptions);
+                                                     screenServiceOptions(context));
         } else if (heroScreenPrefix && heroScreenPrefix->empty()) {
             spdlog::info("Scene '{}': no hero CRT bound yet (the CRT of the room that holds the eye, once it stays in "
                          "one)",
@@ -1258,7 +1293,7 @@ struct RetroverseApp::State {
         host.showScene = [this, &context](scene::SceneDescription next, const WorldSession::SceneShow& show) {
             return replaceScene(context, std::move(next), scene::assetModelLoader(context.paths().assetRoot()),
                                 show.keepWalker, show.heroScreenPrefix, show.walkerMove, show.screenGames,
-                                show.atCamera);
+                                show.atCamera, show.screenPresets);
         };
         // I4 step 7b: the teleports on the floor shown (the walker at a room's doorway, at the elevator).
         host.teleport = [this](const scene::CameraSetup& at) {
@@ -1411,7 +1446,8 @@ struct RetroverseApp::State {
     Status replaceScene(AppContext& context, scene::SceneDescription next, scene::ModelLoader loader,
                         bool keepWalker = false, const std::optional<std::string>& heroScreenPrefix = std::nullopt,
                         const std::optional<FrameMove>& walkerMove = std::nullopt,
-                        std::vector<ScreenGame> screenGames = {}, bool atCamera = false) {
+                        std::vector<ScreenGame> screenGames = {}, bool atCamera = false,
+                        std::map<std::string, std::string, std::less<>> screenPresets = {}) {
         // A ride's destination puts the walker at its camera (I4 step 7b), whatever --spawn said for the start.
         std::optional<SpawnPoint> spawn = keepWalker ? std::optional<SpawnPoint>(freeRoam->pose())
                                           : atCamera ? std::nullopt
@@ -1430,6 +1466,8 @@ struct RetroverseApp::State {
             screen->unbind(false); // the registry is cleared below: its material goes with it
         }
         graphics->clearContent();
+        // I5 step 6: the new scene's screens take their rooms' packs' CRT presets.
+        graphics->screenLooks().setScene(std::move(screenPresets));
         // The overlay's panels refer to members of the scene instance (its environment, its lights' packing): the new
         // instance takes the old one's place in the same storage, which they keep referring to.
         scene.reset();
@@ -1809,6 +1847,8 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(graphics.error());
     }
     state->graphics = std::move(*graphics);
+    // I5 step 6: the screens' CRT presets follow video.json's crtEffect and crtPreset keys.
+    state->graphics->screenLooks().setVideo(state->videoSettings(context));
     auto sceneInstance = SceneInstance::create(state->description, state->graphics->materialLibrary(),
                                                state->loadModel, state->graphics->resources());
     if (!sceneInstance) {
@@ -1854,6 +1894,16 @@ Status RetroverseApp::onInit(AppContext& context) {
         // The screens' decoders stop and are waited for before a launch, and open again after it (ADR-0012 §6); the
         // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
+        // I5 step 9 (ADR-0016 §11): the insertion into the console hides the stop: the mix starts fading and the slots
+        // stop as it begins, the hero showing the game's title card; the hand-over (`starting`) waits for what remains.
+        hooks.preparing = [raw, &context](const std::string& gameId) {
+            if (raw->audio) {
+                raw->audio->beginSuspend();
+            }
+            if (raw->screen) {
+                raw->screen->prepareLaunch(gameId, context.frameIndex());
+            }
+        };
         hooks.starting = [raw, &context] {
             // ADR-0016 §9: the mix fades out (50 ms, begun before the screens' decoders stop, so that it runs while
             // they do) and the device stops, leaving the endpoint to the emulator.
@@ -2168,7 +2218,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }
-    state.updateScreens(frame, context.window().isMinimized());
+    state.updateScreens(context, context.window().isMinimized());
     state.updateXrGame(context);
     state.updateAudio(&actions);
     state.syncCaptureLayers();
@@ -2233,7 +2283,7 @@ void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
     state.simulatedSeconds += elapsedSeconds;
     state.setPriority(context.frameIndex(),
                       processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
-    state.updateScreens(context.frameIndex(), true);
+    state.updateScreens(context, true);
     state.updateAudio(nullptr);
 }
 
@@ -2261,6 +2311,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
         // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});
         context.report().processPriority = m_state->priority;
+        context.report().crtLooks = crtLooksRecord(m_state->graphics->screenLooks());
         if (context.options().frameLimit) {
             m_state->freeRoam->logFinalPose(context.frameIndex(), m_state->simulatedSeconds);
         }

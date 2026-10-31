@@ -102,6 +102,7 @@ std::vector<CabinetPlay> chooseCabinets(const CabinetChoice& choice) {
             plays.push_back(CabinetPlay{choice.focused, ScreenClass::Focus});
             return plays;
         case WorldState::Inspect:
+        case WorldState::AnimatingToConsole:
         case WorldState::Launching:
         case WorldState::Returning:
             plays.push_back(CabinetPlay{choice.focused, ScreenClass::Direct});

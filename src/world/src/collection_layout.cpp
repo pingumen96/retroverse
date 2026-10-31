@@ -434,6 +434,7 @@ Expected<CollectionLayout> collectionLayout(const WorldPlan& plan, const RoomId&
         item.slot = placement.slot;
         item.section = level->section;
         item.stance = stance;
+        item.inFixture = family.spineFacing == SpineFacing::Front;
         item.cluster =
             clusterId(*socketIndex, prefab->generator == "shelf" ? placement.slot.level() : kWholeFixtureLevel);
         // The offset (ADR-0010 §6): pushed in along the slot's -Z, turned about its +Y through the item's centre.

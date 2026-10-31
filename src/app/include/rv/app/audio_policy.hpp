@@ -68,9 +68,12 @@ struct SpatialSound {
 [[nodiscard]] double azimuthOf(double eyeX, double eyeZ, double forwardX, double forwardZ, double targetX,
                                double targetZ) noexcept;
 
-/// The sound ducks (audio::kDuckDecibels) while the world's card, the directory or the quick catalog is open.
-[[nodiscard]] constexpr bool audioDucked(bool cardShown, bool directoryOpen, bool catalogOpen) noexcept {
-    return cardShown || directoryOpen || catalogOpen;
+/// The sound ducks (audio::kDuckDecibels) while the world's card, the directory or the quick catalog is open; never
+/// while the media viewer is (I5 step 8, ADR-0016 §9: its own clip plays at full volume, the world paused under it,
+/// over the card or the quick catalog it was opened from).
+[[nodiscard]] constexpr bool audioDucked(bool cardShown, bool directoryOpen, bool catalogOpen,
+                                         bool viewerOpen = false) noexcept {
+    return !viewerOpen && (cardShown || directoryOpen || catalogOpen);
 }
 
 } // namespace rv::app

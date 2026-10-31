@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,42 +12,51 @@
 #include <rv/core/expected.hpp>
 #include <rv/render/framebuffer.hpp>
 #include <rv/render/post_settings.hpp>
+#include <rv/render/view_target_plan.hpp>
 
 namespace rv::gl {
 
 /// The render targets one output of the renderer (the window, a screenshot) is drawn through, all for the size of that
-/// output:
-///  - hdr(): two GL_RGBA16F color attachments + a depth24/stencil8 texture. The scene pass writes the fragment outputs
-///    of the scene shaders into them (SceneOutput, SceneRenderer): the linear radiance (the first attachment, the one
-///    copies and readbacks take) and its emitted part, the light the bloom always spreads (PostProcessor). Its depth,
-///    written by the depth pre-pass, is what the ambient occlusion is estimated from (Framebuffer::bindDepthTexture).
+/// output, allocated from viewTargetPlan() (formats, sizes, the passes each image lives through and the storage it
+/// takes over from an image whose last pass is over):
+///  - hdr(): two color attachments + a depth24/stencil8 texture. The scene pass writes the fragment outputs of the
+///    scene shaders into them (SceneOutput, SceneRenderer): the linear radiance (GL_RGBA16F, the first attachment, the
+///    one copies and readbacks take) and its emitted part (GL_R11F_G11F_B10F), the light the bloom always spreads
+///    (PostProcessor). Its depth, written by the depth pre-pass, is what the ambient occlusion is estimated from
+///    (Framebuffer::bindDepthTexture), what the outline's mark and the debug lines are tested against.
 ///  - ambientOcclusionRaw(): GL_RG16F at ssaoTargetSize(size()), half the resolution: the ambient occlusion estimate
 ///    and the distance it was taken at (SsaoPass).
 ///  - ambientOcclusion(): GL_R8 at size(): the blurred ambient occlusion the lit shader reads, 1 where nothing occludes
 ///    (SsaoPass).
-///  - bloomLevels(): kBloomLevelCount GL_RGBA16F targets of bloomLevelSizes(size()), the bloom chain (PostProcessor).
+///  - bloomLevels(): kBloomLevelCount GL_R11F_G11F_B10F targets of bloomLevelSizes(size()), the bloom chain
+///    (PostProcessor); the first in ambientOcclusionRaw()'s storage, whose blur is over before the bloom starts.
 ///  - tonemapped(): GL_SRGB8_ALPHA8 at size(), no depth: the tonemapped image with the perceptual luma of each pixel in
-///    its alpha, which the post pass writes into it when the anti-aliasing pass follows (PostProcessor).
-///  - output(): GL_SRGB8_ALPHA8 color + depth24/stencil8. The post pass (or the anti-aliasing pass after it) writes the
-///    tonemapped image into it, debug lines and overlays are drawn over it; it is what the window shows
+///    its alpha, which the post pass writes into it when the anti-aliasing pass follows (PostProcessor), in the
+///    storage of hdr()'s emitted part, which that pass reads texel by texel where it writes.
+///  - output(): GL_SRGB8_ALPHA8, no depth. The post pass (or the anti-aliasing pass after it) writes the tonemapped
+///    image into it, the outline and overlays are drawn over it; it is what the window shows
 ///    (Framebuffer::blitToDefault) and what screenshots read (Framebuffer::readPixels). Its alpha is not meant to be
 ///    shown: 1, or the luma the post pass writes when no anti-aliasing follows.
-/// Allocated once per size: resize() reallocates them only when the size changes, so drawing allocates nothing.
+///  - outputWithSceneDepth(): output()'s color over hdr()'s depth/stencil (Framebuffer::createAlias, no storage of its
+///    own): the debug lines are drawn into it, depth-tested against the scene.
+/// Allocated once per size: resize() reallocates them only when the size changes, so drawing allocates nothing. Their
+/// storage is viewTargetsBytes(size()) (GpuMemoryKind::Targets).
 /// Move-only; a default-constructed ViewTargets is empty. Main thread only.
 class ViewTargets {
 public:
     ViewTargets() noexcept = default;
 
     /// Allocates every target for an output of `size` pixels, labeled "<debugName>.hdr", "<debugName>.ssaoRaw",
-    /// "<debugName>.ssao", "<debugName>.bloom<i>", "<debugName>.tonemapped" and "<debugName>.output". Errors: those of
-    /// Framebuffer::create (a size outside the limits, an allocation failure).
+    /// "<debugName>.ssao", "<debugName>.bloom<i>", "<debugName>.tonemapped", "<debugName>.output" and
+    /// "<debugName>.outputWithSceneDepth". Errors: those of Framebuffer::create and Framebuffer::createAlias (a size
+    /// outside the limits, an allocation failure).
     [[nodiscard]] static Expected<ViewTargets> create(glm::ivec2 size, std::string_view debugName);
 
     /// Reallocates every target at `size`; their contents are undefined afterwards. No-op for the current size. On
     /// error the previous targets are kept, all of the previous size.
     [[nodiscard]] Status resize(glm::ivec2 size);
 
-    [[nodiscard]] bool valid() const noexcept { return m_output.valid(); }
+    [[nodiscard]] bool valid() const noexcept { return m_outputWithSceneDepth.valid(); }
     /// Size of the output, and of the HDR target.
     [[nodiscard]] glm::ivec2 size() const noexcept { return m_output.size(); }
     [[nodiscard]] const Framebuffer& hdr() const noexcept { return m_hdr; }
@@ -58,14 +69,24 @@ public:
     /// The tonemapped image before anti-aliasing.
     [[nodiscard]] const Framebuffer& tonemapped() const noexcept { return m_tonemapped; }
     [[nodiscard]] const Framebuffer& output() const noexcept { return m_output; }
+    /// The output's color over the scene's depth/stencil.
+    [[nodiscard]] const Framebuffer& outputWithSceneDepth() const noexcept { return m_outputWithSceneDepth; }
 
 private:
+    /// The framebuffer that holds `image` and its color attachment.
+    [[nodiscard]] const Framebuffer& storageOf(ViewImage image, std::size_t& attachment) const noexcept;
+    /// The target of `image` for an output of `size`: its own storage, or a view of the image it takes over.
+    [[nodiscard]] Expected<Framebuffer> createImage(ViewImage image, glm::ivec2 size) const;
+    /// The bytes the framebuffers record as GpuMemoryKind::Targets: viewTargetsBytes(size()) (asserted by create()).
+    [[nodiscard]] std::uint64_t recordedBytes() const noexcept;
+
     Framebuffer m_hdr;
     Framebuffer m_ambientOcclusionRaw;
     Framebuffer m_ambientOcclusion;
     std::array<Framebuffer, kBloomLevelCount> m_bloom;
     Framebuffer m_tonemapped;
     Framebuffer m_output;
+    Framebuffer m_outputWithSceneDepth;
     std::string m_debugName;
 };
 

@@ -43,11 +43,34 @@ constexpr std::array<ui::NavDirection, 4> kDirections{ui::NavDirection::Up, ui::
     return transform;
 }
 
+/// A rotation of `radians` about +Z (right-handed: +X turns towards +Y for a positive angle).
+[[nodiscard]] glm::mat4 rotationZ(float radians) noexcept {
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    glm::mat4 transform(1.0f);
+    transform[0] = glm::vec4(c, s, 0.0f, 0.0f);
+    transform[1] = glm::vec4(-s, c, 0.0f, 0.0f);
+    return transform;
+}
+
+/// The roll about the slot's +Z that stands a spine-out item's cover upright once its quarter turn has brought its
+/// front to the viewer (the fix of 2026-10-29): a cartridge on its end (its top face out, its +X up) would show its
+/// cover sideways, its picture's top to the left; an item on its side (I6 step 4) is upright already (0).
+[[nodiscard]] float uprightRoll(const world::CollectionItem& item) noexcept {
+    const glm::mat3 inSlot = glm::mat3(glm::inverse(item.slotFrame) * item.transform);
+    const glm::vec3 up = glm::mat3(rotationY(-core::kHalfPi)) * (inSlot * glm::vec3(0.0f, 1.0f, 0.0f));
+    if (!std::isfinite(up.x) || !std::isfinite(up.y) || (std::fabs(up.x) < 1e-4f && up.y > 0.0f)) {
+        return 0.0f;
+    }
+    return std::atan2(up.x, up.y);
+}
+
 /// The pull in the slot's frame: what moves the item from its place in the slot (item.slotBox) to its pulled pose.
 [[nodiscard]] glm::mat4 pullInSlot(const world::CollectionItem& item, float progress, float reach) noexcept {
     const float p = std::isfinite(progress) ? std::clamp(progress, 0.0f, 1.0f) : 0.0f;
     const core::Aabb& box = item.slotBox;
-    if (p <= 0.0f || box.isEmpty()) {
+    if (p <= 0.0f || box.isEmpty() || item.inFixture) {
+        // A cabinet's screen stays in its bezel (the fix of 2026-10-29): its "pull" is the dynamic copy at its place.
         return glm::mat4(1.0f);
     }
     const glm::vec3 center = box.center();
@@ -65,18 +88,23 @@ constexpr std::array<ui::NavDirection, 4> kDirections{ui::NavDirection::Up, ui::
     const float settled = std::max(kPullOutDepthShare * 2.0f * b, front + a + kPullClearance);
     float out = 0.0f;
     float turn = 0.0f;
+    float roll = 0.0f;
     if (p <= kPullSlideShare) {
         out = clear * (p / kPullSlideShare);
     } else {
         const float u = (p - kPullSlideShare) / (1.0f - kPullSlideShare);
         // A quarter turn about +Y: its front (the slot's +X) comes round to the slot's +Z, towards the viewer.
         turn = -core::kHalfPi * u;
+        // Rolled upright about the slot's +Z meanwhile, clear of its row: a roll about +Z moves nothing along the
+        // slot's depth, so the turn's clearance below holds.
+        roll = uprightRoll(item) * u;
         // Turned by `turn`, its footprint reaches |sin| a + |cos| b in front of its centre: the centre stays that far
         // plus the clearance in front of the row while it settles to the share of its depth.
         const float turned = a * std::fabs(std::sin(turn)) + b * std::fabs(std::cos(turn));
         out = std::max(front + turned + kPullClearance, clear + (settled - clear) * u);
     }
-    return translation(center + glm::vec3(0.0f, 0.0f, out)) * rotationY(turn) * translation(-center);
+    return translation(center + glm::vec3(0.0f, 0.0f, out)) * rotationZ(roll) * rotationY(turn) *
+           translation(-center);
 }
 
 } // namespace
@@ -88,16 +116,22 @@ float rowReach(const world::CollectionItem& item, const world::CollectionLayout&
     }
     // In the item's slot frame: what stands across the span its turn sweeps (its centre +- the half diagonal of its
     // footprint), within its height (a board it stands on or under touches it at most: 1 mm off), from behind its back
-    // up to kMaxRowReach past its face.
+    // up to kMaxRowReach past its face. An item that rolls upright as it turns (a cartridge on its end, uprightRoll())
+    // sweeps the disc of its turned face's half diagonal about its centre, across and up and down: the boards above
+    // and below it count then (the fix of 2026-10-29).
     const glm::mat4 toSlot = glm::inverse(item.slotFrame);
     const glm::vec3 half = box.halfExtents();
-    const float across = std::sqrt(half.x * half.x + half.z * half.z) + kPullClearance;
+    const bool rolls = std::fabs(uprightRoll(item)) > 1e-3f;
+    const float sweep = std::sqrt(half.y * half.y + half.z * half.z) + kPullClearance;
+    const float across = std::max(std::sqrt(half.x * half.x + half.z * half.z) + kPullClearance, rolls ? sweep : 0.0f);
     const float centre = box.center().x;
     constexpr float kTouch = 0.001f;
+    const float low = rolls ? box.center().y - sweep : box.min.y + kTouch;
+    const float high = rolls ? box.center().y + sweep : box.max.y - kTouch;
     float reach = 0.0f;
     const auto consider = [&](const core::Aabb& local) {
         if (local.isEmpty() || local.max.x <= centre - across || local.min.x >= centre + across ||
-            local.max.y <= box.min.y + kTouch || local.min.y >= box.max.y - kTouch || local.max.z <= box.max.z ||
+            local.max.y <= low || local.min.y >= high || local.max.z <= box.max.z ||
             local.min.z >= box.max.z + kMaxRowReach) {
             return;
         }
@@ -105,8 +139,8 @@ float rowReach(const world::CollectionItem& item, const world::CollectionLayout&
     };
     // The region in the room, to pass over what lies elsewhere before turning it into the slot's frame.
     const core::Aabb region =
-        core::Aabb::fromMinMax(glm::vec3(centre - across, box.min.y, box.min.z),
-                               glm::vec3(centre + across, box.max.y, box.max.z + kMaxRowReach))
+        core::Aabb::fromMinMax(glm::vec3(centre - across, std::min(low, box.min.y), box.min.z),
+                               glm::vec3(centre + across, std::max(high, box.max.y), box.max.z + kMaxRowReach))
             .transformed(item.slotFrame);
     for (const core::Aabb& occluder : layout.occluders) {
         if (region.intersects(occluder)) {
@@ -131,8 +165,9 @@ float rowReach(const world::CollectionItem& item, const world::CollectionLayout&
 }
 
 glm::mat4 pulledItemTransform(const world::CollectionItem& item, float progress, float reach) noexcept {
-    if (!(progress > 0.0f)) {
-        return item.transform; // in its slot: the static pose exactly
+    if (!(progress > 0.0f) || item.inFixture) {
+        // In its slot, or part of its fixture (a cabinet's screen): the static pose exactly.
+        return item.transform;
     }
     // The item in its slot's frame, moved there, back to the room.
     return item.slotFrame * pullInSlot(item, progress, reach) * glm::inverse(item.slotFrame) * item.transform;
@@ -197,7 +232,7 @@ std::optional<RoomItem> CollectionRoom::item(world::PickId id) const {
     if (found == nullptr) {
         return std::nullopt;
     }
-    return RoomItem{id, found->game, found->stance == world::ItemStance::FaceOut, sectionOf(id)};
+    return RoomItem{id, found->game, found->stance == world::ItemStance::FaceOut, sectionOf(id), found->inFixture};
 }
 
 scene::WalkerPose CollectionRoom::focusPose(world::PickId id) const {
@@ -210,6 +245,39 @@ scene::WalkerPose CollectionRoom::focusPose(world::PickId id) const {
 
 std::optional<world::PickId> CollectionRoom::step(world::PickId from, world::StepDirection direction) const {
     return m_navigation.step(from, direction);
+}
+
+scene::WalkerPose consoleViewPose(const ConsoleSocket& socket, const scene::WalkerPose& from,
+                                  const FocusViewer& viewer) noexcept {
+    const glm::vec3 eye = from.feet + glm::vec3(0.0f, viewer.eyeHeight, 0.0f);
+    const glm::vec3 slot = socket.position();
+    bool screenFaces = false;
+    glm::vec3 screen(0.0f);
+    if (socket.heroScreen) {
+        screen = glm::vec3((*socket.heroScreen)[3]);
+        const glm::vec3 normal = glm::vec3((*socket.heroScreen)[2]);
+        const glm::vec3 toScreen = screen - eye;
+        screenFaces = core::isFinite(screen) && core::isFinite(normal) && glm::dot(normal, toScreen) < 0.0f;
+    }
+    scene::ViewAngles angles;
+    if (screenFaces) {
+        // The title card shows: the socket below the middle of the view, the screen above it.
+        angles = scene::aimAt(eye, 0.5f * (slot + screen), viewer.lens, viewer.aspect, {}, from.yaw);
+    } else {
+        // The socket on the lower third's line: an area of the view whose centre is that line.
+        scene::ViewArea lowerThird;
+        lowerThird.min = glm::vec2(-1.0f, -1.0f);
+        lowerThird.max = glm::vec2(1.0f, 1.0f + 2.0f * kConsoleViewY);
+        angles = scene::aimAt(eye, slot, viewer.lens, viewer.aspect, lowerThird, from.yaw);
+    }
+    return scene::WalkerPose{from.feet, angles.yaw, std::max(angles.pitch, kConsoleViewMinPitch)};
+}
+
+std::optional<scene::WalkerPose> CollectionRoom::consolePose(const scene::WalkerPose& from) const {
+    if (!m_consoleSocket) {
+        return std::nullopt;
+    }
+    return consoleViewPose(*m_consoleSocket, from, m_viewer);
 }
 
 FocusStepRepeat::FocusStepRepeat(const ui::NavSettings& settings) noexcept : m_repeater(settings) {}

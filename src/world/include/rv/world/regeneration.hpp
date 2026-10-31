@@ -197,6 +197,13 @@ using RoomDataLoader = std::function<Expected<WorldData>(const RoomDataRequest& 
 /// A loader reading `assetRoot` with loadWorldData(), each request read once.
 [[nodiscard]] RoomDataLoader assetRootLoader(const std::filesystem::path& assetRoot);
 
+/// The requests a regeneration of `plan` makes for its standing rooms' data (each as an update reads it: its kind,
+/// floor, recorded family and template), in the plan's order, so that a caller can read them ahead into a caching
+/// loader (m3/preview-time: the app's directory reads them with the catalog's inputs; every regeneration reads the
+/// rooms outside its scope for their validation and its input digest).
+[[nodiscard]] std::vector<RoomDataRequest> standingRoomRequests(
+    const WorldPlan& plan, const std::map<catalog::SystemName, std::vector<std::string>>& platformTags);
+
 /// What a regeneration reads.
 struct RegenerationInput {
     RegenerationScope scope;

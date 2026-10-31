@@ -201,7 +201,8 @@ ScreenSettings resolved(ScreenSettings base, const ScreenOverrides& overrides) {
     if (overrides.volume) {
         base.volume = *overrides.volume;
     }
-    if (overrides.crtPreset) {
+    // "" is none (ADR-0016 §7): a room's or a screen's empty crtPreset leaves the kind's (the user's) choice.
+    if (overrides.crtPreset && !overrides.crtPreset->empty()) {
         base.crtPreset = *overrides.crtPreset;
     }
     if (overrides.games) {

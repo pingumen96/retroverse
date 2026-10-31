@@ -545,6 +545,62 @@ InspectRecord readInspect(FieldReader& fields) {
     return inspect;
 }
 
+Json insertionToJson(const InsertionRecord& insertion) {
+    Json json{{"started", insertion.started},
+              {"arrived", insertion.arrived},
+              {"skipped", insertion.skipped},
+              {"refused", insertion.refused},
+              {"movingFrames", insertion.movingFrames},
+              {"socketFrames", insertion.socketFrames},
+              {"pickId", insertion.pickId},
+              {"seconds", insertion.seconds},
+              {"end", insertion.end},
+              {"socket", vec3ToJson(insertion.socket)},
+              {"center", vec3ToJson(insertion.center)},
+              {"scale", insertion.scale},
+              {"distance", insertion.distance}};
+    if (insertion.startFrame) {
+        json["startFrame"] = *insertion.startFrame;
+    }
+    if (insertion.seatedFrame) {
+        json["seatedFrame"] = *insertion.seatedFrame;
+    }
+    if (insertion.endFrame) {
+        json["endFrame"] = *insertion.endFrame;
+    }
+    Json frames = Json::array();
+    for (const InsertionFrameRecord& frame : insertion.frames) {
+        frames.push_back(Json{{"frame", frame.frame}, {"progress", frame.progress}, {"distance", frame.distance}});
+    }
+    json["frames"] = std::move(frames);
+    return json;
+}
+
+InsertionRecord readInsertion(FieldReader& fields) {
+    InsertionRecord insertion;
+    insertion.started = fields.count("started");
+    insertion.arrived = fields.count("arrived");
+    insertion.skipped = fields.count("skipped");
+    insertion.refused = fields.count("refused");
+    insertion.movingFrames = fields.count("movingFrames");
+    insertion.socketFrames = fields.count("socketFrames");
+    insertion.pickId = fields.string("pickId");
+    insertion.startFrame = fields.optionalCount("startFrame");
+    insertion.seatedFrame = fields.optionalCount("seatedFrame");
+    insertion.endFrame = fields.optionalCount("endFrame");
+    insertion.seconds = fields.number("seconds");
+    insertion.end = fields.string("end");
+    insertion.socket = fields.vec3("socket");
+    insertion.center = fields.vec3("center");
+    insertion.scale = fields.number("scale");
+    insertion.distance = fields.number("distance");
+    for (FieldReader& frame : fields.objectArray("frames")) {
+        insertion.frames.push_back(
+            InsertionFrameRecord{frame.count("frame"), frame.number("progress"), frame.number("distance")});
+    }
+    return insertion;
+}
+
 Json interactionToJson(const InteractionRecord& interaction) {
     Json json = Json::object();
     if (!interaction.bound) {
@@ -584,6 +640,7 @@ Json interactionToJson(const InteractionRecord& interaction) {
     json["events"] = std::move(events);
     json["eventsDropped"] = interaction.eventsDropped;
     json["inspect"] = inspectToJson(interaction.inspect);
+    json["insertion"] = insertionToJson(interaction.insertion);
     return json;
 }
 
@@ -623,6 +680,9 @@ InteractionRecord readInteraction(FieldReader& fields) {
     interaction.eventsDropped = fields.count("eventsDropped");
     if (std::optional<FieldReader> inspect = fields.optionalObject("inspect")) {
         interaction.inspect = readInspect(*inspect);
+    }
+    if (std::optional<FieldReader> insertion = fields.optionalObject("insertion")) {
+        interaction.insertion = readInsertion(*insertion);
     }
     return interaction;
 }
@@ -795,6 +855,8 @@ Json screensToJson(const GameScreensRecord& screens) {
     json["failures"] = screens.failures;
     json["pictureBox"] = screens.pictureBox;
     json["stageBox"] = screens.stageBox;
+    json["videoFrames"] = screens.videoFrames;
+    json["videoBox"] = screens.videoBox;
     Json events = Json::array();
     for (const GameScreenEventRecord& event : screens.events) {
         Json entry{{"frame", event.frame}, {"event", event.event}};
@@ -825,6 +887,11 @@ GameScreensRecord readScreens(FieldReader& fields) {
     screens.failures = fields.count("failures");
     screens.pictureBox = fields.numberArray("pictureBox");
     screens.stageBox = fields.numberArray("stageBox");
+    // I5 step 8 (absent from earlier reports).
+    screens.videoFrames = fields.optionalCount("videoFrames").value_or(0);
+    if (fields.has("videoBox")) {
+        screens.videoBox = fields.numberArray("videoBox");
+    }
     for (FieldReader& event : fields.objectArray("events")) {
         GameScreenEventRecord entry;
         entry.frame = event.count("frame");
@@ -878,6 +945,15 @@ Json directoryToJson(const DirectoryRecord& directory) {
     }
     json["events"] = std::move(events);
     json["eventsDropped"] = directory.eventsDropped;
+    Json chainRooms = Json::array();
+    for (const DirectoryChainRoomRecord& room : directory.chainRooms) {
+        Json ranges = Json::array();
+        for (const DirectoryRangeRecord& range : room.ranges) {
+            ranges.push_back(Json{{"system", range.system}, {"first", range.first}, {"last", range.last}});
+        }
+        chainRooms.push_back(Json{{"room", room.room}, {"ranges", std::move(ranges)}, {"scattered", room.scattered}});
+    }
+    json["chainRooms"] = std::move(chainRooms);
     return json;
 }
 
@@ -915,6 +991,17 @@ DirectoryRecord readDirectory(FieldReader& fields) {
         directory.events.push_back(std::move(entry));
     }
     directory.eventsDropped = fields.count("eventsDropped");
+    // I4b step 8: a report written before it lists no room of a chain.
+    for (FieldReader& room : fields.optionalObjectArray("chainRooms")) {
+        DirectoryChainRoomRecord entry;
+        entry.room = room.string("room");
+        for (FieldReader& range : room.objectArray("ranges")) {
+            entry.ranges.push_back(
+                DirectoryRangeRecord{range.string("system"), range.string("first"), range.string("last")});
+        }
+        entry.scattered = room.boolean("scattered");
+        directory.chainRooms.push_back(std::move(entry));
+    }
     return directory;
 }
 
@@ -1007,7 +1094,8 @@ Json editsToJson(const std::vector<WorldEditRecord>& edits) {
                      {"snapshot", edit.snapshot},
                      {"planDigest", edit.planDigest},
                      {"liveUpdateDeferred", edit.liveUpdateDeferred},
-                     {"probes", edit.probes}};
+                     {"probes", edit.probes},
+                     {"rooms", edit.rooms}};
         if (edit.readyFrame) {
             session["readyFrame"] = *edit.readyFrame;
         }
@@ -1059,6 +1147,7 @@ std::vector<WorldEditRecord> readEdits(FieldReader& fields) {
         edit.backMs = session.optionalNumber("backMs");
         edit.liveUpdateDeferred = session.boolean("liveUpdateDeferred");
         edit.probes = session.optionalCount("probes").value_or(0);
+        edit.rooms = session.optionalStringArray("rooms");
         edits.push_back(std::move(edit));
     }
     return edits;
@@ -1230,6 +1319,7 @@ Json worldToJson(const WorldRecord& world) {
     }
     json["replacedRooms"] = std::move(replaced);
     json["needsConfirmation"] = world.needsConfirmation;
+    json["roomsAdded"] = world.roomsAdded;
     json["hardFindings"] = world.hardFindings;
     json["softFindings"] = world.softFindings;
     json["objects"] = world.objects;
@@ -1480,6 +1570,7 @@ WorldRecord readWorld(FieldReader& fields) {
         world.replacedRooms.push_back(std::move(record));
     }
     world.needsConfirmation = fields.optionalStringArray("needsConfirmation");
+    world.roomsAdded = fields.optionalStringArray("roomsAdded");
     world.hardFindings = fields.count("hardFindings");
     world.softFindings = fields.count("softFindings");
     world.objects = fields.count("objects");
@@ -1871,6 +1962,14 @@ Json videoToJson(const VideoRecord& video) {
         entry["decoderRan"] = launch.decoderRan;
         entry["stopMs"] = launch.stopMs;
         entry["threadsRunning"] = launch.threadsRunning;
+        if (launch.stopFrame) {
+            entry["stopFrame"] = *launch.stopFrame;
+        }
+        entry["waitMs"] = launch.waitMs;
+        if (launch.handOverFrame) {
+            entry["handOverFrame"] = *launch.handOverFrame;
+        }
+        entry["cancelled"] = launch.cancelled;
         putOptional(entry, "positionSeconds", launch.positionSeconds);
         entry["reopened"] = launch.reopened;
         putOptional(entry, "reopenedAtSeconds", launch.reopenedAtSeconds);
@@ -1983,6 +2082,23 @@ Json videoToJson(const VideoRecord& video) {
                             {"given", verdictList(video.verdicts.given)},
                             {"written", video.verdicts.written},
                             {"writeFailures", video.verdicts.writeFailures}};
+    const VideoViewerRecord& viewer = video.viewer;
+    json["viewer"] = Json{{"clips", viewer.clips},
+                          {"decodersOpened", viewer.decodersOpened},
+                          {"framesUploaded", viewer.framesUploaded},
+                          {"pauses", viewer.pauses},
+                          {"knownBad", viewer.knownBad},
+                          {"failures", viewer.failures},
+                          {"game", viewer.game},
+                          {"state", viewer.state},
+                          {"reason", viewer.reason},
+                          {"width", viewer.width},
+                          {"height", viewer.height},
+                          {"rows", viewer.rows},
+                          {"maxGpuBytes", viewer.maxGpuBytes},
+                          {"gpuBytes", viewer.gpuBytes},
+                          {"openFrames", viewer.openFrames},
+                          {"worldFramesWhileOpen", viewer.worldFramesWhileOpen}};
     return json;
 }
 
@@ -2004,6 +2120,31 @@ ProcessPriorityRecord readProcessPriority(FieldReader& fields) {
                                                         change.string("reason"), change.boolean("applied")});
     }
     return priority;
+}
+
+Json crtLooksToJson(const CrtLooksRecord& looks) {
+    Json screens = Json::array();
+    for (const CrtLookRecord& screen : looks.screens) {
+        screens.push_back(Json{{"screen", screen.screen},
+                               {"room", screen.room},
+                               {"kind", screen.kind},
+                               {"preset", screen.preset},
+                               {"chosen", screen.chosen},
+                               {"rule", screen.rule}});
+    }
+    return Json{{"crtEffect", looks.crtEffect}, {"presetsSource", looks.presetsSource}, {"screens", std::move(screens)}};
+}
+
+CrtLooksRecord readCrtLooks(FieldReader& fields) {
+    CrtLooksRecord looks;
+    looks.crtEffect = fields.string("crtEffect");
+    looks.presetsSource = fields.string("presetsSource");
+    for (FieldReader& screen : fields.objectArray("screens")) {
+        looks.screens.push_back(CrtLookRecord{screen.string("screen"), screen.string("room"), screen.string("kind"),
+                                              screen.string("preset"), screen.string("chosen"),
+                                              screen.string("rule")});
+    }
+    return looks;
 }
 
 Json audioToJson(const AudioRecord& audio) {
@@ -2164,6 +2305,10 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.decoderRan = launch.boolean("decoderRan");
         entry.stopMs = launch.number("stopMs");
         entry.threadsRunning = launch.count("threadsRunning");
+        entry.stopFrame = launch.optionalCount("stopFrame");
+        entry.waitMs = launch.optionalNumber("waitMs").value_or(0.0);
+        entry.handOverFrame = launch.optionalCount("handOverFrame");
+        entry.cancelled = launch.has("cancelled") && launch.boolean("cancelled");
         entry.positionSeconds = launch.optionalNumber("positionSeconds");
         entry.reopened = launch.boolean("reopened");
         entry.reopenedAtSeconds = launch.optionalNumber("reopenedAtSeconds");
@@ -2272,6 +2417,26 @@ VideoRecord readVideo(FieldReader& fields) {
         }
         video.verdicts.written = verdicts->count("written");
         video.verdicts.writeFailures = verdicts->count("writeFailures");
+    }
+    // I5 step 8 (absent from earlier reports).
+    if (std::optional<FieldReader> viewer = fields.optionalObject("viewer")) {
+        VideoViewerRecord& record = video.viewer;
+        record.clips = viewer->count("clips");
+        record.decodersOpened = viewer->count("decodersOpened");
+        record.framesUploaded = viewer->count("framesUploaded");
+        record.pauses = viewer->count("pauses");
+        record.knownBad = viewer->count("knownBad");
+        record.failures = viewer->count("failures");
+        record.game = viewer->string("game");
+        record.state = viewer->string("state");
+        record.reason = viewer->string("reason");
+        record.width = viewer->count("width");
+        record.height = viewer->count("height");
+        record.rows = viewer->count("rows");
+        record.maxGpuBytes = viewer->count("maxGpuBytes");
+        record.gpuBytes = viewer->optionalCount("gpuBytes").value_or(0); // I5 step 8's review
+        record.openFrames = viewer->count("openFrames");
+        record.worldFramesWhileOpen = viewer->count("worldFramesWhileOpen");
     }
     return video;
 }
@@ -2843,7 +3008,12 @@ std::string formatRunReport(const RunReport& report) {
     if (report.screenshot) {
         json["screenshot"] = Json{{"file", core::pathToGenericUtf8(report.screenshot->file)},
                                   {"width", report.screenshot->width},
-                                  {"height", report.screenshot->height}};
+                                  {"height", report.screenshot->height},
+                                  {"targets", report.screenshot->targets}};
+    }
+    if (report.window) {
+        json["window"] = Json{{"drawableWidth", report.window->drawableWidth},
+                              {"drawableHeight", report.window->drawableHeight}};
     }
     if (report.finalCamera) {
         json["finalCamera"] = spawnToJson(*report.finalCamera);
@@ -2907,6 +3077,9 @@ std::string formatRunReport(const RunReport& report) {
     json["video"] = videoToJson(report.video);
     if (report.processPriority) {
         json["processPriority"] = processPriorityToJson(*report.processPriority);
+    }
+    if (report.crtLooks) {
+        json["crtLooks"] = crtLooksToJson(*report.crtLooks);
     }
     json["screens"] = screensToJson(report.screens);
     json["directory"] = directoryToJson(report.directory);
@@ -2986,7 +3159,13 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
         const auto extent = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
         report.screenshot = ScreenshotRecord{core::pathFromUtf8(screenshot->string("file")),
                                              static_cast<int>(screenshot->count("width", extent)),
-                                             static_cast<int>(screenshot->count("height", extent))};
+                                             static_cast<int>(screenshot->count("height", extent)),
+                                             screenshot->optionalString("targets").value_or(std::string())};
+    }
+    if (auto window = fields.optionalObject("window")) {
+        const auto extent = static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+        report.window = WindowRecord{static_cast<int>(window->count("drawableWidth", extent)),
+                                     static_cast<int>(window->count("drawableHeight", extent))};
     }
     if (auto camera = fields.optionalObject("finalCamera")) {
         report.finalCamera = readSpawn(*camera);
@@ -3058,6 +3237,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto priority = fields.optionalObject("processPriority")) {
         report.processPriority = readProcessPriority(*priority);
+    }
+    if (auto looks = fields.optionalObject("crtLooks")) {
+        report.crtLooks = readCrtLooks(*looks);
     }
     if (auto screens = fields.optionalObject("screens")) {
         report.screens = readScreens(*screens);

@@ -8,6 +8,7 @@ add_library(rv_assets STATIC
     src/bc1.cpp
     src/collection_labels.cpp
     src/cover_fit.cpp
+    src/crt_presets.cpp
     src/derived_texture_cache.cpp
     src/glb_writer.cpp
     src/gltf_geometry.cpp
@@ -15,6 +16,7 @@ add_library(rv_assets STATIC
     src/image_decode.cpp
     src/image_encode.cpp
     src/image_io.cpp
+    src/image_orientation.cpp
     src/json_util.cpp
     src/material_library.cpp
     src/mip_chain.cpp

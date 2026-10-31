@@ -24,6 +24,8 @@
 
 #include <glm/vec2.hpp>
 
+#include <rv/app/crt_looks.hpp>
+#include <rv/assets/material_desc.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/collection_arrays.hpp>
 #include <rv/render/static_instance_group.hpp>
@@ -218,6 +220,8 @@ private:
 
     /// One layered material per array and class not yet given one.
     void addLayeredMaterials(SceneGraphics& graphics);
+    /// The library's material `name`, the front's with its CRT look (m_frontLook) when it is the front's.
+    [[nodiscard]] assets::MaterialDesc frontDesc(const assets::MaterialLibrary& library, std::string_view name) const;
     /// The items of `layout`: their layers acquired, their records built (resident layers named; the hover's
     /// highlight and the pulled-out and hero-front hidden reasons of the items that stand carried over by pick id) and
     /// the group made.
@@ -260,6 +264,10 @@ private:
     glm::vec2 m_screenSize{0.0f};
     std::string m_frontMaterialName;
     std::vector<scene::MaterialHandle> m_videoMaterials;
+    /// I5 step 6: the CRT look of a front drawn through a picture tube (its room's cabinet preset, crt_looks.hpp).
+    std::optional<assets::CrtEffect> m_frontLook;
+    /// Its record (ScreenLooks), recorded again for the pooled video materials once they are made ("<key prefix>/video").
+    std::optional<ScreenLookApplied> m_frontLookApplied;
 };
 
 } // namespace rv::app

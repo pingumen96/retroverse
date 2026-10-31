@@ -197,9 +197,14 @@ public:
     void videoStopped() noexcept { m_videoShowing = false; }
 
     /// A launch starts: the decoder stops, `clipPosition` (seconds into the clip shown, if a video showed) is kept for
-    /// the return. Nothing once quit.
-    void launchStarting(std::optional<double> clipPosition) noexcept;
+    /// the return. With `titleCard` (I5 step 9, ADR-0016 §11: the hero while the item goes into the console) the
+    /// target's title card is the still wanted from now on, when it has one: the screen shows it once it is drawn,
+    /// until launchEnded(). Nothing once quit.
+    void launchStarting(std::optional<double> clipPosition, bool titleCard = false) noexcept;
     /// The launch ended (the return), failed to start or was refused: the decoder may run again, at the kept position.
+    /// A title card launchStarting() forced is undone (I5 step 9's review): the still chain is back where it stood, its
+    /// still wanted again (the card's texture stands for it meanwhile: the screen holds its last picture), so that a
+    /// target without a clip shows its own still again, not the card for the rest of its turn.
     void launchEnded() noexcept;
     /// Retroverse quits: the decoder stays stopped.
     void quit() noexcept { m_phase = ScreenPhase::Quit; }
@@ -271,6 +276,10 @@ private:
     bool m_noSlot = false;
 
     ScreenPhase m_phase = ScreenPhase::Running;
+    /// The still chain's index and the still ready before launchStarting() forced the title card (undone by
+    /// launchEnded(); forgotten by a new target).
+    std::optional<std::size_t> m_chainBeforeCard;
+    std::optional<ScreenPicture> m_stillBeforeCard;
     std::optional<double> m_launchPosition;
     std::optional<double> m_resumePosition;
     bool m_visible = true;

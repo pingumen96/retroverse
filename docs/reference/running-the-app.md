@@ -25,7 +25,10 @@ build/rvdata`).
   version (the driver), debug messages per severity (those `--gl-selftest` provoked included; its `glSelfTest` record
   counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
   (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
-  buffer's capacity, the screenshot written, the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
+  buffer's capacity, the screenshot written (`screenshot`: file, size, and since the memory margin `targets`, `window`
+  when it was drawn through the window's render targets (it has the window's size) or `own` through a set made for it
+  alone), the window (`window`: `drawableWidth`, `drawableHeight`, its drawable at the end of the run, the size asked
+  for times the display's scale), the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
   self-check, the quick catalog (`catalog`: `source` `esde` or `mock`, file, games, times `opened`, `open` at the end,
   the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
   `times` {`openedMs`, `firstListMs`, `firstPageMs`} from the process's creation (NFR-01), `pages` and `frames` (p50,
@@ -42,7 +45,9 @@ build/rvdata`).
   `collectionPlanning`, `layerUploads`, `videoUpload`; p50, p95, p99, max over the frames each ran in), `gpuMemory` (the
   renderer's own accounting per kind: `proceduralSurfaces`, `collectionArrays`, `heroTextures`, `video`, `targets`,
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
-  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings, since I4 step 6b
+  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings (`launches`: since
+  I5 step 9 `stopFrame` when the stop began with the insertion, `waitMs` the hand-over's own wait, `handOverFrame`, and
+  `cancelled` for a launch refused during the insertion, the screens reopened without a hand-over), since I4 step 6b
   `binds`, the screens bound after the run's first (at a room change, or a scene shown in place of another; the first,
   at the start room or the first room the eye stays in, is not one): frame, screen, games, `bindMs`, decoder threads
   still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); since I5 step 3's review
@@ -60,14 +65,19 @@ build/rvdata`).
   `textures`, `items`, `added`, `removed` or `rebuilt`, its items compared in its own frame, `coversChanged`; and
   `walker`, where a floor committed again kept the walker: `area`, `shift`, `halfTurn`), `itemsWritten`, `screenGames`
   (the bound CRT's games), `objectFallbacks` of the persisted start; `interaction` (events, counts,
-  `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
-  `edits` (I4b step 3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
+  `inspect`; since I5 step 9 `insertion`: `started`, `arrived`, `skipped`, `refused`, `movingFrames`, `socketFrames`,
+  and the last one's `pickId`, `startFrame`, `seatedFrame`, `endFrame` (the hand-over released, after the hold),
+  `seconds`, `end`, `socket`, `center`, `scale`, `distance` and `frames` (`frame`, `progress`, `distance`)), `card`
+  (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`), `edits` (I4b step
+  3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
   `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
   `in-place`, `room` (I4b step 4: the room's static part rebuilt alone), `floor` or `none`, `editMs`, `shownFrame`,
   `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
   `exited`, `failed` or "" still open, `endFrame`, `written`, `replayed`, `saveRefused` (a rule, or `failed`),
   `snapshot`, `planDigest` (the plan shown at the end),
-  `saveMs`, `backMs`, `liveUpdateDeferred`); `regenerationInputsReleased` (I4b step 6's review: the times the
+  `saveMs`, `backMs`, `liveUpdateDeferred`, `rooms`: I4b step 8, the rooms of its chain the session edited, in the
+  order the walker entered them); `roomsAdded` (I4b step 8: the expansion rooms the update that saved the building
+  added, which the notice `rooms-added` names); `regenerationInputsReleased` (I4b step 6's review: the times the
   regenerations' inputs were let go of, the directory closed with nothing pending); `regenerations` (I4b step 6: one
   per preview asked, `kind` `room`,
   `floor`, `world` or `undo`, `scope`, `via` `directory` or `notice`, `requestFrame`, `previewFrame`, `previewMs` (from
@@ -81,8 +91,9 @@ build/rvdata`).
   `in-place`, `floor` or `none`, `walker` `doorway:<room>`, `elevator` or `kept`, `end` `committed`, `cancelled`,
   `failed` or "" still open);
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
-  placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
-  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
+  placement asked, `events`: since I5 step 9 `inserted` and `insertion-skipped` between `launch` and `ended`),
+  `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`, `rebuild` or `kept`, kept,
+  moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
   elevator ride: `from`, `to`, `reason` `floor`, `room` or `showInRoom`, `room`, `game`, the frames `requestedFrame`,
   `fadedOutFrame`, `swappedFrame`, `fadedInFrame`, the milliseconds from the request `builtMs`, `residentMs`, `totalMs`
@@ -103,11 +114,13 @@ build/rvdata`).
   format, array bytes, fronts and spines resident, covers, labels and failures, the cache's hits, misses and stores, `times`
   {`shownAtMs`, `allResidentAtMs`, `residentAfterShownMs`}, `arrival`, `uploads`, `lockstep`, `pausedRounds`,
   `retries`, `hero`), `screens` (the media viewer and Informazioni: `viewerFrames`, `infoFrames`, `pictures`,
-  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog) and, since I4 step 7b,
+  `failures`, `pictureBox`, `stageBox`, `events` with the game and `from` card or catalog; since I5 step 8
+  `videoFrames`, `videoBox` and the `video` and `manual` events, below) and, since I4 step 7b,
   `directory` (`{}` without the building: `opened`, at the end `open`, `tab`, `view`, `notice`, `gamesState`;
   `gamesRequests`, the `games` last listed with `gameId`, `title`, `system`, `favorite`, `played` "YYYY-MM-DD"; the card
   last shown `cardGame`, `cardRoom`, `cardOutcome`; `events` `open` (tab, `elevator` or `map`), `command`, `refused`,
-  `games`, `card`, `launch-ended`, `closed`); also `catalog.refreshes`
+  `games`, `card`, `launch-ended`, `closed`; since I4b step 8 `chainRooms`, each room of a chain as last listed with its
+  `ranges` {`system`, `first`, `last`} and `scattered`); also `catalog.refreshes`
   (one per refresh: trigger, outcome, times, the longest slice, counts, the lists asked meanwhile, `before` and
   `after`), `catalog.lists` (the waits of the lists), `gpuPasses` in `frameTimes` and in every phase (`shadow`,
   `depth`, `ssao`, `scene`, `post`, `outline`, `total`: p50, p95, p99, max over the frames past the warm-up that
@@ -185,7 +198,9 @@ build/rvdata`).
   below the highlight threshold must not bloom, an emitter must keep its energy (+-5%), a single very bright pixel must
   glow alike (+-20%) whatever its value and place. `fxaa`: a hard edge slanted 12 degrees between black and white,
   post-processed without dithering, without and then with anti-aliasing: at least half the rows it crosses must get
-  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was. Use `retroverse.exe
+  intermediate values, every pixel of a flat 3x3 neighborhood must stay exactly as it was; then with the bloom, the
+  post pass's image written over the emitted light it reads (anti-aliasing on, `docs/i5/memory-margin.md`) must equal
+  byte for byte the one it writes into the output without anti-aliasing. Use `retroverse.exe
   --self-check srgb --smoke --hidden --data-dir build/rvdata` (and `--self-check bloom`, `--self-check fxaa`).
 - Scenes are lit (PBR and unlit emissive materials, scene lights, hemispheric ambient) in linear HDR (`GL_RGBA16F`) and
   post-processed once per view: bloom of the light surfaces emit (screens, lamp shades, neon) and of the highlights
@@ -376,6 +391,22 @@ build/rvdata`).
   screen in view, so that it shows on the frame the slot opened (`video.firstFrameWaits`, `firstFrameWaitMaxMs`,
   `firstFrameWaitTimeouts`); a slot's `open` event gives the position it opened at (`fromSeconds`; absent: the
   clip's start).
+- The CRT presets (I5 step 6, ADR-0016 §7, `docs/i5/step-6.md`): every screen's tube (scanlines, phosphor mask,
+  curvature, vignette, the glass's sheen) is one of `assets/materials/crt_presets.json`'s presets, `neutral` (the clean
+  video), `consumer` (the look every CRT had before), `arcade` (deeper scanlines, a stronger and coarser mask, more
+  curvature) and `monitor` (a fine mask, little curvature), chosen when the scene's screen materials are registered:
+  `video.json`'s `crtEffect` `off` makes every screen `neutral` and `vintage` steps each one stronger (`monitor` to
+  `consumer`, `consumer` to `arcade`); else `video.json`'s `crtPreset` for the screen (`rooms.<room>.screens.<object
+  id>`, then `rooms.<room>.<kind>`, then the kind's own key; `""` is none); else the room's theme pack's
+  `screenPreset` (the optical-era lounge's `monitor`, the arcade's `arcade`); else the kind's (`consumer`, the
+  cabinets `arcade`). The arcade's cabinets take one look per room. `<user data>/config/crt_presets.json` (read, never
+  written) overrides the presets' values key by key (`{"schemaVersion": 1, "presets": {"arcade": {"scanlineStrength":
+  0.4}}}`); a user file that does not load is left out whole, a shipped one that does not load leaves the built-in
+  copy (both said in the log). The report's `crtLooks` gives `crtEffect`, `presetsSource` (`shipped`, `user`,
+  `built-in`) and `screens` (each screen of the scene shown at the end: `screen`, its object's id or a room's cabinets'
+  `collection/<room>/<family>`, and `collection/<room>/<family>/video` for their pooled video materials once a cabinet
+  played; `room`, `kind`, `preset`, `chosen` before `crtEffect`, `rule` `video.json`, `pack` or `kind`). The smoke scene `tests/smoke/scenes/crt_presets.json` (room `crt_presets`) holds four CRTs at eye height
+  showing the colour bars, one per preset with its case's `video.json`.
 - The generated building (I3's room, `docs/i3/step-10b.md` to `step-17b.md`; ADR-0010 to ADR-0012; the building since
   I4, ADR-0013, `docs/i4/step-1.md` to `step-5a.md`): without `--scene`, `--model` or `--mock-catalog`, `retroverse.exe`
   plans the building of its ES-DE catalog and shows one floor of it. The building job (on the worker pool) reads every
@@ -387,8 +418,9 @@ build/rvdata`).
   or arcade room lacking a section's selection held as it is, logged; a new system with a placeable title enters, its
   own room or a section, logged, since I4 step 6b), saves it
   under `<user data>/worlds/<library id>/` (generator 1.5, schema 2: since I4b step 7 a room past its template's
-  capacity is a chain of a head and expansion rooms, `room:<system>:<n>`, which the app shows as rooms of their floor
-  until step 8 signs them; a stored schema-1 plan of I3 is read lifted and
+  capacity is a chain of a head and expansion rooms, `room:<system>:<n>`, rooms of their floor signed with their
+  head's sign and number since I4b step 8 (an update that adds one says so with the notice `rooms-added`, naming the
+  first new room; the update reads a chain's data once, its head's); a stored schema-1 plan of I3 is read lifted and
   written in schema 2 by its first update, the schema-1 file kept in `backups/`; a room the update keeps as it is shows
   with the regeneration's notice and its new games unplaced as `room-kept`; since I6 step 4 a room of cases or boxes
   planned by generator 1.3 is migrated once to its family's successor, standing on its side, logged, in the run
@@ -456,14 +488,20 @@ build/rvdata`).
   and Start are Vedi media, Informazioni and Avvia; Esc / B leaves
   one level (Inspect to Focus to free roam). The hero CRT plays the clip of the item focused or inspected for 300 ms.
   Vedi media (the card's button, Y; the quick catalog's too) opens the media viewer: the game's images one page per kind
-  (cover, back cover, physical media, 3D box, screenshot, title screen, marquee, fan art; the missing kinds skipped),
-  left and right page, Home and End jump, Back closes; a file that cannot be read shows its fallback. Informazioni (X)
+  (cover, back cover, physical media, 3D box, screenshot, title screen, since I5 step 8 the clip, marquee, fan art and
+  the manual last; the missing kinds skipped), left and right page, Home and End jump, Back closes; a file that cannot
+  be read shows its fallback; A pauses the clip, or opens the manual (below). Informazioni (X)
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
-  and Y switch between the two. Avvia launches as the quick catalog's does; after the return the walker stands where it
-  stood and the item is in the hand again; the hero CRT's decoder stops before the launch and reopens at the clip's
-  position after it. The quick catalog's card offers "Mostra nella stanza" for a game the building places (the walker
-  eased to its item's Focus pose; since I4 step 7b in any room: teleported to the room's doorway first on the same
-  floor, a ride first to another floor, below) and says why for one it does not: one of a system without a room is not
+  and Y switch between the two. Avvia launches as the quick catalog's does; in a room with a console (I5 step 9) the
+  item first goes from the hand into the console's cartridge slot in 450 ms, the eye leading it to the console in
+  300 ms, and is seen seated 100 ms, while the screens' decoders stop and the hero shows the game's title card (an
+  action button skips it: activate, confirm, start, back; never a walking key; none under `reduceMotion`, in the
+  arcade or a shared room); after the return the walker stands where it stood and the item is in the hand again; the
+  hero CRT's decoder stops before the launch and reopens at the clip's position after it (the report's
+  `world.interaction.insertion` and `video.launches` `stopFrame`, `waitMs`, `handOverFrame`). The quick catalog's
+  card offers "Mostra nella stanza" for a game the building places (the walker eased to its item's Focus pose; since I4
+  step 7b in any room: teleported to the room's doorway first on the same floor, a ride first to another floor, below)
+  and says why for one it does not: one of a system without a room is not
   on display (`not-in-room`), an unplaced one gives its reason. After "Aggiorna
   libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
   saved, the other floors only saved; room by room as at the start: new titles placed into their slots with their
@@ -489,9 +527,14 @@ build/rvdata`).
   Back/Select) opens it anywhere in free roam (not in Focus, Inspect, a launch or a ride, nor in the frame an interact
   takes an item) and closes it again. It has the UI's input (the world stands still) and Esc / B leaves one level (the
   card to the games, a floor's rooms to the floors, then it closes). "Piani" lists the plan's floors in the elevator's order (the walker's marked), a floor its hall
-  ("Corridoio e ascensore") and its rooms along the hall with their games; "Preferiti e recenti" (the shoulders, or Left
-  and Right on the tabs) the catalog's favourites, then its most recently played games (Retroverse's sessions and
-  ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's launch, its outcome on the card)
+  ("Corridoio e ascensore") and its rooms along the hall with their games (I4b step 8: a chain's rooms together, the
+  head where it stands and its expansions after it by number, indented and named with it, "Lumen Desk Computer 2";
+  each with its titles' range, "850 giochi · A – Mo", the initials of its first and last title in the chain's order,
+  two letters where two rooms meet on one, a shared room's per section, "in ordine sparso" when an update's additions
+  interleave the rooms; read from the rooms' items files on the pool, none until they are); "Preferiti e recenti"
+  (the shoulders, or Left and Right on the tabs) the catalog's favourites, then its most recently played games
+  (Retroverse's sessions and ES-DE's `<lastplayed>`, at most 30), a game its card with Avvia (the quick catalog's
+  launch, its outcome on the card)
   and "Mostra nella stanza". Choosing another floor's hall rides there, the walker's own floor's hall puts the walker
   back at its elevator; a room of the walker's floor teleports to its doorway, one of another floor rides there first.
   A ride: the view fades out in 250 ms (instant with `reduceMotion`; the post pass dims the tonemapped view's sRGB
@@ -525,8 +568,12 @@ build/rvdata`).
   (B) puts it back; P (the pad's X) pins or unpins the game targeted in place. Every move and swap pins its games
   (`overrides.json`, origin `editor`). Each edit is applied on the pool to a draft of the plan and validated; a refusal
   ("Quello spazio è già occupato", ...) leaves the game in the hand. The reticle and the D-pad target only while the eye
-  is in the edited room. Enter or Start opens the menu (Esc with pending changes too; Start again closes it, the walker
-  stands still while it is open): Salva (the session's operations saved under the world lock behind a snapshot, action `edit`, which
+  is in the edited room. I4b step 8: a session edits the chain of the room it began in (its head and expansions):
+  walking into another room of it while browsing or holding a game edits that room (the bar's name with its number),
+  so a game picked up in the head is carried through the hall and dropped into a free slot of the expansion or onto a
+  game there (one operation; both rooms laid out again); a held fixture keeps its room. Enter or Start opens the menu
+  (Esc with pending changes too; Start again closes it, the walker stands still while it is open): Salva (the session's
+  operations saved under the world lock behind a snapshot, action `edit`, which
   `retroverse-cli worldplan undo` undoes; replayed onto the stored plan if it changed meanwhile, refused with nothing
   written when one no longer applies), Annulla ultima azione (the draft's last), Esci senza salvare (the room as stored
   again), Continua. Esc with nothing pending leaves the editor. The quick catalog, the directory and rides wait, and a
@@ -632,6 +679,27 @@ build/rvdata`).
   `video.verdicts`: `loaded` (the file was read: a missing file is no verdict), `entries`, `knownBad` (the games whose
   clips were left out: `gameId`, `verdict`), `given` (the run's verdicts, one per clip), `written` (those merged into
   the file), `writeFailures`.
+- The media viewer's clip and manual (I5 step 8, ADR-0016 §10, `docs/i5/step-8.md`): the viewer's `videos` page (after
+  the title screen) plays the game's clip with its sound, at `viewerMaxRows` (720) with two decoders and `maxRows` with
+  one, in the `direct` class under a key of its own (never a world screen's slot), into a texture of its own while it
+  plays, shown through a `GL_RGBA8` view as `rv-texture:media-viewer-video`; A or Enter (`ui_activate`) pauses it and
+  plays it again; a clip that cannot play shows "Filmato non riproducibile" with its reason (a failure verdict's: never
+  opened; the decoder's, which gives a verdict). While the viewer is open, on any page, the world's screens and cabinets
+  count as out of view (their slots pause, reason `viewer`, and stop after 10 s, reopening where they were; a slot the
+  clip takes keeps its screen's frame) and the sound is the viewer's clip alone at full volume (no duck over the card or the quick catalog,
+  wherever the eye is); they play again when it closes. A run that has shown no screen yet makes the screens' service
+  for the clip; there too the clip stops once its page or the viewer lets it go, and its failure verdict holds. The `manuals` page (the last) names the manual's file; "Apri il manuale" (A, Enter, or its button) starts
+  explorer.exe with the file as its one argument through a Win32 process runner (`launcher::planManualOpen`: no shell;
+  plain paths only, `.pdf`, within `MAX_PATH`, no comma, colon or device name, always quoted; a refused path says
+  "Retroverse non apre questo manuale..."; another A within 2 s of an opening is ignored), which hands it to Windows' default PDF program: no game session, nothing
+  waits, Retroverse keeps running; under `RV_LAUNCH_ALLOWLIST` (every automated run) the guard refuses it ("Apertura
+  bloccata"). video.json's `enabled: false` turns the world's clips off, not the viewer's (`maxDecoders`,
+  `viewerMaxRows` and `audio.mode: off` reach it: ADR-0016 §4 as amended). The report's `video.viewer`
+  (`clips`, `decodersOpened`, `framesUploaded`, `pauses`, `knownBad`, `failures`, the last clip's `game`, `state`,
+  `reason`, `width`, `height`, `rows`, `maxGpuBytes`, `gpuBytes` at the end, `openFrames`, `worldFramesWhileOpen`),
+  the viewer among `video.screens` (kind `media-viewer`), `screens.videoFrames`, `screens.videoBox` and the screens' events `video`
+  (`waiting`, `playing <w>x<h>`, `paused`, `failed <reason>`, `verdict <reason>`) and `manual` (`found <file>`,
+  `missing <reason>`, `opened`, `refused`, `unsupported <reason>`, `failed <reason>`).
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
   `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
@@ -730,3 +798,108 @@ build/rvdata`).
   tests/input_scripts/quick_catalog_launch.json --exit-after-frames --frames 50 --hidden --fixed-dt 0.016667
   --data-dir build/rvdata --run-report build/a1/run.json`.
 
+## Try the editor, a regeneration and an undo
+
+The user's trial of Gate M3 (`docs/testing/gate-m3.md`), with ES-DE closed. Retroverse only reads the library: the
+catalog, the plan, its overrides and snapshots, the derived covers and the logs go to the data directory, here
+`build/rvdata` (any folder outside ES-DE's works; the programs refuse one inside them). From a PowerShell in the
+repository, after `./scripts/build.ps1 -Preset msvc-x64-release`:
+
+```powershell
+$bin = './build/msvc-x64-release/bin'; $data = 'build/rvdata'
+& "$bin/retroverse-cli.exe" --data-dir $data library create   # finds ES-DE as ES-DE finds itself (once)
+& "$bin/retroverse-cli.exe" --data-dir $data import           # the whole library (about 20 s; again to refresh)
+& "$bin/retroverse.exe" --data-dir $data --fullscreen --start-room room:snes   # the building, at room:snes's doorway
+```
+
+Games launch with ES-DE's own commands from a PowerShell where `RV_LAUNCH_ALLOWLIST` is not set; to try the editor
+without any emulator starting, set it to the build's fake first (`$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path
+"$bin/rv_fake_emulator.exe").Path`).
+
+**The editor** (games and furniture):
+
+1. In room:snes, M opens the directory; its third tab "Modifiche" (the shoulders, or Right on the tab bar) lists
+   "Modifica stanza". Or point at a cartridge, E twice to inspect it, and "Sposta" on its card (it starts the editor
+   with that game in the hand).
+2. In the editor the bar at the bottom names the room and what the reticle targets. E picks up the game under the
+   reticle; E on an empty slot moves it there (a ghost of it shows where it would stand, outlined warm white, red when
+   a rule refuses it), E on another game swaps them, E on its own slot or Esc puts it back. P (the pad's X) pins or
+   unpins the game targeted. The D-pad (the arrows) steps over every slot, empty ones included.
+3. Where no game or slot is under the reticle it targets a side-wall module, a display case or a decoration: E picks
+   it up, it follows the floor (a poster its wall) on the 100 mm grid, Q and R (the shoulders) turn it, the arrows
+   nudge it by 10 cm; E drops it (refused with the rule named on the bar), Esc puts it back.
+4. Enter (Start) opens the menu: **Salva**, Annulla ultima azione, Esci senza salvare, Continua. Salva writes the plan
+   and `overrides.json` behind a snapshot; the room shows again at once.
+5. Quit and start again with the same command: the games and the furniture stand where you put them.
+
+**A regeneration**: M, "Modifiche", "Rigenera stanza" (the room you stand in; "Rigenera piano" the floor, "Rigenera
+mondo" the building). The preview lists what would change (rooms, games that change place, the display cases,
+fixtures), the customizations kept and those that cannot be, with why. **Rigenera** keeps every customization;
+**Rigenera e scarta le personalizzazioni** asks a second confirmation ("Indietro" focused) before dropping them;
+**Annulla** writes nothing. After Rigenera the room is rebuilt and you stand at its doorway.
+
+**An undo**: M, "Modifiche", "Annulla ultima modifica" names what it would undo (the saved edits or the regeneration,
+its room and time); "Annulla la modifica" restores the plan and the overrides as they were, byte for byte. There is no
+redo; undo walks back through the explicit actions (the last 20 kept).
+
+The same from the command line, on the same data directory (each prints what it did; `--dry-run` writes nothing):
+
+```powershell
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan show                     # the floors and rooms
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan edit pin --game <GameId>  # where-is <GameId> finds a game
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan check (Join-Path $data 'worlds/esde/world-plan.json')
+                                              # the pins: honoured, orphaned, conflicting (with why), unhonoured
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan regenerate --room room:snes --dry-run   # the impact
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan snapshots                # the actions undo can restore
+& "$bin/retroverse-cli.exe" --data-dir $data worldplan undo                     # the last one, byte for byte
+```
+
+(`worlds/esde` is the world of the library `library create` names `esde`; `worldplan show` prints the plan's path.)
+
+## Try the screens and the sound
+
+The user's trial of Gate M4 (`docs/testing/gate-m4.md`), with ES-DE closed and the speakers or headphones on. The
+data directory is the one the editor's trial uses (`build/rvdata`, made with `library create` and `import` as
+above); from a PowerShell in the repository, after `./scripts/build.ps1 -Preset msvc-x64-release`:
+
+```powershell
+$bin = './build/msvc-x64-release/bin'; $data = 'build/rvdata'
+& "$bin/retroverse-cli.exe" --data-dir $data import             # again, if the library changed since
+& "$bin/retroverse.exe" --data-dir $data --fullscreen --start-room room:snes
+```
+
+An interactive run plays the clips' sound on the default device (`--mute` starts muted; `--audio null` mixes into
+nothing). To try a launch without any emulator starting, set `$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path
+"$bin/rv_fake_emulator.exe").Path` first: Avvia then plays the insertion and the game-session panel says the launch
+was blocked ("L'avvio è stato bloccato dalla protezione ..."); under the variable the viewer's manual is refused too
+("Apertura bloccata"), so try the manual in a PowerShell without it. Without the variable, games launch with ES-DE's
+own commands.
+
+1. **A room's playlist and a selection** (room:snes). At the doorway the hero CRT at the far wall plays a clip; every
+   30 s (`video.json`'s `previewDuration`) it moves on to another game of the room, the last frame held between two
+   clips, never the standby pattern. Point at a cartridge and wait: after 300 ms the CRT plays that game's clip (its
+   still or title card when it has none); look away and, once the selected clip has played, the playlist comes back.
+2. **A secondary TV** (`--start-room room:amstradcpc`, the computer floor's largest room). A small CRT on a sideboard
+   of the east wall plays a rotation of its own; walk towards it from the doorway with the hero CRT in view: both play
+   (two decoders); turn away from one and it pauses, holding its frame, and stops after 10 s out of view.
+3. **The arcade** (`--start-room area:arcade`). Stand in front of a cabinet in the aisle: after 1 s its screen plays
+   its game's clip (attract) and stops once it leaves the view. E twice inspects it: its clip plays in the hand; Esc
+   goes back to Focus with the clip still on, Esc again to its cover.
+4. **The sound walking away** (room:snes). The hero's sound pans with the head and falls with the distance (full
+   within 1.5 m, then as 1.5 over the distance, gone past 12 m); turning so the CRT leaves the view fades it out. The
+   card (inspect an item), the directory (M) and the quick catalog (Tab) duck it by 9 dB; in a hall between rooms it is
+   silent. The SNES clips at 96 kHz must sound at their right pitch, the lips and hits on their picture.
+5. **Mute**: F8 mutes at once and sounds again (no pad button).
+6. **The viewer's video and a manual**: inspect an item, Vedi media (Y) and page right to the clip's page: it plays at
+   720 rows with its sound while the room's screens pause under it; A pauses and plays it. A game with a scraped
+   manual has the "Manuale" page last: "Apri il manuale" (A) opens it in Windows' default PDF program.
+7. **A launch with its animation**: inspect a cartridge in a console room and choose Avvia: the cartridge goes from the
+   hand into the console's slot in 450 ms (the eye leading it), the hero shows the game's title card and the screens'
+   sound fades before the emulator starts; any action button skips the animation. After the game (or the refusal
+   under the allow-list) the room comes back as it was, the item in the hand, the clips playing again where they
+   stopped. In the arcade, Avvia launches at once (no console).
+
+What to listen and look for beyond the checks: the clips' sound in sync with the picture, no crackle at the
+cross-fade between two clips, the ducking under the card and the catalog, the emulator's own sound after the launch
+(also an emulator in exclusive mode) and the clip's coming back after it, and the arcade's portrait screens'
+letterboxed horizontal clips (`BACKLOG.md`).

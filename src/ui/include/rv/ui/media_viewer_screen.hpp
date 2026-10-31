@@ -2,7 +2,8 @@
 
 // The media viewer on assets/ui/media_viewer.rml (I3 step 14b; ADR-0012 §5): its data model "media_viewer" bound to a
 // MediaViewerModel's page, the picture through the image source rv-texture:media-viewer-picture (the application
-// registers the texture with UiSystem::setTexture) sized to fit the stage as laid out, the clicks on its buttons.
+// registers the texture with UiSystem::setTexture) sized to fit the stage as laid out, the clicks on its buttons; since I5
+// step 8 the clip through rv-texture:media-viewer-video, fitted likewise, and the manual's page.
 
 #include <cstdint>
 #include <memory>
@@ -19,10 +20,10 @@ namespace rv::ui {
 
 class UiView;
 
-/// What a click on one of the viewer's buttons asks.
-enum class ViewerClick : std::uint8_t { Previous, Next, Close };
+/// What a click on one of the viewer's buttons asks (I5 step 8: the clip's pause, "Apri il manuale").
+enum class ViewerClick : std::uint8_t { Previous, Next, Close, Pause, Manual };
 
-/// "previous", "next", "close" (the page event's argument).
+/// "previous", "next", "close", "pause", "manual" (the page event's argument).
 [[nodiscard]] std::string_view toString(ViewerClick click) noexcept;
 [[nodiscard]] std::optional<ViewerClick> viewerClickFromName(std::string_view name) noexcept;
 
@@ -51,6 +52,8 @@ public:
     /// The picture's box as laid out (x, y from the view's top-left corner, width, height, in pixels); nothing while
     /// it is hidden or shows no picture.
     [[nodiscard]] std::optional<glm::vec4> pictureBox() const;
+    /// I5 step 8: the clip's box as laid out on the videos page, likewise (nothing until its first frame shows).
+    [[nodiscard]] std::optional<glm::vec4> videoBox() const;
     /// The stage's box as laid out, likewise.
     [[nodiscard]] std::optional<glm::vec4> stageBox() const;
 

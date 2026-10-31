@@ -64,8 +64,28 @@ std::string_view toString(WorldState state) noexcept {
         return "returning";
     case WorldState::Edit:
         return "edit";
+    case WorldState::AnimatingToConsole:
+        return "animating to console";
     }
     return "unknown";
+}
+
+std::string_view toString(InsertionEnd end) noexcept {
+    switch (end) {
+    case InsertionEnd::Arrived:
+        return "arrived";
+    case InsertionEnd::Skipped:
+        return "skipped";
+    }
+    return "unknown";
+}
+
+bool insertionSkipPressed(const input::ActionState& actions) noexcept {
+    // The deliberate action buttons alone: a key or a stick still held from walking, sprinting or looking (the arrows
+    // are both walking and ui_up..ui_right) never skips.
+    constexpr Action kSkips[] = {Action::Interact, Action::UiActivate, Action::Confirm,
+                                 Action::Menu,     Action::Back,       Action::UiBack};
+    return std::any_of(std::begin(kSkips), std::end(kSkips), [&](Action action) { return actions.pressed(action); });
 }
 
 std::string_view toString(WorldContext context) noexcept {
@@ -217,7 +237,7 @@ WorldBackDecision worldBackAction(const BackState& shell, WorldBack world) noexc
 }
 
 WorldInteraction::WorldInteraction(InteractionSettings settings)
-    : m_settings(settings), m_lift(0.0f, scene::Easing::EaseInOut) {
+    : m_settings(settings), m_lift(0.0f, scene::Easing::EaseInOut), m_insert(0.0f, scene::Easing::EaseInOut) {
     InspectSettings& inspect = m_settings.inspect;
     inspect.minDistance = std::max(finiteOrZero(inspect.minDistance), 0.0f);
     inspect.maxDistance = std::max(finiteOrZero(inspect.maxDistance), inspect.minDistance);
@@ -226,6 +246,7 @@ WorldInteraction::WorldInteraction(InteractionSettings settings)
     m_inspectDistance = inspect.distance;
     m_walker.setReduceMotion(m_settings.reduceMotion);
     m_lift.setReduceMotion(m_settings.reduceMotion);
+    m_insert.setReduceMotion(m_settings.reduceMotion);
 }
 
 void WorldInteraction::setRoom(const InteractionRoom* room) {
@@ -261,6 +282,7 @@ WorldBack WorldInteraction::backLevel() const noexcept {
         // In Focus the lift moves only while the item is lowered back from Inspect.
         return m_lift.animating() ? WorldBack::SkipLowering : WorldBack::LeaveFocus;
     case WorldState::FreeRoam:
+    case WorldState::AnimatingToConsole:
     case WorldState::Launching:
     case WorldState::Returning:
     case WorldState::Edit:
@@ -276,6 +298,7 @@ world::PickId WorldInteraction::highlighted() const noexcept {
     case WorldState::Focus:
         return m_focused;
     case WorldState::Inspect:
+    case WorldState::AnimatingToConsole:
     case WorldState::Launching:
     case WorldState::Returning:
     case WorldState::Edit:
@@ -304,6 +327,7 @@ void WorldInteraction::setReduceMotion(bool on) {
     }
     m_walker.setReduceMotion(on);
     m_lift.setReduceMotion(on);
+    m_insert.setReduceMotion(on); // an insertion under way arrives: the next update ends it
     for (Pull& pull : m_pulls) {
         pull.progress.setReduceMotion(on);
     }
@@ -338,6 +362,13 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
             case WorldState::Inspect:
                 readInspect(actions, dt, finiteOrZero(frame.wheelNotches), frame.card, result);
                 break;
+            case WorldState::AnimatingToConsole:
+                // A deliberate button skips the insertion (ADR-0016 §11): the item in the socket at once, the eye
+                // stopped where it is.
+                if (insertionSkipPressed(*frame.actions)) {
+                    endInsertion(InsertionEnd::Skipped, result);
+                }
+                break;
             case WorldState::Launching:
             case WorldState::Returning:
             case WorldState::Edit:
@@ -364,13 +395,31 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
     }
     m_walkerPlaced = false;
     m_lift.advance(dt);
+    if (m_state == WorldState::AnimatingToConsole) {
+        // The item seated, it is seen there for the hold before the hand-over (none under reduceMotion).
+        const bool seated = !m_insert.animating();
+        m_insert.advance(dt);
+        if (seated) {
+            m_seatedSeconds += dt;
+        }
+        if (!m_insert.animating() &&
+            (m_settings.reduceMotion || !(m_seatedSeconds < m_settings.timings.insertionHold))) {
+            endInsertion(InsertionEnd::Arrived, result);
+        }
+    } else {
+        m_insert.advance(dt);
+    }
 
     // The hover's dwell: the item it rests on is pulled out once the dwell has passed (FreeRoam; in Focus the focused
     // item is the pulled one).
     if (m_state == WorldState::FreeRoam && m_hover.hovered() != world::kNoPick && m_dwellPulls) {
         m_dwell += dt;
         if (m_dwell >= m_settings.timings.hoverDwell) {
-            pull(m_hover.hovered());
+            // An item that is part of its fixture (a cabinet's screen) stays as it is under the hover.
+            const auto hovered = roomItem(m_hover.hovered());
+            if (!hovered || !hovered->inFixture) {
+                pull(m_hover.hovered());
+            }
             m_dwellPulls = false;
         }
     }
@@ -488,10 +537,7 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
             toFreeRoam(InteractionNotice::ItemUnavailable);
             return;
         }
-        m_launch = WorldLaunchRecord{m_focused, item->game, m_walkerNow, inspectView()};
-        result.launch = WorldLaunchRequest{m_focused, item->game};
-        m_state = WorldState::Launching;
-        clearNotice();
+        startLaunch(*item, result);
         return;
     }
     if (card == CardAction::Move) {
@@ -508,6 +554,44 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
     } else if (card == CardAction::Info || actions.pressed(Action::UiInfo)) {
         result.showInfo = true;
     }
+}
+
+void WorldInteraction::startLaunch(const RoomItem& item, InteractionResult& result) {
+    m_launch = WorldLaunchRecord{m_focused, item.game, m_walkerNow, inspectView()};
+    clearNotice();
+    // I5 step 9 (ADR-0016 §11): in a room with a console the item goes into its media socket first, the eye turning to
+    // it; instant under reduceMotion, which launches at once as a room without a console does. None in VR either
+    // (keepWalker, ADR-0017 §5 as amended on 2026-10-31): its eye's turn would drive the user's head.
+    const float seconds = m_settings.timings.insertion;
+    const std::optional<scene::WalkerPose> console =
+        m_room != nullptr && !m_settings.reduceMotion && !m_settings.keepWalker && std::isfinite(seconds) &&
+                seconds > 0.0f
+            ? m_room->consolePose(m_walkerNow)
+            : std::nullopt;
+    result.launch = WorldLaunchRequest{m_focused, item.game, console.has_value()};
+    if (!console) {
+        m_state = WorldState::Launching;
+        return;
+    }
+    m_state = WorldState::AnimatingToConsole;
+    m_insert.jumpTo(0.0f);
+    m_insert.animateTo(1.0f, seconds);
+    m_seatedSeconds = 0.0f;
+    // The eye leads (eased out, shorter): the item, held in front of it, drops into a console already framed.
+    const float look = m_settings.timings.insertionLook;
+    easeWalkerTo(*console, std::isfinite(look) && look > 0.0f ? std::min(look, seconds) : seconds,
+                 scene::Easing::EaseOut);
+}
+
+void WorldInteraction::endInsertion(InsertionEnd end, InteractionResult& result) {
+    m_state = WorldState::Launching;
+    m_insert.finish();
+    if (m_walker.animating()) {
+        // Skipped: the eye stops where it is (no snap); the return restores Avvia's pose anyway.
+        m_walker.jumpTo(m_walker.pose());
+        m_walkerPlaced = true;
+    }
+    result.insertionEnded = end;
 }
 
 void WorldInteraction::track(const world::HoverSample& sample) {
@@ -544,6 +628,7 @@ void WorldInteraction::track(const world::HoverSample& sample) {
 
 void WorldInteraction::finishReturn() {
     const WorldLaunchRecord record = m_launch.value_or(WorldLaunchRecord{});
+    m_insert.jumpTo(0.0f); // the item out of the console, back in the hand
     // In VR (I10 step 10) the user may have walked while the game ran: the walker stays where they stand.
     m_walker.jumpTo(m_settings.keepWalker ? m_walkerNow : record.walker);
     m_walkerPlaced = true;
@@ -574,7 +659,8 @@ void WorldInteraction::finishReturn() {
 }
 
 bool WorldInteraction::enterEdit() {
-    if (m_state == WorldState::Launching || m_state == WorldState::Returning || m_state == WorldState::Edit) {
+    if (m_state == WorldState::AnimatingToConsole || m_state == WorldState::Launching ||
+        m_state == WorldState::Returning || m_state == WorldState::Edit) {
         return false;
     }
     m_state = WorldState::Edit;
@@ -626,7 +712,7 @@ bool WorldInteraction::showInRoom(world::PickId id, const scene::WalkerPose& wal
 }
 
 void WorldInteraction::launchEnded(const LaunchMessage& outcome) {
-    if (m_state != WorldState::Launching) {
+    if (m_state != WorldState::Launching && m_state != WorldState::AnimatingToConsole) {
         return;
     }
     m_state = WorldState::Returning;
@@ -701,6 +787,7 @@ void WorldInteraction::toFreeRoam(InteractionNotice notice) {
     }
     m_focused = world::kNoPick;
     m_lift.jumpTo(0.0f);
+    m_insert.jumpTo(0.0f);
     if (m_walker.animating()) {
         // Stopped where it is: the player walks on from there.
         m_walker.jumpTo(m_walker.pose());
@@ -715,7 +802,8 @@ void WorldInteraction::toFreeRoam(InteractionNotice notice) {
     }
 }
 
-void WorldInteraction::easeWalkerTo(const scene::WalkerPose& target, float seconds) {
+void WorldInteraction::easeWalkerTo(const scene::WalkerPose& target, float seconds, scene::Easing easing) {
+    m_walker.setEasing(easing);
     if (!m_walker.animating()) {
         // The player may have looked around since the last ease: start where the walker is.
         m_walker.jumpTo(m_walkerNow);

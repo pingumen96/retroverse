@@ -87,6 +87,7 @@
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_room.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/app/world_live_plan.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -145,6 +146,9 @@ public:
         bool atCamera = false;
         /// The games the hero CRT binds with (its room's).
         std::vector<ScreenGame> screenGames;
+        /// The theme packs' CRT presets of the floor's rooms, by room id (I5 step 6: world::ThemeMaterials::
+        /// screenPreset, rooms without one left out), which their screens take (crt_looks.hpp).
+        std::map<std::string, std::string, std::less<>> screenPresets;
     };
 
     /// What the session asks of the application at a frame boundary.
@@ -388,6 +392,11 @@ private:
     [[nodiscard]] bool showRoomsAlone(WorldBuild& build, std::span<const RoomStaticPart> statics,
                                       WorldLiveUpdateRecord& record, bool& replaced);
     [[nodiscard]] bool regenerationAllowed(const ProductUi& product) const;
+    /// I5 step 9's review: a launch is on, the room's in particular from Avvia (its insertion into the console, while
+    /// launchActive() is still false) to the interaction's return to Inspect (worldLaunchInFlight()): a live update's,
+    /// a regeneration's or a retargeted building's result waits, and the editor does not open, so that the room the
+    /// item was taken from stays as it is.
+    [[nodiscard]] bool launchHolds(const ProductUi& product) const noexcept;
     /// A lockstep run waits for a preview's or a commit's job.
     [[nodiscard]] bool regenerationWaits() const noexcept;
     /// A frame was rendered: the frame that shows the room again after a commit.
@@ -426,7 +435,12 @@ private:
     /// fallback); false when it cannot be.
     [[nodiscard]] bool commitEditFloor(const world::WorldPlan* plan, const std::string& digest, bool* committedFloor);
     /// The edited room's targets from the session's floor shown.
-    void bindEditRoom();
+    /// `entered` (I4b step 8): the walker entered another room of the chain (the interaction lets go of its targets).
+    void bindEditRoom(bool entered = false);
+    /// I4b step 8: the edited room becomes `room`, another of the session's chain the walker entered.
+    void enterEditRoom(const world::RoomId& room);
+    /// The collection of room `room` of the floor shown, if it has one.
+    [[nodiscard]] CollectionInstance* editCollectionOf(const world::RoomId& room) const;
     /// The held item's static records hidden, the target outlined (every frame), or both cleared.
     void syncEditFlags();
     void clearEditFlags();
@@ -494,6 +508,8 @@ private:
         core::Aabb doorway;
         /// Its index among the interaction's rooms (WorldHover::addRoom), if it has a collection.
         std::optional<std::size_t> interactionRoom;
+        /// I5 step 9: its console's media socket in the scene (consoleSocketOf()), none without a console.
+        std::optional<ConsoleSocket> console;
     };
 
     /// An item of the floor: its room (an index into m_rooms), its index in the room's collection, its index among the
@@ -649,6 +665,12 @@ private:
     void keepPlan(const WorldBuild& build);
     /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
     void syncDirectory(ProductUi& product);
+    /// I4b step 8: the chains' ranges of the plan shown asked for (once per plan digest) and taken when they come.
+    void followChainRanges();
+    /// I4b step 8: the notice naming the expansion rooms an update added, once the floor shows and no other notice does.
+    void followRoomsAdded(ProductUi& product);
+    /// Lockstep: the ranges of the plan shown are on their way.
+    [[nodiscard]] bool chainRangesWait() const noexcept;
     /// The interaction's index of the room `room` of the floor shown, if it has a collection.
     [[nodiscard]] std::optional<std::size_t> interactionRoomOf(std::string_view room) const;
     /// A building's result for another floor than the one shown (a ride happened since its floor was asked): its floor
@@ -710,6 +732,10 @@ private:
     /// step 6's review: its notice offers the first that stands).
     std::uint64_t m_buildsRecorded = 0;
     std::vector<world::RoomId> m_confirmationRooms;
+    /// I4b step 8 (ADR-0015 §7): the expansion rooms the last update that saved the building added, and whether their
+    /// notice waits to show (followRoomsAdded()).
+    std::vector<world::RoomId> m_addedRooms;
+    bool m_addedRoomsPending = false;
     std::optional<std::chrono::system_clock::time_point> m_shownAt;
     bool m_coverPhaseOpen = false;
     /// The coverLoad phase waits to open until the frame after m_coverPhaseAfter (commit(), update()).
@@ -733,6 +759,8 @@ private:
     std::uint64_t m_liveRequestFrame = 0;
     std::optional<Clock::time_point> m_liveRequestedAt;
     bool m_liveFlow = false;
+    /// launchHolds() as this frame's update() found it (waits(): a result held back is no reason to wait).
+    bool m_launchHeld = false;
 
     /// I4 step 7b: the plan shown (its state for the rides' floor jobs, its where-is index), the floor shown ("" none),
     /// its elevator's zone, arrival camera and rooms' doorway cameras (the scene's frame), the directory's building made
@@ -767,6 +795,16 @@ private:
     std::map<std::string, scene::CameraSetup> m_doorways;
     ui::DirectoryBuilding m_directoryBuilding;
     std::string m_directoryPlan;
+    /// I4b step 8 (ADR-0015 §7): the ranges of the chains' rooms of the plan shown, read on the pool from the rooms'
+    /// items files (chainRangesOf()): their mailbox, what they were asked for and are held for (the plan's digest and
+    /// the builds that wrote the items files: a first start writes them after its plan shows), the key whose job could
+    /// not be submitted (asked again on a later frame, its warning logged once).
+    std::shared_ptr<ChainRangesMailbox> m_rangesBox;
+    std::string m_rangesAsked;
+    std::string m_rangesRefused;
+    std::string m_rangesDigest;
+    std::uint64_t m_itemsWrites = 0;
+    std::map<world::RoomId, ChainRoomRanges> m_ranges;
     /// The ride, when it was asked (the steady clock), the directory's command that asked it, the destination built.
     std::unique_ptr<ElevatorRide> m_ride;
     Clock::time_point m_rideStart;

@@ -1148,6 +1148,14 @@ SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot, con
     return result;
 }
 
+std::string chainSignText(std::string_view sign, const RoomId& room) {
+    if (!room.isExpansion()) {
+        return std::string(sign);
+    }
+    const std::string number = std::to_string(room.index());
+    return sign.empty() ? number : fmt::format("{} {}", sign, number);
+}
+
 Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const WorldPlan& plan, const RoomId& roomId,
                                   const std::optional<LightingProfile>& lighting,
                                   std::span<const std::string> platformTags) {
@@ -1191,6 +1199,8 @@ Expected<SceneData> loadSceneData(const std::filesystem::path& assetRoot, const 
         data.platform = sharedRoomPlatform(room->kind, room->floor, system, *systems, *building);
     }
     data.platform.mediaFamily = room->mediaFamily;
+    // I4b step 8 (ADR-0015 §7): an expansion's signs are its head's with its number.
+    data.platform.signText = chainSignText(data.platform.signText, roomId);
     auto registry = loadMediaFamilies(assetRoot);
     if (!registry) {
         return propagate(registry.error());

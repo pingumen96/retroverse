@@ -81,6 +81,23 @@ assets::MaterialLibrary loadMaterials(const core::Paths& paths) {
     return builtin;
 }
 
+/// The CRT presets (I5 step 6): assets/materials/crt_presets.json with the user's over it; a file that does not load
+/// is said in the log (the user's left out, the shipped one's built-in copy used).
+ScreenLooks loadScreenLooks(const core::Paths& paths) {
+    assets::LoadedCrtPresets loaded = assets::loadCrtPresets(paths.assetRoot(), paths.configDir());
+    for (const Error& issue : loaded.issues) {
+        if (loaded.source == "built-in") {
+            spdlog::error("CRT presets: the shipped crt_presets.json does not load, the built-in values are used: {}",
+                          issue.toString());
+        } else {
+            spdlog::warn("CRT presets: the user's crt_presets.json is left out, the shipped values used: {}",
+                         issue.toString());
+        }
+    }
+    spdlog::info("CRT presets: the {} values", loaded.source);
+    return ScreenLooks(loaded.presets, std::string(loaded.source));
+}
+
 /// The programs of the scene, its shadow and ambient occlusion, its post-processing and the hover outline
 /// (ShaderLibrary handles), loaded at startup.
 struct ScenePrograms {
@@ -168,8 +185,9 @@ bool prepareStereoImage(std::optional<gl::Framebuffer>& image, glm::ivec2 size, 
                         std::optional<glm::ivec2>& failedSize) {
     Status status = ok();
     if (!image) {
+        // No depth: the eyes are copied in, nothing is drawn with a depth test (docs/i5/memory-margin.md).
         auto created =
-            gl::Framebuffer::create(gl::FramebufferDesc{size, gl::ColorFormat::Srgb8Alpha8, true}, debugName);
+            gl::Framebuffer::create(gl::FramebufferDesc{size, gl::ColorFormat::Srgb8Alpha8, false}, debugName);
         if (created) {
             image = std::move(*created);
         } else {
@@ -221,6 +239,8 @@ struct SceneGraphics::State {
     explicit State(assets::MaterialLibrary materialLibrary) : library(std::move(materialLibrary)) {}
 
     assets::MaterialLibrary library;
+    /// The screens' CRT looks (I5 step 6), which the scene instances' screens take.
+    ScreenLooks looks;
     std::unique_ptr<gl::ShaderLibrary> shaders;
     ScenePrograms programs;
     std::optional<gl::ShaderHandle> debugShader; ///< loaded when debug lines are first set
@@ -239,7 +259,8 @@ struct SceneGraphics::State {
     bool debugLinesShown = false;
     std::function<void(gl::GLDevice&)> windowOverlay;
     std::function<void(gl::GLDevice&, const gl::Framebuffer&)> screenshotOverlay;
-    /// Render targets of the window's view and of screenshots, each kept at its size (allocated on first use).
+    /// Render targets of the window's view, kept at its size (allocated on first use), and of a screenshot of another
+    /// size, made for it alone: one set is held at any time (captureScreenshot()).
     gl::ViewTargets windowTargets;
     gl::ViewTargets screenshotTargets;
     std::optional<glm::ivec2> failedWindowSize;
@@ -266,6 +287,10 @@ struct SceneGraphics::State {
     glm::ivec2 lastScreenshotSize{0};
     FrameStatsLog statsLog;
     bool lastFrameCaptured = false; ///< --screenshot written
+    /// The targets the last screenshot was drawn through (kScreenshotWindowTargets, kScreenshotOwnTargets or
+    /// kScreenshotEyesTargets).
+    std::string_view screenshotTargetsUsed;
+    std::string_view lastFrameTargets; ///< those of the --screenshot
     bool viewRendered = false;      ///< a view was rendered during the current frame (window or screenshot)
     bool anyViewRendered = false;   ///< a view was rendered during the run
 
@@ -433,6 +458,17 @@ struct SceneGraphics::State {
         return copied;
     }
 
+    /// Back on the desktop (a VR session that ended, I10 step 2): the eyes' targets and the framebuffers over the
+    /// swapchains' images are let go of, so that the window's targets are the only set held.
+    /// `vr`: the session still runs (a frame without its eyes, tracking lost), and they are kept for the next one.
+    void releaseEyes(bool vr) {
+        if (vr || (!eyeTargets[0].valid() && !eyeTargets[1].valid() && swapchainTargets.empty())) {
+            return;
+        }
+        eyeTargets = {};
+        swapchainTargets.clear();
+    }
+
     /// The VR screenshot: both eyes, as renderEyes() left them, side by side at their size. False when the image cannot
     /// be allocated (logged).
     bool composeEyes(gl::GLDevice& device) {
@@ -461,39 +497,80 @@ struct SceneGraphics::State {
         return post;
     }
 
-    /// Renders `view` at --screenshot-size into the screenshot targets, with the overlay when it shows in screenshots,
-    /// and writes it as an RGB PNG; a VR frame's (`xrEyes`: its eyes rendered) is both eyes side by side.
+    /// Renders `view` at --screenshot-size, with the overlay when it shows in screenshots, and writes it as an RGB PNG.
+    /// At the window's size it is drawn through the window's targets, which the window's view draws anew right after;
+    /// at another size through targets made for it alone, with the window's let go of first (the window's view makes
+    /// them again): one set of targets is held at any time (docs/i5/memory-margin.md). A VR frame's (`xrEyes`: its
+    /// eyes rendered, I10 step 2) is both eyes side by side at their size, and the stereo preview's (I10 step 1) both
+    /// preview eyes: each from the eyes' targets, the side-by-side image let go of once written.
     Status captureScreenshot(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path,
                              bool xrEyes) {
         const CommandLineOptions& options = context.options();
-        glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
-        const gl::Framebuffer* output = nullptr;
+        if (xrEyes || options.stereoPreview) {
+            screenshotTargetsUsed = kScreenshotEyesTargets;
+            Status captured = captureEyes(context, view, path, xrEyes);
+            xrScreenshot.reset();
+            screenshotStereo.reset();
+            return captured;
+        }
+        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
+        const bool windowSized = size == context.framebufferSize();
+        screenshotTargetsUsed = windowSized ? kScreenshotWindowTargets : kScreenshotOwnTargets;
+        if (!windowSized) {
+            windowTargets = gl::ViewTargets{};
+        }
+        Status captured = captureInto(context, view, path, windowSized);
+        if (!windowSized) {
+            screenshotTargets = gl::ViewTargets{};
+        }
+        return captured;
+    }
+
+    /// captureScreenshot() through the window's targets (`windowSized`) or the screenshot's.
+    Status captureInto(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path,
+                       bool windowSized) {
+        const CommandLineOptions& options = context.options();
+        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
+        gl::ViewTargets& targets = windowSized ? windowTargets : screenshotTargets;
+        const bool prepared = windowSized
+                                  ? prepareTargets(windowTargets, size, "WindowTargets", failedWindowSize)
+                                  : prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize);
+        if (!prepared) {
+            return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot", core::pathToUtf8(path));
+        }
+        render(context.device(), view, targets);
+        return writeScreenshot(context, targets.output(), path, size);
+    }
+
+    /// captureScreenshot() of both eyes: a VR frame's as renderEyes() left them (`xrEyes`), else the stereo preview's
+    /// at --screenshot-size.
+    Status captureEyes(AppContext& context, const gl::RenderView& view, const std::filesystem::path& path,
+                       bool xrEyes) {
+        const CommandLineOptions& options = context.options();
         if (xrEyes) {
             if (!composeEyes(context.device())) {
                 return makeError(ErrorCode::GraphicsError, "no image for the VR screenshot", core::pathToUtf8(path));
             }
-            output = &*xrScreenshot;
-            size = xrScreenshot->size();
-        } else if (options.stereoPreview) {
-            if (!prepareStereoImage(screenshotStereo, size, "ScreenshotStereo", failedScreenshotStereoSize) ||
-                !renderStereo(context.device(), view, *screenshotStereo)) {
-                return makeError(ErrorCode::GraphicsError, "no render targets for the stereo screenshot",
-                                 core::pathToUtf8(path));
-            }
-            output = &*screenshotStereo;
-        } else {
-            if (!prepareTargets(screenshotTargets, size, "ScreenshotTargets", failedScreenshotSize)) {
-                return makeError(ErrorCode::GraphicsError, "no render targets for the screenshot",
-                                 core::pathToUtf8(path));
-            }
-            render(context.device(), view, screenshotTargets);
-            output = &screenshotTargets.output();
+            return writeScreenshot(context, *xrScreenshot, path, xrScreenshot->size());
         }
+        const glm::ivec2 size(options.screenshotWidth, options.screenshotHeight);
+        if (!prepareStereoImage(screenshotStereo, size, "ScreenshotStereo", failedScreenshotStereoSize) ||
+            !renderStereo(context.device(), view, *screenshotStereo)) {
+            return makeError(ErrorCode::GraphicsError, "no render targets for the stereo screenshot",
+                             core::pathToUtf8(path));
+        }
+        return writeScreenshot(context, *screenshotStereo, path, size);
+    }
+
+    /// The screenshot's last part: the overlay over `output` when it shows in screenshots, then `output` read back and
+    /// written as an RGB PNG.
+    Status writeScreenshot(AppContext& context, const gl::Framebuffer& output, const std::filesystem::path& path,
+                           glm::ivec2 size) {
         if (screenshotOverlay) {
-            screenshotOverlay(context.device(), *output);
+            screenshotOverlay(context.device(), output);
         }
         gl::Framebuffer::unbind(); // the frame leaves the default framebuffer bound, also when the window is not drawn
-        auto image = output->readPixels();
+        auto image = output.readPixels();
         if (!image) {
             return propagate(image.error());
         }
@@ -536,6 +613,7 @@ SceneGraphics::~SceneGraphics() = default;
 Expected<std::unique_ptr<SceneGraphics>> SceneGraphics::create(AppContext& context) {
     const core::Paths& paths = context.paths();
     auto state = std::make_unique<State>(loadMaterials(paths));
+    state->looks = loadScreenLooks(paths);
     state->shaders = std::make_unique<gl::ShaderLibrary>(paths.assetRoot() / "shaders");
     auto programs = loadScenePrograms(*state->shaders);
     if (!programs) {
@@ -592,7 +670,11 @@ const assets::MaterialLibrary& SceneGraphics::materialLibrary() const noexcept {
 
 SceneResources SceneGraphics::resources() noexcept {
     return SceneResources{m_state->meshes, m_state->materials, *m_state->textures,
-                          m_state->uniformBufferOffsetAlignment};
+                          m_state->uniformBufferOffsetAlignment, &m_state->looks};
+}
+
+ScreenLooks& SceneGraphics::screenLooks() noexcept {
+    return m_state->looks;
 }
 
 void SceneGraphics::clearContent() noexcept {
@@ -726,6 +808,7 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
     if (options.screenshot && lastFrame) {
         if (auto written = state.captureScreenshot(context, view, *options.screenshot, eyesRendered); written) {
             state.lastFrameCaptured = true;
+            state.lastFrameTargets = state.screenshotTargetsUsed;
         } else {
             Error error = written.error();
             error.message = "--screenshot failed: " + error.message;
@@ -749,12 +832,15 @@ void SceneGraphics::renderFrame(AppContext& context, const gl::RenderView& view,
             } else {
                 gl::Framebuffer::clearDefault(context.device().state(), windowSize);
             }
-        } else if (prepareTargets(state.windowTargets, windowSize, "WindowTargets", state.failedWindowSize)) {
-            state.render(context.device(), view, state.windowTargets);
-            state.windowTargets.output().blitToDefault(context.device().state(), windowSize);
         } else {
-            // No scene this frame (logged): a black window, with the overlay and its log still over it.
-            gl::Framebuffer::clearDefault(context.device().state(), windowSize);
+            state.releaseEyes(context.vr());
+            if (prepareTargets(state.windowTargets, windowSize, "WindowTargets", state.failedWindowSize)) {
+                state.render(context.device(), view, state.windowTargets);
+                state.windowTargets.output().blitToDefault(context.device().state(), windowSize);
+            } else {
+                // No scene this frame (logged): a black window, with the overlay and its log still over it.
+                gl::Framebuffer::clearDefault(context.device().state(), windowSize);
+            }
         }
         // Last, over the scene in the window.
         if (state.windowOverlay) {
@@ -799,8 +885,8 @@ void SceneGraphics::finishRun(AppContext& context) {
     }
     report.instanceCapacity = state.renderer->instanceCapacity();
     if (options.screenshot && state.lastFrameCaptured) {
-        report.screenshot =
-            ScreenshotRecord{*options.screenshot, state.lastScreenshotSize.x, state.lastScreenshotSize.y};
+        report.screenshot = ScreenshotRecord{*options.screenshot, state.lastScreenshotSize.x,
+                                             state.lastScreenshotSize.y, std::string(state.lastFrameTargets)};
     }
     // The GPU memory accounting (gl::gpuMemoryLedger) records every texture of the cache and the defaults, and nothing
     // else under their kinds: the run report's procedural surfaces and scene textures are what they hold.

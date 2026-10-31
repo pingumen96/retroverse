@@ -23,6 +23,8 @@ using Json = nlohmann::json;
 
 constexpr std::int64_t kMaxVersion = 999'999;
 
+// titleJson() and documentJson() are the selection's document; generation.cpp's writeSelectionText() writes its text
+// straight from a selection for the building's input digest (m3/preview-time): mirror any change there.
 Json titleJson(const RoomTitle& title) {
     return Json{
         {"game", title.game.toString()}, {"titleKey", title.titleKey},

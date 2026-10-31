@@ -8,8 +8,12 @@
 #include <utility>
 
 #include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
+#include <rv/app/room_items.hpp>
+#include <rv/catalog/metadata.hpp>
 #include <rv/world/building.hpp>
+#include <rv/world/title_key.hpp>
 
 namespace rv::app {
 namespace {
@@ -67,6 +71,44 @@ namespace {
     return ordered;
 }
 
+/// How many rooms each chain of `plan` has, by its head.
+[[nodiscard]] std::map<world::RoomId, std::uint32_t> chainSizes(const world::WorldPlan& plan) {
+    std::map<world::RoomId, std::uint32_t> sizes;
+    for (const world::Room& room : plan.rooms) {
+        ++sizes[room.id.head()];
+    }
+    return sizes;
+}
+
+/// `along` (a floor's rooms along its hall) with each chain's rooms together (I4b step 8): a head where it stands, then
+/// its expansions on the floor by number; an expansion whose head is not on the floor where it stands.
+[[nodiscard]] std::vector<const world::Room*> chainsTogether(const std::vector<const world::Room*>& along) {
+    const auto onFloor = [&](const world::RoomId& id) {
+        return std::any_of(along.begin(), along.end(), [&](const world::Room* room) { return room->id == id; });
+    };
+    std::vector<const world::Room*> ordered;
+    ordered.reserve(along.size());
+    for (const world::Room* room : along) {
+        if (room->id.isExpansion()) {
+            if (!onFloor(room->id.head())) {
+                ordered.push_back(room); // never in a valid plan (expansion-chain): listed where it stands
+            }
+            continue;
+        }
+        ordered.push_back(room);
+        std::vector<const world::Room*> expansions;
+        for (const world::Room* other : along) {
+            if (other->id.isExpansion() && other->id.head() == room->id) {
+                expansions.push_back(other);
+            }
+        }
+        std::sort(expansions.begin(), expansions.end(),
+                  [](const world::Room* a, const world::Room* b) { return a->id.index() < b->id.index(); });
+        ordered.insert(ordered.end(), expansions.begin(), expansions.end());
+    }
+    return ordered;
+}
+
 [[nodiscard]] WorldMove refuse(std::string_view notice, std::string why) {
     WorldMove move;
     move.kind = WorldMoveKind::Refuse;
@@ -107,22 +149,272 @@ namespace {
 
 } // namespace
 
-ui::DirectoryBuilding directoryBuildingOf(const world::WorldPlan& plan, const SystemFullName& fullName) {
+std::string rangeInitial(std::string_view sortKey) {
+    if (sortKey.empty()) {
+        return "#";
+    }
+    const char c = sortKey.front();
+    if (c >= 'a' && c <= 'z') {
+        return std::string(1, static_cast<char>(c - 'a' + 'A'));
+    }
+    if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+        return std::string(1, c);
+    }
+    return "#";
+}
+
+std::string rangePrefix(std::string_view sortKey) {
+    std::string prefix = rangeInitial(sortKey);
+    if (prefix != "#" && sortKey.size() > 1) {
+        const char c = sortKey[1];
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            prefix += c;
+        } else if (c >= 'A' && c <= 'Z') {
+            prefix += static_cast<char>(c - 'A' + 'a');
+        }
+    }
+    return prefix;
+}
+
+std::map<world::RoomId, ChainRoomRanges> chainRangesOf(const world::WorldPlan& plan, const ChainTitleOf& titleOf) {
+    std::map<world::RoomId, std::vector<const world::Room*>> chains;
+    for (const world::Room& room : plan.rooms) {
+        chains[room.id.head()].push_back(&room);
+    }
+    std::map<world::RoomId, std::vector<catalog::GameId>> placed;
+    for (const world::Placement& placement : plan.placements) {
+        placed[placement.slot.fixture().room()].push_back(placement.game);
+    }
+    struct Entry {
+        std::size_t section = 0;
+        catalog::SystemName system;
+        std::string sortKey;
+        std::string titleKey;
+        catalog::GameId game;
+        world::RoomId room;
+    };
+    std::map<world::RoomId, ChainRoomRanges> result;
+    for (const auto& [head, rooms] : chains) {
+        if (rooms.size() < 2) {
+            continue;
+        }
+        // The head's sections order the chain (its rooms share them); the titles of a system outside them go after
+        // them, a section of their own per system, by name.
+        const auto headRoom =
+            std::find_if(rooms.begin(), rooms.end(), [&](const world::Room* room) { return room->id == head; });
+        const std::vector<catalog::SystemName> sections =
+            systemsOf(**(headRoom != rooms.end() ? headRoom : rooms.begin()));
+        std::vector<Entry> entries;
+        for (const world::Room* room : rooms) {
+            result[room->id] = ChainRoomRanges{};
+            const auto games = placed.find(room->id);
+            if (games == placed.end() || !titleOf) {
+                continue;
+            }
+            for (const catalog::GameId& game : games->second) {
+                const std::optional<ChainTitle> title = titleOf(game);
+                if (!title) {
+                    continue;
+                }
+                const auto section = std::find(sections.begin(), sections.end(), title->system);
+                entries.push_back(Entry{static_cast<std::size_t>(section - sections.begin()), title->system,
+                                        title->sortKey, title->titleKey, game, room->id});
+            }
+        }
+        // The generator's order (alphabeticalLess(): section, sort key, title key, GameId), so that titles of one sort
+        // key at a boundary stand as the split shared them.
+        std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+            return std::tie(a.section, a.system, a.sortKey, a.titleKey, a.game) <
+                   std::tie(b.section, b.system, b.sortKey, b.titleKey, b.game);
+        });
+        // Section by section (the entries stand by section in order): each room's first and last title there, the
+        // rooms in the order of their first; a boundary two rooms share the initial of shows two letters.
+        std::size_t begin = 0;
+        while (begin < entries.size()) {
+            std::size_t end = begin;
+            while (end < entries.size() && entries[end].section == entries[begin].section &&
+                   entries[end].system == entries[begin].system) {
+                ++end;
+            }
+            struct Span {
+                world::RoomId room;
+                std::size_t first = 0;
+                std::size_t last = 0;
+                std::string firstText;
+                std::string lastText;
+            };
+            std::vector<Span> spans;
+            for (const world::Room* room : rooms) {
+                std::optional<std::size_t> first;
+                std::size_t last = 0;
+                for (std::size_t at = begin; at < end; ++at) {
+                    if (entries[at].room == room->id) {
+                        if (!first) {
+                            first = at;
+                        }
+                        last = at;
+                    }
+                }
+                if (!first) {
+                    continue;
+                }
+                spans.push_back(Span{room->id, *first, last, rangeInitial(entries[*first].sortKey),
+                                     rangeInitial(entries[last].sortKey)});
+                for (std::size_t at = *first; at < last; ++at) {
+                    if (entries[at].room != room->id) {
+                        result[room->id].scattered = true;
+                    }
+                }
+            }
+            std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.first < b.first; });
+            for (std::size_t index = 0; index + 1 < spans.size(); ++index) {
+                Span& before = spans[index];
+                Span& after = spans[index + 1];
+                if (before.lastText == after.firstText) {
+                    before.lastText = rangePrefix(entries[before.last].sortKey);
+                    after.firstText = rangePrefix(entries[after.first].sortKey);
+                }
+            }
+            // In the rooms' own order (the chain's), so that each room's ranges follow its sections.
+            for (const world::Room* room : rooms) {
+                for (const Span& span : spans) {
+                    if (span.room == room->id) {
+                        result[room->id].ranges.push_back(
+                            ui::DirectoryRange{ui::DirectorySystem{entries[span.first].system.str(), {}},
+                                               span.firstText, span.lastText});
+                    }
+                }
+            }
+            begin = end;
+        }
+    }
+    return result;
+}
+
+std::vector<catalog::SystemName> chainSystemsOf(const world::WorldPlan& plan) {
+    const std::map<world::RoomId, std::uint32_t> sizes = chainSizes(plan);
+    std::vector<catalog::SystemName> systems;
+    for (const world::Room& room : plan.rooms) {
+        if (sizes.at(room.id.head()) < 2) {
+            continue;
+        }
+        for (const catalog::SystemName& system : systemsOf(room)) {
+            if (std::find(systems.begin(), systems.end(), system) == systems.end()) {
+                systems.push_back(system);
+            }
+        }
+    }
+    return systems;
+}
+
+std::map<catalog::GameId, ChainTitle> chainTitlesOf(const std::filesystem::path& cacheDir,
+                                                    const catalog::LibraryId& library,
+                                                    const std::vector<catalog::SystemName>& systems) {
+    std::map<catalog::GameId, ChainTitle> titles;
+    for (const catalog::SystemName& system : systems) {
+        auto items = readRoomItems(roomItemsFile(cacheDir, library, system));
+        if (!items) {
+            if (items.error().code != ErrorCode::NotFound) {
+                spdlog::warn("Directory: the titles of {} are not known for its rooms' ranges: {}", system.str(),
+                             items.error().message);
+            }
+            continue;
+        }
+        for (const RoomItemText& item : items->items) {
+            // A shared or arcade room's items file lists its other sections' games too, without their text
+            // (snapshotRoomItems()): a game's title is its own section's, never overwritten by another's listing.
+            if (!hasText(item) || titles.contains(item.game)) {
+                continue;
+            }
+            const std::string& shown = item.title.empty() ? item.fallbackTitle : item.title;
+            std::string sortKey;
+            if (item.screen && !item.screen->sortKey.empty()) {
+                sortKey = item.screen->sortKey;
+            } else if (auto key = catalog::sortKeyOf(shown)) {
+                sortKey = std::move(*key);
+            }
+            auto key = world::titleKey(shown);
+            titles.emplace(item.game, ChainTitle{system, std::move(sortKey), key ? std::move(*key) : std::string()});
+        }
+    }
+    return titles;
+}
+
+void ChainRangesMailbox::ask(std::string key) {
+    const std::lock_guard lock(m_mutex);
+    m_asked = std::move(key);
+    if (m_answer && m_answer->first != m_asked) {
+        m_answer.reset();
+    }
+}
+
+bool ChainRangesMailbox::post(const std::string& key, std::map<world::RoomId, ChainRoomRanges> ranges) {
+    std::function<void()> wake;
+    {
+        const std::lock_guard lock(m_mutex);
+        if (key != m_asked) {
+            return false;
+        }
+        m_answer.emplace(key, std::move(ranges));
+        wake = m_wake;
+    }
+    if (wake) {
+        wake();
+    }
+    return true;
+}
+
+std::optional<ChainRangesMailbox::Answer> ChainRangesMailbox::take() {
+    const std::lock_guard lock(m_mutex);
+    std::optional<Answer> answer = std::move(m_answer);
+    m_answer.reset();
+    return answer;
+}
+
+void ChainRangesMailbox::setWake(std::function<void()> wake) {
+    const std::lock_guard lock(m_mutex);
+    m_wake = std::move(wake);
+}
+
+ui::DirectoryBuilding directoryBuildingOf(const world::WorldPlan& plan, const SystemFullName& fullName,
+                                          const std::map<world::RoomId, ChainRoomRanges>* ranges) {
     const std::map<world::RoomId, std::uint32_t> placed = placedPerRoom(plan);
+    const std::map<world::RoomId, std::uint32_t> chains = chainSizes(plan);
+    const auto shownSystem = [&](const catalog::SystemName& system) {
+        return ui::DirectorySystem{system.str(), fullName ? fullName(system) : std::string()};
+    };
     ui::DirectoryBuilding building;
     for (const world::Floor* floor : floorsInOrder(plan)) {
         ui::DirectoryFloor entry;
         entry.id = floor->id;
         entry.order = floor->order;
-        for (const world::Room* room : roomsAlongHall(plan, floor->id)) {
+        for (const world::Room* room : chainsTogether(roomsAlongHall(plan, floor->id))) {
             ui::DirectoryRoom shown;
             shown.id = room->id.toString();
             shown.kind = std::string(world::toString(room->kind));
             for (const catalog::SystemName& system : systemsOf(*room)) {
-                shown.systems.push_back(ui::DirectorySystem{system.str(), fullName ? fullName(system) : std::string()});
+                shown.systems.push_back(shownSystem(system));
             }
             const auto count = placed.find(room->id);
             shown.games = count != placed.end() ? count->second : 0;
+            // I4b step 8: its place in its chain, its titles' ranges (their systems named as the room's are).
+            shown.chainIndex = room->id.index();
+            shown.chainRooms = chains.at(room->id.head());
+            if (ranges != nullptr) {
+                if (const auto found = ranges->find(room->id); found != ranges->end()) {
+                    shown.ranges = found->second.ranges;
+                    shown.scattered = found->second.scattered;
+                    for (ui::DirectoryRange& range : shown.ranges) {
+                        const auto system = std::find_if(shown.systems.begin(), shown.systems.end(),
+                                                         [&](const ui::DirectorySystem& section) {
+                                                             return section.name == range.system.name;
+                                                         });
+                        if (system != shown.systems.end()) {
+                            range.system = *system;
+                        }
+                    }
+                }
+            }
             entry.rooms.push_back(std::move(shown));
         }
         building.floors.push_back(std::move(entry));
