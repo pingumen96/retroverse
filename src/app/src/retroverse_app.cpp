@@ -2218,7 +2218,8 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }
-    state.updateScreens(context, context.window().isMinimized());
+    // A minimized window hides nothing from a headset: the screens stay in the eyes' view.
+    state.updateScreens(context, !context.vr() && context.window().isMinimized());
     state.updateXrGame(context);
     state.updateAudio(&actions);
     state.syncCaptureLayers();
