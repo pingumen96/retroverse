@@ -79,7 +79,8 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   persisted start of `test_world_start.cpp`, `[world_start]`, and the live update after a refresh of
   `test_world_live_update.cpp`, `[world_live]`), its covers (`gpu.covers: ...`), hover, pull-out and Focus (`gpu.world
   focus: ...`), inspection (`gpu.world inspect: ...`), the card (`gpu.world card: ...`), the media viewer and
-  Informazioni (`gpu.media viewer: ...`), launching from the room and "Mostra nella stanza" (`gpu.world launch: ...`),
+  Informazioni (`gpu.media viewer: ...`), launching from the room (since I5 step 9 after the insertion into the
+  console, `[insertion]`) and "Mostra nella stanza" (`gpu.world launch: ...`),
   the look's probes (`gpu.world look: ...`), the media families' rooms of the `esde/building` fixture through
   `--start-room` (`gpu.world families: ...`, I4 step 2), the floors of the `esde/building` fixture (`gpu.world
   floor: ...`, I4 step 3: `tests/smoke/scenes/two_areas.json` from each area and without areas, each area's lights and

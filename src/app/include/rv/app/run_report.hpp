@@ -331,6 +331,55 @@ struct InspectRecord {
     bool operator==(const InspectRecord&) const = default;
 };
 
+/// One frame drawn during the last insertion (InsertionRecord::frames).
+struct InsertionFrameRecord {
+    std::uint64_t frame = 0;
+    /// The interaction's eased progress (0 in the hand, 1 in the socket) and the item's centre's distance from the
+    /// socket (meters).
+    double progress = 0.0;
+    double distance = 0.0;
+
+    bool operator==(const InsertionFrameRecord&) const = default;
+};
+
+/// The most insertion frames a run report keeps (an insertion lasts 27 frames at 60 Hz).
+inline constexpr std::size_t kMaxInsertionFrames = 120;
+
+/// The insertion into the console (I5 step 9; ADR-0016 §11): the held item eased into the console's media socket
+/// after Avvia, before the launch's hand-over.
+struct InsertionRecord {
+    /// Insertions begun (Avvia in a room with a console, not under reduceMotion), and how they ended: the item in the
+    /// socket, skipped by a button, the launch refused or failed meanwhile (back to Inspect).
+    std::uint64_t started = 0;
+    std::uint64_t arrived = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t refused = 0;
+    /// Frames drawn with the item on its way (progress between 0 and 1) and in the socket (1: the frame it seated, its
+    /// hold before the hand-over and the launch's frame "Gioco in corso").
+    std::uint64_t movingFrames = 0;
+    std::uint64_t socketFrames = 0;
+    /// The last insertion: its item (pick id in hexadecimal), the frames it began on, the item seated in the socket on
+    /// (progress 1; the skip's frame when skipped) and it ended on (the hand-over released: InsertionEnd, after the
+    /// hold), the frame times from its start to its end (its first frame's included: the interaction's own clock), how
+    /// it ended ("arrived", "skipped", "refused"; "" while it runs).
+    std::string pickId;
+    std::optional<std::uint64_t> startFrame;
+    std::optional<std::uint64_t> seatedFrame;
+    std::optional<std::uint64_t> endFrame;
+    double seconds = 0.0;
+    std::string end;
+    /// The console's media socket (the scene's frame), the item's centre and scale factor (insertedScale()) on the last
+    /// frame drawn, and that centre's distance from the socket (meters).
+    glm::vec3 socket{0.0f};
+    glm::vec3 center{0.0f};
+    double scale = 1.0;
+    double distance = 0.0;
+    /// The frames drawn during the last insertion, in order (at most kMaxInsertionFrames).
+    std::vector<InsertionFrameRecord> frames;
+
+    bool operator==(const InsertionRecord&) const = default;
+};
+
 /// The world's interaction (I3 step 13a; ADR-0012 §1-§3): the hover with its outline and label, the pull-out on the
 /// dynamic path, Focus and its D-pad steps; the inspection (I3 step 13b). Empty ({}) in runs without a room's
 /// collection.
@@ -368,6 +417,8 @@ struct InteractionRecord {
     std::vector<InteractionEventRecord> events;
     std::uint64_t eventsDropped = 0;
     InspectRecord inspect;
+    /// I5 step 9.
+    InsertionRecord insertion;
 
     bool operator==(const InteractionRecord&) const = default;
 };
@@ -421,6 +472,7 @@ struct CardRecord {
 struct RoomLaunchEventRecord {
     std::uint64_t frame = 0;
     /// "launch" (Avvia asked: game, pickId, walker), "refused" (the product UI took no launch now: outcome, reason),
+    /// "inserted" and "insertion-skipped" (I5 step 9: the insertion into the console ended, the hand-over may begin),
     /// "ended" (the launch's outcome, reason), "restored" (the frame the interaction came back: state, pickId, walker),
     /// "show-in-room" (game, pickId), "show-in-room-failed" (game; reason: the card's room key, "item-unavailable" or
     /// "state").
@@ -1249,6 +1301,15 @@ struct VideoLaunchRecord {
     double stopMs = 0.0;
     /// Decoder threads still running when the hand-over began: 0 unless the bound passed.
     std::uint64_t threadsRunning = 0;
+    /// I5 step 9 (ADR-0016 §11): the stop began with the insertion, before the hand-over (ScreenService::
+    /// prepareLaunch()), on this frame; absent when it began at the hand-over. The milliseconds the hand-over itself
+    /// waited for the threads (0 when they had ended during the insertion).
+    std::optional<std::uint64_t> stopFrame;
+    double waitMs = 0.0;
+    /// The frame the hand-over began on (ScreenService::launchStarting()), and whether the launch never started (a
+    /// launch refused during the insertion: the screens reopened without a hand-over).
+    std::optional<std::uint64_t> handOverFrame;
+    bool cancelled = false;
     /// Seconds into the clip shown when it stopped (absent when no frame of a video showed).
     std::optional<double> positionSeconds;
     /// The decoder opened again after the launch ended, seeking to this position (absent: not reopened, or from the

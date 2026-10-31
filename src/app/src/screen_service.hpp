@@ -276,9 +276,16 @@ public:
     /// After update(): the viewer's clip (its state, its texture's view, its reason).
     [[nodiscard]] const ViewerVideo& viewerVideo() const noexcept;
 
-    /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
+    /// I5 step 9 (ADR-0016 §11): the insertion into the console begins: every decoder stops now (each screen keeping
+    /// its clip's position), never waited for here, its thread ending while the insertion runs; the hero shows the
+    /// title card of `gameId` when that game is its target; `frame` is Avvia's (the stop's events and record).
+    /// launchStarting() follows before the hand-over, or launchEnded() when the launch never starts.
+    void prepareLaunch(const std::string& gameId, std::uint64_t frame);
+    /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for, at most
+    /// kScreenStopBoundSeconds from the stop's start (prepareLaunch()'s when it came first).
     void launchStarting();
-    /// The launch ended, failed to start or was refused: the clips open again at their positions.
+    /// The launch ended, failed to start or was refused (a prepared one too, recorded `cancelled`): the clips open
+    /// again at their positions.
     void launchEnded();
     /// The end of the run: the decoders stay stopped, every decoder thread is waited for, the worker ends.
     void shutdown();

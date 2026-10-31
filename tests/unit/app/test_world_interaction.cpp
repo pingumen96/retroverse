@@ -117,6 +117,7 @@ TEST_CASE("app/world_interaction: each state has its input context", "[app][worl
     CHECK(rv::app::worldContextFor(WorldState::Inspect) == WorldContext::Inspect);
     CHECK(rv::app::worldContextFor(WorldState::Launching) == WorldContext::Suspended);
     CHECK(rv::app::worldContextFor(WorldState::Returning) == WorldContext::Suspended);
+    CHECK(rv::app::worldContextFor(WorldState::AnimatingToConsole) == WorldContext::Suspended);
 
     const std::set<Action> look{Action::LookX, Action::LookY, Action::LookDeltaX, Action::LookDeltaY};
     const std::set<Action> arrows{Action::UiUp, Action::UiDown, Action::UiLeft, Action::UiRight};
@@ -868,6 +869,9 @@ TEST_CASE("app/world_interaction: names for the log", "[app][world_interaction]"
     CHECK(rv::app::toString(WorldState::Inspect) == "inspect");
     CHECK(rv::app::toString(WorldState::Launching) == "launching");
     CHECK(rv::app::toString(WorldState::Returning) == "returning");
+    CHECK(rv::app::toString(WorldState::AnimatingToConsole) == "animating to console");
+    CHECK(rv::app::toString(rv::app::InsertionEnd::Arrived) == "arrived");
+    CHECK(rv::app::toString(rv::app::InsertionEnd::Skipped) == "skipped");
     CHECK(rv::app::toString(InteractionNotice::None) == "none");
     CHECK(rv::app::toString(InteractionNotice::ItemUnavailable) == "item unavailable");
     CHECK(rv::app::toString(InteractionNotice::LaunchOutcome) == "launch outcome");
@@ -931,4 +935,294 @@ TEST_CASE("app/world_interaction: the card's presses wait for the item in the ha
     CHECK(lifting.interaction.state() == WorldState::Inspect);
     lifting.press(CardAction::Back);
     CHECK(lifting.interaction.state() == WorldState::Focus);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The insertion into the console (I5 step 9, ADR-0016 §11)
+// ---------------------------------------------------------------------------------------------------------------
+
+namespace {
+
+/// Inspecting with the room's console 1.2 m to the walker's right and below the eye, its socket at `console`.
+InteractionHarness inspectingWithConsole(rv::app::InteractionSettings settings = {}) {
+    InteractionHarness harness = inspecting(settings);
+    const rv::scene::WalkerPose pose = harness.pose();
+    const glm::vec3 right(std::cos(pose.yaw), 0.0f, std::sin(pose.yaw));
+    harness.room.console = pose.feet + 1.2f * right + glm::vec3(0.0f, 0.6f, 0.0f);
+    return harness;
+}
+
+} // namespace
+
+TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item into it in 450 ms, the eye leading "
+          "in 300 ms, the launch held until the item was seen seated",
+          "[app][world_interaction][insertion]") {
+    InteractionHarness harness = inspectingWithConsole();
+    const PickId item = harness.interaction.focused();
+    const rv::scene::WalkerPose walker = harness.pose();
+    const rv::app::InspectView view = harness.interaction.inspectView();
+    const rv::scene::WalkerPose facingConsole = *harness.room.consolePose(walker);
+    rv::app::InteractionResult last = harness.press(rv::app::CardAction::Launch);
+    REQUIRE(last.launch.has_value());
+    CHECK(last.launch->item == item);
+    CHECK(last.launch->held);
+    CHECK_FALSE(last.insertionEnded.has_value());
+    CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
+    CHECK(harness.interaction.context() == WorldContext::Suspended);
+    CHECK(harness.interaction.focused() == item);
+    CHECK(harness.interaction.highlighted() == kNoPick);
+    CHECK(harness.interaction.backLevel() == WorldBack::Shell);
+    // The first frame already moves it (its own frame time), the eye turning with it, ahead of it (eased out).
+    CHECK(harness.interaction.insertion() > 0.0f);
+    CHECK(harness.interaction.insertion() < 0.05f);
+    REQUIRE(last.walker.has_value());
+    const float firstTurn = std::abs(rv::core::wrapAngleRadians(harness.pose().yaw - walker.yaw));
+    CHECK(firstTurn > 0.1f * std::abs(rv::core::wrapAngleRadians(facingConsole.yaw - walker.yaw)));
+    REQUIRE(harness.interaction.launchRecord().has_value());
+    CHECK(sameWalker(harness.interaction.launchRecord()->walker, walker));
+    CHECK(harness.interaction.launchRecord()->inspect == view);
+    // Neither the editor nor "Mostra nella stanza" during it.
+    CHECK_FALSE(harness.interaction.enterEdit());
+    CHECK_FALSE(harness.interaction.showInRoom(harness.room.at(1, 2, 3), harness.pose()));
+
+    // The eye on the console in 300 ms (18 frames, Avvia's included), the item still on its way.
+    last = harness.idle(17);
+    CHECK(sameWalker(harness.pose(), facingConsole));
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    CHECK(harness.interaction.insertion() < 1.0f);
+    // The item seated after 450 ms (27 frames), seen there 100 ms more (6 frames) before the launch's hand-over is
+    // released.
+    last = harness.idle(9);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
+    CHECK_FALSE(last.insertionEnded.has_value());
+    int held = 0;
+    while (!last.insertionEnded && held < 20) {
+        last = harness.idle(1);
+        ++held;
+    }
+    CHECK(held == 6);
+    REQUIRE(last.insertionEnded.has_value());
+    CHECK(*last.insertionEnded == rv::app::InsertionEnd::Arrived);
+    CHECK_FALSE(last.launch.has_value());
+    CHECK(harness.interaction.state() == WorldState::Launching);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    CHECK(sameWalker(harness.pose(), facingConsole));
+    // It stays in the socket while the game runs.
+    harness.idle(5);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    CHECK_FALSE(harness.interaction.walkerEasing());
+
+    // The return: Inspect of the same item, in the hand as before Avvia, the walker where Avvia found it.
+    harness.interaction.launchEnded(rv::app::LaunchMessage{std::string(rv::app::launch_outcome::kReturned), "", ""});
+    const rv::app::InteractionResult back = harness.idle(1);
+    CHECK(harness.interaction.state() == WorldState::Inspect);
+    CHECK(harness.interaction.focused() == item);
+    CHECK(harness.interaction.insertion() == 0.0f);
+    CHECK(harness.interaction.inspectView() == view);
+    REQUIRE(back.walker.has_value());
+    CHECK(sameWalker(harness.pose(), walker));
+    CHECK(harness.interaction.notice() == InteractionNotice::None);
+}
+
+TEST_CASE("app/world_interaction: a deliberate button skips the insertion, the eye stopping where it is, the launch "
+          "going on within the frame",
+          "[app][world_interaction][insertion]") {
+    // Activate, confirm, start, back and cancel skip; a look, a walk, sprint, the arrows (both walking and ui_up..
+    // ui_right), the quick catalog's button and the global actions (a screenshot, the mute) do not.
+    const auto skippedBy = [](std::initializer_list<Action> actions, float look) {
+        InteractionHarness harness = inspectingWithConsole();
+        const rv::scene::WalkerPose facingConsole = *harness.room.consolePose(harness.pose());
+        REQUIRE(harness.press(rv::app::CardAction::Launch).launch->held);
+        harness.idle(5);
+        const rv::scene::WalkerPose turning = harness.pose();
+        ActionState state = pressing(actions);
+        state.setAxis(Action::LookDeltaX, look);
+        const rv::app::InteractionResult result = harness.frame(state);
+        const bool skipped = result.insertionEnded == rv::app::InsertionEnd::Skipped;
+        if (skipped) {
+            CHECK(harness.interaction.state() == WorldState::Launching);
+            CHECK(harness.interaction.insertion() == 1.0f);
+            // No snap: the eye stays where the turn had taken it, short of the console.
+            REQUIRE(result.walker.has_value());
+            CHECK(sameWalker(harness.pose(), turning));
+            CHECK_FALSE(sameWalker(harness.pose(), facingConsole));
+            CHECK_FALSE(harness.interaction.walkerEasing());
+            harness.idle(3);
+            CHECK(sameWalker(harness.pose(), turning));
+        } else {
+            CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
+        }
+        return skipped;
+    };
+    CHECK(skippedBy({Action::Interact}, 0.0f));
+    CHECK(skippedBy({Action::UiActivate}, 0.0f));
+    CHECK(skippedBy({Action::Confirm}, 0.0f));
+    CHECK(skippedBy({Action::Menu}, 0.0f));
+    CHECK(skippedBy({Action::Back}, 0.0f));
+    CHECK(skippedBy({Action::UiBack}, 0.0f));
+    CHECK_FALSE(skippedBy({}, 40.0f));
+    CHECK_FALSE(skippedBy({Action::Sprint}, 0.0f));
+    CHECK_FALSE(skippedBy({Action::UiUp, Action::UiLeft}, 0.0f));
+    CHECK_FALSE(skippedBy({Action::QuickCatalog, Action::Map}, 0.0f));
+    CHECK_FALSE(skippedBy({Action::Screenshot, Action::ToggleMute}, 0.0f));
+    // Through the default bindings: a key and the pad's buttons.
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::E)));
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Enter)));
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Escape)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::South)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::East)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::Start)));
+    // Walking keys and buttons held from before Avvia, or pressed meanwhile, never skip.
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::W)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Up)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Left)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::LeftShift)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::DpadUp)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::LeftStick)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::F12)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(ActionState{}));
+    // Without the frame's actions (the product UI has the input) it runs on.
+    InteractionHarness noInput = inspectingWithConsole();
+    REQUIRE(noInput.press(rv::app::CardAction::Launch).launch->held);
+    noInput.frame(nullptr);
+    CHECK(noInput.interaction.state() == WorldState::AnimatingToConsole);
+}
+
+TEST_CASE("app/world_interaction: the insertion is instant under reduceMotion: the launch at once",
+          "[app][world_interaction][insertion]") {
+    rv::app::InteractionSettings settings;
+    settings.reduceMotion = true;
+    InteractionHarness harness = inspectingWithConsole(settings);
+    const rv::scene::WalkerPose walker = harness.pose();
+    const rv::app::InteractionResult result = harness.press(rv::app::CardAction::Launch);
+    REQUIRE(result.launch.has_value());
+    CHECK_FALSE(result.launch->held);
+    CHECK_FALSE(result.insertionEnded.has_value());
+    CHECK(harness.interaction.state() == WorldState::Launching);
+    CHECK(harness.interaction.insertion() == 0.0f);
+    CHECK(sameWalker(harness.pose(), walker));
+
+    // Turned on during one: it arrives on the next update.
+    InteractionHarness turned = inspectingWithConsole();
+    REQUIRE(turned.press(rv::app::CardAction::Launch).launch->held);
+    turned.idle(3);
+    turned.interaction.setReduceMotion(true);
+    const rv::app::InteractionResult next = turned.idle(1);
+    CHECK(next.insertionEnded == rv::app::InsertionEnd::Arrived);
+    CHECK(turned.interaction.state() == WorldState::Launching);
+    CHECK(turned.interaction.insertion() == 1.0f);
+}
+
+TEST_CASE("app/world_interaction: a launch refused during the insertion comes back to Inspect with the item in the "
+          "hand",
+          "[app][world_interaction][insertion][failures]") {
+    InteractionHarness harness = inspectingWithConsole();
+    const PickId item = harness.interaction.focused();
+    const rv::scene::WalkerPose walker = harness.pose();
+    const rv::app::InspectView view = harness.interaction.inspectView();
+    REQUIRE(harness.press(rv::app::CardAction::Launch).launch->held);
+    harness.idle(8);
+    REQUIRE(harness.interaction.state() == WorldState::AnimatingToConsole);
+    REQUIRE(harness.interaction.insertion() > 0.0f);
+    const rv::app::LaunchMessage refused{std::string(rv::app::launch_outcome::kNotReady), "rom-missing", "game.sfc"};
+    harness.interaction.launchEnded(refused);
+    CHECK(harness.interaction.state() == WorldState::Returning);
+    const rv::app::InteractionResult back = harness.idle(1);
+    CHECK_FALSE(back.insertionEnded.has_value());
+    CHECK(harness.interaction.state() == WorldState::Inspect);
+    CHECK(harness.interaction.focused() == item);
+    CHECK(harness.interaction.insertion() == 0.0f);
+    CHECK(harness.interaction.inspectView() == view);
+    CHECK(harness.interaction.inspectView().lift == 1.0f);
+    CHECK(sameWalker(harness.pose(), walker));
+    CHECK(harness.interaction.notice() == InteractionNotice::LaunchOutcome);
+    CHECK(harness.interaction.noticeMessage() == refused);
+    // Usable: Avvia again inserts again.
+    const rv::app::InteractionResult again = harness.press(rv::app::CardAction::Launch);
+    REQUIRE(again.launch.has_value());
+    CHECK(again.launch->held);
+    CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
+}
+
+TEST_CASE("app/world_interaction: a live update delivered during the insertion waits for the return to Inspect",
+          "[app][world_interaction][insertion][failures]") {
+    // I5 step 9's review: WorldSession holds a live update's (and a regeneration's) result while a world launch is in
+    // flight (worldLaunchInFlight()), even before the product UI's launch is active (its decision held for the
+    // insertion). Here the update, delivered on the insertion's 5th frame, takes the inspected item out of the room;
+    // the loop applies it as the session does, only on a frame where nothing holds it.
+    InteractionHarness harness = inspectingWithConsole();
+    const PickId item = harness.interaction.focused();
+    REQUIRE(harness.press(rv::app::CardAction::Launch).launch->held);
+    CHECK(rv::app::worldLaunchInFlight(harness.interaction.state()));
+    bool delivered = false;
+    bool applied = false;
+    std::optional<WorldState> appliedIn;
+    bool arrived = false;
+    const auto frame = [&](int index) {
+        if (index == 5) {
+            delivered = true;
+        }
+        if (delivered && !applied && !rv::app::worldLaunchInFlight(harness.interaction.state())) {
+            appliedIn = harness.interaction.state();
+            harness.room.remove(item);
+            harness.interaction.roomChanged();
+            applied = true;
+        }
+        const rv::app::InteractionResult result = harness.idle(1);
+        arrived = arrived || result.insertionEnded == rv::app::InsertionEnd::Arrived;
+    };
+    int index = 1;
+    for (; index < 60 && harness.interaction.state() != WorldState::Launching; ++index) {
+        frame(index);
+        CHECK_FALSE(applied);
+        CHECK(harness.interaction.focused() == item);
+    }
+    // The insertion ran to its end with its item: held, not applied.
+    CHECK(arrived);
+    CHECK(delivered);
+    CHECK_FALSE(applied);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    frame(index++);
+    CHECK_FALSE(applied); // Launching
+    harness.interaction.launchEnded(rv::app::LaunchMessage{std::string(rv::app::launch_outcome::kReturned), "", ""});
+    CHECK(rv::app::worldLaunchInFlight(harness.interaction.state())); // Returning
+    frame(index++);
+    // The return found its item (Inspect again); the update applied on the next frame, from Inspect.
+    CHECK_FALSE(applied);
+    CHECK(harness.interaction.state() == WorldState::Inspect);
+    CHECK(harness.interaction.focused() == item);
+    frame(index++);
+    CHECK(applied);
+    CHECK(appliedIn == WorldState::Inspect);
+    CHECK(harness.interaction.state() == WorldState::FreeRoam);
+    CHECK(harness.interaction.notice() == InteractionNotice::ItemUnavailable);
+    // Every other state lets it through.
+    for (const WorldState state : {WorldState::FreeRoam, WorldState::Focus, WorldState::Inspect, WorldState::Edit}) {
+        CHECK_FALSE(rv::app::worldLaunchInFlight(state));
+    }
+}
+
+TEST_CASE("app/world_interaction: no insertion without a console", "[app][world_interaction][insertion]") {
+    // The arcade's hero corner and a shared room's stand without a console (ADR-0013 §6): their rooms answer no
+    // consolePose(), and Avvia launches at once as before.
+    InteractionHarness harness = inspecting();
+    REQUIRE_FALSE(harness.room.console.has_value());
+    const rv::scene::WalkerPose walker = harness.pose();
+    const rv::app::InteractionResult result = harness.press(rv::app::CardAction::Launch);
+    REQUIRE(result.launch.has_value());
+    CHECK_FALSE(result.launch->held);
+    CHECK(harness.interaction.state() == WorldState::Launching);
+    CHECK(harness.interaction.insertion() == 0.0f);
+    harness.idle(30);
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    CHECK(sameWalker(harness.pose(), walker));
+    // The insertion's length 0 is none either.
+    rv::app::InteractionSettings instant;
+    instant.timings.insertion = 0.0f;
+    InteractionHarness zero = inspectingWithConsole(instant);
+    const rv::app::InteractionResult launched = zero.press(rv::app::CardAction::Launch);
+    REQUIRE(launched.launch.has_value());
+    CHECK_FALSE(launched.launch->held);
+    CHECK(zero.interaction.state() == WorldState::Launching);
 }

@@ -123,10 +123,18 @@ public:
         add(std::move(event));
     }
 
-    /// After the interaction's update of a frame: the first frame after a launch whose state is neither Launching nor
-    /// Returning records the restore (`walker`: the pose the frame placed the walker at).
+    /// I5 step 9: the insertion of the launch asked for ended (`end`: the item in the console's socket, or skipped):
+    /// its hand-over may begin.
+    void insertionEnded(InsertionEnd end, std::uint64_t frame) {
+        add(eventAt(frame, end == InsertionEnd::Arrived ? "inserted" : "insertion-skipped"));
+    }
+
+    /// After the interaction's update of a frame: the first frame after a launch whose state is neither
+    /// AnimatingToConsole, Launching nor Returning records the restore (`walker`: the pose the frame placed the walker
+    /// at).
     void observe(WorldState state, world::PickId focused, const scene::WalkerPose& walker, std::uint64_t frame) {
-        if (!m_awaitingRestore || state == WorldState::Launching || state == WorldState::Returning) {
+        if (!m_awaitingRestore || state == WorldState::AnimatingToConsole || state == WorldState::Launching ||
+            state == WorldState::Returning) {
             return;
         }
         m_awaitingRestore = false;

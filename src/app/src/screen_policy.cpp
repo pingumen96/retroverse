@@ -381,7 +381,8 @@ std::optional<ScreenPicture> ScreenPolicy::wantedStill() const noexcept {
     }
     // The card stands for a clip that does not play: never drawn over the wait for a clip's first frame (the previous
     // picture stays up meanwhile).
-    if (m_chain[m_chainIndex] == ScreenPicture::TitleCard && hasVideo() && !m_noSlot) {
+    if (m_chain[m_chainIndex] == ScreenPicture::TitleCard && hasVideo() && !m_noSlot &&
+        m_phase == ScreenPhase::Running) {
         return std::nullopt;
     }
     return m_chain[m_chainIndex];
@@ -421,13 +422,24 @@ void ScreenPolicy::stillFailed() noexcept {
     }
 }
 
-void ScreenPolicy::launchStarting(std::optional<double> clipPosition) noexcept {
+void ScreenPolicy::launchStarting(std::optional<double> clipPosition, bool titleCard) noexcept {
     if (m_phase == ScreenPhase::Quit) {
         return;
     }
     m_phase = ScreenPhase::Launched;
     m_launchPosition = clipPosition;
     m_resumePosition.reset();
+    if (titleCard) {
+        // The game's title card while the item goes into the console (ADR-0016 §11): the chain's end, at once.
+        const auto card = std::find(m_chain.begin(), m_chain.end(), ScreenPicture::TitleCard);
+        if (card != m_chain.end()) {
+            m_chainBeforeCard = m_chainIndex;
+            m_stillBeforeCard = m_readyStill;
+            m_chainIndex = static_cast<std::size_t>(card - m_chain.begin());
+            m_readyStill.reset();
+            m_videoShowing = false;
+        }
+    }
 }
 
 void ScreenPolicy::launchEnded() noexcept {
@@ -436,6 +448,13 @@ void ScreenPolicy::launchEnded() noexcept {
     }
     m_phase = ScreenPhase::Running;
     m_resumePosition = std::exchange(m_launchPosition, std::nullopt);
+    if (const std::optional<std::size_t> chain = std::exchange(m_chainBeforeCard, std::nullopt)) {
+        // The forced card undone: the chain where it stood. The still it showed then is asked for again (the screen's
+        // one still texture holds the card now); one that was the card already stays ready.
+        const std::optional<ScreenPicture> still = std::exchange(m_stillBeforeCard, std::nullopt);
+        m_chainIndex = std::min(*chain, m_chain.size());
+        m_readyStill = still == ScreenPicture::TitleCard ? still : std::nullopt;
+    }
 }
 
 std::optional<double> ScreenPolicy::takeResumePosition() noexcept {
@@ -455,6 +474,8 @@ void ScreenPolicy::retarget(std::string id, ScreenOrigin origin) {
     }
     m_chainIndex = 0;
     m_readyStill.reset();
+    m_chainBeforeCard.reset();
+    m_stillBeforeCard.reset();
     m_videoShowing = false;
     m_videoFailed = false;
     m_elapsed = 0.0;

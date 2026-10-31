@@ -87,6 +87,7 @@
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_room.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/app/world_live_plan.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -384,6 +385,11 @@ private:
     [[nodiscard]] bool showRoomsAlone(WorldBuild& build, std::span<const RoomStaticPart> statics,
                                       WorldLiveUpdateRecord& record, bool& replaced);
     [[nodiscard]] bool regenerationAllowed(const ProductUi& product) const;
+    /// I5 step 9's review: a launch is on, the room's in particular from Avvia (its insertion into the console, while
+    /// launchActive() is still false) to the interaction's return to Inspect (worldLaunchInFlight()): a live update's,
+    /// a regeneration's or a retargeted building's result waits, and the editor does not open, so that the room the
+    /// item was taken from stays as it is.
+    [[nodiscard]] bool launchHolds(const ProductUi& product) const noexcept;
     /// A lockstep run waits for a preview's or a commit's job.
     [[nodiscard]] bool regenerationWaits() const noexcept;
     /// A frame was rendered: the frame that shows the room again after a commit.
@@ -495,6 +501,8 @@ private:
         core::Aabb doorway;
         /// Its index among the interaction's rooms (WorldHover::addRoom), if it has a collection.
         std::optional<std::size_t> interactionRoom;
+        /// I5 step 9: its console's media socket in the scene (consoleSocketOf()), none without a console.
+        std::optional<ConsoleSocket> console;
     };
 
     /// An item of the floor: its room (an index into m_rooms), its index in the room's collection, its index among the
@@ -744,6 +752,8 @@ private:
     std::uint64_t m_liveRequestFrame = 0;
     std::optional<Clock::time_point> m_liveRequestedAt;
     bool m_liveFlow = false;
+    /// launchHolds() as this frame's update() found it (waits(): a result held back is no reason to wait).
+    bool m_launchHeld = false;
 
     /// I4 step 7b: the plan shown (its state for the rides' floor jobs, its where-is index), the floor shown ("" none),
     /// its elevator's zone, arrival camera and rooms' doorway cameras (the scene's frame), the directory's building made

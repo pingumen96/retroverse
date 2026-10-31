@@ -40,6 +40,42 @@ void WorldInspection::observe(const WorldInteraction& interaction, WorldState be
     }
 }
 
+void WorldInspection::observeInsertion(const WorldInteraction& interaction, const InteractionResult& result,
+                                       float deltaSeconds, std::uint64_t frame) {
+    m_frame = frame;
+    const float dt = std::isfinite(deltaSeconds) && deltaSeconds > 0.0f ? deltaSeconds : 0.0f;
+    if (result.launch && result.launch->held) {
+        ++m_insertion.started;
+        m_inserting = true;
+        m_insertion.pickId = fmt::format("{:08X}", result.launch->item);
+        m_insertion.startFrame = frame;
+        m_insertion.seatedFrame.reset();
+        m_insertion.endFrame.reset();
+        m_insertion.end.clear();
+        m_insertion.seconds = 0.0;
+        m_insertion.frames.clear();
+    }
+    if (!m_inserting) {
+        return;
+    }
+    m_insertion.seconds += dt;
+    if (!m_insertion.seatedFrame && interaction.insertion() >= 1.0f) {
+        m_insertion.seatedFrame = frame;
+    }
+    if (result.insertionEnded) {
+        ++(*result.insertionEnded == InsertionEnd::Arrived ? m_insertion.arrived : m_insertion.skipped);
+        m_insertion.end = std::string(toString(*result.insertionEnded));
+        m_insertion.endFrame = frame;
+        m_inserting = false;
+    } else if (interaction.state() != WorldState::AnimatingToConsole) {
+        // The launch ended during the insertion (refused, not ready): back to Inspect with the item in the hand.
+        ++m_insertion.refused;
+        m_insertion.end = "refused";
+        m_insertion.endFrame = frame;
+        m_inserting = false;
+    }
+}
+
 world::PickId WorldInspection::markedItem(const WorldInteraction& interaction) noexcept {
     const world::PickId highlighted = interaction.highlighted();
     if (highlighted != world::kNoPick) {
@@ -59,6 +95,26 @@ glm::mat4 WorldInspection::itemModel(const WorldInteraction& interaction, const 
         heldDistanceLimit(clusterBounds(room.layout(), item), heldRadius(item), camera.position(), camera.forward());
     const float drawn = heldDistance(view.distance, limit);
     const glm::mat4 model = heldItemTransform(pulled, view, camera, drawn);
+
+    // I5 step 9: from the hand into the console's media socket.
+    const float insertion = interaction.insertion();
+    if (insertion > 0.0f && room.consoleSocket()) {
+        const ConsoleSocket& socket = *room.consoleSocket();
+        const float scale = insertedScale(itemExtents(item), socket.opening);
+        const glm::mat4 inserted = insertedItemTransform(model, socket, scale, insertion);
+        const glm::vec3 center(inserted[3]);
+        const float distance = glm::distance(center, socket.position());
+        m_insertion.socket = socket.position();
+        m_insertion.center = center;
+        m_insertion.scale = insertedScaleAt(scale, insertion);
+        m_insertion.distance = distance;
+        ++(insertion >= 1.0f ? m_insertion.socketFrames : m_insertion.movingFrames);
+        if (m_insertion.frames.size() < kMaxInsertionFrames &&
+            (m_insertion.frames.empty() || m_insertion.frames.back().frame != m_frame)) {
+            m_insertion.frames.push_back(InsertionFrameRecord{m_frame, insertion, distance});
+        }
+        return inserted;
+    }
 
     // The frame's record: the pose in the camera's frame (x right, y up, z towards the viewer).
     const glm::mat4 toCamera = camera.view();
@@ -87,7 +143,8 @@ void WorldInspection::apply(const WorldInteraction& interaction, gl::RenderView&
     if (!(lift > 0.0f) || interaction.focused() == world::kNoPick) {
         return;
     }
-    const InspectDimming dimming = inspectDimming(lift, view.post.vignette);
+    // I5 step 9: the dimming fades out as the item goes into the console.
+    const InspectDimming dimming = insertionDimming(lift, interaction.insertion(), view.post.vignette);
     view.outline.dimOutside = dimming.dimOutside;
     view.outline.edge = interaction.highlighted() != world::kNoPick;
     view.post.vignette = dimming.vignette;

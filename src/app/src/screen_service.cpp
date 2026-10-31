@@ -471,6 +471,14 @@ struct ScreenService::Impl {
     std::map<std::string, std::string, std::less<>> clipGames;
     ScreenPhase phase = ScreenPhase::Running;
     bool reopenPending = false;
+    /// I5 step 9 (ADR-0016 §11): a stop begun before the hand-over (prepareLaunch(), the insertion): when it began,
+    /// its record, and when its threads were all seen ended.
+    struct PreparedStop {
+        Clock::time_point start;
+        VideoLaunchRecord record;
+        std::optional<Clock::time_point> ended;
+    };
+    std::optional<PreparedStop> prepared;
     std::uint64_t frameIndex = 0;
     double now = 0.0;
     /// This frame's window is minimized (every screen out of view).
@@ -1463,6 +1471,7 @@ struct ScreenService::Impl {
         frameIndex = frame;
         now = nowSeconds;
         minimized = minimizedWindow;
+        notePreparedStop();
         flushCabinetEvents();
         if (phase == ScreenPhase::Quit) {
             return;
@@ -1934,10 +1943,9 @@ struct ScreenService::Impl {
         viewerShown = std::move(next);
     }
 
-    void launchStarting() {
-        if (phase != ScreenPhase::Running) {
-            return;
-        }
+    /// Every slot stopped for a launch (never waited for here), each screen keeping its clip's position for the return;
+    /// the hero showing `cardGame`'s title card meanwhile when it is its target (I5 step 9). The phase Launched.
+    VideoLaunchRecord beginStop(const std::optional<std::string>& cardGame) {
         VideoLaunchRecord stop;
         stop.decoderRan =
             std::any_of(slots.begin(), slots.end(), [](const Slot& slot) { return slot.playback != nullptr; });
@@ -1950,7 +1958,8 @@ struct ScreenService::Impl {
                     position = clipPosition(slot);
                 }
             }
-            screen->policy.launchStarting(position);
+            const bool card = isHero(*screen) && cardGame && screen->policy.targetId() == *cardGame;
+            screen->policy.launchStarting(position, card);
             if (isHero(*screen)) {
                 stop.positionSeconds = position;
             }
@@ -1958,21 +1967,65 @@ struct ScreenService::Impl {
         for (const SlotCommand& command : scheduler.stopAll("launch")) {
             stopSlot(command.slot, command.reason);
         }
-        const Clock::time_point start = Clock::now();
+        phase = ScreenPhase::Launched;
+        return stop;
+    }
+
+    /// I5 step 9 (ADR-0016 §11): the insertion begins: the slots stop now, their threads end while it runs, and the
+    /// hand-over (launchStarting()) waits only for what remains of the bound.
+    void prepareLaunch(const std::string& gameId, std::uint64_t frame) {
+        if (phase != ScreenPhase::Running) {
+            return;
+        }
+        frameIndex = std::max(frameIndex, frame); // the frame of Avvia, before this frame's update()
+        PreparedStop stop{Clock::now(), beginStop(gameId), std::nullopt};
+        stop.record.stopFrame = frameIndex;
+        spdlog::info("Video: the decoders stop for the launch while the item goes into the console");
+        prepared = std::move(stop);
+        notePreparedStop();
+    }
+
+    /// The prepared stop's threads all ended: when (checked each frame and at the hand-over).
+    void notePreparedStop() {
+        if (prepared && !prepared->ended && decoderThreads() == 0) {
+            prepared->ended = Clock::now();
+        }
+    }
+
+    void launchStarting() {
+        Clock::time_point start;
+        VideoLaunchRecord stop;
+        if (phase == ScreenPhase::Running) {
+            start = Clock::now();
+            stop = beginStop(std::nullopt);
+        } else if (phase == ScreenPhase::Launched && prepared) {
+            start = prepared->start;
+            stop = prepared->record;
+        } else {
+            return;
+        }
+        // At most kScreenStopBoundSeconds from the stop's start in all (ADR-0012 §6): a prepared stop's threads had the
+        // insertion's time already.
+        const Clock::time_point waitStart = Clock::now();
         const auto bound = std::chrono::duration<double>(kScreenStopBoundSeconds);
         while (decoderThreads() > 0 && Clock::now() - start < bound) {
             std::this_thread::sleep_for(kPollInterval);
         }
-        stop.stopMs = stop.decoderRan ? millisecondsSince(start) : 0.0;
+        notePreparedStop();
+        const Clock::time_point ended = prepared && prepared->ended ? *prepared->ended : Clock::now();
+        stop.stopMs = stop.decoderRan ? std::chrono::duration<double, std::milli>(ended - start).count() : 0.0;
+        stop.waitMs = millisecondsSince(waitStart);
         stop.threadsRunning = decoderThreads();
+        stop.handOverFrame = frameIndex;
+        prepared.reset();
         reapDrained();
-        phase = ScreenPhase::Launched;
         if (stop.threadsRunning > 0) {
             spdlog::warn("Video: {} decoder thread(s) did not end within {:g} s; the launch goes on (they end on their "
                          "own)",
                          stop.threadsRunning, kScreenStopBoundSeconds);
         } else if (stop.decoderRan) {
-            spdlog::info("Video: the decoders stopped for the launch in {:.1f} ms", stop.stopMs);
+            spdlog::info("Video: the decoders stopped for the launch in {:.1f} ms (the hand-over waited {:.1f} ms)",
+                         stop.stopMs, stop.waitMs);
         }
         counters.launches.push_back(stop);
     }
@@ -1980,6 +2033,19 @@ struct ScreenService::Impl {
     void launchEnded() {
         if (phase != ScreenPhase::Launched) {
             return;
+        }
+        if (prepared) {
+            // Prepared for a launch that never started (refused during the insertion): no hand-over came.
+            notePreparedStop();
+            VideoLaunchRecord stop = prepared->record;
+            stop.cancelled = true;
+            const Clock::time_point ended = prepared->ended.value_or(Clock::now());
+            stop.stopMs =
+                stop.decoderRan ? std::chrono::duration<double, std::milli>(ended - prepared->start).count() : 0.0;
+            stop.threadsRunning = decoderThreads();
+            prepared.reset();
+            spdlog::info("Video: the launch did not start; the screens play again");
+            counters.launches.push_back(stop);
         }
         phase = ScreenPhase::Running;
         for (ScreenState* screen : allScreens()) {
@@ -2479,6 +2545,10 @@ void ScreenService::setViewer(const ViewerRequest& request) {
 
 const ViewerVideo& ScreenService::viewerVideo() const noexcept {
     return m_impl->viewerShown;
+}
+
+void ScreenService::prepareLaunch(const std::string& gameId, std::uint64_t frame) {
+    m_impl->prepareLaunch(gameId, frame);
 }
 
 void ScreenService::launchStarting() {

@@ -83,8 +83,10 @@ public:
     /// A room's collection on the floor, committed at a frame boundary (`collection` must stay until clear()): its
     /// layout's items, navigation and pick targets with its occluders, as room `addRoom()`'s count so far. Returns the
     /// pick targets indexed (0 when the index or the navigation cannot be built: logged, the room then hovers nothing).
-    /// The first room added is the active one until setActiveRoom() says otherwise.
-    std::size_t addRoom(world::CollectionLayout layout, CollectionInstance* collection);
+    /// The first room added is the active one until setActiveRoom() says otherwise. `console`: the media socket of the
+    /// room's console (I5 step 9: consoleSocketOf()), none without one.
+    std::size_t addRoom(world::CollectionLayout layout, CollectionInstance* collection,
+                        std::optional<ConsoleSocket> console = std::nullopt);
     /// The room that holds the eye (an index of addRoom()'s order; none: a hall, which hovers nothing). It becomes the
     /// interaction's room once the interaction is in free roam with nothing hovered, pulled or focused in the room it
     /// leaves (asked again every frame until then).

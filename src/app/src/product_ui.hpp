@@ -41,9 +41,14 @@ class AppContext;
 
 /// What the application does around a launch (I3 step 11: the hero CRT's decoder, ADR-0012 §6), on the main thread.
 struct LaunchHooks {
+    /// I5 step 9 (ADR-0016 §11): a room's launch was asked with its insertion (launchWorldGame() with `held`): the
+    /// screens' decoders begin to stop and the sound to fade while the insertion runs, the hero screen showing the
+    /// title card of `gameId`. `starting` follows before the hand-over, or `ended` when the launch never starts.
+    std::function<void(const std::string& gameId)> preparing;
     /// A launch is about to start: called before the window's hand-over and the process, on the host's wake.
     std::function<void()> starting;
-    /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned.
+    /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned;
+    /// also for a prepared launch that never started (refused during the insertion).
     std::function<void()> ended;
 };
 
@@ -162,8 +167,15 @@ public:
     /// Avvia on an item of the room (I3 step 15a, ADR-0012 §6): `game` launched as the quick catalog's Avvia launches a
     /// game (AppCatalog::requestLaunch: the ES-DE catalog resolves it on its worker right before the launch; then the
     /// LaunchFlow, its play session, the launch hooks). False, and nothing asked, while another launch is being decided,
-    /// waits or runs.
-    bool launchWorldGame(const catalog::GameId& game, std::string_view title);
+    /// waits or runs. I5 step 9: `held`, the room's insertion into the console runs (ADR-0016 §11): the launch is
+    /// resolved at once and LaunchHooks::preparing called, but a ready request waits for releaseWorldLaunch() before
+    /// the flow takes it (the game-session panel, the hand-over); a refusal ends it at once as always.
+    bool launchWorldGame(const catalog::GameId& game, std::string_view title, bool held = false);
+    /// I5 step 9: the insertion ended: the room's held launch goes on (its decision now, or as it comes).
+    void releaseWorldLaunch();
+    /// I5 step 9's review: the room's launch asked by launchWorldGame() has not ended yet (decided, held for the
+    /// insertion, waiting, running), whether or not launchActive() says so meanwhile.
+    [[nodiscard]] bool worldLaunchInFlight() const noexcept;
     /// How the room's launch asked by launchWorldGame() ended, once: its outcome as the game-session panel tells it
     /// (launch_outcome::kReturned after a normal return; a refusal's or a failure's message otherwise).
     [[nodiscard]] std::optional<LaunchMessage> takeWorldLaunchEnded();

@@ -157,6 +157,11 @@ struct ProductUi::Impl {
     /// taken); the room's placement of a game for the catalog's card; a "Mostra nella stanza" not taken yet.
     std::optional<std::uint64_t> worldToken;
     std::optional<LaunchMessage> worldEnded;
+    /// I5 step 9: the room's launch waits for its insertion (launchWorldGame() with `held`, until releaseWorldLaunch());
+    /// its ready decision parked meanwhile; the screens prepared for it (LaunchHooks::preparing) and not yet started.
+    bool worldHeld = false;
+    std::optional<LaunchDecision> heldDecision;
+    bool worldPrepared = false;
     std::function<std::string(std::string_view)> roomPlacement;
     std::optional<std::string> showInRoomAsked;
     /// The wall-clock times of the frames that showed games of the catalog (CatalogRecord::frames; at most
@@ -472,6 +477,12 @@ struct ProductUi::Impl {
         if (worldToken == token) {
             worldEnded = message;
             worldToken.reset();
+            worldHeld = false;
+            heldDecision.reset();
+            // A launch prepared for its insertion that never started: the screens play again (I5 step 9).
+            if (std::exchange(worldPrepared, false) && hooks.ended) {
+                hooks.ended();
+            }
         }
         if (directoryToken == token) {
             directoryToken.reset();
@@ -568,17 +579,29 @@ struct ProductUi::Impl {
         if (!decision) {
             return;
         }
+        // I5 step 9: the room's ready launch waits for its insertion (a refusal is told at once).
+        if (decision->request && worldHeld && worldToken == decision->token) {
+            spdlog::info("Frame {}: launch {} is ready; it waits for the insertion into the console",
+                         context.frameIndex(), decision->token);
+            heldDecision = std::move(decision);
+            return;
+        }
+        applyDecision(std::move(*decision));
+    }
+
+    /// `decision` applied: the launch requested of the flow, or refused with its message (and its play session).
+    void applyDecision(LaunchDecision decision) {
         const std::uint64_t frame = context.frameIndex();
-        if (decision->request) {
-            sessionToken = decision->token;
-            flow.request(std::move(*decision->request), std::move(decision->info), frame);
+        if (decision.request) {
+            sessionToken = decision.token;
+            flow.request(std::move(*decision.request), std::move(decision.info), frame);
         } else {
-            const LaunchMessage refusal = decision->refusal;
-            if (flow.refuse(std::move(decision->refusal), std::move(decision->info), frame)) {
-                catalog->sessionRefused(decision->token);
+            const LaunchMessage refusal = decision.refusal;
+            if (flow.refuse(std::move(decision.refusal), std::move(decision.info), frame)) {
+                catalog->sessionRefused(decision.token);
                 afterPending = true;
             }
-            worldLaunchEnded(decision->token, refusal);
+            worldLaunchEnded(decision.token, refusal);
         }
         if (before) {
             flow.noteBefore(std::move(*before));
@@ -1159,7 +1182,7 @@ void ProductUi::setLaunchHooks(LaunchHooks hooks) {
     m_impl->hooks = std::move(hooks);
 }
 
-bool ProductUi::launchWorldGame(const catalog::GameId& game, std::string_view title) {
+bool ProductUi::launchWorldGame(const catalog::GameId& game, std::string_view title, bool held) {
     Impl& s = *m_impl;
     ui::CatalogEntry entry;
     entry.id = game.toString();
@@ -1170,9 +1193,31 @@ bool ProductUi::launchWorldGame(const catalog::GameId& game, std::string_view ti
     }
     s.worldToken = token;
     s.worldEnded.reset();
-    spdlog::info("Frame {}: Avvia in the room on '{}' ({}): launch {} asked", s.context.frameIndex(), entry.title,
-                 entry.id, *token);
+    s.worldHeld = held;
+    s.heldDecision.reset();
+    spdlog::info("Frame {}: Avvia in the room on '{}' ({}): launch {} asked{}", s.context.frameIndex(), entry.title,
+                 entry.id, *token, held ? ", its hand-over after the insertion" : "");
+    if (held && s.hooks.preparing) {
+        // The decoders' stop and the sound's fade run while the item goes into the console (ADR-0016 §11).
+        s.worldPrepared = true;
+        s.hooks.preparing(entry.id);
+    }
     return true;
+}
+
+void ProductUi::releaseWorldLaunch() {
+    Impl& s = *m_impl;
+    if (!s.worldHeld) {
+        return;
+    }
+    s.worldHeld = false;
+    if (std::optional<LaunchDecision> decision = std::exchange(s.heldDecision, std::nullopt)) {
+        s.applyDecision(std::move(*decision));
+    }
+}
+
+bool ProductUi::worldLaunchInFlight() const noexcept {
+    return m_impl->worldToken.has_value();
 }
 
 std::optional<LaunchMessage> ProductUi::takeWorldLaunchEnded() {
@@ -1447,6 +1492,7 @@ void ProductUi::onIdle() {
     const LaunchClock::time_point now = LaunchClock::now();
     const std::uint64_t frame = s.context.frameIndex();
     if (s.flow.pending()) {
+        s.worldPrepared = false; // started: `ended` comes with the return (afterReturn())
         if (s.hooks.starting) {
             s.hooks.starting(); // before the hand-over and the process (the decoder stopped and joined)
         }

@@ -540,8 +540,9 @@ void WorldSession::followRide(ProductUi& product, bool idleWake, double deltaSec
         }
     }
     // A building's result built again for the floor shown applies as a live update: never while a launched game runs
-    // (ADR-0012 §6), so one that comes meanwhile waits for its end (the floor still "applying" until then).
-    if (m_retargetResult && !product.launchActive()) {
+    // (ADR-0012 §6), nor from Avvia to the return (I5 step 9's review: launchHolds()), so one that comes meanwhile
+    // waits for its end (the floor still "applying" until then).
+    if (m_retargetResult && !launchHolds(product)) {
         m_retargetPending = false;
         applyLive(std::move(*std::exchange(m_retargetResult, std::nullopt)));
     }

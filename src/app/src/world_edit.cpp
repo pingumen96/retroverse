@@ -180,7 +180,7 @@ constexpr float kHeldScale = 0.7f;
 
 std::optional<std::string> WorldSession::editableRoom(const ProductUi& product) const {
     if (m_edit || regenerating() || m_state != "room" || !m_shown || !m_planState || m_ride || m_retargetPending ||
-        m_retargetResult || m_shownPreview || m_previewAwaitingFrame || product.launchActive() ||
+        m_retargetResult || m_shownPreview || m_previewAwaitingFrame || launchHolds(product) ||
         (m_flow && m_flow->phase() != WorldPhase::Done)) {
         return std::nullopt;
     }
