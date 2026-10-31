@@ -9,14 +9,12 @@ gate checks, how to run it, the figures of its runs on the reference machine, wh
 requirements are proven and the follow-ups. How to try the editor, a regeneration and an undo:
 [running-the-app.md](../reference/running-the-app.md#try-the-editor-a-regeneration-and-an-undo).
 
-**Status: not passed yet** (October 30, 2026, reference machine; the runs below), **the user's trial pending**. Every
-correctness check passed: the build matrix, both test suites, every golden, every I4b area, the real library's snapshots
-(0 differences), the CLI edit session, generator 1.5's update, the dry runs, the commits and undos, the focus watch. Two
-things failed: three Debug GPU cases ran out of time under another session's load (they pass when run again, one only
-without ctest's timeout; that one is now five cases, one per floor), and the regeneration preview of a room in the app
-takes 2.6 to 4.1 s on the real library against ADR-0015 §9's 2 s, with the machine loaded. The preview is being made
-faster on another branch (`m3/preview-time`); after it merges, the gate's verdict is one full run and one `-TimingOnly
--RealLibrary` run on a quiet machine, neither done yet.
+**Status: passed** (October 31, 2026, reference machine, a quiet machine: runs 4 and 5 below), **the user's trial
+pending**. Runs 1 to 3 (October 30, the machine loaded) found the room preview over ADR-0015 §9's 2 s on the real
+library (2.6 to 4.1 s in the app); [preview-time.md](../i4b/preview-time.md) brought it to 0.7 to 0.8 s. Run 4 (the
+full gate) found one regression of that fix in Debug (the read-ahead kept the regenerations' inputs from being let go
+of, fixed by 44776ee1 and its five GPU cases passed again) and two Debug cases of the cabinets' attract one frame late
+(they pass when run again); run 5 (`-TimingOnly -RealLibrary`) passed every row.
 
 ## What the gate checks
 
@@ -91,6 +89,44 @@ Close ES-DE first (`Get-Process ES-DE` must find nothing). The gate exits 0 when
 cannot start.
 
 ## The figures of the runs
+
+### Runs 4 and 5: the verdict (October 31, 2026)
+
+Main at 051c4707 (run 4) and 4fbfd078 (run 5), a quiet machine (CPU 18% before the runs, ES-DE closed, no other
+build), logs in `build/gate-m3` and `build/gate-m3-full.log`, `build/gate-m3-timing2.log`.
+
+**Run 4**, `./scripts/gate.ps1 -Gate M3 -RealLibrary` (69 steps, 10,908 s): every build without a warning; the unit
+tests 2,237 passed in Debug and Release; the Release GPU cases 157 passed, 1 skipped (the overlay's cursor case); every
+golden G01 to G20 in both, none skipped (G01 73 pixels, 0.004%; every other 0); every I4b area in Release, and in Debug
+but the regenerations (below); §9's fixture rows (an edit shown at most 51.6 ms, a room preview 27 ms, a commit 326 ms);
+the benchmark path p99 3.12 ms, 240.0 MiB; the focus watch 0 visible windows of test processes. Three Debug GPU cases
+failed: `gpu.world_regenerate: the world's preview, then Annulla, writes nothing` (`regenerationInputsReleased` 0, the
+read-ahead's regression, fixed by 44776ee1: the five cases pass in Debug, 43 regeneration unit cases too) and two of
+`gpu.cabinets: attract ...` (the attract's first frame 61 for 60; both pass when run again, BACKLOG's load-sensitive
+Debug cases). Its real-library step did not start (the `RV_REAL_*` folders not given).
+
+**Run 5**, `./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary` (42 steps, 867 s): **PASSED**, 0 failed, 0 skipped.
+
+| Step | Limit | Run 5 |
+|---|---|---|
+| ADR-0015 §9 on the fixtures (Release GPU, 13 cases passed) | 250 ms / 2 s / 3 s | an edit shown 48.3 ms at most; previews room 25 ms, floor 70 ms, world 97 ms; saves 42 ms, commits 267 ms, an undo 68 ms |
+| Benchmark path, snes-stress | p99 <= 33.3 ms | p50 2.76 ms, p99 3.18 ms; 240.0 MiB |
+| Real library: snapshots (NFR-10) | 0 differences | **0 differences among 542,121 entries** |
+| Real library: the six tests | | 801 assertions in 6 test cases, all passed |
+| Real building: planned twice / unchanged restart | one SHA-256 / <= 3 s | one digest over 9 runs (jobs 2.73 and 2.46 s); skipped by its stamp in 0.46 and 0.49 s |
+| NFR-01 to the lobby | < 5,000 ms | the lobby **2,727 and 2,733 ms**, the quick catalog's first page 1,683 and 1,668 ms |
+| The busiest floor's GPU memory (computer, 1280 x 720) | <= 512 MiB | 451.7 MiB cold and warm |
+| Rides cold / warm, lobby to room:amstradcpc | 10 s / 3 s | view back 2.50 s (`timed-out`, built at 0.78 s) / **1.59 s**; the room whole 11.34 s / 1.31 s |
+| Generator 1.5's update | byte for byte | 44 of 44 rooms, 0 capacity entries before and after, in 2.9 s |
+| CLI dry runs: room:snes, floor computer, the world | 2 s / 15 s / 15 s | **697 ms**, 872 ms, 897 ms; nothing written |
+| App previews on the pool: room:snes, again warm; floor; world | 2 s / 15 s | **519 ms**, 505 ms; 714 ms; 1,034 ms |
+| App previews in the app: room:snes, room:amstradcpc | <= 2,000 ms | **687 ms, 842 ms** after the request |
+| Rigenera stanza / Annulla: room:snes, room:amstradcpc; Rigenera piano gen4 | <= 3,000 ms | 971 / 908 ms; 1,216 / 1,138 ms; 964 ms |
+| CLI edit session; `worldplan check`; an update; undo | | saved in 1.4 s; 5 honoured, 0 hard; nothing written; the plan's SHA-256 back |
+| The busiest floor, both screens playing, 1920 x 1080 | <= 512 MiB | **477.5 MiB** cold, warm and with a screenshot; frame p99 6.15 and 7.83 ms |
+| Focus watch | no finding | 0 foreground changes, 0 windows |
+
+### Runs 1 to 3 (October 30, 2026, the machine loaded)
 
 October 30, 2026, on the reference machine ([reference-hardware.md](reference-hardware.md): Intel Core i7-9700K, 8
 cores, 64 GB, RTX 2080 SUPER with OpenGL 4.5.0 NVIDIA 621.01, Windows 11 Home 10.0.29671), branch `i4b/step-9` at
@@ -186,8 +222,8 @@ pool with the cover loader and the frame. A warm second preview in the test's pr
 are the CLI's dry runs (1.69 to 1.73 s; room:amstradcpc's by hand 2.11 s), and the commits are within 3 s. The load
 stretched Gate D's quiet figures by 1.3 to 1.4 times in these runs; on a quiet machine the in-app previews would still
 be about 2 to 3 s, over. The fix (BACKLOG, "Measurement": the digests' canonical text written straight from the plan
-instead of through a JSON document of the whole world, the plan's copies, the preview's job on the pool) is being made
-on the branch `m3/preview-time`; its figures replace these after the quiet rerun.
+instead of through a JSON document of the whole world, the plan's copies, the preview's job on the pool) was made on
+`m3/preview-time` ([preview-time.md](../i4b/preview-time.md)); run 5 above has its figures.
 
 ## Where ADR-0015's decisions are proven
 
@@ -218,11 +254,11 @@ on the branch `m3/preview-time`; its figures replace these after the quiet rerun
 
 Gathered in `BACKLOG.md`, "Follow-ups from I4b" and "Measurement":
 
-- **The room's regeneration preview on the real library** (ADR-0015 §9's 2 s): 2.6 to 4.1 s in the app under load,
-  about 1.7 s for the CLI's dry run (above); being fixed on `m3/preview-time` (the digests' canonical text written
-  straight from the plan, the plan's copies, the preview's job on the pool).
+- **The room's regeneration preview asked before the tab's read-ahead ends** waits for it (0.3 to 1.1 s under load):
+  seeding the inputs from the building job's snapshot (BACKLOG, from I4b step 6).
 - **The Debug GPU cases that are close to their time limits under load**: the floor-app cases' 10 s lockstep wait for
-  the building, `app/world_flow: a start room kept ...`'s 60 s; a gate on a loaded machine fails them on time alone.
+  the building, `app/world_flow: a start room kept ...`'s 60 s, `gpu.cabinets: attract ...`'s first frame (61 for 60
+  in run 4); a gate on a loaded machine fails them on time alone.
   `gpu.world floor: light reaches through the doorways ...` (474 to 579 s in Debug against ctest's 600 s) is now one
   case per floor, each with its own timeout: the tilted leak probes at a floor's first north and first south doorway,
   the comparison as I4 lit it on gen4's floor alone.
