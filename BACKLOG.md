@@ -727,3 +727,23 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   (30 ms), because the slots stop as the insertion begins (their threads end while it runs). A fade over the 450 ms
   would keep the audible slot's decoder running until the hand-over and stop it there, with the wait the animation
   hides now (`docs/i5/step-9.md`).
+
+### Gate M4 (I5 step 10)
+
+- **The ride's record against the hub's showcase:** in Gate M4's second run (`docs/testing/gate-m4.md`), on a loaded
+  machine, the cold ride back to the ground floor arrived 51 ms before the hub's showcase (its favourites' and recent
+  games' proxies, an array of their own) was built, so the ride's record counted 2.4 MiB of collection arrays where a
+  direct start holds 4.8 MiB and `test_building_real.cpp`'s check of it failed (the run's end held the 4.8 MiB). Take
+  the record once the showcase is in, or have the ground floor's arrival wait for it as it waits for the covers in
+  view; the showcase popping in a few frames after the view comes back is the visible side.
+- **A room without clips shows its first game's title card:** area:shared:gen5, room:switch and room:trs-80 hold no
+  playable clip, and their hero screens end on the title card of the start choice (`chooseStillGame()`: the first
+  candidate with a still or a title card, so the first game). Preferring the first game that has a still file
+  (screenshot, title screen, cover) would show a picture where the room has one; whether these rooms have any was not
+  checked.
+- **The soak's last few MiB:** +3.3 MiB in the hour after minute 5, a slope of 5.5 MiB an hour from minute 10 falling
+  to 3.8 from minute 30; a census of the process's regions (as I5 step 7's review made) would tell the allocator's
+  fragmentation from the driver's.
+- **The two-clips phase is tied to frames:** `bench_snes_room.json`'s `two-clips` phase (frames 64 to 115) follows
+  where the scheduler opens and pauses the secondary's slot on that path; the gate checks every frame against the slot
+  events and fails the row when they part, at which point the phase moves with them.

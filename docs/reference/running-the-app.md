@@ -807,3 +807,51 @@ The same from the command line, on the same data directory (each prints what it 
 ```
 
 (`worlds/esde` is the world of the library `library create` names `esde`; `worldplan show` prints the plan's path.)
+
+## Try the screens and the sound
+
+The user's trial of Gate M4 (`docs/testing/gate-m4.md`), with ES-DE closed and the speakers or headphones on. The
+data directory is the one the editor's trial uses (`build/rvdata`, made with `library create` and `import` as
+above); from a PowerShell in the repository, after `./scripts/build.ps1 -Preset msvc-x64-release`:
+
+```powershell
+$bin = './build/msvc-x64-release/bin'; $data = 'build/rvdata'
+& "$bin/retroverse-cli.exe" --data-dir $data import             # again, if the library changed since
+& "$bin/retroverse.exe" --data-dir $data --fullscreen --start-room room:snes
+```
+
+An interactive run plays the clips' sound on the default device (`--mute` starts muted; `--audio null` mixes into
+nothing). To try a launch without any emulator starting, set `$env:RV_LAUNCH_ALLOWLIST = (Resolve-Path
+"$bin/rv_fake_emulator.exe").Path` first: Avvia then plays the insertion and the game-session panel says the launch
+was blocked ("L'avvio è stato bloccato dalla protezione ..."); under the variable the viewer's manual is refused too
+("Apertura bloccata"), so try the manual in a PowerShell without it. Without the variable, games launch with ES-DE's
+own commands.
+
+1. **A room's playlist and a selection** (room:snes). At the doorway the hero CRT at the far wall plays a clip; every
+   30 s (`video.json`'s `previewDuration`) it moves on to another game of the room, the last frame held between two
+   clips, never the standby pattern. Point at a cartridge and wait: after 300 ms the CRT plays that game's clip (its
+   still or title card when it has none); look away and, once the selected clip has played, the playlist comes back.
+2. **A secondary TV** (`--start-room room:amstradcpc`, the computer floor's largest room). A small CRT on a sideboard
+   of the east wall plays a rotation of its own; walk towards it from the doorway with the hero CRT in view: both play
+   (two decoders); turn away from one and it pauses, holding its frame, and stops after 10 s out of view.
+3. **The arcade** (`--start-room area:arcade`). Stand in front of a cabinet in the aisle: after 1 s its screen plays
+   its game's clip (attract) and stops once it leaves the view. E twice inspects it: its clip plays in the hand; Esc
+   goes back to Focus with the clip still on, Esc again to its cover.
+4. **The sound walking away** (room:snes). The hero's sound pans with the head and falls with the distance (full
+   within 1.5 m, then as 1.5 over the distance, gone past 12 m); turning so the CRT leaves the view fades it out. The
+   card (inspect an item), the directory (M) and the quick catalog (Tab) duck it by 9 dB; in a hall between rooms it is
+   silent. The SNES clips at 96 kHz must sound at their right pitch, the lips and hits on their picture.
+5. **Mute**: F8 mutes at once and sounds again (no pad button).
+6. **The viewer's video and a manual**: inspect an item, Vedi media (Y) and page right to the clip's page: it plays at
+   720 rows with its sound while the room's screens pause under it; A pauses and plays it. A game with a scraped
+   manual has the "Manuale" page last: "Apri il manuale" (A) opens it in Windows' default PDF program.
+7. **A launch with its animation**: inspect a cartridge in a console room and choose Avvia: the cartridge goes from the
+   hand into the console's slot in 450 ms (the eye leading it), the hero shows the game's title card and the screens'
+   sound fades before the emulator starts; any action button skips the animation. After the game (or the refusal
+   under the allow-list) the room comes back as it was, the item in the hand, the clips playing again where they
+   stopped. In the arcade, Avvia launches at once (no console).
+
+What to listen and look for beyond the checks: the clips' sound in sync with the picture, no crackle at the
+cross-fade between two clips, the ducking under the card and the catalog, the emulator's own sound after the launch
+(also an emulator in exclusive mode) and the clip's coming back after it, and the arcade's portrait screens'
+letterboxed horizontal clips (`BACKLOG.md`).
