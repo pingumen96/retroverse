@@ -12,8 +12,8 @@
 //     arcade's hero cabinet) shows a clip or a still of its game's fallback chain (screenshot, title screen, cover,
 //     the generated title card), never the building's standby pattern once it showed a picture and never at the
 //     end; never more than 2 decoders open nor 2 decoder threads, every thread joined at the exit.
-// The figures are printed (the lines starting "Real screens:"): ids, kinds, counts and pictures, nothing derived from
-// the user's titles. The runs' reports stay in the build tree (never committed).
+// The figures are printed (the lines starting "Real screens:", each flushed whole: a line cut by the next test's log
+// once missed scripts/gate.ps1's pattern): ids, kinds, counts and pictures, nothing derived from the user's titles. The runs' reports stay in the build tree (never committed).
 
 #include "support/child_process.hpp"
 #include "support/fixture.hpp"
@@ -153,7 +153,8 @@ TEST_CASE("app/world: every collection room of the real building shows a clip or
         INFO((imported ? std::string() : imported.error().toString()));
         REQUIRE(imported.has_value());
         std::cout << fmt::format("Real screens: the whole library imported in {:.1f} s\n",
-                                 std::chrono::duration<double>(Clock::now() - start).count());
+                                 std::chrono::duration<double>(Clock::now() - start).count())
+                  << std::flush;
     }
 
     // The first start, in the lobby: the building planned and written.
@@ -184,7 +185,8 @@ TEST_CASE("app/world: every collection room of the real building shows a clip or
         const std::size_t placed = placements[id];
         if (placed == 0) {
             std::cout << fmt::format("Real screens: {} ({}, {}) holds no games: not started\n", id,
-                                     rv::world::toString(room.kind), room.floor);
+                                     rv::world::toString(room.kind), room.floor)
+                      << std::flush;
             continue;
         }
         ++started;
@@ -255,7 +257,8 @@ TEST_CASE("app/world: every collection room of the real building shows a clip or
             video.maxDecoderThreads,
             video.firstFrameMs ? fmt::format("{:.0f} ms after its decoder started", *video.firstFrameMs)
                                : std::string("none"),
-            video.fallbacks.size(), video.idleFramesWithGame, seconds);
+            video.fallbacks.size(), video.idleFramesWithGame, seconds)
+                  << std::flush;
     }
     std::string stillText;
     for (const auto& [picture, count] : stills) {
@@ -270,7 +273,8 @@ TEST_CASE("app/world: every collection room of the real building shows a clip or
                              "started in all; not showing: {}\n",
                              started, plan.rooms.size(), onClip, stillCount,
                              stillText.empty() ? std::string("none") : stillText, onStandby, mostOpen, mostThreads,
-                             decoders, notShowing.empty() ? std::string("none") : fmt::format("{}", notShowing.size()));
+                             decoders, notShowing.empty() ? std::string("none") : fmt::format("{}", notShowing.size()))
+              << std::flush;
     CHECK(started > 0);
     CHECK(onStandby == 0);
     CHECK(notShowing.empty());
