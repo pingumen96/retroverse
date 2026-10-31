@@ -252,7 +252,7 @@ the regeneration's signatures are frozen at the end of steps 2 and 5.
 ### Gate M3
 
 `scripts/gate.ps1 -Gate M3` runs Gate A's build matrix (no warning), the unit tests and the GPU smoke tests in Debug
-and Release, every golden in both (G01 to G20 since I5 added G19 and G20, none rewritten or skipped), a row per I4b area counted from those runs (the
+and Release, every golden in both (G01 to G21 since I5 added G19 and G20 and I10 G21, none rewritten or skipped), a row per I4b area counted from those runs (the
 overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their preview, undo, the
 expansion rooms in the world and in the app), the benchmark path in Release and ADR-0015 §9's rows against the
 acceptable limits, prints the summary table (logs in `build/gate-m3`) and exits 1 when a step failed; all of it under

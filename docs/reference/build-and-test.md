@@ -26,10 +26,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate D                            # Gate D: Gate C + the I6 checks, every golden to G18
 ./scripts/gate.ps1 -Gate D -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # also the migrations
 ./scripts/gate.ps1 -Gate D -TimingOnly -RealLibrary   # the timing parts alone (Release), a quiet-machine rerun
-./scripts/gate.ps1 -Gate M3                           # Gate M3: Gate A + every golden to G20, the I4b checks, section 9
+./scripts/gate.ps1 -Gate M3                           # Gate M3: Gate A + every golden to G21, the I4b checks, section 9
 ./scripts/gate.ps1 -Gate M3 -RealLibrary              # also the real building, regenerations, a CLI edit session, both screens
 ./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary  # section 9's rows and the timing parts again, a quiet-machine rerun
-./scripts/gate.ps1 -Gate M4                           # Gate M4: Gate D's runs, every golden to G20, the I5 checks, two clips
+./scripts/gate.ps1 -Gate M4                           # Gate M4: Gate D's runs, every golden to G21, the I5 checks, two clips
 ./scripts/gate.ps1 -Gate M4 -RealLibrary              # also every real room's screen, the arcade, a 96 kHz clip, verdicts
 ./scripts/gate.ps1 -Gate M4 -TimingOnly -RealLibrary -Soak   # the timing parts again and the soak hour, a quiet machine
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
@@ -213,7 +213,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   builds Release alone and runs the benchmark path and, with `-RealLibrary`, the real library's run (a rerun of the
   timing parts on a quiet machine).
 - `scripts/gate.ps1 -Gate M3` (`docs/testing/gate-m3.md`, logs in `build/gate-m3`) runs Gate A's build matrix, the
-  unit and GPU runs of Debug and Release, every golden (G01 to G20; a golden that skips fails the gate, as one missing
+  unit and GPU runs of Debug and Release, every golden (G01 to G21; a golden that skips fails the gate, as one missing
   does), the benchmark path in Release and, per Debug and Release, a row per I4b area counted from the unit and GPU runs
   (`$i4bAreas`: the overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their
   preview, undo, the expansion rooms in the world and in the app; an area with a skipped GPU case fails, as a skipped
@@ -235,7 +235,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   (`$m3TimingGpuFilter`) with ADR-0015 §9's fixture rows, the benchmark path and, with `-RealLibrary`, the real
   library's run. Gate M3's verdict is a full run plus a `-TimingOnly -RealLibrary` run on a quiet machine.
 - `scripts/gate.ps1 -Gate M4` (`docs/testing/gate-m4.md`, logs in `build/gate-m4`) runs everything Gate D runs (the
-  build matrix, the unit and GPU runs of Debug and Release, every golden to G20, a golden that skips failing as at Gate
+  build matrix, the unit and GPU runs of Debug and Release, every golden to G21, a golden that skips failing as at Gate
   M3, the I4 and I6 rows per area, the benchmark path in Release) and, per Debug and Release, a row per I5 area counted
   from the unit and GPU runs (`$i5Areas`: the playlists and fallbacks, the scheduler, the secondary TVs, the cabinets,
   the audio, the CRT presets, the video verdicts, the viewer's clip and manual, the insertion; an area with a skipped

@@ -77,7 +77,7 @@
          for byte, none over capacity, the ground floor's rooms re-placed onto the hub in the same update, a second
          start and the whole job writing nothing).
     Gate M3 (milestone M3 part 2, customization, ADR-0015; docs/testing/gate-m3.md): Gate A's build matrix, the unit
-    tests and the GPU smoke tests of Debug and Release, every golden in both (G01 to G20: a golden skipped fails the
+    tests and the GPU smoke tests of Debug and Release, every golden in both (G01 to G21: a golden skipped fails the
     gate, as one missing does), Gate B's benchmark path in Release against the acceptable limits, and
       9. per Debug and Release, rows for the I4b test cases counted from the unit and GPU runs, one per area (the
          overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their preview,
@@ -95,7 +95,7 @@
          check, an update moving nothing, an undo restoring the plan's SHA-256) and [secondary_tv] (the busiest floor
          at 1920 x 1080 with both screens playing, 512 MiB).
     Gate M4 (milestone M4, screens and media, ADR-0016; docs/testing/gate-m4.md): everything Gate D runs (Gate A's build
-    matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G20, a golden
+    matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G21, a golden
     skipped failing the gate as for Gate M3, the I4 and I6 rows per area, the benchmark path in Release), and
      12. per Debug and Release, rows for the I5 test cases counted from the unit and GPU runs, one per area (the
          playlists and fallbacks, the scheduler, the secondary TVs, the cabinets, the audio, the CRT presets, the video
@@ -461,7 +461,7 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         'D' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15', 'G16',
                 'G17', 'G18') }
         { $_ -in @('M3', 'M4') } { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13',
-                'G14', 'G15', 'G16', 'G17', 'G18', 'G19', 'G20') }
+                'G14', 'G15', 'G16', 'G17', 'G18', 'G19', 'G20', 'G21') }
         default { @('G01') }
     }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)

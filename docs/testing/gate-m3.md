@@ -24,9 +24,10 @@ or showing a window where the user sees it fails the gate):
 - **Gate A's build matrix**: `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release`, a compiler, linker or
   CMake warning failing its row.
 - **The unit tests and the GPU smoke tests** of Debug and Release (ctest's `unit` and `gpu` labels, the goldens apart).
-- **Every golden**, G01 to G20, in Debug and Release: a row per golden with the verdict its case writes, a failed row
+- **Every golden**, G01 to G21, in Debug and Release: a row per golden with the verdict its case writes, a failed row
   for any the run does not report and, new at this gate, for any that skips (another GPU or driver than the golden's,
-  no OpenGL 4.5 context): no golden may pass unproven. I4b added none (the look did not change); G19 and G20 are I5's.
+  no OpenGL 4.5 context): no golden may pass unproven. I4b added none (the look did not change); G19 and G20 are I5's,
+  G21 is I10's.
 - **The I4b checks**, per Debug and Release, one row per area counted from the unit and GPU runs (`scripts/gate.ps1`'s
   `$i4bAreas`; a case counts in one area only). An area with a skipped GPU case fails, as a skipped golden does (the
   one case every Release run skips, the overlay's cursor case, lies in no I4b area; `$m3SkipExempt` would name a case
