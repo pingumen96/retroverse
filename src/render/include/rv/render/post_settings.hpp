@@ -50,6 +50,10 @@ struct PostSettings {
     /// the tonemap, so every pixel dims alike, the brightest lights too; the elevator ride's fade, I4 step 7b). 0
     /// changes nothing.
     float fade = 0.0f;
+    /// [0, 1]: the comfort vignette of a headset's eye (PostUniforms::tunnel, I10 step 3) around `tunnelCenter`, where
+    /// the eye looks straight ahead in the view's texture coordinates. 0 changes nothing.
+    float tunnel = 0.0f;
+    glm::vec2 tunnelCenter{0.5f, 0.5f};
     /// Smooths the stair-steps of edges after the tonemap (FXAA, post/fxaa.frag): one more fullscreen pass.
     bool antialiasing = false;
 };

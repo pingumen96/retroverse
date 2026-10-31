@@ -55,7 +55,7 @@ input::ActionMap loadBindings(const core::Paths& paths) {
 
 AppInput::AppInput(platform::GraphicsWindow& window, input::ActionMap bindings,
                    std::optional<input::InputScript> script)
-    : m_capture(window.handle()), m_system(std::move(bindings)) {
+    : m_capture(window.handle()), m_system(bindings), m_controllers(std::move(bindings)) {
     if (script) {
         m_script.emplace(std::move(*script));
     }
@@ -71,14 +71,24 @@ void AppInput::handleEvent(const SDL_Event& event) {
     }
 }
 
-input::ActionState AppInput::update(std::uint64_t frameIndex) {
-    const input::RawInputFrame raw = m_collector.endFrame();
+input::ActionState AppInput::update(std::uint64_t frameIndex, const xr::VirtualPad* controllers) {
+    input::RawInputFrame raw = m_collector.endFrame();
+    if (controllers != nullptr) {
+        controllers->mergeInto(raw);
+    }
     m_mouseWheel = std::isfinite(raw.mouseWheel) ? raw.mouseWheel : 0.0f;
     input::ActionState actions = m_system.resolve(raw);
     if (m_script) {
         m_script->apply(frameIndex, actions, m_system.settings().pressThreshold);
     }
     return actions;
+}
+
+input::ActionState AppInput::controllersAlone(const xr::VirtualPad& controllers) {
+    input::RawInputFrame raw;
+    controllers.mergeInto(raw);
+    m_controllers.setSettings(m_system.settings()); // the overlay edits the devices' settings
+    return m_controllers.resolve(raw);
 }
 
 void AppInput::captureMouseWhenFocused(std::string_view reason) {

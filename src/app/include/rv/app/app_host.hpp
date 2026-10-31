@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -17,6 +18,7 @@ namespace rv::app {
 
 class AppContext;
 class IAppLogic;
+class XrSessionDriver;
 
 /// How an application built on AppHost presents itself. The defaults are retroverse.exe's.
 struct AppIdentity {
@@ -49,6 +51,13 @@ struct AppIdentity {
 /// ends a wait from any thread. Frames do not advance meanwhile, so a frame-limited run renders its whole --frames
 /// whatever the wait, and the wait is no frame time. Quit requests and window close still end the run (the logic's
 /// onShutdown follows, as always).
+///
+/// With --vr (I10 step 2, ADR-0017 §3) the host starts the VR session on the window's context before the logic's
+/// onInit (XrSessionDriver; without a runtime or a headset the run stays on the desktop). While the session runs its
+/// runtime paces the loop: each frame waits for the runtime (xrWaitFrame) before onUpdate, the logic renders the eyes
+/// of AppContext::xrFrame() and mirrors one in the window, and the frame is submitted after onRender, the window
+/// presented without vsync. When the session ends (exited, lost, a failed call) the run goes on on the desktop, vsync
+/// as asked. The window being minimized does not stop a VR run's frames.
 class AppHost {
 public:
     /// The longest idle wait between two IAppLogic::onIdle calls when nothing wakes the host: how often the logic
@@ -80,7 +89,9 @@ private:
     void recordMeasurements() noexcept;
     /// Runs until quit or the frame limit, keeping RunReport::framesRendered current after every frame; an error means
     /// presentation failed. Records each frame's time (FrameTiming) and closes the CPU sections' frame.
-    [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context);
+    [[nodiscard]] Status runMainLoop(IAppLogic& logic, AppContext& context, XrSessionDriver* xr);
+    /// The VR session ended: the run is back on the desktop from frame `desktopFrame`, vsync as asked.
+    void leaveXr(AppContext& context, std::uint64_t desktopFrame);
     /// Handles quit, window close, resize and the fullscreen shortcut. Returns true when the event is consumed and must
     /// not reach the logic: the Alt+Enter press (platform::isFullscreenToggle), the host's wake event.
     [[nodiscard]] bool handleHostEvent(AppContext& context, const SDL_Event& event) const;

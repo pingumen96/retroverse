@@ -1,12 +1,18 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string_view>
+#include <vector>
+
+#include <glm/vec2.hpp>
 
 #include <rv/app/crt_looks.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/render/panel_pass.hpp>
 #include <rv/render/post_processor.hpp>
 #include <rv/render/scene_renderer.hpp>
 #include <rv/render/surface_view.hpp>
@@ -39,6 +45,22 @@ class AppContext;
 /// settings, at time 0. The caller sets what it controls itself (the time, the shadow settings, wireframe,
 /// anti-aliasing).
 [[nodiscard]] gl::RenderView makeRenderView(const SceneInstance& scene, const scene::Camera& camera);
+
+/// The eyes of a VR frame (I10 step 2, ADR-0017 §4): their cameras in the world (left, right) and the swapchain images
+/// they go into, GL textures of `size` pixels (xr::Frame::images).
+struct XrEyeTargets {
+    std::array<scene::Camera, 2> cameras;
+    /// The eyes' fields (the comfort vignette's centre, I10 step 3).
+    std::array<scene::EyeFov, 2> fields{};
+    /// Drawn into each eye over its post-processing (I10 step 5: the UI's panel).
+    std::vector<gl::Panel> panels;
+    /// The share of `size` the eyes render at, scaled up into their images (I10 step 7's dynamic render scale).
+    float renderScale = 1.0f;
+    /// xr.json's fast profile (I10 step 9): the eyes without the ambient occlusion and the anti-aliasing.
+    bool fast = false;
+    std::array<std::uint32_t, 2> images{};
+    glm::ivec2 size{0};
+};
 
 /// What every view of a SceneInstance needs on the GPU, shared by the applications built on rv_app (RetroverseApp, the
 /// asset preview tool), and the frame they render with it:
@@ -107,6 +129,11 @@ public:
                     std::function<void(gl::GLDevice&, const gl::Framebuffer&)> screenshot);
 
     /// Renders the frame of `view` (its camera's aspect follows each target):
+    ///  0. with `eyes` (a VR frame), both eyes first, each from its camera into its own targets and then into its
+    ///     swapchain image: culled against the frustum enclosing them, the second reading the first's shadow map, no
+    ///     vignette; AppContext::setXrViewsRendered() once both are in their images. The screenshots then show both
+    ///     eyes side by side at their size (--screenshot-size is the desktop's), and the window the left eye, filling
+    ///     it without distortion (gl::Framebuffer::blitToDefaultFilled);
     ///  1. the screenshots first, so that the frame ends with the window: with `screenshotRequested` (F12)
     ///     <user data>/screenshots/retroverse-<timestamp>.png, a failure logged; on the last frame of a frame-limited
     ///     run with --screenshot that file, a failure failing the run (AppContext::failRun). Both at
@@ -116,7 +143,8 @@ public:
     ///  2. the window: the view into the window's targets, copied to the window (black when the targets cannot be
     ///     allocated), then the overlay;
     ///  3. the frame statistics (and, in developer builds, their summary once per second).
-    void renderFrame(AppContext& context, const gl::RenderView& view, bool screenshotRequested);
+    void renderFrame(AppContext& context, const gl::RenderView& view, bool screenshotRequested,
+                     const XrEyeTargets* eyes = nullptr);
 
     /// F5: rebuilds every program.
     void reloadShaders();

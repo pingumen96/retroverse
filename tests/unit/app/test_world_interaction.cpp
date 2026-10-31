@@ -937,6 +937,29 @@ TEST_CASE("app/world_interaction: the card's presses wait for the item in the ha
     CHECK(lifting.interaction.state() == WorldState::Focus);
 }
 
+TEST_CASE("app/world_interaction: in VR Focus and its steps leave the walker where it stands (I10 step 4)",
+          "[app][world_interaction][transitions]") {
+    rv::app::InteractionSettings settings;
+    settings.keepWalker = true;
+    InteractionHarness harness = hovering(settings);
+    const rv::scene::WalkerPose start = harness.pose();
+    const PickId item = harness.room.at(0, 4, 16);
+    rv::app::InteractionResult result = harness.frame(pressing({Action::Interact}));
+    CHECK(harness.interaction.state() == WorldState::Focus);
+    CHECK(harness.interaction.focused() == item);
+    CHECK_FALSE(result.walker.has_value());
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    harness.idle(30);
+    CHECK(sameWalker(harness.pose(), start));
+    // The item comes out where it is; a D-pad step moves the focus, not the walker.
+    CHECK(harness.interaction.pullOf(item) == 1.0f);
+    harness.frame(pressing({Action::UiRight}));
+    CHECK(harness.interaction.focused() == harness.room.at(0, 4, 17));
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    harness.idle(30);
+    CHECK(sameWalker(harness.pose(), start));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The insertion into the console (I5 step 9, ADR-0016 §11)
 // ---------------------------------------------------------------------------------------------------------------
@@ -1112,6 +1135,24 @@ TEST_CASE("app/world_interaction: the insertion is instant under reduceMotion: t
     CHECK(next.insertionEnded == rv::app::InsertionEnd::Arrived);
     CHECK(turned.interaction.state() == WorldState::Launching);
     CHECK(turned.interaction.insertion() == 1.0f);
+}
+
+TEST_CASE("app/world_interaction: in VR there is no insertion: the launch at once, the head never turned",
+          "[app][world_interaction][insertion]") {
+    // ADR-0017 §5 (amended on 2026-10-31): the insertion's eye leads by turning the walker, which in a headset is the
+    // user's head; the VR mode (keepWalker) launches at once as reduceMotion does, even if reduceMotion were off.
+    rv::app::InteractionSettings settings;
+    settings.keepWalker = true;
+    InteractionHarness harness = inspectingWithConsole(settings);
+    const rv::scene::WalkerPose walker = harness.pose();
+    const rv::app::InteractionResult result = harness.press(rv::app::CardAction::Launch);
+    REQUIRE(result.launch.has_value());
+    CHECK_FALSE(result.launch->held);
+    CHECK(harness.interaction.state() == WorldState::Launching);
+    CHECK(harness.interaction.insertion() == 0.0f);
+    harness.idle(30);
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    CHECK(sameWalker(harness.pose(), walker));
 }
 
 TEST_CASE("app/world_interaction: a launch refused during the insertion comes back to Inspect with the item in the "

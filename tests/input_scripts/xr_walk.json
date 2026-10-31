@@ -1,0 +1,22 @@
+// I10 step 3: a walk with the VR mode's fake runtime in the test room (retroverse.exe --vr --xr-runtime fake), from
+// --spawn 0,0,3.2,0,0 (feet at (0, 0, 3.2) facing north): the head turned 90 degrees left in the tracking space, the
+// stick walks along it, a snap turn to the right, then the teleport aimed with the right stick up and let go.
+//   frames  0-9    standing, looking ahead (north)
+//   frames 10-39   the head turned west, the stick forward: 30 frames at 2.5 m/s, 1.25 m west, head (-1.25, 1.65, 3.2)
+//   frames 40-41   the right stick pushed right: one snap turn of 30 degrees about the head, now facing 60 degrees left
+//   frames 42-49   the stick let go
+//   frames 50-59   looking 30 degrees down, the right stick up: the teleport's arc, landing about 1.73 m ahead
+//   frames 60-69   the stick let go at frame 60: the walker lands there, the head above the landing
+//   retroverse.exe --vr --xr-runtime fake --scene m0_testroom --spawn 0,0,3.2,0,0 --hidden --exit-after-frames
+//     --frames 70 --fixed-dt 0.016667 --input-script tests/input_scripts/xr_walk.json --run-report <report.json>
+// tests/smoke/test_xr.cpp reads the run report's head samples and the movement's counters.
+[
+  {"fromFrame": 0, "toFrame": 9, "headPose": {"position": [0, 1.65, 0]}},
+  {"fromFrame": 10, "toFrame": 39, "headPose": {"yaw": -90, "position": [0, 1.65, 0]},
+   "actions": {"move_forward": 1.0}},
+  {"fromFrame": 40, "toFrame": 41, "headPose": {"yaw": -90, "position": [0, 1.65, 0]}, "actions": {"look_x": 1.0}},
+  {"fromFrame": 42, "toFrame": 49, "headPose": {"yaw": -90, "position": [0, 1.65, 0]}},
+  {"fromFrame": 50, "toFrame": 59, "headPose": {"yaw": -90, "pitch": -30, "position": [0, 1.65, 0]},
+   "actions": {"look_y": 1.0}},
+  {"fromFrame": 60, "toFrame": 69, "headPose": {"yaw": -90, "pitch": -30, "position": [0, 1.65, 0]}}
+]

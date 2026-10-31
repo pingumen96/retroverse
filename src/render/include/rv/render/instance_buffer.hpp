@@ -18,15 +18,16 @@ namespace rv::gl {
 /// attribute locations 4..7 and its attributes at location 8, divisor 1): one persistently mapped, coherent buffer
 /// split into kRegionCount regions used in turn. Each write() fills the next region after waiting for the fence placed
 /// by release() once the draws that last read it were issued, so the CPU never overwrites records the GPU may still be
-/// reading and, with three regions, normally never waits at all.
+/// reading and, with a region for every view of the frames in flight, normally never waits at all.
 ///
 /// When a write does not fit a region, the buffer is reallocated larger: a new GL buffer with a new generation()
 /// (unique across every InstanceBuffer), which the meshes must be attached to again (MeshRegistry::
 /// attachInstanceBuffer). Move-only; a default-constructed or moved-from buffer is empty. Main thread only.
 class InstanceBuffer {
 public:
-    /// Regions used in turn: the frame being recorded, and up to two frames the GPU may still be drawing.
-    static constexpr std::size_t kRegionCount = 3;
+    /// Regions used in turn, one per view: the views of the frame being recorded (up to four: a headset's two eyes, or
+    /// the stereo preview's, and their screenshot) and of the frame the GPU may still be drawing (ADR-0017 §4).
+    static constexpr std::size_t kRegionCount = 8;
     /// Bytes of one instance record, the stride GpuMesh reads them with (GpuMesh::kInstanceStride).
     static constexpr std::size_t kRecordBytes = sizeof(scene::InstanceData);
     /// Largest region, in instances: base instances of the last region still fit 32 bits.

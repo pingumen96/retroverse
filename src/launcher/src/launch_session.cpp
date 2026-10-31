@@ -228,12 +228,14 @@ void LaunchSession::apply(const ProcessEvent& event) {
             }
         }
         m_windowVisible = true;
+        m_window = event.window;
         if (m_state == SessionState::StillRunning) {
             setState(SessionState::Running, "a window of the emulator is visible again");
         }
         break;
     case ProcessEventKind::WindowsGone:
         m_windowVisible = false;
+        m_window = 0;
         m_windowClockStart = event.observedAt;
         break;
     case ProcessEventKind::WatchFailed:

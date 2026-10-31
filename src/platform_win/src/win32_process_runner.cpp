@@ -141,6 +141,7 @@ struct WindowSearch {
     const DWORD* processIds = nullptr;
     std::size_t count = 0;
     bool found = false;
+    HWND window = nullptr;
 };
 
 BOOL CALLBACK findVisibleWindow(HWND window, LPARAM parameter) {
@@ -159,6 +160,7 @@ BOOL CALLBACK findVisibleWindow(HWND window, LPARAM parameter) {
         return TRUE;
     }
     search->found = true;
+    search->window = window;
     return FALSE;
 }
 
@@ -540,7 +542,7 @@ private:
         } else if (!m_mainExited) {
             processIds[count++] = m_processId;
         }
-        WindowSearch search{processIds.data(), count, false};
+        WindowSearch search{processIds.data(), count, false, nullptr};
         if (count > 0) {
             EnumWindows(&findVisibleWindow, reinterpret_cast<LPARAM>(&search));
         }
@@ -551,6 +553,7 @@ private:
         const LaunchClock::time_point now = LaunchClock::now();
         ProcessEvent event;
         event.kind = search.found ? ProcessEventKind::WindowShown : ProcessEventKind::WindowsGone;
+        event.window = reinterpret_cast<std::uintptr_t>(search.window);
         event.observedAt = now;
         event.occurredAt = now;
         push(std::move(event));

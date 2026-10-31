@@ -267,7 +267,13 @@ struct PostUniforms {
     float ditherAmplitude = 0.0f;
     /// [0, 1]: the view faded to black after the tonemap: the sRGB-encoded output times 1 - fade (before dithering).
     float fade = 0.0f;
-    float padding = 0.0f;
+    /// [0, 1]: the comfort vignette of a headset's eye (I10 step 3): the view black outside a disc around
+    /// tunnelCenter that shrinks as it grows; 0 changes nothing.
+    float tunnel = 0.0f;
+    /// Where the eye looks straight ahead in the view's texture coordinates (an off-axis eye's centre is not the
+    /// view's).
+    glm::vec2 tunnelCenter{0.5f, 0.5f};
+    float padding[2] = {0.0f, 0.0f};
 };
 
 static_assert(offsetof(PostUniforms, exposure) == 0);
@@ -277,7 +283,9 @@ static_assert(offsetof(PostUniforms, bloomKnee) == 12);
 static_assert(offsetof(PostUniforms, vignette) == 16);
 static_assert(offsetof(PostUniforms, ditherAmplitude) == 20);
 static_assert(offsetof(PostUniforms, fade) == 24);
-static_assert(sizeof(PostUniforms) == 32, "std140 block sizes are multiples of 16 bytes");
+static_assert(offsetof(PostUniforms, tunnel) == 28);
+static_assert(offsetof(PostUniforms, tunnelCenter) == 32);
+static_assert(sizeof(PostUniforms) == 48, "std140 block sizes are multiples of 16 bytes");
 
 /// Texture units of the post-processing passes: `layout(binding = N) uniform sampler2D` in common/post.glsl (Source,
 /// Emission) and post/post.frag (Bloom). They follow the material units, so that no pass rebinds a material texture.

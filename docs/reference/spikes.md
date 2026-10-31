@@ -32,3 +32,13 @@ ADR-0004 to ADR-0006). They run frame- or time-limited like the app; measure per
   launch emulators whose data cannot be isolated (DuckStation). Keep visible runs short. The `desktop` tests run the
   fake emulator (`tests/fake_emulator`) in fullscreen: `./scripts/test.ps1 -Preset msvc-x64-debug-desktop`.
 
+
+# I10 spike
+
+- XR (`docs/spikes/i10-xr.md`, ADR-0017): `spike_xr.exe --seconds 30 --data-dir build/spike_xr --report
+  build/spike_xr/report.json` opens an OpenXR session on the app's GL 4.5 context (`XR_KHR_opengl_enable`) and renders a
+  ray-cast stereo room at the runtime's pace, the left eye in the window. It needs a headset (start Link first):
+  `--list` reports what the runtime offers without a session. `--runtime-json <manifest>` measures another runtime
+  without changing the active one; also `--refresh-rate`, `--render-scale`, `--space`, `--wait-system-s`,
+  `--frames`, `--warmup-s`, `--max-missed`, `--no-mirror`, `--hidden`. No automated GPU case; `spike_xr_tests` (label
+  `unit`) tests its GPU-free core.

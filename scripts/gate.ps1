@@ -41,10 +41,10 @@
       5. per Debug and Release, the I3 test cases counted from the unit and GPU runs (the world's snapshot goldens and
          property suites, the room in the app: gpu.world*, gpu.covers, gpu.media viewer, gpu.refresh, ...);
       6. in Release, the benchmark path of 2,000 titles at 1920 x 1080 with --no-vsync (rv_smoke_tests
-         "[benchmark]"): its frame times and GPU memory read from its run report against the acceptable limits
+         "[benchmark]~[xr]"): its frame times and GPU memory read from its run report against the acceptable limits
          (docs/roadmap.md, "Acceptable performance"), its GPU passes reported; with -Benchmarks also every hidden
-         benchmark, rv_tests "[bench]" and rv_smoke_tests "[bench]", as informative rows (a slow figure never fails
-         the gate);
+         benchmark but the fake headset's, rv_tests "[bench]" and rv_smoke_tests "[bench]~[xr]", as informative rows (a
+         slow figure never fails the gate);
       7. with -RealLibrary, scripts/real-library.ps1 -Filter '[real-library][room-real]' (ES-DE closed, read-only
          snapshots before and after, RV_LAUNCH_ALLOWLIST naming the fake emulator alone): the real SNES room's plan
          generated twice, the restart after a second import, the covers cold and warm, the benchmark path, a refresh
@@ -77,7 +77,7 @@
          for byte, none over capacity, the ground floor's rooms re-placed onto the hub in the same update, a second
          start and the whole job writing nothing).
     Gate M3 (milestone M3 part 2, customization, ADR-0015; docs/testing/gate-m3.md): Gate A's build matrix, the unit
-    tests and the GPU smoke tests of Debug and Release, every golden in both (G01 to G20: a golden skipped fails the
+    tests and the GPU smoke tests of Debug and Release, every golden in both (G01 to G21: a golden skipped fails the
     gate, as one missing does), Gate B's benchmark path in Release against the acceptable limits, and
       9. per Debug and Release, rows for the I4b test cases counted from the unit and GPU runs, one per area (the
          overrides and snapshots, the edits, the editor's games and furniture, the regenerations and their preview,
@@ -95,7 +95,7 @@
          check, an update moving nothing, an undo restoring the plan's SHA-256) and [secondary_tv] (the busiest floor
          at 1920 x 1080 with both screens playing, 512 MiB).
     Gate M4 (milestone M4, screens and media, ADR-0016; docs/testing/gate-m4.md): everything Gate D runs (Gate A's build
-    matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G20, a golden
+    matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G21, a golden
     skipped failing the gate as for Gate M3, the I4 and I6 rows per area, the benchmark path in Release), and
      12. per Debug and Release, rows for the I5 test cases counted from the unit and GPU runs, one per area (the
          playlists and fallbacks, the scheduler, the secondary TVs, the cabinets, the audio, the CRT presets, the video
@@ -115,14 +115,21 @@
      15. with -Soak, rv_smoke_tests "[soak]" in Release (an hour of four screens playing and switching clips): the
          private bytes' growth after the first 5 minutes (32 MiB), its slope, the handles and threads, from the case's
          memory.csv (copied into the gate's logs).
+    Gate VR (I10, VR through OpenXR, ADR-0017; docs/testing/gate-vr.md): Gate D whole, run as a gate of its own (its
+    build matrix, unit and GPU runs with the fake runtime's VR cases among them, every golden, the benchmark path, under
+    the focus watcher; -RealLibrary and the real library's options passed on), then the VR mode's rows:
+      9. golden G21 (both eyes in the test room) in Debug and Release, from the GPU runs' verdicts;
+     10. the VR benchmark path in Release (tests/smoke/test_world_benchmark.cpp: the snes-stress room, both eyes at
+         Link's 2048 x 2048, the fake runtime) against ADR-0017 §9: frame p50 at most 13.9 ms, p99 at most 20 ms; the
+         same path at 120 Hz with the fast profile (I10 step 9): p50 at most 8.3 ms, p99 at most 11.1 ms.
     -TimingOnly (Gates D, M3 and M4) runs the timing parts alone, for a rerun on a quiet machine: the Release build, the
     benchmark path and, with -RealLibrary, the real library's run (its correctness rows too: the snapshots, the tests);
     for Gate M3 also the Release GPU cases of the editor and the regenerations (gpu.world_edit, gpu.world_regenerate,
     the editor's cases of gpu.world_expansion, gpu.cabinets and gpu.secondary_tv) and ADR-0015 section 9's rows on the
     fixtures from their run reports. Gate M3's verdict is a full run plus a -TimingOnly -RealLibrary run on a quiet
     machine, Gate M4's the same and the soak.
-    Gates M1, B, C, D, M3 and M4 run under scripts/focus_watch.py (--watch build): a test process that takes the foreground or
-    shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
+    Gates M1, B, C, D, M3, M4 (and VR, through its Gate D) run under scripts/focus_watch.py (--watch build): a test
+    process that takes the foreground or shows a window where the user sees it, or a system error dialog during the run, fails the gate. The watcher counts
     a failing program of the user's (a WerFault or loader box) against the run too: its row names the rule that
     matched, so such a finding can be told from a test's.
 
@@ -152,10 +159,11 @@
     ./scripts/gate.ps1 -Gate M4 -RealLibrary -LegacyCli <generator 1.3's retroverse-cli.exe>   # ES-DE closed
     ./scripts/gate.ps1 -Gate M4 -TimingOnly -RealLibrary -Soak    # the timing parts again and the soak hour, quiet
     ./scripts/gate.ps1 -Gate M4 -RealLibrary -FullVideoScan       # also every clip's verdict (hours)
+    ./scripts/gate.ps1 -Gate VR                             # Gate D, then G21 and the VR benchmark path
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('A', 'M1', 'B', 'C', 'D', 'M3', 'M4')]
+    [ValidateSet('A', 'M1', 'B', 'C', 'D', 'M3', 'M4', 'VR')]
     [string]$Gate,
     [switch]$Clean,
     [switch]$RealLibrary,
@@ -182,11 +190,11 @@ $resultsFile = Join-Path $logDir 'results.json'
 $focusReport = Join-Path $logDir 'focus_watch.json'
 
 if (($RealLibrary -and $Gate -eq 'A') -or ($FullHashPass -and $Gate -ne 'M1')) {
-    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C, D, M3 and M4, -FullHashPass to -Gate M1' -ForegroundColor Red
+    Write-Host 'gate: -RealLibrary belongs to -Gate M1, B, C, D, M3, M4 and VR, -FullHashPass to -Gate M1' -ForegroundColor Red
     exit 2
 }
-if ($Benchmarks -and $Gate -notin @('B', 'C', 'D', 'M3', 'M4')) {
-    Write-Host 'gate: -Benchmarks belongs to -Gate B, C, D, M3 and M4' -ForegroundColor Red
+if ($Benchmarks -and $Gate -notin @('B', 'C', 'D', 'M3', 'M4', 'VR')) {
+    Write-Host 'gate: -Benchmarks belongs to -Gate B, C, D, M3, M4 and VR' -ForegroundColor Red
     exit 2
 }
 if ($TimingOnly -and $Gate -notin @('D', 'M3', 'M4')) {
@@ -248,6 +256,48 @@ function Write-Summary {
 }
 
 $gateTimer = [Diagnostics.Stopwatch]::StartNew()
+
+# --- Gate VR: Gate D, then the VR mode's rows ----------------------------------------------------------------------------
+if ($Gate -eq 'VR') {
+    $forward = @('-Gate', 'D')
+    foreach ($switch in @(@('-Clean', $Clean), @('-RealLibrary', $RealLibrary), @('-Benchmarks', $Benchmarks))) {
+        if ($switch[1]) { $forward += $switch[0] }
+    }
+    foreach ($pair in @(@('-EsdeHome', $EsdeHome), @('-EsdeInstall', $EsdeInstall), @('-RomRoot', $RomRoot),
+                        @('-MediaRoot', $MediaRoot), @('-RetroArchExe', $RetroArchExe), @('-LegacyCli', $LegacyCli))) {
+        if ($pair[1]) { $forward += @($pair[0], $pair[1]) }
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    & pwsh -NoProfile -File $PSCommandPath @forward
+    $gateD = $LASTEXITCODE
+    Add-Result 'Gate D' ($(if ($gateD -eq 0) { 'passed' } else { 'FAILED' })) "exit $gateD (its rows: build/gate-d/)" `
+        $timer.Elapsed.TotalSeconds
+    foreach ($preset in @('msvc-x64-debug', 'msvc-x64-release')) {
+        $verdictFile = Join-Path $root "build/$preset/smoke/golden_g21/comparison.txt"
+        if (Test-Path $verdictFile) {
+            $verdict = (Get-Content -Raw $verdictFile).Trim()
+            $result = if ($verdict -like 'skipped*') { 'skipped' } elseif ($verdict -match ': match') { 'passed' }
+                      else { 'FAILED' }
+            Add-Result "G21 $preset" $result $verdict 0
+        } else {
+            Add-Result "G21 $preset" 'not run' 'no verdict: the GPU run did not reach golden/G21' 0
+        }
+    }
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $benchLog = Join-Path $logDir 'vr-benchmark.log'
+    $previous = $env:RV_LAUNCH_BACKGROUND
+    $env:RV_LAUNCH_BACKGROUND = '1'
+    & (Join-Path $root 'build/msvc-x64-release/bin/rv_smoke_tests.exe') `
+        'world benchmark: the benchmark path in the fake headset*' *> $benchLog
+    $benchExit = $LASTEXITCODE
+    $env:RV_LAUNCH_BACKGROUND = $previous
+    $figures = ((Select-String -Path $benchLog -Pattern 'VR benchmark' | ForEach-Object { $_.Line.Trim() }) -join ' | ')
+    $result = if ($benchExit -eq 0) { 'passed' } elseif ($benchExit -eq 4) { 'skipped' } else { 'FAILED' }
+    Add-Result 'VR benchmark (Release)' $result ($(if ($figures) { $figures.Trim() } else { "exit $benchExit, $benchLog" })) `
+        $timer.Elapsed.TotalSeconds 'frame p50 13.9 / p99 20 ms; 120 Hz 8.3 / 11.1 ms'
+    $results | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $resultsFile
+    exit (Write-Summary)
+}
 
 # --- Gates M1, B, C, D, M3 and M4 under the focus watcher -------------------------------------------------------------
 # The outer run starts the gate again under scripts/focus_watch.py, with RV_GATE_INNER set; the inner run does the work
@@ -330,7 +380,13 @@ function Invoke-Build([string]$Preset) {
     $buildLog = Join-Path $logDir "build-$Preset.log"
     Remove-Item -ErrorAction SilentlyContinue $configureLog, $buildLog
     $code = 0
-    if (-not (Test-Path (Join-Path $root "build/$Preset/CMakeCache.txt"))) {
+    # As scripts/build.ps1: a tree whose cache lacks the vcpkg feature xr configures again, or its manifest install takes
+    # the loader out of the shared build/vcpkg_installed. A tree with RV_ENABLE_XR off wants no loader.
+    $cache = Join-Path $root "build/$Preset/CMakeCache.txt"
+    $stale = (Test-Path $cache) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^VCPKG_MANIFEST_FEATURES:[^=]*=.*\bxr\b' -Quiet) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^RV_ENABLE_XR:[^=]*=(OFF|0|FALSE|NO|N)$' -Quiet)
+    if ($stale -or -not (Test-Path $cache)) {
         $code = Invoke-Logged $configureLog @('cmake', '--preset', $Preset)
     }
     if ($code -eq 0) {
@@ -390,8 +446,10 @@ function Invoke-Tests([string]$Step, [string]$Name, [string]$Preset, [string[]]$
 function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     $smokeDir = Join-Path $root "build/$Preset/smoke"
     $verdictOf = { param($id) if ($id -eq 'G01') { Join-Path $smokeDir 'golden_g01/comparison.txt' }
+                   elseif ($id -eq 'G21') { Join-Path $smokeDir 'golden_g21/comparison.txt' }
                    else { Join-Path $smokeDir ('golden_room/{0}/comparison.txt' -f $id.ToLowerInvariant()) } }
-    Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt')
+    Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt'),
+        (Join-Path $smokeDir 'golden_g21/comparison.txt')
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
     $pattern = if ($Gate -in @('B', 'C', 'D', 'M3', 'M4')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
@@ -403,7 +461,7 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
         'D' { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15', 'G16',
                 'G17', 'G18') }
         { $_ -in @('M3', 'M4') } { @('G01', 'G02', 'G02s', 'G06', 'G07', 'G08a', 'G08b', 'G10', 'G11', 'G12', 'G13',
-                'G14', 'G15', 'G16', 'G17', 'G18', 'G19', 'G20') }
+                'G14', 'G15', 'G16', 'G17', 'G18', 'G19', 'G20', 'G21') }
         default { @('G01') }
     }
     $run = Invoke-Tests "Goldens $Preset" "golden-$Preset" $TestPreset @('-R', $pattern)
@@ -715,10 +773,12 @@ function Invoke-Catch([string]$Step, [string]$Name, [string]$Executable, [string
 function Invoke-Benchmarks {
     $bin = Join-Path $root 'build/msvc-x64-release/bin'
     $first = $results.Count
-    $spec = '[benchmark]'
+    # The fake headset's benchmarks ([xr]) are Gate VR's alone, which runs them itself against ADR-0017 section 9: here
+    # their names would make them the benchmark path's hard rows.
+    $spec = '[benchmark]~[xr]'
     if ($Benchmarks) {
         Invoke-Catch 'Benchmarks, GPU-free (Release)' 'bench-unit' (Join-Path $bin 'rv_tests.exe') '[bench]' | Out-Null
-        $spec = '[bench]'
+        $spec = '[bench]~[xr]'
     }
     $cases = Invoke-Catch 'Benchmarks, GPU (Release)' 'bench-gpu' (Join-Path $bin 'rv_smoke_tests.exe') $spec
     # The figures each case printed (WARN), a row per case.

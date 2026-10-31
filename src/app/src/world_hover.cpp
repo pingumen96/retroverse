@@ -354,9 +354,10 @@ std::span<const scene::RenderItem> WorldHover::viewItems(std::span<const scene::
     for (const PulledItem& pulled : m_interaction.pulledItems()) {
         if (const world::CollectionItem* item = m_room->find(pulled.id)) {
             const glm::mat4 model = pulledItemTransform(*item, pulled.progress, m_room->reachOf(pulled.id));
-            m_collection->appendRenderItems(pulled.id,
-                                            m_inspection.itemModel(m_interaction, *m_room, *item, model, camera),
-                                            m_viewItems);
+            m_collection->appendRenderItems(
+                pulled.id,
+                m_heldAside ? model : m_inspection.itemModel(m_interaction, *m_room, *item, model, camera, m_heldHand),
+                m_viewItems);
         }
     }
     return m_viewItems;

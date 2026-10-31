@@ -225,6 +225,10 @@ struct InteractionSettings {
     InspectSettings inspect;
     /// The world's reduceMotion (world::WorldConfig): every animation instant.
     bool reduceMotion = false;
+    /// The VR mode (I10 step 4, ADR-0017 §5 amending ADR-0012): Focus and its D-pad steps never move the walker, the
+    /// item pulled out where it is ("Mostra nella stanza" still takes the walker to the item); no insertion into the
+    /// console either (I5 step 9's eye turn would drive the head): Avvia launches at once, as under reduceMotion.
+    bool keepWalker = false;
 };
 
 /// A collection item as the interaction needs it.
@@ -471,7 +475,7 @@ private:
     void track(const world::HoverSample& sample);
     void finishReturn();
 
-    void enterFocus(world::PickId id, const RoomItem& item, float easeSeconds);
+    void enterFocus(world::PickId id, const RoomItem& item, float easeSeconds, bool easeWalker);
     void moveFocus(world::PickId id, const RoomItem& item, bool easeWalker);
     void enterInspect(world::PickId id, const RoomItem& item);
     void leaveInspect();

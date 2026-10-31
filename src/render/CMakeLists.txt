@@ -59,6 +59,9 @@ add_library(rv_render STATIC
     src/material_registry.cpp
     src/mesh_registry.cpp
     src/outline_pass.cpp
+    src/panel_pass.cpp
+    src/dx_interop.cpp
+    src/picture_probe.cpp
     src/post_processor.cpp
     src/render_state_cache.cpp
     src/sampler.cpp
@@ -87,3 +90,5 @@ target_link_libraries(rv_render PUBLIC
     rv_render_debug_filter
     rv_render_uniforms
     rv::glad)
+# opengl32: wglGetProcAddress, which loads WGL_NV_DX_interop2's entry points (dx_interop.cpp, I10 step 6).
+target_link_libraries(rv_render PRIVATE opengl32)

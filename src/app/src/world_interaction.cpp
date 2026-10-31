@@ -465,7 +465,7 @@ void WorldInteraction::readFreeRoam(const input::ActionState& actions, Interacti
     if (item->faceOut) {
         enterInspect(target, *item);
     } else {
-        enterFocus(target, *item, m_settings.timings.focusEase);
+        enterFocus(target, *item, m_settings.timings.focusEase, !m_settings.keepWalker);
     }
 }
 
@@ -493,7 +493,7 @@ void WorldInteraction::readFocus(const input::ActionState& actions, InteractionR
     if (const auto direction = stepPressed(actions); direction && m_room != nullptr) {
         if (const auto next = m_room->step(m_focused, *direction)) {
             if (const auto item = roomItem(*next)) {
-                moveFocus(*next, *item, true);
+                moveFocus(*next, *item, !m_settings.keepWalker);
             }
         }
     }
@@ -560,10 +560,12 @@ void WorldInteraction::startLaunch(const RoomItem& item, InteractionResult& resu
     m_launch = WorldLaunchRecord{m_focused, item.game, m_walkerNow, inspectView()};
     clearNotice();
     // I5 step 9 (ADR-0016 §11): in a room with a console the item goes into its media socket first, the eye turning to
-    // it; instant under reduceMotion, which launches at once as a room without a console does.
+    // it; instant under reduceMotion, which launches at once as a room without a console does. None in VR either
+    // (keepWalker, ADR-0017 §5 as amended on 2026-10-31): its eye's turn would drive the user's head.
     const float seconds = m_settings.timings.insertion;
     const std::optional<scene::WalkerPose> console =
-        m_room != nullptr && !m_settings.reduceMotion && std::isfinite(seconds) && seconds > 0.0f
+        m_room != nullptr && !m_settings.reduceMotion && !m_settings.keepWalker && std::isfinite(seconds) &&
+                seconds > 0.0f
             ? m_room->consolePose(m_walkerNow)
             : std::nullopt;
     result.launch = WorldLaunchRequest{m_focused, item.game, console.has_value()};
@@ -627,7 +629,8 @@ void WorldInteraction::track(const world::HoverSample& sample) {
 void WorldInteraction::finishReturn() {
     const WorldLaunchRecord record = m_launch.value_or(WorldLaunchRecord{});
     m_insert.jumpTo(0.0f); // the item out of the console, back in the hand
-    m_walker.jumpTo(record.walker);
+    // In VR (I10 step 10) the user may have walked while the game ran: the walker stays where they stand.
+    m_walker.jumpTo(m_settings.keepWalker ? m_walkerNow : record.walker);
     m_walkerPlaced = true;
     const std::optional<LaunchMessage> outcome = std::move(m_launchOutcome);
     m_launchOutcome.reset();
@@ -704,7 +707,7 @@ bool WorldInteraction::showInRoom(world::PickId id, const scene::WalkerPose& wal
         return false;
     }
     m_walkerNow = walker;
-    enterFocus(id, *item, m_settings.timings.showInRoomEase);
+    enterFocus(id, *item, m_settings.timings.showInRoomEase, true);
     return true;
 }
 
@@ -716,13 +719,15 @@ void WorldInteraction::launchEnded(const LaunchMessage& outcome) {
     m_launchOutcome = outcome;
 }
 
-void WorldInteraction::enterFocus(world::PickId id, const RoomItem& item, float easeSeconds) {
+void WorldInteraction::enterFocus(world::PickId id, const RoomItem& item, float easeSeconds, bool easeWalker) {
     m_state = WorldState::Focus;
     m_focused = id;
     m_focusedSection = item.section;
     pull(id);
     pushBackAllBut(id);
-    easeWalkerTo(m_room->focusPose(id), easeSeconds);
+    if (easeWalker) {
+        easeWalkerTo(m_room->focusPose(id), easeSeconds);
+    }
     m_interactSkips = true;
     clearNotice();
 }

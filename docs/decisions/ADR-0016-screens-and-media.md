@@ -568,6 +568,9 @@ Included, as `AnimatingToConsole` between Inspect and Launching:
   the walker as Avvia found it; the screens reopen where they stopped (the run report's `video.launches` entry
   `cancelled`).
 
+*Amended on 2026-10-31 (I10 brought together with main):* no insertion in VR (ADR-0017 §5 as amended that day): the
+eye's turn would drive the user's head, so Avvia in a headset launches at once, as under `reduceMotion`.
+
 ### 12. Budgets and acceptable performance
 
 - **GPU memory.** The world's video is at most two 480-row slots (texture and ring, about 4.8 MiB each). The viewer's

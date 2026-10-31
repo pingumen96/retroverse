@@ -43,6 +43,13 @@ inline constexpr glm::vec4 kWholeScreen{0.0f, 0.0f, 1.0f, 1.0f};
 /// finite (nothing known: the screen as it is).
 [[nodiscard]] glm::vec4 pictureRect(glm::vec2 picture, glm::vec2 screen) noexcept;
 
+/// The rectangle of a screen of `screen` that shows `crop` of a picture of `picture` (I10 step 11: a captured window
+/// without its black bars, picture_bounds.hpp): `crop` (corner and size in the picture's texture coordinates) fills
+/// pictureRect() of its own size, and the rectangle returned is the whole picture's, reaching beyond the screen where
+/// the crop leaves the picture out (the material maps the screen's uv through it). pictureRect() for the whole picture
+/// or a crop without area.
+[[nodiscard]] glm::vec4 croppedPictureRect(glm::vec2 picture, const glm::vec4& crop, glm::vec2 screen) noexcept;
+
 /// `rect` is the whole screen.
 [[nodiscard]] bool isWholeScreen(const glm::vec4& rect) noexcept;
 

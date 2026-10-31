@@ -1,0 +1,123 @@
+// The controllers' inputs for each OpenXR interaction profile (I10 step 4, ADR-0017 §5), suggested to the runtime
+// when the VR mode starts. Every controller drives a gamepad's buttons and sticks ("south" is the pad's A, "back" its View
+// button, ...), which the action map's gamepad bindings turn into actions as they do a pad's; "select" is a hand's
+// trigger (its ray's select: interact in the room), "grip" and "aim" its poses, "haptic" its vibration. The user's
+// <user data>/config/xr_bindings.json replaces any profile of the same "profile", or adds one; Retroverse reads it and
+// never writes it. A profile with an "extension" is suggested only when the runtime offers it.
+//
+// The Touch layout: the left stick walks and its click opens the directory; the right stick turns and, pushed up, aims
+// the teleport; either trigger selects with its hand's ray; A interacts, B goes back, Y is the quick catalog, X
+// "Informazioni", the left menu button "Avvia" (the pad's Start); the grips are the pad's shoulders.
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "profile": "/interaction_profiles/oculus/touch_controller",
+      "bindings": {
+        "left_stick": ["/user/hand/left/input/thumbstick"],
+        "right_stick": ["/user/hand/right/input/thumbstick"],
+        "back": ["/user/hand/left/input/thumbstick/click"],
+        "right_stick_click": ["/user/hand/right/input/thumbstick/click"],
+        "south": ["/user/hand/right/input/a/click"],
+        "east": ["/user/hand/right/input/b/click"],
+        "west": ["/user/hand/left/input/x/click"],
+        "north": ["/user/hand/left/input/y/click"],
+        "start": ["/user/hand/left/input/menu/click"],
+        "left_shoulder": ["/user/hand/left/input/squeeze/value"],
+        "right_shoulder": ["/user/hand/right/input/squeeze/value"],
+        "select": ["/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    },
+    {
+      "profile": "/interaction_profiles/valve/index_controller",
+      "bindings": {
+        "left_stick": ["/user/hand/left/input/thumbstick"],
+        "right_stick": ["/user/hand/right/input/thumbstick"],
+        "back": ["/user/hand/left/input/thumbstick/click"],
+        "right_stick_click": ["/user/hand/right/input/thumbstick/click"],
+        "south": ["/user/hand/right/input/a/click"],
+        "east": ["/user/hand/right/input/b/click"],
+        "west": ["/user/hand/left/input/a/click"],
+        "north": ["/user/hand/left/input/b/click"],
+        "start": ["/user/hand/left/input/trackpad/force"],
+        "left_shoulder": ["/user/hand/left/input/squeeze/value"],
+        "right_shoulder": ["/user/hand/right/input/squeeze/value"],
+        "select": ["/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    },
+    {
+      "profile": "/interaction_profiles/htc/vive_controller",
+      "bindings": {
+        "left_stick": ["/user/hand/left/input/trackpad"],
+        "right_stick": ["/user/hand/right/input/trackpad"],
+        "back": ["/user/hand/left/input/squeeze/click"],
+        "south": ["/user/hand/right/input/trackpad/click"],
+        "east": ["/user/hand/right/input/menu/click"],
+        "north": ["/user/hand/left/input/trackpad/click"],
+        "start": ["/user/hand/left/input/menu/click"],
+        "right_shoulder": ["/user/hand/right/input/squeeze/click"],
+        "select": ["/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    },
+    {
+      "profile": "/interaction_profiles/microsoft/motion_controller",
+      "bindings": {
+        "left_stick": ["/user/hand/left/input/thumbstick"],
+        "right_stick": ["/user/hand/right/input/thumbstick"],
+        "back": ["/user/hand/left/input/thumbstick/click"],
+        "right_stick_click": ["/user/hand/right/input/thumbstick/click"],
+        "south": ["/user/hand/right/input/trackpad/click"],
+        "east": ["/user/hand/right/input/menu/click"],
+        "north": ["/user/hand/left/input/trackpad/click"],
+        "start": ["/user/hand/left/input/menu/click"],
+        "left_shoulder": ["/user/hand/left/input/squeeze/click"],
+        "right_shoulder": ["/user/hand/right/input/squeeze/click"],
+        "select": ["/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    },
+    {
+      "profile": "/interaction_profiles/bytedance/pico4_controller",
+      "extension": "XR_BD_controller_interaction",
+      "bindings": {
+        "left_stick": ["/user/hand/left/input/thumbstick"],
+        "right_stick": ["/user/hand/right/input/thumbstick"],
+        "back": ["/user/hand/left/input/thumbstick/click"],
+        "right_stick_click": ["/user/hand/right/input/thumbstick/click"],
+        "south": ["/user/hand/right/input/a/click"],
+        "east": ["/user/hand/right/input/b/click"],
+        "west": ["/user/hand/left/input/x/click"],
+        "north": ["/user/hand/left/input/y/click"],
+        "start": ["/user/hand/left/input/menu/click"],
+        "left_shoulder": ["/user/hand/left/input/squeeze/value"],
+        "right_shoulder": ["/user/hand/right/input/squeeze/value"],
+        "select": ["/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    },
+    {
+      "profile": "/interaction_profiles/khr/simple_controller",
+      "bindings": {
+        "select": ["/user/hand/left/input/select/click", "/user/hand/right/input/select/click"],
+        "start": ["/user/hand/left/input/menu/click"],
+        "east": ["/user/hand/right/input/menu/click"],
+        "grip": ["/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"],
+        "aim": ["/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"],
+        "haptic": ["/user/hand/left/output/haptic", "/user/hand/right/output/haptic"]
+      }
+    }
+  ]
+}

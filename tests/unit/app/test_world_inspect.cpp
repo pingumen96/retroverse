@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
@@ -28,6 +29,7 @@
 #include <rv/input/action.hpp>
 #include <rv/input/action_state.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/pose_animator.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/pick_index.hpp>
 
@@ -152,6 +154,29 @@ TEST_CASE("app/world_inspect: held upright in front of the eye, its cover to it,
         previous = glm::vec3(at[3]);
         previousFront = axis(at, 2);
     }
+}
+
+TEST_CASE("app/world_inspect: in VR the item is held in front of the controller, turned by the wrist (I10 step 4)",
+          "[app][world_inspect]") {
+    const glm::mat4 pulled = somePulledPose();
+    const rv::scene::Camera camera = cameraAt({0.0f, 1.65f, 0.0f}, 0.0f, -10.0f);
+    // The grip turned 90 degrees left about +Y, at the hip: its -Z points along -X.
+    const rv::scene::RigidPose hand{glm::vec3(0.3f, 1.1f, -0.4f),
+                                    glm::angleAxis(rv::core::degreesToRadians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f))};
+    const glm::mat4 held = rv::app::heldItemTransform(pulled, InspectView{1.0f, 0.0f, 0.0f, 0.6f}, camera, 0.6f, hand);
+    CHECK(near(glm::vec3(held[3]), glm::vec3(0.3f - rv::app::kHandHoldDistance, 1.1f, -0.4f), 1e-5f));
+    // Its front faces back along the hand's +Z (towards the user holding it), upright with the hand.
+    CHECK(near(axis(held, 2), glm::vec3(1.0f, 0.0f, 0.0f), 1e-5f));
+    CHECK(near(axis(held, 1), glm::vec3(0.0f, 1.0f, 0.0f), 1e-5f));
+    // The camera's distance and the view's centre play no part; the inspection's yaw still turns it.
+    const glm::mat4 far = rv::app::heldItemTransform(pulled, InspectView{1.0f, 0.0f, 0.0f, 1.0f}, camera, 1.0f, hand);
+    CHECK(near(glm::vec3(far[3]), glm::vec3(held[3]), 1e-5f));
+    const float turn = rv::core::degreesToRadians(30.0f);
+    const glm::mat4 yawed = rv::app::heldItemTransform(pulled, InspectView{1.0f, turn, 0.0f, 0.6f}, camera, 0.6f, hand);
+    CHECK(std::fabs(glm::dot(axis(yawed, 2), glm::vec3(1.0f, 0.0f, 0.0f)) - std::cos(turn)) < 1e-5f);
+    // Halfway up from the pulled pose: on the straight line to the hand.
+    const glm::mat4 half = rv::app::heldItemTransform(pulled, InspectView{0.5f, 0.0f, 0.0f, 0.6f}, camera, 0.6f, hand);
+    CHECK(near(glm::vec3(half[3]), 0.5f * (glm::vec3(pulled[3]) + glm::vec3(held[3])), 1e-5f));
 }
 
 TEST_CASE("app/world_inspect: the held distance kept out of the item's fixture", "[app][world_inspect]") {

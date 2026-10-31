@@ -103,6 +103,8 @@ struct ProductUi::Impl {
 
     std::unique_ptr<ui::UiSystem> system;
     std::unique_ptr<ui::UiView> view;
+    /// I10 step 5: a controller's ray is on the VR panel (the UI's mouse is there).
+    bool xrPointing = false;
     std::unique_ptr<ui::QuickCatalogModel> model;
     std::unique_ptr<ui::QuickCatalogScreen> screen;
     std::unique_ptr<GameSessionPanel> panel;
@@ -1514,6 +1516,37 @@ void ProductUi::onIdle() {
 
 void ProductUi::frameRendered() noexcept {
     m_impl->flow.frameRendered();
+}
+
+void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, bool released, float wheel) {
+    Rml::Context& context = m_impl->view->context();
+    if (!pixel) {
+        if (m_impl->xrPointing) {
+            context.ProcessMouseLeave();
+            m_impl->xrPointing = false;
+        }
+        return;
+    }
+    m_impl->xrPointing = true;
+    context.ProcessMouseMove(static_cast<int>(pixel->x), static_cast<int>(pixel->y), 0);
+    if (pressed) {
+        context.ProcessMouseButtonDown(0, 0);
+    }
+    if (released) {
+        context.ProcessMouseButtonUp(0, 0);
+    }
+    if (wheel != 0.0f) {
+        context.ProcessMouseWheel(wheel, 0);
+    }
+}
+
+std::uintptr_t ProductUi::launchWindow() const noexcept {
+    const launcher::LaunchSession* session = m_impl->flow.session();
+    return session != nullptr && !session->finished() ? session->window() : 0;
+}
+
+bool ProductUi::visible() const noexcept {
+    return m_impl->visible();
 }
 
 void ProductUi::renderToWindow(gl::GLDevice& device) {

@@ -1,5 +1,6 @@
 #include <rv/render/scene_renderer.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -472,10 +473,18 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         }
         shadow = shadowProjectionFor(view.shadowLight, casterBounds, m_shadowMap.resolution());
     }
+    // The map an earlier view of this frame drew is this view's too: the same light, bias and scene.
+    const glm::vec2 depthBias = shadowDepthBias(view.shadowSettings);
+    const bool shadowShared =
+        shadow && m_frame > 0 && m_drawnShadow && m_drawnShadow->frame == m_frame &&
+        m_drawnShadow->viewProjection == shadow->viewProjection && m_drawnShadow->depthBias == depthBias &&
+        m_drawnShadow->items == view.items.data() && m_drawnShadow->itemCount == view.items.size() &&
+        std::equal(m_drawnShadow->staticGroups.begin(), m_drawnShadow->staticGroups.end(), view.staticGroups.begin(),
+                   view.staticGroups.end());
     const bool uniformsReady = updateUniforms(view, camera, shadow);
     std::optional<std::uint32_t> baseInstance;
     if (uniformsReady) {
-        const scene::Frustum viewFrustum = camera.frustum();
+        const scene::Frustum viewFrustum = view.cullFrustum.value_or(camera.frustum());
         scene::PlanOptions options;
         options.frustum = viewFrustum;
         options.eye = camera.position();
@@ -488,7 +497,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         m_planner.plan(view.items, options, m_plan);
         stats.culledItems = m_plan.culledItems;
         std::optional<scene::Frustum> shadowFrustum;
-        if (shadow) {
+        if (shadow && !shadowShared) {
             shadowFrustum = scene::Frustum::fromViewProjection(shadow->viewProjection);
             options.frustum = shadowFrustum;
             options.eye = shadow->eye;
@@ -497,7 +506,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         }
         planStaticGroups(view, viewFrustum, shadowFrustum, stats);
         stats.batches = m_plan.batches.size() + stats.staticBatches;
-        if (auto uploaded = uploadInstances(shadow.has_value()); uploaded) {
+        if (auto uploaded = uploadInstances(shadow && !shadowShared); uploaded) {
             if (const std::optional<std::size_t> skipped = m_uploadFailures.succeed()) {
                 spdlog::info("Scene views are drawn again after {} view(s) were skipped", *skipped);
             }
@@ -510,10 +519,21 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
     }
 
     // 1. The key light's shadow map; the shadow plan's instances follow the view's.
-    const bool shadowDrawn = baseInstance && shadow;
+    const bool shadowDrawn = baseInstance && shadow && !shadowShared;
     if (shadowDrawn) {
         drawShadowMap(device, shaders, view, *baseInstance + static_cast<std::uint32_t>(m_plan.instances.size()),
                       view.shadowSettings, stats);
+        m_drawnShadow = DrawnShadow{m_frame,
+                                    shadow->viewProjection,
+                                    depthBias,
+                                    view.items.data(),
+                                    view.items.size(),
+                                    {view.staticGroups.begin(), view.staticGroups.end()},
+                                    stats.shadowDrawCalls,
+                                    stats.shadowInstances};
+    } else if (baseInstance && shadowShared) {
+        stats.shadowDrawCalls = m_drawnShadow->drawCalls;
+        stats.shadowInstances = m_drawnShadow->instances;
     }
 
     // 2. The depth pre-pass into the cleared HDR target.
@@ -601,8 +621,9 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
         stats.debugLines = view.debugDraw->lineCount();
     }
     // A view without a shadow map reports no shadow time (the timer still holds an earlier view's), nor one without an
-    // outline an outline time.
-    stats.shadowGpuMilliseconds = shadowDrawn ? m_shadowTimer.latestMilliseconds() : std::nullopt;
+    // outline an outline time; one sharing the frame's map reports the time of its drawing.
+    stats.shadowGpuMilliseconds =
+        shadowDrawn || (baseInstance && shadowShared) ? m_shadowTimer.latestMilliseconds() : std::nullopt;
     stats.depthGpuMilliseconds = m_depthTimer.latestMilliseconds();
     stats.ssaoGpuMilliseconds = m_ssao.latestGpuMilliseconds();
     stats.sceneGpuMilliseconds = m_timer.latestMilliseconds();

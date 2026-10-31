@@ -58,7 +58,11 @@ TEST_CASE("render/post_settings: the default settings change nothing but the ton
     CHECK(uniforms.bloomThreshold == rv::gl::kBloomThreshold);
     CHECK(uniforms.bloomKnee == rv::gl::kBloomKnee);
     CHECK(uniforms.fade == 0.0f);
-    CHECK(uniforms.padding == 0.0f);
+    // I10 step 3: no comfort vignette, centred.
+    CHECK(uniforms.tunnel == 0.0f);
+    CHECK(uniforms.tunnelCenter == glm::vec2(0.5f, 0.5f));
+    CHECK(uniforms.padding[0] == 0.0f);
+    CHECK(uniforms.padding[1] == 0.0f);
 }
 
 TEST_CASE("render/post_settings: the post block keeps every value in its documented range", "[render][post]") {

@@ -2,10 +2,13 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <nlohmann/json.hpp>
 
 #include <rv/core/file_io.hpp>
@@ -372,4 +375,98 @@ TEST_CASE("input/input_script: steps hold a named phase open on their frames", "
     CHECK(notString.code == ErrorCode::ParseError);
     CHECK(notString.context == "script.json:/0/phase");
     CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "phase": ""}])").code == ErrorCode::ValidationFailed);
+}
+
+TEST_CASE("input/input_script: steps give the VR mode's fake runtime its head poses (I10 step 2)",
+          "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "headPose": {"yaw": -40, "position": [0, 1.65, 0]}},
+        {"fromFrame": 5, "toFrame": 14, "headPose": {"pitch": -20, "roll": 10}, "actions": {"move_forward": 1}}
+    ])");
+    REQUIRE(script.steps().size() == 2);
+    const std::optional<rv::input::ScriptedHeadPose> first = script.headPoseAt(0);
+    REQUIRE(first);
+    CHECK(first->yawDeg == -40.0f);
+    CHECK(first->pitchDeg == 0.0f);
+    CHECK(first->position == std::optional<glm::vec3>(glm::vec3(0.0f, 1.65f, 0.0f)));
+    // The later step wins where both cover the frame; a pose without a position leaves the fake's standing head.
+    const std::optional<rv::input::ScriptedHeadPose> later = script.headPoseAt(7);
+    REQUIRE(later);
+    CHECK(later->yawDeg == 0.0f);
+    CHECK(later->pitchDeg == -20.0f);
+    CHECK(later->rollDeg == 10.0f);
+    CHECK_FALSE(later->position);
+    CHECK_FALSE(script.headPoseAt(15));
+    CHECK(script.valueAt(7, Action::MoveForward) == 1.0f);
+
+    // A pose alone makes a step; its fields are checked.
+    CHECK(parseOk(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {}}])").headPoseAt(0));
+    const rv::Error pitch = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"pitch": 95}}])");
+    CHECK(pitch.code == ErrorCode::ValidationFailed);
+    CHECK(pitch.context == "script.json:/0/headPose/pitch");
+    const rv::Error unknown = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"yaww": 5}}])");
+    CHECK(unknown.code == ErrorCode::ParseError);
+    CHECK(unknown.context == "script.json:/0/headPose/yaww");
+    const rv::Error position = parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"position": [0, 1]}}])");
+    CHECK(position.code == ErrorCode::ParseError);
+    CHECK(position.context == "script.json:/0/headPose/position");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": {"position": [0, 1000, 0]}}])").code ==
+          ErrorCode::ValidationFailed);
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "headPose": 3}])").code == ErrorCode::ParseError);
+}
+
+TEST_CASE("input/input_script: steps give the fake runtime's controllers their poses (I10 step 4)",
+          "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "rightHand": {"yaw": 10, "pitch": -15, "position": [0.2, 1.2, -0.3]}},
+        {"fromFrame": 5, "toFrame": 9, "leftHand": {"yaw": -30}, "actions": {"interact": 1}}
+    ])");
+    const std::optional<rv::input::ScriptedHeadPose> right = script.handPoseAt(2, true);
+    REQUIRE(right);
+    CHECK(right->yawDeg == 10.0f);
+    CHECK(right->pitchDeg == -15.0f);
+    CHECK(right->position == std::optional<glm::vec3>(glm::vec3(0.2f, 1.2f, -0.3f)));
+    CHECK_FALSE(script.handPoseAt(2, false));
+    const std::optional<rv::input::ScriptedHeadPose> left = script.handPoseAt(6, false);
+    REQUIRE(left);
+    CHECK(left->yawDeg == -30.0f);
+    CHECK_FALSE(left->position);
+    CHECK_FALSE(script.handPoseAt(10, true));
+    CHECK_FALSE(script.headPoseAt(2));
+    // A hand alone makes a step; its fields are checked like the head's.
+    CHECK(parseOk(R"([{"fromFrame": 0, "toFrame": 0, "leftHand": {}}])").handPoseAt(0, false));
+    const rv::Error roll = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightHand": {"roll": "x"}}])");
+    CHECK(roll.context == "script.json:/0/rightHand/roll");
+}
+
+TEST_CASE("input/input_script: steps press the fake runtime's triggers (I10 step 5)", "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 0, "toFrame": 9, "rightHand": {"yaw": 10}},
+        {"fromFrame": 3, "toFrame": 4, "rightSelect": 1},
+        {"fromFrame": 6, "toFrame": 6, "leftSelect": 0.5}
+    ])");
+    CHECK(script.handSelectAt(2, true) == 0.0f);
+    CHECK(script.handSelectAt(3, true) == 1.0f);
+    CHECK(script.handSelectAt(4, true) == 1.0f);
+    CHECK(script.handSelectAt(4, false) == 0.0f);
+    CHECK(script.handSelectAt(6, false) == 0.5f);
+    CHECK(script.handSelectAt(6, true) == 0.0f);
+    const rv::Error outOfRange = parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightSelect": 2}])");
+    CHECK(outOfRange.code == ErrorCode::ValidationFailed);
+    CHECK(outOfRange.context == "script.json:/0/rightSelect");
+}
+
+TEST_CASE("input/input_script: steps push the fake runtime's thumbsticks (I10 step 10)", "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 2, "toFrame": 5, "leftStick": [0, -1]},
+        {"fromFrame": 4, "toFrame": 4, "rightStick": [0.5, 0.25]}
+    ])");
+    CHECK(script.handStickAt(1, false) == glm::vec2(0.0f));
+    CHECK(script.handStickAt(2, false) == glm::vec2(0.0f, -1.0f));
+    CHECK(script.handStickAt(4, true) == glm::vec2(0.5f, 0.25f));
+    CHECK(script.handStickAt(5, true) == glm::vec2(0.0f));
+    const rv::Error outOfRange = parseError(R"([{"fromFrame": 0, "toFrame": 0, "leftStick": [0, 1.5]}])");
+    CHECK(outOfRange.code == ErrorCode::ValidationFailed);
+    CHECK(outOfRange.context == "script.json:/0/leftStick");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightStick": [1]}])").context == "script.json:/0/rightStick");
 }

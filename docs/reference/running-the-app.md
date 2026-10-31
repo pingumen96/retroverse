@@ -26,8 +26,8 @@ build/rvdata`).
   counts them apart, so in a clean run `high` equals its `highSeverityCaptured`), frames, the last view's statistics
   (draw calls, batches, instances, triangles, culled items, shadow and depth draw calls, GPU times), the instance
   buffer's capacity, the screenshot written (`screenshot`: file, size, and since the memory margin `targets`, `window`
-  when it was drawn through the window's render targets (it has the window's size) or `own` through a set made for it
-  alone), the window (`window`: `drawableWidth`, `drawableHeight`, its drawable at the end of the run, the size asked
+  when it was drawn through the window's render targets (it has the window's size), `own` through a set made for it
+  alone or `eyes` from the eyes' targets (a VR frame or the stereo preview)), the window (`window`: `drawableWidth`, `drawableHeight`, its drawable at the end of the run, the size asked
   for times the display's scale), the walker's final pose (feet, yaw, pitch as `--spawn` takes them), the
   self-check, the quick catalog (`catalog`: `source` `esde` or `mock`, file, games, times `opened`, `open` at the end,
   the selection; for the ES-DE catalog since I2 step 13 also `notice`, `library`, `systems`, `search`, `filter`,
@@ -249,6 +249,55 @@ build/rvdata`).
   clusters per view (`collectionPlanning`). An instance flagged highlighted gets the hover outline after the
   post-processing (a 2 px ring at 1080p in #F4EFE6, scaled with the output's height, its own GPU timer); one flagged
   hidden is not drawn.
+- The stereo preview (I10 step 1, ADR-0017 §4, `docs/i10/step-1.md`): `--stereo-preview` shows a headset's two eyes
+  side by side in the window and in every screenshot, on black. Each eye is an off-axis view of a Quest 3S's field
+  (52 degrees outwards, 45 inwards, 48 up, 50 down), 64 mm from the other, at half the image's width. Both are culled
+  against one frustum enclosing them, and the second reads the shadow map the first drew. It checks the VR mode's
+  rendering (the camera's eye mode, the SSAO of an asymmetric field, the shared shadow map) without a headset; the
+  covers, picking and the audio still follow the desktop's camera.
+- The VR mode (I10 step 2, ADR-0017 §3, §8, `docs/i10/step-2.md`): `--vr` renders in a headset through the system's
+  OpenXR runtime (Meta Horizon Link over the cable or Air Link, SteamVR), `--xr-runtime-json <manifest>` another
+  runtime for this process only. The runtime paces the frames (72 Hz on a Quest), each eye renders at the runtime's
+  recommended size times `--xr-render-scale` (0.25 to 2) into its sRGB swapchain, and the window mirrors the left eye
+  without vsync. `display.mode: "vr"` in `<user data>/config/xr.json` starts every run in VR as `--vr` does (shipped
+  defaults in `assets/config/xr.json`: the render scale, the refresh rate, the posture, the comfort options). Moving
+  (I10 step 3, `docs/i10/step-3.md`): the left stick and WASD walk along the head's heading; the right stick turns (30
+  degree snap turns, or smooth: xr.json's `comfort.turn`) and, pushed up, aims the teleport's arc from the head, landing
+  where it shows a cyan ring once let go (amber: nowhere to land); the user's own steps carry the walker's capsule
+  through the collision world, and a head leaning beyond it fades the view, pushed back further than 0.3 m. The space is
+  LOCAL_FLOOR, else STAGE, else LOCAL 1.6 m up; `posture: "seated"` makes the head up to the walker's eye height at the
+  start and at each recentering (the headset's own, which the head survives in place); every transition of the world
+  is instant (reduceMotion), and `comfort.vignette` darkens the view's edges while the stick moves it. Controllers
+  (I10 step 4, `docs/i10/step-4.md`): their buttons and sticks act as a gamepad's (`assets/config/xr_bindings.json`
+  per interaction profile: Touch, Index, Vive, WMR, Pico 4, simple; a user's `xr_bindings.json` replaces a profile),
+  either trigger interacts along that hand's laser, Focus pulls the item out where it is and Inspect holds it in the
+  pointing hand, which ticks when the laser comes onto an item; the right controller aims the teleport, and
+  `comfort.moveRelativeTo: "hand"` walks along the left one. The fake runtime's controllers are the input script's
+  `leftHand` and `rightHand` steps (`leftSelect`, `rightSelect` their triggers). The UI (I10 step 5,
+  `docs/i10/step-5.md`): one panel drawn into the eyes, in front of the user where a UI that takes the input opened
+  (the catalog, the directory, the viewer: the ray is its mouse, the trigger clicks, the right stick scrolls), else a
+  heads-up display on the head (the label over its item, the prompts, the card); the window and the screenshots show
+  it through the eyes. A launched game (I10 step 6, `docs/i10/step-6.md`) keeps the headset rendering: its emulator's
+  window (borderless, never exclusive fullscreen) is captured onto the room's hero CRT (Windows.Graphics.Capture,
+  WGL_NV_DX_interop2; I10 step 11: its client area without its black bars, at their aspect) and given the
+  foreground, the pad plays it, the inspected item waits in its fixture; Retroverse reads only the controllers'
+  walk, turns and teleport until it ends (I10 step 10: input scripts' `leftStick`, `rightStick` push the fake
+  runtime's thumbsticks). Interactive runs scale the eyes'
+  rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
+  frame-limited runs keep 1. 120 Hz (I10 step 9): `--xr-refresh-rate 120` or xr.json's `refreshRate` asks the headset
+  for the highest rate it offers up to that (Link needs 120 Hz turned on in the Meta app); xr.json's `quality`
+  ("auto": from 110 Hz the eyes leave out the ambient occlusion and the anti-aliasing; "full"; "fast") keeps the frame
+  within 8.3 ms. Without a
+  runtime or a headset (an interactive run waits 15 s
+  for one) the run stays on the desktop and the log says why; a session that ends (the runtime quits, Link drops) sends
+  the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
+  no wait, at the `--input-script`'s `headPose` steps (`tests/input_scripts/xr_look.json`); a frame-limited run's
+  screenshot then holds both eyes side by side (2048 x 1024), `--xr-fake-lose-after <frames>` loses the session, and
+  `--xr-fake-untracked-frames <frames>` gives its first frames no eyes, as a real runtime's first frames ask for no views.
+  The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
+  and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, the
+  movement's snap turns, teleports and push-backs, and the controllers (the profiles taken and held, the frames
+  tracked and pointing, the vibrations), the game's capture and the frames the controllers walked while it ran.
 - The hero CRT (I3 step 11, `docs/i3/step-11.md`; the scene's first `crt` prefab with a picture on its screen, the test
   room's or, on a floor, the CRT of the room that holds the eye since I4 step 6b: bound once the eye has stayed in a
   room for 300 ms, the last room's kept in a hall, rebound without joining the previous clip's decoder on the render

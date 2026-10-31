@@ -44,6 +44,10 @@ set(RV_FFMPEG_LIBRARIES
     rv::ffmpeg
     rv_ffmpeg
     CACHE INTERNAL "Target names of FFmpeg (the root CMakeLists.txt's wrapper of vcpkg's FindFFMPEG)")
+set(RV_OPENXR_LIBRARIES
+    OpenXR::openxr_loader
+    OpenXR::headers
+    CACHE INTERNAL "Target names of the OpenXR loader (vcpkg port openxr-loader, ADR-0017)")
 # rv_audio (ADR-0016 §9): GPU-free, rv_core and miniaudio only. FFmpeg stays rv_media's (rv_app connects the two), and
 # neither the UI, the databases nor the media module may be reached from the mixer.
 set(RV_AUDIO_FORBIDDEN_LINKS

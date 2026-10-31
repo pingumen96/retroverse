@@ -11,6 +11,7 @@
 #include <rv/input/input_system.hpp>
 #include <rv/platform/mouse_capture.hpp>
 #include <rv/platform/sdl_input_collector.hpp>
+#include <rv/xr/controllers.hpp>
 
 union SDL_Event;
 
@@ -35,8 +36,12 @@ public:
     /// collector.
     void handleEvent(const SDL_Event& event);
     /// The actions of frame `frameIndex` (AppContext::frameIndex()): device input resolved through the bindings, with
-    /// the script's values on the frames it covers.
-    [[nodiscard]] input::ActionState update(std::uint64_t frameIndex);
+    /// the script's values on the frames it covers. `controllers`: a VR frame's controllers as a gamepad (I10 step 4),
+    /// merged into the pad's input before the bindings resolve it.
+    [[nodiscard]] input::ActionState update(std::uint64_t frameIndex, const xr::VirtualPad* controllers = nullptr);
+    /// The actions of a VR frame's controllers alone, through the same bindings and settings, without the devices or
+    /// the script (I10 step 10): while a game runs in VR the pad and the keyboard play it, the controllers still walk.
+    [[nodiscard]] input::ActionState controllersAlone(const xr::VirtualPad& controllers);
 
     /// See platform::MouseCapture::captureWhenFocused(); `reason` completes the log line.
     void captureMouseWhenFocused(std::string_view reason);
@@ -59,6 +64,8 @@ private:
     platform::SdlInputCollector m_collector;
     platform::MouseCapture m_capture;
     input::InputSystem m_system;
+    /// The bindings again for controllersAlone(): its own held state, apart from the devices'.
+    input::InputSystem m_controllers;
     std::optional<input::InputScriptPlayer> m_script;
     float m_mouseWheel = 0.0f;
 };

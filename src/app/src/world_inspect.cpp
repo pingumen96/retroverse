@@ -76,7 +76,7 @@ float heldDistance(float distance, float limit) noexcept {
 }
 
 glm::mat4 heldItemTransform(const glm::mat4& pulled, const InspectView& view, const scene::Camera& camera,
-                            float distance) noexcept {
+                            float distance, const std::optional<scene::RigidPose>& hand) noexcept {
     const float lift = clamp01(view.lift);
     if (!(lift > 0.0f)) {
         return pulled; // at its pulled-out pose exactly
@@ -92,14 +92,22 @@ glm::mat4 heldItemTransform(const glm::mat4& pulled, const InspectView& view, co
     const scene::RigidPose from{glm::vec3(pulled[3]), glm::normalize(glm::quat_cast(pulledRotation))};
 
     // In the hand: the camera's axes (right, up, back: right-handed, since up = right x forward), the inspection's
-    // turn in them, the centre heldCentre() (left of and below the view's centre).
-    const glm::vec3 forward = camera.forward();
-    const glm::mat3 cameraAxes(camera.right(), camera.up(), -forward);
+    // turn in them, the centre heldCentre() (left of and below the view's centre). In VR the controller's grip in
+    // their place, the item in front of it.
     const float yaw = std::isfinite(view.yaw) ? view.yaw : 0.0f;
     const float pitch = std::isfinite(view.pitch) ? view.pitch : 0.0f;
-    const glm::mat3 held = cameraAxes * rotationX(-pitch) * rotationY(yaw);
-    const float along = std::isfinite(distance) ? distance : InspectSettings{}.distance;
-    const scene::RigidPose to{heldCentre(camera, along), glm::normalize(glm::quat_cast(held))};
+    scene::RigidPose to;
+    if (hand && finite(hand->position)) {
+        const glm::mat3 handAxes = glm::mat3_cast(glm::normalize(hand->orientation));
+        const glm::mat3 held = handAxes * rotationX(-pitch) * rotationY(yaw);
+        to = scene::RigidPose{hand->position - handAxes[2] * kHandHoldDistance, glm::normalize(glm::quat_cast(held))};
+    } else {
+        const glm::vec3 forward = camera.forward();
+        const glm::mat3 cameraAxes(camera.right(), camera.up(), -forward);
+        const glm::mat3 held = cameraAxes * rotationX(-pitch) * rotationY(yaw);
+        const float along = std::isfinite(distance) ? distance : InspectSettings{}.distance;
+        to = scene::RigidPose{heldCentre(camera, along), glm::normalize(glm::quat_cast(held))};
+    }
 
     const scene::RigidPose pose = lift >= 1.0f ? to : scene::interpolatePose(from, to, lift);
     glm::mat4 transform(glm::mat3_cast(pose.orientation));

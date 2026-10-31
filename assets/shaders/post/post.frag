@@ -26,6 +26,13 @@ float interleavedGradientNoise(vec2 pixel) {
     return fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
 }
 
+// The comfort vignette (I10 step 3): clear within a disc around uTunnelCenter whose radius shrinks from beyond the
+// corners (uTunnel 0) to a third of the view (uTunnel 1), black past its soft edge.
+float tunnel(vec2 uv) {
+    float radius = mix(1.5, 0.35, uTunnel);
+    return 1.0 - smoothstep(radius, radius + 0.2, distance(uv, uTunnelCenter) * 2.0);
+}
+
 // Darkening towards the corners: 1 - uVignette * r^4, with r = 0 at the center of the view and 1 in its corners.
 float vignette(vec2 uv) {
     vec2 fromCenter = uv * 2.0 - 1.0;
@@ -53,6 +60,9 @@ void main() {
     }
     radiance *= vignette(vUv);
     vec3 display = tonemap(radiance, uExposure);
+    if (uTunnel > 0.0) {
+        display *= tunnel(vUv);
+    }
     if (uFade > 0.0) {
         // Scaled where the target quantizes (its sRGB encoding): the view dims evenly, its brightest lights too.
         display = srgbToLinear(linearToSrgb(display) * (1.0 - uFade));

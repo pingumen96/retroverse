@@ -43,6 +43,10 @@ public:
     void teleportToCamera(const scene::CameraSetup& camera) noexcept;
     /// Walls and furniture stop the walker while enabled (the default); disabled, it walks through them.
     void setCollisionEnabled(bool enabled) noexcept { m_collisionEnabled = enabled; }
+    /// The collision world the walker moves through: null while collision is off (the VR mode's movement, I10 step 3).
+    [[nodiscard]] const scene::CollisionWorld* collision() const noexcept {
+        return m_collisionEnabled ? &m_collision : nullptr;
+    }
     /// The walker, for the developer overlay (pose, speeds).
     [[nodiscard]] scene::FirstPersonController& controller() noexcept { return m_controller; }
 

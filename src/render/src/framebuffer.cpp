@@ -458,6 +458,46 @@ void Framebuffer::copyColorTo(const Framebuffer& destination) const {
                            target.x, target.y, GL_COLOR_BUFFER_BIT, filter);
 }
 
+void Framebuffer::copyColorTo(const Framebuffer& destination, glm::ivec2 offset) const {
+    if (!valid() || !destination.valid()) {
+        return;
+    }
+    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y,
+                           offset.x, offset.y, offset.x + m_desc.size.x, offset.y + m_desc.size.y, GL_COLOR_BUFFER_BIT,
+                           GL_NEAREST);
+}
+
+void Framebuffer::copyColorTo(const TextureTarget& destination) const {
+    if (!valid() || !destination.valid()) {
+        return;
+    }
+    const glm::ivec2 target = destination.m_size;
+    const GLenum filter = target == m_desc.size ? GL_NEAREST : GL_LINEAR;
+    glBlitNamedFramebuffer(m_framebuffer.id(), destination.m_framebuffer.id(), 0, 0, m_desc.size.x, m_desc.size.y, 0, 0,
+                           target.x, target.y, GL_COLOR_BUFFER_BIT, filter);
+}
+
+void Framebuffer::blitToDefaultFilled(RenderStateCache& state, glm::ivec2 windowSize) const {
+    if (!valid() || windowSize.x <= 0 || windowSize.y <= 0) {
+        return;
+    }
+    // The source rectangle with the window's proportions: full width and a band of the height, or the reverse.
+    const glm::ivec2 size = m_desc.size;
+    glm::ivec2 crop = size;
+    if (static_cast<long long>(size.x) * windowSize.y > static_cast<long long>(size.y) * windowSize.x) {
+        crop.x = std::max(1, static_cast<int>(static_cast<long long>(size.y) * windowSize.x / windowSize.y));
+    } else {
+        crop.y = std::max(1, static_cast<int>(static_cast<long long>(size.x) * windowSize.y / windowSize.x));
+    }
+    const glm::ivec2 origin = (size - crop) / 2;
+    state.setFramebufferSrgb(false);
+    const GLenum filter = windowSize == crop ? GL_NEAREST : GL_LINEAR;
+    glBlitNamedFramebuffer(m_framebuffer.id(), 0, origin.x, origin.y, origin.x + crop.x, origin.y + crop.y, 0, 0,
+                           windowSize.x, windowSize.y, GL_COLOR_BUFFER_BIT, filter);
+    unbind();
+    state.setViewport(glm::ivec4(0, 0, windowSize.x, windowSize.y));
+}
+
 void Framebuffer::blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) const {
     if (!valid() || windowSize.x <= 0 || windowSize.y <= 0) {
         return;
@@ -537,6 +577,32 @@ Expected<std::vector<glm::vec4>> Framebuffer::readLinearPixels() const {
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glGetTextureImage(m_colors[0].id(), 0, GL_RGBA, GL_FLOAT, static_cast<GLsizei>(byteCount), pixels.data());
     return pixels;
+}
+
+Expected<TextureTarget> TextureTarget::create(GLuint texture, glm::ivec2 size, std::string_view debugName) {
+    if (texture == 0 || size.x <= 0 || size.y <= 0) {
+        return makeError(ErrorCode::InvalidArgument, "a texture target needs a texture and a size",
+                         std::string(debugName));
+    }
+    GLuint framebuffer = 0;
+    glCreateFramebuffers(1, &framebuffer);
+    TextureTarget target;
+    target.m_framebuffer = FramebufferObject(framebuffer);
+    if (framebuffer == 0) {
+        return makeError(ErrorCode::GraphicsError, "glCreateFramebuffers returned no framebuffer",
+                         std::string(debugName));
+    }
+    detail::setObjectLabel(GL_FRAMEBUFFER, framebuffer, debugName);
+    glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, texture, 0);
+    glNamedFramebufferDrawBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+    const GLenum status = glCheckNamedFramebufferStatus(framebuffer, GL_DRAW_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        return makeError(ErrorCode::GraphicsError, fmt::format("incomplete framebuffer (status 0x{:X})", status),
+                         std::string(debugName));
+    }
+    target.m_texture = texture;
+    target.m_size = size;
+    return target;
 }
 
 } // namespace rv::gl

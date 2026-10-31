@@ -27,6 +27,7 @@ tools).
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also the GPU smoke tests (label "gpu")
 ./scripts/gate.ps1 -Gate D                            # the latest gate: build matrix, tests, goldens, benchmark path
 ./scripts/gate.ps1 -Gate D -RealLibrary               # also the real library's building, migrations and SNES room
+./scripts/gate.ps1 -Gate VR                           # I10: Gate D, then golden G21 and the VR benchmark path
 ./scripts/real-library.ps1 -Filter '[real-library][building]'   # the real library, ES-DE closed (see Safety)
 ```
 
@@ -89,7 +90,8 @@ screenshots: `docs/reference/visual-verification.md`.
   (miniaudio only inside, never `media`), `launcher` (GPU-free) -> `catalog` (domain and ports) -> `esde` (pugixml
   private), `catalog_db` (SQLite private),
   `world` (the generator, GPU-free), `platform_win` -> `platform` (SDL3) -> `render` (OpenGL through glad, no SDL)
-  -> `devui` (Dear ImGui, developer builds), `ui` (RmlUi) -> `app` (composition root) -> `retroverse.exe`. Forbidden
+  -> `devui` (Dear ImGui, developer builds), `ui` (RmlUi), `xr` (VR, the OpenXR loader only inside; I10) -> `app`
+  (composition root) -> `retroverse.exe`. Forbidden
   links are enforced at configure time (`cmake/LayerRules.cmake`, `rv_forbid_link`); GPU-free parts of the app live in
   `rv_app_cli` and `rv_app_catalog`. What each module holds: `docs/reference/layout.md`.
 - Tools: `tools/cli`, `tools/asset-preview`, `tools/screenshot-diff`, each with a GPU-free core tested by `rv_tests`.

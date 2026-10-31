@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -29,8 +30,18 @@ constexpr std::string_view kToFrameField = "toFrame";
 constexpr std::string_view kActionsField = "actions";
 constexpr std::string_view kTextField = "text";
 constexpr std::string_view kPhaseField = "phase";
-constexpr std::array<std::string_view, 5> kStepFields{kFromFrameField, kToFrameField, kActionsField, kTextField,
-                                                      kPhaseField};
+constexpr std::string_view kHeadPoseField = "headPose";
+constexpr std::string_view kLeftHandField = "leftHand";
+constexpr std::string_view kRightHandField = "rightHand";
+constexpr std::string_view kLeftSelectField = "leftSelect";
+constexpr std::string_view kRightSelectField = "rightSelect";
+constexpr std::string_view kLeftStickField = "leftStick";
+constexpr std::string_view kRightStickField = "rightStick";
+constexpr std::array<std::string_view, 12> kStepFields{
+    kFromFrameField, kToFrameField,   kActionsField,    kTextField,        kPhaseField,     kHeadPoseField,
+    kLeftHandField,  kRightHandField, kLeftSelectField, kRightSelectField, kLeftStickField, kRightStickField};
+constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
+constexpr float kMaxHeadPitchDeg = 90.0f;
 
 Expected<std::uint64_t> parseFrame(const Json& step, std::string_view field, const JsonLocation& stepAt) {
     const JsonLocation at = stepAt.child(field);
@@ -76,6 +87,70 @@ Expected<float> parseValue(Action action, const Json& value, const JsonLocation&
                     at);
     }
     return number;
+}
+
+Expected<float> parseAngle(const Json& pose, std::string_view field, float limit, const JsonLocation& poseAt) {
+    const auto it = pose.find(field);
+    if (it == pose.end()) {
+        return 0.0f;
+    }
+    const JsonLocation at = poseAt.child(field);
+    if (!it->is_number()) {
+        return fail(ErrorCode::ParseError, "expected degrees (a number)", at);
+    }
+    const auto degrees = static_cast<float>(it->get<double>());
+    if (!std::isfinite(degrees) || std::abs(degrees) > limit) {
+        return fail(ErrorCode::ValidationFailed, "degrees out of range", at);
+    }
+    return degrees;
+}
+
+Expected<ScriptedHeadPose> parseHeadPose(const Json& pose, const JsonLocation& at) {
+    if (!pose.is_object()) {
+        return fail(ErrorCode::ParseError,
+                    "expected a head pose such as {\"yaw\": 30, \"pitch\": -10, \"position\": [0, 1.65, 0]}", at);
+    }
+    for (const auto& item : pose.items()) {
+        if (std::find(kHeadPoseFields.begin(), kHeadPoseFields.end(), item.key()) == kHeadPoseFields.end()) {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), at.child(item.key()));
+        }
+    }
+    ScriptedHeadPose parsed;
+    const auto yaw = parseAngle(pose, "yaw", std::numeric_limits<float>::max(), at);
+    if (!yaw) {
+        return propagate(yaw.error());
+    }
+    const auto pitch = parseAngle(pose, "pitch", kMaxHeadPitchDeg, at);
+    if (!pitch) {
+        return propagate(pitch.error());
+    }
+    const auto roll = parseAngle(pose, "roll", std::numeric_limits<float>::max(), at);
+    if (!roll) {
+        return propagate(roll.error());
+    }
+    parsed.yawDeg = *yaw;
+    parsed.pitchDeg = *pitch;
+    parsed.rollDeg = *roll;
+    if (const auto position = pose.find("position"); position != pose.end()) {
+        const JsonLocation positionAt = at.child("position");
+        if (!position->is_array() || position->size() != 3) {
+            return fail(ErrorCode::ParseError, "expected [x, y, z] in meters", positionAt);
+        }
+        glm::vec3 xyz(0.0f);
+        for (std::size_t i = 0; i < 3; ++i) {
+            const Json& value = (*position)[i];
+            if (!value.is_number()) {
+                return fail(ErrorCode::ParseError, "expected [x, y, z] in meters", positionAt);
+            }
+            xyz[static_cast<glm::length_t>(i)] = static_cast<float>(value.get<double>());
+            if (!std::isfinite(xyz[static_cast<glm::length_t>(i)]) ||
+                std::abs(xyz[static_cast<glm::length_t>(i)]) > ScriptedHeadPose::kMaxCoordinate) {
+                return fail(ErrorCode::ValidationFailed, "a coordinate out of range", positionAt);
+            }
+        }
+        parsed.position = xyz;
+    }
+    return parsed;
 }
 
 Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
@@ -145,13 +220,61 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
         }
     }
 
+    if (const auto pose = step.find(kHeadPoseField); pose != step.end()) {
+        auto headPose = parseHeadPose(*pose, at.child(kHeadPoseField));
+        if (!headPose) {
+            return propagate(headPose.error());
+        }
+        parsed.headPose = *headPose;
+    }
+    // I10 step 4: the hands' controllers, posed like the head.
+    for (const auto& [field, hand] : {std::pair{kLeftHandField, &parsed.leftHand}, std::pair{kRightHandField,
+                                                                                             &parsed.rightHand}}) {
+        if (const auto pose = step.find(field); pose != step.end()) {
+            auto handPose = parseHeadPose(*pose, at.child(field));
+            if (!handPose) {
+                return propagate(handPose.error());
+            }
+            *hand = *handPose;
+        }
+    }
+    // I10 step 5: the triggers.
+    for (const auto& [field, select] : {std::pair{kLeftSelectField, &parsed.leftSelect},
+                                        std::pair{kRightSelectField, &parsed.rightSelect}}) {
+        if (const auto value = step.find(field); value != step.end()) {
+            if (!value->is_number() || !std::isfinite(value->get<double>()) || value->get<double>() < 0.0 ||
+                value->get<double>() > 1.0) {
+                return fail(ErrorCode::ValidationFailed, "expected a number from 0 to 1", at.child(field));
+            }
+            *select = value->get<float>();
+        }
+    }
+    // I10 step 10: the thumbsticks.
+    for (const auto& [field, stick] : {std::pair{kLeftStickField, &parsed.leftStick},
+                                       std::pair{kRightStickField, &parsed.rightStick}}) {
+        if (const auto value = step.find(field); value != step.end()) {
+            const auto inRange = [](const Json& axis) {
+                return axis.is_number() && std::isfinite(axis.get<double>()) && axis.get<double>() >= -1.0 &&
+                       axis.get<double>() <= 1.0;
+            };
+            if (!value->is_array() || value->size() != 2 || !inRange((*value)[0]) || !inRange((*value)[1])) {
+                return fail(ErrorCode::ValidationFailed, "expected [x, y], each a number from -1 to 1",
+                            at.child(field));
+            }
+            *stick = glm::vec2((*value)[0].get<float>(), (*value)[1].get<float>());
+        }
+    }
+
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
-        if (!parsed.text.empty() || !parsed.phase.empty()) {
+        if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand ||
+            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick) {
             return parsed;
         }
-        return fail(ErrorCode::ParseError, "missing field \"actions\" (or \"text\", \"phase\")", actionsAt);
+        return fail(ErrorCode::ParseError,
+                    "missing field \"actions\" (or \"text\", \"phase\", \"headPose\", \"leftHand\", \"rightHand\")",
+                    actionsAt);
     }
     if (!actions->is_object()) {
         return fail(ErrorCode::ParseError, "expected an object mapping action names to values", actionsAt);
@@ -251,6 +374,49 @@ std::string InputScript::textAt(std::uint64_t frame) const {
         }
     }
     return text;
+}
+
+std::optional<ScriptedHeadPose> InputScript::headPoseAt(std::uint64_t frame) const {
+    std::optional<ScriptedHeadPose> pose;
+    for (const InputScriptStep& step : m_steps) {
+        if (step.headPose && step.covers(frame)) {
+            pose = step.headPose;
+        }
+    }
+    return pose;
+}
+
+std::optional<ScriptedHeadPose> InputScript::handPoseAt(std::uint64_t frame, bool right) const {
+    std::optional<ScriptedHeadPose> pose;
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<ScriptedHeadPose>& hand = right ? step.rightHand : step.leftHand;
+        if (hand && step.covers(frame)) {
+            pose = hand;
+        }
+    }
+    return pose;
+}
+
+float InputScript::handSelectAt(std::uint64_t frame, bool right) const {
+    float select = 0.0f;
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<float>& value = right ? step.rightSelect : step.leftSelect;
+        if (value && step.covers(frame)) {
+            select = *value;
+        }
+    }
+    return select;
+}
+
+glm::vec2 InputScript::handStickAt(std::uint64_t frame, bool right) const {
+    glm::vec2 stick(0.0f);
+    for (const InputScriptStep& step : m_steps) {
+        const std::optional<glm::vec2>& value = right ? step.rightStick : step.leftStick;
+        if (value && step.covers(frame)) {
+            stick = *value;
+        }
+    }
+    return stick;
 }
 
 std::vector<std::string> InputScript::phasesAt(std::uint64_t frame) const {

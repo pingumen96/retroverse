@@ -19,6 +19,7 @@
 namespace rv::gl {
 
 class RenderStateCache;
+class TextureTarget;
 
 /// Internal format of a framebuffer's color attachment.
 enum class ColorFormat : std::uint8_t {
@@ -143,12 +144,23 @@ public:
     /// format (clamped to [0, 1] for Srgb8Alpha8, and encoded to sRGB while GL_FRAMEBUFFER_SRGB is enabled). Does
     /// nothing for an empty framebuffer.
     void copyColorTo(const Framebuffer& destination) const;
+    /// Copies the color attachment unscaled into `destination`'s with its lower left corner at `offset` (pixels),
+    /// clipped to `destination`: the bytes verbatim while GL_FRAMEBUFFER_SRGB is disabled (two views side by side in
+    /// one image). Does nothing for an empty framebuffer.
+    void copyColorTo(const Framebuffer& destination, glm::ivec2 offset) const;
+    /// Copies the color attachment into `destination`'s texture (an XR swapchain's image), stretched to its size: the
+    /// bytes verbatim at the same size while GL_FRAMEBUFFER_SRGB is disabled. Does nothing for an empty framebuffer or
+    /// target.
+    void copyColorTo(const TextureTarget& destination) const;
 
     /// Copies the color attachment to the default framebuffer, stretched over (0, 0)-(windowSize), then binds the
     /// default framebuffer with a matching viewport for overlays. GL_FRAMEBUFFER_SRGB is disabled first, so the stored
     /// bytes are copied verbatim: the window shows the same pixels as readPixels() returns, whether or not the
     /// window's framebuffer is sRGB-capable. Does nothing for an empty framebuffer or an empty window.
     void blitToDefault(RenderStateCache& state, glm::ivec2 windowSize) const;
+    /// Like blitToDefault(), but the window is filled without distortion: the largest centred part of the image with
+    /// the window's proportions is stretched over it (the VR mirror: an eye's image in a wider window).
+    void blitToDefaultFilled(RenderStateCache& state, glm::ivec2 windowSize) const;
     /// Clears the default framebuffer to opaque black and binds it with a viewport of (0, 0)-(windowSize), the state
     /// blitToDefault() leaves: the window of a frame that has no view to show, under the overlays drawn next. Does
     /// nothing for an empty window.
@@ -195,6 +207,29 @@ private:
     FramebufferObject m_framebuffer;
     GpuMemoryAllocation m_memory;
     bool m_alias = false;
+};
+
+/// A framebuffer that draws into a color texture someone else owns (an XR swapchain's image, ADR-0017 §2): one color
+/// attachment and no depth, the target of Framebuffer::copyColorTo(). The texture must outlive it. Move-only; a
+/// default-constructed or moved-from TextureTarget is empty. Main thread only.
+class TextureTarget {
+public:
+    TextureTarget() noexcept = default;
+
+    /// Attaches `texture` (a 2D texture of `size` pixels). Errors: GraphicsError when no framebuffer can be created or
+    /// the driver reports it incomplete with that texture.
+    [[nodiscard]] static Expected<TextureTarget> create(GLuint texture, glm::ivec2 size, std::string_view debugName);
+
+    [[nodiscard]] bool valid() const noexcept { return m_framebuffer.valid(); }
+    [[nodiscard]] glm::ivec2 size() const noexcept { return m_size; }
+    [[nodiscard]] GLuint texture() const noexcept { return m_texture; }
+
+private:
+    friend class Framebuffer;
+
+    FramebufferObject m_framebuffer;
+    GLuint m_texture = 0;
+    glm::ivec2 m_size{0};
 };
 
 } // namespace rv::gl

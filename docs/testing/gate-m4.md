@@ -26,10 +26,10 @@ or showing a window where the user sees it fails the gate), everything Gate D ru
 - **Gate A's build matrix**: `msvc-x64-debug`, `msvc-x64-relwithdebinfo` and `msvc-x64-release`, a compiler, linker or
   CMake warning failing its row.
 - **The unit tests and the GPU smoke tests** of Debug and Release (ctest's `unit` and `gpu` labels, the goldens apart).
-- **Every golden**, G01 to G20, in Debug and Release, a row per golden with the verdict its case writes; a golden the
+- **Every golden**, G01 to G21, in Debug and Release, a row per golden with the verdict its case writes; a golden the
   run does not report, or one that skips, fails its row (as at Gate M3). I5 added G19 (a console room with both screens
   frozen) and G20 (a cabinet playing in Focus); its steps regenerated the goldens where a secondary TV stands, G15, G17
-  and G20 on purpose.
+  and G20 on purpose. G21 (both eyes in the test room) is I10's.
 - **Gate C's I4 rows and Gate D's I6 rows**, per Debug and Release, counted from the unit and GPU runs (`$i4Areas`,
   `$i6Areas`).
 - **The I5 checks**, per Debug and Release, one row per area counted from the unit and GPU runs (`scripts/gate.ps1`'s

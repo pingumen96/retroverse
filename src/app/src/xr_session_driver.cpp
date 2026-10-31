@@ -1,0 +1,217 @@
+#include <rv/app/xr_session_driver.hpp>
+
+#include <chrono>
+#include <utility>
+
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
+
+#include <rv/core/math.hpp>
+#include <rv/core/text.hpp>
+#include <rv/input/input_script.hpp>
+#include <rv/xr/fake_runtime.hpp>
+#include <rv/xr/gl_images.hpp>
+#include <rv/xr/xr_bindings.hpp>
+#if defined(RV_XR_OPENXR)
+#include <rv/xr/openxr_runtime.hpp>
+#endif
+
+namespace rv::app {
+namespace {
+
+/// How long an interactive run waits for a headset the runtime does not see yet; frame-limited runs never wait.
+constexpr std::chrono::milliseconds kInteractiveHeadsetWait{15000};
+
+/// The fake runtime's head at an input script's head pose.
+xr::Pose headPoseOf(const input::ScriptedHeadPose& scripted, float standingHeight) {
+    const xr::Angles angles{core::degreesToRadians(scripted.yawDeg), core::degreesToRadians(scripted.pitchDeg),
+                            core::degreesToRadians(scripted.rollDeg)};
+    return xr::Pose{xr::orientationOf(angles), scripted.position.value_or(glm::vec3(0.0f, standingHeight, 0.0f))};
+}
+
+void describe(const xr::RuntimeDescription& description, XrRecord& record) {
+    record.runtime = description.runtime;
+    record.runtimeVersion = description.runtimeVersion;
+    record.system = description.system;
+    record.extensions = description.extensions;
+    record.space = description.space;
+    record.recommendedEyeSize = description.recommendedEyeSize;
+    record.eyeSize = description.eyeSize;
+    record.renderScale = description.renderScale;
+    record.format = description.format;
+    record.srgb = description.srgb;
+    record.imagesPerEye = description.imagesPerEye;
+    record.refreshRates = description.refreshRates;
+}
+
+} // namespace
+
+std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions& options,
+                                                        const xr::XrSettings& settings, const core::Paths& paths,
+                                                        XrRecord& record) {
+    const XrOptions& xrOptions = options.xr;
+    const double renderScale = xrOptions.renderScale.value_or(settings.renderScale);
+    // I10 step 9: the refresh rate asked for, --xr-refresh-rate's over xr.json's (0 there: the runtime's own).
+    std::optional<float> refreshRate = xrOptions.refreshRate;
+    if (!refreshRate && settings.refreshRate > 0.0f) {
+        refreshRate = settings.refreshRate;
+    }
+    record.runtimeChoice = std::string(toString(xrOptions.runtime));
+    record.posture = std::string(xr::toString(settings.posture));
+    record.turn = std::string(xr::toString(settings.comfort.turn));
+    const auto unavailable = [&](std::string why) -> std::unique_ptr<XrSessionDriver> {
+        spdlog::warn("VR unavailable, the run stays on the desktop: {}", why);
+        record.unavailable = std::move(why);
+        return nullptr;
+    };
+
+    std::unique_ptr<xr::Runtime> runtime;
+    const xr::FakeRuntime* fake = nullptr;
+    if (xrOptions.runtime == XrRuntimeChoice::Fake) {
+        xr::FakeRuntimeConfig config;
+        config.renderScale = renderScale;
+        // A Quest 3S's rates (XR_FB_display_refresh_rate), 72 Hz until another is asked for.
+        config.refreshRates = {72.0f, 80.0f, 90.0f, 120.0f};
+        config.refreshRate = refreshRate;
+        config.loseAfterFrames = xrOptions.fakeLoseAfterFrames;
+        for (std::uint64_t frame = 0; frame < xrOptions.fakeUntrackedFrames.value_or(0); ++frame) {
+            config.untrackedFrames.push_back(frame);
+        }
+        if (options.inputScript) {
+            auto loaded = input::InputScript::loadFromFile(*options.inputScript);
+            if (!loaded) {
+                return unavailable("the input script's head poses: " + loaded.error().toString());
+            }
+            config.headPose = [script = *loaded,
+                               height = config.eyeHeight](std::uint64_t frame) -> std::optional<xr::Pose> {
+                if (const std::optional<input::ScriptedHeadPose> pose = script.headPoseAt(frame)) {
+                    return headPoseOf(*pose, height);
+                }
+                return std::nullopt;
+            };
+            // I10 step 5: their triggers.
+            config.handSelect = [script = *loaded](std::uint64_t frame, xr::Hand hand) {
+                return script.handSelectAt(frame, hand == xr::Hand::Right);
+            };
+            // I10 step 10: their thumbsticks.
+            config.handStick = [script = *loaded](std::uint64_t frame, xr::Hand hand) {
+                return script.handStickAt(frame, hand == xr::Hand::Right);
+            };
+            // I10 step 4: the controllers the script holds, resting at hip height in front of the user.
+            config.handPose = [script = std::move(*loaded)](std::uint64_t frame,
+                                                            xr::Hand hand) -> std::optional<xr::Pose> {
+                const bool right = hand == xr::Hand::Right;
+                if (const std::optional<input::ScriptedHeadPose> pose = script.handPoseAt(frame, right)) {
+                    const glm::vec3 resting(right ? 0.2f : -0.2f, 1.1f, -0.3f);
+                    return headPoseOf(input::ScriptedHeadPose{pose->yawDeg, pose->pitchDeg, pose->rollDeg,
+                                                              pose->position.value_or(resting)},
+                                      0.0f);
+                }
+                return std::nullopt;
+            };
+        }
+        auto created = std::make_unique<xr::FakeRuntime>(xr::withGlImages(std::move(config)));
+        if (created->images(0).empty() || created->images(1).empty()) {
+            return unavailable("the fake runtime's swapchain images could not be created");
+        }
+        fake = created.get();
+        runtime = std::move(created);
+    } else {
+#if defined(RV_XR_OPENXR)
+        xr::OpenXrOptions openXr;
+        openXr.runtimeJson = xrOptions.runtimeJson.value_or(std::filesystem::path());
+        openXr.headsetWait = options.frameLimit ? std::chrono::milliseconds(0) : kInteractiveHeadsetWait;
+        openXr.renderScale = renderScale;
+        // The controllers' bindings (xr_bindings.json, I10 step 4); without them the pad alone drives the mode.
+        if (auto bindings = xr::loadXrBindings(paths.assetRoot(), paths.configDir())) {
+            for (const Error& issue : bindings->issues) {
+                spdlog::warn("The user's xr_bindings.json is left out, its defaults used: {}", issue.toString());
+            }
+            openXr.bindings = std::move(bindings->bindings);
+        } else {
+            spdlog::warn("xr_bindings.json could not be read, no controller is read: {}", bindings.error().toString());
+        }
+        openXr.refreshRate = refreshRate;
+        auto created = xr::createOpenXrRuntime(openXr);
+        if (!created) {
+            return unavailable(created.error().toString());
+        }
+        runtime = std::move(*created);
+#else
+        return unavailable("this build has no OpenXR loader (RV_ENABLE_XR off)");
+#endif
+    }
+
+    describe(runtime->description(), record);
+    record.started = true;
+    const xr::RuntimeDescription& description = runtime->description();
+    spdlog::info("VR: {} ({} {}), headset '{}', eyes {}x{} at render scale {:g}, {} space", description.backend,
+                 description.runtime, description.runtimeVersion, description.system, description.eyeSize.x,
+                 description.eyeSize.y, description.renderScale, description.space);
+    return std::unique_ptr<XrSessionDriver>(
+        new XrSessionDriver(std::make_unique<xr::Session>(std::move(runtime)), fake));
+}
+
+XrSessionDriver::XrSessionDriver(std::unique_ptr<xr::Session> session, const xr::FakeRuntime* fake)
+    : m_session(std::move(session)), m_fake(fake) {}
+
+XrSessionDriver::~XrSessionDriver() = default;
+
+void XrSessionDriver::pollEvents() {
+    m_session->pollEvents();
+}
+
+std::optional<xr::Frame> XrSessionDriver::beginFrame() {
+    auto frame = m_session->beginFrame();
+    if (!frame) {
+        spdlog::error("VR frame failed: {}", frame.error().toString());
+        return std::nullopt;
+    }
+    return *frame;
+}
+
+void XrSessionDriver::endFrame(bool rendered) {
+    if (auto ended = m_session->endFrame(rendered); !ended) {
+        spdlog::error("VR frame not submitted: {}", ended.error().toString());
+    }
+}
+
+void XrSessionDriver::requestExit() {
+    m_session->requestExit();
+}
+
+void XrSessionDriver::vibrate(xr::Hand hand, float amplitude, float seconds) {
+    ++m_vibrations;
+    m_session->vibrate(hand, amplitude, seconds);
+}
+
+void XrSessionDriver::finish(XrRecord& record) const {
+    describe(m_session->description(), record);
+    record.refreshRate = m_session->currentRefreshRate();
+    record.reachedFocused = m_session->reachedFocused();
+    record.endReason = m_session->endReason();
+    record.framesWaited = m_session->framesWaited();
+    const xr::FrameSummary summary = m_session->frameSummary();
+    record.framesWithViews = summary.rendered;
+    record.refreshHz = summary.refreshHz;
+    record.missedRefreshes = summary.missedRefreshes;
+    record.missedFraction = summary.missedFraction;
+    if (summary.cpu.count > 0) {
+        record.cpuTimes = TimeSummary{summary.cpu.count, summary.cpu.p50Ms, summary.cpu.p95Ms, summary.cpu.p99Ms,
+                                      summary.cpu.maxMs};
+    }
+    record.interactionProfiles = m_session->description().interactionProfiles;
+    record.leftController = m_session->profiles()[0];
+    record.rightController = m_session->profiles()[1];
+    record.vibrations = m_vibrations;
+    record.events.clear();
+    for (const xr::SessionEvent& event : m_session->events()) {
+        record.events.push_back(fmt::format("{}: {}", event.frame, event.what));
+    }
+    if (m_fake != nullptr) {
+        spdlog::info("VR fake runtime: {} frame(s) ended, {} with both eyes", m_fake->framesEnded(),
+                     m_fake->framesWithViews());
+    }
+}
+
+} // namespace rv::app

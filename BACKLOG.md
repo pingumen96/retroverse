@@ -11,7 +11,8 @@ Ideas and deferred work that is out of scope for the current iteration. Pull ite
 
 - Writing back to `gamelist.xml` (spec §4.6): read-only until a round-trip test suite exists.
 - Legacy EmulationStation, RetroBat and Batocera library adapters.
-- VR, Linux build, hardware video decoding (D3D11VA), OpenGL 3.3 fallback.
+- Linux build, hardware video decoding (D3D11VA), OpenGL 3.3 fallback. (VR left this list on 2026-10-29: ADR-0017,
+  iteration I10.)
 - Alternative world style presets beyond `RetroMuseumCozy` (style §18).
 
 ## Follow-ups from M0
@@ -713,6 +714,24 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   the objects that changed; the old ones stay registered (unused), across sessions, until the floor is committed again
   (a ride, a building's result, a refresh's commit). Sessions that move furniture for long grow them a little;
   releasing unused entries needs reference counts in the registries.
+
+## Follow-ups from I10
+
+Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
+
+- **Hand tracking** (`XR_EXT_hand_tracking`): pointing and pinching without the controllers.
+- **Passthrough and mixed reality** (`XR_FB_passthrough` or the environment blend modes): the room around the real one.
+- **The Touch controllers as the emulator's pad:** a virtual XInput pad needs a third-party kernel driver (ViGEmBus, a
+  retired project) installed by hand; the physical pad plays the game instead.
+- **A Linux runtime** (Monado), with the Linux build.
+- **The UI as compositor layers** (I10 step 5): ADR-0017 §6's `XrCompositionLayerQuad` per panel, sharper text than the
+  panel drawn into the eyes; the card beside its item in the world and the labels as small quads of their own, which
+  need the UI's documents drawn apart.
+- **The insertion in VR** (the merge with main, 2026-10-31): I5 step 9's insertion into the console does not run in a
+  headset, because its eye leads by turning the walker, which is the user's head there (ADR-0017's amendment of
+  2026-10-31). The item could still fly from the hand into the socket with the head left alone, and with a hint
+  (a glow on the console, a haptic tick) when the console is out of view; it needs the held pose from the hand (I10
+  step 4) composed with `insertedItemTransform()`, and a trial in the headset.
 
 ## Follow-ups from I5
 

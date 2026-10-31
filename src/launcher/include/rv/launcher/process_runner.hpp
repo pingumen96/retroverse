@@ -44,6 +44,9 @@ struct ProcessEvent {
     std::string image;
     /// WatchFailed: why.
     std::string message;
+    /// WindowShown: the window found (an HWND as an integer; 0 where the runner has none), I10 step 6: the VR mode
+    /// captures it onto the room's CRT.
+    std::uintptr_t window = 0;
 };
 
 /// A started process and its tree, followed by a runner until stopWatching() or destruction. Implementations never

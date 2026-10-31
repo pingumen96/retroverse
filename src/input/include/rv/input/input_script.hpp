@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <nlohmann/json_fwd.hpp>
 
 #include <rv/core/expected.hpp>
@@ -21,6 +23,21 @@ namespace rv::input {
 
 /// One step of an input script: on every frame from fromFrame to toFrame (both included) the listed actions take the
 /// given values.
+/// A head pose an input script gives the VR mode's fake runtime (I10 step 2): where the head looks, degrees (yaw and
+/// pitch as the camera's: 0 looks at -Z, positive yaw turns right and positive pitch looks up; positive roll tilts the
+/// head to the right), and where it is in the tracking space, meters (nothing: the fake runtime's standing head).
+struct ScriptedHeadPose {
+    /// Largest |coordinate| accepted, meters.
+    static constexpr float kMaxCoordinate = 100.0f;
+
+    float yawDeg = 0.0f;
+    float pitchDeg = 0.0f;
+    float rollDeg = 0.0f;
+    std::optional<glm::vec3> position;
+
+    bool operator==(const ScriptedHeadPose&) const = default;
+};
+
 struct InputScriptStep {
     std::uint64_t fromFrame = 0;
     std::uint64_t toFrame = 0;
@@ -32,6 +49,18 @@ struct InputScriptStep {
     /// A named phase of the run (app::FrameTiming) open on every frame of the step: its frame times are reported apart
     /// (the run report's phases). Empty: none.
     std::string phase;
+    /// The head's pose on every frame of the step, for the VR mode's fake runtime (ScriptedHeadPose). Nothing: none.
+    std::optional<ScriptedHeadPose> headPose;
+    /// The left and right controllers' poses (I10 step 4), in the same terms; nothing: that hand holds none.
+    std::optional<ScriptedHeadPose> leftHand;
+    std::optional<ScriptedHeadPose> rightHand;
+    /// Their triggers on every frame of the step (I10 step 5: "leftSelect", "rightSelect", [0, 1]); nothing: released.
+    std::optional<float> leftSelect;
+    std::optional<float> rightSelect;
+    /// Their thumbsticks on every frame of the step (I10 step 10: "leftStick", "rightStick", [x, y] in [-1, 1], +y
+    /// pushed forward); nothing: centered.
+    std::optional<glm::vec2> leftStick;
+    std::optional<glm::vec2> rightStick;
 
     [[nodiscard]] bool covers(std::uint64_t frame) const noexcept { return frame >= fromFrame && frame <= toFrame; }
 };
@@ -58,7 +87,16 @@ struct InputScriptStep {
 ///    report gives apart ({"fromFrame": 40, "toFrame": 99, "phase": "benchmark"}): an ASCII letter, then up to
 ///    kMaxPhaseNameBytes - 1 ASCII letters, digits, '_' or '-' (isValidPhaseName). Steps with the same phase that
 ///    overlap or touch keep it open throughout.
-/// A step has at least one of "actions", "text" and "phase", and an "actions" it has is not empty.
+///  - "headPose" (I10 step 2): the head's pose for the VR mode's fake runtime on every frame of the step,
+///    {"yaw": 30, "pitch": -10, "roll": 0, "position": [0, 1.65, -0.2]}: degrees and meters (ScriptedHeadPose), every
+///    field optional (angles 0, the fake runtime's standing head), finite, |pitch| at most 90 and |coordinates| at
+///    most ScriptedHeadPose::kMaxCoordinate.
+///  - "leftHand", "rightHand" (I10 step 4): a controller's pose in that hand, in the same terms as "headPose" (it
+///    points along its -Z; no position: the fake runtime's resting hand); "leftSelect", "rightSelect" (I10 step 5)
+///    its trigger, a number in [0, 1]; "leftStick", "rightStick" (I10 step 10) its thumbstick, [x, y] in [-1, 1] with
+///    +y pushed forward.
+/// A step has at least one of "actions", "text", "phase", "headPose", "leftHand" and "rightHand", and an "actions" it
+/// has is not empty.
 ///  - Steps may overlap. On a frame where several steps set the same action, the step that comes later in the file
 ///    wins.
 /// Every field is required, unknown fields are errors and a script holds 1 to kMaxSteps steps. Error contexts are
@@ -92,6 +130,14 @@ public:
     [[nodiscard]] std::string textAt(std::uint64_t frame) const;
     /// The phases open on `frame`: the "phase" of every step that covers it, sorted, without repeats.
     [[nodiscard]] std::vector<std::string> phasesAt(std::uint64_t frame) const;
+    /// The head pose on `frame`: the "headPose" of the last step in file order that covers it and has one, or nothing.
+    [[nodiscard]] std::optional<ScriptedHeadPose> headPoseAt(std::uint64_t frame) const;
+    /// A hand's controller on `frame` (the right one when `right`): as headPoseAt() for "rightHand" or "leftHand".
+    [[nodiscard]] std::optional<ScriptedHeadPose> handPoseAt(std::uint64_t frame, bool right) const;
+    /// A hand's trigger on `frame`: the "rightSelect" or "leftSelect" of the last step that covers it, else 0.
+    [[nodiscard]] float handSelectAt(std::uint64_t frame, bool right) const;
+    /// A hand's thumbstick on `frame`: the "rightStick" or "leftStick" of the last step that covers it, else centered.
+    [[nodiscard]] glm::vec2 handStickAt(std::uint64_t frame, bool right) const;
 
 private:
     std::vector<InputScriptStep> m_steps;

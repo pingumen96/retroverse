@@ -1,0 +1,28 @@
+// The VR mode's settings (I10, ADR-0017 §8). The user's <user data>/config/xr.json overrides any of these keys
+// (objects merged member by member); Retroverse reads it and never writes it.
+{
+  "schemaVersion": 1,
+  // "vr": every run starts in the headset, as with --vr (back on the desktop when no headset is found).
+  "display": { "mode": "desktop" },
+  // The eyes' images over the runtime's recommended size, 0.25 to 2 (--xr-render-scale overrides it).
+  "renderScale": 1.0,
+  // The refresh rate asked of the headset, Hz, when its runtime offers a choice (XR_FB_display_refresh_rate: 72, 90,
+  // 120 on a Quest); 0 keeps the runtime's own.
+  "refreshRate": 0,
+  // "standing": the head as high as it is tracked; "seated": made up to the walker's eye height (1.65 m) when the
+  // session starts and at each recentering (the headset's own: hold its menu button).
+  "posture": "standing",
+  // The eyes' rendering: "full" as on the desktop; "fast" without the ambient occlusion and the anti-aliasing (a third
+  // of the GPU's time per eye); "auto": fast from 110 Hz on (120 Hz), full below.
+  "quality": "auto",
+  "comfort": {
+    // The right stick turns by "snap" turns or "smooth"ly.
+    "turn": "snap",
+    "snapDegrees": 30,
+    "smoothDegreesPerSecond": 90,
+    // 0 to 1: how far the view's edges darken while the stick walks or turns smoothly; 0 is off.
+    "vignette": 0,
+    // "head": the left stick walks where the head looks; "hand": where the left controller points.
+    "moveRelativeTo": "head"
+  }
+}

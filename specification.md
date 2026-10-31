@@ -62,7 +62,8 @@ L'utente dispone di una collezione ES-DE con giochi SNES, N64, PlayStation, Play
 - Inclusione o redistribuzione di ROM, BIOS, manuali e asset di terzi senza diritti.
 - Compatibilità completa con tutti i fork EmulationStation come risultato automatico della compatibilità ES-DE.
 - Riproduzione dei videogiochi *all'interno* del televisore virtuale (emulazione embedded): possibile funzione futura, non requisito iniziale.
-- Multiplayer, VR, cloud obbligatorio, visite remote e social network.
+- Multiplayer, cloud obbligatorio, visite remote e social network. (La VR non è più fuori ambito: ADR-0017, iterazione
+  I10.)
 - Un editor di modellazione 3D general-purpose.
 - Un motore di fisica complesso: inizialmente sono sufficienti collisioni e interazioni contestuali.
 
@@ -1490,7 +1491,7 @@ Il catalogo contiene migliaia di giochi. Il primo caricamento avviene a zone; la
 
 - Adapter ES legacy migliorato; RetroBat/Batocera specifici.
 - Altri preset e oggetti interattivi, libreria di asset ampliata, mod.
-- Multi-display avanzato, decoder accelerato, VR in un'architettura dedicata.
+- Multi-display avanzato, decoder accelerato. (La VR è anticipata all'iterazione I10: ADR-0017.)
 - Possibile frontend su Linux dopo astrarre tutti i servizi Windows.
 
 ---
@@ -1537,7 +1538,7 @@ I requisiti critici sono identificati con ID per poterli collegare a issue, test
 | FR-034 | P2 | Multi-screen playlist avanzate | Playlist indipendenti e policy di priorità |
 | FR-035 | P2 | Temi/community mod | Manifest asset di terzi validati |
 | FR-036 | P2 | Adapter Batocera/RetroBat | Suite di compatibilità separata |
-| FR-037 | P2 | VR | Specifica separata, non impatta v1 |
+| FR-037 | P2 | VR | Specifica separata: ADR-0017 (I10), non cambia il desktop |
 
 ## 23.1 Definition of Done generale
 

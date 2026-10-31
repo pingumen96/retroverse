@@ -1,0 +1,16 @@
+// I10 step 2: a look around with the VR mode's fake runtime (retroverse.exe --vr --xr-runtime fake), standing still:
+// head poses only, in the tracking space (LOCAL_FLOOR: the floor under the walker), degrees and meters.
+//   frames  0-9    looking ahead, 1.65 m up
+//   frames 10-19   turned 40 degrees left
+//   frames 20-29   turned 35 degrees right, looking 20 degrees down
+//   frames 30-39   ahead again, tilted 10 degrees to the right, a step forward and a crouch (0.3 m in front, 1.2 m up)
+//   retroverse.exe --vr --xr-runtime fake --scene m0_testroom --hidden --exit-after-frames --frames 40
+//     --fixed-dt 0.016667 --input-script tests/input_scripts/xr_look.json --run-report <report.json>
+//     --screenshot <both eyes.png>
+// tests/smoke/test_xr.cpp reads the run report's head samples and the screenshot of both eyes.
+[
+  {"fromFrame": 0, "toFrame": 9, "headPose": {"position": [0, 1.65, 0]}},
+  {"fromFrame": 10, "toFrame": 19, "headPose": {"yaw": -40, "position": [0, 1.65, 0]}},
+  {"fromFrame": 20, "toFrame": 29, "headPose": {"yaw": 35, "pitch": -20, "position": [0, 1.65, 0]}},
+  {"fromFrame": 30, "toFrame": 39, "headPose": {"roll": 10, "position": [0, 1.2, -0.3]}}
+]

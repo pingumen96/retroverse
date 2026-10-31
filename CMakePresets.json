@@ -31,7 +31,7 @@
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_HOST_TRIPLET": "x64-windows",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg_installed",
-        "VCPKG_MANIFEST_FEATURES": "video;ui",
+        "VCPKG_MANIFEST_FEATURES": "video;ui;xr",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
@@ -74,7 +74,7 @@
       "displayName": "MSVC x64 Profile (Tracy)",
       "cacheVariables": {
         "RV_ENABLE_TRACY": "ON",
-        "VCPKG_MANIFEST_FEATURES": "video;ui;profiling"
+        "VCPKG_MANIFEST_FEATURES": "video;ui;xr;profiling"
       }
     }
   ],

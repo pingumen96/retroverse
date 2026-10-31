@@ -55,6 +55,8 @@
 #include <rv/launcher/emulator_profile.hpp>
 #include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
+#include <rv/platform/window_handover.hpp>
+#include <rv/platform_win/foreground.hpp>
 #include <rv/platform_win/process_priority.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/render/framebuffer.hpp>
@@ -65,6 +67,8 @@
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/xr/pose.hpp>
+#include <rv/xr/render_scale.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
@@ -85,6 +89,9 @@
 #include "screen_service.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
+#include "xr_game.hpp"
+#include "xr_movement.hpp"
+#include "xr_ui.hpp"
 
 namespace rv::app {
 namespace {
@@ -104,6 +111,31 @@ constexpr DebugGrid kSceneDebugGrid{10.0f, 1.0f};
 /// Width / height of a viewport, 16:9 for an empty one.
 float aspectOf(glm::ivec2 size) noexcept {
     return size.x > 0 && size.y > 0 ? static_cast<float>(size.x) / static_cast<float>(size.y) : 16.0f / 9.0f;
+}
+
+/// The walk of a VR frame's controllers while a game runs (I10 step 10): the stick's walk and sprint, the turn and the
+/// teleport's aim, nothing that presses a button of the world or the UI.
+input::ActionState walkOf(const input::ActionState& controllers) noexcept {
+    input::ActionState walk;
+    for (const input::Action action :
+         {input::Action::MoveRight, input::Action::MoveForward, input::Action::LookX, input::Action::LookY}) {
+        walk.setAxis(action, controllers.axis(action));
+    }
+    walk.setButton(input::Action::Sprint, controllers.held(input::Action::Sprint),
+                   controllers.pressed(input::Action::Sprint), controllers.released(input::Action::Sprint));
+    walk.setActiveDevice(controllers.activeDevice());
+    return walk;
+}
+
+/// True when `walk` moves the walker, turns it or aims its teleport.
+bool walks(const input::ActionState& walk) noexcept {
+    for (const input::Action action :
+         {input::Action::MoveRight, input::Action::MoveForward, input::Action::LookX, input::Action::LookY}) {
+        if (walk.axis(action) != 0.0f) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// "world grid (1 m cells out to 10 m), object bounds" for the kinds of `selection`.
@@ -491,9 +523,32 @@ struct RetroverseApp::State {
     gl::ShadowSettings shadowSettings;
     /// ToggleDevUI pressed in a run without the overlay: logged once.
     bool overlayNoticeLogged = false;
-    /// The view camera: the scene camera's lens and pose, then driven by free roam.
+    /// The view camera: the scene camera's lens and pose, then driven by free roam; in a VR frame the head's.
     scene::Camera camera;
+    /// The VR frame's eyes in the world, for onRender (followHead(); none on the desktop).
+    std::optional<XrEyeTargets> xrEyes;
     std::optional<FreeRoam> freeRoam;
+    /// The walker's movement in VR (I10 step 3; none on the desktop), and what it adds to the view (the teleport's
+    /// arc): the view's items copied with the arc's after them.
+    std::optional<XrMovement> xrMovement;
+    XrProps xrProps;
+    std::vector<scene::RenderItem> xrItems;
+    bool xrPropsFailed = false;
+    /// The VR frame's controllers (I10 step 4) and the item their ray rested on last frame (a vibration when it moves
+    /// onto another).
+    XrHands xrHands;
+    world::PickId xrHovered = world::kNoPick;
+    /// The product UI in the headset (I10 step 5): its panel, and whether the eyes drew it this frame (the window and
+    /// the screenshots then show it through them, not as an overlay).
+    XrUi xrUi;
+    bool xrUiDrawn = false;
+    /// The launched game on the hero CRT (I10 step 6).
+    XrGame xrGame;
+    /// I10 step 10: the game's window given the foreground, and the foreground last logged while a game ran in VR.
+    std::uintptr_t xrForegroundGiven = 0;
+    platform_win::ForegroundWindow xrForeground;
+    /// The eyes' dynamic render scale (I10 step 7): interactive runs only, so that frame-limited runs render alike.
+    xr::RenderScale renderScale;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -628,6 +683,283 @@ struct RetroverseApp::State {
         return record;
     }
 
+    /// The walker's actions of a located VR frame move it through the head's movement (I10 step 3, XrMovement); false
+    /// on the desktop and while tracking is lost (the walker moves as on the desktop, or stays).
+    bool moveInXr(AppContext& context, const input::ActionState& actions, double deltaSeconds) {
+        const xr::Frame* frame = context.xrFrame();
+        if (frame == nullptr || !frame->located || !freeRoam || !xrMovement) {
+            return false;
+        }
+        xrMovement->update(*frame, actions, xrHands, static_cast<float>(deltaSeconds), *freeRoam, camera);
+        return true;
+    }
+
+    /// The pointing controller's ray on the UI's world panel (I10 step 5): the UI's mouse there, the trigger its button,
+    /// the right stick its wheel. True while it points at the panel (the trigger is then no interact).
+    bool pointXrUi(AppContext& context) {
+        if (!xrMovement || !product) {
+            return false;
+        }
+        const std::optional<XrUi::Pointing> pointing = xrUi.point(xrHands.pointer().ray());
+        if (!pointing) {
+            product->xrPointer(std::nullopt, false, false, 0.0f);
+            return false;
+        }
+        const float stick = xrHands.pad().state().axes[input::toIndex(input::GamepadAxis::RightY)];
+        const float wheel = std::abs(stick) > 0.3f ? -stick * 0.25f : 0.0f;
+        product->xrPointer(pointing->pixel, xrHands.pointer().selectPressed(), xrHands.pointer().selectReleased(),
+                           wheel);
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            ++record->uiPointedFrames;
+            record->uiClicks += xrHands.pointer().selectPressed() ? 1 : 0;
+        }
+        return true;
+    }
+
+    /// A VR frame's controllers before its input is read (I10 step 4): none on the desktop or while tracking is lost.
+    void updateXrHands(AppContext& context) {
+        if (!xrMovement) {
+            return;
+        }
+        const xr::Frame* frame = context.xrFrame();
+        xrHands.update(frame != nullptr && frame->located ? frame : nullptr, xrMovement->locomotion().anchor());
+    }
+
+    /// The UI's panel where the head is after the frame's movement (I10 step 5): in front of it when the UI takes the
+    /// input, on it as a heads-up display otherwise.
+    void placeXrUi(AppContext& context) {
+        if (!xrEyes || !product) {
+            return;
+        }
+        xrUi.place(xr::Pose{camera.orientation(), camera.position()}, product->hasInput(),
+                   context.window().drawableSize());
+        if (std::optional<XrRecord>& record = context.report().xr; record && xrUi.mode() == xr::PanelMode::World) {
+            ++record->uiPanelFrames;
+        }
+    }
+
+    /// The controllers where the frame's movement put the tracking space (I10 step 4), the inspected item in the
+    /// pointing hand, a vibration when the ray came onto another item.
+    void followHands(AppContext& context) {
+        if (!xrMovement) {
+            return;
+        }
+        if (world) {
+            const world::PickId hovered = world->hovered();
+            if (hovered != world::kNoPick && hovered != xrHovered) {
+                if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                    context.vibrate(*hand, 0.35f, 0.02f);
+                }
+            }
+            xrHovered = hovered;
+        }
+        const xr::Frame* frame = context.xrFrame();
+        std::optional<scene::RigidPose> held;
+        if (frame != nullptr && frame->located) {
+            xrHands.follow(xrMovement->locomotion().anchor());
+            if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                if (const std::optional<xr::Pose>& grip = xrHands.grip(*hand)) {
+                    held = scene::RigidPose{grip->position, grip->orientation};
+                }
+            }
+            if (std::optional<XrRecord>& record = context.report().xr; record && xrHands.anyTracked()) {
+                ++record->handFrames;
+            }
+        }
+        if (world) {
+            world->setHeldHand(held);
+            world->setHeldAside(playingInXr(context));
+        }
+    }
+
+    /// A game runs in VR (I10 step 6): the pad plays it, Retroverse reads only the controllers' walk (step 10).
+    [[nodiscard]] bool playingInXr(const AppContext& context) const {
+        return context.vr() && product && (product->launchActive() || product->launchWindow() != 0);
+    }
+
+    /// A VR frame (AppContext::xrFrame, I10 step 2) places the tracking space where the movement anchored it (ADR-0017
+    /// §5, I10 step 3): the eyes' cameras for the render, and the head's as the view camera for everything that follows
+    /// it (culling, covers, labels, the audio listener). The head's pose and the movement's counters go into the run
+    /// report. Nothing on the desktop or while tracking is lost (the walker's camera stays).
+    void followHead(AppContext& context) {
+        xrEyes.reset();
+        const xr::Frame* frame = context.xrFrame();
+        if (frame == nullptr || !frame->located || !freeRoam || !xrMovement) {
+            return;
+        }
+        const xr::Locomotion& locomotion = xrMovement->locomotion();
+        const xr::TrackingAnchor anchor = locomotion.anchor();
+        XrEyeTargets eyes;
+        for (std::size_t eye = 0; eye < eyes.cameras.size(); ++eye) {
+            const xr::Pose pose = xr::toWorld(anchor, frame->eyes[eye].pose);
+            eyes.cameras[eye] = camera;
+            eyes.cameras[eye].setEye(pose.position, pose.orientation, frame->eyes[eye].fov);
+            eyes.fields[eye] = frame->eyes[eye].fov;
+        }
+        const xr::Pose head = xr::toWorld(anchor, xr::headOf(frame->eyes));
+        camera.setEye(head.position, head.orientation, xr::combinedField(frame->eyes));
+        if (std::optional<XrRecord>& record = context.report().xr;
+            record && record->head.size() < XrRecord::kMaxHeadSamples) {
+            const xr::Angles angles = xr::anglesOf(head.orientation);
+            record->head.push_back(XrHeadSample{context.frameIndex(), head.position,
+                                                core::radiansToDegrees(angles.yaw),
+                                                core::radiansToDegrees(angles.pitch),
+                                                core::radiansToDegrees(angles.roll)});
+        }
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            const xr::LocomotionCounters& counters = locomotion.counters();
+            record->snapTurns = counters.snapTurns;
+            record->teleports = counters.teleports;
+            record->pushedFrames = counters.pushedFrames;
+            record->largestHeadOffset = counters.largestHeadOffset;
+        }
+        if (frame->wantsViews()) {
+            eyes.images = frame->images;
+            eyes.size = frame->eyeSize;
+            // I10 step 9: xr.json's quality at the session's refresh rate.
+            const float refreshHz = frame->timing.displayPeriodNs > 0
+                                        ? static_cast<float>(1.0e9 / static_cast<double>(frame->timing.displayPeriodNs))
+                                        : 0.0f;
+            eyes.fast = xr::fastProfile(context.xrSettings().quality, refreshHz);
+            if (std::optional<XrRecord>& record = context.report().xr) {
+                record->quality = eyes.fast ? "fast" : "full";
+            }
+            xrEyes = eyes;
+        }
+    }
+
+    /// The eyes' render scale (I10 step 7, ADR-0017 §9): from the GPU's time of the last frames' eyes against the
+    /// display's period, lowered while it leaves too little room, raised again; at most 0.8 while a game shows on the
+    /// CRT (the "in game" profile: the GPU shared with the emulator and the capture). 1 in frame-limited runs.
+    void scaleXrEyes(AppContext& context) {
+        const xr::Frame* frame = context.xrFrame();
+        if (!xrEyes || frame == nullptr || context.options().frameLimit) {
+            return;
+        }
+        renderScale.setMax(xrGame.showing() ? 0.8f : 1.0f);
+        const gl::FrameStats& stats = graphics->renderStats();
+        double eye = 0.0;
+        for (const std::optional<double>& pass : {stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds,
+                                                  stats.sceneGpuMilliseconds, stats.postGpuMilliseconds,
+                                                  stats.outlineGpuMilliseconds}) {
+            eye += pass.value_or(0.0);
+        }
+        const double gpu = 2.0 * eye + stats.shadowGpuMilliseconds.value_or(0.0);
+        const double period = static_cast<double>(frame->timing.displayPeriodNs) / 1e6;
+        xrEyes->renderScale = renderScale.update(gpu, period);
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            record->dynamicScale = true;
+            record->scaleChanges = renderScale.changes();
+            record->lowestScale = renderScale.lowest();
+            record->eyesGpuMilliseconds = renderScale.smoothedMilliseconds();
+        }
+    }
+
+    /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
+    /// one; nothing on the desktop, where the game has the screen.
+    void updateXrGame(AppContext& context) {
+        std::optional<XrRecord>& record = context.report().xr;
+        const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
+        xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
+        followXrForeground(context, window);
+    }
+
+    /// I10 step 10: the game's window takes the foreground once it shows, as on the desktop, where Retroverse's window
+    /// steps back (most emulators read the pad only in front); never in hidden or background runs. Each change of the
+    /// foreground while it runs is logged.
+    void followXrForeground(AppContext& context, std::uintptr_t window) {
+        if (window == 0) {
+            xrForegroundGiven = 0;
+            xrForeground = {};
+            return;
+        }
+        if (window != xrForegroundGiven && !context.options().hidden && !platform_win::backgroundLaunchesRequested()) {
+            xrForegroundGiven = window;
+            const bool given = platform_win::giveForeground(window);
+            spdlog::info("VR: the game's window {} the foreground", given ? "takes" : "could not take");
+        }
+        const platform_win::ForegroundWindow foreground = platform_win::foregroundWindow();
+        if (foreground != xrForeground) {
+            xrForeground = foreground;
+            const auto ours =
+                reinterpret_cast<std::uintptr_t>(platform::nativeWindowHandle(context.window().handle()));
+            spdlog::info("VR: the foreground is {} (process {})",
+                         foreground.window == window ? "the game's window"
+                         : foreground.window == ours  ? "Retroverse's window"
+                         : foreground.window == 0     ? "no window"
+                                                      : "another window",
+                         foreground.processId);
+        }
+    }
+
+    /// The product UI drawn into its panel for the eyes (I10 step 5); the window and the screenshots then leave it
+    /// out of their overlay.
+    void drawXrUi(AppContext& context, const gl::RenderView& view) {
+        xrUiDrawn = false;
+        if (!context.vr()) {
+            xrUi.release(); // a session that ended: like the eyes' targets
+        }
+        if (!xrEyes || !product) {
+            return;
+        }
+        xrEyes->panels.clear();
+        // The game on the CRT (I10 step 6) shows with no panel in front of it.
+        if (!product->visible() || xrGame.showing()) {
+            xrUiDrawn = true;
+            return;
+        }
+        if (Status drawn = xrUi.render(context.device(), *product, context.window().drawableSize()); !drawn) {
+            spdlog::error("The VR mode's UI panel cannot be drawn: {}", drawn.error().toString());
+            return;
+        }
+        if (const std::optional<gl::Panel> panel = xrUi.panel(view.post.fade)) {
+            xrEyes->panels.push_back(*panel);
+        }
+        xrUiDrawn = true;
+    }
+
+    /// What a VR frame's eyes add to the view (I10 step 3): the movement's fade (a head leaning into a wall, a
+    /// teleport's blink) over the ride's, the comfort vignette, the teleport's arc. Nothing on the desktop.
+    void addXrView(AppContext& context, gl::RenderView& view) {
+        if (!xrEyes || !xrMovement) {
+            return;
+        }
+        const xr::Locomotion& locomotion = xrMovement->locomotion();
+        view.post.fade = std::max(view.post.fade, locomotion.fade());
+        view.post.tunnel = locomotion.tunnel();
+        const std::optional<xr::TeleportArc>& arc = locomotion.arc();
+        const bool hands = xrHands.anyTracked();
+        if ((!arc && !hands) || xrPropsFailed) {
+            return;
+        }
+        xrItems.assign(view.items.begin(), view.items.end());
+        const int alignment = context.device().caps().uniformBufferOffsetAlignment;
+        Status added = arc ? xrProps.appendArc(*arc, *graphics, alignment, xrItems) : ok();
+        if (added && hands) {
+            // I10 step 4: the controllers, the pointing hand's laser to the first collider or the floor.
+            float reach = 0.0f;
+            if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                if (const std::optional<xr::Pose>& aim = xrHands.aim(*hand)) {
+                    const core::Ray ray{aim->position, glm::normalize(aim->orientation * glm::vec3(0.0f, 0.0f, -1.0f))};
+                    reach = xr::castRay(ray, XrProps::kLaserReach, freeRoam->controller().feetPosition().y,
+                                        freeRoam->collision());
+                    // I10 step 5: on the UI's world panel it ends there.
+                    if (const std::optional<XrUi::Pointing> pointing = xrUi.point(ray)) {
+                        reach = std::min(reach, pointing->distance);
+                    }
+                }
+            }
+            const bool onItem = world && world->hovered() != world::kNoPick;
+            added = xrProps.appendHands(xrHands, reach, onItem, *graphics, alignment, xrItems);
+        }
+        if (!added) {
+            spdlog::error("The VR mode's props cannot be drawn: {}", added.error().toString());
+            xrPropsFailed = true;
+            return;
+        }
+        view.items = xrItems;
+    }
+
     /// The view of the frame: the scene from the walker's camera, with the overlay's rendering toggles.
     [[nodiscard]] gl::RenderView view() const {
         gl::RenderView view = makeRenderView(*scene, camera);
@@ -679,6 +1011,13 @@ struct RetroverseApp::State {
                 SDL_GetMouseState(&cursor.x, &cursor.y);
             }
             frame.ray = pickRay(camera, frame.raySource, cursor, windowSize);
+            // I10 step 4: in VR the pointing controller's ray.
+            if (const std::optional<core::Ray>& ray = xrHands.pointer().ray(); ray && xrMovement) {
+                frame.ray = *ray;
+                if (std::optional<XrRecord>& record = context.report().xr) {
+                    ++record->pointedFrames;
+                }
+            }
         }
         return world->interact(frame);
     }
@@ -1404,7 +1743,7 @@ struct RetroverseApp::State {
         std::function<void(gl::GLDevice&, const gl::Framebuffer&)> intoScreenshot;
         if (product || overlayInScreenshots) {
             intoScreenshot = [this, overlayInScreenshots](gl::GLDevice& device, const gl::Framebuffer& target) {
-                if (product) {
+                if (product && !xrUiDrawn) {
                     product->renderTo(device, target);
                 }
 #if defined(RV_DEV_UI)
@@ -1418,7 +1757,7 @@ struct RetroverseApp::State {
         }
         graphics->setOverlay(
             [this](gl::GLDevice& device) {
-                if (product) {
+                if (product && !xrUiDrawn) {
                     product->renderToWindow(device);
                 }
 #if defined(RV_DEV_UI)
@@ -1538,6 +1877,9 @@ Status RetroverseApp::onInit(AppContext& context) {
     state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
                           core::degreesToRadians(camera.pitchDeg));
     state->freeRoam.emplace(state->description, state->scene->collisionWorld(), options.spawn);
+    if (context.vr()) {
+        state->xrMovement.emplace(state->freeRoam->controller().settings(), context.xrSettings());
+    }
 
     input::ActionMap bindings = loadBindings(paths);
     state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
@@ -1687,10 +2029,27 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
     state.stepSeconds = deltaSeconds;
-    // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game.
-    state.setPriority(frame, processPriorityFor(context.window().isMinimized(),
+    // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game. A
+    // minimized window hides nothing from a headset, whose eyes still render.
+    state.setPriority(frame, processPriorityFor(!context.vr() && context.window().isMinimized(),
                                                 state.product != nullptr && state.product->launchActive()));
-    const input::ActionState actions = state.input->update(frame);
+    // I10 step 4: a VR frame's controllers drive the pad's actions, the pointing hand's trigger interacts; step 5:
+    // on the UI's panel the ray is its mouse and the trigger clicks.
+    state.updateXrHands(context);
+    input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
+    // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends, but (I10 step 10)
+    // the controllers' walk, turns and teleport, which the emulator never sees: the user goes up to the CRT.
+    const bool playingInXr = state.playingInXr(context);
+    input::ActionState playingWalk;
+    if (playingInXr) {
+        actions.clear();
+        if (state.xrMovement) {
+            playingWalk = walkOf(state.input->controllersAlone(state.xrHands.pad()));
+        }
+    }
+    if (!state.pointXrUi(context) && !playingInXr) {
+        state.xrHands.applySelect(actions);
+    }
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
     const InputContext inputContext = state.inputContext();
@@ -1784,25 +2143,41 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         spdlog::error("Debug lines unavailable: {}", shown.error().toString());
     }
     state.freeRoam->setCollisionEnabled(state.collision);
+    // The walker's actions of the frame: none while an ease of the world drives it or a ride runs.
+    input::ActionState walkerActions;
     if (worldResult.walker) {
         state.placeWalker(*worldResult.walker); // an ease of the world drives the walker: no actions this frame
-    } else if (riding) {
-        state.freeRoam->update(input::ActionState{}, static_cast<float>(deltaSeconds), state.camera);
-    } else if (state.world) {
+    } else if (state.world && !riding) {
         // I4b step 3: the world's context sees the arrows too (the editor's walker does not walk while one steps); the
         // editor's menu holds the walker (its arrows choose a button).
         const WorldContext walkerContext = state.world->editHoldsWalker() ? WorldContext::Suspended : worldContext;
-        state.freeRoam->update(walkerActionsFor(walkerContext, inputContext == InputContext::World
-                                                                   ? actions
-                                                                   : actionsFor(inputContext, actions)),
-                               static_cast<float>(deltaSeconds), state.camera);
-    } else {
-        state.freeRoam->update(actionsFor(inputContext, actions), static_cast<float>(deltaSeconds), state.camera);
+        walkerActions = walkerActionsFor(walkerContext, inputContext == InputContext::World
+                                                            ? actions
+                                                            : actionsFor(inputContext, actions));
+    } else if (!state.world) {
+        walkerActions = actionsFor(inputContext, actions);
     }
+    if (playingInXr && !worldResult.walker) {
+        walkerActions = playingWalk;
+    }
+    // In a VR frame the head's movement moves the walker (I10 step 3), then the head, where the walker now stands,
+    // takes the view (I10 step 2).
+    if (state.moveInXr(context, walkerActions, deltaSeconds)) {
+        if (std::optional<XrRecord>& record = context.report().xr; record && playingInXr && walks(walkerActions)) {
+            ++record->playingWalkFrames;
+        }
+    } else if (!worldResult.walker) {
+        state.freeRoam->update(walkerActions, static_cast<float>(deltaSeconds), state.camera);
+    }
+    state.followHead(context);
+    state.followHands(context);
+    state.placeXrUi(context);
     if (state.world && state.product) {
-        // The hover's title label over the item as this frame's camera shows it (none under the product UI).
+        // The hover's title label over the item as this frame's camera shows it (none under the product UI); in VR as
+        // the heads-up display shows it (I10 step 5).
         const bool worldShown = inputContext == InputContext::World && !riding;
-        state.product->setWorldLabel(worldShown ? state.world->label(state.camera, context.window().drawableSize())
+        const scene::Camera labelCamera = state.xrEyes ? state.xrUi.hudCamera(state.camera) : state.camera;
+        state.product->setWorldLabel(worldShown ? state.world->label(labelCamera, context.window().drawableSize())
                                                 : std::nullopt);
         // The card beside the inspected item (I3 step 14a).
         state.world->showCard(worldResult, *state.product);
@@ -1831,9 +2206,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         const input::ActionState uiActions = actionsFor(InputContext::Ui, actions);
         state.product->update(inputContext == InputContext::Ui && !riding ? &uiActions : nullptr, deltaSeconds,
                               state.simulatedSeconds);
-        // After this frame is presented the host waits: a launch starts, or an emulator has the screen.
+        // After this frame is presented the host waits: a launch starts, or an emulator has the screen. In VR the
+        // headset keeps rendering (ADR-0017 §7, I10 step 6): the launch is followed every frame instead.
         if (state.product->wantsIdle()) {
-            context.setIdle(true);
+            if (context.vr()) {
+                state.product->onIdle();
+            } else {
+                context.setIdle(true);
+            }
         }
     }
     if (state.world) {
@@ -1842,7 +2222,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // A lockstep run's frame waits for the layers of its view (I3 step 12).
         state.world->settle(*state.product);
     }
-    state.updateScreens(context, context.window().isMinimized());
+    // A minimized window hides nothing from a headset: the screens stay in the eyes' view.
+    state.updateScreens(context, !context.vr() && context.window().isMinimized());
+    state.updateXrGame(context);
     state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
@@ -1855,7 +2237,11 @@ void RetroverseApp::onRender(AppContext& context) {
     }
     State& state = *m_state;
     state.followSceneAreas(context.frameIndex());
-    state.graphics->renderFrame(context, state.view(), state.screenshotRequested);
+    gl::RenderView view = state.view();
+    state.addXrView(context, view);
+    state.drawXrUi(context, view);
+    state.scaleXrEyes(context);
+    state.graphics->renderFrame(context, view, state.screenshotRequested, state.xrEyes ? &*state.xrEyes : nullptr);
     state.screenshotRequested = false;
     if (state.world) {
         state.world->frameRendered();
@@ -1866,8 +2252,9 @@ void RetroverseApp::onRender(AppContext& context) {
     }
     if (state.product) {
         state.product->frameRendered();
-        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle).
-        if (state.product->wantsIdle()) {
+        // A question nobody can see is presented once: the host waits after this frame (LaunchFlow::hostIdle). Never in
+        // VR (I10 step 6): the headset renders on, the update follows the launch.
+        if (state.product->wantsIdle() && !context.vr()) {
             context.setIdle(true);
         }
     }

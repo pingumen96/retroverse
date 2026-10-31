@@ -11,7 +11,9 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
@@ -50,13 +52,15 @@ struct DebugMessageCounts {
 /// The render targets a screenshot was drawn through (ScreenshotRecord::targets, docs/i5/memory-margin.md).
 inline constexpr std::string_view kScreenshotWindowTargets = "window"; ///< the window's: the screenshot has its size
 inline constexpr std::string_view kScreenshotOwnTargets = "own";       ///< a set made for the screenshot alone
+/// Both eyes side by side from the eyes' own targets: a VR frame's (I10 step 2) or the stereo preview's (I10 step 1).
+inline constexpr std::string_view kScreenshotEyesTargets = "eyes";
 
 /// The --screenshot a run wrote.
 struct ScreenshotRecord {
     std::filesystem::path file; ///< as given on the command line
     int width = 0;
     int height = 0;
-    /// kScreenshotWindowTargets or kScreenshotOwnTargets.
+    /// kScreenshotWindowTargets, kScreenshotOwnTargets or kScreenshotEyesTargets.
     std::string targets;
 
     bool operator==(const ScreenshotRecord&) const = default;
@@ -1676,6 +1680,112 @@ struct AudioClipRecord {
     bool operator==(const AudioClipRecord&) const = default;
 };
 
+/// Where the head was in the world on a frame of the VR mode (I10 step 2): the middle of the eyes, and where it looked
+/// (degrees, the camera's yaw and pitch, and the roll: positive tilts to the right).
+struct XrHeadSample {
+    std::uint64_t frame = 0;
+    glm::vec3 position{0.0f};
+    float yawDeg = 0.0f;
+    float pitchDeg = 0.0f;
+    float rollDeg = 0.0f;
+
+    bool operator==(const XrHeadSample&) const = default;
+};
+
+/// The VR mode of a run (--vr; I10 step 2, ADR-0017 §8): the runtime and its session, the frames it paced, the head's
+/// poses. Absent without --vr.
+struct XrRecord {
+    /// The head samples kept at most: one per frame of the first frames.
+    static constexpr std::size_t kMaxHeadSamples = 600;
+
+    /// --xr-runtime: "openxr" or "fake".
+    std::string runtimeChoice;
+    /// A session was created; otherwise `unavailable` says why and the run stayed on the desktop.
+    bool started = false;
+    std::optional<std::string> unavailable;
+    /// xr::RuntimeDescription: what the runtime and its session are.
+    std::string runtime;
+    std::string runtimeVersion;
+    std::string system;
+    std::vector<std::string> extensions;
+    std::string space;
+    glm::ivec2 recommendedEyeSize{0};
+    glm::ivec2 eyeSize{0};
+    double renderScale = 1.0;
+    std::string format;
+    bool srgb = false;
+    std::size_t imagesPerEye = 0;
+    std::vector<float> refreshRates;
+    /// The refresh rate the runtime reported at the end, when it tells it.
+    std::optional<float> refreshRate;
+    /// The session was focused at least once.
+    bool reachedFocused = false;
+    /// Why the session ended ("exited", "lost", a failed call); empty when it still ran at the end.
+    std::string endReason;
+    /// The first frame rendered on the desktop after the session ended or failed; absent while it ran to the end.
+    std::optional<std::uint64_t> desktopFromFrame;
+    /// The frames the session waited for and those it submitted with both eyes, and xr::FrameSummary's pacing.
+    std::uint64_t framesWaited = 0;
+    std::uint64_t framesWithViews = 0;
+    double refreshHz = 0.0;
+    std::uint64_t missedRefreshes = 0;
+    double missedFraction = 0.0;
+    /// CPU time from xrWaitFrame's return to xrEndFrame's return, milliseconds.
+    std::optional<TimeSummary> cpuTimes;
+    /// The session's state changes and events, "<frame>: <what>".
+    std::vector<std::string> events;
+    /// The head in the world on the first kMaxHeadSamples frames that located the eyes.
+    std::vector<XrHeadSample> head;
+    /// xr.json's posture ("standing", "seated") and turn ("snap", "smooth") (I10 step 3).
+    std::string posture;
+    std::string turn;
+    /// The movement (xr::LocomotionCounters): snap turns, teleports, frames the head leaned too far beyond the capsule
+    /// and was pushed back, the farthest it leaned (meters).
+    std::uint64_t snapTurns = 0;
+    std::uint64_t teleports = 0;
+    std::uint64_t pushedFrames = 0;
+    float largestHeadOffset = 0.0f;
+    /// The controllers (I10 step 4): the interaction profiles whose bindings the runtime took, the profile in each hand
+    /// at the end ("" none), the frames a controller was tracked and those whose pick ray came from a hand, the
+    /// vibrations asked for.
+    std::vector<std::string> interactionProfiles;
+    std::string leftController;
+    std::string rightController;
+    std::uint64_t handFrames = 0;
+    std::uint64_t pointedFrames = 0;
+    std::uint64_t vibrations = 0;
+    /// The UI's panel (I10 step 5): frames it stood in the world (the UI had the input), frames a controller's ray was
+    /// on it, the clicks of its trigger there.
+    std::uint64_t uiPanelFrames = 0;
+    std::uint64_t uiPointedFrames = 0;
+    std::uint64_t uiClicks = 0;
+    /// The launched game on the CRT (I10 step 6): captures started, frames captured, those a hero CRT showed (none
+    /// where no hero screen is bound), the window's size last captured, why a capture could not start or went on
+    /// (empty: none).
+    std::uint64_t captureStarts = 0;
+    std::uint64_t captureFrames = 0;
+    std::uint64_t captureShownFrames = 0;
+    glm::ivec2 captureSize{0};
+    std::string captureError;
+    /// I10 step 11: the window's part the CRT showed last (corner and size in its texture coordinates, its black bars
+    /// left out), the samples read back for it and its changes.
+    glm::vec4 captureCrop{0.0f, 0.0f, 1.0f, 1.0f};
+    std::uint64_t captureCropSamples = 0;
+    std::uint64_t captureCropChanges = 0;
+    /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
+    std::uint64_t playingWalkFrames = 0;
+    /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the
+    /// GPU's time of a frame's eyes as it smoothed it last (milliseconds).
+    bool dynamicScale = false;
+    /// The eyes' profile of the last frame (xr.json's quality at the refresh rate, I10 step 9): "full" or "fast".
+    std::string quality;
+    std::uint64_t scaleChanges = 0;
+    float lowestScale = 1.0f;
+    double eyesGpuMilliseconds = 0.0;
+
+    bool operator==(const XrRecord&) const = default;
+};
+
 /// The clips' sound over the run (I5 step 5, ADR-0016 §9; retroverse.exe). `device`: the output used ("device", "null",
 /// "off": every smoke test asserts null or off), `reason`: why (app::resolveAudioOutput's: "RV_AUDIO", "--audio",
 /// "frame-limited", "interactive"; "device-failed" when the device did not open and the null output took over).
@@ -1974,6 +2084,8 @@ struct RunReport {
     /// The clips' sound (I5 step 5, ADR-0016 §9; "audio", written last): absent in runs without the application's
     /// sound (the asset preview).
     std::optional<AudioRecord> audio;
+    /// The VR mode (I10 step 2; "xr", after "audio"): absent without --vr.
+    std::optional<XrRecord> xr;
 };
 
 /// The report as JSON text (two-space indented, keys in the order of RunReport, absent optionals left out, paths

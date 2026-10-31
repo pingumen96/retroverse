@@ -32,6 +32,17 @@ G01 was not. G01's PNG is still the one rendered with `GL_RGBA16F` there: the te
 from it (at most 38/255, 0.004%, on the edges of the neon sign and the lamp), within its tolerance (0.5%), so it
 passes as is. A later change that moves G01 on purpose rewrites it under the new formats.
 
+**G21 under the same formats (October 31, 2026).** G21 shows G01's scene, the test room, through both eyes, and its PNG
+too was rendered before the memory margin, on I10's branch. Since I10 was brought together with main it renders 59 of
+2,097,152 pixels beyond 6/255 (at most 51/255, 0.003%), within its tolerance (0.5%), so it passes as is and was not
+rewritten. `retroverse-screenshot-diff` writes no heatmap for images that match, so the pixels were read from a diff of
+the two PNGs: they fall where G01's do, on the emitted light of the neon sign and the CRT's picture and around the two
+lamps, in both eyes, with a few single pixels on the shelves and the floor. The cause was checked: with
+`view_target_plan.cpp` put back on the old formats for one run (the emission and the bloom in `GL_RGBA16F`, the
+tonemapped image and the first bloom level in storage of their own), G21 and G01 both differ from their PNGs by 0 pixels
+at 0/255 in Debug. The formats are the whole of the difference, and the merge moved nothing else in either image. A
+later change that moves G21 on purpose rewrites it under the new formats.
+
 ## First populated room (specification §18.1; Gate B, October 19, 2026)
 
 Measured in Release at 1920 x 1080 with `--no-vsync` on the benchmark path (`tests/input_scripts/bench_snes_room.json`,

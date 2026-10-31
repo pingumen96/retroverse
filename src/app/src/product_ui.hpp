@@ -250,11 +250,19 @@ public:
     [[nodiscard]] bool wantsIdle() const noexcept;
     /// A launch is about to start or a game has the screen (LaunchFlow::pending, LaunchFlow::hostIdle).
     [[nodiscard]] bool launchActive() const noexcept;
+    /// The running launch's emulator window while it shows one (launcher::LaunchSession::window, I10 step 6), else 0.
+    [[nodiscard]] std::uintptr_t launchWindow() const noexcept;
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();
     /// A frame was rendered.
     void frameRendered() noexcept;
+
+    /// I10 step 5: a controller's ray on the VR mode's panel as the UI's mouse: moved to `pixel` (the view's pixels;
+    /// none: off the panel, the mouse leaves), pressed and released (its trigger), `wheel` notches scrolled.
+    void xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, bool released, float wheel);
+    /// Something of the UI shows (what renderTo() draws).
+    [[nodiscard]] bool visible() const noexcept;
 
     /// Draws the UI over the window's frame, and into a screenshot (scaled to fit), when something shows.
     void renderToWindow(gl::GLDevice& device);
