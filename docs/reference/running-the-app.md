@@ -45,7 +45,9 @@ build/rvdata`).
   `collectionPlanning`, `layerUploads`, `videoUpload`; p50, p95, p99, max over the frames each ran in), `gpuMemory` (the
   renderer's own accounting per kind: `proceduralSurfaces`, `collectionArrays`, `heroTextures`, `video`, `targets`,
   `sceneTextures`, `buffers`; now and peak), `video` (the hero CRT: the game and picture shown, the one decoder, the
-  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings, since I4 step 6b
+  first frame and uploads, the fallbacks with their reasons, the launches' stops and reopenings (`launches`: since
+  I5 step 9 `stopFrame` when the stop began with the insertion, `waitMs` the hand-over's own wait, `handOverFrame`, and
+  `cancelled` for a launch refused during the insertion, the screens reopened without a hand-over), since I4 step 6b
   `binds`, the screens bound after the run's first (at a room change, or a scene shown in place of another; the first,
   at the start room or the first room the eye stays in, is not one): frame, screen, games, `bindMs`, decoder threads
   still ending, `clipStopped` (a clip open on the previous screen, stopped, never waited for); since I5 step 3's review
@@ -63,8 +65,11 @@ build/rvdata`).
   `textures`, `items`, `added`, `removed` or `rebuilt`, its items compared in its own frame, `coversChanged`; and
   `walker`, where a floor committed again kept the walker: `area`, `shift`, `halfTurn`), `itemsWritten`, `screenGames`
   (the bound CRT's games), `objectFallbacks` of the persisted start; `interaction` (events, counts,
-  `inspect`), `card` (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`),
-  `edits` (I4b step 3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
+  `inspect`; since I5 step 9 `insertion`: `started`, `arrived`, `skipped`, `refused`, `movingFrames`, `socketFrames`,
+  and the last one's `pickId`, `startFrame`, `seatedFrame`, `endFrame` (the hand-over released, after the hold),
+  `seconds`, `end`, `socket`, `center`, `scale`, `distance` and `frames` (`frame`, `progress`, `distance`)), `card`
+  (`shownFrames`, `coverFrames`, `squeezedFrames`, what it showed, `focused`, `coverBox`, `events`), `edits` (I4b step
+  3: one per editor session, `room`, `via` `directory` or `card`, `enterFrame`, `readyFrame`,
   `prepareMs`, `failed`; `operations` with `frame`, `op`, `operation`, `refused` (its rule), `rebuild`, `path`
   `in-place`, `room` (I4b step 4: the room's static part rebuilt alone), `floor` or `none`, `editMs`, `shownFrame`,
   `shownMs`; `undone`, `menus`, `probes` (I4b step 4: a held fixture's places judged), `end` `saved`, `discarded`,
@@ -86,8 +91,9 @@ build/rvdata`).
   `in-place`, `floor` or `none`, `walker` `doorway:<room>`, `elevator` or `kept`, `end` `committed`, `cancelled`,
   `failed` or "" still open);
   `launch` (`launches`, `returned`, `notReturned`, `showInRoom`, `walkerBefore`, `walkerAfter`, `poseRestored`, the
-  placement asked, `events`), `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`,
-  `rebuild` or `kept`, kept, moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
+  placement asked, `events`: since I5 step 9 `inserted` and `insertion-skipped` between `launch` and `ended`),
+  `liveUpdates` (one per update after a refresh: kind `unchanged`, `textures`, `items`, `rebuild` or `kept`, kept,
+  moved, added, removed, the arrays grown, `rooms` and `walker` as `reconcile`'s); since I4
   step 7b `floors` (the plan's floors in the elevator's order: `id`, `order`, `rooms`, `placed`), `rides` (each
   elevator ride: `from`, `to`, `reason` `floor`, `room` or `showInRoom`, `room`, `game`, the frames `requestedFrame`,
   `fadedOutFrame`, `swappedFrame`, `fadedInFrame`, the milliseconds from the request `builtMs`, `residentMs`, `totalMs`
@@ -439,13 +445,15 @@ build/rvdata`).
   be read shows its fallback; A pauses the clip, or opens the manual (below). Informazioni (X)
   shows the description, the metadata and the other versions the plan knows with their regions; Up and Down scroll; X
   and Y switch between the two. Avvia launches as the quick catalog's does; in a room with a console (I5 step 9) the
-  item first goes from the hand into the console's cartridge slot in 450 ms, the eye turning to it, while the screens'
-  decoders stop and the hero shows the game's title card (any button skips it; none under `reduceMotion`, in the arcade
-  or a shared room); after the return the walker stands where it stood and the item is in the hand again; the hero
-  CRT's decoder stops before the launch and reopens at the clip's position after it (the report's
-  `world.interaction.insertion` and `video.launches` `stopFrame`, `waitMs`, `handOverFrame`). The quick catalog's card offers "Mostra nella stanza" for a game the building places (the walker
-  eased to its item's Focus pose; since I4 step 7b in any room: teleported to the room's doorway first on the same
-  floor, a ride first to another floor, below) and says why for one it does not: one of a system without a room is not
+  item first goes from the hand into the console's cartridge slot in 450 ms, the eye leading it to the console in
+  300 ms, and is seen seated 100 ms, while the screens' decoders stop and the hero shows the game's title card (an
+  action button skips it: activate, confirm, start, back; never a walking key; none under `reduceMotion`, in the
+  arcade or a shared room); after the return the walker stands where it stood and the item is in the hand again; the
+  hero CRT's decoder stops before the launch and reopens at the clip's position after it (the report's
+  `world.interaction.insertion` and `video.launches` `stopFrame`, `waitMs`, `handOverFrame`). The quick catalog's
+  card offers "Mostra nella stanza" for a game the building places (the walker eased to its item's Focus pose; since I4
+  step 7b in any room: teleported to the room's doorway first on the same floor, a ride first to another floor, below)
+  and says why for one it does not: one of a system without a room is not
   on display (`not-in-room`), an unplaced one gives its reason. After "Aggiorna
   libreria" or `--refresh-library` the floor follows the refreshed catalog live (the building job again, the plan
   saved, the other floors only saved; room by room as at the start: new titles placed into their slots with their

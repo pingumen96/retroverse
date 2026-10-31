@@ -713,3 +713,17 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   the objects that changed; the old ones stay registered (unused), across sessions, until the floor is committed again
   (a ride, a building's result, a refresh's commit). Sessions that move furniture for long grow them a little;
   releasing unused entries needs reference counts in the registries.
+
+## Follow-ups from I5
+
+### The insertion into the console (I5 step 9)
+
+- **A disc console with its own tray:** every console room's hero corner holds the `console_cartridge` prefab (the
+  systems' defaults), so a disc system's case is pushed into the cartridge slot, shrunk to fit (ADR-0016 §11's
+  amendment). A disc console prefab with a tray socket of its own (a lid or a drawer the case or the disc goes into),
+  chosen by the system's media kind, would match the item to its console; a look change for a later pack, no plan
+  change (a socket is none).
+- **The sound over the insertion:** the mix fades in 50 ms at Avvia and each stopped slot's sound in the pause fade
+  (30 ms), because the slots stop as the insertion begins (their threads end while it runs). A fade over the 450 ms
+  would keep the audible slot's decoder running until the hand-over and stop it there, with the wait the animation
+  hides now (`docs/i5/step-9.md`).
