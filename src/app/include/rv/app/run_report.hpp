@@ -13,6 +13,7 @@
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <rv/app/command_line.hpp>
 #include <rv/app/exit_code.hpp>
@@ -1596,6 +1597,11 @@ struct XrRecord {
     std::uint64_t captureFrames = 0;
     glm::ivec2 captureSize{0};
     std::string captureError;
+    /// I10 step 11: the window's part the CRT showed last (corner and size in its texture coordinates, its black bars
+    /// left out), the samples read back for it and its changes.
+    glm::vec4 captureCrop{0.0f, 0.0f, 1.0f, 1.0f};
+    std::uint64_t captureCropSamples = 0;
+    std::uint64_t captureCropChanges = 0;
     /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
     std::uint64_t playingWalkFrames = 0;
     /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the

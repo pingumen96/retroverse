@@ -1,11 +1,14 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
+#include <rv/app/picture_bounds.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/platform_win/window_capture.hpp>
 #include <rv/render/dx_interop.hpp>
+#include <rv/render/picture_probe.hpp>
 
 namespace rv::gl {
 class RenderStateCache;
@@ -35,6 +38,8 @@ public:
 
 private:
     void stop(ScreenService* screen);
+    /// I10 step 11: a small copy of the window read a few times a second, its black bars cropped off the CRT.
+    void probeBars(gl::RenderStateCache& state, XrRecord* record);
     void fail(std::string_view what, const Error& error, ScreenService* screen, XrRecord* record);
 
     std::uintptr_t m_window = 0;
@@ -44,6 +49,14 @@ private:
     std::unique_ptr<gl::DxInteropTexture> m_interop;
     std::uint64_t m_generation = 0;
     bool m_showing = false;
+    std::unique_ptr<gl::PictureProbe> m_probe;
+    bool m_probeFailed = false;
+    std::chrono::steady_clock::time_point m_probedAt{};
+    PictureBounds m_bounds;
+    /// The window's client area in the capture's pixels (its frame and title bar left out), and the crop the CRT shows:
+    /// the client area's part between its bars, in the capture's texture coordinates.
+    glm::ivec4 m_client{0};
+    glm::vec4 m_crop{0.0f, 0.0f, 1.0f, 1.0f};
 };
 
 } // namespace rv::app

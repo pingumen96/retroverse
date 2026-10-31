@@ -58,6 +58,8 @@ using Clock = std::chrono::steady_clock;
 struct Options {
     std::uint32_t exitCode = 0;
     int frames = 0;
+    int minWindowMs = 0;
+    bool pillarbox = false;
     bool exclusive = false;
     bool stealFocus = false;
     bool inputAtEnd = false;
@@ -91,6 +93,9 @@ constexpr std::string_view kUsage =
     "rv_fake_emulator [options] [-- payload...]\n"
     "  --exit-code N            exit with N (decimal or 0x hexadecimal; default 0)\n"
     "  --frames N               show a fullscreen window for N frames (vsync), then exit\n"
+    "  --min-window-ms MS       with --frames: the window shows at least MS ms (frames may go faster than vsync)\n"
+    "  --pillarbox              with --frames: the color only in the window's middle 4:3, black at its sides (a 4:3\n"
+    "                           game in a wide window)\n"
     "  --exclusive              with --frames: exclusive fullscreen in a display mode other than the desktop's\n"
     "  --steal-focus            with --frames: force the window into the foreground on its first frame\n"
     "  --input-at-end           with --frames: a Shift key tap into its window before it closes (the\n"
@@ -203,6 +208,13 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
                 return false;
             }
             options.frames = static_cast<int>(std::min<std::uint64_t>(n, 1000000));
+        } else if (arg == "--min-window-ms") {
+            if (!number(n)) {
+                return false;
+            }
+            options.minWindowMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
+        } else if (arg == "--pillarbox") {
+            options.pillarbox = true;
         } else if (arg == "--sleep-ms") {
             if (!number(n)) {
                 return false;
@@ -687,7 +699,7 @@ void runWindow(const Options& options, nlohmann::json& log) {
     const auto r = static_cast<std::uint8_t>((options.color >> 16) & 0xFF);
     const auto g = static_cast<std::uint8_t>((options.color >> 8) & 0xFF);
     const auto b = static_cast<std::uint8_t>(options.color & 0xFF);
-    while (!quit && (options.hang || frame < options.frames)) {
+    while (!quit && (options.hang || frame < options.frames || sinceStart() < options.minWindowMs)) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
@@ -707,11 +719,19 @@ void runWindow(const Options& options, nlohmann::json& log) {
         int width = 0;
         int height = 0;
         SDL_GetRenderOutputSize(renderer, &width, &height);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+        // The picture: the whole window, or its middle 4:3 between black bars (--pillarbox).
+        SDL_FRect area{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)};
+        if (options.pillarbox) {
+            area.w = std::min(area.w, area.h * 4.0f / 3.0f);
+            area.x = (static_cast<float>(width) - area.w) * 0.5f;
+        }
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        // A bar sweeping across the screen: the frame pacing shows.
-        const float x = static_cast<float>((frame * 16) % std::max(width, 1));
-        const SDL_FRect bar{x, 0.0f, static_cast<float>(width) / 16.0f, static_cast<float>(height)};
+        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+        SDL_RenderFillRect(renderer, &area);
+        // A bar sweeping across the picture: the frame pacing shows.
+        const float x = area.x + static_cast<float>((frame * 16) % std::max(static_cast<int>(area.w), 1));
+        const SDL_FRect bar{x, 0.0f, std::min(area.w / 16.0f, area.x + area.w - x), area.h};
         SDL_SetRenderDrawColor(renderer, 240, 220, 160, 255);
         SDL_RenderFillRect(renderer, &bar);
         SDL_RenderPresent(renderer);

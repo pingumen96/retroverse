@@ -1268,6 +1268,9 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     xr.captureSize = glm::ivec2(1280, 960);
     xr.captureError = "";
     xr.playingWalkFrames = 75;
+    xr.captureCrop = glm::vec4(0.125f, 0.0f, 0.75f, 1.0f);
+    xr.captureCropSamples = 30;
+    xr.captureCropChanges = 1;
     xr.dynamicScale = true;
     xr.quality = "fast";
     xr.scaleChanges = 3;

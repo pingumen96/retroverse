@@ -157,6 +157,21 @@ public:
     }
 
     /// Three finite numbers.
+    /// Four numbers (I10 step 11: a crop's corner and size).
+    [[nodiscard]] glm::vec4 vec4(std::string_view key) {
+        const nlohmann::json* value = required(key);
+        if (value == nullptr) {
+            return glm::vec4(0.0f);
+        }
+        if (!value->is_array() || value->size() != 4 ||
+            !std::all_of(value->begin(), value->end(), [](const nlohmann::json& item) { return item.is_number(); })) {
+            fail(key, "expected an array of four numbers");
+            return glm::vec4(0.0f);
+        }
+        return glm::vec4((*value)[0].get<float>(), (*value)[1].get<float>(), (*value)[2].get<float>(),
+                         (*value)[3].get<float>());
+    }
+
     [[nodiscard]] glm::vec3 vec3(std::string_view key) {
         const nlohmann::json* value = required(key);
         if (value == nullptr) {
@@ -2676,6 +2691,10 @@ Json xrToJson(const XrRecord& xr) {
     json["captureFrames"] = xr.captureFrames;
     json["captureSize"] = ivec2ToJson(xr.captureSize);
     json["captureError"] = xr.captureError;
+    json["captureCrop"] = Json::array({static_cast<double>(xr.captureCrop.x), static_cast<double>(xr.captureCrop.y),
+                                       static_cast<double>(xr.captureCrop.z), static_cast<double>(xr.captureCrop.w)});
+    json["captureCropSamples"] = xr.captureCropSamples;
+    json["captureCropChanges"] = xr.captureCropChanges;
     json["playingWalkFrames"] = xr.playingWalkFrames;
     json["dynamicScale"] = xr.dynamicScale;
     json["quality"] = xr.quality;
@@ -2744,6 +2763,9 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureFrames = fields.count("captureFrames");
     xr.captureSize = readIvec2(fields, "captureSize");
     xr.captureError = fields.string("captureError");
+    xr.captureCrop = fields.vec4("captureCrop");
+    xr.captureCropSamples = fields.count("captureCropSamples");
+    xr.captureCropChanges = fields.count("captureCropChanges");
     xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");
     xr.quality = fields.string("quality");

@@ -23,6 +23,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include <rv/app/picture_bounds.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
 #include <rv/app/world_inspect.hpp>
@@ -61,19 +62,23 @@ struct ImportedRoom {
     fs::path data;
 
     /// `launches`: Avvia starts this build's fake emulator (a "fake-return" profile with a window, test_world_card.cpp's
-    /// with --frames).
-    explicit ImportedRoom(std::string_view name, bool launches = false)
+    /// with --frames), with `game` before its own arguments (I10 step 11: a pillarboxed picture).
+    explicit ImportedRoom(std::string_view name, bool launches = false, std::vector<std::string> game = {})
         : fixture(rv::test::Fixture::materialize("esde/snes-room").value()),
           dir(freshCaseDir(std::string("xr_room/") + std::string(name))), data(dir / "data") {
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
         if (launches) {
+            // A window for 150 frames (about 2.5 s), which the headset's run captures.
+            std::vector<std::string> arguments = std::move(game);
+            for (const char* argument : {"--frames", "150", "--exit-timeout-ms", "30000", "--", "{rom}"}) {
+                arguments.emplace_back(argument);
+            }
             const nlohmann::json profile{
                 {"id", "fake-return"},
                 {"executable", arg(fakeEmulatorExe())},
-                // A window for 150 frames (about 2.5 s), which the headset's run captures.
-                {"arguments", {"--frames", "150", "--exit-timeout-ms", "30000", "--", "{rom}"}},
+                {"arguments", arguments},
                 {"windowTimeoutSeconds", 0},
                 {"hideConsoleWindow", true},
                 {"systems", {{"snes", nlohmann::json::object()}}}};
@@ -211,10 +216,12 @@ TEST_CASE("xr: the right controller's ray inspects a cartridge, held in that han
     CHECK(glm::length(glm::vec2(xr.head[0].position.x - spawn.feet.x, xr.head[0].position.z - spawn.feet.z)) < 1e-4f);
 }
 
-TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured from its window (I10 step 6)",
-          "[gpu][xr]") {
-    ensureLaunchAllowList();
-    const ImportedRoom room("launch", true);
+namespace {
+
+/// The room's first run (the room shown), then the headset's: the right controller's ray on fx:hw-w/s:5.4 inspects it
+/// at frame 40, Avvia (the pad's Start) at frame 70 launches the fake emulator, `steps` (input script steps, each
+/// ending with a comma) on top; `frames` frames in all.
+AppRun launchInHeadset(const ImportedRoom& room, std::string_view steps, int frames) {
     const AppRun first = runApp(retroverseExe(), room.dir, "first",
                                 {"--start-room", "room:snes", "--exit-after-frames", "--frames", "3", "--fixed-dt",
                                  "0.016667", "--screenshot", arg(room.dir / "first.png")});
@@ -232,27 +239,36 @@ TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured fr
                                          rv::core::radiansToDegrees(std::atan2(local.x, -local.z)),
                                          rv::core::radiansToDegrees(std::asin(std::clamp(local.y, -1.0f, 1.0f))),
                                          kRightHand.x, kRightHand.y, kRightHand.z);
-    // Inspected at frame 40, Avvia (the pad's Start) at frame 70; the game's window shows about 2.5 s, captured
-    // meanwhile. I10 step 10: from frame 75 to 100, while the game runs, the left controller's stick pulled back walks
-    // the user back from the shelf.
     const fs::path script = room.dir / "launch.json";
     REQUIRE(rv::core::writeTextFileAtomic(script, fmt::format(R"([
-  {{"fromFrame": 0, "toFrame": 899, "headPose": {{"position": [0, 1.65, 0]}}, {0}}},
+  {}
+  {{"fromFrame": 0, "toFrame": {}, "headPose": {{"position": [0, 1.65, 0]}}, {}}},
   {{"fromFrame": 40, "toFrame": 40, "actions": {{"interact": 1}}}},
-  {{"fromFrame": 70, "toFrame": 70, "actions": {{"confirm": 1}}}},
-  {{"fromFrame": 75, "toFrame": 100, "leftStick": [0, -1]}}
+  {{"fromFrame": 70, "toFrame": 70, "actions": {{"confirm": 1}}}}
 ])",
-                                                              hand))
+                                                              steps, frames - 1, hand))
                 .has_value());
     rv::app::SpawnPoint spawnPoint;
     spawnPoint.feet = spawn.feet;
     spawnPoint.yawDeg = rv::core::radiansToDegrees(spawn.yaw);
     spawnPoint.pitchDeg = 0.0f;
-    const AppRun run = runApp(retroverseExe(), room.dir, "vr",
-                              {"--vr", "--xr-runtime", "fake", "--start-room", "room:snes", "--spawn",
-                               spawnArgument(spawnPoint), "--input-script", arg(script), "--exit-after-frames",
-                               "--frames", "900", "--fixed-dt", "0.016667"});
+    AppRun run = runApp(retroverseExe(), room.dir, "vr",
+                        {"--vr", "--xr-runtime", "fake", "--start-room", "room:snes", "--spawn",
+                         spawnArgument(spawnPoint), "--input-script", arg(script), "--exit-after-frames", "--frames",
+                         std::to_string(frames), "--fixed-dt", "0.016667"});
     requireCleanRun(run);
+    return run;
+}
+
+} // namespace
+
+TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured from its window (I10 step 6)",
+          "[gpu][xr]") {
+    ensureLaunchAllowList();
+    const ImportedRoom room("launch", true);
+    // The game's window shows about 2.5 s, captured meanwhile. I10 step 10: from frame 75 to 100, while the game runs,
+    // the left controller's stick pulled back walks the user back from the shelf.
+    const AppRun run = launchInHeadset(room, R"({"fromFrame": 75, "toFrame": 100, "leftStick": [0, -1]},)", 900);
     INFO(run.describe());
     REQUIRE(run.report->launches.size() == 1);
     CHECK(run.report->launches.front().profile == "fake-return");
@@ -276,4 +292,32 @@ TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured fr
     const glm::vec3 before = headAt(74);
     const glm::vec3 after = headAt(101);
     CHECK(glm::length(glm::vec2(after.x - before.x, after.z - before.z)) > 0.2f);
+    // A window with no bar shows its whole client area (I10 step 11: the test window's frame and title bar left out):
+    // its 16:9.
+    CHECK(xr.captureCropSamples > 0);
+    const glm::vec2 shown = glm::vec2(xr.captureCrop.z, xr.captureCrop.w) * glm::vec2(xr.captureSize);
+    CHECK(shown.x / shown.y == Catch::Approx(16.0 / 9.0).margin(0.05));
+}
+
+TEST_CASE("xr: a game pillarboxed in its wide window fills the hero CRT without its bars (I10 step 11)",
+          "[gpu][xr]") {
+    ensureLaunchAllowList();
+    // The fake emulator's 16:9 window holds its picture in the middle 4:3, black at the sides, for at least 5 s.
+    const ImportedRoom room("pillarbox", true, {"--pillarbox", "--min-window-ms", "5000"});
+    const AppRun run = launchInHeadset(room, "", 1800);
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureCropSamples >= rv::app::PictureBounds::kNarrowSamples);
+    CHECK(xr.captureCropChanges >= 1);
+    // The capture holds the test's window with its frame and title bar: the crop is its client area's middle 4:3, an
+    // eighth of the client's width left out on each side (less a sampled column kept), centred in the capture.
+    const glm::vec2 capture(xr.captureSize);
+    const glm::vec2 shown = glm::vec2(xr.captureCrop.z, xr.captureCrop.w) * capture;
+    CHECK(shown.x / shown.y == Catch::Approx(4.0 / 3.0).margin(0.05));
+    CHECK(xr.captureCrop.z < 0.8f);
+    CHECK(xr.captureCrop.x + 0.5f * xr.captureCrop.z == Catch::Approx(0.5f).margin(0.02f));
+    CHECK(xr.captureCrop.y + xr.captureCrop.w <= 1.0f);
 }

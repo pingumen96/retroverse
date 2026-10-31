@@ -1636,14 +1636,14 @@ struct ScreenService::Impl {
         }
     }
 
-    void showGameWindow(GLuint texture, glm::ivec2 size) {
+    void showGameWindow(GLuint texture, glm::ivec2 size, const glm::vec4& crop) {
         ScreenState* screen = hero();
         if (screen == nullptr || texture == 0 || size.x <= 0 || size.y <= 0) {
             return;
         }
         const bool first = !gameWindow;
         gameWindow = texture;
-        setRect(*screen, pictureRect(glm::vec2(size), screen->binding.screenSize));
+        setRect(*screen, croppedPictureRect(glm::vec2(size), crop, screen->binding.screenSize));
         if (screen->appliedOverride != texture) {
             if (auto set = materials.setTextureOverride(screen->binding.material, gl::MaterialTextureSlot::BaseColor,
                                                         texture);
@@ -2218,8 +2218,8 @@ void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::
     m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
 }
 
-void ScreenService::showGameWindow(unsigned texture, glm::ivec2 size) {
-    m_impl->showGameWindow(texture, size);
+void ScreenService::showGameWindow(unsigned texture, glm::ivec2 size, const glm::vec4& crop) {
+    m_impl->showGameWindow(texture, size, crop);
 }
 
 void ScreenService::clearGameWindow() {
