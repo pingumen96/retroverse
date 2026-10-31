@@ -29,6 +29,9 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
 ./scripts/gate.ps1 -Gate M3                           # Gate M3: Gate A + every golden to G20, the I4b checks, section 9
 ./scripts/gate.ps1 -Gate M3 -RealLibrary              # also the real building, regenerations, a CLI edit session, both screens
 ./scripts/gate.ps1 -Gate M3 -TimingOnly -RealLibrary  # section 9's rows and the timing parts again, a quiet-machine rerun
+./scripts/gate.ps1 -Gate M4                           # Gate M4: Gate D's runs, every golden to G20, the I5 checks, two clips
+./scripts/gate.ps1 -Gate M4 -RealLibrary              # also every real room's screen, the arcade, a 96 kHz clip, verdicts
+./scripts/gate.ps1 -Gate M4 -TimingOnly -RealLibrary -Soak   # the timing parts again and the soak hour, a quiet machine
 ./scripts/real-library.ps1                            # the [real-library] tests, ES-DE closed, snapshots before/after
 ./scripts/dev.ps1 cmake --preset msvc-x64-debug       # any raw command inside the dev environment
 ```
@@ -229,6 +232,25 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `-TimingOnly` builds Release alone, runs the editor's and regenerations' Release GPU cases again
   (`$m3TimingGpuFilter`) with ADR-0015 §9's fixture rows, the benchmark path and, with `-RealLibrary`, the real
   library's run. Gate M3's verdict is a full run plus a `-TimingOnly -RealLibrary` run on a quiet machine.
+- `scripts/gate.ps1 -Gate M4` (`docs/testing/gate-m4.md`, logs in `build/gate-m4`) runs everything Gate D runs (the
+  build matrix, the unit and GPU runs of Debug and Release, every golden to G20, a golden that skips failing as at Gate
+  M3, the I4 and I6 rows per area, the benchmark path in Release) and, per Debug and Release, a row per I5 area counted
+  from the unit and GPU runs (`$i5Areas`: the playlists and fallbacks, the scheduler, the secondary TVs, the cabinets,
+  the audio, the CRT presets, the video verdicts, the viewer's clip and manual, the insertion; an area with a skipped
+  GPU case fails), then in Release the benchmark path's `two-clips` phase (`tests/input_scripts/bench_snes_room.json`,
+  frames 64 to 115: the hero CRT and the snes-stress room's secondary TV both playing on every frame, read from the run
+  report's slot events) against ADR-0016 §12's rows, the whole gate under `scripts/focus_watch.py`. `-RealLibrary`
+  adds one `scripts/real-library.ps1` run (ES-DE closed, one pair of snapshots, 0 differences) of `[real-library]`
+  `[screens]` (`tests/unit/app/test_screens_real.cpp`: every collection room of the real building started at its
+  doorway for 4 s, its hero screen on a clip or its chain's still, never standby, at most 2 decoders; the clips' first
+  frames against NFR-06's 2 s), `[secondary_tv]`, `[arcade]`, `[audio]` (a 96 kHz clip's sound within 80 ms at p95),
+  `[videos]` (the SNES clips checked from nothing: the gate removes the case's data directory first) and Gate D's
+  `[building]` (with the migrations: `-LegacyCli` or `RV_LEGACY_CLI`) and `[room-real]`; every limit is written in the
+  script. `-FullVideoScan` checks every system's clips instead (about two hours). `-Soak` runs `rv_smoke_tests
+  "[soak]"` in Release last: the private bytes' growth after the first 5 minutes (32 MiB), their slope, the handles
+  and threads from its `memory.csv` (copied to `build/gate-m4/soak-memory.csv`). `-TimingOnly` builds Release alone
+  and runs the benchmark path and, with `-RealLibrary`, the real library's run. Gate M4's verdict is a full run plus a
+  `-TimingOnly -RealLibrary` run and the soak on a quiet machine.
 - vcpkg manifest mode, baseline pinned in `vcpkg.json`, packages installed in `build/vcpkg_installed`, built by the
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
@@ -296,7 +318,10 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   that played inspected; "Real arcade:" lines), since I5 step 3 `-Filter '[real-library][secondary_tv]'` (the busiest
   floor's largest room with a secondary TV, both screens playing in view in a 1920 x 1080 window, its GPU memory
   within 512 MiB in runs without `--screenshot`, whose render targets add about 72 MiB; the frame times with and
-  without clips; "Real secondary TV:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's
+  without clips; "Real secondary TV:" lines), since I5 step 10 `-Filter '[real-library][screens]'` (the whole library
+  imported under `build/<preset>/real-library/screens`, then every room of the plan that holds games started at its
+  doorway with `--start-room` for 240 lockstep frames: its hero screen on a clip or its chain's still, never standby,
+  at most 2 decoders and threads; "Real screens:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's
   clips (hours). `-OutDir <dir>` moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that
   script between the first snapshot and the tests, with the same variables (Gate M1's measurements). `python -I
   scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a
