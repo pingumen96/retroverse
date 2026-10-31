@@ -231,3 +231,6 @@ What the steps built where it departs from the text above, each recorded in its 
   game's, the emulator never sees the controllers); the inspected item waits in its fixture; the emulator's window is
   given the foreground once it shows, Retroverse's window rendering on behind it (step 10, asked after the first
   session in the headset).
+- **§7:** the CRT shows the captured window's client area without its black bars (an emulator's pillarbox in a window
+  as wide as the monitor), found in a small read-back four times a second and kept steady, at the crop's own aspect
+  (step 11).

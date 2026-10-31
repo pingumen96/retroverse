@@ -264,9 +264,10 @@ build/rvdata`).
   heads-up display on the head (the label over its item, the prompts, the card); the window and the screenshots show
   it through the eyes. A launched game (I10 step 6, `docs/i10/step-6.md`) keeps the headset rendering: its emulator's
   window (borderless, never exclusive fullscreen) is captured onto the room's hero CRT (Windows.Graphics.Capture,
-  WGL_NV_DX_interop2) and given the foreground, the pad plays it, the inspected item waits in its fixture; Retroverse
-  reads only the controllers' walk, turns and teleport until it ends (I10 step 10: input scripts' `leftStick`,
-  `rightStick` push the fake runtime's thumbsticks). Interactive runs scale the eyes'
+  WGL_NV_DX_interop2; I10 step 11: its client area without its black bars, at their aspect) and given the
+  foreground, the pad plays it, the inspected item waits in its fixture; Retroverse reads only the controllers'
+  walk, turns and teleport until it ends (I10 step 10: input scripts' `leftStick`, `rightStick` push the fake
+  runtime's thumbsticks). Interactive runs scale the eyes'
   rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
   frame-limited runs keep 1. 120 Hz (I10 step 9): `--xr-refresh-rate 120` or xr.json's `refreshRate` asks the headset
   for the highest rate it offers up to that (Link needs 120 Hz turned on in the Meta app); xr.json's `quality`
