@@ -247,14 +247,37 @@ std::optional<world::PickId> CollectionRoom::step(world::PickId from, world::Ste
     return m_navigation.step(from, direction);
 }
 
+scene::WalkerPose consoleViewPose(const ConsoleSocket& socket, const scene::WalkerPose& from,
+                                  const FocusViewer& viewer) noexcept {
+    const glm::vec3 eye = from.feet + glm::vec3(0.0f, viewer.eyeHeight, 0.0f);
+    const glm::vec3 slot = socket.position();
+    bool screenFaces = false;
+    glm::vec3 screen(0.0f);
+    if (socket.heroScreen) {
+        screen = glm::vec3((*socket.heroScreen)[3]);
+        const glm::vec3 normal = glm::vec3((*socket.heroScreen)[2]);
+        const glm::vec3 toScreen = screen - eye;
+        screenFaces = core::isFinite(screen) && core::isFinite(normal) && glm::dot(normal, toScreen) < 0.0f;
+    }
+    scene::ViewAngles angles;
+    if (screenFaces) {
+        // The title card shows: the socket below the middle of the view, the screen above it.
+        angles = scene::aimAt(eye, 0.5f * (slot + screen), viewer.lens, viewer.aspect, {}, from.yaw);
+    } else {
+        // The socket on the lower third's line: an area of the view whose centre is that line.
+        scene::ViewArea lowerThird;
+        lowerThird.min = glm::vec2(-1.0f, -1.0f);
+        lowerThird.max = glm::vec2(1.0f, 1.0f + 2.0f * kConsoleViewY);
+        angles = scene::aimAt(eye, slot, viewer.lens, viewer.aspect, lowerThird, from.yaw);
+    }
+    return scene::WalkerPose{from.feet, angles.yaw, std::max(angles.pitch, kConsoleViewMinPitch)};
+}
+
 std::optional<scene::WalkerPose> CollectionRoom::consolePose(const scene::WalkerPose& from) const {
     if (!m_consoleSocket) {
         return std::nullopt;
     }
-    const glm::vec3 eye = from.feet + glm::vec3(0.0f, m_viewer.eyeHeight, 0.0f);
-    const glm::vec3 target = m_consoleSocket->position();
-    const scene::ViewAngles angles = scene::aimAt(eye, target, m_viewer.lens, m_viewer.aspect, {}, from.yaw);
-    return scene::WalkerPose{from.feet, angles.yaw, angles.pitch};
+    return consoleViewPose(*m_consoleSocket, from, m_viewer);
 }
 
 FocusStepRepeat::FocusStepRepeat(const ui::NavSettings& settings) noexcept : m_repeater(settings) {}

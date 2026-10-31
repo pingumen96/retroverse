@@ -547,6 +547,9 @@ Json insertionToJson(const InsertionRecord& insertion) {
     if (insertion.startFrame) {
         json["startFrame"] = *insertion.startFrame;
     }
+    if (insertion.seatedFrame) {
+        json["seatedFrame"] = *insertion.seatedFrame;
+    }
     if (insertion.endFrame) {
         json["endFrame"] = *insertion.endFrame;
     }
@@ -568,6 +571,7 @@ InsertionRecord readInsertion(FieldReader& fields) {
     insertion.socketFrames = fields.count("socketFrames");
     insertion.pickId = fields.string("pickId");
     insertion.startFrame = fields.optionalCount("startFrame");
+    insertion.seatedFrame = fields.optionalCount("seatedFrame");
     insertion.endFrame = fields.optionalCount("endFrame");
     insertion.seconds = fields.number("seconds");
     insertion.end = fields.string("end");

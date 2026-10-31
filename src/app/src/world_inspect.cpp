@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-
 #include <span>
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <rv/app/crt_looks.hpp>
 #include <rv/core/math.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
@@ -116,11 +116,22 @@ InspectDimming inspectDimming(float lift, float baseVignette) noexcept {
     return InspectDimming{kInspectDimShare * share, std::min(1.0f, base + kInspectVignette * share)};
 }
 
-std::optional<ConsoleSocket> consoleSocketOf(const scene::SceneDescription& description,
-                                             std::string_view roomPrefix) {
+namespace {
+
+/// A socket of a scene object, in the scene's frame, with its size.
+struct FoundSocket {
+    glm::mat4 transform{1.0f};
+    glm::vec3 size{0.0f};
+};
+
+/// The socket `name` of the first prefab object among `description`'s whose id begins with `roomPrefix` and ends with
+/// `suffix` and whose prefab (built again, no GPU) has it, through the object's first instance.
+[[nodiscard]] std::optional<FoundSocket> objectSocket(const scene::SceneDescription& description,
+                                                      std::string_view roomPrefix, std::string_view suffix,
+                                                      std::string_view name) {
     for (const scene::SceneObject& object : description.objects) {
         if (object.source != scene::SceneObject::Source::Prefab || !object.id.starts_with(roomPrefix) ||
-            !object.id.ends_with(kConsoleIdSuffix)) {
+            !object.id.ends_with(suffix)) {
             continue;
         }
         const std::span<const glm::mat4> transforms = object.instanceTransforms();
@@ -131,14 +142,30 @@ std::optional<ConsoleSocket> consoleSocketOf(const scene::SceneDescription& desc
         if (!prefab) {
             continue;
         }
-        const geometry::Socket* socket = geometry::findSocket(prefab->sockets, kConsoleMediaSocket);
+        const geometry::Socket* socket = geometry::findSocket(prefab->sockets, name);
         if (socket == nullptr) {
             continue;
         }
-        const glm::vec3 size = geometry::socketSize(*socket);
-        return ConsoleSocket{transforms.front() * socket->transform, glm::vec2(size.x, size.z)};
+        return FoundSocket{transforms.front() * socket->transform, geometry::socketSize(*socket)};
     }
     return std::nullopt;
+}
+
+} // namespace
+
+std::optional<ConsoleSocket> consoleSocketOf(const scene::SceneDescription& description,
+                                             std::string_view roomPrefix) {
+    const std::optional<FoundSocket> slot =
+        objectSocket(description, roomPrefix, kConsoleIdSuffix, kConsoleMediaSocket);
+    if (!slot) {
+        return std::nullopt;
+    }
+    ConsoleSocket socket{slot->transform, glm::vec2(slot->size.x, slot->size.z), std::nullopt};
+    if (const std::optional<FoundSocket> screen =
+            objectSocket(description, roomPrefix, kHeroCrtIdSuffix, kHeroScreenSocket)) {
+        socket.heroScreen = screen->transform;
+    }
+    return socket;
 }
 
 glm::vec3 itemExtents(const world::CollectionItem& item) noexcept {
@@ -169,6 +196,11 @@ float insertedScale(const glm::vec3& extents, const glm::vec2& opening) noexcept
     return scale;
 }
 
+float insertedScaleAt(float scale, float progress) noexcept {
+    const float shrink = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
+    return 1.0f + (shrink - 1.0f) * clamp01(progress);
+}
+
 glm::mat4 insertedItemTransform(const glm::mat4& held, const ConsoleSocket& socket, float scale,
                                 float progress) noexcept {
     const float t = clamp01(progress);
@@ -192,8 +224,7 @@ glm::mat4 insertedItemTransform(const glm::mat4& held, const ConsoleSocket& sock
     const scene::RigidPose from{glm::vec3(held[3]), glm::normalize(glm::quat_cast(heldRotation))};
     const scene::RigidPose to{socket.position(), glm::normalize(glm::quat_cast(socketRotation))};
     const scene::RigidPose pose = t >= 1.0f ? to : scene::interpolatePose(from, to, t);
-    const float shrink = std::isfinite(scale) && scale > 0.0f ? scale : 1.0f;
-    const float factor = 1.0f + (shrink - 1.0f) * t;
+    const float factor = insertedScaleAt(scale, t);
     glm::mat4 transform(glm::mat3_cast(pose.orientation));
     transform[0] *= heldScale.x * factor;
     transform[1] *= heldScale.y * factor;

@@ -354,15 +354,17 @@ struct InsertionRecord {
     std::uint64_t arrived = 0;
     std::uint64_t skipped = 0;
     std::uint64_t refused = 0;
-    /// Frames drawn with the item on its way (progress between 0 and 1) and in the socket (1: the insertion's last
-    /// frame and the launch's frame "Gioco in corso").
+    /// Frames drawn with the item on its way (progress between 0 and 1) and in the socket (1: the frame it seated, its
+    /// hold before the hand-over and the launch's frame "Gioco in corso").
     std::uint64_t movingFrames = 0;
     std::uint64_t socketFrames = 0;
-    /// The last insertion: its item (pick id in hexadecimal), the frames it began and ended on, the frame times from
-    /// its start to its end (its first frame's included: the interaction's own clock), how it ended ("arrived",
-    /// "skipped", "refused"; "" while it runs).
+    /// The last insertion: its item (pick id in hexadecimal), the frames it began on, the item seated in the socket on
+    /// (progress 1; the skip's frame when skipped) and it ended on (the hand-over released: InsertionEnd, after the
+    /// hold), the frame times from its start to its end (its first frame's included: the interaction's own clock), how
+    /// it ended ("arrived", "skipped", "refused"; "" while it runs).
     std::string pickId;
     std::optional<std::uint64_t> startFrame;
+    std::optional<std::uint64_t> seatedFrame;
     std::optional<std::uint64_t> endFrame;
     double seconds = 0.0;
     std::string end;

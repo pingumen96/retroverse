@@ -94,6 +94,8 @@ struct InspectDimming {
 inline constexpr std::string_view kConsoleIdSuffix = ".console";
 /// The console prefabs' media socket (geometry::ConsoleCartridgeParams: "CartridgeSlot").
 inline constexpr std::string_view kConsoleMediaSocket = "CartridgeSlot";
+/// The hero CRT's screen (the crt prefab's "ScreenSurface": its centre, +Z out of the glass).
+inline constexpr std::string_view kHeroScreenSocket = "ScreenSurface";
 /// The share of the socket's opening the item fills at most once in it (its front's width and its thickness).
 inline constexpr float kInsertedFill = 0.9f;
 /// How far the item reaches down into the console at most once in it (meters): half of its height (a console stands
@@ -107,6 +109,9 @@ struct ConsoleSocket {
     glm::mat4 transform{1.0f};
     /// The opening's width (along the socket's +X) and depth (+Z), meters.
     glm::vec2 opening{0.0f};
+    /// I5 step 9's review: the screen of the room's hero CRT (kHeroScreenSocket) in the scene's frame, when the room
+    /// has one: the eye turned to the console frames it too when it faces the eye (consoleViewPose()).
+    std::optional<glm::mat4> heroScreen;
 
     [[nodiscard]] glm::vec3 position() const noexcept { return glm::vec3(transform[3]); }
     bool operator==(const ConsoleSocket&) const = default;
@@ -114,8 +119,9 @@ struct ConsoleSocket {
 
 /// The media socket of the console among `description`'s objects whose ids begin with `roomPrefix` ("room:snes/"; ""
 /// takes any): the first prefab object whose id ends with kConsoleIdSuffix and whose prefab (built again from its
-/// kind and parameters, no GPU) has kConsoleMediaSocket, through its first instance. Nothing in a room without a
-/// console (the arcade's hero corner, a shared room's: ADR-0013 §6) or a scene without one.
+/// kind and parameters, no GPU) has kConsoleMediaSocket, through its first instance; with the screen of the first such
+/// object ending with kHeroCrtIdSuffix whose prefab has kHeroScreenSocket. Nothing in a room without a console (the
+/// arcade's hero corner, a shared room's: ADR-0013 §6) or a scene without one.
 [[nodiscard]] std::optional<ConsoleSocket> consoleSocketOf(const scene::SceneDescription& description,
                                                            std::string_view roomPrefix);
 
@@ -128,12 +134,16 @@ struct ConsoleSocket {
 /// y) within kInsertedHalfDepth. A size or an opening that is empty or not finite sets no bound.
 [[nodiscard]] float insertedScale(const glm::vec3& extents, const glm::vec2& opening) noexcept;
 
+/// The factor of the item's scale at `progress` (clamped to [0, 1]; non-finite counts as 0) of the insertion: 1 at 0,
+/// `scale` (insertedScale(); one that is not positive or not finite counts as 1) at 1, linear between.
+[[nodiscard]] float insertedScaleAt(float scale, float progress) noexcept;
+
 /// The pose of the item going into the console's media socket at `progress` (the interaction's eased insertion,
 /// clamped to [0, 1]; non-finite counts as 0), from the item prefab's space to the scene's frame: at 0 exactly `held`
 /// (its pose in the hand), at 1 in the socket: its centre at the socket's origin (half of it down in the console), its
 /// prefab axes the socket's (upright, its front the console's front), `held`'s scale times `scale`
 /// (insertedScale()); in between, its centre along the straight line, its orientation along the shorter arc
-/// (scene::interpolatePose) and its scale linearly.
+/// (scene::interpolatePose) and its scale by insertedScaleAt().
 [[nodiscard]] glm::mat4 insertedItemTransform(const glm::mat4& held, const ConsoleSocket& socket, float scale,
                                               float progress) noexcept;
 

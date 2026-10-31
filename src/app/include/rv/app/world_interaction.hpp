@@ -74,8 +74,8 @@ enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Retu
 ///    which is both confirm and ui_activate, presses the focused button), interact and ui_activate (skip the lift).
 ///    Neither QuickCatalog nor Back: the pad's north button is Vedi media here, the quick catalog elsewhere.
 ///  - Suspended (AnimatingToConsole, Launching, Returning): nothing; A1's game-session panel has the input while a
-///    game launches and runs. During the insertion (AnimatingToConsole) any button the frame pressed skips it
-///    (anyButtonPressed(), on the frame's actions before any context): it is read by no context.
+///    game launches and runs. During the insertion (AnimatingToConsole) a deliberate action button the frame pressed
+///    skips it (insertionSkipPressed(), on the frame's actions before any context): it is read by no context.
 ///  - Edit (I4b step 3, ADR-0015 §4: the editor's): the walking and look actions and Sprint (the walker walks and looks
 ///    as in FreeRoam), interact (pick up, drop), Back, confirm (the editor's menu: Enter, the pad's Start), edit_pin,
 ///    the arrows and the D-pad (steps between slots, the menu's focus) and ui_activate (the menu's press). Neither
@@ -116,10 +116,19 @@ enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended, Ed
 /// keys walk and step at once otherwise: in Edit they step).
 [[nodiscard]] input::ActionState walkerActionsFor(WorldContext context, const input::ActionState& actions) noexcept;
 
-/// True when `actions` pressed a button this frame that skips the insertion (ADR-0016 §11: any button): every action
-/// but the look and walking axes, the UI's analog navigation (an axis is no button) and the global actions (a
-/// screenshot, the developer overlay, a shader reload, the mute: host functions that change nothing in the world).
-[[nodiscard]] bool anyButtonPressed(const input::ActionState& actions) noexcept;
+/// True when `actions` pressed a button this frame that skips the insertion (ADR-0016 §11's "any button", as amended
+/// by I5 step 9's review): a deliberate action button, activate (interact, ui_activate), confirm and start (confirm,
+/// menu), back and cancel (back, ui_back). Never what the player may still hold from walking or looking (the walking
+/// and look axes, sprint, the arrows, which are both move_forward / move_right and ui_up..ui_right), nor the global
+/// actions (a screenshot, the developer overlay, a shader reload, the mute: host functions).
+[[nodiscard]] bool insertionSkipPressed(const input::ActionState& actions) noexcept;
+
+/// I5 step 9's review: a launch from the world is in flight in `state` (the insertion, the launch, the return): the
+/// room it was asked from must stay as it is until the interaction is back in Inspect, so a live update's or a
+/// regeneration's result waits (WorldSession).
+[[nodiscard]] constexpr bool worldLaunchInFlight(WorldState state) noexcept {
+    return state == WorldState::AnimatingToConsole || state == WorldState::Launching || state == WorldState::Returning;
+}
 
 /// Where the pick ray starts (ADR-0012 §2).
 enum class PickRaySource : std::uint8_t {
@@ -183,8 +192,14 @@ struct InteractionTimings {
     float lift = 0.300f;
     /// The lowering back to the pulled-out pose (Back from Inspect).
     float lower = 0.200f;
-    /// I5 step 9 (ADR-0016 §11): the held item into the console's media socket after Avvia, the eye turning to it.
+    /// I5 step 9 (ADR-0016 §11): the held item into the console's media socket after Avvia (eased in and out).
     float insertion = 0.450f;
+    /// The eye's turn to the console meanwhile (eased out: it leads, so that the item, held in front of it, drops into
+    /// a console already framed).
+    float insertionLook = 0.300f;
+    /// The item seen seated in the socket before the launch's hand-over ("Gioco in corso" dims the view): 6 frames at
+    /// 60 Hz, the whole within style §16.2's 650 ms.
+    float insertionHold = 0.100f;
 };
 
 /// How the inspected item answers the look actions and the zoom (ADR-0012 §4, style §6.2).
@@ -294,8 +309,9 @@ struct WorldLaunchRequest {
 
 /// How the insertion ended (InteractionResult::insertionEnded).
 enum class InsertionEnd : std::uint8_t {
-    Arrived, ///< the item reached the console's media socket (InteractionTimings::insertion)
-    Skipped, ///< a button skipped the rest of it (anyButtonPressed())
+    Arrived, ///< the item reached the console's media socket (InteractionTimings::insertion) and was seen seated
+             ///< there (InteractionTimings::insertionHold)
+    Skipped, ///< a button skipped the rest of it (insertionSkipPressed())
 };
 
 /// "arrived", "skipped".
@@ -310,7 +326,7 @@ struct InteractionResult {
     /// Avvia: start this launch; the state stays AnimatingToConsole or Launching until launchEnded().
     std::optional<WorldLaunchRequest> launch;
     /// I5 step 9: the insertion of a held launch ended this frame (AnimatingToConsole left for Launching): its
-    /// hand-over may begin.
+    /// hand-over may begin. Arrived comes InteractionTimings::insertionHold after the item seated (insertion() 1).
     std::optional<InsertionEnd> insertionEnded;
     /// Vedi media and Informazioni on the inspected item (I3 step 14b).
     bool showMedia = false;
@@ -424,7 +440,8 @@ public:
     [[nodiscard]] float pullOf(world::PickId id) const noexcept;
     [[nodiscard]] InspectView inspectView() const noexcept;
     /// I5 step 9: the insertion's progress, eased, from 0 (the item in the hand) to 1 (in the console's media socket):
-    /// it runs in AnimatingToConsole and stays 1 while the game launches and runs; 0 otherwise.
+    /// it runs in AnimatingToConsole (1 during its hold, the item seated) and stays 1 while the game launches and
+    /// runs; 0 otherwise.
     [[nodiscard]] float insertion() const noexcept { return m_insert.pose(); }
     /// The walker's ease is running.
     [[nodiscard]] bool walkerEasing() const noexcept { return m_walker.animating(); }
@@ -447,7 +464,8 @@ private:
                      InteractionResult& result);
     /// Avvia on the inspected item: AnimatingToConsole (held) with a console and motion, else Launching.
     void startLaunch(const RoomItem& item, InteractionResult& result);
-    /// The insertion's end (arrived or skipped): Launching.
+    /// The insertion's end (arrived after its hold, or skipped: the item seated at once, the walker stopped where it
+    /// is): Launching.
     void endInsertion(InsertionEnd end, InteractionResult& result);
     void back(const BackState& shell, InteractionResult& result);
     void track(const world::HoverSample& sample);
@@ -459,7 +477,8 @@ private:
     void leaveInspect();
     void leaveFocus();
     void toFreeRoam(InteractionNotice notice);
-    void easeWalkerTo(const scene::WalkerPose& target, float seconds);
+    void easeWalkerTo(const scene::WalkerPose& target, float seconds,
+                      scene::Easing easing = scene::Easing::EaseInOut);
     void skipWalkerAndPull();
 
     void pull(world::PickId id);
@@ -493,8 +512,10 @@ private:
     /// The walker was placed this frame without an ease left running (a skip, an instant ease, a stop, a restore).
     bool m_walkerPlaced = false;
     scene::PoseAnimator<float> m_lift;
-    /// I5 step 9: the insertion's progress (AnimatingToConsole).
+    /// I5 step 9: the insertion's progress (AnimatingToConsole), and the time the item has stood seated in the socket
+    /// (its hold before the hand-over).
     scene::PoseAnimator<float> m_insert;
+    float m_seatedSeconds = 0.0f;
     float m_inspectYaw = 0.0f;
     float m_inspectPitch = 0.0f;
     float m_inspectDistance = 0.45f;

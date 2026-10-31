@@ -11,8 +11,8 @@
 //              79, 97, 109 and 115 closes each, back to Inspect with the card)
 //   frame 118  confirm: Avvia (the pad's Start)         frame 175  ui_activate: Avvia pressed on the card
 //              (I3 step 15a: each launches the game, decided on the next frame; since I5 step 9 the item goes into
-//              the console first, 27 frames, the hand-over on the last (144, 201); Inspect of the same item comes back
-//              the frame after (145, 202), with the card on Avvia)
+//              the console first, 27 frames, and is seen seated 6 more, the hand-over on the last (150, 207); Inspect
+//              of the same item comes back the frame after (151, 208), with the card on Avvia)
 //   frame 225  ui_right: Vedi media focused             frame 231  ui_down: Indietro focused
 //   frame 245  ui_activate: Indietro pressed: Focus of the same item, the card gone
 //   frame 275  interact: Inspect again, the card again on Avvia

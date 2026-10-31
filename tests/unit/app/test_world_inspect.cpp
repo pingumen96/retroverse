@@ -473,6 +473,13 @@ TEST_CASE("app/world_inspect: a console room's console has its media socket; the
         CHECK(socket->opening.x <= 0.15f + 1e-6f);
         CHECK(socket->opening.y > 0.02f);
         CHECK(socket->opening.y <= 0.045f + 1e-6f);
+        // The hero CRT's screen beside it (I5 step 9's review: the title card framed when it faces the eye): its
+        // glass upright, a little above the console, near it.
+        REQUIRE(socket->heroScreen.has_value());
+        const glm::vec3 screen((*socket->heroScreen)[3]);
+        CHECK(std::abs(axis(*socket->heroScreen, 2).y) < 0.2f);
+        CHECK(screen.y > socket->position().y);
+        CHECK(glm::length(screen - socket->position()) < 2.0f);
     }
     CHECK(consoles == 3);
     // A hand-made scene without a console.
@@ -526,6 +533,12 @@ TEST_CASE("app/world_inspect: from the hand into the socket: its centre at the s
     CHECK(insertedItemTransform(held, socket, scale, 0.0f) == held);
     CHECK(insertedItemTransform(held, socket, scale, -1.0f) == held);
     CHECK(insertedItemTransform(held, socket, scale, std::numeric_limits<float>::quiet_NaN()) == held);
+    // The scale's factor: 1 in the hand, `scale` in the socket, linear between (a bad scale counts as 1).
+    CHECK(rv::app::insertedScaleAt(scale, 0.0f) == 1.0f);
+    CHECK(rv::app::insertedScaleAt(scale, 1.0f) == scale);
+    CHECK(std::abs(rv::app::insertedScaleAt(scale, 0.5f) - 0.9f) < 1e-6f);
+    CHECK(rv::app::insertedScaleAt(scale, 3.0f) == scale);
+    CHECK(rv::app::insertedScaleAt(-2.0f, 0.5f) == 1.0f);
     for (const float progress : {1.0f, 2.0f}) {
         const glm::mat4 inserted = insertedItemTransform(held, socket, scale, progress);
         CHECK(near(glm::vec3(inserted[3]), socket.position(), 1e-5f));
@@ -554,24 +567,73 @@ TEST_CASE("app/world_inspect: from the hand into the socket: its centre at the s
     CHECK(rv::app::insertionDimming(1.0f, 0.5f, 0.0f) == rv::app::inspectDimming(0.5f, 0.0f));
 }
 
-TEST_CASE("app/world_inspect: the room's console pose turns the eye to the socket, the feet kept",
+namespace {
+
+/// Where `point` shows in the view of a camera at `eye` in `pose` (normalized device coordinates, +Y up).
+[[nodiscard]] glm::vec2 ndcOf(const glm::vec3& eye, const rv::scene::WalkerPose& pose, const glm::vec3& point) {
+    rv::scene::Camera camera;
+    camera.setPose(eye, pose.yaw, pose.pitch);
+    const glm::vec4 clip = camera.viewProjection() * glm::vec4(point, 1.0f);
+    return glm::vec2(clip) / clip.w;
+}
+
+} // namespace
+
+TEST_CASE("app/world_inspect: the eye turned to the console frames the socket on the lower third, the title card "
+          "when the hero screen faces it, never pitched below 30 degrees",
           "[app][world_inspect][insertion]") {
     const CollectionLayout layout = rv::test::world::layoutOf(rv::test::world::planCase("plan-50-seed-102938"));
     auto room = rv::app::CollectionRoom::build(std::make_shared<const CollectionLayout>(layout));
     REQUIRE(room.has_value());
     const rv::scene::WalkerPose from{glm::vec3(1.0f, 0.0f, -2.0f), 0.3f, -0.1f};
+    const glm::vec3 eye = from.feet + glm::vec3(0.0f, kEyeHeight, 0.0f);
     CHECK_FALSE((*room)->consolePose(from).has_value());
     rv::app::ConsoleSocket socket;
     socket.transform[3] = glm::vec4(-0.2f, 0.62f, -4.6f, 1.0f);
     (*room)->setConsoleSocket(socket);
+
+    // No hero screen: the socket straight ahead on the lower third's line, the feet kept.
     const std::optional<rv::scene::WalkerPose> pose = (*room)->consolePose(from);
     REQUIRE(pose.has_value());
     CHECK(pose->feet == from.feet);
-    const rv::scene::Camera camera = cameraAt(from.feet + glm::vec3(0.0f, kEyeHeight, 0.0f),
-                                              rv::core::radiansToDegrees(pose->yaw),
-                                              rv::core::radiansToDegrees(pose->pitch));
-    const glm::vec3 toSocket = glm::normalize(socket.position() - camera.position());
-    CHECK(glm::dot(camera.forward(), toSocket) > 0.9999f);
+    CHECK(pose->pitch > rv::app::kConsoleViewMinPitch);
+    const glm::vec2 slot = ndcOf(eye, *pose, socket.position());
+    CHECK(std::abs(slot.x) < 1e-3f);
+    CHECK(std::abs(slot.y - rv::app::kConsoleViewY) < 1e-3f);
+
+    // A screen beside the console that faces the eye: the eye between them, both in view (the card above the slot).
+    rv::app::ConsoleSocket withScreen = socket;
+    glm::mat4 screen(1.0f); // +Z out of the glass, towards the walker (who stands at +Z of it)
+    screen[3] = glm::vec4(0.25f, 0.95f, -4.75f, 1.0f);
+    withScreen.heroScreen = screen;
+    const rv::scene::WalkerPose facing = rv::app::consoleViewPose(withScreen, from, rv::app::FocusViewer{});
+    const glm::vec3 middle = 0.5f * (socket.position() + glm::vec3(screen[3]));
+    CHECK(glm::length(ndcOf(eye, facing, middle)) < 1e-3f);
+    const glm::vec2 slotShown = ndcOf(eye, facing, socket.position());
+    const glm::vec2 cardShown = ndcOf(eye, facing, glm::vec3(screen[3]));
+    CHECK(slotShown.y < cardShown.y);
+    for (const glm::vec2& shown : {slotShown, cardShown}) {
+        CHECK(std::abs(shown.x) < 0.9f);
+        CHECK(std::abs(shown.y) < 0.9f);
+    }
+    // Turned away (its back to the eye): the lower third's framing again.
+    glm::mat4 away = screen;
+    away[2] = glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+    away[0] = glm::vec4(-1.0f, 0.0f, 0.0f, 0.0f);
+    withScreen.heroScreen = away;
+    const rv::scene::WalkerPose back = rv::app::consoleViewPose(withScreen, from, rv::app::FocusViewer{});
+    CHECK(std::abs(back.yaw - pose->yaw) < 1e-6f);
+    CHECK(std::abs(back.pitch - pose->pitch) < 1e-6f);
+
+    // A low console close by (45 degrees below the eye): the pitch clamped to -30 degrees, the socket still in view,
+    // lower than the third's line.
+    rv::app::ConsoleSocket below;
+    below.transform[3] = glm::vec4(from.feet.x - 0.6f, 0.45f, from.feet.z - 1.05f, 1.0f);
+    const rv::scene::WalkerPose steep = rv::app::consoleViewPose(below, from, rv::app::FocusViewer{});
+    CHECK(steep.pitch == rv::app::kConsoleViewMinPitch);
+    const glm::vec2 low = ndcOf(eye, steep, below.position());
+    CHECK(low.y < rv::app::kConsoleViewY);
+    CHECK(low.y > -1.0f);
 }
 
 TEST_CASE("app/world_inspect: the run report's insertion record reads back", "[app][world_inspect][insertion]") {
@@ -587,6 +649,7 @@ TEST_CASE("app/world_inspect: the run report's insertion record reads back", "[a
     insertion.socketFrames = 3;
     insertion.pickId = "0300000C";
     insertion.startFrame = 120;
+    insertion.seatedFrame = 124;
     insertion.endFrame = 125;
     insertion.seconds = 0.1;
     insertion.end = "skipped";

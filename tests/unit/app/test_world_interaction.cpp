@@ -952,20 +952,10 @@ InteractionHarness inspectingWithConsole(rv::app::InteractionSettings settings =
     return harness;
 }
 
-/// The insertion's frames from Avvia (its frame included) to the frame it ended; the last result.
-int framesToEnd(InteractionHarness& harness, rv::app::InteractionResult& last, int limit = 100) {
-    int frames = 1;
-    while (!last.insertionEnded && frames < limit) {
-        last = harness.idle(1);
-        ++frames;
-    }
-    return frames;
-}
-
 } // namespace
 
-TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item into it in 450 ms, the launch held "
-          "until then",
+TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item into it in 450 ms, the eye leading "
+          "in 300 ms, the launch held until the item was seen seated",
           "[app][world_interaction][insertion]") {
     InteractionHarness harness = inspectingWithConsole();
     const PickId item = harness.interaction.focused();
@@ -982,10 +972,12 @@ TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item 
     CHECK(harness.interaction.focused() == item);
     CHECK(harness.interaction.highlighted() == kNoPick);
     CHECK(harness.interaction.backLevel() == WorldBack::Shell);
-    // The first frame already moves it (its own frame time), the eye turning with it.
+    // The first frame already moves it (its own frame time), the eye turning with it, ahead of it (eased out).
     CHECK(harness.interaction.insertion() > 0.0f);
     CHECK(harness.interaction.insertion() < 0.05f);
     REQUIRE(last.walker.has_value());
+    const float firstTurn = std::abs(rv::core::wrapAngleRadians(harness.pose().yaw - walker.yaw));
+    CHECK(firstTurn > 0.1f * std::abs(rv::core::wrapAngleRadians(facingConsole.yaw - walker.yaw)));
     REQUIRE(harness.interaction.launchRecord().has_value());
     CHECK(sameWalker(harness.interaction.launchRecord()->walker, walker));
     CHECK(harness.interaction.launchRecord()->inspect == view);
@@ -993,9 +985,23 @@ TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item 
     CHECK_FALSE(harness.interaction.enterEdit());
     CHECK_FALSE(harness.interaction.showInRoom(harness.room.at(1, 2, 3), harness.pose()));
 
-    // 450 ms at 60 Hz: 27 frames, Avvia's included; the eye on the socket, the launch's hand-over released.
-    const int frames = framesToEnd(harness, last);
-    CHECK(frames == 27);
+    // The eye on the console in 300 ms (18 frames, Avvia's included), the item still on its way.
+    last = harness.idle(17);
+    CHECK(sameWalker(harness.pose(), facingConsole));
+    CHECK_FALSE(harness.interaction.walkerEasing());
+    CHECK(harness.interaction.insertion() < 1.0f);
+    // The item seated after 450 ms (27 frames), seen there 100 ms more (6 frames) before the launch's hand-over is
+    // released.
+    last = harness.idle(9);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
+    CHECK_FALSE(last.insertionEnded.has_value());
+    int held = 0;
+    while (!last.insertionEnded && held < 20) {
+        last = harness.idle(1);
+        ++held;
+    }
+    CHECK(held == 6);
     REQUIRE(last.insertionEnded.has_value());
     CHECK(*last.insertionEnded == rv::app::InsertionEnd::Arrived);
     CHECK_FALSE(last.launch.has_value());
@@ -1019,14 +1025,17 @@ TEST_CASE("app/world_interaction: Avvia in a room with a console eases the item 
     CHECK(harness.interaction.notice() == InteractionNotice::None);
 }
 
-TEST_CASE("app/world_interaction: any button skips the insertion, the launch going on within the frame",
+TEST_CASE("app/world_interaction: a deliberate button skips the insertion, the eye stopping where it is, the launch "
+          "going on within the frame",
           "[app][world_interaction][insertion]") {
-    // A look, a walk and the global actions (a screenshot, the mute) are no skip; any other press is, Back included.
+    // Activate, confirm, start, back and cancel skip; a look, a walk, sprint, the arrows (both walking and ui_up..
+    // ui_right), the quick catalog's button and the global actions (a screenshot, the mute) do not.
     const auto skippedBy = [](std::initializer_list<Action> actions, float look) {
         InteractionHarness harness = inspectingWithConsole();
         const rv::scene::WalkerPose facingConsole = *harness.room.consolePose(harness.pose());
         REQUIRE(harness.press(rv::app::CardAction::Launch).launch->held);
         harness.idle(5);
+        const rv::scene::WalkerPose turning = harness.pose();
         ActionState state = pressing(actions);
         state.setAxis(Action::LookDeltaX, look);
         const rv::app::InteractionResult result = harness.frame(state);
@@ -1034,27 +1043,45 @@ TEST_CASE("app/world_interaction: any button skips the insertion, the launch goi
         if (skipped) {
             CHECK(harness.interaction.state() == WorldState::Launching);
             CHECK(harness.interaction.insertion() == 1.0f);
+            // No snap: the eye stays where the turn had taken it, short of the console.
             REQUIRE(result.walker.has_value());
-            CHECK(sameWalker(harness.pose(), facingConsole));
+            CHECK(sameWalker(harness.pose(), turning));
+            CHECK_FALSE(sameWalker(harness.pose(), facingConsole));
+            CHECK_FALSE(harness.interaction.walkerEasing());
+            harness.idle(3);
+            CHECK(sameWalker(harness.pose(), turning));
         } else {
             CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
         }
         return skipped;
     };
     CHECK(skippedBy({Action::Interact}, 0.0f));
+    CHECK(skippedBy({Action::UiActivate}, 0.0f));
     CHECK(skippedBy({Action::Confirm}, 0.0f));
+    CHECK(skippedBy({Action::Menu}, 0.0f));
     CHECK(skippedBy({Action::Back}, 0.0f));
     CHECK(skippedBy({Action::UiBack}, 0.0f));
-    CHECK(skippedBy({Action::QuickCatalog}, 0.0f));
     CHECK_FALSE(skippedBy({}, 40.0f));
+    CHECK_FALSE(skippedBy({Action::Sprint}, 0.0f));
+    CHECK_FALSE(skippedBy({Action::UiUp, Action::UiLeft}, 0.0f));
+    CHECK_FALSE(skippedBy({Action::QuickCatalog, Action::Map}, 0.0f));
     CHECK_FALSE(skippedBy({Action::Screenshot, Action::ToggleMute}, 0.0f));
     // Through the default bindings: a key and the pad's buttons.
-    CHECK(rv::app::anyButtonPressed(keyPress(rv::input::Key::E)));
-    CHECK(rv::app::anyButtonPressed(keyPress(rv::input::Key::Escape)));
-    CHECK(rv::app::anyButtonPressed(padPress(rv::input::GamepadButton::South)));
-    CHECK(rv::app::anyButtonPressed(padPress(rv::input::GamepadButton::Start)));
-    CHECK_FALSE(rv::app::anyButtonPressed(keyPress(rv::input::Key::F12)));
-    CHECK_FALSE(rv::app::anyButtonPressed(ActionState{}));
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::E)));
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Enter)));
+    CHECK(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Escape)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::South)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::East)));
+    CHECK(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::Start)));
+    // Walking keys and buttons held from before Avvia, or pressed meanwhile, never skip.
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::W)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Up)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::Left)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::LeftShift)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::DpadUp)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(padPress(rv::input::GamepadButton::LeftStick)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(keyPress(rv::input::Key::F12)));
+    CHECK_FALSE(rv::app::insertionSkipPressed(ActionState{}));
     // Without the frame's actions (the product UI has the input) it runs on.
     InteractionHarness noInput = inspectingWithConsole();
     REQUIRE(noInput.press(rv::app::CardAction::Launch).launch->held);

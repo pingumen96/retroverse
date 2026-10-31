@@ -49,6 +49,7 @@ void WorldInspection::observeInsertion(const WorldInteraction& interaction, cons
         m_inserting = true;
         m_insertion.pickId = fmt::format("{:08X}", result.launch->item);
         m_insertion.startFrame = frame;
+        m_insertion.seatedFrame.reset();
         m_insertion.endFrame.reset();
         m_insertion.end.clear();
         m_insertion.seconds = 0.0;
@@ -58,6 +59,9 @@ void WorldInspection::observeInsertion(const WorldInteraction& interaction, cons
         return;
     }
     m_insertion.seconds += dt;
+    if (!m_insertion.seatedFrame && interaction.insertion() >= 1.0f) {
+        m_insertion.seatedFrame = frame;
+    }
     if (result.insertionEnded) {
         ++(*result.insertionEnded == InsertionEnd::Arrived ? m_insertion.arrived : m_insertion.skipped);
         m_insertion.end = std::string(toString(*result.insertionEnded));
@@ -102,7 +106,7 @@ glm::mat4 WorldInspection::itemModel(const WorldInteraction& interaction, const 
         const float distance = glm::distance(center, socket.position());
         m_insertion.socket = socket.position();
         m_insertion.center = center;
-        m_insertion.scale = 1.0 + (static_cast<double>(scale) - 1.0) * std::min(1.0, static_cast<double>(insertion));
+        m_insertion.scale = insertedScaleAt(scale, insertion);
         m_insertion.distance = distance;
         ++(insertion >= 1.0f ? m_insertion.socketFrames : m_insertion.movingFrames);
         if (m_insertion.frames.size() < kMaxInsertionFrames &&

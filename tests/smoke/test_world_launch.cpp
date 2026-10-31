@@ -5,9 +5,10 @@
 // (RV_LAUNCH_ALLOWLIST) and every launch in the background (RV_LAUNCH_BACKGROUND, main.cpp).
 //  - Avvia on the inspected item's card (world_insertion.json from the Focus pose of Amber Lantern, which has a clip the
 //    hero CRT plays while it is inspected; the secondary TV's autoplay off): I5 step 9's insertion, the item eased
-//    into the console's media socket in 450 ms (at the socket within 1 cm on its last frame), the hero CRT's decoder
-//    stopped as it began with its thread ended before the hand-over; the launch resolved on the catalog worker
-//    meanwhile, its hand-over after the insertion, Returned, its play session recorded and verified; the walker's pose
+//    into the console's media socket in 450 ms (the socket the shown scene's console's), seen seated 100 ms, the hero
+//    CRT's decoder stopped as it began with its thread ended before the hand-over; the launch resolved on the catalog
+//    worker meanwhile, its hand-over after the insertion, Returned, its play session recorded and verified; the walker's
+//    pose
 //    and Inspect of the same item restored, the item on its shelf, the card shown again; the decoder opened again
 //    after the return, at the clip's position; the cover loader paused, no frame rendered while the game ran.
 //  - The insertion skipped by a button (world_insertion_skip.json): the item in the socket at once, the launch within
@@ -37,10 +38,12 @@
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/session_store.hpp>
+#include <rv/core/aabb.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
 #include <rv/geometry/prefabs.hpp>
@@ -151,6 +154,10 @@ std::vector<std::string> roomArguments(std::uint32_t frames, const fs::path& sho
 struct ShownRoom {
     rv::scene::CameraSetup camera;
     rv::world::CollectionLayout layout;
+    /// I5 step 9: the console's media socket in the room's scene (app::consoleSocketOf()) and the console's bounds
+    /// there (its prefab's, through its instance).
+    std::optional<rv::app::ConsoleSocket> console;
+    rv::core::Aabb consoleBounds;
     /// The room's secondary TV (I5 step 3): its screen's id and its bounds' middle (the screen service's distance and
     /// view test read its bounds).
     std::string secondaryScreen;
@@ -169,7 +176,15 @@ ShownRoom shownRoom(const ImportedRoom& room, const rv::app::RunReport& report) 
     REQUIRE(scene.has_value());
     auto layout = rv::world::collectionLayout(stored->plan, roomId, *data, {});
     REQUIRE(layout.has_value());
-    ShownRoom shown{scene->camera, std::move(*layout), {}, glm::vec3(0.0f)};
+    ShownRoom shown{scene->camera, std::move(*layout), std::nullopt, rv::core::Aabb{}, {}, glm::vec3(0.0f)};
+    shown.console = rv::app::consoleSocketOf(*scene, "");
+    for (const rv::scene::SceneObject& object : scene->objects) {
+        if (object.id.ends_with(rv::app::kConsoleIdSuffix)) {
+            auto prefab = rv::geometry::buildPrefab(object.kind, object.params);
+            REQUIRE(prefab.has_value());
+            shown.consoleBounds = prefab->bounds.transformed(object.instanceTransforms().front());
+        }
+    }
     auto tvs = rv::world::secondaryTvFixtures(stored->plan, roomId, *data);
     REQUIRE(tvs.has_value());
     if (!tvs->empty()) {
@@ -278,11 +293,12 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     requireScreenshot(run, shot, {1920, 1080});
 
     // I5 step 9: the insertion, from Avvia (80) for 450 ms: 27 frames at 60 Hz, its last (106) with the item in the
-    // console's media socket (its centre within 1 cm), the eye on it.
+    // console's media socket, the eye on the console since 97 (300 ms); then seen seated 100 ms (6 frames) before the
+    // hand-over is released (112).
     const rv::app::InsertionRecord& insertion = report.world.interaction.insertion;
-    WARN("insertion: " << insertion.seconds << " s, frames " << insertion.startFrame.value_or(0) << " to "
-                       << insertion.endFrame.value_or(0) << ", the item " << insertion.distance
-                       << " m from the socket, scale " << insertion.scale);
+    WARN("insertion: " << insertion.seconds << " s, frames " << insertion.startFrame.value_or(0) << ", seated "
+                       << insertion.seatedFrame.value_or(0) << ", released " << insertion.endFrame.value_or(0)
+                       << ", the item " << insertion.distance << " m from the socket, scale " << insertion.scale);
     CHECK(insertion.started == 1);
     CHECK(insertion.arrived == 1);
     CHECK(insertion.skipped == 0);
@@ -290,11 +306,21 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     CHECK(insertion.end == "arrived");
     CHECK(insertion.pickId == fmt::format("{:08X}", item.pickId));
     CHECK(insertion.startFrame == std::optional<std::uint64_t>(80));
-    CHECK(insertion.endFrame == std::optional<std::uint64_t>(106));
-    CHECK(std::abs(insertion.seconds - 0.45) < 0.5 * 0.016667);
+    CHECK(insertion.seatedFrame == std::optional<std::uint64_t>(106));
+    CHECK(insertion.endFrame == std::optional<std::uint64_t>(112));
+    CHECK(std::abs(insertion.seconds - 0.55) < 0.5 * 0.016667);
+    CHECK(insertion.seconds <= 0.65); // style §16.2
     CHECK(insertion.distance < 0.01);
     CHECK(insertion.scale > 0.3);
     CHECK(insertion.scale <= 1.0);
+    // The socket is the shown room's console's (the scene's frame is the start room's: --start-room), on that console.
+    REQUIRE(shown.console.has_value());
+    WARN("socket " << insertion.socket.x << ", " << insertion.socket.y << ", " << insertion.socket.z << "; the scene's "
+                   << shown.console->position().x << ", " << shown.console->position().y << ", "
+                   << shown.console->position().z);
+    CHECK(glm::length(insertion.socket - shown.console->position()) < 1e-4f);
+    const rv::core::Aabb consoleBox = shown.consoleBounds.inflated(0.001f);
+    CHECK(consoleBox.contains(insertion.socket));
     const rv::app::InsertionFrameRecord* first = insertionFrame(insertion, 80);
     const rv::app::InsertionFrameRecord* middle = insertionFrame(insertion, 93);
     const rv::app::InsertionFrameRecord* last = insertionFrame(insertion, 106);
@@ -309,7 +335,7 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     CHECK(last->progress == 1.0);
     CHECK(last->distance < 0.01);
     CHECK(insertion.movingFrames >= 26);
-    CHECK(insertion.socketFrames >= 1);
+    CHECK(insertion.socketFrames >= 7);
     // The frames between come closer each frame.
     for (std::size_t index = 1; index < insertion.frames.size(); ++index) {
         CHECK(insertion.frames[index].distance <= insertion.frames[index - 1].distance + 1e-3);
@@ -318,7 +344,7 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     CHECK(takenScreenshots(room).size() == 3);
 
     // The launch: the product UI's, resolved on the catalog worker during the insertion, its request (the flow's: the
-    // game-session panel and the hand-over) on the insertion's last frame, started on the next, Returned.
+    // game-session panel and the hand-over) on the hold's last frame, started on the next, Returned.
     REQUIRE(report.launches.size() == 1);
     const rv::app::LaunchRecord& launch = report.launches.front();
     CHECK(launch.gameId == game);
@@ -326,8 +352,8 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     CHECK(launch.state == "Returned");
     CHECK(launch.outcome == "returned");
     CHECK(launch.exitCode == 0u);
-    CHECK(launch.requestFrame == 106);
-    CHECK(launch.startFrame == std::optional<std::uint64_t>(107));
+    CHECK(launch.requestFrame == 112);
+    CHECK(launch.startFrame == std::optional<std::uint64_t>(113));
     CHECK(launch.framesWhileRunning == 0);
     REQUIRE(launch.runMs.has_value());
     CHECK(*launch.runMs >= 2400.0);
@@ -357,7 +383,7 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     const std::vector<std::string> events = launchEvents(world);
     REQUIRE(events.size() == 4);
     CHECK(events[0] == "80:launch");
-    CHECK(events[1] == "106:inserted");
+    CHECK(events[1] == "112:inserted");
     CHECK(events[2].ends_with(":ended"));
     CHECK(events[3].ends_with(":restored"));
     CHECK(world.events[2].frame == world.events[3].frame);
@@ -410,7 +436,7 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     CHECK(stop.decoderRan);
     CHECK(stop.stopFrame == std::optional<std::uint64_t>(80));
     REQUIRE(stop.handOverFrame.has_value());
-    CHECK(*stop.handOverFrame >= 106);
+    CHECK(*stop.handOverFrame >= 112);
     CHECK(*stop.handOverFrame < *launch.startFrame);
     CHECK_FALSE(stop.cancelled);
     CHECK(stop.stopMs < 1000.0);
@@ -462,6 +488,7 @@ TEST_CASE("world launch: a button skips the insertion and the game launches with
     CHECK(insertion.arrived == 0);
     CHECK(insertion.end == "skipped");
     CHECK(insertion.startFrame == std::optional<std::uint64_t>(80));
+    CHECK(insertion.seatedFrame == std::optional<std::uint64_t>(86));
     CHECK(insertion.endFrame == std::optional<std::uint64_t>(86));
     const rv::app::InsertionFrameRecord* skipped = insertionFrame(insertion, 86);
     REQUIRE(skipped != nullptr);
@@ -500,8 +527,9 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
     // turned towards the TV, which opens its clip in view (an ambient screen opens a slot only in view); turned back
     // onto the item (the TV paused out of view, keeping its slot), inspected (the hero CRT plays the game's clip),
     // Avvia: both slots stop and their threads end before the hand-over. After the return Inspect comes back as it
-    // was, the TV out of view and so without a slot; Indietro (Focus), back (free roam), turned towards the TV, which
-    // opens its clip again where it stopped.
+    // was, the TV out of view and so without a slot (I5 step 9: the insertion and its hold first, 80 to 112; the game
+    // from 113); Indietro (Focus), back (free roam), turned towards the TV, which opens its clip again where it
+    // stopped.
     ensureLaunchAllowList();
     ImportedRoom room("both_screens", false);
     const ShownRoom shown = firstRun(room);
@@ -531,9 +559,9 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
             {"look_delta_y", (focus.pitch - tvPitch) / kRadiansPerPixel}}}},
          {{"fromFrame", 40}, {"toFrame", 40}, {"actions", {{"interact", 1}}}},
          {{"fromFrame", 80}, {"toFrame", 80}, {"actions", {{"confirm", 1}}}},
-         {{"fromFrame", 110}, {"toFrame", 110}, {"actions", {{"ui_back", 1}}}},
-         {{"fromFrame", 130}, {"toFrame", 130}, {"actions", {{"back", 1}}}},
-         {{"fromFrame", 150}, {"toFrame", 150},
+         {{"fromFrame", 116}, {"toFrame", 116}, {"actions", {{"ui_back", 1}}}},
+         {{"fromFrame", 136}, {"toFrame", 136}, {"actions", {{"back", 1}}}},
+         {{"fromFrame", 156}, {"toFrame", 156},
           {"actions",
            {{"look_delta_x", -turn / kRadiansPerPixel},
             {"look_delta_y", (tvPitch - focus.pitch) / kRadiansPerPixel}}}}});
@@ -586,8 +614,8 @@ TEST_CASE("world launch: on the product's video settings, the hero CRT's and the
                std::find(event.screens.begin(), event.screens.end(), shown.secondaryScreen) != event.screens.end();
     });
     REQUIRE(resumed != video.slotEvents.end());
-    CHECK(resumed->frame >= 150);
-    CHECK(resumed->frame <= 154);
+    CHECK(resumed->frame >= 156);
+    CHECK(resumed->frame <= 160);
     REQUIRE(resumed->fromSeconds.has_value());
     CHECK(*resumed->fromSeconds > 0.0);
     // The hero CRT's clip opened again after the return.

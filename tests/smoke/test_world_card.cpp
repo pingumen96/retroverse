@@ -313,10 +313,10 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
     const rv::app::CardRecord& card = requireCard(run);
     INFO(run.describe());
     // Shown on entering Inspect (frame 40), hidden while Avvia's insertion and launch run and shown again after its
-    // return (I3 step 15a, I5 step 9: the decision the next frame, the item into the console for 27 frames, the game
-    // while the host waits, Inspect again the frame after), hidden at Indietro (245), shown at the second Inspect
-    // (275), hidden at Back (305).
-    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 145, 202, 275});
+    // return (I3 step 15a, I5 step 9: the decision the next frame, the item into the console for 27 frames and seen
+    // seated 6 more, the game while the host waits, Inspect again the frame after), hidden at Indietro (245), shown at
+    // the second Inspect (275), hidden at Back (305).
+    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 151, 208, 275});
     CHECK(framesOf(card, "hidden") == std::vector<std::uint64_t>{118, 175, 245, 305});
     // The focus moved by the arrows and the D-pad within the grid (Avvia, Vedi media / Informazioni, Indietro); a
     // card shown again starts on Avvia.
