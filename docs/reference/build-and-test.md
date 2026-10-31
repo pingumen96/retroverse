@@ -7,7 +7,7 @@ imports it for the current call (it also compacts the over-long machine PATH tha
 call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 and msys64 tools.
 
 ```powershell
-./scripts/build.ps1                                   # configure on first use + build msvc-x64-debug
+./scripts/build.ps1                                   # configure when needed + build msvc-x64-debug
 ./scripts/build.ps1 -Preset msvc-x64-release          # other presets: msvc-x64-relwithdebinfo, msvc-x64-profile
 ./scripts/build.ps1 -Target rv_tests                  # single target
 ./scripts/test.ps1                                    # unit tests (label "unit"); GPU tests excluded
@@ -257,7 +257,11 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   vcpkg clone that `VCPKG_ROOT` names (`E:/Progetti/vcpkg`, shared with other projects; ADR-0007): `scripts/dev.ps1`
   restores the variable after the developer environment points it at Visual Studio's bundled copy. The first configure
   in a fresh checkout or worktree restores packages from the local binary cache (a few minutes). A tree configured with
-  another toolchain keeps it until `./scripts/build.ps1 -Preset <preset> -Fresh`.
+  another toolchain keeps it until `./scripts/build.ps1 -Preset <preset> -Fresh`. A tree's `VCPKG_MANIFEST_FEATURES` stays
+  in its cache, and each configure's manifest install takes the ports it does not list out of `build/vcpkg_installed`,
+  which the presets share: `scripts/build.ps1` and `scripts/gate.ps1` run `cmake --preset` again, once, for a tree whose
+  cache lacks `xr` (not with `RV_ENABLE_XR` off), and a bare `cmake --build` that regenerates such a tree stops with
+  "Could not find OpenXR", naming that command.
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
   `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"` (`rv_tests` runs its launches in the background, see "Safety
   rules"). The catalog query benchmarks (I2 step 9: NFR-02 on 10,000 games, a UI page on 100,000, what the search area

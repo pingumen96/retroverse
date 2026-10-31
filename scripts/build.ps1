@@ -19,7 +19,13 @@ $dev = Join-Path $PSScriptRoot 'dev.ps1'
 Push-Location $root
 try {
     $cache = Join-Path $root "build/$Preset/CMakeCache.txt"
-    if ($Fresh -or -not (Test-Path $cache)) {
+    # A tree configured before the presets gained the vcpkg feature xr keeps its old VCPKG_MANIFEST_FEATURES, and the
+    # manifest install of its next regeneration takes the loader out of the shared build/vcpkg_installed: the preset
+    # again, once. A tree with RV_ENABLE_XR off wants no loader.
+    $stale = (Test-Path $cache) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^VCPKG_MANIFEST_FEATURES:[^=]*=.*\bxr\b' -Quiet) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^RV_ENABLE_XR:[^=]*=(OFF|0|FALSE|NO|N)$' -Quiet)
+    if ($Fresh -or $stale -or -not (Test-Path $cache)) {
         $configureArgs = @('cmake', '--preset', $Preset)
         if ($Fresh) { $configureArgs += '--fresh' }
         & $dev @configureArgs

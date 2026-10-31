@@ -380,7 +380,13 @@ function Invoke-Build([string]$Preset) {
     $buildLog = Join-Path $logDir "build-$Preset.log"
     Remove-Item -ErrorAction SilentlyContinue $configureLog, $buildLog
     $code = 0
-    if (-not (Test-Path (Join-Path $root "build/$Preset/CMakeCache.txt"))) {
+    # As scripts/build.ps1: a tree whose cache lacks the vcpkg feature xr configures again, or its manifest install takes
+    # the loader out of the shared build/vcpkg_installed. A tree with RV_ENABLE_XR off wants no loader.
+    $cache = Join-Path $root "build/$Preset/CMakeCache.txt"
+    $stale = (Test-Path $cache) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^VCPKG_MANIFEST_FEATURES:[^=]*=.*\bxr\b' -Quiet) -and
+        -not (Select-String -LiteralPath $cache -Pattern '^RV_ENABLE_XR:[^=]*=(OFF|0|FALSE|NO|N)$' -Quiet)
+    if ($stale -or -not (Test-Path $cache)) {
         $code = Invoke-Logged $configureLog @('cmake', '--preset', $Preset)
     }
     if ($code -eq 0) {

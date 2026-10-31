@@ -74,7 +74,16 @@ find_package(pugixml CONFIG REQUIRED)
 # The OpenXR loader (vcpkg feature "xr", enabled by every preset): OpenXR::openxr_loader, with openxr/openxr.h and
 # openxr/openxr_platform.h; it finds the active runtime (Meta Horizon Link, SteamVR, ...) at run time (ADR-0017).
 if(RV_ENABLE_XR)
-    find_package(OpenXR CONFIG REQUIRED)
+    find_package(OpenXR CONFIG QUIET)
+    # A tree configured before its preset gained the feature keeps the old list in its cache, whose manifest install takes
+    # the port out of the shared build/vcpkg_installed: a bare `cmake --build` that regenerates ends here.
+    if(NOT OpenXR_FOUND)
+        message(FATAL_ERROR
+            "Could not find OpenXR, which the VR mode needs (vcpkg feature \"xr\"): this tree's "
+            "VCPKG_MANIFEST_FEATURES is \"${VCPKG_MANIFEST_FEATURES}\". Configure it again with its preset, "
+            "./scripts/dev.ps1 cmake --preset <preset> (./scripts/build.ps1 and ./scripts/gate.ps1 do it themselves), "
+            "or set RV_ENABLE_XR=OFF to build without VR.")
+    endif()
 endif()
 
 # Testing is enabled before any directory is added: tests/ and spikes/ register ctest cases, and a directory only gets a
