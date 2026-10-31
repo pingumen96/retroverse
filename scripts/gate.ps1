@@ -442,7 +442,8 @@ function Invoke-Goldens([string]$Preset, [string]$TestPreset) {
     $verdictOf = { param($id) if ($id -eq 'G01') { Join-Path $smokeDir 'golden_g01/comparison.txt' }
                    elseif ($id -eq 'G21') { Join-Path $smokeDir 'golden_g21/comparison.txt' }
                    else { Join-Path $smokeDir ('golden_room/{0}/comparison.txt' -f $id.ToLowerInvariant()) } }
-    Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt')
+    Remove-Item -ErrorAction SilentlyContinue (Join-Path $smokeDir 'golden_g01/comparison.txt'),
+        (Join-Path $smokeDir 'golden_g21/comparison.txt')
     Get-ChildItem -ErrorAction SilentlyContinue -Path (Join-Path $smokeDir 'golden_room') -Filter comparison.txt -Recurse |
         Remove-Item
     $pattern = if ($Gate -in @('B', 'C', 'D', 'M3', 'M4')) { '^gpu\.golden/' } else { '^gpu\.golden/G01:' }
