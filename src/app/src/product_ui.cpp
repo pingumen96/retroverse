@@ -1216,6 +1216,10 @@ void ProductUi::releaseWorldLaunch() {
     }
 }
 
+bool ProductUi::worldLaunchInFlight() const noexcept {
+    return m_impl->worldToken.has_value();
+}
+
 std::optional<LaunchMessage> ProductUi::takeWorldLaunchEnded() {
     return std::exchange(m_impl->worldEnded, std::nullopt);
 }

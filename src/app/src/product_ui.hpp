@@ -173,6 +173,9 @@ public:
     bool launchWorldGame(const catalog::GameId& game, std::string_view title, bool held = false);
     /// I5 step 9: the insertion ended: the room's held launch goes on (its decision now, or as it comes).
     void releaseWorldLaunch();
+    /// I5 step 9's review: the room's launch asked by launchWorldGame() has not ended yet (decided, held for the
+    /// insertion, waiting, running), whether or not launchActive() says so meanwhile.
+    [[nodiscard]] bool worldLaunchInFlight() const noexcept;
     /// How the room's launch asked by launchWorldGame() ended, once: its outcome as the game-session panel tells it
     /// (launch_outcome::kReturned after a normal return; a refusal's or a failure's message otherwise).
     [[nodiscard]] std::optional<LaunchMessage> takeWorldLaunchEnded();

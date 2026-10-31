@@ -1145,6 +1145,64 @@ TEST_CASE("app/world_interaction: a launch refused during the insertion comes ba
     CHECK(harness.interaction.state() == WorldState::AnimatingToConsole);
 }
 
+TEST_CASE("app/world_interaction: a live update delivered during the insertion waits for the return to Inspect",
+          "[app][world_interaction][insertion][failures]") {
+    // I5 step 9's review: WorldSession holds a live update's (and a regeneration's) result while a world launch is in
+    // flight (worldLaunchInFlight()), even before the product UI's launch is active (its decision held for the
+    // insertion). Here the update, delivered on the insertion's 5th frame, takes the inspected item out of the room;
+    // the loop applies it as the session does, only on a frame where nothing holds it.
+    InteractionHarness harness = inspectingWithConsole();
+    const PickId item = harness.interaction.focused();
+    REQUIRE(harness.press(rv::app::CardAction::Launch).launch->held);
+    CHECK(rv::app::worldLaunchInFlight(harness.interaction.state()));
+    bool delivered = false;
+    bool applied = false;
+    std::optional<WorldState> appliedIn;
+    bool arrived = false;
+    const auto frame = [&](int index) {
+        if (index == 5) {
+            delivered = true;
+        }
+        if (delivered && !applied && !rv::app::worldLaunchInFlight(harness.interaction.state())) {
+            appliedIn = harness.interaction.state();
+            harness.room.remove(item);
+            harness.interaction.roomChanged();
+            applied = true;
+        }
+        const rv::app::InteractionResult result = harness.idle(1);
+        arrived = arrived || result.insertionEnded == rv::app::InsertionEnd::Arrived;
+    };
+    int index = 1;
+    for (; index < 60 && harness.interaction.state() != WorldState::Launching; ++index) {
+        frame(index);
+        CHECK_FALSE(applied);
+        CHECK(harness.interaction.focused() == item);
+    }
+    // The insertion ran to its end with its item: held, not applied.
+    CHECK(arrived);
+    CHECK(delivered);
+    CHECK_FALSE(applied);
+    CHECK(harness.interaction.insertion() == 1.0f);
+    frame(index++);
+    CHECK_FALSE(applied); // Launching
+    harness.interaction.launchEnded(rv::app::LaunchMessage{std::string(rv::app::launch_outcome::kReturned), "", ""});
+    CHECK(rv::app::worldLaunchInFlight(harness.interaction.state())); // Returning
+    frame(index++);
+    // The return found its item (Inspect again); the update applied on the next frame, from Inspect.
+    CHECK_FALSE(applied);
+    CHECK(harness.interaction.state() == WorldState::Inspect);
+    CHECK(harness.interaction.focused() == item);
+    frame(index++);
+    CHECK(applied);
+    CHECK(appliedIn == WorldState::Inspect);
+    CHECK(harness.interaction.state() == WorldState::FreeRoam);
+    CHECK(harness.interaction.notice() == InteractionNotice::ItemUnavailable);
+    // Every other state lets it through.
+    for (const WorldState state : {WorldState::FreeRoam, WorldState::Focus, WorldState::Inspect, WorldState::Edit}) {
+        CHECK_FALSE(rv::app::worldLaunchInFlight(state));
+    }
+}
+
 TEST_CASE("app/world_interaction: no insertion without a console", "[app][world_interaction][insertion]") {
     // The arcade's hero corner and a shared room's stand without a console (ADR-0013 §6): their rooms answer no
     // consolePose(), and Avvia launches at once as before.

@@ -243,6 +243,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
             m_coverPhaseOpen = true;
         }
     }
+    m_launchHeld = launchHolds(product);
     if (m_flow) {
         m_flow->update(product.catalog());
         // I3 step 10c: the stored plan's floor shows first (world_start.cpp); the building's result waits until a
@@ -250,10 +251,11 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
         if (std::optional<WorldBuild> preview = m_flow->takePreview()) {
             commitPreview(std::move(*preview));
         }
-        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6); I4 step 7b: a result
-        // waits for a ride to end (ADR-0013 §10), and one built for another floor than the one shown is built again
-        // for it first.
-        if (!m_previewAwaitingFrame && !(m_liveFlow && product.launchActive()) && !m_ride && !m_retargetPending) {
+        // I3 step 15b: a live update's result waits while a launched game runs (ADR-0012 §6), and since I5 step 9's
+        // review from Avvia on (the insertion) to the return to Inspect (launchHolds()); I4 step 7b: a result waits
+        // for a ride to end (ADR-0013 §10), and one built for another floor than the one shown is built again for it
+        // first.
+        if (!m_previewAwaitingFrame && !(m_liveFlow && m_launchHeld) && !m_ride && !m_retargetPending) {
             if (std::optional<WorldResult> result = m_flow->takeResult()) {
                 if (retargetResult(*result, product.catalog().worldReader())) {
                     m_liveFlow = false;
@@ -1193,6 +1195,11 @@ void WorldSession::frameRendered() {
     }
 }
 
+bool WorldSession::launchHolds(const ProductUi& product) const noexcept {
+    return product.launchActive() || product.worldLaunchInFlight() ||
+           (m_interaction && worldLaunchInFlight(m_interaction->interaction().state()));
+}
+
 bool WorldSession::waits() const {
     if (!m_options.lockstep) {
         return false;
@@ -1205,9 +1212,9 @@ bool WorldSession::waits() const {
     const bool lastFrameNext = limit && m_nextFrame + 1 >= *limit;
     const bool ridePending =
         m_ride && (m_ride->awaitsFloor() || (m_ride->phase() == RidePhase::AwaitingView && !rideViewResident()));
-    // A result that waits for the ride to end is no reason to wait.
-    const bool flowPending =
-        m_flow && m_flow->phase() != WorldPhase::Done && !(m_ride && m_flow->phase() == WorldPhase::Ready);
+    // A result that waits for the ride to end, or a live one for a launch's end, is no reason to wait.
+    const bool flowPending = m_flow && m_flow->phase() != WorldPhase::Done &&
+                             !((m_ride || (m_liveFlow && m_launchHeld)) && m_flow->phase() == WorldPhase::Ready);
     const bool pending = m_decided.has_value() || flowPending || (!m_rooms.empty() && !settled(lastFrameNext)) ||
                          ridePending || (m_retargetPending && !m_retargetResult) || !showcaseSettled() || editWaits() ||
                          regenerationWaits() || chainRangesWait();

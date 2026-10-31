@@ -190,7 +190,7 @@ bool WorldSession::regenerationWaits() const noexcept {
 
 bool WorldSession::regenerationAllowed(const ProductUi& product) const {
     return m_state == "room" && m_shown && m_planState && !m_ride && !m_edit && !m_retargetPending &&
-           !m_retargetResult && !m_shownPreview && !m_previewAwaitingFrame && !product.launchActive() &&
+           !m_retargetResult && !m_shownPreview && !m_previewAwaitingFrame && !launchHolds(product) &&
            !(m_flow && m_flow->phase() != WorldPhase::Done) && !regenerating();
 }
 
