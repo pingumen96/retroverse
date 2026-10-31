@@ -179,10 +179,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   (G01 and the room goldens; Gates A and M1 run `gpu.golden/G01` alone), a row per golden and preset with the verdict
   its case writes next to its screenshot (`build/<preset>/smoke/golden_g01/comparison.txt`,
   `smoke/golden_room/<case>/comparison.txt`), rows for the I3 unit tests and GPU cases (counted from those runs), then
-  in Release the benchmark path (`rv_smoke_tests "[benchmark]"`): its frame times and GPU memory read from its run
+  in Release the benchmark path (`rv_smoke_tests "[benchmark]~[xr]"`): its frame times and GPU memory read from its run
   report against the roadmap's acceptable limits, its GPU passes as an informative row; `-Benchmarks` also runs every
-  hidden benchmark, `rv_tests "[bench]"` and `rv_smoke_tests "[bench]"`, as informative rows (a row per GPU case with
-  the figures it printed; their XML reports in `build/gate-b`); the whole gate under `scripts/focus_watch.py`.
+  hidden benchmark but the fake headset's, `rv_tests "[bench]"` and `rv_smoke_tests "[bench]~[xr]"`, as informative rows
+  (a row per GPU case with the figures it printed; their XML reports in `build/gate-b`); the whole gate under
+  `scripts/focus_watch.py`. The fake headset's two benchmarks (`[benchmark][xr]`) run in Gate VR alone, against
+  ADR-0017 §9.
   `-RealLibrary` adds `scripts/real-library.ps1 -Filter '[real-library][room-real]'` (snapshots before and after, 0
   differences) and reads the test's run reports (`build/msvc-x64-release/real-library/room/<run>.json`): the plan
   generated twice, the restart after a second import (no rebuild, 0 moves), the time to the room (the restart within 5

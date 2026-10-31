@@ -41,10 +41,10 @@
       5. per Debug and Release, the I3 test cases counted from the unit and GPU runs (the world's snapshot goldens and
          property suites, the room in the app: gpu.world*, gpu.covers, gpu.media viewer, gpu.refresh, ...);
       6. in Release, the benchmark path of 2,000 titles at 1920 x 1080 with --no-vsync (rv_smoke_tests
-         "[benchmark]"): its frame times and GPU memory read from its run report against the acceptable limits
+         "[benchmark]~[xr]"): its frame times and GPU memory read from its run report against the acceptable limits
          (docs/roadmap.md, "Acceptable performance"), its GPU passes reported; with -Benchmarks also every hidden
-         benchmark, rv_tests "[bench]" and rv_smoke_tests "[bench]", as informative rows (a slow figure never fails
-         the gate);
+         benchmark but the fake headset's, rv_tests "[bench]" and rv_smoke_tests "[bench]~[xr]", as informative rows (a
+         slow figure never fails the gate);
       7. with -RealLibrary, scripts/real-library.ps1 -Filter '[real-library][room-real]' (ES-DE closed, read-only
          snapshots before and after, RV_LAUNCH_ALLOWLIST naming the fake emulator alone): the real SNES room's plan
          generated twice, the restart after a second import, the covers cold and warm, the benchmark path, a refresh
@@ -766,10 +766,12 @@ function Invoke-Catch([string]$Step, [string]$Name, [string]$Executable, [string
 function Invoke-Benchmarks {
     $bin = Join-Path $root 'build/msvc-x64-release/bin'
     $first = $results.Count
-    $spec = '[benchmark]'
+    # The fake headset's benchmarks ([xr]) are Gate VR's alone, which runs them itself against ADR-0017 section 9: here
+    # their names would make them the benchmark path's hard rows.
+    $spec = '[benchmark]~[xr]'
     if ($Benchmarks) {
         Invoke-Catch 'Benchmarks, GPU-free (Release)' 'bench-unit' (Join-Path $bin 'rv_tests.exe') '[bench]' | Out-Null
-        $spec = '[bench]'
+        $spec = '[bench]~[xr]'
     }
     $cases = Invoke-Catch 'Benchmarks, GPU (Release)' 'bench-gpu' (Join-Path $bin 'rv_smoke_tests.exe') $spec
     # The figures each case printed (WARN), a row per case.

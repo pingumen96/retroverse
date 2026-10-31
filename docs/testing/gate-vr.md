@@ -20,7 +20,8 @@ CRT while the controllers walk. Then it adds:
 
 - **Golden G21** (both eyes in the test room, `assets/style_tests/screenshots/g21_xr_testroom_golden.png`) in Debug and
   Release, read from the GPU runs' verdicts; compared on the golden's GPU and driver only, like the others.
-- **The VR benchmark path** in Release (`tests/smoke/test_world_benchmark.cpp`, `[.bench]`): the snes-stress room of
+- **The VR benchmark path** in Release (`tests/smoke/test_world_benchmark.cpp`, `[.bench]`, run by this gate alone:
+  the others select `[benchmark]~[xr]`): the snes-stress room of
   2,000 titles along `tests/input_scripts/bench_snes_room.json`, both eyes at 2048 x 2048 (the fake runtime at render
   scale 2, about Link's 2080 x 2096 on a Quest 3S), render scale 1, against ADR-0017 §9: frame p50 at most 13.9 ms and
   p99 at most 20 ms (72 Hz). Both eyes' GPU time is printed (twice the last eye's passes). The same path at 120 Hz
