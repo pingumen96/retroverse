@@ -37,10 +37,10 @@ RelWithDebInfo and Release without a warning, the unit tests and the GPU checks 
   | Floor app | `app/world_build` (but the ride's floor and the unchanged start), `app/room_snapshot`, `app/room_items`, `app/cover_requests` of a floor | `gpu.world floor app`: two rooms of one family, the walk between rooms, the lobby start |
   | Start and live | `app/world_flow`, `app/world_live_plan`, `app/world_reconcile`, `app/screen_room`, `app/world_build: an unchanged start ...`, `app/room_screen: the room ...` | `gpu.world floor app`: the stored floor reconciled room by room, a system entering the resident floor, the hero CRT rebound, the lobby into the arcade room, the quick catalog's selection in its room only |
 
-- **The benchmark path** in Release (`rv_smoke_tests "[benchmark]"`, the snes-stress room at 1920 x 1080 with
+- **The benchmark path** in Release (`rv_smoke_tests "[benchmark]~[xr]"`, the snes-stress room at 1920 x 1080 with
   `--no-vsync`): its frame times and GPU memory read from its run report against the acceptable limits
   ([roadmap](../roadmap.md), "Acceptable performance"), its GPU passes reported; `-Benchmarks` also runs every hidden
-  benchmark as informative rows.
+  benchmark but the fake headset's as informative rows.
 - **The focus watch**: the whole gate runs under `python -I scripts/focus_watch.py --watch build`, as Gates M1 and B
   do (a foreground change to a test process, a visible window of one, or a system error dialog fails the gate).
 - **With `-RealLibrary`**, on the real ES-DE library (its folders from `-EsdeHome`, `-EsdeInstall`, `-RomRoot`,
