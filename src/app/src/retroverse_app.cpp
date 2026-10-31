@@ -2029,8 +2029,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     const std::uint64_t frame = context.frameIndex();
     state.simulatedSeconds += deltaSeconds;
     state.stepSeconds = deltaSeconds;
-    // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game.
-    state.setPriority(frame, processPriorityFor(context.window().isMinimized(),
+    // Above normal while the view renders (I5 step 2, ADR-0016 §2); normal while minimized or during a game. A
+    // minimized window hides nothing from a headset, whose eyes still render.
+    state.setPriority(frame, processPriorityFor(!context.vr() && context.window().isMinimized(),
                                                 state.product != nullptr && state.product->launchActive()));
     // I10 step 4: a VR frame's controllers drive the pad's actions, the pointing hand's trigger interacts; step 5:
     // on the UI's panel the ray is its mouse and the trigger clicks.
