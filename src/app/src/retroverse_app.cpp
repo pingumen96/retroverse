@@ -1555,6 +1555,16 @@ Status RetroverseApp::onInit(AppContext& context) {
         // The screens' decoders stop and are waited for before a launch, and open again after it (ADR-0012 §6); the
         // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
+        // I5 step 9 (ADR-0016 §11): the insertion into the console hides the stop: the mix starts fading and the slots
+        // stop as it begins, the hero showing the game's title card; the hand-over (`starting`) waits for what remains.
+        hooks.preparing = [raw, &context](const std::string& gameId) {
+            if (raw->audio) {
+                raw->audio->beginSuspend();
+            }
+            if (raw->screen) {
+                raw->screen->prepareLaunch(gameId, context.frameIndex());
+            }
+        };
         hooks.starting = [raw, &context] {
             // ADR-0016 §9: the mix fades out (50 ms, begun before the screens' decoders stop, so that it runs while
             // they do) and the device stops, leaving the endpoint to the emulator.

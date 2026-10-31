@@ -197,8 +197,10 @@ public:
     void videoStopped() noexcept { m_videoShowing = false; }
 
     /// A launch starts: the decoder stops, `clipPosition` (seconds into the clip shown, if a video showed) is kept for
-    /// the return. Nothing once quit.
-    void launchStarting(std::optional<double> clipPosition) noexcept;
+    /// the return. With `titleCard` (I5 step 9, ADR-0016 §11: the hero while the item goes into the console) the
+    /// target's title card is the still wanted from now on, when it has one: the screen shows it once it is drawn, and
+    /// until the clip shows again after the return. Nothing once quit.
+    void launchStarting(std::optional<double> clipPosition, bool titleCard = false) noexcept;
     /// The launch ended (the return), failed to start or was refused: the decoder may run again, at the kept position.
     void launchEnded() noexcept;
     /// Retroverse quits: the decoder stays stopped.

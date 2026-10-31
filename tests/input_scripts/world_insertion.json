@@ -1,0 +1,21 @@
+// I5 step 9 (ADR-0016 §11): Avvia in a console room. The walker starts at the Focus pose of Amber Lantern's item in the
+// snes-room fixture's room (--spawn), the reticle on it; the game has a clip, which the hero CRT plays while it is
+// inspected.
+//   frame 40   interact: the face-out item is inspected at once, its card shows (Avvia focused)
+//   frame 80   confirm: Avvia (the pad's Start). The launch is resolved on the catalog worker at once, the screens'
+//              decoders stop and the sound fades, the hero shows the game's title card; the item goes from the hand
+//              into the console's media socket in 450 ms (27 frames, 80 to 106), the eye turning to it; F12 at the
+//              start, the middle and the end (80, 93, 106)
+//   frame 106  the item in the socket: the launch's hand-over ("Gioco in corso"), the fake emulator runs about 2.5 s
+//              while Retroverse renders nothing; at the return Inspect of the same item, the walker as Avvia found it
+// tests/smoke/test_world_launch.cpp checks the run report (launches, world.launch, world.interaction.insertion,
+// video) and the play session in the catalog database.
+//   retroverse --spawn <Amber Lantern's Focus pose> --input-script tests/input_scripts/world_insertion.json
+//     --exit-after-frames --frames 120 --fixed-dt 0.016667 --hidden --data-dir <a data directory with the fixture and
+//     the fake emulator's profile assigned to snes>
+[
+  {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
+  {"fromFrame": 80, "toFrame": 80, "actions": {"confirm": 1, "screenshot": 1}},
+  {"fromFrame": 93, "toFrame": 93, "actions": {"screenshot": 1}},
+  {"fromFrame": 106, "toFrame": 106, "actions": {"screenshot": 1}}
+]

@@ -272,9 +272,10 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
     const std::vector<std::string> script{"--spawn", spawnArgument(focusSpawn(item, shown.camera)), "--input-script",
                                           arg(inputScript("world_card.json"))};
 
-    // Mid-way (frame 145): Inspect of the item again after Avvia, the card on Avvia.
+    // Mid-way (frame 170): Inspect of the item again after Avvia (the insertion, I5 step 9, then the launch), the card
+    // on Avvia.
     const fs::path cardShot = room.dir / "card.png";
-    const AppRun mid = runApp(retroverseExe(), room.dir, "card", roomArguments(146, cardShot, script));
+    const AppRun mid = runApp(retroverseExe(), room.dir, "card", roomArguments(171, cardShot, script));
     const rv::app::CardRecord& shownCard = requireCard(mid);
     INFO(mid.describe());
     CHECK(mid.report->world.interaction.state == "inspect");
@@ -308,30 +309,31 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
 
     // The whole script.
     const fs::path endShot = room.dir / "end.png";
-    const AppRun run = runApp(retroverseExe(), room.dir, "all", roomArguments(260, endShot, script));
+    const AppRun run = runApp(retroverseExe(), room.dir, "all", roomArguments(335, endShot, script));
     const rv::app::CardRecord& card = requireCard(run);
     INFO(run.describe());
-    // Shown on entering Inspect (frame 40), hidden while Avvia's launch runs and shown again after its return (I3 step
-    // 15a: the decision the next frame, the game while the host waits, Inspect again the frame after), hidden at
-    // Indietro (170), shown at the second Inspect (200), hidden at Back (230).
-    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 120, 132, 200});
-    CHECK(framesOf(card, "hidden") == std::vector<std::uint64_t>{118, 130, 170, 230});
+    // Shown on entering Inspect (frame 40), hidden while Avvia's insertion and launch run and shown again after its
+    // return (I3 step 15a, I5 step 9: the decision the next frame, the item into the console for 27 frames, the game
+    // while the host waits, Inspect again the frame after), hidden at Indietro (245), shown at the second Inspect
+    // (275), hidden at Back (305).
+    CHECK(framesOf(card, "shown") == std::vector<std::uint64_t>{40, 145, 202, 275});
+    CHECK(framesOf(card, "hidden") == std::vector<std::uint64_t>{118, 175, 245, 305});
     // The focus moved by the arrows and the D-pad within the grid (Avvia, Vedi media / Informazioni, Indietro); a
     // card shown again starts on Avvia.
     const std::vector<std::string> focus = eventsOf(card, "focus");
-    const std::vector<std::string> expectedFocus{"70:media", "82:back", "88:info", "100:play", "150:media", "156:back"};
+    const std::vector<std::string> expectedFocus{"70:media", "82:back", "88:info", "100:play", "225:media", "231:back"};
     CHECK(focus == expectedFocus);
     // The presses: ui_activate on the focused button (Vedi media, Informazioni, Avvia, Indietro).
     const std::vector<std::string> presses = eventsOf(card, "press");
-    const std::vector<std::string> expectedPresses{"76:media:activate", "94:info:activate", "130:play:activate",
-                                                   "170:back:activate"};
+    const std::vector<std::string> expectedPresses{"76:media:activate", "94:info:activate", "175:play:activate",
+                                                   "245:back:activate"};
     CHECK(presses == expectedPresses);
     // What the interaction answered: the card's presses and the shortcuts (the pad's Y and X, the pad's Start).
     CHECK(framesOf(card, "media") == std::vector<std::uint64_t>{76, 106});
     CHECK(framesOf(card, "info") == std::vector<std::uint64_t>{94, 112});
-    CHECK(framesOf(card, "launch") == std::vector<std::uint64_t>{118, 130});
-    // The interaction's states: Inspect at 40, Focus at Indietro (170), Inspect at 200, Focus at Back (230), Avvia's
-    // round trips between (two launches, both returned).
+    CHECK(framesOf(card, "launch") == std::vector<std::uint64_t>{118, 175});
+    // The interaction's states: Inspect at 40, Focus at Indietro (245), Inspect at 275, Focus at Back (305), Avvia's
+    // round trips between (two launches, both returned, each after its insertion).
     CHECK(run.report->launches.size() == 2);
     CHECK(run.report->world.launch.returned == 2);
     std::vector<std::uint64_t> focusStates;
@@ -340,7 +342,8 @@ TEST_CASE("world card: the inspected item's card shows its game, its buttons rea
             focusStates.push_back(event.frame);
         }
     }
-    CHECK(focusStates == std::vector<std::uint64_t>{170, 230});
+    CHECK(focusStates == std::vector<std::uint64_t>{245, 305});
+    CHECK(run.report->world.interaction.insertion.arrived == 2);
     CHECK(run.report->world.interaction.state == "focus");
     CHECK(card.focused.empty());
     CHECK(card.shownFrames > 100);

@@ -657,6 +657,11 @@ TEST_CASE("world families: a game launched from its cabinet's screen returns to 
     CHECK(report.world.interaction.state == "inspect");
     CHECK(report.world.interaction.focusedGame == item.game.toString());
     CHECK(report.world.room == "area:arcade");
+    // I5 step 9 (ADR-0016 §11): the arcade has no console, so no insertion: the launch asked on Avvia's frame.
+    CHECK(report.world.interaction.insertion.started == 0);
+    CHECK(report.world.interaction.insertion.frames.empty());
+    REQUIRE(report.world.launch.events.size() >= 2);
+    CHECK(report.world.launch.events[1].event == "ended");
 }
 
 TEST_CASE("world families: the building's big-box room without media shows generated labels",
