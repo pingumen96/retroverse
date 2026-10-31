@@ -251,3 +251,29 @@ TEST_CASE("scene/pose_animator: reduceMotion makes every run instant", "[scene][
     progress.moveTo(0.7f, 1.0f);
     CHECK(progress.goal() == 1.0f);
 }
+
+TEST_CASE("scene/pose_animator: a new curve applies to the runs that start after it, never to one under way",
+          "[scene][pose_animator]") {
+    PoseAnimator<float> look(0.0f);
+    CHECK(look.easing() == Easing::EaseInOut);
+    // At rest the curve changes at once (its ends map to themselves: the pose does not move).
+    look.setEasing(Easing::EaseOut);
+    CHECK(look.easing() == Easing::EaseOut);
+    CHECK(look.pose() == 0.0f);
+    look.animateTo(1.0f, 0.3f);
+    look.advance(0.1f);
+    CHECK(look.pose() == Approx(rv::scene::ease(Easing::EaseOut, look.progress())));
+    // Asked for during the run: the run keeps its curve (no jump), the next run takes the new one.
+    const float before = look.pose();
+    look.setEasing(Easing::EaseInOut);
+    CHECK(look.pose() == before);
+    CHECK(look.easing() == Easing::EaseOut);
+    look.advance(1.0f);
+    CHECK_FALSE(look.animating());
+    CHECK(look.easing() == Easing::EaseInOut);
+    // Back from 1 to 0 (the run reversed): its time fraction runs down on the new curve.
+    look.animateTo(0.0f, 0.3f);
+    look.advance(0.1f);
+    CHECK(look.progress() < 1.0f);
+    CHECK(look.pose() == Approx(rv::scene::ease(Easing::EaseInOut, look.progress())));
+}

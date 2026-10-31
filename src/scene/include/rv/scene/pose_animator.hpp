@@ -95,7 +95,7 @@ template <typename Pose>
 class PoseAnimator {
 public:
     explicit PoseAnimator(const Pose& rest = Pose{}, Easing easing = Easing::EaseInOut) noexcept
-        : m_from(rest), m_to(rest), m_easing(easing) {
+        : m_from(rest), m_to(rest), m_easing(easing), m_nextEasing(easing) {
         m_progress.jumpTo(1.0f);
     }
 
@@ -104,6 +104,16 @@ public:
         m_from = pose;
         m_to = pose;
         m_progress.jumpTo(1.0f);
+        m_easing = m_nextEasing;
+    }
+
+    /// The curve of the runs that start from now on (a run under way keeps its own, so that its pose never jumps;
+    /// reversing it keeps it too).
+    void setEasing(Easing easing) noexcept {
+        m_nextEasing = easing;
+        if (!animating()) {
+            m_easing = easing; // at rest the curve moves nothing: its ends map to themselves
+        }
     }
 
     /// See the class comment.
@@ -123,13 +133,22 @@ public:
         }
         m_from = current;
         m_to = target;
+        m_easing = m_nextEasing;
         m_progress.jumpTo(0.0f);
         m_progress.moveTo(1.0f, durationSeconds);
     }
 
-    void advance(float seconds) noexcept { m_progress.advance(seconds); }
+    void advance(float seconds) noexcept {
+        m_progress.advance(seconds);
+        if (!animating()) {
+            m_easing = m_nextEasing;
+        }
+    }
     /// Arrives where it is heading at once (skip).
-    void finish() noexcept { m_progress.finish(); }
+    void finish() noexcept {
+        m_progress.finish();
+        m_easing = m_nextEasing;
+    }
     /// See EasedProgress::setReduceMotion.
     void setReduceMotion(bool on) noexcept { m_progress.setReduceMotion(on); }
 
@@ -142,11 +161,14 @@ public:
     /// The time fraction of the current run, 0 at its start and 1 at its end.
     [[nodiscard]] float progress() const noexcept { return m_progress.value(); }
     [[nodiscard]] bool reduceMotion() const noexcept { return m_progress.reduceMotion(); }
+    /// The curve of the run under way (or the last one).
+    [[nodiscard]] Easing easing() const noexcept { return m_easing; }
 
 private:
     Pose m_from;
     Pose m_to;
     Easing m_easing = Easing::EaseInOut;
+    Easing m_nextEasing = Easing::EaseInOut;
     EasedProgress m_progress;
 };
 
