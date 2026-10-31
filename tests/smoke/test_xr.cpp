@@ -26,6 +26,10 @@
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/time.hpp>
+#include <rv/render/gpu_memory.hpp>
+#include <rv/render/shadow_settings.hpp>
+#include <rv/render/texture_memory.hpp>
+#include <rv/render/view_target_plan.hpp>
 #include <rv/screenshot_diff/screenshot_diff.hpp>
 
 #include "smoke_support.hpp"
@@ -45,6 +49,11 @@ constexpr float kWalkerYawDeg = 9.0f;
 std::vector<std::string> vrArguments(int frames, const fs::path& shot) {
     return {"--scene",    "m0_testroom",       "--vr",          "--xr-runtime", "fake",   "--exit-after-frames",
             "--frames",   std::to_string(frames), "--fixed-dt", "0.016667",     "--screenshot", arg(shot)};
+}
+
+/// The key light's shadow map, which every run's targets hold once (docs/i5/memory-margin.md).
+std::uint64_t shadowMapBytes() {
+    return rv::gl::textureBytes(rv::gl::GpuFormat::Depth32F, glm::ivec2(rv::gl::kShadowMapResolution), 1);
 }
 
 const rv::app::XrHeadSample* headAt(const rv::app::XrRecord& xr, std::uint64_t frame) {
@@ -82,6 +91,15 @@ TEST_CASE("xr: the fake runtime paces the test room, each eye into its image, th
     INFO(run.describe());
     // Both eyes side by side, each at the runtime's size.
     requireScreenshot(run, shot, glm::ivec2(2 * kEyeSize.x, kEyeSize.y));
+
+    // The memory margin in VR: one set of the view target plan per eye and the shadow map, the window's set never made
+    // (the mirror is the left eye); the side-by-side image (4 bytes a pixel, no depth) on top, only while it is written.
+    REQUIRE(run.report->screenshot.has_value());
+    CHECK(run.report->screenshot->targets == rv::app::kScreenshotEyesTargets);
+    const std::uint64_t eyes = 2 * rv::gl::viewTargetsBytes(kEyeSize) + shadowMapBytes();
+    const std::uint64_t image = std::uint64_t{4} * 2 * kEyeSize.x * kEyeSize.y;
+    CHECK(run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes == eyes);
+    CHECK(run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).peakBytes == eyes + image);
 
     REQUIRE(run.report->xr);
     const rv::app::XrRecord& xr = *run.report->xr;
@@ -230,6 +248,28 @@ TEST_CASE("xr: a lost session sends the run back to the desktop, which renders o
     CHECK(xr.framesWithViews == 10);
     CHECK(xr.head.size() == 10);
     CHECK(run.report->framesRendered == 20);
+    // The memory margin back on the desktop: the eyes' targets let go of, the window's set and the shadow map alone.
+    REQUIRE(run.report->window.has_value());
+    const glm::ivec2 drawable(run.report->window->drawableWidth, run.report->window->drawableHeight);
+    CHECK(run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::Targets).bytes ==
+          rv::gl::viewTargetsBytes(drawable) + shadowMapBytes());
+}
+
+TEST_CASE("xr: the stereo preview draws both eyes through the eyes' targets, into the window and the screenshot "
+          "(I10 step 1)",
+          "[gpu][xr]") {
+    const fs::path dir = freshCaseDir("xr/stereo_preview");
+    const fs::path shot = dir / "stereo.png";
+    const AppRun run = runApp(retroverseExe(), dir, "stereo",
+                              {"--scene", "m0_testroom", "--stereo-preview", "--exit-after-frames", "--frames", "5",
+                               "--fixed-dt", "0.016667", "--screenshot", arg(shot)});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    requireScreenshot(run, shot, glm::ivec2(1920, 1080));
+    REQUIRE(run.report->screenshot.has_value());
+    CHECK(run.report->screenshot->targets == rv::app::kScreenshotEyesTargets);
+    CHECK(run.report->framesRendered == 5);
 }
 
 TEST_CASE("xr: without a runtime the run stays on the desktop and says why (I10 step 2)", "[gpu][xr]") {
