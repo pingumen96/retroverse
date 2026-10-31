@@ -6,7 +6,8 @@
 // --fixed-dt (the same path on every machine). The figures are printed (WARN) for docs/i3/step-17b.md: the frame times
 // and the GPU time of every pass over the "benchmark" phase, what the last view drew, the GPU memory. In Release the
 // frame times must be acceptable (docs/roadmap.md, "Acceptable performance"): p99 at most 33.3 ms (never under 30 FPS)
-// and p50 at most 16.7 ms (60 FPS typically); the GPU passes are only reported.
+// and p50 at most 16.7 ms (60 FPS typically), over the whole path and over its "two-clips" phase (Gate M4, ADR-0016
+// section 12: the hero CRT and the room's secondary TV both playing); the GPU passes are only reported.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -112,6 +113,13 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
     REQUIRE(benchmark->times.has_value());
     CHECK(benchmark->times->count == kBenchmarkFrames);
     const rv::app::TimeSummary& times = *benchmark->times;
+    // Gate M4 (ADR-0016 section 12): the "two-clips" phase, the pan that holds the hero CRT and the room's secondary TV
+    // in view, both decoder slots playing (scripts/gate.ps1 reads the slot events for every frame of it).
+    const rv::app::PhaseRecord* twoClips = phaseOf(report, "two-clips");
+    REQUIRE(twoClips != nullptr);
+    CHECK(twoClips->frames == 52);
+    REQUIRE(twoClips->times.has_value());
+    CHECK(report.video.maxOpenDecoders == 2);
 
     std::string passes;
     for (const rv::app::GpuPassRecord& pass : benchmark->gpuPasses) {
@@ -128,11 +136,12 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
                            report.lastView->shadowDrawCalls, report.lastView->depthDrawCalls);
     }
     WARN(fmt::format("snes-stress benchmark ({}, {}): phase {} frames, frame p50 {:.2f} ms, p95 {:.2f} ms, p99 {:.2f} "
-                     "ms, max {:.2f} ms; GPU {}; the last view: {}; arrays {:.1f} MiB, GPU memory peak {:.1f} MiB; "
-                     "the walker ended at {}; every layer resident {:.0f} ms after the room showed (cache {} hits, {} "
-                     "misses)",
+                     "ms, max {:.2f} ms; two clips playing: {} frames, p50 {:.2f} ms, p99 {:.2f} ms; GPU {}; the last "
+                     "view: {}; arrays {:.1f} MiB, GPU memory peak {:.1f} MiB; the walker ended at {}; every layer "
+                     "resident {:.0f} ms after the room showed (cache {} hits, {} misses)",
                      report.buildType, report.context ? report.context->renderer : std::string("?"), times.count,
-                     times.p50Ms, times.p95Ms, times.p99Ms, times.maxMs, passes, view,
+                     times.p50Ms, times.p95Ms, times.p99Ms, times.maxMs, twoClips->times->count,
+                     twoClips->times->p50Ms, twoClips->times->p99Ms, passes, view,
                      static_cast<double>(report.residency.arrayBytes) / (1024.0 * 1024.0),
                      static_cast<double>(report.gpuMemory.peakTotalBytes) / (1024.0 * 1024.0),
                      report.finalCamera ? spawnArgument(*report.finalCamera) : std::string("?"),
@@ -147,5 +156,7 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
     // Acceptable frame times (Release, 1920 x 1080, --no-vsync).
     CHECK(times.p99Ms <= 33.3);
     CHECK(times.p50Ms <= 16.7);
+    CHECK(twoClips->times->p99Ms <= 33.3);
+    CHECK(twoClips->times->p50Ms <= 16.7);
 #endif
 }
