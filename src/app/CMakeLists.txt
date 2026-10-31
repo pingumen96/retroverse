@@ -36,6 +36,7 @@ add_library(rv_app_cli STATIC
     src/mock_catalog.cpp
     src/model_viewer.cpp
     src/overlay_policy.cpp
+    src/picture_bounds.cpp
     src/playlist.cpp
     src/process_priority.cpp
     src/room_items.cpp

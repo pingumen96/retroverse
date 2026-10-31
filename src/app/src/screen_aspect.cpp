@@ -42,6 +42,16 @@ glm::vec4 pictureRect(glm::vec2 picture, glm::vec2 screen) noexcept {
     return {static_cast<float>(0.5 * (1.0 - width)), 0.0f, static_cast<float>(width), 1.0f};
 }
 
+glm::vec4 croppedPictureRect(glm::vec2 picture, const glm::vec4& crop, glm::vec2 screen) noexcept {
+    if (!(crop.z > 0.0f) || !(crop.w > 0.0f) || !std::isfinite(crop.x) || !std::isfinite(crop.y) ||
+        isWholeScreen(crop)) {
+        return pictureRect(picture, screen);
+    }
+    const glm::vec4 shown = pictureRect(picture * glm::vec2(crop.z, crop.w), screen);
+    const glm::vec2 scale(shown.z / crop.z, shown.w / crop.w);
+    return {shown.x - crop.x * scale.x, shown.y - crop.y * scale.y, scale.x, scale.y};
+}
+
 bool isWholeScreen(const glm::vec4& rect) noexcept {
     return rect.x == kWholeScreen.x && rect.y == kWholeScreen.y && rect.z == kWholeScreen.z &&
            rect.w == kWholeScreen.w;
