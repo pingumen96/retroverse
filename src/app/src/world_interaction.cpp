@@ -64,8 +64,34 @@ std::string_view toString(WorldState state) noexcept {
         return "returning";
     case WorldState::Edit:
         return "edit";
+    case WorldState::AnimatingToConsole:
+        return "animating to console";
     }
     return "unknown";
+}
+
+std::string_view toString(InsertionEnd end) noexcept {
+    switch (end) {
+    case InsertionEnd::Arrived:
+        return "arrived";
+    case InsertionEnd::Skipped:
+        return "skipped";
+    }
+    return "unknown";
+}
+
+bool anyButtonPressed(const input::ActionState& actions) noexcept {
+    for (std::size_t index = 0; index < input::kActionCount; ++index) {
+        const auto action = static_cast<Action>(index);
+        if (input::isLookAction(action) || isGlobalAction(action) || action == Action::MoveForward ||
+            action == Action::MoveRight || action == Action::UiNavX || action == Action::UiNavY) {
+            continue;
+        }
+        if (actions.pressed(action)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string_view toString(WorldContext context) noexcept {
@@ -217,7 +243,7 @@ WorldBackDecision worldBackAction(const BackState& shell, WorldBack world) noexc
 }
 
 WorldInteraction::WorldInteraction(InteractionSettings settings)
-    : m_settings(settings), m_lift(0.0f, scene::Easing::EaseInOut) {
+    : m_settings(settings), m_lift(0.0f, scene::Easing::EaseInOut), m_insert(0.0f, scene::Easing::EaseInOut) {
     InspectSettings& inspect = m_settings.inspect;
     inspect.minDistance = std::max(finiteOrZero(inspect.minDistance), 0.0f);
     inspect.maxDistance = std::max(finiteOrZero(inspect.maxDistance), inspect.minDistance);
@@ -226,6 +252,7 @@ WorldInteraction::WorldInteraction(InteractionSettings settings)
     m_inspectDistance = inspect.distance;
     m_walker.setReduceMotion(m_settings.reduceMotion);
     m_lift.setReduceMotion(m_settings.reduceMotion);
+    m_insert.setReduceMotion(m_settings.reduceMotion);
 }
 
 void WorldInteraction::setRoom(const InteractionRoom* room) {
@@ -261,6 +288,7 @@ WorldBack WorldInteraction::backLevel() const noexcept {
         // In Focus the lift moves only while the item is lowered back from Inspect.
         return m_lift.animating() ? WorldBack::SkipLowering : WorldBack::LeaveFocus;
     case WorldState::FreeRoam:
+    case WorldState::AnimatingToConsole:
     case WorldState::Launching:
     case WorldState::Returning:
     case WorldState::Edit:
@@ -276,6 +304,7 @@ world::PickId WorldInteraction::highlighted() const noexcept {
     case WorldState::Focus:
         return m_focused;
     case WorldState::Inspect:
+    case WorldState::AnimatingToConsole:
     case WorldState::Launching:
     case WorldState::Returning:
     case WorldState::Edit:
@@ -304,6 +333,7 @@ void WorldInteraction::setReduceMotion(bool on) {
     }
     m_walker.setReduceMotion(on);
     m_lift.setReduceMotion(on);
+    m_insert.setReduceMotion(on); // an insertion under way arrives: the next update ends it
     for (Pull& pull : m_pulls) {
         pull.progress.setReduceMotion(on);
     }
@@ -338,6 +368,12 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
             case WorldState::Inspect:
                 readInspect(actions, dt, finiteOrZero(frame.wheelNotches), frame.card, result);
                 break;
+            case WorldState::AnimatingToConsole:
+                // Any button skips the insertion (ADR-0016 §11): the item in the socket, the eye on it, at once.
+                if (anyButtonPressed(*frame.actions)) {
+                    endInsertion(InsertionEnd::Skipped, result);
+                }
+                break;
             case WorldState::Launching:
             case WorldState::Returning:
             case WorldState::Edit:
@@ -364,6 +400,10 @@ InteractionResult WorldInteraction::update(const InteractionFrame& frame) {
     }
     m_walkerPlaced = false;
     m_lift.advance(dt);
+    m_insert.advance(dt);
+    if (m_state == WorldState::AnimatingToConsole && !m_insert.animating()) {
+        endInsertion(InsertionEnd::Arrived, result);
+    }
 
     // The hover's dwell: the item it rests on is pulled out once the dwell has passed (FreeRoam; in Focus the focused
     // item is the pulled one).
@@ -492,10 +532,7 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
             toFreeRoam(InteractionNotice::ItemUnavailable);
             return;
         }
-        m_launch = WorldLaunchRecord{m_focused, item->game, m_walkerNow, inspectView()};
-        result.launch = WorldLaunchRequest{m_focused, item->game};
-        m_state = WorldState::Launching;
-        clearNotice();
+        startLaunch(*item, result);
         return;
     }
     if (card == CardAction::Move) {
@@ -512,6 +549,37 @@ void WorldInteraction::readInspect(const input::ActionState& actions, float dt, 
     } else if (card == CardAction::Info || actions.pressed(Action::UiInfo)) {
         result.showInfo = true;
     }
+}
+
+void WorldInteraction::startLaunch(const RoomItem& item, InteractionResult& result) {
+    m_launch = WorldLaunchRecord{m_focused, item.game, m_walkerNow, inspectView()};
+    clearNotice();
+    // I5 step 9 (ADR-0016 §11): in a room with a console the item goes into its media socket first, the eye turning to
+    // it; instant under reduceMotion, which launches at once as a room without a console does.
+    const float seconds = m_settings.timings.insertion;
+    const std::optional<scene::WalkerPose> console =
+        m_room != nullptr && !m_settings.reduceMotion && std::isfinite(seconds) && seconds > 0.0f
+            ? m_room->consolePose(m_walkerNow)
+            : std::nullopt;
+    result.launch = WorldLaunchRequest{m_focused, item.game, console.has_value()};
+    if (!console) {
+        m_state = WorldState::Launching;
+        return;
+    }
+    m_state = WorldState::AnimatingToConsole;
+    m_insert.jumpTo(0.0f);
+    m_insert.animateTo(1.0f, seconds);
+    easeWalkerTo(*console, seconds);
+}
+
+void WorldInteraction::endInsertion(InsertionEnd end, InteractionResult& result) {
+    m_state = WorldState::Launching;
+    m_insert.finish();
+    if (m_walker.animating()) {
+        m_walker.finish(); // skipped: the eye on the socket at once
+        m_walkerPlaced = true;
+    }
+    result.insertionEnded = end;
 }
 
 void WorldInteraction::track(const world::HoverSample& sample) {
@@ -548,6 +616,7 @@ void WorldInteraction::track(const world::HoverSample& sample) {
 
 void WorldInteraction::finishReturn() {
     const WorldLaunchRecord record = m_launch.value_or(WorldLaunchRecord{});
+    m_insert.jumpTo(0.0f); // the item out of the console, back in the hand
     m_walker.jumpTo(record.walker);
     m_walkerPlaced = true;
     const std::optional<LaunchMessage> outcome = std::move(m_launchOutcome);
@@ -577,7 +646,8 @@ void WorldInteraction::finishReturn() {
 }
 
 bool WorldInteraction::enterEdit() {
-    if (m_state == WorldState::Launching || m_state == WorldState::Returning || m_state == WorldState::Edit) {
+    if (m_state == WorldState::AnimatingToConsole || m_state == WorldState::Launching ||
+        m_state == WorldState::Returning || m_state == WorldState::Edit) {
         return false;
     }
     m_state = WorldState::Edit;
@@ -629,7 +699,7 @@ bool WorldInteraction::showInRoom(world::PickId id, const scene::WalkerPose& wal
 }
 
 void WorldInteraction::launchEnded(const LaunchMessage& outcome) {
-    if (m_state != WorldState::Launching) {
+    if (m_state != WorldState::Launching && m_state != WorldState::AnimatingToConsole) {
         return;
     }
     m_state = WorldState::Returning;
@@ -702,6 +772,7 @@ void WorldInteraction::toFreeRoam(InteractionNotice notice) {
     }
     m_focused = world::kNoPick;
     m_lift.jumpTo(0.0f);
+    m_insert.jumpTo(0.0f);
     if (m_walker.animating()) {
         // Stopped where it is: the player walks on from there.
         m_walker.jumpTo(m_walker.pose());

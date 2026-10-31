@@ -25,6 +25,7 @@
 
 #include <glm/glm.hpp>
 
+#include <rv/app/world_inspect.hpp>
 #include <rv/app/world_interaction.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -116,6 +117,14 @@ public:
     [[nodiscard]] scene::WalkerPose focusPose(world::PickId id) const override;
     [[nodiscard]] std::optional<world::PickId> step(world::PickId from,
                                                     world::StepDirection direction) const override;
+    /// I5 step 9: the walker at `from`'s feet looking at the console's media socket (consoleSocket()) from its eye (the
+    /// viewer's eye height), with the whole view; nothing without a console.
+    [[nodiscard]] std::optional<scene::WalkerPose> consolePose(const scene::WalkerPose& from) const override;
+
+    /// I5 step 9 (ADR-0016 §11): the media socket of the room's console in the scene's frame
+    /// (app::consoleSocketOf()), or none (the arcade, a shared room).
+    void setConsoleSocket(std::optional<ConsoleSocket> socket) noexcept { m_consoleSocket = socket; }
+    [[nodiscard]] const std::optional<ConsoleSocket>& consoleSocket() const noexcept { return m_consoleSocket; }
 
     /// The viewer the next focusPose() calls frame for.
     void setViewer(const FocusViewer& viewer) noexcept { m_viewer = viewer; }
@@ -138,6 +147,7 @@ private:
     std::vector<float> m_reach;
     world::SlotNavigation m_navigation;
     FocusViewer m_viewer;
+    std::optional<ConsoleSocket> m_consoleSocket;
 };
 
 /// The D-pad and the arrow keys in Focus (I3 step 13a's choice; step 7 steps once per press): a direction held steps at

@@ -12,7 +12,9 @@
 //    (a shelf level, the display case's glass);
 //  - inspectDimming(): the scene behind the item dimmed by one stop and vignetted, eased with the lift;
 //  - screenSelection(): the game the hero CRT follows (the quick catalog's selection while it is open, else the
-//    world's focused or inspected item).
+//    world's focused or inspected item);
+//  - I5 step 9 (ADR-0016 §11): consoleSocketOf(), the media socket of a room's console in the scene; itemExtents(),
+//    insertedScale() and insertedItemTransform(), the held item going into it after Avvia; insertionDimming().
 
 #include <optional>
 #include <string>
@@ -23,6 +25,7 @@
 #include <rv/app/world_interaction.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/scene/scene_description.hpp>
 #include <rv/world/collection_layout.hpp>
 
 namespace rv::app {
@@ -86,5 +89,56 @@ struct InspectDimming {
 /// (`focusedGame`, its GameId text; empty for none); nothing in FreeRoam (the CRT keeps what it plays).
 [[nodiscard]] std::optional<std::string> screenSelection(const std::optional<std::string>& catalogSelection,
                                                          WorldState state, std::string_view focusedGame);
+
+/// I5 step 9: the id suffix of a hero corner's console (world::FixtureId "<room>/fx:<socket>.console").
+inline constexpr std::string_view kConsoleIdSuffix = ".console";
+/// The console prefabs' media socket (geometry::ConsoleCartridgeParams: "CartridgeSlot").
+inline constexpr std::string_view kConsoleMediaSocket = "CartridgeSlot";
+/// The share of the socket's opening the item fills at most once in it (its front's width and its thickness).
+inline constexpr float kInsertedFill = 0.9f;
+/// How far the item reaches down into the console at most once in it (meters): half of its height (a console stands
+/// about 7 cm high: geometry::ConsoleCartridgeParams).
+inline constexpr float kInsertedHalfDepth = 0.055f;
+
+/// The media socket of a room's console, in the scene's frame (I5 step 9, ADR-0016 §11).
+struct ConsoleSocket {
+    /// From the socket's frame to the scene's: its origin the middle of the opening, +Y up out of it, +Z the console's
+    /// front (the prefab's socket under the object's first instance).
+    glm::mat4 transform{1.0f};
+    /// The opening's width (along the socket's +X) and depth (+Z), meters.
+    glm::vec2 opening{0.0f};
+
+    [[nodiscard]] glm::vec3 position() const noexcept { return glm::vec3(transform[3]); }
+    bool operator==(const ConsoleSocket&) const = default;
+};
+
+/// The media socket of the console among `description`'s objects whose ids begin with `roomPrefix` ("room:snes/"; ""
+/// takes any): the first prefab object whose id ends with kConsoleIdSuffix and whose prefab (built again from its
+/// kind and parameters, no GPU) has kConsoleMediaSocket, through its first instance. Nothing in a room without a
+/// console (the arcade's hero corner, a shared room's: ADR-0013 §6) or a scene without one.
+[[nodiscard]] std::optional<ConsoleSocket> consoleSocketOf(const scene::SceneDescription& description,
+                                                           std::string_view roomPrefix);
+
+/// The item's size along its prefab's axes (x across its front, y up, z its thickness), meters: its slot box seen from
+/// its prefab's space, scaled by its transform. Zero for an empty box.
+[[nodiscard]] glm::vec3 itemExtents(const world::CollectionItem& item) noexcept;
+
+/// The scale the item shrinks to in the socket (ADR-0016 §11: "shrinks into it"): at most 1, its front's width and its
+/// thickness (`extents`' x and z) within kInsertedFill of the opening's width and depth, half its height (`extents`'
+/// y) within kInsertedHalfDepth. A size or an opening that is empty or not finite sets no bound.
+[[nodiscard]] float insertedScale(const glm::vec3& extents, const glm::vec2& opening) noexcept;
+
+/// The pose of the item going into the console's media socket at `progress` (the interaction's eased insertion,
+/// clamped to [0, 1]; non-finite counts as 0), from the item prefab's space to the scene's frame: at 0 exactly `held`
+/// (its pose in the hand), at 1 in the socket: its centre at the socket's origin (half of it down in the console), its
+/// prefab axes the socket's (upright, its front the console's front), `held`'s scale times `scale`
+/// (insertedScale()); in between, its centre along the straight line, its orientation along the shorter arc
+/// (scene::interpolatePose) and its scale linearly.
+[[nodiscard]] glm::mat4 insertedItemTransform(const glm::mat4& held, const ConsoleSocket& socket, float scale,
+                                              float progress) noexcept;
+
+/// The dimming of the scene behind the item during the insertion: inspectDimming()'s at the lift, fading out with the
+/// insertion (`insertion` clamped to [0, 1]), so that the console the item goes into shows as the room is lit.
+[[nodiscard]] InspectDimming insertionDimming(float lift, float insertion, float baseVignette) noexcept;
 
 } // namespace rv::app

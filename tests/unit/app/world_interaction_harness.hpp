@@ -72,7 +72,20 @@ public:
         return m_navigation.step(from, direction);
     }
 
+    /// I5 step 9: the walker at `from`'s feet looking at `console` from its eye; nothing without one.
+    [[nodiscard]] std::optional<scene::WalkerPose> consolePose(const scene::WalkerPose& from) const override {
+        if (!console) {
+            return std::nullopt;
+        }
+        const glm::vec3 to = *console - (from.feet + glm::vec3(0.0f, kEyeHeight, 0.0f));
+        return scene::WalkerPose{from.feet, std::atan2(to.x, -to.z),
+                                 std::atan2(to.y, std::sqrt(to.x * to.x + to.z * to.z))};
+    }
+
     void remove(world::PickId id) { m_removed.push_back(id); }
+
+    /// I5 step 9: where the room's console's media socket stands (none: a room without a console, the default).
+    std::optional<glm::vec3> console;
 
     [[nodiscard]] static catalog::GameId gameOf(world::PickId id) {
         return catalog::GameId::fromValue(1000 + static_cast<std::uint64_t>(id)).value();

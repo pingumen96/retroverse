@@ -87,6 +87,7 @@
 #include <rv/app/screen_policy.hpp>
 #include <rv/app/screen_room.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_inspect.hpp>
 #include <rv/app/world_live_plan.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
@@ -495,6 +496,8 @@ private:
         core::Aabb doorway;
         /// Its index among the interaction's rooms (WorldHover::addRoom), if it has a collection.
         std::optional<std::size_t> interactionRoom;
+        /// I5 step 9: its console's media socket in the scene (consoleSocketOf()), none without a console.
+        std::optional<ConsoleSocket> console;
     };
 
     /// An item of the floor: its room (an index into m_rooms), its index in the room's collection, its index among the

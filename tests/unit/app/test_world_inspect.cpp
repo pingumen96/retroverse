@@ -428,3 +428,185 @@ TEST_CASE("app/world_inspect: lift, turn, zoom and Back over the 50-title room, 
     loop.frame(pressing({Action::Back}));
     CHECK(world.state() == WorldState::FreeRoam);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The insertion into the console (I5 step 9, ADR-0016 §11)
+// ---------------------------------------------------------------------------------------------------------------
+
+TEST_CASE("app/world_inspect: a console room's console has its media socket; the arcade and a shared room none",
+          "[app][world_inspect][insertion]") {
+    auto text = rv::core::readTextFile(rv::test::world::goldenPlanDir() / "building-esde-seed-102938.json");
+    REQUIRE(text.has_value());
+    auto plan = rv::world::readPlan(*text, "building-esde-seed-102938");
+    REQUIRE(plan.has_value());
+    std::size_t consoles = 0;
+    for (const rv::world::Room& room : plan->rooms) {
+        INFO(room.id.toString());
+        auto data = rv::world::loadSceneData(rv::test::world::sourceAssetRoot(), *plan, room.id);
+        REQUIRE(data.has_value());
+        auto scene = rv::world::toSceneDescription(*plan, room.id, *data);
+        REQUIRE(scene.has_value());
+        const std::optional<rv::app::ConsoleSocket> socket = rv::app::consoleSocketOf(*scene, "");
+        const bool consoleRoom = room.id.toString().starts_with("room:");
+        CHECK(socket.has_value() == consoleRoom);
+        // A prefix of another room finds nothing.
+        CHECK_FALSE(rv::app::consoleSocketOf(*scene, "room:none/").has_value());
+        if (!socket) {
+            continue;
+        }
+        ++consoles;
+        // On the console's top, its opening the slot's (a little under 15 x 4.5 cm), +Y up.
+        const rv::scene::SceneObject* console = nullptr;
+        for (const rv::scene::SceneObject& object : scene->objects) {
+            if (object.id.ends_with(rv::app::kConsoleIdSuffix)) {
+                console = &object;
+            }
+        }
+        REQUIRE(console != nullptr);
+        CHECK(console->kind == "console_cartridge");
+        const glm::vec3 base(console->instanceTransforms().front()[3]);
+        CHECK(socket->position().y > base.y + 0.03f);
+        CHECK(socket->position().y < base.y + 0.3f);
+        CHECK(glm::length(glm::vec2(socket->position().x - base.x, socket->position().z - base.z)) < 0.2f);
+        CHECK(axis(socket->transform, 1).y > 0.999f);
+        CHECK(socket->opening.x > 0.1f);
+        CHECK(socket->opening.x <= 0.15f + 1e-6f);
+        CHECK(socket->opening.y > 0.02f);
+        CHECK(socket->opening.y <= 0.045f + 1e-6f);
+    }
+    CHECK(consoles == 3);
+    // A hand-made scene without a console.
+    CHECK_FALSE(rv::app::consoleSocketOf(rv::scene::SceneDescription{}, "").has_value());
+}
+
+TEST_CASE("app/world_inspect: the item shrinks into the socket's opening", "[app][world_inspect][insertion]") {
+    using rv::app::insertedScale;
+    using rv::app::kInsertedFill;
+    using rv::app::kInsertedHalfDepth;
+    const glm::vec2 opening(0.15f, 0.045f);
+    // A cartridge that fits keeps its size; a wider case shrinks to 90% of the opening's width, a thicker one to its
+    // depth's, a taller one to the console's depth.
+    CHECK(insertedScale(glm::vec3(0.10f, 0.09f, 0.02f), opening) == 1.0f);
+    CHECK(insertedScale(glm::vec3(0.30f, 0.09f, 0.02f), opening) == kInsertedFill * 0.15f / 0.30f);
+    CHECK(insertedScale(glm::vec3(0.10f, 0.09f, 0.08f), opening) == kInsertedFill * 0.045f / 0.08f);
+    CHECK(insertedScale(glm::vec3(0.10f, 0.22f, 0.02f), opening) == 2.0f * kInsertedHalfDepth / 0.22f);
+    // Nothing known sets no bound.
+    CHECK(insertedScale(glm::vec3(0.30f, 0.0f, 0.02f), glm::vec2(0.0f)) == 1.0f);
+    CHECK(insertedScale(glm::vec3(std::numeric_limits<float>::quiet_NaN()), opening) == 1.0f);
+    // The golden plan's cartridges: their sizes along their prefab's axes, their front wider than they are thick.
+    const CollectionLayout layout = rv::test::world::layoutOf(rv::test::world::planCase("plan-50-seed-102938"));
+    REQUIRE_FALSE(layout.items.empty());
+    for (const CollectionItem& item : layout.items) {
+        const glm::vec3 extents = rv::app::itemExtents(item);
+        INFO(item.slot.toString());
+        CHECK(extents.x > 0.05f);
+        CHECK(extents.y > 0.05f);
+        CHECK(extents.z > 0.005f);
+        CHECK(extents.x > extents.z);
+        const float scale = insertedScale(extents, opening);
+        CHECK(scale > 0.3f);
+        CHECK(scale <= 1.0f);
+        CHECK(extents.x * scale <= kInsertedFill * opening.x + 1e-6f);
+    }
+    CHECK(rv::app::itemExtents(CollectionItem{}) == glm::vec3(0.0f));
+}
+
+TEST_CASE("app/world_inspect: from the hand into the socket: its centre at the socket at the end, upright, facing the "
+          "console's front",
+          "[app][world_inspect][insertion]") {
+    // The socket of a console turned a little, on a cabinet 0.55 m high.
+    rv::app::ConsoleSocket socket;
+    socket.transform = glm::mat4(glm::mat3(glm::vec3(std::cos(0.14f), 0.0f, -std::sin(0.14f)), glm::vec3(0.0f, 1.0f, 0.0f),
+                                           glm::vec3(std::sin(0.14f), 0.0f, std::cos(0.14f))));
+    socket.transform[3] = glm::vec4(-0.2f, 0.62f, -4.6f, 1.0f);
+    socket.opening = glm::vec2(0.15f, 0.045f);
+    const glm::mat4 held = somePulledPose(1.25f);
+    const float scale = 0.8f;
+    using rv::app::insertedItemTransform;
+    CHECK(insertedItemTransform(held, socket, scale, 0.0f) == held);
+    CHECK(insertedItemTransform(held, socket, scale, -1.0f) == held);
+    CHECK(insertedItemTransform(held, socket, scale, std::numeric_limits<float>::quiet_NaN()) == held);
+    for (const float progress : {1.0f, 2.0f}) {
+        const glm::mat4 inserted = insertedItemTransform(held, socket, scale, progress);
+        CHECK(near(glm::vec3(inserted[3]), socket.position(), 1e-5f));
+        for (int index = 0; index < 3; ++index) {
+            CHECK(near(axis(inserted, index), axis(socket.transform, index), 1e-5f));
+            CHECK(std::abs(glm::length(glm::vec3(inserted[index])) - 1.25f * scale) < 1e-5f);
+        }
+    }
+    // On its way: along the straight line, the scale between, never a jump from frame to frame.
+    glm::vec3 previous(held[3]);
+    for (int frame = 1; frame <= 27; ++frame) {
+        const float t = static_cast<float>(frame) / 27.0f;
+        const glm::mat4 pose = insertedItemTransform(held, socket, scale, t);
+        const glm::vec3 centre(pose[3]);
+        const glm::vec3 expected = glm::mix(glm::vec3(held[3]), socket.position(), t);
+        CHECK(near(centre, expected, 1e-4f));
+        CHECK(glm::length(centre - previous) < 0.25f);
+        const float length = glm::length(glm::vec3(pose[0]));
+        CHECK(length <= 1.25f + 1e-5f);
+        CHECK(length >= 1.25f * scale - 1e-5f);
+        previous = centre;
+    }
+    // The dimming fades out as it goes.
+    CHECK(rv::app::insertionDimming(1.0f, 0.0f, 0.05f) == rv::app::inspectDimming(1.0f, 0.05f));
+    CHECK(rv::app::insertionDimming(1.0f, 1.0f, 0.05f) == rv::app::inspectDimming(0.0f, 0.05f));
+    CHECK(rv::app::insertionDimming(1.0f, 0.5f, 0.0f) == rv::app::inspectDimming(0.5f, 0.0f));
+}
+
+TEST_CASE("app/world_inspect: the room's console pose turns the eye to the socket, the feet kept",
+          "[app][world_inspect][insertion]") {
+    const CollectionLayout layout = rv::test::world::layoutOf(rv::test::world::planCase("plan-50-seed-102938"));
+    auto room = rv::app::CollectionRoom::build(std::make_shared<const CollectionLayout>(layout));
+    REQUIRE(room.has_value());
+    const rv::scene::WalkerPose from{glm::vec3(1.0f, 0.0f, -2.0f), 0.3f, -0.1f};
+    CHECK_FALSE((*room)->consolePose(from).has_value());
+    rv::app::ConsoleSocket socket;
+    socket.transform[3] = glm::vec4(-0.2f, 0.62f, -4.6f, 1.0f);
+    (*room)->setConsoleSocket(socket);
+    const std::optional<rv::scene::WalkerPose> pose = (*room)->consolePose(from);
+    REQUIRE(pose.has_value());
+    CHECK(pose->feet == from.feet);
+    const rv::scene::Camera camera = cameraAt(from.feet + glm::vec3(0.0f, kEyeHeight, 0.0f),
+                                              rv::core::radiansToDegrees(pose->yaw),
+                                              rv::core::radiansToDegrees(pose->pitch));
+    const glm::vec3 toSocket = glm::normalize(socket.position() - camera.position());
+    CHECK(glm::dot(camera.forward(), toSocket) > 0.9999f);
+}
+
+TEST_CASE("app/world_inspect: the run report's insertion record reads back", "[app][world_inspect][insertion]") {
+    rv::app::RunReport report;
+    report.world.bound = true;
+    report.world.interaction.bound = true;
+    rv::app::InsertionRecord& insertion = report.world.interaction.insertion;
+    insertion.started = 2;
+    insertion.arrived = 1;
+    insertion.skipped = 1;
+    insertion.refused = 0;
+    insertion.movingFrames = 31;
+    insertion.socketFrames = 3;
+    insertion.pickId = "0300000C";
+    insertion.startFrame = 120;
+    insertion.endFrame = 125;
+    insertion.seconds = 0.1;
+    insertion.end = "skipped";
+    insertion.socket = glm::vec3(-0.25f, 0.62f, -4.5f);
+    insertion.center = glm::vec3(-0.25f, 0.62f, -4.5f);
+    insertion.scale = 0.75;
+    insertion.distance = 0.0;
+    insertion.frames = {{120, 0.02, 1.5}, {125, 1.0, 0.0}};
+    rv::app::VideoLaunchRecord launch;
+    launch.decoderRan = true;
+    launch.stopMs = 12.5;
+    launch.stopFrame = 120;
+    launch.waitMs = 0.25;
+    launch.handOverFrame = 126;
+    launch.cancelled = true;
+    report.video.bound = true;
+    report.video.launches.push_back(launch);
+    const auto parsed = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(parsed.has_value());
+    CHECK(parsed->world.interaction.insertion == insertion);
+    REQUIRE(parsed->video.launches.size() == 1);
+    CHECK(parsed->video.launches.front() == launch);
+}

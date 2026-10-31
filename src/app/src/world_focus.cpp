@@ -247,6 +247,16 @@ std::optional<world::PickId> CollectionRoom::step(world::PickId from, world::Ste
     return m_navigation.step(from, direction);
 }
 
+std::optional<scene::WalkerPose> CollectionRoom::consolePose(const scene::WalkerPose& from) const {
+    if (!m_consoleSocket) {
+        return std::nullopt;
+    }
+    const glm::vec3 eye = from.feet + glm::vec3(0.0f, m_viewer.eyeHeight, 0.0f);
+    const glm::vec3 target = m_consoleSocket->position();
+    const scene::ViewAngles angles = scene::aimAt(eye, target, m_viewer.lens, m_viewer.aspect, {}, from.yaw);
+    return scene::WalkerPose{from.feet, angles.yaw, angles.pitch};
+}
+
 FocusStepRepeat::FocusStepRepeat(const ui::NavSettings& settings) noexcept : m_repeater(settings) {}
 
 void FocusStepRepeat::reset() noexcept {

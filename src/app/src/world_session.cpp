@@ -844,6 +844,12 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
             show.screenPresets.emplace(room.room.toString(), room.sceneData.theme.screenPreset);
         }
     }
+    // I5 step 9 (ADR-0016 §11): each room's console socket, which the insertion after Avvia goes to (none without a
+    // console: the arcade, a shared room), found before the scene goes to the host.
+    std::vector<std::optional<ConsoleSocket>> consoles;
+    for (const RoomCollection& room : build.rooms) {
+        consoles.push_back(consoleSocketOf(*build.scene, room.room.toString() + "/"));
+    }
     if (Status shown = m_host.showScene(std::move(*build.scene), show); !shown) {
         spdlog::error("World: the floor's scene cannot be shown: {}; the test room instead", shown.error().toString());
         if (Status fallback = m_host.showTestRoom(); !fallback) {
@@ -877,10 +883,12 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     // hover, the pull-out and Focus over each (I3 step 13a: its pick targets and navigation; a copy, as the persisted
     // start keeps the shown build's layouts to reconcile them, I3 step 10c).
     std::size_t interactionRooms = 0;
-    for (RoomCollection& room : build.rooms) {
+    for (std::size_t roomIndex = 0; roomIndex < build.rooms.size(); ++roomIndex) {
+        RoomCollection& room = build.rooms[roomIndex];
         FloorRoom floorRoom;
         floorRoom.id = room.room;
         floorRoom.doorway = room.doorway;
+        floorRoom.console = consoles[roomIndex];
         m_record.items += room.layout.items.size();
         m_record.clusters += room.layout.clusters.size();
         m_record.skipped += room.layout.skipped.size();
@@ -904,7 +912,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
         // The interaction's rooms are those with a collection, in the floor's order.
         if (floorRoom.collection) {
             floorRoom.interactionRoom = interactionRooms++;
-            m_record.pickTargets += m_interaction->addRoom(room.layout, floorRoom.collection.get());
+            m_record.pickTargets += m_interaction->addRoom(room.layout, floorRoom.collection.get(), floorRoom.console);
         }
         m_rooms.push_back(std::move(floorRoom));
     }

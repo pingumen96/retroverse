@@ -40,7 +40,8 @@ WorldHover::~WorldHover() {
     syncAnimationPhase(false);
 }
 
-std::size_t WorldHover::addRoom(world::CollectionLayout layout, CollectionInstance* collection) {
+std::size_t WorldHover::addRoom(world::CollectionLayout layout, CollectionInstance* collection,
+                                std::optional<ConsoleSocket> console) {
     const auto start = std::chrono::steady_clock::now();
     const std::string roomId = layout.room.toString();
     RoomEntry entry;
@@ -51,6 +52,7 @@ std::size_t WorldHover::addRoom(world::CollectionLayout layout, CollectionInstan
     } else if (auto room = CollectionRoom::build(std::make_shared<const world::CollectionLayout>(std::move(layout)))) {
         entry.index = std::move(*index);
         entry.room = std::move(*room);
+        entry.room->setConsoleSocket(console);
     } else {
         spdlog::error("World: the D-pad steps of {} cannot be built: {}", roomId, room.error().toString());
     }
@@ -192,6 +194,7 @@ InteractionResult WorldHover::update(const Frame& frame) {
     const WorldState before = m_interaction.state();
     InteractionResult result = m_interaction.update(input);
     m_inspection.observe(m_interaction, before, result);
+    m_inspection.observeInsertion(m_interaction, result, frame.deltaSeconds, m_context.frameIndex());
     // Avvia (result.launch) goes to the product UI through the application (I3 step 15a, WorldLaunch).
     if (result.showMedia || result.showInfo) {
         spdlog::debug("{} in the room: I3 step 14b", result.showMedia ? "Vedi media" : "Informazioni");
@@ -317,7 +320,8 @@ void WorldHover::observe(bool stepped, bool fromCursor) {
                                          return item.progress > 0.0f && item.progress < 1.0f;
                                      });
     const float lift = m_interaction.inspectView().lift;
-    const bool animating = m_interaction.walkerEasing() || pulling || (lift > 0.0f && lift < 1.0f);
+    const bool animating = m_interaction.walkerEasing() || pulling || (lift > 0.0f && lift < 1.0f) ||
+                           state == WorldState::AnimatingToConsole;
     syncAnimationPhase(animating);
     m_record.animationFrames += animating ? 1 : 0;
     m_record.walkerEaseFrames += m_interaction.walkerEasing() ? 1 : 0;
@@ -390,6 +394,7 @@ void WorldHover::record(InteractionRecord& record) const {
         return;
     }
     m_inspection.record(record.inspect);
+    m_inspection.record(record.insertion);
     record.state = std::string(toString(m_interaction.state()));
     record.hoveredPickId = pickText(m_interaction.hovered());
     record.focusedPickId = pickText(m_interaction.focused());

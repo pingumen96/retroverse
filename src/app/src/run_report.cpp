@@ -530,6 +530,58 @@ InspectRecord readInspect(FieldReader& fields) {
     return inspect;
 }
 
+Json insertionToJson(const InsertionRecord& insertion) {
+    Json json{{"started", insertion.started},
+              {"arrived", insertion.arrived},
+              {"skipped", insertion.skipped},
+              {"refused", insertion.refused},
+              {"movingFrames", insertion.movingFrames},
+              {"socketFrames", insertion.socketFrames},
+              {"pickId", insertion.pickId},
+              {"seconds", insertion.seconds},
+              {"end", insertion.end},
+              {"socket", vec3ToJson(insertion.socket)},
+              {"center", vec3ToJson(insertion.center)},
+              {"scale", insertion.scale},
+              {"distance", insertion.distance}};
+    if (insertion.startFrame) {
+        json["startFrame"] = *insertion.startFrame;
+    }
+    if (insertion.endFrame) {
+        json["endFrame"] = *insertion.endFrame;
+    }
+    Json frames = Json::array();
+    for (const InsertionFrameRecord& frame : insertion.frames) {
+        frames.push_back(Json{{"frame", frame.frame}, {"progress", frame.progress}, {"distance", frame.distance}});
+    }
+    json["frames"] = std::move(frames);
+    return json;
+}
+
+InsertionRecord readInsertion(FieldReader& fields) {
+    InsertionRecord insertion;
+    insertion.started = fields.count("started");
+    insertion.arrived = fields.count("arrived");
+    insertion.skipped = fields.count("skipped");
+    insertion.refused = fields.count("refused");
+    insertion.movingFrames = fields.count("movingFrames");
+    insertion.socketFrames = fields.count("socketFrames");
+    insertion.pickId = fields.string("pickId");
+    insertion.startFrame = fields.optionalCount("startFrame");
+    insertion.endFrame = fields.optionalCount("endFrame");
+    insertion.seconds = fields.number("seconds");
+    insertion.end = fields.string("end");
+    insertion.socket = fields.vec3("socket");
+    insertion.center = fields.vec3("center");
+    insertion.scale = fields.number("scale");
+    insertion.distance = fields.number("distance");
+    for (FieldReader& frame : fields.objectArray("frames")) {
+        insertion.frames.push_back(
+            InsertionFrameRecord{frame.count("frame"), frame.number("progress"), frame.number("distance")});
+    }
+    return insertion;
+}
+
 Json interactionToJson(const InteractionRecord& interaction) {
     Json json = Json::object();
     if (!interaction.bound) {
@@ -569,6 +621,7 @@ Json interactionToJson(const InteractionRecord& interaction) {
     json["events"] = std::move(events);
     json["eventsDropped"] = interaction.eventsDropped;
     json["inspect"] = inspectToJson(interaction.inspect);
+    json["insertion"] = insertionToJson(interaction.insertion);
     return json;
 }
 
@@ -608,6 +661,9 @@ InteractionRecord readInteraction(FieldReader& fields) {
     interaction.eventsDropped = fields.count("eventsDropped");
     if (std::optional<FieldReader> inspect = fields.optionalObject("inspect")) {
         interaction.inspect = readInspect(*inspect);
+    }
+    if (std::optional<FieldReader> insertion = fields.optionalObject("insertion")) {
+        interaction.insertion = readInsertion(*insertion);
     }
     return interaction;
 }
@@ -1887,6 +1943,14 @@ Json videoToJson(const VideoRecord& video) {
         entry["decoderRan"] = launch.decoderRan;
         entry["stopMs"] = launch.stopMs;
         entry["threadsRunning"] = launch.threadsRunning;
+        if (launch.stopFrame) {
+            entry["stopFrame"] = *launch.stopFrame;
+        }
+        entry["waitMs"] = launch.waitMs;
+        if (launch.handOverFrame) {
+            entry["handOverFrame"] = *launch.handOverFrame;
+        }
+        entry["cancelled"] = launch.cancelled;
         putOptional(entry, "positionSeconds", launch.positionSeconds);
         entry["reopened"] = launch.reopened;
         putOptional(entry, "reopenedAtSeconds", launch.reopenedAtSeconds);
@@ -2222,6 +2286,10 @@ VideoRecord readVideo(FieldReader& fields) {
         entry.decoderRan = launch.boolean("decoderRan");
         entry.stopMs = launch.number("stopMs");
         entry.threadsRunning = launch.count("threadsRunning");
+        entry.stopFrame = launch.optionalCount("stopFrame");
+        entry.waitMs = launch.optionalNumber("waitMs").value_or(0.0);
+        entry.handOverFrame = launch.optionalCount("handOverFrame");
+        entry.cancelled = launch.has("cancelled") && launch.boolean("cancelled");
         entry.positionSeconds = launch.optionalNumber("positionSeconds");
         entry.reopened = launch.boolean("reopened");
         entry.reopenedAtSeconds = launch.optionalNumber("reopenedAtSeconds");

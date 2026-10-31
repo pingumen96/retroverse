@@ -15,9 +15,14 @@
 // |           |                                                          | or Inspect (face-out)                         |
 // | Focus     | interact on a spine-out item; Back from Inspect;         | interact or ui_activate: Inspect; Back:       |
 // |           | showInRoom()                                             | FreeRoam, the item put back                   |
-// | Inspect   | interact or ui_activate in Focus; interact on a face-out | Avvia: Launching; Back: Focus, the item       |
-// |           | item in FreeRoam; the return of a launch                 | lowered to its pulled-out pose                |
-// | Launching | Avvia                                                    | launchEnded(): Returning                      |
+// | Inspect   | interact or ui_activate in Focus; interact on a face-out | Avvia: AnimatingToConsole in a room with a    |
+// |           | item in FreeRoam; the return of a launch                 | console, else Launching; Back: Focus, the     |
+// |           |                                                          | item lowered to its pulled-out pose           |
+// | Animating | Avvia in a room with a console (I5 step 9, ADR-0016      | the insertion's end (450 ms, or any button:   |
+// | ToConsole | §11), not under reduceMotion                             | the skip): Launching; launchEnded() (refused  |
+// |           |                                                          | meanwhile): Returning                         |
+// | Launching | Avvia (straight from Inspect without a console or under  | launchEnded(): Returning                      |
+// |           | reduceMotion), the insertion's end                       |                                               |
 // | Returning | launchEnded()                                            | the next update: Inspect of the same item     |
 // |           |                                                          | (FreeRoam when it left the room)              |
 // | Edit      | enterEdit() (I4b step 3: the directory's "Modifica       | leaveEdit(): FreeRoam                         |
@@ -49,11 +54,11 @@
 
 namespace rv::app {
 
-/// The world's interaction states (ADR-0012 §1; specification §8.3's OnShelf, Focused, HeldForInspection, Launching,
-/// Returning).
-enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Returning, Edit };
+/// The world's interaction states (ADR-0012 §1; specification §8.3's OnShelf, Focused, HeldForInspection,
+/// AnimatingToConsole, Launching, Returning).
+enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Returning, Edit, AnimatingToConsole };
 
-/// "free roam", "focus", "inspect", "launching", "returning", "edit".
+/// "free roam", "focus", "inspect", "launching", "returning", "edit", "animating to console".
 [[nodiscard]] std::string_view toString(WorldState state) noexcept;
 
 /// Who reads the world's actions in each state, inside the action map's World context (input_context.hpp: the product
@@ -68,7 +73,9 @@ enum class WorldState : std::uint8_t { FreeRoam, Focus, Inspect, Launching, Retu
 ///    ui_activate (its buttons' focus and the press of the focused one, I3 step 14a: InteractionFrame::card, so Enter,
 ///    which is both confirm and ui_activate, presses the focused button), interact and ui_activate (skip the lift).
 ///    Neither QuickCatalog nor Back: the pad's north button is Vedi media here, the quick catalog elsewhere.
-///  - Suspended (Launching, Returning): nothing; A1's game-session panel has the input meanwhile.
+///  - Suspended (AnimatingToConsole, Launching, Returning): nothing; A1's game-session panel has the input while a
+///    game launches and runs. During the insertion (AnimatingToConsole) any button the frame pressed skips it
+///    (anyButtonPressed(), on the frame's actions before any context): it is read by no context.
 ///  - Edit (I4b step 3, ADR-0015 §4: the editor's): the walking and look actions and Sprint (the walker walks and looks
 ///    as in FreeRoam), interact (pick up, drop), Back, confirm (the editor's menu: Enter, the pad's Start), edit_pin,
 ///    the arrows and the D-pad (steps between slots, the menu's focus) and ui_activate (the menu's press). Neither
@@ -87,6 +94,7 @@ enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended, Ed
         return WorldContext::Focus;
     case WorldState::Inspect:
         return WorldContext::Inspect;
+    case WorldState::AnimatingToConsole:
     case WorldState::Launching:
     case WorldState::Returning:
         return WorldContext::Suspended;
@@ -107,6 +115,11 @@ enum class WorldContext : std::uint8_t { FreeRoam, Focus, Inspect, Suspended, Ed
 /// suspended; in Edit what FreeRoam gives, the walking released while an arrow or a D-pad direction is held (the arrow
 /// keys walk and step at once otherwise: in Edit they step).
 [[nodiscard]] input::ActionState walkerActionsFor(WorldContext context, const input::ActionState& actions) noexcept;
+
+/// True when `actions` pressed a button this frame that skips the insertion (ADR-0016 §11: any button): every action
+/// but the look and walking axes, the UI's analog navigation (an axis is no button) and the global actions (a
+/// screenshot, the developer overlay, a shader reload, the mute: host functions that change nothing in the world).
+[[nodiscard]] bool anyButtonPressed(const input::ActionState& actions) noexcept;
 
 /// Where the pick ray starts (ADR-0012 §2).
 enum class PickRaySource : std::uint8_t {
@@ -170,6 +183,8 @@ struct InteractionTimings {
     float lift = 0.300f;
     /// The lowering back to the pulled-out pose (Back from Inspect).
     float lower = 0.200f;
+    /// I5 step 9 (ADR-0016 §11): the held item into the console's media socket after Avvia, the eye turning to it.
+    float insertion = 0.450f;
 };
 
 /// How the inspected item answers the look actions and the zoom (ADR-0012 §4, style §6.2).
@@ -227,6 +242,13 @@ public:
     /// The D-pad step from `from` (world::SlotNavigation::step).
     [[nodiscard]] virtual std::optional<world::PickId> step(world::PickId from,
                                                             world::StepDirection direction) const = 0;
+    /// I5 step 9 (ADR-0016 §11): where the walker looks at the media socket of the room's console from `from` (its
+    /// feet kept, the eye turned to the socket), or nothing when the room has no console (the arcade, a shared room, a
+    /// hand-made scene): Avvia then launches without the insertion.
+    [[nodiscard]] virtual std::optional<scene::WalkerPose> consolePose(const scene::WalkerPose& from) const {
+        static_cast<void>(from);
+        return std::nullopt;
+    }
 };
 
 /// A button of the inspected item's card pressed (I3 step 14a, ADR-0012 §5: the card's buttons have the focus, so Enter
@@ -263,9 +285,21 @@ struct InteractionFrame {
 struct WorldLaunchRequest {
     world::PickId item = world::kNoPick;
     catalog::GameId game;
+    /// I5 step 9 (ADR-0016 §11): the insertion runs: the launch is asked for at once (resolved meanwhile), but its
+    /// hand-over waits for InteractionResult::insertionEnded; the screens' decoders begin to stop now.
+    bool held = false;
 
     bool operator==(const WorldLaunchRequest&) const = default;
 };
+
+/// How the insertion ended (InteractionResult::insertionEnded).
+enum class InsertionEnd : std::uint8_t {
+    Arrived, ///< the item reached the console's media socket (InteractionTimings::insertion)
+    Skipped, ///< a button skipped the rest of it (anyButtonPressed())
+};
+
+/// "arrived", "skipped".
+[[nodiscard]] std::string_view toString(InsertionEnd end) noexcept;
 
 /// What the app does after a frame.
 struct InteractionResult {
@@ -273,8 +307,11 @@ struct InteractionResult {
     std::optional<BackAction> shellBack;
     /// QuickCatalog was pressed where the context reads it: open the quick catalog.
     bool openCatalog = false;
-    /// Avvia: start this launch; the state stays Launching until launchEnded().
+    /// Avvia: start this launch; the state stays AnimatingToConsole or Launching until launchEnded().
     std::optional<WorldLaunchRequest> launch;
+    /// I5 step 9: the insertion of a held launch ended this frame (AnimatingToConsole left for Launching): its
+    /// hand-over may begin.
+    std::optional<InsertionEnd> insertionEnded;
     /// Vedi media and Informazioni on the inspected item (I3 step 14b).
     bool showMedia = false;
     bool showInfo = false;
@@ -345,8 +382,8 @@ public:
 
     /// "Mostra nella stanza" (ADR-0012 §8): Focus of `id` from FreeRoam or Focus, the walker eased from `walker` over
     /// InteractionTimings::showInRoomEase, the item pulled out. False, with ItemUnavailable, when the room does not
-    /// hold it; false, changing nothing, in Inspect, Launching or Returning. The walker's ease is in the next update's
-    /// result.
+    /// hold it; false, changing nothing, in Inspect, AnimatingToConsole, Launching or Returning. The walker's ease is
+    /// in the next update's result.
     bool showInRoom(world::PickId id, const scene::WalkerPose& walker);
 
     /// Focus left at once, its item put back and the walker's ease stopped where it is, with no notice (I4 step 7b:
@@ -355,8 +392,10 @@ public:
     void leaveFocusNow();
 
     /// The launch Avvia asked for ended (A1's LaunchFlow, its outcome as the game-session panel tells it): Returning;
-    /// the next update restores the walker's pose and the inspection of the item. An outcome other than
-    /// launch_outcome::kReturned (refused, not ready, failed, crashed) becomes the notice. Ignored outside Launching.
+    /// the next update restores the walker's pose and the inspection of the item (in the hand, the insertion undone).
+    /// An outcome other than launch_outcome::kReturned (refused, not ready, failed, crashed) becomes the notice. In
+    /// AnimatingToConsole too (a launch refused during the insertion: back to Inspect with the item in the hand).
+    /// Ignored in any other state.
     void launchEnded(const LaunchMessage& outcome);
 
     /// Turns every animation instant (and finishes those running), or back.
@@ -364,7 +403,7 @@ public:
 
     /// I4b step 3 (ADR-0015 §4): the state Edit from FreeRoam, Focus or Inspect, the interaction letting go of
     /// everything at once (nothing hovered, focused, pulled or lifted; the walker's ease stopped where it is; no notice).
-    /// False, changing nothing, while launching or returning (or in Edit already).
+    /// False, changing nothing, during the insertion, while launching or returning (or in Edit already).
     bool enterEdit();
     /// Edit left for FreeRoam; nothing in other states.
     void leaveEdit();
@@ -375,7 +414,7 @@ public:
     [[nodiscard]] WorldBack backLevel() const noexcept;
     /// The item the pick ray rests on (HoverTracker), in FreeRoam and Focus.
     [[nodiscard]] world::PickId hovered() const noexcept { return m_hover.hovered(); }
-    /// The item of Focus, Inspect, Launching and Returning; kNoPick in FreeRoam.
+    /// The item of Focus, Inspect, AnimatingToConsole, Launching and Returning; kNoPick in FreeRoam.
     [[nodiscard]] world::PickId focused() const noexcept { return m_focused; }
     /// The item outlined and labelled (ADR-0012 §3): the hovered one in FreeRoam, the focused one in Focus, none else.
     [[nodiscard]] world::PickId highlighted() const noexcept;
@@ -384,6 +423,9 @@ public:
     /// The pull of `id` (0 when it is in its slot).
     [[nodiscard]] float pullOf(world::PickId id) const noexcept;
     [[nodiscard]] InspectView inspectView() const noexcept;
+    /// I5 step 9: the insertion's progress, eased, from 0 (the item in the hand) to 1 (in the console's media socket):
+    /// it runs in AnimatingToConsole and stays 1 while the game launches and runs; 0 otherwise.
+    [[nodiscard]] float insertion() const noexcept { return m_insert.pose(); }
     /// The walker's ease is running.
     [[nodiscard]] bool walkerEasing() const noexcept { return m_walker.animating(); }
     [[nodiscard]] InteractionNotice notice() const noexcept { return m_notice; }
@@ -403,6 +445,10 @@ private:
     void readFocus(const input::ActionState& actions, InteractionResult& result);
     void readInspect(const input::ActionState& actions, float dt, float wheelNotches, std::optional<CardAction> card,
                      InteractionResult& result);
+    /// Avvia on the inspected item: AnimatingToConsole (held) with a console and motion, else Launching.
+    void startLaunch(const RoomItem& item, InteractionResult& result);
+    /// The insertion's end (arrived or skipped): Launching.
+    void endInsertion(InsertionEnd end, InteractionResult& result);
     void back(const BackState& shell, InteractionResult& result);
     void track(const world::HoverSample& sample);
     void finishReturn();
@@ -447,6 +493,8 @@ private:
     /// The walker was placed this frame without an ease left running (a skip, an instant ease, a stop, a restore).
     bool m_walkerPlaced = false;
     scene::PoseAnimator<float> m_lift;
+    /// I5 step 9: the insertion's progress (AnimatingToConsole).
+    scene::PoseAnimator<float> m_insert;
     float m_inspectYaw = 0.0f;
     float m_inspectPitch = 0.0f;
     float m_inspectDistance = 0.45f;

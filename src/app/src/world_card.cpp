@@ -69,7 +69,8 @@ void WorldCard::update(const WorldInteraction& interaction, const InteractionRes
     const std::string game = item != nullptr ? item->game.toString() : std::string();
     // Avvia: Inspect left for the launch (13a's stand-in ends it at once, Returning, I3 step 15a launches).
     const WorldState state = interaction.state();
-    if (m_lastState == WorldState::Inspect && (state == WorldState::Launching || state == WorldState::Returning)) {
+    if (m_lastState == WorldState::Inspect && (state == WorldState::AnimatingToConsole ||
+                                               state == WorldState::Launching || state == WorldState::Returning)) {
         addEvent(frame, "launch", game);
     }
     m_lastState = state;

@@ -160,7 +160,7 @@ bool WorldSession::applyItems(WorldBuild& build, const LiveUpdatePlan& plan, Wor
         }
         // The hover, the pull-out and Focus over the room's layout (its pick targets and D-pad steps; the pick ids of
         // the items that stood are theirs still).
-        m_record.pickTargets += m_interaction->addRoom(layout, room.collection.get());
+        m_record.pickTargets += m_interaction->addRoom(layout, room.collection.get(), room.console);
         m_record.staticRecords += room.collection->group().layout().instances().size();
     }
     syncCollections();
