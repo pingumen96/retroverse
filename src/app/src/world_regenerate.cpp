@@ -473,10 +473,11 @@ void WorldSession::followRegeneration(ProductUi& product) {
     // I4b step 6's review: the catalog's inputs (about 224 MiB of private bytes on the reference library) are let go of
     // while nothing needs them: the directory closed, no notice offering a preview, no preview, commit or undo asked or
     // running (a job that took them keeps them), no directory command waiting (a row that closed it, "Rigenera ...",
-    // taken next frame). The tab or the notice reads them ahead again.
+    // taken next frame). The tab or the notice reads them ahead again. The read-ahead itself needs nothing: while it
+    // takes the inputs the slot is running (never let go of), and its rooms' data loop stops once they are let go of.
     const bool wanted = product.directoryOpen() || product.directoryCommandsPending() || confirmationOffered() ||
-                        state.confirmationPending ||
-                        state.request.has_value() || state.job != RegenerateJob::None;
+                        state.confirmationPending || state.request.has_value() ||
+                        (state.job != RegenerateJob::None && state.job != RegenerateJob::Prewarm);
     if (releaseIdleInputs(*state.slot, wanted)) {
         state.prewarmed = false;
         ++m_record.regenerationInputsReleased;
