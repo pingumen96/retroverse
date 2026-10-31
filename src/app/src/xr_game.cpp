@@ -25,7 +25,8 @@ XrGame::~XrGame() {
 }
 
 void XrGame::stop(ScreenService* screen) {
-    if (m_showing && screen != nullptr) {
+    // Whether the last frame showed it or not: a hero screen that went while the game ran left the picture set.
+    if (screen != nullptr) {
         screen->clearGameWindow();
     }
     m_probe.reset();
@@ -142,12 +143,12 @@ void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenSe
         return;
     }
     probeBars(state, record);
-    if (screen != nullptr) {
-        screen->showGameWindow(m_interop->texture(), m_interop->size(), m_crop);
-        m_showing = true;
-    }
+    // No hero screen bound (the lobby, a hall, a service made unbound for the media viewer's clip): captured, shown
+    // nowhere, so the UI's panel stays and the eyes keep their scale.
+    m_showing = screen != nullptr && screen->showGameWindow(m_interop->texture(), m_interop->size(), m_crop);
     if (record != nullptr) {
         ++record->captureFrames;
+        record->captureShownFrames += m_showing ? 1 : 0;
         record->captureSize = m_interop->size();
         record->captureCrop = m_crop;
     }

@@ -1739,10 +1739,10 @@ struct ScreenService::Impl {
         }
     }
 
-    void showGameWindow(GLuint texture, glm::ivec2 size, const glm::vec4& crop) {
+    bool showGameWindow(GLuint texture, glm::ivec2 size, const glm::vec4& crop) {
         ScreenState* screen = hero();
         if (screen == nullptr || texture == 0 || size.x <= 0 || size.y <= 0) {
-            return;
+            return false;
         }
         const bool first = !gameWindow;
         gameWindow = texture;
@@ -1752,13 +1752,14 @@ struct ScreenService::Impl {
                                                         texture);
                 !set) {
                 spdlog::error("{}: the game's window cannot be shown: {}", nameOf(*screen), set.error().toString());
-                return;
+                return false;
             }
             screen->appliedOverride = texture;
         }
         if (first) {
             spdlog::info("{} shows the launched game's window ({}x{})", nameOf(*screen), size.x, size.y);
         }
+        return true;
     }
 
     void clearGameWindow() {
@@ -2588,8 +2589,8 @@ void ScreenService::update(std::uint64_t frame, double nowSeconds, const scene::
     m_impl->update(frame, nowSeconds, camera, selection, minimized, eyeInRoom);
 }
 
-void ScreenService::showGameWindow(unsigned texture, glm::ivec2 size, const glm::vec4& crop) {
-    m_impl->showGameWindow(texture, size, crop);
+bool ScreenService::showGameWindow(unsigned texture, glm::ivec2 size, const glm::vec4& crop) {
+    return m_impl->showGameWindow(texture, size, crop);
 }
 
 void ScreenService::clearGameWindow() {

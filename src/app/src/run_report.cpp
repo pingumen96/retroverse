@@ -2854,6 +2854,7 @@ Json xrToJson(const XrRecord& xr) {
     json["uiClicks"] = xr.uiClicks;
     json["captureStarts"] = xr.captureStarts;
     json["captureFrames"] = xr.captureFrames;
+    json["captureShownFrames"] = xr.captureShownFrames;
     json["captureSize"] = ivec2ToJson(xr.captureSize);
     json["captureError"] = xr.captureError;
     json["captureCrop"] = Json::array({static_cast<double>(xr.captureCrop.x), static_cast<double>(xr.captureCrop.y),
@@ -2926,6 +2927,7 @@ XrRecord readXr(FieldReader& fields) {
     xr.uiClicks = fields.count("uiClicks");
     xr.captureStarts = fields.count("captureStarts");
     xr.captureFrames = fields.count("captureFrames");
+    xr.captureShownFrames = fields.count("captureShownFrames");
     xr.captureSize = readIvec2(fields, "captureSize");
     xr.captureError = fields.string("captureError");
     xr.captureCrop = fields.vec4("captureCrop");

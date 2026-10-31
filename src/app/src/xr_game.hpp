@@ -33,7 +33,7 @@ public:
 
     /// One frame with the launch's emulator `window` (an HWND; 0: none, the capture ends).
     void update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record);
-    /// The CRT shows the game.
+    /// The CRT shows the game: at its last new picture a hero screen was bound and took it.
     [[nodiscard]] bool showing() const noexcept { return m_showing; }
 
 private:

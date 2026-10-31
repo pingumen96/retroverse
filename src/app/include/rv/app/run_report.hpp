@@ -1759,10 +1759,12 @@ struct XrRecord {
     std::uint64_t uiPanelFrames = 0;
     std::uint64_t uiPointedFrames = 0;
     std::uint64_t uiClicks = 0;
-    /// The launched game on the CRT (I10 step 6): captures started, frames captured and shown, the window's size last
-    /// captured, why a capture could not start or went on (empty: none).
+    /// The launched game on the CRT (I10 step 6): captures started, frames captured, those a hero CRT showed (none
+    /// where no hero screen is bound), the window's size last captured, why a capture could not start or went on
+    /// (empty: none).
     std::uint64_t captureStarts = 0;
     std::uint64_t captureFrames = 0;
+    std::uint64_t captureShownFrames = 0;
     glm::ivec2 captureSize{0};
     std::string captureError;
     /// I10 step 11: the window's part the CRT showed last (corner and size in its texture coordinates, its black bars

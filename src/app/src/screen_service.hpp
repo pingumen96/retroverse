@@ -273,8 +273,11 @@ public:
     /// I10 step 6 (ADR-0017 §7): the hero screen shows `texture` (the launched game's window captured, `size` texels,
     /// display-encoded sRGB) in place of its own pictures, its aspect kept on the screen's, until clearGameWindow(),
     /// which gives the screen its pictures back. I10 step 11: `crop` (the window's part between its black bars, in its
-    /// texture coordinates, app::PictureBounds) fills the screen at its own aspect.
-    void showGameWindow(unsigned texture, glm::ivec2 size, const glm::vec4& crop = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+    /// texture coordinates, app::PictureBounds) fills the screen at its own aspect. False when nothing shows it: no hero
+    /// screen is bound (a room without one, a service made unbound for the media viewer's clip).
+    [[nodiscard]] bool showGameWindow(unsigned texture, glm::ivec2 size,
+                                      const glm::vec4& crop = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+    /// Nothing without a picture shown.
     void clearGameWindow();
     /// A launch starts (before the window's hand-over): every decoder stops and its thread is waited for (bounded).
     /// The media viewer on the next update() (I5 step 8): open or not, and its videos page's clip. A clip asked again

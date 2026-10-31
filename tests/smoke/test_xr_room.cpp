@@ -279,6 +279,7 @@ TEST_CASE("xr: a game launched in the headset plays on the hero CRT, captured fr
     CHECK(xr.captureError.empty());
     CHECK(xr.captureStarts == 1);
     CHECK(xr.captureFrames > 0);
+    CHECK(xr.captureShownFrames == xr.captureFrames);
     CHECK(xr.captureSize.x > 0);
     CHECK(xr.captureSize.y > 0);
     // The controllers walked while the game ran (the pad's actions were the game's).
@@ -320,4 +321,52 @@ TEST_CASE("xr: a game pillarboxed in its wide window fills the hero CRT without 
     CHECK(xr.captureCrop.z < 0.8f);
     CHECK(xr.captureCrop.x + 0.5f * xr.captureCrop.z == Catch::Approx(0.5f).margin(0.02f));
     CHECK(xr.captureCrop.y + xr.captureCrop.w <= 1.0f);
+}
+
+TEST_CASE("xr: a game launched where no CRT is bound is captured, shown nowhere", "[gpu][xr]") {
+    // The lobby binds no screen; the media viewer's clip makes the screens' service there, unbound (I5 step 8's
+    // review), which then has no hero to show the game's window on: the UI's panel must stay, and nothing may count the
+    // game as shown.
+    ensureLaunchAllowList();
+    const ImportedRoom room("no_crt", true);
+    const AppRun first = runApp(retroverseExe(), room.dir, "first", {"--exit-after-frames", "--frames", "3"});
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    // The quick catalog on Amber Lantern's card (frame 52), its viewer (56), the clip's page (60 to 75), closed at 170,
+    // Avvia at 180.
+    nlohmann::json steps = nlohmann::json::array();
+    const auto press = [&steps](int frame, std::string_view action) {
+        steps.push_back({{"fromFrame", frame}, {"toFrame", frame}, {"actions", {{std::string(action), 1}}}});
+    };
+    press(40, "quick_catalog");
+    press(43, "ui_up");
+    press(46, "ui_up");
+    steps.push_back({{"fromFrame", 49}, {"toFrame", 49}, {"text", "amber"}});
+    press(52, "ui_activate");
+    press(56, "ui_media");
+    for (int frame = 60; frame <= 75; frame += 3) {
+        press(frame, "ui_right");
+    }
+    press(170, "ui_back");
+    press(180, "ui_activate");
+    const fs::path script = room.dir / "no_crt.json";
+    REQUIRE(rv::core::writeTextFileAtomic(script, steps.dump(2) + "\n").has_value());
+    const AppRun run = runApp(retroverseExe(), room.dir, "vr",
+                              {"--vr", "--xr-runtime", "fake", "--input-script", arg(script), "--exit-after-frames",
+                               "--frames", "900", "--fixed-dt", "0.016667"});
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.room.empty()); // the lobby
+    CHECK(report.video.screens.empty());
+    CHECK(report.video.viewer.clips >= 1);
+    REQUIRE(report.launches.size() == 1);
+    CHECK(report.launches.front().profile == "fake-return");
+    REQUIRE(report.xr);
+    const rv::app::XrRecord& xr = *report.xr;
+    CHECK(xr.framesWithViews == 900);
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureStarts == 1);
+    CHECK(xr.captureFrames > 0);
+    CHECK(xr.captureShownFrames == 0);
 }
