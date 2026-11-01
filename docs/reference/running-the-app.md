@@ -723,7 +723,7 @@ build/rvdata`).
   directory, and never opens in the editor, during a launch or a ride, or in Focus and Inspect. Nothing pauses behind it
   but the walker: the screens keep playing, ducked as under the directory. Esci leaves a game that still runs running.
 - **The settings screen** (I7 step 1, ADR-0018 §2, §3: `app::settingRows()`, `ui::SettingsModel`,
-  `assets/ui/settings.rml`): five groups, Schermo (window or borderless fullscreen, text scale 100, 125, 150%, FOV 70 to
+  `assets/ui/settings.rml`): five groups, Schermo (window or borderless fullscreen, text scale 100 or 125%, FOV 70 to
   110 degrees or the scene's), Audio (general and video volume, mute, sound off), Mondo (lighting, `reduceMotion`, clips
   on or off, CRT effect, the TVs' programme), Controlli (mouse and stick sensitivity, invert Y; the bindings come at step
   3), VR (start in the headset, turn, vignette, walking relative to, posture, quality, refresh rate). The shoulders

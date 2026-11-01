@@ -11,6 +11,6 @@
   "invertY": false,
   // "window" or "borderless" (borderless fullscreen; exclusive fullscreen is not offered: ADR-0018 §3).
   "displayMode": "window",
-  // The product UI's size, 0.5 to 3; the settings screen offers 1, 1.25 and 1.5.
+  // The product UI's size, 0.5 to 3; the settings screen offers 1 and 1.25.
   "textScale": 1
 }

@@ -104,7 +104,7 @@ std::vector<SettingRow> settingRows(std::span<const std::string> lightingProfile
     std::vector<SettingRow> rows;
     // Schermo.
     rows.push_back(hiddenInVr(choice(kPlayer, "displayMode", SettingGroup::Display, {"window", "borderless"})));
-    rows.push_back(choice(kPlayer, "textScale", SettingGroup::Display, {1.0, 1.25, 1.5}));
+    rows.push_back(choice(kPlayer, "textScale", SettingGroup::Display, {1.0, 1.25}));
     SettingRow fov = hiddenInVr(slider(kPlayer, "horizontalFovDeg", SettingGroup::Display, 70.0, 110.0, 5.0));
     fov.nullable = true;
     rows.push_back(std::move(fov));

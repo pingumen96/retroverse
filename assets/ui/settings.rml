@@ -78,7 +78,8 @@
 							<p data-if="row.key == 'player.displayMode' && row.value == 'borderless'">Schermo intero</p>
 							<p data-if="row.key == 'player.textScale' && row.value == '1'">100%</p>
 							<p data-if="row.key == 'player.textScale' && row.value == '1.25'">125%</p>
-							<p data-if="row.key == 'player.textScale' && row.value == '1.5'">150%</p>
+							<!-- A hand-written scale the row does not list. -->
+							<p data-if="row.key == 'player.textScale' && row.value != '1' && row.value != '1.25'">{{ row.value }}x</p>
 							<p data-if="row.key == 'video.audio.mode' && row.value == 'nearest-focused'">Acceso</p>
 							<p data-if="row.key == 'video.audio.mode' && row.value == 'off'">Spento</p>
 							<p data-if="row.key == 'world.lightingProfile' && row.value == 'evening'">Sera</p>
