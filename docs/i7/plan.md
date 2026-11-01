@@ -182,5 +182,4 @@ The scope below was set for I7 on the user's behalf after "procedi con M5"; the 
 - **Text scale at 150%** may cut panels written at 100%; a step that cannot make it fit drops 150% rather than the check.
 - **The pad session's 30 minutes** may expose gaps no script does (the settle delay on a TV, BACKLOG). Those become
   follow-ups, not new I7 steps, unless they block the session.
-- **Pending trials:** Gates M3, M4 and VR passed but the user's own trials of them are still open. I7 does not wait for
-  them; a fix they bring is merged in like any other.
+- **Pending trials:** none: the user declared M3, M4 and I10 done on November 1, 2026.
