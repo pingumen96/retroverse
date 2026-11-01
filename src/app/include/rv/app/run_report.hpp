@@ -662,6 +662,8 @@ struct MenuRecord {
     /// The most elements of the panel found with cut text on any frame it showed (ADR-0018 §15).
     std::uint32_t textCut = 0;
     std::uint32_t settingsTextCut = 0;
+    /// At the end: the settings screen's focused row lies outside its list's visible part.
+    bool settingsRowCovered = false;
     /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
     std::vector<MenuEventRecord> events;
     std::uint64_t eventsDropped = 0;

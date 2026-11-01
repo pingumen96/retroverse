@@ -158,6 +158,8 @@ public:
     [[nodiscard]] bool capturingBinding() const noexcept;
     /// `action`'s name on `device` (assets/ui/key_labels.json), "" when it has no binding there.
     [[nodiscard]] std::string bindingLabel(input::Action action, input::DeviceKind device) const;
+    /// The same for a prompt, which must read: the other device's name when `device` has none.
+    [[nodiscard]] std::string promptLabel(input::Action action, input::DeviceKind device) const;
     /// "Controller scollegato" shows, over whatever shows.
     void setControllerNotice(bool shown);
 

@@ -103,5 +103,8 @@ private:
 /// settings.json's bindings over `map` (ADR-0018 §7: each action named replaces that action's, after the user's file), a
 /// list applyOverrides() refuses left out alone (logged). How many actions changed.
 std::size_t applySettingsBindings(input::ActionMap& map, const core::SettingsFile& file);
+/// `section` (action names over binding lists) over `map`, action by action: what is no action, or a list
+/// applyOverrides() refuses, is left out alone (logged). How many actions changed. Every path to the map goes through it.
+std::size_t applyBindingSection(input::ActionMap& map, const nlohmann::json& section);
 
 } // namespace rv::app

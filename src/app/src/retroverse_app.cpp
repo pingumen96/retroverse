@@ -1444,11 +1444,7 @@ struct RetroverseApp::State {
     void applyBindings() {
         input::ActionMap map = bindingLayers.below;
         if (!safeBindings) {
-            const nlohmann::json document{{"schemaVersion", input::ActionMap::kSchemaVersion},
-                                          {"bindings", settings->document(kBindingsSettingsSection)}};
-            if (const auto replaced = map.applyOverrides(document, "settings.json"); !replaced) {
-                spdlog::warn("settings.json's bindings are left out: {}", replaced.error().toString());
-            }
+            applyBindingSection(map, settings->document(kBindingsSettingsSection));
         }
         keepUnlocked(map, bindingLayers.shipped);
         input->setBindings(map);
@@ -2730,10 +2726,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         std::optional<std::string> prompt;
         bool totem = false;
         if (worldShown && !state.product->hasInput() && state.world->idleAtElevator()) {
-            prompt = state.product->bindingLabel(input::Action::Interact, actions.activeDevice());
+            prompt = state.product->promptLabel(input::Action::Interact, actions.activeDevice());
         } else if (worldShown && !state.product->hasInput() && state.world->idleAtTotem()) {
             // I6 step 5: the hub's directory totem's prompt, "Indice".
-            prompt = state.product->bindingLabel(input::Action::Interact, actions.activeDevice());
+            prompt = state.product->promptLabel(input::Action::Interact, actions.activeDevice());
             totem = true;
         }
         state.world->elevatorPrompt(*state.product, std::move(prompt), totem);

@@ -78,6 +78,23 @@ TEST_CASE("ui/hint_bar: a hint with nothing bound says so, and so does a name th
     CHECK(bar.glyph("toggle_mute ui_back") == HintGlyph{"B", "pad-b", false, true});
 }
 
+TEST_CASE("ui/hint_bar: a prompt reads even when the device has nothing bound", "[ui][hints]") {
+    HintBar bar = shippedBar();
+    ActionMap map;
+    map.bind(Action::Interact, rv::input::GamepadButtonBinding{rv::input::GamepadButton::South, 1.0f});
+    bar.setMap(map);
+    CHECK(bar.label(Action::Interact, DeviceKind::KeyboardMouse).empty());
+    CHECK(bar.promptLabel(Action::Interact, DeviceKind::KeyboardMouse) == "A");
+    map = ActionMap{};
+    map.bind(Action::Interact, rv::input::KeyBinding{rv::input::Key::E, 1.0f});
+    bar.setMap(map);
+    CHECK(bar.promptLabel(Action::Interact, DeviceKind::Gamepad) == "E");
+    CHECK(bar.promptLabel(Action::Interact, DeviceKind::KeyboardMouse) == "E");
+    // Nothing anywhere: no name, and the document drops the glyph.
+    bar.setMap(ActionMap{});
+    CHECK(bar.promptLabel(Action::Interact, DeviceKind::Gamepad).empty());
+}
+
 TEST_CASE("ui/hint_bar: the revision changes with what the glyphs say, not otherwise", "[ui][hints]") {
     HintBar bar = shippedBar();
     const std::uint64_t before = bar.revision();

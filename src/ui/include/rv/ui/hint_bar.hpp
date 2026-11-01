@@ -59,6 +59,8 @@ public:
     [[nodiscard]] HintGlyph glyph(std::string_view actions) const;
     /// `action`'s name on `device`, "" when it has no binding there.
     [[nodiscard]] std::string label(input::Action action, input::DeviceKind device) const;
+    /// label() for a prompt that must read: the other device's name when `device` has none.
+    [[nodiscard]] std::string promptLabel(input::Action action, input::DeviceKind device) const;
     /// Changes with whatever glyph() answers.
     [[nodiscard]] std::uint64_t revision() const noexcept { return m_revision; }
 

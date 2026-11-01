@@ -1693,6 +1693,10 @@ std::string ProductUi::bindingLabel(input::Action action, input::DeviceKind devi
     return m_impl->hintBar.label(action, device);
 }
 
+std::string ProductUi::promptLabel(input::Action action, input::DeviceKind device) const {
+    return m_impl->hintBar.promptLabel(action, device);
+}
+
 void ProductUi::setControllerNotice(bool shown) {
     m_impl->controllerNoticeWanted = shown;
 }
@@ -2238,6 +2242,7 @@ void ProductUi::finish() {
     s.menuRecord.view = std::string(ui::toString(s.menu.view()));
     s.menuRecord.settingsOpen = s.settingsModel.isOpen();
     s.menuRecord.settingsGroup = s.settingsModel.group();
+    s.menuRecord.settingsRowCovered = s.settingsShown() && s.settingsScreen->focusedRowCovered();
     for (const ui::SettingsRow& row : s.settingsModel.rows()) {
         s.menuRecord.settingsRows.push_back(row.key);
     }

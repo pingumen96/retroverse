@@ -223,6 +223,24 @@ TEST_CASE("app/binding_rules: settings.json over a hand-written file names only 
     CHECK(map.bindings(Action::Sprint).size() == 1);
 }
 
+TEST_CASE("app/binding_rules: a bad entry of the section is left out alone, on every path", "[app][binding]") {
+    const Json section = Json::parse(R"({"sprint": [{"key": "bogus"}], "defaults": true,
+        "ui_info": [{"key": "f7"}], "ui_media": "not a list"})");
+    ActionMap live = ActionMap::defaults();
+    CHECK(applyBindingSection(live, section) == 1);
+    CHECK(holds(live, Action::UiInfo, key(Key::F7)));
+    CHECK(holds(live, Action::Sprint, key(Key::LeftShift)));
+    CHECK(holds(live, Action::UiMedia, key(Key::F6)));
+
+    const rv::test::TempDir dir("binding_section");
+    rv::core::SettingsFile file = rv::core::SettingsFile::load(dir.path() / "settings.json");
+    file.set(kBindingsSettingsSection, "sprint", section["sprint"]);
+    file.set(kBindingsSettingsSection, "ui_info", section["ui_info"]);
+    ActionMap loaded = ActionMap::defaults();
+    CHECK(applySettingsBindings(loaded, file) == 1);
+    CHECK(loaded == live);
+}
+
 TEST_CASE("app/binding_rules: a row's list equal to the layer below leaves the file", "[app][binding]") {
     const rv::test::TempDir dir("binding_rows");
     SettingsLayers layers;

@@ -204,9 +204,9 @@ struct SettingsScreen::Impl {
         if (element == nullptr) {
             return;
         }
-        // A capture's strip takes room from the list: the row it is for stays in view.
-        if (const bool strip = !capture.empty(); strip != stripShown) {
-            stripShown = strip;
+        // A capture's strip takes room from the list, more when it says why a press was refused: the row stays in view.
+        if (Rml::String strip = capture + "/" + captureRefused; strip != stripShown) {
+            stripShown = std::move(strip);
             element->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest));
         }
         if (view.context().GetFocusElement() == element) {
@@ -222,7 +222,7 @@ struct SettingsScreen::Impl {
     Rml::DataModelHandle handle;
     bool modelCreated = false;
     bool documentShown = false;
-    bool stripShown = false;
+    Rml::String stripShown = "/";
     const SettingsModel* model = nullptr;
     std::optional<std::uint64_t> boundRevision;
     std::optional<SettingsClick> clicked;
@@ -321,6 +321,21 @@ std::string SettingsScreen::focusedElement() const {
         return {};
     }
     return std::string(focus->GetId());
+}
+
+bool SettingsScreen::focusedRowCovered() const {
+    Impl& impl = *m_impl;
+    if (impl.document == nullptr || impl.model == nullptr) {
+        return false;
+    }
+    Rml::Element* row = impl.document->GetElementById(Rml::String(impl.model->focusedElement()));
+    Rml::Element* list = impl.document->GetElementById(Rml::String(settings::kListId));
+    if (row == nullptr || list == nullptr) {
+        return false;
+    }
+    const float top = list->GetAbsoluteTop() + list->GetClientTop();
+    return row->GetAbsoluteTop() < top - 1.0f ||
+           row->GetAbsoluteTop() + row->GetOffsetHeight() > top + list->GetClientHeight() + 1.0f;
 }
 
 std::uint32_t SettingsScreen::textCut() const {

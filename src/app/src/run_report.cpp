@@ -1015,7 +1015,8 @@ Json menuToJson(const MenuRecord& menu) {
               {"settingsRows", menu.settingsRows},
               {"quit", menu.quit},
               {"textCut", menu.textCut},
-              {"settingsTextCut", menu.settingsTextCut}};
+              {"settingsTextCut", menu.settingsTextCut},
+              {"settingsRowCovered", menu.settingsRowCovered}};
     Json events = Json::array();
     for (const MenuEventRecord& event : menu.events) {
         Json entry{{"frame", event.frame}, {"event", event.event}};
@@ -1041,6 +1042,7 @@ MenuRecord readMenu(FieldReader& fields) {
     menu.quit = fields.boolean("quit");
     menu.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
     menu.settingsTextCut = static_cast<std::uint32_t>(fields.count("settingsTextCut"));
+    menu.settingsRowCovered = fields.boolean("settingsRowCovered");
     for (FieldReader& event : fields.objectArray("events")) {
         MenuEventRecord entry;
         entry.frame = event.count("frame");

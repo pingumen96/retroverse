@@ -197,9 +197,16 @@ std::size_t applySettingsBindings(input::ActionMap& map, const core::SettingsFil
         names.emplace_back(input::actionName(static_cast<input::Action>(index)));
     }
     const std::vector<std::string_view> allowed(names.begin(), names.end());
-    const Json section = file.section(kBindingsSettingsSection, allowed);
+    return applyBindingSection(map, file.section(kBindingsSettingsSection, allowed));
+}
+
+std::size_t applyBindingSection(input::ActionMap& map, const Json& section) {
     std::size_t changed = 0;
     for (const auto& [action, list] : section.items()) {
+        if (!input::actionFromName(action)) {
+            spdlog::warn("settings.json: {} in the bindings names no action: left out", action);
+            continue;
+        }
         const Json document{{"schemaVersion", input::ActionMap::kSchemaVersion}, {"bindings", {{action, list}}}};
         if (const auto replaced = map.applyOverrides(document, "settings.json")) {
             changed += *replaced;

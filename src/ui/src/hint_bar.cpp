@@ -54,6 +54,15 @@ std::string HintBar::label(input::Action action, input::DeviceKind device) const
     return input::bindingLabel(m_map, action, device, m_labels);
 }
 
+std::string HintBar::promptLabel(input::Action action, input::DeviceKind device) const {
+    std::string name = label(action, device);
+    if (name.empty()) {
+        name = label(action, device == input::DeviceKind::Gamepad ? input::DeviceKind::KeyboardMouse
+                                                                  : input::DeviceKind::Gamepad);
+    }
+    return name;
+}
+
 HintGlyph HintBar::glyph(std::string_view actions) const {
     std::vector<input::Binding> bindings;
     std::size_t start = 0;
