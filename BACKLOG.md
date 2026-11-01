@@ -766,3 +766,34 @@ Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
 - **The two-clips phase is tied to frames:** `bench_snes_room.json`'s `two-clips` phase (frames 64 to 115) follows
   where the scheduler opens and pauses the secondary's slot on that path; the gate checks every frame against the slot
   events and fails the row when they part, at which point the phase moves with them.
+
+## Parked at I7's planning
+
+Decided on 2026-11-01 (ADR-0018, `docs/i7/plan.md`). Items of the lists above that named I7 and stay out of it, each with
+why; what I7 does take, it closes in its step notes.
+
+- **The quick-hash pass in idle time** (above, "The quick-hash pass scheduled by the app"): about 45 minutes of reads on
+  an external drive should not start by themselves; I7 step 8 offers it on request.
+- **A video in the quick catalog's card** (ADR-0016 §10): the room's hero screen already follows the selection; a decoder
+  under the list competes with the screens' two for little.
+- **Editing the `explicit` playlist in the app** (`docs/i5/plan.md`): a list of GameIds per room needs a picker of its
+  own, for a mode few will use; `video.json` keeps it.
+- **Filters by missing media and "ready only" in the quick catalog** (specification §13.3, above "Readiness for every
+  game in bulk"): the coverage report says what is missing; the filters need query work and, for readiness, every game
+  resolved.
+- **Localization tables** (above, "Localization"): the product is Italian in v1; only the game-session panel's sentences
+  stay as they are.
+- **High contrast and a catalog-only mode** (specification §12.4): `reduceMotion`, the CRT effect, clips off and the text
+  scale cover what the settings screen can do cheaply; these need a second stylesheet and a run without a world.
+- **Effects and ambience volumes:** I8, with the sounds they would adjust.
+- **The frame stalls after an emulator's return, exclusive-fullscreen emulators, the error-mode policy for crashes** (above,
+  "Emulator launch"): I8's performance and fault-injection work; none blocks daily use.
+- **The GUI-subsystem `retroverse.exe`** (above, "Release subsystem"): I9.
+- **Derived profiles, a startup grace per profile, the per-game choice in `launch --dry-run --path`, best-fit argument
+  mangling:** no user need yet; the emulators screen does not depend on them.
+- **Keyboard defaults for Vedi media, Informazioni and the filters** (above): remapping (I7 step 3) lets a user bind
+  them; the shipped map stays as it is, since letters stay with text fields.
+- **A user's emulator profile edited in the app:** hand-written `emulators.json` keeps it; I7 chooses among what exists
+  and a program for an ES-DE command.
+- **`xr_bindings.json` remapped in the app:** the runtime takes bindings at the session's start, and the shipped profiles
+  cover the controllers.

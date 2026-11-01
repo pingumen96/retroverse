@@ -13,7 +13,7 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I4b | M3 part 2, customization (ADR-0015): the editor (games moved, swapped and pinned, furniture moved on the room's grid) written to `overrides.json`, "Rigenera stanza / piano / mondo" with an impact preview and consent, snapshots and undo, linked expansion rooms past a room's capacity (generator 1.5) | Gate M3: M3 Done (customizable without manual per-game work) |
 | I5 | M4 screens and media (ADR-0016): the decoder scheduler (2 decoders in Balanced, 1 in Low, priorities, visibility, shared textures, staggered uploads, the priority boost), playlists, secondary TVs, arcade cabinets playing clips, clip audio (miniaudio, spatial, one dominant source), CRT presets and the picture's aspect, fallbacks and video verdicts, videos and manuals in the media viewer, the insertion animation | Gate M4: every room has working TVs within the decoder budget, M4 Done |
 | I6 | The styling pass of the building (ADR-0014), done before I5 and I4b: light through doorways and per area, dressed halls, theme packs per floor, side-face spines for cases and boxes, the hub, arcade cabinets and handheld showcases | Gate D: the building reads like the concept, era by era |
-| I7 | M5 part 1: wizard, emulator management, settings, statistics, file watcher (games and media added in ES-DE appear without a restart), media coverage report per system | 30-minute controller-only session |
+| I7 | M5 part 1, daily use (ADR-0018): one menu, a settings screen over Retroverse's own `settings.json`, the first-run wizard from the pad, emulator management with launch tests, remapping and a hint bar from the active bindings, the on-screen keyboard, statistics and the game's status, the file watcher (games and media added in ES-DE appear without a restart), the media coverage report per system, the library screen | Gate Pad: `gate.ps1 -Gate Pad`, then a 30-minute controller-only session |
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
 | I10 | VR through OpenXR (ADR-0017), beside I4b and I5: a headset on the PC (Meta Quest through Link or Air Link, SteamVR, any OpenXR runtime), the building walked and used with Touch controllers or the pad, the launched game on the room's CRT | Gate VR: a 30-minute session in the headset |
@@ -34,7 +34,10 @@ building"). Next, planned on October 27, 2026 on the user's request: I4b, custom
 ([ADR-0016](decisions/ADR-0016-screens-and-media.md)), their steps run side by side where they own their files
 ([i4b/plan.md](i4b/plan.md), [i5/plan.md](i5/plan.md), "Beside I5" / "Beside I4b"). Planned on October 29, 2026 on
 the user's request: I10, VR through OpenXR ([ADR-0017](decisions/ADR-0017-vr-through-openxr.md)), in its own
-worktree beside them.
+worktree beside them. Gates M3 and M4 have passed, with the user's trials still pending; I10 is merged, and Gate VR's
+run and its session in the headset are the user's. Planned on November 1, 2026 after the user's "procedi con M5": I7,
+daily use ([ADR-0018](decisions/ADR-0018-daily-use.md), [i7/plan.md](i7/plan.md)), then I8 and I9, outlined below, each
+with its own ADR and plan when reached.
 
 ## Acceptable performance
 
@@ -63,6 +66,8 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | A clip's sound against its picture | within 80 ms at p95 |
 | Frame time in VR, a populated room, both eyes at the runtime's recommended size (ADR-0017 §9) | p50 at most 13.9 ms, p99 at most 20 ms, at most 1% of the refreshes missed (72 Hz); 90 Hz informative |
 | Frame time in VR with a game captured on the CRT (the "in game" profile) | the same limits |
+| A game or medium added in ES-DE (NFR-05, the watcher) | in the quick catalog within 10 s of the file's arrival, local volume, nothing else running; in its room informative |
+| A menu section's data (emulators, statistics, coverage) on the reference library | shown within 1 s of opening |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -219,6 +224,81 @@ FR-013 in 9; FR-014 in A1 and 13; FR-018 and NFR-10 in 0b and 14; FR-019 in 10 a
 SC-12 in 6 and 9; [testing/gate-m1.md](testing/gate-m1.md) maps each to the tests and gate figures that prove it,
 FR-012, FR-014 and SC-02 also to the manual session. Deferred: the 100/1k/10k/30k import fixtures of spec §18.3 beyond
 the search benchmark (I8) and NFR-05's file watcher (I7).
+
+## I7: M5 part 1, daily use
+
+[ADR-0018](decisions/ADR-0018-daily-use.md), planned on November 1, 2026 after the user's "procedi con M5" (the
+decisions taken on the user's behalf: [i7/plan.md](i7/plan.md)):
+- **One menu**, on Start and Back's last level, in place of quitting.
+- **Settings** in Retroverse's own `<user data>/settings.json` over the hand-written `config` files, which stay untouched.
+- **The first-run wizard**, from the pad, ES-DE only, replacing `library create` and `import` by hand (they keep working).
+- **Emulators:** every system's readiness, the choice for a system or a title, a program for a command that finds none,
+  a launch test before a new choice counts.
+- **Controls:** the hint bar from the active bindings, remapping, hotplug proven, the on-screen keyboard.
+- **Statistics** from Retroverse's own sessions, estimated hours, the game's status.
+- **The file watcher:** games and media added in ES-DE appear without a restart, read-only, debounced, idle during a game.
+- **Coverage and the library:** the media coverage per system, sources, review rows, the mass-disappearance guard.
+
+Every step delivers a screen or a behaviour to try, works from the pad alone, and appears on VR's panel. Automated runs
+never discover the real ES-DE (the wizard needs `--wizard --esde-home`), and a launch test fails closed without
+`RV_LAUNCH_ALLOWLIST`. Step notes in `docs/i7/`.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0018, this plan | | The files exist | done |
+| 1 | The menu and settings: `Action::Menu` in free roam, Back's last level the menu (`BackAction::MenuBack`, `ui::SystemMenuModel`, `system_menu.rml`, Esci with a confirmation), `core::SettingsFile` and `Paths::settingsFile()`, the overlay in `loadVideoSettings`, `loadWorldConfig`, the XR settings and `loadBindings`, `player.json` (`app::PlayerSettings`), the settings screen and its table of rows (`setting_rows.hpp`, `settings_model`, `settings.rml`) without the bindings, applied live and written when it closes | 0 | Unit: the layers' order, only the changed keys written, unknown keys kept, comments of `config` files untouched (their bytes equal), a broken file left out and backed up, a stray key never reaching a strict loader, Ripristina; `test_back_action`'s table. GPU (pad actions only): Start opens the menu, a volume and `reduceMotion` change at once and survive a restart, FOV changes the view, a lighting change commits the floor within 3 s, Back out to the world, Esci ends the run; the panel on `--xr-runtime fake`, its FOV and window rows hidden. Every golden 0 pixels apart with no `settings.json` | |
+| 2 | The wizard and `rv_library`: the module (the one launch library, `createLibrary`, `previewLibrary`; the CLI's `library create`, `import --dry-run` and `launch` and `CatalogLaunchLibrary` moved onto it), `wizard_model`, `folder_browser_model`, `wizard.rml`, the pages but Emulatori, `--wizard`, `--esde-home`, `--esde-install`, the database made and the first import through the refresh's progress, the world started in place, the notices no longer naming the CLI alone | 1 (beside 3) | Unit: the pages' states, resuming with `library.json` and no database, the data-directory guard, a folder browser over a vanished folder; the CLI's tests unchanged. GPU (`esde/building`, pad actions only): the seven pages to the lobby, the report's `wizard` counts equal the CLI's dry run; `--wizard` without `--esde-home` exits 2; a frame-limited run without `library.json` keeps today's test room and report. Real library (`real-library.ps1`, data under `build/`): the preview and the first import from `--esde-home`, 0 differences | |
+| 3 | Controls: `input::bindingLabel`, `ui::HintBar`, `assets/ui/key_labels.json`, every document's hints from the active map and the last device; remapping in the settings screen (capture, a clash judged per context, the swap, no lock-out, `--safe-bindings`); the notice "Controller scollegato"; FR-029 proven | 1 (beside 2) | Unit: labels for every key and button of `codes.hpp`, clashes per context, the actions that may never be left unbound, `applyOverrides` over a hand-written file. Platform: a virtual pad unplugged and back during a UI screen. GPU: a rebound activate works and the hints name it, on the keyboard and the pad; a report after `--safe-bindings`; the goldens 0 pixels apart, or regenerated on purpose where a hint's text changed | |
+| 4 | Emulators: `launchTable()`, the worker's jobs (the table, a pending choice, a test with it, stored choices), `rv_launch_program_choices` (launch area step 2), `EsdeCommandTranslator` taking a program first, `launchTestAllowed()`, `emulators_model`, `emulators.rml`, the wizard's page 5, SC-10's suggestion; `assign --emulator --program`; `gate.ps1` and `test.ps1` under the automation guard | 2 (beside 5) | Unit: the table against `retroverse-cli profiles`'s output on the fixtures, a pending choice stored only after a clean return, a stale label, a program refused by name and by the file it opens, a verification not counting for another program, the migration; `launchTestAllowed()`'s table. GPU with the fake emulator: a system requiring configuration repaired from the pad and launched (SC-10), its session `test`, a crash leaving the choice pending, an unattended run without the allow-list refused before anything starts. Real library: the 48 systems' readiness as in `profiles`, nothing launched, 0 differences; a real launch test is the user's | |
+| 5 | The on-screen keyboard: `keyboard_model`, `keyboard.rml`, opened on the search field by the pad, typing through `typeText`, accents, delete, confirm, clicks for the ray | 1 (beside 4) | Unit: the grid's moves, wrapping, delete, confirm, UTF-8 of the accented letters. GPU: a search typed with pad actions alone narrows the list, the keyboard not cut at 1280 x 720 and at text scale 150%; the same by a scripted ray with `--xr-runtime fake`. M1's one keyboard step of the manual session closes | |
+| 6 | Statistics, the status, Informazioni: `rv_game_status` (launch area step 2), `rv/catalog/statistics.hpp`, `playStatistics()`, `retroverse-cli stats`, `statistics_model`, `statistics.rml`; Informazioni's rows: another version launched, the title's emulator, the status | 4 (beside 7) | Unit: hours from sessions by outcome (tests, crashes and left-running out), per system and status, the derived status, an alias keeping its status, `db rebuild-index` leaving it; p95 within 100 ms on a generated 10,000 sessions. GPU: after a fake emulator's launch the screen counts it and the word *stimate* shows; another version launched from Informazioni, its session under its own GameId; a title's emulator stored | |
+| 7 | The file watcher: `core::IChangeWatcher`, `platform_win::DirectoryWatcher`, `esde::changeScope()`, `app::LibraryWatch`, `RefreshRequest` with `watcher`, partial refreshes, the existence poll, safe removal, the 30 s fallback, another process's import, `--watch-library` and `--no-watch-library`, the report's `watcher` | 1, step 13r's refresh (beside 6) | Unit: the policy's table on a fake clock (quiet, burst, a game, the editor, overflow, a volume lost and back), scope on hostile paths and an emulator's save, real notifications on a `TempDir`, a partial refresh leaving the other systems' rows byte-identical; a mock device notification closing a handle. GPU: a ROM copied into a materialized `esde/building` appears in the quick catalog within 10 s and in a new slot with 0 moves (SC-05, NFR-08), a cover added shows, nothing starts during the fake's game; the folder renamed away and back (SC-06: same ids). Real library: armed on the real roots for a minute, 0 differences; the biggest system's partial refresh timed; delivery on exFAT is the user's | |
+| 8 | Coverage and the library: `mediaCoverage()`, `coverage_model`, `coverage.rml`, the verdicts' failures; `library_model`, `library.rml`, the roots' state and watch mode, the last import's issues, "Applica le rimozioni", review rows through `resolveReview()`, "Calcola impronte" on request | 4, 7 | Unit: `mediaCoverage()` equal to `measureCoverage()`'s two populations on the fixtures, a review resolved only to its candidates, the removals held until confirmed. GPU: both screens by pad actions, a review resolved, a hash pass cancelled and resumed. Real library: the figures within 0.1 point of `media --coverage`, the screen within 1 s, 0 differences | |
+| 9 | Gate Pad: `scripts/gate.ps1 -Gate Pad` (and `-RealLibrary`), `docs/testing/gate-pad.md`, documentation | 1-8 | The gate passes; the user plays the 30-minute controller-only session, tries a ROM added and the drive unplugged by hand, and declares I7 done | |
+
+Order: 1, then 2 beside 3, then 4 beside 5, then 6 beside 7, then 8, then 9.
+
+### Gate Pad
+
+`scripts/gate.ps1 -Gate Pad` runs what Gate M4 runs (the build matrix, the unit tests and the GPU smoke tests in Debug and
+Release, every golden, the benchmark path with two clips), and golden G21, under `scripts/focus_watch.py` with
+`RV_LAUNCH_ALLOWLIST` naming the build's fake emulator, and adds a row per I7 area counted from those runs: the menu and
+settings, the wizard, emulators, controls, the keyboard, statistics, the watcher, coverage and the library; the
+watcher's 10 s row; one pad-only script that crosses the menu, a setting, a search, the emulators, the statistics and a
+launch. It prints the summary table (logs in `build/gate-pad`) and exits 1 when a step failed.
+
+`-RealLibrary` adds, with ES-DE closed and `RV_AUDIO=null`, one `scripts/real-library.ps1` run with snapshots before and
+after and 0 differences: the wizard's preview and first import under `build/`, the emulators' table of the 48 systems,
+the coverage against `media --coverage`, the watcher armed, a partial refresh timed, and the rows Gate M4 runs. Nothing
+launches.
+
+`docs/testing/gate-pad.md` holds the figures, where ADR-0018 and I7's requirements are proven (FR-014, FR-020, FR-026,
+FR-027, FR-029, FR-030, FR-033, NFR-05, NFR-08, SC-05, SC-06, SC-10), the follow-ups, and what to try.
+
+**The user's session, 30 minutes with the pad alone, the keyboard and mouse put away:** first start on a fresh data
+directory through the wizard; a real launch test; walking, the elevator, the directory, a search typed on the on-screen
+keyboard, several games launched and returned from; settings changed and kept after a restart; the pad unplugged and
+back; statistics; then, by hand and outside the session, a ROM added to the real folder, a scrape in ES-DE, and the
+external drive ejected and returned.
+
+## I8 and I9: the rest of M5 (outline)
+
+Only what is needed to see M5 end to end; each gets its own ADR and plan when reached.
+
+**I8, performance and finish (Gate E + style §28's definition of done):**
+- the Low and High graphics profiles (style §20.1), LOD for far rows, smaller or BC7 arrays, more shadowed lights, the
+  texture arrays for the test room's labels;
+- the 10k and 30k fixtures and the full benchmark suite across rooms and profiles;
+- Blender hero assets (once the procedural prefabs' sizes and sockets are validated), interaction sounds and ambience
+  with provenance (ADR-0016's effects and ambience buses);
+- the license audit, the registry of the UI documents, golden G09 and goldens per profile;
+- the fault-injection suite (the approved plan's `--inject-*` flags; NFR-09's scraping case does not apply: ADR-0003).
+
+**I9, packaging and release (M5 Done, specification §22: an everyday alternative to ES-DE on Windows):**
+- the installer, and the portable build proven (FR-032; `--portable` exists);
+- autostart with Windows as the installer's reversible option, kiosk mode if it stays small (ADR-0018 §17);
+- third-party notices shipped, a GUI-subsystem `retroverse.exe` decided (ADR-0006's open risk), diagnostics for support;
+- database updates across versions proven on the reference library, the release itself, and the user's declaration.
 
 ## I4b: M3 part 2, customization
 
@@ -623,7 +703,7 @@ passed and the user declared M2 done on October 20, 2026 (the manual session uns
 - **I6**: other media families (portrait boxes of NES, Mega Drive and Master System, square handheld boxes, wide GBA
   cartridges), boxes as prefabs, cartridge shapes matched to `physicalmedia` images (PAL and US silhouettes told by the
   image's aspect, since the scraper often returned PAL media for USA ROMs), `generic_media_box` for unmapped systems.
-- **I7**: the file watcher (games and media added in ES-DE appear without "Aggiorna libreria"), the settings screen
+- **I7** (since planned by ADR-0018, above): the file watcher (games and media added in ES-DE appear without "Aggiorna libreria"), the settings screen
   (`reduceMotion`, FOV, sensitivity, the lighting profile), remapping, the on-screen keyboard, launching another version
   of a title from its card.
 - **I8**: the Low and High profiles, LOD for far rows, BC7 or smaller arrays for the Low profile, the test room's labels
