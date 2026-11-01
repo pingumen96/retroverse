@@ -1078,6 +1078,7 @@ Json settingsToJson(const SettingsRecord& settings) {
     json["textScale"] = settings.textScale;
     json["displayMode"] = settings.displayMode;
     json["windowFullscreen"] = settings.windowFullscreen;
+    json["displayModeApplied"] = settings.displayModeApplied;
     json["reduceMotion"] = settings.reduceMotion;
     json["masterGain"] = settings.masterGain;
     return json;
@@ -1114,6 +1115,7 @@ SettingsRecord readSettings(FieldReader& fields) {
     settings.textScale = fields.number("textScale");
     settings.displayMode = fields.string("displayMode");
     settings.windowFullscreen = fields.boolean("windowFullscreen");
+    settings.displayModeApplied = fields.count("displayModeApplied");
     settings.reduceMotion = fields.boolean("reduceMotion");
     settings.masterGain = fields.number("masterGain");
     return settings;

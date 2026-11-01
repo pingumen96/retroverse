@@ -1268,7 +1268,8 @@ TEST_CASE("app/run_report: the menu and the settings read back field for field, 
     settings.mouseSensitivity = 2.0;
     settings.stickSensitivity = 0.5;
     settings.invertY = true;
-    settings.textScale = 1.5;
+    settings.textScale = 1.25;
+    settings.displayModeApplied = 1;
     settings.displayMode = "borderless";
     settings.windowFullscreen = true;
     settings.reduceMotion = true;

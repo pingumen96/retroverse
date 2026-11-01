@@ -3,7 +3,7 @@
 // "settings" sections: Start and Back open the menu, Back walks out, Esci ends the run after its one confirmation; a
 // volume and reduceMotion apply at once and survive a restart; the FOV changes the view; a lighting change commits the
 // floor without moving anything; a broken settings.json is left out, kept and replaced; the user's config files keep
-// their bytes; the panel in a headset, its FOV and window rows hidden, its ray clicking; no text cut at 150%.
+// their bytes; the panel in a headset, its FOV and window rows hidden, its ray clicking; no text cut at 125%.
 // Every helper's frames are the room's: the menu's actions come after the lockstep run's room stands.
 
 #include <catch2/catch_test_macros.hpp>
@@ -255,6 +255,55 @@ TEST_CASE("settings: a volume and reduceMotion change at once and survive a rest
     CHECK(again.report->settings->writes == 0);
 }
 
+TEST_CASE("settings: F8's mute stays through another row, and only the mute row sets it", "[gpu][menu_settings]") {
+    const ImportedRoom room("mute");
+    Script script;
+    script.press("toggle_mute").wait(4); // F8: this run alone
+    script.openSettings().press("ui_filter_next").press("ui_left").press("ui_down").press("ui_down");
+    const fs::path file = room.dir / "script.json";
+    script.write(file);
+    const AppRun run = runApp(retroverseExe(), room.dir, "run",
+                              roomArguments(script.frame + 4, room.dir / "end.png", file));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->audio);
+    CHECK(run.report->audio->muteToggles == 1);
+    CHECK(run.report->audio->muted); // the volume's change left it
+    CHECK(run.report->settings->masterGain == 0.95);
+    // The mute row itself was not touched, so nothing of F8 reached the file.
+    CHECK_FALSE(rowOf(*run.report, "video.audio.muted").overridden);
+}
+
+TEST_CASE("settings: only the display mode's row reaches the window", "[gpu][menu_settings]") {
+    const ImportedRoom room("display_mode");
+    Script script;
+    script.openSettings();
+    script.press("ui_down", 2).press("ui_right", 2); // Campo visivo: not the window's
+    script.press("ui_filter_next", 3).press("ui_right"); // Controlli: the mouse's sensitivity: nor this
+    const fs::path file = room.dir / "script.json";
+    script.write(file);
+    const AppRun other = runApp(retroverseExe(), room.dir, "other",
+                                roomArguments(script.frame + 4, room.dir / "other.png", file));
+    skipWithoutOpenGl(other);
+    requireCleanRun(other);
+    INFO(other.describe());
+    CHECK(other.report->settings->changes.size() == 3);
+    CHECK(other.report->settings->displayModeApplied == 0);
+
+    Script own;
+    own.openSettings().press("ui_right"); // Visualizzazione: schermo intero; a hidden window stays as it is
+    const fs::path ownFile = room.dir / "own.json";
+    own.write(ownFile);
+    const AppRun run = runApp(retroverseExe(), room.dir, "own",
+                              roomArguments(own.frame + 4, room.dir / "own.png", ownFile));
+    requireCleanRun(run);
+    INFO(run.describe());
+    CHECK(run.report->settings->displayModeApplied == 1);
+    CHECK(run.report->settings->displayMode == "borderless");
+    CHECK_FALSE(run.report->settings->windowFullscreen);
+}
+
 TEST_CASE("settings: Ripristina gives the layer below back", "[gpu][menu_settings]") {
     const ImportedRoom room("restore");
     room.writeSettings(R"({"schemaVersion": 1, "future": {"kept": true}, "video": {"audio": {"master": 0.5}}})");
@@ -395,9 +444,9 @@ TEST_CASE("settings: a stray key and a hand-written key shadowed are reported, t
     CHECK_FALSE(run.report->settings->unreadable);
 }
 
-TEST_CASE("settings: at text scale 150% at 1280 x 720 no row, button or hint is cut", "[gpu][menu_settings]") {
+TEST_CASE("settings: at text scale 125% at 1280 x 720 no row, button or hint is cut", "[gpu][menu_settings]") {
     const ImportedRoom room("text_scale");
-    room.writeSettings(R"({"schemaVersion": 1, "player": {"textScale": 1.5}})");
+    room.writeSettings(R"({"schemaVersion": 1, "player": {"textScale": 1.25}})");
     Script script;
     script.press("menu").wait(6);
     script.press("ui_down").press("ui_activate").wait(4); // the settings screen, then every group
@@ -409,7 +458,7 @@ TEST_CASE("settings: at text scale 150% at 1280 x 720 no row, button or hint is 
     skipWithoutOpenGl(run);
     requireCleanRun(run);
     INFO(run.describe());
-    CHECK(run.report->settings->textScale == 1.5);
+    CHECK(run.report->settings->textScale == 1.25);
     REQUIRE(run.report->menu);
     CHECK(run.report->menu->textCut == 0);
     CHECK(run.report->menu->settingsTextCut == 0);
@@ -492,11 +541,9 @@ TEST_CASE("menu: the screens' pictures", "[.shots]") {
     shoot("fov_row", Script{}.openSettings().press("ui_down", 2).press("ui_right", 7).wait(4));
     shoot("fov_after", Script{}.openSettings().press("ui_down", 2).press("ui_back").press("ui_back").wait(10));
     REQUIRE(fs::remove(room.data / "settings.json"));
-    room.writeSettings(R"({"schemaVersion": 1, "player": {"textScale": 1.5}})");
-    all("scale150_");
-    shoot("scale150_settings_restore_all", Script{}.openSettings().press("ui_filter_next", 2).press("ui_down", 6).wait(4));
-    shoot("scale150_catalog", Script{}.press("quick_catalog").wait(20));
-    shoot("scale150_directory", Script{}.press("map").wait(20));
     room.writeSettings(R"({"schemaVersion": 1, "player": {"textScale": 1.25}})");
-    shoot("scale125_settings_world", Script{}.openSettings().press("ui_filter_next", 2).wait(4));
+    all("scale125_");
+    shoot("scale125_settings_restore_all", Script{}.openSettings().press("ui_filter_next", 2).press("ui_down", 6).wait(4));
+    shoot("scale125_catalog", Script{}.press("quick_catalog").wait(20));
+    shoot("scale125_directory", Script{}.press("map").wait(20));
 }

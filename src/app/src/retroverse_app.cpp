@@ -1278,7 +1278,9 @@ struct RetroverseApp::State {
             if (Status kept = file.backUpUnreadable(); kept) {
                 settingsRecord.backedUp = true;
             } else {
-                spdlog::error("settings.json was not kept aside: {}", kept.error().toString());
+                spdlog::error("settings.json was not kept aside, so it is not replaced; what changes holds for this run "
+                              "alone: {}",
+                              kept.error().toString());
             }
         }
         const auto keep = [this](std::string_view section, const std::vector<std::string>& refused) {
@@ -1386,23 +1388,36 @@ struct RetroverseApp::State {
     /// it (the floor's job reads the loaders).
     void settingChanged(AppContext& context, const SettingRow& row) {
         if (row.section == kPlayerSettingsSection) {
-            if (auto read = parsePlayerSettings(settings->document(kPlayerSettingsSection), "settings.json")) {
+            const auto accepts = [](const nlohmann::json& document) {
+                return parsePlayerSettings(document, "settings.json").has_value();
+            };
+            if (auto read = parsePlayerSettings(settings->document(kPlayerSettingsSection, accepts), "settings.json")) {
                 player = *read;
                 applyLens();
                 applyInputSettings();
-                applyDisplayMode(context);
+                // Only its own row: --fullscreen and Alt+Enter stay the run's.
+                if (row.key == "displayMode") {
+                    ++settingsRecord.displayModeApplied;
+                    applyDisplayMode(context);
+                }
                 if (product) {
                     product->setTextScale(static_cast<float>(player.textScale));
                 }
             }
         } else if (row.section == kVideoSettingsSection) {
-            if (auto read = parseVideoSettings(settings->document(kVideoSettingsSection), "settings.json")) {
+            const auto accepts = [](const nlohmann::json& document) {
+                return parseVideoSettings(document, "settings.json").has_value();
+            };
+            if (auto read = parseVideoSettings(settings->document(kVideoSettingsSection, accepts), "settings.json")) {
                 video = std::move(*read);
                 graphics->screenLooks().setVideo(*video);
                 if (screen) {
                     screen->setVideo(*video, context.frameIndex());
                 }
-                muted = video->audio.muted || context.options().mute;
+                // Only its own row: F8 changes the run alone (ADR-0018 §3), and no other row undoes it.
+                if (row.key == "audio.muted") {
+                    muted = video->audio.muted || context.options().mute;
+                }
                 soundOff = video->audio.mode == AudioMode::Off;
                 if (audio) {
                     audio->mixer().setMaster(video->audio.master * video->audio.video);
@@ -1451,17 +1466,23 @@ struct RetroverseApp::State {
         if (!lookCommitPending || !settings) {
             return;
         }
-        if (settings->idle()) {
-            settings->saveAsync(); // a row changed since: the floor's job reads the file
-        }
         if (context.options().fixedDeltaSeconds) {
             settings->flush();
         }
-        if (settings->idle() && !settings->dirty()) {
+        switch (settings->followWrite()) {
+        case SettingsStore::WriteState::Pending:
+            break;
+        case SettingsStore::WriteState::Written:
             lookCommitPending = false;
             if (world) {
                 world->commitFloorAgain();
             }
+            break;
+        case SettingsStore::WriteState::Failed:
+            // The floor's job reads the file: a commit now would draw the old look. The next save tries again.
+            lookCommitPending = false;
+            spdlog::error("The floor is not committed again: settings.json was not written");
+            break;
         }
     }
 

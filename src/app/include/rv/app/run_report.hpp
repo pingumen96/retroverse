@@ -716,6 +716,8 @@ struct SettingsRecord {
     double textScale = 1.0;
     std::string displayMode;
     bool windowFullscreen = false;
+    /// Times a change of the display mode's row reached the window (no other row does).
+    std::uint64_t displayModeApplied = 0;
     bool reduceMotion = false;
     double masterGain = 1.0;
 
