@@ -337,6 +337,84 @@ TEST_CASE("app/settings: document() is what the loaders would give", "[app][sett
     CHECK(*xr == data.xr().settings);
 }
 
+TEST_CASE("app/settings: a write that fails keeps the change dirty, the next save tries again", "[app][settings]") {
+    const UserData data;
+    // A file where its folder should be: the write cannot happen.
+    const std::filesystem::path blocker = data.dir.path() / "blocker";
+    REQUIRE(rv::core::writeTextFileAtomic(blocker, "x").has_value());
+    const std::filesystem::path path = blocker / "settings.json";
+    SettingsStore store(rv::core::SettingsFile::load(path), data.layers(), rows());
+    CHECK(store.set(rowOf(store, "world.lightingProfile"), "afternoon"));
+    store.saveAsync();
+    store.flush();
+    CHECK(store.writeFailures() == 1);
+    CHECK(store.dirty());
+    // Nothing that reads the file may go on, and asking starts no write.
+    CHECK(store.followWrite() == SettingsStore::WriteState::Failed);
+    CHECK(store.followWrite() == SettingsStore::WriteState::Failed);
+    CHECK(store.writes() == 1);
+
+    std::filesystem::remove(blocker);
+    store.saveAsync();
+    store.flush();
+    CHECK_FALSE(store.dirty());
+    CHECK(store.followWrite() == SettingsStore::WriteState::Written);
+    CHECK(rv::core::readTextFile(path).value().find("afternoon") != std::string::npos);
+}
+
+TEST_CASE("app/settings: followWrite() writes what changed since the last write", "[app][settings]") {
+    const UserData data;
+    SettingsStore store(rv::core::SettingsFile::load(data.settings), data.layers(), rows());
+    CHECK(store.followWrite() == SettingsStore::WriteState::Written);
+    CHECK(store.set(rowOf(store, "player.invertY"), true));
+    CHECK(store.followWrite() == SettingsStore::WriteState::Pending);
+    store.flush();
+    CHECK(store.followWrite() == SettingsStore::WriteState::Written);
+    CHECK(data.readSettings()["player"]["invertY"] == Json(true));
+}
+
+TEST_CASE("app/settings: an unknown lighting profile leaves the layer below in force", "[app][settings]") {
+    const UserData data;
+    data.writeConfig("world.json", R"({"lightingProfile": "afternoon"})");
+    data.writeSettings(R"({"schemaVersion": 1, "world": {"lightingProfile": "no_such_profile"}})");
+    const rv::world::LoadedWorldConfig world = data.world();
+    CHECK(world.config.lightingProfile == "afternoon");
+    CHECK(world.refusedKeys == std::vector<std::string>{"lightingProfile"});
+    CHECK(rv::world::roomLightingProfile(assetRoot(), data.config).name == "afternoon");
+}
+
+TEST_CASE("app/settings: a value a row cannot show but its loader takes survives another row's change", "[app][settings]") {
+    const UserData data;
+    data.writeSettings(R"({"schemaVersion": 1, "player": {"textScale": 2, "mouseSensitivity": 4.5}})");
+    CHECK(data.player().settings.textScale == 2.0);
+    SettingsStore store(rv::core::SettingsFile::load(data.settings), data.layers(), rows());
+    CHECK(store.set(rowOf(store, "player.invertY"), true));
+    const auto accepts = [](const Json& document) { return rv::app::parsePlayerSettings(document, "test").has_value(); };
+    const auto read = rv::app::parsePlayerSettings(store.document("player", accepts), "test");
+    REQUIRE(read.has_value());
+    CHECK(read->textScale == 2.0);
+    CHECK(read->mouseSensitivity == 4.5);
+    CHECK(read->invertY);
+
+    // A value the loader refuses stays out, the others in.
+    data.writeSettings(R"({"schemaVersion": 1, "player": {"horizontalFovDeg": 1000, "invertY": true}})");
+    SettingsStore bad(rv::core::SettingsFile::load(data.settings), data.layers(), rows());
+    const auto kept = rv::app::parsePlayerSettings(bad.document("player", accepts), "test");
+    REQUIRE(kept.has_value());
+    CHECK_FALSE(kept->horizontalFovDeg.has_value());
+    CHECK(kept->invertY);
+}
+
+TEST_CASE("app/setting_rows: the text scale offers 100 and 125%; a hand-written one stays honoured", "[app][settings]") {
+    const auto row = std::find_if(rows().begin(), rows().end(),
+                                  [](const SettingRow& candidate) { return candidate.id() == "player.textScale"; });
+    REQUIRE(row != rows().end());
+    CHECK(row->choices == std::vector<Json>{1.0, 1.25});
+    const UserData data;
+    data.writeConfig("player.json", R"({"textScale": 1.5})");
+    CHECK(data.player().settings.textScale == 1.5);
+}
+
 TEST_CASE("app/settings: the user's config files keep their bytes, comments included", "[app][settings]") {
     const UserData data;
     constexpr std::string_view kVideo = R"(// my audio

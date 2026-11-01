@@ -1,6 +1,7 @@
 #include <rv/world/world_config.hpp>
 
 #include <array>
+#include <system_error>
 #include <utility>
 
 #include <rv/core/canonical_json.hpp>
@@ -286,11 +287,17 @@ Expected<LoadedWorldConfig> loadHandWrittenConfig(const std::filesystem::path& a
 }
 
 /// The keys of `overlay` a section of settings.json may set over a config: only how the world is shown.
-void applyShownKeys(WorldConfig& config, const nlohmann::json& overlay, std::vector<std::string>& refused) {
+void applyShownKeys(WorldConfig& config, const nlohmann::json& overlay, const std::filesystem::path& assetRoot,
+                    std::vector<std::string>& refused) {
+    const auto knownProfile = [&](const std::string& id) {
+        std::error_code ignored;
+        return isValidDataId(id) &&
+               std::filesystem::exists(assetRoot / "world" / "lighting" / core::pathFromUtf8(id + ".json"), ignored);
+    };
     for (const auto& [key, value] : overlay.items()) {
         if (key == "reduceMotion" && value.is_boolean()) {
             config.reduceMotion = value.get<bool>();
-        } else if (key == "lightingProfile" && value.is_string() && isValidDataId(value.get<std::string>())) {
+        } else if (key == "lightingProfile" && value.is_string() && knownProfile(value.get<std::string>())) {
             config.lightingProfile = value.get<std::string>();
         } else {
             refused.push_back(key);
@@ -315,7 +322,7 @@ Expected<LoadedWorldConfig> loadWorldConfig(const std::filesystem::path& assetRo
                                            {"lightingProfile", loaded->config.lightingProfile}};
     applyShownKeys(loaded->config,
                    core::SettingsFile::loadBeside(userConfigDir).section(kWorldSettingsSection, worldSettingKeys()),
-                   loaded->refusedKeys);
+                   assetRoot, loaded->refusedKeys);
     return loaded;
 }
 

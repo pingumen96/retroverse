@@ -65,6 +65,10 @@ void WorldSession::followLook(ProductUi& product) {
     skeleton.screenMediaRoot = m_planState->screenMediaRoot;
     skeleton.reason = "the floor's look changed";
     requestFloor(std::move(skeleton), true, product.catalog().worldReader());
+    if (!m_retargetPending) {
+        m_lookCommit = false; // not submitted: no later live update may take its place
+        return;
+    }
     spdlog::info("Frame {}: the floor {} is built again for its new look", m_context.frameIndex(), m_floor);
 }
 

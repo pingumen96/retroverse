@@ -107,34 +107,29 @@ std::size_t SettingsStore::restoreAll() {
     return removed;
 }
 
-Json SettingsStore::document(std::string_view section) const {
-    Json merged = layer(section);
+Json SettingsStore::document(std::string_view section, const std::function<bool(const Json&)>& accepts) const {
+    std::vector<std::string_view> keys;
     for (const SettingRow& row : m_rows) {
-        if (row.section != section || !overridden(row)) {
-            continue;
+        if (row.section == section) {
+            keys.push_back(row.key);
         }
-        Json keyed = value(row);
-        // The key's objects, innermost first.
-        std::string_view key = row.key;
-        for (std::size_t dot = key.rfind('.'); dot != std::string_view::npos; dot = key.rfind('.')) {
-            keyed = Json{{std::string(key.substr(dot + 1)), std::move(keyed)}};
-            key = key.substr(0, dot);
-        }
-        merged = core::mergeSettingsDocuments(std::move(merged), Json{{std::string(key), std::move(keyed)}});
     }
-    return merged;
+    return core::acceptedOverlay(layer(section), m_file.section(section, keys),
+                                 accepts ? accepts : [](const Json&) { return true; });
 }
 
 void SettingsStore::saveAsync() {
-    if (!m_dirty) {
+    if (!dirty()) {
         return;
     }
     flush();
     m_dirty = false;
+    m_writeFailed = false;
     m_running = true;
     m_writer = std::thread([this, file = m_file] {
         if (Status saved = file.save(); !saved) {
             ++m_failures;
+            m_writeFailed = true; // the changes stay in memory, in force, for the next save
             spdlog::error("settings.json was not written: {}", saved.error().toString());
         } else {
             spdlog::info("settings.json written");
@@ -142,6 +137,20 @@ void SettingsStore::saveAsync() {
         ++m_writes;
         m_running = false;
     });
+}
+
+SettingsStore::WriteState SettingsStore::followWrite() {
+    if (!idle()) {
+        return WriteState::Pending;
+    }
+    if (m_writeFailed.load()) {
+        return WriteState::Failed;
+    }
+    if (m_dirty) {
+        saveAsync();
+        return WriteState::Pending;
+    }
+    return WriteState::Written;
 }
 
 void SettingsStore::flush() {

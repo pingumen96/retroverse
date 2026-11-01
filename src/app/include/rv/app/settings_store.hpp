@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -55,13 +56,21 @@ public:
     bool restore(const SettingRow& row);
     /// "Ripristina tutto": removes the key of every row; how many. Keys no row names stay.
     std::size_t restoreAll();
-    /// `section`'s document under settings.json with the keys of the rows over it: what a loader would give now.
-    [[nodiscard]] nlohmann::json document(std::string_view section) const;
+    /// `section`'s document under settings.json with the keys of the rows over it as far as `accepts` (the loader's
+    /// parser) takes them: what a loader would give now, a value a row cannot show but the loader takes included.
+    [[nodiscard]] nlohmann::json document(std::string_view section,
+                                          const std::function<bool(const nlohmann::json&)>& accepts = {}) const;
 
-    /// Changes wait to be written.
-    [[nodiscard]] bool dirty() const noexcept { return m_dirty; }
-    /// Writes the file on a thread of its own when changes wait (the previous write waited for first).
+    /// Changes wait to be written, those of a write that failed among them.
+    [[nodiscard]] bool dirty() const noexcept { return m_dirty || m_writeFailed.load(); }
+    /// Writes the file on a thread of its own when changes wait (the previous write waited for first): a write that
+    /// failed is tried again here.
     void saveAsync();
+    /// Where the changes stand, for what reads the file (the floor's job): a write runs, or was started now for what
+    /// changed since (Pending); the file holds them (Written); the last write failed (Failed: the next saveAsync() tries
+    /// again, followWrite() does not).
+    enum class WriteState : std::uint8_t { Pending, Written, Failed };
+    [[nodiscard]] WriteState followWrite();
     /// Waits for the write under way.
     void flush();
     /// No write is under way.
@@ -81,6 +90,7 @@ private:
     std::atomic<bool> m_running{false};
     std::atomic<std::uint64_t> m_writes{0};
     std::atomic<std::uint64_t> m_failures{0};
+    std::atomic<bool> m_writeFailed{false};
 };
 
 /// settings.json's section for bindings.json: action names over binding lists, as that file's "bindings" holds them.
