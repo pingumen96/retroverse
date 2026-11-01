@@ -43,6 +43,8 @@ Roadmap row: I7 step 2. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   This is the one write under `config` besides `library.json` itself.
 - **A lockstep run waits for a page's work**, up to 30 minutes rather than the worker's 10 s: the real library's first
   import takes minutes, and a script's presses must find their page ready.
+- **The first import starts no world by itself:** `WorldSession::followRefresh` leaves a refresh that ended under the
+  wizard to page 7, or the live flow would build the world at page 4 and again at page 7, before the lighting choice.
 - **A second A on the way in presses nothing** while page 2 or 3 is still looking: Avanti pressed twice would otherwise
   open a browser, or go back and cancel the read. Clicks are aimed and still work.
 - **Back on the first page rests on Esci** rather than quitting. The window's close still quits.
