@@ -164,9 +164,8 @@ TEST_CASE("wizard: the seven pages to the lobby by the pad alone, its counts the
     CHECK(catalog.refreshes.front().outcome == "done");
     CHECK(catalog.refreshes.front().added == wizard.added);
     CHECK(catalog.refreshes.front().added > 0);
-    REQUIRE(run.report->world);
-    CHECK(run.report->world->state == "room");
-    CHECK(run.report->world->notice.empty());
+    CHECK(run.report->world.state == "room");
+    CHECK(run.report->world.notice.empty());
     REQUIRE(run.report->menu);
     CHECK(run.report->menu->opened == 0);
 
@@ -185,8 +184,7 @@ TEST_CASE("wizard: the seven pages to the lobby by the pad alone, its counts the
     requireCleanRun(again);
     INFO(again.describe());
     CHECK_FALSE(again.report->wizard.has_value());
-    REQUIRE(again.report->world);
-    CHECK(again.report->world->state == "room");
+    CHECK(again.report->world.state == "room");
 }
 
 TEST_CASE("wizard: --wizard without --esde-home exits 2, frame-limited or not", "[gpu][wizard]") {
@@ -208,10 +206,9 @@ TEST_CASE("wizard: a frame-limited run without library.json keeps today's test r
     requireCleanRun(run);
     INFO(run.describe());
     CHECK_FALSE(run.report->wizard.has_value());
-    REQUIRE(run.report->world);
-    CHECK(run.report->world->state == "test-room");
-    CHECK(run.report->world->notice == "no-catalog");
-    CHECK(run.report->world->catalogState == "no-library");
+    CHECK(run.report->world.state == "test-room");
+    CHECK(run.report->world.notice == "no-catalog");
+    CHECK(run.report->world.catalogState == "no-library");
     REQUIRE(run.report->catalog);
     CHECK(run.report->catalog->notice == "no-library");
     CHECK_FALSE(fs::exists(dir / "data" / "database"));
@@ -268,7 +265,7 @@ TEST_CASE("wizard: a run with library.json and no catalog resumes at the preview
     CHECK(run.report->wizard->resumed);
     CHECK(run.report->wizard->entered);
     CHECK(run.report->wizard->pages.front() == "preview");
-    CHECK(run.report->world->state == "room");
+    CHECK(run.report->world.state == "room");
     CHECK(rv::core::readTextFile(dir / "data" / "config" / "library.json").value() == before);
 }
 

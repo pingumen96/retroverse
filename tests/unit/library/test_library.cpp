@@ -10,6 +10,7 @@
 #include <rv/catalog/ids.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/library/folder_listing.hpp>
 #include <rv/library/library_creation.hpp>

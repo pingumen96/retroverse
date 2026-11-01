@@ -22,6 +22,7 @@
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/library.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/library/library_preview.hpp>
 
@@ -57,7 +58,7 @@ constexpr std::string_view kPagesScript = R"([
 } // namespace
 
 TEST_CASE("wizard on the real library: the preview and the first import from --esde-home",
-          "[.real-library][real-library][wizard]") {
+          "[.real-library][real-library][wizard_real]") {
     const auto home = pathVariable(L"RV_REAL_ESDE_HOME");
     const auto install = pathVariable(L"RV_REAL_ESDE_INSTALL");
     REQUIRE(home.has_value());
@@ -130,10 +131,9 @@ TEST_CASE("wizard on the real library: the preview and the first import from --e
     REQUIRE(read->catalog->refreshes.size() == 1);
     CHECK(read->catalog->refreshes.front().trigger == "wizard");
     CHECK(read->catalog->refreshes.front().outcome == "done");
-    REQUIRE(read->world.has_value());
-    CHECK(read->world->state == "room");
+    CHECK(read->world.state == "room");
     std::cout << fmt::format("wizard: {} systems, {} with games, {} games, {} with media, {} not games, {} errors; the "
                              "first import: {} added in {:.1f} s\n",
                              wizard.systems, wizard.systemsWithGames, wizard.games, wizard.media, wizard.notAGame,
-                             wizard.errors, wizard.added, read->catalog->refreshes.front().ms / 1000.0);
+                             wizard.errors, wizard.added, read->catalog->refreshes.front().ms.value_or(0.0) / 1000.0);
 }

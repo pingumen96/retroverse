@@ -15,6 +15,7 @@
 #include <rv/app/wizard_flow.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
 
@@ -52,6 +53,21 @@ void settle(WizardFlow& flow) {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     } while (flow.busy());
     flow.poll();
+}
+
+/// prepareImport()'s answer.
+WizardFlow::Prepared prepared(WizardFlow& flow) {
+    flow.prepareImport();
+    const auto start = std::chrono::steady_clock::now();
+    while (true) {
+        if (std::optional<WizardFlow::Prepared> answer = flow.takePrepared()) {
+            return *answer;
+        }
+        if (std::chrono::steady_clock::now() - start > std::chrono::seconds(30)) {
+            FAIL("the wizard's job did not answer");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
 }
 
 WizardFlow::Options optionsFor(const fs::path& data, const rv::test::Fixture& fixture) {
@@ -175,16 +191,13 @@ TEST_CASE("wizard: a ROM folder out of reach stops page 2, a chosen one goes on"
     settle(flow);
     CHECK(flow.browsed() == 1);
     CHECK(model.detection().problem == "none");
-    CHECK(model.detection().folders[static_cast<std::size_t>(WizardFolder::Rom)].path ==
-          rv::core::pathToUtf8Lossy(fixture.path("roms-moved")));
+    CHECK(fs::path(model.detection().folders[static_cast<std::size_t>(WizardFolder::Rom)].path).lexically_normal() ==
+          fixture.path("roms-moved").lexically_normal());
 
     // Page 4 records the override.
-    flow.prepareImport();
-    settle(flow);
-    const auto prepared = flow.takePrepared();
-    REQUIRE(prepared.has_value());
-    CHECK(prepared->failure.empty());
-    CHECK(prepared->changed);
+    const WizardFlow::Prepared written = prepared(flow);
+    CHECK(written.failure.empty());
+    CHECK(written.changed);
     CHECK(rv::esde::readLibraryFile(libraryFile(data.path()))->romRoot == fixture.path("roms-moved"));
 }
 
@@ -207,9 +220,7 @@ TEST_CASE("wizard: resuming with library.json and no database starts at the prev
         first.open(WizardStart::Fresh);
         press(first);
         settle(first);
-        first.prepareImport();
-        settle(first);
-        REQUIRE(first.takePrepared().has_value());
+        static_cast<void>(prepared(first));
     }
     const std::string before = rv::core::readTextFile(file).value();
 
@@ -226,12 +237,9 @@ TEST_CASE("wizard: resuming with library.json and no database starts at the prev
     REQUIRE(model.previewWork() == WizardWork::Done);
     CHECK(model.preview().games > 0);
 
-    flow.prepareImport();
-    settle(flow);
-    const auto prepared = flow.takePrepared();
-    REQUIRE(prepared.has_value());
-    CHECK(prepared->failure.empty());
-    CHECK_FALSE(prepared->changed); // it stands
+    const WizardFlow::Prepared stands = prepared(flow);
+    CHECK(stands.failure.empty());
+    CHECK_FALSE(stands.changed); // it stands
     CHECK(rv::core::readTextFile(file).value() == before);
     CHECK_FALSE(fs::exists(file.parent_path() / "backups"));
 }
@@ -246,9 +254,7 @@ TEST_CASE("wizard: library.json replaced only with its copy; a copy that fails l
         first.open(WizardStart::Fresh);
         press(first);
         settle(first);
-        first.prepareImport();
-        settle(first);
-        REQUIRE(first.takePrepared().has_value());
+        static_cast<void>(prepared(first));
     }
     const std::string before = rv::core::readTextFile(file).value();
     WizardFlow flow(optionsFor(data.path(), fixture));
@@ -271,21 +277,14 @@ TEST_CASE("wizard: library.json replaced only with its copy; a copy that fails l
     // A file where the backups' folder must go: the copy cannot be made.
     const fs::path backups = file.parent_path() / "backups";
     REQUIRE(rv::core::writeTextFileAtomic(backups, "in the way").has_value());
-    flow.prepareImport();
-    settle(flow);
-    auto prepared = flow.takePrepared();
-    REQUIRE(prepared.has_value());
-    CHECK(prepared->failure == "library-backup");
+    CHECK(prepared(flow).failure == "library-backup");
     CHECK(rv::core::readTextFile(file).value() == before);
 
     // Out of the way, Riprova writes what was chosen: the failure kept it.
     fs::remove(backups);
-    flow.prepareImport();
-    settle(flow);
-    prepared = flow.takePrepared();
-    REQUIRE(prepared.has_value());
-    CHECK(prepared->failure.empty());
-    CHECK(prepared->changed);
+    const WizardFlow::Prepared retried = prepared(flow);
+    CHECK(retried.failure.empty());
+    CHECK(retried.changed);
     CHECK(rv::core::readTextFile(file).value() != before);
     CHECK(fs::is_directory(backups));
     CHECK_FALSE(fs::is_empty(backups));

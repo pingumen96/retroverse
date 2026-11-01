@@ -234,6 +234,9 @@ std::optional<FolderBrowserResult> FolderBrowserModel::click(const FolderBrowser
         m_selected = m_first + click.index;
         break;
     case FolderBrowserClick::Kind::Use:
+        if (!canUse()) {
+            return std::nullopt; // the keys never reach it either
+        }
         m_focus = FolderBrowserFocus::Use;
         break;
     case FolderBrowserClick::Kind::Cancel:
