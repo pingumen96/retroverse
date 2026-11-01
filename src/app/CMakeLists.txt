@@ -38,6 +38,7 @@ add_library(rv_app_cli STATIC
     src/model_viewer.cpp
     src/overlay_policy.cpp
     src/picture_bounds.cpp
+    src/player_settings.cpp
     src/playlist.cpp
     src/process_priority.cpp
     src/room_items.cpp
@@ -49,6 +50,8 @@ add_library(rv_app_cli STATIC
     src/screen_scheduler.cpp
     src/screenshot_name.cpp
     src/self_check.cpp
+    src/setting_rows.cpp
+    src/settings_store.cpp
     src/video_settings.cpp
     src/world_focus.cpp
     src/world_inspect.cpp

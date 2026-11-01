@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -140,10 +141,21 @@ struct LoadedWorldConfig {
     /// that does not load, a combination checkWorldConfig() refuses. The file is then left out whole and the default
     /// preset used, as the other configuration files of the user are (CLAUDE.md, "Configuration files").
     std::vector<Error> issues;
+    /// The keys settings.json may set as the layers under it give them ("Ripristina"'s values).
+    nlohmann::json belowSettings;
+    /// Keys of settings.json whose value is refused: left out, each alone.
+    std::vector<std::string> refusedKeys;
 };
 
-/// The default preset, or the one world.json names, with world.json's keys. A missing world.json is no issue. Errors:
-/// the default preset does not load (a broken installation).
+/// settings.json's section for world.json, and the keys the settings screen may set there (ADR-0018 §2): only how the
+/// world is shown. Seeds, density, passages and sharedRoomMinTitles stay hand-written: settings never change what the
+/// world holds (NFR-08), and a stray key of that section reaches neither the strict parser nor the building's stamp.
+inline constexpr std::string_view kWorldSettingsSection = "world";
+[[nodiscard]] std::span<const std::string_view> worldSettingKeys() noexcept;
+
+/// The default preset, or the one world.json names, with world.json's keys, and those of worldSettingKeys() of the
+/// settings.json beside `userConfigDir` over them. A missing world.json is no issue. Errors: the default preset does not
+/// load (a broken installation).
 [[nodiscard]] Expected<LoadedWorldConfig> loadWorldConfig(const std::filesystem::path& assetRoot,
                                                           const std::filesystem::path& userConfigDir);
 

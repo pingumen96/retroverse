@@ -18,6 +18,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -70,10 +72,18 @@ struct XrSettings {
 struct LoadedXrSettings {
     XrSettings settings;
     std::vector<Error> issues;
+    /// The document under settings.json: the defaults with the user's file over them ("Ripristina"'s values).
+    nlohmann::json belowSettings;
+    /// Keys of settings.json whose value parseXrSettings() refused: left out, each alone.
+    std::vector<std::string> refusedKeys;
 };
 
-/// The shipped defaults under `assetRoot`/config, overridden by `userConfigDir`/xr.json when it exists. Errors: the
-/// defaults cannot be read or checked.
+/// settings.json's section for this file and the keys the settings screen may set there (ADR-0018 §2, §3).
+inline constexpr std::string_view kXrSettingsSection = "xr";
+[[nodiscard]] std::span<const std::string_view> xrSettingKeys() noexcept;
+
+/// The shipped defaults under `assetRoot`/config, overridden by `userConfigDir`/xr.json when it exists, with the keys of
+/// settings.json beside that folder over both. Errors: the defaults cannot be read or checked.
 [[nodiscard]] Expected<LoadedXrSettings> loadXrSettings(const std::filesystem::path& assetRoot,
                                                         const std::filesystem::path& userConfigDir);
 
