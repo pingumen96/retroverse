@@ -74,6 +74,50 @@ TEST_CASE("app/back_action: the directory is a level of the product UI's, under 
     CHECK(decision.shell == BackAction::DirectoryBack);
 }
 
+TEST_CASE("app/back_action: where a product UI exists Back's last level is the menu, never quitting",
+          "[app][back_action]") {
+    // ADR-0018 §1: with a pad, B in free roam used to end the program at once.
+    CHECK(backAction(BackState{.productUi = true}) == BackAction::OpenMenu);
+    // Runs without a product UI (the model viewer, the asset preview) still quit.
+    CHECK(backAction(BackState{.productUi = false}) == BackAction::Quit);
+    // The keyboard reaches it with Esc once the mouse is free, through the overlay when it shows.
+    CHECK(backAction(BackState{.mouseCaptured = true, .productUi = true}) == BackAction::ReleaseMouse);
+    CHECK(backAction(BackState{.overlayVisible = true, .productUi = true}) == BackAction::CloseOverlay);
+    // Every other level comes first.
+    CHECK(backAction(BackState{.overlayVisible = true, .overlayHasKeyboard = true, .productUi = true}) ==
+          BackAction::Ignore);
+    CHECK(backAction(BackState{.panelOpen = true, .productUi = true}) == BackAction::PanelBack);
+    CHECK(backAction(BackState{.catalogOpen = true, .productUi = true}) == BackAction::CatalogBack);
+    CHECK(backAction(BackState{.directoryOpen = true, .productUi = true}) == BackAction::DirectoryBack);
+}
+
+TEST_CASE("app/back_action: the menu is a level of the product UI's, under its game-session panel", "[app][back_action]") {
+    CHECK(backAction(BackState{.menuOpen = true, .productUi = true}) == BackAction::MenuBack);
+    // Open, the mouse and the overlay wait for it, as for the directory.
+    CHECK(backAction(BackState{.mouseCaptured = true, .overlayVisible = true, .menuOpen = true, .productUi = true}) ==
+          BackAction::MenuBack);
+    CHECK(backAction(BackState{.panelOpen = true, .menuOpen = true, .productUi = true}) == BackAction::PanelBack);
+    CHECK(backAction(BackState{.overlayVisible = true, .overlayPopupOpen = true, .menuOpen = true, .productUi = true}) ==
+          BackAction::ClosePopup);
+    CHECK(rv::app::toString(BackAction::MenuBack) == "menu back");
+    CHECK(rv::app::toString(BackAction::OpenMenu) == "open menu");
+}
+
+TEST_CASE("app/back_action: the world's own levels come before the menu opens", "[app][back_action]") {
+    using rv::app::WorldBack;
+    // Focus and Inspect are left first; only free roam reaches the menu.
+    const rv::app::WorldBackDecision focus = rv::app::worldBackAction(BackState{.productUi = true}, WorldBack::LeaveFocus);
+    CHECK(focus.level == WorldBack::LeaveFocus);
+    const rv::app::WorldBackDecision roam = rv::app::worldBackAction(BackState{.productUi = true}, WorldBack::Shell);
+    CHECK(roam.level == WorldBack::Shell);
+    CHECK(roam.shell == BackAction::OpenMenu);
+    // The menu open: its level, whatever the world's.
+    const rv::app::WorldBackDecision open =
+        rv::app::worldBackAction(BackState{.menuOpen = true, .productUi = true}, WorldBack::LeaveFocus);
+    CHECK(open.level == WorldBack::Shell);
+    CHECK(open.shell == BackAction::MenuBack);
+}
+
 TEST_CASE("app/back_action: every level has a name for the log", "[app][back_action]") {
     CHECK(rv::app::toString(BackAction::Ignore) == "ignore");
     CHECK(rv::app::toString(BackAction::ClosePopup) == "close popup");

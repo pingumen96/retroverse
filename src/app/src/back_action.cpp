@@ -10,6 +10,8 @@ std::string_view toString(BackAction action) noexcept {
         return "close popup";
     case BackAction::PanelBack:
         return "panel back";
+    case BackAction::MenuBack:
+        return "menu back";
     case BackAction::CatalogBack:
         return "catalog back";
     case BackAction::DirectoryBack:
@@ -18,6 +20,8 @@ std::string_view toString(BackAction action) noexcept {
         return "release mouse";
     case BackAction::CloseOverlay:
         return "close overlay";
+    case BackAction::OpenMenu:
+        return "open menu";
     case BackAction::Quit:
         return "quit";
     }
@@ -34,6 +38,9 @@ BackAction backAction(const BackState& state) noexcept {
     if (state.panelOpen) {
         return BackAction::PanelBack;
     }
+    if (state.menuOpen) {
+        return BackAction::MenuBack;
+    }
     if (state.catalogOpen) {
         return BackAction::CatalogBack;
     }
@@ -46,7 +53,7 @@ BackAction backAction(const BackState& state) noexcept {
     if (state.overlayVisible) {
         return BackAction::CloseOverlay;
     }
-    return BackAction::Quit;
+    return state.productUi ? BackAction::OpenMenu : BackAction::Quit;
 }
 
 } // namespace rv::app

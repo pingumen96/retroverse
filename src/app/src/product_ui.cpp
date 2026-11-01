@@ -1,5 +1,6 @@
 #include "product_ui.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -38,6 +39,8 @@
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
 #include <rv/ui/regenerate_preview_screen.hpp>
+#include <rv/ui/settings_screen.hpp>
+#include <rv/ui/system_menu_screen.hpp>
 
 #include "edit_bar_panel.hpp"
 #include "elevator_prompt_panel.hpp"
@@ -202,11 +205,114 @@ struct ProductUi::Impl {
     std::vector<ui::RegenerateButton> previewButtonsSeen;
     double previewButtonsSince = 0.0;
     static constexpr double kPreviewClickGuardSeconds = 0.5;
+    /// I7 step 1: the menu and the settings screen over it (their screens made when they first open), the application's
+    /// side of them, their run report records.
+    std::unique_ptr<ui::SystemMenuScreen> menuScreen;
+    ui::SystemMenuModel menu;
+    std::unique_ptr<ui::SettingsScreen> settingsScreen;
+    ui::SettingsModel settingsModel;
+    MenuHooks menuHooks;
+    MenuRecord menuRecord;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
-               (editBar && editBar->visible()) || previewShown();
+               (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown();
+    }
+
+    /// The menu shows (not while a section shows over it).
+    [[nodiscard]] bool menuShown() const noexcept { return menuScreen && menu.isOpen() && !settingsModel.isOpen(); }
+    /// The settings screen shows.
+    [[nodiscard]] bool settingsShown() const noexcept { return settingsScreen && settingsModel.isOpen(); }
+
+    void addMenuEvent(std::string event, std::string detail = {}) {
+        if (menuRecord.events.size() >= kMaxInteractionEvents) {
+            ++menuRecord.eventsDropped;
+            return;
+        }
+        menuRecord.events.push_back(MenuEventRecord{context.frameIndex(), std::move(event), std::move(detail)});
+    }
+
+    void menuCommand(const std::optional<ui::SystemMenuCommand>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the menu asks {}", context.frameIndex(), ui::toString(*command));
+        switch (*command) {
+        case ui::SystemMenuCommand::Close:
+            addMenuEvent("closed");
+            break;
+        case ui::SystemMenuCommand::OpenSettings:
+            openSettings();
+            break;
+        case ui::SystemMenuCommand::Quit:
+            addMenuEvent("quit");
+            menuRecord.quit = true;
+            if (menuHooks.quit) {
+                menuHooks.quit();
+            }
+            break;
+        }
+    }
+
+    void openSettings() {
+        if (!settingsScreen) {
+            auto screen = ui::SettingsScreen::create(*view);
+            if (!screen) {
+                spdlog::error("The settings screen unavailable: {}", screen.error().toString());
+                return;
+            }
+            settingsScreen = std::move(*screen);
+        } else if (Rml::Element* root = view->context().GetRootElement()) {
+            root->Focus(); // as the directory's: the focus the screen applies starts from the context's root
+        }
+        nav.reset();
+        if (menuHooks.settingRows) {
+            settingsModel.setRows(menuHooks.settingRows());
+        }
+        settingsModel.open();
+        ++menuRecord.settingsOpened;
+        addMenuEvent("settings");
+        spdlog::info("Frame {}: the settings screen opened", context.frameIndex());
+    }
+
+    void settingsCommand(const std::optional<ui::SettingsCommand>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the settings screen asks {} '{}'", context.frameIndex(), ui::toString(command->kind),
+                     command->key);
+        if (command->kind == ui::SettingsCommand::Kind::Close) {
+            addMenuEvent("settings-closed");
+            if (menuHooks.settingsClosed) {
+                menuHooks.settingsClosed();
+            }
+            nav.reset();
+            return;
+        }
+        if (menuHooks.applySetting) {
+            menuHooks.applySetting(*command);
+        }
+        if (menuHooks.settingRows) {
+            settingsModel.setRows(menuHooks.settingRows());
+        }
+    }
+
+    void syncMenu() {
+        if (menuScreen) {
+            if (menuShown()) {
+                menuScreen->show(menu);
+            } else {
+                menuScreen->hide();
+            }
+        }
+        if (settingsScreen) {
+            if (settingsModel.isOpen()) {
+                settingsScreen->show(settingsModel);
+            } else {
+                settingsScreen->hide();
+            }
+        }
     }
 
     /// I4b step 6: the preview shows.
@@ -237,7 +343,8 @@ struct ProductUi::Impl {
     [[nodiscard]] bool directoryShown() const noexcept { return directoryScreen && directory.isOpen(); }
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
-        return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown();
+        return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
+               settingsShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -1140,9 +1247,67 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
     m_impl->wantedTotem = totem;
 }
 
+bool ProductUi::menuOpen() const noexcept {
+    return m_impl->menu.isOpen();
+}
+
+void ProductUi::openMenu(std::string_view via) {
+    Impl& s = *m_impl;
+    if (s.menu.isOpen()) {
+        return;
+    }
+    if (!s.menuScreen) {
+        auto screen = ui::SystemMenuScreen::create(*s.view);
+        if (!screen) {
+            spdlog::error("The menu unavailable: {}", screen.error().toString());
+            return;
+        }
+        s.menuScreen = std::move(*screen);
+    } else if (Rml::Element* root = s.view->context().GetRootElement()) {
+        root->Focus(); // as the directory's: the focus the screen applies starts from the context's root
+    }
+    // A stick or direction still held from walking must not move in the panel that just opened.
+    s.nav.reset();
+    s.menu.open();
+    ++s.menuRecord.opened;
+    s.addMenuEvent("open", std::string(via));
+    spdlog::info("Frame {}: the menu opened ({})", s.context.frameIndex(), via);
+}
+
+void ProductUi::menuBack() {
+    Impl& s = *m_impl;
+    if (s.settingsModel.isOpen()) {
+        s.settingsCommand(s.settingsModel.apply(ui::UiCommand::Back));
+    } else if (s.menu.isOpen()) {
+        s.menuCommand(s.menu.apply(ui::UiCommand::Back));
+    }
+}
+
+void ProductUi::setMenuHooks(MenuHooks hooks) {
+    m_impl->menuHooks = std::move(hooks);
+}
+
+void ProductUi::refreshSettings() {
+    Impl& s = *m_impl;
+    if (s.settingsModel.isOpen() && s.menuHooks.settingRows) {
+        s.settingsModel.setRows(s.menuHooks.settingRows());
+    }
+}
+
+void ProductUi::setTextScale(float scale) {
+    m_impl->view->setTextScale(scale);
+}
+
 bool ProductUi::handleEvent(const SDL_Event& event) {
     if (!hasInput()) {
         return false;
+    }
+    // I7 step 1: the menu and the settings screen likewise (only the mouse; their commands come from the UI actions).
+    if (m_impl->settingsShown() && !m_impl->panel->visible()) {
+        return m_impl->settingsScreen->handlePointer(event);
+    }
+    if (m_impl->menuShown() && !m_impl->panel->visible()) {
+        return m_impl->menuScreen->handlePointer(event);
     }
     // I4b step 6: the regeneration's preview likewise (only the mouse; its choices come from the UI actions).
     if (m_impl->previewShown() && !m_impl->panel->visible() && !m_impl->screensOpen()) {
@@ -1348,6 +1513,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     if (uiActions != nullptr) {
         // I4b step 6's review: the preview's hints show the glyphs of the device used last.
         s.preview.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
+        s.settingsModel.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
     }
     const auto followPreviewButtons = [&] {
         if (std::vector<ui::RegenerateButton> buttons = s.preview.buttons(); buttons != s.previewButtonsSeen) {
@@ -1372,6 +1538,10 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 s.previewCommand(s.preview.apply(command)); // I4b step 6
             } else if (s.screensOpen()) {
                 s.switchScreen(s.screens->apply(command, s.context.frameIndex()));
+            } else if (s.settingsModel.isOpen()) {
+                s.settingsCommand(s.settingsModel.apply(command)); // I7 step 1
+            } else if (s.menu.isOpen()) {
+                s.menuCommand(s.menu.apply(command)); // I7 step 1
             } else if (s.catalogOpen && s.screen) {
                 s.screen->apply(command);
             } else if (s.directoryShown()) {
@@ -1384,6 +1554,19 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         if (const std::optional<ui::DirectoryClick> click = s.directoryScreen->takeClicked();
             click && s.directoryShown() && !s.panel->visible()) {
             s.directoryCommand(s.directory.click(*click));
+        }
+    }
+    // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
+    if (s.settingsScreen) {
+        if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
+            click && s.settingsShown() && !s.panel->visible()) {
+            s.settingsCommand(s.settingsModel.click(*click));
+        }
+    }
+    if (s.menuScreen) {
+        if (const std::optional<ui::SystemMenuButton> click = s.menuScreen->takeClicked();
+            click && s.menuShown() && !s.panel->visible()) {
+            s.menuCommand(s.menu.click(*click));
         }
     }
     // I4b step 6: the preview's clicks (but the second of a double-click, whose button changed under it).
@@ -1423,6 +1606,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncPrompt();
     s.syncEditBar();
     s.syncPreview();
+    s.syncMenu();
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
@@ -1436,6 +1620,14 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         }
         if (s.previewShown()) {
             s.previewScreen->afterUpdate();
+        }
+        if (s.menuShown()) {
+            s.menuScreen->afterUpdate();
+            s.menuRecord.textCut = std::max(s.menuRecord.textCut, s.menuScreen->textCut());
+        }
+        if (s.settingsShown()) {
+            s.settingsScreen->afterUpdate();
+            s.menuRecord.settingsTextCut = std::max(s.menuRecord.settingsTextCut, s.settingsScreen->textCut());
         }
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
@@ -1608,6 +1800,14 @@ void ProductUi::finish() {
     if (s.screens) {
         report.screens = s.screens->record();
     }
+    s.menuRecord.open = s.menu.isOpen();
+    s.menuRecord.view = std::string(ui::toString(s.menu.view()));
+    s.menuRecord.settingsOpen = s.settingsModel.isOpen();
+    s.menuRecord.settingsGroup = s.settingsModel.group();
+    for (const ui::SettingsRow& row : s.settingsModel.rows()) {
+        s.menuRecord.settingsRows.push_back(row.key);
+    }
+    report.menu = std::move(s.menuRecord);
     if (s.directoryRecord.bound) {
         DirectoryRecord directory = std::move(s.directoryRecord);
         directory.open = s.directory.isOpen();

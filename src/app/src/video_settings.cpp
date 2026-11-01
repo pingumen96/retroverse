@@ -1,6 +1,7 @@
 #include <rv/app/video_settings.hpp>
 
 #include <rv/core/json.hpp>
+#include <rv/core/settings_file.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -361,18 +362,13 @@ Expected<VideoSettings> parseVideoSettings(const Json& document, std::string_vie
 }
 
 Json mergeVideoDocuments(Json base, const Json& overrides) {
-    if (!base.is_object() || !overrides.is_object()) {
-        return overrides;
-    }
-    for (const auto& [key, value] : overrides.items()) {
-        const auto existing = base.find(key);
-        if (existing != base.end() && existing->is_object() && value.is_object()) {
-            *existing = mergeVideoDocuments(std::move(*existing), value);
-        } else {
-            base[key] = value;
-        }
-    }
-    return base;
+    return core::mergeSettingsDocuments(std::move(base), overrides);
+}
+
+std::span<const std::string_view> videoSettingKeys() noexcept {
+    static constexpr std::array<std::string_view, 7> kKeys = {"enabled",      "crtEffect",   "audio.mode", "audio.master",
+                                                              "audio.video", "audio.muted", "hero.playlist"};
+    return kKeys;
 }
 
 Expected<LoadedVideoSettings> loadVideoSettings(const std::filesystem::path& assetRoot,
@@ -388,27 +384,40 @@ Expected<LoadedVideoSettings> loadVideoSettings(const std::filesystem::path& ass
     }
     LoadedVideoSettings loaded;
     loaded.settings = std::move(*shipped);
+    loaded.belowSettings = *defaults;
 
+    // The user's file over the defaults, left out whole when it does not load.
     const std::filesystem::path userPath = userConfigDir / core::pathFromUtf8(kVideoSettingsFile);
     std::error_code ignored;
-    if (!std::filesystem::exists(userPath, ignored)) {
-        return loaded;
+    if (std::filesystem::exists(userPath, ignored)) {
+        auto user = core::readJsonFile(userPath);
+        if (!user) {
+            loaded.issues.push_back(user.error());
+        } else if (!user->is_object()) {
+            loaded.issues.push_back(
+                Error{ErrorCode::ParseError, "expected an object", core::pathToUtf8Lossy(userPath)});
+        } else {
+            Json document = mergeVideoDocuments(*defaults, *user);
+            if (auto merged = parseVideoSettings(document, core::pathToUtf8Lossy(userPath))) {
+                loaded.settings = std::move(*merged);
+                loaded.belowSettings = std::move(document);
+            } else {
+                loaded.issues.push_back(merged.error());
+            }
+        }
     }
-    auto user = core::readJsonFile(userPath);
-    if (!user) {
-        loaded.issues.push_back(user.error());
-        return loaded;
+
+    // settings.json's keys over them (ADR-0018 §2): a value the parser refuses costs that value alone.
+    const Json overlay = core::SettingsFile::loadBeside(userConfigDir).section(kVideoSettingsSection, videoSettingKeys());
+    if (!overlay.empty()) {
+        const Json document = core::acceptedOverlay(
+            loaded.belowSettings, overlay,
+            [](const Json& candidate) { return parseVideoSettings(candidate, "settings.json").has_value(); },
+            &loaded.refusedKeys);
+        if (auto merged = parseVideoSettings(document, "settings.json")) {
+            loaded.settings = std::move(*merged);
+        }
     }
-    if (!user->is_object()) {
-        loaded.issues.push_back(Error{ErrorCode::ParseError, "expected an object", core::pathToUtf8Lossy(userPath)});
-        return loaded;
-    }
-    auto merged = parseVideoSettings(mergeVideoDocuments(*defaults, *user), core::pathToUtf8Lossy(userPath));
-    if (!merged) {
-        loaded.issues.push_back(merged.error());
-        return loaded;
-    }
-    loaded.settings = std::move(*merged);
     return loaded;
 }
 

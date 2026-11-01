@@ -225,11 +225,13 @@ WorldBackDecision worldBackAction(const BackState& shell, WorldBack world) noexc
     case BackAction::Ignore:
     case BackAction::ClosePopup:
     case BackAction::PanelBack:
+    case BackAction::MenuBack:
     case BackAction::CatalogBack:
     case BackAction::DirectoryBack:
         return WorldBackDecision{WorldBack::Shell, action};
     case BackAction::ReleaseMouse:
     case BackAction::CloseOverlay:
+    case BackAction::OpenMenu:
     case BackAction::Quit:
         break;
     }

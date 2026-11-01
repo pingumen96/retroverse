@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 
 #include <rv/core/json.hpp>
+#include <rv/core/settings_file.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -181,6 +182,13 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
     return settings;
 }
 
+std::span<const std::string_view> xrSettingKeys() noexcept {
+    static constexpr std::array<std::string_view, 7> kKeys = {"display.mode",    "posture",       "quality",
+                                                              "refreshRate",     "comfort.turn",  "comfort.vignette",
+                                                              "comfort.moveRelativeTo"};
+    return kKeys;
+}
+
 Expected<LoadedXrSettings> loadXrSettings(const std::filesystem::path& assetRoot,
                                           const std::filesystem::path& userConfigDir) {
     const std::filesystem::path defaultsPath = assetRoot / "config" / core::pathFromUtf8(kXrSettingsFile);
@@ -194,27 +202,40 @@ Expected<LoadedXrSettings> loadXrSettings(const std::filesystem::path& assetRoot
     }
     LoadedXrSettings loaded;
     loaded.settings = *shipped;
+    loaded.belowSettings = *defaults;
 
+    // The user's file over the defaults, left out whole when it does not load.
     const std::filesystem::path userPath = userConfigDir / core::pathFromUtf8(kXrSettingsFile);
     std::error_code ignored;
-    if (userConfigDir.empty() || !std::filesystem::exists(userPath, ignored)) {
-        return loaded;
+    if (!userConfigDir.empty() && std::filesystem::exists(userPath, ignored)) {
+        auto user = core::readJsonFile(userPath);
+        if (!user) {
+            loaded.issues.push_back(user.error());
+        } else if (!user->is_object()) {
+            loaded.issues.push_back(
+                Error{ErrorCode::ParseError, "expected an object", core::pathToUtf8Lossy(userPath)});
+        } else {
+            Json document = merge(*defaults, *user);
+            if (auto merged = parseXrSettings(document, core::pathToUtf8Lossy(userPath))) {
+                loaded.settings = *merged;
+                loaded.belowSettings = std::move(document);
+            } else {
+                loaded.issues.push_back(merged.error());
+            }
+        }
     }
-    auto user = core::readJsonFile(userPath);
-    if (!user) {
-        loaded.issues.push_back(user.error());
-        return loaded;
+
+    // settings.json's keys over them (ADR-0018 §2): a value the parser refuses costs that value alone.
+    const Json overlay = core::SettingsFile::loadBeside(userConfigDir).section(kXrSettingsSection, xrSettingKeys());
+    if (!overlay.empty()) {
+        const Json document = core::acceptedOverlay(
+            loaded.belowSettings, overlay,
+            [](const Json& candidate) { return parseXrSettings(candidate, "settings.json").has_value(); },
+            &loaded.refusedKeys);
+        if (auto merged = parseXrSettings(document, "settings.json")) {
+            loaded.settings = *merged;
+        }
     }
-    if (!user->is_object()) {
-        loaded.issues.push_back(Error{ErrorCode::ParseError, "expected an object", core::pathToUtf8Lossy(userPath)});
-        return loaded;
-    }
-    auto merged = parseXrSettings(merge(*defaults, *user), core::pathToUtf8Lossy(userPath));
-    if (!merged) {
-        loaded.issues.push_back(merged.error());
-        return loaded;
-    }
-    loaded.settings = *merged;
     return loaded;
 }
 

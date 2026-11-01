@@ -36,6 +36,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -166,10 +167,19 @@ struct LoadedVideoSettings {
     VideoSettings settings;
     /// The user's file could not be read, parsed or checked: left out whole.
     std::vector<Error> issues;
+    /// The document under settings.json: the defaults with the user's file over them ("Ripristina"'s values).
+    nlohmann::json belowSettings;
+    /// Keys of settings.json whose value parseVideoSettings() refused: left out, each alone.
+    std::vector<std::string> refusedKeys;
 };
 
-/// assets/config/video.json with <userConfigDir>/video.json over it (a missing user file is no issue). Errors: the
-/// defaults do not load (a broken installation).
+/// settings.json's section for this file, and the keys the settings screen may set there (ADR-0018 §2, §3): every other
+/// key of that section is ignored, so that no stray key can make parseVideoSettings() refuse the document.
+inline constexpr std::string_view kVideoSettingsSection = "video";
+[[nodiscard]] std::span<const std::string_view> videoSettingKeys() noexcept;
+
+/// assets/config/video.json with <userConfigDir>/video.json over it (a missing user file is no issue) and the keys of
+/// settings.json beside that folder over both. Errors: the defaults do not load (a broken installation).
 [[nodiscard]] Expected<LoadedVideoSettings> loadVideoSettings(const std::filesystem::path& assetRoot,
                                                               const std::filesystem::path& userConfigDir);
 

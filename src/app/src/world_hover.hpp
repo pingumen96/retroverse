@@ -143,6 +143,8 @@ public:
         return id != world::kNoPick && std::binary_search(m_hidden.begin(), m_hidden.end(), id);
     }
     [[nodiscard]] const WorldInteraction& interaction() const noexcept { return m_interaction; }
+    /// I7 step 1: reduceMotion from the settings screen (WorldInteraction::setReduceMotion).
+    void setReduceMotion(bool on) { m_interaction.setReduceMotion(on); }
     /// I3 step 15a: the launch of the result's `launch` ended (WorldInteraction::launchEnded); "Mostra nella stanza" on
     /// `game` (WorldInteraction::showInRoom from `walker`): the item's pick id, or kNoPick when the room shown has no
     /// item of it or the state takes none (the interaction's notice tells which); the pick id of `game`'s item.

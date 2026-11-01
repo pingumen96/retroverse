@@ -8,8 +8,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <rv/app/settings_store.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/settings_file.hpp>
 #include <rv/core/text.hpp>
 #include <rv/platform/graphics_window.hpp>
 
@@ -37,19 +39,20 @@ input::ActionMap loadBindings(const core::Paths& paths) {
     std::error_code error;
     if (!std::filesystem::is_regular_file(userPath, error)) {
         spdlog::debug("No user bindings at {}", core::pathToUtf8(userPath));
-        return map;
-    }
-    const auto document = core::readJsonFile(userPath);
-    if (!document) {
+    } else if (const auto document = core::readJsonFile(userPath); !document) {
         spdlog::warn("User bindings ignored: {}", document.error().toString());
-        return map;
-    }
-    const auto replaced = map.applyOverrides(*document, core::pathToUtf8(userPath));
-    if (!replaced) {
+    } else if (const auto replaced = map.applyOverrides(*document, core::pathToUtf8(userPath)); !replaced) {
         spdlog::warn("User bindings ignored: {}", replaced.error().toString());
-        return map;
+    } else {
+        spdlog::info("User bindings from {} replace the bindings of {} action(s)", core::pathToUtf8(userPath),
+                     *replaced);
     }
-    spdlog::info("User bindings from {} replace the bindings of {} action(s)", core::pathToUtf8(userPath), *replaced);
+
+    // settings.json over the user's file (ADR-0018 §2): an action the screen did not touch stays as it is written.
+    const std::size_t remapped = applySettingsBindings(map, core::SettingsFile::loadBeside(paths.configDir()));
+    if (remapped > 0) {
+        spdlog::info("settings.json replaces the bindings of {} action(s)", remapped);
+    }
     return map;
 }
 

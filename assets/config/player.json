@@ -1,0 +1,16 @@
+// The player's own settings (ADR-0018 §2; src/app/include/rv/app/player_settings.hpp). Every key is here; the user's
+// <user data>/config/player.json overrides them key by key and is never written by Retroverse. What the settings screen
+// changes goes to <user data>/settings.json, over both.
+{
+  "schemaVersion": 1,
+  // The view's horizontal field in degrees, 30 to 150; null keeps the scene's lens.
+  "horizontalFovDeg": null,
+  // The look's scales: the mouse's and the right stick's, 0.1 to 5.
+  "mouseSensitivity": 1,
+  "stickSensitivity": 1,
+  "invertY": false,
+  // "window" or "borderless" (borderless fullscreen; exclusive fullscreen is not offered: ADR-0018 §3).
+  "displayMode": "window",
+  // The product UI's size, 0.5 to 3; the settings screen offers 1 and 1.25.
+  "textScale": 1
+}

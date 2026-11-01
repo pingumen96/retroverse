@@ -24,6 +24,7 @@ add_library(rv_core STATIC
     src/random.cpp
     src/relative_path.cpp
     src/seed.cpp
+    src/settings_file.cpp
     src/sha256.cpp
     src/system_error.cpp
     src/system_probe.cpp

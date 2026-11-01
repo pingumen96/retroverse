@@ -1,0 +1,127 @@
+<rml>
+<head>
+	<!--
+		The settings screen (ADR-0018 §3): the menu's Impostazioni. What it changes goes to <user data>/settings.json, over
+		the hand-written files of <user data>/config, which stay untouched. Applied at once, the file written when it
+		closes; "Ripristina" lets the layer below show through.
+		Bound to the data model "settings" of rv::ui::SettingsScreen (src/ui/src/settings_screen.cpp), which also names the
+		ids below (src/ui/include/rv/ui/settings_model.hpp). group: display, audio, world, controls, vr. A row: key
+		(app::SettingRow::id(), section and dotted key), kind (toggle, choice, slider), value (a toggle's on or off, a
+		choice's value as text), text (a slider's number), fill (its bar), scene (the FOV's null), note ('', commit, session,
+		start), overridden. device: pad, keys (the hints' glyphs, the device used last; step 3 takes them from the active
+		bindings). Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the
+		model's; the input stays with the application; a click presses what a key would (VR's ray too). The bundled fonts
+		have no symbols: the arrows are plain text.
+	-->
+	<title>Impostazioni</title>
+	<link type="text/rcss" href="settings.rcss"/>
+</head>
+<body data-model="settings">
+	<div id="settings-panel" class="panel">
+		<h1>Impostazioni</h1>
+		<div id="st-tabs">
+			<button class="tab" data-class-active="group == 'display'" data-event-click="tab('display')">Schermo</button>
+			<button class="tab" data-class-active="group == 'audio'" data-event-click="tab('audio')">Audio</button>
+			<button class="tab" data-class-active="group == 'world'" data-event-click="tab('world')">Mondo</button>
+			<button class="tab" data-class-active="group == 'controls'" data-event-click="tab('controls')">Controlli</button>
+			<button class="tab" data-class-active="group == 'vr'" data-event-click="tab('vr')">VR</button>
+		</div>
+		<div id="st-list">
+			<div class="slot" data-for="row : rows">
+				<div class="row" data-attr-id="row.elementId">
+					<div class="label" data-event-click="row(row.index)">
+						<!-- Schermo -->
+						<p data-if="row.key == 'player.displayMode'">Visualizzazione</p>
+						<p data-if="row.key == 'player.textScale'">Dimensione del testo</p>
+						<p data-if="row.key == 'player.horizontalFovDeg'">Campo visivo</p>
+						<!-- Audio -->
+						<p data-if="row.key == 'video.audio.master'">Volume generale</p>
+						<p data-if="row.key == 'video.audio.video'">Volume dei video</p>
+						<p data-if="row.key == 'video.audio.muted'">Muto</p>
+						<p data-if="row.key == 'video.audio.mode'">Suono</p>
+						<!-- Mondo -->
+						<p data-if="row.key == 'world.lightingProfile'">Illuminazione</p>
+						<p data-if="row.key == 'world.reduceMotion'">Riduci i movimenti</p>
+						<p data-if="row.key == 'video.enabled'">Video sugli schermi</p>
+						<p data-if="row.key == 'video.crtEffect'">Effetto CRT</p>
+						<p data-if="row.key == 'video.hero.playlist'">Programma dei televisori</p>
+						<!-- Controlli -->
+						<p data-if="row.key == 'player.mouseSensitivity'">Sensibilità del mouse</p>
+						<p data-if="row.key == 'player.stickSensitivity'">Sensibilità della levetta</p>
+						<p data-if="row.key == 'player.invertY'">Inverti lo sguardo verticale</p>
+						<!-- VR -->
+						<p data-if="row.key == 'xr.display.mode'">Avvia nel visore</p>
+						<p data-if="row.key == 'xr.comfort.turn'">Rotazione</p>
+						<p data-if="row.key == 'xr.comfort.vignette'">Vignettatura</p>
+						<p data-if="row.key == 'xr.comfort.moveRelativeTo'">Cammina verso</p>
+						<p data-if="row.key == 'xr.posture'">Posizione</p>
+						<p data-if="row.key == 'xr.quality'">Qualità</p>
+						<p data-if="row.key == 'xr.refreshRate'">Frequenza</p>
+						<p class="row-note" data-if="row.note == 'commit'">Il piano si ricarica</p>
+						<p class="row-note" data-if="row.note == 'session'">Alla prossima sessione VR</p>
+						<p class="row-note" data-if="row.note == 'start'">Al prossimo avvio</p>
+					</div>
+					<div class="control">
+						<button class="arrow" data-if="row.kind != 'toggle'" data-event-click="step(row.index, -1)">&lt;</button>
+						<div class="value" data-event-click="row(row.index)">
+							<!-- A slider: its bar and its number. -->
+							<div class="bar" data-if="row.kind == 'slider' && !row.scene"><div class="fill" data-style-width="row.fill"></div></div>
+							<p data-if="row.kind == 'slider' && row.scene">Della scena</p>
+							<p data-if="row.kind == 'slider' && row.key == 'player.horizontalFovDeg' && !row.scene">{{ row.text }}°</p>
+							<p data-if="row.kind == 'slider' && (row.key == 'player.mouseSensitivity' || row.key == 'player.stickSensitivity')">{{ row.text }}</p>
+							<p data-if="row.kind == 'slider' && (row.key == 'video.audio.master' || row.key == 'video.audio.video' || row.key == 'xr.comfort.vignette')">{{ row.text }}%</p>
+							<!-- A toggle. -->
+							<p data-if="row.kind == 'toggle' && row.value == 'on'">Sì</p>
+							<p data-if="row.kind == 'toggle' && row.value == 'off'">No</p>
+							<!-- Choices. -->
+							<p data-if="row.key == 'player.displayMode' && row.value == 'window'">In una finestra</p>
+							<p data-if="row.key == 'player.displayMode' && row.value == 'borderless'">Schermo intero</p>
+							<p data-if="row.key == 'player.textScale' && row.value == '1'">100%</p>
+							<p data-if="row.key == 'player.textScale' && row.value == '1.25'">125%</p>
+							<!-- A hand-written scale the row does not list. -->
+							<p data-if="row.key == 'player.textScale' && row.value != '1' && row.value != '1.25'">{{ row.value }}x</p>
+							<p data-if="row.key == 'video.audio.mode' && row.value == 'nearest-focused'">Acceso</p>
+							<p data-if="row.key == 'video.audio.mode' && row.value == 'off'">Spento</p>
+							<p data-if="row.key == 'world.lightingProfile' && row.value == 'evening'">Sera</p>
+							<p data-if="row.key == 'world.lightingProfile' && row.value == 'afternoon'">Pomeriggio</p>
+							<p data-if="row.key == 'video.crtEffect' && row.value == 'off'">Spento</p>
+							<p data-if="row.key == 'video.crtEffect' && row.value == 'light'">Leggero</p>
+							<p data-if="row.key == 'video.crtEffect' && row.value == 'vintage'">Vintage</p>
+							<p data-if="row.key == 'video.hero.playlist' && row.value == 'shuffle'">Casuale</p>
+							<p data-if="row.key == 'video.hero.playlist' && row.value == 'sequential'">In ordine</p>
+							<p data-if="row.key == 'video.hero.playlist' && row.value == 'favorites'">Preferiti</p>
+							<p data-if="row.key == 'video.hero.playlist' && row.value == 'recent'">Recenti</p>
+							<p data-if="row.key == 'video.hero.playlist' && row.value == 'explicit'">Personalizzato</p>
+							<p data-if="row.key == 'xr.display.mode' && row.value == 'desktop'">No</p>
+							<p data-if="row.key == 'xr.display.mode' && row.value == 'vr'">Sì</p>
+							<p data-if="row.key == 'xr.comfort.turn' && row.value == 'snap'">A scatti</p>
+							<p data-if="row.key == 'xr.comfort.turn' && row.value == 'smooth'">Continua</p>
+							<p data-if="row.key == 'xr.comfort.moveRelativeTo' && row.value == 'head'">Dove guardi</p>
+							<p data-if="row.key == 'xr.comfort.moveRelativeTo' && row.value == 'hand'">Dove punta la mano</p>
+							<p data-if="row.key == 'xr.posture' && row.value == 'standing'">In piedi</p>
+							<p data-if="row.key == 'xr.posture' && row.value == 'seated'">Seduto</p>
+							<p data-if="row.key == 'xr.quality' && row.value == 'auto'">Automatica</p>
+							<p data-if="row.key == 'xr.quality' && row.value == 'full'">Piena</p>
+							<p data-if="row.key == 'xr.quality' && row.value == 'fast'">Veloce</p>
+							<p data-if="row.key == 'xr.refreshRate' && row.value == '0'">Del visore</p>
+							<p data-if="row.key == 'xr.refreshRate' && row.value != '0'">{{ row.value }} Hz</p>
+						</div>
+						<button class="arrow" data-if="row.kind != 'toggle'" data-event-click="step(row.index, 1)">&gt;</button>
+					</div>
+					<button class="restore" data-class-off="!row.overridden" data-event-click="restore(row.index)">Ripristina</button>
+				</div>
+			</div>
+			<div id="st-restore-all" class="row all" data-event-click="restore_all()">
+				<p data-if="!confirmAll">Ripristina tutto</p>
+				<p data-if="confirmAll">Premi di nuovo per tornare ai valori dei file di configurazione</p>
+			</div>
+		</div>
+		<div id="st-hints">
+			<span class="hint" data-if="device == 'pad'"><span class="kbd wide">LB RB</span>Gruppo</span>
+			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Cambia</span>
+			<span class="hint" data-if="device == 'pad'"><span class="kbd pad-x">X</span>Ripristina</span>
+			<span class="hint"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
+		</div>
+	</div>
+</body>
+</rml>

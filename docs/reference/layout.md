@@ -262,6 +262,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `library.json` (the library's id, the ES-DE home and install, root overrides), is written only by `retroverse-cli
   library create` and the wizard (ADR-0018 §4); choices made later go to the database (ADR-0008 §6). What the settings
   screen changes goes to `<user data>/settings.json`, outside `config`: one section per file it overlays, only the keys
-  the user changed, read over the shipped defaults and the user's file (ADR-0018 §2).
+  the user changed, read over the shipped defaults and the user's file (ADR-0018 §2; `rv/core/settings_file.hpp`, since
+  I7 step 1). `assets/config/player.json` under `player.json` holds what had no file (`rv/app/player_settings.hpp`). I7
+  step 1 also adds to `rv_app_cli` `setting_rows.hpp` (the settings screen's table) and `settings_store.hpp` (the rows
+  over the file and the layers under it, written off the main thread), to `rv_ui_model` `system_menu_model` and
+  `settings_model`, to `rv_ui` their screens (`assets/ui/system_menu.rml`, `settings.rml`).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 

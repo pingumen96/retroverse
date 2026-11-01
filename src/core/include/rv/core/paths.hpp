@@ -52,6 +52,9 @@ public:
     [[nodiscard]] std::filesystem::path screenshotsDir() const { return m_userDataRoot / "screenshots"; }
     /// The catalog database's folder (retroverse.sqlite, its WAL and backups; ADR-0008 §5).
     [[nodiscard]] std::filesystem::path databaseDir() const { return m_userDataRoot / "database"; }
+    /// What the settings screen writes (ADR-0018 §2, rv/core/settings_file.hpp): never under configDir(), which stays
+    /// the user's.
+    [[nodiscard]] std::filesystem::path settingsFile() const { return m_userDataRoot / "settings.json"; }
 
     /// Resolves an asset-relative UTF-8 path ("shaders/pbr/pbr_base.frag"). Forward or back slashes are
     /// accepted; absolute paths and paths escaping the asset root ("..") are rejected.

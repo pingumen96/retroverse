@@ -103,12 +103,14 @@ Italian label of each is the document's.
 
 | Group | Rows |
 |---|---|
-| Schermo | window or borderless fullscreen; text scale (100, 125, 150%); FOV (70 to 110 degrees, or the scene's) |
+| Schermo | window or borderless fullscreen; text scale (100, 125%); FOV (70 to 110 degrees, or the scene's) |
 | Audio | master and video volume, mute, sound off (`audio.mode`) |
 | Mondo | lighting profile, `reduceMotion`, clips on or off (`video.enabled`), CRT effect, the TVs' programme (`hero.playlist` without `explicit`) |
 | Controlli | mouse and stick sensitivity, invert Y, the bindings (§7) |
 | VR | start in the headset, turn, vignette, walking relative to, posture, quality, refresh rate |
 
+- **Amended 2026-11-01:** text scale offers 100 and 125%. At 150% the older panels lose their lists and a button at
+  1280 x 720 (`docs/i7/step-1.md`); a hand-written `textScale` stays honoured by the loader, 0.5 to 3.
 - **Applied at once:** everything except the lighting profile, which commits the floor again within the save row's 3 s,
   and the VR session's rows, which apply at the next session and say so. The mute row is what a run starts with; F8
   changes the run only, as ADR-0016 §4 had it.
