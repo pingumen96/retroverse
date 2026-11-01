@@ -270,6 +270,31 @@ private:
 
 } // namespace
 
+TEST_CASE("platform/gamepad_manager: the last pad gone, the keyboard is the device used last", "[platform][gamepad]") {
+    rv::test::VirtualGamepadScope sdl;
+    if (!sdl.ready()) {
+        SKIP("SDL gamepad subsystem unavailable: " << SDL_GetError());
+    }
+    SdlInputCollector collector;
+    const SDL_JoystickID first = sdl.attach("First Pad");
+    const SDL_JoystickID second = sdl.attach("Second Pad");
+    pump(collector);
+    {
+        VirtualPad pad(first);
+        REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, true));
+        pump(collector);
+        REQUIRE(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    }
+    // One of two goes: the other is still a pad.
+    REQUIRE(SDL_DetachVirtualJoystick(first));
+    pump(collector);
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    // The last goes.
+    REQUIRE(SDL_DetachVirtualJoystick(second));
+    pump(collector);
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::KeyboardMouse);
+}
+
 TEST_CASE("platform/gamepad_manager: a pad unplugged and back during a UI screen (FR-029)", "[platform][gamepad]") {
     rv::test::VirtualGamepadScope sdl;
     if (!sdl.ready()) {

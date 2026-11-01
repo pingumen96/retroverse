@@ -58,6 +58,9 @@ void SdlInputCollector::handleEvent(const SDL_Event& event) {
     case SDL_EVENT_GAMEPAD_REMOVED:
         m_gamepads.handleEvent(event);
         std::erase_if(m_pads, [id = event.gdevice.which](const PadState& pad) { return pad.id == id; });
+        if (m_gamepads.count() == 0) {
+            m_lastDevice = input::DeviceKind::KeyboardMouse; // no hint may name a pad that is gone
+        }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
     case SDL_EVENT_GAMEPAD_BUTTON_UP:
