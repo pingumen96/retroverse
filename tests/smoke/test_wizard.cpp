@@ -174,13 +174,9 @@ TEST_CASE("wizard: the seven pages to the lobby by the pad alone, its counts the
 
     // The next start finds it all ready: no wizard, the building at once.
     const fs::path next = dir / "next.png";
-    Script none;
-    none.wait(10);
-    const fs::path empty = dir / "none.json";
-    none.write(empty);
     const AppRun again = runApp(retroverseExe(), dir, "again",
                                 {"--exit-after-frames", "--frames", "20", "--fixed-dt", "0.016667", "--screenshot",
-                                 arg(next), "--input-script", arg(empty)});
+                                 arg(next)});
     requireCleanRun(again);
     INFO(again.describe());
     CHECK_FALSE(again.report->wizard.has_value());
@@ -281,7 +277,8 @@ TEST_CASE("wizard: at text scale 125% at 1280 x 720 no page and no browser is cu
     script.press("ui_back").wait(3);
     script.press("ui_up", 4).press("ui_activate").wait(3); // the first folder's browser
     script.press("ui_back").wait(3);
-    script.forward(6).wait(3); // on through the pages
+    script.press("ui_down", 4); // Avanti again
+    script.forward(5).wait(3);  // on through the pages
     const fs::path file = dir / "script.json";
     script.write(file);
     std::vector<std::string> arguments = wizardArguments(fixture, script.frame + 3, dir / "end.png", file);
@@ -299,10 +296,10 @@ TEST_CASE("wizard: at text scale 125% at 1280 x 720 no page and no browser is cu
 TEST_CASE("wizard: in a headset the ray presses what the pad would", "[gpu][wizard][xr]") {
     const fs::path dir = freshCaseDir("wizard/vr");
     const rv::test::Fixture fixture = rv::test::Fixture::materialize("esde/snes-room").value();
-    // The right controller at the hip points at Avanti, low on the panel and left of its middle (the panel stands 1.3 m
-    // in front of the eyes, 0.12 m below them, 1.8 m wide at the window's 16:9).
+    // The right controller at the hip points at Avanti, at the panel's bottom left (the canvas stands 1.3 m in front of
+    // the eyes, 0.12 m below them, 1.8 m wide at the window's 16:9).
     const glm::vec3 hand(0.2f, 1.25f, -0.3f);
-    const glm::vec3 target(-0.50f, 1.65f - 0.12f - 0.30f, -1.3f);
+    const glm::vec3 target(-0.68f, 1.65f - 0.12f - 0.37f, -1.3f);
     const glm::vec3 toTarget = glm::normalize(target - hand);
     const float yawDeg = rv::core::radiansToDegrees(std::atan2(toTarget.x, -toTarget.z));
     const float pitchDeg = rv::core::radiansToDegrees(std::asin(toTarget.y));
