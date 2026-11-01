@@ -9,8 +9,8 @@ gate checks, how to run it, the figures of its runs on the reference machine, wh
 requirements are proven and the follow-ups. How to try the editor, a regeneration and an undo:
 [running-the-app.md](../reference/running-the-app.md#try-the-editor-a-regeneration-and-an-undo).
 
-**Status: passed** (October 31, 2026, reference machine, a quiet machine: runs 4 and 5 below), **the user's trial
-pending**. Runs 1 to 3 (October 30, the machine loaded) found the room preview over ADR-0015 §9's 2 s on the real
+**Status: passed** (October 31, 2026, reference machine, a quiet machine: runs 4 and 5 below); **the user declared M3 done on
+November 1, 2026**. Runs 1 to 3 (October 30, the machine loaded) found the room preview over ADR-0015 §9's 2 s on the real
 library (2.6 to 4.1 s in the app); [preview-time.md](../i4b/preview-time.md) brought it to 0.7 to 0.8 s. Run 4 (the
 full gate) found one regression of that fix in Debug (the read-ahead kept the regenerations' inputs from being let go
 of, fixed by 44776ee1 and its five GPU cases passed again) and two Debug cases of the cabinets' attract one frame late

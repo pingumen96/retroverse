@@ -6,7 +6,8 @@ the teleport, used with the Touch controllers or the pad, the UI on a panel in t
 room's CRT. What each step built is in [docs/i10/](../i10/). This page says what the gate checks, how to run it, and the
 session in the headset that decides it.
 
-**Status: built, not yet run.** The automated part is ready; the headset session is the user's.
+**Status: the user declared I10 done on November 1, 2026.** This page records no whole run of `gate.ps1 -Gate VR` and no
+session on SteamVR (not installed here); the VR cases, G21 and the VR benchmarks passed at I10's merge into main.
 
 ## What the gate checks
 

@@ -10,8 +10,8 @@ figures of its runs on the reference machine, where ADR-0016 and M4's requiremen
 to try the screens and the sound:
 [running-the-app.md](../reference/running-the-app.md#try-the-screens-and-the-sound).
 
-**Status: every M4 row passed, the user's trial pending** (October 31, 2026, reference machine, the machine not
-quiet: below). Run 1 (the full gate with the real library) failed one row on the gate's reading of a test's output (a
+**Status: every M4 row passed** (October 31, 2026, reference machine, the machine not quiet: below); **the user
+declared M4 done on November 1, 2026**. Run 1 (the full gate with the real library) failed one row on the gate's reading of a test's output (a
 printed line cut by the next test's log, fixed by 5c60283c; the test had passed); run 2 (`-TimingOnly -RealLibrary
 -Soak`) failed one assertion of Gate D's real building case, a race of the ride's record with the hub's showcase
 under load that passed in run 1 and again when run alone (BACKLOG). Every I5 row, every golden, every timing row, the
