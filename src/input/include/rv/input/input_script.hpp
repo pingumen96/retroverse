@@ -18,6 +18,8 @@
 #include <rv/core/expected.hpp>
 #include <rv/input/action.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/input/codes.hpp>
+#include <rv/input/raw_input.hpp>
 
 namespace rv::input {
 
@@ -36,6 +38,20 @@ struct ScriptedHeadPose {
     std::optional<glm::vec3> position;
 
     bool operator==(const ScriptedHeadPose&) const = default;
+};
+
+/// What a step holds on the devices themselves (I7 step 3), before the bindings resolve it: unlike "actions", it goes
+/// through the map, so a rebound action can be proven, and it is what a capture of the settings screen reads.
+struct ScriptedRawInput {
+    std::vector<Key> keys;
+    std::vector<GamepadButton> padButtons;
+    /// Pad axes in their ranges (codes.hpp), [-1, 1] or [0, 1].
+    std::vector<std::pair<GamepadAxis, float>> padAxes;
+    /// A pad plugged in (true), or none at all (false); nothing: as the devices say. Holding a pad's button or axis
+    /// plugs one in.
+    std::optional<bool> padConnected;
+
+    bool operator==(const ScriptedRawInput&) const = default;
 };
 
 struct InputScriptStep {
@@ -61,6 +77,10 @@ struct InputScriptStep {
     /// pushed forward); nothing: centered.
     std::optional<glm::vec2> leftStick;
     std::optional<glm::vec2> rightStick;
+    /// I7 step 3: the devices' state on every frame of the step ("raw").
+    std::optional<ScriptedRawInput> raw;
+    /// I7 step 3: the device used last from this step on ("device": "pad", "keys"), until another step says.
+    std::optional<DeviceKind> device;
 
     [[nodiscard]] bool covers(std::uint64_t frame) const noexcept { return frame >= fromFrame && frame <= toFrame; }
 };
@@ -95,8 +115,13 @@ struct InputScriptStep {
 ///    points along its -Z; no position: the fake runtime's resting hand); "leftSelect", "rightSelect" (I10 step 5)
 ///    its trigger, a number in [0, 1]; "leftStick", "rightStick" (I10 step 10) its thumbstick, [x, y] in [-1, 1] with
 ///    +y pushed forward.
-/// A step has at least one of "actions", "text", "phase", "headPose", "leftHand" and "rightHand", and an "actions" it
-/// has is not empty.
+///  - "raw" (I7 step 3): the devices themselves on every frame of the step, before the bindings:
+///    {"keys": ["insert"], "padButtons": ["west"], "padAxes": {"left_trigger": 1}, "padConnected": true}, every field
+///    optional (ScriptedRawInput). A press through it makes its device the one used last, as a real press does.
+///  - "device" (I7 step 3): "pad" or "keys", the device used last from fromFrame on, until another step says: the
+///    hints' device without any press.
+/// A step has at least one of "actions", "text", "phase", "headPose", "leftHand", "rightHand", "raw" and "device", and
+/// an "actions" it has is not empty.
 ///  - Steps may overlap. On a frame where several steps set the same action, the step that comes later in the file
 ///    wins.
 /// Every field is required, unknown fields are errors and a script holds 1 to kMaxSteps steps. Error contexts are
@@ -165,10 +190,19 @@ public:
     /// `pressThreshold` should be the InputSystem's (InputSettings::pressThreshold); it is clamped to
     /// [kMinPressThreshold, 1], non-finite values counting as the InputSettings default.
     void apply(std::uint64_t frame, ActionState& state, float pressThreshold);
+    /// The script's "raw" and "device" over `raw`, before the bindings resolve it. Call once per frame, every frame, in
+    /// increasing frame order: edges are against the previous call.
+    void applyRaw(std::uint64_t frame, RawInputFrame& raw);
+    /// Takes what `state` holds as the previous frame's, so that nothing held reports pressed on the next apply():
+    /// after the bindings changed (AppInput::setBindings).
+    void noteHeld(const ActionState& state) noexcept;
 
 private:
     InputScript m_script;
     std::bitset<kActionCount> m_previousHeld;
+    std::bitset<kKeyCount> m_rawKeys;
+    std::bitset<kGamepadButtonCount> m_rawButtons;
+    std::optional<DeviceKind> m_device;
 };
 
 } // namespace rv::input

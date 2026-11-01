@@ -285,6 +285,8 @@ ActionMap ActionMap::defaults() {
     map.bind(Action::Map, KeyBinding{Key::M, 1.0f});
     map.bind(Action::Map, GamepadButtonBinding{GamepadButton::Back, 1.0f});
 
+    // I7 step 3 (ADR-0018 §7): Menu always keeps a key and a pad button.
+    map.bind(Action::Menu, KeyBinding{Key::F10, 1.0f});
     map.bind(Action::Menu, GamepadButtonBinding{GamepadButton::Start, 1.0f});
 
     map.bind(Action::ToggleDevUI, KeyBinding{Key::F1, 1.0f});
@@ -317,9 +319,15 @@ ActionMap ActionMap::defaults() {
     map.bind(Action::UiActivate, GamepadButtonBinding{GamepadButton::South, 1.0f});
     map.bind(Action::UiBack, KeyBinding{Key::Escape, 1.0f});
     map.bind(Action::UiBack, GamepadButtonBinding{GamepadButton::East, 1.0f});
+    // I7 step 3: function keys for what had no key: step 1's gap on the keyboard (the group, Ripristina); never a letter,
+    // which belongs to the text fields.
+    map.bind(Action::UiMedia, KeyBinding{Key::F6, 1.0f});
     map.bind(Action::UiMedia, GamepadButtonBinding{GamepadButton::North, 1.0f});
+    map.bind(Action::UiInfo, KeyBinding{Key::F4, 1.0f});
     map.bind(Action::UiInfo, GamepadButtonBinding{GamepadButton::West, 1.0f});
+    map.bind(Action::UiFilterPrevious, KeyBinding{Key::F2, 1.0f});
     map.bind(Action::UiFilterPrevious, GamepadButtonBinding{GamepadButton::LeftShoulder, 1.0f});
+    map.bind(Action::UiFilterNext, KeyBinding{Key::F3, 1.0f});
     map.bind(Action::UiFilterNext, GamepadButtonBinding{GamepadButton::RightShoulder, 1.0f});
     // The clips' sound (I5 step 5, ADR-0016 §9): F8 mutes; no pad button until I7's remapping.
     map.bind(Action::ToggleMute, KeyBinding{Key::F8, 1.0f});

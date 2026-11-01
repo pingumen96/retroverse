@@ -53,6 +53,7 @@
       { "padButton": "back" }
     ],
     "menu": [
+      { "key": "f10" },
       { "padButton": "start" }
     ],
     "toggle_dev_ui": [
@@ -111,15 +112,19 @@
       { "padButton": "east" }
     ],
     "ui_media": [
+      { "key": "f6" },
       { "padButton": "north" }
     ],
     "ui_info": [
+      { "key": "f4" },
       { "padButton": "west" }
     ],
     "ui_filter_previous": [
+      { "key": "f2" },
       { "padButton": "left_shoulder" }
     ],
     "ui_filter_next": [
+      { "key": "f3" },
       { "padButton": "right_shoulder" }
     ],
     "toggle_mute": [

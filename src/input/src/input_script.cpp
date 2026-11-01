@@ -37,9 +37,13 @@ constexpr std::string_view kLeftSelectField = "leftSelect";
 constexpr std::string_view kRightSelectField = "rightSelect";
 constexpr std::string_view kLeftStickField = "leftStick";
 constexpr std::string_view kRightStickField = "rightStick";
-constexpr std::array<std::string_view, 12> kStepFields{
+constexpr std::string_view kRawField = "raw";
+constexpr std::string_view kDeviceField = "device";
+constexpr std::array<std::string_view, 14> kStepFields{
     kFromFrameField, kToFrameField,   kActionsField,    kTextField,        kPhaseField,     kHeadPoseField,
-    kLeftHandField,  kRightHandField, kLeftSelectField, kRightSelectField, kLeftStickField, kRightStickField};
+    kLeftHandField,  kRightHandField, kLeftSelectField, kRightSelectField, kLeftStickField, kRightStickField,
+    kRawField,       kDeviceField};
+constexpr std::array<std::string_view, 4> kRawFields{"keys", "padButtons", "padAxes", "padConnected"};
 constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
 constexpr float kMaxHeadPitchDeg = 90.0f;
 
@@ -149,6 +153,69 @@ Expected<ScriptedHeadPose> parseHeadPose(const Json& pose, const JsonLocation& a
             }
         }
         parsed.position = xyz;
+    }
+    return parsed;
+}
+
+Expected<ScriptedRawInput> parseRaw(const Json& raw, const JsonLocation& at) {
+    if (!raw.is_object()) {
+        return fail(ErrorCode::ParseError, "expected an object such as {\"keys\": [\"insert\"]}", at);
+    }
+    for (const auto& item : raw.items()) {
+        if (std::find(kRawFields.begin(), kRawFields.end(), item.key()) == kRawFields.end()) {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), at.child(item.key()));
+        }
+    }
+    ScriptedRawInput parsed;
+    if (const auto keys = raw.find("keys"); keys != raw.end()) {
+        if (!keys->is_array()) {
+            return fail(ErrorCode::ParseError, "expected an array of key names", at.child("keys"));
+        }
+        for (const Json& name : *keys) {
+            const auto key = name.is_string() ? keyFromName(name.get_ref<const std::string&>()) : std::nullopt;
+            if (!key) {
+                return fail(ErrorCode::ValidationFailed, "unknown key " + name.dump(), at.child("keys"));
+            }
+            parsed.keys.push_back(*key);
+        }
+    }
+    if (const auto buttons = raw.find("padButtons"); buttons != raw.end()) {
+        if (!buttons->is_array()) {
+            return fail(ErrorCode::ParseError, "expected an array of button names", at.child("padButtons"));
+        }
+        for (const Json& name : *buttons) {
+            const auto button = name.is_string() ? gamepadButtonFromName(name.get_ref<const std::string&>())
+                                                 : std::nullopt;
+            if (!button) {
+                return fail(ErrorCode::ValidationFailed, "unknown button " + name.dump(), at.child("padButtons"));
+            }
+            parsed.padButtons.push_back(*button);
+        }
+    }
+    if (const auto axes = raw.find("padAxes"); axes != raw.end()) {
+        if (!axes->is_object()) {
+            return fail(ErrorCode::ParseError, "expected an object mapping axis names to values",
+                        at.child("padAxes"));
+        }
+        for (const auto& item : axes->items()) {
+            const auto axis = gamepadAxisFromName(item.key());
+            if (!axis) {
+                return fail(ErrorCode::ValidationFailed, "unknown axis " + inQuotes(item.key()),
+                            at.child("padAxes").child(item.key()));
+            }
+            if (!item.value().is_number() || !std::isfinite(item.value().get<double>()) ||
+                std::abs(item.value().get<double>()) > 1.0) {
+                return fail(ErrorCode::ValidationFailed, "expected a number from -1 to 1",
+                            at.child("padAxes").child(item.key()));
+            }
+            parsed.padAxes.emplace_back(*axis, item.value().get<float>());
+        }
+    }
+    if (const auto connected = raw.find("padConnected"); connected != raw.end()) {
+        if (!connected->is_boolean()) {
+            return fail(ErrorCode::ParseError, "expected true or false", at.child("padConnected"));
+        }
+        parsed.padConnected = connected->get<bool>();
     }
     return parsed;
 }
@@ -265,15 +332,32 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
         }
     }
 
+    // I7 step 3: the devices themselves.
+    if (const auto raw = step.find(kRawField); raw != step.end()) {
+        auto read = parseRaw(*raw, at.child(kRawField));
+        if (!read) {
+            return propagate(read.error());
+        }
+        parsed.raw = std::move(*read);
+    }
+    if (const auto device = step.find(kDeviceField); device != step.end()) {
+        if (!device->is_string() || (*device != "pad" && *device != "keys")) {
+            return fail(ErrorCode::ValidationFailed, "expected \"pad\" or \"keys\"", at.child(kDeviceField));
+        }
+        parsed.device = *device == "pad" ? DeviceKind::Gamepad : DeviceKind::KeyboardMouse;
+    }
+
     const JsonLocation actionsAt = at.child(kActionsField);
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
         if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand ||
-            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick) {
+            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick || parsed.raw ||
+            parsed.device) {
             return parsed;
         }
         return fail(ErrorCode::ParseError,
-                    "missing field \"actions\" (or \"text\", \"phase\", \"headPose\", \"leftHand\", \"rightHand\")",
+                    "missing field \"actions\" (or \"text\", \"phase\", \"headPose\", \"leftHand\", \"rightHand\", "
+                    "\"raw\", \"device\")",
                     actionsAt);
     }
     if (!actions->is_object()) {
@@ -462,6 +546,69 @@ void InputScriptPlayer::apply(std::uint64_t frame, ActionState& state, float pre
         state.setButton(action, held, !wasHeld && (held || tapped), !held && (wasHeld || tapped));
         state.setAxis(action, value);
         m_previousHeld[index] = held;
+    }
+}
+
+void InputScriptPlayer::applyRaw(std::uint64_t frame, RawInputFrame& raw) {
+    std::bitset<kKeyCount> keys;
+    std::bitset<kGamepadButtonCount> buttons;
+    std::optional<bool> connected;
+    bool padHeld = false;
+    for (const InputScriptStep& step : m_script.steps()) {
+        if (!step.covers(frame)) {
+            continue;
+        }
+        if (step.device) {
+            m_device = step.device;
+        }
+        if (!step.raw) {
+            continue;
+        }
+        for (const Key key : step.raw->keys) {
+            keys.set(toIndex(key));
+        }
+        for (const GamepadButton button : step.raw->padButtons) {
+            buttons.set(toIndex(button));
+            padHeld = true;
+        }
+        for (const auto& [axis, value] : step.raw->padAxes) {
+            raw.gamepadAxes[toIndex(axis)] = value;
+            padHeld = true;
+            if (std::abs(value) >= 0.5f) {
+                m_device = DeviceKind::Gamepad;
+            }
+        }
+        if (step.raw->padConnected) {
+            connected = step.raw->padConnected;
+        }
+    }
+    const std::bitset<kKeyCount> keysPressed = keys & ~m_rawKeys;
+    const std::bitset<kGamepadButtonCount> buttonsPressed = buttons & ~m_rawButtons;
+    raw.keysDown |= keys;
+    raw.keysPressed |= keysPressed;
+    raw.keysReleased |= m_rawKeys & ~keys;
+    raw.gamepadButtonsDown |= buttons;
+    raw.gamepadButtonsPressed |= buttonsPressed;
+    raw.gamepadButtonsReleased |= m_rawButtons & ~buttons;
+    m_rawKeys = keys;
+    m_rawButtons = buttons;
+    if (keysPressed.any()) {
+        m_device = DeviceKind::KeyboardMouse;
+    }
+    if (buttonsPressed.any()) {
+        m_device = DeviceKind::Gamepad;
+    }
+    if (padHeld || connected) {
+        raw.gamepadConnected = padHeld || *connected;
+    }
+    if (m_device) {
+        raw.lastActiveDevice = *m_device;
+    }
+}
+
+void InputScriptPlayer::noteHeld(const ActionState& state) noexcept {
+    for (std::size_t index = 0; index < kActionCount; ++index) {
+        m_previousHeld[index] = state.held(static_cast<Action>(index));
     }
 }
 

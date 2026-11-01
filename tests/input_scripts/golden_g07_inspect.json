@@ -10,6 +10,7 @@
 //     --video-freeze-pts 1 --exit-after-frames --frames 90 --fixed-dt 0.016667 --hidden
 //     --data-dir <a data directory with the fixture imported>
 [
+  {"fromFrame": 60, "toFrame": 60, "device": "pad"},
   {"fromFrame": 40, "toFrame": 40, "actions": {"interact": 1}},
   {"fromFrame": 60, "toFrame": 69, "actions": {"look_x": 0.5}}
 ]
