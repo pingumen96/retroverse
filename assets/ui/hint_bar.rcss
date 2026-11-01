@@ -1,7 +1,7 @@
 /*
 	The hints' glyphs (ui/hint_bar.hpp, ADR-0018 §7), linked after a document's own style sheet. A document styles its glyph's
 	round shape (.pad, .key, .kbd); ui::HintBarView gives it the name, a face button's colour, or hint-wide for a name
-	longer than a letter. The element's own class outweighs nothing here: "span" makes these win over a document's .pad.
+	longer than a letter. The rules name "span" to outweigh a document's one-class rules, its compact theme's among them.
 */
 
 span.hint-wide {

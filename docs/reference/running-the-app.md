@@ -650,7 +650,7 @@ build/rvdata`).
   output over `--audio` (the test presets, `scripts/real-library.ps1` and the smoke tests' runs set it; `device` or
   another value is ignored with a warning); a device that does not open falls back to `null` (reason `device-failed`),
   and `video.json`'s `audio.mode` `off` means `off`. `--mute` (or `audio.muted`) starts muted; F8 (`toggle_mute`, no pad
-  button) mutes and sounds again at once. One screen is heard: the visible one playing of the best class (`direct`,
+  button unless Controlli gives it one) mutes and sounds again at once. One screen is heard: the visible one playing of the best class (`direct`,
   `focus`, `room`, `ambient`), then the nearest, within `proximityMeters` (the screen heard keeps it until one of its
   class is 0.5 m nearer), while the eye is in the room whose screens are bound (in a hall the last room's screens are
   silent); a change cross-fades in 300 ms, a pause fades out in 30 ms, and the other slots' decoders discard their audio
@@ -714,11 +714,12 @@ build/rvdata`).
   (`waiting`, `playing <w>x<h>`, `paused`, `failed <reason>`, `verdict <reason>`) and `manual` (`found <file>`,
   `missing <reason>`, `opened`, `refused`, `unsupported <reason>`, `failed <reason>`).
 - Controls go through the action map (`assets/config/default_bindings.json`, overridden per action by
-  `<user data>/config/bindings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
+  `<user data>/config/bindings.json`, then by the settings screen's Controlli in `settings.json`): WASD/arrows walk (Left Shift sprints), the mouse looks around once captured,
   gamepad sticks walk and look; Tab (gamepad Y) opens the quick catalog (below); M (gamepad Back/Select) opens the
   directory, E (gamepad A) at an elevator, the hub's totem or a proxy of its showcase too (above); P (gamepad X) pins
   in the editor (`edit_pin`, I4b step 3, above), Q and R (the gamepad's shoulders) turn a fixture it holds
-  (`edit_rotate_left`, `edit_rotate_right`, I4b step 4); Esc (gamepad B)
+  (`edit_rotate_left`, `edit_rotate_right`, I4b step 4); F10 (gamepad Start) opens the menu; in a screen F2 and F3
+  (the shoulders) change the list or group, F4 (X) is Informazioni or Ripristina, F6 (Y) Vedi media; Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
   panel, else steps back through the menu, the quick catalog or the directory and closes it, else releases the mouse
   (only Esc: a pad's B goes on), else closes the overlay, else **opens the menu** (ADR-0018 §1; the model viewer and the
@@ -737,14 +738,26 @@ build/rvdata`).
 - **The settings screen** (I7 step 1, ADR-0018 §2, §3: `app::settingRows()`, `ui::SettingsModel`,
   `assets/ui/settings.rml`): five groups, Schermo (window or borderless fullscreen, text scale 100 or 125%, FOV 70 to
   110 degrees or the scene's), Audio (general and video volume, mute, sound off), Mondo (lighting, `reduceMotion`, clips
-  on or off, CRT effect, the TVs' programme), Controlli (mouse and stick sensitivity, invert Y; the bindings come at step
-  3), VR (start in the headset, turn, vignette, walking relative to, posture, quality, refresh rate). The shoulders
+  on or off, CRT effect, the TVs' programme), Controlli (mouse and stick sensitivity, invert Y, the bindings: below), VR (start in the headset, turn, vignette, walking relative to, posture, quality, refresh rate). The shoulders
   change group, up and down the row, left and right its value, A flips or moves on, X restores the row (`Ripristina`),
   the group's last row is `Ripristina tutto`, which asks once; B goes back to the menu. Everything takes a click as its
   key does, so VR's ray works; in a headset the window and FOV rows are hidden. Every change applies at once, but: the
   lighting profile and the CRT effect commit the floor shown again (nothing moves, the walker stays; the rows say so),
   the VR rows apply at the next session, and sound turned on in a run that started with it off comes at the next start.
   The mute row is what a run starts with; F8 changes the run only. A hidden window (`--hidden`) never changes its mode.
+- **Hints and remapping** (I7 step 3, ADR-0018 §7, `docs/i7/step-3.md`). A hint's verb is the document's, its key comes
+  from the active map and the device used last (`hint-action`, `rv/ui/hint_bar.hpp`; names in
+  `assets/ui/key_labels.json`); an action with no binding on that device hides its hint. Controlli lists "Nel mondo" and
+  "Nei menu", each action's key and pad button: A (or a click) waits 5 s for a press, of a key, a pad button or a trigger,
+  and it takes that device's slot alone (Interact keeps its click). Another action of the same context with that press
+  offers a swap; one that is not on the list, or a text field's key for a menu action, is refused and the wait goes on; so
+  is a swap that would leave UiActivate, UiBack or Menu without their key or button, which they keep whatever a file says.
+  `Ripristina predefiniti` asks once and removes `settings.json`'s `bindings`, showing the hand-written file through.
+  `--safe-bindings` leaves that section out of the run and shows only that button, to get out of a bad map. In a headset a
+  pad is remapped like any pad; Touch controllers reach the map as a pad does (`docs/i7/step-3.md`).
+- **"Controller scollegato"** (FR-029): when the last pad goes, a small notice over whatever shows, until a pad is back or
+  8 s pass; the report's `controls` has `padsLost`, `padsBack`, `noticeShown`, and `device`, `hints`, `hintsOutside`,
+  `captures`, `bindings`, `safeBindings`.
 - **`<user data>/settings.json`** (`core::SettingsFile`, `Paths::settingsFile()`): what the screen changed, written off
   the main thread when the screen closes, before a launch and at the end of the run; never under `config` or ES-DE's
   folders. Plain JSON, `{"schemaVersion": 1, "video": {...}, "world": {...}, "bindings": {...}, "player": {...}, "xr":
@@ -808,7 +821,10 @@ build/rvdata`).
   threshold) and logs the pose at the end of each step; a step may carry `"text"` (UTF-8, 1 to 256 bytes, no control
   character), typed once on its `fromFrame` into the product UI's focused text field (the quick catalog's search field
   is two `ui_up` above the list's first game), or `"phase": "<name>"`, a phase of the run report open on its frames,
-  with or without actions (`measurement_phases.json`). Only the listed actions are scripted: in a visible window with
+  with or without actions (`measurement_phases.json`), or `"raw"` (I7 step 3: `{"keys": ["insert"], "padButtons":
+  ["west"], "padAxes": {"left_trigger": 1}, "padConnected": true}`, the devices themselves on its frames, through the
+  bindings, what a capture reads and a rebound action needs), or `"device": "pad"` / `"keys"`, the device used last from
+  its `fromFrame` on, which the hints follow. Only the listed actions are scripted: in a visible window with
   focus, keys and pads still drive the others, so automated runs add `--hidden`. `--fixed-dt <seconds>`
   replaces the measured frame time, for the walker and the shader time alike, so scripted runs are reproducible.
   Frame-limited runs log the final camera (`Final camera after N frame(s) (T s simulated): feet ..., yaw ..., pitch
