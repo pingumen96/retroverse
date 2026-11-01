@@ -1,0 +1,30 @@
+<rml>
+<head>
+	<!--
+		The menu (ADR-0018 §1): pad Start, or Back's last level. It holds what is not about the building: Riprendi,
+		Impostazioni and Esci, which asks once; each later step of I7 adds its section's button here. A game left running
+		stays running.
+		Bound to the data model "system_menu" of rv::ui::SystemMenuScreen (src/ui/src/system_menu_screen.cpp); its ids are
+		rv::ui::elementIdOf()'s (src/ui/include/rv/ui/system_menu_model.hpp). view: main, confirm. The focus is the model's;
+		the input stays with the application, a click presses a button (VR's ray too).
+	-->
+	<title>Menu</title>
+	<link type="text/rcss" href="system_menu.rcss"/>
+</head>
+<body data-model="system_menu">
+	<div id="system-menu" class="panel">
+		<div data-if="view == 'main'">
+			<h1>Retroverse</h1>
+			<button id="sm-resume" class="action primary" data-event-click="button('resume')">Riprendi</button>
+			<button id="sm-settings" class="action" data-event-click="button('settings')">Impostazioni</button>
+			<button id="sm-quit" class="action" data-event-click="button('quit')">Esci</button>
+		</div>
+		<div data-if="view == 'confirm'">
+			<h1>Uscire da Retroverse?</h1>
+			<p class="note">Un gioco lasciato in esecuzione resta aperto.</p>
+			<button id="sm-stay" class="action primary" data-event-click="button('stay')">Annulla</button>
+			<button id="sm-confirm-quit" class="action danger" data-event-click="button('confirm-quit')">Esci</button>
+		</div>
+	</div>
+</body>
+</rml>
