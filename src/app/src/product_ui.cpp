@@ -230,7 +230,6 @@ struct ProductUi::Impl {
     /// A catalog of the wizard's own stands (page 4 tried before).
     bool wizardCatalog = false;
     bool wizardWorldStarted = false;
-    bool padLast = false;
     std::optional<ui::WizardPage> wizardPageSeen;
     std::optional<WizardRecord> wizardRecord;
     static constexpr std::chrono::minutes kWizardWaitLimit{30};
@@ -649,7 +648,7 @@ struct ProductUi::Impl {
     void syncMenu() {
         if (wizardScreen) {
             if (wizardShown()) {
-                wizardScreen->show(wizardFlow->model(), wizardFlow->browser(), padLast);
+                wizardScreen->show(wizardFlow->model(), wizardFlow->browser());
             } else {
                 wizardScreen->hide();
             }
@@ -1929,9 +1928,6 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.followWizard();
 
     s.commands.clear();
-    if (uiActions != nullptr) {
-        s.padLast = uiActions->activeDevice() == input::DeviceKind::Gamepad;
-    }
     const auto followPreviewButtons = [&] {
         if (std::vector<ui::RegenerateButton> buttons = s.preview.buttons(); buttons != s.previewButtonsSeen) {
             s.previewButtonsSeen = std::move(buttons);

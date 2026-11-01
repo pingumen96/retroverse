@@ -6,7 +6,7 @@ Roadmap row: I7 step 3. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
 
 - **The hints** (`input::KeyLabels`, `input::bindingLabel()`, `ui::HintBar`, `ui::HintBarView`, `assets/ui/key_labels.json`):
   every document's hints come from the active map and the last device. A document declares a hint in one line and links
-  `hint_bar.rcss` after its own sheet; `wizard.rml` needs nothing else, and no screen does anything:
+  `hint_bar.rcss` after its own sheet, as `wizard.rml` does (its tutorial page too: a line with nothing bound on the device hides); no screen does anything:
 
   ```html
   <span class="hint"><span class="pad" hint-action="ui_activate"></span>Avvia</span>

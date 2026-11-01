@@ -8,13 +8,14 @@
 		unreachable, unreadable, unknown, checking. problem: none, home-unknown, home-missing, rom-root-unknown,
 		media-root-unknown, data-directory-inside, rom-root-unavailable. failure: library-unreadable, library-exists,
 		library-backup, library-write, catalog, read, busy. importPhase: reading, media, comparing, writing. browserState:
-		closed, loading, listed, failed; browserFailure: missing, unreachable, unreadable. device: pad, keys (the hints'
-		glyphs). Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the models';
+		closed, loading, listed, failed; browserFailure: missing, unreachable, unreadable. The hints come from the
+		active bindings (ui/hint_bar.hpp). Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the models';
 		the input stays with the application; a click presses what a key would (VR's ray too). The bundled fonts have no
 		symbols: the arrows are plain text.
 	-->
 	<title>Benvenuto</title>
 	<link type="text/rcss" href="wizard.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="wizard">
 	<div id="wizard-panel" class="panel" data-if="!browserOpen">
@@ -128,13 +129,13 @@
 				<p class="note" data-if="worldWork != 'done'">L'edificio si sta componendo...</p>
 				<p class="note" data-if="worldWork == 'done'">L'edificio è pronto.</p>
 				<div class="tutorial">
-					<p class="control"><span class="kbd wide">Levetta sinistra</span>Cammina</p>
-					<p class="control"><span class="kbd wide">Levetta destra</span>Guarda</p>
-					<p class="control"><span class="kbd pad-a">A</span>Interagisci, avvia, conferma</p>
-					<p class="control"><span class="kbd pad-b">B</span>Indietro</p>
-					<p class="control"><span class="kbd pad-y">Y</span>Catalogo rapido</p>
-					<p class="control"><span class="kbd wide">Select</span>Indice dell'edificio</p>
-					<p class="control"><span class="kbd wide">Start</span>Menu</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="move_forward"></span>Cammina</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="look_x"></span>Guarda</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="interact"></span>Interagisci, avvia, conferma</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="back"></span>Indietro</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="quick_catalog"></span>Catalogo rapido</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="map"></span>Indice dell'edificio</p>
+					<p class="control hint-prose"><span class="kbd" hint-action="menu"></span>Menu</p>
 				</div>
 			</div>
 		</div>
@@ -147,10 +148,10 @@
 			<button id="wz-quit" class="action danger" data-if="showQuit" data-event-click="button('quit')">Esci</button>
 		</div>
 		<div id="wz-hints">
-			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Conferma</span>
-			<span class="hint" data-if="page == 'detection'"><span class="kbd wide">Su Giù</span>Scegli una cartella</span>
-			<span class="hint" data-if="page == 'appearance'"><span class="kbd wide">Sinistra Destra</span>Cambia</span>
-			<span class="hint" data-if="showPrevious"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
+			<span class="hint"><span class="kbd" hint-action="ui_activate"></span>Conferma</span>
+			<span class="hint" data-if="page == 'detection'"><span class="kbd" hint-action="ui_up ui_down"></span>Scegli una cartella</span>
+			<span class="hint" data-if="page == 'appearance'"><span class="kbd" hint-action="ui_left ui_right"></span>Cambia</span>
+			<span class="hint" data-if="showPrevious"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
 		</div>
 	</div>
 
@@ -175,9 +176,9 @@
 			<button id="fb-cancel" class="action" data-event-click="browser('cancel')">Annulla</button>
 		</div>
 		<div id="fb-hints">
-			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Apri</span>
-			<span class="hint" data-if="device == 'pad'"><span class="kbd pad-x">X</span>Usa questa cartella</span>
-			<span class="hint"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Annulla</span>
+			<span class="hint"><span class="kbd" hint-action="ui_activate"></span>Apri</span>
+			<span class="hint"><span class="kbd" hint-action="ui_info"></span>Usa questa cartella</span>
+			<span class="hint"><span class="kbd" hint-action="ui_back"></span>Annulla</span>
 		</div>
 	</div>
 </body>
