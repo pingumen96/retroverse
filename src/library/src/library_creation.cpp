@@ -129,6 +129,10 @@ LibraryStage libraryStage(const core::Paths& paths) {
     if (!database) {
         return LibraryStage::Ready;
     }
+    // Made and killed before its migration: no schema, so nothing was ever imported.
+    if (const auto version = database->writer().userVersion(); version && *version == 0) {
+        return LibraryStage::NoCatalog;
+    }
     auto reader = database->openReader();
     if (!reader) {
         return LibraryStage::Ready;

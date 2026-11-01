@@ -117,7 +117,8 @@ public:
 /// How far a data directory has come (ADR-0018 §4: the files say, no record of its own).
 enum class LibraryStage : std::uint8_t {
     NoLibrary,  ///< no library.json: the wizard starts on its first page
-    NoCatalog,  ///< library.json, but no database, or one no import ever finished in: it resumes at its preview
+    NoCatalog,  ///< library.json, but no database, one with no schema yet, or one no import ever finished in: it resumes
+                ///< at its preview
     Ready,      ///< a catalog holds the library, or the database cannot be read (the app's notice says so)
 };
 /// "no-library", "no-catalog", "ready".

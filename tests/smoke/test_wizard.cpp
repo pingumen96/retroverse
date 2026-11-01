@@ -248,6 +248,12 @@ TEST_CASE("wizard: a run with library.json and no catalog resumes at the preview
     INFO(created.describe());
     REQUIRE(created.exitCode == 0);
     const std::string before = rv::core::readTextFile(dir / "data" / "config" / "library.json").value();
+    // A wizard killed as the database was made left this file: the same resume, the import making its schema.
+    SECTION("no database") {}
+    SECTION("a database file with no schema yet") {
+        fs::create_directories(dir / "data" / "database");
+        REQUIRE(rv::core::writeTextFileAtomic(dir / "data" / "database" / "retroverse.sqlite", "").has_value());
+    }
 
     Script script;
     script.wait(3);

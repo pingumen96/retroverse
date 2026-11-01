@@ -8,10 +8,16 @@
 #include <string>
 
 #include <rv/catalog/ids.hpp>
+#include <rv/catalog/import_service.hpp>
+#include <rv/catalog_db/catalog_store.hpp>
+#include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/migrator.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/esde/library_source.hpp>
+#include <rv/esde/media_resolver.hpp>
 #include <rv/library/folder_listing.hpp>
 #include <rv/library/library_creation.hpp>
 #include <rv/library/library_preview.hpp>
@@ -126,6 +132,33 @@ TEST_CASE("library: the stage a data directory stands at comes from its files", 
     CHECK(rv::library::libraryStage(paths) == LibraryStage::NoCatalog);
     // Asking made nothing.
     CHECK_FALSE(fs::exists(paths.userDataRoot() / "database"));
+
+    const fs::path file = rv::catalog_db::databaseFile(paths);
+    SECTION("a file nothing was written in: killed as it was made") {
+        fs::create_directories(file.parent_path());
+        REQUIRE(rv::core::writeTextFileAtomic(file, "").has_value());
+        CHECK(rv::library::libraryStage(paths) == LibraryStage::NoCatalog);
+    }
+    SECTION("a database opened, never migrated") {
+        { REQUIRE(rv::catalog_db::Database::open(file).has_value()); }
+        CHECK(rv::library::libraryStage(paths) == LibraryStage::NoCatalog);
+    }
+    SECTION("a database migrated, no import finished") {
+        { REQUIRE(rv::catalog_db::openCatalogDatabase(file).has_value()); }
+        CHECK(rv::library::libraryStage(paths) == LibraryStage::NoCatalog);
+    }
+    SECTION("a catalog that holds its library") {
+        const auto profile = rv::esde::readLibraryFile(paths.configDir() / rv::esde::kLibraryFileName);
+        REQUIRE(profile.has_value());
+        auto database = rv::catalog_db::openCatalogDatabase(file);
+        REQUIRE(database.has_value());
+        auto store = rv::catalog_db::SqliteCatalogStore::open(*database).value();
+        rv::esde::EsdeLibrarySource source;
+        rv::esde::EsdeMediaResolver media(rv::library::mediaRootOf(*profile));
+        rv::catalog::ImportService service(source, media, *store, nullptr);
+        REQUIRE(service.run(*profile, rv::catalog::ImportOptions{}).has_value());
+        CHECK(rv::library::libraryStage(paths) == LibraryStage::Ready);
+    }
 }
 
 TEST_CASE("library: the preview reads without writing and counts as the dry run", "[library]") {
