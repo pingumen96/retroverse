@@ -334,6 +334,9 @@ struct PreviewApp::State {
         case app::BackAction::CloseOverlay:
             devUi->setVisible(false);
             break;
+        case app::BackAction::MenuBack:
+        case app::BackAction::OpenMenu: // no product UI here
+            break;
         case app::BackAction::Quit:
             spdlog::info("Back pressed, quitting");
             context.requestQuit();
