@@ -101,7 +101,8 @@ screenshots: `docs/reference/visual-verification.md`.
   `tests/input_scripts`.
 - Configuration: shipped defaults under `assets/` (JSON with comments), the user's overrides under
   `<user data>/config`, which Retroverse reads and never writes (`library.json` is written only by `retroverse-cli
-  library create`). `third_party/glad` is generated: never edit it by hand.
+  library create` and the wizard). What the settings screen changes goes to `<user data>/settings.json`, over those
+  files, only the keys the user changed and never a key that shapes a plan (ADR-0018 §2). `third_party/glad` is generated: never edit it by hand.
 
 ## Conventions
 
@@ -120,7 +121,8 @@ screenshots: `docs/reference/visual-verification.md`.
   moves a placement. A GameId is derived once and then persisted.
 - The catalog database: only `database.cpp` includes `sqlite3.h`; one writer thread, read-only readers; writes of
   identities, aliases or index rows hold the import lock. ES-DE's scraper credentials are never read, logged or stored.
-- Product UI strings live in the RML documents under `assets/ui` (Italian); bundled fonts only.
+- Product UI strings live in the RML documents under `assets/ui` (Italian), the keys' names in
+  `assets/ui/key_labels.json`; bundled fonts only.
 - Identifiers, comments, documentation and commit messages in English. More: `docs/reference/conventions.md`.
 
 ## Safety rules
@@ -130,7 +132,9 @@ screenshots: `docs/reference/visual-verification.md`.
   and run only through `./scripts/real-library.ps1` (ES-DE closed, read-only snapshots before and after, 0
   differences). Product code and new tests never name this machine's library paths.
 - Anything automated that may start an emulator sets `RV_LAUNCH_ALLOWLIST` (absolute paths, `;`-separated; the build's
-  `rv_fake_emulator.exe`). DuckStation never starts; RetroArch only with an isolated configuration under `build/`.
+  `rv_fake_emulator.exe`). DuckStation never starts; RetroArch only with an isolated configuration under `build/`. An
+  unattended run refuses a launch test without that variable, and a frame-limited run never discovers ES-DE by itself:
+  the wizard needs `--wizard --esde-home <fixture>` (ADR-0018 §4, §6).
   Product code starts processes only through `rv_launcher` / `Win32ProcessRunner`: argv, never a shell string, and it
   never terminates an emulator.
 - Automated tests never take the Windows foreground: no visible or activated window, no console window, no injected

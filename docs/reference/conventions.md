@@ -148,7 +148,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   gives one argument per element, never split again (`rv/launcher/arg_template.hpp`); `{env:NAME}` takes only the
   allow-listed folder variables, since command lines are logged. (Test harnesses start their own children:
   `tests/support/child_process.hpp`, `rv_fake_emulator`.)
-- Product UI strings live in the RML documents under `assets/ui` (Italian until localization tables exist); sizes in dp,
-  bundled fonts only, no color transitions (RmlUi rebuilds the geometry of every animated frame).
+- Product UI strings live in the RML documents under `assets/ui` (Italian until localization tables exist), the keys'
+  names in `assets/ui/key_labels.json` (ADR-0018 §7); sizes in dp, bundled fonts only, no color transitions (RmlUi rebuilds the geometry of every animated frame).
 - Language: identifiers, comments, documentation and commit messages in English.
 

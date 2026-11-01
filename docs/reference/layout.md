@@ -260,6 +260,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `afternoon`), `themes/` (the room's materials); prefab families in
   `assets/manifests/families.json`. The one exception,
   `library.json` (the library's id, the ES-DE home and install, root overrides), is written only by `retroverse-cli
-  library create`; choices made later go to the database (ADR-0008 §6).
+  library create` and the wizard (ADR-0018 §4); choices made later go to the database (ADR-0008 §6). What the settings
+  screen changes goes to `<user data>/settings.json`, outside `config`: one section per file it overlays, only the keys
+  the user changed, read over the shipped defaults and the user's file (ADR-0018 §2).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 
