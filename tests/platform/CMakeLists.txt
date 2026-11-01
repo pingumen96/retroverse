@@ -10,7 +10,7 @@ file(GLOB RV_PLATFORM_TEST_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR
 add_executable(rv_platform_tests ${RV_PLATFORM_TEST_SOURCES})
 rv_set_target_defaults(rv_platform_tests)
 rv_enable_long_paths(rv_platform_tests)
-target_link_libraries(rv_platform_tests PRIVATE rv_platform Catch2::Catch2WithMain)
+target_link_libraries(rv_platform_tests PRIVATE rv_platform rv_ui_model Catch2::Catch2WithMain)
 
 catch_discover_tests(rv_platform_tests
     DISCOVERY_MODE PRE_TEST

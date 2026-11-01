@@ -215,8 +215,6 @@ struct WorldEditState {
     /// last (moveHeldLights()).
     std::vector<std::pair<std::size_t, scene::Light>> heldLights;
     std::optional<world::FixtureTransform> heldLightsAt;
-    /// The device used last (the bar's glyphs).
-    input::DeviceKind device = input::DeviceKind::KeyboardMouse;
     /// The session's record (also pushed into the run report's world.edits at its end, or the run's).
     WorldEditRecord record;
 };

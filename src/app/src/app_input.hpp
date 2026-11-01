@@ -42,6 +42,12 @@ public:
     /// The actions of a VR frame's controllers alone, through the same bindings and settings, without the devices or
     /// the script (I10 step 10): while a game runs in VR the pad and the keyboard play it, the controllers still walk.
     [[nodiscard]] input::ActionState controllersAlone(const xr::VirtualPad& controllers);
+    /// The bindings from now on (remapping, I7 step 3); what is held now reports no press.
+    void setBindings(const input::ActionMap& bindings);
+    /// The last update()'s raw frame, the script's "raw" and a headset's controllers in it: what a capture reads.
+    [[nodiscard]] const input::RawInputFrame& rawFrame() const noexcept { return m_raw; }
+    /// A pad is plugged in (the script's "raw" as a real one; a headset's controllers are none).
+    [[nodiscard]] bool padConnected() const noexcept { return m_padConnected; }
 
     /// See platform::MouseCapture::captureWhenFocused(); `reason` completes the log line.
     void captureMouseWhenFocused(std::string_view reason);
@@ -67,6 +73,8 @@ private:
     /// The bindings again for controllersAlone(): its own held state, apart from the devices'.
     input::InputSystem m_controllers;
     std::optional<input::InputScriptPlayer> m_script;
+    input::RawInputFrame m_raw;
+    bool m_padConnected = false;
     float m_mouseWheel = 0.0f;
 };
 

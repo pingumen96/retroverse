@@ -30,6 +30,8 @@ struct SettingsLayers {
     nlohmann::json world = nlohmann::json::object();
     nlohmann::json player = nlohmann::json::object();
     nlohmann::json xr = nlohmann::json::object();
+    /// Action names over binding lists (ActionMap::toJson()'s "bindings"), the user's file over the shipped map.
+    nlohmann::json bindings = nlohmann::json::object();
 };
 
 class SettingsStore {
@@ -93,9 +95,6 @@ private:
     std::atomic<bool> m_writeFailed{false};
 };
 
-/// settings.json's section for bindings.json: action names over binding lists, as that file's "bindings" holds them.
-inline constexpr std::string_view kBindingsSettingsSection = "bindings";
-
 /// "<section>.<key>" of every key of `file` that shadows a hand-written value of <userConfigDir>/<section's file>
 /// (ADR-0018 §2: logged once at the start). Reads only.
 [[nodiscard]] std::vector<std::string> shadowedSettings(const core::SettingsFile& file,
@@ -104,5 +103,8 @@ inline constexpr std::string_view kBindingsSettingsSection = "bindings";
 /// settings.json's bindings over `map` (ADR-0018 §7: each action named replaces that action's, after the user's file), a
 /// list applyOverrides() refuses left out alone (logged). How many actions changed.
 std::size_t applySettingsBindings(input::ActionMap& map, const core::SettingsFile& file);
+/// `section` (action names over binding lists) over `map`, action by action: what is no action, or a list
+/// applyOverrides() refuses, is left out alone (logged). How many actions changed. Every path to the map goes through it.
+std::size_t applyBindingSection(input::ActionMap& map, const nlohmann::json& section);
 
 } // namespace rv::app

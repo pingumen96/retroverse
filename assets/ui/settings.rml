@@ -8,13 +8,16 @@
 		ids below (src/ui/include/rv/ui/settings_model.hpp). group: display, audio, world, controls, vr. A row: key
 		(app::SettingRow::id(), section and dotted key), kind (toggle, choice, slider), value (a toggle's on or off, a
 		choice's value as text), text (a slider's number), fill (its bar), scene (the FOV's null), note ('', commit, session,
-		start), overridden. device: pad, keys (the hints' glyphs, the device used last; step 3 takes them from the active
-		bindings). Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the
+		start), overridden; a binding row (I7 step 3, ADR-0018 §7): keyLabel, padLabel (names from key_labels.json), heading
+		(world, ui: the list it opens). capture: '', waiting, offer; captureKey, captureOther (rows), captureRefused
+		(reserved, locked), captureSeconds. The hints come from the active bindings (ui/hint_bar.hpp): a hint-action names
+		the actions, the verb stays here. Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the
 		model's; the input stays with the application; a click presses what a key would (VR's ray too). The bundled fonts
 		have no symbols: the arrows are plain text.
 	-->
 	<title>Impostazioni</title>
 	<link type="text/rcss" href="settings.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="settings">
 	<div id="settings-panel" class="panel">
@@ -28,6 +31,12 @@
 		</div>
 		<div id="st-list">
 			<div class="slot" data-for="row : rows">
+				<div class="list-title" data-if="row.heading != ''">
+					<span class="title-text" data-if="row.heading == 'world'">Nel mondo</span>
+					<span class="title-text" data-if="row.heading == 'ui'">Nei menu</span>
+					<span class="title-device">Tastiera</span>
+					<span class="title-device">Controller</span>
+				</div>
 				<div class="row" data-attr-id="row.elementId">
 					<div class="label" data-event-click="row(row.index)">
 						<!-- Schermo -->
@@ -49,6 +58,29 @@
 						<p data-if="row.key == 'player.mouseSensitivity'">Sensibilità del mouse</p>
 						<p data-if="row.key == 'player.stickSensitivity'">Sensibilità della levetta</p>
 						<p data-if="row.key == 'player.invertY'">Inverti lo sguardo verticale</p>
+						<!-- Controlli: the bindings -->
+						<p data-if="row.key == 'bindings.interact'">Interagisci</p>
+						<p data-if="row.key == 'bindings.back'">Indietro</p>
+						<p data-if="row.key == 'bindings.quick_catalog'">Catalogo rapido</p>
+						<p data-if="row.key == 'bindings.map'">Indice</p>
+						<p data-if="row.key == 'bindings.menu'">Menu</p>
+						<p data-if="row.key == 'bindings.confirm'">Conferma</p>
+						<p data-if="row.key == 'bindings.sprint'">Corri</p>
+						<p data-if="row.key == 'bindings.toggle_mute'">Muto</p>
+						<p data-if="row.key == 'bindings.edit_pin'">Modifica: fissa</p>
+						<p data-if="row.key == 'bindings.edit_rotate_left'">Modifica: ruota a sinistra</p>
+						<p data-if="row.key == 'bindings.edit_rotate_right'">Modifica: ruota a destra</p>
+						<p data-if="row.key == 'bindings.ui_activate'">Conferma</p>
+						<p data-if="row.key == 'bindings.ui_back'">Indietro</p>
+						<p data-if="row.key == 'bindings.ui_media'">Vedi media</p>
+						<p data-if="row.key == 'bindings.ui_info'">Informazioni</p>
+						<p data-if="row.key == 'bindings.ui_filter_previous'">Elenco precedente</p>
+						<p data-if="row.key == 'bindings.ui_filter_next'">Elenco successivo</p>
+						<p data-if="row.key == 'bindings.ui_page_up'">Pagina su</p>
+						<p data-if="row.key == 'bindings.ui_page_down'">Pagina giù</p>
+						<p data-if="row.key == 'bindings.ui_home'">Primo elemento</p>
+						<p data-if="row.key == 'bindings.ui_end'">Ultimo elemento</p>
+						<p data-if="row.key == 'bindings.defaults'">Ripristina predefiniti</p>
 						<!-- VR -->
 						<p data-if="row.key == 'xr.display.mode'">Avvia nel visore</p>
 						<p data-if="row.key == 'xr.comfort.turn'">Rotazione</p>
@@ -61,7 +93,14 @@
 						<p class="row-note" data-if="row.note == 'session'">Alla prossima sessione VR</p>
 						<p class="row-note" data-if="row.note == 'start'">Al prossimo avvio</p>
 					</div>
-					<div class="control">
+					<div class="control" data-if="row.kind == 'binding'" data-event-click="row(row.index)">
+						<div class="bind-cell"><p data-if="row.keyLabel != ''">{{ row.keyLabel }}</p><p data-if="row.keyLabel == ''">-</p></div>
+						<div class="bind-cell"><p data-if="row.padLabel != ''">{{ row.padLabel }}</p><p data-if="row.padLabel == ''">-</p></div>
+					</div>
+					<div class="control" data-if="row.kind == 'action'" data-event-click="row(row.index)">
+						<div class="value"><p data-if="!confirmAction">Torna ai tasti dei file</p><p data-if="confirmAction">Premi di nuovo</p></div>
+					</div>
+					<div class="control" data-if="row.kind != 'binding' && row.kind != 'action'">
 						<button class="arrow" data-if="row.kind != 'toggle'" data-event-click="step(row.index, -1)">&lt;</button>
 						<div class="value" data-event-click="row(row.index)">
 							<!-- A slider: its bar and its number. -->
@@ -116,11 +155,29 @@
 				<p data-if="confirmAll">Premi di nuovo per tornare ai valori dei file di configurazione</p>
 			</div>
 		</div>
-		<div id="st-hints">
-			<span class="hint" data-if="device == 'pad'"><span class="kbd wide">LB RB</span>Gruppo</span>
-			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Cambia</span>
-			<span class="hint" data-if="device == 'pad'"><span class="kbd pad-x">X</span>Ripristina</span>
-			<span class="hint"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
+		<!-- A capture: any key or pad button; the mouse clicks Annulla (VR's ray too). A clash: the swap, or nothing. -->
+		<div id="st-capture" data-if="capture != ''">
+			<div data-if="capture == 'waiting'">
+				<p><span data-if="captureKey == 'bindings.interact'">Interagisci</span><span data-if="captureKey == 'bindings.back'">Indietro</span><span data-if="captureKey == 'bindings.quick_catalog'">Catalogo rapido</span><span data-if="captureKey == 'bindings.map'">Indice</span><span data-if="captureKey == 'bindings.menu'">Menu</span><span data-if="captureKey == 'bindings.confirm'">Conferma</span><span data-if="captureKey == 'bindings.sprint'">Corri</span><span data-if="captureKey == 'bindings.toggle_mute'">Muto</span><span data-if="captureKey == 'bindings.edit_pin'">Modifica: fissa</span><span data-if="captureKey == 'bindings.edit_rotate_left'">Modifica: ruota a sinistra</span><span data-if="captureKey == 'bindings.edit_rotate_right'">Modifica: ruota a destra</span><span data-if="captureKey == 'bindings.ui_activate'">Conferma</span><span data-if="captureKey == 'bindings.ui_back'">Indietro</span><span data-if="captureKey == 'bindings.ui_media'">Vedi media</span><span data-if="captureKey == 'bindings.ui_info'">Informazioni</span><span data-if="captureKey == 'bindings.ui_filter_previous'">Elenco precedente</span><span data-if="captureKey == 'bindings.ui_filter_next'">Elenco successivo</span><span data-if="captureKey == 'bindings.ui_page_up'">Pagina su</span><span data-if="captureKey == 'bindings.ui_page_down'">Pagina giù</span><span data-if="captureKey == 'bindings.ui_home'">Primo elemento</span><span data-if="captureKey == 'bindings.ui_end'">Ultimo elemento</span>: premi un tasto o un pulsante ({{ captureSeconds }} s)</p>
+				<p class="capture-note" data-if="captureRefused == 'reserved'">Quel comando è riservato: premine un altro.</p>
+				<p class="capture-note" data-if="captureRefused == 'locked'">Quel comando non può restare senza tasto: premine un altro.</p>
+				<div class="capture-buttons">
+					<button class="capture-button" data-event-click="capture_cancel()">Annulla</button>
+				</div>
+			</div>
+			<div data-if="capture == 'offer'">
+				<p>Già usato da <span data-if="captureOther == 'bindings.interact'">Interagisci</span><span data-if="captureOther == 'bindings.back'">Indietro</span><span data-if="captureOther == 'bindings.quick_catalog'">Catalogo rapido</span><span data-if="captureOther == 'bindings.map'">Indice</span><span data-if="captureOther == 'bindings.menu'">Menu</span><span data-if="captureOther == 'bindings.confirm'">Conferma</span><span data-if="captureOther == 'bindings.sprint'">Corri</span><span data-if="captureOther == 'bindings.toggle_mute'">Muto</span><span data-if="captureOther == 'bindings.edit_pin'">Modifica: fissa</span><span data-if="captureOther == 'bindings.edit_rotate_left'">Modifica: ruota a sinistra</span><span data-if="captureOther == 'bindings.edit_rotate_right'">Modifica: ruota a destra</span><span data-if="captureOther == 'bindings.ui_activate'">Conferma</span><span data-if="captureOther == 'bindings.ui_back'">Indietro</span><span data-if="captureOther == 'bindings.ui_media'">Vedi media</span><span data-if="captureOther == 'bindings.ui_info'">Informazioni</span><span data-if="captureOther == 'bindings.ui_filter_previous'">Elenco precedente</span><span data-if="captureOther == 'bindings.ui_filter_next'">Elenco successivo</span><span data-if="captureOther == 'bindings.ui_page_up'">Pagina su</span><span data-if="captureOther == 'bindings.ui_page_down'">Pagina giù</span><span data-if="captureOther == 'bindings.ui_home'">Primo elemento</span><span data-if="captureOther == 'bindings.ui_end'">Ultimo elemento</span>: scambiare i due?</p>
+				<div class="capture-buttons">
+					<button id="st-swap" class="capture-button" data-event-click="capture_swap()"><span class="kbd" hint-action="ui_activate"></span>Scambia</button>
+					<button id="st-keep" class="capture-button" data-event-click="capture_cancel()"><span class="kbd" hint-action="ui_back"></span>Annulla</button>
+				</div>
+			</div>
+		</div>
+		<div id="st-hints" data-if="capture == ''">
+			<span class="hint"><span class="kbd" hint-action="ui_filter_previous ui_filter_next"></span>Gruppo</span>
+			<span class="hint"><span class="kbd" hint-action="ui_activate"></span>Cambia</span>
+			<span class="hint"><span class="kbd" hint-action="ui_info"></span>Ripristina</span>
+			<span class="hint"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
 		</div>
 	</div>
 </body>

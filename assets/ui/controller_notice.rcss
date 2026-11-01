@@ -1,0 +1,51 @@
+/*
+	"Controller scollegato" (controller_notice.rml), in the panels' look (directory.rcss): the top of the view, centred,
+	over whatever shows. Sizes in dp.
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	pointer-events: none;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 20dp;
+	color: #F4EFE6;
+}
+
+div, p {
+	display: block;
+}
+
+#controller-notice {
+	position: absolute;
+	box-sizing: border-box;
+	top: 3%;
+	left: 30%;
+	width: 40%;
+	padding: 10dp 18dp;
+	text-align: center;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #C8645A;
+	border-radius: 14dp;
+}
+
+.title {
+	font-size: 24dp;
+	font-weight: bold;
+}
+
+.line {
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+@media (theme: compact) {
+	#controller-notice { left: 20%; width: 60%; padding: 6dp 14dp; }
+	.title { font-size: 21dp; }
+	.line { font-size: 16dp; }
+}

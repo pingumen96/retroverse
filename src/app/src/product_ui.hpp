@@ -17,6 +17,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
 #include <rv/input/action_state.hpp>
+#include <rv/input/raw_input.hpp>
 #include <rv/ui/directory_model.hpp>
 #include <rv/ui/game_card_model.hpp>
 #include <rv/ui/regenerate_preview_model.hpp>
@@ -65,6 +66,9 @@ struct MenuHooks {
     std::function<void()> settingsClosed;
     /// Esci, confirmed.
     std::function<void()> quit;
+    /// I7 step 3: what a press a capture read means for the row `key`, and the row that has it.
+    std::function<std::pair<ui::SettingsCapture, std::string>(const std::string& key, const input::Binding& press)>
+        judgeBinding;
 };
 
 /// What the application does for the wizard (I7 step 2, ADR-0018 §4), on the main thread. Its settings go through
@@ -145,6 +149,19 @@ public:
     void refreshSettings();
     /// The UI's text scale from now on (UiView::setTextScale).
     void setTextScale(float scale);
+
+    /// I7 step 3 (ADR-0018 §7): the bindings the hints name and the UI's keys, from now on.
+    void setBindings(const input::ActionMap& bindings);
+    /// The frame's raw input, what a capture reads, and the device used last, which the hints follow.
+    void inputFrame(const input::RawInputFrame& raw, input::DeviceKind device);
+    /// A capture of the settings screen waits for a press: the frame's actions act on nothing.
+    [[nodiscard]] bool capturingBinding() const noexcept;
+    /// `action`'s name on `device` (assets/ui/key_labels.json), "" when it has no binding there.
+    [[nodiscard]] std::string bindingLabel(input::Action action, input::DeviceKind device) const;
+    /// The same for a prompt, which must read: the other device's name when `device` has none.
+    [[nodiscard]] std::string promptLabel(input::Action action, input::DeviceKind device) const;
+    /// "Controller scollegato" shows, over whatever shows.
+    void setControllerNotice(bool shown);
 
     /// The directory (I4 step 7b; ADR-0013 §10; docs/i4/step-7a.md's contract: ui::DirectoryModel on
     /// assets/ui/directory.rml through ui::DirectoryScreen): open (the UI's input, its Back level), its floors and rooms

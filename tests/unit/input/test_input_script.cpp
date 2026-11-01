@@ -470,3 +470,85 @@ TEST_CASE("input/input_script: steps push the fake runtime's thumbsticks (I10 st
     CHECK(outOfRange.context == "script.json:/0/leftStick");
     CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightStick": [1]}])").context == "script.json:/0/rightStick");
 }
+
+TEST_CASE("input/input_script: raw steps go through the bindings, with edges and a pad (I7 step 3)",
+          "[input][input_script]") {
+    using namespace rv::input;
+    InputScriptPlayer player(parseOk(R"([
+        {"fromFrame": 2, "toFrame": 3, "raw": {"keys": ["insert"]}},
+        {"fromFrame": 5, "toFrame": 5, "raw": {"padButtons": ["west"], "padAxes": {"left_trigger": 1}}},
+        {"fromFrame": 7, "toFrame": 8, "raw": {"padConnected": true}},
+        {"fromFrame": 9, "toFrame": 9, "raw": {"padConnected": false}}
+    ])"));
+    const auto frameOf = [&](std::uint64_t frame) {
+        RawInputFrame raw;
+        player.applyRaw(frame, raw);
+        return raw;
+    };
+    CHECK(frameOf(1).keysDown.none());
+    RawInputFrame raw = frameOf(2);
+    CHECK(raw.keysDown[toIndex(Key::Insert)]);
+    CHECK(raw.keysPressed[toIndex(Key::Insert)]);
+    CHECK(raw.lastActiveDevice == DeviceKind::KeyboardMouse);
+    raw = frameOf(3);
+    CHECK(raw.keysDown[toIndex(Key::Insert)]);
+    CHECK_FALSE(raw.keysPressed[toIndex(Key::Insert)]);
+    raw = frameOf(4);
+    CHECK_FALSE(raw.keysDown[toIndex(Key::Insert)]);
+    CHECK(raw.keysReleased[toIndex(Key::Insert)]);
+
+    raw = frameOf(5);
+    CHECK(raw.gamepadConnected);
+    CHECK(raw.gamepadButtonsPressed[toIndex(GamepadButton::West)]);
+    CHECK(raw.gamepadAxes[toIndex(GamepadAxis::LeftTrigger)] == 1.0f);
+    CHECK(raw.lastActiveDevice == DeviceKind::Gamepad);
+    // A press makes its device the one used last, and it stays so.
+    raw = frameOf(6);
+    CHECK_FALSE(raw.gamepadConnected);
+    CHECK(raw.lastActiveDevice == DeviceKind::Gamepad);
+
+    CHECK(frameOf(7).gamepadConnected);
+    RawInputFrame plugged;
+    plugged.gamepadConnected = true;
+    player.applyRaw(9, plugged);
+    CHECK_FALSE(plugged.gamepadConnected); // a real pad hidden
+}
+
+TEST_CASE("input/input_script: a device step lasts until another says (I7 step 3)", "[input][input_script]") {
+    using namespace rv::input;
+    InputScriptPlayer player(parseOk(R"([
+        {"fromFrame": 2, "toFrame": 2, "device": "pad"},
+        {"fromFrame": 4, "toFrame": 4, "device": "keys"}
+    ])"));
+    const auto deviceOf = [&](std::uint64_t frame) {
+        RawInputFrame raw;
+        raw.lastActiveDevice = DeviceKind::Gamepad; // a real device says otherwise: only a step overrides it
+        player.applyRaw(frame, raw);
+        return raw.lastActiveDevice;
+    };
+    CHECK(deviceOf(1) == DeviceKind::Gamepad);
+    CHECK(deviceOf(2) == DeviceKind::Gamepad);
+    CHECK(deviceOf(3) == DeviceKind::Gamepad);
+    CHECK(deviceOf(4) == DeviceKind::KeyboardMouse);
+    CHECK(deviceOf(5) == DeviceKind::KeyboardMouse);
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "device": "mouse"}])").context == "script.json:/0/device");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "raw": {"keys": ["nope"]}}])").context ==
+          "script.json:/0/raw/keys");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "raw": {"stray": 1}}])").context ==
+          "script.json:/0/raw/stray");
+    CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "raw": {"padAxes": {"left_x": 2}}}])").code ==
+          ErrorCode::ValidationFailed);
+}
+
+TEST_CASE("input/input_script: noteHeld keeps a held button from pressing after the map changed (I7 step 3)",
+          "[input][input_script]") {
+    InputScriptPlayer player(parseOk(R"([{"fromFrame": 0, "toFrame": 0, "phase": "idle"}])"));
+    ActionState held;
+    held.setButton(Action::UiActivate, true, false, false);
+    player.noteHeld(held);
+    ActionState next;
+    next.setButton(Action::UiActivate, true, true, false);
+    player.apply(1, next, 0.5f);
+    CHECK(next.held(Action::UiActivate));
+    CHECK_FALSE(next.pressed(Action::UiActivate));
+}

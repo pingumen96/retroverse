@@ -662,6 +662,8 @@ struct MenuRecord {
     /// The most elements of the panel found with cut text on any frame it showed (ADR-0018 §15).
     std::uint32_t textCut = 0;
     std::uint32_t settingsTextCut = 0;
+    /// At the end: the settings screen's focused row lies outside its list's visible part.
+    bool settingsRowCovered = false;
     /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
     std::vector<MenuEventRecord> events;
     std::uint64_t eventsDropped = 0;
@@ -776,6 +778,37 @@ struct SettingsRecord {
     double masterGain = 1.0;
 
     bool operator==(const SettingsRecord&) const = default;
+};
+
+/// A hint as shown at the end of the run.
+struct HintRecord {
+    /// The hint's actions (`hint-action`), its text.
+    std::string actions;
+    std::string text;
+
+    bool operator==(const HintRecord&) const = default;
+};
+
+/// The controls in the run (I7 step 3, ADR-0018 §7).
+struct ControlsRecord {
+    /// The device the hints follow at the end: "pad", "keys".
+    std::string device;
+    /// --safe-bindings: settings.json's bindings were left out.
+    bool safeBindings = false;
+    /// The hints visible at the end, and those that run past their box.
+    std::vector<HintRecord> hints;
+    std::uint32_t hintsOutside = 0;
+    /// A press a capture took, per its verdict (app::toString(BindingVerdict)), in order.
+    std::vector<std::string> captures;
+    /// The pad went, came back; "Controller scollegato" shows at the end; frames it showed.
+    std::uint64_t padsLost = 0;
+    std::uint64_t padsBack = 0;
+    bool noticeShown = false;
+    std::uint64_t noticeFrames = 0;
+    /// The rebound row's names at the end, "<action>=<key>|<pad>", for every action a user may bind.
+    std::vector<std::string> bindings;
+
+    bool operator==(const ControlsRecord&) const = default;
 };
 
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
@@ -2222,6 +2255,7 @@ struct RunReport {
     std::optional<SettingsRecord> settings;
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;
+    std::optional<ControlsRecord> controls;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

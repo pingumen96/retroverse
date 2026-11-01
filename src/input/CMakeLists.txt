@@ -5,6 +5,7 @@ add_library(rv_input STATIC
     src/action.cpp
     src/action_map.cpp
     src/binding.cpp
+    src/binding_labels.cpp
     src/codes.cpp
     src/input_script.cpp
     src/input_system.cpp

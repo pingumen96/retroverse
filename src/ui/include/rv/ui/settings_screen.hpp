@@ -42,6 +42,8 @@ public:
     [[nodiscard]] std::optional<SettingsClick> takeClicked() noexcept;
     /// The element that has RmlUi's focus ("" none).
     [[nodiscard]] std::string focusedElement() const;
+    /// The focused row lies outside the list's visible part (under a capture's strip, say).
+    [[nodiscard]] bool focusedRowCovered() const;
     /// Elements of the panel whose text does not fit its box as shown now.
     [[nodiscard]] std::uint32_t textCut() const;
 

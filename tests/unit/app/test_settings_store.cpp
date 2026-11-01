@@ -435,6 +435,13 @@ TEST_CASE("app/settings: the user's config files keep their bytes, comments incl
 
     SettingsStore store(rv::core::SettingsFile::load(data.settings), data.layers(), rows());
     for (const SettingRow& row : store.rows()) {
+        if (row.kind == rv::app::SettingKind::Action) {
+            continue; // no value of its own
+        }
+        if (row.kind == rv::app::SettingKind::Binding) {
+            static_cast<void>(store.set(row, Json::array({Json{{"key", "f7"}}})));
+            continue;
+        }
         const Json value = store.value(row);
         const auto next = row.kind == rv::app::SettingKind::Toggle  ? Json(!value.get<bool>())
                           : row.kind == rv::app::SettingKind::Slider ? Json(row.max)
@@ -500,6 +507,8 @@ TEST_CASE("app/setting_rows: every row names a key its loader takes, and none sh
             CHECK(contains(rv::world::worldSettingKeys(), row.key));
         } else if (row.section == "xr") {
             CHECK(contains(rv::xr::xrSettingKeys(), row.key));
+        } else if (row.section == rv::app::kBindingsSettingsSection) {
+            CHECK((row.key == rv::app::kRestoreBindingsKey || rv::input::actionFromName(row.key).has_value()));
         } else {
             CHECK(row.section == "player");
             CHECK(contains(rv::app::playerSettingKeys(), row.key));
@@ -517,7 +526,9 @@ TEST_CASE("app/setting_rows: the shipped values are among each row's", "[app][se
     SettingsStore store(rv::core::SettingsFile::load(data.settings), data.layers(), rows());
     for (const SettingRow& row : store.rows()) {
         INFO(row.id());
-        CHECK(row.takes(store.below(row)));
+        if (row.section != rv::app::kBindingsSettingsSection) { // lists of the map, tested in test_binding_rules.cpp
+            CHECK(row.takes(store.below(row)));
+        }
     }
 }
 

@@ -21,8 +21,7 @@
 // Input (the ui_* actions through NavInput): Up and Left move to the previous button, Down and Right to the next;
 // Activate (or a click) presses the focused button, but for the first input frame after the content arrived (a held or
 // doubled press meant for what was there before never lands on a choice); Back leaves the second confirmation for the
-// preview (Drop focused), else closes the panel (Cancel), never while committing. The hints show the glyphs of the
-// device used last. Every sentence is the document's: the model holds keys and counts only.
+// preview (Drop focused), else closes the panel (Cancel), never while committing. Every sentence is the document's: the model holds keys and counts only.
 
 #include <array>
 #include <cstddef>
@@ -53,8 +52,6 @@ inline constexpr std::string_view kBackId = "rp-back";
 inline constexpr std::string_view kCancelId = "rp-cancel";
 /// The data event of a click on a button: "button('<regenerate|drop|confirm-drop|undo|back|cancel>')".
 inline constexpr std::string_view kButtonEvent = "button";
-/// The device whose glyphs the hints show ("device"): the pad's buttons, or the keys.
-inline constexpr std::array<std::string_view, 2> kDevices{"pad", "keys"};
 /// What the panel is about (RegenerateKind).
 inline constexpr std::array<std::string_view, 4> kKinds{"room", "floor", "world", "undo"};
 /// Where it stands (RegenerateState).
@@ -171,9 +168,6 @@ public:
     /// An input frame ended (the product UI's update applied its commands; the content arrives between two of them, in
     /// the world's update): Activate counts again.
     void endInputFrame() noexcept;
-    /// The device used last: the hints show the pad's glyphs (`pad`), else the keys'.
-    void setDevice(bool pad) noexcept;
-    [[nodiscard]] bool padDevice() const noexcept { return m_pad; }
     /// The preview or the commit failed (regenerate_preview::kFailures): Failed, Annulla focused (its sentence says
     /// why). Ignored while closed.
     void setFailed(std::string failure);
@@ -212,9 +206,8 @@ private:
     std::string m_failure;
     RegenerateButton m_focused = RegenerateButton::Cancel;
     std::uint64_t m_revision = 0;
-    /// Activate is ignored until the input frame after a content arrived ends; the device used last.
+    /// Activate is ignored until the input frame after a content arrived ends.
     bool m_activateHeld = false;
-    bool m_pad = false;
 };
 
 } // namespace rv::ui

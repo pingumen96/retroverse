@@ -12,9 +12,11 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_video.h>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/app/app_logic.hpp>
+#include <rv/app/binding_rules.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/launch_flow.hpp>
@@ -39,6 +41,9 @@
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
 #include <rv/ui/regenerate_preview_screen.hpp>
+#include <rv/ui/controller_notice_screen.hpp>
+#include <rv/ui/hint_bar.hpp>
+#include <rv/ui/hint_bar_view.hpp>
 #include <rv/ui/settings_screen.hpp>
 #include <rv/ui/system_menu_screen.hpp>
 #include <rv/ui/wizard_screen.hpp>
@@ -225,17 +230,25 @@ struct ProductUi::Impl {
     /// A catalog of the wizard's own stands (page 4 tried before).
     bool wizardCatalog = false;
     bool wizardWorldStarted = false;
-    bool padLast = false;
     std::optional<ui::WizardPage> wizardPageSeen;
     std::optional<WizardRecord> wizardRecord;
     static constexpr std::chrono::minutes kWizardWaitLimit{30};
     std::optional<std::chrono::steady_clock::time_point> wizardWaitSince;
+    /// I7 step 3: the hints from the active bindings, the raw frame a capture reads, "Controller scollegato".
+    ui::HintBar hintBar;
+    std::unique_ptr<ui::HintBarView> hintView;
+    input::RawInputFrame rawFrame;
+    CapturePress capturePress;
+    bool captureRunning = false;
+    std::vector<std::string> captures;
+    std::unique_ptr<ui::ControllerNoticeScreen> controllerNotice;
+    bool controllerNoticeWanted = false;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
-               wizardShown();
+               wizardShown() || controllerNoticeWanted;
     }
 
     /// The wizard shows.
@@ -519,6 +532,41 @@ struct ProductUi::Impl {
         report.wizard = std::move(record);
     }
 
+    /// A capture's frame: its time, and the press it waits for (the first frame only notes what is down already).
+    void followCapture(double deltaSeconds) {
+        if (!settingsModel.capturing()) {
+            captureRunning = false;
+            return;
+        }
+        if (!std::exchange(captureRunning, true)) {
+            capturePress.start(rawFrame);
+            return;
+        }
+        settingsModel.tick(deltaSeconds);
+        const std::optional<input::Binding> press = capturePress.next(rawFrame);
+        if (!press || !settingsModel.capturing() || !menuHooks.judgeBinding) {
+            return;
+        }
+        auto [answer, other] = menuHooks.judgeBinding(settingsModel.captureKey(), *press);
+        captures.emplace_back(ui::toString(answer));
+        settingsCommand(settingsModel.captured(*press, answer, std::move(other)));
+    }
+
+    void syncControllerNotice() {
+        if (controllerNoticeWanted && !controllerNotice) {
+            auto screen = ui::ControllerNoticeScreen::create(*view);
+            if (!screen) {
+                spdlog::error("The controller's notice unavailable: {}", screen.error().toString());
+                controllerNoticeWanted = false;
+                return;
+            }
+            controllerNotice = std::move(*screen);
+        }
+        if (controllerNotice) {
+            controllerNotice->setShown(controllerNoticeWanted);
+        }
+    }
+
     /// The menu shows (not while a section shows over it).
     [[nodiscard]] bool menuShown() const noexcept { return menuScreen && menu.isOpen() && !settingsModel.isOpen(); }
     /// The settings screen shows.
@@ -600,7 +648,7 @@ struct ProductUi::Impl {
     void syncMenu() {
         if (wizardScreen) {
             if (wizardShown()) {
-                wizardScreen->show(wizardFlow->model(), wizardFlow->browser(), padLast);
+                wizardScreen->show(wizardFlow->model(), wizardFlow->browser());
             } else {
                 wizardScreen->hide();
             }
@@ -1263,6 +1311,14 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     }
     s.view = std::move(*view);
     s.view->setCommandKeys(ui::commandKeys(bindings));
+    // I7 step 3 (ADR-0018 §7): without its table a key shows its own name.
+    if (auto labels = input::KeyLabels::loadFromFile(paths.assetRoot() / "ui" / "key_labels.json")) {
+        s.hintBar.setLabels(std::move(*labels));
+    } else {
+        spdlog::warn("The keys' names are unavailable: {}", labels.error().toString());
+    }
+    s.hintBar.setMap(bindings);
+    s.hintView = std::make_unique<ui::HintBarView>(*s.view);
 
     s.model = std::make_unique<ui::QuickCatalogModel>(s.catalog->source());
     // The catalog's screen is created when it first opens (openCatalog), as a screen shown from the start: created
@@ -1618,6 +1674,32 @@ void ProductUi::setMenuHooks(MenuHooks hooks) {
     m_impl->menuHooks = std::move(hooks);
 }
 
+void ProductUi::setBindings(const input::ActionMap& bindings) {
+    m_impl->hintBar.setMap(bindings);
+    m_impl->view->setCommandKeys(ui::commandKeys(bindings));
+}
+
+void ProductUi::inputFrame(const input::RawInputFrame& raw, input::DeviceKind device) {
+    m_impl->rawFrame = raw;
+    m_impl->hintBar.setDevice(device);
+}
+
+bool ProductUi::capturingBinding() const noexcept {
+    return m_impl->settingsModel.isOpen() && m_impl->settingsModel.capturing();
+}
+
+std::string ProductUi::bindingLabel(input::Action action, input::DeviceKind device) const {
+    return m_impl->hintBar.label(action, device);
+}
+
+std::string ProductUi::promptLabel(input::Action action, input::DeviceKind device) const {
+    return m_impl->hintBar.promptLabel(action, device);
+}
+
+void ProductUi::setControllerNotice(bool shown) {
+    m_impl->controllerNoticeWanted = shown;
+}
+
 void ProductUi::refreshSettings() {
     Impl& s = *m_impl;
     if (s.settingsModel.isOpen() && s.menuHooks.settingRows) {
@@ -1846,12 +1928,6 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.followWizard();
 
     s.commands.clear();
-    if (uiActions != nullptr) {
-        s.padLast = uiActions->activeDevice() == input::DeviceKind::Gamepad;
-        // I4b step 6's review: the preview's hints show the glyphs of the device used last.
-        s.preview.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
-        s.settingsModel.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
-    }
     const auto followPreviewButtons = [&] {
         if (std::vector<ui::RegenerateButton> buttons = s.preview.buttons(); buttons != s.previewButtonsSeen) {
             s.previewButtonsSeen = std::move(buttons);
@@ -1888,6 +1964,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             }
         }
     }
+    s.followCapture(deltaSeconds); // I7 step 3
     // The directory's clicks (I4 step 7b): a tab, a row, a card's button.
     if (s.directoryScreen) {
         if (const std::optional<ui::DirectoryClick> click = s.directoryScreen->takeClicked();
@@ -1947,6 +2024,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncEditBar();
     s.syncPreview();
     s.syncMenu();
+    s.syncControllerNotice();
+    s.hintView->sync(s.hintBar); // I7 step 3: before the view lays them out
 
     if (s.visible()) {
         s.system->setTime(timeSeconds);
@@ -2159,11 +2238,24 @@ void ProductUi::finish() {
     s.menuRecord.view = std::string(ui::toString(s.menu.view()));
     s.menuRecord.settingsOpen = s.settingsModel.isOpen();
     s.menuRecord.settingsGroup = s.settingsModel.group();
+    s.menuRecord.settingsRowCovered = s.settingsShown() && s.settingsScreen->focusedRowCovered();
     for (const ui::SettingsRow& row : s.settingsModel.rows()) {
         s.menuRecord.settingsRows.push_back(row.key);
     }
     report.menu = std::move(s.menuRecord);
     s.finishWizard(report);
+    ControlsRecord& controls = report.controls ? *report.controls : report.controls.emplace();
+    controls.device = s.hintBar.device() == input::DeviceKind::Gamepad ? "pad" : "keys";
+    for (ui::HintShown& hint : s.hintView->shown()) {
+        controls.hints.push_back(HintRecord{std::move(hint.actions), std::move(hint.text)});
+    }
+    controls.hintsOutside = s.hintView->outside();
+    controls.captures = std::move(s.captures);
+    for (const BindableAction& bindable : bindableActions()) {
+        controls.bindings.push_back(fmt::format("{}={}|{}", input::actionName(bindable.action),
+                                                s.hintBar.label(bindable.action, input::DeviceKind::KeyboardMouse),
+                                                s.hintBar.label(bindable.action, input::DeviceKind::Gamepad)));
+    }
     if (s.directoryRecord.bound) {
         DirectoryRecord directory = std::move(s.directoryRecord);
         directory.open = s.directory.isOpen();

@@ -59,6 +59,11 @@ struct Script {
         frame += frames;
         return *this;
     }
+    /// The device used last from here on (I7 step 3): the hints follow it.
+    Script& device(std::string_view name) {
+        steps.push_back(Json{{"fromFrame", frame}, {"toFrame", frame}, {"device", std::string(name)}});
+        return *this;
+    }
     /// Avanti, `pages` times, from the first page.
     Script& forward(int pages) { return press("ui_activate", pages); }
 
@@ -237,6 +242,52 @@ TEST_CASE("wizard: the folder browser changes a root; a folder that vanished lea
     CHECK(wizard.browserState == "listed");
     CHECK(wizard.browserTextCut == 0);
     CHECK_FALSE(fs::exists(dir / "data" / "config" / "library.json"));
+}
+
+TEST_CASE("wizard: both hint strips name the device used last, from the active map", "[gpu][wizard][controls]") {
+    const rv::test::Fixture fixture = rv::test::Fixture::materialize("esde/snes-room").value();
+    // ES-DE's ROM folder moved away: page 2 stops on its row, and the browser opens from there.
+    const rv::test::Fixture moved = rv::test::Fixture::materialize("esde/snes-room").value();
+    fs::rename(moved.path("roms"), moved.path("moved"));
+    const auto hintsOf = [&](std::string_view name, std::string_view device, bool browser) {
+        const fs::path dir = freshCaseDir(std::string("wizard/hints_") + std::string(name));
+        Script script;
+        script.device(device).press("ui_activate").wait(3); // to Rilevamento
+        if (browser) {
+            script.press("ui_down", 2).press("ui_activate").wait(3);
+        }
+        const fs::path file = dir / "script.json";
+        script.write(file);
+        const AppRun run = runApp(retroverseExe(), dir, "run",
+                                  wizardArguments(browser ? moved : fixture, script.frame + 3, dir / "end.png", file));
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+        INFO(run.describe());
+        REQUIRE(run.report->controls);
+        CHECK(run.report->controls->device == device);
+        CHECK(run.report->controls->hintsOutside == 0);
+        std::map<std::string, std::string> hints;
+        for (const rv::app::HintRecord& hint : run.report->controls->hints) {
+            hints[hint.actions] = hint.text;
+        }
+        return hints;
+    };
+    auto pages = hintsOf("pages_pad", "pad", false);
+    CHECK(pages["ui_activate"] == "A");
+    CHECK(pages["ui_up ui_down"] == "^ v");
+    CHECK(pages["ui_back"] == "B");
+    pages = hintsOf("pages_keys", "keys", false);
+    CHECK(pages["ui_activate"] == "Invio");
+    CHECK(pages["ui_up ui_down"] == "Frecce");
+    CHECK(pages["ui_back"] == "Esc");
+    auto browser = hintsOf("browser_pad", "pad", true);
+    CHECK(browser["ui_activate"] == "A");
+    CHECK(browser["ui_info"] == "X");
+    CHECK(browser["ui_back"] == "B");
+    browser = hintsOf("browser_keys", "keys", true);
+    CHECK(browser["ui_activate"] == "Invio");
+    CHECK(browser["ui_info"] == "F4");
+    CHECK(browser["ui_back"] == "Esc");
 }
 
 TEST_CASE("wizard: a run with library.json and no catalog resumes at the preview", "[gpu][wizard]") {

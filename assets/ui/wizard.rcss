@@ -297,18 +297,6 @@ p {
 	color: #171B22;
 }
 
-.kbd.wide {
-	width: auto;
-	padding: 0dp 9dp;
-	border-radius: 6dp;
-	background-color: #F4EFE6CC;
-}
-
-.pad-a { background-color: #6EAF93; }
-.pad-b { background-color: #C8645A; }
-.pad-x { background-color: #7FA6D6; }
-.pad-y { background-color: #E0C36A; }
-
 /* Compact: views under 760 dp of the display's density tall, as the directory's. */
 @media (theme: compact) {
 	body { font-size: 19dp; }

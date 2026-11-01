@@ -233,6 +233,8 @@ struct CommandLineOptions {
     std::optional<audio::AudioOutput> audio;
     /// --mute: the run starts muted (toggle_mute, F8, sounds it again).
     bool mute = false;
+    /// --safe-bindings (ADR-0018 §7): settings.json's bindings are left out of this run.
+    bool safeBindings = false;
     /// --audio-capture <wav> (tests), frame-limited runs only: the null output's mix written to this 32-bit float WAV
     /// at the end of the run (the offline mix the GPU tests analyse).
     std::optional<std::filesystem::path> audioCapture;

@@ -407,7 +407,7 @@ TEST_CASE("ui/nav_input: the command keys are the keys bound to the UI's actions
     using rv::input::toIndex;
     const std::bitset<rv::input::kKeyCount> defaults = rv::ui::commandKeys(rv::input::ActionMap::defaults());
     for (const Key key : {Key::Up, Key::Down, Key::Left, Key::Right, Key::Enter, Key::Escape, Key::PageUp,
-                          Key::PageDown, Key::Home, Key::End}) {
+                          Key::PageDown, Key::Home, Key::End, Key::F2, Key::F3, Key::F4, Key::F6}) {
         INFO(rv::input::keyName(key));
         CHECK(defaults.test(toIndex(key)));
     }
@@ -416,7 +416,7 @@ TEST_CASE("ui/nav_input: the command keys are the keys bound to the UI's actions
         INFO(rv::input::keyName(key));
         CHECK_FALSE(defaults.test(toIndex(key)));
     }
-    CHECK(defaults.count() == 10);
+    CHECK(defaults.count() == 14);
 
     // A user's bindings: a letter bound to a UI action becomes a command key, an unbound key stops being one.
     rv::input::ActionMap custom = rv::input::ActionMap::defaults();

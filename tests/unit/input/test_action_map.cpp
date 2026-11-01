@@ -198,7 +198,7 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::QuickCatalog, {key(Key::Tab), padButton(GamepadButton::North)}},
         {Action::Confirm, {key(Key::Enter), padButton(GamepadButton::Start)}},
         {Action::Map, {key(Key::M), padButton(GamepadButton::Back)}},
-        {Action::Menu, {padButton(GamepadButton::Start)}},
+        {Action::Menu, {key(Key::F10), padButton(GamepadButton::Start)}},
         {Action::ToggleDevUI, {key(Key::F1)}},
         {Action::ReloadShaders, {key(Key::F5)}},
         {Action::Screenshot, {key(Key::F12)}},
@@ -217,10 +217,10 @@ TEST_CASE("input/action_map: defaults implement the specification controls table
         {Action::UiEnd, {key(Key::End), padButton(GamepadButton::RightStick)}},
         {Action::UiActivate, {key(Key::Enter), padButton(GamepadButton::South)}},
         {Action::UiBack, {key(Key::Escape), padButton(GamepadButton::East)}},
-        {Action::UiMedia, {padButton(GamepadButton::North)}},
-        {Action::UiInfo, {padButton(GamepadButton::West)}},
-        {Action::UiFilterPrevious, {padButton(GamepadButton::LeftShoulder)}},
-        {Action::UiFilterNext, {padButton(GamepadButton::RightShoulder)}},
+        {Action::UiMedia, {key(Key::F6), padButton(GamepadButton::North)}},
+        {Action::UiInfo, {key(Key::F4), padButton(GamepadButton::West)}},
+        {Action::UiFilterPrevious, {key(Key::F2), padButton(GamepadButton::LeftShoulder)}},
+        {Action::UiFilterNext, {key(Key::F3), padButton(GamepadButton::RightShoulder)}},
         // The clips' sound (I5 step 5): F8, no pad button.
         {Action::ToggleMute, {key(Key::F8)}},
         // The editor (I4b step 3, ADR-0015 §4).
@@ -310,7 +310,7 @@ TEST_CASE("input/action_map: toJson writes every action and every field", "[inpu
     CHECK(forward[4].at("deadzone").dump() == "0.15");
     CHECK(bindings.at("look_delta_y")[0] == nlohmann::json::parse(R"({"mouseAxis": "delta_y", "scale": -1.0})"));
     CHECK(bindings.at("interact")[1] == nlohmann::json::parse(R"({"mouseButton": "left", "scale": 1.0})"));
-    CHECK(bindings.at("menu")[0] == nlohmann::json::parse(R"({"padButton": "start", "scale": 1.0})"));
+    CHECK(bindings.at("menu")[1] == nlohmann::json::parse(R"({"padButton": "start", "scale": 1.0})"));
 
     // Unbound actions are written as empty arrays.
     ActionMap sparse;

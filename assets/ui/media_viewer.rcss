@@ -181,7 +181,6 @@ h2 {
 	color: #171B22;
 }
 
-.pad-dpad { background-color: #F4EFE6; }
 .pad-a { background-color: #6EAF93; }
 
 /* I5 step 8: the clip's pause as a button among the hints, its badge, the reason of a clip that cannot play, the

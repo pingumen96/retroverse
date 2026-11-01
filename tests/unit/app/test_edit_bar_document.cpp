@@ -64,10 +64,9 @@ TEST_CASE("app/edit_bar_document: the ids, the data model, every mode, refusal a
     for (const std::string_view focus : {"save", "undo", "discard", "continue"}) {
         CHECK(contains(rml, "menuFocus == '" + std::string(focus) + "'"));
     }
-    // The glyphs of both devices; the bindings the panel gives.
-    for (const std::string_view device : eb::kDevices) {
-        CHECK(contains(rml, "device == '" + std::string(device) + "'"));
-    }
+    // The hints from the active bindings (ui/hint_bar.hpp); the bindings the panel gives.
+    CHECK(contains(rml, "hint-action=\"interact\""));
+    CHECK(contains(rml, "hint-action=\"edit_pin\""));
     for (const std::string_view binding : {"{{ roomTitle }}", "{{ targetTitle }}", "{{ heldTitle }}", "{{ pending }}",
                                            "targetPinned", "targetFaceOut", "targetFree", "targetOwn", "ending"}) {
         INFO(binding);
@@ -107,7 +106,7 @@ TEST_CASE("app/edit_bar_document: every piece of furniture named, held and targe
     CHECK(eb::kFixtureKinds.back() == "furniture");
     // A fixture that cannot move names why at once, without "Prendi".
     CHECK(contains(rml, "!fixtureLocked && !fixtureHung"));
-    CHECK(contains(rml, "target != 'dressed' && !fixtureLocked\"><span class=\"key pad-a\""));
+    CHECK(contains(rml, "target != 'dressed' && !fixtureLocked\"><span class=\"key\" hint-action=\"interact\""));
 }
 
 TEST_CASE("app/edit_bar_document: the directory's \"Modifica stanza\"", "[app][documents]") {

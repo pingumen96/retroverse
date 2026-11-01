@@ -4,6 +4,8 @@
 #include <cmath>
 #include <utility>
 
+#include <rv/app/binding_rules.hpp>
+
 namespace rv::app {
 namespace {
 
@@ -91,6 +93,10 @@ bool SettingRow::takes(const Json& value) const {
         }
         return value.is_number() && std::isfinite(value.get<double>()) && value.get<double>() >= min &&
                value.get<double>() <= max;
+    case SettingKind::Binding:
+        return value.is_array();
+    case SettingKind::Action:
+        return false;
     }
     return false;
 }
@@ -121,10 +127,24 @@ std::vector<SettingRow> settingRows(std::span<const std::string> lightingProfile
     rows.push_back(committing(choice(kVideo, "crtEffect", SettingGroup::World, {"off", "light", "vintage"})));
     rows.push_back(
         choice(kVideo, "hero.playlist", SettingGroup::World, {"shuffle", "sequential", "favorites", "recent"}));
-    // Controlli (the bindings: step 3).
+    // Controlli.
     rows.push_back(slider(kPlayer, "mouseSensitivity", SettingGroup::Controls, 0.25, 3.0, 0.25));
     rows.push_back(slider(kPlayer, "stickSensitivity", SettingGroup::Controls, 0.25, 3.0, 0.25));
     rows.push_back(toggle(kPlayer, "invertY", SettingGroup::Controls));
+    for (const BindableAction& bindable : bindableActions()) {
+        SettingRow row;
+        row.section = kBindingsSettingsSection;
+        row.key = input::actionName(bindable.action);
+        row.group = SettingGroup::Controls;
+        row.kind = SettingKind::Binding;
+        rows.push_back(std::move(row));
+    }
+    SettingRow restoreBindings;
+    restoreBindings.section = kBindingsSettingsSection;
+    restoreBindings.key = kRestoreBindingsKey;
+    restoreBindings.group = SettingGroup::Controls;
+    restoreBindings.kind = SettingKind::Action;
+    rows.push_back(std::move(restoreBindings));
     // VR: each read when a session starts.
     rows.push_back(nextSession(choice(kXr, "display.mode", SettingGroup::Vr, {"desktop", "vr"})));
     rows.push_back(nextSession(choice(kXr, "comfort.turn", SettingGroup::Vr, {"snap", "smooth"})));

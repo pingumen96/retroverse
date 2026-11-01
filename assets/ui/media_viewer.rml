@@ -17,6 +17,7 @@
 	-->
 	<title>Vedi media</title>
 	<link type="text/rcss" href="media_viewer.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body id="media-viewer" data-model="media_viewer">
 	<div class="panel">
@@ -88,11 +89,11 @@
 		<div class="footer">
 			<button id="media-previous" class="action" data-class-disabled="!viewer.hasPrevious" data-event-click="page('previous')">Precedente</button>
 			<div class="hints">
-				<span class="hint"><span class="pad pad-dpad">&lt; &gt;</span>Sfoglia</span>
-				<button id="media-video-pause" class="hint hint-button" data-if="viewer.kind == 'videos' && viewer.state == 'shown'" data-event-click="page('pause')"><span class="pad pad-a">A</span><span data-if="!viewer.paused">Pausa</span><span data-if="viewer.paused">Riprendi</span></button>
-				<span class="hint" data-if="viewer.kind == 'manuals' && viewer.state == 'shown'"><span class="pad pad-a">A</span>Apri</span>
-				<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
-				<span class="hint"><span class="pad pad-b">B</span>Chiudi</span>
+				<span class="hint"><span class="pad" hint-action="ui_left ui_right"></span>Sfoglia</span>
+				<button id="media-video-pause" class="hint hint-button" data-if="viewer.kind == 'videos' && viewer.state == 'shown'" data-event-click="page('pause')"><span class="pad" hint-action="ui_activate"></span><span data-if="!viewer.paused">Pausa</span><span data-if="viewer.paused">Riprendi</span></button>
+				<span class="hint" data-if="viewer.kind == 'manuals' && viewer.state == 'shown'"><span class="pad" hint-action="ui_activate"></span>Apri</span>
+				<span class="hint"><span class="pad" hint-action="ui_info"></span>Informazioni</span>
+				<span class="hint"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
 			</div>
 			<button id="media-next" class="action" data-class-disabled="!viewer.hasNext" data-event-click="page('next')">Successiva</button>
 			<button id="media-close" class="action close" data-event-click="page('close')">Chiudi</button>

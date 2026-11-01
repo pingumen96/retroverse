@@ -13,6 +13,8 @@
 #include <rv/input/raw_input.hpp>
 #include <rv/platform/gamepad_manager.hpp>
 #include <rv/platform/sdl_input_collector.hpp>
+#include <rv/ui/nav_input.hpp>
+#include <rv/ui/settings_model.hpp>
 
 #include "sdl_test_events.hpp"
 
@@ -217,4 +219,171 @@ TEST_CASE("platform/gamepad_manager: the most recently used pad is active", "[pl
     late.closeAll();
     CHECK(late.count() == 0);
     CHECK_FALSE(late.activeId().has_value());
+}
+
+namespace {
+
+constexpr double kFrameSeconds = 1.0 / 60.0;
+
+/// The application's path from the pad to a UI screen: the collector's frame through the bindings and the UI's navigation
+/// into the settings screen's model.
+class UiScreen {
+public:
+    UiScreen() {
+        rv::ui::SettingsRow first;
+        first.key = "first";
+        first.group = "controls";
+        first.kind = rv::ui::SettingsRowKind::Toggle;
+        first.value = false;
+        rv::ui::SettingsRow second = first;
+        second.key = "second";
+        rv::ui::SettingsRow third = first;
+        third.key = "third";
+        m_model.setRows({first, second, third});
+        m_model.open();
+    }
+
+    /// One frame: what the collector says now goes through to the model. The frame's commands.
+    std::size_t frame(SdlInputCollector& collector) {
+        pump(collector);
+        const rv::input::RawInputFrame raw = collector.endFrame();
+        m_connected = raw.gamepadConnected;
+        const rv::input::ActionState actions = m_system.resolve(raw);
+        m_commands.clear();
+        m_nav.update(actions, kFrameSeconds, m_commands);
+        for (const rv::ui::UiCommand command : m_commands.commands()) {
+            static_cast<void>(m_model.apply(command));
+        }
+        return m_commands.commands().size();
+    }
+
+    [[nodiscard]] std::size_t focus() const noexcept { return m_model.focus(); }
+    [[nodiscard]] bool connected() const noexcept { return m_connected; }
+
+private:
+    rv::input::InputSystem m_system;
+    rv::ui::NavInput m_nav;
+    rv::ui::UiCommandList m_commands;
+    rv::ui::SettingsModel m_model;
+    bool m_connected = false;
+};
+
+} // namespace
+
+TEST_CASE("platform/gamepad_manager: the last pad gone, the keyboard is the device used last", "[platform][gamepad]") {
+    rv::test::VirtualGamepadScope sdl;
+    if (!sdl.ready()) {
+        SKIP("SDL gamepad subsystem unavailable: " << SDL_GetError());
+    }
+    SdlInputCollector collector;
+    const SDL_JoystickID first = sdl.attach("First Pad");
+    const SDL_JoystickID second = sdl.attach("Second Pad");
+    pump(collector);
+    {
+        VirtualPad pad(first);
+        REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, true));
+        pump(collector);
+        REQUIRE(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    }
+    // One of two goes: the other is still a pad.
+    REQUIRE(SDL_DetachVirtualJoystick(first));
+    pump(collector);
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::Gamepad);
+    // The last goes.
+    REQUIRE(SDL_DetachVirtualJoystick(second));
+    pump(collector);
+    CHECK(collector.endFrame().lastActiveDevice == DeviceKind::KeyboardMouse);
+}
+
+TEST_CASE("platform/gamepad_manager: a pad unplugged and back during a UI screen (FR-029)", "[platform][gamepad]") {
+    rv::test::VirtualGamepadScope sdl;
+    if (!sdl.ready()) {
+        SKIP("SDL gamepad subsystem unavailable: " << SDL_GetError());
+    }
+    SdlInputCollector collector;
+    UiScreen screen;
+    SDL_JoystickID id = sdl.attach("Sofa Pad");
+    REQUIRE(id != 0);
+    screen.frame(collector);
+    REQUIRE(screen.connected());
+    {
+        VirtualPad pad(id);
+        REQUIRE(pad.valid());
+        REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true));
+        screen.frame(collector);
+        CHECK(screen.focus() == 1);
+    }
+    // Unplugged with the D-pad held: the focus does not run on by itself, for all the repeat's delay and more.
+    REQUIRE(SDL_DetachVirtualJoystick(id));
+    screen.frame(collector);
+    CHECK_FALSE(screen.connected());
+    for (int frame = 0; frame < 120; ++frame) {
+        CHECK(screen.frame(collector) == 0);
+    }
+    CHECK(screen.focus() == 1);
+
+    // Back, a new pad id: the screen follows it at once, nothing left held.
+    id = sdl.attach("Sofa Pad");
+    REQUIRE(id != 0);
+    screen.frame(collector);
+    CHECK(screen.connected());
+    VirtualPad pad(id);
+    REQUIRE(pad.valid());
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true));
+    screen.frame(collector);
+    CHECK(screen.focus() == 2);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false));
+    screen.frame(collector);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_DPAD_UP, true));
+    screen.frame(collector);
+    CHECK(screen.focus() == 1);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_DPAD_UP, false));
+    REQUIRE(SDL_DetachVirtualJoystick(id));
+    pump(collector);
+}
+
+TEST_CASE("platform/gamepad_manager: a pad unplugged and back across a game (FR-029)", "[platform][gamepad]") {
+    rv::test::VirtualGamepadScope sdl;
+    if (!sdl.ready()) {
+        SKIP("SDL gamepad subsystem unavailable: " << SDL_GetError());
+    }
+    SdlInputCollector collector;
+    SDL_JoystickID id = sdl.attach("Game Pad");
+    REQUIRE(id != 0);
+    pump(collector);
+    {
+        VirtualPad pad(id);
+        REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_SOUTH, true));
+        pump(collector);
+        REQUIRE(collector.endFrame().gamepadButtonsDown[toIndex(GamepadButton::South)]);
+    }
+    // A game has the screen: the application drops what droppedWhileIdle() names and takes the rest, the pad's coming and
+    // going among them. It went and came back meanwhile, the button that launched still down when it left.
+    REQUIRE(SDL_DetachVirtualJoystick(id));
+    id = sdl.attach("Game Pad");
+    REQUIRE(id != 0);
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type != SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.type != SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+            collector.handleEvent(event);
+        }
+    }
+    collector.releaseAll(); // AppInput::releaseAll() after the wait
+    rv::input::RawInputFrame frame = collector.endFrame();
+    CHECK(frame.gamepadConnected);
+    CHECK(frame.gamepadButtonsDown.none());
+    CHECK(collector.gamepads().count() == 1);
+    CHECK(collector.gamepads().activeId() == id);
+
+    // The return: the same pad answers.
+    VirtualPad pad(id);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_EAST, true));
+    pump(collector);
+    frame = collector.endFrame();
+    CHECK(frame.gamepadButtonsPressed[toIndex(GamepadButton::East)]);
+    CHECK(frame.lastActiveDevice == DeviceKind::Gamepad);
+    REQUIRE(pad.button(SDL_GAMEPAD_BUTTON_EAST, false));
+    pump(collector);
+    REQUIRE(SDL_DetachVirtualJoystick(id));
+    pump(collector);
 }

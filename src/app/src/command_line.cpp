@@ -587,6 +587,9 @@ void addHostOptions(core::ArgParser& parser) {
         .option("width", "pixels", "Initial window width.", std::to_string(CommandLineOptions::kDefaultWindowWidth))
         .option("height", "pixels", "Initial window height.", std::to_string(CommandLineOptions::kDefaultWindowHeight))
         .flag("fullscreen", "Start in borderless fullscreen.")
+        .flag("safe-bindings",
+              "Start without the keys and buttons the settings screen remapped (settings.json's bindings stay in the "
+              "file; Controlli's \"Ripristina predefiniti\" clears them).")
         .flag("hidden", "Never show the window; only with --smoke or --exit-after-frames.")
         .flag("no-vsync", "Disable vertical synchronization.")
         .flag("smoke", "Render a few frames (see --frames) and exit. The exit code is 1 when the run stops early or, "
@@ -633,6 +636,7 @@ Status applyHostOptions(const core::ParsedArgs& args, CommandLineOptions& option
     options.windowWidth = *width;
     options.windowHeight = *height;
     options.fullscreen = args.has("fullscreen");
+    options.safeBindings = args.has("safe-bindings");
     options.hidden = args.has("hidden");
     options.vsync = !args.has("no-vsync");
 

@@ -23,6 +23,7 @@
 	-->
 	<title>Indice dell'edificio</title>
 	<link type="text/rcss" href="directory.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="directory">
 	<div id="directory" class="panel">
@@ -297,15 +298,15 @@
 
 	<div id="dir-hints">
 		<div class="hint-bar">
-			<span class="hint" data-if="view == 'floors' && !editFocused"><span class="pad pad-a">A</span>Apri il piano</span>
-			<span class="hint" data-if="editFocused"><span class="pad pad-a">A</span>Modifica stanza</span>
-			<span class="hint" data-if="view == 'rooms'"><span class="pad pad-a">A</span>Vai</span>
-			<span class="hint" data-if="view == 'games'"><span class="pad pad-a">A</span>Apri la scheda</span>
-			<span class="hint" data-if="view == 'card'"><span class="pad pad-a">A</span>Conferma</span>
-			<span class="hint" data-if="view == 'changes'"><span class="pad pad-a">A</span>Scegli</span>
-			<span class="hint" data-if="view != 'card'"><span class="pad pad-wide">LB RB</span>Cambia elenco</span>
-			<span class="hint" data-if="view == 'floors' || view == 'games' || view == 'changes'"><span class="pad pad-b">B</span>Chiudi</span>
-			<span class="hint" data-if="view == 'rooms' || view == 'card'"><span class="pad pad-b">B</span>Indietro</span>
+			<span class="hint" data-if="view == 'floors' && !editFocused"><span class="pad" hint-action="ui_activate"></span>Apri il piano</span>
+			<span class="hint" data-if="editFocused"><span class="pad" hint-action="ui_activate"></span>Modifica stanza</span>
+			<span class="hint" data-if="view == 'rooms'"><span class="pad" hint-action="ui_activate"></span>Vai</span>
+			<span class="hint" data-if="view == 'games'"><span class="pad" hint-action="ui_activate"></span>Apri la scheda</span>
+			<span class="hint" data-if="view == 'card'"><span class="pad" hint-action="ui_activate"></span>Conferma</span>
+			<span class="hint" data-if="view == 'changes'"><span class="pad" hint-action="ui_activate"></span>Scegli</span>
+			<span class="hint" data-if="view != 'card'"><span class="pad" hint-action="ui_filter_previous ui_filter_next"></span>Cambia elenco</span>
+			<span class="hint" data-if="view == 'floors' || view == 'games' || view == 'changes'"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
+			<span class="hint" data-if="view == 'rooms' || view == 'card'"><span class="pad" hint-action="ui_back"></span>Indietro</span>
 		</div>
 	</div>
 </body>

@@ -40,9 +40,8 @@ public:
     WizardScreen(const WizardScreen&) = delete;
     WizardScreen& operator=(const WizardScreen&) = delete;
 
-    /// Shows the models (bound only when a revision changed), `pad`: the hints of the device used last. They must stay
-    /// alive while the screen shows them.
-    void show(const WizardModel& model, const FolderBrowserModel& browser, bool pad);
+    /// Shows the models (bound only when a revision changed). They must stay alive while the screen shows them.
+    void show(const WizardModel& model, const FolderBrowserModel& browser);
     void hide();
     [[nodiscard]] bool visible() const noexcept;
     /// After UiView::update(): the focus on what the models name.

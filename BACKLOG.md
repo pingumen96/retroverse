@@ -142,9 +142,10 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **Saving the developer overlay's edits:** light, environment and material tweaks are live only (M0 step 9). Writing
   them back to a scene file or to `materials.json` needs a JSON writer that keeps the files' comments and layout.
 - **Hints that name keys:** log lines and overlay labels name the default keys ("F1 hides it", "Reload shaders (F5)",
-  "Esc releases it"), which are wrong once `<user data>/config/bindings.json` rebinds those actions. Format the bound
-  keys from the active `input::ActionMap` (a display name per key and pad button) when the controls settings screen
-  arrives (I7).
+  "Esc releases it"), which are wrong once `<user data>/config/bindings.json` rebinds those actions. The product UI's
+  come from the active map since I7 step 3 (`rv/ui/hint_bar.hpp`); the developer overlay's and the log's still do not.
+- **Touch controllers apart from the pad's map:** they reach the bindings as a pad does, so remapping the pad in a
+  headset moves them too (`docs/i7/step-3.md`). A map of their own, or resolving them before the remapped section.
 
 ### Testing and automation
 

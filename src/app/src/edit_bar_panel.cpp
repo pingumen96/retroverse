@@ -51,7 +51,6 @@ struct EditBarPanel::Impl {
         constructor.Bind("refusalKnown", &refusalKnown);
         constructor.Bind("saveRefused", &saveRefused);
         constructor.Bind("menuFocus", &menuFocus);
-        constructor.Bind("device", &device);
         constructor.Bind("fixtureKind", &fixtureKind);
         constructor.Bind("fixtureHung", &fixtureHung);
         constructor.Bind("fixtureLocked", &fixtureLocked);
@@ -91,7 +90,6 @@ struct EditBarPanel::Impl {
                                                           value.refusal) != edit_bar::kRules.end();
         saveRefused = value.saveRefused;
         menuFocus = Rml::String(value.menuFocus);
-        device = Rml::String(value.device);
         fixtureKind = Rml::String(value.fixtureKind);
         fixtureHung = value.fixtureHung;
         fixtureLocked = value.fixtureLocked;
@@ -124,7 +122,6 @@ struct EditBarPanel::Impl {
     bool refusalKnown = true;
     bool saveRefused = false;
     Rml::String menuFocus;
-    Rml::String device;
     Rml::String fixtureKind;
     bool fixtureHung = false;
     bool fixtureLocked = false;

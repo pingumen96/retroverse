@@ -75,7 +75,6 @@ struct WizardScreen::Impl {
             row.RegisterMember("name", &RowView::name);
         }
         constructor.RegisterArray<std::vector<RowView>>();
-        constructor.Bind("device", &device);
         constructor.Bind("page", &page);
         constructor.Bind("pageNumber", &pageNumber);
         constructor.Bind("resumed", &resumed);
@@ -188,8 +187,7 @@ struct WizardScreen::Impl {
         return ok();
     }
 
-    void bind(const WizardModel& shown, const FolderBrowserModel& folders, bool pad) {
-        device = pad ? "pad" : "keys";
+    void bind(const WizardModel& shown, const FolderBrowserModel& folders) {
         page = Rml::String(toString(shown.page()));
         pageNumber = static_cast<int>(shown.page()) + 1;
         resumed = shown.resumed();
@@ -275,11 +273,9 @@ struct WizardScreen::Impl {
     const FolderBrowserModel* browser = nullptr;
     std::optional<std::uint64_t> boundRevision;
     std::optional<std::uint64_t> boundBrowser;
-    std::optional<bool> boundPad;
     std::optional<WizardClick> clicked;
     int wheel = 0;
 
-    Rml::String device;
     Rml::String page;
     int pageNumber = 1;
     bool resumed = false;
@@ -339,18 +335,17 @@ Expected<std::unique_ptr<WizardScreen>> WizardScreen::create(UiView& view) {
     return std::unique_ptr<WizardScreen>(new WizardScreen(std::move(impl)));
 }
 
-void WizardScreen::show(const WizardModel& model, const FolderBrowserModel& browser, bool pad) {
+void WizardScreen::show(const WizardModel& model, const FolderBrowserModel& browser) {
     Impl& impl = *m_impl;
     if (impl.document == nullptr) {
         return;
     }
     impl.model = &model;
     impl.browser = &browser;
-    if (impl.boundRevision != model.revision() || impl.boundBrowser != browser.revision() || impl.boundPad != pad) {
-        impl.bind(model, browser, pad);
+    if (impl.boundRevision != model.revision() || impl.boundBrowser != browser.revision()) {
+        impl.bind(model, browser);
         impl.boundRevision = model.revision();
         impl.boundBrowser = browser.revision();
-        impl.boundPad = pad;
     }
     if (!impl.documentShown) {
         impl.document->Show(Rml::ModalFlag::None, Rml::FocusFlag::None);

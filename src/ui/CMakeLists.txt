@@ -27,6 +27,7 @@ add_library(rv_ui_model STATIC
     src/focus_regions.cpp
     src/game_card_model.cpp
     src/game_info_model.cpp
+    src/hint_bar.cpp
     src/in_memory_catalog_source.cpp
     src/media_viewer_model.cpp
     src/nav_input.cpp
@@ -47,9 +48,11 @@ rv_forbid_link(rv_ui_model)
 add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/rmlui_backends" "${CMAKE_CURRENT_BINARY_DIR}/rmlui_backends")
 
 add_library(rv_ui STATIC
+    src/controller_notice_screen.cpp
     src/directory_screen.cpp
     src/game_card_screen.cpp
     src/game_info_screen.cpp
+    src/hint_bar_view.cpp
     src/hover_label_screen.cpp
     src/media_viewer_screen.cpp
     src/quick_catalog_screen.cpp

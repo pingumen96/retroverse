@@ -18,7 +18,7 @@
 		<span class="prompt">
 			<span class="name" data-if="!totem">Ascensore</span>
 			<span class="name" data-if="totem">Indice</span>
-			<span class="key">{{ key }}</span>
+			<span class="key" data-if="key != ''">{{ key }}</span>
 			<span class="action" data-if="!totem">Scegli il piano</span>
 			<span class="action" data-if="totem">Piani e stanze</span>
 		</span>

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+using rv::ui::SettingsCapture;
 using rv::ui::SettingsClick;
 using rv::ui::SettingsCommand;
 using rv::ui::SettingsModel;
@@ -261,4 +262,161 @@ TEST_CASE("ui/settings: clicks mirror the keys", "[ui][settings]") {
     // A group without rows takes no click.
     CHECK_FALSE(model.click(SettingsClick{SettingsClick::Kind::Tab, 3, 1}).has_value());
     CHECK(model.group() == "audio");
+}
+
+namespace {
+
+SettingsRow bindingRow(std::string key) {
+    SettingsRow row;
+    row.key = std::move(key);
+    row.group = "controls";
+    row.kind = SettingsRowKind::Binding;
+    row.value = Json::array();
+    row.keyLabel = "Invio";
+    row.padLabel = "A";
+    return row;
+}
+
+SettingsModel captureModel() {
+    SettingsModel model;
+    SettingsRow restore;
+    restore.key = "bindings.defaults";
+    restore.group = "controls";
+    restore.kind = SettingsRowKind::Action;
+    model.setRows({bindingRow("bindings.ui_activate"), restore});
+    model.open();
+    return model;
+}
+
+const rv::input::Binding kPress = rv::input::KeyBinding{rv::input::Key::F7, 1.0f};
+
+} // namespace
+
+TEST_CASE("ui/settings: Activate on a binding starts a capture; a free press binds it", "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    REQUIRE(model.capturing());
+    CHECK(model.captureKey() == "bindings.ui_activate");
+    CHECK(model.captureSeconds() == 5);
+    // Nothing reaches the screen meanwhile.
+    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK(model.isOpen());
+    CHECK(model.capturing());
+
+    const auto command = model.captured(kPress, SettingsCapture::Free, {});
+    REQUIRE(command);
+    CHECK(command->kind == SettingsCommand::Kind::Bind);
+    CHECK(command->key == "bindings.ui_activate");
+    CHECK(command->press == kPress);
+    CHECK_FALSE(model.capturing());
+}
+
+TEST_CASE("ui/settings: a capture ends by itself, by a click, or by the press it already has",
+          "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    static_cast<void>(model.apply(UiCommand::Activate));
+    const std::uint64_t before = model.revision();
+    model.tick(0.1);
+    CHECK(model.revision() == before); // not a new value every frame
+    model.tick(1.0);
+    CHECK(model.revision() > before);
+    CHECK(model.captureSeconds() == 4);
+    model.tick(4.0);
+    CHECK_FALSE(model.capturing());
+    CHECK(model.captureKey().empty());
+
+    static_cast<void>(model.apply(UiCommand::Activate));
+    REQUIRE(model.capturing());
+    CHECK_FALSE(model.click({SettingsClick::Kind::CaptureCancel}).has_value());
+    CHECK_FALSE(model.capturing());
+
+    static_cast<void>(model.apply(UiCommand::Activate));
+    CHECK_FALSE(model.captured(kPress, SettingsCapture::Same, {}).has_value());
+    CHECK_FALSE(model.capturing());
+    // The screen works again.
+    CHECK(model.apply(UiCommand::Down) == std::nullopt);
+    CHECK(model.focus() == 1);
+}
+
+TEST_CASE("ui/settings: a refused press says why and the capture goes on, its time again", "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    static_cast<void>(model.apply(UiCommand::Activate));
+    model.tick(3.0);
+    CHECK_FALSE(model.captured(kPress, SettingsCapture::Reserved, "bindings.ui_up").has_value());
+    CHECK(model.capturing());
+    CHECK(model.captureRefused() == "reserved");
+    CHECK(model.captureSeconds() == 5);
+    CHECK_FALSE(model.captured(kPress, SettingsCapture::Locked, "bindings.ui_back").has_value());
+    CHECK(model.captureRefused() == "locked");
+    CHECK(model.captureOther() == "bindings.ui_back");
+}
+
+TEST_CASE("ui/settings: a clash offers its swap: Activate or a click take it, Back or a click drop it",
+          "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    const auto offer = [&] {
+        static_cast<void>(model.apply(UiCommand::Activate));
+        CHECK_FALSE(model.captured(kPress, SettingsCapture::Clash, "bindings.ui_back").has_value());
+        CHECK(model.offeringSwap());
+        CHECK_FALSE(model.capturing());
+        CHECK(model.captureOther() == "bindings.ui_back");
+    };
+    offer();
+    // Nothing else moves under the offer.
+    CHECK_FALSE(model.apply(UiCommand::Down).has_value());
+    CHECK(model.focus() == 0);
+    CHECK_FALSE(model.click({SettingsClick::Kind::Row, 1}).has_value());
+    CHECK(model.focus() == 0);
+    const auto taken = model.apply(UiCommand::Activate);
+    REQUIRE(taken);
+    CHECK(taken->kind == SettingsCommand::Kind::Swap);
+    CHECK(taken->key == "bindings.ui_activate");
+    CHECK(taken->other == "bindings.ui_back");
+    CHECK(taken->press == kPress);
+    CHECK_FALSE(model.offeringSwap());
+
+    offer();
+    const auto clicked = model.click({SettingsClick::Kind::CaptureSwap});
+    REQUIRE(clicked);
+    CHECK(clicked->kind == SettingsCommand::Kind::Swap);
+
+    offer();
+    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK_FALSE(model.offeringSwap());
+    CHECK(model.isOpen()); // Back dropped the offer, it did not close the screen
+
+    offer();
+    CHECK_FALSE(model.click({SettingsClick::Kind::CaptureCancel}).has_value());
+    CHECK_FALSE(model.offeringSwap());
+}
+
+TEST_CASE("ui/settings: a click on a binding row captures as Activate does", "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    CHECK_FALSE(model.click({SettingsClick::Kind::Row, 0}).has_value());
+    CHECK(model.capturing());
+}
+
+TEST_CASE("ui/settings: Ripristina predefiniti asks once; Back and moving away drop the question",
+          "[ui][settings][capture]") {
+    SettingsModel model = captureModel();
+    static_cast<void>(model.apply(UiCommand::Down));
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    CHECK(model.confirmingAction());
+    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK_FALSE(model.confirmingAction());
+    CHECK(model.isOpen());
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    static_cast<void>(model.apply(UiCommand::Up));
+    CHECK_FALSE(model.confirmingAction());
+    static_cast<void>(model.apply(UiCommand::Down));
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    const auto command = model.apply(UiCommand::Activate);
+    REQUIRE(command);
+    CHECK(command->kind == SettingsCommand::Kind::RestoreRow);
+    CHECK(command->key == "bindings.defaults");
+    // A click mirrors it.
+    CHECK_FALSE(model.click({SettingsClick::Kind::Row, 1}).has_value());
+    const auto clicked = model.click({SettingsClick::Kind::Row, 1});
+    REQUIRE(clicked);
+    CHECK(clicked->kind == SettingsCommand::Kind::RestoreRow);
 }

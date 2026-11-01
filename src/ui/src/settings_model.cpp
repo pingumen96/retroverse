@@ -73,6 +73,9 @@ std::optional<Json> settingsStep(const SettingsRow& row, int direction, bool wra
         }
         return std::optional<Json>(std::in_place, row.choices[static_cast<std::size_t>(next)]);
     }
+    case SettingsRowKind::Binding:
+    case SettingsRowKind::Action:
+        return std::nullopt;
     case SettingsRowKind::Slider: {
         if (!row.value.is_number()) {
             if (direction > 0) {
@@ -108,6 +111,28 @@ std::string_view toString(SettingsCommand::Kind kind) noexcept {
         return "restore-all";
     case SettingsCommand::Kind::Close:
         return "close";
+    case SettingsCommand::Kind::Bind:
+        return "bind";
+    case SettingsCommand::Kind::Swap:
+        return "swap";
+    case SettingsCommand::Kind::RestoreRow:
+        return "restore-row";
+    }
+    return "unknown";
+}
+
+std::string_view toString(SettingsCapture answer) noexcept {
+    switch (answer) {
+    case SettingsCapture::Free:
+        return "free";
+    case SettingsCapture::Same:
+        return "same";
+    case SettingsCapture::Clash:
+        return "clash";
+    case SettingsCapture::Reserved:
+        return "reserved";
+    case SettingsCapture::Locked:
+        return "locked";
     }
     return "unknown";
 }
@@ -148,6 +173,8 @@ std::string SettingsModel::focusedElement() const {
 void SettingsModel::open() {
     m_open = true;
     m_confirmAll = false;
+    m_confirmAction = false;
+    endCapture();
     m_focus = 0;
     const std::vector<std::string> held = groups();
     m_group = held.empty() ? std::string(settings::kGroups.front()) : held.front();
@@ -157,6 +184,7 @@ void SettingsModel::open() {
 void SettingsModel::close() noexcept {
     if (m_open) {
         m_open = false;
+        m_capture = Capture::None;
         changed();
     }
 }
@@ -185,18 +213,12 @@ void SettingsModel::setRows(std::vector<SettingsRow> rows) {
     changed();
 }
 
-void SettingsModel::setDevice(bool pad) noexcept {
-    if (m_pad != pad) {
-        m_pad = pad;
-        changed();
-    }
-}
-
 void SettingsModel::setGroup(std::string group) {
     if (group != m_group) {
         m_group = std::move(group);
         m_focus = 0;
         m_confirmAll = false;
+        m_confirmAction = false;
         changed();
     }
 }
@@ -222,6 +244,7 @@ void SettingsModel::moveFocus(int direction) {
         return;
     }
     m_confirmAll = false;
+    m_confirmAction = false;
     changed();
 }
 
@@ -234,7 +257,7 @@ std::optional<SettingsCommand> SettingsModel::stepFocused(int direction, bool wr
     if (!next) {
         return std::nullopt;
     }
-    return SettingsCommand{SettingsCommand::Kind::Change, row->key, std::move(*next)};
+    return SettingsCommand{SettingsCommand::Kind::Change, row->key, std::move(*next), std::nullopt, {}};
 }
 
 std::optional<SettingsCommand> SettingsModel::restoreFocused() {
@@ -242,7 +265,7 @@ std::optional<SettingsCommand> SettingsModel::restoreFocused() {
     if (row == nullptr || !row->overridden) {
         return std::nullopt;
     }
-    return SettingsCommand{SettingsCommand::Kind::Restore, row->key, nullptr};
+    return SettingsCommand{SettingsCommand::Kind::Restore, row->key, nullptr, std::nullopt, {}};
 }
 
 std::optional<SettingsCommand> SettingsModel::pressRestoreAll() {
@@ -253,11 +276,121 @@ std::optional<SettingsCommand> SettingsModel::pressRestoreAll() {
     }
     m_confirmAll = false;
     changed();
-    return SettingsCommand{SettingsCommand::Kind::RestoreAll, {}, nullptr};
+    return SettingsCommand{SettingsCommand::Kind::RestoreAll, {}, nullptr, std::nullopt, {}};
+}
+
+void SettingsModel::startCapture(const SettingsRow& row) {
+    m_capture = Capture::Waiting;
+    m_captureKey = row.key;
+    m_captureOther.clear();
+    m_captureRefused.clear();
+    m_capturePress.reset();
+    m_captureLeft = settings::kCaptureSeconds;
+    changed();
+}
+
+void SettingsModel::endCapture() {
+    if (m_capture != Capture::None || !m_captureKey.empty()) {
+        m_capture = Capture::None;
+        m_captureKey.clear();
+        m_captureOther.clear();
+        m_captureRefused.clear();
+        m_capturePress.reset();
+        changed();
+    }
+}
+
+int SettingsModel::captureSeconds() const noexcept {
+    return static_cast<int>(std::ceil(std::max(m_captureLeft, 0.0)));
+}
+
+void SettingsModel::tick(double seconds) {
+    if (!capturing()) {
+        return;
+    }
+    const int before = captureSeconds();
+    m_captureLeft -= seconds;
+    if (m_captureLeft <= 0.0) {
+        endCapture();
+    } else if (captureSeconds() != before) {
+        changed();
+    }
+}
+
+std::optional<SettingsCommand> SettingsModel::captured(const input::Binding& press, SettingsCapture answer,
+                                                       std::string other) {
+    if (!capturing()) {
+        return std::nullopt;
+    }
+    switch (answer) {
+    case SettingsCapture::Free: {
+        SettingsCommand command{SettingsCommand::Kind::Bind, m_captureKey, nullptr, press, {}};
+        endCapture();
+        return command;
+    }
+    case SettingsCapture::Same:
+        endCapture();
+        return std::nullopt;
+    case SettingsCapture::Clash:
+        m_capture = Capture::Offer;
+        m_capturePress = press;
+        m_captureOther = std::move(other);
+        m_captureRefused.clear();
+        changed();
+        return std::nullopt;
+    case SettingsCapture::Reserved:
+    case SettingsCapture::Locked:
+        m_captureOther = std::move(other);
+        m_captureRefused = answer == SettingsCapture::Reserved ? "reserved" : "locked";
+        m_captureLeft = settings::kCaptureSeconds;
+        changed();
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+std::optional<SettingsCommand> SettingsModel::takeSwap() {
+    if (!offeringSwap() || !m_capturePress) {
+        return std::nullopt;
+    }
+    SettingsCommand command{SettingsCommand::Kind::Swap, m_captureKey, nullptr, m_capturePress, m_captureOther};
+    endCapture();
+    return command;
+}
+
+std::optional<SettingsCommand> SettingsModel::pressRow() {
+    const SettingsRow* row = focusedRow();
+    if (row == nullptr) {
+        return pressRestoreAll();
+    }
+    if (row->kind == SettingsRowKind::Binding) {
+        startCapture(*row);
+        return std::nullopt;
+    }
+    if (row->kind == SettingsRowKind::Action) {
+        if (!m_confirmAction) {
+            m_confirmAction = true;
+            changed();
+            return std::nullopt;
+        }
+        m_confirmAction = false;
+        changed();
+        return SettingsCommand{SettingsCommand::Kind::RestoreRow, row->key, nullptr, std::nullopt, {}};
+    }
+    return stepFocused(1, true);
 }
 
 std::optional<SettingsCommand> SettingsModel::apply(UiCommand command) {
-    if (!m_open) {
+    if (!m_open || capturing()) {
+        return std::nullopt;
+    }
+    if (offeringSwap()) {
+        if (command == UiCommand::Activate) {
+            return takeSwap();
+        }
+        if (command == UiCommand::Back) {
+            endCapture();
+        }
         return std::nullopt;
     }
     switch (command) {
@@ -272,10 +405,7 @@ std::optional<SettingsCommand> SettingsModel::apply(UiCommand command) {
     case UiCommand::Right:
         return stepFocused(1, false);
     case UiCommand::Activate:
-        if (focusedRow() == nullptr) {
-            return pressRestoreAll();
-        }
-        return stepFocused(1, true);
+        return pressRow();
     case UiCommand::Info:
         return restoreFocused();
     case UiCommand::FilterPrevious:
@@ -285,13 +415,14 @@ std::optional<SettingsCommand> SettingsModel::apply(UiCommand command) {
         moveGroup(1);
         return std::nullopt;
     case UiCommand::Back:
-        if (m_confirmAll) {
+        if (m_confirmAll || m_confirmAction) {
             m_confirmAll = false;
+            m_confirmAction = false;
             changed();
             return std::nullopt;
         }
         close();
-        return SettingsCommand{SettingsCommand::Kind::Close, {}, nullptr};
+        return SettingsCommand{SettingsCommand::Kind::Close, {}, nullptr, std::nullopt, {}};
     default:
         return std::nullopt;
     }
@@ -299,6 +430,16 @@ std::optional<SettingsCommand> SettingsModel::apply(UiCommand command) {
 
 std::optional<SettingsCommand> SettingsModel::click(const SettingsClick& click) {
     if (!m_open) {
+        return std::nullopt;
+    }
+    if (click.kind == SettingsClick::Kind::CaptureCancel) {
+        endCapture();
+        return std::nullopt;
+    }
+    if (click.kind == SettingsClick::Kind::CaptureSwap) {
+        return takeSwap();
+    }
+    if (capturing() || offeringSwap()) {
         return std::nullopt;
     }
     if (click.kind == SettingsClick::Kind::Tab) {
@@ -325,11 +466,12 @@ std::optional<SettingsCommand> SettingsModel::click(const SettingsClick& click) 
     if (m_focus != click.index) {
         m_focus = click.index;
         m_confirmAll = false;
+        m_confirmAction = false;
         changed();
     }
     switch (click.kind) {
     case SettingsClick::Kind::Row:
-        return focusedRow()->kind == SettingsRowKind::Slider ? std::nullopt : stepFocused(1, true);
+        return focusedRow()->kind == SettingsRowKind::Slider ? std::nullopt : pressRow();
     case SettingsClick::Kind::Step:
         return stepFocused(click.direction, false);
     case SettingsClick::Kind::Restore:
