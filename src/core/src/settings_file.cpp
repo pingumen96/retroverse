@@ -23,8 +23,8 @@ using Json = nlohmann::json;
 
 constexpr std::string_view kSchemaVersionKey = "schemaVersion";
 constexpr std::uintmax_t kMaxSettingsBytes = 16u * 1024u * 1024u;
-/// A rename onto a file a reader holds open can fail while it does: tried again for about 100 ms.
-constexpr int kSaveAttempts = 6;
+/// A rename onto a file a reader holds open can fail while it does: tried again for about 200 ms.
+constexpr int kSaveAttempts = 12;
 constexpr std::chrono::milliseconds kSaveRetryWait{20};
 
 /// A dotted key's parts.
