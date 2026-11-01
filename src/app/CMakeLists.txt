@@ -31,6 +31,8 @@ add_library(rv_app_cli STATIC
     src/exit_code.cpp
     src/frame_stats_log.cpp
     src/frame_timing.cpp
+    src/binding_rules.cpp
+    src/controller_watch.cpp
     src/input_context.cpp
     src/launch_flow.cpp
     src/launch_outcome.cpp

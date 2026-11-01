@@ -778,6 +778,37 @@ struct SettingsRecord {
     bool operator==(const SettingsRecord&) const = default;
 };
 
+/// A hint as shown at the end of the run.
+struct HintRecord {
+    /// The hint's actions (`hint-action`), its text.
+    std::string actions;
+    std::string text;
+
+    bool operator==(const HintRecord&) const = default;
+};
+
+/// The controls in the run (I7 step 3, ADR-0018 §7).
+struct ControlsRecord {
+    /// The device the hints follow at the end: "pad", "keys".
+    std::string device;
+    /// --safe-bindings: settings.json's bindings were left out.
+    bool safeBindings = false;
+    /// The hints visible at the end, and those that run past their box.
+    std::vector<HintRecord> hints;
+    std::uint32_t hintsOutside = 0;
+    /// A press a capture took, per its verdict (app::toString(BindingVerdict)), in order.
+    std::vector<std::string> captures;
+    /// The pad went, came back; "Controller scollegato" shows at the end; frames it showed.
+    std::uint64_t padsLost = 0;
+    std::uint64_t padsBack = 0;
+    bool noticeShown = false;
+    std::uint64_t noticeFrames = 0;
+    /// The rebound row's names at the end, "<action>=<key>|<pad>", for every action a user may bind.
+    std::vector<std::string> bindings;
+
+    bool operator==(const ControlsRecord&) const = default;
+};
+
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -2222,6 +2253,7 @@ struct RunReport {
     std::optional<SettingsRecord> settings;
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;
+    std::optional<ControlsRecord> controls;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

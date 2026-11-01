@@ -214,14 +214,6 @@ TEST_CASE("ui/regenerate_preview: a press meant for what showed before never lan
     CHECK(drop.state() == RegenerateState::Confirm);
     CHECK_FALSE(drop.apply(UiCommand::Activate).has_value());
     CHECK(drop.state() == RegenerateState::Ready);
-    // The device used last: the hints' glyphs.
-    CHECK_FALSE(model.padDevice());
-    const std::uint64_t before = model.revision();
-    model.setDevice(true);
-    CHECK(model.padDevice());
-    CHECK(model.revision() > before);
-    model.setDevice(true);
-    CHECK(model.revision() == before + 1);
 }
 
 TEST_CASE("ui/regenerate_preview: the document has the ids, bindings, events and keys its screen uses",
@@ -262,10 +254,9 @@ TEST_CASE("ui/regenerate_preview: the document has the ids, bindings, events and
         INFO(subject);
         CHECK(contains(rml, "conflict.subject == '" + std::string(subject) + "'"));
     }
-    for (const std::string_view device : rp::kDevices) {
-        INFO(device);
-        CHECK(contains(rml, "device == '" + std::string(device) + "'"));
-    }
+    // The hints come from the active bindings (ui/hint_bar.hpp).
+    CHECK(contains(rml, "hint-action=\"ui_activate\""));
+    CHECK(contains(rml, "hint-action=\"ui_back\""));
     // The column: a body that scrolls, the choices and the hints after it (I4b step 6's review).
     CHECK(contains(rml, "id=\"rp-body\""));
     CHECK(contains(rml, "id=\"rp-hints\""));

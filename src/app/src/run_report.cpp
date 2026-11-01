@@ -1131,6 +1131,35 @@ WizardRecord readWizard(FieldReader& fields) {
     return wizard;
 }
 
+Json controlsToJson(const ControlsRecord& controls) {
+    Json hints = Json::array();
+    for (const HintRecord& hint : controls.hints) {
+        hints.push_back(Json{{"actions", hint.actions}, {"text", hint.text}});
+    }
+    return Json{{"device", controls.device},           {"safeBindings", controls.safeBindings},
+                {"hints", std::move(hints)},           {"hintsOutside", controls.hintsOutside},
+                {"captures", controls.captures},       {"padsLost", controls.padsLost},
+                {"padsBack", controls.padsBack},       {"noticeShown", controls.noticeShown},
+                {"noticeFrames", controls.noticeFrames}, {"bindings", controls.bindings}};
+}
+
+ControlsRecord readControls(FieldReader& fields) {
+    ControlsRecord controls;
+    controls.device = fields.string("device");
+    controls.safeBindings = fields.boolean("safeBindings");
+    for (FieldReader& hint : fields.objectArray("hints")) {
+        controls.hints.push_back(HintRecord{hint.string("actions"), hint.string("text")});
+    }
+    controls.hintsOutside = static_cast<std::uint32_t>(fields.count("hintsOutside"));
+    controls.captures = fields.stringArray("captures");
+    controls.padsLost = fields.count("padsLost");
+    controls.padsBack = fields.count("padsBack");
+    controls.noticeShown = fields.boolean("noticeShown");
+    controls.noticeFrames = fields.count("noticeFrames");
+    controls.bindings = fields.stringArray("bindings");
+    return controls;
+}
+
 Json settingsToJson(const SettingsRecord& settings) {
     Json json{{"unreadable", settings.unreadable},
               {"backedUp", settings.backedUp},
@@ -3289,6 +3318,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.settings) {
         json["settings"] = settingsToJson(*report.settings);
     }
+    if (report.controls) {
+        json["controls"] = controlsToJson(*report.controls);
+    }
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -3461,6 +3493,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto settings = fields.optionalObject("settings")) {
         report.settings = readSettings(*settings);
+    }
+    if (auto controls = fields.optionalObject("controls")) {
+        report.controls = readControls(*controls);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

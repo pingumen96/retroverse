@@ -1,0 +1,16 @@
+<rml>
+<head>
+	<!--
+		"Controller scollegato" (FR-029, ADR-0018 §7): shown by rv::ui::ControllerNoticeScreen when the last pad goes, over
+		whatever shows, until one comes back or some seconds pass. It takes no input and never the focus.
+	-->
+	<title>Controller</title>
+	<link type="text/rcss" href="controller_notice.rcss"/>
+</head>
+<body>
+	<div id="controller-notice">
+		<p class="title">Controller scollegato</p>
+		<p class="line">Ricollegalo, o continua con tastiera e mouse.</p>
+	</div>
+</body>
+</rml>

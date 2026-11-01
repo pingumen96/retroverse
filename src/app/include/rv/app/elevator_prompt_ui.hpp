@@ -6,23 +6,17 @@
 // (tests/unit/app/test_elevator_prompt_document.cpp); the name of the key or button the prompt shows; and where the
 // walker must stand and look for it (facesElevator()). The words are the document's: the code passes the key's name.
 
-#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
-#include <variant>
 
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <rv/core/aabb.hpp>
-#include <rv/input/action.hpp>
-#include <rv/input/action_map.hpp>
-#include <rv/input/binding.hpp>
-#include <rv/input/codes.hpp>
 
 namespace rv::app {
 
@@ -36,43 +30,6 @@ inline constexpr std::string_view kDataModel = "elevator_prompt";
 inline constexpr std::string_view kPanelId = "elevator-prompt";
 
 } // namespace elevator_prompt
-
-/// The name of a gamepad button as the prompt shows it: the face buttons by their Xbox letters (South "A", East "B",
-/// West "X", North "Y"), the others by their binding name.
-[[nodiscard]] inline std::string gamepadButtonLabel(input::GamepadButton button) {
-    switch (button) {
-    case input::GamepadButton::South:
-        return "A";
-    case input::GamepadButton::East:
-        return "B";
-    case input::GamepadButton::West:
-        return "X";
-    case input::GamepadButton::North:
-        return "Y";
-    default:
-        return std::string(input::gamepadButtonName(button));
-    }
-}
-
-/// The key (`device` KeyboardMouse: the first key bound to Interact, its name in capitals) or button (Gamepad: the first
-/// button bound to it) the prompt names for `action` in `map`; "" when nothing of that device is bound to it.
-[[nodiscard]] inline std::string promptKeyLabel(const input::ActionMap& map, input::Action action,
-                                                input::DeviceKind device) {
-    for (const input::Binding& binding : map.bindings(action)) {
-        if (device == input::DeviceKind::KeyboardMouse) {
-            if (const auto* key = std::get_if<input::KeyBinding>(&binding)) {
-                std::string name(input::keyName(key->key));
-                for (char& c : name) {
-                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                }
-                return name;
-            }
-        } else if (const auto* button = std::get_if<input::GamepadButtonBinding>(&binding)) {
-            return gamepadButtonLabel(button->button);
-        }
-    }
-    return {};
-}
 
 /// The cosine of the widest angle between the walker's view on the floor and the direction to the elevator's doors at
 /// which the prompt shows (80 degrees).

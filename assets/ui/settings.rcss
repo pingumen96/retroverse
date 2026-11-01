@@ -218,16 +218,70 @@ h1 {
 	color: #171B22;
 }
 
-.kbd.wide {
-	width: auto;
-	padding: 0dp 9dp;
-	border-radius: 6dp;
-	background-color: #F4EFE6CC;
+/* A list of the Controlli group opens with its heads, over the columns of its rows. */
+.list-title {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 10dp 15dp 2dp 15dp;
+	font-size: 18dp;
+	color: #FFC88ACC;
 }
 
-.pad-a { background-color: #6EAF93; }
-.pad-b { background-color: #C8645A; }
-.pad-x { background-color: #7FA6D6; }
+.title-text {
+	display: block;
+	flex: 1 1 0dp;
+}
+
+.title-device {
+	display: block;
+	flex: 0 0 auto;
+	width: 150dp;
+	text-align: center;
+}
+
+.list-title .title-device:last-child {
+	margin-right: 134dp;
+}
+
+.bind-cell {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	text-align: center;
+}
+
+#st-capture {
+	flex: 0 0 auto;
+	margin-top: 8dp;
+	padding: 8dp 14dp;
+	border-radius: 12dp;
+	background-color: #FFC88A1F;
+	border: 2dp #FFC88A;
+	text-align: center;
+}
+
+.capture-note {
+	font-size: 18dp;
+	color: #FFC88A;
+}
+
+.capture-buttons {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	margin-top: 6dp;
+}
+
+.capture-button {
+	display: block;
+	flex: 0 0 auto;
+	margin: 0dp 8dp;
+	padding: 4dp 14dp;
+	border-radius: 8dp;
+	font-size: 20dp;
+	color: #F4EFE6;
+	background-color: #FFFFFF14;
+}
 
 /* Compact: views under 760 dp of the display's density tall, as the directory's. */
 @media (theme: compact) {
@@ -243,4 +297,10 @@ h1 {
 	.restore { width: 106dp; font-size: 17dp; }
 	#st-hints { font-size: 16dp; margin-top: 6dp; }
 	.kbd { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+	.title-device { width: 130dp; }
+	.list-title { font-size: 16dp; padding-top: 6dp; }
+	.list-title .title-device:last-child { margin-right: 116dp; }
+	#st-capture { padding: 4dp 12dp; margin-top: 4dp; }
+	.capture-note { font-size: 16dp; }
+	.capture-button { font-size: 18dp; padding: 3dp 12dp; }
 }

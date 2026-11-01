@@ -11,6 +11,7 @@
 	-->
 	<title>Informazioni</title>
 	<link type="text/rcss" href="game_info.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body id="game-info" data-model="game_info">
 	<div class="panel">
@@ -41,9 +42,9 @@
 		<div class="footer">
 			<button id="info-media" class="action" data-event-click="act('media')">Vedi media</button>
 			<div class="hints">
-				<span class="hint"><span class="pad pad-dpad">^ v</span>Scorri</span>
-				<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
-				<span class="hint"><span class="pad pad-b">B</span>Chiudi</span>
+				<span class="hint"><span class="pad" hint-action="ui_up ui_down"></span>Scorri</span>
+				<span class="hint"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
+				<span class="hint"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
 			</div>
 			<button id="info-close" class="action close" data-event-click="act('close')">Chiudi</button>
 		</div>

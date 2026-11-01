@@ -20,6 +20,7 @@
 	-->
 	<title>Anteprima della rigenerazione</title>
 	<link type="text/rcss" href="regenerate_preview.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="regenerate_preview">
 	<div id="regenerate-preview" class="panel">
@@ -157,10 +158,10 @@
 		</div>
 		<!-- The pad's or the keys' glyphs, the device used last (as the editor's bar). -->
 		<div id="rp-hints" data-if="state != 'committing'">
-			<span class="hint" data-if="state != 'computing'"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Scegli</span>
-			<span class="hint" data-if="state == 'confirm' || (state == 'ready' && kind == 'undo')"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
-			<span class="hint" data-if="state == 'failed' || (state == 'ready' && kind != 'undo' && !changed && overrides == 0)"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Chiudi</span>
-			<span class="hint" data-if="state == 'computing' || (state == 'ready' && kind != 'undo' && (changed || overrides > 0))"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Annulla</span>
+			<span class="hint" data-if="state != 'computing'"><span class="kbd" hint-action="ui_activate"></span>Scegli</span>
+			<span class="hint" data-if="state == 'confirm' || (state == 'ready' && kind == 'undo')"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
+			<span class="hint" data-if="state == 'failed' || (state == 'ready' && kind != 'undo' && !changed && overrides == 0)"><span class="kbd" hint-action="ui_back"></span>Chiudi</span>
+			<span class="hint" data-if="state == 'computing' || (state == 'ready' && kind != 'undo' && (changed || overrides > 0))"><span class="kbd" hint-action="ui_back"></span>Annulla</span>
 		</div>
 	</div>
 </body>

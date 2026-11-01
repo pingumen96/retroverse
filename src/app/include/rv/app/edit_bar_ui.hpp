@@ -97,8 +97,6 @@ inline constexpr std::array<std::string_view, 19> kFixtureKinds{
     "furniture"};
 /// The verdicts on a held fixture's place (EditBarContent::verdict).
 inline constexpr std::array<std::string_view, 3> kVerdicts{"checking", "ok", "refused"};
-/// The devices whose glyphs the bar shows ("pad": the pad's buttons, "keys": the keyboard's).
-inline constexpr std::array<std::string_view, 2> kDevices{"pad", "keys"};
 
 } // namespace edit_bar
 
@@ -132,8 +130,6 @@ struct EditBarContent {
     bool saveRefused = false;
     /// The menu's focused button (edit_bar::kMenuButtonIds' order: "save", "undo", "discard", "continue").
     std::string menuFocus;
-    /// edit_bar::kDevices: the glyphs of the device used last.
-    std::string device = "keys";
     /// I4b step 4: the furniture targeted (`target` "fixture") or held (`mode` "moving"): its kind (edit_bar::
     /// kFixtureKinds), whether it hangs on a wall (it turns with its wall, not with the keys), whether it cannot move
     /// (targeted: `refusal` names why at once, no "Prendi"); held, whether it stands elsewhere than where it was picked

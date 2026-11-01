@@ -379,9 +379,6 @@ void WorldSession::enterEditRoom(const world::RoomId& room) {
 InteractionResult WorldSession::editFrame(const WorldHover::Frame& frame) {
     WorldEditState& edit = *m_edit;
     InteractionResult result;
-    if (frame.actions != nullptr) {
-        edit.device = frame.actions->activeDevice();
-    }
     EditFrame input;
     input.actions = frame.actions;
     input.deltaSeconds = frame.deltaSeconds;
@@ -687,7 +684,6 @@ void WorldSession::followEdit(ProductUi& product) {
     }
     bar.saveRefused = edit.saveRefused;
     bar.menuFocus = std::string(toString(edit.interaction.menuFocus()));
-    bar.device = edit.device == input::DeviceKind::Gamepad ? "pad" : "keys";
     product.setEditBar(std::move(bar));
     m_editBarShown = true;
 }

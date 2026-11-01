@@ -12,6 +12,7 @@
 	-->
 	<title>Catalogo rapido</title>
 	<link type="text/rcss" href="quick_catalog.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="catalog">
 	<div id="catalog" class="panel">
@@ -177,10 +178,10 @@
 
 	<div id="hints">
 		<div id="hint-bar" class="hint-bar">
-			<span class="hint"><span class="pad pad-a">A</span>Avvia</span>
-			<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
-			<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
-			<span class="hint"><span class="pad pad-b">B</span>Indietro</span>
+			<span class="hint"><span class="pad" hint-action="ui_activate"></span>Avvia</span>
+			<span class="hint"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
+			<span class="hint"><span class="pad" hint-action="ui_info"></span>Informazioni</span>
+			<span class="hint"><span class="pad" hint-action="ui_back"></span>Indietro</span>
 		</div>
 	</div>
 </body>

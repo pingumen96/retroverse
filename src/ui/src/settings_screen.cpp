@@ -28,6 +28,9 @@ struct RowView {
     Rml::String text;
     Rml::String fill;
     Rml::String note;
+    Rml::String keyLabel;
+    Rml::String padLabel;
+    Rml::String heading;
     bool scene = false;
     bool overridden = false;
 };
@@ -49,6 +52,10 @@ struct RowView {
         return "choice";
     case SettingsRowKind::Slider:
         return "slider";
+    case SettingsRowKind::Binding:
+        return "binding";
+    case SettingsRowKind::Action:
+        return "action";
     }
     return {};
 }
@@ -86,6 +93,9 @@ struct SettingsScreen::Impl {
             row.RegisterMember("text", &RowView::text);
             row.RegisterMember("fill", &RowView::fill);
             row.RegisterMember("note", &RowView::note);
+            row.RegisterMember("keyLabel", &RowView::keyLabel);
+            row.RegisterMember("padLabel", &RowView::padLabel);
+            row.RegisterMember("heading", &RowView::heading);
             row.RegisterMember("scene", &RowView::scene);
             row.RegisterMember("overridden", &RowView::overridden);
         }
@@ -93,7 +103,12 @@ struct SettingsScreen::Impl {
         constructor.Bind("group", &group);
         constructor.Bind("rows", &rows);
         constructor.Bind("confirmAll", &confirmAll);
-        constructor.Bind("device", &device);
+        constructor.Bind("confirmAction", &confirmAction);
+        constructor.Bind("capture", &capture);
+        constructor.Bind("captureKey", &captureKey);
+        constructor.Bind("captureOther", &captureOther);
+        constructor.Bind("captureRefused", &captureRefused);
+        constructor.Bind("captureSeconds", &captureSeconds);
         const auto click = [this](SettingsClick::Kind kind) {
             return [this, kind](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
                 SettingsClick made;
@@ -115,6 +130,10 @@ struct SettingsScreen::Impl {
         constructor.BindEventCallback(Rml::String(settings::kStepEvent), click(SettingsClick::Kind::Step));
         constructor.BindEventCallback(Rml::String(settings::kRestoreEvent), click(SettingsClick::Kind::Restore));
         constructor.BindEventCallback(Rml::String(settings::kRestoreAllEvent), click(SettingsClick::Kind::RestoreAll));
+        constructor.BindEventCallback(Rml::String(settings::kCaptureCancelEvent),
+                                      click(SettingsClick::Kind::CaptureCancel));
+        constructor.BindEventCallback(Rml::String(settings::kCaptureSwapEvent),
+                                      click(SettingsClick::Kind::CaptureSwap));
         constructor.BindEventCallback(Rml::String(settings::kTabEvent),
                                       [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
                                           if (args.empty()) {
@@ -159,13 +178,21 @@ struct SettingsScreen::Impl {
             made.text = Rml::String(settingsValueText(*row));
             made.fill = Rml::String(settingsFill(*row));
             made.note = Rml::String(row->note);
+            made.keyLabel = Rml::String(row->keyLabel);
+            made.padLabel = Rml::String(row->padLabel);
+            made.heading = Rml::String(row->heading);
             made.scene = row->kind == SettingsRowKind::Slider && row->value.is_null();
             made.overridden = row->overridden;
             rows.push_back(std::move(made));
             ++index;
         }
         confirmAll = shown.confirmingRestoreAll();
-        device = shown.padDevice() ? "pad" : "keys";
+        confirmAction = shown.confirmingAction();
+        capture = shown.capturing() ? "waiting" : shown.offeringSwap() ? "offer" : "";
+        captureKey = Rml::String(shown.captureKey());
+        captureOther = Rml::String(shown.captureOther());
+        captureRefused = Rml::String(shown.captureRefused());
+        captureSeconds = shown.captureSeconds();
         handle.DirtyAllVariables();
     }
 
@@ -194,7 +221,12 @@ struct SettingsScreen::Impl {
     Rml::String group;
     std::vector<RowView> rows;
     bool confirmAll = false;
-    Rml::String device;
+    bool confirmAction = false;
+    Rml::String capture;
+    Rml::String captureKey;
+    Rml::String captureOther;
+    Rml::String captureRefused;
+    int captureSeconds = 0;
 };
 
 SettingsScreen::SettingsScreen(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}

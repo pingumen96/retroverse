@@ -21,6 +21,7 @@
 	-->
 	<title>Modifica stanza</title>
 	<link type="text/rcss" href="edit_bar.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="edit_bar">
 	<!-- The menu (Start, Enter), above the bar. -->
@@ -110,30 +111,30 @@
 
 		<!-- The actions, with the glyphs of the device used last. -->
 		<div class="hints" data-if="mode == 'browse' || mode == 'holding'">
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Prendi</span>
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && !targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Fissa</span>
-			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && targetPinned"><span class="key pad-x" data-if="device == 'pad'">X</span><span class="key wide" data-if="device == 'keys'">P</span>Sblocca</span>
-			<span class="hint" data-if="mode == 'holding' && targetOwn"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
-			<span class="hint" data-if="mode == 'holding' && !targetOwn && targetFree"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
-			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Scambia</span>
-			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Spazio vicino</span>
-			<span class="hint" data-if="mode == 'holding'"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Rimetti a posto</span>
-			<span class="hint" data-if="mode == 'browse' && pending == 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Esci</span>
-			<span class="hint" data-if="mode == 'browse' && pending > 0"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Menu</span>
-			<span class="hint" data-if="mode == 'holding' || pending == 0"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked"><span class="key" hint-action="interact"></span>Prendi</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && !targetPinned"><span class="key" hint-action="edit_pin"></span>Fissa</span>
+			<span class="hint" data-if="mode == 'browse' && target != '' && target != 'slot' && target != 'dressed' && !fixtureLocked && targetPinned"><span class="key" hint-action="edit_pin"></span>Sblocca</span>
+			<span class="hint" data-if="mode == 'holding' && targetOwn"><span class="key" hint-action="interact"></span>Rimetti</span>
+			<span class="hint" data-if="mode == 'holding' && !targetOwn && targetFree"><span class="key" hint-action="interact"></span>Posa</span>
+			<span class="hint" data-if="mode == 'holding' && !targetOwn && target == 'game'"><span class="key" hint-action="interact"></span>Scambia</span>
+			<span class="hint"><span class="key" hint-action="ui_up ui_down ui_left ui_right"></span>Spazio vicino</span>
+			<span class="hint" data-if="mode == 'holding'"><span class="key" hint-action="back"></span>Rimetti a posto</span>
+			<span class="hint" data-if="mode == 'browse' && pending == 0"><span class="key" hint-action="back"></span>Esci</span>
+			<span class="hint" data-if="mode == 'browse' && pending > 0"><span class="key" hint-action="back"></span>Menu</span>
+			<span class="hint" data-if="mode == 'holding' || pending == 0"><span class="key" hint-action="confirm"></span>Menu</span>
 		</div>
 		<div class="hints" data-if="mode == 'moving'">
-			<span class="hint" data-if="placeMoved"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Posa</span>
-			<span class="hint" data-if="!placeMoved"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">E</span>Rimetti</span>
-			<span class="hint" data-if="!fixtureHung"><span class="key wide" data-if="device == 'pad'">LB RB</span><span class="key wide" data-if="device == 'keys'">Q R</span>Ruota</span>
-			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Sposta di 10 cm</span>
-			<span class="hint"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Rimetti a posto</span>
-			<span class="hint"><span class="key wide" data-if="device == 'pad'">Start</span><span class="key wide" data-if="device == 'keys'">Invio</span>Menu</span>
+			<span class="hint" data-if="placeMoved"><span class="key" hint-action="interact"></span>Posa</span>
+			<span class="hint" data-if="!placeMoved"><span class="key" hint-action="interact"></span>Rimetti</span>
+			<span class="hint" data-if="!fixtureHung"><span class="key" hint-action="edit_rotate_left edit_rotate_right"></span>Ruota</span>
+			<span class="hint"><span class="key" hint-action="ui_up ui_down ui_left ui_right"></span>Sposta di 10 cm</span>
+			<span class="hint"><span class="key" hint-action="back"></span>Rimetti a posto</span>
+			<span class="hint"><span class="key" hint-action="confirm"></span>Menu</span>
 		</div>
 		<div class="hints" data-if="mode == 'menu'">
-			<span class="hint"><span class="key wide" data-if="device == 'pad'">Croce</span><span class="key wide" data-if="device == 'keys'">Frecce</span>Scegli</span>
-			<span class="hint"><span class="key pad-a" data-if="device == 'pad'">A</span><span class="key wide" data-if="device == 'keys'">Invio</span>Conferma</span>
-			<span class="hint"><span class="key pad-b" data-if="device == 'pad'">B</span><span class="key wide" data-if="device == 'keys'">Esc</span>Continua</span>
+			<span class="hint"><span class="key" hint-action="ui_up ui_down ui_left ui_right"></span>Scegli</span>
+			<span class="hint"><span class="key" hint-action="ui_activate"></span>Conferma</span>
+			<span class="hint"><span class="key" hint-action="back"></span>Continua</span>
 		</div>
 	</div>
 </body>

@@ -471,12 +471,6 @@ h2 {
 	color: #171B22;
 }
 
-.pad-wide {
-	width: auto;
-	padding: 0dp 12dp;
-	background-color: #F4EFE6CC;
-}
-
 .pad-a { background-color: #6EAF93; }
 .pad-b { background-color: #C8645A; }
 
@@ -505,7 +499,6 @@ h2 {
 	.notice { font-size: 17dp; }
 	.hint-bar { font-size: 18dp; padding: 6dp 18dp; }
 	.pad { width: 28dp; height: 28dp; line-height: 28dp; border-radius: 14dp; }
-	.pad-wide { width: auto; }
 }
 
 /* I4b step 6: the "Modifiche" tab's rows, a little tighter than the floors' so that the five fit in the list. Their

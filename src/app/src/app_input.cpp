@@ -8,6 +8,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <rv/app/binding_rules.hpp>
 #include <rv/app/settings_store.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/paths.hpp>
@@ -23,7 +24,7 @@ constexpr std::string_view kUserBindingsFile = "bindings.json";
 
 } // namespace
 
-input::ActionMap loadBindings(const core::Paths& paths) {
+LoadedBindings loadBindingLayers(const core::Paths& paths, bool safe) {
     const std::filesystem::path defaultsPath =
         (paths.assetRoot() / core::pathFromUtf8(kDefaultBindingsPath)).make_preferred();
     input::ActionMap map;
@@ -34,6 +35,8 @@ input::ActionMap loadBindings(const core::Paths& paths) {
         map = input::ActionMap::defaults();
         spdlog::warn("Input bindings unavailable, using the built-in defaults: {}", loaded.error().toString());
     }
+    LoadedBindings layers;
+    layers.shipped = map;
 
     const std::filesystem::path userPath = paths.configDir() / core::pathFromUtf8(kUserBindingsFile);
     std::error_code error;
@@ -48,12 +51,26 @@ input::ActionMap loadBindings(const core::Paths& paths) {
                      *replaced);
     }
 
+    layers.below = map;
     // settings.json over the user's file (ADR-0018 §2): an action the screen did not touch stays as it is written.
-    const std::size_t remapped = applySettingsBindings(map, core::SettingsFile::loadBeside(paths.configDir()));
-    if (remapped > 0) {
-        spdlog::info("settings.json replaces the bindings of {} action(s)", remapped);
+    if (safe) {
+        spdlog::warn("--safe-bindings: settings.json's bindings are left out");
+    } else {
+        const std::size_t remapped = applySettingsBindings(map, core::SettingsFile::loadBeside(paths.configDir()));
+        if (remapped > 0) {
+            spdlog::info("settings.json replaces the bindings of {} action(s)", remapped);
+        }
     }
-    return map;
+    for (const input::Action action : keepUnlocked(map, layers.shipped)) {
+        spdlog::warn("Input bindings: {} gets its shipped binding back: it may never be left without one",
+                     input::actionName(action));
+    }
+    layers.map = std::move(map);
+    return layers;
+}
+
+input::ActionMap loadBindings(const core::Paths& paths, bool safe) {
+    return loadBindingLayers(paths, safe).map;
 }
 
 AppInput::AppInput(platform::GraphicsWindow& window, input::ActionMap bindings,
@@ -76,9 +93,14 @@ void AppInput::handleEvent(const SDL_Event& event) {
 
 input::ActionState AppInput::update(std::uint64_t frameIndex, const xr::VirtualPad* controllers) {
     input::RawInputFrame raw = m_collector.endFrame();
+    if (m_script) {
+        m_script->applyRaw(frameIndex, raw);
+    }
+    m_padConnected = raw.gamepadConnected; // a headset's controllers are no pad to lose
     if (controllers != nullptr) {
         controllers->mergeInto(raw);
     }
+    m_raw = raw;
     m_mouseWheel = std::isfinite(raw.mouseWheel) ? raw.mouseWheel : 0.0f;
     input::ActionState actions = m_system.resolve(raw);
     if (m_script) {
@@ -92,6 +114,17 @@ input::ActionState AppInput::controllersAlone(const xr::VirtualPad& controllers)
     controllers.mergeInto(raw);
     m_controllers.setSettings(m_system.settings()); // the overlay edits the devices' settings
     return m_controllers.resolve(raw);
+}
+
+void AppInput::setBindings(const input::ActionMap& bindings) {
+    m_system.setMap(bindings);
+    m_controllers.setMap(bindings);
+    // What is down now was pressed under the old map: it must not press what it is bound to from now on (the very key a
+    // capture took would activate the row it was captured for).
+    const input::ActionState held = m_system.resolve(m_raw);
+    if (m_script) {
+        m_script->noteHeld(held);
+    }
 }
 
 void AppInput::captureMouseWhenFocused(std::string_view reason) {

@@ -28,6 +28,9 @@
 #include <rv/app/crt_looks.hpp>
 #include <rv/app/debug_line_selection.hpp>
 #include <rv/app/elevator_prompt_ui.hpp>
+#include <rv/app/binding_rules.hpp>
+#include <rv/app/bindings.hpp>
+#include <rv/app/controller_watch.hpp>
 #include <rv/app/input_context.hpp>
 #include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
@@ -49,6 +52,7 @@
 #include <rv/core/math.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/input/binding_labels.hpp>
 #include <rv/core/version.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/devui/overlay_input.hpp>
@@ -491,9 +495,23 @@ ui::SettingsRow settingsRowOf(const SettingRow& row, const SettingsStore& store,
     ui::SettingsRow shown;
     shown.key = row.id();
     shown.group = std::string(toString(row.group));
-    shown.kind = row.kind == SettingKind::Toggle   ? ui::SettingsRowKind::Toggle
-                 : row.kind == SettingKind::Choice ? ui::SettingsRowKind::Choice
-                                                   : ui::SettingsRowKind::Slider;
+    switch (row.kind) {
+    case SettingKind::Toggle:
+        shown.kind = ui::SettingsRowKind::Toggle;
+        break;
+    case SettingKind::Choice:
+        shown.kind = ui::SettingsRowKind::Choice;
+        break;
+    case SettingKind::Slider:
+        shown.kind = ui::SettingsRowKind::Slider;
+        break;
+    case SettingKind::Binding:
+        shown.kind = ui::SettingsRowKind::Binding;
+        break;
+    case SettingKind::Action:
+        shown.kind = ui::SettingsRowKind::Action;
+        break;
+    }
     shown.value = store.value(row);
     shown.choices = row.choices;
     shown.min = row.min;
@@ -537,6 +555,12 @@ struct RetroverseApp::State {
     /// I7 step 1 (ADR-0018 §2, §3): settings.json and the layers under it, the player's settings in force, the floor to
     /// commit again once the file holds what it is drawn with, the report's section.
     std::unique_ptr<SettingsStore> settings;
+    /// I7 step 3: the bindings' layers, the rows' edits asking for the map again, the pad going and coming back.
+    LoadedBindings bindingLayers;
+    bool bindingsTouched = false;
+    bool safeBindings = false;
+    ControllerWatch controllers;
+    std::uint64_t controllerNoticeFrames = 0;
     PlayerSettings player;
     bool lookCommitPending = false;
     SettingsRecord settingsRecord;
@@ -1336,6 +1360,9 @@ struct RetroverseApp::State {
         for (const std::string& key : settingsRecord.refused) {
             spdlog::warn("settings.json's {} is left out: the value is refused", key);
         }
+        safeBindings = context.options().safeBindings;
+        bindingLayers = loadBindingLayers(paths, safeBindings);
+        layers.bindings = bindingLayers.below.toJson()["bindings"];
         settingsRecord.shadowed = shadowedSettings(file, paths.configDir());
         for (const std::string& key : settingsRecord.shadowed) {
             spdlog::info("settings.json's {} shadows the hand-written value of <user data>/config", key);
@@ -1378,8 +1405,13 @@ struct RetroverseApp::State {
     /// settings' rows for the screen: those of a headset when the run is in one (ADR-0018 §12).
     [[nodiscard]] std::vector<ui::SettingsRow> settingsRows(const AppContext& context) const {
         std::vector<ui::SettingsRow> rows;
+        std::optional<BindingGroup> list;
         for (const SettingRow& row : settings->rows()) {
             if (row.hiddenInVr && context.vr()) {
+                continue;
+            }
+            // --safe-bindings: the map in force is not the rows'; "Ripristina predefiniti" stays, to clear them.
+            if (row.kind == SettingKind::Binding && safeBindings) {
                 continue;
             }
             std::string note;
@@ -1390,9 +1422,91 @@ struct RetroverseApp::State {
             } else if (row.id() == "video.audio.mode" && !audio) {
                 note = "start"; // no engine runs: only a start makes one
             }
-            rows.push_back(settingsRowOf(row, *settings, std::move(note)));
+            ui::SettingsRow shown = settingsRowOf(row, *settings, std::move(note));
+            if (row.kind == SettingKind::Binding) {
+                const std::optional<input::Action> action = input::actionFromName(row.key);
+                if (action && product) {
+                    shown.keyLabel = product->bindingLabel(*action, input::DeviceKind::KeyboardMouse);
+                    shown.padLabel = product->bindingLabel(*action, input::DeviceKind::Gamepad);
+                }
+                const BindingGroup group = input::isUiAction(*action) ? BindingGroup::Ui : BindingGroup::World;
+                if (list != group) {
+                    list = group;
+                    shown.heading = group == BindingGroup::Ui ? "ui" : "world";
+                }
+            }
+            rows.push_back(std::move(shown));
         }
         return rows;
+    }
+
+    /// The map a row's change leaves, in force from this frame: the layer below, settings.json's rows over it, no lock-out.
+    void applyBindings() {
+        input::ActionMap map = bindingLayers.below;
+        if (!safeBindings) {
+            const nlohmann::json document{{"schemaVersion", input::ActionMap::kSchemaVersion},
+                                          {"bindings", settings->document(kBindingsSettingsSection)}};
+            if (const auto replaced = map.applyOverrides(document, "settings.json"); !replaced) {
+                spdlog::warn("settings.json's bindings are left out: {}", replaced.error().toString());
+            }
+        }
+        keepUnlocked(map, bindingLayers.shipped);
+        input->setBindings(map);
+        if (product) {
+            product->setBindings(map);
+        }
+    }
+
+    /// A press a capture took: a row's own (Bind), or the two rows of a swap, the screen's edit in memory.
+    void applyBindingPress(const ui::SettingsCommand& command) {
+        const SettingRow* row = settings->row(command.key);
+        const std::optional<input::Action> action =
+            row != nullptr ? input::actionFromName(row->key) : std::optional<input::Action>();
+        if (!action || !command.press) {
+            return;
+        }
+        const input::ActionMap& map = input->system().map();
+        if (command.kind == ui::SettingsCommand::Kind::Bind) {
+            settings->set(*row, bindingList(withBinding(map, *action, *command.press), *action));
+        } else {
+            const SettingRow* otherRow = settings->row(command.other);
+            const std::optional<input::Action> other =
+                otherRow != nullptr ? input::actionFromName(otherRow->key) : std::optional<input::Action>();
+            if (!other) {
+                return;
+            }
+            const input::ActionMap edited = withSwap(map, *action, *command.press, *other);
+            settings->set(*row, bindingList(edited, *action));
+            settings->set(*otherRow, bindingList(edited, *other));
+        }
+        bindingsTouched = true;
+    }
+
+    /// What a press means for the row `key`, in the screen's terms.
+    [[nodiscard]] std::pair<ui::SettingsCapture, std::string> judgeBindingPress(const std::string& key,
+                                                                                const input::Binding& press) const {
+        const SettingRow* row = settings->row(key);
+        const std::optional<input::Action> action =
+            row != nullptr ? input::actionFromName(row->key) : std::optional<input::Action>();
+        if (!action) {
+            return {ui::SettingsCapture::Same, {}};
+        }
+        const BindingJudgement judged = judgeBinding(input->system().map(), *action, press);
+        std::string other =
+            judged.other ? fmt::format("{}.{}", kBindingsSettingsSection, input::actionName(*judged.other)) : "";
+        switch (judged.verdict) {
+        case BindingVerdict::Free:
+            return {ui::SettingsCapture::Free, std::move(other)};
+        case BindingVerdict::Same:
+            return {ui::SettingsCapture::Same, std::move(other)};
+        case BindingVerdict::Clash:
+            return {ui::SettingsCapture::Clash, std::move(other)};
+        case BindingVerdict::Reserved:
+            return {ui::SettingsCapture::Reserved, std::move(other)};
+        case BindingVerdict::Locked:
+            return {ui::SettingsCapture::Locked, std::move(other)};
+        }
+        return {ui::SettingsCapture::Same, {}};
     }
 
     void recordSettingChange(const AppContext& context, const ui::SettingsCommand& command) {
@@ -1400,14 +1514,18 @@ struct RetroverseApp::State {
             ++settingsRecord.changesDropped;
             return;
         }
-        settingsRecord.changes.push_back(SettingChangeRecord{context.frameIndex(),
-                                                             std::string(ui::toString(command.kind)), command.key,
-                                                             command.value.dump()});
+        settingsRecord.changes.push_back(SettingChangeRecord{
+            context.frameIndex(), std::string(ui::toString(command.kind)), command.key,
+            command.press ? std::string(input::bindingCode(*command.press)) : command.value.dump()});
     }
 
     /// What a row's new value does to the run (ADR-0018 §3): at once, or the floor committed again once the file holds
     /// it (the floor's job reads the loaders).
     void settingChanged(AppContext& context, const SettingRow& row) {
+        if (row.section == kBindingsSettingsSection) {
+            bindingsTouched = true; // once, for all the rows of this command
+            return;
+        }
         if (row.section == kPlayerSettingsSection) {
             const auto accepts = [](const nlohmann::json& document) {
                 return parsePlayerSettings(document, "settings.json").has_value();
@@ -1457,6 +1575,26 @@ struct RetroverseApp::State {
     /// A command of the settings screen: the value in memory and in force.
     void applySetting(AppContext& context, const ui::SettingsCommand& command) {
         recordSettingChange(context, command);
+        applySettingCommand(context, command);
+        if (std::exchange(bindingsTouched, false)) {
+            applyBindings();
+        }
+    }
+
+    void applySettingCommand(AppContext& context, const ui::SettingsCommand& command) {
+        if (command.kind == ui::SettingsCommand::Kind::Bind || command.kind == ui::SettingsCommand::Kind::Swap) {
+            applyBindingPress(command);
+            return;
+        }
+        if (command.kind == ui::SettingsCommand::Kind::RestoreRow) {
+            // "Ripristina predefiniti": the bindings' section goes, the hand-written file shows through.
+            for (const SettingRow& row : settings->rows()) {
+                if (row.section == kBindingsSettingsSection && settings->restore(row)) {
+                    bindingsTouched = true;
+                }
+            }
+            return;
+        }
         if (command.kind == ui::SettingsCommand::Kind::RestoreAll) {
             std::vector<std::pair<const SettingRow*, nlohmann::json>> before;
             for (const SettingRow& row : settings->rows()) {
@@ -1537,6 +1675,12 @@ struct RetroverseApp::State {
         settingsRecord.windowFullscreen = context.window().isFullscreen();
         settingsRecord.reduceMotion = world && world->reduceMotion();
         settingsRecord.masterGain = video ? video->audio.master * video->audio.video : 1.0;
+        ControlsRecord& controlsRecord = report.controls ? *report.controls : report.controls.emplace();
+        controlsRecord.safeBindings = safeBindings;
+        controlsRecord.padsLost = controllers.lost();
+        controlsRecord.padsBack = controllers.back();
+        controlsRecord.noticeShown = controllers.noticeShown();
+        controlsRecord.noticeFrames = controllerNoticeFrames;
         report.settings = std::move(settingsRecord);
     }
 
@@ -2224,7 +2368,7 @@ Status RetroverseApp::onInit(AppContext& context) {
     }
     state->applyLens();
 
-    input::ActionMap bindings = loadBindings(paths);
+    input::ActionMap bindings = state->bindingLayers.map;
     state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
     state->applyInputSettings();
     if (state->player.displayMode == DisplayMode::Borderless) {
@@ -2249,6 +2393,9 @@ Status RetroverseApp::onInit(AppContext& context) {
             raw->applySetting(context, command);
         };
         menuHooks.settingsClosed = [raw] { raw->settings->saveAsync(); };
+        menuHooks.judgeBinding = [raw](const std::string& key, const input::Binding& press) {
+            return raw->judgeBindingPress(key, press);
+        };
         menuHooks.quit = [raw, &context] {
             spdlog::info("Esci confirmed, quitting");
             raw->settings->saveAsync();
@@ -2417,6 +2564,16 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // on the UI's panel the ray is its mouse and the trigger clicks.
     state.updateXrHands(context);
     input::ActionState actions = state.input->update(frame, state.xrMovement ? &state.xrHands.pad() : nullptr);
+    // I7 step 3: the hints' device, the pad going ("Controller scollegato"), a capture taking the raw input for itself.
+    state.controllers.update(state.input->padConnected(), deltaSeconds);
+    state.controllerNoticeFrames += state.controllers.noticeShown() ? 1 : 0;
+    if (state.product) {
+        state.product->inputFrame(state.input->rawFrame(), actions.activeDevice());
+        state.product->setControllerNotice(state.controllers.noticeShown());
+        if (state.product->capturingBinding()) {
+            actions.clear();
+        }
+    }
     // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends, but (I10 step 10)
     // the controllers' walk, turns and teleport, which the emulator never sees: the user goes up to the CRT.
     const bool playingInXr = state.playingInXr(context);
@@ -2573,10 +2730,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         std::optional<std::string> prompt;
         bool totem = false;
         if (worldShown && !state.product->hasInput() && state.world->idleAtElevator()) {
-            prompt = promptKeyLabel(state.input->system().map(), input::Action::Interact, actions.activeDevice());
+            prompt = state.product->bindingLabel(input::Action::Interact, actions.activeDevice());
         } else if (worldShown && !state.product->hasInput() && state.world->idleAtTotem()) {
             // I6 step 5: the hub's directory totem's prompt, "Indice".
-            prompt = promptKeyLabel(state.input->system().map(), input::Action::Interact, actions.activeDevice());
+            prompt = state.product->bindingLabel(input::Action::Interact, actions.activeDevice());
             totem = true;
         }
         state.world->elevatorPrompt(*state.product, std::move(prompt), totem);

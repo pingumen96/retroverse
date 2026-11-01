@@ -134,13 +134,6 @@ void RegeneratePreviewModel::endInputFrame() noexcept {
     m_activateHeld = false;
 }
 
-void RegeneratePreviewModel::setDevice(bool pad) noexcept {
-    if (m_pad != pad) {
-        m_pad = pad;
-        changed();
-    }
-}
-
 void RegeneratePreviewModel::setFailed(std::string failure) {
     if (!m_open) {
         return;

@@ -19,6 +19,11 @@
 //
 // Clicks mirror the keys (ADR-0018 §12: VR's ray is the mouse): a tab, a row (it is focused and takes Activate unless it
 // is a slider), its arrows, its Ripristina, "Ripristina tutto".
+//
+// Remapping (ADR-0018 §7, I7 step 3): Activate or a click on a binding row starts a capture. While it waits no command
+// reaches the screen: the application reads the raw input and answers with captured(), or tick() ends it after
+// kCaptureSeconds, or a click on Annulla does. A clash offers its swap: Activate takes it, Back drops it; both click too.
+// "Ripristina predefiniti" (an action row) asks once, as "Ripristina tutto" does.
 
 #include <array>
 #include <cstddef>
@@ -30,6 +35,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <rv/input/binding.hpp>
 #include <rv/ui/ui_command.hpp>
 
 namespace rv::ui {
@@ -45,11 +51,21 @@ inline constexpr std::string_view kRowEvent = "row";
 inline constexpr std::string_view kStepEvent = "step";
 inline constexpr std::string_view kRestoreEvent = "restore";
 inline constexpr std::string_view kRestoreAllEvent = "restore_all";
+inline constexpr std::string_view kCaptureCancelEvent = "capture_cancel";
+inline constexpr std::string_view kCaptureSwapEvent = "capture_swap";
+/// How long a capture waits for a press.
+inline constexpr double kCaptureSeconds = 5.0;
 /// The groups, the tabs' order (app::SettingGroup's names).
 inline constexpr std::array<std::string_view, 5> kGroups = {"display", "audio", "world", "controls", "vr"};
 } // namespace settings
 
-enum class SettingsRowKind : std::uint8_t { Toggle, Choice, Slider };
+enum class SettingsRowKind : std::uint8_t {
+    Toggle,
+    Choice,
+    Slider,
+    Binding, ///< an action's key and pad button: Activate captures a press
+    Action,  ///< a button that asks once: "Ripristina predefiniti"
+};
 
 /// A row as the screen shows it. `value` is what is in force.
 struct SettingsRow {
@@ -71,6 +87,11 @@ struct SettingsRow {
     /// What the row says about when it applies: "" at once, "commit" (the floor is committed again, within 3 s), "session"
     /// (at the next VR session), "start" (at the next start).
     std::string note;
+    /// A binding's key and pad button as named on screen ("" none).
+    std::string keyLabel;
+    std::string padLabel;
+    /// The list a binding row opens: "world", "ui"; "" the rows after the first of a list.
+    std::string heading;
 
     bool operator==(const SettingsRow&) const = default;
 };
@@ -92,19 +113,26 @@ struct SettingsCommand {
         Restore,    ///< `key`'s row is restored
         RestoreAll, ///< every row is restored
         Close,      ///< it closed itself: back to the menu
+        Bind,       ///< `key`'s binding takes `press`
+        Swap,       ///< `key`'s binding takes `press`, `other` takes what it held
+        RestoreRow, ///< an action row, confirmed: `key`
     };
     Kind kind = Kind::Close;
     std::string key;
     nlohmann::json value;
+    /// Bind, Swap.
+    std::optional<input::Binding> press;
+    /// Swap: the row of the action that has the press.
+    std::string other;
 
     bool operator==(const SettingsCommand&) const = default;
 };
-/// "change", "restore", "restore-all", "close".
+/// "change", "restore", "restore-all", "close", "bind", "swap", "restore-row".
 [[nodiscard]] std::string_view toString(SettingsCommand::Kind kind) noexcept;
 
 /// A click of the document (settings_screen.cpp).
 struct SettingsClick {
-    enum class Kind : std::uint8_t { Tab, Row, Step, Restore, RestoreAll };
+    enum class Kind : std::uint8_t { Tab, Row, Step, Restore, RestoreAll, CaptureCancel, CaptureSwap };
     Kind kind = Kind::Row;
     /// A tab's index among settings::kGroups, a row's among the rows shown.
     std::size_t index = 0;
@@ -114,6 +142,18 @@ struct SettingsClick {
     bool operator==(const SettingsClick&) const = default;
 };
 
+/// What the application says of a captured press (app::BindingVerdict, which this module does not know).
+enum class SettingsCapture : std::uint8_t {
+    Free,     ///< it binds at once
+    Same,     ///< the action has it: nothing to do, the capture ends
+    Clash,    ///< another action has it: a swap is offered
+    Reserved, ///< refused: the capture goes on, saying so
+    Locked,   ///< refused likewise: a locked action would lose it
+};
+
+/// "free", "same", "clash", "reserved", "locked".
+[[nodiscard]] std::string_view toString(SettingsCapture answer) noexcept;
+
 class SettingsModel {
 public:
     /// Opens on the first group that holds rows, its first row focused.
@@ -121,15 +161,32 @@ public:
     void close() noexcept;
     /// The rows from now on, the focus kept on its row's key.
     void setRows(std::vector<SettingsRow> rows);
-    /// The device used last: the hints show the pad's glyphs (`pad`), else the keys'.
-    void setDevice(bool pad) noexcept;
 
     /// A UI command. The command for the app, if any.
     [[nodiscard]] std::optional<SettingsCommand> apply(UiCommand command);
     [[nodiscard]] std::optional<SettingsCommand> click(const SettingsClick& click);
 
+    /// A capture waits for a press: no UI command is given to apply().
+    [[nodiscard]] bool capturing() const noexcept { return m_capture == Capture::Waiting; }
+    /// A clash's swap is offered.
+    [[nodiscard]] bool offeringSwap() const noexcept { return m_capture == Capture::Offer; }
+    /// The row a capture or an offer is for ("" none).
+    [[nodiscard]] const std::string& captureKey() const noexcept { return m_captureKey; }
+    /// The action that has the press: the offer's other row, or the row that refused it.
+    [[nodiscard]] const std::string& captureOther() const noexcept { return m_captureOther; }
+    /// Why the last press was refused: "reserved", "locked", "" none.
+    [[nodiscard]] const std::string& captureRefused() const noexcept { return m_captureRefused; }
+    /// Whole seconds left of the capture.
+    [[nodiscard]] int captureSeconds() const noexcept;
+    /// A capture's time passes; it ends by itself after settings::kCaptureSeconds.
+    void tick(double seconds);
+    /// The press a capture read and what it means; `other`: the row that has it. The command for the app, if any.
+    [[nodiscard]] std::optional<SettingsCommand> captured(const input::Binding& press, SettingsCapture answer,
+                                                          std::string other);
+    /// The action rows' confirmation shows.
+    [[nodiscard]] bool confirmingAction() const noexcept { return m_confirmAction; }
+
     [[nodiscard]] bool isOpen() const noexcept { return m_open; }
-    [[nodiscard]] bool padDevice() const noexcept { return m_pad; }
     /// The group shown (settings::kGroups).
     [[nodiscard]] const std::string& group() const noexcept { return m_group; }
     /// The groups that hold rows, in order.
@@ -155,11 +212,23 @@ private:
     [[nodiscard]] std::optional<SettingsCommand> stepFocused(int direction, bool wrap);
     [[nodiscard]] std::optional<SettingsCommand> restoreFocused();
     [[nodiscard]] std::optional<SettingsCommand> pressRestoreAll();
+    [[nodiscard]] std::optional<SettingsCommand> pressRow();
+    void startCapture(const SettingsRow& row);
+    void endCapture();
+    [[nodiscard]] std::optional<SettingsCommand> takeSwap();
     [[nodiscard]] const SettingsRow* focusedRow() const;
 
+    enum class Capture : std::uint8_t { None, Waiting, Offer };
+
     bool m_open = false;
-    bool m_pad = false;
     bool m_confirmAll = false;
+    bool m_confirmAction = false;
+    Capture m_capture = Capture::None;
+    std::string m_captureKey;
+    std::string m_captureOther;
+    std::string m_captureRefused;
+    std::optional<input::Binding> m_capturePress;
+    double m_captureLeft = 0.0;
     std::vector<SettingsRow> m_rows;
     std::string m_group;
     std::size_t m_focus = 0;

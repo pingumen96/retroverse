@@ -61,6 +61,9 @@ const Json& SettingsStore::layer(std::string_view section) const {
     if (section == "player") {
         return m_below.player;
     }
+    if (section == kBindingsSettingsSection) {
+        return m_below.bindings;
+    }
     return m_below.xr;
 }
 
@@ -163,6 +166,14 @@ std::vector<std::string> shadowedSettings(const core::SettingsFile& file, const 
     constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kFiles = {
         {{"video", "video.json"}, {"world", "world.json"}, {"player", "player.json"}, {"xr", "xr.json"}}};
     std::vector<std::string> shadowed;
+    if (const Json held = file.rawSection(kBindingsSettingsSection); !held.empty()) {
+        if (const auto written = core::readJsonFile(userConfigDir / "bindings.json");
+            written && written->contains("bindings")) {
+            for (const std::string& key : core::shadowedKeys(held, (*written)["bindings"])) {
+                shadowed.push_back(std::string(kBindingsSettingsSection) + "." + key);
+            }
+        }
+    }
     for (const auto& [section, name] : kFiles) {
         const Json held = file.rawSection(section);
         if (held.empty()) {

@@ -179,7 +179,6 @@ h3 {
 	color: #171B22;
 }
 
-.pad-dpad { background-color: #F4EFE6; }
 .pad-y { background-color: #FFC88A; }
 .pad-b { background-color: #C8645A; }
 

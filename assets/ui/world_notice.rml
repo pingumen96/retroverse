@@ -20,16 +20,17 @@
 		for no-games; empty without one. roomKind (console, shared, arcade) and roomTitle (a console room's system's
 		name): the room needs-confirmation offers to regenerate, or the room rooms-added names (with roomNumber, its
 		number in its chain, and moreRooms, the other rooms added). Every string is written here (CLAUDE.md): the panel binds keys only. It takes
-		no input: the quick catalog (Tab) is where to act.
+		no input: the quick catalog <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> is where to act.
 	-->
 	<title>Stanza</title>
 	<link type="text/rcss" href="world_notice.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body data-model="world_notice">
 	<div id="world-notice">
 		<div data-if="notice == 'generating'">
 			<h1>Preparazione della stanza...</h1>
-			<p>La stanza dei giochi si sta componendo a partire dal catalogo. Il catalogo rapido (Tab) è già
+			<p>La stanza dei giochi si sta componendo a partire dal catalogo. Il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> è già
 				disponibile.</p>
 		</div>
 
@@ -40,23 +41,21 @@
 			<p data-if="state == 'no-database'">Il catalogo non è ancora stato importato: alla prossima apertura la
 				procedura guidata lo crea, oppure "retroverse-cli import", poi la stanza dei giochi si genera.</p>
 			<p data-if="state == 'data-directory'">La cartella dei dati di Retroverse è dentro le cartelle della
-				libreria: il catalogo non si apre. Il catalogo rapido (Tab) dice come fare.</p>
-			<p data-if="state == 'library-mismatch'">Il catalogo appartiene a un'altra libreria: il catalogo rapido
-				(Tab) dice come associarla di nuovo.</p>
+				libreria: il catalogo non si apre. Il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> dice come fare.</p>
+			<p data-if="state == 'library-mismatch'">Il catalogo appartiene a un'altra libreria: il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> dice come associarla di nuovo.</p>
 			<p data-if="state == 'unavailable'">Il catalogo non si apre: "retroverse-cli db check" dice perché.</p>
 		</div>
 
 		<div data-if="notice == 'no-games'">
 			<h1>Stanza di prova</h1>
-			<p>Nessun sistema del catalogo ha una stanza nell'edificio: i giochi sono tutti nel catalogo rapido
-				(Tab).</p>
+			<p>Nessun sistema del catalogo ha una stanza nell'edificio: i giochi sono tutti nel catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span>.</p>
 			<p data-if="room != ''">Per questo la stanza di partenza richiesta ({{ room }}) non c'è.</p>
 		</div>
 
 		<div data-if="notice == 'media-unknown'">
 			<h1>Cartella dei media non raggiungibile</h1>
 			<p>La stanza dei giochi si genera quando la cartella dei media di ES-DE è di nuovo raggiungibile. Intanto il
-				catalogo rapido (Tab) elenca tutti i giochi.</p>
+				catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> elenca tutti i giochi.</p>
 		</div>
 
 		<div data-if="notice == 'media-unknown-kept'">
@@ -74,18 +73,18 @@
 		<div data-if="notice == 'refused'">
 			<h1>Piano della stanza non utilizzabile</h1>
 			<p>Il piano salvato è stato modificato a mano o scritto da una versione più recente di Retroverse:
-				"retroverse-cli worldplan generate --replace" lo genera di nuovo. Intanto il catalogo rapido (Tab) elenca
+				"retroverse-cli worldplan generate --replace" lo genera di nuovo. Intanto il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> elenca
 				tutti i giochi.</p>
 		</div>
 
 		<div data-if="notice == 'failed'">
 			<h1>La stanza non si può generare</h1>
-			<p>Il registro di Retroverse dice perché. Intanto il catalogo rapido (Tab) elenca tutti i giochi.</p>
+			<p>Il registro di Retroverse dice perché. Intanto il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> elenca tutti i giochi.</p>
 		</div>
 
 		<div data-if="notice == 'room-unreachable'">
 			<h1>Ora non si può andare nella stanza del gioco</h1>
-			<p>Riprova tra poco: "Mostra nella stanza" del catalogo rapido (Tab) ti porterà davanti al gioco.</p>
+			<p>Riprova tra poco: "Mostra nella stanza" del catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> ti porterà davanti al gioco.</p>
 		</div>
 
 		<div data-if="notice == 'edit-unavailable'">
@@ -100,7 +99,7 @@
 			<p class="room-name" data-if="roomKind == 'console'">{{ roomTitle }}</p>
 			<p class="room-name" data-if="roomKind == 'shared'">Sala condivisa</p>
 			<p class="room-name" data-if="roomKind == 'arcade'">Sala giochi arcade</p>
-			<p>Premi Invio (Start sul controller) per vedere cosa cambierebbe rigenerandola.</p>
+			<p>Premi <span hint-action="confirm"></span> per vedere cosa cambierebbe rigenerandola.</p>
 		</div>
 
 		<div data-if="notice == 'rooms-added'">
@@ -121,7 +120,7 @@
 			<h1>Alcune stanze sono state riordinate</h1>
 			<p>Alcune stanze ora mostrano i giochi in un modo nuovo: custodie e scatole in piedi sugli scaffali con la
 				costa in vista, i giochi della sala giochi sugli schermi dei cabinati. I giochi in vetrina sono stati
-				scelti di nuovo; il catalogo rapido (Tab) li trova tutti come prima.</p>
+				scelti di nuovo; il catalogo rapido <span class="hint-prose">(<span hint-action="quick_catalog"></span>)</span> li trova tutti come prima.</p>
 		</div>
 	</div>
 </body>

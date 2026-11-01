@@ -177,13 +177,6 @@ p, h2, span, div {
 	color: #171B22;
 }
 
-.key.wide {
-	width: auto;
-	padding: 0dp 9dp;
-	border-radius: 6dp;
-	background-color: #F4EFE6CC;
-}
-
 .pad-a { background-color: #6EAF93; }
 .pad-b { background-color: #C8645A; }
 .pad-x { background-color: #4C8BC9; }

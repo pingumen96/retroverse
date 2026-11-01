@@ -17,6 +17,7 @@
 	-->
 	<title>Scheda del gioco</title>
 	<link type="text/rcss" href="game_card.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
 <body id="game-card" data-model="game_card">
 	<div class="cover-frame" data-class-empty="!card.cover">
@@ -96,9 +97,9 @@
 		<button id="card-move" class="action wide" data-if="card.movable" data-event-click="press('move')">Sposta</button>
 	</div>
 	<div class="hints">
-		<span class="hint"><span class="pad pad-y">Y</span>Vedi media</span>
-		<span class="hint"><span class="pad pad-x">X</span>Informazioni</span>
-		<span class="hint"><span class="pad pad-b">B</span>Indietro</span>
+		<span class="hint"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
+		<span class="hint"><span class="pad" hint-action="ui_info"></span>Informazioni</span>
+		<span class="hint"><span class="pad" hint-action="ui_back"></span>Indietro</span>
 	</div>
 </body>
 </rml>

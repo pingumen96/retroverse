@@ -30,6 +30,8 @@ struct SettingsLayers {
     nlohmann::json world = nlohmann::json::object();
     nlohmann::json player = nlohmann::json::object();
     nlohmann::json xr = nlohmann::json::object();
+    /// Action names over binding lists (ActionMap::toJson()'s "bindings"), the user's file over the shipped map.
+    nlohmann::json bindings = nlohmann::json::object();
 };
 
 class SettingsStore {
@@ -92,9 +94,6 @@ private:
     std::atomic<std::uint64_t> m_failures{0};
     std::atomic<bool> m_writeFailed{false};
 };
-
-/// settings.json's section for bindings.json: action names over binding lists, as that file's "bindings" holds them.
-inline constexpr std::string_view kBindingsSettingsSection = "bindings";
 
 /// "<section>.<key>" of every key of `file` that shadows a hand-written value of <userConfigDir>/<section's file>
 /// (ADR-0018 §2: logged once at the start). Reads only.
