@@ -27,7 +27,7 @@ Roadmap row: I7 step 2. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   its creation. `replaceCatalog()` makes the list again over the new source.
 - **The wizard's Back is the menu's level:** `ProductUi::menuOpen()` is true while it shows and `menuBack()` is its Back,
   so `BackAction` and its table did not change.
-- **A database no import finished in counts as no catalog** (`LibraryStage::NoCatalog`), which ADR-0018 §4 does not say:
+- **A database with no schema, or one no import finished in, counts as no catalog** (`LibraryStage::NoCatalog`), which ADR-0018 §4 does not say:
   a wizard killed during page 4 leaves an empty database, and without this the next start would show an empty building.
   The check reads the database read-only and never makes it.
 - **`--esde-home <dir>` takes the ES-DE home or the folder that holds it**, so a fixture's root (`--home`'s meaning) and
@@ -41,6 +41,7 @@ Roadmap row: I7 step 2. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   `backUpFile` kept a copy in `config/backups`; a copy that fails leaves the file and keeps what was chosen for the next
   try. A library.json another process made meanwhile is kept (`library-exists`). The flag is cleared only after the write.
   This is the one write under `config` besides `library.json` itself.
+- **A resumed run told `--esde-home` or `--esde-install`** detects before page 3 reads, so the preview reads what page 2 shows; page 4 writes `library.json` when that differs from the file.
 - **A lockstep run waits for a page's work**, up to 30 minutes rather than the worker's 10 s: the real library's first
   import takes minutes, and a script's presses must find their page ready.
 - **The first import starts no world by itself:** `WorldSession::followRefresh` leaves a refresh that ended under the
