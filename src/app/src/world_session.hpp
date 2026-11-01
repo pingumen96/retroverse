@@ -298,6 +298,12 @@ public:
     [[nodiscard]] float fade() const noexcept;
     /// The world's reduceMotion (world.json): every transition instant, the change of an area's environment too.
     [[nodiscard]] bool reduceMotion() const noexcept { return m_reduceMotion; }
+    /// I7 step 1: the settings screen's reduceMotion, at once; it stays forced in VR (ADR-0018 §12).
+    void setReduceMotion(bool on);
+    /// I7 step 1 (ADR-0018 §3): what the floor is drawn with changed (the lighting profile, the CRT effect), in
+    /// settings.json already: the floor shown is built again from the plan shown, nothing moved, and committed as a live
+    /// update's rebuild, the walker kept (trigger "look"), as soon as nothing else is on its way.
+    void commitFloorAgain();
     /// The walker stands in the elevator's proximity zone of the floor shown, facing its doors (facesElevator()).
     [[nodiscard]] bool atElevator() const;
     /// atElevator() in free roam with nothing hovered and no ride: the prompt shows, interact opens the directory (the
@@ -622,6 +628,8 @@ private:
     [[nodiscard]] std::optional<WorldBuild> takeFloorBuild(bool& retarget);
     /// The ride's frame (or idle wake): its floor job answered, its fade moved, the floor swapped, the ride ended.
     void followRide(ProductUi& product, bool idleWake, double deltaSeconds);
+    /// commitFloorAgain() asked: the floor's job once nothing else is on its way (world_live_update.cpp).
+    void followLook(ProductUi& product);
     /// One frame of the ride under way, `elapsedMs` after its request.
     void stepRide(ProductUi& product, double deltaSeconds, double elapsedMs);
     void swapRide();
@@ -756,6 +764,9 @@ private:
     /// Rooms whose CRT could not be bound (none found in the scene): never asked again.
     std::set<std::string> m_screenless;
     bool m_liveRequested = false;
+    /// I7 step 1: commitFloorAgain() waits for its job (`m_lookPending`), or its result for applyLive() (`m_lookCommit`).
+    bool m_lookPending = false;
+    bool m_lookCommit = false;
     std::uint64_t m_liveRequestFrame = 0;
     std::optional<Clock::time_point> m_liveRequestedAt;
     bool m_liveFlow = false;

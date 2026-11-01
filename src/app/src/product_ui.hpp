@@ -19,6 +19,8 @@
 #include <rv/ui/directory_model.hpp>
 #include <rv/ui/game_card_model.hpp>
 #include <rv/ui/regenerate_preview_model.hpp>
+#include <rv/ui/settings_model.hpp>
+#include <rv/ui/system_menu_model.hpp>
 
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
@@ -50,6 +52,18 @@ struct LaunchHooks {
     /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned;
     /// also for a prepared launch that never started (refused during the insertion).
     std::function<void()> ended;
+};
+
+/// What the application does for the menu and the settings screen (I7 step 1, ADR-0018 §1, §3), on the main thread.
+struct MenuHooks {
+    /// The rows the settings screen shows now (what is in force).
+    std::function<std::vector<ui::SettingsRow>()> settingRows;
+    /// A row changed, restored, or all of them restored: applied, in memory; the rows are read again after it.
+    std::function<void(const ui::SettingsCommand&)> applySetting;
+    /// The settings screen closed: what it changed goes to its file.
+    std::function<void()> settingsClosed;
+    /// Esci, confirmed.
+    std::function<void()> quit;
 };
 
 /// The product UI of retroverse.exe and what it launches (I2 steps A1 and 13; specification §12.2 QuickLibrary, §13,
@@ -90,8 +104,25 @@ public:
     /// The game-session panel shows (a game running and asking, an outcome), or the media viewer or Informazioni (I3
     /// step 14b: Back's PanelBack level closes them first), or the regeneration's preview (I4b step 6).
     [[nodiscard]] bool panelOpen() const noexcept;
-    /// The product UI has the input (InputContext::Ui): the catalog, the directory or the panel is open.
-    [[nodiscard]] bool hasInput() const noexcept { return catalogOpen() || panelOpen() || directoryOpen(); }
+    /// The product UI has the input (InputContext::Ui): the catalog, the directory, the menu or the panel is open.
+    [[nodiscard]] bool hasInput() const noexcept {
+        return catalogOpen() || panelOpen() || directoryOpen() || menuOpen();
+    }
+
+    /// The menu (I7 step 1, ADR-0018 §1: ui::SystemMenuModel on assets/ui/system_menu.rml through ui::SystemMenuScreen)
+    /// shows, or a section of it: the UI's input, its Back level.
+    [[nodiscard]] bool menuOpen() const noexcept;
+    /// Opens it on Riprendi (`via`: "start" or "back", for the run report); its screen is made the first time (one that
+    /// cannot be made is logged and it stays closed). The application decides when it may open.
+    void openMenu(std::string_view via);
+    /// Its Back level (BackAction::MenuBack): a section to the menu, the confirmation to the menu, the menu to the world.
+    void menuBack();
+    /// The application's side of the menu and of the settings screen (replacing any set before).
+    void setMenuHooks(MenuHooks hooks);
+    /// The rows of the settings screen read again (MenuHooks::settingRows), when it shows.
+    void refreshSettings();
+    /// The UI's text scale from now on (UiView::setTextScale).
+    void setTextScale(float scale);
 
     /// The directory (I4 step 7b; ADR-0013 §10; docs/i4/step-7a.md's contract: ui::DirectoryModel on
     /// assets/ui/directory.rml through ui::DirectoryScreen): open (the UI's input, its Back level), its floors and rooms

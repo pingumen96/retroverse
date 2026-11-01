@@ -1005,6 +1005,120 @@ DirectoryRecord readDirectory(FieldReader& fields) {
     return directory;
 }
 
+Json menuToJson(const MenuRecord& menu) {
+    Json json{{"opened", menu.opened},
+              {"settingsOpened", menu.settingsOpened},
+              {"open", menu.open},
+              {"view", menu.view},
+              {"settingsOpen", menu.settingsOpen},
+              {"settingsGroup", menu.settingsGroup},
+              {"settingsRows", menu.settingsRows},
+              {"quit", menu.quit},
+              {"textCut", menu.textCut},
+              {"settingsTextCut", menu.settingsTextCut}};
+    Json events = Json::array();
+    for (const MenuEventRecord& event : menu.events) {
+        Json entry{{"frame", event.frame}, {"event", event.event}};
+        if (!event.detail.empty()) {
+            entry["detail"] = event.detail;
+        }
+        events.push_back(std::move(entry));
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = menu.eventsDropped;
+    return json;
+}
+
+MenuRecord readMenu(FieldReader& fields) {
+    MenuRecord menu;
+    menu.opened = fields.count("opened");
+    menu.settingsOpened = fields.count("settingsOpened");
+    menu.open = fields.boolean("open");
+    menu.view = fields.string("view");
+    menu.settingsOpen = fields.boolean("settingsOpen");
+    menu.settingsGroup = fields.string("settingsGroup");
+    menu.settingsRows = fields.stringArray("settingsRows");
+    menu.quit = fields.boolean("quit");
+    menu.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    menu.settingsTextCut = static_cast<std::uint32_t>(fields.count("settingsTextCut"));
+    for (FieldReader& event : fields.objectArray("events")) {
+        MenuEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.detail = event.optionalString("detail").value_or(std::string());
+        menu.events.push_back(std::move(entry));
+    }
+    menu.eventsDropped = fields.count("eventsDropped");
+    return menu;
+}
+
+Json settingsToJson(const SettingsRecord& settings) {
+    Json json{{"unreadable", settings.unreadable},
+              {"backedUp", settings.backedUp},
+              {"shadowed", settings.shadowed},
+              {"refused", settings.refused},
+              {"writes", settings.writes},
+              {"writeFailures", settings.writeFailures}};
+    Json rows = Json::array();
+    for (const SettingValueRecord& row : settings.rows) {
+        rows.push_back(Json{{"key", row.key}, {"value", row.value}, {"overridden", row.overridden}});
+    }
+    json["rows"] = std::move(rows);
+    Json changes = Json::array();
+    for (const SettingChangeRecord& change : settings.changes) {
+        changes.push_back(Json{
+            {"frame", change.frame}, {"kind", change.kind}, {"key", change.key}, {"value", change.value}});
+    }
+    json["changes"] = std::move(changes);
+    json["changesDropped"] = settings.changesDropped;
+    json["lensFovDeg"] = settings.lensFovDeg;
+    json["mouseSensitivity"] = settings.mouseSensitivity;
+    json["stickSensitivity"] = settings.stickSensitivity;
+    json["invertY"] = settings.invertY;
+    json["textScale"] = settings.textScale;
+    json["displayMode"] = settings.displayMode;
+    json["windowFullscreen"] = settings.windowFullscreen;
+    json["reduceMotion"] = settings.reduceMotion;
+    json["masterGain"] = settings.masterGain;
+    return json;
+}
+
+SettingsRecord readSettings(FieldReader& fields) {
+    SettingsRecord settings;
+    settings.unreadable = fields.boolean("unreadable");
+    settings.backedUp = fields.boolean("backedUp");
+    settings.shadowed = fields.stringArray("shadowed");
+    settings.refused = fields.stringArray("refused");
+    settings.writes = fields.count("writes");
+    settings.writeFailures = fields.count("writeFailures");
+    for (FieldReader& row : fields.objectArray("rows")) {
+        SettingValueRecord entry;
+        entry.key = row.string("key");
+        entry.value = row.string("value");
+        entry.overridden = row.boolean("overridden");
+        settings.rows.push_back(std::move(entry));
+    }
+    for (FieldReader& change : fields.objectArray("changes")) {
+        SettingChangeRecord entry;
+        entry.frame = change.count("frame");
+        entry.kind = change.string("kind");
+        entry.key = change.string("key");
+        entry.value = change.string("value");
+        settings.changes.push_back(std::move(entry));
+    }
+    settings.changesDropped = fields.count("changesDropped");
+    settings.lensFovDeg = fields.number("lensFovDeg");
+    settings.mouseSensitivity = fields.number("mouseSensitivity");
+    settings.stickSensitivity = fields.number("stickSensitivity");
+    settings.invertY = fields.boolean("invertY");
+    settings.textScale = fields.number("textScale");
+    settings.displayMode = fields.string("displayMode");
+    settings.windowFullscreen = fields.boolean("windowFullscreen");
+    settings.reduceMotion = fields.boolean("reduceMotion");
+    settings.masterGain = fields.number("masterGain");
+    return settings;
+}
+
 /// An unbound record (no room asked for) is the empty object it was before I3 step 10b.
 Json roomUpdatesToJson(const std::vector<RoomUpdateRecord>& rooms) {
     Json array = Json::array();
@@ -3085,6 +3199,12 @@ std::string formatRunReport(const RunReport& report) {
     }
     json["screens"] = screensToJson(report.screens);
     json["directory"] = directoryToJson(report.directory);
+    if (report.menu) {
+        json["menu"] = menuToJson(*report.menu);
+    }
+    if (report.settings) {
+        json["settings"] = settingsToJson(*report.settings);
+    }
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -3248,6 +3368,12 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto directory = fields.optionalObject("directory")) {
         report.directory = readDirectory(*directory);
+    }
+    if (auto menu = fields.optionalObject("menu")) {
+        report.menu = readMenu(*menu);
+    }
+    if (auto settings = fields.optionalObject("settings")) {
+        report.settings = readSettings(*settings);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

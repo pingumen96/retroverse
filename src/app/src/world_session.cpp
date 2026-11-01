@@ -279,6 +279,7 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     }
     // I4 step 7b: the ride (its floor's job, its fade, the floor swapped behind it).
     followRide(product, idleWake, deltaSeconds);
+    followLook(product);
     followRefresh(product);
     startLiveFlow(product);
     if (!idleWake) {

@@ -636,6 +636,92 @@ struct DirectoryRecord {
     bool operator==(const DirectoryRecord&) const = default;
 };
 
+/// A change of the menu (I7 step 1).
+struct MenuEventRecord {
+    std::uint64_t frame = 0;
+    /// "open" (`detail` "start" or "back"), "settings", "settings-closed", "closed", "quit".
+    std::string event;
+    std::string detail;
+
+    bool operator==(const MenuEventRecord&) const = default;
+};
+
+/// The menu (I7 step 1, ADR-0018 §1): how often it opened, where it ended, its changes.
+struct MenuRecord {
+    std::uint64_t opened = 0;
+    std::uint64_t settingsOpened = 0;
+    /// At the end: open, its view (ui::toString), the settings screen open, its group.
+    bool open = false;
+    std::string view;
+    bool settingsOpen = false;
+    std::string settingsGroup;
+    /// The rows the settings screen listed when last given them (app::SettingRow::id(): a headset's hide some).
+    std::vector<std::string> settingsRows;
+    /// Esci was confirmed.
+    bool quit = false;
+    /// The most elements of the panel found with cut text on any frame it showed (ADR-0018 §15).
+    std::uint32_t textCut = 0;
+    std::uint32_t settingsTextCut = 0;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<MenuEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const MenuRecord&) const = default;
+};
+
+/// A row of the settings screen at the end of the run (I7 step 1).
+struct SettingValueRecord {
+    /// app::SettingRow::id().
+    std::string key;
+    /// Its value as JSON text.
+    std::string value;
+    /// settings.json holds it.
+    bool overridden = false;
+
+    bool operator==(const SettingValueRecord&) const = default;
+};
+
+/// A row changed or restored.
+struct SettingChangeRecord {
+    std::uint64_t frame = 0;
+    /// ui::toString(SettingsCommand::Kind).
+    std::string kind;
+    std::string key;
+    std::string value;
+
+    bool operator==(const SettingChangeRecord&) const = default;
+};
+
+/// settings.json in the run (I7 step 1, ADR-0018 §2) and what the settings took effect on.
+struct SettingsRecord {
+    /// The file existed and could not be used: left out, kept as a backup.
+    bool unreadable = false;
+    bool backedUp = false;
+    /// "<section>.<key>": keys shadowing a hand-written value at the start; keys whose value a loader left out.
+    std::vector<std::string> shadowed;
+    std::vector<std::string> refused;
+    /// Its writes finished, and those that failed.
+    std::uint64_t writes = 0;
+    std::uint64_t writeFailures = 0;
+    /// The rows at the end, in the screen's order (none hidden in a headset is listed there).
+    std::vector<SettingValueRecord> rows;
+    std::vector<SettingChangeRecord> changes;
+    std::uint64_t changesDropped = 0;
+    /// In force at the end: the view's horizontal field, the look's scales, the text scale, the display mode the settings
+    /// ask for and the window's, the world's reduceMotion, the mixer's master gain.
+    double lensFovDeg = 0.0;
+    double mouseSensitivity = 1.0;
+    double stickSensitivity = 1.0;
+    bool invertY = false;
+    double textScale = 1.0;
+    std::string displayMode;
+    bool windowFullscreen = false;
+    bool reduceMotion = false;
+    double masterGain = 1.0;
+
+    bool operator==(const SettingsRecord&) const = default;
+};
+
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -2075,6 +2161,9 @@ struct RunReport {
     GameScreensRecord screens;
     /// The directory (I4 step 7b; the product UI), always written ("directory").
     DirectoryRecord directory;
+    /// The menu and settings.json (I7 step 1; runs with a product UI, the settings' section in every run of the app).
+    std::optional<MenuRecord> menu;
+    std::optional<SettingsRecord> settings;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

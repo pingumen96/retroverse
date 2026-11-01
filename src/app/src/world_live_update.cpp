@@ -26,6 +26,48 @@ void WorldSession::requestLiveUpdate() {
                  m_context.frameIndex());
 }
 
+void WorldSession::setReduceMotion(bool on) {
+    m_reduceMotion = on || m_context.vr();
+    m_interaction->setReduceMotion(m_reduceMotion);
+    spdlog::info("Frame {}: reduceMotion {}", m_context.frameIndex(), m_reduceMotion ? "on" : "off");
+}
+
+void WorldSession::commitFloorAgain() {
+    if (!m_lookPending) {
+        m_liveRequestFrame = m_context.frameIndex();
+        m_liveRequestedAt = Clock::now();
+    }
+    m_lookPending = true;
+}
+
+void WorldSession::followLook(ProductUi& product) {
+    if (!m_lookPending) {
+        return;
+    }
+    if (m_state != "room" || !m_shown || !m_planState) {
+        m_lookPending = false; // nothing shows that a look could change: the next floor is drawn with it
+        return;
+    }
+    if (m_ride || m_edit || m_retargetPending || m_retargetResult || m_shownPreview || m_previewAwaitingFrame ||
+        regenerating() || launchHolds(product) || (m_flow && m_flow->phase() != WorldPhase::Done)) {
+        return;
+    }
+    m_lookPending = false;
+    m_lookCommit = true;
+    WorldBuild skeleton;
+    skeleton.library = m_planState->library;
+    skeleton.startRoom = m_options.startRoom;
+    skeleton.requestedFloor = m_floor;
+    skeleton.outcome = WorldOutcome::Kept;
+    skeleton.planDigest = m_planState->digest;
+    skeleton.mediaRoot = m_planState->mediaRoot;
+    skeleton.mediaRootPath = m_planState->mediaRootPath;
+    skeleton.screenMediaRoot = m_planState->screenMediaRoot;
+    skeleton.reason = "the floor's look changed";
+    requestFloor(std::move(skeleton), true, product.catalog().worldReader());
+    spdlog::info("Frame {}: the floor {} is built again for its new look", m_context.frameIndex(), m_floor);
+}
+
 void WorldSession::startLiveFlow(ProductUi& product) {
     // One flow at a time; the persisted start's reconciliation first (its snapshot may already follow the refresh, the
     // live update then finds nothing to do).
@@ -219,8 +261,9 @@ bool WorldSession::applyRooms(WorldBuild& build, const LiveUpdatePlan& plan, Wor
 
 void WorldSession::applyLive(WorldResult result) {
     const Clock::time_point start = Clock::now();
+    const bool look = std::exchange(m_lookCommit, false);
     WorldLiveUpdateRecord record;
-    record.trigger = "refresh";
+    record.trigger = look ? "look" : "refresh";
     record.requestFrame = m_liveRequestFrame;
     record.frame = m_context.frameIndex();
     if (m_liveRequestedAt) {
@@ -260,7 +303,12 @@ void WorldSession::applyLive(WorldResult result) {
         return;
     }
     WorldBuild& build = *result.build;
-    const LiveUpdatePlan plan = planLiveUpdate(*m_shown, build);
+    LiveUpdatePlan plan = planLiveUpdate(*m_shown, build);
+    if (look && plan.kind != LiveUpdateKind::Kept) {
+        // The items compare the same; what changed is the scene's (ADR-0018 §3: settings show the world another way).
+        plan.kind = LiveUpdateKind::Rebuild;
+        plan.reason = "the floor's look changed";
+    }
     record.kind = std::string(toString(plan.kind));
     record.reason = plan.reason;
     record.kept = plan.difference.kept;

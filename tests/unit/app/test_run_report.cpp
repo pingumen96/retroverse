@@ -1237,6 +1237,59 @@ TEST_CASE("app/run_report: the static groups and the outline of a view read back
     REQUIRE_FALSE(wrong.has_value());
     CHECK(wrong.error().context == "r.json:/lastView/staticGroups/clusters");
 }
+TEST_CASE("app/run_report: the menu and the settings read back field for field, absent without them (I7 step 1)",
+          "[app][run_report]") {
+    RunReport report = fullReport();
+    rv::app::MenuRecord menu;
+    menu.opened = 2;
+    menu.settingsOpened = 1;
+    menu.open = true;
+    menu.view = "confirm";
+    menu.settingsOpen = true;
+    menu.settingsGroup = "audio";
+    menu.settingsRows = {"player.textScale", "video.audio.master"};
+    menu.quit = true;
+    menu.textCut = 1;
+    menu.settingsTextCut = 2;
+    menu.events = {{12, "open", "start"}, {30, "closed", ""}};
+    menu.eventsDropped = 3;
+    report.menu = menu;
+    rv::app::SettingsRecord settings;
+    settings.unreadable = true;
+    settings.backedUp = true;
+    settings.shadowed = {"video.audio.master"};
+    settings.refused = {"video.audio.video"};
+    settings.writes = 2;
+    settings.writeFailures = 1;
+    settings.rows = {{"video.audio.master", "0.5", true}};
+    settings.changes = {{20, "change", "video.audio.master", "0.5"}};
+    settings.changesDropped = 4;
+    settings.lensFovDeg = 90.0;
+    settings.mouseSensitivity = 2.0;
+    settings.stickSensitivity = 0.5;
+    settings.invertY = true;
+    settings.textScale = 1.5;
+    settings.displayMode = "borderless";
+    settings.windowFullscreen = true;
+    settings.reduceMotion = true;
+    settings.masterGain = 0.25;
+    report.settings = settings;
+
+    const auto read = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(read.has_value());
+    REQUIRE(read->menu);
+    CHECK(*read->menu == menu);
+    REQUIRE(read->settings);
+    CHECK(*read->settings == settings);
+
+    report.menu.reset();
+    report.settings.reset();
+    const auto without = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(without.has_value());
+    CHECK_FALSE(without->menu.has_value());
+    CHECK_FALSE(without->settings.has_value());
+}
+
 TEST_CASE("app/run_report: the VR mode reads back field for field, absent without --vr (I10 step 2)",
           "[app][run_report]") {
     RunReport report = fullReport();

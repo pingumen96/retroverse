@@ -2559,6 +2559,21 @@ std::span<const CabinetShown> ScreenService::cabinetsShown() const noexcept {
     return m_impl->shownCabinets;
 }
 
+void ScreenService::setVideo(VideoSettings video, std::uint64_t frame) {
+    const bool again =
+        video.enabled != m_impl->options.video.enabled || video.hero.playlist != m_impl->options.video.hero.playlist;
+    m_impl->options.video = std::move(video);
+    if (!again || m_impl->screens.empty()) {
+        return;
+    }
+    std::vector<ScreenBinding> bindings;
+    bindings.reserve(m_impl->screens.size());
+    for (const std::unique_ptr<Impl::ScreenState>& screen : m_impl->screens) {
+        bindings.push_back(screen->binding);
+    }
+    m_impl->bind(std::move(bindings), std::vector<ScreenGame>(m_impl->rawGames), frame);
+}
+
 void ScreenService::unbind(bool clearOverride) {
     m_impl->unbind(clearOverride);
 }

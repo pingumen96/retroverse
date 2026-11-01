@@ -32,10 +32,13 @@
 #include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
+#include <rv/app/player_settings.hpp>
 #include <rv/app/process_priority.hpp>
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
 #include <rv/app/self_check.hpp>
+#include <rv/app/setting_rows.hpp>
+#include <rv/app/settings_store.hpp>
 #include <rv/app/video_settings.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/assets/gltf_loader.hpp>
@@ -67,8 +70,11 @@
 #include <rv/render/shadow_settings.hpp>
 #include <rv/render/texture_cache.hpp>
 #include <rv/scene/camera.hpp>
+#include <rv/world/room_look.hpp>
+#include <rv/world/world_config.hpp>
 #include <rv/xr/pose.hpp>
 #include <rv/xr/render_scale.hpp>
+#include <rv/xr/xr_settings.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/scene_description.hpp>
 #include <rv/scene/scene_geometry.hpp>
@@ -453,7 +459,29 @@ VideoSettings videoSettingsOf(const core::Paths& paths) {
     for (const Error& issue : loaded->issues) {
         spdlog::warn("Video: the user's video.json is left out, the defaults used: {}", issue.toString());
     }
+    for (const std::string& key : loaded->refusedKeys) {
+        spdlog::warn("Video: settings.json's {} is left out: the value is refused", key);
+    }
     return loaded->settings;
+}
+
+/// A row as the settings screen shows it, `note` saying when it applies (ui::SettingsRow::note).
+ui::SettingsRow settingsRowOf(const SettingRow& row, const SettingsStore& store, std::string note) {
+    ui::SettingsRow shown;
+    shown.key = row.id();
+    shown.group = std::string(toString(row.group));
+    shown.kind = row.kind == SettingKind::Toggle   ? ui::SettingsRowKind::Toggle
+                 : row.kind == SettingKind::Choice ? ui::SettingsRowKind::Choice
+                                                   : ui::SettingsRowKind::Slider;
+    shown.value = store.value(row);
+    shown.choices = row.choices;
+    shown.min = row.min;
+    shown.max = row.max;
+    shown.step = row.step;
+    shown.nullable = row.nullable;
+    shown.overridden = store.overridden(row);
+    shown.note = std::move(note);
+    return shown;
 }
 
 /// The screens' CRT looks of the scene shown (I5 step 6), for the run report.
@@ -482,13 +510,23 @@ struct RetroverseApp::State {
     /// The light of the first view and of every frame while it eased, and of the last view (I6 step 1).
     std::vector<SceneLightingSample> lightingSamples;
     SceneLightingSample lastLighting;
-    /// video.json, read once (I5 step 1): the screens' settings and the sound's.
+    /// video.json, read once (I5 step 1): the screens' settings and the sound's; since I7 step 1 what the settings
+    /// screen changed, over it.
     std::optional<VideoSettings> video;
+    /// I7 step 1 (ADR-0018 §2, §3): settings.json and the layers under it, the player's settings in force, the floor to
+    /// commit again once the file holds what it is drawn with, the report's section.
+    std::unique_ptr<SettingsStore> settings;
+    PlayerSettings player;
+    bool lookCommitPending = false;
+    SettingsRecord settingsRecord;
     /// The clips' sound (I5 step 5, ADR-0016 §9): the engine (none with --audio off or video.json's audio mode off),
     /// declared before the screens' service, which feeds its mixer, so that it outlives it; the run's mute and duck,
     /// the end of the mix pulled so far (the null output), the report's section.
     std::unique_ptr<audio::AudioEngine> audio;
     bool muted = false;
+    /// The settings screen's "Suono": spento while an engine runs mutes its mix (a run that started without one starts
+    /// none: at the next start).
+    bool soundOff = false;
     bool ducked = false;
     std::optional<double> audioPulledTo;
     AudioRecord audioRecord;
@@ -557,6 +595,8 @@ struct RetroverseApp::State {
     /// The phases the --input-script holds open (its steps' "phase"), sorted.
     std::vector<std::string> scriptPhases;
     bool screenshotRequested = false; ///< Screenshot action pressed; captured during the next render
+    /// This frame's actions came from a pad (backState()).
+    bool padUsedLast = false;
     /// The mouse between first-person look and the layers over the scene (the developer overlay, the product UI):
     /// the first layer to open frees a captured mouse, the last to close captures it again when it freed it.
     devui::CaptureHandover captureHandover;
@@ -1082,7 +1122,7 @@ struct RetroverseApp::State {
     /// the mute set.
     void createAudio(const AppContext& context) {
         const CommandLineOptions& options = context.options();
-        const VideoSettings& settings = videoSettings(context);
+        const VideoSettings& shown = videoSettings(context);
         const char* environment = std::getenv("RV_AUDIO");
         AudioOutputChoice choice =
             resolveAudioOutput(options.audio, environment != nullptr ? std::optional<std::string_view>(environment)
@@ -1091,14 +1131,15 @@ struct RetroverseApp::State {
         if (!choice.warning.empty()) {
             spdlog::warn("Audio: {}", choice.warning);
         }
-        if (settings.audio.mode == AudioMode::Off && choice.output != audio::AudioOutput::Off) {
+        if (shown.audio.mode == AudioMode::Off && choice.output != audio::AudioOutput::Off) {
             choice = AudioOutputChoice{audio::AudioOutput::Off, "video.json"};
         }
         if (options.audioCapture && choice.output != audio::AudioOutput::Null) {
             spdlog::warn("Audio: --audio-capture records the null output's mix; the {} output has none",
                          audio::toString(choice.output));
         }
-        muted = options.mute || settings.audio.muted;
+        muted = options.mute || shown.audio.muted;
+        soundOff = shown.audio.mode == AudioMode::Off;
         audioRecord.mutedAtStart = muted;
         if (choice.output != audio::AudioOutput::Off) {
             audio::AudioEngineOptions engineOptions;
@@ -1116,7 +1157,7 @@ struct RetroverseApp::State {
             }
             if (engine) {
                 audio = std::move(*engine);
-                audio->mixer().setMaster(settings.audio.master * settings.audio.video);
+                audio->mixer().setMaster(shown.audio.master * shown.audio.video);
                 audio->mixer().setMuted(muted);
             } else {
                 spdlog::error("Audio: {}; no sound", engine.error().toString());
@@ -1138,12 +1179,14 @@ struct RetroverseApp::State {
             ++audioRecord.muteToggles;
             spdlog::info("Audio: {}", muted ? "muted" : "sound on");
             if (audio) {
-                audio->mixer().setMuted(muted);
+                audio->mixer().setMuted(muted || soundOff);
             }
         }
         const bool card = world && world->context() == WorldContext::Inspect;
-        const bool duck = audioDucked(card, product && product->directoryOpen(), product && product->catalogOpen(),
-                                      product && product->mediaViewerOpen());
+        // ADR-0018 §1: nothing pauses behind the menu but the walker; the screens are ducked as under the directory.
+        const bool duck =
+            audioDucked(card, product && (product->directoryOpen() || product->menuOpen()),
+                        product && product->catalogOpen(), product && product->mediaViewerOpen());
         if (duck != ducked) {
             ducked = duck;
             ++audioRecord.duckChanges;
@@ -1220,6 +1263,239 @@ struct RetroverseApp::State {
         }
         priority.changes.push_back(PriorityChangeRecord{frame, std::string(platform_win::toString(now)),
                                                         std::string(choice.reason), set.has_value()});
+    }
+
+    // --- I7 step 1: settings.json (ADR-0018 §2, §3) ---------------------------------------------------------------
+
+    /// settings.json and the layers under it read through the loaders; an unreadable file kept aside, what it shadows
+    /// logged once; player.json's settings in force from here on.
+    void loadSettings(const AppContext& context) {
+        const core::Paths& paths = context.paths();
+        core::SettingsFile file = core::SettingsFile::load(paths.settingsFile());
+        if (file.unreadable()) {
+            settingsRecord.unreadable = true;
+            spdlog::warn("settings.json is left out: {}", file.issue()->toString());
+            if (Status kept = file.backUpUnreadable(); kept) {
+                settingsRecord.backedUp = true;
+            } else {
+                spdlog::error("settings.json was not kept aside: {}", kept.error().toString());
+            }
+        }
+        const auto keep = [this](std::string_view section, const std::vector<std::string>& refused) {
+            for (const std::string& key : refused) {
+                settingsRecord.refused.push_back(fmt::format("{}.{}", section, key));
+            }
+        };
+        SettingsLayers layers;
+        if (auto loaded = loadVideoSettings(paths.assetRoot(), paths.configDir())) {
+            layers.video = loaded->belowSettings;
+            keep(kVideoSettingsSection, loaded->refusedKeys);
+        }
+        if (auto loaded = world::loadWorldConfig(paths.assetRoot(), paths.configDir())) {
+            layers.world = loaded->belowSettings;
+            keep(world::kWorldSettingsSection, loaded->refusedKeys);
+        }
+        if (auto loaded = xr::loadXrSettings(paths.assetRoot(), paths.configDir())) {
+            layers.xr = loaded->belowSettings;
+            keep(xr::kXrSettingsSection, loaded->refusedKeys);
+        }
+        if (auto loaded = loadPlayerSettings(paths.assetRoot(), paths.configDir())) {
+            layers.player = loaded->belowSettings;
+            keep(kPlayerSettingsSection, loaded->refusedKeys);
+            for (const Error& issue : loaded->issues) {
+                spdlog::warn("The user's player.json is left out, its defaults used: {}", issue.toString());
+            }
+            player = loaded->settings;
+        } else {
+            spdlog::error("The shipped player.json does not load ({}); the built-in defaults are used",
+                          loaded.error().toString());
+        }
+        for (const std::string& key : settingsRecord.refused) {
+            spdlog::warn("settings.json's {} is left out: the value is refused", key);
+        }
+        settingsRecord.shadowed = shadowedSettings(file, paths.configDir());
+        for (const std::string& key : settingsRecord.shadowed) {
+            spdlog::info("settings.json's {} shadows the hand-written value of <user data>/config", key);
+        }
+        settings = std::make_unique<SettingsStore>(std::move(file), std::move(layers),
+                                                   settingRows(world::lightingProfileIds(paths.assetRoot())));
+    }
+
+    /// The lens the view uses: the scene's, with the player's horizontal field when set (never in a headset, whose
+    /// runtime decides it: ADR-0018 §12).
+    void applyLens() {
+        scene::CameraLens lens = description.camera.lens;
+        if (player.horizontalFovDeg && !xrMovement) {
+            lens.horizontalFovDeg = static_cast<float>(*player.horizontalFovDeg);
+        }
+        camera.setLens(lens);
+    }
+
+    /// The look's scales and inversion, over the devices' settings (the developer overlay edits the same ones).
+    void applyInputSettings() {
+        input::InputSettings devices = input->system().settings();
+        devices.mouseSensitivityScale = static_cast<float>(player.mouseSensitivity);
+        devices.stickSensitivityScale = static_cast<float>(player.stickSensitivity);
+        devices.invertLookY = player.invertY;
+        input->system().setSettings(devices);
+    }
+
+    /// The window as the settings ask (a change of the row, or borderless at the start: a window mode then leaves
+    /// --fullscreen alone). A hidden window stays as it is: an automated run takes nothing of the screen.
+    void applyDisplayMode(AppContext& context) {
+        const bool wanted = player.displayMode == DisplayMode::Borderless;
+        if (context.options().hidden || context.window().isFullscreen() == wanted) {
+            return;
+        }
+        if (Status set = context.window().setFullscreen(wanted); !set) {
+            spdlog::warn("The window stays as it is: {}", set.error().toString());
+        }
+    }
+
+    /// settings' rows for the screen: those of a headset when the run is in one (ADR-0018 §12).
+    [[nodiscard]] std::vector<ui::SettingsRow> settingsRows(const AppContext& context) const {
+        std::vector<ui::SettingsRow> rows;
+        for (const SettingRow& row : settings->rows()) {
+            if (row.hiddenInVr && context.vr()) {
+                continue;
+            }
+            std::string note;
+            if (row.apply == SettingApply::NextSession) {
+                note = "session";
+            } else if (row.apply == SettingApply::CommitFloor) {
+                note = world ? "commit" : "start";
+            } else if (row.id() == "video.audio.mode" && !audio) {
+                note = "start"; // no engine runs: only a start makes one
+            }
+            rows.push_back(settingsRowOf(row, *settings, std::move(note)));
+        }
+        return rows;
+    }
+
+    void recordSettingChange(const AppContext& context, const ui::SettingsCommand& command) {
+        if (settingsRecord.changes.size() >= kMaxInteractionEvents) {
+            ++settingsRecord.changesDropped;
+            return;
+        }
+        settingsRecord.changes.push_back(SettingChangeRecord{context.frameIndex(),
+                                                             std::string(ui::toString(command.kind)), command.key,
+                                                             command.value.dump()});
+    }
+
+    /// What a row's new value does to the run (ADR-0018 §3): at once, or the floor committed again once the file holds
+    /// it (the floor's job reads the loaders).
+    void settingChanged(AppContext& context, const SettingRow& row) {
+        if (row.section == kPlayerSettingsSection) {
+            if (auto read = parsePlayerSettings(settings->document(kPlayerSettingsSection), "settings.json")) {
+                player = *read;
+                applyLens();
+                applyInputSettings();
+                applyDisplayMode(context);
+                if (product) {
+                    product->setTextScale(static_cast<float>(player.textScale));
+                }
+            }
+        } else if (row.section == kVideoSettingsSection) {
+            if (auto read = parseVideoSettings(settings->document(kVideoSettingsSection), "settings.json")) {
+                video = std::move(*read);
+                graphics->screenLooks().setVideo(*video);
+                if (screen) {
+                    screen->setVideo(*video, context.frameIndex());
+                }
+                muted = video->audio.muted || context.options().mute;
+                soundOff = video->audio.mode == AudioMode::Off;
+                if (audio) {
+                    audio->mixer().setMaster(video->audio.master * video->audio.video);
+                    audio->mixer().setMuted(muted || soundOff);
+                }
+            }
+        } else if (row.section == world::kWorldSettingsSection && row.key == "reduceMotion" && world) {
+            world->setReduceMotion(settings->value(row).get<bool>());
+        }
+        if (row.apply == SettingApply::CommitFloor && world) {
+            settings->saveAsync();
+            lookCommitPending = true;
+        }
+    }
+
+    /// A command of the settings screen: the value in memory and in force.
+    void applySetting(AppContext& context, const ui::SettingsCommand& command) {
+        recordSettingChange(context, command);
+        if (command.kind == ui::SettingsCommand::Kind::RestoreAll) {
+            std::vector<std::pair<const SettingRow*, nlohmann::json>> before;
+            for (const SettingRow& row : settings->rows()) {
+                before.emplace_back(&row, settings->value(row));
+            }
+            settings->restoreAll();
+            for (const auto& [row, value] : before) {
+                if (settings->value(*row) != value) {
+                    settingChanged(context, *row);
+                }
+            }
+            return;
+        }
+        const SettingRow* row = settings->row(command.key);
+        if (row == nullptr) {
+            return;
+        }
+        const bool changed = command.kind == ui::SettingsCommand::Kind::Restore ? settings->restore(*row)
+                                                                               : settings->set(*row, command.value);
+        if (changed) {
+            settingChanged(context, *row);
+        }
+    }
+
+    /// A lighting or CRT change, written, reaches the floor; a lockstep run waits for the write here, so that the
+    /// commit falls on the same frame every time.
+    void followLookCommit(const AppContext& context) {
+        if (!lookCommitPending || !settings) {
+            return;
+        }
+        if (settings->idle()) {
+            settings->saveAsync(); // a row changed since: the floor's job reads the file
+        }
+        if (context.options().fixedDeltaSeconds) {
+            settings->flush();
+        }
+        if (settings->idle() && !settings->dirty()) {
+            lookCommitPending = false;
+            if (world) {
+                world->commitFloorAgain();
+            }
+        }
+    }
+
+    /// The menu may open (ADR-0018 §1): never in the editor, during a launch or a ride, nor over another panel.
+    void openMenu(std::string_view via) {
+        if (!product || product->hasInput() || product->launchActive() || product->worldLaunchInFlight() ||
+            (world && (world->riding() || world->editing()))) {
+            return;
+        }
+        product->openMenu(via);
+        syncCaptureLayers();
+    }
+
+    /// The report's section at the end of the run.
+    void recordSettings(AppContext& context, RunReport& report) {
+        if (settings) {
+            settingsRecord.rows.clear();
+            for (const SettingRow& row : settings->rows()) {
+                settingsRecord.rows.push_back(
+                    SettingValueRecord{row.id(), settings->value(row).dump(), settings->overridden(row)});
+            }
+            settingsRecord.writes = settings->writes();
+            settingsRecord.writeFailures = settings->writeFailures();
+        }
+        settingsRecord.lensFovDeg = camera.lens().horizontalFovDeg;
+        settingsRecord.mouseSensitivity = player.mouseSensitivity;
+        settingsRecord.stickSensitivity = player.stickSensitivity;
+        settingsRecord.invertY = player.invertY;
+        settingsRecord.textScale = player.textScale;
+        settingsRecord.displayMode = std::string(toString(player.displayMode));
+        settingsRecord.windowFullscreen = context.window().isFullscreen();
+        settingsRecord.reduceMotion = world && world->reduceMotion();
+        settingsRecord.masterGain = video ? video->audio.master * video->audio.video : 1.0;
+        report.settings = std::move(settingsRecord);
     }
 
     /// The options of the run's screens' service.
@@ -1496,7 +1772,7 @@ struct RetroverseApp::State {
         }
         scene.emplace(std::move(*instance));
         freeRoam->resetScene(description, scene->collisionWorld(), spawn);
-        camera.setLens(description.camera.lens);
+        applyLens();
         // The camera takes the walker's new pose now: this frame renders the new scene from it.
         freeRoam->update(input::ActionState{}, 0.0f, camera);
         createScreen(context, std::move(screenGames), heroScreenPrefix);
@@ -1539,7 +1815,8 @@ struct RetroverseApp::State {
     /// What Back can leave (backAction).
     [[nodiscard]] BackState backState() const noexcept {
         BackState levels;
-        levels.mouseCaptured = input->mouseCaptured();
+        // The pad's B goes straight on: the captured mouse is the keyboard's level (ADR-0018 §1).
+        levels.mouseCaptured = input->mouseCaptured() && !padUsedLast;
 #if defined(RV_DEV_UI)
         if (devUi) {
             levels.overlayVisible = devUi->visible();
@@ -1551,6 +1828,8 @@ struct RetroverseApp::State {
             levels.panelOpen = product->panelOpen();
             levels.catalogOpen = product->catalogOpen();
             levels.directoryOpen = product->directoryOpen();
+            levels.menuOpen = product->menuOpen();
+            levels.productUi = true;
         }
         return levels;
     }
@@ -1558,7 +1837,8 @@ struct RetroverseApp::State {
     /// Who reads this frame's actions: the product UI while its catalog, the directory or its panel is open, the world
     /// otherwise.
     [[nodiscard]] InputContext inputContext() const noexcept {
-        return product ? inputContextFor(product->catalogOpen() || product->directoryOpen(), product->panelOpen())
+        return product ? inputContextFor(product->catalogOpen() || product->directoryOpen() || product->menuOpen(),
+                                         product->panelOpen())
                        : InputContext::World;
     }
 
@@ -1648,6 +1928,9 @@ struct RetroverseApp::State {
         case BackAction::PanelBack:
             product->panelBack();
             break;
+        case BackAction::MenuBack:
+            product->menuBack();
+            break;
         case BackAction::CatalogBack:
             product->catalogBack();
             break;
@@ -1656,10 +1939,14 @@ struct RetroverseApp::State {
             break;
         case BackAction::ReleaseMouse:
             input->releaseMouse(overlayVisible() ? "Back pressed; press it again to close the developer overlay"
+                                : product        ? "Back pressed; press it again for the menu"
                                                  : "Back pressed; press it again to quit");
             break;
         case BackAction::CloseOverlay:
             setOverlayVisible(false);
+            break;
+        case BackAction::OpenMenu:
+            openMenu("back");
             break;
         case BackAction::Quit:
             spdlog::info("Back pressed, quitting");
@@ -1774,7 +2061,7 @@ struct RetroverseApp::State {
     void resetToSceneCamera() {
         freeRoam->teleportToCamera(description.camera);
         scene->snapLighting();
-        camera.setLens(description.camera.lens);
+        applyLens();
         spdlog::info("Camera reset to the scene camera: {}", freeRoam->describePose());
     }
 
@@ -1850,6 +2137,7 @@ Status RetroverseApp::onInit(AppContext& context) {
         return propagate(graphics.error());
     }
     state->graphics = std::move(*graphics);
+    state->loadSettings(context);
     // I5 step 6: the screens' CRT presets follow video.json's crtEffect and crtPreset keys.
     state->graphics->screenLooks().setVideo(state->videoSettings(context));
     auto sceneInstance = SceneInstance::create(state->description, state->graphics->materialLibrary(),
@@ -1873,16 +2161,20 @@ Status RetroverseApp::onInit(AppContext& context) {
     }
 
     const scene::CameraSetup& camera = state->description.camera;
-    state->camera.setLens(camera.lens);
     state->camera.setPose(camera.position, core::degreesToRadians(camera.yawDeg),
                           core::degreesToRadians(camera.pitchDeg));
     state->freeRoam.emplace(state->description, state->scene->collisionWorld(), options.spawn);
     if (context.vr()) {
         state->xrMovement.emplace(state->freeRoam->controller().settings(), context.xrSettings());
     }
+    state->applyLens();
 
     input::ActionMap bindings = loadBindings(paths);
     state->input = std::make_unique<AppInput>(context.window(), bindings, std::move(*script));
+    state->applyInputSettings();
+    if (state->player.displayMode == DisplayMode::Borderless) {
+        state->applyDisplayMode(context);
+    }
     if (appCatalog) {
         State* raw = state.get();
         auto product = ProductUi::create(
@@ -1894,6 +2186,20 @@ Status RetroverseApp::onInit(AppContext& context) {
             return propagate(std::move(error));
         }
         state->product = std::move(*product);
+        state->product->setTextScale(static_cast<float>(state->player.textScale));
+        // I7 step 1 (ADR-0018 §1, §3): what the menu and the settings screen ask of the run.
+        MenuHooks menuHooks;
+        menuHooks.settingRows = [raw, &context] { return raw->settingsRows(context); };
+        menuHooks.applySetting = [raw, &context](const ui::SettingsCommand& command) {
+            raw->applySetting(context, command);
+        };
+        menuHooks.settingsClosed = [raw] { raw->settings->saveAsync(); };
+        menuHooks.quit = [raw, &context] {
+            spdlog::info("Esci confirmed, quitting");
+            raw->settings->saveAsync();
+            context.requestQuit();
+        };
+        state->product->setMenuHooks(std::move(menuHooks));
         // The screens' decoders stop and are waited for before a launch, and open again after it (ADR-0012 §6); the
         // process priority is normal before the emulator starts (I5 step 2).
         LaunchHooks hooks;
@@ -1908,6 +2214,8 @@ Status RetroverseApp::onInit(AppContext& context) {
             }
         };
         hooks.starting = [raw, &context] {
+            // ADR-0018 §2: what the settings changed is on disk before a game takes the machine.
+            raw->settings->saveAsync();
             // ADR-0016 §9: the mix fades out (50 ms, begun before the screens' decoders stop, so that it runs while
             // they do) and the device stops, leaving the endpoint to the emulator.
             if (raw->audio) {
@@ -2050,6 +2358,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     if (!state.pointXrUi(context) && !playingInXr) {
         state.xrHands.applySelect(actions);
     }
+    state.padUsedLast = actions.activeDevice() == input::DeviceKind::Gamepad;
     state.syncScriptPhases(context.frameTiming(), frame);
     // The context of the frame is the one it began in: the press that opens the catalog is no command inside it.
     const InputContext inputContext = state.inputContext();
@@ -2104,7 +2413,10 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                 !worldResult.walker;
             if (state.product && !riding && freeRoamNow && !state.product->launchActive() &&
                 !state.product->hasInput()) {
-                if (actions.pressed(input::Action::Map)) {
+                if (actions.pressed(input::Action::Menu)) {
+                    // ADR-0018 §1: Start in free roam, Back's last level.
+                    state.openMenu("start");
+                } else if (actions.pressed(input::Action::Map)) {
                     state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "map");
                 } else if (actions.pressed(input::Action::Interact) && state.world->idleAtElevator()) {
                     state.world->openDirectory(*state.product, ui::DirectoryTab::Floors, "elevator");
@@ -2127,6 +2439,9 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             }
             if (catalogToggleRequested(inputContext, actions)) {
                 state.openCatalog();
+            }
+            if (actions.pressed(input::Action::Menu)) {
+                state.openMenu("start");
             }
         }
     } else if (catalogToggleRequested(inputContext, actions) && !state.product->panelOpen()) {
@@ -2216,6 +2531,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             }
         }
     }
+    state.followLookCommit(context);
     if (state.world) {
         // The room (I3 step 10b): its result committed at this frame boundary, its covers' round.
         state.world->update(*state.product, false, state.simulatedSeconds);
@@ -2312,6 +2628,12 @@ void RetroverseApp::onShutdown(AppContext& context) {
         }
         // The clips' sound (I5 step 5): the capture written, the section recorded (with the screens' part).
         m_state->recordAudio(context.report());
+        // I7 step 1: what the settings changed reaches its file whatever ended the run (the window closed too).
+        if (m_state->settings) {
+            m_state->settings->saveAsync();
+            m_state->settings->flush();
+        }
+        m_state->recordSettings(context, context.report());
         // Normal for the rest of the exit (the joins and the report need no boost), the report's last change. The class
         // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});

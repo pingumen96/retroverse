@@ -223,6 +223,11 @@ public:
     /// clip go, the others play on).
     void setGames(std::vector<ScreenGame> games);
 
+    /// The settings screen changed video.json's keys (I7 step 1, ADR-0018 §3): the volumes and the sound's mode follow at
+    /// once; clips turned on or off, or another programme, bind the bound screens afresh, each screen's choice made as at
+    /// the start (never at the frame's middle: between two frames).
+    void setVideo(VideoSettings video, std::uint64_t frame);
+
     /// Lets go of the screens (I4 step 6b): the clips stop (never waited for), the stills go, and the screens' picture
     /// overrides clear when `clearOverride` (false: the scene's registry was cleared, the materials are gone).
     /// Unbound, the service shows nothing and opens no decoder until bind().
