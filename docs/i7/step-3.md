@@ -23,12 +23,16 @@ Roadmap row: I7 step 3. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   action, removed again when it equals the layer below. The frame's actions are cleared while a capture waits, so nothing
   else sees the press, and `AppInput::setBindings()` resolves the held input through the new map at once: without that
   the very key a capture took would press the row it was captured for.
+- **A swap** involves every holder in the context, and is refused when the action has nothing to give back and a holder
+  would lose its last key or pad button (`Locked`), or when what goes back is another action's where the holder is read
+  (`Reserved`): it never strips a device, nor moves the clash.
 - **No lock-out** (`keepUnlocked()`, in the loader and after every edit): UiActivate, UiBack and Menu get the shipped key or
   button back whatever a file says. The arrows and the D-pad are not bindable, so the screen can always be walked.
   `--safe-bindings` leaves the section out, and Controlli then shows only "Ripristina predefiniti".
 - **The hotplug** (`app::ControllerWatch`, `ui::ControllerNoticeScreen`): "Controller scollegato" when the last pad goes,
-  until one is back or 8 s pass. `rv_platform_tests` proves a virtual pad unplugged and back during a UI screen and across
-  a game (FR-029): `GamepadManager` needed no change.
+  until one is back or 8 s pass; the last pad gone, the keyboard is the device used last, so no hint names it.
+  `rv_platform_tests` proves a virtual pad unplugged and back during a UI screen and across a game (FR-029), and a smoke
+  case the notice on a game's return, the pad going through the script's `"raw"`, not an SDL event.
 - **Input scripts** gained `"raw"` (the devices, through the bindings) and `"device"`. The pad's hints are thereby tested
   for the first time; step 1's scripted actions never set the last device.
 

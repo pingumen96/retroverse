@@ -254,6 +254,38 @@ TEST_CASE("controls: a reserved press is refused and the capture goes on; time e
     CHECK(bound(*run.report, "ui_activate=Invio|A"));
 }
 
+TEST_CASE("controls: the capture's strip leaves the row in view, a refusal's line too", "[gpu][controls]") {
+    const Room room("strip");
+    const auto check = [&](std::string_view name, Script script) {
+        const AppRun run = runScript(room, name, script);
+        skipWithoutOpenGl(run);
+        requireCleanRun(run);
+        INFO(name << ": " << run.describe());
+        CHECK(run.report->menu->settingsOpen);
+        CHECK_FALSE(run.report->menu->settingsRowCovered);
+    };
+    check("waiting", Script{}.toActivateRow().press("ui_activate").wait(4));
+    check("refused", Script{}.toActivateRow().press("ui_activate").wait(2).key("k").wait(4));
+    check("offer", Script{}.toActivateRow().press("ui_activate").wait(2).key("escape").wait(4));
+}
+
+TEST_CASE("controls: a bad entry of settings.json costs that action alone, a live rebind included", "[gpu][controls]") {
+    const Room room("bad_entry");
+    room.writeSettings(R"({"schemaVersion": 1, "bindings": {"sprint": [{"key": "bogus"}], "defaults": true,
+        "ui_info": [{"key": "f7"}, {"padButton": "west"}]}})");
+    Script script;
+    script.toActivateRow();
+    script.press("ui_activate").wait(2).key("insert").wait(4);
+    const AppRun run = runScript(room, "run", script);
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    CHECK(run.report->controls->captures == std::vector<std::string>{"free"});
+    CHECK(bound(*run.report, "ui_activate=Ins|A"));
+    CHECK(bound(*run.report, "ui_info=F7|X")); // the live map kept it
+    CHECK(bound(*run.report, "sprint=Maiusc|L3"));
+}
+
 TEST_CASE("controls: a hand-written file cannot lock anybody out, nor is it touched", "[gpu][controls]") {
     const Room room("lock_out");
     constexpr std::string_view kWritten = R"(// mine

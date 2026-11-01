@@ -1,0 +1,9 @@
+// I7 step 3: quick_catalog_launch.json with a pad plugged in up to the launch's frame 8: tests/smoke/test_launch.cpp.
+[
+  {"fromFrame": 0, "toFrame": 8, "raw": {"padConnected": true}},
+  {"fromFrame": 2, "toFrame": 2, "actions": {"quick_catalog": 1}},
+  {"fromFrame": 8, "toFrame": 8, "actions": {"ui_activate": 1}},
+  {"fromFrame": 14, "toFrame": 14, "actions": {"ui_back": 1}},
+  {"fromFrame": 20, "toFrame": 20, "actions": {"ui_back": 1}},
+  {"fromFrame": 26, "toFrame": 45, "actions": {"move_forward": 1}}
+]

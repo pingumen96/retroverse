@@ -121,6 +121,18 @@ TEST_CASE("launch: a game launched from the quick catalog returns, and no frame 
     CHECK(payload[1] == "gb");
 }
 
+TEST_CASE("launch: a pad lost during a game says so on the return (FR-029)", "[gpu][launch][controls]") {
+    // No frame runs while the fake plays: the script's pad is there up to the launch's frame, gone at the first after it.
+    const AppRun run = runLaunch("pad_lost", {fake_games::kReturns}, "quick_catalog_launch_pad_lost.json");
+    const rv::app::LaunchRecord& launch = requireLaunch(run, fake_games::kReturns);
+    CHECK(launch.state == "Returned");
+    REQUIRE(run.report->controls);
+    CHECK(run.report->controls->padsLost == 1);
+    CHECK(run.report->controls->padsBack == 0);
+    CHECK(run.report->controls->noticeShown);
+    CHECK(run.report->controls->noticeFrames > 0);
+}
+
 TEST_CASE("launch: failures leave the application interactive with their outcome", "[gpu][launch]") {
     struct Case {
         std::string_view name;
