@@ -35,10 +35,10 @@
 
 		<div data-if="notice == 'no-catalog'">
 			<h1>Stanza di prova</h1>
-			<p data-if="state == 'no-library'">Nessuna libreria ES-DE è associata a Retroverse: la stanza dei giochi si
-				genera dopo "retroverse-cli library create" e "retroverse-cli import".</p>
-			<p data-if="state == 'no-database'">Il catalogo non è ancora stato importato: "retroverse-cli import" lo
-				crea, poi la stanza dei giochi si genera al prossimo avvio.</p>
+			<p data-if="state == 'no-library'">Nessuna libreria ES-DE è associata a Retroverse: alla prossima apertura la
+				procedura guidata la collega, oppure "retroverse-cli library create" e "retroverse-cli import".</p>
+			<p data-if="state == 'no-database'">Il catalogo non è ancora stato importato: alla prossima apertura la
+				procedura guidata lo crea, oppure "retroverse-cli import", poi la stanza dei giochi si genera.</p>
 			<p data-if="state == 'data-directory'">La cartella dei dati di Retroverse è dentro le cartelle della
 				libreria: il catalogo non si apre. Il catalogo rapido (Tab) dice come fare.</p>
 			<p data-if="state == 'library-mismatch'">Il catalogo appartiene a un'altra libreria: il catalogo rapido

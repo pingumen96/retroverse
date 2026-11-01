@@ -1052,6 +1052,85 @@ MenuRecord readMenu(FieldReader& fields) {
     return menu;
 }
 
+Json wizardToJson(const WizardRecord& wizard) {
+    Json json{{"resumed", wizard.resumed},
+              {"open", wizard.open},
+              {"page", wizard.page},
+              {"detectionWork", wizard.detectionWork},
+              {"previewWork", wizard.previewWork},
+              {"importWork", wizard.importWork},
+              {"worldWork", wizard.worldWork},
+              {"problem", wizard.problem},
+              {"failure", wizard.failure},
+              {"entered", wizard.entered},
+              {"pages", wizard.pages},
+              {"systems", wizard.systems},
+              {"systemsWithGames", wizard.systemsWithGames},
+              {"entries", wizard.entries},
+              {"games", wizard.games},
+              {"esdeGames", wizard.esdeGames},
+              {"missingFiles", wizard.missingFiles},
+              {"notAGame", wizard.notAGame},
+              {"discMembers", wizard.discMembers},
+              {"media", wizard.media},
+              {"issues", wizard.issues},
+              {"errors", wizard.errors},
+              {"added", wizard.added},
+              {"browsed", wizard.browsed},
+              {"browserState", wizard.browserState},
+              {"browserFailure", wizard.browserFailure},
+              {"textCut", wizard.textCut},
+              {"browserTextCut", wizard.browserTextCut}};
+    Json events = Json::array();
+    for (const WizardEventRecord& event : wizard.events) {
+        events.push_back(Json{{"frame", event.frame}, {"event", event.event}, {"detail", event.detail}});
+    }
+    json["events"] = std::move(events);
+    json["eventsDropped"] = wizard.eventsDropped;
+    return json;
+}
+
+WizardRecord readWizard(FieldReader& fields) {
+    WizardRecord wizard;
+    wizard.resumed = fields.boolean("resumed");
+    wizard.open = fields.boolean("open");
+    wizard.page = fields.string("page");
+    wizard.detectionWork = fields.string("detectionWork");
+    wizard.previewWork = fields.string("previewWork");
+    wizard.importWork = fields.string("importWork");
+    wizard.worldWork = fields.string("worldWork");
+    wizard.problem = fields.string("problem");
+    wizard.failure = fields.string("failure");
+    wizard.entered = fields.boolean("entered");
+    wizard.pages = fields.stringArray("pages");
+    wizard.systems = fields.count("systems");
+    wizard.systemsWithGames = fields.count("systemsWithGames");
+    wizard.entries = fields.count("entries");
+    wizard.games = fields.count("games");
+    wizard.esdeGames = fields.count("esdeGames");
+    wizard.missingFiles = fields.count("missingFiles");
+    wizard.notAGame = fields.count("notAGame");
+    wizard.discMembers = fields.count("discMembers");
+    wizard.media = fields.count("media");
+    wizard.issues = fields.count("issues");
+    wizard.errors = fields.count("errors");
+    wizard.added = fields.count("added");
+    wizard.browsed = fields.count("browsed");
+    wizard.browserState = fields.string("browserState");
+    wizard.browserFailure = fields.string("browserFailure");
+    wizard.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    wizard.browserTextCut = static_cast<std::uint32_t>(fields.count("browserTextCut"));
+    for (FieldReader& event : fields.objectArray("events")) {
+        WizardEventRecord entry;
+        entry.frame = event.count("frame");
+        entry.event = event.string("event");
+        entry.detail = event.string("detail");
+        wizard.events.push_back(std::move(entry));
+    }
+    wizard.eventsDropped = fields.count("eventsDropped");
+    return wizard;
+}
+
 Json settingsToJson(const SettingsRecord& settings) {
     Json json{{"unreadable", settings.unreadable},
               {"backedUp", settings.backedUp},
@@ -3201,6 +3280,9 @@ std::string formatRunReport(const RunReport& report) {
     }
     json["screens"] = screensToJson(report.screens);
     json["directory"] = directoryToJson(report.directory);
+    if (report.wizard) {
+        json["wizard"] = wizardToJson(*report.wizard);
+    }
     if (report.menu) {
         json["menu"] = menuToJson(*report.menu);
     }
@@ -3370,6 +3452,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto directory = fields.optionalObject("directory")) {
         report.directory = readDirectory(*directory);
+    }
+    if (auto wizard = fields.optionalObject("wizard")) {
+        report.wizard = readWizard(*wizard);
     }
     if (auto menu = fields.optionalObject("menu")) {
         report.menu = readMenu(*menu);

@@ -41,6 +41,7 @@
 #include <rv/ui/regenerate_preview_screen.hpp>
 #include <rv/ui/settings_screen.hpp>
 #include <rv/ui/system_menu_screen.hpp>
+#include <rv/ui/wizard_screen.hpp>
 
 #include "edit_bar_panel.hpp"
 #include "elevator_prompt_panel.hpp"
@@ -213,11 +214,309 @@ struct ProductUi::Impl {
     ui::SettingsModel settingsModel;
     MenuHooks menuHooks;
     MenuRecord menuRecord;
+    /// I7 step 2: the wizard (its flow from startWizard() on, its screen made with it), the application's side of it, where
+    /// its import stands, the page last recorded, its run report record; how long a lockstep run waits for its work at
+    /// most (the real library's first import takes minutes).
+    enum class WizardImportStage : std::uint8_t { None, Preparing, Opening, Refreshing };
+    std::unique_ptr<WizardFlow> wizardFlow;
+    std::unique_ptr<ui::WizardScreen> wizardScreen;
+    WizardHooks wizardHooks;
+    WizardImportStage wizardImport = WizardImportStage::None;
+    /// A catalog of the wizard's own stands (page 4 tried before).
+    bool wizardCatalog = false;
+    bool wizardWorldStarted = false;
+    bool padLast = false;
+    std::optional<ui::WizardPage> wizardPageSeen;
+    std::optional<WizardRecord> wizardRecord;
+    static constexpr std::chrono::minutes kWizardWaitLimit{30};
+    std::optional<std::chrono::steady_clock::time_point> wizardWaitSince;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
-               (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown();
+               (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
+               wizardShown();
+    }
+
+    /// The wizard shows.
+    [[nodiscard]] bool wizardShown() const noexcept {
+        return wizardFlow && wizardScreen && wizardFlow->model().isOpen();
+    }
+
+    void addWizardEvent(std::string event, std::string detail = {}) {
+        if (!wizardRecord) {
+            return;
+        }
+        if (wizardRecord->events.size() >= kMaxInteractionEvents) {
+            ++wizardRecord->eventsDropped;
+            return;
+        }
+        wizardRecord->events.push_back(WizardEventRecord{context.frameIndex(), std::move(event), std::move(detail)});
+    }
+
+    /// The row of the settings with `key`, as it stands.
+    [[nodiscard]] std::optional<ui::SettingsRow> settingRow(std::string_view key) const {
+        if (menuHooks.settingRows) {
+            for (ui::SettingsRow& row : menuHooks.settingRows()) {
+                if (row.key == key) {
+                    return std::move(row);
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// Page 6's rows, as the settings have them.
+    void showAppearance() {
+        const std::optional<ui::SettingsRow> lighting = settingRow("world.lightingProfile");
+        const std::optional<ui::SettingsRow> motion = settingRow("world.reduceMotion");
+        wizardFlow->model().setAppearance(lighting ? ui::settingsValueKey(*lighting) : std::string(),
+                                          motion && motion->value.is_boolean() && motion->value.get<bool>());
+    }
+
+    /// `key` a step on: the settings screen's way, written with the rest when the world starts.
+    void stepSetting(std::string_view key, int direction) {
+        const std::optional<ui::SettingsRow> row = settingRow(key);
+        if (!row || !menuHooks.applySetting) {
+            return;
+        }
+        if (std::optional<nlohmann::json> next = ui::settingsStep(*row, direction, true)) {
+            menuHooks.applySetting(ui::SettingsCommand{ui::SettingsCommand::Kind::Change, row->key, std::move(*next)});
+        }
+        showAppearance();
+    }
+
+    void failImport(std::string failure) {
+        spdlog::warn("Frame {}: the wizard's import failed: {}", context.frameIndex(), failure);
+        addWizardEvent("import-failed", failure);
+        wizardImport = WizardImportStage::None;
+        wizardFlow->model().setImport(ui::WizardWork::Failed, {}, std::move(failure));
+    }
+
+    void wizardCommand(const std::optional<ui::WizardCommand>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the wizard asks {}", context.frameIndex(), ui::toString(command->kind));
+        switch (command->kind) {
+        case ui::WizardCommandKind::Quit:
+            if (wizardHooks.quit) {
+                wizardHooks.quit();
+            }
+            break;
+        case ui::WizardCommandKind::Browse:
+            addWizardEvent("browse", std::string(ui::toString(command->folder)));
+            wizardFlow->command(*command);
+            break;
+        case ui::WizardCommandKind::Detect:
+        case ui::WizardCommandKind::Read:
+            wizardFlow->command(*command);
+            break;
+        case ui::WizardCommandKind::Import:
+            wizardImport = WizardImportStage::Preparing;
+            wizardFlow->model().setImport(ui::WizardWork::Running, {});
+            wizardFlow->prepareImport();
+            break;
+        case ui::WizardCommandKind::Lighting:
+            stepSetting("world.lightingProfile", command->direction);
+            break;
+        case ui::WizardCommandKind::ReduceMotion:
+            stepSetting("world.reduceMotion", 1);
+            break;
+        case ui::WizardCommandKind::StartWorld:
+            if (!std::exchange(wizardWorldStarted, true)) {
+                wizardFlow->model().setWorld(ui::WizardWork::Running);
+                if (wizardHooks.startWorld) {
+                    wizardHooks.startWorld();
+                }
+            }
+            break;
+        case ui::WizardCommandKind::Enter:
+            wizardFlow->model().close();
+            if (wizardRecord) {
+                wizardRecord->entered = true;
+            }
+            addWizardEvent("entered");
+            nav.reset();
+            break;
+        }
+    }
+
+    /// A UI command for the wizard, or for the browser over it.
+    void wizardApply(ui::UiCommand command) {
+        if (wizardFlow->browser().isOpen()) {
+            browserClosed(wizardFlow->browser().apply(command));
+        } else {
+            wizardCommand(wizardFlow->model().apply(command));
+        }
+    }
+
+    void browserClosed(const std::optional<ui::FolderBrowserResult>& result) {
+        if (!result) {
+            return;
+        }
+        if (result->chosen) {
+            addWizardEvent("chosen");
+        }
+        wizardFlow->browserClosed(*result);
+        if (wizardRecord) {
+            wizardRecord->browsed = wizardFlow->browsed();
+        }
+        nav.reset();
+    }
+
+    void wizardClicks() {
+        if (!wizardScreen) {
+            return;
+        }
+        if (const int wheel = wizardScreen->takeWheel(); wheel != 0 && wizardFlow->browser().isOpen()) {
+            wizardFlow->browser().scroll(wheel);
+        }
+        const std::optional<ui::WizardClick> click = wizardScreen->takeClicked();
+        if (!click || !wizardShown() || panel->visible()) {
+            return;
+        }
+        if (click->kind == ui::WizardClick::Kind::Browser) {
+            browserClosed(wizardFlow->browser().click(click->browser));
+        } else {
+            wizardCommand(wizardFlow->model().click(click->button, click->direction));
+        }
+    }
+
+    /// The wizard's frame: its jobs' answers, the page's work, what the catalog and the world brought.
+    void followWizard() {
+        if (!wizardFlow) {
+            return;
+        }
+        wizardFlow->poll();
+        ui::WizardModel& model = wizardFlow->model();
+        if (!model.isOpen()) {
+            return;
+        }
+        if (wizardPageSeen != model.page()) {
+            wizardPageSeen = model.page();
+            const std::string page(ui::toString(model.page()));
+            spdlog::info("Frame {}: the wizard shows {}", context.frameIndex(), page);
+            if (wizardRecord) {
+                wizardRecord->pages.push_back(page);
+            }
+            addWizardEvent("page", page);
+            if (model.page() == ui::WizardPage::Appearance) {
+                showAppearance();
+            }
+        }
+        wizardCommand(model.takeEntered());
+        if (std::optional<WizardFlow::Prepared> prepared = wizardFlow->takePrepared()) {
+            if (!prepared->failure.empty()) {
+                failImport(std::move(prepared->failure));
+            } else if (prepared->changed || !wizardCatalog) {
+                // A catalog of its own, now that library.json says what it holds.
+                wizardCatalog = true;
+                wizardImport = WizardImportStage::Opening;
+                replaceCatalog(wizardHooks.makeCatalog());
+            } else {
+                wizardImport = WizardImportStage::Opening; // the catalog of the try before opened this library
+            }
+        }
+        if (wizardImport == WizardImportStage::Opening) {
+            const CatalogState state = catalog->roomCatalogState();
+            if (state == CatalogState::Ready) {
+                requestRefresh(RefreshTrigger::Wizard);
+                if (catalog->refreshState().running) {
+                    wizardImport = WizardImportStage::Refreshing;
+                } else {
+                    failImport("catalog");
+                }
+            } else if (state != CatalogState::Opening) {
+                spdlog::warn("Frame {}: the wizard's catalog did not open: {}", context.frameIndex(), toString(state));
+                wizardCatalog = false; // Riprova makes another
+                failImport("catalog");
+            }
+        }
+        if (wizardImport == WizardImportStage::Refreshing) {
+            const RefreshState state = catalog->refreshState();
+            if (state.running) {
+                ui::WizardImport progress;
+                if (state.progress) {
+                    progress.phase = std::string(toString(state.progress->phase));
+                    progress.done = state.progress->done;
+                    progress.total = state.progress->total;
+                }
+                if (progress != model.importing()) {
+                    model.setImport(ui::WizardWork::Running, std::move(progress));
+                }
+            } else if (state.last && state.last->outcome == RefreshOutcome::Done) {
+                wizardImport = WizardImportStage::None;
+                ui::WizardImport done;
+                done.entries = state.last->entries;
+                done.added = state.last->added;
+                if (wizardRecord) {
+                    wizardRecord->added = done.added;
+                }
+                model.setImport(ui::WizardWork::Done, std::move(done));
+            } else {
+                failImport(state.last && state.last->outcome == RefreshOutcome::Busy ? "busy" : "read");
+            }
+        }
+        if (wizardWorldStarted && model.worldWork() == ui::WizardWork::Running && wizardHooks.worldReady &&
+            wizardHooks.worldReady()) {
+            model.setWorld(ui::WizardWork::Done);
+        }
+    }
+
+    /// Something the wizard's page waits for is not there yet: a lockstep run's frames wait for it, so that a script's
+    /// presses find the page as it will stand.
+    [[nodiscard]] bool wizardWaits() const noexcept {
+        if (!lockstep || !wizardFlow || !wizardFlow->model().isOpen()) {
+            return false;
+        }
+        const bool waiting = wizardFlow->busy() || wizardImport != WizardImportStage::None ||
+                             (wizardWorldStarted && wizardFlow->model().worldWork() == ui::WizardWork::Running);
+        return waiting && (!wizardWaitSince || std::chrono::steady_clock::now() - *wizardWaitSince < kWizardWaitLimit);
+    }
+
+    void replaceCatalog(std::unique_ptr<AppCatalog> next) {
+        screen.reset();
+        model.reset();
+        if (catalog) {
+            catalog->shutdown();
+        }
+        catalog = std::move(next);
+        model = std::make_unique<ui::QuickCatalogModel>(catalog->source());
+    }
+
+    void finishWizard(RunReport& report) {
+        if (!wizardRecord) {
+            return;
+        }
+        WizardRecord record = std::move(*wizardRecord);
+        const ui::WizardModel& shown = wizardFlow->model();
+        record.resumed = shown.resumed();
+        record.open = shown.isOpen();
+        record.page = std::string(ui::toString(shown.page()));
+        record.detectionWork = std::string(ui::toString(shown.detectionWork()));
+        record.previewWork = std::string(ui::toString(shown.previewWork()));
+        record.importWork = std::string(ui::toString(shown.importWork()));
+        record.worldWork = std::string(ui::toString(shown.worldWork()));
+        record.problem = shown.detection().problem;
+        record.failure = shown.failure();
+        const ui::WizardPreview& preview = shown.preview();
+        const WizardPreviewFigures& figures = wizardFlow->figures();
+        record.systems = preview.systems;
+        record.systemsWithGames = preview.systemsWithGames;
+        record.games = preview.games;
+        record.media = preview.media;
+        record.notAGame = preview.unrecognized;
+        record.errors = preview.errors;
+        record.entries = figures.entries;
+        record.esdeGames = figures.esdeGames;
+        record.missingFiles = figures.missing;
+        record.discMembers = figures.members;
+        record.issues = figures.issues;
+        const ui::FolderBrowserModel& browser = wizardFlow->browser();
+        record.browserState = std::string(ui::toString(browser.state()));
+        record.browserFailure = browser.failure() ? std::string(ui::toString(*browser.failure())) : std::string();
+        report.wizard = std::move(record);
     }
 
     /// The menu shows (not while a section shows over it).
@@ -299,6 +598,13 @@ struct ProductUi::Impl {
     }
 
     void syncMenu() {
+        if (wizardScreen) {
+            if (wizardShown()) {
+                wizardScreen->show(wizardFlow->model(), wizardFlow->browser(), padLast);
+            } else {
+                wizardScreen->hide();
+            }
+        }
         if (menuScreen) {
             if (menuShown()) {
                 menuScreen->show(menu);
@@ -344,7 +650,7 @@ struct ProductUi::Impl {
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
         return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
-               settingsShown();
+               settingsShown() || wizardShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -1248,7 +1554,30 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
 }
 
 bool ProductUi::menuOpen() const noexcept {
-    return m_impl->menu.isOpen();
+    return m_impl->menu.isOpen() || wizardOpen();
+}
+
+bool ProductUi::wizardOpen() const noexcept {
+    return m_impl->wizardShown();
+}
+
+void ProductUi::startWizard(WizardFlow::Options options, WizardStart start, WizardHooks hooks) {
+    Impl& s = *m_impl;
+    auto screen = ui::WizardScreen::create(*s.view);
+    if (!screen) {
+        s.context.failRun(screen.error(), ExitCode::InitializationFailed);
+        return;
+    }
+    s.wizardScreen = std::move(*screen);
+    s.wizardHooks = std::move(hooks);
+    s.wizardFlow = std::make_unique<WizardFlow>(std::move(options));
+    s.wizardRecord.emplace();
+    s.wizardFlow->open(start);
+    spdlog::info("Frame {}: the wizard started ({})", s.context.frameIndex(), toString(start));
+}
+
+void ProductUi::replaceCatalog(std::unique_ptr<AppCatalog> catalog) {
+    m_impl->replaceCatalog(std::move(catalog));
 }
 
 void ProductUi::openMenu(std::string_view via) {
@@ -1276,7 +1605,9 @@ void ProductUi::openMenu(std::string_view via) {
 
 void ProductUi::menuBack() {
     Impl& s = *m_impl;
-    if (s.settingsModel.isOpen()) {
+    if (s.wizardShown()) {
+        s.wizardApply(ui::UiCommand::Back);
+    } else if (s.settingsModel.isOpen()) {
         s.settingsCommand(s.settingsModel.apply(ui::UiCommand::Back));
     } else if (s.menu.isOpen()) {
         s.menuCommand(s.menu.apply(ui::UiCommand::Back));
@@ -1301,6 +1632,10 @@ void ProductUi::setTextScale(float scale) {
 bool ProductUi::handleEvent(const SDL_Event& event) {
     if (!hasInput()) {
         return false;
+    }
+    // I7 step 2: the wizard likewise, over everything but the panel.
+    if (m_impl->wizardShown() && !m_impl->panel->visible()) {
+        return m_impl->wizardScreen->handlePointer(event);
     }
     // I7 step 1: the menu and the settings screen likewise (only the mouse; their commands come from the UI actions).
     if (m_impl->settingsShown() && !m_impl->panel->visible()) {
@@ -1508,9 +1843,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.flow.poll(LaunchClock::now(), s.context.frameIndex());
     s.afterReturn();
     s.followHandover();
+    s.followWizard();
 
     s.commands.clear();
     if (uiActions != nullptr) {
+        s.padLast = uiActions->activeDevice() == input::DeviceKind::Gamepad;
         // I4b step 6's review: the preview's hints show the glyphs of the device used last.
         s.preview.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
         s.settingsModel.setDevice(uiActions->activeDevice() == input::DeviceKind::Gamepad);
@@ -1534,6 +1871,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
+            } else if (s.wizardShown()) {
+                s.wizardApply(command); // I7 step 2
             } else if (s.preview.isOpen()) {
                 s.previewCommand(s.preview.apply(command)); // I4b step 6
             } else if (s.screensOpen()) {
@@ -1556,6 +1895,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             s.directoryCommand(s.directory.click(*click));
         }
     }
+    s.wizardClicks(); // I7 step 2
     // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
     if (s.settingsScreen) {
         if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
@@ -1621,6 +1961,14 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         if (s.previewShown()) {
             s.previewScreen->afterUpdate();
         }
+        if (s.wizardShown()) {
+            s.wizardScreen->afterUpdate();
+            if (s.wizardRecord) {
+                s.wizardRecord->textCut = std::max(s.wizardRecord->textCut, s.wizardScreen->textCut());
+                s.wizardRecord->browserTextCut =
+                    std::max(s.wizardRecord->browserTextCut, s.wizardScreen->browserTextCut());
+            }
+        }
         if (s.menuShown()) {
             s.menuScreen->afterUpdate();
             s.menuRecord.textCut = std::max(s.menuRecord.textCut, s.menuScreen->textCut());
@@ -1667,7 +2015,7 @@ void ProductUi::catalogBack() {
 }
 
 bool ProductUi::wantsIdle() const noexcept {
-    return m_impl->flow.hostIdle() || m_impl->waitsForCatalog();
+    return m_impl->flow.hostIdle() || m_impl->waitsForCatalog() || m_impl->wizardWaits();
 }
 
 bool ProductUi::launchActive() const noexcept {
@@ -1677,6 +2025,13 @@ bool ProductUi::launchActive() const noexcept {
 void ProductUi::onIdle() {
     Impl& s = *m_impl;
     s.lastFrame.reset(); // the wait is no frame time
+    if (s.wizardWaits() && !s.wizardWaitSince) {
+        s.wizardWaitSince = std::chrono::steady_clock::now();
+    }
+    s.followWizard();
+    if (s.wizardFlow && !s.wizardWaits()) {
+        s.wizardWaitSince.reset();
+    }
     if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() &&
         (s.catalog->busy() || (s.screens && s.screens->loading()))) {
         s.catalogWaitSince = std::chrono::steady_clock::now();
@@ -1808,6 +2163,7 @@ void ProductUi::finish() {
         s.menuRecord.settingsRows.push_back(row.key);
     }
     report.menu = std::move(s.menuRecord);
+    s.finishWizard(report);
     if (s.directoryRecord.bound) {
         DirectoryRecord directory = std::move(s.directoryRecord);
         directory.open = s.directory.isOpen();

@@ -384,9 +384,6 @@ Candidates from I2 step 13 (the real catalog in the app, `docs/i2/step-13.md`):
   the catalog worker checks the user data directory against the library's folders; `retroverse-cli` logs to stderr
   until the guard passed. The guard keeps the database out of the library's folders, but a `--data-dir` inside one
   would get the log file.
-- **One launch library for the CLI and the app:** `rv_app_catalog`'s `CatalogLaunchLibrary` mirrors the CLI's
-  `LaunchLibrary` (`launch_text.hpp`) and `cmd_launch.cpp`'s `resolveCatalogGame`, private to `rv_cli_core`; move
-  them into one shared library (below the app and the CLI) so that the two cannot drift.
 - **A refresh when another process imports:** the open app keeps the list it materialized until something asks again;
   an import made by `retroverse-cli` meanwhile shows at the next query or start. The app refreshes itself on request
   since I3 step 13r ("Aggiorna libreria", `--refresh-library`); noticing another process's import, or ES-DE's changes,

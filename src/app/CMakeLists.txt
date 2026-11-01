@@ -77,7 +77,7 @@ rv_forbid_link(rv_app_cli)
 # (world_live_plan: step 15b), what the media viewer and Informazioni show of a game (game_screens: step 14b); since I4b
 # the editor's draft (world_edit_draft: step 3) and the regenerations' and the undo's jobs (world_regenerate_job: step
 # 6); since I5 step 8's review the screens' verdicts (screen_verdicts: I5 step 7, over rv_media's verdicts file, unit
-# tested). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
+# tested); since I7 step 2 the wizard's flow (wizard_flow). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
@@ -88,6 +88,7 @@ add_library(rv_app_catalog STATIC
     src/room_screen.cpp
     src/room_snapshot.cpp
     src/screen_verdicts.cpp
+    src/wizard_flow.cpp
     src/world_build.cpp
     src/world_live_plan.cpp
     src/world_reconcile.cpp

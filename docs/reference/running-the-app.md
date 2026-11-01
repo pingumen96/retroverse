@@ -12,6 +12,18 @@ start, run report not written, the GPU memory accounting missing a texture of th
 `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of `%LOCALAPPDATA%`; use `--data-dir
 build/rvdata`).
 
+- **The first-run wizard** (I7 step 2, ADR-0018 §4, `docs/i7/step-2.md`). An interactive run in the building's mode whose
+  data directory has no `library.json` starts on it; one with `library.json` and no catalog (no database, or one no
+  import finished in) resumes at its preview. A data directory `retroverse-cli library create` and `import` prepared
+  never sees it. **A frame-limited run never starts it by itself and never discovers ES-DE:** it keeps the test room and
+  its notice, and takes the wizard only with `--wizard --esde-home <dir>` (the ES-DE home, or the folder that holds it
+  as ES-DE's own `--home` names it, a fixture's root), with `--esde-install <dir>`; the system probe is then never asked.
+  `--wizard` without `--esde-home` exits 2. A lockstep run's frames wait for what a page waits for, so a script presses
+  `ui_activate` every few frames: Avanti six times and Entra take a data directory from nothing to the lobby. The test
+  room shows behind it, no catalog worker exists until page 4, and page 7 starts the world in place. The report's
+  `wizard`: `pages`, `resumed`, `entered`, each page's work, `problem`, `failure`, the preview's counts (those of `import
+  --dry-run --json`'s `totals`), `added`, `browsed`, `browserState`, `textCut`, `browserTextCut`, `events`; a refresh's
+  `trigger` is `wizard`.
 - Host options of both executables, besides those described below: `--width`/`--height` (the window, default
   1280x720), `--fullscreen` (borderless), `--no-vsync`, `--gl-selftest` (provokes one GL_INVALID_ENUM to prove that
   OpenGL errors reach the log; a `--smoke` run still passes when it is the only one), `--asset-root <dir>` (else

@@ -42,6 +42,8 @@ std::string_view toString(RefreshTrigger trigger) noexcept {
         return "command-line";
     case RefreshTrigger::User:
         return "user";
+    case RefreshTrigger::Wizard:
+        return "wizard";
     }
     return "user";
 }

@@ -12,6 +12,7 @@
 #include <rv/app/command_line.hpp>
 #include <rv/app/game_screens.hpp>
 #include <rv/app/launch_outcome.hpp>
+#include <rv/app/wizard_flow.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/input/action_map.hpp>
@@ -66,6 +67,19 @@ struct MenuHooks {
     std::function<void()> quit;
 };
 
+/// What the application does for the wizard (I7 step 2, ADR-0018 §4), on the main thread. Its settings go through
+/// MenuHooks.
+struct WizardHooks {
+    /// The ES-DE catalog that makes its database: EsdeAppCatalog with createDatabase (page 4).
+    std::function<std::unique_ptr<AppCatalog>()> makeCatalog;
+    /// The world starts in place of the test room (page 7).
+    std::function<void()> startWorld;
+    /// The world has shown what it could: Entra may be offered.
+    std::function<bool()> worldReady;
+    /// Esci.
+    std::function<void()> quit;
+};
+
 /// The product UI of retroverse.exe and what it launches (I2 steps A1 and 13; specification §12.2 QuickLibrary, §13,
 /// §15.5 ExternalEmulatorRunning; ADR-0005, ADR-0006): RmlUi over the window (ui::UiSystem, one ui::UiView), the quick
 /// catalog (ui::QuickCatalogScreen over a ui::QuickCatalogModel over the AppCatalog's source: the ES-DE catalog through
@@ -112,6 +126,11 @@ public:
     /// The menu (I7 step 1, ADR-0018 §1: ui::SystemMenuModel on assets/ui/system_menu.rml through ui::SystemMenuScreen)
     /// shows, or a section of it: the UI's input, its Back level.
     [[nodiscard]] bool menuOpen() const noexcept;
+    /// The first-run wizard (I7 step 2, ADR-0018 §4; app::WizardFlow, ui::WizardModel on assets/ui/wizard.rml through
+    /// ui::WizardScreen) over the run from now on, `start` Fresh or Resume. It has the UI's input and the menu's Back level
+    /// (menuOpen() is true while it shows, menuBack() is its Back).
+    void startWizard(WizardFlow::Options options, WizardStart start, WizardHooks hooks);
+    [[nodiscard]] bool wizardOpen() const noexcept;
     /// Opens it on Riprendi (`via`: "start" or "back", for the run report); its screen is made the first time (one that
     /// cannot be made is logged and it stays closed). The application decides when it may open.
     void openMenu(std::string_view via);
@@ -119,6 +138,9 @@ public:
     void menuBack();
     /// The application's side of the menu and of the settings screen (replacing any set before).
     void setMenuHooks(MenuHooks hooks);
+    /// The catalog from now on, in place of the one held (the wizard's page 4): the old one ends, the list and the quick
+    /// catalog's screen are made again over the new one's source.
+    void replaceCatalog(std::unique_ptr<AppCatalog> catalog);
     /// The rows of the settings screen read again (MenuHooks::settingRows), when it shows.
     void refreshSettings();
     /// The UI's text scale from now on (UiView::setTextScale).
