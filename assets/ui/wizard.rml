@@ -85,7 +85,7 @@
 					<p data-if="importPhase == 'writing'">Scrittura del catalogo: {{ importDone }} di {{ importTotal }}</p>
 					<div class="bar"><div class="fill" data-style-width="importFill"></div></div>
 				</div>
-				<p data-if="importWork == 'done'">Catalogo pronto: {{ importAdded }} giochi importati.</p>
+				<p data-if="importWork == 'done'">Catalogo pronto: {{ games }} giochi importati.</p>
 				<div data-if="importWork == 'failed'">
 					<p class="problem" data-if="failure == 'library-exists'">Un altro programma ha creato la libreria nel frattempo: niente è stato sostituito. Riavvia Retroverse.</p>
 					<p class="problem" data-if="failure == 'library-backup'">Non si può fare una copia della libreria esistente: niente è stato sostituito.</p>

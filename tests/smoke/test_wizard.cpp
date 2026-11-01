@@ -166,6 +166,8 @@ TEST_CASE("wizard: the seven pages to the lobby by the pad alone, its counts the
     CHECK(catalog.refreshes.front().added > 0);
     CHECK(run.report->world.state == "room");
     CHECK(run.report->world.notice.empty());
+    // Page 7 made the world, once: the import never started it behind the panel.
+    CHECK(run.report->world.liveUpdates.empty());
     REQUIRE(run.report->menu);
     CHECK(run.report->menu->opened == 0);
 
@@ -360,7 +362,7 @@ TEST_CASE("wizard: the pages' pictures", "[.shots][.wizard_shots]") {
     };
     const auto all = [&](std::string_view prefix, std::string_view settings, const std::vector<std::string>& extra) {
         const std::string name(prefix);
-        shoot(name + "1_welcome", Script{}.wait(3), settings, extra);
+        shoot(name + "1_welcome", Script{}.press("ui_down").press("ui_up").wait(3), settings, extra);
         shoot(name + "2_detection", Script{}.forward(1).wait(3), settings, extra);
         shoot(name + "3_preview", Script{}.forward(2).wait(3), settings, extra);
         shoot(name + "4_import", Script{}.forward(3).wait(3), settings, extra);

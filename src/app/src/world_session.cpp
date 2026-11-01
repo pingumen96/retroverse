@@ -495,6 +495,9 @@ void WorldSession::followRefresh(ProductUi& product) {
         return;
     }
     m_lastRefresh = refreshSignature(state.last);
+    if (product.wizardOpen()) {
+        return; // its first import: its page 7 starts the world (ADR-0018 §4)
+    }
     if (m_loader && m_mediaRootPath && state.last->outcome == RefreshOutcome::Done) {
         spdlog::info("Frame {}: the catalog was refreshed; the cover loader tries the media root again",
                      m_context.frameIndex());
