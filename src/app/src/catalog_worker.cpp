@@ -16,7 +16,6 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
-#include <rv/app/catalog_launch_library.hpp>
 #include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
@@ -29,6 +28,7 @@
 #include <rv/esde/settings.hpp>
 #include <rv/esde/systems.hpp>
 #include <rv/launcher/launch_guard.hpp>
+#include <rv/library/launch_library.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/ui/ui_assets.hpp>
 
@@ -304,13 +304,13 @@ private:
             opened.state = CatalogState::DataDirectory;
             return guarded;
         }
-        if (!std::filesystem::exists(opened.database, ignored)) {
+        if (!m_options.createDatabase && !std::filesystem::exists(opened.database, ignored)) {
             opened.state = CatalogState::NoDatabase;
             return makeError(ErrorCode::NotFound, "no catalog database: run 'retroverse-cli import'",
                              core::pathToUtf8Lossy(opened.database));
         }
         catalog_db::DatabaseOptions options;
-        options.create = false;
+        options.create = m_options.createDatabase;
         options.busyTimeout = m_options.busyTimeout;
         options.lockWait = m_options.lockWait;
         auto database = catalog_db::openCatalogDatabase(opened.database, options);
@@ -401,7 +401,7 @@ private:
     std::vector<CatalogSystem> resolveSystems(const std::vector<catalog_db::SystemSummary>& summaries) {
         m_library.reset();
         m_libraryError.reset();
-        auto library = loadCatalogLaunchLibrary(m_profile, m_options.paths);
+        auto library = library::loadLaunchLibrary(m_profile, m_options.paths);
         if (library) {
             m_library = std::move(*library);
             for (const catalog::Issue& issue : m_library->issues) {
@@ -467,9 +467,9 @@ private:
             return system;
         }
         const catalog::LaunchResolution resolution =
-            resolveSystemLaunch(*m_library, summary.system, assignedFor(summary.system.name));
+            library::resolveSystemLaunch(*m_library, summary.system, assignedFor(summary.system.name));
         system.choice = resolution.chosen.choice;
-        system.perGame = resolvedPerGame(resolution);
+        system.perGame = library::resolvedPerGame(resolution);
         system.launch = launchStateOf(resolution, isVerified(system.name, system.choice));
         spdlog::debug("Catalog system {}: {} ({}){}", system.name.str(), catalog::toString(system.launch.readiness),
                       system.launch.blocker, system.perGame ? ", resolved per game" : "");
@@ -612,8 +612,8 @@ private:
             if (!differs) {
                 readiness.state = system->second.launch;
             } else {
-                const catalog::LaunchResolution resolution = resolveCatalogLaunch(
-                    *m_library, **details, gameChoice, assignedFor(entry.system), GameFileCheck::Catalog);
+                const catalog::LaunchResolution resolution = library::resolveCatalogLaunch(
+                    *m_library, **details, gameChoice, assignedFor(entry.system), library::GameFileCheck::Catalog);
                 readiness.state = launchStateOf(resolution, isVerified(entry.system, resolution.chosen.choice));
             }
         }
@@ -675,7 +675,8 @@ private:
             *choice ? std::optional<launcher::LaunchChoice>((**choice).choice) : std::nullopt;
         if (m_library) {
             resolved.resolution =
-                resolveCatalogLaunch(*m_library, game, gameChoice, assignedFor(entry.system), GameFileCheck::Disk);
+                library::resolveCatalogLaunch(*m_library, game, gameChoice, assignedFor(entry.system),
+                                              library::GameFileCheck::Disk);
         } else {
             resolved.resolution.chosen.choice = gameChoice.value_or(launcher::LaunchChoice{});
             resolved.resolution.translation.blockers.push_back(catalog::ReadinessBlocker{
@@ -999,7 +1000,7 @@ private:
     std::unique_ptr<catalog_db::Database> m_database;
     std::unique_ptr<catalog_db::SessionStore> m_store;
     std::unique_ptr<catalog_db::SqliteCatalogQuery> m_query;
-    std::unique_ptr<CatalogLaunchLibrary> m_library;
+    std::unique_ptr<library::LaunchLibrary> m_library;
     std::optional<Error> m_libraryError;
     /// ES-DE's <lastplayed> to UTC for the favourites and recent games, made on first use (I4 step 7b).
     catalog::LocalTimeToUtc m_localToUtc;

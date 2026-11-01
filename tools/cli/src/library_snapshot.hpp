@@ -27,6 +27,7 @@
 #include <rv/esde/library_source.hpp>
 #include <rv/esde/media_resolver.hpp>
 #include <rv/esde/settings.hpp>
+#include <rv/library/library_preview.hpp>
 
 #include "esde_text.hpp"
 
@@ -53,38 +54,18 @@ inline std::optional<catalog::LibraryProfile> readRecordedLibrary(CommandContext
     return std::nullopt;
 }
 
-/// A library read into a snapshot, and what the read did.
-struct LibraryRead {
-    catalog::LibrarySnapshot snapshot;
-    esde::EsdeLoadStatistics statistics;
-};
+/// A library read into a snapshot, and what the read did (library::previewLibrary()).
+using LibraryRead = library::LibraryPreview;
 
-/// Reads the library `profile` describes into a snapshot with esde::EsdeLibrarySource, as the import reads it, but
-/// that every cue sheet and playlist that is a game is read (there is no database to take the groups read before
-/// from); only the system named `system` when one is given (a partial snapshot, for looking at that system, never for
-/// an import). Read-only towards ES-DE. Errors: EsdeLibrarySource::load()'s (InvalidArgument for a system the
-/// configuration does not define; NotFound, Unavailable or ParseError when the ES-DE home, its settings or its systems
-/// cannot be read).
+/// library::previewLibrary() of `profile`; only the system named `system` when one is given.
 inline Expected<LibraryRead> readLibrarySnapshot(const catalog::LibraryProfile& profile,
                                                  const std::optional<std::string>& system) {
-    esde::EsdeLibrarySourceOptions options;
-    if (system) {
-        options.systems.push_back(*system);
-    }
-    esde::EsdeLibrarySource source(std::move(options));
-    auto snapshot = source.load(profile, catalog::LibraryLoadOptions{});
-    if (!snapshot) {
-        return propagate(snapshot.error());
-    }
-    return LibraryRead{std::move(*snapshot), source.lastStatistics()};
+    library::PreviewOptions options;
+    options.system = system;
+    return library::previewLibrary(profile, options);
 }
 
-/// The media root of the library `profile` describes: its override, else ES-DE's MediaDirectory (or its default) from
-/// the settings. A root that is not known (the settings cannot be read and there is no override) has no path.
-inline esde::ResolvedRoot mediaRootOf(const catalog::LibraryProfile& profile) {
-    const auto settings = esde::readSettings(profile.esdeHome);
-    return esde::resolveMediaRoot(settings ? *settings : esde::EsdeSettings{}, profile);
-}
+using library::mediaRootOf;
 
 /// Per media kind, the file of an indexed entry's media of that kind, derived under `mediaRoot`
 /// (esde::EsdeMediaResolver::path(), without looking at the disk) from the presence and extension the catalog stores;

@@ -262,6 +262,9 @@ public:
         catalog_db::OwnerAlive ownerAlive;
         /// The lists query() asks for (not the opening's first list).
         RunQuery runQuery;
+        /// Makes and migrates the database when it is not there (the wizard's page 4, ADR-0018 §4); the other runs leave
+        /// that to retroverse-cli import, and say NoDatabase.
+        bool createDatabase = false;
         /// The library source a refresh imports from (esde::EsdeLibrarySource unless set; tests slow it down).
         std::function<std::unique_ptr<catalog::ILibrarySource>()> makeSource;
         /// The writer's busy timeout: a session write waits at most this long for another process's write

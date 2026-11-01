@@ -81,7 +81,6 @@ rv_forbid_link(rv_app_cli)
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
-    src/catalog_launch_library.cpp
     src/catalog_worker.cpp
     src/game_screens.cpp
     src/hub_showcase.cpp
@@ -99,7 +98,7 @@ add_library(rv::app_catalog ALIAS rv_app_catalog)
 rv_set_target_defaults(rv_app_catalog)
 target_include_directories(rv_app_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(rv_app_catalog PUBLIC
-    rv_app_cli rv_core rv_launcher rv_ui_model rv_catalog rv_esde rv_catalog_db rv_platform_win rv_media)
+    rv_app_cli rv_core rv_launcher rv_ui_model rv_catalog rv_esde rv_catalog_db rv_platform_win rv_media rv_library)
 rv_forbid_link(rv_app_catalog)
 
 add_library(rv_app STATIC

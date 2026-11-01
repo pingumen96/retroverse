@@ -65,97 +65,7 @@ namespace {
 
 constexpr std::string_view kName = "retroverse-cli import";
 
-/// One system's entries counted, or all of them.
-struct Counts {
-    std::size_t entries = 0;
-    std::size_t games = 0;
-    std::size_t missing = 0;
-    std::size_t notAGame = 0;
-    std::size_t members = 0;
-    std::size_t folders = 0;
-    std::size_t outside = 0;
-    std::size_t unavailable = 0; ///< entries whose folder could not be listed (any state)
-    std::size_t esde = 0;        ///< games and members on disk: what ES-DE lists
-    std::size_t groups = 0;
-    std::size_t unavailableFolders = 0;
-    std::size_t issues = 0;
-    /// "extension-not-configured", "noload-txt", "bios-or-device-set", "excluded-by-setting:<setting>".
-    std::map<std::string, std::size_t> reasons;
-
-    void add(const Counts& other) {
-        entries += other.entries;
-        games += other.games;
-        missing += other.missing;
-        notAGame += other.notAGame;
-        members += other.members;
-        folders += other.folders;
-        outside += other.outside;
-        unavailable += other.unavailable;
-        esde += other.esde;
-        groups += other.groups;
-        unavailableFolders += other.unavailableFolders;
-        issues += other.issues;
-        for (const auto& [reason, count] : other.reasons) {
-            reasons[reason] += count;
-        }
-    }
-};
-
-std::string reasonOf(const catalog::CatalogEntry& entry) {
-    std::string reason(catalog::toString(entry.notAGameReason));
-    if (!entry.excludingSetting.empty()) {
-        reason += ":" + entry.excludingSetting;
-    }
-    return reason;
-}
-
-/// The counts of every system of the snapshot, by name.
-std::map<std::string, Counts> countsOf(const catalog::LibrarySnapshot& snapshot) {
-    std::map<std::string, Counts> counts;
-    for (const catalog::SystemInfo& system : snapshot.systems) {
-        counts[system.name.str()];
-    }
-    for (const catalog::CatalogEntry& entry : snapshot.entries) {
-        Counts& count = counts[entry.system.str()];
-        ++count.entries;
-        count.unavailable += entry.availability == catalog::Availability::SourceUnavailable ? 1 : 0;
-        const bool game = entry.state == catalog::EntryState::Game || entry.state == catalog::EntryState::DiscMember;
-        count.esde += game && entry.availability == catalog::Availability::Available ? 1 : 0;
-        switch (entry.state) {
-        case catalog::EntryState::Game:
-            ++count.games;
-            break;
-        case catalog::EntryState::MissingFile:
-            ++count.missing;
-            break;
-        case catalog::EntryState::NotAGame:
-            ++count.notAGame;
-            ++count.reasons[reasonOf(entry)];
-            break;
-        case catalog::EntryState::DiscMember:
-            ++count.members;
-            break;
-        case catalog::EntryState::Folder:
-            ++count.folders;
-            break;
-        case catalog::EntryState::OutsideSystemFolder:
-            ++count.outside;
-            break;
-        }
-    }
-    for (const catalog::DiscGroup& group : snapshot.discGroups) {
-        ++counts[group.system.str()].groups;
-    }
-    for (const catalog::UnavailableFolder& folder : snapshot.unavailableFolders) {
-        ++counts[folder.system.str()].unavailableFolders;
-    }
-    for (const catalog::Issue& issue : snapshot.issues) {
-        if (const auto found = counts.find(issue.system); found != counts.end()) {
-            ++found->second.issues;
-        }
-    }
-    return counts;
-}
+using Counts = library::PreviewCounts;
 
 double secondsOf(std::chrono::nanoseconds time) {
     return std::chrono::duration<double>(time).count();
@@ -668,7 +578,7 @@ ExitCode runImport(CommandContext& context) {
         return read.error().code == ErrorCode::InvalidArgument ? ExitCode::UsageError : ExitCode::RuntimeFailure;
     }
     const catalog::LibrarySnapshot& snapshot = read->snapshot;
-    const std::map<std::string, Counts> counts = countsOf(snapshot);
+    const std::map<std::string, Counts>& counts = read->counts;
     const esde::EsdeLoadStatistics& statistics = read->statistics;
     spdlog::info("import --dry-run: {} system(s), {} entr(ies), {} issue(s), read in {:.2f} s", snapshot.systems.size(),
                  snapshot.entries.size(), snapshot.issues.size(), secondsOf(statistics.totalTime));
