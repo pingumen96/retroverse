@@ -67,4 +67,8 @@ None changed.
 ## Text scale
 
 `UiView::setTextScale()` scales every dp, so at 150% a 1280 x 720 window on this machine's 125% display is 683 x 384 dp.
-See the step's report for what that does to the panels of earlier steps.
+The menu and the settings screen stay whole there (their labels wrap, the rows scroll, `textCut` 0 on every group). The
+panels of earlier steps were looked at, not changed: the quick catalog and the directory keep their rows but show one at
+a time, titles ellipsized, and the card's "Mostra nella stanza" runs under the hint bar. Keeping 150% for them or
+dropping the choice is a follow-up (the plan's risk "Text scale at 150%"); the world's card, the game-session panel, the
+media viewer and the preview were not looked at.
