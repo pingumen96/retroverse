@@ -708,14 +708,50 @@ build/rvdata`).
   in the editor (`edit_pin`, I4b step 3, above), Q and R (the gamepad's shoulders) turn a fixture it holds
   (`edit_rotate_left`, `edit_rotate_right`, I4b step 4); Esc (gamepad B)
   leaves one level: it closes a popup of the developer overlay (a combo's list, a color picker), else the game-session
-  panel, else steps back through the quick catalog or the directory and closes it, else releases the mouse, else closes
-  the overlay, else quits; F1 toggles the overlay; F5 reloads the shaders, F8 mutes the clips' sound or sounds it
-  again (I5 step 5), F12 saves `<user data>/screenshots/retroverse-<timestamp>.png`.
+  panel, else steps back through the menu, the quick catalog or the directory and closes it, else releases the mouse
+  (only Esc: a pad's B goes on), else closes the overlay, else **opens the menu** (ADR-0018 §1; the model viewer and the
+  asset preview, which have no product UI, quit); gamepad Start opens the menu in free roam too; closing the window
+  quits at once. F1 toggles the overlay; F5 reloads the shaders, F8 mutes the clips' sound or sounds it again for the
+  run (I5 step 5), F12 saves `<user data>/screenshots/retroverse-<timestamp>.png`.
   Interactive runs capture the mouse when the window has focus and on a click into it; frame-limited runs only on a
   click. Alt+Enter toggles fullscreen: the host handles it before the action map (fixed, not rebindable, never seen as
   Enter). The walker collides with walls and furniture and can step into a doorway but not leave the room. Developer
   builds also reload a shader within ~0.5 s of saving any of its files (`assets/shaders`); a broken edit logs
   `<file>:<line>: error ...` and the previous program stays in use.
+- **The menu** (I7 step 1, ADR-0018 §1: `ui::SystemMenuModel`, `assets/ui/system_menu.rml`): Riprendi, Impostazioni,
+  Esci, which asks once (Annulla focused); later steps add their sections' buttons. It has the UI's input like the
+  directory, and never opens in the editor, during a launch or a ride, or in Focus and Inspect. Nothing pauses behind it
+  but the walker: the screens keep playing, ducked as under the directory. Esci leaves a game that still runs running.
+- **The settings screen** (I7 step 1, ADR-0018 §2, §3: `app::settingRows()`, `ui::SettingsModel`,
+  `assets/ui/settings.rml`): five groups, Schermo (window or borderless fullscreen, text scale 100, 125, 150%, FOV 70 to
+  110 degrees or the scene's), Audio (general and video volume, mute, sound off), Mondo (lighting, `reduceMotion`, clips
+  on or off, CRT effect, the TVs' programme), Controlli (mouse and stick sensitivity, invert Y; the bindings come at step
+  3), VR (start in the headset, turn, vignette, walking relative to, posture, quality, refresh rate). The shoulders
+  change group, up and down the row, left and right its value, A flips or moves on, X restores the row (`Ripristina`),
+  the group's last row is `Ripristina tutto`, which asks once; B goes back to the menu. Everything takes a click as its
+  key does, so VR's ray works; in a headset the window and FOV rows are hidden. Every change applies at once, but: the
+  lighting profile and the CRT effect commit the floor shown again (nothing moves, the walker stays; the rows say so),
+  the VR rows apply at the next session, and sound turned on in a run that started with it off comes at the next start.
+  The mute row is what a run starts with; F8 changes the run only. A hidden window (`--hidden`) never changes its mode.
+- **`<user data>/settings.json`** (`core::SettingsFile`, `Paths::settingsFile()`): what the screen changed, written off
+  the main thread when the screen closes, before a launch and at the end of the run; never under `config` or ES-DE's
+  folders. Plain JSON, `{"schemaVersion": 1, "video": {...}, "world": {...}, "bindings": {...}, "player": {...}, "xr":
+  {...}}`, each section shaped like the file it overlays and holding only the keys changed (a value equal to the layer
+  below removes its key). The layers, weakest first: the shipped defaults, `config/<file>.json`, this file. Each loader
+  (`loadVideoSettings`, `world::loadWorldConfig`, `xr::loadXrSettings`, `loadBindings`, `loadPlayerSettings`, the
+  CLI's too) takes only the keys the screen may set, so a stray key reaches no strict parser, and a value it refuses
+  costs that value alone (logged, the report's `settings.refused`). No key that shapes a plan is taken: seeds, density,
+  passages and `sharedRoomMinTitles` stay in `world.json`. Keys, sections and values the build does not know are written
+  back as read. An unreadable file is left out whole, logged, copied to `<user data>/backups` and replaced at the next
+  write. A key shadowing a hand-written value is logged at the start (`settings.shadowed`); `Ripristina` gives the
+  hand-written value back. `assets/config/player.json`, `config/player.json` over it (`app::PlayerSettings`): FOV (`null`
+  keeps the scene's lens), sensitivities, inversion, the display mode, the text scale; the command line's `--fullscreen`
+  and Alt+Enter stay the run's.
+- The run report's `menu` (`opened`, `settingsOpened`, `open`, `view`, `settingsOpen`, `settingsGroup`, `settingsRows`,
+  `quit`, `textCut` and `settingsTextCut`, the most elements found with cut text on a frame, `events`) and `settings`
+  (`unreadable`, `backedUp`, `shadowed`, `refused`, `writes`, `writeFailures`, `rows`, `changes`, then what is in force:
+  `lensFovDeg`, `mouseSensitivity`, `stickSensitivity`, `invertY`, `textScale`, `displayMode`, `windowFullscreen`,
+  `reduceMotion`, `masterGain`). A floor committed for a look is a `world.liveUpdates` entry with `trigger` `look`.
 - The product UI reads sixteen `ui_*` actions from the same map (`rv/input/action.hpp`, `input::isUiAction`; defaults
   in `default_bindings.json` and `ActionMap::defaults()`, which a test keeps equal): `ui_up` ... `ui_right` (arrows,
   D-pad), `ui_nav_x`/`ui_nav_y` (the left stick, bound without a dead zone: `ui::NavInput`'s hysteresis of 0.55 / 0.35
@@ -723,9 +759,9 @@ build/rvdata`).
   End, the stick clicks), `ui_activate` (Enter, A), `ui_back` (Esc, B), `ui_media` (Y), `ui_info` (X),
   `ui_filter_previous`/`ui_filter_next` (the shoulders). They share keys and buttons with the world's actions; letters,
   digits, space, Backspace, Delete and Tab stay with RmlUi's text fields. A user's `bindings.json` overrides them per
-  action like any other. `spike_ui` reads them, and so does `retroverse.exe` while the quick catalog, the directory or
-  the game-session panel is open (and `map`, which closes the directory), the world's actions while they are closed
-  (`rv/app/input_context.hpp`: the walker stands still under the catalog and the directory).
+  action like any other. `spike_ui` reads them, and so does `retroverse.exe` while the quick catalog, the directory, the
+  menu or the game-session panel is open (and `map`, which closes the directory), the world's actions while they are
+  closed (`rv/app/input_context.hpp`: the walker stands still under them).
 - Developer overlay (Dear ImGui, `rv_devui`; developer builds only: Release compiles without it and only warns about the
   two options below): F1 shows and hides it, `--devui-open` opens it from the first frame (automation, screenshots).
   Docked panels around the scene: Stats (FPS, a graph of the last 240 frame times, GPU times of the shadow map, the
