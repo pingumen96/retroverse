@@ -1,13 +1,17 @@
-#include <rv/app/catalog_launch_library.hpp>
+#include <rv/library/launch_library.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <utility>
 
 #include <fmt/format.h>
 
+#include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/session_store.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/utf8.hpp>
 
-namespace rv::app {
+namespace rv::library {
 namespace {
 
 /// The game's availability on disk now: its system's folder, then each element of its path as the folder spells it
@@ -56,29 +60,27 @@ catalog::LaunchResolution notConfigured(const catalog::SystemName& system,
 
 } // namespace
 
-const catalog::SystemInfo* CatalogLaunchLibrary::findSystem(std::string_view name) const {
+const catalog::SystemInfo* LaunchLibrary::findSystem(std::string_view name) const {
     const auto found = std::find_if(systemInfos.begin(), systemInfos.end(),
                                     [&](const catalog::SystemInfo& system) { return system.name.str() == name; });
     return found == systemInfos.end() ? nullptr : &*found;
 }
 
-Expected<std::unique_ptr<CatalogLaunchLibrary>> loadCatalogLaunchLibrary(catalog::LibraryProfile profile,
-                                                                        const core::Paths& paths) {
-    auto library = std::make_unique<CatalogLaunchLibrary>();
+Expected<std::unique_ptr<LaunchLibrary>> loadLaunchLibrary(catalog::LibraryProfile profile, const core::Paths& paths) {
+    auto library = std::make_unique<LaunchLibrary>();
     library->profile = std::move(profile);
+    const auto failed = [](std::string_view what, const Error& error) {
+        return Error{error.code, fmt::format("ES-DE's {} cannot be read: {}", what, error.toString()), {}};
+    };
     auto settings = esde::readSettings(library->profile.esdeHome);
     if (!settings) {
-        Error error = settings.error();
-        error.message = "ES-DE's settings cannot be read: " + error.message;
-        return propagate(std::move(error));
+        return propagate(failed("settings", settings.error()));
     }
     library->settings = std::move(*settings);
     library->romRoot = esde::resolveRomRoot(library->settings, library->profile);
     auto systems = esde::loadSystems(library->profile);
     if (!systems) {
-        Error error = systems.error();
-        error.message = "ES-DE's systems cannot be read: " + error.message;
-        return propagate(std::move(error));
+        return propagate(failed("systems", systems.error()));
     }
     library->systems = std::move(*systems);
     library->findRules = esde::loadFindRules(library->profile);
@@ -99,11 +101,29 @@ Expected<std::unique_ptr<CatalogLaunchLibrary>> loadCatalogLaunchLibrary(catalog
     return library;
 }
 
-catalog::LaunchChoices catalogLaunchChoices(const CatalogLaunchLibrary& library, const catalog::SystemName& system,
-                                            const std::optional<launcher::LaunchChoice>& game,
-                                            std::string gameAltEmulator,
-                                            const std::optional<launcher::LaunchChoice>& assignedSystem,
-                                            std::string systemAlternativeEmulator) {
+std::optional<esde::Gamelist> readSystemGamelist(LaunchLibrary& library, const catalog::SystemInfo& system) {
+    if (system.romFolder.empty()) {
+        return std::nullopt;
+    }
+    const std::filesystem::path file =
+        esde::gamelistFile(system.name, system.romFolder, library.settings, library.profile.esdeHome);
+    auto gamelist = esde::readGamelist(file, system.name, system.romFolder);
+    if (!gamelist) {
+        if (gamelist.error().code != ErrorCode::NotFound) {
+            library.issues.push_back(catalog::Issue{
+                catalog::IssueSeverity::Warning, "gamelist-unreadable", system.name.str(), core::pathToUtf8Lossy(file),
+                fmt::format("the gamelist cannot be read ({}): its alternative emulators are not known",
+                            gamelist.error().message)});
+        }
+        return std::nullopt;
+    }
+    return std::move(*gamelist);
+}
+
+catalog::LaunchChoices launchChoices(const LaunchLibrary& library, const catalog::SystemName& system,
+                                     const std::optional<launcher::LaunchChoice>& game, std::string gameAltEmulator,
+                                     const std::optional<launcher::LaunchChoice>& assignedSystem,
+                                     std::string systemAlternativeEmulator) {
     catalog::LaunchChoices choices;
     choices.alternativeEmulatorPerGame = library.settings.alternativeEmulatorPerGame;
     choices.game = game;
@@ -118,8 +138,63 @@ catalog::LaunchChoices catalogLaunchChoices(const CatalogLaunchLibrary& library,
     return choices;
 }
 
-catalog::LaunchResolution resolveCatalogLaunch(const CatalogLaunchLibrary& library,
-                                               const catalog_db::GameDetails& details,
+catalog::LaunchChoices systemChoices(const LaunchLibrary& library, const catalog::SystemInfo& system,
+                                     const std::string& alternativeEmulator) {
+    const auto assigned = library.assignedChoices.find(system.name.str());
+    return launchChoices(library, system.name, std::nullopt, {},
+                         assigned != library.assignedChoices.end()
+                             ? std::optional<launcher::LaunchChoice>(assigned->second)
+                             : std::nullopt,
+                         alternativeEmulator);
+}
+
+std::string_view systemChoiceOrigin(const LaunchLibrary& library, std::string_view system) {
+    if (library.assignedChoices.find(system) != library.assignedChoices.end()) {
+        return kAssignedOrigin;
+    }
+    return library.profiles.systemChoice(system) != nullptr ? kEmulatorsJsonOrigin : std::string_view();
+}
+
+void loadAssignedChoices(LaunchLibrary& library, const core::Paths& paths) {
+    catalog_db::DatabaseOptions options;
+    options.create = false;
+    options.switchToWal = false; // reading writes nothing into the file
+    const auto unknown = [&](const Error& error) {
+        library.issues.push_back(catalog::Issue{
+            catalog::IssueSeverity::Warning, "catalog-unreadable", {},
+            core::pathToUtf8Lossy(catalog_db::databaseFile(paths)),
+            fmt::format("the catalog database cannot be read ({}): the choices made with 'retroverse-cli assign' are "
+                        "not known",
+                        error.message)});
+    };
+    auto database = catalog_db::Database::open(catalog_db::databaseFile(paths), options);
+    if (!database) {
+        if (database.error().code != ErrorCode::NotFound) {
+            unknown(database.error());
+        }
+        return;
+    }
+    auto reader = database->openReader();
+    if (!reader) {
+        unknown(reader.error());
+        return;
+    }
+    auto store = catalog_db::SessionStore::open(*reader);
+    if (!store) {
+        unknown(store.error());
+        return;
+    }
+    auto choices = (*store)->systemChoices(library.profile.id);
+    if (!choices) {
+        unknown(choices.error());
+        return;
+    }
+    for (catalog_db::SystemChoiceRow& row : *choices) {
+        library.assignedChoices.emplace(row.system.str(), std::move(row.stored.choice));
+    }
+}
+
+catalog::LaunchResolution resolveCatalogLaunch(const LaunchLibrary& library, const catalog_db::GameDetails& details,
                                                const std::optional<launcher::LaunchChoice>& gameChoice,
                                                const std::optional<launcher::LaunchChoice>& assignedSystem,
                                                GameFileCheck check) {
@@ -143,19 +218,18 @@ catalog::LaunchResolution resolveCatalogLaunch(const CatalogLaunchLibrary& libra
     }
     const std::string alternativeEmulator = details.system ? details.system->alternativeEmulator : std::string();
     const catalog::LaunchChoices choices =
-        catalogLaunchChoices(library, entry.system, gameChoice, entry.altEmulator, assignedSystem, alternativeEmulator);
+        launchChoices(library, entry.system, gameChoice, entry.altEmulator, assignedSystem, alternativeEmulator);
     return catalog::resolveLaunch(*system, &game, choices, library.context());
 }
 
-catalog::LaunchResolution resolveSystemLaunch(const CatalogLaunchLibrary& library,
-                                              const catalog::SystemInfo& catalogSystem,
+catalog::LaunchResolution resolveSystemLaunch(const LaunchLibrary& library, const catalog::SystemInfo& catalogSystem,
                                               const std::optional<launcher::LaunchChoice>& assignedSystem) {
     const catalog::SystemInfo* system = library.findSystem(catalogSystem.name.str());
     if (system == nullptr) {
         return notConfigured(catalogSystem.name, std::nullopt);
     }
-    const catalog::LaunchChoices choices = catalogLaunchChoices(library, catalogSystem.name, std::nullopt, {},
-                                                                assignedSystem, catalogSystem.alternativeEmulator);
+    const catalog::LaunchChoices choices = launchChoices(library, catalogSystem.name, std::nullopt, {}, assignedSystem,
+                                                         catalogSystem.alternativeEmulator);
     return catalog::resolveLaunch(*system, nullptr, choices, library.context());
 }
 
@@ -163,4 +237,4 @@ bool resolvedPerGame(const catalog::LaunchResolution& systemResolution) noexcept
     return !systemResolution.translation.notes.empty();
 }
 
-} // namespace rv::app
+} // namespace rv::library

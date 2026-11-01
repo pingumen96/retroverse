@@ -220,6 +220,14 @@ struct CommandLineOptions {
     /// on its floor; --spawn, the input scripts' poses and the run report's walker poses in its frame), a valid room id
     /// ("room:snes", "area:arcade", ...). Empty: the ground floor's lobby. Only in the generated building's runs.
     std::string startRoom;
+    /// --wizard: the first-run wizard in a frame-limited run (ADR-0018 §4), which needs `esdeHome`: no automated run ever
+    /// discovers the machine's ES-DE.
+    bool wizard = false;
+    /// --esde-home <dir>, with --wizard: the ES-DE home, or the folder that holds it as ES-DE's own --home names it;
+    /// discovery stands on it and the system probe is never asked.
+    std::optional<std::filesystem::path> esdeHome;
+    /// --esde-install <dir>, with --esde-home: ES-DE's install folder.
+    std::optional<std::filesystem::path> esdeInstall;
     /// --audio device|null|off (I5 step 5, ADR-0016 §9): where the clips' sound goes. None: null in frame-limited runs,
     /// the device otherwise; RV_AUDIO=null or off forces its value over both (resolveAudioOutput).
     std::optional<audio::AudioOutput> audio;

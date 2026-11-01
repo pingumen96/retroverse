@@ -173,12 +173,18 @@ TEST_CASE("core/settings_file: a loader reading the file never stops its replace
         }
     });
     int failed = 0;
+    std::string lastError;
     for (int index = 0; index < 200; ++index) {
         file.set("video", "audio.master", index / 1000.0);
-        failed += file.save().has_value() ? 0 : 1;
+        const auto saved = file.save();
+        if (!saved) {
+            ++failed;
+            lastError = saved.error().message;
+        }
     }
     done = true;
     reader.join();
+    INFO(lastError);
     CHECK(failed == 0);
     CHECK(unreadable == 0);
 }

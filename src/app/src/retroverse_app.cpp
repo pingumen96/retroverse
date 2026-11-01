@@ -240,6 +240,15 @@ std::optional<world::RoomId> startRoomOf(const CommandLineOptions& options) {
     return room ? std::optional<world::RoomId>(std::move(*room)) : std::nullopt;
 }
 
+/// The test room behind the wizard (ADR-0018 §4): without its notice, the wizard says it all.
+WorldResult roomBehindWizard() {
+    WorldResult result;
+    result.testRoom = true;
+    result.catalogState = std::string(toString(CatalogState::NoLibrary));
+    result.reason = "the wizard runs";
+    return result;
+}
+
 /// Without library.json or the catalog's database the ES-DE catalog cannot open: the room is decided at once (the test
 /// room, its notice naming the catalog's state), so that such runs never show the room's shell first.
 std::optional<WorldResult> roomWithoutCatalog(const core::Paths& paths) {
@@ -280,6 +289,18 @@ Expected<SceneSource> loadSceneSource(const CommandLineOptions& options, const c
     source.description = std::move(*shell);
     source.loadModel = scene::assetModelLoader(paths.assetRoot());
     return source;
+}
+
+/// The ES-DE catalog of the data directory, its worker started; `createDatabase`: the wizard's, which makes the database.
+std::unique_ptr<AppCatalog> makeEsdeCatalog(AppContext& context, bool createDatabase) {
+    EsdeAppCatalog::Options esde;
+    esde.paths = context.paths();
+    esde.wake = context.wakeCallback();
+    const platform_win::ProcessIdentity process = platform_win::currentProcessIdentity();
+    esde.owner = catalog::SessionOwner{process.processId, process.creationTime};
+    esde.processCreated = process.creationTime;
+    esde.createDatabase = createDatabase;
+    return std::make_unique<EsdeAppCatalog>(std::move(esde));
 }
 
 /// A self-check that could not run: recorded in the run report and failing the run (exit code 3).
@@ -1735,6 +1756,17 @@ struct RetroverseApp::State {
                      lockstep ? " (lockstep: frames wait for the floor and its layers)" : "");
     }
 
+    /// The wizard's page 7 (I7 step 2, ADR-0018 §4): the world starts on the catalog the wizard made, in place of the
+    /// test room behind it: the session that showed that room goes, what the settings changed reaches its file first (the
+    /// building's job reads the lighting profile through the loaders), and a new session makes the building as a start
+    /// does; its first commit replaces the scene.
+    void startWorldInPlace(AppContext& context) {
+        settings->saveAsync();
+        settings->flush();
+        world.reset();
+        startWorld(context, std::nullopt);
+    }
+
     /// Shows `next` in place of the scene shown, at a frame boundary (the generated room after its shell, the test room
     /// instead of it; I3 step 10b): the content of the registries and the scene go, the new scene is instantiated, the
     /// walker stands at its camera (or at --spawn), the camera's lens is its, the hero CRT's service binds the new
@@ -2119,7 +2151,13 @@ Status RetroverseApp::onInit(AppContext& context) {
     // Without --scene, --model or --mock-catalog the run shows the generated room (I3 step 10b): its shell while it is
     // made, or the test room at once when the catalog cannot open at all.
     const bool room = roomMode(options);
+    // I7 step 2 (ADR-0018 §4): where the data directory stands decides the first run. An automated run keeps what follows
+    // unless --wizard asks: it never discovers ES-DE by itself.
+    const WizardStart wizard = wizardStart(room, options, library::libraryStage(paths));
     std::optional<WorldResult> decided = room ? roomWithoutCatalog(paths) : std::nullopt;
+    if (wizard != WizardStart::None) {
+        decided = roomBehindWizard();
+    }
     auto source = loadSceneSource(options, paths, decided);
     if (!source) {
         return propagate(source.error());
@@ -2140,14 +2178,10 @@ Status RetroverseApp::onInit(AppContext& context) {
     std::unique_ptr<AppCatalog> appCatalog;
     if (*mock) {
         appCatalog = std::make_unique<MockAppCatalog>(std::move(**mock), launcher::loadEmulatorProfiles(paths));
+    } else if (wizard != WizardStart::None) {
+        appCatalog = std::make_unique<PendingAppCatalog>(); // ADR-0018 §4: no worker until page 4
     } else if (!options.model) {
-        EsdeAppCatalog::Options esde;
-        esde.paths = paths;
-        esde.wake = context.wakeCallback();
-        const platform_win::ProcessIdentity process = platform_win::currentProcessIdentity();
-        esde.owner = catalog::SessionOwner{process.processId, process.creationTime};
-        esde.processCreated = process.creationTime;
-        appCatalog = std::make_unique<EsdeAppCatalog>(std::move(esde));
+        appCatalog = makeEsdeCatalog(context, false);
     }
     auto state = std::make_unique<State>();
     state->description = std::move(source->description);
@@ -2262,6 +2296,23 @@ Status RetroverseApp::onInit(AppContext& context) {
         state->product->setLaunchHooks(std::move(hooks));
         if (room) {
             state->startWorld(context, std::move(decided));
+        }
+        if (wizard != WizardStart::None) {
+            WizardFlow::Options flow;
+            flow.paths = paths;
+            flow.esdeHome = options.esdeHome;
+            flow.esdeInstall = options.esdeInstall;
+            flow.wake = context.wakeCallback();
+            WizardHooks wizardHooks;
+            wizardHooks.makeCatalog = [&context] { return makeEsdeCatalog(context, true); };
+            wizardHooks.startWorld = [raw, &context] { raw->startWorldInPlace(context); };
+            wizardHooks.worldReady = [raw] { return raw->world && raw->world->firstResultShown(); };
+            wizardHooks.quit = [raw, &context] {
+                spdlog::info("Esci pressed in the wizard, quitting");
+                raw->settings->saveAsync();
+                context.requestQuit();
+            };
+            state->product->startWizard(std::move(flow), wizard, std::move(wizardHooks));
         }
     }
 #if defined(RV_DEV_UI)

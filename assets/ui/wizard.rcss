@@ -1,0 +1,333 @@
+/*
+	The wizard (wizard.rml), in the directory's look (directory.rcss: palette of style 3, UI neutral #171B22 in a translucent
+	carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93, the warm red #C8645A of the pad's
+	B). A column: the step, the page (it scrolls when it does not fit), the buttons and the hints, never clipped. Sizes in dp.
+	No colour is animated (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+p, h1, span {
+	focus: none;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+	margin-bottom: 12dp;
+}
+
+p {
+	margin-bottom: 10dp;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	left: 16%;
+	width: 68%;
+	top: 6%;
+	height: 88%;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+	padding: 22dp 28dp;
+}
+
+#wz-step {
+	flex: 0 0 auto;
+	font-size: 18dp;
+	color: #FFC88ACC;
+	margin-bottom: 6dp;
+}
+
+#wz-body, #fb-list {
+	flex: 1 1 auto;
+	min-height: 0dp;
+	overflow-y: auto;
+	padding-right: 10dp;
+}
+
+#wz-body scrollbarvertical, #fb-list scrollbarvertical {
+	width: 8dp;
+}
+
+#wz-body scrollbarvertical slidertrack, #fb-list scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#wz-body scrollbarvertical sliderbar, #fb-list scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+}
+
+.problem {
+	font-size: 21dp;
+	color: #F2A79E;
+	margin-top: 6dp;
+}
+
+.folder {
+	padding: 5dp 12dp;
+	margin-bottom: 5dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.folder:focus, .choice:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.folder-label {
+	margin-bottom: 2dp;
+	font-size: 21dp;
+}
+
+.folder-path {
+	margin-bottom: 2dp;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+	word-break: break-word;
+}
+
+.state {
+	margin-left: 14dp;
+	font-size: 18dp;
+}
+
+.state.ok { color: #8FD0B3; }
+.state.warn { color: #FFC88A; }
+.state.bad { color: #F2A79E; }
+
+.figures {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 8dp;
+}
+
+.figure {
+	box-sizing: border-box;
+	width: 33%;
+	padding: 4dp 10dp 4dp 0dp;
+}
+
+.number {
+	font-size: 32dp;
+	font-weight: bold;
+	margin-bottom: 0dp;
+}
+
+.what {
+	font-size: 18dp;
+	color: #F4EFE6B3;
+	margin-bottom: 0dp;
+}
+
+.bar {
+	height: 10dp;
+	margin: 6dp 0dp;
+	border-radius: 5dp;
+	background-color: #F4EFE626;
+}
+
+.fill {
+	height: 10dp;
+	border-radius: 5dp;
+	background-color: #6EAF93;
+}
+
+.choice {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 6dp 12dp;
+	margin-bottom: 6dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.choice-label {
+	flex: 1 1 0dp;
+	margin-bottom: 0dp;
+}
+
+.choice-value {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	flex: 0 0 auto;
+	width: 260dp;
+}
+
+.current {
+	flex: 1 1 0dp;
+	text-align: center;
+	margin-bottom: 0dp;
+}
+
+.arrow {
+	display: block;
+	flex: 0 0 auto;
+	width: 34dp;
+	height: 34dp;
+	line-height: 34dp;
+	text-align: center;
+	border-radius: 8dp;
+	background-color: #FFFFFF14;
+}
+
+.tutorial .control {
+	margin-bottom: 5dp;
+	font-size: 21dp;
+}
+
+#wz-buttons, #fb-buttons {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: row;
+	margin-top: 10dp;
+}
+
+.action {
+	display: block;
+	padding: 8dp 22dp;
+	margin-right: 10dp;
+	font-size: 23dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+	white-space: nowrap;
+}
+
+.action.primary { background-color: #6EAF9340; }
+.action.danger { background-color: #C8645A33; }
+.action.off { color: #F4EFE659; }
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.action.danger:focus {
+	background-color: #C8645A;
+	color: #FFFFFF;
+}
+
+.row {
+	display: block;
+	padding: 3dp 12dp;
+	margin-bottom: 3dp;
+	font-size: 21dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 10dp;
+	tab-index: auto;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.row:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+#fb-up {
+	flex: 0 0 auto;
+	color: #FFC88A;
+}
+
+#wz-hints, #fb-hints {
+	flex: 0 0 auto;
+	margin-top: 8dp;
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+.hint {
+	display: inline-block;
+	margin-right: 22dp;
+	white-space: nowrap;
+}
+
+.kbd {
+	display: inline-block;
+	width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	border-radius: 13dp;
+	margin-right: 7dp;
+	text-align: center;
+	font-size: 16dp;
+	font-weight: bold;
+	color: #171B22;
+}
+
+.kbd.wide {
+	width: auto;
+	padding: 0dp 9dp;
+	border-radius: 6dp;
+	background-color: #F4EFE6CC;
+}
+
+.pad-a { background-color: #6EAF93; }
+.pad-b { background-color: #C8645A; }
+.pad-x { background-color: #7FA6D6; }
+.pad-y { background-color: #E0C36A; }
+
+/* Compact: views under 760 dp of the display's density tall, as the directory's. */
+@media (theme: compact) {
+	body { font-size: 19dp; }
+	h1 { font-size: 25dp; margin-bottom: 6dp; }
+	p { margin-bottom: 6dp; }
+	.panel { left: 6%; width: 88%; top: 3%; height: 94%; padding: 12dp 18dp; }
+	#wz-step { font-size: 15dp; margin-bottom: 2dp; }
+	.note { font-size: 17dp; }
+	.problem { font-size: 17dp; margin-top: 3dp; }
+	.folder { padding: 2dp 10dp; margin-bottom: 3dp; }
+	.folder-label { font-size: 18dp; margin-bottom: 0dp; }
+	.folder-path { font-size: 15dp; margin-bottom: 0dp; }
+	.state { font-size: 15dp; }
+	.number { font-size: 25dp; }
+	.what { font-size: 15dp; }
+	.action { font-size: 19dp; padding: 4dp 16dp; }
+	.row { font-size: 18dp; padding: 1dp 10dp; margin-bottom: 2dp; }
+	.tutorial .control { font-size: 17dp; margin-bottom: 3dp; }
+	#wz-buttons, #fb-buttons { margin-top: 6dp; }
+	#wz-hints, #fb-hints { font-size: 15dp; margin-top: 5dp; }
+	.kbd { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+}

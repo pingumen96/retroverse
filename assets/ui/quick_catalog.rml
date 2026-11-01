@@ -70,10 +70,10 @@
 			<!-- The catalog database itself (notice: rv::ui::quick_catalog::kNotice*): being opened, or not there yet and
 			     how to make it (retroverse-cli, I2 steps 2 and 11a). -->
 			<p id="notice" class="empty" data-if="notice == 'opening' && count == 0">Apertura del catalogo...</p>
-			<p class="empty" data-if="notice == 'no-library'">Nessuna libreria ES-DE collegata. Collegala con
-				"retroverse-cli library create", importala con "retroverse-cli import", poi riapri Retroverse.</p>
-			<p class="empty" data-if="notice == 'no-database'">Il catalogo non è ancora stato importato. Importalo con
-				"retroverse-cli import", poi riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'no-library'">Nessuna libreria ES-DE collegata. Riapri Retroverse: la procedura
+				guidata la collega. Oppure "retroverse-cli library create" e "retroverse-cli import", poi riapri Retroverse.</p>
+			<p class="empty" data-if="notice == 'no-database'">Il catalogo non è ancora stato importato. Riapri Retroverse: la
+				procedura guidata lo importa. Oppure "retroverse-cli import", poi riapri Retroverse.</p>
 			<p class="empty" data-if="notice == 'data-directory'">La cartella dei dati di Retroverse è dentro le cartelle
 				della libreria ES-DE, che Retroverse non modifica mai: scegline un'altra (--data-dir) e riapri Retroverse.</p>
 			<p class="empty" data-if="notice == 'library-mismatch'">library.json indica una libreria diversa da quella del

@@ -189,6 +189,19 @@ void MockAppCatalog::record(CatalogRecord& record) const {
     record.games = m_source.entries().size();
 }
 
+// --- The wizard's catalog to come -----------------------------------------------------------------------------------
+
+PendingAppCatalog::PendingAppCatalog() : m_source(std::vector<ui::CatalogEntry>{}) {}
+
+std::string_view PendingAppCatalog::notice() const noexcept {
+    return ui::quick_catalog::kNoticeNoLibrary;
+}
+
+void PendingAppCatalog::record(CatalogRecord& record) const {
+    record.source = "esde";
+    record.notice = std::string(notice());
+}
+
 // --- The ES-DE catalog ---------------------------------------------------------------------------------------------
 
 namespace {
@@ -198,6 +211,7 @@ CatalogWorker::Options workerOptions(const EsdeAppCatalog::Options& options) {
     worker.paths = options.paths;
     worker.wake = options.wake;
     worker.owner = options.owner;
+    worker.createDatabase = options.createDatabase;
     if (options.adjust) {
         options.adjust(worker);
     }

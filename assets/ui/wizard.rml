@@ -1,0 +1,184 @@
+<rml>
+<head>
+	<!--
+		The first-run wizard (ADR-0018 §4): seven pages from the pad alone, the folder browser over them. Bound to the data
+		model "wizard" of rv::ui::WizardScreen (src/ui/src/wizard_screen.cpp); its ids are rv::ui::elementIdOf()'s and
+		FolderBrowserModel's (src/ui/include/rv/ui/wizard_model.hpp, folder_browser_model.hpp). page: welcome, detection,
+		preview, import, emulators, appearance, world. A work: idle, running, done, failed. A folder's state: ok, missing,
+		unreachable, unreadable, unknown, checking. problem: none, home-unknown, home-missing, rom-root-unknown,
+		media-root-unknown, data-directory-inside, rom-root-unavailable. failure: library-unreadable, library-exists,
+		library-backup, library-write, catalog, read, busy. importPhase: reading, media, comparing, writing. browserState:
+		closed, loading, listed, failed; browserFailure: missing, unreachable, unreadable. device: pad, keys (the hints'
+		glyphs). Every string is written here (CLAUDE.md): the screen binds keys and numbers only. The focus is the models';
+		the input stays with the application; a click presses what a key would (VR's ray too). The bundled fonts have no
+		symbols: the arrows are plain text.
+	-->
+	<title>Benvenuto</title>
+	<link type="text/rcss" href="wizard.rcss"/>
+</head>
+<body data-model="wizard">
+	<div id="wizard-panel" class="panel" data-if="!browserOpen">
+		<p id="wz-step">Passo {{ pageNumber }} di 7</p>
+		<div id="wz-body">
+			<div data-if="page == 'welcome'">
+				<h1>Benvenuto in Retroverse</h1>
+				<p>Retroverse trasforma la tua collezione di ES-DE in un edificio da esplorare: ogni console ha la sua stanza, ogni gioco il suo posto sugli scaffali.</p>
+				<p>Legge le cartelle di ES-DE, delle ROM e dei media e non vi scrive mai nulla. Il catalogo e le impostazioni restano nella cartella dei dati di Retroverse.</p>
+				<p>Bastano pochi passi, tutti dal controller.</p>
+			</div>
+
+			<div data-if="page == 'detection'">
+				<h1>Rilevamento</h1>
+				<p data-if="detectionWork == 'running'">Ricerca di ES-DE...</p>
+				<p class="note" data-if="version != ''">ES-DE {{ version }}</p>
+				<div id="wz-folder-home" class="folder" data-event-click="button('folder-home')">
+					<p class="folder-label">Cartella di ES-DE<span class="state ok" data-if="homeState == 'ok'">Trovata</span><span class="state bad" data-if="homeState == 'missing'">Non esiste</span><span class="state bad" data-if="homeState == 'unreachable'">Non raggiungibile</span><span class="state bad" data-if="homeState == 'unreadable'">Non leggibile</span><span class="state bad" data-if="homeState == 'unknown'">Non trovata</span></p>
+					<p class="folder-path">{{ homePath }}</p>
+				</div>
+				<div id="wz-folder-install" class="folder" data-event-click="button('folder-install')">
+					<p class="folder-label">Installazione di ES-DE<span class="state ok" data-if="installState == 'ok'">Trovata</span><span class="state bad" data-if="installState == 'missing'">Non esiste</span><span class="state bad" data-if="installState == 'unreachable'">Non raggiungibile</span><span class="state bad" data-if="installState == 'unreadable'">Non leggibile</span><span class="state warn" data-if="installState == 'unknown'">Non trovata</span></p>
+					<p class="folder-path">{{ installPath }}</p>
+				</div>
+				<div id="wz-folder-rom" class="folder" data-event-click="button('folder-rom')">
+					<p class="folder-label">Cartella delle ROM<span class="state ok" data-if="romState == 'ok'">Raggiungibile</span><span class="state bad" data-if="romState == 'missing'">Non esiste</span><span class="state bad" data-if="romState == 'unreachable'">Non raggiungibile</span><span class="state bad" data-if="romState == 'unreadable'">Non leggibile</span><span class="state bad" data-if="romState == 'unknown'">Non nota</span></p>
+					<p class="folder-path">{{ romPath }}</p>
+				</div>
+				<div id="wz-folder-media" class="folder" data-event-click="button('folder-media')">
+					<p class="folder-label">Cartella dei media<span class="state ok" data-if="mediaState == 'ok'">Raggiungibile</span><span class="state warn" data-if="mediaState == 'missing'">Non esiste</span><span class="state warn" data-if="mediaState == 'unreachable'">Non raggiungibile</span><span class="state warn" data-if="mediaState == 'unreadable'">Non leggibile</span><span class="state bad" data-if="mediaState == 'unknown'">Non nota</span></p>
+					<p class="folder-path">{{ mediaPath }}</p>
+				</div>
+				<div data-if="detectionWork == 'done'">
+					<p class="problem" data-if="problem == 'home-unknown'">ES-DE non si trova: scegli la sua cartella, quella che contiene settings e gamelists.</p>
+					<p class="problem" data-if="problem == 'home-missing'">La cartella di ES-DE non esiste: scegline un'altra.</p>
+					<p class="problem" data-if="problem == 'rom-root-unknown'">Le impostazioni di ES-DE non dicono dove sono le ROM: scegli la cartella.</p>
+					<p class="problem" data-if="problem == 'media-root-unknown'">Le impostazioni di ES-DE non dicono dove sono i media: scegli la cartella.</p>
+					<p class="problem" data-if="problem == 'rom-root-unavailable'">La cartella delle ROM non si raggiunge: controlla che il disco sia collegato, o scegline un'altra.</p>
+					<p class="problem" data-if="problem == 'data-directory-inside'">La cartella dei dati di Retroverse è dentro le cartelle della libreria, dove Retroverse non scrive. Avvia Retroverse con un'altra cartella dei dati.</p>
+				</div>
+			</div>
+
+			<div data-if="page == 'preview'">
+				<h1>Anteprima</h1>
+				<p data-if="previewWork == 'running'">Lettura della libreria: su un disco esterno può volerci qualche minuto...</p>
+				<div data-if="previewWork == 'done'">
+					<div class="figures">
+						<div class="figure"><p class="number">{{ systems }}</p><p class="what">sistemi configurati</p></div>
+						<div class="figure"><p class="number">{{ systemsWithGames }}</p><p class="what">sistemi con giochi</p></div>
+						<div class="figure"><p class="number">{{ games }}</p><p class="what">giochi</p></div>
+						<div class="figure"><p class="number">{{ media }}</p><p class="what">giochi con media</p></div>
+						<div class="figure"><p class="number">{{ unrecognized }}</p><p class="what">voci non riconosciute</p></div>
+						<div class="figure"><p class="number">{{ errors }}</p><p class="what">errori</p></div>
+					</div>
+					<p class="note" data-if="hasCoverage">Copertura dei media: {{ coverage }}% dei giochi. Quelli senza media compaiono comunque, col titolo. Nulla è stato scritto.</p>
+					<p class="note" data-if="!hasCoverage">La cartella dei media non si legge: i giochi compaiono comunque, col titolo. Nulla è stato scritto.</p>
+				</div>
+				<p class="problem" data-if="previewWork == 'failed'">La libreria non si legge: controlla le cartelle del passo precedente.</p>
+			</div>
+
+			<div data-if="page == 'import'">
+				<h1>Importazione</h1>
+				<div data-if="importWork == 'running' || importWork == 'idle'">
+					<p data-if="importPhase == ''">Preparazione del catalogo...</p>
+					<p data-if="importPhase == 'reading'">Lettura delle cartelle e delle gamelist...</p>
+					<p data-if="importPhase == 'media'">Ricerca dei media: {{ importDone }} di {{ importTotal }}</p>
+					<p data-if="importPhase == 'comparing'">Confronto: {{ importDone }} di {{ importTotal }} sistemi</p>
+					<p data-if="importPhase == 'writing'">Scrittura del catalogo: {{ importDone }} di {{ importTotal }}</p>
+					<div class="bar"><div class="fill" data-style-width="importFill"></div></div>
+				</div>
+				<p data-if="importWork == 'done'">Catalogo pronto: {{ games }} giochi importati.</p>
+				<div data-if="importWork == 'failed'">
+					<p class="problem" data-if="failure == 'library-exists'">Un altro programma ha creato la libreria nel frattempo: niente è stato sostituito. Riavvia Retroverse.</p>
+					<p class="problem" data-if="failure == 'library-backup'">Non si può fare una copia della libreria esistente: niente è stato sostituito.</p>
+					<p class="problem" data-if="failure == 'library-write'">La libreria non si scrive nella cartella dei dati di Retroverse.</p>
+					<p class="problem" data-if="failure == 'catalog'">Il catalogo non si apre: il registro di Retroverse dice perché.</p>
+					<p class="problem" data-if="failure == 'read'">L'importazione non è riuscita: controlla che le cartelle siano raggiungibili.</p>
+					<p class="problem" data-if="failure == 'busy'">Un'altra importazione è in corso: riprova tra poco.</p>
+				</div>
+			</div>
+
+			<div data-if="page == 'emulators'">
+				<h1>Emulatori</h1>
+				<p>I giochi si avviano con gli stessi comandi di ES-DE: se in ES-DE funzionano, funzionano anche qui.</p>
+				<p>Puoi passare oltre: un gioco che non parte dirà cosa manca.</p>
+			</div>
+
+			<div data-if="page == 'appearance'">
+				<h1>Aspetto</h1>
+				<div id="wz-lighting" class="choice" data-event-click="button('lighting')">
+					<p class="choice-label">Illuminazione</p>
+					<div class="choice-value">
+						<button class="arrow" data-event-click="step('lighting', -1)">&lt;</button>
+						<p class="current" data-if="lighting == 'evening'">Sera</p>
+						<p class="current" data-if="lighting == 'afternoon'">Pomeriggio</p>
+						<button class="arrow" data-event-click="step('lighting', 1)">&gt;</button>
+					</div>
+				</div>
+				<div id="wz-reduce-motion" class="choice" data-event-click="button('reduce-motion')">
+					<p class="choice-label">Riduci i movimenti</p>
+					<div class="choice-value">
+						<p class="current" data-if="reduceMotion">Sì</p>
+						<p class="current" data-if="!reduceMotion">No</p>
+					</div>
+				</div>
+				<p class="note">Si cambiano quando vuoi da Impostazioni, nel menu.</p>
+			</div>
+
+			<div data-if="page == 'world'">
+				<h1>Il mondo</h1>
+				<p class="note" data-if="worldWork != 'done'">L'edificio si sta componendo...</p>
+				<p class="note" data-if="worldWork == 'done'">L'edificio è pronto.</p>
+				<div class="tutorial">
+					<p class="control"><span class="kbd wide">Levetta sinistra</span>Cammina</p>
+					<p class="control"><span class="kbd wide">Levetta destra</span>Guarda</p>
+					<p class="control"><span class="kbd pad-a">A</span>Interagisci, avvia, conferma</p>
+					<p class="control"><span class="kbd pad-b">B</span>Indietro</p>
+					<p class="control"><span class="kbd pad-y">Y</span>Catalogo rapido</p>
+					<p class="control"><span class="kbd wide">Select</span>Indice dell'edificio</p>
+					<p class="control"><span class="kbd wide">Start</span>Menu</p>
+				</div>
+			</div>
+		</div>
+
+		<div id="wz-buttons">
+			<button id="wz-next" class="action primary" data-if="showNext" data-event-click="button('next')">Avanti</button>
+			<button id="wz-enter" class="action primary" data-if="showEnter" data-event-click="button('enter')">Entra</button>
+			<button id="wz-retry" class="action" data-if="showRetry" data-event-click="button('retry')">Riprova</button>
+			<button id="wz-previous" class="action" data-if="showPrevious" data-event-click="button('previous')">Indietro</button>
+			<button id="wz-quit" class="action danger" data-if="showQuit" data-event-click="button('quit')">Esci</button>
+		</div>
+		<div id="wz-hints">
+			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Conferma</span>
+			<span class="hint" data-if="page == 'detection'"><span class="kbd wide">Su Giù</span>Scegli una cartella</span>
+			<span class="hint" data-if="page == 'appearance'"><span class="kbd wide">Sinistra Destra</span>Cambia</span>
+			<span class="hint" data-if="showPrevious"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Indietro</span>
+		</div>
+	</div>
+
+	<div id="folder-browser" class="panel" data-if="browserOpen">
+		<h1>Scegli una cartella</h1>
+		<p class="folder-path" data-if="!atDrives">{{ browserPath }}</p>
+		<p class="folder-path" data-if="atDrives">Unità disponibili</p>
+		<button id="fb-up" class="row" data-if="!atDrives" data-event-click="browser('up')">Cartella superiore</button>
+		<div id="fb-list" data-event-mousescroll="browser_wheel()">
+			<p class="note" data-if="browserState == 'loading'">Lettura della cartella...</p>
+			<p class="note" data-if="browserState == 'listed' && browserCount == 0">Nessuna sottocartella.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'missing'">Questa cartella non esiste più.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'unreachable'">Il disco non si raggiunge: controlla che sia collegato.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'unreadable'">Questa cartella non si legge.</p>
+			<div data-for="row : rows">
+				<button class="row" data-attr-id="row.elementId" data-event-click="browser_row(row.index)">{{ row.name }}</button>
+			</div>
+		</div>
+		<p class="note" data-if="browserCount > 8">Da {{ browserFrom }} a {{ browserTo }} di {{ browserCount }}</p>
+		<div id="fb-buttons">
+			<button id="fb-use" class="action primary" data-class-off="!canUse" data-event-click="browser('use')">Usa questa cartella</button>
+			<button id="fb-cancel" class="action" data-event-click="browser('cancel')">Annulla</button>
+		</div>
+		<div id="fb-hints">
+			<span class="hint"><span class="kbd pad-a" data-if="device == 'pad'">A</span><span class="kbd wide" data-if="device == 'keys'">Invio</span>Apri</span>
+			<span class="hint" data-if="device == 'pad'"><span class="kbd pad-x">X</span>Usa questa cartella</span>
+			<span class="hint"><span class="kbd pad-b" data-if="device == 'pad'">B</span><span class="kbd wide" data-if="device == 'keys'">Esc</span>Annulla</span>
+		</div>
+	</div>
+</body>
+</rml>

@@ -180,6 +180,26 @@ private:
     std::optional<LaunchDecision> m_decision;
 };
 
+/// What the product UI holds while the wizard has not reached its page 4 (ADR-0018 §4): no catalog worker exists, no
+/// game is listed, and the room's side says NoLibrary.
+class PendingAppCatalog final : public AppCatalog {
+public:
+    PendingAppCatalog();
+
+    [[nodiscard]] ui::CatalogSource& source() noexcept override { return m_source; }
+    [[nodiscard]] std::string_view notice() const noexcept override;
+    bool requestLaunch(std::uint64_t /*token*/, const ui::CatalogEntry& /*entry*/) override { return false; }
+    [[nodiscard]] std::optional<LaunchDecision> takeDecision() override { return std::nullopt; }
+    [[nodiscard]] bool deciding() const noexcept override { return false; }
+    CatalogChanges poll() override { return {}; }
+    [[nodiscard]] bool busy() const noexcept override { return false; }
+    [[nodiscard]] CatalogState roomCatalogState() const noexcept override { return CatalogState::NoLibrary; }
+    void record(CatalogRecord& record) const override;
+
+private:
+    ui::InMemoryCatalogSource m_source;
+};
+
 /// The ES-DE catalog of the user data directory: the catalog worker (CatalogWorker, started at construction) and the
 /// source over it (CatalogDatabaseSource). Avvia resolves the game again on the worker right before the launch (its
 /// file on disk now, the database's choices: ADR-0008 §8, docs/i2/step-12.md); the play sessions are recorded on the
@@ -197,6 +217,8 @@ public:
         std::uint64_t processCreated = 0;
         /// Tests: the worker's own options over the defaults (its query, its owner check).
         std::function<void(CatalogWorker::Options&)> adjust;
+        /// CatalogWorker::Options::createDatabase: the wizard's page 4.
+        bool createDatabase = false;
     };
 
     explicit EsdeAppCatalog(Options options);

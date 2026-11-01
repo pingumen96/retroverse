@@ -15,6 +15,8 @@ add_subdirectory(catalog)
 add_subdirectory(esde)
 add_subdirectory(catalog_db)
 add_subdirectory(platform_win)
+# What the app and retroverse-cli share of a library (I7 step 2, ADR-0018 §13).
+add_subdirectory(library)
 # The world generator of milestone M2 (I3, ADR-0010): plans computed from the catalog's snapshot, GPU-free.
 add_subdirectory(world)
 

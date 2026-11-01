@@ -12,6 +12,8 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   option: the ES-DE home is `<dir>\ES-DE`; `--install` defaults to the uninstall entry) and prints the ES-DE home, `~`,
   the install and version, the settings it uses, the roots, find rules, systems, gamelists and issues, each with its
   source. It reads ES-DE's files and writes nothing but its log; exit 1 on an error issue.
+- Since I7 step 2 `library create`, `import --dry-run`, `profiles`, `launch` and `assign` read through `rv_library`,
+  which the app's wizard and catalog worker share; their output did not change.
 - `library [show]` prints `<user data>/config/library.json` and the roots it gives; `library create [--id <slug>]
   [--home <dir>] [--install <dir>] [--rom-root <dir>] [--media-root <dir>] [--force]` discovers ES-DE and writes it
   atomically, never over an existing file without `--force`; the roots must resolve, from the settings or the options.

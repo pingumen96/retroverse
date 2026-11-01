@@ -669,6 +669,60 @@ struct MenuRecord {
     bool operator==(const MenuRecord&) const = default;
 };
 
+/// A wizard's step (I7 step 2).
+struct WizardEventRecord {
+    std::uint64_t frame = 0;
+    /// "page" (`detail` its name), "browse" (`detail` the folder), "chosen", "import-failed" (`detail` the document's key),
+    /// "entered".
+    std::string event;
+    std::string detail;
+
+    bool operator==(const WizardEventRecord&) const = default;
+};
+
+/// The first-run wizard (I7 step 2, ADR-0018 §4): how it went, the preview's counts (`retroverse-cli import --dry-run`'s).
+struct WizardRecord {
+    bool resumed = false;
+    bool open = false;
+    /// At the end: its page, what it was doing (ui::toString(WizardWork)), why it failed.
+    std::string page;
+    std::string detectionWork;
+    std::string previewWork;
+    std::string importWork;
+    std::string worldWork;
+    std::string problem;
+    std::string failure;
+    /// Entra was pressed: the world, in place.
+    bool entered = false;
+    /// The pages in the order they were shown.
+    std::vector<std::string> pages;
+    std::uint64_t systems = 0;
+    std::uint64_t systemsWithGames = 0;
+    std::uint64_t entries = 0;
+    std::uint64_t games = 0;
+    std::uint64_t esdeGames = 0;
+    std::uint64_t missingFiles = 0;
+    std::uint64_t notAGame = 0;
+    std::uint64_t discMembers = 0;
+    std::uint64_t media = 0;
+    std::uint64_t issues = 0;
+    std::uint64_t errors = 0;
+    /// What the first import added.
+    std::uint64_t added = 0;
+    /// Folders chosen in the browser; its state at the end.
+    std::uint64_t browsed = 0;
+    std::string browserState;
+    std::string browserFailure;
+    /// The most elements of the panels found with cut text on any frame they showed (ADR-0018 §15).
+    std::uint32_t textCut = 0;
+    std::uint32_t browserTextCut = 0;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<WizardEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const WizardRecord&) const = default;
+};
+
 /// A row of the settings screen at the end of the run (I7 step 1).
 struct SettingValueRecord {
     /// app::SettingRow::id().
@@ -2166,6 +2220,8 @@ struct RunReport {
     /// The menu and settings.json (I7 step 1; runs with a product UI, the settings' section in every run of the app).
     std::optional<MenuRecord> menu;
     std::optional<SettingsRecord> settings;
+    /// The first-run wizard (I7 step 2; runs that started it).
+    std::optional<WizardRecord> wizard;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

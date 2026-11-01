@@ -284,6 +284,8 @@ public:
     [[nodiscard]] std::span<const gl::StaticInstanceGroup* const> staticGroups() const noexcept { return m_groups; }
     /// A lockstep run must wait before its next frame: the floor or its layers are on their way (within the limit).
     [[nodiscard]] bool waits() const;
+    /// The building's first result was shown, or told why it cannot be (the wizard's page 7, I7 step 2).
+    [[nodiscard]] bool firstResultShown() const noexcept { return m_state != "generating"; }
     /// The collections go (before the application replaces the scene and clears the registries).
     void dropCollection();
 

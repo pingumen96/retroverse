@@ -20,7 +20,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `src/world/forbidden_links.cmake`, proven by `unit.cmake/layer_rules`), `platform_win` (Windows without SDL, namespace
   `rv::platform_win`: the system probe `Win32SystemProbe`, the process runner `Win32ProcessRunner`, `win32_util.hpp`,
   since I5 step 2 `process_priority.hpp` (the process's priority class); on
-  `core` and `launcher`) -> `platform` (SDL3; the window hand-over; links `platform_win`) -> `render` (OpenGL through
+  `core` and `launcher`), `library` (since I7 step 2, `rv::library`: the one launch library, library creation and preview,
+  the folder browser's listings, what the app and `retroverse-cli` share of a library; above `esde`, `catalog_db` and
+  `platform_win`, no RmlUi, no `rv_world`) -> `platform` (SDL3; the window hand-over; links `platform_win`) -> `render` (OpenGL through
   glad; never includes SDL) -> `devui` (Dear ImGui, developer builds; its GPU-free part `rv_devui_model` is always
   built), `ui` (RmlUi product UI; its GPU-free part `rv_ui_model` is always built), `xr` (I10, ADR-0017: the VR mode;
   its GPU-free part `rv_xr_model`, always built and kept from the OpenXR loader, holds the poses, the runtime's
@@ -38,8 +40,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `#if defined(RV_DEV_UI)`. `rv_app` links `rv_ui`, `rv_launcher` and `rv_platform_win` for the quick catalog's
   launches (I2 step A1) and, since step 13,
   `rv_app_catalog` (GPU-free and tools-free, between `rv_app_cli` and `rv_app`: the catalog worker, its
-  `ui::CatalogSource`, the app's copy of the CLI's launch library, `AppCatalog` over the ES-DE or the mock catalog; on
-  `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_ui_model`; tested by `tests/unit/app`; since I3 step
+  `ui::CatalogSource`, `AppCatalog` over the ES-DE or the mock catalog, since I7 step 2 the wizard's flow (`wizard_flow.hpp`); on
+  `rv_catalog`, `rv_esde`, `rv_catalog_db`, `rv_platform_win`, `rv_library`, `rv_ui_model`; tested by `tests/unit/app`; since I3 step
   13r also the refresh, `library_refresh.hpp`: the import in slices, GPU-free). Since I3 `rv_app` links `rv_media` (the
   hero CRT's `ScreenService`, private, step 11) and `rv_world` (also linked by `rv_app_cli` and `rv_cli_core`);
   `rv_app_cli` holds the frame timing and phases (`frame_timing.hpp`, step 0d; the GPU passes, 17b), the interaction

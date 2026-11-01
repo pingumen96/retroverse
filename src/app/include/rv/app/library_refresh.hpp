@@ -69,8 +69,9 @@ enum class RefreshOutcome : std::uint8_t {
 enum class RefreshTrigger : std::uint8_t {
     CommandLine, ///< --refresh-library, once the catalog opened
     User,        ///< "Aggiorna libreria" in the quick catalog
+    Wizard,      ///< the wizard's first import (ADR-0018 §4)
 };
-/// "command-line", "user".
+/// "command-line", "user", "wizard".
 [[nodiscard]] std::string_view toString(RefreshTrigger trigger) noexcept;
 
 struct RefreshProgress {

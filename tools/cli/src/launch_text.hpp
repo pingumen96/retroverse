@@ -1,9 +1,8 @@
 #pragma once
 
 // Private to rv_cli_core (I2 step 10): what `profiles`, `launch` and `assign` share: the library they translate commands
-// for (library.json, its settings, systems and find rules, the gamelists' alternative emulators), the emulator
-// profiles, Retroverse's choices for the systems (the catalog database's, from `assign`, rank before emulators.json's:
-// I2 step 12), the machine (Win32SystemProbe), and how choices, translations and blockers read as text and as JSON.
+// for (library::LaunchLibrary, since I7 step 2 the app's too), and how choices, translations and blockers read as text
+// and as JSON.
 
 #include <algorithm>
 #include <filesystem>
@@ -35,39 +34,20 @@
 #include <rv/esde/systems.hpp>
 #include <rv/launcher/emulator_profile.hpp>
 #include <rv/launcher/launch_request.hpp>
+#include <rv/library/launch_library.hpp>
 #include <rv/platform_win/system_probe.hpp>
 
 #include "esde_text.hpp"
 
 namespace rv::cli {
 
-/// Everything a launch is resolved with. Held by pointer: the translator and the context point into it.
-struct LaunchLibrary {
-    catalog::LibraryProfile profile;
-    esde::EsdeSettings settings;
-    esde::ResolvedRoot romRoot;
-    esde::SystemsConfiguration systems;
-    esde::FindRules findRules;
-    std::vector<catalog::SystemInfo> systemInfos;
-    launcher::EmulatorProfiles profiles;
-    platform_win::Win32SystemProbe probe;
-    std::unique_ptr<esde::EsdeCommandTranslator> translator;
-    /// Retroverse's choices for the library's systems that the catalog database holds (retroverse-cli assign), by
-    /// system name: they rank before emulators.json's "systemChoices" (systemChoices()). Empty until
-    /// loadAssignedChoices() or the launch's own read of the database.
-    std::map<std::string, launcher::LaunchChoice, std::less<>> assignedChoices;
-    /// What reading the library met: settings, roots, systems, find rules, gamelists, profiles.
-    std::vector<catalog::Issue> issues;
-
-    [[nodiscard]] catalog::LaunchContext context() const {
-        return catalog::LaunchContext{translator.get(), &profiles, &probe, nullptr};
-    }
-    [[nodiscard]] const catalog::SystemInfo* findSystem(std::string_view name) const {
-        const auto found = std::find_if(systemInfos.begin(), systemInfos.end(),
-                                        [&](const catalog::SystemInfo& system) { return system.name.str() == name; });
-        return found == systemInfos.end() ? nullptr : &*found;
-    }
-};
+using library::LaunchLibrary;
+using library::kAssignedOrigin;
+using library::kEmulatorsJsonOrigin;
+using library::loadAssignedChoices;
+using library::readSystemGamelist;
+using library::systemChoiceOrigin;
+using library::systemChoices;
 
 /// Reads the library <user data>/config/library.json records and the emulator profiles. On failure the message goes to
 /// the context's stderr and `failure` says how the command exits: UsageError without a library.json (or with one that
@@ -82,130 +62,13 @@ inline std::unique_ptr<LaunchLibrary> loadLaunchLibrary(CommandContext& context,
         failure = ExitCode::UsageError;
         return nullptr;
     }
-    auto library = std::make_unique<LaunchLibrary>();
-    library->profile = std::move(*profile);
-    auto settings = esde::readSettings(library->profile.esdeHome);
-    if (!settings) {
-        context.err.writeLine(fmt::format("{}: ES-DE's settings cannot be read: {}", name, settings.error().toString()));
+    auto library = library::loadLaunchLibrary(std::move(*profile), context.paths);
+    if (!library) {
+        context.err.writeLine(fmt::format("{}: {}", name, library.error().message));
         failure = ExitCode::RuntimeFailure;
         return nullptr;
     }
-    library->settings = std::move(*settings);
-    library->romRoot = esde::resolveRomRoot(library->settings, library->profile);
-    auto systems = esde::loadSystems(library->profile);
-    if (!systems) {
-        context.err.writeLine(fmt::format("{}: ES-DE's systems cannot be read: {}", name, systems.error().toString()));
-        failure = ExitCode::RuntimeFailure;
-        return nullptr;
-    }
-    library->systems = std::move(*systems);
-    library->findRules = esde::loadFindRules(library->profile);
-    auto& issues = library->issues;
-    issues.insert(issues.end(), library->settings.issues.begin(), library->settings.issues.end());
-    issues.insert(issues.end(), library->romRoot.issues.begin(), library->romRoot.issues.end());
-    issues.insert(issues.end(), library->systems.issues.begin(), library->systems.issues.end());
-    issues.insert(issues.end(), library->findRules.issues.begin(), library->findRules.issues.end());
-    library->systemInfos = esde::systemInfos(library->systems, library->romRoot, library->profile, issues);
-    library->profiles = launcher::loadEmulatorProfiles(context.paths);
-    for (const launcher::ProfileIssue& issue : library->profiles.issues) {
-        issues.push_back(catalog::Issue{catalog::IssueSeverity::Warning, "profile-issue", {}, issue.file,
-                                        issue.toString()});
-    }
-    library->translator = std::make_unique<esde::EsdeCommandTranslator>(
-        esde::TranslationContext{library->profile, library->romRoot, &library->findRules, &library->probe},
-        library->systems);
-    return library;
-}
-
-/// The gamelist of `system`, when it has one that can be read: what gives its <alternativeEmulator> and the games'
-/// <altemulator>. A gamelist that fails is an issue (the choices it holds are then unknown).
-inline std::optional<esde::Gamelist> readSystemGamelist(LaunchLibrary& library, const catalog::SystemInfo& system) {
-    if (system.romFolder.empty()) {
-        return std::nullopt;
-    }
-    const std::filesystem::path file =
-        esde::gamelistFile(system.name, system.romFolder, library.settings, library.profile.esdeHome);
-    auto gamelist = esde::readGamelist(file, system.name, system.romFolder);
-    if (!gamelist) {
-        if (gamelist.error().code != ErrorCode::NotFound) {
-            library.issues.push_back(catalog::Issue{
-                catalog::IssueSeverity::Warning, "gamelist-unreadable", system.name.str(), pathText(file),
-                fmt::format("the gamelist cannot be read ({}): its alternative emulators are not known",
-                            gamelist.error().message)});
-        }
-        return std::nullopt;
-    }
-    return std::move(*gamelist);
-}
-
-/// Where Retroverse's choice for a system comes from (I2 step 12): the catalog database's (`assign`), which ranks first
-/// as the user's latest explicit choice, else emulators.json's "systemChoices".
-inline constexpr std::string_view kAssignedOrigin = "assign";
-inline constexpr std::string_view kEmulatorsJsonOrigin = "emulators.json";
-
-/// Where Retroverse's choice for `system` comes from: kAssignedOrigin, kEmulatorsJsonOrigin, or empty when it has none.
-inline std::string_view systemChoiceOrigin(const LaunchLibrary& library, std::string_view system) {
-    if (library.assignedChoices.find(system) != library.assignedChoices.end()) {
-        return kAssignedOrigin;
-    }
-    return library.profiles.systemChoice(system) != nullptr ? kEmulatorsJsonOrigin : std::string_view();
-}
-
-/// The choices of a system without a game: Retroverse's for the system (the catalog database's from `assign`, else
-/// emulators.json's), the gamelist's <alternativeEmulator>.
-inline catalog::LaunchChoices systemChoices(const LaunchLibrary& library, const catalog::SystemInfo& system,
-                                            const std::string& alternativeEmulator) {
-    catalog::LaunchChoices choices;
-    choices.alternativeEmulatorPerGame = library.settings.alternativeEmulatorPerGame;
-    if (const auto assigned = library.assignedChoices.find(system.name.str());
-        assigned != library.assignedChoices.end()) {
-        choices.system = assigned->second;
-    } else if (const launcher::LaunchChoice* choice = library.profiles.systemChoice(system.name.str())) {
-        choices.system = *choice;
-    }
-    choices.systemAlternativeEmulator = alternativeEmulator;
-    return choices;
-}
-
-/// Reads into `library` Retroverse's choices for its systems from the catalog database (retroverse-cli assign), opened
-/// for reading only: never made, migrated or written. No database yet, or one that holds no choice of the library: no
-/// choices. A database that cannot be read is an issue (assign's choices are then not known).
-inline void loadAssignedChoices(LaunchLibrary& library, const core::Paths& paths) {
-    catalog_db::DatabaseOptions options;
-    options.create = false;
-    options.switchToWal = false; // reading writes nothing into the file
-    const auto unknown = [&](const Error& error) {
-        library.issues.push_back(catalog::Issue{
-            catalog::IssueSeverity::Warning, "catalog-unreadable", {}, pathText(catalog_db::databaseFile(paths)),
-            fmt::format("the catalog database cannot be read ({}): the choices made with 'retroverse-cli assign' are "
-                        "not known",
-                        error.message)});
-    };
-    auto database = catalog_db::Database::open(catalog_db::databaseFile(paths), options);
-    if (!database) {
-        if (database.error().code != ErrorCode::NotFound) {
-            unknown(database.error());
-        }
-        return;
-    }
-    auto reader = database->openReader();
-    if (!reader) {
-        unknown(reader.error());
-        return;
-    }
-    auto store = catalog_db::SessionStore::open(*reader);
-    if (!store) {
-        unknown(store.error());
-        return;
-    }
-    auto choices = (*store)->systemChoices(library.profile.id);
-    if (!choices) {
-        unknown(choices.error());
-        return;
-    }
-    for (catalog_db::SystemChoiceRow& row : *choices) {
-        library.assignedChoices.emplace(row.system.str(), std::move(row.stored.choice));
-    }
+    return std::move(*library);
 }
 
 /// "command \"bsnes\"", "profile 'retroarch'", "the command" (a single unlabelled one).

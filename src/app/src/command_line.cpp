@@ -135,6 +135,13 @@ core::ArgParser makeParser() {
                 "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
                 "that room's frame. The run exits 2 when the building's plan lacks the room. Not with --scene, "
                 "--model or --mock-catalog.")
+        .flag("wizard",
+              "Run the first-run wizard on a data directory without a library, also in a frame-limited run. Needs "
+              "--esde-home. Not with --scene, --model or --mock-catalog.")
+        .option("esde-home", "dir",
+                "With --wizard: the ES-DE home (the folder of settings/ and gamelists/), or the folder that holds it. "
+                "Discovery stands on it: the registry and the machine are not asked.")
+        .option("esde-install", "dir", "With --esde-home: ES-DE's install folder, the folder of ES-DE.exe.")
         .option("audio", "device|null|off",
                 "Where the clips' sound goes: the default audio device (the default of interactive runs), null (mixed "
                 "and thrown away, never touching the system's audio: the default of frame-limited runs) or off (no "
@@ -785,6 +792,36 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
         }
         options.startRoom = **startRoom;
     }
+    auto esdeHome = pathValue(*args, "esde-home");
+    if (!esdeHome) {
+        return propagate(esdeHome.error());
+    }
+    auto esdeInstall = pathValue(*args, "esde-install");
+    if (!esdeInstall) {
+        return propagate(esdeInstall.error());
+    }
+    options.wizard = args->has("wizard");
+    // ADR-0018 §4: --wizard without --esde-home exits 2, frame-limited or not: no run names ES-DE halfway.
+    if (options.wizard && !esdeHome->has_value()) {
+        return makeError(ErrorCode::InvalidArgument, "the wizard asked for needs --esde-home <dir>", "--wizard");
+    }
+    if (esdeHome->has_value() && !options.wizard) {
+        return makeError(ErrorCode::InvalidArgument, "only with --wizard", "--esde-home");
+    }
+    if (esdeInstall->has_value() && !esdeHome->has_value()) {
+        return makeError(ErrorCode::InvalidArgument, "only with --esde-home", "--esde-install");
+    }
+    if (options.wizard && (scene->has_value() || model->has_value() || mockCatalog->has_value())) {
+        return makeError(ErrorCode::InvalidArgument, "the wizard makes the building's library: not with --scene, --model "
+                                                     "or --mock-catalog",
+                         "--wizard");
+    }
+    const auto absoluteFolder = [](const std::optional<std::filesystem::path>& folder) {
+        std::error_code ignored;
+        return folder ? std::optional<std::filesystem::path>(std::filesystem::absolute(*folder, ignored)) : folder;
+    };
+    options.esdeHome = absoluteFolder(*esdeHome);
+    options.esdeInstall = absoluteFolder(*esdeInstall);
     if (auto pending = pendingOptionError(options); !pending) {
         return propagate(pending.error());
     }
