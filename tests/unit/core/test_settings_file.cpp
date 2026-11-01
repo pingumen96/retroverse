@@ -13,9 +13,11 @@
 #include <nlohmann/json.hpp>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 using rv::core::SettingsFile;
@@ -136,6 +138,49 @@ TEST_CASE("core/settings_file: an unreadable file is left out whole, backed up, 
     const SettingsFile again = SettingsFile::load(path);
     CHECK_FALSE(again.unreadable());
     CHECK(again.value("world", "reduceMotion") == Json(true));
+}
+
+TEST_CASE("core/settings_file: an unreadable file that cannot be backed up is never replaced", "[core][settings_file]") {
+    const rv::test::TempDir dir("rv-settings");
+    const std::filesystem::path path = dir.path() / "settings.json";
+    write(path, "{ broken");
+    write(dir.path() / "backups", "a file where the backups' folder should be");
+    SettingsFile file = SettingsFile::load(path);
+    REQUIRE(file.unreadable());
+    CHECK_FALSE(file.backUpUnreadable().has_value());
+    file.set("world", "reduceMotion", true);
+    const rv::Status saved = file.save();
+    REQUIRE_FALSE(saved.has_value());
+    CHECK(saved.error().code == rv::ErrorCode::Conflict);
+    CHECK(rv::core::readTextFile(path).value() == "{ broken");
+    // Once it could be kept aside, the file is replaced.
+    std::filesystem::remove(dir.path() / "backups");
+    REQUIRE(file.backUpUnreadable().has_value());
+    CHECK(file.save().has_value());
+}
+
+TEST_CASE("core/settings_file: a loader reading the file never stops its replacement", "[core][settings_file]") {
+    const rv::test::TempDir dir("rv-settings");
+    const std::filesystem::path path = dir.path() / "settings.json";
+    SettingsFile file = SettingsFile::load(path);
+    file.set("world", "reduceMotion", true);
+    REQUIRE(file.save().has_value());
+    std::atomic<bool> done{false};
+    std::atomic<int> unreadable{0};
+    std::thread reader([&] {
+        while (!done) {
+            unreadable += SettingsFile::load(path).unreadable() ? 1 : 0;
+        }
+    });
+    int failed = 0;
+    for (int index = 0; index < 200; ++index) {
+        file.set("video", "audio.master", index / 1000.0);
+        failed += file.save().has_value() ? 0 : 1;
+    }
+    done = true;
+    reader.join();
+    CHECK(failed == 0);
+    CHECK(unreadable == 0);
 }
 
 TEST_CASE("core/settings_file: a readable file has nothing to back up", "[core][settings_file]") {

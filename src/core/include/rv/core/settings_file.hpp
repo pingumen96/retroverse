@@ -56,8 +56,8 @@ public:
     [[nodiscard]] bool unreadable() const noexcept { return m_issue.has_value(); }
     [[nodiscard]] const std::optional<Error>& issue() const noexcept { return m_issue; }
     /// Copies an unreadable file to <folder of the file>/backups (core::backUpFile), so that the next write loses
-    /// nothing. Nothing without one. Errors: those of core::backUpFile.
-    [[nodiscard]] Status backUpUnreadable() const;
+    /// nothing. Nothing without one. Errors: those of core::backUpFile; save() then refuses to replace the file.
+    [[nodiscard]] Status backUpUnreadable();
 
     /// The keys of `allowedKeys` (dotted) that section `name` holds, shaped like the section; an empty object when it
     /// holds none or is not an object. Keys it holds that are not allowed never come out.
@@ -78,13 +78,16 @@ public:
     /// The file's text: the document with schemaVersion (kSettingsSchemaVersion unless it holds another), two spaces, a
     /// final line feed.
     [[nodiscard]] std::string text() const;
-    /// Writes text() through core::writeFileAtomic, the folder made when missing. Errors: those of the write.
+    /// Writes text() through core::writeFileAtomic, the folder made when missing, tried again for a moment when a reader
+    /// holds the file. Errors: those of the write; Conflict for an unreadable file not yet kept aside by
+    /// backUpUnreadable(), which is never lost.
     [[nodiscard]] Status save() const;
 
 private:
     std::filesystem::path m_path;
     nlohmann::json m_document = nlohmann::json::object();
     std::optional<Error> m_issue;
+    bool m_keptAside = false;
 };
 
 /// `overlay`'s keys (an object shaped like section()'s result) merged over `base` as far as `accepts` takes them: the

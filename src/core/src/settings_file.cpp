@@ -1,10 +1,12 @@
 #include <rv/core/settings_file.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <mutex>
 #include <set>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -20,6 +22,10 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr std::string_view kSchemaVersionKey = "schemaVersion";
+constexpr std::uintmax_t kMaxSettingsBytes = 16u * 1024u * 1024u;
+/// A rename onto a file a reader holds open can fail while it does: tried again for about 100 ms.
+constexpr int kSaveAttempts = 6;
+constexpr std::chrono::milliseconds kSaveRetryWait{20};
 
 /// A dotted key's parts.
 [[nodiscard]] std::vector<std::string> partsOf(std::string_view key) {
@@ -144,9 +150,12 @@ SettingsFile SettingsFile::load(const std::filesystem::path& path) {
     if (path.empty() || !std::filesystem::exists(path, ignored)) {
         return file;
     }
-    Expected<std::string> text = readTextFile(path);
+    // Full sharing: another thread's loader must never stand in the way of the rename that replaces this file.
+    Expected<std::string> text = readFileShared(path, kMaxSettingsBytes);
     if (!text) {
-        file.m_issue = text.error();
+        if (text.error().code != ErrorCode::NotFound) {
+            file.m_issue = text.error();
+        }
         return file;
     }
     try {
@@ -171,7 +180,7 @@ SettingsFile SettingsFile::loadBeside(const std::filesystem::path& userConfigDir
     return file;
 }
 
-Status SettingsFile::backUpUnreadable() const {
+Status SettingsFile::backUpUnreadable() {
     if (!m_issue) {
         return ok();
     }
@@ -179,6 +188,7 @@ Status SettingsFile::backUpUnreadable() const {
     if (!backup) {
         return propagate(backup.error());
     }
+    m_keptAside = true;
     spdlog::warn("settings.json could not be used: kept as {}, replaced at the next write",
                  pathToUtf8Lossy(backup->backup));
     return ok();
@@ -247,12 +257,22 @@ Status SettingsFile::save() const {
     if (m_path.empty()) {
         return makeError(ErrorCode::InvalidArgument, "settings.json has no path");
     }
+    if (m_issue && !m_keptAside) {
+        return makeError(ErrorCode::Conflict, "the unreadable file is not replaced: it could not be kept aside",
+                         pathToUtf8Lossy(m_path));
+    }
     std::error_code error;
     std::filesystem::create_directories(m_path.parent_path(), error);
     if (error) {
         return makeError(ErrorCode::IoError, error.message(), pathToUtf8Lossy(m_path.parent_path()));
     }
-    return writeTextFileAtomic(m_path, text());
+    const std::string content = text();
+    Status written = writeTextFileAtomic(m_path, content);
+    for (int attempt = 1; attempt < kSaveAttempts && !written; ++attempt) {
+        std::this_thread::sleep_for(kSaveRetryWait);
+        written = writeTextFileAtomic(m_path, content);
+    }
+    return written;
 }
 
 Json acceptedOverlay(Json base, const Json& overlay, const std::function<bool(const Json&)>& accepts,
