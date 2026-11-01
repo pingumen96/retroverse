@@ -1469,15 +1469,15 @@ struct RetroverseApp::State {
         if (command.kind == ui::SettingsCommand::Kind::Bind) {
             settings->set(*row, bindingList(withBinding(map, *action, *command.press), *action));
         } else {
-            const SettingRow* otherRow = settings->row(command.other);
-            const std::optional<input::Action> other =
-                otherRow != nullptr ? input::actionFromName(otherRow->key) : std::optional<input::Action>();
-            if (!other) {
-                return;
-            }
-            const input::ActionMap edited = withSwap(map, *action, *command.press, *other);
+            const std::vector<input::Action> holders = bindingHolders(map, *action, *command.press);
+            const input::ActionMap edited = withSwap(map, *action, *command.press);
             settings->set(*row, bindingList(edited, *action));
-            settings->set(*otherRow, bindingList(edited, *other));
+            for (const input::Action holder : holders) {
+                if (const SettingRow* held =
+                        settings->row(fmt::format("{}.{}", kBindingsSettingsSection, input::actionName(holder)))) {
+                    settings->set(*held, bindingList(edited, holder));
+                }
+            }
         }
         bindingsTouched = true;
     }

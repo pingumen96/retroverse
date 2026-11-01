@@ -48,15 +48,16 @@ struct BindableAction {
 enum class BindingVerdict : std::uint8_t {
     Free,     ///< nothing else in its contexts uses it
     Same,     ///< the action has it already
-    Clash,    ///< another action a user may bind has it: a swap is offered
-    Reserved, ///< it stays what it is: an action not listed uses it, or a text field needs it
-    Locked,   ///< the swap would leave a locked action without its key or button
+    Clash,    ///< other actions a user may bind have it: a swap is offered
+    Reserved, ///< it stays what it is: an action not listed uses it, a text field needs it, or what a swap would
+              ///< hand back is another action's
+    Locked,   ///< the action has nothing to give back, and a holder would be left with no key or no pad button
 };
 [[nodiscard]] std::string_view toString(BindingVerdict verdict) noexcept;
 
 struct BindingJudgement {
     BindingVerdict verdict = BindingVerdict::Free;
-    /// Who has it (Clash, Locked, and Reserved by an action).
+    /// Who has it, or who refuses what a swap hands back (Clash, Locked, and Reserved by an action): the first of them.
     std::optional<input::Action> other;
 
     bool operator==(const BindingJudgement&) const = default;
@@ -68,10 +69,12 @@ struct BindingJudgement {
 
 /// `map` with `press` in `action`'s slot of that device.
 [[nodiscard]] input::ActionMap withBinding(input::ActionMap map, input::Action action, const input::Binding& press);
-/// `map` with `press` in `action`'s slot, and what that slot held given to `other` in place of `press` (`other` left
-/// without it when the slot was empty).
-[[nodiscard]] input::ActionMap withSwap(input::ActionMap map, input::Action action, const input::Binding& press,
-                                        input::Action other);
+/// Every action that holds `press` in a context `action` is read in (actionsCompete()): whom a swap involves.
+[[nodiscard]] std::vector<input::Action> bindingHolders(const input::ActionMap& map, input::Action action,
+                                                        const input::Binding& press);
+/// `map` with `press` in `action`'s slot, and what that slot held given to every bindingHolders() in place of `press`
+/// (they lose it when the slot was empty, which judgeBinding() allows only to a holder with another of that device).
+[[nodiscard]] input::ActionMap withSwap(input::ActionMap map, input::Action action, const input::Binding& press);
 
 /// `action`'s bindings as a binding file's list (settings.json's section).
 [[nodiscard]] nlohmann::json bindingList(const input::ActionMap& map, input::Action action);

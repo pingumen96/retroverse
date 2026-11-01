@@ -85,7 +85,10 @@ TEST_CASE("app/binding_rules: a clash is judged per context", "[app][binding]") 
     CHECK(world.verdict == BindingVerdict::Clash);
     CHECK(world.other == Action::EditPin);
     CHECK(judgeBinding(map, Action::Sprint, button(GamepadButton::DpadUp)).verdict == BindingVerdict::Free);
-    CHECK(judgeBinding(map, Action::UiMedia, button(GamepadButton::Back)).verdict == BindingVerdict::Clash); // Map, in Ui
+    // UiMedia would hand Y to Map, which QuickCatalog has where Map is read: refused, not moved.
+    const BindingJudgement moved = judgeBinding(map, Action::UiMedia, button(GamepadButton::Back));
+    CHECK(moved.verdict == BindingVerdict::Reserved);
+    CHECK(moved.other == Action::QuickCatalog);
     // The shipped sharings are no clash.
     CHECK(judgeBinding(map, Action::Menu, button(GamepadButton::Start)).verdict == BindingVerdict::Same);
     CHECK_FALSE(actionsCompete(Action::QuickCatalog, Action::UiMedia));
@@ -119,11 +122,47 @@ TEST_CASE("app/binding_rules: a locked action never loses its only key or button
     // With a slot the swap keeps it bound.
     const ActionMap shipped = ActionMap::defaults();
     CHECK(judgeBinding(shipped, Action::UiInfo, button(GamepadButton::South)).verdict == BindingVerdict::Clash);
-    const ActionMap swapped = withSwap(shipped, Action::UiInfo, button(GamepadButton::South), Action::UiActivate);
+    const ActionMap swapped = withSwap(shipped, Action::UiInfo, button(GamepadButton::South));
     CHECK(holds(swapped, Action::UiInfo, button(GamepadButton::South)));
     CHECK(holds(swapped, Action::UiActivate, button(GamepadButton::West)));
     CHECK_FALSE(holds(swapped, Action::UiActivate, button(GamepadButton::South)));
     CHECK(holds(swapped, Action::UiActivate, key(Key::Enter))); // the other device untouched
+}
+
+TEST_CASE("app/binding_rules: with nothing to give back no action is stripped of its device", "[app][binding]") {
+    const ActionMap map = ActionMap::defaults();
+    // ToggleMute has no pad button: A would leave a pad user without Interact and without UiActivate.
+    const BindingJudgement mute = judgeBinding(map, Action::ToggleMute, button(GamepadButton::South));
+    CHECK(mute.verdict == BindingVerdict::Locked);
+    CHECK(mute.other == Action::Interact);
+    // A holder with another button of that device may lose this one.
+    ActionMap second = map;
+    second.bind(Action::Interact, button(GamepadButton::DpadUp));
+    second.clear(Action::UiActivate);
+    second.bind(Action::UiActivate, key(Key::Enter));
+    second.bind(Action::UiActivate, button(GamepadButton::RightStick));
+    const BindingJudgement judged = judgeBinding(second, Action::ToggleMute, button(GamepadButton::South));
+    CHECK(judged.verdict == BindingVerdict::Clash);
+    const ActionMap taken = withSwap(second, Action::ToggleMute, button(GamepadButton::South));
+    CHECK(holds(taken, Action::ToggleMute, button(GamepadButton::South)));
+    CHECK_FALSE(holds(taken, Action::Interact, button(GamepadButton::South)));
+    CHECK(holds(taken, Action::Interact, button(GamepadButton::DpadUp)));
+}
+
+TEST_CASE("app/binding_rules: a swap takes the press from every holder in the context", "[app][binding]") {
+    // ToggleMute is read everywhere: X is EditPin's in the world and UiInfo's in the UI.
+    ActionMap map = ActionMap::defaults();
+    map.bind(Action::ToggleMute, button(GamepadButton::Guide));
+    const std::vector<Action> holders = bindingHolders(map, Action::ToggleMute, button(GamepadButton::West));
+    CHECK(holders == std::vector<Action>{Action::UiInfo, Action::EditPin});
+    REQUIRE(judgeBinding(map, Action::ToggleMute, button(GamepadButton::West)).verdict == BindingVerdict::Clash);
+    const ActionMap swapped = withSwap(map, Action::ToggleMute, button(GamepadButton::West));
+    CHECK(holds(swapped, Action::ToggleMute, button(GamepadButton::West)));
+    for (const Action holder : holders) {
+        INFO(actionName(holder));
+        CHECK_FALSE(holds(swapped, holder, button(GamepadButton::West)));
+        CHECK(holds(swapped, holder, button(GamepadButton::Guide)));
+    }
 }
 
 TEST_CASE("app/binding_rules: a press takes its device's slot alone", "[app][binding]") {

@@ -69,6 +69,20 @@ constexpr std::array<Action, 3> kLocked = {Action::UiActivate, Action::UiBack, A
     return std::nullopt;
 }
 
+[[nodiscard]] bool holds(const input::ActionMap& map, Action action, const Binding& press) {
+    const auto bindings = map.bindings(action);
+    return std::any_of(bindings.begin(), bindings.end(),
+                       [&](const Binding& binding) { return input::sameInput(binding, press); });
+}
+
+/// `action` has a key (a pad's press: a button or trigger) other than `press`.
+[[nodiscard]] bool holdsAnother(const input::ActionMap& map, Action action, const Binding& press) {
+    const auto bindings = map.bindings(action);
+    return std::any_of(bindings.begin(), bindings.end(), [&](const Binding& binding) {
+        return inSlot(binding, deviceOf(press)) && !input::sameInput(binding, press);
+    });
+}
+
 /// `map` with `action`'s bindings rewritten: `from` (none: nothing) becomes `to` (none: gone); `to` goes first in the
 /// action's slot when `from` is none.
 void replaceBinding(input::ActionMap& map, Action action, const std::optional<Binding>& from,
@@ -150,30 +164,46 @@ BindingJudgement judgeBinding(const input::ActionMap& map, Action action, const 
                                                            isTextKey(key->key)) {
         return {BindingVerdict::Reserved, std::nullopt};
     }
-    std::optional<Action> clash;
-    for (std::size_t index = 0; index < input::kActionCount; ++index) {
-        const auto other = static_cast<Action>(index);
-        if (!actionsCompete(action, other)) {
-            continue;
-        }
-        const auto bindings = map.bindings(other);
-        const bool holds = std::any_of(bindings.begin(), bindings.end(),
-                                       [&](const Binding& binding) { return input::sameInput(binding, press); });
-        if (!holds) {
-            continue;
-        }
-        if (!isBindable(other)) {
-            return {BindingVerdict::Reserved, other};
-        }
-        clash = clash ? clash : std::optional<Action>(other);
-    }
-    if (!clash) {
+    const std::vector<Action> holders = bindingHolders(map, action, press);
+    if (holders.empty()) {
         return {BindingVerdict::Free, std::nullopt};
     }
-    if (isLockedAction(*clash) && !slot) {
-        return {BindingVerdict::Locked, clash};
+    for (const Action holder : holders) {
+        if (!isBindable(holder)) {
+            return {BindingVerdict::Reserved, holder};
+        }
     }
-    return {BindingVerdict::Clash, clash};
+    if (!slot) {
+        // Nothing to give back: a holder may lose the press only if that device still reaches it.
+        for (const Action holder : holders) {
+            if (!holdsAnother(map, holder, press)) {
+                return {BindingVerdict::Locked, holder};
+            }
+        }
+        return {BindingVerdict::Clash, holders.front()};
+    }
+    // What goes back must be free where each holder is read, or the swap only moves the clash.
+    for (const Action holder : holders) {
+        for (std::size_t index = 0; index < input::kActionCount; ++index) {
+            const auto other = static_cast<Action>(index);
+            if (other != action && actionsCompete(holder, other) && holds(map, other, *slot) &&
+                std::find(holders.begin(), holders.end(), other) == holders.end()) {
+                return {BindingVerdict::Reserved, other};
+            }
+        }
+    }
+    return {BindingVerdict::Clash, holders.front()};
+}
+
+std::vector<Action> bindingHolders(const input::ActionMap& map, Action action, const Binding& press) {
+    std::vector<Action> holders;
+    for (std::size_t index = 0; index < input::kActionCount; ++index) {
+        const auto other = static_cast<Action>(index);
+        if (actionsCompete(action, other) && holds(map, other, press)) {
+            holders.push_back(other);
+        }
+    }
+    return holders;
 }
 
 input::ActionMap withBinding(input::ActionMap map, Action action, const Binding& press) {
@@ -181,10 +211,12 @@ input::ActionMap withBinding(input::ActionMap map, Action action, const Binding&
     return map;
 }
 
-input::ActionMap withSwap(input::ActionMap map, Action action, const Binding& press, Action other) {
+input::ActionMap withSwap(input::ActionMap map, Action action, const Binding& press) {
     const std::optional<Binding> slot = slotOf(map, action, deviceOf(press));
+    for (const Action holder : bindingHolders(map, action, press)) {
+        replaceBinding(map, holder, press, slot);
+    }
     replaceBinding(map, action, slot, press);
-    replaceBinding(map, other, press, slot);
     return map;
 }
 
