@@ -201,7 +201,15 @@ struct SettingsScreen::Impl {
             return;
         }
         Rml::Element* element = document->GetElementById(Rml::String(model->focusedElement()));
-        if (element == nullptr || view.context().GetFocusElement() == element) {
+        if (element == nullptr) {
+            return;
+        }
+        // A capture's strip takes room from the list: the row it is for stays in view.
+        if (const bool strip = !capture.empty(); strip != stripShown) {
+            stripShown = strip;
+            element->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest));
+        }
+        if (view.context().GetFocusElement() == element) {
             return;
         }
         if (element->Focus(true)) {
@@ -214,6 +222,7 @@ struct SettingsScreen::Impl {
     Rml::DataModelHandle handle;
     bool modelCreated = false;
     bool documentShown = false;
+    bool stripShown = false;
     const SettingsModel* model = nullptr;
     std::optional<std::uint64_t> boundRevision;
     std::optional<SettingsClick> clicked;
