@@ -83,6 +83,17 @@ using ui::WizardWork;
     }
 }
 
+[[nodiscard]] bool sameFolder(const std::optional<std::filesystem::path>& left,
+                              const std::optional<std::filesystem::path>& right) {
+    const auto tidy = [](std::filesystem::path path) { return path.make_preferred().lexically_normal(); };
+    return left.has_value() == right.has_value() && (!left || tidy(*left) == tidy(*right));
+}
+
+[[nodiscard]] bool sameFolders(const catalog::LibraryProfile& left, const catalog::LibraryProfile& right) {
+    return sameFolder(left.esdeHome, right.esdeHome) && sameFolder(left.installFolder, right.installFolder) &&
+           sameFolder(left.romRoot, right.romRoot) && sameFolder(left.mediaRoot, right.mediaRoot);
+}
+
 /// A folder chosen for the ES-DE home: it, or the folder that holds its ES-DE folder as ES-DE's own --home names it.
 void setHome(library::LibraryDraftRequest& request, const std::filesystem::path& folder) {
     std::error_code ignored;
@@ -142,6 +153,15 @@ struct WizardFlow::Box {
     std::optional<Listed> listed;
     std::optional<Prepared> prepared;
 
+    /// `slot` takes `answer` unless a newer one stands there: a job that ends late never hides a later job's answer.
+    template <typename Answer>
+    void post(std::optional<Answer>& slot, Answer answer) {
+        const std::lock_guard lock(mutex);
+        if (!slot || slot->serial < answer.serial) {
+            slot = std::move(answer);
+        }
+    }
+
     /// Runs `job` on a thread that holds only this box.
     template <typename Job>
     static void run(const std::shared_ptr<Box>& box, Job job) {
@@ -157,16 +177,13 @@ struct WizardFlow::Box {
             } catch (...) {
                 spdlog::error("A job of the wizard failed");
             }
-            std::function<void()> wakeHost;
-            {
-                const std::lock_guard lock(box->mutex);
-                --box->running;
-                wakeHost = box->wake;
+            // The wake under the lock: once the destructor cleared it, none is on its way to a host that is gone.
+            const std::lock_guard lock(box->mutex);
+            --box->running;
+            if (box->wake) {
+                box->wake();
             }
             box->ended.notify_all();
-            if (wakeHost) {
-                wakeHost();
-            }
         }).detach();
     }
 };
@@ -183,8 +200,9 @@ WizardFlow::~WizardFlow() {
         m_readCancel->store(true);
     }
     std::unique_lock lock(m_box->mutex);
-    if (!m_box->ended.wait_for(lock, kStopBound, [this] { return m_box->running == 0; })) {
-        spdlog::warn("A job of the wizard did not end within {} ms; it is left to end by itself", kStopBound.count());
+    if (!m_box->ended.wait_for(lock, m_options.stopBound, [this] { return m_box->running == 0; })) {
+        spdlog::warn("A job of the wizard did not end within {} ms; it is left to end by itself",
+                     m_options.stopBound.count());
     }
     m_box->wake = nullptr;
 }
@@ -195,7 +213,9 @@ void WizardFlow::open(WizardStart start) {
         if (profile) {
             m_profile = *profile;
             m_id = profile->id;
-            // The folders of the file stand, but what the command line gave.
+            // The folders of the file stand, but what the command line gave, which only a detection can turn into a
+            // library: page 3 then reads that, and page 4 writes it when it differs from the file.
+            m_detectBeforeRead = m_home.has_value() || m_install.has_value();
             if (!m_home) {
                 m_home = profile->esdeHome;
             }
@@ -253,30 +273,47 @@ void WizardFlow::detect() {
         } else {
             answer.detection.problem = "home-unknown";
         }
-        const std::lock_guard lock(box.mutex);
-        box.detected = std::move(answer);
+        box.post(box.detected, std::move(answer));
     });
 }
 
-void WizardFlow::read() {
-    const std::uint64_t serial = ++m_readSerial;
+void WizardFlow::cancelRead() {
     if (m_readCancel) {
-        m_readCancel->store(true); // a read still running for what the user left
+        m_readCancel->store(true);
     }
+    ++m_readSerial; // what it still answers is dropped
+    if (m_reading || std::exchange(m_readAfterDetect, false)) {
+        m_reading = false;
+        m_model.setPreview(WizardWork::Idle, {});
+    }
+}
+
+void WizardFlow::read() {
+    cancelRead(); // one still running, for what the user left
+    if (m_detectBeforeRead && !m_draft) {
+        // The answer of this detection asks for the read again (poll()).
+        m_detectBeforeRead = false;
+        m_readAfterDetect = true;
+        m_model.setPreview(WizardWork::Running, {});
+        detect();
+        return;
+    }
+    const std::uint64_t serial = m_readSerial;
     m_readCancel = std::make_shared<std::atomic<bool>>(false);
-    const std::optional<catalog::LibraryProfile>& profile = m_draft && m_draft->profile ? m_draft->profile : m_profile;
+    // A detection's library, once there is one: what page 2 shows. library.json's only until then.
+    const std::optional<catalog::LibraryProfile>& profile = m_draft ? m_draft->profile : m_profile;
     if (!profile) {
         m_model.setPreview(WizardWork::Failed, {}, "library-unreadable");
         return;
     }
     m_reading = true;
     m_model.setPreview(WizardWork::Running, {});
-    Box::run(m_box, [serial, profile = *profile, cancel = m_readCancel](Box& box) {
+    Box::run(m_box, [serial, profile = *profile, cancel = m_readCancel, readLibrary = m_options.readLibrary](Box& box) {
         Box::Read answer;
         answer.serial = serial;
         library::PreviewOptions options;
         options.cancel = cancel.get();
-        const auto preview = library::previewLibrary(profile, options);
+        const auto preview = readLibrary ? readLibrary(profile, options) : library::previewLibrary(profile, options);
         if (preview) {
             const library::PreviewCounts& total = preview->total;
             answer.preview.systems = preview->snapshot.systems.size();
@@ -306,14 +343,14 @@ void WizardFlow::read() {
             spdlog::debug("Wizard: the library cannot be read: {}", preview.error().toString());
             answer.failure = "library-unreadable";
         }
-        const std::lock_guard lock(box.mutex);
-        box.read = std::move(answer);
+        box.post(box.read, std::move(answer));
     });
 }
 
 void WizardFlow::listing(const ui::FolderListingRequest& request) {
     m_listing = true;
-    Box::run(m_box, [request](Box& box) {
+    m_listingSerial = request.serial;
+    Box::run(m_box, [request, listFolders = m_options.listFolders](Box& box) {
         Box::Listed answer;
         answer.serial = request.serial;
         const auto toRows = [&](const std::vector<library::ListedFolder>& folders) {
@@ -324,19 +361,19 @@ void WizardFlow::listing(const ui::FolderListingRequest& request) {
         };
         if (request.folder.empty()) {
             toRows(library::listDrives());
-        } else if (const auto folders = library::listFolders(request.folder)) {
+        } else if (const auto folders = listFolders ? listFolders(request.folder) : library::listFolders(request.folder)) {
             toRows(*folders);
         } else {
             answer.failure = failureOf(folders.error());
         }
-        const std::lock_guard lock(box.mutex);
-        box.listed = std::move(answer);
+        box.post(box.listed, std::move(answer));
     });
 }
 
 void WizardFlow::command(const ui::WizardCommand& command) {
     switch (command.kind) {
     case ui::WizardCommandKind::Detect:
+        cancelRead(); // Back from page 3 comes this way
         detect();
         break;
     case ui::WizardCommandKind::Read:
@@ -453,7 +490,14 @@ void WizardFlow::poll() {
             m_draft.reset();
             spdlog::warn("Wizard: discovery failed: {}", detected->draft.error().toString());
         }
+        // What the command line gave differs from the file: page 4 writes it.
+        if (m_profile && m_draft && m_draft->profile && !sameFolders(*m_profile, *m_draft->profile)) {
+            m_changed = true;
+        }
         m_model.setDetection(WizardWork::Done, std::move(detected->detection));
+        if (std::exchange(m_readAfterDetect, false)) {
+            read();
+        }
     }
     if (reading && reading->serial == m_readSerial) {
         m_reading = false;
@@ -465,13 +509,20 @@ void WizardFlow::poll() {
         }
     }
     if (listed) {
-        m_listing = false;
+        if (listed->serial == m_listingSerial) {
+            m_listing = false; // a stale job ending says nothing of the one awaited
+        }
         if (listed->failure) {
             m_browser.setFailure(listed->serial, *listed->failure);
         } else {
             m_browser.setListing(listed->serial, std::move(listed->rows));
         }
     }
+}
+
+int WizardFlow::runningJobs() const {
+    const std::lock_guard lock(m_box->mutex);
+    return m_box->running;
 }
 
 bool WizardFlow::busy() const noexcept {

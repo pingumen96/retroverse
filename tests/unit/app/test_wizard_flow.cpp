@@ -4,9 +4,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -199,6 +203,207 @@ TEST_CASE("wizard: a ROM folder out of reach stops page 2, a chosen one goes on"
     CHECK(written.failure.empty());
     CHECK(written.changed);
     CHECK(rv::esde::readLibraryFile(libraryFile(data.path()))->romRoot == fixture.path("roms-moved"));
+}
+
+namespace {
+
+/// A folder job that waits until it is let go.
+struct Gate {
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool open = false;
+
+    void release() {
+        {
+            const std::lock_guard lock(mutex);
+            open = true;
+        }
+        changed.notify_all();
+    }
+    void wait() {
+        std::unique_lock lock(mutex);
+        changed.wait(lock, [this] { return open; });
+    }
+};
+
+void waitForNoJobs(WizardFlow& flow) {
+    const auto start = std::chrono::steady_clock::now();
+    while (flow.runningJobs() != 0) {
+        if (std::chrono::steady_clock::now() - start > std::chrono::seconds(30)) {
+            FAIL("a job of the wizard did not end");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+} // namespace
+
+TEST_CASE("wizard: a stale listing that ends last hides nothing and ends no wait", "[wizard]") {
+    const auto fixture = rv::test::Fixture::materialize("esde/snes-room").value();
+    const rv::test::TempDir data("rv-wizard");
+    Gate gate;
+    Gate later;
+    auto options = optionsFor(data.path(), fixture);
+    options.listFolders = [&](const fs::path& folder) -> rv::Expected<std::vector<rv::library::ListedFolder>> {
+        if (folder.filename() == "slow") {
+            gate.wait();
+            return std::vector<rv::library::ListedFolder>{{folder / "stale", "stale"}};
+        }
+        if (folder.filename() == "later") {
+            later.wait();
+        }
+        return std::vector<rv::library::ListedFolder>{{folder / "fresh", "fresh"}};
+    };
+    WizardFlow flow(options);
+    rv::ui::WizardCommand browse{WizardCommandKind::Browse};
+    flow.open(WizardStart::Fresh);
+    flow.command(browse); // no detection yet: at the drives
+    auto& browser = flow.browser();
+    flow.poll();
+    settle(flow);
+    REQUIRE(browser.state() == rv::ui::FolderBrowserState::Listed);
+
+    browser.close();
+    browser.open(data.path() / "slow");
+    flow.poll(); // the slow listing, held
+    CHECK(flow.busy());
+    SECTION("the newer answer waits in the box when the stale one ends") {
+        static_cast<void>(browser.apply(rv::ui::UiCommand::Activate)); // up, while it loads
+        flow.poll();
+        const auto start = std::chrono::steady_clock::now();
+        while (flow.runningJobs() != 1 && std::chrono::steady_clock::now() - start < std::chrono::seconds(30)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        gate.release();
+        waitForNoJobs(flow);
+        flow.poll(); // both ended before this look: the stale one overwrote nothing
+        CHECK(browser.state() == rv::ui::FolderBrowserState::Listed);
+        CHECK_FALSE(flow.busy());
+        REQUIRE(browser.count() == 1);
+        CHECK(browser.rows().front().name == "fresh");
+    }
+    SECTION("a stale answer after the newer one was shown changes nothing") {
+        static_cast<void>(browser.apply(rv::ui::UiCommand::Activate));
+        flow.poll();
+        settle(flow);
+        REQUIRE(browser.state() == rv::ui::FolderBrowserState::Listed);
+        gate.release();
+        waitForNoJobs(flow);
+        flow.poll();
+        CHECK(browser.rows().front().name == "fresh");
+    }
+    SECTION("a stale answer never ends the wait for the one asked") {
+        browser.open(data.path() / "later");
+        flow.poll();
+        gate.release();
+        const auto start = std::chrono::steady_clock::now();
+        while (flow.runningJobs() != 1 && std::chrono::steady_clock::now() - start < std::chrono::seconds(30)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        flow.poll();
+        CHECK(browser.state() == rv::ui::FolderBrowserState::Loading);
+        CHECK(flow.busy());
+        later.release();
+        settle(flow);
+        CHECK(browser.state() == rv::ui::FolderBrowserState::Listed);
+        CHECK(browser.rows().front().name == "fresh");
+    }
+}
+
+TEST_CASE("wizard: no wake once the flow is gone, a job left running included", "[wizard]") {
+    const auto fixture = rv::test::Fixture::materialize("esde/snes-room").value();
+    const rv::test::TempDir data("rv-wizard");
+    auto gate = std::make_shared<Gate>();
+    auto wakes = std::make_shared<std::atomic<int>>(0);
+    auto ended = std::make_shared<Gate>();
+    auto options = optionsFor(data.path(), fixture);
+    options.stopBound = std::chrono::milliseconds(20);
+    options.wake = [wakes] { ++*wakes; };
+    options.listFolders = [gate, ended](const fs::path&) -> rv::Expected<std::vector<rv::library::ListedFolder>> {
+        gate->wait();
+        ended->release();
+        return std::vector<rv::library::ListedFolder>{};
+    };
+    {
+        WizardFlow flow(options);
+        flow.browser().open(data.path());
+        flow.poll();
+    }
+    const int atTheEnd = wakes->load();
+    gate->release();
+    ended->wait();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    CHECK(wakes->load() == atTheEnd);
+}
+
+TEST_CASE("wizard: Back from page 3 stops the read and drops its answer", "[wizard]") {
+    const auto fixture = rv::test::Fixture::materialize("esde/snes-room").value();
+    const rv::test::TempDir data("rv-wizard");
+    std::atomic<bool> cancelled{false};
+    auto options = optionsFor(data.path(), fixture);
+    options.readLibrary = [&](const rv::catalog::LibraryProfile&,
+                              const rv::library::PreviewOptions& read) -> rv::Expected<rv::library::LibraryPreview> {
+        const auto start = std::chrono::steady_clock::now();
+        while (!read.cancel->load()) {
+            if (std::chrono::steady_clock::now() - start > std::chrono::seconds(30)) {
+                return rv::makeError(rv::ErrorCode::IoError, "never cancelled", {});
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        cancelled = true;
+        return rv::makeError(rv::ErrorCode::Cancelled, "cancelled", {});
+    };
+    WizardFlow flow(options);
+    flow.open(WizardStart::Fresh);
+    press(flow);
+    settle(flow);
+    press(flow); // Avanti: the read runs
+    auto& model = flow.model();
+    REQUIRE(model.page() == rv::ui::WizardPage::Preview);
+    REQUIRE(model.previewWork() == WizardWork::Running);
+    const auto back = model.apply(rv::ui::UiCommand::Back);
+    REQUIRE(back.has_value());
+    flow.command(*back);
+    CHECK(model.previewWork() == WizardWork::Idle);
+    settle(flow);
+    waitForNoJobs(flow);
+    flow.poll();
+    CHECK(cancelled.load());
+    CHECK(model.page() == rv::ui::WizardPage::Detection);
+    CHECK(model.previewWork() == WizardWork::Idle);
+}
+
+TEST_CASE("wizard: resuming with --esde-home reads what page 2 shows, and page 4 records it", "[wizard]") {
+    const auto recorded = rv::test::Fixture::materialize("esde/snes-room").value();
+    const auto told = rv::test::Fixture::materialize("esde/snes-single").value();
+    const rv::test::TempDir data("rv-wizard");
+    const fs::path file = libraryFile(data.path());
+    {
+        WizardFlow first(optionsFor(data.path(), recorded));
+        first.open(WizardStart::Fresh);
+        press(first);
+        settle(first);
+        static_cast<void>(prepared(first));
+    }
+    REQUIRE(rv::esde::readLibraryFile(file)->esdeHome == recorded.path("ES-DE"));
+
+    WizardFlow flow(optionsFor(data.path(), told));
+    flow.open(WizardStart::Resume);
+    auto& model = flow.model();
+    const auto entered = model.takeEntered();
+    REQUIRE(entered.has_value());
+    flow.command(*entered);
+    CHECK(model.previewWork() == WizardWork::Running);
+    settle(flow);
+    REQUIRE(model.previewWork() == WizardWork::Done);
+    CHECK(fs::path(model.detection().folders[0].path).lexically_normal() == told.path("ES-DE").lexically_normal());
+    CHECK(model.preview().games == 1); // the told library's one game, not the recorded one's
+
+    const WizardFlow::Prepared written = prepared(flow);
+    CHECK(written.failure.empty());
+    CHECK(written.changed);
+    CHECK(fs::path(rv::esde::readLibraryFile(file)->esdeHome).lexically_normal() ==
+          told.path("ES-DE").lexically_normal());
 }
 
 TEST_CASE("wizard: a data directory inside the library is refused on page 2", "[wizard]") {

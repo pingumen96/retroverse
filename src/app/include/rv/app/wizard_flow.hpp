@@ -19,9 +19,11 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/app/command_line.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/library/folder_listing.hpp>
 #include <rv/library/library_creation.hpp>
 #include <rv/library/library_preview.hpp>
 #include <rv/ui/folder_browser_model.hpp>
@@ -59,11 +61,18 @@ public:
         /// --esde-home, --esde-install: discovery stands on them and the system probe is never asked.
         std::optional<std::filesystem::path> esdeHome;
         std::optional<std::filesystem::path> esdeInstall;
-        /// Called on a job's thread once it answered (AppContext::wakeCallback(): thread-safe).
+        /// Called on a job's thread once it answered, under the flow's lock, so that none comes once the destructor
+        /// returned (AppContext::wakeCallback(): thread-safe). It must not call into the flow.
         std::function<void()> wake;
+        /// How long the destructor waits for the jobs at most.
+        std::chrono::milliseconds stopBound = kStopBound;
+        /// Tests: the disk's side of a job (library::listFolders, library::previewLibrary unless set).
+        std::function<Expected<std::vector<library::ListedFolder>>(const std::filesystem::path&)> listFolders;
+        std::function<Expected<library::LibraryPreview>(const catalog::LibraryProfile&, const library::PreviewOptions&)>
+            readLibrary;
     };
 
-    /// How long the destructor waits for the jobs at most.
+    /// How long the destructor waits for the jobs by default.
     static constexpr std::chrono::milliseconds kStopBound{5000};
 
     explicit WizardFlow(Options options);
@@ -103,6 +112,8 @@ public:
     [[nodiscard]] const WizardPreviewFigures& figures() const noexcept { return m_figures; }
     /// Folders chosen in the browser.
     [[nodiscard]] std::uint64_t browsed() const noexcept { return m_browsed; }
+    /// The jobs' threads still running, stale ones included.
+    [[nodiscard]] int runningJobs() const;
 
 private:
     struct Box;
@@ -110,6 +121,8 @@ private:
     [[nodiscard]] library::LibraryDraftRequest draftRequest() const;
     void detect();
     void read();
+    /// A read running stops, its answer dropped: the user left its page.
+    void cancelRead();
     void listing(const ui::FolderListingRequest& request);
 
     Options m_options;
@@ -134,6 +147,11 @@ private:
     bool m_reading = false;
     bool m_preparing = false;
     bool m_listing = false;
+    /// The listing the browser awaits: only its answer ends the wait.
+    std::uint64_t m_listingSerial = 0;
+    /// A resumed wizard told other folders than library.json's: page 3 reads what a detection finds, never the file's.
+    bool m_detectBeforeRead = false;
+    bool m_readAfterDetect = false;
     std::shared_ptr<std::atomic<bool>> m_readCancel;
     WizardPreviewFigures m_figures;
     std::uint64_t m_browsed = 0;
