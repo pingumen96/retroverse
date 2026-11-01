@@ -721,13 +721,13 @@ TEST_CASE("app/catalog_worker: the directory's favourites and recent games come 
 
 TEST_CASE("app/catalog_worker: every blocker code the launch resolution reports has the card's sentence",
           "[app][catalog_worker]") {
-    // The codes rv_catalog's resolution, rv_esde's translation and the app report: each string literal that follows a
+    // The codes rv_catalog's resolution, rv_esde's translation, rv_library and the app report: each string literal that follows a
     // LaunchReadiness value (block(LaunchReadiness::X, "code", ...), ReadinessBlocker{LaunchReadiness::X, "code", ...})
     // or is assigned to a code (the emulator profiles' blockers: code = "profile-template").
     const fs::path root = rv::core::pathFromUtf8(RV_TEST_SOURCE_DIR) / "src";
     const std::regex blocker(R"re((?:LaunchReadiness::[A-Za-z]+,\s*|\bcode = )"([a-z][a-z0-9-]*)")re");
     std::set<std::string> codes;
-    for (const char* folder : {"catalog/src", "esde/src", "app/src"}) {
+    for (const char* folder : {"catalog/src", "esde/src", "library/src", "app/src"}) {
         for (const fs::directory_entry& file : fs::directory_iterator(root / folder)) {
             if (file.path().extension() != ".cpp") {
                 continue;
