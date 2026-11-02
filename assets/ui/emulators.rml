@@ -1,0 +1,159 @@
+<rml>
+<head>
+	<!--
+		The emulators screen (ADR-0018 §5): the menu's Emulatori and the wizard's page 5. The systems with games: readiness,
+		what launches them and why, whether it was verified, the first blocker. A system opens every ES-DE command and every
+		Retroverse profile that serves it, the ready ones first; one chosen here waits for its launch test, and only then
+		is it stored; "Salva senza provare" stores it as it is. Nothing is ever written to ES-DE's files.
+		Bound to the data model "emulators" of rv::ui::EmulatorsScreen (src/ui/src/emulators_screen.cpp); its ids are
+		rv::ui::EmulatorsModel's (src/ui/include/rv/ui/emulators_model.hpp) and FolderBrowserModel's. state: loading, listed,
+		unavailable. viewName: systems, system, choice, testing. readiness: catalog::toString(LaunchReadiness). source:
+		catalog::toString(ChoiceSource). blocker: a blocker's code, the card's list of codes in brief. verdict: '', running,
+		verified, crashed, failed, quick-exit, left-running, blocked, guard, unattended, busy, error. problem: '', refused,
+		missing, write. browserState: closed, loading, listed, failed. The hints come from the active bindings
+		(ui/hint_bar.hpp). Every string is written here (CLAUDE.md): the screen binds keys, numbers and the names ES-DE and
+		the profiles give. The focus is the model's; the input stays with the application; a click presses what a key would
+		(VR's ray too). The bundled fonts have no symbols: the arrows are plain text.
+	-->
+	<title>Emulatori</title>
+	<link type="text/rcss" href="emulators.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
+</head>
+<body data-model="emulators">
+	<div id="emulators-panel" class="panel" data-if="!browserOpen">
+		<div data-if="viewName == 'systems'" class="view">
+			<h1>Emulatori</h1>
+			<p class="note" data-if="state == 'loading'">Lettura dei sistemi...</p>
+			<p class="note" data-if="state == 'unavailable'">Nessun catalogo aperto: importa la libreria per vedere i sistemi.</p>
+			<p class="note" data-if="state == 'listed' && systems.size == 0">Il catalogo non ha giochi.</p>
+			<div id="em-list" data-if="state == 'listed'">
+				<div class="row" data-for="system : systems" data-attr-id="system.elementId" data-event-click="system(system.index)">
+					<div class="row-main">
+						<p class="title">{{ system.fullName }}</p>
+						<p class="detail">
+							<span data-if="system.choice != ''">{{ system.choice }}</span><span data-if="system.choice == ''">Comando di ES-DE</span>
+							<span class="why" data-if="system.source == 'first-command'">, il primo di ES-DE</span>
+							<span class="why" data-if="system.source == 'esde-system'">, scelto in ES-DE</span>
+							<span class="why" data-if="system.source == 'retroverse-system'">, scelto in Retroverse</span>
+							<span class="why">. Giochi: {{ system.games }}</span>
+						</p>
+						<p class="blocker" data-if="system.blocker == 'emulator-not-found'">L'emulatore non si trova su questo computer.</p>
+						<p class="blocker" data-if="system.blocker == 'core-not-found'">Manca il core dell'emulatore.</p>
+						<p class="blocker" data-if="system.blocker == 'token-unsupported'">Il comando di ES-DE usa qualcosa che Retroverse non esegue.</p>
+						<p class="blocker" data-if="system.blocker == 'find-rules-missing'">ES-DE non dice dove cercare l'emulatore.</p>
+						<p class="blocker" data-if="system.blocker == 'program-refused'">Il comando avvia un interprete di comandi, che Retroverse non esegue mai.</p>
+						<p class="blocker" data-if="system.blocker == 'choice-stale' || system.blocker == 'profile-unknown'">La scelta memorizzata non esiste più: scegline un'altra.</p>
+						<p class="blocker" data-if="system.blocker == 'source-unavailable'">La cartella dei giochi non si raggiunge.</p>
+						<p class="blocker" data-if="system.blocker == 'command-placeholder'">ES-DE non ha un emulatore per questo sistema.</p>
+						<p class="blocker" data-if="system.readiness == 'requires-configuration' && system.blocker != 'token-unsupported' && system.blocker != 'find-rules-missing' && system.blocker != 'program-refused' && system.blocker != 'choice-stale' && system.blocker != 'profile-unknown' && system.blocker != 'command-placeholder'">Il comando di ES-DE non si può usare così com'è.</p>
+					</div>
+					<p class="badge ok" data-if="system.readiness == 'ready' && system.verified">Verificato</p>
+					<p class="badge ok" data-if="system.readiness == 'ready' && !system.verified && !system.stored">Pronto</p>
+					<p class="badge warn" data-if="system.readiness == 'ready' && !system.verified && system.stored">Non verificato</p>
+					<p class="badge bad" data-if="system.readiness == 'requires-configuration'">Richiede configurazione</p>
+					<p class="badge bad" data-if="system.readiness == 'emulator-not-found'">Emulatore non trovato</p>
+					<p class="badge bad" data-if="system.readiness == 'core-not-found'">Core non trovato</p>
+					<p class="badge bad" data-if="system.readiness == 'source-unavailable' || system.readiness == 'rom-missing'">Non raggiungibile</p>
+				</div>
+			</div>
+		</div>
+
+		<div data-if="viewName == 'system'" class="view">
+			<h1>{{ current.fullName }}</h1>
+			<p class="note" data-if="verdict == 'verified'">Provato: la scelta è memorizzata e verificata.</p>
+			<p class="note" data-if="verdict != 'verified' && saved">Salvato senza provarlo: resta non verificato.</p>
+			<p class="note" data-if="verdict != 'verified' && !saved">Scegli come avviare i suoi giochi: i pronti sono in cima.</p>
+			<div id="em-options">
+				<div class="row" data-for="option : options" data-attr-id="option.elementId" data-event-click="option(option.index)">
+					<div class="row-main" data-if="!option.clear">
+						<p class="title"><span data-if="option.name != ''">{{ option.name }}</span><span data-if="option.name == ''">Comando di ES-DE</span><span class="kind" data-if="option.profile"> (profilo di Retroverse)</span><span class="kind" data-if="option.chosen"> (in uso)</span></p>
+						<p class="detail path" data-if="option.program != ''">{{ option.program }}</p>
+					</div>
+					<div class="row-main" data-if="option.clear">
+						<p class="title">Torna alla scelta di ES-DE</p>
+					</div>
+					<p class="badge ok" data-if="!option.clear && option.readiness == 'ready' && option.verified">Verificato</p>
+					<p class="badge ok" data-if="!option.clear && option.readiness == 'ready' && !option.verified">Pronto</p>
+					<p class="badge bad" data-if="option.readiness == 'requires-configuration'">Richiede configurazione</p>
+					<p class="badge bad" data-if="option.readiness == 'emulator-not-found'">Emulatore non trovato</p>
+					<p class="badge bad" data-if="option.readiness == 'core-not-found'">Core non trovato</p>
+					<p class="badge bad" data-if="option.readiness == 'source-unavailable' || option.readiness == 'rom-missing'">Non raggiungibile</p>
+				</div>
+			</div>
+		</div>
+
+		<div data-if="viewName == 'choice'" class="view">
+			<h1><span data-if="chosen.name != ''">{{ chosen.name }}</span><span data-if="chosen.name == ''">Comando di ES-DE</span></h1>
+			<p class="note">Per {{ current.fullName }}. La scelta conta dopo una prova riuscita, o se la salvi senza provare.</p>
+			<p class="detail path" data-if="chosen.program != ''">{{ chosen.program }}</p>
+			<p class="problem" data-if="verdict == 'crashed'">Il gioco si è chiuso con un errore: la scelta non è stata memorizzata.</p>
+			<p class="problem" data-if="verdict == 'failed'">L'emulatore non è partito o è uscito con un errore: la scelta non è stata memorizzata.</p>
+			<p class="problem" data-if="verdict == 'quick-exit'">L'emulatore è uscito subito: la scelta non è stata memorizzata.</p>
+			<p class="problem" data-if="verdict == 'left-running'">Il gioco è ancora aperto: la prova non conta, la scelta non è stata memorizzata.</p>
+			<p class="problem" data-if="verdict == 'blocked'">Il gioco non si può avviare così: la scelta non è stata memorizzata.</p>
+			<p class="problem" data-if="verdict == 'guard'">Questo avvio automatico non permette quel programma: nulla è partito.</p>
+			<p class="problem" data-if="verdict == 'unattended'">Un avvio automatico non fa prove di lancio senza RV_LAUNCH_ALLOWLIST: nulla è partito.</p>
+			<p class="problem" data-if="verdict == 'busy'">Un altro gioco è in corso: riprova dopo.</p>
+			<p class="problem" data-if="verdict == 'error'">La prova non si è potuta registrare.</p>
+			<p class="problem" data-if="problem == 'refused'">Quel programma non si può usare: Retroverse non avvia interpreti di comandi o programmi di avvio.</p>
+			<p class="problem" data-if="problem == 'missing'">Quel programma non esiste più.</p>
+			<p class="problem" data-if="problem == 'write'">La scelta non si è potuta memorizzare.</p>
+			<p class="note" data-if="chosen.readiness == 'emulator-not-found'">L'emulatore non si trova: scegli il suo programma, o salva per quando ci sarà.</p>
+			<p class="note" data-if="chosen.readiness == 'core-not-found'">Manca il core: la prova non si può fare.</p>
+			<p class="note" data-if="chosen.readiness == 'requires-configuration'">Questo comando non si può usare così com'è: Retroverse non lo avvia.</p>
+			<p class="note" data-if="chosen.readiness == 'ready' && samplesKnown && sampleCount == 0">Il sistema non ha giochi disponibili per una prova.</p>
+			<div id="em-buttons">
+				<div id="em-sample" class="choice" data-if="showTest" data-event-click="button('sample')">
+					<p class="choice-label">Gioco di prova</p>
+					<div class="choice-value">
+						<button class="arrow" data-event-click="sample(-1)">&lt;</button>
+						<p class="current">{{ sampleTitle }}</p>
+						<button class="arrow" data-event-click="sample(1)">&gt;</button>
+					</div>
+				</div>
+				<button id="em-test" class="action primary" data-if="showTest" data-event-click="button('test')">Prova con questo gioco</button>
+				<button id="em-program" class="action primary" data-if="showProgram" data-event-click="button('program')">Scegli il programma</button>
+				<button id="em-clear-program" class="action" data-if="showClearProgram" data-event-click="button('clear-program')">Togli il programma scelto</button>
+				<button id="em-save" class="action" data-event-click="button('save')">Salva senza provare</button>
+				<button id="em-cancel" class="action" data-event-click="button('cancel')">Annulla</button>
+			</div>
+		</div>
+
+		<div data-if="viewName == 'testing'" class="view">
+			<h1>Prova in corso</h1>
+			<p class="note">{{ sampleTitle }}: quando il gioco si chiude si torna qui col risultato.</p>
+		</div>
+
+		<div id="em-hints">
+			<span class="hint" data-if="viewName != 'testing'"><span class="kbd" hint-action="ui_activate"></span>Conferma</span>
+			<span class="hint" data-if="viewName == 'choice'"><span class="kbd" hint-action="ui_left ui_right"></span>Gioco</span>
+			<span class="hint" data-if="viewName != 'testing'"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
+		</div>
+	</div>
+
+	<div id="folder-browser" class="panel" data-if="browserOpen">
+		<h1>Scegli il programma</h1>
+		<p class="folder-path" data-if="!atDrives">{{ browserPath }}</p>
+		<p class="folder-path" data-if="atDrives">Unità disponibili</p>
+		<button id="fb-up" class="row browse" data-if="!atDrives" data-event-click="browser('up')">Cartella superiore</button>
+		<div id="fb-list" data-event-mousescroll="browser_wheel()">
+			<p class="note" data-if="browserState == 'loading'">Lettura della cartella...</p>
+			<p class="note" data-if="browserState == 'listed' && browserCount == 0">Nessun programma qui.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'missing'">Questa cartella non esiste più.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'unreachable'">Il disco non si raggiunge: controlla che sia collegato.</p>
+			<p class="problem" data-if="browserState == 'failed' && browserFailure == 'unreadable'">Questa cartella non si legge.</p>
+			<div data-for="row : rows">
+				<button class="row browse" data-class-program="row.program" data-attr-id="row.elementId" data-event-click="browser_row(row.index)">{{ row.name }}</button>
+			</div>
+		</div>
+		<p class="note" data-if="browserCount > 8">Da {{ browserFrom }} a {{ browserTo }} di {{ browserCount }}</p>
+		<div id="fb-buttons">
+			<button id="fb-cancel" class="action" data-event-click="browser('cancel')">Annulla</button>
+		</div>
+		<div id="fb-hints">
+			<span class="hint"><span class="kbd" hint-action="ui_activate"></span>Apri o scegli</span>
+			<span class="hint"><span class="kbd" hint-action="ui_back"></span>Annulla</span>
+		</div>
+	</div>
+</body>
+</rml>

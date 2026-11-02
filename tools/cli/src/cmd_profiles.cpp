@@ -1,5 +1,6 @@
-// retroverse-cli profiles (I2 step 10): the emulator profiles Retroverse knows and, for each system of the library
-// library.json records, how its games launch (ADR-0008 §8): the command or profile chosen and why (Retroverse's choice
+// retroverse-cli profiles (I2 step 10; since I7 step 4 over library::launchTable()): the emulator profiles Retroverse knows
+// and, for each system of the library library.json records, how its games launch (ADR-0008 §8): the command or profile
+// chosen and why (Retroverse's choice
 // for the system: the catalog database's from `assign`, else emulators.json's, I2 step 12; the gamelist's
 // <alternativeEmulator>, the first command), its readiness without a game, the find rule and entry that found the
 // program and the core, the blockers; then every command of the system
@@ -24,6 +25,7 @@
 #include <rv/core/arg_parser.hpp>
 #include <rv/launcher/arg_template.hpp>
 #include <rv/launcher/emulator_profile.hpp>
+#include <rv/library/launch_table.hpp>
 
 #include "commands.hpp"
 #include "launch_text.hpp"
@@ -39,51 +41,12 @@ struct ProfileReport {
     Expected<launcher::LocatedExecutable> executable;
 };
 
-/// What a system's report holds.
-struct SystemReport {
-    const catalog::SystemInfo* system = nullptr;
-    std::string alternativeEmulator;
-    std::optional<launcher::LaunchChoice> systemChoice;
-    catalog::LaunchResolution resolution;
-    struct Command {
-        std::string label;
-        std::string text;
-        catalog::LaunchTranslation translation;
-    };
-    std::vector<Command> commands;
-    struct Profile {
-        std::string id;
-        catalog::LaunchTranslation translation;
-    };
-    std::vector<Profile> profiles;
-};
+using SystemReport = library::SystemLaunchRow;
 
 struct Report {
     std::vector<ProfileReport> profiles;
     std::vector<SystemReport> systems;
 };
-
-SystemReport reportSystem(LaunchLibrary& library, const catalog::SystemInfo& system) {
-    SystemReport report;
-    report.system = &system;
-    if (const auto gamelist = readSystemGamelist(library, system)) {
-        report.alternativeEmulator = gamelist->alternativeEmulator;
-    }
-    const catalog::LaunchChoices choices = systemChoices(library, system, report.alternativeEmulator);
-    report.systemChoice = choices.system;
-    const catalog::LaunchContext context = library.context();
-    report.resolution = catalog::resolveLaunch(system, nullptr, choices, context);
-    if (const esde::SystemDefinition* definition = library.systems.find(system.name.str())) {
-        for (const esde::SystemCommand& command : definition->commands) {
-            report.commands.push_back(
-                {command.label, command.text, library.translator->translate(system.name, command.label, nullptr)});
-        }
-    }
-    for (const launcher::EmulatorProfile* profile : library.profiles.serving(system.name.str())) {
-        report.profiles.push_back({profile->id, catalog::translateProfile(system, nullptr, *profile, context)});
-    }
-    return report;
-}
 
 std::string labelText(const std::string& label) {
     return label.empty() ? std::string("(unlabelled)") : label;
@@ -135,21 +98,20 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
                                 report.systems.empty() ? "" : ":"));
     for (const SystemReport& system : report.systems) {
         const catalog::LaunchResolution& resolution = system.resolution;
-        out.writeLine(fmt::format("  {} ({})", system.system->name.str(), system.system->fullName));
+        out.writeLine(fmt::format("  {} ({})", system.system.name.str(), system.system.fullName));
         out.writeLine(fmt::format("    {:<18}{}: {} ({})", "launches with", catalog::describe(resolution.readiness()),
                                   choiceText(resolution.chosen.choice),
-                                  whyText(resolution.chosen, systemChoiceOrigin(library, system.system->name.str()))));
+                                  whyText(resolution.chosen, systemChoiceOrigin(library, system.system.name.str()))));
         for (const std::string& warning : resolution.chosen.warnings) {
             out.writeLine(fmt::format("    {:<18}{}", "warning", warning));
         }
         writeTranslationDetails(out, resolution.translation, "    ", 18, false);
         if (!system.commands.empty()) {
             out.writeLine("    commands");
-            for (const SystemReport::Command& command : system.commands) {
-                const bool chosen = resolution.chosen.choice.kind == launcher::LaunchChoiceKind::EsdeCommand &&
-                                    resolution.chosen.choice.value == command.label && !resolution.chosen.blocker;
+            for (const library::LaunchOption& command : system.commands) {
+                const bool chosen = resolution.chosen.choice == command.choice && !resolution.chosen.blocker;
                 const catalog::LaunchTranslation& translation = command.translation;
-                out.writeLine(fmt::format("      {} {:<34}{}{}", chosen ? '*' : ' ', labelText(command.label),
+                out.writeLine(fmt::format("      {} {:<34}{}{}", chosen ? '*' : ' ', labelText(command.choice.value),
                                           catalog::describe(translation.readiness()),
                                           translation.blockers.empty()
                                               ? std::string()
@@ -158,11 +120,10 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
         }
         if (!system.profiles.empty()) {
             out.writeLine("    profiles");
-            for (const SystemReport::Profile& profile : system.profiles) {
-                const bool chosen = resolution.chosen.choice.kind == launcher::LaunchChoiceKind::Profile &&
-                                    resolution.chosen.choice.value == profile.id;
+            for (const library::LaunchOption& profile : system.profiles) {
+                const bool chosen = resolution.chosen.choice == profile.choice;
                 const catalog::LaunchTranslation& translation = profile.translation;
-                out.writeLine(fmt::format("      {} {:<34}{}{}", chosen ? '*' : ' ', profile.id,
+                out.writeLine(fmt::format("      {} {:<34}{}{}", chosen ? '*' : ' ', profile.choice.value,
                                           catalog::describe(translation.readiness()),
                                           translation.blockers.empty()
                                               ? std::string()
@@ -219,26 +180,26 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
     Json systems = Json::array();
     for (const SystemReport& system : report.systems) {
         Json entry = translationJson(system.resolution.translation);
-        entry["name"] = system.system->name.str();
-        entry["fullName"] = system.system->fullName;
-        entry["romFolder"] = system.system->romFolder.empty() ? Json(nullptr) : Json(pathText(system.system->romFolder));
-        entry["availability"] = std::string(catalog::toString(system.system->availability));
+        entry["name"] = system.system.name.str();
+        entry["fullName"] = system.system.fullName;
+        entry["romFolder"] = system.system.romFolder.empty() ? Json(nullptr) : Json(pathText(system.system.romFolder));
+        entry["availability"] = std::string(catalog::toString(system.system.availability));
         entry["alternativeEmulator"] =
             system.alternativeEmulator.empty() ? Json(nullptr) : Json(system.alternativeEmulator);
         entry["systemChoice"] = system.systemChoice ? choiceJson(*system.systemChoice) : Json(nullptr);
-        entry["chosen"] = chosenJson(system.resolution.chosen, systemChoiceOrigin(library, system.system->name.str()));
+        entry["chosen"] = chosenJson(system.resolution.chosen, systemChoiceOrigin(library, system.system.name.str()));
         Json commands = Json::array();
-        for (const SystemReport::Command& command : system.commands) {
+        for (const library::LaunchOption& command : system.commands) {
             Json item = translationJson(command.translation);
-            item["label"] = command.label;
+            item["label"] = command.choice.value;
             item["command"] = command.text;
             commands.push_back(std::move(item));
         }
         entry["commands"] = std::move(commands);
         Json serving = Json::array();
-        for (const SystemReport::Profile& profile : system.profiles) {
+        for (const library::LaunchOption& profile : system.profiles) {
             Json item = translationJson(profile.translation);
-            item["id"] = profile.id;
+            item["id"] = profile.choice.value;
             serving.push_back(std::move(item));
         }
         entry["profiles"] = std::move(serving);
@@ -295,11 +256,7 @@ ExitCode runProfiles(CommandContext& context) {
         report.profiles.push_back({&profile, launcher::locateExecutable(profile.executable, library->probe,
                                                                         environment)});
     }
-    for (const catalog::SystemInfo& system : library->systemInfos) {
-        if (!only || system.name.str() == *only) {
-            report.systems.push_back(reportSystem(*library, system));
-        }
-    }
+    report.systems = library::launchTable(*library, only ? std::optional<std::string_view>(*only) : std::nullopt);
     spdlog::info("profiles: {} profile(s), {} system(s)", report.profiles.size(), report.systems.size());
 
     Output& out = *output ? **output : context.out;

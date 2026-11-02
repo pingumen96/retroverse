@@ -61,6 +61,9 @@ enum class Sql : std::size_t {
     SelectSystemChoice,
     UpsertSystemChoice,
     DeleteSystemChoice,
+    SelectProgramChoices,
+    UpsertProgramChoice,
+    DeleteProgramChoice,
     UpsertVerification,
     SelectVerifications,
     ResolveGame,
@@ -115,6 +118,13 @@ std::string_view sqlOf(Sql which) noexcept {
                "chosen_at = excluded.chosen_at";
     case Sql::DeleteSystemChoice:
         return "DELETE FROM rv_launch_system_choices WHERE library = ?1 AND system = ?2";
+    case Sql::SelectProgramChoices:
+        return "SELECT emulator, program, chosen_at FROM rv_launch_program_choices WHERE library = ?1 ORDER BY emulator";
+    case Sql::UpsertProgramChoice:
+        return "INSERT INTO rv_launch_program_choices (library, emulator, program, chosen_at) VALUES (?1, ?2, ?3, ?4) "
+               "ON CONFLICT (library, emulator) DO UPDATE SET program = excluded.program, chosen_at = excluded.chosen_at";
+    case Sql::DeleteProgramChoice:
+        return "DELETE FROM rv_launch_program_choices WHERE library = ?1 AND emulator = ?2";
     case Sql::UpsertVerification:
         return "INSERT INTO rv_launch_verifications (library, system, kind, value, game, session, test, program, "
                "verified_at) VALUES (?1, ?2, ?3, ?4, " RV_RESOLVED_GAME("?5") ", ?6, ?7, ?8, ?9) "
@@ -863,6 +873,79 @@ Expected<bool> SessionStore::clearSystemChoice(const LibraryId& library, const S
             return propagate(remove.error());
         }
         (*remove)->bindText(1, library.str()).bindText(2, system.str());
+        if (auto removed = (*remove)->run(); !removed) {
+            return propagate(removed.error());
+        }
+        return m_state->connection.changes() > 0;
+    });
+}
+
+Expected<std::vector<ProgramChoiceRow>> SessionStore::programChoices(const LibraryId& library) {
+    auto select = m_state->statement(Sql::SelectProgramChoices);
+    if (!select) {
+        return propagate(select.error());
+    }
+    Statement& row = **select;
+    const ScopedReset reset(row);
+    row.bindText(1, library.str());
+    std::vector<ProgramChoiceRow> rows;
+    for (;;) {
+        auto stepped = row.step();
+        if (!stepped) {
+            return propagate(stepped.error());
+        }
+        if (!*stepped) {
+            break;
+        }
+        auto program = core::tryPathFromUtf8(row.columnText(1));
+        auto chosenAt = readTime(row.columnText(2), "rv_launch_program_choices.chosen_at");
+        if (!program || !chosenAt) {
+            return unreadable("a program choice it cannot read", std::string(row.columnText(0)));
+        }
+        rows.push_back(ProgramChoiceRow{std::string(row.columnText(0)), std::move(*program), *chosenAt});
+    }
+    return rows;
+}
+
+Status SessionStore::setProgramChoice(const LibraryId& library, std::string_view emulator,
+                                      const std::filesystem::path& program,
+                                      std::chrono::system_clock::time_point chosenAt, const BusyRetry& retry) {
+    const auto text = core::tryPathToUtf8(program);
+    if (emulator.empty() || !text || text->empty()) {
+        return makeError(ErrorCode::InvalidArgument, "a program choice names no emulator or no program");
+    }
+    if (!core::isValidUtf8(emulator) || emulator.find('\0') != std::string_view::npos) {
+        return makeError(ErrorCode::InvalidArgument, "a program choice that is not UTF-8 text");
+    }
+    return m_state->inTransaction("an emulator's program", retry, [&]() -> Status {
+        auto upsert = m_state->statement(Sql::UpsertProgramChoice);
+        if (!upsert) {
+            return propagate(upsert.error());
+        }
+        Statement& statement = **upsert;
+        statement.bindText(1, library.str())
+            .bindText(2, emulator)
+            .bindText(3, *text)
+            .bindText(4, timeText(chosenAt));
+        if (auto written = statement.run(); !written) {
+            if (isForeignKeyFailure(written.error())) {
+                return makeError(ErrorCode::InvalidArgument,
+                                 fmt::format("the catalog holds no library '{}' (an import records it)", library.str()));
+            }
+            return written;
+        }
+        return ok();
+    });
+}
+
+Expected<bool> SessionStore::clearProgramChoice(const LibraryId& library, std::string_view emulator,
+                                                const BusyRetry& retry) {
+    return m_state->inTransaction("an emulator's program removed", retry, [&]() -> Expected<bool> {
+        auto remove = m_state->statement(Sql::DeleteProgramChoice);
+        if (!remove) {
+            return propagate(remove.error());
+        }
+        (*remove)->bindText(1, library.str()).bindText(2, emulator);
         if (auto removed = (*remove)->run(); !removed) {
             return propagate(removed.error());
         }

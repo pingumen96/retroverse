@@ -1,0 +1,296 @@
+/*
+	The emulators screen (emulators.rml), in the directory's look (directory.rcss: palette of style 3, UI neutral #171B22 in
+	a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93, the warm red
+	#C8645A of the pad's B). A column: the title, the list (it scrolls when it does not fit), the hints, never clipped; the
+	folder browser the wizard's. Sizes in dp. No colour is animated (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+p, h1, span {
+	focus: none;
+}
+
+h1 {
+	font-size: 34dp;
+	font-weight: bold;
+	margin-bottom: 10dp;
+}
+
+p {
+	margin-bottom: 8dp;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	left: 12%;
+	width: 76%;
+	top: 6%;
+	height: 88%;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+	padding: 22dp 28dp;
+}
+
+.view {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	min-height: 0dp;
+}
+
+#em-list, #em-options, #fb-list {
+	flex: 1 1 auto;
+	min-height: 0dp;
+	overflow-y: auto;
+	padding-right: 10dp;
+}
+
+#em-list scrollbarvertical, #em-options scrollbarvertical, #fb-list scrollbarvertical {
+	width: 8dp;
+}
+
+#em-list scrollbarvertical slidertrack, #em-options scrollbarvertical slidertrack, #fb-list scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#em-list scrollbarvertical sliderbar, #em-options scrollbarvertical sliderbar, #fb-list scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+}
+
+.problem {
+	font-size: 21dp;
+	color: #F2A79E;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 5dp 12dp;
+	margin-bottom: 5dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.row:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.row-main {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+}
+
+.title {
+	margin-bottom: 0dp;
+}
+
+.kind {
+	font-size: 18dp;
+	color: #FFC88ACC;
+}
+
+.detail {
+	margin-bottom: 0dp;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.path {
+	word-break: break-word;
+}
+
+.blocker {
+	margin-bottom: 0dp;
+	font-size: 18dp;
+	color: #F2A79E;
+}
+
+.badge {
+	flex: 0 0 auto;
+	width: 170dp;
+	margin: 0dp 0dp 0dp 12dp;
+	font-size: 18dp;
+	text-align: center;
+}
+
+.badge.ok { color: #8FD0B3; }
+.badge.warn { color: #FFC88A; }
+.badge.bad { color: #F2A79E; }
+
+#em-buttons {
+	flex: 1 1 auto;
+	min-height: 0dp;
+	overflow-y: auto;
+	padding-right: 10dp;
+}
+
+.choice {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 5dp 12dp;
+	margin-bottom: 6dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.choice:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.choice-label {
+	flex: 0 0 auto;
+	margin: 0dp 14dp 0dp 0dp;
+}
+
+.choice-value {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	flex: 1 1 0dp;
+	min-width: 0dp;
+}
+
+.current {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	text-align: center;
+	margin-bottom: 0dp;
+}
+
+.arrow {
+	display: block;
+	flex: 0 0 auto;
+	width: 34dp;
+	height: 34dp;
+	line-height: 34dp;
+	text-align: center;
+	border-radius: 8dp;
+	background-color: #FFFFFF14;
+}
+
+.action {
+	display: block;
+	padding: 6dp 22dp;
+	margin-bottom: 6dp;
+	font-size: 22dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.action.primary { background-color: #6EAF9340; }
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.folder-path {
+	font-size: 18dp;
+	color: #F4EFE6B3;
+	word-break: break-word;
+}
+
+.row.browse {
+	display: block;
+	padding: 3dp 12dp;
+	margin-bottom: 3dp;
+	font-size: 21dp;
+	border-radius: 10dp;
+	word-break: break-word;
+}
+
+.row.browse.program {
+	color: #8FD0B3;
+}
+
+#fb-buttons {
+	flex: 0 0 auto;
+	margin-top: 8dp;
+}
+
+#em-hints, #fb-hints {
+	flex: 0 0 auto;
+	margin-top: 8dp;
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+.hint {
+	display: inline-block;
+	margin-right: 22dp;
+	white-space: nowrap;
+}
+
+.kbd {
+	display: inline-block;
+	width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	border-radius: 13dp;
+	margin-right: 7dp;
+	text-align: center;
+	font-size: 16dp;
+	font-weight: bold;
+	color: #171B22;
+}
+
+/* Compact: views under 760 dp of the display's density tall, as the directory's. */
+@media (theme: compact) {
+	body { font-size: 20dp; }
+	h1 { font-size: 26dp; margin-bottom: 6dp; }
+	p { margin-bottom: 5dp; }
+	.panel { left: 6%; width: 88%; top: 3%; height: 94%; padding: 14dp 20dp; }
+	.note { font-size: 17dp; }
+	.problem { font-size: 18dp; }
+	.row { padding: 3dp 10dp; margin-bottom: 3dp; }
+	.detail, .blocker, .folder-path, .kind { font-size: 16dp; }
+	.badge { width: 130dp; font-size: 16dp; margin-left: 8dp; }
+	.choice { padding: 3dp 10dp; margin-bottom: 4dp; }
+	.arrow { width: 30dp; height: 30dp; line-height: 30dp; }
+	.action { padding: 3dp 18dp; margin-bottom: 4dp; font-size: 19dp; }
+	.row.browse { font-size: 18dp; padding: 2dp 10dp; }
+	#em-hints, #fb-hints { font-size: 16dp; margin-top: 5dp; }
+	.kbd { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+}

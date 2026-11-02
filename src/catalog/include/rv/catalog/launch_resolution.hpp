@@ -97,7 +97,8 @@ struct ReadinessBlocker {
 struct FoundLocation {
     std::filesystem::path path;
     /// The rule: an ES-DE find rule type ("winregistrypath", "winregistryvalue", "systempath", "staticpath",
-    /// "corepath"), "command" for an absolute path the command names itself, or a profile's rule ("App Paths", "path").
+    /// "corepath"), "command" for an absolute path the command names itself, a profile's rule ("App Paths", "path"), or
+    /// "retroverse" for a program the user chose for the emulator (ADR-0018 §5).
     std::string rule;
     /// The rule's entry as written ("retroarch.exe", "%EMUPATH%\cores", the profile's path), or the command's element.
     std::string entry;
@@ -117,6 +118,9 @@ struct LaunchTranslation {
     std::optional<launcher::LaunchRequest> request;
     /// Why it cannot start, in the order they were found; empty when ready.
     std::vector<ReadinessBlocker> blockers;
+    /// The %EMULATOR_X% name the command's program is, whether found or not; empty for a literal path or a profile:
+    /// what a program can be chosen for (ADR-0018 §5).
+    std::string emulator;
     /// The program, when found.
     std::optional<FoundLocation> program;
     /// The core, when the command names one (%CORE_X%) and it was found.

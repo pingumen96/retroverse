@@ -6,6 +6,11 @@
 //
 //   assign <system> [<label|profile>] [--command <label> | --profile <id> | --clear]
 //   assign --game <id> [<label|profile>] [--command <label> | --profile <id> | --clear]
+//   assign --emulator <name> [--program <exe> | --clear]
+//
+// --emulator (I7 step 4, ADR-0018 §5) names the X of a command's %EMULATOR_X%: the program stored for it
+// (rv_launch_program_choices) comes before its find rules at every translation. A program must exist and be one Retroverse
+// starts, by its name and the file it opens (esde::checkProgramChoice()). Without --program it shows what is stored.
 //
 // A value is checked against what exists: an ES-DE command label of the system (compared exactly, as ES-DE compares
 // labels) or the id of a profile serving it (emulators.json, the shipped ones and the user's); a value that is both is
@@ -32,6 +37,8 @@
 #include <rv/catalog_db/session_store.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/arg_parser.hpp>
+#include <rv/core/utf8.hpp>
+#include <rv/esde/launch_translation.hpp>
 
 #include "catalog_text.hpp"
 #include "commands.hpp"
@@ -59,6 +66,64 @@ std::string_view toString(Action action) noexcept {
         return "clear";
     }
     return "unknown";
+}
+
+/// `assign --emulator`: the program of an emulator, shown, stored or removed.
+ExitCode runEmulator(CommandContext& context, const std::string& emulator, const std::optional<std::string>& program,
+                     bool clear, bool json, std::optional<Output>& output) {
+    ExitCode failure = ExitCode::Ok;
+    const auto library = loadLaunchLibrary(context, kName, failure);
+    if (!library) {
+        return failure;
+    }
+    auto catalog = openLaunchCatalog(context.paths);
+    if (!catalog) {
+        return catalogFailure(context, catalog.error());
+    }
+    catalog_db::SessionStore& store = *catalog->store;
+    if (program) {
+        const auto path = core::tryPathFromUtf8(*program);
+        if (!path) {
+            return usageError(context, "--program: not a path");
+        }
+        if (const Status allowed = esde::checkProgramChoice(*path); !allowed) {
+            context.err.writeLine(fmt::format("{}: --program: {}", kName, allowed.error().toString()));
+            return ExitCode::UsageError;
+        }
+        const Status stored = store.setProgramChoice(library->profile.id, emulator, *path,
+                                                     std::chrono::system_clock::now(), catalog_db::kPatientRetry);
+        if (!stored) {
+            context.err.writeLine(fmt::format("{}: the program cannot be stored: {}", kName, stored.error().toString()));
+            return ExitCode::RuntimeFailure;
+        }
+        spdlog::info("assign: the emulator {} now runs {}", emulator, *program);
+    } else if (clear) {
+        auto cleared = store.clearProgramChoice(library->profile.id, emulator, catalog_db::kPatientRetry);
+        if (!cleared) {
+            context.err.writeLine(fmt::format("{}: the program cannot be removed: {}", kName,
+                                              cleared.error().toString()));
+            return ExitCode::RuntimeFailure;
+        }
+    }
+    auto rows = store.programChoices(library->profile.id);
+    if (!rows) {
+        return catalogFailure(context, rows.error());
+    }
+    const auto row = std::find_if(rows->begin(), rows->end(),
+                                  [&](const catalog_db::ProgramChoiceRow& choice) { return choice.emulator == emulator; });
+    const std::optional<std::string> stored =
+        row != rows->end() ? std::optional<std::string>(pathText(row->program)) : std::nullopt;
+    Output& out = output ? *output : context.out;
+    if (json) {
+        out.write(jsonText(Json{{"library", library->profile.id.str()},
+                                {"emulator", emulator},
+                                {"program", stored ? Json(*stored) : Json(nullptr)}}));
+    } else {
+        out.writeLine(fmt::format("{:<20}{}", "Emulator", emulator));
+        out.writeLine(fmt::format("{:<20}{}", "Program", stored.value_or("none: its find rules decide")));
+        out.writeLine("Stored in the catalog database; the user's files are never written.");
+    }
+    return finishOutput(context, output, kName) ? ExitCode::Ok : ExitCode::RuntimeFailure;
 }
 
 /// What the command did.
@@ -236,6 +301,8 @@ ExitCode runAssign(CommandContext& context) {
     parser.positional("target", "The system (an ES-DE system name); with --game, the value.")
         .positional("value", "An ES-DE command label of the system, or the id of a profile serving it.")
         .option("game", "id", "Choose for this game of the catalog (its GameId) instead of its whole system.")
+        .option("emulator", "name", "The X of a command's %EMULATOR_X%: show, store (--program) or --clear its program.")
+        .option("program", "exe", "With --emulator: the program, an absolute path, used before its find rules.")
         .option("command", "label", "The value is this ES-DE command label.")
         .option("profile", "id", "The value is this emulator profile id.")
         .flag("clear", "Remove the choice.")
@@ -254,6 +321,21 @@ ExitCode runAssign(CommandContext& context) {
     auto output = outputFileOption(*args);
     if (!output) {
         return usage(output.error().toString());
+    }
+    if (args->has("emulator")) {
+        const std::string emulator = args->value("emulator").value_or("");
+        if (emulator.empty() || args->has("game") || args->has("command") || args->has("profile") ||
+            args->positional("target")) {
+            return usage("--emulator <name> takes --program <exe> or --clear only");
+        }
+        if (args->has("program") && args->has("clear")) {
+            return usage("give one of --program or --clear");
+        }
+        return runEmulator(context, emulator, args->has("program") ? args->value("program") : std::nullopt,
+                           args->has("clear"), args->has("json"), *output);
+    }
+    if (args->has("program")) {
+        return usage("--program needs --emulator <name>");
     }
     const std::optional<std::string> first = args->positional("target");
     const std::optional<std::string> second = args->positional("value");

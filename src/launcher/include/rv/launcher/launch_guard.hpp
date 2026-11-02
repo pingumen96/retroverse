@@ -114,4 +114,13 @@ private:
 /// RV_LAUNCH_ALLOWLIST): what a runner returns unchanged when the guard refused the request.
 [[nodiscard]] bool isGuardRefusal(const Error& error) noexcept;
 
+/// ADR-0018 §6: a launch test is a real launch, so it fails closed: an unattended run (`frameLimited`, or `background`,
+/// RV_LAUNCH_BACKGROUND set and neither empty nor "0") refuses one while RV_LAUNCH_ALLOWLIST is not set (empty counts as
+/// set: the guard then allows nothing). Asked before anything is resolved; the guard then applies as to every launch.
+[[nodiscard]] constexpr bool launchTestAllowed(bool frameLimited, bool background, bool allowListSet) noexcept {
+    return allowListSet || !(frameLimited || background);
+}
+/// launchTestAllowed() of this process now. `frameLimited`: an app run with a frame limit; the CLI passes false.
+[[nodiscard]] bool launchTestAllowed(bool frameLimited);
+
 } // namespace rv::launcher

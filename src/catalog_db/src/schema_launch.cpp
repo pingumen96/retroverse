@@ -116,8 +116,23 @@ CREATE TABLE rv_launch_verifications (
 CREATE INDEX rv_launch_verifications_game ON rv_launch_verifications (game);
 )sql";
 
-constexpr std::array<AreaStep, 1> kSteps{{
+// I7 step 4 (ADR-0018 §5): the program Retroverse's user chose for an emulator of ES-DE's commands that finds none, per
+// library and %EMULATOR_X% name (as written in the commands, compared exactly): esde::findEmulator() looks here before
+// the find rules. The path is refused by launcher::isRefusedProgram() at every translation, like a program a find rule
+// finds. A state table: `db rebuild-index` never touches it, and nothing is written into ES-DE's files.
+constexpr std::string_view kVersion2 = R"sql(
+CREATE TABLE rv_launch_program_choices (
+    library   TEXT NOT NULL REFERENCES rv_libraries (id),
+    emulator  TEXT NOT NULL CHECK (emulator <> ''),
+    program   TEXT NOT NULL CHECK (program <> ''),
+    chosen_at TEXT NOT NULL,
+    PRIMARY KEY (library, emulator)
+) WITHOUT ROWID, STRICT;
+)sql";
+
+constexpr std::array<AreaStep, 2> kSteps{{
     {1, kVersion1, nullptr, false},
+    {2, kVersion2, nullptr, false},
 }};
 
 } // namespace

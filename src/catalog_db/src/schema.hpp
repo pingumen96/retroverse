@@ -10,7 +10,8 @@
 //            idx_disc_references (step 11a), idx_import_issues
 //   search   (schema_search.cpp, step 9): the FTS5 index over idx_games and what the queries need
 //   launch   (schema_launch.cpp, step 12): play sessions, per-game and per-system launch choices, launch
-//            verifications: rv_play_sessions, rv_launch_game_choices, rv_launch_system_choices, rv_launch_verifications
+//            verifications: rv_play_sessions, rv_launch_game_choices, rv_launch_system_choices, rv_launch_verifications;
+//            since I7 step 4 (version 2) the programs chosen for emulators: rv_launch_program_choices
 // The program's migration to version v runs every area's steps of version v, in the order above, in one transaction
 // (programMigrations(), migrator.cpp): an area may refer to the tables of the areas before it, never to those after it.
 // Rules every area keeps: STRICT tables; foreign keys point from idx_* to rv_* (and among rv_*), never into idx_*, and
