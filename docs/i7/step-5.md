@@ -13,6 +13,8 @@ Roadmap row: I7 step 5. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   RmlUi's focus; the selected key is a class, not the focus. Delete is RmlUi's Backspace (`CaretKey::Backspace`), so the
   field's own text stays the only copy. Confirm is Enter in the field (`linebreak`): on to the results.
 - **The way in:** Activate on the field with the pad as the device used last; in a headset the ray's click on the field.
+- **The panel stays on top by hand** (`KeyboardScreen::raise()`): RmlUi raises the document of whatever takes the focus, so a
+  focus given back to the field put the catalog's body over the keys, and it took every click.
 - **Back** stays the application's: `catalogBack()` closes the keyboard first, so `BackAction` did not change.
 - **The report's** `keyboard`.
 
