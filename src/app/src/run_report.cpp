@@ -1054,6 +1054,77 @@ MenuRecord readMenu(FieldReader& fields) {
     return menu;
 }
 
+Json emulatorsToJson(const EmulatorsRecord& emulators) {
+    Json json{{"opened", emulators.opened},
+              {"open", emulators.open},
+              {"state", emulators.state},
+              {"view", emulators.view},
+              {"verdict", emulators.verdict},
+              {"problem", emulators.problem},
+              {"tests", emulators.tests},
+              {"testsRefused", emulators.testsRefused},
+              {"testsStored", emulators.testsStored},
+              {"tableMs", emulators.tableMs},
+              {"sample", emulators.sample},
+              {"textCut", emulators.textCut},
+              {"browserTextCut", emulators.browserTextCut},
+              {"eventsDropped", emulators.eventsDropped}};
+    Json systems = Json::array();
+    for (const EmulatorsSystemRecord& system : emulators.systems) {
+        systems.push_back(Json{{"name", system.name},
+                               {"games", system.games},
+                               {"readiness", system.readiness},
+                               {"blocker", system.blocker},
+                               {"source", system.source},
+                               {"choice", system.choice},
+                               {"verified", system.verified},
+                               {"stored", system.stored},
+                               {"options", system.options}});
+    }
+    json["systems"] = std::move(systems);
+    Json events = Json::array();
+    for (const EmulatorsEventRecord& event : emulators.events) {
+        events.push_back(Json{{"frame", event.frame}, {"event", event.event}, {"detail", event.detail}});
+    }
+    json["events"] = std::move(events);
+    return json;
+}
+
+EmulatorsRecord readEmulators(FieldReader& fields) {
+    EmulatorsRecord emulators;
+    emulators.opened = fields.count("opened");
+    emulators.open = fields.boolean("open");
+    emulators.state = fields.string("state");
+    emulators.view = fields.string("view");
+    emulators.verdict = fields.string("verdict");
+    emulators.problem = fields.string("problem");
+    emulators.tests = fields.count("tests");
+    emulators.testsRefused = fields.count("testsRefused");
+    emulators.testsStored = fields.count("testsStored");
+    emulators.tableMs = fields.number("tableMs");
+    emulators.sample = fields.string("sample");
+    emulators.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    emulators.browserTextCut = static_cast<std::uint32_t>(fields.count("browserTextCut"));
+    emulators.eventsDropped = fields.count("eventsDropped");
+    for (FieldReader& entry : fields.objectArray("systems")) {
+        EmulatorsSystemRecord system;
+        system.name = entry.string("name");
+        system.games = entry.count("games");
+        system.readiness = entry.string("readiness");
+        system.blocker = entry.string("blocker");
+        system.source = entry.string("source");
+        system.choice = entry.string("choice");
+        system.verified = entry.boolean("verified");
+        system.stored = entry.boolean("stored");
+        system.options = entry.stringArray("options");
+        emulators.systems.push_back(std::move(system));
+    }
+    for (FieldReader& entry : fields.objectArray("events")) {
+        emulators.events.push_back(EmulatorsEventRecord{entry.count("frame"), entry.string("event"), entry.string("detail")});
+    }
+    return emulators;
+}
+
 Json wizardToJson(const WizardRecord& wizard) {
     Json json{{"resumed", wizard.resumed},
               {"open", wizard.open},
@@ -3353,6 +3424,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.wizard) {
         json["wizard"] = wizardToJson(*report.wizard);
     }
+    if (report.emulators) {
+        json["emulators"] = emulatorsToJson(*report.emulators);
+    }
     if (report.menu) {
         json["menu"] = menuToJson(*report.menu);
     }
@@ -3531,6 +3605,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto wizard = fields.optionalObject("wizard")) {
         report.wizard = readWizard(*wizard);
+    }
+    if (auto emulators = fields.optionalObject("emulators")) {
+        report.emulators = readEmulators(*emulators);
     }
     if (auto menu = fields.optionalObject("menu")) {
         report.menu = readMenu(*menu);

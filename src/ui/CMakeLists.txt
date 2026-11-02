@@ -7,7 +7,8 @@
 #                (the building's floors and rooms, the favourites and recent games, their card); since I4b step 6 the
 #                impact preview of a regeneration or an undo (RegeneratePreviewModel); since I7 step 1 the menu and the
 #                settings screen (SystemMenuModel, SettingsModel); since I7 step 2 the wizard and the folder browser
-#                (WizardModel, FolderBrowserModel); since I7 step 5 the on-screen keyboard (KeyboardModel).
+#                (WizardModel, FolderBrowserModel); since I7 step 4 the emulators screen (EmulatorsModel); since I7 step 5
+#                the on-screen keyboard (KeyboardModel).
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
 #                catalog screen (QuickCatalogScreen, a fixed pool of rows), since I3 (skeletons) the world's card,
@@ -22,6 +23,7 @@
 add_library(rv_ui_model STATIC
     src/catalog_source.cpp
     src/directory_model.cpp
+    src/emulators_model.cpp
     src/filter_count_log.cpp
     src/focus_history.cpp
     src/folder_browser_model.cpp
@@ -52,6 +54,7 @@ add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/rmlui_backends" "${CMAKE_CUR
 add_library(rv_ui STATIC
     src/controller_notice_screen.cpp
     src/directory_screen.cpp
+    src/emulators_screen.cpp
     src/game_card_screen.cpp
     src/game_info_screen.cpp
     src/hint_bar_view.cpp

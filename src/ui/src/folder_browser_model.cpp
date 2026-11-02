@@ -34,6 +34,12 @@ std::string_view toString(FolderBrowserFailure failure) noexcept {
 }
 
 void FolderBrowserModel::open(const std::optional<std::filesystem::path>& start) {
+    m_programs = false;
+    go(start.value_or(std::filesystem::path{}));
+}
+
+void FolderBrowserModel::openForProgram(const std::optional<std::filesystem::path>& start) {
+    m_programs = true;
     go(start.value_or(std::filesystem::path{}));
 }
 
@@ -72,7 +78,7 @@ std::optional<FolderListingRequest> FolderBrowserModel::takeRequest() noexcept {
     if (!std::exchange(m_requestPending, false) || !m_awaited) {
         return std::nullopt;
     }
-    return FolderListingRequest{*m_awaited, m_folder};
+    return FolderListingRequest{*m_awaited, m_folder, m_programs};
 }
 
 void FolderBrowserModel::setListing(std::uint64_t serial, std::vector<FolderRow> rows) {
@@ -151,6 +157,11 @@ std::optional<FolderBrowserResult> FolderBrowserModel::press() {
         return std::nullopt;
     case FolderBrowserFocus::Row:
         if (m_selected < m_rows.size()) {
+            if (m_rows[m_selected].program) {
+                FolderBrowserResult result{m_rows[m_selected].path};
+                close();
+                return result;
+            }
             go(m_rows[m_selected].path);
         }
         return std::nullopt;

@@ -26,6 +26,8 @@ TEST_CASE("ui/system_menu: opens on Riprendi; the focus stops at the ends", "[ui
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Settings);
     static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.focused() == SystemMenuButton::Emulators);
+    static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Quit);
 }
@@ -48,9 +50,20 @@ TEST_CASE("ui/system_menu: Impostazioni asks for its screen and stays open under
     CHECK(menu.isOpen());
 }
 
+TEST_CASE("ui/system_menu: Emulatori asks for its screen and stays open under it", "[ui][system_menu]") {
+    SystemMenuModel menu;
+    menu.open();
+    static_cast<void>(menu.apply(UiCommand::Down));
+    static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.apply(UiCommand::Activate) == SystemMenuCommand::OpenEmulators);
+    CHECK(menu.isOpen());
+    CHECK(menu.click(SystemMenuButton::Emulators) == SystemMenuCommand::OpenEmulators);
+}
+
 TEST_CASE("ui/system_menu: Esci asks once, Annulla focused", "[ui][system_menu]") {
     SystemMenuModel menu;
     menu.open();
+    static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK_FALSE(menu.apply(UiCommand::Activate).has_value());
@@ -91,7 +104,7 @@ TEST_CASE("ui/system_menu: a click presses a button shown, as its key does", "[u
 }
 
 TEST_CASE("ui/system_menu: names", "[ui][system_menu]") {
-    for (const SystemMenuButton button : {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Quit,
+    for (const SystemMenuButton button : {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Emulators, SystemMenuButton::Quit,
                                           SystemMenuButton::ConfirmQuit, SystemMenuButton::Stay}) {
         CHECK(rv::ui::systemMenuButtonFromName(rv::ui::toString(button)) == button);
         CHECK_FALSE(rv::ui::elementIdOf(button).empty());

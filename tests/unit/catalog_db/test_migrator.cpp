@@ -119,13 +119,16 @@ std::string metaValue(Connection& connection, std::string_view key) {
 
 } // namespace
 
-TEST_CASE("catalog_db/migrator: a fresh database migrates to schema v1, the identity and index areas, without a backup",
+TEST_CASE("catalog_db/migrator: a fresh database migrates to the program's schema, the identity and index areas first, "
+          "without a backup",
           "[catalog_db]") {
-    CHECK(programSchemaVersion() == 1);
+    CHECK(programSchemaVersion() == 2);
     const auto migrations = programMigrations();
-    REQUIRE(migrations.size() == 1);
+    REQUIRE(migrations.size() == 2);
     CHECK(migrations[0].version == 1);
     CHECK(migrations[0].name.starts_with("schema v1: identity, index")); // later areas add their names
+    CHECK(migrations[1].version == 2);
+    CHECK(migrations[1].name == "schema v2: launch"); // I7 step 4: the programs chosen for emulators
     CHECK_FALSE(migrations[0].rebuildsTables);
 
     const rv::test::TempDir dir("rv-migrate-fresh");

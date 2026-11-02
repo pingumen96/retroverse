@@ -666,3 +666,16 @@ TEST_CASE("launcher/launch_guard: the runner applies it before anything starts",
         CHECK(session.state() == rv::launcher::SessionState::Returned);
     }
 }
+
+TEST_CASE("launcher/guard: a launch test fails closed in an unattended run", "[launcher][launch_guard]") {
+    using rv::launcher::launchTestAllowed;
+    // frame-limited, RV_LAUNCH_BACKGROUND, RV_LAUNCH_ALLOWLIST set
+    STATIC_REQUIRE(launchTestAllowed(false, false, false)); // a person at the machine
+    STATIC_REQUIRE(launchTestAllowed(false, false, true));
+    STATIC_REQUIRE_FALSE(launchTestAllowed(true, false, false));
+    STATIC_REQUIRE_FALSE(launchTestAllowed(false, true, false));
+    STATIC_REQUIRE_FALSE(launchTestAllowed(true, true, false));
+    STATIC_REQUIRE(launchTestAllowed(true, false, true));
+    STATIC_REQUIRE(launchTestAllowed(false, true, true));
+    STATIC_REQUIRE(launchTestAllowed(true, true, true));
+}

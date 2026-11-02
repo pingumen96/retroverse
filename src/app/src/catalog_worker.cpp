@@ -23,12 +23,14 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/esde/launch_translation.hpp>
 #include <rv/esde/library_source.hpp>
 #include <rv/esde/media_resolver.hpp>
 #include <rv/esde/settings.hpp>
 #include <rv/esde/systems.hpp>
 #include <rv/launcher/launch_guard.hpp>
 #include <rv/library/launch_library.hpp>
+#include <rv/library/launch_table.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/ui/ui_assets.hpp>
 
@@ -54,6 +56,20 @@ struct ReadinessJob {
 struct ResolveJob {
     std::uint64_t token = 0;
     catalog::GameId game;
+    std::optional<LaunchTestChoice> test;
+};
+/// The emulators screen (I7 step 4).
+struct TableJob {
+    std::uint64_t serial = 0;
+};
+struct SamplesJob {
+    std::uint64_t serial = 0;
+    catalog::SystemName system;
+    std::size_t limit = 0;
+};
+struct ChoiceJob {
+    std::uint64_t serial = 0;
+    ChoiceChange change;
 };
 enum class SessionStep : std::uint8_t { Begin, Finish };
 struct SessionJob {
@@ -70,7 +86,8 @@ struct RecentJob {
     std::uint64_t serial = 0;
     std::size_t limit = 0;
 };
-using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob>;
+using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob, TableJob, SamplesJob,
+                         ChoiceJob>;
 
 /// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
 /// open, only reads (lists, the favourites and recent games on the worker's reader, readiness), as launches and session
@@ -80,7 +97,11 @@ using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, Refresh
         return false;
     }
     return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job) ||
-           std::holds_alternative<RecentJob>(job);
+           std::holds_alternative<RecentJob>(job) || std::holds_alternative<SamplesJob>(job);
+}
+
+[[nodiscard]] Status statusOf(const Expected<bool>& removed) {
+    return removed ? ok() : Status(propagate(removed.error()));
 }
 
 /// The launch state of a resolution, as the card shows it.
@@ -437,18 +458,18 @@ private:
         }
         if (auto verifications = m_store->verifications(m_profile.id)) {
             for (const catalog_db::LaunchVerification& verification : *verifications) {
-                m_verified.insert(verificationKey(verification.system, verification.choice));
+                m_verified[verificationKey(verification.system, verification.choice)] = verification.program;
             }
         }
-    }
-
-    [[nodiscard]] static std::tuple<std::string, int, std::string> verificationKey(const catalog::SystemName& system,
-                                                                                  const launcher::LaunchChoice& choice) {
-        return {system.str(), static_cast<int>(choice.kind), choice.value};
-    }
-
-    [[nodiscard]] bool isVerified(const catalog::SystemName& system, const launcher::LaunchChoice& choice) const {
-        return m_verified.contains(verificationKey(system, choice));
+        if (m_library) {
+            m_library->assignedChoices = m_assigned;
+            if (auto programs = m_store->programChoices(m_profile.id)) {
+                library::setProgramChoices(*m_library, *programs);
+            } else {
+                spdlog::warn("Catalog: the programs chosen for emulators cannot be read: {}",
+                             programs.error().toString());
+            }
+        }
     }
 
     [[nodiscard]] std::optional<launcher::LaunchChoice> assignedFor(const catalog::SystemName& system) const {
@@ -470,7 +491,8 @@ private:
             library::resolveSystemLaunch(*m_library, summary.system, assignedFor(summary.system.name));
         system.choice = resolution.chosen.choice;
         system.perGame = library::resolvedPerGame(resolution);
-        system.launch = launchStateOf(resolution, isVerified(system.name, system.choice));
+        system.launch = launchStateOf(resolution,
+                                      verifiedWith(m_verified, system.name, system.choice, resolution.translation));
         spdlog::debug("Catalog system {}: {} ({}){}", system.name.str(), catalog::toString(system.launch.readiness),
                       system.launch.blocker, system.perGame ? ", resolved per game" : "");
         return system;
@@ -528,16 +550,7 @@ private:
 
     void handle(RecentJob& job) {
         const Clock::time_point start = Clock::now();
-        if (!m_localToUtc) {
-            // One converter for the worker's thread (it keeps the zone's intervals it has read).
-            if (auto machine = catalog::machineLocalTimeToUtc()) {
-                m_localToUtc = std::move(*machine);
-            } else {
-                spdlog::warn("Catalog: the machine's time zone cannot be read ({}); ES-DE's <lastplayed> is read as UTC",
-                             machine.error().toString());
-                m_localToUtc = catalog::fixedOffsetLocalTimeToUtc(std::chrono::minutes(0));
-            }
-        }
+        prepareLocalTime();
         catalog::RecentGamesQuery query;
         query.limit = job.limit;
         query.localToUtc = m_localToUtc;
@@ -556,6 +569,20 @@ private:
                 results.recentGames = std::move(list);
             }
         });
+    }
+
+    /// One converter for the worker's thread (it keeps the zone's intervals it has read).
+    void prepareLocalTime() {
+        if (m_localToUtc) {
+            return;
+        }
+        if (auto machine = catalog::machineLocalTimeToUtc()) {
+            m_localToUtc = std::move(*machine);
+        } else {
+            spdlog::warn("Catalog: the machine's time zone cannot be read ({}); ES-DE's <lastplayed> is read as UTC",
+                         machine.error().toString());
+            m_localToUtc = catalog::fixedOffsetLocalTimeToUtc(std::chrono::minutes(0));
+        }
     }
 
     void handle(ReadinessJob& job) {
@@ -614,21 +641,136 @@ private:
             } else {
                 const catalog::LaunchResolution resolution = library::resolveCatalogLaunch(
                     *m_library, **details, gameChoice, assignedFor(entry.system), library::GameFileCheck::Catalog);
-                readiness.state = launchStateOf(resolution, isVerified(entry.system, resolution.chosen.choice));
+                readiness.state = launchStateOf(
+                    resolution, verifiedWith(m_verified, entry.system, resolution.chosen.choice, resolution.translation));
             }
         }
         readiness.ownState = system == m_systems.end() || readiness.state != system->second.launch;
         return readiness;
     }
 
+    // --- The emulators screen (I7 step 4) -----------------------------------------------------------------------------
+
+    void handle(TableJob& job) {
+        const Clock::time_point start = Clock::now();
+        EmulatorTable table;
+        table.serial = job.serial;
+        auto summaries = m_query->systems();
+        if (!m_library) {
+            table.error = *m_libraryError;
+        } else if (!summaries) {
+            table.error = summaries.error();
+        } else {
+            for (const catalog_db::SystemSummary& summary : *summaries) {
+                if (summary.library == m_profile.id && summary.games > 0) {
+                    const library::SystemLaunchRow row =
+                        library::systemLaunchRow(*m_library, summary.system, summary.system.alternativeEmulator);
+                    table.systems.push_back(emulatorSystemOf(row, summary.games, m_verified,
+                                                             m_assigned.contains(summary.system.name.str())));
+                }
+            }
+        }
+        table.milliseconds = millisecondsSince(start);
+        spdlog::info("Emulators: {} system(s) resolved in {:.0f} ms", table.systems.size(), table.milliseconds);
+        m_shared->post([&](CatalogResults& results) { results.emulatorTable = std::move(table); });
+    }
+
+    void handle(SamplesJob& job) {
+        EmulatorSamples answer;
+        answer.serial = job.serial;
+        answer.system = job.system.str();
+        prepareLocalTime();
+        if (auto games = library::sampleGames(*m_query, job.system, m_localToUtc, job.limit)) {
+            answer.games.reserve(games->size());
+            for (const library::SampleGame& game : *games) {
+                answer.games.push_back(ui::EmulatorSample{game.id.toString(), game.title});
+            }
+        } else {
+            spdlog::warn("Emulators: the games of {} cannot be read: {}", job.system.str(), games.error().toString());
+        }
+        m_shared->post([&](CatalogResults& results) { results.emulatorSamples = std::move(answer); });
+    }
+
+    /// `choice` stored for `system`; an unlabelled command has no label to store, and is what stands without a choice.
+    [[nodiscard]] Status storeSystemChoice(const catalog::SystemName& system, const launcher::LaunchChoice& choice) {
+        if (choice.value.empty()) {
+            return statusOf(m_store->clearSystemChoice(m_profile.id, system, catalog_db::kPatientRetry));
+        }
+        return m_store->setSystemChoice(m_profile.id, system, choice, std::chrono::system_clock::now(),
+                                        catalog_db::kPatientRetry);
+    }
+
+    /// What is stored changed: the choices read again, the systems' readiness resolved again, ES-DE's configuration as it
+    /// was read; answers resolved before are of an older generation.
+    void resolveAgain() {
+        readChoices();
+        auto summaries = m_query->systems();
+        if (!summaries) {
+            spdlog::warn("Emulators: the systems cannot be read again: {}; their readiness stays",
+                         summaries.error().toString());
+            return;
+        }
+        CatalogResolved resolved;
+        m_systems.clear();
+        for (const catalog_db::SystemSummary& summary : *summaries) {
+            if (summary.library == m_profile.id && summary.games > 0) {
+                resolved.systems.push_back(systemState(summary));
+                m_systems.emplace(summary.system.name.str(), resolved.systems.back());
+            }
+        }
+        resolved.generation = ++m_generation;
+        m_shared->post([&](CatalogResults& results) { results.resolved = std::move(resolved); });
+    }
+
+    void handle(ChoiceJob& job) {
+        ChoiceChanged changed;
+        changed.serial = job.serial;
+        changed.kind = job.change.kind;
+        const ChoiceChange& change = job.change;
+        Status status;
+        switch (change.kind) {
+        case ChoiceChange::Kind::Save:
+            status = storeSystemChoice(change.system, change.choice);
+            break;
+        case ChoiceChange::Kind::Clear:
+            status = statusOf(m_store->clearSystemChoice(m_profile.id, change.system, catalog_db::kPatientRetry));
+            break;
+        case ChoiceChange::Kind::SetProgram:
+            if (const Status allowed = esde::checkProgramChoice(change.program); !allowed) {
+                changed.problem = allowed.error().code == ErrorCode::NotFound ? "missing" : "refused";
+                spdlog::info("Emulators: the program for {} refused: {}", change.emulator, allowed.error().message);
+            } else {
+                status = m_store->setProgramChoice(m_profile.id, change.emulator, change.program,
+                                                   std::chrono::system_clock::now(), catalog_db::kPatientRetry);
+            }
+            break;
+        case ChoiceChange::Kind::ClearProgram:
+            status = statusOf(m_store->clearProgramChoice(m_profile.id, change.emulator, catalog_db::kPatientRetry));
+            break;
+        }
+        if (!status) {
+            changed.problem = "write";
+            spdlog::warn("Emulators: a change could not be stored: {}", status.error().toString());
+        }
+        if (changed.problem.empty()) {
+            resolveAgain();
+        }
+        m_shared->post([&](CatalogResults& results) { results.changes.push_back(std::move(changed)); });
+    }
+
     void handle(ResolveJob& job) {
         ResolvedLaunch resolved;
         resolved.token = job.token;
         resolved.requested = job.game;
+        if (job.test) {
+            m_tests[job.token] = *job.test;
+        }
+        m_resolvingTest = job.test;
         if (const Status status = resolveLaunch(job.game, resolved); !status) {
             resolved.error = status.error();
             spdlog::warn("Launch of {} cannot be resolved: {}", job.game.toString(), status.error().toString());
         }
+        m_resolvingTest.reset();
         m_shared->post([&](CatalogResults& results) { results.launches.push_back(std::move(resolved)); });
     }
 
@@ -671,8 +813,11 @@ private:
         }
         // The choices made since the catalog opened (another process's retroverse-cli assign) count too.
         readChoices();
+        // A launch test launches with its choice whatever the game's own: what it verifies must be what it ran.
         const std::optional<launcher::LaunchChoice> gameChoice =
-            *choice ? std::optional<launcher::LaunchChoice>((**choice).choice) : std::nullopt;
+            m_resolvingTest ? std::optional<launcher::LaunchChoice>(m_resolvingTest->choice)
+            : *choice       ? std::optional<launcher::LaunchChoice>((**choice).choice)
+                            : std::nullopt;
         if (m_library) {
             resolved.resolution =
                 library::resolveCatalogLaunch(*m_library, game, gameChoice, assignedFor(entry.system),
@@ -690,6 +835,12 @@ private:
         session.game = id;
         session.choice = resolved.resolution.chosen.choice;
         session.choiceSource = resolved.resolution.chosen.source;
+        if (m_resolvingTest) {
+            session.test = true;
+            session.choiceSource = m_resolvingTest->forGame ? catalog::ChoiceSource::RetroverseGame
+                                                            : catalog::ChoiceSource::RetroverseSystem;
+            resolved.resolution.chosen.source = session.choiceSource;
+        }
         session.owner = m_options.owner;
         spdlog::info("Launch of {} ({} {}) resolved: {}", id.toString(), entry.system.str(),
                      session.choice.value.empty() ? std::string("the command") : session.choice.value,
@@ -932,7 +1083,7 @@ private:
             verification.verifiedAt = stored.session.ended.value_or(std::chrono::system_clock::now());
             if (auto recorded = m_store->recordVerification(verification); recorded) {
                 stored.verified = true;
-                m_verified.insert(verificationKey(verification.system, verification.choice));
+                m_verified[verificationKey(verification.system, verification.choice)] = verification.program;
                 verified.emplace(verification.system, verification.choice);
                 if (const auto system = m_systems.find(verification.system.str());
                     system != m_systems.end() && system->second.choice == verification.choice &&
@@ -946,6 +1097,7 @@ private:
         }
         spdlog::info("Play session {} of {} recorded: {}{}", stored.session.id, stored.session.game.toString(),
                      catalog::toString(stored.session.outcome), stored.verified ? ", verified" : "");
+        finishTest(token, recording, stored);
         m_recordings.erase(token);
         m_shared->post([&](CatalogResults& results) {
             results.sessions.push_back(std::move(stored));
@@ -953,6 +1105,35 @@ private:
                 results.verified.push_back(std::move(*verified));
             }
         });
+    }
+
+    /// A launch test's session ended: only a normal return stores its choice (ADR-0018 §5).
+    void finishTest(std::uint64_t token, const Recording& recording, const StoredSession& stored) {
+        const auto found = m_tests.find(token);
+        if (found == m_tests.end()) {
+            return;
+        }
+        const LaunchTestChoice test = found->second;
+        m_tests.erase(found);
+        LaunchTestResult result;
+        result.token = token;
+        result.session = stored.session.id;
+        if (!stored.error && catalog::returnedNormally(stored.session)) {
+            const Status written =
+                test.forGame ? m_store->setGameChoice(*test.forGame, test.choice, std::chrono::system_clock::now(),
+                                                      catalog_db::kPatientRetry)
+                             : storeSystemChoice(recording.system, test.choice);
+            result.stored = written.has_value();
+            if (!written) {
+                spdlog::warn("The choice a launch test verified could not be stored: {}", written.error().toString());
+            }
+        }
+        result.verdict = stored.error ? std::string("error") : testVerdictOf(stored.session, result.stored);
+        spdlog::info("Launch test of {} ended: {}", stored.session.game.toString(), result.verdict);
+        if (result.stored) {
+            resolveAgain();
+        }
+        m_shared->post([&](CatalogResults& results) { results.tests.push_back(std::move(result)); });
     }
 
     // --- Stopping ------------------------------------------------------------------------------------------------
@@ -1007,8 +1188,11 @@ private:
     /// The systems with games, by name.
     std::map<std::string, CatalogSystem, std::less<>> m_systems;
     std::map<std::string, launcher::LaunchChoice, std::less<>> m_assigned;
-    std::set<std::tuple<std::string, int, std::string>> m_verified;
+    VerifiedPrograms m_verified;
     std::map<std::uint64_t, Recording> m_recordings;
+    /// The launch tests under way, by token, and the one being resolved.
+    std::map<std::uint64_t, LaunchTestChoice> m_tests;
+    std::optional<LaunchTestChoice> m_resolvingTest;
     Clock::time_point m_lastRetry{};
     /// The systems' readiness generation (GameReadiness::generation).
     std::uint64_t m_generation = 0;
@@ -1087,10 +1271,36 @@ void CatalogWorker::readiness(std::vector<catalog::GameId> games) {
     m_shared->work.notify_one();
 }
 
-void CatalogWorker::resolve(std::uint64_t token, catalog::GameId game) {
+void CatalogWorker::resolve(std::uint64_t token, catalog::GameId game, std::optional<LaunchTestChoice> test) {
     {
         const std::lock_guard lock(m_shared->mutex);
-        m_shared->jobs.emplace_back(ResolveJob{token, game});
+        m_shared->jobs.emplace_back(ResolveJob{token, game, std::move(test)});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::emulatorTable(std::uint64_t serial) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<TableJob>(job); });
+        m_shared->jobs.emplace_back(TableJob{serial});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::sampleGames(std::uint64_t serial, catalog::SystemName system, std::size_t limit) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<SamplesJob>(job); });
+        m_shared->jobs.emplace_back(SamplesJob{serial, std::move(system), limit});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::changeChoice(std::uint64_t serial, ChoiceChange change) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        m_shared->jobs.emplace_back(ChoiceJob{serial, std::move(change)});
     }
     m_shared->work.notify_one();
 }

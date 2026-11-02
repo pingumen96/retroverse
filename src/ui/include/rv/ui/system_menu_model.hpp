@@ -2,9 +2,9 @@
 
 // GPU-free (part of rv_ui_model): no SDL, OpenGL or RmlUi header is included.
 //
-// The menu (ADR-0018 §1; assets/ui/system_menu.rml through ui::SystemMenuScreen): Riprendi, Impostazioni, Esci, with one
-// confirmation before Esci. It holds what is not about the building (the directory stays the building's panel). Each later
-// step adds its section's button (Emulatori, Statistiche, Copertura media, Libreria): a section is a screen of its own,
+// The menu (ADR-0018 §1; assets/ui/system_menu.rml through ui::SystemMenuScreen): Riprendi, Impostazioni, Emulatori, Esci,
+// with one confirmation before Esci. It holds what is not about the building (the directory stays the building's panel).
+// Each later step adds its section's button (Statistiche, Copertura media, Libreria): a section is a screen of its own,
 // whose Back returns here.
 //
 // | View    | Up, Down           | Activate             | Back                    |
@@ -30,8 +30,8 @@ inline constexpr std::string_view kButtonEvent = "button";
 inline constexpr std::string_view kPanelId = "system-menu";
 } // namespace system_menu
 
-enum class SystemMenuButton : std::uint8_t { Resume, Settings, Quit, ConfirmQuit, Stay };
-/// "resume", "settings", "quit", "confirm-quit", "stay" (the button event's argument).
+enum class SystemMenuButton : std::uint8_t { Resume, Settings, Emulators, Quit, ConfirmQuit, Stay };
+/// "resume", "settings", "emulators", "quit", "confirm-quit", "stay" (the button event's argument).
 [[nodiscard]] std::string_view toString(SystemMenuButton button) noexcept;
 [[nodiscard]] std::optional<SystemMenuButton> systemMenuButtonFromName(std::string_view name) noexcept;
 /// The button's element id ("sm-resume" ...).
@@ -45,9 +45,10 @@ enum class SystemMenuView : std::uint8_t { Main, Confirm };
 enum class SystemMenuCommand : std::uint8_t {
     Close,        ///< it closed itself: back to the world
     OpenSettings, ///< the settings screen opens over it
+    OpenEmulators, ///< the emulators screen opens over it
     Quit,         ///< Esci, confirmed
 };
-/// "close", "open-settings", "quit".
+/// "close", "open-settings", "open-emulators", "quit".
 [[nodiscard]] std::string_view toString(SystemMenuCommand command) noexcept;
 
 /// The menu's state: open, its view, its focused button. Main thread; no rendering. Every change of what the panel shows

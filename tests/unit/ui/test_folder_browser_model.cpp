@@ -184,3 +184,35 @@ TEST_CASE("ui/folder_browser: entering, choosing, cancelling; clicks mirror the 
     CHECK_FALSE(back->chosen.has_value());
     CHECK_FALSE(cancelled.isOpen());
 }
+
+TEST_CASE("ui/folder browser: choosing a program: a row chooses it, no folder can be used", "[ui][folder_browser]") {
+    FolderBrowserModel browser;
+    browser.openForProgram(std::filesystem::path("C:/Emu"));
+    const auto request = browser.takeRequest();
+    REQUIRE(request.has_value());
+    CHECK(request->programs);
+    browser.setListing(request->serial, {FolderRow{"C:/Emu/cores", "cores", false},
+                                         FolderRow{"C:/Emu/emu.exe", "emu.exe", true}});
+    CHECK_FALSE(browser.canUse());
+    CHECK_FALSE(browser.apply(UiCommand::Info).has_value());
+
+    // A folder is entered, a program chosen.
+    CHECK_FALSE(browser.apply(UiCommand::Down).has_value());
+    const auto chosen = browser.apply(UiCommand::Activate);
+    REQUIRE(chosen.has_value());
+    CHECK(chosen->chosen == std::filesystem::path("C:/Emu/emu.exe"));
+    CHECK_FALSE(browser.isOpen());
+
+    browser.openForProgram(std::filesystem::path("C:/Emu"));
+    const auto again = browser.takeRequest();
+    REQUIRE(again.has_value());
+    browser.setListing(again->serial, {FolderRow{"C:/Emu/cores", "cores", false}});
+    CHECK_FALSE(browser.apply(UiCommand::Activate).has_value());
+    CHECK(browser.isOpen());
+    CHECK(browser.folder() == std::filesystem::path("C:/Emu/cores"));
+    CHECK(browser.takeRequest()->programs); // a folder entered lists programs too
+
+    // The folders' browser again: as it was.
+    browser.open(std::filesystem::path("C:/Emu"));
+    CHECK_FALSE(browser.takeRequest()->programs);
+}

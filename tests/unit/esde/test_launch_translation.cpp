@@ -625,3 +625,79 @@ TEST_CASE("esde/launch translation: listedPath spells a path as the folder lists
         CHECK(rv::esde::listedPath(machine.roms() / "gb", bad).error().code == rv::ErrorCode::InvalidArgument);
     }
 }
+
+TEST_CASE("esde/launch translation: a program chosen comes before the find rules and is never passed over",
+          "[esde][launch]") {
+    rv::test::LaunchMachine machine;
+    const std::filesystem::path ruled = machine.program(machine.root() / "Rules" / "emu.exe");
+    machine.emulator("EMU", {FindRule{FindRuleType::StaticPath, {rv::core::pathToUtf8(ruled)}}});
+    const rv::esde::SystemDefinition system = rv::test::testSystem({{"Emu", "%EMULATOR_EMU% %ROM%"}});
+    rv::esde::ProgramChoices programs;
+    rv::esde::TranslationContext context = machine.context();
+    context.programChoices = &programs;
+
+    // Nothing chosen: the rules, and the translation names the emulator.
+    rv::catalog::LaunchTranslation found = rv::esde::translateCommand(context, system, system.commands.front(), nullptr);
+    REQUIRE(found.program.has_value());
+    CHECK(found.program->path == ruled);
+    CHECK(found.emulator == "EMU");
+
+    const std::filesystem::path chosen = machine.program(machine.root() / "Chosen" / "mine.exe");
+    programs["EMU"] = chosen;
+    found = rv::esde::translateCommand(context, system, system.commands.front(), nullptr);
+    REQUIRE(found.program.has_value());
+    CHECK(found.program->path == chosen);
+    CHECK(found.program->rule == "retroverse");
+    CHECK(found.readiness() == LaunchReadiness::Ready);
+
+    // Gone: not found, naming it; the rules' program must not start in its place.
+    programs["EMU"] = machine.root() / "Chosen" / "gone.exe";
+    found = rv::esde::translateCommand(context, system, system.commands.front(), nullptr);
+    CHECK_FALSE(found.program.has_value());
+    CHECK(found.readiness() == LaunchReadiness::EmulatorNotFound);
+    REQUIRE(found.attempts.size() == 1);
+    CHECK(found.attempts.front().find("gone.exe") != std::string::npos);
+
+    // An emulator no find rule defines takes a program too: what repairs "find-rules-missing".
+    const rv::esde::SystemDefinition unruled = rv::test::testSystem({{"None", "%EMULATOR_UNRULED% %ROM%"}});
+    programs["UNRULED"] = chosen;
+    found = rv::esde::translateCommand(context, unruled, unruled.commands.front(), nullptr);
+    CHECK(found.readiness() == LaunchReadiness::Ready);
+}
+
+TEST_CASE("esde/launch translation: a program chosen is refused by the name found and by the file it opens",
+          "[esde][launch]") {
+    rv::test::LaunchMachine machine;
+    const rv::esde::SystemDefinition system = rv::test::testSystem({{"Emu", "%EMULATOR_EMU% %ROM%"}});
+    rv::esde::ProgramChoices programs;
+    rv::esde::TranslationContext context = machine.context();
+    context.programChoices = &programs;
+
+    const std::filesystem::path shell = machine.program(machine.root() / "Bin" / "cmd.exe");
+    programs["EMU"] = shell;
+    const rv::catalog::LaunchTranslation named = rv::esde::translateCommand(context, system, system.commands.front(), nullptr);
+    REQUIRE_FALSE(named.blockers.empty());
+    CHECK(named.blockers.front().code == "program-refused");
+    CHECK(rv::esde::checkProgramChoice(shell).error().code == rv::ErrorCode::ValidationFailed);
+
+    // A symbolic link named like an emulator (a machine without the right to make one skips this part).
+    const std::filesystem::path link = machine.root() / "Bin" / "harmless.exe";
+    std::error_code denied;
+    std::filesystem::create_symlink(shell, link, denied);
+    if (!denied) {
+        machine.probe.addFile(link);
+        programs["EMU"] = link;
+        const rv::catalog::LaunchTranslation opened =
+            rv::esde::translateCommand(context, system, system.commands.front(), nullptr);
+        REQUIRE_FALSE(opened.blockers.empty());
+        CHECK(opened.blockers.front().code == "program-refused");
+        CHECK(opened.blockers.front().message.find("it opens cmd.exe") != std::string::npos);
+        CHECK(rv::esde::checkProgramChoice(link).error().code == rv::ErrorCode::ValidationFailed);
+    }
+
+    CHECK(rv::esde::checkProgramChoice(machine.program(machine.root() / "Bin" / "fine.exe")).has_value());
+    CHECK(rv::esde::checkProgramChoice(machine.root() / "Bin" / "gone.exe").error().code == rv::ErrorCode::NotFound);
+    CHECK(rv::esde::checkProgramChoice("relative.exe").error().code == rv::ErrorCode::InvalidArgument);
+    // Not a program Windows starts.
+    CHECK_FALSE(rv::esde::checkProgramChoice(machine.file(machine.root() / "Bin" / "text.exe", "not a program")).has_value());
+}

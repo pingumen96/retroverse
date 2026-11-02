@@ -25,6 +25,7 @@
 #include <rv/core/paths.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/launcher/launch_guard.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
@@ -37,9 +38,11 @@
 #include <rv/ui/ui_view.hpp>
 
 #include <rv/app/directory_data.hpp>
+#include <rv/app/folder_lister.hpp>
 #include <rv/app/world_card_ui.hpp>
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
+#include <rv/ui/emulators_screen.hpp>
 #include <rv/ui/regenerate_preview_screen.hpp>
 #include <rv/ui/controller_notice_screen.hpp>
 #include <rv/ui/hint_bar.hpp>
@@ -249,12 +252,270 @@ struct ProductUi::Impl {
     std::unique_ptr<ui::KeyboardScreen> keyboardScreen;
     ui::KeyboardModel keyboard;
     std::optional<KeyboardRecord> keyboardRecord;
+    /// I7 step 4: the emulators screen over the menu or the wizard (its screen made when it first opens), the folder
+    /// browser over it and its listings, the launch test under way, what a program waits to be chosen for, its record.
+    std::unique_ptr<ui::EmulatorsScreen> emulatorsScreen;
+    ui::EmulatorsModel emulators;
+    ui::FolderBrowserModel programBrowser;
+    std::unique_ptr<FolderLister> programLister;
+    std::optional<std::uint64_t> emulatorTest;
+    std::string programFor;
+    std::optional<EmulatorsRecord> emulatorsRecord;
+    bool emulatorsAsked = false;
+    bool wizardTableWanted = false;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
-               wizardShown() || controllerNoticeWanted || keyboardShown();
+               emulatorsShown() || wizardShown() || controllerNoticeWanted || keyboardShown();
+    }
+
+    /// The emulators screen shows.
+    [[nodiscard]] bool emulatorsShown() const noexcept { return emulatorsScreen && emulators.isOpen(); }
+
+    EmulatorsRecord& emulatorsReport() { return emulatorsRecord ? *emulatorsRecord : emulatorsRecord.emplace(); }
+
+    void addEmulatorsEvent(std::string event, std::string detail = {}) {
+        EmulatorsRecord& record = emulatorsReport();
+        if (record.events.size() >= kMaxInteractionEvents) {
+            ++record.eventsDropped;
+            return;
+        }
+        record.events.push_back(EmulatorsEventRecord{context.frameIndex(), std::move(event), std::move(detail)});
+    }
+
+    void openEmulators(std::string_view via) {
+        if (emulators.isOpen()) {
+            return;
+        }
+        if (!emulatorsScreen) {
+            auto screen = ui::EmulatorsScreen::create(*view);
+            if (!screen) {
+                spdlog::error("The emulators screen unavailable: {}", screen.error().toString());
+                return;
+            }
+            emulatorsScreen = std::move(*screen);
+            programLister = std::make_unique<FolderLister>(context.wakeCallback());
+        } else if (Rml::Element* root = view->context().GetRootElement()) {
+            root->Focus(); // as the directory's: the focus the screen applies starts from the context's root
+        }
+        nav.reset();
+        emulators.open();
+        ++emulatorsReport().opened;
+        addEmulatorsEvent("open", std::string(via));
+        spdlog::info("Frame {}: the emulators screen opened ({})", context.frameIndex(), via);
+    }
+
+    /// `kind`'s change asked of the catalog; a catalog without it says so at once.
+    void changeChoice(ChoiceChange change, std::string_view event) {
+        addEmulatorsEvent(std::string(event), change.emulator.empty() ? change.system.str() : change.emulator);
+        const bool toSystem = change.kind != ChoiceChange::Kind::SetProgram &&
+                              change.kind != ChoiceChange::Kind::ClearProgram;
+        if (!catalog->requestChoiceChange(std::move(change))) {
+            emulators.changeEnded("write", toSystem);
+        }
+    }
+
+    /// `command`'s choice as the launcher names it.
+    [[nodiscard]] static launcher::LaunchChoice choiceOf(const ui::EmulatorsCommand& command) {
+        return launcher::LaunchChoice{command.profile ? launcher::LaunchChoiceKind::Profile
+                                                      : launcher::LaunchChoiceKind::EsdeCommand,
+                                      command.value};
+    }
+
+    /// ADR-0018 §6: refused before anything is resolved in an unattended run without the allow-list.
+    void startLaunchTest(const ui::EmulatorsCommand& command) {
+        EmulatorsRecord& record = emulatorsReport();
+        if (!launcher::launchTestAllowed(context.options().frameLimit.has_value())) {
+            spdlog::warn("Frame {}: a launch test refused: an unattended run without {}", context.frameIndex(),
+                         launcher::kLaunchAllowListVariable);
+            ++record.testsRefused;
+            addEmulatorsEvent("test-refused");
+            emulators.testEnded("unattended");
+            return;
+        }
+        ui::CatalogEntry entry;
+        entry.id = command.game;
+        entry.title = command.gameTitle;
+        const std::optional<std::uint64_t> token = launch(entry, LaunchTestChoice{choiceOf(command), std::nullopt});
+        if (!token) {
+            emulators.testEnded("busy");
+            return;
+        }
+        emulatorTest = token;
+        ++record.tests;
+        addEmulatorsEvent("test", command.game);
+        emulators.testStarted();
+    }
+
+    void emulatorsCommand(const std::optional<ui::EmulatorsCommand>& command) {
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the emulators screen asks {} '{}'", context.frameIndex(), ui::toString(command->kind),
+                     command->system);
+        const auto systemName = catalog::SystemName::parse(command->system);
+        switch (command->kind) {
+        case ui::EmulatorsCommandKind::Close:
+            addEmulatorsEvent("closed");
+            nav.reset();
+            break;
+        case ui::EmulatorsCommandKind::Load:
+            if (!catalog->requestEmulatorTable()) {
+                emulators.setUnavailable();
+            }
+            break;
+        case ui::EmulatorsCommandKind::Samples:
+            addEmulatorsEvent("system", command->system);
+            if (!systemName || !catalog->requestSampleGames(*systemName, ui::emulators::kMaxSampleGames)) {
+                emulators.setSamples(command->system, {});
+            }
+            break;
+        case ui::EmulatorsCommandKind::Test:
+            startLaunchTest(*command);
+            break;
+        case ui::EmulatorsCommandKind::Save:
+            if (systemName) {
+                ChoiceChange change;
+                change.kind = ChoiceChange::Kind::Save;
+                change.system = *systemName;
+                change.choice = choiceOf(*command);
+                changeChoice(std::move(change), "saved");
+            }
+            break;
+        case ui::EmulatorsCommandKind::Clear:
+            if (systemName) {
+                ChoiceChange change;
+                change.kind = ChoiceChange::Kind::Clear;
+                change.system = *systemName;
+                changeChoice(std::move(change), "cleared");
+            }
+            break;
+        case ui::EmulatorsCommandKind::ClearProgram: {
+            ChoiceChange change;
+            change.kind = ChoiceChange::Kind::ClearProgram;
+            change.emulator = command->emulator;
+            changeChoice(std::move(change), "program-cleared");
+            break;
+        }
+        case ui::EmulatorsCommandKind::Browse: {
+            programFor = command->emulator;
+            addEmulatorsEvent("browse", programFor);
+            nav.reset();
+            // Where ES-DE is: emulators are often beside it; a run without one starts at the drives.
+            programBrowser.openForProgram(catalog->programStartFolder());
+            break;
+        }
+        }
+    }
+
+    void programClosed(const std::optional<ui::FolderBrowserResult>& result) {
+        if (!result) {
+            return;
+        }
+        nav.reset();
+        if (result->chosen) {
+            ChoiceChange change;
+            change.kind = ChoiceChange::Kind::SetProgram;
+            change.emulator = programFor;
+            change.program = *result->chosen;
+            changeChoice(std::move(change), "program");
+        }
+    }
+
+    void emulatorsApply(ui::UiCommand command) {
+        if (programBrowser.isOpen()) {
+            programClosed(programBrowser.apply(command));
+        } else {
+            emulatorsCommand(emulators.apply(command));
+        }
+    }
+
+    void emulatorsClicks() {
+        if (!emulatorsScreen) {
+            return;
+        }
+        if (const int wheel = emulatorsScreen->takeWheel(); wheel != 0 && programBrowser.isOpen()) {
+            programBrowser.scroll(wheel);
+        }
+        const std::optional<ui::EmulatorsScreenClick> click = emulatorsScreen->takeClicked();
+        if (!click || !emulatorsShown() || panel->visible()) {
+            return;
+        }
+        if (click->browser) {
+            programClosed(programBrowser.click(click->folder));
+        } else {
+            emulatorsCommand(emulators.click(click->screen));
+        }
+    }
+
+    /// The screen's frame: what its views ask, what the catalog answered, the browser's listings.
+    void followEmulators() {
+        emulatorsCommand(emulators.takeRequest());
+        if (std::optional<EmulatorTable> table = catalog->takeEmulatorTable()) {
+            if (table->error) {
+                spdlog::warn("The emulators table cannot be read: {}", table->error->toString());
+                emulators.setUnavailable();
+            } else {
+                EmulatorsRecord& record = emulatorsReport();
+                record.tableMs = std::max(record.tableMs, table->milliseconds);
+                record.systems.clear();
+                for (const ui::EmulatorSystem& system : table->systems) {
+                    EmulatorsSystemRecord row{system.name,   system.games,    system.readiness, system.blocker,
+                                              system.source, system.choice,   system.verified,  system.stored, {}};
+                    for (const ui::EmulatorOption& option : system.options) {
+                        row.options.push_back(fmt::format("{}={}", option.name, option.readiness));
+                    }
+                    record.systems.push_back(std::move(row));
+                }
+                emulators.setTable(std::move(table->systems));
+            }
+            if (wizardFlow) {
+                wizardFlow->model().setEmulators(table->error ? std::nullopt
+                                                              : std::optional<std::size_t>(emulators.readySystems()),
+                                                 emulators.blockedSystems());
+            }
+        }
+        if (std::optional<EmulatorSamples> samples = catalog->takeSampleGames()) {
+            if (!samples->games.empty()) {
+                emulatorsReport().sample = samples->games.front().title;
+            }
+            emulators.setSamples(samples->system, std::move(samples->games));
+        }
+        if (std::optional<ChoiceChanged> changed = catalog->takeChoiceChanged()) {
+            if (changed->kind == ChoiceChange::Kind::SetProgram) {
+                addEmulatorsEvent("program-stored", changed->problem);
+            }
+            emulators.changeEnded(changed->problem, changed->kind != ChoiceChange::Kind::SetProgram &&
+                                                        changed->kind != ChoiceChange::Kind::ClearProgram);
+            ++catalogRevision;
+        }
+        if (std::optional<LaunchTestResult> test = catalog->takeLaunchTest(); test && test->token == emulatorTest) {
+            emulatorTest.reset();
+            addEmulatorsEvent("test-ended", test->verdict);
+            if (test->stored) {
+                ++emulatorsReport().testsStored;
+            }
+            emulators.testEnded(test->verdict);
+            ++catalogRevision;
+        }
+        if (programLister) {
+            programLister->poll(programBrowser);
+        }
+    }
+
+    void finishEmulators(RunReport& report) {
+        if (!emulatorsRecord) {
+            return;
+        }
+        EmulatorsRecord record = std::move(*emulatorsRecord);
+        record.open = emulators.isOpen();
+        record.state = std::string(ui::toString(emulators.state()));
+        record.view = std::string(ui::toString(emulators.view()));
+        record.verdict = emulators.verdict();
+        record.problem = emulators.problem();
+        report.emulators = std::move(record);
     }
 
     /// The on-screen keyboard shows.
@@ -437,6 +698,12 @@ struct ProductUi::Impl {
                 }
             }
             break;
+        case ui::WizardCommandKind::Emulators:
+            wizardTableWanted = true;
+            break;
+        case ui::WizardCommandKind::OpenEmulators:
+            openEmulators("wizard");
+            break;
         case ui::WizardCommandKind::Enter:
             wizardFlow->model().close();
             if (wizardRecord) {
@@ -511,6 +778,10 @@ struct ProductUi::Impl {
                 showAppearance();
             }
         }
+        // A catalog answers page 5's counts only once it opened: asked again until it did.
+        if (std::exchange(wizardTableWanted, false) && !catalog->requestEmulatorTable()) {
+            model.setEmulators(std::nullopt, 0);
+        }
         wizardCommand(model.takeEntered());
         if (std::optional<WizardFlow::Prepared> prepared = wizardFlow->takePrepared()) {
             if (!prepared->failure.empty()) {
@@ -576,7 +847,8 @@ struct ProductUi::Impl {
         if (!lockstep || !wizardFlow || !wizardFlow->model().isOpen()) {
             return false;
         }
-        const bool waiting = wizardFlow->busy() || wizardImport != WizardImportStage::None ||
+        const bool waiting = wizardFlow->busy() || (programLister && programLister->busy()) ||
+                             wizardImport != WizardImportStage::None ||
                              (wizardWorldStarted && wizardFlow->model().worldWork() == ui::WizardWork::Running);
         return waiting && (!wizardWaitSince || std::chrono::steady_clock::now() - *wizardWaitSince < kWizardWaitLimit);
     }
@@ -661,7 +933,9 @@ struct ProductUi::Impl {
     }
 
     /// The menu shows (not while a section shows over it).
-    [[nodiscard]] bool menuShown() const noexcept { return menuScreen && menu.isOpen() && !settingsModel.isOpen(); }
+    [[nodiscard]] bool menuShown() const noexcept {
+        return menuScreen && menu.isOpen() && !settingsModel.isOpen() && !emulators.isOpen();
+    }
     /// The settings screen shows.
     [[nodiscard]] bool settingsShown() const noexcept { return settingsScreen && settingsModel.isOpen(); }
 
@@ -684,6 +958,9 @@ struct ProductUi::Impl {
             break;
         case ui::SystemMenuCommand::OpenSettings:
             openSettings();
+            break;
+        case ui::SystemMenuCommand::OpenEmulators:
+            openEmulators("menu");
             break;
         case ui::SystemMenuCommand::Quit:
             addMenuEvent("quit");
@@ -739,8 +1016,15 @@ struct ProductUi::Impl {
     }
 
     void syncMenu() {
+        if (emulatorsScreen) {
+            if (emulators.isOpen()) {
+                emulatorsScreen->show(emulators, programBrowser);
+            } else {
+                emulatorsScreen->hide();
+            }
+        }
         if (wizardScreen) {
-            if (wizardShown()) {
+            if (wizardShown() && !emulators.isOpen()) {
                 wizardScreen->show(wizardFlow->model(), wizardFlow->browser());
             } else {
                 wizardScreen->hide();
@@ -791,7 +1075,7 @@ struct ProductUi::Impl {
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
         return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
-               settingsShown() || wizardShown();
+               settingsShown() || emulatorsShown() || wizardShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -1015,13 +1299,14 @@ struct ProductUi::Impl {
     }
 
     /// Avvia on `entry`: the catalog decides, at once (the mock) or on its worker; applyDecision() acts on it.
-    /// The token of the launch asked (nothing while one is decided, waits or runs: nothing asked).
-    std::optional<std::uint64_t> launch(const ui::CatalogEntry& entry) {
+    /// The token of the launch asked (nothing while one is decided, waits or runs: nothing asked); `test`: a launch test.
+    std::optional<std::uint64_t> launch(const ui::CatalogEntry& entry,
+                                        const std::optional<LaunchTestChoice>& test = std::nullopt) {
         if (flow.pending() || flow.sessionActive() || catalog->deciding()) {
             return std::nullopt;
         }
         const std::uint64_t token = flow.records().size();
-        if (!catalog->requestLaunch(token, entry)) {
+        if (!(test ? catalog->requestLaunchTest(token, entry, *test) : catalog->requestLaunch(token, entry))) {
             return std::nullopt;
         }
         before = currentView();
@@ -1254,7 +1539,8 @@ struct ProductUi::Impl {
     /// The lockstep run waits for the catalog worker (within kLockstepWaitLimit).
     [[nodiscard]] bool waitsForCatalog() const noexcept {
         // The media viewer's pictures too (I3 step 14b), so that scripted runs see them on the same frames.
-        if (!lockstep || (!catalog->busy() && !(screens && screens->loading()))) {
+        if (!lockstep || (!catalog->busy() && !(screens && screens->loading()) &&
+                          !(programLister && programLister->busy()))) {
             return false;
         }
         return !catalogWaitSince || std::chrono::steady_clock::now() - *catalogWaitSince < kLockstepWaitLimit;
@@ -1703,7 +1989,7 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
 }
 
 bool ProductUi::menuOpen() const noexcept {
-    return m_impl->menu.isOpen() || wizardOpen();
+    return m_impl->menu.isOpen() || wizardOpen() || m_impl->emulators.isOpen();
 }
 
 bool ProductUi::wizardOpen() const noexcept {
@@ -1754,7 +2040,9 @@ void ProductUi::openMenu(std::string_view via) {
 
 void ProductUi::menuBack() {
     Impl& s = *m_impl;
-    if (s.wizardShown()) {
+    if (s.emulators.isOpen()) {
+        s.emulatorsApply(ui::UiCommand::Back); // I7 step 4: over the menu or the wizard
+    } else if (s.wizardShown()) {
         s.wizardApply(ui::UiCommand::Back);
     } else if (s.settingsModel.isOpen()) {
         s.settingsCommand(s.settingsModel.apply(ui::UiCommand::Back));
@@ -1807,6 +2095,10 @@ void ProductUi::setTextScale(float scale) {
 bool ProductUi::handleEvent(const SDL_Event& event) {
     if (!hasInput()) {
         return false;
+    }
+    // I7 step 4: the emulators screen likewise, over the wizard and the menu.
+    if (m_impl->emulatorsShown() && !m_impl->panel->visible()) {
+        return m_impl->emulatorsScreen->handlePointer(event);
     }
     // I7 step 2: the wizard likewise, over everything but the panel.
     if (m_impl->wizardShown() && !m_impl->panel->visible()) {
@@ -2019,6 +2311,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.afterReturn();
     s.followHandover();
     s.followWizard();
+    s.followEmulators(); // I7 step 4
 
     s.commands.clear();
     const auto followPreviewButtons = [&] {
@@ -2045,6 +2338,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 s.panel->apply(command);
             } else if (s.keyboardShown()) {
                 s.keyboardApply(command); // I7 step 5
+            } else if (s.emulators.isOpen()) {
+                s.emulatorsApply(command); // I7 step 4
             } else if (s.wizardShown()) {
                 s.wizardApply(command); // I7 step 2
             } else if (s.preview.isOpen()) {
@@ -2087,6 +2382,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             }
         }
     }
+    s.emulatorsClicks(); // I7 step 4
     // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
     if (s.settingsScreen) {
         if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
@@ -2154,6 +2450,12 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         }
         if (s.previewShown()) {
             s.previewScreen->afterUpdate();
+        }
+        if (s.emulatorsShown()) {
+            s.emulatorsScreen->afterUpdate();
+            EmulatorsRecord& record = s.emulatorsReport();
+            record.textCut = std::max(record.textCut, s.emulatorsScreen->textCut());
+            record.browserTextCut = std::max(record.browserTextCut, s.emulatorsScreen->browserTextCut());
         }
         if (s.wizardShown()) {
             s.wizardScreen->afterUpdate();
@@ -2230,11 +2532,12 @@ void ProductUi::onIdle() {
         s.wizardWaitSince = std::chrono::steady_clock::now();
     }
     s.followWizard();
+    s.followEmulators();
     if (s.wizardFlow && !s.wizardWaits()) {
         s.wizardWaitSince.reset();
     }
     if (s.lockstep && !s.catalogWaitSince && !s.flow.hostIdle() &&
-        (s.catalog->busy() || (s.screens && s.screens->loading()))) {
+        (s.catalog->busy() || (s.screens && s.screens->loading()) || (s.programLister && s.programLister->busy()))) {
         s.catalogWaitSince = std::chrono::steady_clock::now();
     }
     // A decision the worker brings is applied by the next frame's update, which renders its "Gioco in corso" first.
@@ -2371,6 +2674,7 @@ void ProductUi::finish() {
         s.menuRecord.settingsRows.push_back(row.key);
     }
     report.menu = std::move(s.menuRecord);
+    s.finishEmulators(report);
     s.finishWizard(report);
     if (s.keyboardRecord) {
         s.keyboardRecord->open = s.keyboard.isOpen();

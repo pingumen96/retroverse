@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/catalog_db/database.hpp>
+#include <rv/esde/discovery.hpp>
 #include <rv/launcher/launch_plan.hpp>
 #include <rv/ui/ui_assets.hpp>
 
@@ -242,6 +243,65 @@ std::string_view EsdeAppCatalog::notice() const noexcept {
     return noticeOf(m_source.state());
 }
 
+bool EsdeAppCatalog::requestLaunchTest(std::uint64_t token, const ui::CatalogEntry& entry,
+                                       const LaunchTestChoice& test) {
+    const auto game = catalog::GameId::parse(entry.id);
+    if (m_resolving || m_decision || !game || m_stopped || m_source.ended()) {
+        return false;
+    }
+    m_resolving = token;
+    Launch& launch = m_launches[token];
+    launch.title = entry.title;
+    launch.session.game = *game;
+    launch.test = true;
+    m_worker.resolve(token, *game, test);
+    spdlog::info("Launch test of '{}' ({}) asked: resolving it on the catalog worker", entry.title, entry.id);
+    return true;
+}
+
+bool EsdeAppCatalog::requestEmulatorTable() {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_tableAsked = true;
+    m_table.reset();
+    m_worker.emulatorTable(++m_emulatorSerial);
+    return true;
+}
+
+bool EsdeAppCatalog::requestSampleGames(const catalog::SystemName& system, std::size_t limit) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_samplesAsked = true;
+    m_samples.reset();
+    m_worker.sampleGames(++m_emulatorSerial, system, limit);
+    return true;
+}
+
+bool EsdeAppCatalog::requestChoiceChange(ChoiceChange change) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    ++m_changesAsked;
+    m_worker.changeChoice(++m_emulatorSerial, std::move(change));
+    return true;
+}
+
+std::optional<std::filesystem::path> EsdeAppCatalog::programStartFolder() const {
+    const auto profile = esde::readLibraryFile(m_options.paths.configDir() / esde::kLibraryFileName);
+    return profile ? profile->installFolder : std::nullopt;
+}
+
+std::optional<ChoiceChanged> EsdeAppCatalog::takeChoiceChanged() {
+    if (m_changes.empty()) {
+        return std::nullopt;
+    }
+    ChoiceChanged changed = std::move(m_changes.front());
+    m_changes.erase(m_changes.begin());
+    return changed;
+}
+
 bool EsdeAppCatalog::requestLaunch(std::uint64_t token, const ui::CatalogEntry& entry) {
     // One decision at a time, until it is taken: a second Avvia would ask again with the same token.
     if (m_resolving || m_decision) {
@@ -355,7 +415,40 @@ CatalogChanges EsdeAppCatalog::poll() {
             makeError(ErrorCode::Unavailable, "the catalog worker ended before it answered"));
     }
     collectSessions(results);
+    collectEmulators(results);
     return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
+}
+
+void EsdeAppCatalog::collectEmulators(CatalogResults& results) {
+    if (results.emulatorTable && m_tableAsked && results.emulatorTable->serial == m_emulatorSerial) {
+        m_tableAsked = false;
+    }
+    if (results.emulatorTable) {
+        m_table = std::move(results.emulatorTable);
+        results.emulatorTable.reset();
+    }
+    if (results.emulatorSamples) {
+        m_samplesAsked = false;
+        m_samples = std::move(results.emulatorSamples);
+        results.emulatorSamples.reset();
+    }
+    for (ChoiceChanged& changed : results.changes) {
+        m_changesAsked -= m_changesAsked > 0 ? 1 : 0;
+        m_changes.push_back(std::move(changed));
+    }
+    results.changes.clear();
+    for (LaunchTestResult& result : results.tests) {
+        m_testAwaited = false;
+        m_testResult = std::move(result);
+    }
+    results.tests.clear();
+    if (m_source.ended()) {
+        // Nothing asked of the worker will be answered any more.
+        m_tableAsked = false;
+        m_samplesAsked = false;
+        m_changesAsked = 0;
+        m_testAwaited = false;
+    }
 }
 
 bool EsdeAppCatalog::collectRefresh(CatalogResults& results, bool ended) {
@@ -440,16 +533,25 @@ void EsdeAppCatalog::sessionEnded(std::uint64_t token, const launcher::LaunchSes
     launch.session =
         finishedPlaySession(launch.session, session, cause, stoppedAwaiting, launch.guardAllowed, LaunchClock::now());
     m_worker.finishSession(token, launch.session, launch.system, session.request().executable);
+    m_testAwaited = m_testAwaited || launch.test;
 }
 
 void EsdeAppCatalog::sessionRefused(std::uint64_t token) {
     const auto found = m_launches.find(token);
-    if (found == m_launches.end() || m_stopped || found->second.system.str().empty()) {
-        return; // a game that could not be resolved names no identity to record a session for
+    if (found == m_launches.end() || m_stopped) {
+        return;
     }
     Launch& launch = found->second;
+    if (launch.system.str().empty()) {
+        // A game that could not be resolved names no identity to record a session for.
+        if (launch.test) {
+            m_testResult = LaunchTestResult{token, "blocked", false, 0};
+        }
+        return;
+    }
     launch.session = blockedPlaySession(launch.session, launch.resolution, std::chrono::system_clock::now());
     m_worker.finishSession(token, launch.session, launch.system, {});
+    m_testAwaited = m_testAwaited || launch.test;
 }
 
 void EsdeAppCatalog::shutdown() {
