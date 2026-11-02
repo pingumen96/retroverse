@@ -279,5 +279,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   (`assets/ui/keyboard.rml`). I7 step 6 adds to `rv_catalog` `game_status.hpp` and `statistics.hpp`, to `rv_catalog_db`
   `stats_query.cpp` (`playStatistics()`, `gameStatus()`) and `rv_game_status`, to `rv_ui_model` `statistics_model`, to `rv_ui`
   `statistics_screen` (`assets/ui/statistics.rml`), to `rv_app_catalog` `statistics_data`, to `tools/cli` `cmd_stats.cpp`.
+  I7 step 7 (the file watcher) adds to `rv_core` `change_watcher.hpp` (the port) and
+  `foldedPathElements()`, to `rv_esde` `change_scope.hpp` (a changed path to a system, the roots watched), to
+  `rv_platform_win` `directory_watcher.hpp` (the thread, ReadDirectoryChangesW, the polls, the device notifications), to
+  `rv_app_cli` `library_watch.hpp` (the policy on an injected clock), to `rv_app_catalog` `library_watcher.hpp` (the
+  watcher's changes to the catalog's `RefreshRequest`, `library_refresh.hpp`), and `tests/support/fake_change_watcher.hpp`.
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 

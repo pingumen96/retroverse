@@ -316,9 +316,15 @@ private:
                 m_shared->status[root->index].name = root->spec.name;
             }
         }
+        std::size_t notified = 0;
+        std::size_t polled = 0;
         for (const auto& root : m_roots) {
             arm(*root);
+            notified += root->mode == core::WatchMode::Notify ? 1 : 0;
+            polled += root->mode == core::WatchMode::Poll ? 1 : 0;
         }
+        spdlog::info("Library watcher: {} root(s) armed: {} notified, {} polled, {} not there", m_roots.size(), notified,
+                     polled, m_roots.size() - notified - polled);
         const std::lock_guard lock(m_shared->mutex);
         m_shared->settledGeneration = generation;
     }
