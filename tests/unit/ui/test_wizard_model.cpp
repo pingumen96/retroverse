@@ -83,8 +83,21 @@ TEST_CASE("ui/wizard: the seven pages to the end, each asking for its work", "[u
     model.setImport(WizardWork::Done, WizardImport{});
     CHECK(model.focused() == WizardButton::Next);
 
-    CHECK_FALSE(forward(model).has_value());
+    command = forward(model);
+    REQUIRE(command.has_value());
+    CHECK(command->kind == WizardCommandKind::Emulators); // its counts
     CHECK(model.page() == WizardPage::Emulators);
+    CHECK(model.focused() == WizardButton::Next);
+    model.setEmulators(44, 4);
+    CHECK(model.emulatorsReady() == std::optional<std::size_t>(44));
+    CHECK(model.emulatorsBlocked() == 4);
+    CHECK_FALSE(model.apply(UiCommand::Up).has_value());
+    CHECK(model.focused() == WizardButton::Emulators);
+    command = model.apply(UiCommand::Activate);
+    REQUIRE(command.has_value());
+    CHECK(command->kind == WizardCommandKind::OpenEmulators); // the screen over the page
+    CHECK(model.page() == WizardPage::Emulators);
+    CHECK_FALSE(model.apply(UiCommand::Down).has_value());
     CHECK_FALSE(forward(model).has_value()); // skippable: the menu has it
     CHECK(model.page() == WizardPage::Appearance);
     CHECK(model.focused() == WizardButton::Next);
@@ -179,7 +192,7 @@ TEST_CASE("ui/wizard: the ways back", "[ui][wizard]") {
     CHECK_FALSE(model.apply(UiCommand::Back).has_value());
     CHECK(model.page() == WizardPage::Emulators);
     static_cast<void>(forward(model));
-    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK(model.apply(UiCommand::Back)->kind == WizardCommandKind::Emulators); // its counts again
     CHECK(model.page() == WizardPage::Emulators);
     static_cast<void>(forward(model));
     static_cast<void>(forward(model));

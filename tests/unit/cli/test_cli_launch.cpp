@@ -28,6 +28,7 @@
 #include <rv/esde/discovery.hpp>
 
 #include "support/fixture.hpp"
+#include "support/program_stub.hpp"
 #include "support/temp_dir.hpp"
 
 namespace fs = std::filesystem;
@@ -305,4 +306,63 @@ TEST_CASE("cli/launch: no library.json", "[cli][launch]") {
     const std::vector<std::string> arguments{"--data-dir", utf8(dir.file("data")), "profiles"};
     CHECK(rv::cli::run(arguments, out, err, testEnvironment(dir.path())) == ExitCode::UsageError);
     CHECK(err.text().find("library create") != std::string::npos);
+}
+
+TEST_CASE("cli/assign --emulator: a program for a command that finds none", "[cli][launch]") {
+    const LoggingReset loggingReset;
+    Setup setup = standardSetup();
+    REQUIRE(setup.run({"import"}).code == ExitCode::Ok);
+    const auto gbMissing = [&] {
+        const auto report = nlohmann::json::parse(setup.run({"profiles", "--json", "--system", "gb"}).out);
+        for (const auto& command : report.at("systems").at(0).at("commands")) {
+            if (command.at("label") == "Missing Emulator (Standalone)") {
+                return command;
+            }
+        }
+        return nlohmann::json();
+    };
+    CHECK(gbMissing().at("readiness") == "emulator-not-found");
+
+    const rv::test::TempDir programs("rv-cli-program");
+    const fs::path program = programs.file("standalone.exe");
+    rv::test::writeProgramStub(program);
+    const RunResult set = setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--program", utf8(program)});
+    INFO(set.err);
+    REQUIRE(set.code == ExitCode::Ok);
+    CHECK(set.out.find("standalone.exe") != std::string::npos);
+    CHECK(gbMissing().at("readiness") == "ready");
+    CHECK(gbMissing().at("program").at("rule") == "retroverse");
+
+    const RunResult shown = setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--json"});
+    REQUIRE(shown.code == ExitCode::Ok);
+    CHECK(nlohmann::json::parse(shown.out).at("program") == utf8(program));
+
+    // Refused by its name; nothing stored.
+    const fs::path shell = programs.file("powershell.exe");
+    rv::test::writeProgramStub(shell);
+    const RunResult refused = setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--program", utf8(shell)});
+    CHECK(refused.code == ExitCode::UsageError);
+    CHECK(refused.err.find("command interpreter") != std::string::npos);
+    CHECK(setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--program", utf8(programs.file("gone.exe"))}).code ==
+          ExitCode::UsageError);
+    CHECK(nlohmann::json::parse(setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--json"}).out).at("program") ==
+          utf8(program));
+
+    REQUIRE(setup.run({"assign", "--emulator", "MISSING-EMULATOR", "--clear"}).code == ExitCode::Ok);
+    CHECK(gbMissing().at("readiness") == "emulator-not-found");
+
+    CHECK(setup.run({"assign", "gb", "--program", utf8(program)}).code == ExitCode::UsageError);
+    CHECK(setup.run({"assign", "--emulator", "X", "--game", "g0000000000000001"}).code == ExitCode::UsageError);
+    CHECK(setup.run({"assign", "--emulator", "X", "--clear", "--program", utf8(program)}).code == ExitCode::UsageError);
+}
+
+TEST_CASE("cli/launch --test fails closed in an unattended run without the allow-list", "[cli][launch]") {
+    const LoggingReset loggingReset;
+    Setup setup = standardSetup();
+    const ScopedVariable background(L"RV_LAUNCH_BACKGROUND", L"1");
+    const ScopedVariable allowList(L"RV_LAUNCH_ALLOWLIST", std::nullopt);
+    // Refused before the library or the game is looked at: this one does not exist.
+    const RunResult refused = setup.run({"launch", "--game", "g0000000000000001", "--test"});
+    CHECK(refused.code == ExitCode::ProblemsFound);
+    CHECK(refused.err.find("RV_LAUNCH_ALLOWLIST") != std::string::npos);
 }

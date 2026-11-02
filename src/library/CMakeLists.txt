@@ -7,6 +7,7 @@
 add_library(rv_library STATIC
     src/folder_listing.cpp
     src/launch_library.cpp
+    src/launch_table.cpp
     src/library_creation.cpp
     src/library_preview.cpp
 )

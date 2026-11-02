@@ -35,17 +35,19 @@ namespace {
 std::vector<ListedFolder> listDrives() {
     std::vector<ListedFolder> drives;
     for (const std::filesystem::path& root : platform_win::driveRoots()) {
-        drives.push_back(ListedFolder{root, core::pathToUtf8Lossy(root)});
+        drives.push_back(ListedFolder{root, core::pathToUtf8Lossy(root), false});
     }
     return drives;
 }
 
-Expected<std::vector<ListedFolder>> listFolders(const std::filesystem::path& folder) {
+namespace {
+
+[[nodiscard]] Expected<std::vector<ListedFolder>> listEntries(const std::filesystem::path& folder, bool programs) {
     const esde::FolderCheck check = esde::checkFolder(folder);
     if (check.availability != catalog::Availability::Available) {
         return propagate(listingError(folder, check, {}));
     }
-    std::vector<ListedFolder> folders;
+    std::vector<ListedFolder> listed;
     std::error_code error;
     std::filesystem::directory_iterator entries(folder, std::filesystem::directory_options::skip_permission_denied,
                                                 error);
@@ -53,22 +55,40 @@ Expected<std::vector<ListedFolder>> listFolders(const std::filesystem::path& fol
         return propagate(listingError(folder, check, error.message()));
     }
     const std::filesystem::directory_iterator end;
-    while (entries != end && folders.size() < kMaxListedFolders) {
+    while (entries != end && listed.size() < kMaxListedFolders) {
         std::error_code entryError;
-        if (entries->is_directory(entryError) && !bookkeeping(entries->path().filename().native())) {
-            folders.push_back(ListedFolder{entries->path(), core::pathToUtf8Lossy(entries->path().filename())});
+        const std::filesystem::path& path = entries->path();
+        if (entries->is_directory(entryError)) {
+            if (!bookkeeping(path.filename().native())) {
+                listed.push_back(ListedFolder{path, core::pathToUtf8Lossy(path.filename()), false});
+            }
+        } else if (programs && _wcsicmp(path.extension().c_str(), L".exe") == 0) {
+            listed.push_back(ListedFolder{path, core::pathToUtf8Lossy(path.filename()), true});
         }
         entries.increment(error);
         if (error) {
             return propagate(listingError(folder, check, error.message()));
         }
     }
-    std::sort(folders.begin(), folders.end(), [](const ListedFolder& left, const ListedFolder& right) {
+    std::sort(listed.begin(), listed.end(), [](const ListedFolder& left, const ListedFolder& right) {
+        if (left.program != right.program) {
+            return right.program;
+        }
         const std::string a = core::toLowerAscii(left.name);
         const std::string b = core::toLowerAscii(right.name);
         return a != b ? a < b : left.name < right.name;
     });
-    return folders;
+    return listed;
+}
+
+} // namespace
+
+Expected<std::vector<ListedFolder>> listFolders(const std::filesystem::path& folder) {
+    return listEntries(folder, false);
+}
+
+Expected<std::vector<ListedFolder>> listPrograms(const std::filesystem::path& folder) {
+    return listEntries(folder, true);
 }
 
 esde::FolderCheck checkAccess(const std::filesystem::path& folder) {

@@ -96,7 +96,8 @@ Expected<std::unique_ptr<LaunchLibrary>> loadLaunchLibrary(catalog::LibraryProfi
                                         issue.toString()});
     }
     library->translator = std::make_unique<esde::EsdeCommandTranslator>(
-        esde::TranslationContext{library->profile, library->romRoot, &library->findRules, &library->probe},
+        esde::TranslationContext{library->profile, library->romRoot, &library->findRules, &library->probe,
+                                 &library->programChoices},
         library->systems);
     return library;
 }
@@ -155,6 +156,13 @@ std::string_view systemChoiceOrigin(const LaunchLibrary& library, std::string_vi
     return library.profiles.systemChoice(system) != nullptr ? kEmulatorsJsonOrigin : std::string_view();
 }
 
+void setProgramChoices(LaunchLibrary& library, const std::vector<catalog_db::ProgramChoiceRow>& rows) {
+    library.programChoices.clear();
+    for (const catalog_db::ProgramChoiceRow& row : rows) {
+        library.programChoices.emplace(row.emulator, row.program);
+    }
+}
+
 void loadAssignedChoices(LaunchLibrary& library, const core::Paths& paths) {
     catalog_db::DatabaseOptions options;
     options.create = false;
@@ -192,6 +200,12 @@ void loadAssignedChoices(LaunchLibrary& library, const core::Paths& paths) {
     for (catalog_db::SystemChoiceRow& row : *choices) {
         library.assignedChoices.emplace(row.system.str(), std::move(row.stored.choice));
     }
+    auto programs = (*store)->programChoices(library.profile.id);
+    if (!programs) {
+        unknown(programs.error());
+        return;
+    }
+    setProgramChoices(library, *programs);
 }
 
 catalog::LaunchResolution resolveCatalogLaunch(const LaunchLibrary& library, const catalog_db::GameDetails& details,

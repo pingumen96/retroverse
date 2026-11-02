@@ -8,7 +8,9 @@
 // why the game cannot start (catalog::LaunchTranslation).
 //
 // The program is decided on the unexpanded command: it must be exactly one %EMULATOR_X% element, found through the
-// find rules of X, or a literal absolute path whose only tokens are '~' and %ESPATH%. Command interpreters and launchers
+// program the user chose for X (ADR-0018 §5: TranslationContext::programChoices, first and without a fallback, so that
+// the emulator never changes behind the user's back) or the find rules of X, or a literal absolute path whose only
+// tokens are '~' and %ESPATH%. Command interpreters and launchers
 // are refused by name even when a find rule finds them (launcher::isRefusedProgram: cmd, powershell, explorer, ...), by
 // the name found and by the name of the file it opens (an 8.3 alias or a symbolic link resolved), and the request must
 // pass launcher::validateLaunchRequest (a PE .exe or .com, the working folder there).
@@ -58,6 +60,8 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -73,13 +77,18 @@
 
 namespace rv::esde {
 
+/// The programs chosen for emulators (rv_launch_program_choices), by the X of %EMULATOR_X%, compared exactly.
+using ProgramChoices = std::map<std::string, std::filesystem::path, std::less<>>;
+
 /// What a translation reads: the library (its ES-DE home gives '~', its install folder %ESPATH%), the ROM root
-/// (%ROMPATH%, the systems' ROM folders), the find rules and the machine. The pointers must outlive the calls.
+/// (%ROMPATH%, the systems' ROM folders), the find rules, the machine and the programs chosen (null: none). The pointers
+/// must outlive the calls.
 struct TranslationContext {
     catalog::LibraryProfile profile;
     ResolvedRoot romRoot;
     const FindRules* findRules = nullptr;
     const core::ISystemProbe* probe = nullptr;
+    const ProgramChoices* programChoices = nullptr;
 };
 
 /// The largest %INJECT% content ES-DE injects (bytes of UTF-8 text, line ends removed); a longer one injects
@@ -104,8 +113,8 @@ struct FindResult {
     bool noRules = false;
 };
 
-/// Looks for the program of %EMULATOR_<name>% (`name` compared exactly) through its find rules, as the header comment
-/// describes.
+/// Looks for the program of %EMULATOR_<name>% (`name` compared exactly): the program chosen for it, which is found or
+/// not ("retroverse" its rule), else its find rules, as the header comment describes.
 [[nodiscard]] FindResult findEmulator(const TranslationContext& context, std::string_view name);
 
 /// Looks for the core file `coreFile` ("bsnes_libretro.dll", the text after %CORE_<name>% and its separator) through
@@ -140,6 +149,13 @@ private:
     TranslationContext m_context;
     const SystemsConfiguration* m_systems = nullptr;
 };
+
+/// Whether `program` may be chosen for an emulator (ADR-0018 §5): an absolute path to a file Retroverse would start. Not a
+/// command interpreter or launcher by the name it has or the file it opens (launcher::isRefusedProgram: an 8.3 alias or a
+/// link hides neither), and a request naming it passes launcher::validateLaunchRequest (a PE .exe or .com). A translation
+/// checks the same again. Errors: NotFound (no such file), ValidationFailed (refused: its message says why), those of
+/// validateLaunchRequest.
+[[nodiscard]] Status checkProgramChoice(const std::filesystem::path& program);
 
 /// A file or folder below a ROM folder as the file system spells it.
 struct ListedPath {

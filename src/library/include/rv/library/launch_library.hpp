@@ -19,6 +19,7 @@
 #include <rv/catalog/snapshot.hpp>
 #include <rv/catalog/system.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
+#include <rv/catalog_db/session_store.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/esde/find_rules.hpp>
 #include <rv/esde/gamelist.hpp>
@@ -51,6 +52,9 @@ struct LaunchLibrary {
     /// system name: they rank before emulators.json's "systemChoices" (systemChoices()). Empty until
     /// loadAssignedChoices() or the caller's own read of the database.
     std::map<std::string, launcher::LaunchChoice, std::less<>> assignedChoices;
+    /// The programs chosen for emulators (ADR-0018 §5: rv_launch_program_choices, ahead of the find rules): the
+    /// translator reads this map. Empty until loadAssignedChoices() or setProgramChoices().
+    esde::ProgramChoices programChoices;
     /// What reading the library met: settings, roots, systems, find rules, gamelists, profiles.
     std::vector<catalog::Issue> issues;
 
@@ -95,8 +99,11 @@ inline constexpr std::string_view kEmulatorsJsonOrigin = "emulators.json";
 /// Where Retroverse's choice for `system` comes from: kAssignedOrigin, kEmulatorsJsonOrigin, or empty when it has none.
 [[nodiscard]] std::string_view systemChoiceOrigin(const LaunchLibrary& library, std::string_view system);
 
-/// Reads into `library` Retroverse's choices for its systems from the catalog database (retroverse-cli assign), opened
-/// for reading only: never made, migrated or written. No database yet, or one that holds no choice of the library: no
+/// `rows` as the library's programs chosen for emulators.
+void setProgramChoices(LaunchLibrary& library, const std::vector<catalog_db::ProgramChoiceRow>& rows);
+
+/// Reads into `library` Retroverse's choices for its systems and the programs chosen for its emulators from the catalog
+/// database (retroverse-cli assign), opened for reading only: never made, migrated or written. No database yet, or one that holds no choice of the library: no
 /// choices. A database that cannot be read is an issue (assign's choices are then not known).
 void loadAssignedChoices(LaunchLibrary& library, const core::Paths& paths);
 

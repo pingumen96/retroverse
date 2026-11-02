@@ -13,7 +13,7 @@
 // | 2 | Detection  | Avanti, no problem left  | to 1                      |
 // | 3 | Preview    | Avanti, read             | to 2                      |
 // | 4 | Import     | Avanti, imported         | to 3, once it failed only |
-// | 5 | Emulators  | Avanti (skippable)       | none: the import stands   |
+// | 5 | Emulators  | Avanti (skippable), or the emulators screen over it | none: the import stands |
 // | 6 | Appearance | Avanti                   | to 5                      |
 // | 7 | World      | Entra, the world ready   | none: the world starts    |
 //
@@ -60,9 +60,10 @@ enum class WizardButton : std::uint8_t {
     FolderMedia,
     Lighting,
     ReduceMotion,
+    Emulators,
 };
 /// "next", "previous", "quit", "retry", "enter", "folder-home", "folder-install", "folder-rom", "folder-media",
-/// "lighting", "reduce-motion" (the button event's argument).
+/// "lighting", "reduce-motion", "emulators" (the button event's argument).
 [[nodiscard]] std::string_view toString(WizardButton button) noexcept;
 [[nodiscard]] std::optional<WizardButton> wizardButtonFromName(std::string_view name) noexcept;
 /// The button's element id ("wz-next" ...).
@@ -136,8 +137,11 @@ enum class WizardCommandKind : std::uint8_t {
     ReduceMotion, ///< reduceMotion toggled
     StartWorld,   ///< page 7 entered: the building job
     Enter,        ///< Entra: the wizard ends, in the world
+    Emulators,    ///< page 5 entered: its counts
+    OpenEmulators, ///< page 5's button: the emulators screen over the wizard
 };
-/// "quit", "detect", "browse", "read", "import", "lighting", "reduce-motion", "start-world", "enter".
+/// "quit", "detect", "browse", "read", "import", "lighting", "reduce-motion", "start-world", "enter", "emulators",
+/// "open-emulators".
 [[nodiscard]] std::string_view toString(WizardCommandKind kind) noexcept;
 
 struct WizardCommand {
@@ -169,6 +173,8 @@ public:
     void setImport(WizardWork work, WizardImport progress, std::string failure = {});
     void setAppearance(std::string lightingProfile, bool reduceMotion);
     void setWorld(WizardWork work);
+    /// Page 5's counts: the systems that launch as they are and those that do not; nothing: not known (yet).
+    void setEmulators(std::optional<std::size_t> ready, std::size_t blocked);
 
     [[nodiscard]] bool isOpen() const noexcept { return m_open; }
     [[nodiscard]] bool resumed() const noexcept { return m_resumed; }
@@ -184,6 +190,8 @@ public:
     [[nodiscard]] const std::string& failure() const noexcept { return m_failure; }
     [[nodiscard]] const std::string& lightingProfile() const noexcept { return m_lighting; }
     [[nodiscard]] bool reduceMotion() const noexcept { return m_reduceMotion; }
+    [[nodiscard]] const std::optional<std::size_t>& emulatorsReady() const noexcept { return m_emulatorsReady; }
+    [[nodiscard]] std::size_t emulatorsBlocked() const noexcept { return m_emulatorsBlocked; }
     /// The elements the page offers now, in focus order.
     [[nodiscard]] std::vector<WizardButton> buttons() const;
     [[nodiscard]] WizardButton focused() const noexcept { return m_focused; }
@@ -213,6 +221,8 @@ private:
     std::string m_failure;
     std::string m_lighting;
     bool m_reduceMotion = false;
+    std::optional<std::size_t> m_emulatorsReady;
+    std::size_t m_emulatorsBlocked = 0;
     std::uint64_t m_revision = 0;
 };
 

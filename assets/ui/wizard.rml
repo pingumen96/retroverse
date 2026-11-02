@@ -100,7 +100,10 @@
 			<div data-if="page == 'emulators'">
 				<h1>Emulatori</h1>
 				<p>I giochi si avviano con gli stessi comandi di ES-DE: se in ES-DE funzionano, funzionano anche qui.</p>
-				<p>Puoi passare oltre: un gioco che non parte dirà cosa manca.</p>
+				<p class="note" data-if="emulatorsKnown && emulatorsBlocked == 0">{{ emulatorsReady }} sistemi pronti.</p>
+				<p class="note" data-if="emulatorsKnown && emulatorsBlocked > 0">{{ emulatorsReady }} sistemi pronti, {{ emulatorsBlocked }} da configurare.</p>
+				<button id="wz-emulators" class="action" data-event-click="button('emulators')">Apri Emulatori</button>
+				<p>Puoi passare oltre: si riapre dal menu, e un gioco che non parte dirà cosa manca.</p>
 			</div>
 
 			<div data-if="page == 'appearance'">

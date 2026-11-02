@@ -323,6 +323,8 @@ The I1 spike's launch items stay under "Emulator launch (for I2 and I7)" above; 
   `rv_tests` since I2 step 0b) expects `CreateProcessW` to fail, and the guard would refuse the broken image before it.
   The image is written into a scratch folder per run, which no list can name in advance: that test must clear the
   variable for itself, or point it at its own image, before the scripts set it.
+- **The emulators screen's game of a test:** it steps through the first 200 games (ADR-0018 §5 says any): a search field
+  there, once the on-screen keyboard (I7 step 5) can serve a second field.
 - **Derived profiles:** an `extends` field, so that a user profile changes a few fields of a shipped one instead of
   replacing it whole by id (I2 step 5), if users ask for it.
 - **Startup grace per profile:** a `startupGraceSeconds` beside `windowTimeoutSeconds` in `emulators.json`; today every

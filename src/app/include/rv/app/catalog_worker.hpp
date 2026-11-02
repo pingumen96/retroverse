@@ -26,6 +26,12 @@
 // the answers resolved before. stop() sets the import's cancel flag and interrupts the writer while the import writes:
 // the import is rolled back or committed whole, within the stop's bound.
 //
+// Since I7 step 4 (ADR-0018 §5) it answers the emulators screen: the table of the systems with games (emulatorTable()), the
+// games a launch test offers (sampleGames()), a launch test (resolve() with a LaunchTestChoice: that choice launches, the
+// session records `test`, and only a return that was normal stores it: CatalogResults::tests) and the changes of what is
+// stored (changeChoice()). What is stored changes the systems' readiness: they are resolved again without reading ES-DE's
+// configuration (CatalogResults::resolved, a new readiness generation).
+//
 // Since I4 step 5a it opens, with the catalog, a third read-only connection for the building job (CatalogOpened::world,
 // room_snapshot.hpp's WorldCatalogReader), which reads every system's snapshot on the app's worker pool: the room's
 // snapshot is no job of this worker any more (I3 step 10b's), so that the lists never queue behind it.
@@ -43,6 +49,7 @@
 #include <utility>
 #include <vector>
 
+#include <rv/app/emulators_data.hpp>
 #include <rv/app/library_refresh.hpp>
 #include <rv/app/room_snapshot.hpp>
 #include <rv/catalog/ids.hpp>
@@ -105,6 +112,12 @@ struct CatalogSystem {
     /// the choice it rests on.
     GameLaunchState launch;
     launcher::LaunchChoice choice;
+    /// I7 step 4: where the choice comes from (catalog::toString(ChoiceSource)) and its name as people read it (a command's
+    /// label, a profile's display name): the emulators screen's list, which resolves nothing again.
+    std::string source;
+    std::string choiceName;
+    /// The program the choice finds now, when it does: a verification counts for that one alone.
+    std::optional<std::filesystem::path> program;
     /// Its resolution leaves something to each game (an %INJECT% file, a %STARTDIR%=%GAMEDIR% folder): each game is
     /// resolved for its own readiness.
     bool perGame = false;
@@ -208,6 +221,12 @@ struct CatalogRefreshed {
     std::optional<Error> libraryError;
 };
 
+/// The systems resolved again after a change of what is stored (I7 step 4): as CatalogRefreshed::systems, its generation.
+struct CatalogResolved {
+    std::vector<CatalogSystem> systems;
+    std::uint64_t generation = 0;
+};
+
 /// The directory's favourites and recently played games (CatalogWorker::recentGames, I4 step 7b): the catalog's
 /// SqliteCatalogQuery::favoritesAndRecent on the worker's connection.
 struct RecentGamesList {
@@ -234,13 +253,21 @@ struct CatalogResults {
     /// The refresh running: where it is (the latest), and its end.
     std::optional<RefreshProgress> refreshProgress;
     std::optional<CatalogRefreshed> refreshed;
+    /// I7 step 4: the emulators screen's answers: the latest table and samples, how launch tests and changes ended, the
+    /// systems resolved again.
+    std::optional<EmulatorTable> emulatorTable;
+    std::optional<EmulatorSamples> emulatorSamples;
+    std::vector<LaunchTestResult> tests;
+    std::vector<ChoiceChanged> changes;
+    std::optional<CatalogResolved> resolved;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
 
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && !recentGames && readiness.empty() && launches.empty() && sessions.empty() &&
-               verified.empty() && !refreshProgress && !refreshed && !ended;
+               verified.empty() && !refreshProgress && !refreshed && !emulatorTable && !emulatorSamples &&
+               tests.empty() && changes.empty() && !resolved && !ended;
     }
 };
 
@@ -299,8 +326,19 @@ public:
     /// can differ (its availability, its <altemulator>, Retroverse's choice for it, a folder game, a system whose
     /// resolution leaves something to each game).
     void readiness(std::vector<catalog::GameId> games);
-    /// Resolves the launch of `game` right before it starts (its file on disk now, the database's choices).
-    void resolve(std::uint64_t token, catalog::GameId game);
+    /// Resolves the launch of `game` right before it starts (its file on disk now, the database's choices); `test`: a
+    /// launch test, with that choice (CatalogResults::tests says how it ended, once its session ended).
+    void resolve(std::uint64_t token, catalog::GameId game, std::optional<LaunchTestChoice> test = std::nullopt);
+    /// The table of the systems with games (CatalogResults::emulatorTable), answered with `serial`: what they stand on as
+    /// resolved already (ADR-0018 §16: at once), without their options.
+    void emulatorTable(std::uint64_t serial);
+    /// The options of `system`, each translated now, and the games a launch test of it offers, at most `limit`
+    /// (CatalogResults::emulatorSamples).
+    void sampleGames(std::uint64_t serial, catalog::SystemName system, std::size_t limit);
+    /// The launch test `token` will have no session (a launch refused before one exists): its choice is forgotten.
+    void forgetTest(std::uint64_t token);
+    /// Changes what is stored (CatalogResults::changes), then resolves the systems again (::resolved).
+    void changeChoice(std::uint64_t serial, ChoiceChange change);
     /// The play session of the launch `token`: it began (Running, the started process), it ended (its final state; a
     /// blocked attempt without beginSession()). `system` and `program` (the request's executable) record a launch
     /// verification when it returned normally.

@@ -6,9 +6,9 @@
 namespace rv::ui {
 namespace {
 
-constexpr std::array<SystemMenuButton, 5> kButtons = {SystemMenuButton::Resume, SystemMenuButton::Settings,
-                                                      SystemMenuButton::Quit, SystemMenuButton::ConfirmQuit,
-                                                      SystemMenuButton::Stay};
+constexpr std::array<SystemMenuButton, 6> kButtons = {SystemMenuButton::Resume, SystemMenuButton::Settings,
+                                                      SystemMenuButton::Emulators, SystemMenuButton::Quit,
+                                                      SystemMenuButton::ConfirmQuit, SystemMenuButton::Stay};
 
 } // namespace
 
@@ -18,6 +18,8 @@ std::string_view toString(SystemMenuButton button) noexcept {
         return "resume";
     case SystemMenuButton::Settings:
         return "settings";
+    case SystemMenuButton::Emulators:
+        return "emulators";
     case SystemMenuButton::Quit:
         return "quit";
     case SystemMenuButton::ConfirmQuit:
@@ -43,6 +45,8 @@ std::string_view elementIdOf(SystemMenuButton button) noexcept {
         return "sm-resume";
     case SystemMenuButton::Settings:
         return "sm-settings";
+    case SystemMenuButton::Emulators:
+        return "sm-emulators";
     case SystemMenuButton::Quit:
         return "sm-quit";
     case SystemMenuButton::ConfirmQuit:
@@ -63,6 +67,8 @@ std::string_view toString(SystemMenuCommand command) noexcept {
         return "close";
     case SystemMenuCommand::OpenSettings:
         return "open-settings";
+    case SystemMenuCommand::OpenEmulators:
+        return "open-emulators";
     case SystemMenuCommand::Quit:
         return "quit";
     }
@@ -85,7 +91,7 @@ std::vector<SystemMenuButton> SystemMenuModel::buttons() const {
     if (m_view == SystemMenuView::Confirm) {
         return {SystemMenuButton::Stay, SystemMenuButton::ConfirmQuit};
     }
-    return {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Quit};
+    return {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Emulators, SystemMenuButton::Quit};
 }
 
 std::string SystemMenuModel::focusedElement() const {
@@ -112,6 +118,8 @@ std::optional<SystemMenuCommand> SystemMenuModel::press(SystemMenuButton button)
         return SystemMenuCommand::Close;
     case SystemMenuButton::Settings:
         return SystemMenuCommand::OpenSettings;
+    case SystemMenuButton::Emulators:
+        return SystemMenuCommand::OpenEmulators;
     case SystemMenuButton::Quit:
         // Annulla focused: an A pressed twice by mistake leaves nothing.
         show(SystemMenuView::Confirm, SystemMenuButton::Stay);

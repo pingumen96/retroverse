@@ -2,7 +2,7 @@
 <head>
 	<!--
 		The menu (ADR-0018 §1): pad Start, or Back's last level. It holds what is not about the building: Riprendi,
-		Impostazioni and Esci, which asks once; each later step of I7 adds its section's button here. A game left running
+		Impostazioni, Emulatori and Esci, which asks once; each later step of I7 adds its section's button here. A game left running
 		stays running.
 		Bound to the data model "system_menu" of rv::ui::SystemMenuScreen (src/ui/src/system_menu_screen.cpp); its ids are
 		rv::ui::elementIdOf()'s (src/ui/include/rv/ui/system_menu_model.hpp). view: main, confirm. The focus is the model's;
@@ -17,6 +17,7 @@
 			<h1>Retroverse</h1>
 			<button id="sm-resume" class="action primary" data-event-click="button('resume')">Riprendi</button>
 			<button id="sm-settings" class="action" data-event-click="button('settings')">Impostazioni</button>
+			<button id="sm-emulators" class="action" data-event-click="button('emulators')">Emulatori</button>
 			<button id="sm-quit" class="action" data-event-click="button('quit')">Esci</button>
 		</div>
 		<div data-if="view == 'confirm'">

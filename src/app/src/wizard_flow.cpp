@@ -356,7 +356,7 @@ void WizardFlow::listing(const ui::FolderListingRequest& request) {
         const auto toRows = [&](const std::vector<library::ListedFolder>& folders) {
             answer.rows.reserve(folders.size());
             for (const library::ListedFolder& folder : folders) {
-                answer.rows.push_back(ui::FolderRow{folder.path, folder.name});
+                answer.rows.push_back(ui::FolderRow{folder.path, folder.name, false});
             }
         };
         if (request.folder.empty()) {

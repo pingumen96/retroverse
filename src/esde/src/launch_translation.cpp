@@ -82,6 +82,18 @@ std::optional<std::filesystem::path> finalPathOf(const std::filesystem::path& pa
     return std::filesystem::path(std::move(resolved));
 }
 
+/// How to name `program` when it is refused, by the name found or by the file it opens: an 8.3 alias ("POWERS~1.EXE") or a
+/// link named like an emulator would hide a shell's name. Nothing when it is not.
+std::optional<std::string> refusedProgram(const std::filesystem::path& program) {
+    const auto opened = finalPathOf(program);
+    if (!launcher::isRefusedProgram(program) && !(opened && launcher::isRefusedProgram(*opened))) {
+        return std::nullopt;
+    }
+    const std::string name = core::pathToUtf8Lossy(program.filename());
+    const std::string openedName = opened ? core::pathToUtf8Lossy(opened->filename()) : name;
+    return openedName == name ? name : fmt::format("{} (it opens {})", name, openedName);
+}
+
 /// At most `maxBytes` from the start of `file`, opened as core::readFileShared() opens it (reading only, sharing
 /// everything), and whether more follows. Errors as readFileShared()'s, without OutOfRange: NotFound, Unavailable,
 /// InvalidArgument (a folder or a device), Conflict, IoError.
@@ -675,6 +687,7 @@ private:
                               tokens.front().offset == 0 && tokens.front().text.size() == element.text.size();
         if (emulator) {
             m_emulatorName = tokens.front().target;
+            m_translation.emulator = m_emulatorName;
             FindResult found = findEmulator(m_context, m_emulatorName);
             m_translation.attempts.insert(m_translation.attempts.end(), found.attempts.begin(), found.attempts.end());
             if (found.noRules) {
@@ -729,19 +742,12 @@ private:
         }
         if (m_translation.program) {
             m_programFolder = m_translation.program->path.parent_path();
-            // By the name found and by the file it opens: an 8.3 alias ("POWERS~1.EXE") or a link named like an
-            // emulator would hide a shell's name. The request keeps the path as found, which Windows opens alike.
-            const std::filesystem::path& found = m_translation.program->path;
-            const auto opened = finalPathOf(found);
-            const bool refused = launcher::isRefusedProgram(found) || (opened && launcher::isRefusedProgram(*opened));
-            if (refused) {
-                const std::string name = core::pathToUtf8Lossy(found.filename());
-                const std::string openedName = opened ? core::pathToUtf8Lossy(opened->filename()) : name;
+            // The request keeps the path as found, which Windows opens alike.
+            if (const auto refused = refusedProgram(m_translation.program->path)) {
                 block(LaunchReadiness::RequiresConfiguration, "program-refused",
-                      fmt::format("{}{} is a command interpreter or a launcher, which Retroverse never starts: choose "
+                      fmt::format("{} is a command interpreter or a launcher, which Retroverse never starts: choose "
                                   "another command or an emulator profile for {}",
-                                  name, openedName == name ? std::string() : fmt::format(" (it opens {})", openedName),
-                                  m_system.name.str()));
+                                  *refused, m_system.name.str()));
             }
         }
     }
@@ -1116,6 +1122,18 @@ private:
 
 FindResult findEmulator(const TranslationContext& context, std::string_view name) {
     FindResult result;
+    if (context.programChoices != nullptr) {
+        // Honoured or not found, never passed over: the find rules could start another emulator than the one chosen.
+        if (const auto chosen = context.programChoices->find(name); chosen != context.programChoices->end()) {
+            if (context.probe->fileExists(chosen->second)) {
+                result.found = catalog::FoundLocation{chosen->second, "retroverse", std::string(name), {}};
+            } else {
+                result.attempts.push_back(fmt::format("the program chosen in Retroverse, {}, does not exist",
+                                                      core::pathToUtf8Lossy(chosen->second)));
+            }
+            return result;
+        }
+    }
     const FindRuleSet* rules = emulatorRules(context, name);
     if (rules == nullptr) {
         result.noRules = true;
@@ -1219,6 +1237,26 @@ catalog::LaunchTranslation EsdeCommandTranslator::translate(const catalog::Syste
         return translation;
     }
     return translateCommand(m_context, *definition, *command, game);
+}
+
+Status checkProgramChoice(const std::filesystem::path& program) {
+    const std::string context = core::pathToUtf8Lossy(program);
+    if (!program.is_absolute()) {
+        return makeError(ErrorCode::InvalidArgument, "a program's path must be absolute", context);
+    }
+    std::error_code ignored;
+    if (!std::filesystem::is_regular_file(std::filesystem::path(core::extendedLengthPath(program)), ignored)) {
+        return makeError(ErrorCode::NotFound, "no such program", context);
+    }
+    if (const auto refused = refusedProgram(program)) {
+        return makeError(ErrorCode::ValidationFailed,
+                         fmt::format("{} is a command interpreter or a launcher, which Retroverse never starts", *refused),
+                         context);
+    }
+    launcher::LaunchRequest request;
+    request.executable = program;
+    request.workingDirectory = program.parent_path();
+    return launcher::validateLaunchRequest(request);
 }
 
 Expected<ListedPath> listedPath(const std::filesystem::path& romFolder, std::string_view relativePath) {

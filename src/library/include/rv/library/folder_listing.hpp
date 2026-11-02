@@ -18,6 +18,8 @@ struct ListedFolder {
     std::filesystem::path path;
     /// For people (UTF-8, unpaired surrogates as U+FFFD).
     std::string name;
+    /// A program, not a folder (listPrograms()).
+    bool program = false;
 
     bool operator==(const ListedFolder&) const = default;
 };
@@ -32,6 +34,10 @@ inline constexpr std::size_t kMaxListedFolders = 4000;
 /// ($RECYCLE.BIN, System Volume Information) left out. Errors: NotFound (the folder is gone), Unavailable (its drive
 /// cannot be reached), IoError (it cannot be listed).
 [[nodiscard]] Expected<std::vector<ListedFolder>> listFolders(const std::filesystem::path& folder);
+
+/// listFolders() and, after the folders, the `.exe` files of `folder`, by name (ADR-0018 §5: a program chosen for an
+/// emulator): their rows have `program` set. At most kMaxListedFolders in all.
+[[nodiscard]] Expected<std::vector<ListedFolder>> listPrograms(const std::filesystem::path& folder);
 
 /// Whether a root can be read: esde::checkFolder(), then a look at its first entry (a folder may exist and refuse its
 /// listing). Available, or why not.

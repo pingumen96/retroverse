@@ -611,4 +611,10 @@ bool isGuardRefusal(const Error& error) noexcept {
     return error.code == ErrorCode::ValidationFailed && error.context == kLaunchAllowListVariable;
 }
 
+bool launchTestAllowed(bool frameLimited) {
+    const auto background = processEnvironmentVariable("RV_LAUNCH_BACKGROUND");
+    return launchTestAllowed(frameLimited, background && !background->empty() && *background != "0",
+                             processEnvironmentVariable(kLaunchAllowListVariable).has_value());
+}
+
 } // namespace rv::launcher

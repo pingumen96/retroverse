@@ -14,6 +14,9 @@
 // | Annulla   | the rows               | closes             | Usa, the rows     | Usa  | closes |
 //
 // The drives are its root (an empty path), which Usa cannot choose. Clicks press what the keys press.
+//
+// Choosing a program instead (ADR-0018 §5, the emulators screen): the rows hold the programs after the folders, Activate on
+// a program chooses it, and Usa is never offered: a folder is not a program.
 
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +39,8 @@ inline constexpr std::size_t kVisibleRows = 8;
 struct FolderRow {
     std::filesystem::path path;
     std::string name;
+    /// A program to choose, not a folder to enter.
+    bool program = false;
 
     bool operator==(const FolderRow&) const = default;
 };
@@ -58,6 +63,8 @@ struct FolderListingRequest {
     std::uint64_t serial = 0;
     /// Empty: the drives.
     std::filesystem::path folder;
+    /// The folder's programs too.
+    bool programs = false;
 
     bool operator==(const FolderListingRequest&) const = default;
 };
@@ -87,6 +94,8 @@ class FolderBrowserModel {
 public:
     /// Opens at `start` (nothing: the drives): Usa is offered once it was listed. Asks its listing.
     void open(const std::optional<std::filesystem::path>& start);
+    /// The same to choose a program: its rows hold the programs too, no folder can be used.
+    void openForProgram(const std::optional<std::filesystem::path>& start);
     void close() noexcept;
 
     /// The listing to ask, once.
@@ -117,7 +126,9 @@ public:
     [[nodiscard]] std::size_t selected() const noexcept { return m_selected; }
     [[nodiscard]] FolderBrowserFocus focus() const noexcept { return m_focus; }
     /// Usa can choose what it stands on: a folder listed.
-    [[nodiscard]] bool canUse() const noexcept { return m_state == FolderBrowserState::Listed && !atDrives(); }
+    [[nodiscard]] bool canUse() const noexcept {
+        return m_state == FolderBrowserState::Listed && !atDrives() && !m_programs;
+    }
     /// The element the focus stands on.
     [[nodiscard]] std::string focusedElement() const;
     /// The element of the row at `index` among rows().
@@ -134,6 +145,7 @@ private:
     [[nodiscard]] std::optional<FolderBrowserResult> choose();
 
     FolderBrowserState m_state = FolderBrowserState::Closed;
+    bool m_programs = false;
     std::optional<FolderBrowserFailure> m_failure;
     std::filesystem::path m_folder;
     std::vector<FolderRow> m_rows;

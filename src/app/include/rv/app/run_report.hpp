@@ -671,6 +671,61 @@ struct MenuRecord {
     bool operator==(const MenuRecord&) const = default;
 };
 
+/// What the emulators screen did (I7 step 4).
+struct EmulatorsEventRecord {
+    std::uint64_t frame = 0;
+    /// "open", "closed", "system", "choice", "test" (`detail` the game), "test-refused", "test-ended" (`detail` the verdict),
+    /// "saved", "cleared", "browse", "program" (`detail`: "" stored, else a key of the document).
+    std::string event;
+    std::string detail;
+
+    bool operator==(const EmulatorsEventRecord&) const = default;
+};
+
+/// A system as the screen last listed it.
+struct EmulatorsSystemRecord {
+    std::string name;
+    std::size_t games = 0;
+    std::string readiness;
+    std::string blocker;
+    std::string source;
+    std::string choice;
+    bool verified = false;
+    bool stored = false;
+    /// "<name>=<readiness>", in the screen's order.
+    std::vector<std::string> options;
+
+    bool operator==(const EmulatorsSystemRecord&) const = default;
+};
+
+/// The run report's "emulators" (ADR-0018 §15).
+struct EmulatorsRecord {
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// At the end: where it stands (ui::toString), the verdict and problem it shows.
+    std::string state;
+    std::string view;
+    std::string verdict;
+    std::string problem;
+    /// Launch tests asked, refused before anything was resolved (launchTestAllowed()), stored.
+    std::uint64_t tests = 0;
+    std::uint64_t testsRefused = 0;
+    std::uint64_t testsStored = 0;
+    /// The last table, and how long the worker took for the slowest.
+    std::vector<EmulatorsSystemRecord> systems;
+    double tableMs = 0.0;
+    /// The sample offered first by the last system opened.
+    std::string sample;
+    /// The most elements of the panel, of the browser, found with cut text on any frame it showed (ADR-0018 §15).
+    std::uint32_t textCut = 0;
+    std::uint32_t browserTextCut = 0;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<EmulatorsEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const EmulatorsRecord&) const = default;
+};
+
 /// A wizard's step (I7 step 2).
 struct WizardEventRecord {
     std::uint64_t frame = 0;
@@ -2275,6 +2330,8 @@ struct RunReport {
     DirectoryRecord directory;
     /// The menu and settings.json (I7 step 1; runs with a product UI, the settings' section in every run of the app).
     std::optional<MenuRecord> menu;
+    /// I7 step 4: the emulators screen, once it was asked for anything.
+    std::optional<EmulatorsRecord> emulators;
     std::optional<SettingsRecord> settings;
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;

@@ -125,8 +125,9 @@ TEST_CASE("catalog_db/sessions: the launch area's tables keep the schema's rules
     Connection& writer = f.database.writer();
     const auto tables = textColumn(writer, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name GLOB "
                                            "'rv_launch_*' OR name = 'rv_play_sessions' ORDER BY name");
-    CHECK(tables == std::vector<std::string>{"rv_launch_game_choices", "rv_launch_system_choices",
-                                             "rv_launch_verifications", "rv_play_sessions"});
+    CHECK(tables == std::vector<std::string>{"rv_launch_game_choices", "rv_launch_program_choices",
+                                             "rv_launch_system_choices", "rv_launch_verifications",
+                                             "rv_play_sessions"});
     // Ids shown to users are AUTOINCREMENT, never reused.
     for (const std::string_view table : {"rv_play_sessions", "rv_launch_verifications"}) {
         INFO(table);
@@ -622,4 +623,36 @@ TEST_CASE("catalog_db/sessions: the state rows outlive a rebuild of the index an
     CHECK(store.gameChoice(id(1)).value()->choice == kProfile);    // the alias stands for it
     CHECK(store.sessions(SessionFilter{id(1), 0}).value().size() == 2);
     CHECK(count(writer, "SELECT count(*) FROM pragma_foreign_key_check") == 0);
+}
+
+TEST_CASE("catalog_db/sessions: the programs chosen for emulators", "[catalog_db][sessions]") {
+    const rv::test::TempDir dir("rv-program-choices");
+    auto database = rv::catalog_db::openCatalogDatabase(dir.file("catalog.sqlite"));
+    REQUIRE(database.has_value());
+    Connection& writer = database->writer();
+    auto store = SessionStore::open(writer).value();
+    const LibraryId library = LibraryId::parse("esde").value();
+    const auto at = rv::core::parseUtcIso8601("2026-11-02T10:00:00.000Z").value();
+
+    // The library must exist, as a system's choice's.
+    CHECK(codeOf(store->setProgramChoice(library, "RETROARCH", "C:/Emu/ra.exe", at)) == ErrorCode::InvalidArgument);
+    REQUIRE(writer.execute("INSERT INTO rv_libraries (id, adapter, esde_home) VALUES ('esde', 'esde', 'C:/ES-DE')")
+                .has_value());
+    CHECK(store->programChoices(library).value().empty());
+    CHECK(codeOf(store->setProgramChoice(library, "", "C:/Emu/ra.exe", at)) == ErrorCode::InvalidArgument);
+    CHECK(codeOf(store->setProgramChoice(library, "RETROARCH", {}, at)) == ErrorCode::InvalidArgument);
+
+    REQUIRE(store->setProgramChoice(library, "RETROARCH", "C:/Emu/ra.exe", at).has_value());
+    REQUIRE(store->setProgramChoice(library, "DOLPHIN", "C:/Emu/dolphin.exe", at).has_value());
+    REQUIRE(store->setProgramChoice(library, "RETROARCH", "D:/Other/ra.exe", at + 1h).has_value());
+    const auto rows = store->programChoices(library).value();
+    REQUIRE(rows.size() == 2);
+    CHECK(rows[0].emulator == "DOLPHIN");
+    CHECK(rows[1].emulator == "RETROARCH");
+    CHECK(rows[1].program == std::filesystem::path("D:/Other/ra.exe"));
+    CHECK(rows[1].chosenAt == at + 1h);
+
+    CHECK(store->clearProgramChoice(library, "RETROARCH").value());
+    CHECK_FALSE(store->clearProgramChoice(library, "RETROARCH").value());
+    CHECK(store->programChoices(library).value().size() == 1);
 }

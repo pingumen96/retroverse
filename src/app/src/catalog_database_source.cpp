@@ -83,6 +83,15 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         collected.refreshed = true;
         collected.rowsChanged = true;
     }
+    if (results.resolved) {
+        // I7 step 4: what is stored changed: the same chips, another readiness, a new generation.
+        m_systems = std::move(results.resolved->systems);
+        m_generation = results.resolved->generation;
+        m_readiness.clear();
+        m_asked.clear();
+        results.resolved.reset();
+        collected.rowsChanged = true;
+    }
     if (results.list) {
         // Only the list of the query still asked for: an older one was replaced by it.
         if (m_pendingSerial && results.list->serial == *m_pendingSerial) {

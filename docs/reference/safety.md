@@ -22,8 +22,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   naming an existing ASCII file (the isolated configuration under `build/`, as `spike_launch` writes it). The guard is a
   safety net, not a security boundary: a hard link or copy under another name is kept out by the list alone.
 - A launch test in the product (ADR-0018 §6) is a real launch and fails closed: an unattended run (frame-limited, or
-  `RV_LAUNCH_BACKGROUND` set) refuses it while `RV_LAUNCH_ALLOWLIST` is unset. `[real-library]` runs resolve launches and
-  never start one.
+  `RV_LAUNCH_BACKGROUND` set) refuses it while `RV_LAUNCH_ALLOWLIST` is unset (`launcher::launchTestAllowed()`, asked by
+  the emulators screen and `retroverse-cli launch --test` before anything is resolved). `[real-library]` runs resolve
+  launches and never start one. Ordinary unit runs leave the variable unset: the process-runner tests start renamed
+  fakes. Choices and programs chosen go to the catalog database, never to ES-DE's files.
 - A frame-limited run never discovers ES-DE by itself (ADR-0018 §4): without `library.json` it keeps the test room and
   its notice, and the wizard runs only with `--wizard --esde-home <dir>`, a fixture's in tests, so that no test reads the
   machine's library through discovery. The file watcher (ADR-0018 §10) only reads, is off in automated runs unless

@@ -108,6 +108,9 @@ struct WizardScreen::Impl {
         constructor.Bind("lighting", &lighting);
         constructor.Bind("reduceMotion", &reduceMotion);
         constructor.Bind("worldWork", &worldWork);
+        constructor.Bind("emulatorsKnown", &emulatorsKnown);
+        constructor.Bind("emulatorsReady", &emulatorsReady);
+        constructor.Bind("emulatorsBlocked", &emulatorsBlocked);
         constructor.Bind("showNext", &showNext);
         constructor.Bind("showPrevious", &showPrevious);
         constructor.Bind("showQuit", &showQuit);
@@ -223,6 +226,9 @@ struct WizardScreen::Impl {
         lighting = Rml::String(shown.lightingProfile());
         reduceMotion = shown.reduceMotion();
         worldWork = Rml::String(toString(shown.worldWork()));
+        emulatorsKnown = shown.emulatorsReady().has_value();
+        emulatorsReady = asInt(shown.emulatorsReady().value_or(0));
+        emulatorsBlocked = asInt(shown.emulatorsBlocked());
         const std::vector<WizardButton> buttons = shown.buttons();
         showNext = offers(buttons, WizardButton::Next);
         showPrevious = offers(buttons, WizardButton::Previous);
@@ -303,6 +309,9 @@ struct WizardScreen::Impl {
     Rml::String lighting;
     bool reduceMotion = false;
     Rml::String worldWork;
+    bool emulatorsKnown = false;
+    int emulatorsReady = 0;
+    int emulatorsBlocked = 0;
     bool showNext = false;
     bool showPrevious = false;
     bool showQuit = false;

@@ -142,6 +142,26 @@ public:
     [[nodiscard]] virtual std::optional<Expected<std::vector<catalog::RecentGame>>> takeRecentGames() {
         return std::nullopt;
     }
+    /// The emulators screen (I7 step 4, ADR-0018 §5): asked of the catalog worker, answered once by the take*() below; a
+    /// false says nothing was asked: a catalog without them (the mock catalog, the wizard's before its import).
+    virtual bool requestEmulatorTable() { return false; }
+    [[nodiscard]] virtual std::optional<EmulatorTable> takeEmulatorTable() { return std::nullopt; }
+    virtual bool requestSampleGames(const catalog::SystemName& /*system*/, std::size_t /*limit*/) { return false; }
+    [[nodiscard]] virtual std::optional<EmulatorSamples> takeSampleGames() { return std::nullopt; }
+    virtual bool requestChoiceChange(ChoiceChange /*change*/) { return false; }
+    [[nodiscard]] virtual std::optional<ChoiceChanged> takeChoiceChanged() { return std::nullopt; }
+    /// requestLaunch() of a launch test with `test`: the decision comes the same way; takeLaunchTest() says how it ended,
+    /// once its session is stored.
+    virtual bool requestLaunchTest(std::uint64_t /*token*/, const ui::CatalogEntry& /*entry*/,
+                                   const LaunchTestChoice& /*test*/) {
+        return false;
+    }
+    [[nodiscard]] virtual std::optional<LaunchTestResult> takeLaunchTest() { return std::nullopt; }
+    /// The launch `token` was decided and never reached the flow: no session will say how a test of it ended.
+    virtual void launchDropped(std::uint64_t /*token*/) {}
+    /// Where the folder browser starts looking for a program: ES-DE's install folder, when known; nothing: the drives.
+    [[nodiscard]] virtual std::optional<std::filesystem::path> programStartFolder() const { return std::nullopt; }
+
     /// The full name of `system` as the catalog has it (its <fullname>); "" when it has none or the catalog does not know
     /// the system (the directory then shows its name).
     [[nodiscard]] virtual std::string systemFullName(const catalog::SystemName& /*system*/) const { return {}; }
@@ -232,7 +252,8 @@ public:
     [[nodiscard]] bool deciding() const noexcept override { return m_resolving.has_value() || m_decision.has_value(); }
     CatalogChanges poll() override;
     [[nodiscard]] bool busy() const noexcept override {
-        return m_source.waiting() || m_resolving.has_value() || m_recentAsked.has_value();
+        return m_source.waiting() || m_resolving.has_value() || m_recentAsked.has_value() || m_tableAsked ||
+               m_samplesAsked || m_changesAsked > 0 || m_testAwaited;
     }
     [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
     bool requestRefresh() override;
@@ -261,6 +282,16 @@ public:
     [[nodiscard]] std::optional<Expected<std::vector<catalog::RecentGame>>> takeRecentGames() override {
         return std::exchange(m_recentAnswer, std::nullopt);
     }
+    bool requestEmulatorTable() override;
+    [[nodiscard]] std::optional<EmulatorTable> takeEmulatorTable() override { return std::exchange(m_table, {}); }
+    bool requestSampleGames(const catalog::SystemName& system, std::size_t limit) override;
+    [[nodiscard]] std::optional<EmulatorSamples> takeSampleGames() override { return std::exchange(m_samples, {}); }
+    bool requestChoiceChange(ChoiceChange change) override;
+    [[nodiscard]] std::optional<ChoiceChanged> takeChoiceChanged() override;
+    bool requestLaunchTest(std::uint64_t token, const ui::CatalogEntry& entry, const LaunchTestChoice& test) override;
+    [[nodiscard]] std::optional<LaunchTestResult> takeLaunchTest() override { return std::exchange(m_testResult, {}); }
+    void launchDropped(std::uint64_t token) override;
+    [[nodiscard]] std::optional<std::filesystem::path> programStartFolder() const override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
@@ -279,11 +310,14 @@ private:
         std::optional<launcher::LaunchClock::time_point> begun;
         /// The session as stored, once the worker wrote it (or gave up).
         std::optional<StoredSession> stored;
+        /// A launch test.
+        bool test = false;
     };
 
     /// Milliseconds from the process's creation to `at`.
     [[nodiscard]] double sinceProcessStart(std::chrono::system_clock::time_point at) const;
     void collectSessions(CatalogResults& results);
+    void collectEmulators(CatalogResults& results);
     /// The refresh's progress and end out of `results` (`ended`: the worker's thread ended, so a refresh it did not
     /// answer never will be); true when it ended.
     bool collectRefresh(CatalogResults& results, bool ended);
@@ -312,6 +346,17 @@ private:
     std::uint64_t m_recentSerial = 0;
     std::optional<std::uint64_t> m_recentAsked;
     std::optional<Expected<std::vector<catalog::RecentGame>>> m_recentAnswer;
+    /// The emulators screen's questions out (the lockstep runs wait for them) and their answers until taken (I7 step 4).
+    std::uint64_t m_emulatorSerial = 0;
+    bool m_tableAsked = false;
+    bool m_samplesAsked = false;
+    std::size_t m_changesAsked = 0;
+    /// A launch test's session ended, and how it did is not known yet.
+    bool m_testAwaited = false;
+    std::optional<EmulatorTable> m_table;
+    std::optional<EmulatorSamples> m_samples;
+    std::vector<ChoiceChanged> m_changes;
+    std::optional<LaunchTestResult> m_testResult;
     /// Every list's wait (CatalogRecord::lists), at most kMaxListWaits.
     static constexpr std::size_t kMaxListWaits = 100000;
     std::vector<double> m_listWaits;

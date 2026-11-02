@@ -6,10 +6,10 @@
 namespace rv::ui {
 namespace {
 
-constexpr std::array<WizardButton, 11> kButtons = {
+constexpr std::array<WizardButton, 12> kButtons = {
     WizardButton::Next,          WizardButton::Previous,  WizardButton::Quit,         WizardButton::Retry,
     WizardButton::Enter,         WizardButton::FolderHome, WizardButton::FolderInstall, WizardButton::FolderRom,
-    WizardButton::FolderMedia,   WizardButton::Lighting,   WizardButton::ReduceMotion};
+    WizardButton::FolderMedia,   WizardButton::Lighting,   WizardButton::ReduceMotion, WizardButton::Emulators};
 
 } // namespace
 
@@ -57,6 +57,8 @@ std::string_view toString(WizardButton button) noexcept {
         return "lighting";
     case WizardButton::ReduceMotion:
         return "reduce-motion";
+    case WizardButton::Emulators:
+        return "emulators";
     }
     return "unknown";
 }
@@ -94,6 +96,8 @@ std::string_view elementIdOf(WizardButton button) noexcept {
         return "wz-lighting";
     case WizardButton::ReduceMotion:
         return "wz-reduce-motion";
+    case WizardButton::Emulators:
+        return "wz-emulators";
     }
     return {};
 }
@@ -146,6 +150,10 @@ std::string_view toString(WizardCommandKind kind) noexcept {
         return "start-world";
     case WizardCommandKind::Enter:
         return "enter";
+    case WizardCommandKind::Emulators:
+        return "emulators";
+    case WizardCommandKind::OpenEmulators:
+        return "open-emulators";
     }
     return "unknown";
 }
@@ -183,8 +191,10 @@ void WizardModel::show(WizardPage page) {
     case WizardPage::World:
         m_entered = WizardCommand{WizardCommandKind::StartWorld};
         break;
-    case WizardPage::Welcome:
     case WizardPage::Emulators:
+        m_entered = WizardCommand{WizardCommandKind::Emulators};
+        break;
+    case WizardPage::Welcome:
     case WizardPage::Appearance:
         break;
     }
@@ -228,7 +238,7 @@ std::vector<WizardButton> WizardModel::buttons() const {
         }
         break;
     case WizardPage::Emulators:
-        shown = {WizardButton::Next};
+        shown = {WizardButton::Emulators, WizardButton::Next};
         break;
     case WizardPage::Appearance:
         shown = {WizardButton::Lighting, WizardButton::ReduceMotion, WizardButton::Next, WizardButton::Previous};
@@ -329,6 +339,12 @@ void WizardModel::setAppearance(std::string lightingProfile, bool reduceMotion) 
     ++m_revision;
 }
 
+void WizardModel::setEmulators(std::optional<std::size_t> ready, std::size_t blocked) {
+    m_emulatorsReady = ready;
+    m_emulatorsBlocked = blocked;
+    ++m_revision;
+}
+
 void WizardModel::setWorld(WizardWork work) {
     m_worldWork = work;
     if (m_page == WizardPage::World) {
@@ -361,6 +377,7 @@ std::optional<WizardCommand> WizardModel::press(WizardButton button, int directi
             return takeEntered();
         } else if (m_page == WizardPage::Appearance) {
             show(WizardPage::Emulators);
+            return takeEntered();
         }
         return std::nullopt;
     case WizardButton::Quit:
@@ -393,6 +410,8 @@ std::optional<WizardCommand> WizardModel::press(WizardButton button, int directi
     }
     case WizardButton::ReduceMotion:
         return WizardCommand{WizardCommandKind::ReduceMotion};
+    case WizardButton::Emulators:
+        return WizardCommand{WizardCommandKind::OpenEmulators};
     }
     return std::nullopt;
 }

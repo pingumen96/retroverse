@@ -2,8 +2,8 @@
 
 // SessionStore (I2 step 12): the launch state of the catalog database (ADR-0008 §5, §6, §8, §9), on the tables of the
 // schema area "launch" (schema_launch.cpp): play sessions (rv_play_sessions), Retroverse's launch choices per game and
-// per system (rv_launch_game_choices, rv_launch_system_choices: retroverse-cli assign) and launch verifications
-// (rv_launch_verifications). They are state tables: `db rebuild-index` never touches them, and each refers to the game
+// per system (rv_launch_game_choices, rv_launch_system_choices: retroverse-cli assign), the programs chosen for emulators
+// (rv_launch_program_choices, I7 step 4) and launch verifications (rv_launch_verifications). They are state tables: `db rebuild-index` never touches them, and each refers to the game
 // identity (rv_game_identities) it names, never to the index.
 //
 // Writes go through the process's writer connection (Database::writer(): one writer per process, one thread), each in
@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rv/catalog/ids.hpp>
@@ -70,6 +71,16 @@ struct SystemChoiceRow {
     StoredChoice stored;
 
     bool operator==(const SystemChoiceRow&) const = default;
+};
+
+/// A program chosen for a %EMULATOR_X% of a library (ADR-0018 §5).
+struct ProgramChoiceRow {
+    /// X as the commands write it.
+    std::string emulator;
+    std::filesystem::path program;
+    std::chrono::system_clock::time_point chosenAt;
+
+    bool operator==(const ProgramChoiceRow&) const = default;
 };
 
 /// A launch verification: the latest session that returned normally with a choice for a system (ADR-0008 §8).
@@ -175,6 +186,18 @@ public:
     /// Removes Retroverse's choice for `system` of `library`; true when it had one.
     [[nodiscard]] Expected<bool> clearSystemChoice(const catalog::LibraryId& library, const catalog::SystemName& system,
                                                    const BusyRetry& retry = {});
+
+    /// The programs chosen for the emulators of `library`, by emulator (ADR-0018 §5).
+    [[nodiscard]] Expected<std::vector<ProgramChoiceRow>> programChoices(const catalog::LibraryId& library);
+    /// Stores the program of `emulator` of `library`. Whether it may run is the caller's to check first
+    /// (esde::checkProgramChoice()), and every translation checks it again. Errors: InvalidArgument for an empty emulator
+    /// or program, text that is not UTF-8, or a library the database does not hold; Conflict (busy); SQLite's others.
+    [[nodiscard]] Status setProgramChoice(const catalog::LibraryId& library, std::string_view emulator,
+                                          const std::filesystem::path& program,
+                                          std::chrono::system_clock::time_point chosenAt, const BusyRetry& retry = {});
+    /// Removes the program of `emulator` of `library`; true when it had one.
+    [[nodiscard]] Expected<bool> clearProgramChoice(const catalog::LibraryId& library, std::string_view emulator,
+                                                    const BusyRetry& retry = {});
 
     // --- Verifications -----------------------------------------------------------------------------------------------
 

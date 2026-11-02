@@ -46,8 +46,8 @@
 	<p class="blocker" data-if="card.blocker == 'system-unknown' || card.blocker == 'system-not-configured'">ES-DE non configura più questo sistema.</p>
 	<p class="blocker" data-if="card.blocker == 'library-unreadable'">La configurazione di ES-DE non si legge: controlla che ES-DE sia dove library.json lo indica.</p>
 	<p class="blocker" data-if="card.blocker == 'no-command'">Il sistema non ha nessun comando di avvio.</p>
-	<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
-	<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro con "retroverse-cli assign".</p>
+	<p class="blocker" data-if="card.blocker == 'choice-stale'">Il comando scelto non esiste più: scegline un altro in Emulatori, nel menu.</p>
+	<p class="blocker" data-if="card.blocker == 'profile-unknown'">Il profilo d'emulatore scelto non esiste più: scegline un altro in Emulatori, nel menu.</p>
 	<p class="blocker" data-if="card.blocker == 'profile-template'">Il profilo dell'emulatore contiene argomenti scritti male.</p>
 	<p class="blocker" data-if="card.blocker == 'profile-variable-missing'">Il profilo dell'emulatore usa una variabile che non ha un valore.</p>
 	<p class="blocker" data-if="card.blocker == 'profile-invalid-request' || card.blocker == 'invalid-request'">Windows non può avviare l'emulatore così com'è configurato.</p>

@@ -122,6 +122,11 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   gives that back), the gamelist's `<alternativeEmulator>`, the first command; a stored choice that disappears blocks
   the launch, never skipped. Choices survive restarts and `db rebuild-index`. Exit 1 an unknown game; 2 invalid options,
   an unknown system, a value the system does not have; 3 the catalog cannot be read or written.
+- `assign --emulator <name> [--program <exe> | --clear] [--json]` (I7 step 4, ADR-0018 §5) stores the program of a command's
+  `%EMULATOR_X%` (X, compared exactly) in the catalog database, used before its find rules: a program that exists and is
+  no command interpreter or launcher, by its name and the file it opens. Gone later it is "emulator not found", never
+  passed over. Without `--program` it shows what is stored. `launch --test` fails closed: with `RV_LAUNCH_BACKGROUND` set
+  and no `RV_LAUNCH_ALLOWLIST` it exits 1, nothing resolved or recorded.
 - `sessions [--game <id>] [--limit <n>] [--json]` lists the attempts, newest first (50; 0 for all), after closing as
   interrupted the open sessions whose owner process is gone (`launch --game` does it at its start too; a session another
   live process follows stays open). `exitKind` is null when the session has no exit code (an attempt that never

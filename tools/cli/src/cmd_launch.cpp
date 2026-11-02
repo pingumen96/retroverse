@@ -33,6 +33,9 @@
 // nothing is written (Retroverse's choices are read from the catalog database when there is one: the system's for
 // --path, the game's and the system's for --game). Command lines are logged at debug level only (ADR-0008 §9).
 //
+// A launch test fails closed (ADR-0018 §6): an unattended run (RV_LAUNCH_BACKGROUND) refuses --test while
+// RV_LAUNCH_ALLOWLIST is not set, exit 1, nothing resolved or recorded.
+//
 // Exit codes: 0 a dry run that is ready; a launch that started and returned (or runs on: not waited for, the wait limit,
 // Ctrl+C), for --test only one that returned normally; 1 not ready (blocked, recorded), failed to start, crashed, a quick
 // exit, a --test that did not return normally, a --game the catalog does not have; 2 invalid options, an unknown system,
@@ -959,6 +962,13 @@ ExitCode runLaunch(CommandContext& context) {
     }
     if (!game) {
         return usage("launch needs --game <id> (its GameId: 'retroverse-cli games', 'search'), or --dry-run");
+    }
+    // ADR-0018 §6: a launch test fails closed in an unattended run, before anything is resolved or recorded.
+    if (options.test && !launcher::launchTestAllowed(false)) {
+        context.err.writeLine(fmt::format("{}: a launch test is a real launch, and this unattended run "
+                                          "(RV_LAUNCH_BACKGROUND) has no RV_LAUNCH_ALLOWLIST: nothing started",
+                                          kName));
+        return ExitCode::ProblemsFound;
     }
     return launchCatalogGame(context, *game, options, json, *output);
 }
