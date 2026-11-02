@@ -52,8 +52,29 @@ Roadmap row: I7 step 7. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   system it does not define).
 - **The report's times** (`at`) are milliseconds since the Unix epoch, not from the process's creation: the test
   compares them with the moment it copied the file.
+- **A folder's own time is no change:** Windows reports a folder modified whenever something inside it changes, so an
+  emulator's save beside a ROM came back through its folder. A `Modified` change of a name without an extension is
+  ignored (`folder-time`); the fallback poll's folder times still count, and an added or renamed folder too.
+- **"A cover added shows" is proven by a new title:** in the building fixture every snes title has a cover, and a
+  cartridge without one waits unplaced (`noCover`), so the ROM copied first is listed and the room places it, in a new
+  slot with nothing moved, once its cover is copied in.
+- **No new notice or panel:** the roots' modes reach the run report now and the Libreria screen at step 8, as the plan
+  has it. The pictures (`[watcher_shots]`) are of the room before and after.
 
 ## What was checked
+
+Figures (Release, this machine):
+
+| What | Figure |
+|---|---|
+| A ROM copied into the building fixture, first change to the quick catalog's list after the refresh | 2.0 s (the refresh of snes alone 21 ms) |
+| The same with the fake's game running: held, then the window after the return | the refresh asked after the game's end; 8.0 s from the change |
+| Real library: the roots armed | 0.03 s; settings, custom-systems, gamelists, rom (exFAT), media: notify |
+| Real library: a minute armed, ES-DE closed | 0 changes; 0 differences among 542,121 entries |
+| Real library: the biggest system's partial refresh (c64, 13,026 games) | 811 ms, warm 693 ms; every system 5,786 ms |
+
+The device-notification case fails with its fix removed (the handle kept on `DBT_DEVICEQUERYREMOVE`: the folder cannot
+be opened exclusively, 6 assertions), and passes with it.
 
 The cases are `tests/unit/app/test_library_watch.cpp` (the policy and `LibraryWatcher`), `tests/unit/esde/test_change_scope.cpp`,
 `tests/unit/platform_win/test_directory_watcher.cpp` (real notifications under the build tree, the polls, the device
