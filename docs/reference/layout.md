@@ -273,6 +273,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `binding_rules.hpp` (what a user may bind, clashes per context, no lock-out, a capture's press) and
   `controller_watch.hpp`, to `rv_ui_model` `hint_bar.hpp` (a hint's glyph, and how a document declares one), to `rv_ui`
   `hint_bar_view.hpp` (fills every `hint-action` of the view's documents) and `controller_notice_screen.hpp`
-  (`assets/ui/controller_notice.rml`); `assets/ui/hint_bar.rcss` is linked by every document with hints.
+  (`assets/ui/controller_notice.rml`); `assets/ui/hint_bar.rcss` is linked by every document with hints. I7 step 5 adds to
+  `rv_ui_model` `keyboard_model.hpp` (the grid, one table for what a key shows and types), to `rv_ui` `keyboard_screen.hpp`
+  (`assets/ui/keyboard.rml`).
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 

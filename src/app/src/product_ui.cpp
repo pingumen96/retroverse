@@ -280,13 +280,20 @@ struct ProductUi::Impl {
         return true;
     }
 
+    /// The focus back on the field, the keyboard's panel staying over its document.
+    void focusKeyboardField() {
+        if (screen->focusTextField() && keyboardScreen) {
+            keyboardScreen->raise();
+        }
+    }
+
     /// What the keyboard asks: applied to the search field through the path a typed text takes.
     void keyboardOutput(const std::optional<ui::KeyboardOutput>& output) {
         if (!output || !screen || !keyboardRecord) {
             return;
         }
         spdlog::debug("Frame {}: the on-screen keyboard asks {}", context.frameIndex(), ui::toString(output->kind));
-        screen->focusTextField(); // a click on a key took RmlUi's focus
+        focusKeyboardField(); // a click on a key took RmlUi's focus
         switch (output->kind) {
         case ui::KeyboardOutput::Kind::Type:
             view->context().ProcessTextInput(Rml::String(output->text));
@@ -325,7 +332,7 @@ struct ProductUi::Impl {
         if (keyboardScreen) {
             if (keyboard.isOpen()) {
                 keyboardScreen->show(keyboard);
-                screen->focusTextField();
+                focusKeyboardField();
             } else {
                 keyboardScreen->hide();
             }

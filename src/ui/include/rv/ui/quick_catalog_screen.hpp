@@ -167,8 +167,9 @@ public:
     [[nodiscard]] bool textFieldFocused() const;
     /// The mouse (VR's ray) is over the search field.
     [[nodiscard]] bool pointerOnTextField() const;
-    /// The focus on the search field, where the keyboard types; nothing when it is there already.
-    void focusTextField();
+    /// The focus on the search field, where the keyboard types; nothing when it is there already. True when it moved:
+    /// RmlUi then raised this document over the others.
+    bool focusTextField();
     /// The on-screen keyboard shows over the card: the card and the hints that do not serve it hide.
     void setTyping(bool typing);
     /// The search field's border box in the view's pixels, as UiView::elementBox.

@@ -39,6 +39,8 @@ public:
     void show(const KeyboardModel& model);
     void hide();
     [[nodiscard]] bool visible() const noexcept;
+    /// Over the other documents again: a focus given to the field raises the field's document, which would take the clicks.
+    void raise();
     /// The click since the last call.
     [[nodiscard]] std::optional<KeyboardClick> takeClicked() noexcept;
     /// Elements of the panel whose text does not fit its box as shown now.

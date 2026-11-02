@@ -164,6 +164,12 @@ bool KeyboardScreen::visible() const noexcept {
     return m_impl->documentShown;
 }
 
+void KeyboardScreen::raise() {
+    if (m_impl->documentShown && m_impl->document != nullptr) {
+        m_impl->document->PullToFront();
+    }
+}
+
 std::optional<KeyboardClick> KeyboardScreen::takeClicked() noexcept {
     return std::exchange(m_impl->clicked, std::nullopt);
 }

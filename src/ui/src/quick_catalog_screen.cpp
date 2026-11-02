@@ -1459,10 +1459,8 @@ bool QuickCatalogScreen::pointerOnTextField() const {
     return hover != nullptr && hover->GetId() == qc::kSearchId;
 }
 
-void QuickCatalogScreen::focusTextField() {
-    if (!textFieldFocused()) {
-        static_cast<void>(m_impl->focusElement(qc::kSearchId));
-    }
+bool QuickCatalogScreen::focusTextField() {
+    return !textFieldFocused() && m_impl->focusElement(qc::kSearchId);
 }
 
 void QuickCatalogScreen::setTyping(bool typing) {
