@@ -61,8 +61,6 @@ public:
 
     /// Changes wait for a refresh.
     [[nodiscard]] bool pending() const noexcept { return m_changes > 0; }
-    /// When due() may say yes next, while changes wait and nothing holds them: for the host's wake.
-    [[nodiscard]] std::optional<Clock::time_point> nextDue() const;
     /// Changes that came, or were waiting, while held, in all.
     [[nodiscard]] std::size_t heldChanges() const noexcept { return m_heldChanges; }
 

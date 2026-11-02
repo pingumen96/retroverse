@@ -36,15 +36,12 @@ Clock::time_point at(std::chrono::milliseconds offset) {
 TEST_CASE("app/library_watch: a change waits 2 s of quiet, then one refresh of its system", "[app][library_watch]") {
     LibraryWatch watch;
     CHECK_FALSE(watch.due(at(0ms), false).has_value());
-    CHECK_FALSE(watch.nextDue().has_value());
     watch.change(at(0ms), std::string("snes"));
     CHECK(watch.pending());
-    CHECK(watch.nextDue() == at(2000ms));
     CHECK_FALSE(watch.due(at(1999ms), false).has_value());
     // Another change pushes the end of the window.
     watch.change(at(1500ms), std::string("gb"));
     CHECK_FALSE(watch.due(at(3000ms), false).has_value());
-    CHECK(watch.nextDue() == at(3500ms));
     const std::optional<WatchRefresh> due = watch.due(at(3500ms), false);
     REQUIRE(due.has_value());
     CHECK(due->systems == std::vector<std::string>{"gb", "snes"});
@@ -106,7 +103,6 @@ TEST_CASE("app/library_watch: nothing starts while held; the window opens again 
     for (std::chrono::milliseconds now = 2000ms; now <= 120000ms; now += 1000ms) {
         CHECK_FALSE(watch.due(at(now), true).has_value());
     }
-    CHECK_FALSE(watch.nextDue().has_value());
     CHECK(watch.heldChanges() == 2);
     // The game returned at 120 s: the window opens then, 2 s of quiet from the return.
     CHECK_FALSE(watch.due(at(120000ms), false).has_value());
