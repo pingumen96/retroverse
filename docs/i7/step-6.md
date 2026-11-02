@@ -32,8 +32,7 @@ Roadmap row: I7 step 6. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
 - **The branch carries step 4.** The plan's row needs it and it was not on `main`, so `i7/step-4` was merged in at cb400b66
   (with step 5's conflicts resolved on both sides). Its `rv_launch_program_choices` is schema 2; this step's table is 3.
 - **No third-party notices in Informazioni.** The step's brief asked for them "as the ADR says", but ADR-0018 §11 does not:
-  Informazioni is the game's panel there, and the roadmap gives "third-party notices shipped" to a later iteration. Nothing
-  was added; a screen of licences needs its own decision.
+  Informazioni is the game's panel there, and the roadmap gives "third-party notices shipped" to I9. Nothing was added.
 - **The rows stand in a region of their own**, not at the foot of the scrolled text as before: a long description would
   put Stato out of reach of every press but a page. The versions moved there with them, so `game-info-rows` scrolls to
   the focused row. Up, Down and the pages on the text work as before while no row has the focus.
@@ -49,6 +48,11 @@ Roadmap row: I7 step 6. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   statuses"; going back to derived would need a fifth state on the row.
 - **Stato shows at once, the worker's answer has the last word:** two quick presses would otherwise step from the same value.
   A failed write says "non salvato".
+- **What takes a click is focusable.** With `focus: none` on every `div` and `button`, the statistics tabs heard no click (0 until the rule went), and Informazioni's sheet had the same rule on
+  its Vedi media and Chiudi, whatever the
+  document's comment said. Those elements are focusable now, and each screen hands the focus back when it hides.
+- **The title's emulators dim what is behind them** (`body.for-title`): over the quick catalog its panel let the rows read
+  through; over the menu nothing changes.
 - **Emulatore replaces Informazioni while it shows** rather than standing over it: `backAction()` would otherwise close
   Informazioni under the list (`PanelBack` comes before `MenuBack`).
 - **`p95` within 100 ms holds for Release;** a Debug build's SQLite takes about 300 ms for it, and the case only reports that.

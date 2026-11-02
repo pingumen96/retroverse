@@ -447,6 +447,38 @@ TEST_CASE("statistics: in a headset the panel shows and the ray changes the sect
     CHECK(run.report->statistics->tab == "recent");
 }
 
+TEST_CASE("statistics: in a headset the ray presses Informazioni's Stato", "[gpu][statistics][xr]") {
+    const Room room("vr_info");
+    // The row stands at the panel's foot, in the middle of the canvas's width (as above).
+    const glm::vec3 hand(0.2f, 1.25f, -0.3f);
+    const glm::vec3 target(0.0f, 1.65f - 0.12f - 0.22f, -1.3f);
+    const glm::vec3 toTarget = glm::normalize(target - hand);
+    const float yawDeg = rv::core::radiansToDegrees(std::atan2(toTarget.x, -toTarget.z));
+    const float pitchDeg = rv::core::radiansToDegrees(std::asin(toTarget.y));
+    Script script;
+    script.press("quick_catalog").press("ui_up", 2).type("cobalt").press("ui_activate").press("ui_info").wait(14);
+    const int click = script.frame;
+    script.steps.push_back(Json{{"fromFrame", click}, {"toFrame", click + 3}, {"rightSelect", 1}});
+    script.wait(14);
+    script.steps.push_back(Json{{"fromFrame", 0}, {"toFrame", script.frame}, {"headPose", {{"position", {0, 1.65, 0}}}}});
+    script.steps.push_back(
+        Json{{"fromFrame", 0},
+             {"toFrame", script.frame},
+             {"rightHand", {{"yaw", yawDeg}, {"pitch", pitchDeg}, {"position", {hand.x, hand.y, hand.z}}}}});
+    const fs::path file = room.dir / "vr.json";
+    script.write(file);
+    const AppRun run = runApp(retroverseExe(), room.dir, "run",
+                              {"--scene", "m0_testroom", "--vr", "--xr-runtime", "fake", "--exit-after-frames",
+                               "--frames", std::to_string(script.frame + 4), "--fixed-dt", "0.016667", "--screenshot",
+                               arg(room.dir / "eyes.png"), "--input-script", arg(file)});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->xr);
+    CHECK(run.report->xr->uiClicks == 1);
+    CHECK(eventsNamed(run.report->screens, "status") == std::vector<std::string>{"in-progress"});
+}
+
 // By hand, for a look: rv_smoke_tests "[statistics_shots]" with RV_SHOTS_DIR naming a folder writes each section and
 // Informazioni, at 1920 x 1080 at 100% and 125%, hidden and frame-limited, the pad's actions alone. Not a check: visual
 // verification.

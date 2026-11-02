@@ -19,7 +19,7 @@
 	<link type="text/rcss" href="emulators.rcss"/>
 	<link type="text/rcss" href="hint_bar.rcss"/>
 </head>
-<body data-model="emulators">
+<body data-model="emulators" data-class-for-title="gameTitle != ''">
 	<div id="emulators-panel" class="panel" data-if="!browserOpen">
 		<div data-if="viewName == 'systems'" class="view">
 			<h1>Emulatori</h1>

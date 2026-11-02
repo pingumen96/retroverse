@@ -211,6 +211,7 @@ h3 {
 
 .hint {
 	margin: 0dp 10dp;
+	white-space: nowrap; /* a key stays with its word when the line wraps */
 }
 
 .pad {
