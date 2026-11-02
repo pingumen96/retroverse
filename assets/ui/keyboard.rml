@@ -1,0 +1,41 @@
+<rml>
+<head>
+	<!--
+		The on-screen keyboard (ADR-0018 §8): over a text field a pad's Activate or VR's ray opened it on, the field's panel
+		and the list that narrows left in view. The keys come from rv::ui::keyboardKeys() (src/ui/src/keyboard_model.cpp),
+		so what a key shows is what it types; the words of the wide keys are written here. Bound to the data model "keyboard"
+		of rv::ui::KeyboardScreen (src/ui/src/keyboard_screen.cpp): key.index is the table's, selected the model's. The focus
+		stays on the field: a click presses a key (VR's ray too), a click beside the panel closes it. The key's bindings sit
+		one level below the data-for element, as in quick_catalog.rml.
+	-->
+	<title>Tastiera</title>
+	<link type="text/rcss" href="keyboard.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
+</head>
+<body data-model="keyboard">
+	<div id="keyboard-beside" data-event-click="outside()"></div>
+	<div id="keyboard" class="panel">
+		<div id="keyboard-grid">
+			<div class="key-slot" data-for="key : keys">
+				<div class="key" data-attr-id="key.id" data-class-selected="key.index == selected"
+					data-class-wide="key.kind != 'character'" data-class-confirm="key.kind == 'confirm'"
+					data-style-left="key.left" data-style-top="key.top" data-style-width="key.width"
+					data-style-height="key.height" data-event-click="press(key.index)">
+					<div class="cap">
+						<span data-if="key.kind == 'character'">{{ key.label }}</span>
+						<span data-if="key.kind == 'space'">Spazio</span>
+						<span data-if="key.kind == 'delete'">Cancella</span>
+						<span data-if="key.kind == 'confirm'">Conferma</span>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="hints">
+			<span class="hint"><span class="pad" hint-action="ui_activate"></span>Scrivi</span>
+			<span class="hint"><span class="pad" hint-action="ui_info"></span>Cancella</span>
+			<span class="hint"><span class="pad" hint-action="confirm"></span>Conferma</span>
+			<span class="hint"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
+		</div>
+	</div>
+</body>
+</rml>

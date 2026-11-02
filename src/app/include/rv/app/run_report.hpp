@@ -811,6 +811,29 @@ struct ControlsRecord {
     bool operator==(const ControlsRecord&) const = default;
 };
 
+/// The on-screen keyboard in the run (I7 step 5, ADR-0018 §8), when it opened.
+struct KeyboardRecord {
+    /// Times it opened, by what the last time ("pad", "ray"), and whether it shows at the end.
+    std::uint64_t opened = 0;
+    std::string via;
+    bool open = false;
+    /// What it did: characters typed, deleted, confirmed, closed, by the keys or the pad; clicks among them.
+    std::uint64_t typed = 0;
+    std::uint64_t deleted = 0;
+    std::uint64_t confirmed = 0;
+    std::uint64_t closed = 0;
+    std::uint64_t clicks = 0;
+    /// What the selected key types at the end ("" for delete and confirm).
+    std::string selected;
+    /// Elements of the panel with text cut, the most any frame had.
+    std::uint32_t textCut = 0;
+    /// The keys' grid (while it shows at the end) and the field, in the view's pixels: x, y, width, height.
+    std::optional<glm::vec4> gridBox;
+    std::optional<glm::vec4> fieldBox;
+
+    bool operator==(const KeyboardRecord&) const = default;
+};
+
 /// The persisted start (I3 step 10c): the stored plan's room shown before the catalog's snapshot answered.
 struct WorldPreviewRecord {
     /// The frame it first showed in, when it was committed (from the process's creation), its job on the pool and its
@@ -2256,6 +2279,8 @@ struct RunReport {
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;
     std::optional<ControlsRecord> controls;
+    /// The on-screen keyboard (I7 step 5; runs that opened it).
+    std::optional<KeyboardRecord> keyboard;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

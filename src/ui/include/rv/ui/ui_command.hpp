@@ -32,6 +32,7 @@ enum class UiCommand : std::uint8_t {
     End,            ///< the last entry of a list (right stick click, End)
     FilterPrevious, ///< the previous filter (left shoulder)
     FilterNext,     ///< the next filter (right shoulder)
+    Confirm,        ///< the text is done (Start, Enter): the on-screen keyboard's, the other screens ignore it
     Count
 };
 
@@ -42,7 +43,8 @@ inline constexpr std::size_t kUiCommandCount = static_cast<std::size_t>(UiComman
 }
 
 /// Stable lowercase names, for logs and reports: "up", "down", "left", "right", "activate", "back", "media", "info",
-/// "page_up", "page_down", "home", "end", "filter_previous", "filter_next"; "unknown" for an out-of-range value.
+/// "page_up", "page_down", "home", "end", "filter_previous", "filter_next", "confirm"; "unknown" for an out-of-range
+/// value.
 [[nodiscard]] std::string_view toString(UiCommand command) noexcept;
 /// "up", "down", "left", "right"; "unknown" for an out-of-range value.
 [[nodiscard]] std::string_view toString(NavDirection direction) noexcept;

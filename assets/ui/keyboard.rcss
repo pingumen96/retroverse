@@ -1,0 +1,141 @@
+/*
+	The on-screen keyboard (keyboard.rml), in the quick catalog's look (quick_catalog.rcss: palette of style 3, UI neutral
+	#171B22 in a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93). It
+	takes the card's place, right of the catalog's panel: the field it types into and the list stay in view. Sizes in dp;
+	each key is placed in percent of the grid (keyboard_screen.cpp), whose height is set here. No colour is animated (RmlUi
+	rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 24dp;
+	color: #F4EFE6;
+}
+
+div {
+	display: block;
+}
+
+span {
+	focus: none;
+}
+
+/* Beside the panel: a click there closes it, and reaches nothing under it. */
+#keyboard-beside {
+	position: absolute;
+	left: 0%;
+	top: 0%;
+	width: 100%;
+	height: 100%;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+	padding: 22dp 26dp;
+}
+
+#keyboard {
+	left: 50%;
+	right: 3%;
+	top: 6%;
+}
+
+#keyboard-grid {
+	position: relative;
+	height: 366dp;
+	margin-bottom: 18dp;
+}
+
+.key-slot {
+	display: block;
+}
+
+/* The key's place; the gap between keys is its cap's margin, so that the grid has no holes a click falls through. */
+.key {
+	position: absolute;
+	box-sizing: border-box;
+	padding: 3dp;
+}
+
+.cap {
+	height: 100%;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 10dp;
+	font-size: 26dp;
+	white-space: nowrap;
+}
+
+.key.wide .cap {
+	font-size: 22dp;
+	background-color: #FFFFFF22;
+}
+
+.key.confirm .cap {
+	background-color: #6EAF9340;
+}
+
+.key:hover .cap {
+	border-color: #F4EFE666;
+}
+
+/* The selected key: the pad's, shown at once (style 16.2). */
+.key.selected .cap, .key.confirm.selected .cap {
+	border-color: #FFC88A;
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.hints {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	align-items: center;
+	font-size: 20dp;
+}
+
+.hint {
+	display: inline-block;
+	margin: 3dp 10dp;
+	white-space: nowrap;
+}
+
+.pad {
+	display: inline-block;
+	width: 32dp;
+	height: 32dp;
+	line-height: 32dp;
+	border-radius: 16dp;
+	margin-right: 8dp;
+	text-align: center;
+	font-weight: bold;
+	color: #171B22;
+}
+
+/* Compact: views under 760 dp of the display's density tall, as the catalog's. */
+@media (theme: compact) {
+	body { font-size: 20dp; }
+	.panel { padding: 14dp 18dp; }
+	#keyboard-grid { height: 240dp; margin-bottom: 10dp; }
+	.key { padding: 2dp; }
+	.cap { font-size: 20dp; border-radius: 8dp; }
+	.key.wide .cap { font-size: 17dp; }
+	.hints { font-size: 17dp; }
+	.hint { margin: 2dp 7dp; }
+	.pad { width: 27dp; height: 27dp; line-height: 27dp; border-radius: 14dp; margin-right: 6dp; }
+}

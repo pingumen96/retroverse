@@ -1449,6 +1449,33 @@ std::vector<std::string> QuickCatalogScreen::squeezedCardBlocks() const {
     return squeezed;
 }
 
+bool QuickCatalogScreen::textFieldFocused() const {
+    const Rml::Element* leaf = m_impl->view.focusedElement();
+    return leaf != nullptr && leaf->GetId() == qc::kSearchId;
+}
+
+bool QuickCatalogScreen::pointerOnTextField() const {
+    const Rml::Element* hover = m_impl->view.context().GetHoverElement();
+    return hover != nullptr && hover->GetId() == qc::kSearchId;
+}
+
+void QuickCatalogScreen::focusTextField() {
+    if (!textFieldFocused()) {
+        static_cast<void>(m_impl->focusElement(qc::kSearchId));
+    }
+}
+
+void QuickCatalogScreen::setTyping(bool typing) {
+    Impl& impl = *m_impl;
+    if (impl.document != nullptr && impl.document->IsClassSet(Rml::String(qc::kTypingClass)) != typing) {
+        impl.document->SetClass(Rml::String(qc::kTypingClass), typing);
+    }
+}
+
+std::optional<glm::vec4> QuickCatalogScreen::textFieldBox() const {
+    return m_impl->view.elementBox(qc::kSearchId);
+}
+
 bool QuickCatalogScreen::reloadIfChanged() {
     Impl& impl = *m_impl;
     if (!impl.watch) {

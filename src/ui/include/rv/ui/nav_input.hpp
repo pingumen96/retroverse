@@ -103,8 +103,8 @@ private:
 ///  - page moves (UiPageUp, UiPageDown): a DirectionRepeater of their own, the one engaged last winning; a page action
 ///    engages when held and releases below NavSettings::pageRelease (a trigger's hysteresis);
 ///  - the other commands on the press of their action (Activate, Back, Media, Info, Home, End, FilterPrevious,
-///    FilterNext, in that order), after the frame's steps (Down then Activate activates the element the focus moved
-///    to).
+///    FilterNext, Confirm, in that order), after the frame's steps (Down then Activate activates the element the focus
+///    moved to).
 /// A press is an edge of the action (InputSystem's): released and pressed again between two frames reads as held, as
 /// for every action. Main thread, one update() per frame.
 class NavInput {

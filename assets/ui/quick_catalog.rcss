@@ -522,6 +522,11 @@ h2 {
 .pad-x { background-color: #4C8BC9; }
 .pad-b { background-color: #C8645A; }
 
+/* I7 step 5: the on-screen keyboard (keyboard.rml) stands where the card stands and has its own hints. */
+body.typing #card, body.typing #hints {
+	visibility: hidden;
+}
+
 /* High contrast (specification 12.4): opaque black panels, white text, yellow focus. */
 body.high-contrast {
 	color: #FFFFFF;

@@ -131,7 +131,8 @@ bool actionsCompete(Action left, Action right) noexcept {
         return false;
     }
     const auto pair = [&](Action a, Action b) { return (left == a && right == b) || (left == b && right == a); };
-    if (pair(Action::QuickCatalog, Action::UiMedia) || pair(Action::Confirm, Action::Menu)) {
+    if (pair(Action::QuickCatalog, Action::UiMedia) || pair(Action::Confirm, Action::Menu) ||
+        pair(Action::Confirm, Action::UiActivate)) {
         return false;
     }
     return (readsAction(InputContext::World, left) && readsAction(InputContext::World, right)) ||
@@ -160,8 +161,9 @@ BindingJudgement judgeBinding(const input::ActionMap& map, Action action, const 
     if (slot && input::sameInput(*slot, press)) {
         return {BindingVerdict::Same, std::nullopt};
     }
-    if (const auto* key = std::get_if<KeyBinding>(&press); key != nullptr && input::isUiAction(action) &&
-                                                           isTextKey(key->key)) {
+    // Confirm too: the on-screen keyboard reads it with the field in focus.
+    if (const auto* key = std::get_if<KeyBinding>(&press);
+        key != nullptr && (input::isUiAction(action) || action == Action::Confirm) && isTextKey(key->key)) {
         return {BindingVerdict::Reserved, std::nullopt};
     }
     const std::vector<Action> holders = bindingHolders(map, action, press);

@@ -44,6 +44,8 @@ inline constexpr std::string_view kRegionChips = "chips";
 inline constexpr std::string_view kRegionList = "list";
 inline constexpr std::string_view kRegionActions = "actions";
 inline constexpr std::string_view kSearchId = "search";
+/// The body's class while the on-screen keyboard shows over the card (ADR-0018 §8).
+inline constexpr std::string_view kTypingClass = "typing";
 inline constexpr std::string_view kPlayId = "act-play";
 inline constexpr std::string_view kMediaId = "act-media";
 inline constexpr std::string_view kInfoId = "act-info";

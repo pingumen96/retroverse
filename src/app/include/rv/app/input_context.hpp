@@ -16,8 +16,8 @@ namespace rv::app {
 enum class InputContext : std::uint8_t {
     World, ///< free roam: walking, looking, Back, QuickCatalog (opens the catalog); the UI actions are not read
     Ui,    ///< a product UI screen has the input (the quick catalog, its game-session panel, the directory): the UI
-           ///< actions, QuickCatalog (closes the catalog) and Map (closes the directory, I4 step 7b); the world's
-           ///< actions are not read, so the walker stands still
+           ///< actions, QuickCatalog (closes the catalog), Map (closes the directory, I4 step 7b) and Confirm (the
+           ///< on-screen keyboard, I7 step 5); the world's actions are not read, so the walker stands still
 };
 
 /// "world", "ui".
@@ -36,7 +36,7 @@ enum class InputContext : std::uint8_t {
 }
 
 /// True when `context` reads `action`: the global actions everywhere; in World every action but the UI ones; in Ui the
-/// UI actions (input::isUiAction), QuickCatalog and Map.
+/// UI actions (input::isUiAction), QuickCatalog, Map and Confirm.
 [[nodiscard]] bool readsAction(InputContext context, input::Action action) noexcept;
 
 /// `actions` as `context` reads them: every action it does not read is released (value 0, neither held, pressed nor

@@ -7,7 +7,7 @@ namespace {
 
 constexpr std::array<std::string_view, kUiCommandCount> kCommandNames{
     "up",      "down",      "left", "right", "activate",        "back",       "media", "info",
-    "page_up", "page_down", "home", "end",   "filter_previous", "filter_next"};
+    "page_up", "page_down", "home", "end",   "filter_previous", "filter_next", "confirm"};
 
 } // namespace
 
