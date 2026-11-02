@@ -298,7 +298,8 @@ TEST_CASE("cli/reconciled sessions: a file moved back makes the holder an alias;
                      "AS f WHERE m.type = 'table' AND substr(m.name, 1, 3) = 'rv_' AND f.\"table\" = "
                      "'rv_game_identities' AND f.seq = 0 AND NOT EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) "
                      "AS g WHERE g.id = f.id AND g.seq > 0) ORDER BY 1") ==
-          std::vector<std::string>{"rv_identity_aliases.game", "rv_identity_history.game", "rv_identity_reviews.game",
+          std::vector<std::string>{"rv_game_status.game", "rv_identity_aliases.game", "rv_identity_history.game",
+                                   "rv_identity_reviews.game",
                                    "rv_launch_game_choices.game", "rv_launch_verifications.game",
                                    "rv_play_sessions.game"});
 
