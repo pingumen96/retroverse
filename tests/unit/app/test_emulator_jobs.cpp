@@ -309,6 +309,62 @@ TEST_CASE("app/emulators: a verification does not count for another program", "[
     CHECK(worker.table("gb").verified);
 }
 
+TEST_CASE("app/emulators: an ordinary launch of another program verifies nothing of what the system runs",
+          "[app][emulators]") {
+    const ImportedFixture fixture("rv-emulators");
+    const auto game = fixture.gameAt("gb", "Tiny Tennis (Europe).gb");
+    Worker worker(fixture);
+    PlaySession session;
+    session.game = game;
+    session.choice = command("Fake Emulator");
+    session.started = std::chrono::system_clock::now();
+    session.owner = rv::catalog::SessionOwner{ImportedFixture::testOwnerProcessId(), 1};
+    cleanReturn(session);
+    session.ended = session.started;
+    worker.worker.finishSession(1, session, kGb, "C:/Elsewhere/another-emulator.exe");
+    worker.wait([&] { return !worker.all.sessions.empty(); });
+    REQUIRE(worker.all.sessions.front().verified); // the choice with that program
+    CHECK_FALSE(worker.table("gb").verified);
+}
+
+TEST_CASE("app/emulators: a test that gets no session leaves nothing for the launch that takes its token",
+          "[app][emulators]") {
+    const ImportedFixture fixture("rv-emulators");
+    const auto game = fixture.gameAt("gb", "Tiny Tennis (Europe).gb");
+    Worker worker(fixture);
+    const LaunchChoice choice = command("Home Emulator");
+    const auto ordinaryEnd = [&](std::uint64_t token) {
+        worker.all.launches.clear();
+        worker.all.sessions.clear();
+        worker.worker.resolve(token, game);
+        worker.wait([&] { return !worker.all.launches.empty(); });
+        PlaySession session = worker.all.launches.front().session;
+        session.started = std::chrono::system_clock::now();
+        cleanReturn(session);
+        session.ended = session.started;
+        worker.worker.finishSession(token, session, kGb, "C:/Elsewhere/emu.exe");
+        worker.wait([&] { return !worker.all.sessions.empty(); });
+    };
+
+    // A game that cannot be resolved: an unknown id.
+    worker.all.launches.clear();
+    worker.worker.resolve(1, rv::catalog::GameId::fromValue(12345).value(), LaunchTestChoice{choice, std::nullopt});
+    worker.wait([&] { return !worker.all.launches.empty(); });
+    CHECK(worker.all.launches.front().error.has_value());
+    ordinaryEnd(1);
+    CHECK(worker.all.tests.empty());
+    CHECK_FALSE(storedChoice(fixture, kGb).has_value());
+
+    // A decision the flow never took.
+    worker.all.launches.clear();
+    worker.worker.resolve(2, game, LaunchTestChoice{choice, std::nullopt});
+    worker.wait([&] { return !worker.all.launches.empty(); });
+    worker.worker.forgetTest(2);
+    ordinaryEnd(2);
+    CHECK(worker.all.tests.empty());
+    CHECK_FALSE(storedChoice(fixture, kGb).has_value());
+}
+
 TEST_CASE("app/emulators: Salva senza provare stores it unverified; Clear gives ES-DE's back", "[app][emulators]") {
     const ImportedFixture fixture("rv-emulators");
     Worker worker(fixture);

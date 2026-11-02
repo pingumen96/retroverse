@@ -35,6 +35,9 @@ using VerifiedPrograms = std::map<std::tuple<std::string, int, std::string>, std
 [[nodiscard]] bool verifiedWith(const VerifiedPrograms& verified, const catalog::SystemName& system,
                                 const launcher::LaunchChoice& choice, const catalog::LaunchTranslation& translation);
 
+/// `left` and `right` name one program, as verifications compare them.
+[[nodiscard]] bool sameProgram(const std::filesystem::path& left, const std::filesystem::path& right);
+
 /// The screen's row of `row`, `games` games, its options the ready ones first; `stored`: the database holds a choice for
 /// the system.
 [[nodiscard]] ui::EmulatorSystem emulatorSystemOf(const library::SystemLaunchRow& row, std::size_t games,

@@ -157,6 +157,8 @@ public:
         return false;
     }
     [[nodiscard]] virtual std::optional<LaunchTestResult> takeLaunchTest() { return std::nullopt; }
+    /// The launch `token` was decided and never reached the flow: no session will say how a test of it ended.
+    virtual void launchDropped(std::uint64_t /*token*/) {}
     /// Where the folder browser starts looking for a program: ES-DE's install folder, when known; nothing: the drives.
     [[nodiscard]] virtual std::optional<std::filesystem::path> programStartFolder() const { return std::nullopt; }
 
@@ -288,6 +290,7 @@ public:
     [[nodiscard]] std::optional<ChoiceChanged> takeChoiceChanged() override;
     bool requestLaunchTest(std::uint64_t token, const ui::CatalogEntry& entry, const LaunchTestChoice& test) override;
     [[nodiscard]] std::optional<LaunchTestResult> takeLaunchTest() override { return std::exchange(m_testResult, {}); }
+    void launchDropped(std::uint64_t token) override;
     [[nodiscard]] std::optional<std::filesystem::path> programStartFolder() const override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).

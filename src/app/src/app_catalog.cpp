@@ -259,6 +259,14 @@ bool EsdeAppCatalog::requestLaunchTest(std::uint64_t token, const ui::CatalogEnt
     return true;
 }
 
+void EsdeAppCatalog::launchDropped(std::uint64_t token) {
+    const auto found = m_launches.find(token);
+    if (found != m_launches.end() && found->second.test) {
+        found->second.test = false;
+        m_worker.forgetTest(token);
+    }
+}
+
 bool EsdeAppCatalog::requestEmulatorTable() {
     if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
         return false;

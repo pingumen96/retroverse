@@ -116,6 +116,8 @@ struct CatalogSystem {
     /// label, a profile's display name): the emulators screen's list, which resolves nothing again.
     std::string source;
     std::string choiceName;
+    /// The program the choice finds now, when it does: a verification counts for that one alone.
+    std::optional<std::filesystem::path> program;
     /// Its resolution leaves something to each game (an %INJECT% file, a %STARTDIR%=%GAMEDIR% folder): each game is
     /// resolved for its own readiness.
     bool perGame = false;
@@ -333,6 +335,8 @@ public:
     /// The options of `system`, each translated now, and the games a launch test of it offers, at most `limit`
     /// (CatalogResults::emulatorSamples).
     void sampleGames(std::uint64_t serial, catalog::SystemName system, std::size_t limit);
+    /// The launch test `token` will have no session (a launch refused before one exists): its choice is forgotten.
+    void forgetTest(std::uint64_t token);
     /// Changes what is stored (CatalogResults::changes), then resolves the systems again (::resolved).
     void changeChoice(std::uint64_t serial, ChoiceChange change);
     /// The play session of the launch `token`: it began (Running, the started process), it ended (its final state; a

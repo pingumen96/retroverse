@@ -1447,17 +1447,31 @@ struct ProductUi::Impl {
         applyDecision(std::move(*decision));
     }
 
+    /// The flow took no launch `token`: no session will come; a launch test says so.
+    void launchDropped(std::uint64_t token) {
+        catalog->launchDropped(token);
+        if (emulatorTest == token) {
+            emulatorTest.reset();
+            addEmulatorsEvent("test-ended", "busy");
+            emulators.testEnded("busy");
+        }
+    }
+
     /// `decision` applied: the launch requested of the flow, or refused with its message (and its play session).
     void applyDecision(LaunchDecision decision) {
         const std::uint64_t frame = context.frameIndex();
         if (decision.request) {
             sessionToken = decision.token;
-            flow.request(std::move(*decision.request), std::move(decision.info), frame);
+            if (!flow.request(std::move(*decision.request), std::move(decision.info), frame)) {
+                launchDropped(decision.token);
+            }
         } else {
             const LaunchMessage refusal = decision.refusal;
             if (flow.refuse(std::move(decision.refusal), std::move(decision.info), frame)) {
                 catalog->sessionRefused(decision.token);
                 afterPending = true;
+            } else {
+                launchDropped(decision.token);
             }
             worldLaunchEnded(decision.token, refusal);
         }

@@ -71,6 +71,10 @@ struct ChoiceJob {
     std::uint64_t serial = 0;
     ChoiceChange change;
 };
+/// A launch test that will have no session.
+struct ForgetTestJob {
+    std::uint64_t token = 0;
+};
 enum class SessionStep : std::uint8_t { Begin, Finish };
 struct SessionJob {
     std::uint64_t token = 0;
@@ -87,7 +91,7 @@ struct RecentJob {
     std::size_t limit = 0;
 };
 using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob, TableJob, SamplesJob,
-                         ChoiceJob>;
+                         ChoiceJob, ForgetTestJob>;
 
 /// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
 /// open, only reads (lists, the favourites and recent games on the worker's reader, readiness), as launches and session
@@ -494,6 +498,9 @@ private:
         system.choice = resolution.chosen.choice;
         system.perGame = library::resolvedPerGame(resolution);
         system.source = std::string(catalog::toString(resolution.chosen.source));
+        if (resolution.translation.program) {
+            system.program = resolution.translation.program->path;
+        }
         const launcher::EmulatorProfile* profile =
             system.choice.kind == launcher::LaunchChoiceKind::Profile ? m_library->profiles.find(system.choice.value)
                                                                       : nullptr;
@@ -751,6 +758,8 @@ private:
         m_shared->post([&](CatalogResults& results) { results.resolved = std::move(resolved); });
     }
 
+    void handle(ForgetTestJob& job) { m_tests.erase(job.token); }
+
     void handle(ChoiceJob& job) {
         ChoiceChanged changed;
         changed.serial = job.serial;
@@ -798,6 +807,7 @@ private:
         if (const Status status = resolveLaunch(job.game, resolved); !status) {
             resolved.error = status.error();
             spdlog::warn("Launch of {} cannot be resolved: {}", job.game.toString(), status.error().toString());
+            m_tests.erase(job.token); // no session will come: the token may serve the run's next launch
         }
         m_resolvingTest.reset();
         m_shared->post([&](CatalogResults& results) { results.launches.push_back(std::move(resolved)); });
@@ -1113,11 +1123,16 @@ private:
             if (auto recorded = m_store->recordVerification(verification); recorded) {
                 stored.verified = true;
                 m_verified[verificationKey(verification.system, verification.choice)] = verification.program;
-                verified.emplace(verification.system, verification.choice);
-                if (const auto system = m_systems.find(verification.system.str());
-                    system != m_systems.end() && system->second.choice == verification.choice &&
-                    system->second.launch.readiness == catalog::LaunchReadiness::Ready) {
+                const auto system = m_systems.find(verification.system.str());
+                const bool sameChoice = system != m_systems.end() && system->second.choice == verification.choice;
+                // Its choice with another program than the one it ran says nothing of what the system runs now.
+                const bool sameRun = sameChoice && system->second.program &&
+                                     sameProgram(*system->second.program, verification.program);
+                if (sameRun && system->second.launch.readiness == catalog::LaunchReadiness::Ready) {
                     system->second.launch.verified = true;
+                }
+                if (!sameChoice || sameRun) {
+                    verified.emplace(verification.system, verification.choice);
                 }
             } else {
                 spdlog::warn("The launch verification of {} could not be recorded: {}",
@@ -1323,6 +1338,14 @@ void CatalogWorker::sampleGames(std::uint64_t serial, catalog::SystemName system
         const std::lock_guard lock(m_shared->mutex);
         std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<SamplesJob>(job); });
         m_shared->jobs.emplace_back(SamplesJob{serial, std::move(system), limit});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::forgetTest(std::uint64_t token) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        m_shared->jobs.emplace_back(ForgetTestJob{token});
     }
     m_shared->work.notify_one();
 }

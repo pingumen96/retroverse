@@ -53,8 +53,11 @@ std::tuple<std::string, int, std::string> verificationKey(const catalog::SystemN
 bool verifiedWith(const VerifiedPrograms& verified, const catalog::SystemName& system,
                   const launcher::LaunchChoice& choice, const catalog::LaunchTranslation& translation) {
     const auto found = verified.find(verificationKey(system, choice));
-    return found != verified.end() && translation.program &&
-           normalized(found->second) == normalized(translation.program->path);
+    return found != verified.end() && translation.program && sameProgram(found->second, translation.program->path);
+}
+
+bool sameProgram(const std::filesystem::path& left, const std::filesystem::path& right) {
+    return normalized(left) == normalized(right);
 }
 
 ui::EmulatorSystem emulatorSystemOf(const library::SystemLaunchRow& row, std::size_t games,
