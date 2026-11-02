@@ -67,7 +67,6 @@
 				<div class="row" data-for="option : options" data-attr-id="option.elementId" data-event-click="option(option.index)">
 					<div class="row-main" data-if="!option.clear">
 						<p class="title"><span data-if="option.name != ''">{{ option.name }}</span><span data-if="option.name == ''">Comando di ES-DE</span><span class="kind" data-if="option.profile"> (profilo di Retroverse)</span><span class="kind" data-if="option.chosen"> (in uso)</span></p>
-						<p class="detail path" data-if="option.program != ''">{{ option.program }}</p>
 					</div>
 					<div class="row-main" data-if="option.clear">
 						<p class="title">Torna alla scelta di ES-DE</p>
@@ -126,7 +125,7 @@
 
 		<div id="em-hints">
 			<span class="hint" data-if="viewName != 'testing'"><span class="kbd" hint-action="ui_activate"></span>Conferma</span>
-			<span class="hint" data-if="viewName == 'choice'"><span class="kbd" hint-action="ui_left ui_right"></span>Gioco</span>
+			<span class="hint" data-if="viewName == 'choice' && showTest"><span class="kbd" hint-action="ui_left ui_right"></span>Gioco</span>
 			<span class="hint" data-if="viewName != 'testing'"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
 		</div>
 	</div>

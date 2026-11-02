@@ -94,13 +94,13 @@ private:
 };
 
 /// The standard fixture imported into <case>/data, gb's first command made one Retroverse does not run (with
-/// `blocked`), and two profiles serving gb that run the build's fake.
+/// `blocked`), `extraCommands` more commands for gb, and two profiles serving gb that run the build's fake.
 struct Library {
     rv::test::Fixture fixture;
     fs::path dir;
     fs::path data;
 
-    explicit Library(std::string_view name, bool blocked = true)
+    explicit Library(std::string_view name, bool blocked = true, int extraCommands = 0)
         : fixture(rv::test::Fixture::materialize("esde/standard").value()),
           dir(freshCaseDir(std::string("emulators/") + std::string(name))), data(dir / "data") {
         if (blocked) {
@@ -110,6 +110,11 @@ struct Library {
             REQUIRE(at != std::string::npos);
             text.replace(at, kBlockedCommand.size(),
                          R"(<command label="Script">%ESCAPESPECIALS% %EMULATOR_FAKE-EMULATOR% -- %ROM%</command>)");
+            std::string extra;
+            for (int index = 0; index < extraCommands; ++index) {
+                extra += fmt::format("<command label=\"Extra {}\">%EMULATOR_FAKE-EMULATOR% -- %ROM%</command>", index);
+            }
+            text.insert(text.find("<command label=\"Home Emulator\">"), extra);
             REQUIRE(rv::core::writeTextFileAtomic(systems, text).has_value());
         }
         cli("library", {"library", "create", "--home", arg(fixture.root()), "--install",
@@ -469,7 +474,7 @@ TEST_CASE("emulators: the wizard's page 5 opens the screen and takes the run on"
 
 TEST_CASE("emulators: at text scale 125% at 1280 x 720 no view and no browser is cut", "[gpu][emulators]") {
     ensureLaunchAllowList();
-    const Library library("scale125");
+    const Library library("scale125", true, 16); // a list longer than the panel: it scrolls inside it, as a real system's
     REQUIRE(rv::core::writeTextFileAtomic(library.data / "settings.json",
                                           R"({"schemaVersion": 1, "player": {"textScale": 1.25}})")
                 .has_value());
@@ -537,7 +542,7 @@ TEST_CASE("emulators: the pictures", "[.shots][.emulators_shots]") {
     ensureLaunchAllowList();
     const fs::path out = rv::core::pathFromUtf8(folder);
     fs::create_directories(out);
-    const Library library("shots");
+    const Library library("shots", true, 16);
     const Rows ready = rowsOf(library, "fake-return");
     const Rows missing = rowsOf(library, "Missing Emulator (Standalone)");
     REQUIRE(rv::core::writeTextFileAtomic(library.data / "settings.json", "{\"schemaVersion\": 1}").has_value());

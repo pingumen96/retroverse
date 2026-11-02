@@ -51,11 +51,19 @@ p {
 	padding: 22dp 28dp;
 }
 
+/* Placed by the panel's edges: a flex item's height never reaches a list nested in it, which would run past the panel. */
 .view {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 22dp;
+	bottom: 62dp;
 	display: flex;
 	flex-direction: column;
-	flex: 1 1 auto;
-	min-height: 0dp;
+}
+
+.view h1, .view p {
+	flex: 0 0 auto;
 }
 
 #em-list, #em-options, #fb-list {
@@ -250,7 +258,16 @@ p {
 	margin-top: 8dp;
 }
 
-#em-hints, #fb-hints {
+#em-hints {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	bottom: 18dp;
+	font-size: 18dp;
+	color: #F4EFE6CC;
+}
+
+#fb-hints {
 	flex: 0 0 auto;
 	margin-top: 8dp;
 	font-size: 18dp;
@@ -282,6 +299,8 @@ p {
 	h1 { font-size: 26dp; margin-bottom: 6dp; }
 	p { margin-bottom: 5dp; }
 	.panel { left: 6%; width: 88%; top: 3%; height: 94%; padding: 14dp 20dp; }
+	.view { left: 20dp; right: 20dp; top: 14dp; bottom: 44dp; }
+	#em-hints { left: 20dp; right: 20dp; bottom: 10dp; }
 	.note { font-size: 17dp; }
 	.problem { font-size: 18dp; }
 	.row { padding: 3dp 10dp; margin-bottom: 3dp; }
@@ -291,6 +310,7 @@ p {
 	.arrow { width: 30dp; height: 30dp; line-height: 30dp; }
 	.action { padding: 3dp 18dp; margin-bottom: 4dp; font-size: 19dp; }
 	.row.browse { font-size: 18dp; padding: 2dp 10dp; }
-	#em-hints, #fb-hints { font-size: 16dp; margin-top: 5dp; }
+	#em-hints { font-size: 16dp; }
+	#fb-hints { font-size: 16dp; margin-top: 5dp; }
 	.kbd { width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
 }

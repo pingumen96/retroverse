@@ -457,17 +457,42 @@ std::string EmulatorsScreen::focusedElement() const {
     return std::string(focus->GetId());
 }
 
+namespace {
+
+/// The element `id` of `panel`'s document, shown, runs past the panel's bottom: what no overflow check of a text sees.
+[[nodiscard]] std::uint32_t pastPanel(Rml::ElementDocument& document, Rml::Element& panel, const char* id) {
+    Rml::Element* element = document.GetElementById(id);
+    if (element == nullptr || !element->IsVisible()) {
+        return 0;
+    }
+    const auto bottom = [](Rml::Element& shown) {
+        return shown.GetAbsoluteOffset(Rml::BoxArea::Border).y + shown.GetBox().GetSize(Rml::BoxArea::Border).y;
+    };
+    return bottom(*element) > bottom(panel) + 1.0f ? 1 : 0;
+}
+
+} // namespace
+
 std::uint32_t EmulatorsScreen::textCut() const {
-    Rml::Element* panel =
-        m_impl->document != nullptr ? m_impl->document->GetElementById(Rml::String(emulators::kPanelId)) : nullptr;
-    return panel != nullptr && panel->IsVisible() ? detail::elementsWithCutText(*panel) : 0;
+    Rml::ElementDocument* document = m_impl->document;
+    Rml::Element* panel = document != nullptr ? document->GetElementById(Rml::String(emulators::kPanelId)) : nullptr;
+    if (panel == nullptr || !panel->IsVisible()) {
+        return 0;
+    }
+    return detail::elementsWithCutText(*panel) + pastPanel(*document, *panel, "em-list") +
+           pastPanel(*document, *panel, "em-options") + pastPanel(*document, *panel, "em-buttons") +
+           pastPanel(*document, *panel, "em-hints");
 }
 
 std::uint32_t EmulatorsScreen::browserTextCut() const {
-    Rml::Element* panel = m_impl->document != nullptr
-                              ? m_impl->document->GetElementById(Rml::String(emulators::kBrowserPanelId))
-                              : nullptr;
-    return panel != nullptr && panel->IsVisible() ? detail::elementsWithCutText(*panel) : 0;
+    Rml::ElementDocument* document = m_impl->document;
+    Rml::Element* panel =
+        document != nullptr ? document->GetElementById(Rml::String(emulators::kBrowserPanelId)) : nullptr;
+    if (panel == nullptr || !panel->IsVisible()) {
+        return 0;
+    }
+    return detail::elementsWithCutText(*panel) + pastPanel(*document, *panel, "fb-list") +
+           pastPanel(*document, *panel, "fb-hints");
 }
 
 } // namespace rv::ui
