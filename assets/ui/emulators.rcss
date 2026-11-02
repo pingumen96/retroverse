@@ -62,7 +62,7 @@ p {
 	flex-direction: column;
 }
 
-.view h1, .view p {
+.view > h1, .view > p {
 	flex: 0 0 auto;
 }
 
