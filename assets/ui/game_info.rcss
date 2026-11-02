@@ -189,8 +189,8 @@ h3 {
 .action {
 	display: block;
 	box-sizing: border-box;
-	width: 180dp;
-	padding: 8dp 18dp;
+	width: 150dp;
+	padding: 8dp 10dp;
 	font-size: 21dp;
 	text-align: center;
 	background-color: #FFFFFF14;
@@ -210,7 +210,7 @@ h3 {
 }
 
 .hint {
-	margin: 0dp 10dp;
+	margin: 0dp 6dp;
 	white-space: nowrap; /* a key stays with its word when the line wraps */
 }
 
