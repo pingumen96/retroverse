@@ -125,6 +125,10 @@ TEST_CASE("app/binding_rules: the on-screen keyboard's Confirm is judged in the 
     CHECK(judgeBinding(map, Action::Confirm, key(Key::Insert)).verdict == BindingVerdict::Free);
     // Enter, shared with it, costs UiActivate no swap of its key.
     CHECK(judgeBinding(map, Action::UiActivate, key(Key::Escape)).verdict == BindingVerdict::Clash);
+    // A holder the world reads gets no such pass: Enter for QuickCatalog would open the catalog and be Confirm in free roam.
+    const BindingJudgement tab = judgeBinding(map, Action::UiActivate, key(Key::Tab));
+    CHECK(tab.verdict == BindingVerdict::Reserved);
+    CHECK(tab.other == Action::Confirm);
 }
 
 TEST_CASE("app/binding_rules: a locked action never loses its only key or button", "[app][binding]") {
