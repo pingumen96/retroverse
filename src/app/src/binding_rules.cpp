@@ -188,7 +188,10 @@ BindingJudgement judgeBinding(const input::ActionMap& map, Action action, const 
     for (const Action holder : holders) {
         for (std::size_t index = 0; index < input::kActionCount; ++index) {
             const auto other = static_cast<Action>(index);
-            if (other != action && actionsCompete(holder, other) && holds(map, other, *slot) &&
+            // Confirm shares Enter with UiActivate on purpose: over the on-screen keyboard alone would the holder's key
+            // be read with it, and both then close it. It must not cost UiActivate every swap of its key.
+            const bool shared = action == Action::UiActivate && other == Action::Confirm;
+            if (other != action && !shared && actionsCompete(holder, other) && holds(map, other, *slot) &&
                 std::find(holders.begin(), holders.end(), other) == holders.end()) {
                 return {BindingVerdict::Reserved, other};
             }

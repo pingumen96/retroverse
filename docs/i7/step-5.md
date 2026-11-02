@@ -22,7 +22,8 @@ Roadmap row: I7 step 5. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
 
 - **`Action::Confirm` is read in the UI context now** (`readsAction()`), as `UiCommand::Confirm`, since ADR-0018 §8 gives
   Start to the keyboard. So remapping judges it there: Start for Informazioni is a clash, and Confirm takes no text key (the
-  capture rule of `isTextKey()` extended to it). Enter stays shared with UiActivate on purpose (`actionsCompete()`). No other
+  capture rule of `isTextKey()` extended to it). Enter stays shared with UiActivate on purpose (`actionsCompete()`, and a swap
+  of UiActivate's key does not count it: Esc for UiActivate gives Enter to UiBack, which over the keyboard closes it). No other
   screen sees the command: `ProductUi::update` drops it unless the keyboard shows.
 - **One press that is both Activate and Confirm** (Enter) is read by the device used last: on the keyboard it confirms, on a
   pad that was given both it types, or that pad could type nothing. Conferma's key is still there.

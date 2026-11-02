@@ -123,6 +123,8 @@ TEST_CASE("app/binding_rules: the on-screen keyboard's Confirm is judged in the 
     // A letter types in the field the keyboard reads Confirm over.
     CHECK(judgeBinding(map, Action::Confirm, key(Key::K)).verdict == BindingVerdict::Reserved);
     CHECK(judgeBinding(map, Action::Confirm, key(Key::Insert)).verdict == BindingVerdict::Free);
+    // Enter, shared with it, costs UiActivate no swap of its key.
+    CHECK(judgeBinding(map, Action::UiActivate, key(Key::Escape)).verdict == BindingVerdict::Clash);
 }
 
 TEST_CASE("app/binding_rules: a locked action never loses its only key or button", "[app][binding]") {
