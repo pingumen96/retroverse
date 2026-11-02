@@ -179,9 +179,11 @@ TEST_CASE("ui/nav_input: every command has an action of its own in the action ma
         const auto command = static_cast<UiCommand>(index);
         const Action action = rv::ui::actionFor(command);
         INFO(rv::ui::toString(command));
-        CHECK(rv::input::isUiAction(action));
+        // Confirm is the world's action too, read in the UI for the on-screen keyboard (I7 step 5).
+        CHECK((rv::input::isUiAction(action) || command == UiCommand::Confirm));
         CHECK(actions.insert(action).second);
     }
+    CHECK(rv::ui::actionFor(UiCommand::Confirm) == Action::Confirm);
     CHECK(rv::ui::actionFor(UiCommand::Down) == Action::UiDown);
     CHECK(rv::ui::actionFor(UiCommand::Activate) == Action::UiActivate);
     CHECK(rv::ui::actionFor(UiCommand::FilterNext) == Action::UiFilterNext);

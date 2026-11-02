@@ -112,6 +112,19 @@ TEST_CASE("app/binding_rules: what stays what it is", "[app][binding]") {
     CHECK(judgeBinding(map, Action::Sprint, key(Key::K)).verdict == BindingVerdict::Free);
 }
 
+TEST_CASE("app/binding_rules: the on-screen keyboard's Confirm is judged in the UI, Enter's sharing aside",
+          "[app][binding]") {
+    const ActionMap map = ActionMap::defaults();
+    // Read in the UI since I7 step 5: Start for Informazioni, which deletes on the keyboard, would do two things there.
+    CHECK(actionsCompete(Action::Confirm, Action::UiInfo));
+    CHECK_FALSE(actionsCompete(Action::Confirm, Action::UiActivate)); // Enter, shipped so
+    CHECK_FALSE(actionsCompete(Action::Confirm, Action::Menu));       // Start, shipped so
+    CHECK(judgeBinding(map, Action::UiInfo, button(GamepadButton::Start)).verdict != BindingVerdict::Free);
+    // A letter types in the field the keyboard reads Confirm over.
+    CHECK(judgeBinding(map, Action::Confirm, key(Key::K)).verdict == BindingVerdict::Reserved);
+    CHECK(judgeBinding(map, Action::Confirm, key(Key::Insert)).verdict == BindingVerdict::Free);
+}
+
 TEST_CASE("app/binding_rules: a locked action never loses its only key or button", "[app][binding]") {
     ActionMap map = ActionMap::defaults();
     map.clear(Action::UiInfo); // no slot to give back

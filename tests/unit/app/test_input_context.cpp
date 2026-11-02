@@ -58,7 +58,8 @@ TEST_CASE("app/input_context: each context reads its own actions and the global 
         CHECK(rv::app::readsAction(InputContext::World, action) == (global || !ui));
         // I4 step 7b: Map closes the directory it opens.
         CHECK(rv::app::readsAction(InputContext::Ui, action) ==
-              (global || ui || action == Action::QuickCatalog || action == Action::Map));
+              (global || ui || action == Action::QuickCatalog || action == Action::Map ||
+               action == Action::Confirm));
     }
     CHECK(rv::app::isGlobalAction(Action::ToggleDevUI));
     CHECK(rv::app::isGlobalAction(Action::ReloadShaders));
@@ -79,7 +80,7 @@ TEST_CASE("app/input_context: a device shared by both contexts acts in the one t
     CHECK_FALSE(enterWorld.held(Action::UiActivate));
     const ActionState enterUi = rv::app::actionsFor(InputContext::Ui, enter);
     CHECK(enterUi.pressed(Action::UiActivate));
-    CHECK_FALSE(enterUi.pressed(Action::Confirm));
+    CHECK(enterUi.pressed(Action::Confirm)); // I7 step 5: the on-screen keyboard reads it; no other screen does
 
     // The down arrow walks backwards in the world and moves down in the catalog: under the catalog the walker stands.
     const ActionState down = keyPress(Key::Down);
