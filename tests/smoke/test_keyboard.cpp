@@ -262,6 +262,35 @@ TEST_CASE("keyboard: over it Enter confirms, once, and the catalog's toggle clos
     CHECK_FALSE(closed.report->keyboard->open);
 }
 
+TEST_CASE("keyboard: a direction held through Start or B moves nothing behind it", "[gpu][keyboard]") {
+    const Room room("held");
+    const auto holding = [](std::string_view closing) {
+        Script script;
+        script.device("pad").toField().openKeyboard();
+        const int from = script.frame;
+        script.steps.push_back(Json{{"fromFrame", from}, {"toFrame", from + 60}, {"actions", {{"ui_down", 1}}}});
+        script.steps.push_back(Json{{"fromFrame", from + 20}, {"toFrame", from + 20}, {"actions", {{std::string(closing), 1}}}});
+        script.frame = from + 66;
+        return script;
+    };
+    // Start: on to the list, whose selection stays on its first game.
+    const AppRun confirmed = runScript(room, "confirmed", holding("confirm"));
+    skipWithoutOpenGl(confirmed);
+    requireCleanRun(confirmed);
+    INFO(confirmed.describe());
+    CHECK(confirmed.report->keyboard->confirmed == 1);
+    CHECK(confirmed.report->catalog->selectedPosition == 0);
+
+    // B: the focus stays on the field, so the next A opens the keyboard again.
+    Script closing = holding("ui_back");
+    closing.openKeyboard().wait(4);
+    const AppRun closed = runScript(room, "closed", closing);
+    requireCleanRun(closed);
+    INFO(closed.describe());
+    CHECK(closed.report->keyboard->closed == 1);
+    CHECK(closed.report->keyboard->opened == 2);
+}
+
 TEST_CASE("keyboard: the hints name the active map, and a remapped pad's buttons work", "[gpu][keyboard]") {
     const Room room("hints");
     Script shipped;

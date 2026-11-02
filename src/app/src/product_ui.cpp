@@ -306,9 +306,11 @@ struct ProductUi::Impl {
         case ui::KeyboardOutput::Kind::Confirm:
             screen->apply(ui::UiCommand::Activate); // Enter in the field: on to the results
             ++keyboardRecord->confirmed;
+            nav.reset(); // a direction still held must not walk the list or leave the field
             break;
         case ui::KeyboardOutput::Kind::Close:
             ++keyboardRecord->closed;
+            nav.reset();
             break;
         }
     }
