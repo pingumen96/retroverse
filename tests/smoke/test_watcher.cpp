@@ -79,21 +79,23 @@ struct Addition {
 };
 
 Addition snesAddition(const rv::test::Fixture& fixture) {
+    std::optional<Addition> found;
     for (const fs::directory_entry& entry : fs::directory_iterator(fixture.path("additions/roms/snes"))) {
         const fs::path name = entry.path().filename();
-        if (entry.path().extension() != ".sfc" || fs::exists(fixture.path("roms/snes") / name)) {
+        if (found || entry.path().extension() != ".sfc" || fs::exists(fixture.path("roms/snes") / name)) {
             continue;
         }
         for (const char* extension : {".png", ".jpg"}) {
             const fs::path cover = fs::path(name).replace_extension(extension);
-            if (fs::exists(fixture.path("additions/media/snes/covers") / cover)) {
-                return Addition{"roms/snes/" + rv::core::pathToUtf8(name),
-                                "media/snes/covers/" + rv::core::pathToUtf8(cover)};
+            if (!found && fs::exists(fixture.path("additions/media/snes/covers") / cover)) {
+                found = Addition{"roms/snes/" + rv::core::pathToUtf8(name),
+                                 "media/snes/covers/" + rv::core::pathToUtf8(cover)};
             }
         }
     }
-    FAIL("additions/ holds no new snes title with a cover");
-    return {};
+    INFO("additions/ must hold a new snes title with a cover");
+    REQUIRE(found.has_value());
+    return *found;
 }
 
 void copyIn(const rv::test::Fixture& fixture, const std::string& relative) {
