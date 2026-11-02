@@ -29,8 +29,7 @@ Roadmap row: I7 step 6. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
 
 ## Decisions and departures
 
-- **The branch carries step 4.** The plan's row needs it and it was not on `main`, so `i7/step-4` was merged in at cb400b66
-  (with step 5's conflicts resolved on both sides). Its `rv_launch_program_choices` is schema 2; this step's table is 3.
+- **Step 4's `rv_launch_program_choices` is schema 2;** this step's table is 3.
 - **No third-party notices in Informazioni.** The step's brief asked for them "as the ADR says", but ADR-0018 §11 does not:
   Informazioni is the game's panel there, and the roadmap gives "third-party notices shipped" to I9. Nothing was added.
 - **The rows stand in a region of their own**, not at the foot of the scrolled text as before: a long description would
