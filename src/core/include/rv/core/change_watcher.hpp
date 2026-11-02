@@ -69,6 +69,9 @@ struct Change {
     ChangeKind kind = ChangeKind::Modified;
     /// The absolute path that changed (the root's folder for Overflow, RootLost and RootBack).
     std::filesystem::path path;
+    /// Added and RenamedTo: the path was a folder when the watcher looked (a folder moved in, whose own files a move on
+    /// one volume never reports).
+    bool directory = false;
 
     bool operator==(const Change&) const = default;
 };

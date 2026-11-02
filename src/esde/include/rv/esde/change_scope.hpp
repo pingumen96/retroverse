@@ -8,7 +8,8 @@
 //  - <media root>/<system>/... : the system for its folder, its kind folders and a file with a media extension (or none,
 //    a folder): an image, a video or a manual (mediaExtensions());
 //  - inside a system's ROM folder (the deepest that holds it): the folder itself, a name with one of the system's
-//    extensions (compared ignoring case: ".SFC" counts for ".sfc"), a name without one (a folder moved in), noload.txt:
+//    extensions (compared ignoring case: ".SFC" counts for ".sfc"), a name without one or a folder the watcher saw (one
+//    moved in, its own files unreported), noload.txt:
 //    the system; anything else (an emulator's save or state beside a ROM, "game.srm") is nothing;
 //  - a folder that holds system folders (the ROM root, a folder of a nested layout), the media root, the gamelists
 //    folder: every system;
@@ -88,8 +89,10 @@ class ChangeScopeIndex {
 public:
     explicit ChangeScopeIndex(ChangeScopeMap map);
 
-    /// The scope of a change of `path` (absolute; lexical, as above).
-    [[nodiscard]] ChangeScope scope(const std::filesystem::path& path) const;
+    /// The scope of a change of `path` (absolute; lexical, as above). `directory`: the path is known to be a folder (an
+    /// added or renamed one): inside a ROM or media folder it counts whatever its name, a dotted one included ("Collection
+    /// v2.0", "Game (Rev 1.1)").
+    [[nodiscard]] ChangeScope scope(const std::filesystem::path& path, bool directory = false) const;
     [[nodiscard]] const ChangeScopeMap& map() const noexcept { return m_map; }
 
 private:
@@ -112,8 +115,9 @@ private:
     std::vector<System> m_systems;
 };
 
-/// The scope of a change of `path` (absolute; lexical, as above): ChangeScopeIndex(map).scope(path).
-[[nodiscard]] ChangeScope changeScope(const ChangeScopeMap& map, const std::filesystem::path& path);
+/// The scope of a change of `path` (absolute; lexical, as above): ChangeScopeIndex(map).scope(path, directory).
+[[nodiscard]] ChangeScope changeScope(const ChangeScopeMap& map, const std::filesystem::path& path,
+                                      bool directory = false);
 
 /// The roots the watcher watches for `map`, named "rom", "system:<name>", "media", "gamelists", "custom-systems",
 /// "settings"; a folder inside one listed before is left out (its changes reach that one).

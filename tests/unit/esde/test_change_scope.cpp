@@ -71,6 +71,14 @@ TEST_CASE("esde/change_scope: ROM folders: the system's extensions, a folder, no
     CHECK(scopeOf(map, "Y:\\Roms\\snes\\Zinnia (USA).Sfc") == "system:snes (rom)"); // case ignored: one refresh more
     CHECK(scopeOf(map, "Y:\\Roms\\snes\\Sub Folder\\Deep (Europe).zip") == "system:snes (rom)");
     CHECK(scopeOf(map, "Y:\\Roms\\snes\\Collection") == "system:snes (rom)"); // a folder moved in
+    // A dotted folder moved in (a move on one volume reports the folder alone): known to be a folder, it counts.
+    for (const char* folder : {"Y:\\Roms\\snes\\Collection v2.0", "Y:\\Roms\\snes\\Game (Rev 1.1)"}) {
+        INFO(folder);
+        CHECK(scopeOf(map, folder) == "none (extension)");
+        CHECK(describe(rv::esde::changeScope(map, folder, true)) == "system:snes (rom)");
+    }
+    CHECK(describe(rv::esde::changeScope(map, "X:\\Invented\\Media\\snes\\covers\\Set v1.0", true)) ==
+          "system:snes (media)");
     CHECK(scopeOf(map, "Y:\\Roms\\snes\\Trailing.") == "system:snes (rom)");
     CHECK(scopeOf(map, "Y:\\Roms\\snes\\noload.txt") == "system:snes (rom)");
     CHECK(scopeOf(map, "Y:\\Roms\\snes") == "system:snes (rom-folder)");

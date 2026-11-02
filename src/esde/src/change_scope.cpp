@@ -141,7 +141,7 @@ const ChangeScopeIndex::System* ChangeScopeIndex::systemNamed(const std::wstring
     return nullptr;
 }
 
-ChangeScope ChangeScopeIndex::scope(const std::filesystem::path& path) const {
+ChangeScope ChangeScopeIndex::scope(const std::filesystem::path& path, bool directory) const {
     if (path.empty() || !path.is_absolute()) {
         return none("relative");
     }
@@ -199,7 +199,8 @@ ChangeScope ChangeScopeIndex::scope(const std::filesystem::path& path) const {
             return all;
         }();
         const std::wstring extension = extensionOf(media->back());
-        return extension == L"." || contains(kMedia, extension) ? ofSystem(*named, "media") : none("not-media");
+        return directory || extension == L"." || contains(kMedia, extension) ? ofSystem(*named, "media")
+                                                                              : none("not-media");
     }
     // The system whose ROM folder holds the path most closely (the deepest folder).
     const System* owner = nullptr;
@@ -217,7 +218,7 @@ ChangeScope ChangeScopeIndex::scope(const std::filesystem::path& path) const {
         }
         const std::wstring& name = inside->back();
         const std::wstring extension = extensionOf(name);
-        if (extension == L"." || contains(owner->extensions, extension) || name == folded("noload.txt")) {
+        if (directory || extension == L"." || contains(owner->extensions, extension) || name == folded("noload.txt")) {
             return ofSystem(*owner, "rom");
         }
         return none("extension");
@@ -235,8 +236,8 @@ ChangeScope ChangeScopeIndex::scope(const std::filesystem::path& path) const {
     return none("outside");
 }
 
-ChangeScope changeScope(const ChangeScopeMap& map, const std::filesystem::path& path) {
-    return ChangeScopeIndex(map).scope(path);
+ChangeScope changeScope(const ChangeScopeMap& map, const std::filesystem::path& path, bool directory) {
+    return ChangeScopeIndex(map).scope(path, directory);
 }
 
 std::vector<core::WatchRoot> watchRoots(const ChangeScopeMap& map) {

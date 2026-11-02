@@ -50,7 +50,7 @@ void LibraryWatcher::take(Clock::time_point now) {
             ++m_ignoredBy["folder-time"];
             continue;
         }
-        const esde::ChangeScope scope = m_index->scope(change.path);
+        const esde::ChangeScope scope = m_index->scope(change.path, change.directory);
         // The path may name the user's folders: at debug level only.
         spdlog::debug("Library watcher: {} {}: {}{} ({})", core::toString(change.kind),
                       core::pathToUtf8Lossy(change.path), esde::toString(scope.kind),
