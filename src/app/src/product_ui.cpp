@@ -363,7 +363,11 @@ struct ProductUi::Impl {
             break;
         case ui::EmulatorsCommandKind::Load:
             if (!catalog->requestEmulatorTable()) {
-                emulators.setUnavailable();
+                if (catalog->roomCatalogState() == CatalogState::Opening) {
+                    emulators.prepare(); // asked again on the next frame: it is opening, not absent
+                } else {
+                    emulators.setUnavailable();
+                }
             }
             break;
         case ui::EmulatorsCommandKind::Samples:
@@ -499,6 +503,12 @@ struct ProductUi::Impl {
             }
             emulators.testEnded(test->verdict);
             ++catalogRevision;
+        }
+        // A worker that ended answers nothing more: the screen never stays on a test.
+        if (emulatorTest && catalog->workerEnded() && !flow.sessionActive() && !flow.pending()) {
+            emulatorTest.reset();
+            addEmulatorsEvent("test-ended", "error");
+            emulators.testEnded("error");
         }
         if (programLister) {
             programLister->poll(programBrowser);
