@@ -60,6 +60,8 @@ Roadmap row: I7 step 4. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
 - **A system's rows name no program** (a choice does): with paths the list was three lines a row, and a real system has
   twenty commands. A list that runs past the panel counts as cut (`EmulatorsScreen::textCut()`): at 125% one did, unseen by
   the text check, until the views were placed by the panel's edges; the scale case holds 16 extra commands for it.
+- **No text field, so no on-screen keyboard:** the screen and its browser are moved by the pad alone; paths are browsed
+  (step 5's keyboard stays the quick catalog's).
 - **A choice stored from the screen is `Non verificato`** in the list; `Pronto` stays ES-DE's own commands (§5).
 - **`retroverse-cli launch --test`** fails closed too (exit 1, nothing recorded): ADR-0018 §6 speaks of a launch test, not
   of the app's.
