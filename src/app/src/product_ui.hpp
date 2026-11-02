@@ -12,6 +12,7 @@
 #include <rv/app/command_line.hpp>
 #include <rv/app/game_screens.hpp>
 #include <rv/app/launch_outcome.hpp>
+#include <rv/app/library_watch.hpp>
 #include <rv/app/wizard_flow.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/core/expected.hpp>
@@ -306,6 +307,9 @@ public:
 
     /// The catalog the UI shows (the generated room asks it for the room's snapshot, I3 step 10b).
     [[nodiscard]] AppCatalog& catalog() noexcept;
+    /// I7 step 7: the file watcher's refresh `request`, for the changes `watched` describes (the run report's refresh
+    /// record says so); false, and nothing asked, when the catalog cannot take one now.
+    bool requestWatcherRefresh(const WatchRefresh& watched, RefreshRequest request);
 
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),

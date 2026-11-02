@@ -94,6 +94,10 @@ core::ArgParser makeParser() {
         .flag("refresh-library", "Refresh the catalog from ES-DE once it is open, as \"Aggiorna libreria\" does in the "
                                  "quick catalog: the import of 'retroverse-cli import' on the catalog worker, the "
                                  "list usable meanwhile (the run report's catalog.refreshes).")
+        .flag("watch-library", "Watch the library's folders for games and media added in ES-DE (read-only), also in a "
+                               "frame-limited run, where it is off by default.")
+        .flag("no-watch-library", "Do not watch the library's folders (an interactive run watches them by default); "
+                                  "nothing then follows what ES-DE adds until Aggiorna libreria.")
         .option("video-freeze-pts", "seconds",
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens.")
@@ -774,6 +778,14 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     options.watchLateFrames = args->has("watch-late-frames");
     options.refreshLibrary = args->has("refresh-library");
+    if (args->has("watch-library") && args->has("no-watch-library")) {
+        return makeError(ErrorCode::InvalidArgument, "not with --no-watch-library", "--watch-library");
+    }
+    if (args->has("watch-library")) {
+        options.watchLibrary = true;
+    } else if (args->has("no-watch-library")) {
+        options.watchLibrary = false;
+    }
     options.noTextureCompression = args->has("no-texture-compression");
     options.stereoPreview = args->has("stereo-preview");
     if (auto xr = applyXr(*args, options); !xr) {
@@ -844,6 +856,13 @@ Status pendingOptionError(const CommandLineOptions& options) {
     // One block per option, apart, so that the step implementing one removes its block without touching the others.
     (void)options; // every option is implemented since I3 steps 11 and 13r
     return ok();
+}
+
+bool watchesLibrary(const CommandLineOptions& options) noexcept {
+    if (options.watchLibrary) {
+        return *options.watchLibrary;
+    }
+    return !(options.smoke || options.exitAfterFrames);
 }
 
 Expected<SpawnPoint> parseSpawnPoint(std::string_view text) {

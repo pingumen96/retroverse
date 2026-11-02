@@ -65,6 +65,7 @@
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/session_store.hpp>
 #include <rv/core/expected.hpp>
+#include <rv/esde/change_scope.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/launcher/emulator_profile.hpp>
 
@@ -97,6 +98,9 @@ struct GameLaunchState {
 
     bool operator==(const GameLaunchState&) const = default;
 };
+
+/// How often the worker compares the newest import with the one it knows, with the file watcher (ADR-0018 §10).
+inline constexpr std::chrono::milliseconds kOtherImportsInterval{5000};
 
 /// The blocker code of a launch that cannot be resolved because the library's configuration cannot be read (ES-DE's
 /// settings or systems: CatalogOpened::libraryError).
@@ -223,6 +227,8 @@ struct CatalogRefreshed {
     std::uint64_t generation = 0;
     /// ES-DE's configuration as read again (CatalogOpened::libraryError), with `systems`.
     std::optional<Error> libraryError;
+    /// The systems a partial refresh imported (RefreshRequest::systems, I7 step 7); empty: every system.
+    std::vector<catalog::SystemName> systemsAsked;
 };
 
 /// The systems resolved again after a change of what is stored (I7 step 4): as CatalogRefreshed::systems, its generation.
@@ -294,6 +300,11 @@ struct CatalogResults {
     /// I7 step 6: the latest statistics, and Informazioni's rows.
     std::optional<StatisticsList> statistics;
     std::optional<GameControls> gameControls;
+    /// I7 step 7 (ADR-0018 §10): what the file watcher watches for the library as resolved now (after the opening, after
+    /// each refresh, after another process's import), and another process's import found (its systems resolved again,
+    /// as a refresh's: the lists and the building asked again).
+    std::optional<esde::ChangeScopeMap> watchMap;
+    std::optional<CatalogRefreshed> otherImport;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
@@ -301,7 +312,8 @@ struct CatalogResults {
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && !recentGames && readiness.empty() && launches.empty() && sessions.empty() &&
                verified.empty() && !refreshProgress && !refreshed && !emulatorTable && !emulatorSamples &&
-               tests.empty() && changes.empty() && !resolved && !statistics && !gameControls && !ended;
+               tests.empty() && changes.empty() && !resolved && !statistics && !gameControls && !watchMap &&
+               !otherImport && !ended;
     }
 };
 
@@ -337,6 +349,9 @@ public:
         std::chrono::milliseconds sessionRetryInterval{2000};
         /// How long stop() tries the session writes still pending (the rest of its bound is the interrupt's).
         std::chrono::milliseconds stopPatience{3000};
+        /// How often the newest import is compared with the one known, to follow another process's (ADR-0018 §10:
+        /// 5 s, with the file watcher); nothing: never.
+        std::optional<std::chrono::milliseconds> otherImportsInterval;
     };
 
     /// The worker's default bound for stopping (the destructor's).
@@ -386,10 +401,10 @@ public:
     void finishSession(std::uint64_t token, catalog::PlaySession session, catalog::SystemName system,
                        std::filesystem::path program);
 
-    /// Refreshes the catalog from the library (the import, sliced; CatalogResults::refreshProgress, ::refreshed). False,
-    /// and nothing asked, while a refresh is queued or runs, or once the worker stops or ended. Only once the catalog
-    /// opened Ready: a catalog that did not open answers nothing more.
-    bool refresh();
+    /// Refreshes the catalog from the library (the import, sliced; CatalogResults::refreshProgress, ::refreshed), of the
+    /// systems `request` names or of every one. False, and nothing asked, while a refresh is queued or runs, or once the
+    /// worker stops or ended. Only once the catalog opened Ready: a catalog that did not open answers nothing more.
+    bool refresh(RefreshRequest request = {});
 
     /// What it answered since the last call (main thread).
     [[nodiscard]] CatalogResults take();

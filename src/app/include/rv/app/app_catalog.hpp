@@ -58,6 +58,9 @@ struct CatalogChanges {
     /// It ended Done and the systems were resolved again: the model reads the platforms and the list again
     /// (QuickCatalogModel::refresh(): the selection restored by GameId).
     bool refreshed = false;
+    /// Another process imported the library (I7 step 7): the systems were resolved again, the model reads the platforms
+    /// and the list again, and the building follows.
+    bool otherImport = false;
 };
 
 /// Where the catalog's refresh stands, for the quick catalog (I3 step 13r).
@@ -70,6 +73,8 @@ struct RefreshState {
     /// The last one that ended, and the lists asked while it ran (from the request to the answer on the worker).
     std::optional<RefreshSummary> last;
     std::optional<TimeSummary> lastLists;
+    /// Imports of another process followed (CatalogChanges::otherImport), in all.
+    std::uint64_t otherImports = 0;
 };
 
 /// The run report's record of a refresh that ended: `summary`'s outcome, error, counts, time and slices, `lists`.
@@ -100,7 +105,11 @@ public:
     /// mock catalog has nothing to refresh), starting one (false, and nothing started, while one runs or the catalog is
     /// not open), where it stands; how long the end of the run waited for the worker (shutdown()).
     [[nodiscard]] virtual bool supportsRefresh() const noexcept { return false; }
-    virtual bool requestRefresh() { return false; }
+    /// Of the systems `request` names, or of every one (I7 step 7).
+    virtual bool requestRefresh(RefreshRequest /*request*/ = {}) { return false; }
+    /// What the file watcher watches for this catalog's library, once it opened and whenever it changed (taken once);
+    /// nothing for a catalog without one (the mock, the wizard's before its import). I7 step 7.
+    [[nodiscard]] virtual std::optional<esde::ChangeScopeMap> takeWatchMap() { return std::nullopt; }
     [[nodiscard]] virtual RefreshState refreshState() const { return {}; }
     [[nodiscard]] virtual std::optional<double> stopMilliseconds() const { return std::nullopt; }
 
@@ -246,6 +255,8 @@ public:
         std::function<void(CatalogWorker::Options&)> adjust;
         /// CatalogWorker::Options::createDatabase: the wizard's page 4.
         bool createDatabase = false;
+        /// CatalogWorker::Options::otherImportsInterval: another process's import followed (with the file watcher).
+        std::optional<std::chrono::milliseconds> otherImportsInterval;
     };
 
     explicit EsdeAppCatalog(Options options);
@@ -263,7 +274,8 @@ public:
                m_samplesAsked || m_changesAsked > 0 || m_testAwaited || m_statisticsAsked || m_controlsAsked > 0;
     }
     [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
-    bool requestRefresh() override;
+    bool requestRefresh(RefreshRequest request = {}) override;
+    [[nodiscard]] std::optional<esde::ChangeScopeMap> takeWatchMap() override { return std::exchange(m_watchMap, {}); }
     [[nodiscard]] RefreshState refreshState() const override;
     [[nodiscard]] std::optional<double> stopMilliseconds() const override { return m_stopMs; }
     void sessionStarted(std::uint64_t token, const launcher::LaunchSession& session) override;
@@ -350,6 +362,9 @@ private:
     std::vector<double> m_refreshLists;
     std::optional<RefreshSummary> m_lastRefresh;
     std::optional<TimeSummary> m_lastRefreshLists;
+    /// I7 step 7: the watcher's map until taken, and another process's imports followed.
+    std::optional<esde::ChangeScopeMap> m_watchMap;
+    std::uint64_t m_otherImports = 0;
     /// How long shutdown() waited for the worker to stop.
     std::optional<double> m_stopMs;
     /// The building job's reader (I4 step 5a), from the catalog's opening.

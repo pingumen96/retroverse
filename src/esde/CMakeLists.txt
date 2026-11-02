@@ -5,6 +5,7 @@
 # file names the I2 step that fills it.
 
 add_library(rv_esde STATIC
+    src/change_scope.cpp
     src/command_template.cpp
     src/disc_groups.cpp
     src/discovery.cpp

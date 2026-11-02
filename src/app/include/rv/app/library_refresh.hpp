@@ -29,6 +29,7 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include <rv/catalog/catalog_store.hpp>
 #include <rv/catalog/import_service.hpp>
@@ -70,9 +71,23 @@ enum class RefreshTrigger : std::uint8_t {
     CommandLine, ///< --refresh-library, once the catalog opened
     User,        ///< "Aggiorna libreria" in the quick catalog
     Wizard,      ///< the wizard's first import (ADR-0018 §4)
+    Watcher,     ///< the file watcher's changes (ADR-0018 §10)
 };
-/// "command-line", "user", "wizard".
+/// "command-line", "user", "wizard", "watcher".
 [[nodiscard]] std::string_view toString(RefreshTrigger trigger) noexcept;
+
+/// What a refresh imports (ADR-0018 §10).
+struct RefreshRequest {
+    RefreshTrigger trigger = RefreshTrigger::User;
+    /// Only these systems: a partial refresh, the library's load and the import narrowed together
+    /// (EsdeLibrarySourceOptions::systems with ImportOptions::systems), the other systems' rows left as they are. Empty:
+    /// every system. A system the configuration no longer defines makes it a refresh of every system.
+    std::vector<catalog::SystemName> systems;
+    /// Apply the removals the mass-disappearance guard holds back: never for the watcher's (FR-033).
+    bool acceptRemovals = false;
+
+    bool operator==(const RefreshRequest&) const = default;
+};
 
 struct RefreshProgress {
     RefreshPhase phase = RefreshPhase::Reading;
@@ -150,11 +165,13 @@ struct RefreshPorts {
     catalog::IIdentityPairing* pairing = nullptr;
 };
 
-/// Runs catalog::ImportService::run(profile) over `ports` in slices (above), on the calling thread (the worker's),
-/// with `cancel` as its cancel flag; `slicing` says how it was sliced. The import's errors as ImportService gives them.
+/// Runs catalog::ImportService::run(profile, options) over `ports` in slices (above), on the calling thread (the
+/// worker's), with `cancel` as its cancel flag (over the options'); `slicing` says how it was sliced. The import's errors
+/// as ImportService gives them.
 [[nodiscard]] Expected<catalog::ImportResult> runSlicedImport(const RefreshPorts& ports,
                                                               const catalog::LibraryProfile& profile,
                                                               const std::atomic<bool>& cancel, RefreshHost& host,
-                                                              RefreshSlicing& slicing);
+                                                              RefreshSlicing& slicing,
+                                                              catalog::ImportOptions options = {});
 
 } // namespace rv::app

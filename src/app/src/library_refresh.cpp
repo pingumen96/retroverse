@@ -44,6 +44,8 @@ std::string_view toString(RefreshTrigger trigger) noexcept {
         return "user";
     case RefreshTrigger::Wizard:
         return "wizard";
+    case RefreshTrigger::Watcher:
+        return "watcher";
     }
     return "user";
 }
@@ -429,7 +431,7 @@ private:
 
 Expected<catalog::ImportResult> runSlicedImport(const RefreshPorts& ports, const catalog::LibraryProfile& profile,
                                                 const std::atomic<bool>& cancel, RefreshHost& host,
-                                                RefreshSlicing& slicing) {
+                                                RefreshSlicing& slicing, catalog::ImportOptions options) {
     slicing = RefreshSlicing{};
     Slicer slicer(host, slicing);
     SlicedSource source(ports.source, slicer);
@@ -440,7 +442,6 @@ Expected<catalog::ImportResult> runSlicedImport(const RefreshPorts& ports, const
         pairing.emplace(*ports.pairing, slicer);
     }
     catalog::ImportService service(source, media, store, pairing ? &*pairing : nullptr);
-    catalog::ImportOptions options;
     options.cancel = &cancel;
     auto result = service.run(profile, options);
     slicer.finish();

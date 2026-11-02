@@ -22,6 +22,7 @@
 #include <rv/catalog_db/migrator.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/esde/change_scope.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/esde/launch_translation.hpp>
 #include <rv/esde/library_source.hpp>
@@ -94,8 +95,10 @@ struct SessionJob {
     catalog::SystemName system;
     std::filesystem::path program;
 };
-/// The catalog's refresh (I3 step 13r): one at a time.
-struct RefreshJob {};
+/// The catalog's refresh (I3 step 13r): one at a time; since I7 step 7 of some systems (ADR-0018 §10).
+struct RefreshJob {
+    RefreshRequest request;
+};
 /// The directory's favourites and recent games (I4 step 7b).
 struct RecentJob {
     std::uint64_t serial = 0;
@@ -286,8 +289,16 @@ private:
                 spdlog::debug("Catalog not opened: {}", opened.error->toString());
             }
         }
+        std::optional<esde::ChangeScopeMap> map;
+        if (m_state == CatalogState::Ready) {
+            map = watchMap();
+            noteLastImport();
+        }
         m_shared->post([&](CatalogResults& results) {
             results.opened = std::move(opened);
+            if (map) {
+                results.watchMap = std::move(map);
+            }
             m_shared->openedPosted = true;
         });
     }
@@ -540,8 +551,15 @@ private:
                 std::unique_lock lock(m_shared->mutex);
                 m_shared->busy = false;
                 const auto ready = [&] { return m_shared->stopping || !m_shared->jobs.empty(); };
+                std::optional<std::chrono::milliseconds> wait;
                 if (pendingSessions()) {
-                    m_shared->work.wait_for(lock, m_options.sessionRetryInterval, ready);
+                    wait = m_options.sessionRetryInterval;
+                }
+                if (m_options.otherImportsInterval) {
+                    wait = wait ? std::min(*wait, *m_options.otherImportsInterval) : *m_options.otherImportsInterval;
+                }
+                if (wait) {
+                    m_shared->work.wait_for(lock, *wait, ready);
                 } else {
                     m_shared->work.wait(lock, ready);
                 }
@@ -557,6 +575,7 @@ private:
             if (job) {
                 std::visit([this](auto& value) { handle(value); }, *job);
             }
+            followOtherImports();
             retryPendingSessions(false);
         }
     }
@@ -987,12 +1006,20 @@ private:
 
     // --- The refresh (I3 step 13r) ----------------------------------------------------------------------------------
 
-    void handle(RefreshJob& /*job*/) {
+    void handle(RefreshJob& job) {
         const Clock::time_point start = Clock::now();
-        spdlog::info("Catalog refresh: importing library '{}' on the worker", m_profile.id.str());
+        const std::vector<catalog::SystemName> systems = partialSystems(job.request.systems);
+        if (systems.empty()) {
+            spdlog::info("Catalog refresh ({}): importing library '{}' on the worker", toString(job.request.trigger),
+                         m_profile.id.str());
+        } else {
+            spdlog::info("Catalog refresh ({}): importing {} system(s) of library '{}' on the worker",
+                         toString(job.request.trigger), systems.size(), m_profile.id.str());
+        }
         CatalogRefreshed refreshed;
+        refreshed.systemsAsked = systems;
         RefreshSlicing slicing;
-        const Expected<catalog::ImportResult> result = importLibrary(slicing);
+        const Expected<catalog::ImportResult> result = importLibrary(slicing, systems, job.request.acceptRemovals);
         refreshed.summary = summarizeImport(result);
         refreshed.summary.slicing = slicing;
         if (refreshed.summary.outcome == RefreshOutcome::Done) {
@@ -1024,16 +1051,103 @@ private:
                 spdlog::debug("Catalog refresh: {}", summary.error->toString());
             }
         }
+        noteLastImport();
+        std::optional<esde::ChangeScopeMap> map = watchMap();
         m_shared->post([&](CatalogResults& results) {
             results.refreshProgress.reset();
             results.refreshed = std::move(refreshed);
+            if (map) {
+                results.watchMap = std::move(map);
+            }
             m_shared->refreshing = false;
+        });
+    }
+
+    /// The systems of a partial refresh, when the configuration defines each of them now; every system (empty) when one
+    /// is not defined any more, or when none was named.
+    [[nodiscard]] std::vector<catalog::SystemName> partialSystems(const std::vector<catalog::SystemName>& asked) const {
+        if (asked.empty() || !m_library) {
+            return {};
+        }
+        for (const catalog::SystemName& system : asked) {
+            if (m_library->systems.find(system.str()) == nullptr) {
+                spdlog::info("Catalog refresh: {} is not configured now: every system is imported", system.str());
+                return {};
+            }
+        }
+        return asked;
+    }
+
+    /// What the file watcher watches for the library as resolved now (ADR-0018 §10); nothing when its configuration
+    /// cannot be read.
+    [[nodiscard]] std::optional<esde::ChangeScopeMap> watchMap() const {
+        if (!m_library) {
+            return std::nullopt;
+        }
+        return esde::changeScopeMap(m_library->profile, m_library->romRoot,
+                                    esde::resolveMediaRoot(m_library->settings, m_library->profile),
+                                    m_library->systems);
+    }
+
+    /// The newest import of the library the database holds now (its id; 0 for none), read on the writer.
+    [[nodiscard]] std::optional<std::int64_t> newestImport() {
+        if (!m_importStore) {
+            auto store = catalog_db::SqliteCatalogStore::open(*m_database);
+            if (!store) {
+                return std::nullopt;
+            }
+            m_importStore = std::move(*store);
+        }
+        auto last = m_importStore->lastImport(m_profile.id);
+        if (!last) {
+            return std::nullopt;
+        }
+        return *last ? (*last)->id : std::int64_t{0};
+    }
+
+    void noteLastImport() {
+        if (m_options.otherImportsInterval) {
+            m_knownImport = newestImport();
+            m_lastImportCheck = Clock::now();
+        }
+    }
+
+    /// Another process's import (retroverse-cli import, another Retroverse; ADR-0018 §10): every otherImportsInterval,
+    /// the newest import compared with the one known; when it changed, the systems are resolved again and the main
+    /// thread asks its lists and the building job again (CatalogResults::otherImport).
+    void followOtherImports() {
+        if (!m_options.otherImportsInterval || Clock::now() - m_lastImportCheck < *m_options.otherImportsInterval) {
+            return;
+        }
+        m_lastImportCheck = Clock::now();
+        const std::optional<std::int64_t> newest = newestImport();
+        if (!newest || newest == m_knownImport) {
+            return;
+        }
+        m_knownImport = newest;
+        spdlog::info("Catalog: another process imported the library (import {}): its lists are read again", *newest);
+        auto summaries = m_query->systems();
+        if (!summaries) {
+            spdlog::warn("Catalog: the systems cannot be read again: {}", summaries.error().toString());
+            return;
+        }
+        CatalogRefreshed refreshed;
+        refreshed.systems = resolveSystems(*summaries);
+        refreshed.libraryError = m_libraryError;
+        refreshed.generation = ++m_generation;
+        std::optional<esde::ChangeScopeMap> map = watchMap();
+        m_shared->post([&](CatalogResults& results) {
+            results.otherImport = std::move(refreshed);
+            if (map) {
+                results.watchMap = std::move(map);
+            }
         });
     }
 
     /// The import of the library the catalog opened with (library.json as read then), as retroverse-cli import makes
     /// it (EsdeLibrarySource, EsdeMediaResolver, IdentityPairing), on the worker's writer, sliced.
-    Expected<catalog::ImportResult> importLibrary(RefreshSlicing& slicing) {
+    Expected<catalog::ImportResult> importLibrary(RefreshSlicing& slicing, const std::vector<catalog::SystemName>& systems,
+                                                  bool acceptRemovals) {
         const auto settings = esde::readSettings(m_profile.esdeHome);
         if (!settings) {
             return propagate(settings.error());
@@ -1043,12 +1157,20 @@ private:
         if (!store) {
             return propagate(store.error());
         }
+        // A partial refresh narrows the library's load and the import together (ADR-0018 §10).
+        esde::EsdeLibrarySourceOptions sourceOptions;
+        for (const catalog::SystemName& system : systems) {
+            sourceOptions.systems.push_back(system.str());
+        }
         std::unique_ptr<catalog::ILibrarySource> source =
-            m_options.makeSource ? m_options.makeSource() : std::make_unique<esde::EsdeLibrarySource>();
+            m_options.makeSource ? m_options.makeSource() : std::make_unique<esde::EsdeLibrarySource>(sourceOptions);
         // Reconciliation (I2 step 11b): moved and renamed files keep their identity.
         catalog::IdentityPairing pairing;
+        catalog::ImportOptions options;
+        options.systems = systems;
+        options.acceptRemovals = acceptRemovals;
         return runSlicedImport(RefreshPorts{*source, resolver, **store, &pairing}, m_profile, m_shared->cancel, *this,
-                               slicing);
+                               slicing, std::move(options));
     }
 
     std::size_t serve(bool writing) override {
@@ -1311,6 +1433,7 @@ private:
         }
         m_recordings.clear();
         m_store.reset();
+        m_importStore.reset();
         m_database.reset();
     }
 
@@ -1339,6 +1462,11 @@ private:
     Clock::time_point m_lastRetry{};
     /// The systems' readiness generation (GameReadiness::generation).
     std::uint64_t m_generation = 0;
+    /// Another process's import (Options::otherImportsInterval): the store it is read through, the newest import known,
+    /// when it was looked at.
+    std::unique_ptr<catalog_db::SqliteCatalogStore> m_importStore;
+    std::optional<std::int64_t> m_knownImport;
+    Clock::time_point m_lastImportCheck{};
 };
 
 } // namespace
@@ -1503,14 +1631,14 @@ void CatalogWorker::finishSession(std::uint64_t token, catalog::PlaySession sess
     m_shared->work.notify_one();
 }
 
-bool CatalogWorker::refresh() {
+bool CatalogWorker::refresh(RefreshRequest request) {
     {
         const std::lock_guard lock(m_shared->mutex);
         if (m_shared->stopping || m_shared->finished || m_shared->refreshing) {
             return false;
         }
         m_shared->refreshing = true;
-        m_shared->jobs.emplace_back(RefreshJob{});
+        m_shared->jobs.emplace_back(RefreshJob{std::move(request)});
     }
     m_shared->work.notify_one();
     return true;

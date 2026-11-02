@@ -3,7 +3,9 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <rv/core/expected.hpp>
 
@@ -76,6 +78,11 @@ private:
 /// the file-system casing (fileSystemUpperCase: "C:\Users\X" contains "c:\users\x\es-de"), never Unicode-normalized.
 /// Lexical only: links, junctions, subst and mapped drives are not resolved (checkUserDataDirectory() resolves them).
 [[nodiscard]] bool pathIsWithin(const std::filesystem::path& child, const std::filesystem::path& parent);
+
+/// The elements of `path` as pathIsWithin() compares them: made absolute, normalized, each upper-cased with the
+/// file-system casing (a network path starts with an element of two backslashes); nothing when one cannot be folded.
+/// Comparing the elements of many paths with a few folded once is pathIsWithin() without folding those again.
+[[nodiscard]] std::optional<std::vector<std::wstring>> foldedPathElements(const std::filesystem::path& path);
 
 /// The data-directory guard of ADR-0008 §6 and §7: Retroverse writes its user data (logs, configuration, the
 /// database) nowhere in what it only reads. Refuses `userData` when it is, or lies inside, one of `protectedRoots`

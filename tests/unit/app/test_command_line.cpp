@@ -578,6 +578,16 @@ TEST_CASE("app/command_line: the options of I3 are parsed, listed and no longer 
     REQUIRE(refresh.has_value());
     CHECK(refresh->refreshLibrary);
     CHECK_FALSE(parse({"--smoke"})->refreshLibrary);
+    // I7 step 7: the file watcher is on in interactive runs, off in frame-limited ones unless asked.
+    CHECK(rv::app::watchesLibrary(*parse({})));
+    CHECK_FALSE(rv::app::watchesLibrary(*parse({"--smoke"})));
+    CHECK_FALSE(rv::app::watchesLibrary(*parse({"--exit-after-frames", "--frames", "3"})));
+    CHECK(rv::app::watchesLibrary(*parse({"--smoke", "--watch-library"})));
+    CHECK_FALSE(rv::app::watchesLibrary(*parse({"--no-watch-library"})));
+    const auto both = parse({"--watch-library", "--no-watch-library"});
+    REQUIRE_FALSE(both.has_value());
+    CHECK(both.error().code == ErrorCode::InvalidArgument);
+    CHECK(both.error().context == "--watch-library");
     // I3 step 11: --video-freeze-pts is taken with a frame limit.
     const auto frozen = parse({"--smoke", "--video-freeze-pts", "2.5"});
     REQUIRE(frozen.has_value());

@@ -871,6 +871,23 @@ build/rvdata`).
   after its commit the systems' readiness is resolved again and the list runs again with the selection kept by GameId; a
   line beside the button tells the progress and the result; quitting cancels it (the import rolled back or committed
   whole). The mock catalog has no refresh (`--refresh-library` records `unavailable`); a refresh is no lockstep wait.
+- **The file watcher** (I7 step 7, ADR-0018 §10, `docs/i7/step-7.md`): games and media added in ES-DE appear without a
+  restart. On in interactive runs, off in frame-limited ones unless `--watch-library` asks; `--no-watch-library` turns
+  it off. Once the catalog opened it watches, read-only (folders opened for listing with full sharing), the ROM root,
+  each system folder outside it, the media root and the ES-DE home's `gamelists`, `custom_systems` and `settings`
+  (`esde::watchRoots()`); a change matters when it names a system (a ROM folder's file with one of its extensions, a
+  media file, a gamelist; an emulator's save beside a ROM does not) or every system (the configuration, an overflow, a
+  root lost or back). After 2 s without another change (at most 30 s while they keep coming, then one refresh a minute)
+  it refreshes the systems named, the catalog worker's import narrowed to them, never accepting removals; nothing starts
+  while a game runs, in the editor or during a ride, and the window opens again at the return. The list and the
+  building follow as after "Aggiorna libreria". A root that goes (a drive unplugged, a folder renamed) is closed and its
+  existence looked at every 5 s; Windows asking to eject its drive closes the handle at once. A root whose file system
+  refuses notifications is polled every 30 s (its system folders and gamelists only). With the watcher the worker also
+  follows another process's import (`retroverse-cli import`), every 5 s. The report's `watcher`: `enabled`, `roots`
+  (`name`, `mode` notify, poll or lost, `lost`, `back`, `reason`), `changes`, `mapped`, `ignored`, `ignoredBy`,
+  `overflows`, `rootsLost`, `rootsBack`, `held`, `refreshes`, `refused`, `otherImports`; a watcher's refresh in
+  `catalog.refreshes` has `trigger` `watcher`, `systems`, `changes`, `held`, `burst` and `at` (`firstChange`,
+  `requested`, `listed`: milliseconds since the Unix epoch).
 - `--mock-catalog <file.json>` replaces the ES-DE catalog with a file's games, for the tests (`docs/i2/step-A1.md`;
   `rv/app/mock_catalog.hpp`: JSON with comments, `schemaVersion` 1, `games` each with an optional `launch` {`profile`,
   `rom` absolute or relative to the file, `system`, `variables`}, optional `profiles` over the shipped and the user's;
