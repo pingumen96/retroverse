@@ -125,8 +125,9 @@ TEST_CASE("catalog_db/sessions: the launch area's tables keep the schema's rules
     Connection& writer = f.database.writer();
     const auto tables = textColumn(writer, "SELECT name FROM sqlite_schema WHERE type = 'table' AND name GLOB "
                                            "'rv_launch_*' OR name = 'rv_play_sessions' ORDER BY name");
-    CHECK(tables == std::vector<std::string>{"rv_launch_game_choices", "rv_launch_system_choices",
-                                             "rv_launch_verifications", "rv_play_sessions"});
+    CHECK(tables == std::vector<std::string>{"rv_launch_game_choices", "rv_launch_program_choices",
+                                             "rv_launch_system_choices", "rv_launch_verifications",
+                                             "rv_play_sessions"});
     // Ids shown to users are AUTOINCREMENT, never reused.
     for (const std::string_view table : {"rv_play_sessions", "rv_launch_verifications"}) {
         INFO(table);

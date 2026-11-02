@@ -125,7 +125,8 @@ TEST_CASE("cli/db: migrate makes the database in <user data>/database and report
     CHECK(first.code == ExitCode::Ok);
     CHECK(first.err.empty());
     CHECK(first.out == "Database: " + rv::core::pathToUtf8(cli.databaseFile()) +
-                           "\nSchema version: 0 -> 1\nBackup: none (the database held nothing)\n");
+                           fmt::format("\nSchema version: 0 -> {}\nBackup: none (the database held nothing)\n",
+                                       programVersion()));
     CHECK(std::filesystem::exists(cli.databaseFile()));
 
     const RunResult again = cli.run({"migrate", "--json"});
