@@ -106,7 +106,7 @@
 			<p data-if="code == 'not-ready' && reason == 'rom-missing'">Il file del gioco non si trova più. Controlla che il
 				disco sia collegato, o importa di nuovo il catalogo ("retroverse-cli import").</p>
 			<p data-if="code == 'not-ready' && reason == 'requires-configuration'">Il comando di avvio di questo gioco non si
-				può eseguire così com'è. Scegli un altro comando o un profilo d'emulatore ("retroverse-cli assign").</p>
+				può eseguire così com'è. Scegli un altro comando o un profilo d'emulatore (Emulatori, nel menu).</p>
 			<p data-if="code == 'not-ready' && reason == 'emulator-not-found'">L'emulatore di questo gioco non è installato,
 				o non si trova dove ES-DE lo cerca.</p>
 			<p data-if="code == 'not-ready' && reason == 'core-not-found'">L'emulatore c'è, ma manca il core che il comando

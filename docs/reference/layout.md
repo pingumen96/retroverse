@@ -268,7 +268,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   I7 step 1). `assets/config/player.json` under `player.json` holds what had no file (`rv/app/player_settings.hpp`). I7
   step 1 also adds to `rv_app_cli` `setting_rows.hpp` (the settings screen's table) and `settings_store.hpp` (the rows
   over the file and the layers under it, written off the main thread), to `rv_ui_model` `system_menu_model` and
-  `settings_model`, to `rv_ui` their screens (`assets/ui/system_menu.rml`, `settings.rml`). I7 step 3 adds to `rv_input`
+  `settings_model`, to `rv_ui` their screens (`assets/ui/system_menu.rml`, `settings.rml`). I7 step 4 adds to `rv_library` `launch_table`, to `rv_ui_model` `emulators_model`, to `rv_ui`
+  `emulators_screen` (`assets/ui/emulators.rml`), to `rv_app_catalog` `emulators_data` and `folder_lister`. I7 step 3 adds to `rv_input`
   `binding_labels.hpp` (`input::KeyLabels`, `bindingLabel()`, over `assets/ui/key_labels.json`), to `rv_app_cli`
   `binding_rules.hpp` (what a user may bind, clashes per context, no lock-out, a capture's press) and
   `controller_watch.hpp`, to `rv_ui_model` `hint_bar.hpp` (a hint's glyph, and how a document declares one), to `rv_ui`

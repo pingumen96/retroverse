@@ -15,9 +15,11 @@
 #include <string_view>
 #include <vector>
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/migrator.hpp>
 #include <rv/cli/command.hpp>
 #include <rv/cli/output.hpp>
 #include <rv/core/file_io.hpp>
@@ -31,6 +33,10 @@ using rv::cli::ExitCode;
 using rv::cli::Output;
 
 namespace {
+
+int programVersion() {
+    return rv::catalog_db::programSchemaVersion();
+}
 
 rv::core::PathEnvironment testEnvironment(const std::filesystem::path& executableDir) {
     rv::core::PathEnvironment environment;
@@ -126,12 +132,12 @@ TEST_CASE("cli/db: migrate makes the database in <user data>/database and report
     CHECK(again.code == ExitCode::Ok);
     const auto json = nlohmann::json::parse(again.out);
     CHECK(json.at("database") == rv::core::pathToUtf8(cli.databaseFile()));
-    CHECK(json.at("fromVersion") == 1);
-    CHECK(json.at("toVersion") == 1);
+    CHECK(json.at("fromVersion") == programVersion());
+    CHECK(json.at("toVersion") == programVersion());
     CHECK(json.at("migrated") == false);
     CHECK(json.at("backup").is_null());
     CHECK(json.at("removedBackups").empty());
-    CHECK(cli.run({"migrate"}).out.ends_with("Schema version: 1 (up to date)\n"));
+    CHECK(cli.run({"migrate"}).out.ends_with(fmt::format("Schema version: {} (up to date)\n", programVersion())));
 }
 
 TEST_CASE("cli/db: check passes on a migrated database (exit 0) and reports what it finds (exit 1)",
@@ -159,7 +165,7 @@ TEST_CASE("cli/db: check passes on a migrated database (exit 0) and reports what
     CHECK(healthy.out.ends_with("No problems found.\n"));
     const auto healthyJson = nlohmann::json::parse(cli.run({"check", "--json"}).out);
     CHECK(healthyJson.at("passed") == true);
-    CHECK(healthyJson.at("schemaVersion") == 1);
+    CHECK(healthyJson.at("schemaVersion") == programVersion());
     CHECK(healthyJson.at("checks").size() == 5);
     CHECK(healthyJson.at("problems").empty());
 
@@ -258,7 +264,7 @@ TEST_CASE(
     const RunResult info = cli.run({"info"});
     CHECK(info.code == ExitCode::Ok);
     CHECK(info.out.starts_with("Database: " + rv::core::pathToUtf8(cli.databaseFile()) + "\n"));
-    CHECK(contains(info.out, "Schema version: 1 (this program: 1)\n"));
+    CHECK(contains(info.out, fmt::format("Schema version: {0} (this program: {0})\n", programVersion())));
     CHECK(contains(info.out, ", journal mode wal\n"));
     CHECK(contains(info.out, "  lookup_key_rule = 1\n"));
     // A row count per table, in a column as wide as the longest name (the later steps' tables are listed too).
@@ -268,8 +274,8 @@ TEST_CASE(
 
     const auto json = nlohmann::json::parse(cli.run({"info", "--json"}).out);
     CHECK(json.at("exists") == true);
-    CHECK(json.at("schemaVersion") == 1);
-    CHECK(json.at("programSchemaVersion") == 1);
+    CHECK(json.at("schemaVersion") == programVersion());
+    CHECK(json.at("programSchemaVersion") == programVersion());
     CHECK(json.at("journalMode") == "wal");
     CHECK(json.at("sizes").at("database").get<std::uint64_t>() > 0);
     CHECK(rowsOf(json, "rv_meta").value_or(0) >= 5);
@@ -330,8 +336,8 @@ TEST_CASE("cli/db: a database newer than the program: migrate fails (exit 3), ch
     const RunResult check = cli.run({"check"});
     CHECK(check.code == ExitCode::ProblemsFound);
     CHECK(contains(check.out, "schema-version: PROBLEMS\n"));
-    CHECK(contains(check.out, "newer than this program's 1"));
-    CHECK(contains(cli.run({"info"}).out, "Schema version: 99 (this program: 1)\n"));
+    CHECK(contains(check.out, fmt::format("newer than this program's {}", programVersion())));
+    CHECK(contains(cli.run({"info"}).out, fmt::format("Schema version: 99 (this program: {})\n", programVersion())));
 }
 
 TEST_CASE("cli/db: --output writes the results to a file; usage errors exit 2 and touch no database",
@@ -372,5 +378,5 @@ TEST_CASE("cli/db: --output writes the results to a file; usage errors exit 2 an
     CHECK(migrate.out.empty());
     const auto written = rv::core::readTextFile(results);
     REQUIRE(written.has_value());
-    CHECK(nlohmann::json::parse(*written).at("toVersion") == 1);
+    CHECK(nlohmann::json::parse(*written).at("toVersion") == programVersion());
 }

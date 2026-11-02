@@ -16,6 +16,7 @@
 #include <rv/cli/output.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/discovery.hpp>
 #include <rv/library/folder_listing.hpp>
@@ -79,14 +80,14 @@ TEST_CASE("library/launch table: its rows are what retroverse-cli profiles print
         const nlohmann::json& shown = systems.at(index);
         INFO(row.system.name.str());
         CHECK(shown.at("name") == row.system.name.str());
-        CHECK(shown.at("readiness") == rv::catalog::toString(row.resolution.readiness()));
+        CHECK(shown.at("readiness").get<std::string>() == rv::catalog::toString(row.resolution.readiness()));
         CHECK(shown.at("chosen").at("value") == row.resolution.chosen.choice.value);
-        CHECK(shown.at("chosen").at("source") == rv::catalog::toString(row.resolution.chosen.source));
+        CHECK(shown.at("chosen").at("source").get<std::string>() == rv::catalog::toString(row.resolution.chosen.source));
         REQUIRE(shown.at("commands").size() == row.commands.size());
         for (std::size_t option = 0; option < row.commands.size(); ++option) {
             CHECK(shown.at("commands").at(option).at("label") == row.commands[option].choice.value);
             CHECK(shown.at("commands").at(option).at("command") == row.commands[option].text);
-            CHECK(shown.at("commands").at(option).at("readiness") ==
+            CHECK(shown.at("commands").at(option).at("readiness").get<std::string>() ==
                   rv::catalog::toString(row.commands[option].translation.readiness()));
         }
         REQUIRE(shown.at("profiles").size() == row.profiles.size());

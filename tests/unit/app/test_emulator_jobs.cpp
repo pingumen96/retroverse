@@ -269,7 +269,8 @@ TEST_CASE("app/emulators: a verification does not count for another program", "[
     const ImportedFixture fixture("rv-emulators");
     const auto game = fixture.gameAt("gb", "Tiny Tennis (Europe).gb");
     Worker worker(fixture);
-    const LaunchChoice choice = command("Fake Emulator");
+    // A command that needs no core beside its program.
+    const LaunchChoice choice = command("Fake Emulator (Game Folder)");
     const rv::app::ResolvedLaunch tested = worker.resolveTest(game, choice, 1);
     const auto program = tested.resolution.translation.program->path;
     REQUIRE(worker.finishTest(tested, &cleanReturn, program).verdict == "verified");
@@ -288,9 +289,11 @@ TEST_CASE("app/emulators: a verification does not count for another program", "[
     const rv::ui::EmulatorSystem gb = worker.table("gb");
     CHECK(gb.readiness == "ready");
     CHECK_FALSE(gb.verified);
-    REQUIRE_FALSE(gb.options.empty());
-    CHECK(gb.options.front().programChosen);
-    CHECK_FALSE(gb.options.front().verified);
+    const auto chosen = std::find_if(gb.options.begin(), gb.options.end(),
+                                     [](const rv::ui::EmulatorOption& option) { return option.chosen; });
+    REQUIRE(chosen != gb.options.end());
+    CHECK(chosen->programChosen);
+    CHECK_FALSE(chosen->verified);
 
     // Its program removed: the verification counts again.
     ChoiceChange cleared;
@@ -422,6 +425,6 @@ TEST_CASE("app/emulators: what a test's session says", "[app][emulators]") {
     session = PlaySession{};
     session.outcome = PlaySessionOutcome::Returned;
     session.exitCode = 3;
-    session.exitKind = rv::launcher::ExitKind::Failure;
+    session.exitKind = rv::launcher::ExitKind::ErrorCode;
     CHECK(rv::app::testVerdictOf(session, false) == "failed");
 }

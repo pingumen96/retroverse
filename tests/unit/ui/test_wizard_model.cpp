@@ -192,7 +192,7 @@ TEST_CASE("ui/wizard: the ways back", "[ui][wizard]") {
     CHECK_FALSE(model.apply(UiCommand::Back).has_value());
     CHECK(model.page() == WizardPage::Emulators);
     static_cast<void>(forward(model));
-    CHECK_FALSE(model.apply(UiCommand::Back).has_value());
+    CHECK(model.apply(UiCommand::Back)->kind == WizardCommandKind::Emulators); // its counts again
     CHECK(model.page() == WizardPage::Emulators);
     static_cast<void>(forward(model));
     static_cast<void>(forward(model));

@@ -43,6 +43,9 @@ using rv::ErrorCode;
 
 namespace {
 
+/// The schema version of a database made here; test migrations come after it.
+const int kProgram = programSchemaVersion();
+
 bool contains(std::string_view text, std::string_view part) {
     return text.find(part) != std::string_view::npos;
 }
@@ -139,7 +142,7 @@ TEST_CASE("catalog_db/migrator: a fresh database migrates to the program's schem
     const auto report = migrate(*database);
     REQUIRE(report.has_value());
     CHECK(report->fromVersion == 0);
-    CHECK(report->toVersion == 1);
+    CHECK(report->toVersion == kProgram);
     CHECK(report->migrated());
     CHECK_FALSE(report->backup.has_value()); // nothing to back up yet
     CHECK(report->removedBackups.empty());
@@ -172,8 +175,8 @@ TEST_CASE("catalog_db/migrator: opening a migrated database again changes nothin
         REQUIRE(database.has_value());
         const auto report = migrate(*database);
         REQUIRE(report.has_value());
-        CHECK(report->fromVersion == 1);
-        CHECK(report->toVersion == 1);
+        CHECK(report->fromVersion == kProgram);
+        CHECK(report->toVersion == kProgram);
         CHECK_FALSE(report->migrated());
         CHECK_FALSE(report->backup.has_value());
         CHECK(schemaDump(database->writer()) == schema);
@@ -182,7 +185,7 @@ TEST_CASE("catalog_db/migrator: opening a migrated database again changes nothin
     CHECK(listBackups(file).empty());
     const auto header = rv::test::readDatabaseHeader(file); // closed: the file holds everything
     REQUIRE(header.has_value());
-    CHECK(header->userVersion == 1);
+    CHECK(header->userVersion == static_cast<std::uint32_t>(kProgram));
     CHECK(header->applicationId == kApplicationId);
     CHECK(header->writeVersion == 2); // WAL
 }
@@ -200,7 +203,7 @@ TEST_CASE("catalog_db/migrator: a database newer than the program is refused and
     const auto refused = migrate(*database);
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error().code == ErrorCode::Conflict);
-    CHECK(contains(refused.error().message, "schema version 99, newer than this program's 1"));
+    CHECK(contains(refused.error().message, fmt::format("schema version 99, newer than this program's {}", kProgram)));
     CHECK(database->schemaVersion().value() == 99);
     CHECK(listBackups(file).empty());
     CHECK(codeOf(openCatalogDatabase(file)) == ErrorCode::Conflict);
@@ -219,10 +222,11 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
     // Four migrations, an hour apart: each writes a backup of the database as it was, named with the time and the
     // version it holds; the fourth removes the first.
     std::vector<std::filesystem::path> backups;
-    for (int target = 2; target <= 5; ++target) {
+    for (int step = 2; step <= 5; ++step) {
+        const int target = kProgram - 1 + step;
         auto database = Database::open(file);
         REQUIRE(database.has_value());
-        const auto now = at(fmt::format("2026-10-16T{:02}:00:00.000Z", 8 + target));
+        const auto now = at(fmt::format("2026-10-16T{:02}:00:00.000Z", 8 + step));
         const auto report = migrate(*database, optionsUpTo(target, now));
         REQUIRE(report.has_value());
         CHECK(report->fromVersion == target - 1);
@@ -230,9 +234,9 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
         REQUIRE(report->backup.has_value());
         CHECK(report->backup->filename() ==
               std::filesystem::path(
-                  fmt::format("retroverse-20261016T{:02}0000.000Z-v{}.sqlite", 8 + target, target - 1)));
+                  fmt::format("retroverse-20261016T{:02}0000.000Z-v{}.sqlite", 8 + step, target - 1)));
         CHECK(report->removedBackups ==
-              (target == 5 ? std::vector<std::filesystem::path>{backups[0]} : std::vector<std::filesystem::path>{}));
+              (step == 5 ? std::vector<std::filesystem::path>{backups[0]} : std::vector<std::filesystem::path>{}));
         backups.push_back(*report->backup);
         CHECK(database->writer().queryInt(fmt::format("SELECT count(*) FROM test_v{}", target)).value() == 0);
     }
@@ -242,7 +246,7 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
         // A backup is the database as it was before its migration, and complete: no copy cut short is left.
         const auto header = rv::test::readDatabaseHeader(backups[i]);
         REQUIRE(header.has_value());
-        CHECK(header->userVersion == static_cast<std::uint32_t>(i + 1));
+        CHECK(header->userVersion == static_cast<std::uint32_t>(kProgram + i));
         CHECK(header->applicationId == kApplicationId);
         auto partial = backups[i];
         partial += L".partial";
@@ -250,9 +254,9 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
     }
 
     // Two backups at one instant of one version (a migration that fails, run twice): the second name gets a counter.
-    MigrationOptions failing = optionsUpTo(5, at("2026-10-16T20:00:00.000Z"));
+    MigrationOptions failing = optionsUpTo(kProgram + 4, at("2026-10-16T20:00:00.000Z"));
     failing.migrations.push_back(Migration{
-        6, "fails", [](Connection& connection) { return connection.execute("INSERT INTO nowhere VALUES (1)"); }});
+        kProgram + 5, "fails", [](Connection& connection) { return connection.execute("INSERT INTO nowhere VALUES (1)"); }});
     for (int run = 0; run < 2; ++run) {
         auto database = Database::open(file);
         REQUIRE(database.has_value());
@@ -260,8 +264,8 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
     }
     const auto latest = listBackups(file);
     REQUIRE(latest.size() == 3);
-    CHECK(latest[0].filename() == "retroverse-20261016T200000.000Z-v5-2.sqlite");
-    CHECK(latest[1].filename() == "retroverse-20261016T200000.000Z-v5.sqlite");
+    CHECK(latest[0].filename() == std::filesystem::path(fmt::format("retroverse-20261016T200000.000Z-v{}-2.sqlite", kProgram + 4)));
+    CHECK(latest[1].filename() == std::filesystem::path(fmt::format("retroverse-20261016T200000.000Z-v{}.sqlite", kProgram + 4)));
     CHECK(latest[2] == backups[3]);
 
     // A copy cut short earlier goes; a backup made while the clock was set back is kept all the same (it was the
@@ -272,7 +276,7 @@ TEST_CASE("catalog_db/migrator: a backup with a unique name precedes each migrat
     REQUIRE(rv::core::writeTextFileAtomic(unrelated, "the user's").has_value());
     auto database = Database::open(file);
     REQUIRE(database.has_value());
-    const auto setBack = migrate(*database, optionsUpTo(6, at("2026-01-01T00:00:00.000Z")));
+    const auto setBack = migrate(*database, optionsUpTo(kProgram + 5, at("2026-01-01T00:00:00.000Z")));
     REQUIRE(setBack.has_value());
     REQUIRE(setBack->backup.has_value());
     CHECK(std::filesystem::exists(*setBack->backup));
@@ -289,9 +293,9 @@ TEST_CASE("catalog_db/migrator: a failing migration rolls back and leaves the pr
     REQUIRE(database.has_value());
     Connection& writer = database->writer();
 
-    MigrationOptions options = optionsUpTo(1, at("2026-10-16T12:00:00.000Z"));
+    MigrationOptions options = optionsUpTo(kProgram, at("2026-10-16T12:00:00.000Z"));
     options.migrations.push_back(
-        Migration{2, "half done", [](Connection& connection) -> rv::Status {
+        Migration{kProgram + 1, "half done", [](Connection& connection) -> rv::Status {
                       if (auto made = connection.execute("CREATE TABLE half_done (x INTEGER) STRICT;"
                                                          "INSERT INTO rv_meta (key, value) VALUES ('half', 'done')");
                           !made) {
@@ -302,9 +306,9 @@ TEST_CASE("catalog_db/migrator: a failing migration rolls back and leaves the pr
     const auto failed = migrate(*database, options);
     REQUIRE_FALSE(failed.has_value());
     CHECK(failed.error().code == ErrorCode::InvalidArgument);
-    CHECK(contains(failed.error().message, "migration to schema version 2 (half done) failed"));
+    CHECK(contains(failed.error().message, fmt::format("migration to schema version {} (half done) failed", kProgram + 1)));
     CHECK(contains(failed.error().message, "no such table: nowhere"));
-    CHECK(database->schemaVersion().value() == 1);
+    CHECK(database->schemaVersion().value() == kProgram);
     CHECK(writer.queryInt("SELECT count(*) FROM sqlite_schema WHERE name = 'half_done'").value() == 0);
     CHECK(writer.queryInt("SELECT count(*) FROM rv_meta WHERE key = 'half'").value() == 0);
     CHECK(writer.queryInt("PRAGMA application_id").value() == kApplicationId);
@@ -313,8 +317,8 @@ TEST_CASE("catalog_db/migrator: a failing migration rolls back and leaves the pr
     CHECK_FALSE(writer.inTransaction());
 
     // A migration that rebuilds tables runs with foreign keys off; rows that break one roll it back all the same.
-    MigrationOptions orphans = optionsUpTo(1, at("2026-10-16T13:00:00.000Z"));
-    orphans.migrations.push_back(Migration{2, "orphans",
+    MigrationOptions orphans = optionsUpTo(kProgram, at("2026-10-16T13:00:00.000Z"));
+    orphans.migrations.push_back(Migration{kProgram + 1, "orphans",
                                            [](Connection& connection) {
                                                return connection.execute(
                                                    "INSERT INTO rv_identity_history (game, at, event) "
@@ -325,14 +329,14 @@ TEST_CASE("catalog_db/migrator: a failing migration rolls back and leaves the pr
     REQUIRE_FALSE(broken.has_value());
     CHECK(broken.error().code == ErrorCode::ValidationFailed);
     CHECK(contains(broken.error().message, "rv_identity_history"));
-    CHECK(database->schemaVersion().value() == 1);
+    CHECK(database->schemaVersion().value() == kProgram);
     CHECK(writer.queryInt("SELECT count(*) FROM rv_identity_history").value() == 0);
     CHECK(writer.queryInt("PRAGMA foreign_keys").value() == 1); // on again
 
     // The migration itself then runs.
-    const auto migrated = migrate(*database, optionsUpTo(2, at("2026-10-16T14:00:00.000Z")));
+    const auto migrated = migrate(*database, optionsUpTo(kProgram + 1, at("2026-10-16T14:00:00.000Z")));
     REQUIRE(migrated.has_value());
-    CHECK(migrated->toVersion == 2);
+    CHECK(migrated->toVersion == kProgram + 1);
 }
 
 TEST_CASE("catalog_db/migrator: no migration while another holder has the database open (another process)",
@@ -343,16 +347,16 @@ TEST_CASE("catalog_db/migrator: no migration while another holder has the databa
     auto second = Database::open(file);
     REQUIRE(second.has_value());
 
-    const auto refused = migrate(*second, optionsUpTo(2, at("2026-10-16T12:00:00.000Z")));
+    const auto refused = migrate(*second, optionsUpTo(kProgram + 1, at("2026-10-16T12:00:00.000Z")));
     REQUIRE_FALSE(refused.has_value());
     CHECK(refused.error().code == ErrorCode::Conflict);
     CHECK(contains(refused.error().message, "while another Retroverse process has it open"));
-    CHECK(second->schemaVersion().value() == 1);
+    CHECK(second->schemaVersion().value() == kProgram);
     CHECK(listBackups(file).empty()); // refused before anything was written
     CHECK(second->lock().mode() == LockMode::Shared);
 
     // A holder that leaves within the migration's wait lets it run.
-    MigrationOptions waiting = optionsUpTo(2, at("2026-10-16T12:00:00.000Z"));
+    MigrationOptions waiting = optionsUpTo(kProgram + 1, at("2026-10-16T12:00:00.000Z"));
     waiting.lockWait = 10s;
     std::thread leaving([&] {
         std::this_thread::sleep_for(200ms);
@@ -361,11 +365,11 @@ TEST_CASE("catalog_db/migrator: no migration while another holder has the databa
     const auto migrated = migrate(*second, waiting);
     leaving.join();
     REQUIRE(migrated.has_value());
-    CHECK(migrated->toVersion == 2);
+    CHECK(migrated->toVersion == kProgram + 1);
     // The other holders see the new version once they open the database: the migration waited for them to close it.
     auto third = Database::open(file);
     REQUIRE(third.has_value());
-    CHECK(third->schemaVersion().value() == 2);
+    CHECK(third->schemaVersion().value() == kProgram + 1);
 }
 
 TEST_CASE("catalog_db/migrator: two processes that migrate a new database at once: one migrates, the other then finds "
@@ -389,11 +393,11 @@ TEST_CASE("catalog_db/migrator: two processes that migrate a new database at onc
     REQUIRE(secondReport.has_value());
     REQUIRE(firstReport->has_value());
     REQUIRE(secondReport->has_value());
-    CHECK((*firstReport)->toVersion == 1);
-    CHECK((*secondReport)->toVersion == 1);
+    CHECK((*firstReport)->toVersion == kProgram);
+    CHECK((*secondReport)->toVersion == kProgram);
     CHECK((*firstReport)->migrated() != (*secondReport)->migrated()); // exactly one of them ran the migration
-    CHECK(first->schemaVersion().value() == 1);
-    CHECK(second->schemaVersion().value() == 1);
+    CHECK(first->schemaVersion().value() == kProgram);
+    CHECK(second->schemaVersion().value() == kProgram);
     CHECK(first->lock().mode() == LockMode::Shared);
     CHECK(second->lock().mode() == LockMode::Shared);
 }
@@ -405,7 +409,7 @@ TEST_CASE("catalog_db/migrator: the free space is checked before the backup", "[
     REQUIRE(database.has_value());
 
     std::filesystem::path asked;
-    MigrationOptions options = optionsUpTo(2, at("2026-10-16T12:00:00.000Z"));
+    MigrationOptions options = optionsUpTo(kProgram + 1, at("2026-10-16T12:00:00.000Z"));
     options.freeSpace = [&](const std::filesystem::path& folder) -> rv::Expected<std::uint64_t> {
         asked = folder;
         return 1024;
@@ -415,7 +419,7 @@ TEST_CASE("catalog_db/migrator: the free space is checked before the backup", "[
     CHECK(refused.error().code == ErrorCode::IoError);
     CHECK(contains(refused.error().message, "not enough free space"));
     CHECK(asked == file.parent_path());
-    CHECK(database->schemaVersion().value() == 1);
+    CHECK(database->schemaVersion().value() == kProgram);
     CHECK_FALSE(std::filesystem::exists(backupFolderOf(file)));
 
     options.freeSpace = [](const std::filesystem::path&) -> rv::Expected<std::uint64_t> {
@@ -436,7 +440,7 @@ TEST_CASE("catalog_db/migrator: migrations are numbered 1, 2, ... without gaps, 
         return rv::ok();
     };
     MigrationOptions options;
-    options.migrations = {Migration{2, "two", apply}};
+    options.migrations = {Migration{kProgram + 1, "two", apply}};
     CHECK(codeOf(migrate(*database, options)) == ErrorCode::InvalidArgument);
     options.migrations = {Migration{1, "one", apply}, Migration{3, "three", apply}};
     CHECK(codeOf(migrate(*database, options)) == ErrorCode::InvalidArgument);
@@ -535,8 +539,8 @@ TEST_CASE("catalog_db/check: a migrated database passes every check; broken refe
     const auto healthy = checkDatabase(*database);
     REQUIRE(healthy.has_value());
     CHECK(healthy->passed());
-    CHECK(healthy->schemaVersion == 1);
-    CHECK(healthy->programSchemaVersion == 1);
+    CHECK(healthy->schemaVersion == kProgram);
+    CHECK(healthy->programSchemaVersion == kProgram);
     std::vector<std::string> names;
     for (const DatabaseCheck& check : healthy->checks) {
         names.push_back(check.name);
@@ -574,7 +578,7 @@ TEST_CASE("catalog_db/check: a migrated database passes every check; broken refe
     const auto schema = failedCheck("schema");
     REQUIRE(schema.has_value());
     CHECK(std::find(schema->details.begin(), schema->details.end(),
-                    "table leftover is not part of this program's schema version 1") != schema->details.end());
+                    fmt::format("table leftover is not part of this program's schema version {}", kProgram)) != schema->details.end());
     CHECK(std::find(schema->details.begin(), schema->details.end(), "index idx_games_system is missing") !=
           schema->details.end());
     REQUIRE(writer.execute("DROP TABLE leftover; CREATE INDEX idx_games_system ON idx_games (library, system)")
@@ -620,7 +624,7 @@ TEST_CASE("catalog_db/check: a migrated database passes every check; broken refe
     REQUIRE(writer.execute("PRAGMA user_version = 0").has_value());
     const auto version = failedCheck("schema-version");
     REQUIRE(version.has_value());
-    CHECK(contains(version->details[0], "older than this program's 1"));
+    CHECK(contains(version->details[0], fmt::format("older than this program's {}", kProgram)));
     const auto older = checkDatabase(*database).value();
     CHECK(older.checks[4].passed);
     CHECK(contains(older.checks[4].details[0], "not compared"));
@@ -796,8 +800,8 @@ TEST_CASE("catalog_db/info: the file, versions, sizes, metadata, row counts and 
     REQUIRE(info.has_value());
     CHECK(info->file == file);
     CHECK(info->sqliteVersion == sqliteVersion());
-    CHECK(info->schemaVersion == 1);
-    CHECK(info->programSchemaVersion == 1);
+    CHECK(info->schemaVersion == kProgram);
+    CHECK(info->programSchemaVersion == kProgram);
     CHECK(info->journalMode == "wal");
     CHECK(info->pageSize > 0);
     CHECK(info->pageCount > 0);
@@ -827,10 +831,10 @@ TEST_CASE("catalog_db/info: the file, versions, sizes, metadata, row counts and 
     CHECK(includesAll(keys, kStep4MetaKeys));
     CHECK(info->backups.empty());
 
-    const auto report = migrate(*database, optionsUpTo(2, at("2026-10-16T12:00:00.000Z")));
+    const auto report = migrate(*database, optionsUpTo(kProgram + 1, at("2026-10-16T12:00:00.000Z")));
     REQUIRE(report.has_value());
     const auto after = describeDatabase(*database);
     REQUIRE(after.has_value());
-    CHECK(after->schemaVersion == 2);
+    CHECK(after->schemaVersion == kProgram + 1);
     CHECK(after->backups == std::vector<std::filesystem::path>{*report->backup});
 }

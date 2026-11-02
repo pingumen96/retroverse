@@ -12,6 +12,15 @@ start, run report not written, the GPU memory accounting missing a texture of th
 `<user data>/logs/retroverse.log` (`--data-dir <dir>` keeps test runs out of `%LOCALAPPDATA%`; use `--data-dir
 build/rvdata`).
 
+- **The emulators screen** (I7 step 4, ADR-0018 §5, `docs/i7/step-4.md`): the menu's Emulatori, or the button of the
+  wizard's page 5. The systems with games, what launches each and why, `Pronto`, `Verificato`, or what stops it; a system
+  lists every ES-DE command and Retroverse profile that serves it, the ready first. One chosen waits for its launch test:
+  a real launch of the game shown (most recently played, else first by title; left and right change it), the session
+  recorded with `test`, stored only after a normal return; "Salva senza provare" stores it unverified; "Scegli il
+  programma" browses for a `.exe` for an emulator not found. Nothing goes to ES-DE's files. An unattended run refuses a test
+  without `RV_LAUNCH_ALLOWLIST`, with the verdict `unattended` and nothing started. The report's `emulators`: `opened`,
+  `state`, `view`, `verdict`, `problem`, `tests`, `testsRefused`, `testsStored`, `systems` (each with its `options`,
+  `<name>=<readiness>`), `tableMs`, `sample`, `textCut`, `browserTextCut`, `events`.
 - **The first-run wizard** (I7 step 2, ADR-0018 §4, `docs/i7/step-2.md`). An interactive run in the building's mode whose
   data directory has no `library.json` starts on it; one with `library.json` and no catalog (no database, or one no
   import finished in) resumes at its preview. A data directory `retroverse-cli library create` and `import` prepared
