@@ -389,10 +389,11 @@ TEST_CASE("emulators: a program chosen in the browser repairs a command that fin
     const Rows rows = rowsOf(library, "Missing Emulator (Standalone)");
     const Script choice = toChoice(rows);
 
-    // The browser starts at ES-DE's install folder, its folders first: Emulators, then FakeEmulator, then the programs.
+    // The browser starts at ES-DE's install folder, its folders first: Emulators, then FakeEmulator, whose rows are its
+    // folder cores, then its programs.
     Script refused = choice;
     refused.press("ui_activate").wait(3).press("ui_activate").wait(3).press("ui_activate").wait(3);
-    refused.press("ui_down").press("ui_activate").wait(6); // powershell.exe
+    refused.press("ui_down", 2).press("ui_activate").wait(6); // powershell.exe
     const AppRun run = library.run("refused", refused);
     skipWithoutOpenGl(run);
     requireCleanRun(run);
@@ -405,14 +406,14 @@ TEST_CASE("emulators: a program chosen in the browser repairs a command that fin
 
     Script chosen = choice;
     chosen.press("ui_activate").wait(3).press("ui_activate").wait(3).press("ui_activate").wait(3);
-    chosen.press("ui_activate").wait(6); // fake-emulator.exe
+    chosen.press("ui_down").press("ui_activate").wait(6); // fake-emulator.exe
     const AppRun made = library.run("chosen", chosen);
     requireCleanRun(made);
     INFO(made.describe());
     CHECK(made.report->emulators->problem.empty());
     CHECK(made.report->emulators->view == "choice");
     CHECK(library.assign("stored", {"--emulator", "MISSING-EMULATOR"}).at("program") ==
-          arg(library.fixture.path("Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe")));
+          arg(fs::path(library.fixture.path("Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe")).make_preferred()));
     const auto& options = systemOf(*made.report->emulators, "gb").options;
     CHECK(holds(options, "Missing Emulator (Standalone)=ready"));
 }
