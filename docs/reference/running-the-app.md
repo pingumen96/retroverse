@@ -21,6 +21,16 @@ build/rvdata`).
   without `RV_LAUNCH_ALLOWLIST`, with the verdict `unattended` and nothing started. The report's `emulators`: `opened`,
   `state`, `view`, `verdict`, `problem`, `tests`, `testsRefused`, `testsStored`, `systems` (each with its `options`,
   `<name>=<readiness>`), `tableMs`, `sample`, `textCut`, `browserTextCut`, `events`.
+- **Statistics and Informazioni's rows** (I7 step 6, ADR-0018 §9, §11, `docs/i7/step-6.md`). The menu's Statistiche: Riepilogo,
+  Più giocati, Recenti, Per sistema, Per stato (left, right or the filters; up and down scroll). Estimated hours are the
+  `Returned` sessions' launch to detected return; tests never count, crashes and left-running are attempts; ES-DE's counts
+  stay out. Informazioni has rows below the text: down past its end reaches Stato (Activate, left, right step the four
+  statuses), Emulatore (the emulators screen for this title: Prova runs that title, what is chosen is its alone, Back
+  returns to Informazioni) and each other version (Activate launches it, its session under its own GameId). The report's
+  `statistics`: `opened`, `open`, `state`, `tab`, `tabs`, `sessions`, `crashed`, `leftRunning`, `playedMs`, `gamesPlayed`,
+  `games`, `mostPlayed`, `mostRecent`, `systems` (`<name>=<sessions>`), `statuses` (`<status>=<games>`), `readMs`,
+  `hoursLabel`, `textCut`, `clicks`; `screens` gains `infoTextCut` and the events `row`, `controls`, `status`, `emulators`,
+  `version-launch`, `version-busy`.
 - **The first-run wizard** (I7 step 2, ADR-0018 §4, `docs/i7/step-2.md`). An interactive run in the building's mode whose
   data directory has no `library.json` starts on it; one with `library.json` and no catalog (no database, or one no
   import finished in) resumes at its preview. A data directory `retroverse-cli library create` and `import` prepared

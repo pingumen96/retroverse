@@ -308,6 +308,45 @@ TEST_CASE("catalog_db/statistics: a status is stored for an identity, read throu
     CHECK(f.query->gameStatus(id(3)).value()->status == GameStatus::NotStarted); // a test starts nothing
 }
 
+TEST_CASE("catalog_db/statistics: an alias keeps its game's status, and db rebuild-index leaves it",
+          "[catalog_db][statistics][sessions]") {
+    StatsFixture f("rv-status-alias");
+    const rv::catalog::LibraryId library;
+    REQUIRE(f.store->setGameStatus(id(1), GameStatus::Abandoned, at("2026-10-17T13:00:00Z")).has_value());
+    REQUIRE(f.store->setGameStatus(id(3), GameStatus::Completed, at("2026-10-17T13:00:00Z")).has_value());
+    REQUIRE(f.store->setGameStatus(id(4), GameStatus::Abandoned, at("2026-10-17T13:00:00Z")).has_value());
+
+    // Identity 1 becomes an alias of identity 2, which has no status: the status goes with it.
+    {
+        auto stored = f.catalogStore->identities(library, rv::catalog::SystemName::parse("gb").value());
+        REQUIRE(stored.has_value());
+        const auto one = std::find_if(stored->begin(), stored->end(), [](const auto& row) { return row.id == id(1); });
+        const auto four = std::find_if(stored->begin(), stored->end(), [](const auto& row) { return row.id == id(4); });
+        REQUIRE(one != stored->end());
+        REQUIRE(four != stored->end());
+        auto transaction = f.catalogStore->beginImport(library);
+        REQUIRE(transaction.has_value());
+        REQUIRE((*transaction)->putAlias(rv::catalog::IdentityAlias{*one, id(2)}).has_value());
+        // Identity 4 an alias of 3: 3 keeps its own, as a table unique per game does.
+        REQUIRE((*transaction)->putAlias(rv::catalog::IdentityAlias{*four, id(3)}).has_value());
+        REQUIRE((*transaction)->commit().has_value());
+    }
+    CHECK(f.store->gameStatus(id(2)).value() == GameStatus::Abandoned);
+    CHECK(f.store->gameStatus(id(1)).value() == GameStatus::Abandoned); // the alias stands for it
+    CHECK(f.store->gameStatus(id(3)).value() == GameStatus::Completed);
+    CHECK(f.query->gameStatus(id(1)).value()->status == GameStatus::Abandoned);
+
+    {
+        auto transaction = f.catalogStore->beginImport(library);
+        REQUIRE(transaction.has_value());
+        REQUIRE((*transaction)->clearIndex(library).has_value());
+        REQUIRE((*transaction)->commit().has_value());
+    }
+    CHECK(f.database.writer().queryInt("SELECT count(*) FROM idx_games").value() == 0);
+    CHECK(f.store->gameStatus(id(2)).value() == GameStatus::Abandoned);
+    CHECK(f.database.writer().queryInt("SELECT count(*) FROM pragma_foreign_key_check").value() == 0);
+}
+
 TEST_CASE("catalog_db/statistics: the read's cost on 10,000 sessions (p95 at most 100 ms)", "[catalog_db][statistics]") {
     constexpr std::uint64_t kGames = 2000;
     StatsFixture f("rv-stats-cost", kGames);
