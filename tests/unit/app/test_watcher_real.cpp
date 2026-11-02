@@ -28,6 +28,7 @@
 #include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
+#include <rv/catalog_db/migrator.hpp>
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>

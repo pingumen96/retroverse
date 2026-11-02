@@ -188,6 +188,9 @@ TEST_CASE("app/library_watcher: changes mapped through the scope, the request pa
     fake.push("rom", rv::core::ChangeKind::Added, "Y:\\Roms\\snes\\New Find (USA).sfc");
     fake.push("rom", rv::core::ChangeKind::Added, "Y:\\Roms\\snes\\New Find (USA).srm");  // a save: nothing
     fake.push("rom", rv::core::ChangeKind::Modified, "Y:\\Roms\\gb\\saves\\Tiny.state1"); // nothing
+    // The folders' own times, which Windows reports as a save lands in them: nothing either.
+    fake.push("rom", rv::core::ChangeKind::Modified, "Y:\\Roms\\gb\\saves");
+    fake.push("rom", rv::core::ChangeKind::Modified, "Y:\\Roms\\gb");
     fake.push("media", rv::core::ChangeKind::Added, "X:\\Invented\\Media\\gb\\covers\\Tiny (World).png");
     fake.push("media", rv::core::ChangeKind::Added, "X:\\Invented\\Media\\gb\\covers\\Thumbs.db"); // nothing
     CHECK_FALSE(watcher.poll(at(100ms), false).has_value());
@@ -225,9 +228,9 @@ TEST_CASE("app/library_watcher: changes mapped through the scope, the request pa
     CHECK(record.roots[3].name == "rom");
     CHECK(record.roots[3].mode == "notify");
     CHECK(record.roots[4].mode == "lost");
-    CHECK(record.changes == 8);
+    CHECK(record.changes == 10);
     CHECK(record.mapped == 4);
-    CHECK(record.ignored == 4);
+    CHECK(record.ignored == 6);
     CHECK(record.overflows == 1);
     CHECK(record.rootsLost == 1);
     CHECK(record.refreshes == 2);
@@ -236,5 +239,5 @@ TEST_CASE("app/library_watcher: changes mapped through the scope, the request pa
     for (const rv::app::WatchReasonCount& reason : record.ignoredBy) {
         reasons.push_back(reason.reason + "=" + std::to_string(reason.count));
     }
-    CHECK(reasons == std::vector<std::string>{"extension=2", "no-map=1", "not-media=1"});
+    CHECK(reasons == std::vector<std::string>{"extension=2", "folder-time=2", "no-map=1", "not-media=1"});
 }

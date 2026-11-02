@@ -5,8 +5,9 @@
 // the log says what it waited for:
 //  - a ROM copied into roms/snes appears in the quick catalog within 10 s of its arrival (NFR-05's row: local volume,
 //    nothing else running) through a partial refresh of snes, and the room places it in a new slot with nothing moved
-//    (SC-05, NFR-08); an emulator's save copied beside it wakes nothing; its cover copied next shows (the loader's retry
-//    changes its front); roms/gb renamed away and back keeps every identity (SC-06: the room's placements equal);
+//    (SC-05, NFR-08) once its cover, copied next, is there (a cartridge waits unplaced without one); an emulator's
+//    save copied beside it wakes nothing; roms/gb renamed away and back keeps every identity (SC-06: the room's
+//    placements equal);
 //  - a ROM copied while the fake emulator's game runs starts nothing until the return; the refresh comes after it.
 
 #include <catch2/catch_test_macros.hpp>
@@ -151,7 +152,8 @@ TEST_CASE("watcher: a ROM copied in shows within 10 s and takes a new slot; its 
     REQUIRE_FALSE(gbBefore.empty());
 
     StartedApp app(building.dir, "watched",
-                   {"--start-room", "room:snes", "--watch-library", "--exit-after-frames", "--frames", "1000000000"});
+                   {"--start-room", "room:snes", "--watch-library", "--exit-after-frames", "--frames", "1000000000",
+                    "--log-level", "debug"});
     const fs::path log = building.dir / "watched.log";
     REQUIRE(waitForLog(log, "the room is shown"));
     REQUIRE(waitForLog(log, "root(s) armed:"));
@@ -169,6 +171,12 @@ TEST_CASE("watcher: a ROM copied in shows within 10 s and takes a new slot; its 
     copyIn(building.fixture, addition.cover);
     REQUIRE(waitForLog(log, "the catalog's list after the refresh", 2, 60s));
     REQUIRE(waitForLog(log, "the room's live update (", 2, 60s));
+
+    // An emulator's save and state beside the ROM, alone: nothing starts.
+    REQUIRE(rv::core::writeTextFileAtomic(building.fixture.path(addition.rom + ".srm"), "save 2").has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(building.fixture.path(addition.rom + ".state1"), "state").has_value());
+    std::this_thread::sleep_for(4s);
+    CHECK(countIn(log, "catalog refresh asked (watcher") == 2);
 
     // roms/gb renamed away (its games' source unavailable, nothing removed) and back (the same identities).
     fs::rename(building.fixture.path("roms/gb"), building.fixture.path("roms/gb.away"));
@@ -228,10 +236,13 @@ TEST_CASE("watcher: a ROM copied in shows within 10 s and takes a new slot; its 
         CHECK(gb->removed == 0);
     }
 
-    // The room: the new title placed into a free slot, nothing that stood moved (SC-05, NFR-08).
+    // The room: a cartridge without its cover waits unplaced (noCover); its cover arrived, the title takes a free slot
+    // with it, and nothing that stood moves (SC-05, NFR-08).
     const rv::app::WorldRecord& world = report.world;
     REQUIRE(world.liveUpdates.size() >= 2);
-    const rv::app::WorldLiveUpdateRecord& placed = world.liveUpdates.front();
+    CHECK(world.liveUpdates[0].trigger == "refresh");
+    CHECK(world.liveUpdates[0].added == 0);
+    const rv::app::WorldLiveUpdateRecord& placed = world.liveUpdates[1];
     CHECK(placed.trigger == "refresh");
     CHECK(placed.added == 1);
     CHECK(placed.moved == 0);
@@ -240,8 +251,8 @@ TEST_CASE("watcher: a ROM copied in shows within 10 s and takes a new slot; its 
         CHECK(update.moved == 0);
         CHECK(update.removed == 0);
     }
-    // The cover added: the loader's retry changed the new title's front from its label to its cover.
-    CHECK(report.residency.retriedChanged >= 1);
+    CHECK(world.items == 41);
+    CHECK(world.noCover == 10); // mame's sets alone
     // SC-06: gb's folder away and back, its placements and GameIds as they were.
     CHECK(placementsOf(building, "room:gb") == gbBefore);
 }

@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <rv/core/utf8.hpp>
+
 namespace rv::app {
 
 void LibraryWatcher::arm(esde::ChangeScopeMap map) {
@@ -41,7 +43,18 @@ void LibraryWatcher::take(Clock::time_point now) {
             ++m_ignoredBy["no-map"];
             continue;
         }
+        // A folder's own time (Windows reports it when anything inside changes: an emulator's save beside a ROM): what
+        // matters inside comes with its own name. The fallback poll's folder times are Polled, and count.
+        if (change.kind == core::ChangeKind::Modified && change.path.extension().empty()) {
+            ++m_ignored;
+            ++m_ignoredBy["folder-time"];
+            continue;
+        }
         const esde::ChangeScope scope = m_index->scope(change.path);
+        // The path may name the user's folders: at debug level only.
+        spdlog::debug("Library watcher: {} {}: {}{} ({})", core::toString(change.kind),
+                      core::pathToUtf8Lossy(change.path), esde::toString(scope.kind),
+                      scope.kind == esde::ScopeKind::System ? " " + scope.system.str() : std::string(), scope.reason);
         switch (scope.kind) {
         case esde::ScopeKind::None:
             ++m_ignored;
