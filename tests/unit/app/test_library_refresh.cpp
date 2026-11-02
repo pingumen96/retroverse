@@ -321,6 +321,172 @@ TEST_CASE("app/library_refresh: another import holding the import lock makes the
 
 namespace {
 
+/// Every row of `sql`, each column as text, one line per row: what "byte-identical" compares.
+std::string dump(const ImportedFixture& f, const std::string& sql) {
+    auto database = f.openDatabase();
+    auto statement = database.writer().prepare(sql);
+    REQUIRE(statement.has_value());
+    std::string text;
+    while (true) {
+        auto row = statement->step();
+        REQUIRE(row.has_value());
+        if (!*row) {
+            break;
+        }
+        for (int column = 0; column < statement->columnCount(); ++column) {
+            text += statement->columnText(column);
+            text += '\x1f';
+        }
+        text += '\n';
+    }
+    return text;
+}
+
+/// The rows of every system but `system`: identities, index rows, media, system rows.
+std::string otherSystems(const ImportedFixture& f, std::string_view system) {
+    const std::string name(system);
+    return dump(f, "SELECT * FROM rv_game_identities WHERE system <> '" + name + "' ORDER BY id") +
+           dump(f, "SELECT * FROM idx_games WHERE system <> '" + name + "' ORDER BY id") +
+           dump(f, "SELECT m.* FROM idx_media m JOIN idx_games g ON g.id = m.game WHERE g.system <> '" + name +
+                       "' ORDER BY m.game, m.kind") +
+           dump(f, "SELECT * FROM idx_systems WHERE name <> '" + name + "' ORDER BY name") +
+           dump(f, "SELECT * FROM idx_disc_groups ORDER BY 1");
+}
+
+rv::app::RefreshRequest watcherRefresh(std::vector<std::string_view> systems) {
+    rv::app::RefreshRequest request;
+    request.trigger = rv::app::RefreshTrigger::Watcher;
+    for (const std::string_view system : systems) {
+        request.systems.push_back(rv::catalog::SystemName::parse(system).value());
+    }
+    return request;
+}
+
+} // namespace
+
+TEST_CASE("app/library_refresh: a partial refresh imports its systems alone, the others' rows byte-identical",
+          "[app][library_refresh][watcher]") {
+    const ImportedFixture f("rv-refresh-partial");
+    EsdeAppCatalog catalog(f.options());
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    REQUIRE(model.count() == 15);
+    const std::string before = otherSystems(f, "snes");
+
+    // A ROM added to snes, and one removed from gb that a partial refresh of snes never looks at.
+    addRom(f);
+    fs::remove(f.fixture.path("roms/gb/Hidden Gem (World).gb"));
+    REQUIRE(catalog.requestRefresh(watcherRefresh({"snes"})));
+    CHECK(settleRefresh(catalog, model));
+    const rv::app::RefreshState state = catalog.refreshState();
+    REQUIRE(state.last.has_value());
+    INFO((state.last->error ? state.last->error->toString() : std::string()));
+    CHECK(state.last->outcome == RefreshOutcome::Done);
+    CHECK(state.last->added == 1);
+    CHECK(state.last->removed == 0);
+    const std::size_t partialEntries = state.last->entries;
+    CHECK(model.count() == 16);
+    CHECK(otherSystems(f, "snes") == before);
+    // The import is recorded as a partial one.
+    CHECK(dump(f, "SELECT systems_asked FROM rv_imports ORDER BY id DESC LIMIT 1").find("snes") != std::string::npos);
+
+    // A refresh of every system then sees gb's removal.
+    REQUIRE(catalog.requestRefresh(rv::app::RefreshRequest{rv::app::RefreshTrigger::Watcher, {}, false}));
+    CHECK(settleRefresh(catalog, model));
+    CHECK(catalog.refreshState().last->removed == 1);
+    CHECK(partialEntries < catalog.refreshState().last->entries); // the partial snapshot held snes alone
+    CHECK(model.count() == 15);
+}
+
+TEST_CASE("app/library_refresh: a partial refresh of a system no longer configured refreshes every system",
+          "[app][library_refresh][watcher]") {
+    const ImportedFixture f("rv-refresh-unknown");
+    EsdeAppCatalog catalog(f.options());
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    addRom(f);
+    fs::remove(f.fixture.path("roms/gb/Hidden Gem (World).gb"));
+    REQUIRE(catalog.requestRefresh(watcherRefresh({"snes", "nes"})));
+    CHECK(settleRefresh(catalog, model));
+    REQUIRE(catalog.refreshState().last.has_value());
+    CHECK(catalog.refreshState().last->outcome == RefreshOutcome::Done);
+    CHECK(catalog.refreshState().last->added == 1);
+    CHECK(catalog.refreshState().last->removed == 1);
+}
+
+TEST_CASE("app/library_refresh: a watcher's refresh never accepts removals: the guard keeps a system emptied",
+          "[app][library_refresh][watcher]") {
+    const ImportedFixture f("rv-refresh-guard");
+    EsdeAppCatalog catalog(f.options());
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    const std::string before = dump(f, "SELECT * FROM idx_games WHERE system = 'gb' ORDER BY id");
+    // Most of gb's files gone at once (a folder half-copied, a sync tool's cleanup): held by the guard.
+    for (const char* rom : {"roms/gb/Tiny Tennis (Europe).gb", "roms/gb/Café Racer (Europe).gb",
+                            "roms/gb/Hidden Gem (World).gb", "roms/gb/LOUD CART (USA).GB",
+                            "roms/gb/Collection A/Pocket Puzzle (World).gb",
+                            "roms/gb/Collection B/Pocket Puzzle (World).gb"}) {
+        fs::remove(f.fixture.path(rom));
+    }
+    REQUIRE(catalog.requestRefresh(watcherRefresh({"gb"})));
+    CHECK(settleRefresh(catalog, model));
+    REQUIRE(catalog.refreshState().last.has_value());
+    CHECK(catalog.refreshState().last->outcome == RefreshOutcome::Done);
+    CHECK(catalog.refreshState().last->guarded == 1);
+    CHECK(catalog.refreshState().last->removed == 0);
+    CHECK(dump(f, "SELECT * FROM idx_games WHERE system = 'gb' ORDER BY id") == before);
+}
+
+TEST_CASE("app/library_refresh: the watcher's map comes with the opening and each refresh; another process's import "
+          "is followed",
+          "[app][library_refresh][watcher]") {
+    const ImportedFixture f("rv-refresh-other");
+    rv::app::EsdeAppCatalog::Options options = f.options();
+    options.otherImportsInterval = 50ms;
+    EsdeAppCatalog catalog(options);
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    REQUIRE(findSystem(catalog, "snes") != nullptr);
+    const std::size_t snesBefore = findSystem(catalog, "snes")->games;
+    std::optional<rv::esde::ChangeScopeMap> map = catalog.takeWatchMap();
+    REQUIRE(map.has_value());
+    CHECK(map->find("snes") != nullptr);
+    CHECK(map->romRoot.has_value());
+    CHECK_FALSE(catalog.takeWatchMap().has_value()); // taken once
+
+    // Our own refresh is no other process's import.
+    REQUIRE(catalog.requestRefresh());
+    CHECK(settleRefresh(catalog, model));
+    CHECK(catalog.takeWatchMap().has_value());
+    std::this_thread::sleep_for(300ms);
+    CHECK_FALSE(catalog.poll().otherImport);
+    CHECK(catalog.refreshState().otherImports == 0);
+
+    // retroverse-cli import, as another process makes it: the catalog follows within a few of its intervals.
+    addRom(f);
+    f.importLibrary();
+    const auto deadline = std::chrono::steady_clock::now() + rv::test::kSettleTimeout;
+    bool followed = false;
+    while (!followed) {
+        const rv::app::CatalogChanges changes = catalog.poll();
+        if (changes.otherImport) {
+            CHECK_FALSE(changes.refreshed); // no refresh of ours ended
+            model.refresh();
+            followed = true;
+        }
+        model.poll();
+        REQUIRE(std::chrono::steady_clock::now() < deadline);
+        std::this_thread::sleep_for(5ms);
+    }
+    settle(catalog, model);
+    CHECK(model.count() == 16);
+    CHECK(catalog.refreshState().otherImports == 1);
+    CHECK(findSystem(catalog, "snes")->games == snesBefore + 1);
+    CHECK(catalog.takeWatchMap().has_value());
+}
+
+namespace {
+
 /// A host that records what the sliced import asks of it; its helper work runs on a thread of its own.
 class RecordingHost final : public rv::app::RefreshHost {
 public:

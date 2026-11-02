@@ -1371,3 +1371,50 @@ TEST_CASE("app/run_report: the VR mode reads back field for field, absent withou
     REQUIRE(desktop.has_value());
     CHECK(desktop->xr == report.xr);
 }
+
+TEST_CASE("app/run_report: the file watcher and a watcher's refresh read back field for field (I7 step 7)",
+          "[app][run_report][watcher]") {
+    RunReport report = fullReport();
+    rv::app::WatcherRecord watcher;
+    watcher.enabled = true;
+    watcher.roots = {{"rom", "notify", 1, 1, ""}, {"media", "poll", 0, 0, "refused"}};
+    watcher.changes = 12;
+    watcher.mapped = 9;
+    watcher.ignored = 3;
+    watcher.ignoredBy = {{"extension", 2}, {"not-media", 1}};
+    watcher.overflows = 1;
+    watcher.rootsLost = 1;
+    watcher.rootsBack = 1;
+    watcher.held = 4;
+    watcher.refreshes = 2;
+    watcher.refused = 1;
+    watcher.otherImports = 1;
+    report.watcher = watcher;
+    rv::app::CatalogRecord catalog;
+    catalog.source = "esde";
+    rv::app::RefreshRecord refresh;
+    refresh.trigger = "watcher";
+    refresh.outcome = "done";
+    refresh.systems = {"gb", "snes"};
+    refresh.changes = 3;
+    refresh.held = true;
+    refresh.burst = true;
+    refresh.firstChangeAt = 1'793'600'000'000ull;
+    refresh.requestedAt = 1'793'600'002'000ull;
+    refresh.listedAt = 1'793'600'003'500ull;
+    catalog.refreshes = {refresh};
+    report.catalog = catalog;
+
+    const auto read = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(read.has_value());
+    REQUIRE(read->watcher);
+    CHECK(*read->watcher == watcher);
+    REQUIRE(read->catalog);
+    REQUIRE(read->catalog->refreshes.size() == 1);
+    CHECK(read->catalog->refreshes.front() == refresh);
+
+    report.watcher.reset();
+    const auto without = rv::app::parseRunReport(rv::app::formatRunReport(report), "report.json");
+    REQUIRE(without.has_value());
+    CHECK_FALSE(without->watcher.has_value());
+}
