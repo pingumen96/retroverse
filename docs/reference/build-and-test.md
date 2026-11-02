@@ -329,7 +329,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   doorway with `--start-room` for 240 lockstep frames: its hero screen on a clip or its chain's still, never standby,
   at most 2 decoders and threads; "Real screens:" lines) and with `-FullVideoScan` (`RV_REAL_FULL_VIDEO_SCAN=1`) every system's
   clips (hours), since I7 step 4 `-Filter '[real-library][emulators_real]'` (every system's readiness in the launch table
-  as `profiles` prints it, nothing launched, the table within 1 s; "Real emulators:" lines). `-OutDir <dir>` moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that
+  as `profiles` prints it, nothing launched, a system's options within 1 s; "Real emulators:" lines). `-OutDir <dir>` moves its outputs; `-Measure <script.ps1>` (with `-MeasureArguments @{...}`) runs that
   script between the first snapshot and the tests, with the same variables (Gate M1's measurements). `python -I
   scripts/snapshot_tree.py snapshot <out.json> --hash <dir> --listing <dir>` and `compare <before> <after>` (exit 1 on a
   difference) work alone (Python 3.10 or later, output in UTF-8; links are recorded and never entered, what they lead to

@@ -53,9 +53,9 @@ Roadmap row: I7 step 4. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   Informazioni opens it at step 6, as the plan has it.
 - **The wizard's page 5 is a button, not the screen in the page:** the screen is one document, and the wizard's Avanti must
   stay one press away. The table is asked when the page shows, with its catalog open; a screen over the wizard hides it.
-- **The list translates nothing:** every command of the 195 systems ES-DE defines took 6.5 s on the real library (each looks
+- **The list translates nothing:** every command of the 195 systems ES-DE defines took 2.4 s alone, 6.5 s under load, on the real library (each looks
   for its program in the registry, System32 and PATH), against ADR-0018 §16's second. The list shows what the catalog's
-  opening resolved (`CatalogSystem`), and opening a system translates its options, so `library::launchTable()` stays the
+  opening resolved (`CatalogSystem`), and opening a system translates its options (the slowest 61 ms), so `library::launchTable()` stays the
   CLI's and a system's row the screen's.
 - **A system's rows name no program** (a choice does): with paths the list was three lines a row, and a real system has
   twenty commands. A list that runs past the panel counts as cut (`EmulatorsScreen::textCut()`): at 125% one did, unseen by
