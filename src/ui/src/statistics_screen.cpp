@@ -181,6 +181,11 @@ void StatisticsScreen::hide() {
     }
     impl.shown = false;
     impl.document->Hide();
+    // As the directory's: the focus a click gave never stays on an element of the hidden document.
+    if (const Rml::Element* focus = impl.view.context().GetFocusElement();
+        focus != nullptr && focus->GetOwnerDocument() == impl.document && focus != impl.document) {
+        static_cast<void>(impl.document->Focus());
+    }
 }
 
 bool StatisticsScreen::visible() const noexcept {

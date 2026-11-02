@@ -347,6 +347,11 @@ TEST_CASE("statistics: the status steps from Informazioni and stays", "[gpu][sta
 TEST_CASE("statistics: nothing played, and no catalog at all", "[gpu][statistics]") {
     ensureLaunchAllowList();
     const Room room("empty");
+    {
+        // The fixture's <lastplayed> dates are games played in ES-DE, which the recent games show.
+        auto database = room.open();
+        REQUIRE(database.writer().execute("UPDATE idx_games SET last_played = NULL").has_value());
+    }
     const AppRun played = room.inScene("played", Script{}.openStatistics().press("ui_filter_next", 2));
     skipWithoutOpenGl(played);
     requireCleanRun(played);
@@ -371,7 +376,7 @@ TEST_CASE("statistics: nothing played, and no catalog at all", "[gpu][statistics
     REQUIRE(none.report->statistics);
     CHECK(none.report->statistics->state == "unavailable");
     CHECK_FALSE(none.report->statistics->open);
-    CHECK(none.report->menu->events.back().detail.empty());
+    CHECK(none.report->statistics->sessions == 0);
 }
 
 TEST_CASE("statistics: at text scale 125% at 1280 x 720 nothing is cut", "[gpu][statistics]") {

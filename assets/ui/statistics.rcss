@@ -22,9 +22,12 @@ div, p, h1 {
 	display: block;
 }
 
-/* Nothing takes the focus: the application keeps the input (a click still acts). */
-p, h1, span, div, button {
+/* The text takes no focus. What takes a click must be focusable: RmlUi gives the click to the focusable ancestor. */
+p, h1, span {
 	focus: none;
+}
+
+button {
 	tab-index: none;
 }
 
