@@ -59,6 +59,7 @@ struct StatisticsScreen::Impl {
             row.RegisterMember("sessions", &StatisticsGame::sessions);
             row.RegisterMember("date", &StatisticsGame::date);
             row.RegisterMember("status", &StatisticsGame::status);
+            row.RegisterMember("esde", &StatisticsGame::esde);
         }
         constructor.RegisterArray<std::vector<StatisticsGame>>();
         if (auto row = constructor.RegisterStruct<StatisticsSystem>()) {
@@ -232,6 +233,21 @@ std::uint32_t StatisticsScreen::textCut() const {
         return 0;
     }
     return detail::elementsWithCutText(*panel);
+}
+
+std::vector<std::string> StatisticsScreen::recentNotes() const {
+    std::vector<std::string> notes;
+    if (m_impl->document == nullptr || !m_impl->shown) {
+        return notes;
+    }
+    Rml::ElementList found;
+    m_impl->document->GetElementsByClassName(found, "recent-note");
+    for (const Rml::Element* note : found) {
+        if (note->IsVisible()) {
+            notes.push_back(std::string(note->GetInnerRML()));
+        }
+    }
+    return notes;
 }
 
 std::string StatisticsScreen::hoursLabel() const {

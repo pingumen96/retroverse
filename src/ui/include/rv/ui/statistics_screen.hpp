@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <rv/core/expected.hpp>
 #include <rv/ui/game_info_model.hpp>
@@ -51,6 +52,8 @@ public:
     [[nodiscard]] std::uint32_t textCut() const;
     /// The text of the line that names the hours, as the document shows it ("" when it does not show).
     [[nodiscard]] std::string hoursLabel() const;
+    /// What the recent games shown say of those with no session, in order.
+    [[nodiscard]] std::vector<std::string> recentNotes() const;
 
 private:
     struct Impl;

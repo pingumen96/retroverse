@@ -379,6 +379,46 @@ TEST_CASE("statistics: nothing played, and no catalog at all", "[gpu][statistics
     CHECK(none.report->statistics->sessions == 0);
 }
 
+TEST_CASE("statistics: the recent games tell a game played in ES-DE from one only attempted here", "[gpu][statistics]") {
+    ensureLaunchAllowList();
+    const Room room("recent_notes");
+    {
+        auto database = room.open();
+        REQUIRE(database.writer().execute("UPDATE idx_games SET last_played = NULL").has_value());
+        auto ids = database.writer().prepare("SELECT id FROM idx_games WHERE state = 'game' ORDER BY id LIMIT 2");
+        REQUIRE(ids.has_value());
+        REQUIRE(ids->step().value());
+        const auto crashedGame = static_cast<std::uint64_t>(ids->columnInt(0));
+        REQUIRE(ids->step().value());
+        const auto esdeGame = static_cast<std::uint64_t>(ids->columnInt(0));
+        ids.reset();
+        REQUIRE(database.writer()
+                    .execute(fmt::format("UPDATE idx_games SET last_played = '20261018T100000' WHERE id = {}", esdeGame))
+                    .has_value());
+        auto store = rv::catalog_db::SessionStore::open(database.writer());
+        REQUIRE(store.has_value());
+        rv::catalog::PlaySession crashed;
+        crashed.game = rv::catalog::GameId::fromValue(crashedGame).value();
+        crashed.choice = rv::launcher::LaunchChoice{rv::launcher::LaunchChoiceKind::Profile, "fake-return"};
+        crashed.choiceSource = rv::catalog::ChoiceSource::RetroverseSystem;
+        crashed.started = rv::core::parseUtcIso8601("2026-10-17T12:00:00.000Z").value();
+        crashed.ended = crashed.started + std::chrono::minutes(3);
+        crashed.outcome = rv::catalog::PlaySessionOutcome::Crashed;
+        crashed.exitCode = 3221225477u;
+        crashed.exitKind = rv::launcher::ExitKind::Crash;
+        crashed.owner = rv::catalog::SessionOwner{4242, 1};
+        REQUIRE((*store)->insertSession(crashed).has_value());
+    }
+    const AppRun run = room.inScene("run", Script{}.openStatistics().press("ui_filter_next", 2).wait(4));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->statistics);
+    CHECK(run.report->statistics->tab == "recent");
+    // The latest first: ES-DE's October 18, then the crash of the 17th.
+    CHECK(run.report->statistics->recentNotes == std::vector<std::string>{"giocato in ES-DE", "solo tentativi"});
+}
+
 TEST_CASE("statistics: at text scale 125% at 1280 x 720 nothing is cut", "[gpu][statistics]") {
     ensureLaunchAllowList();
     const Room room("scale125");

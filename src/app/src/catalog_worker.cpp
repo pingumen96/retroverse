@@ -820,10 +820,14 @@ private:
             if (const Status written = m_store->setGameStatus(job.game, *job.status, std::chrono::system_clock::now(),
                                                               catalog_db::kPatientRetry);
                 !written) {
-                controls.writeFailed = true;
+                m_statusNotStored.insert(job.game.value());
                 spdlog::warn("The status of {} could not be stored: {}", job.game.toString(), written.error().toString());
+            } else {
+                m_statusNotStored.erase(job.game.value());
             }
         }
+        // Every answer says it, a plain read's too: only the latest answer reaches the screen.
+        controls.writeFailed = m_statusNotStored.contains(job.game.value());
         if (auto status = m_query->gameStatus(job.game); status && *status) {
             controls.known = true;
             controls.status = **status;
@@ -1323,6 +1327,8 @@ private:
     catalog::LocalTimeToUtc m_localToUtc;
     /// The systems with games, by name, and as the catalog holds them, in the chips' order.
     std::map<std::string, CatalogSystem, std::less<>> m_systems;
+    /// I7 step 6: the games whose last status write failed, until the next write of theirs.
+    std::set<std::uint64_t> m_statusNotStored;
     std::vector<catalog_db::SystemSummary> m_summaries;
     std::map<std::string, launcher::LaunchChoice, std::less<>> m_assigned;
     VerifiedPrograms m_verified;

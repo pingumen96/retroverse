@@ -1141,6 +1141,7 @@ Json statisticsToJson(const StatisticsRecord& statistics) {
                 {"games", statistics.games},
                 {"mostPlayed", statistics.mostPlayed},
                 {"mostRecent", statistics.mostRecent},
+                {"recentNotes", statistics.recentNotes},
                 {"systems", statistics.systems},
                 {"statuses", statistics.statuses},
                 {"readMs", statistics.readMs},
@@ -1164,6 +1165,7 @@ StatisticsRecord readStatistics(FieldReader& fields) {
     statistics.games = fields.count("games");
     statistics.mostPlayed = fields.stringArray("mostPlayed");
     statistics.mostRecent = fields.stringArray("mostRecent");
+    statistics.recentNotes = fields.stringArray("recentNotes");
     statistics.systems = fields.stringArray("systems");
     statistics.statuses = fields.stringArray("statuses");
     statistics.readMs = fields.number("readMs");

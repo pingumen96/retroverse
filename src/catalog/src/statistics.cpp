@@ -12,7 +12,9 @@ namespace {
 
 [[nodiscard]] PlayedGame playedGameOf(const PlayStatisticsRow& row, std::optional<UtcTime> lastPlayed) {
     const GameStatus status = gameStatusOf(row.stored, row.esdeCompleted, row.sessions > 0);
-    return PlayedGame{row.id, row.system, row.systemFullName, row.title, row.sessions, row.played, lastPlayed, status};
+    return PlayedGame{row.id,     row.system, row.systemFullName, row.title,
+                      row.sessions, row.played, lastPlayed,         status,
+                      row.esdeLastPlayed.has_value()};
 }
 
 } // namespace

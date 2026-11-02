@@ -259,7 +259,7 @@ struct GameControls {
     /// The catalog knows it.
     bool known = false;
     catalog::GameStatusState status;
-    /// A status could not be stored: the row keeps what it read.
+    /// The last status written for it could not be stored, until the next write: the row keeps what it read.
     bool writeFailed = false;
     /// Its system, and what launches it: the choice as people read it, where it comes from
     /// (catalog::toString(ChoiceSource)), and the choice stored for this title, if one is.

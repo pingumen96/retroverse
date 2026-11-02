@@ -62,7 +62,8 @@
 					<div class="line-side">
 						<p class="side">{{ game.date }}</p>
 						<p class="detail" data-if="game.sessions > 0">{{ game.hours }} ore stimate</p>
-						<p class="detail" data-if="game.sessions == 0">giocato in ES-DE</p>
+						<p class="detail recent-note" data-if="game.sessions == 0 && game.esde">giocato in ES-DE</p>
+						<p class="detail recent-note" data-if="game.sessions == 0 && !game.esde">solo tentativi</p>
 					</div>
 				</div>
 			</div>

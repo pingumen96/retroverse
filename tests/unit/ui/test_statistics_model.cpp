@@ -96,6 +96,7 @@ TEST_CASE("app/statistics: the content from what the catalog read", "[app][stati
     game.sessions = 2;
     game.played = std::chrono::hours(3);
     game.lastPlayed = std::chrono::system_clock::time_point{};
+    game.esdePlayed = true;
     read.mostPlayed.push_back(game);
     read.mostRecent.push_back(game);
     SystemStatistics system;
@@ -114,6 +115,7 @@ TEST_CASE("app/statistics: the content from what the catalog read", "[app][stati
     REQUIRE(content.mostPlayed.size() == 1);
     CHECK(content.mostPlayed[0].system == "gb"); // no full name: its name
     CHECK(content.mostPlayed[0].date == "02/11/2026");
+    CHECK(content.recent[0].esde);
     CHECK(content.statuses.size() == 4);
     CHECK(content.statuses[1].status == "in-progress");
     CHECK(content.statuses[1].games == 1);

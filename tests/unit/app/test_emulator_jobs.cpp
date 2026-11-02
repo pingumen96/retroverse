@@ -71,6 +71,9 @@ struct Worker {
         if (results.resolved) {
             all.resolved = std::move(results.resolved);
         }
+        if (results.gameControls) {
+            all.gameControls = std::move(results.gameControls);
+        }
         for (auto& launch : results.launches) {
             all.launches.push_back(std::move(launch));
         }
@@ -202,6 +205,40 @@ TEST_CASE("app/emulators: the table: each system's readiness and options, the re
     const rv::ui::EmulatorSystem psx = worker.table("psx");
     CHECK(psx.stored); // the fixture's assign
     CHECK(psx.source == "retroverse-system");
+}
+
+TEST_CASE("app/game controls: a status that could not be stored stays said until the next write", "[app][statistics]") {
+    const ImportedFixture fixture("rv-controls");
+    const auto game = fixture.gameAt("gb", "Tiny Tennis (Europe).gb");
+    Worker worker(fixture);
+    const auto answer = [&](auto ask) {
+        worker.all.gameControls.reset();
+        ask();
+        worker.wait([&] { return worker.all.gameControls.has_value(); });
+        return *worker.all.gameControls;
+    };
+    using rv::catalog::GameStatus;
+    const auto write = [&](GameStatus status) {
+        return answer([&] { worker.worker.setGameStatus(1, game, status); });
+    };
+    const auto read = [&] { return answer([&] { worker.worker.gameControls(2, game); }); };
+
+    auto database = fixture.openDatabase();
+    REQUIRE(database.writer()
+                .execute("CREATE TRIGGER refuse BEFORE INSERT ON rv_game_status "
+                         "BEGIN SELECT RAISE(ABORT, 'refused'); END")
+                .has_value());
+    const rv::app::GameControls failed = write(GameStatus::Completed);
+    CHECK(failed.writeFailed);
+    CHECK_FALSE(failed.status.stored); // the row keeps what it read
+    CHECK(read().writeFailed);         // a plain read replaces the answer, not the failure
+    CHECK(read().writeFailed);
+
+    REQUIRE(database.writer().execute("DROP TRIGGER refuse").has_value());
+    const rv::app::GameControls stored = write(GameStatus::Completed);
+    CHECK_FALSE(stored.writeFailed);
+    CHECK(stored.status.status == GameStatus::Completed);
+    CHECK_FALSE(read().writeFailed);
 }
 
 TEST_CASE("app/emulators: a pending choice is stored only after a clean return", "[app][emulators]") {

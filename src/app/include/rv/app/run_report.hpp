@@ -746,6 +746,8 @@ struct StatisticsRecord {
     std::uint64_t games = 0;
     std::vector<std::string> mostPlayed;
     std::vector<std::string> mostRecent;
+    /// What the recent games shown last said of those with no session.
+    std::vector<std::string> recentNotes;
     /// "name=sessions", "status=games".
     std::vector<std::string> systems;
     std::vector<std::string> statuses;

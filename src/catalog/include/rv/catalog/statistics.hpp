@@ -78,6 +78,8 @@ struct PlayedGame {
     /// session in the most played.
     std::optional<UtcTime> lastPlayed;
     GameStatus status = GameStatus::NotStarted;
+    /// ES-DE recorded it (<lastplayed>): a game with no Returned session was played there, or only attempted here.
+    bool esdePlayed = false;
 
     bool operator==(const PlayedGame&) const = default;
 };

@@ -56,6 +56,8 @@ struct StatisticsGame {
     std::string date;
     /// catalog::toString(GameStatus).
     std::string status;
+    /// ES-DE recorded it: with no session, it was played there; else it was only attempted here.
+    bool esde = false;
 
     bool operator==(const StatisticsGame&) const = default;
 };

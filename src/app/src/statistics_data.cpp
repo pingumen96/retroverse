@@ -30,6 +30,7 @@ namespace {
     shown.sessions = count(game.sessions);
     shown.date = dayText(game.lastPlayed, localDate);
     shown.status = std::string(catalog::toString(game.status));
+    shown.esde = game.esdePlayed;
     return shown;
 }
 

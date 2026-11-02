@@ -260,7 +260,9 @@ TEST_CASE("catalog_db/statistics: the recent games take ES-DE's <lastplayed> as 
     CHECK(statistics.mostRecent[0].id == id(3)); // ES-DE's, the latest: UTC+1, 09:00
     CHECK(statistics.mostRecent[0].lastPlayed == at("2026-10-18T09:00:00Z"));
     CHECK(statistics.mostRecent[0].sessions == 0);
+    CHECK(statistics.mostRecent[0].esdePlayed);
     CHECK(statistics.mostRecent[1].id == id(1));
+    CHECK_FALSE(statistics.mostRecent[1].esdePlayed);
     CHECK(statistics.mostRecent[2].id == id(4)); // a favourite, not first
     CHECK_FALSE(statistics.empty());             // a game played in ES-DE shows, with no session of ours
     CHECK(statistics.sessions == 1);
@@ -269,6 +271,18 @@ TEST_CASE("catalog_db/statistics: the recent games take ES-DE's <lastplayed> as 
     const PlayStatistics one = f.statistics(1);
     CHECK(one.mostRecent.size() == 1);
     CHECK(one.mostPlayed.size() == 1);
+}
+
+TEST_CASE("catalog_db/statistics: a game only attempted here is no game played in ES-DE", "[catalog_db][statistics]") {
+    StatsFixture f("rv-stats-attempted");
+    f.played(1, PlaySessionOutcome::Crashed, 5);
+    f.played(2, PlaySessionOutcome::Running, 0);
+    const PlayStatistics statistics = f.statistics();
+    REQUIRE(statistics.mostRecent.size() == 2);
+    for (const rv::catalog::PlayedGame& game : statistics.mostRecent) {
+        CHECK(game.sessions == 0);
+        CHECK_FALSE(game.esdePlayed);
+    }
 }
 
 TEST_CASE("catalog_db/statistics: a game the library lost keeps its hours, out of the statuses and the recent games",

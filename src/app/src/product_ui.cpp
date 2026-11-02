@@ -2794,6 +2794,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             if (std::string label = s.statisticsScreen->hoursLabel(); !label.empty()) {
                 record.hoursLabel = std::move(label);
             }
+            if (s.statistics.tab() == ui::StatisticsTab::Recent) {
+                record.recentNotes = s.statisticsScreen->recentNotes();
+            }
         }
         if (s.wizardShown()) {
             s.wizardScreen->afterUpdate();
