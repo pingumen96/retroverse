@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cwchar>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -98,24 +100,13 @@ struct DirectoryWatcher::Shared {
     std::vector<core::WatchRoot> roots;
     std::uint64_t generation = 0;
     std::uint64_t settledGeneration = 0;
-    std::vector<core::Change> changes;
-    /// Roots whose changes did not fit (kMaxPendingChanges): one Overflow each at the next take().
-    std::vector<std::size_t> overflowed;
+    /// The changes of `generation`'s roots (the thread drops what it found for an older list: their indices are not
+    /// this list's).
+    detail::PendingChanges pending;
     std::vector<core::RootStatus> status;
     std::vector<HANDLE> handles;
     HWND window = nullptr;
     bool windowReady = false;
-
-    /// Queues `change` (the thread's): false when it did not fit.
-    void push(core::Change change) {
-        if (changes.size() >= core::kMaxPendingChanges) {
-            if (std::find(overflowed.begin(), overflowed.end(), change.root) == overflowed.end()) {
-                overflowed.push_back(change.root);
-            }
-            return;
-        }
-        changes.push_back(std::move(change));
-    }
 };
 
 namespace {
@@ -190,10 +181,16 @@ public:
         case DBT_DEVICEQUERYREMOVE:
             // The volume is asked to go: nothing of ours may hold it. The registration stays for the answer.
             spdlog::info("Library watcher: {}'s volume is asked to go: its folder is let go", root->spec.name);
-            closeRoot(*root, false);
-            root->removalPending = true;
-            root->removalSince = Clock::now();
-            lose(*root, "volume-removal", true);
+            {
+                // No change yet (no refresh may open the volume while Windows removes it): the loss is told once the
+                // volume really went, and nothing at all when the removal is refused.
+                const bool watched = root->mode == core::WatchMode::Notify || root->mode == core::WatchMode::Poll;
+                closeRoot(*root, false);
+                root->removalPending = true;
+                root->removalSince = Clock::now();
+                lose(*root, "volume-removal", false);
+                root->untoldLoss = root->untoldLoss || watched;
+            }
             break;
         case DBT_DEVICEQUERYREMOVEFAILED:
             spdlog::info("Library watcher: {}'s volume stays: watched again", root->spec.name);
@@ -232,6 +229,9 @@ private:
         core::WatchMode mode = core::WatchMode::Arming;
         bool removalPending = false;
         Clock::time_point removalSince{};
+        /// Lost while its volume's removal was pending, the loss not told yet (no RootLost): told once the volume went,
+        /// never when the removal was refused.
+        bool untoldLoss = false;
         Clock::time_point nextCheck{};
         std::wstring finalPath;
         std::map<std::filesystem::path, std::optional<EntryFacts>> snapshot;
@@ -283,11 +283,21 @@ private:
         }
     }
 
+    /// The root a device notification is about: by its registration first, across every root, and only then by the
+    /// handle's value, which Windows may have given another handle since it was closed.
     [[nodiscard]] Root* rootOf(const DEV_BROADCAST_HANDLE& broadcast) {
-        for (const auto& root : m_roots) {
-            if ((broadcast.dbch_hdevnotify != nullptr && broadcast.dbch_hdevnotify == root->notify) ||
-                (broadcast.dbch_handle != nullptr && broadcast.dbch_handle == root->lastHandle)) {
-                return root.get();
+        if (broadcast.dbch_hdevnotify != nullptr) {
+            for (const auto& root : m_roots) {
+                if (broadcast.dbch_hdevnotify == root->notify) {
+                    return root.get();
+                }
+            }
+        }
+        if (broadcast.dbch_handle != nullptr) {
+            for (const auto& root : m_roots) {
+                if (broadcast.dbch_handle == root->lastHandle) {
+                    return root.get();
+                }
             }
         }
         return nullptr;
@@ -310,10 +320,12 @@ private:
         }
         {
             const std::lock_guard lock(m_shared->mutex);
-            m_shared->status.assign(m_roots.size(), core::RootStatus{});
-            m_shared->handles.assign(m_roots.size(), nullptr);
-            for (const auto& root : m_roots) {
-                m_shared->status[root->index].name = root->spec.name;
+            if (m_shared->generation == m_generation) { // else watch() set the newer list's
+                m_shared->status.assign(m_roots.size(), core::RootStatus{});
+                m_shared->handles.assign(m_roots.size(), nullptr);
+                for (const auto& root : m_roots) {
+                    m_shared->status[root->index].name = root->spec.name;
+                }
             }
         }
         std::size_t notified = 0;
@@ -335,8 +347,9 @@ private:
             root.nextCheck = Clock::now() + kRetrySoon; // its cancelled read has not completed yet
             return;
         }
-        // Lost after its first look (gone, or not there yet): its return is a change, as a drive plugged in later.
-        const bool returning = root.mode == core::WatchMode::Lost;
+        // Lost after its first look (gone, or not there yet): its return is a change, as a drive plugged in later; not
+        // after a removal that was refused before its loss was told.
+        const bool returning = root.mode == core::WatchMode::Lost && !root.untoldLoss;
         if (!isFolder(root.spec.folder)) {
             lose(root, "missing", false);
             return;
@@ -378,6 +391,7 @@ private:
         }
         root.mode = core::WatchMode::Notify;
         root.reason.clear();
+        root.untoldLoss = false;
         root.nextCheck = Clock::now() + m_options.existenceInterval;
         if (returning) {
             back(root);
@@ -403,14 +417,22 @@ private:
         if (root.handle == INVALID_HANDLE_VALUE || error == ERROR_OPERATION_ABORTED) {
             return; // closed on purpose
         }
-        if (error == ERROR_NOTIFY_ENUM_DIR || (error == ERROR_SUCCESS && bytes == 0)) {
-            push(root, core::ChangeKind::Overflow, root.spec.folder);
-        } else if (error != ERROR_SUCCESS) {
+        const detail::ReadOutcome outcome = detail::readNotifications(
+            std::as_bytes(std::span(root.buffer)), static_cast<std::uint32_t>(error), static_cast<std::uint32_t>(bytes),
+            root.spec.folder);
+        if (outcome.failed) {
             closeRoot(root, true);
             lose(root, errorMessage(error), true);
             return;
-        } else {
-            parse(root, bytes);
+        }
+        for (const auto& [kind, path] : outcome.changes) {
+            core::Change change{root.index, kind, path};
+            // A folder added or renamed in: whatever its name, what it holds came with it.
+            change.directory = (kind == core::ChangeKind::Added || kind == core::ChangeKind::RenamedTo) && isFolder(path);
+            push(root, std::move(change));
+        }
+        if (outcome.overflow) {
+            push(root, core::ChangeKind::Overflow, root.spec.folder);
         }
         if (!isFolder(root.spec.folder)) {
             closeRoot(root, true);
@@ -421,43 +443,6 @@ private:
             const std::string reason = lastErrorMessage();
             closeRoot(root, true);
             lose(root, reason, true);
-        }
-    }
-
-    void parse(Root& root, DWORD bytes) {
-        const auto* base = reinterpret_cast<const std::uint8_t*>(root.buffer.data());
-        DWORD offset = 0;
-        while (offset + offsetof(FILE_NOTIFY_INFORMATION, FileName) <= bytes) {
-            const auto* info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(base + offset);
-            const DWORD nameBytes = info->FileNameLength;
-            if (offset + offsetof(FILE_NOTIFY_INFORMATION, FileName) + nameBytes > bytes) {
-                push(root, core::ChangeKind::Overflow, root.spec.folder); // malformed: say anything may differ
-                return;
-            }
-            const std::wstring name(info->FileName, nameBytes / sizeof(wchar_t));
-            core::ChangeKind kind = core::ChangeKind::Modified;
-            switch (info->Action) {
-            case FILE_ACTION_ADDED:
-                kind = core::ChangeKind::Added;
-                break;
-            case FILE_ACTION_REMOVED:
-                kind = core::ChangeKind::Removed;
-                break;
-            case FILE_ACTION_RENAMED_OLD_NAME:
-                kind = core::ChangeKind::RenamedFrom;
-                break;
-            case FILE_ACTION_RENAMED_NEW_NAME:
-                kind = core::ChangeKind::RenamedTo;
-                break;
-            default:
-                kind = core::ChangeKind::Modified;
-                break;
-            }
-            push(root, kind, root.spec.folder / std::filesystem::path(name));
-            if (info->NextEntryOffset == 0) {
-                return;
-            }
-            offset += info->NextEntryOffset;
         }
     }
 
@@ -483,11 +468,13 @@ private:
     }
 
     void lose(Root& root, std::string reason, bool change) {
-        const bool wasWatched = root.mode == core::WatchMode::Notify || root.mode == core::WatchMode::Poll;
+        const bool wasWatched =
+            root.mode == core::WatchMode::Notify || root.mode == core::WatchMode::Poll || root.untoldLoss;
         root.mode = core::WatchMode::Lost;
         root.reason = std::move(reason);
         root.nextCheck = Clock::now() + m_options.existenceInterval;
         if (change && wasWatched) {
+            root.untoldLoss = false;
             ++root.lost;
             push(root, core::ChangeKind::RootLost, root.spec.folder);
             spdlog::info("Library watcher: {} lost ({}); its existence looked at every {} ms", root.spec.name,
@@ -504,6 +491,7 @@ private:
 
     void startPolling(Root& root, std::string reason, bool returning) {
         root.mode = core::WatchMode::Poll;
+        root.untoldLoss = false;
         root.reason = std::move(reason);
         root.snapshot.clear();
         for (const std::filesystem::path& target : root.spec.pollTargets) {
@@ -546,12 +534,16 @@ private:
                 break;
             case core::WatchMode::Lost:
                 if (root.removalPending) {
-                    if (isFolder(root.spec.folder) && now - root.removalSince < m_options.removalPatience) {
+                    const bool there = isFolder(root.spec.folder);
+                    if (there && now - root.removalSince < m_options.removalPatience) {
                         root.nextCheck = now + m_options.existenceInterval;
                         break;
                     }
                     root.removalPending = false;
                     unregister(root);
+                    if (!there) {
+                        lose(root, "volume-removed", true); // it went: told now
+                    }
                 }
                 arm(root);
                 break;
@@ -619,14 +611,22 @@ private:
     }
 
     void push(const Root& root, core::ChangeKind kind, std::filesystem::path path) {
+        push(root, core::Change{root.index, kind, std::move(path)});
+    }
+
+    /// Queues a change of `root`, unless watch() gave a newer list meanwhile (its indices are not this one's).
+    void push(const Root& root, core::Change change) {
         const std::lock_guard lock(m_shared->mutex);
-        m_shared->push(core::Change{root.index, kind, std::move(path)});
+        if (root.retired || m_shared->generation != m_generation) {
+            return;
+        }
+        m_shared->pending.push(std::move(change));
         m_pushed = true;
     }
 
     void publish(const Root& root) {
         const std::lock_guard lock(m_shared->mutex);
-        if (root.retired || root.index >= m_shared->status.size()) {
+        if (root.retired || m_shared->generation != m_generation || root.index >= m_shared->status.size()) {
             return;
         }
         core::RootStatus& status = m_shared->status[root.index];
@@ -675,9 +675,24 @@ DirectoryWatcher::~DirectoryWatcher() {
         m_shared->stopping = true;
     }
     SetEvent(m_shared->command);
-    if (m_thread.joinable()) {
-        m_thread.join();
+    if (!m_thread.joinable()) {
+        CloseHandle(m_shared->command);
+        return;
     }
+    // A share that stopped answering can hold the thread in a synchronous call (an existence check, a poll): cancelled,
+    // it returns with an error and the thread ends. One that still holds it after the bound is left to end by itself.
+    const HANDLE thread = m_thread.native_handle();
+    const auto until = std::chrono::steady_clock::now() + kStopBound;
+    while (WaitForSingleObject(thread, 100) == WAIT_TIMEOUT) {
+        if (std::chrono::steady_clock::now() >= until) {
+            spdlog::warn("Library watcher: its thread did not end within {} ms; it is left to end by itself",
+                         kStopBound.count());
+            m_thread.detach(); // its command event stays its own
+            return;
+        }
+        CancelSynchronousIo(thread);
+    }
+    m_thread.join();
     CloseHandle(m_shared->command);
 }
 
@@ -691,23 +706,14 @@ void DirectoryWatcher::watch(std::vector<core::WatchRoot> roots) {
         m_shared->handles.assign(roots.size(), nullptr);
         m_shared->roots = std::move(roots);
         ++m_shared->generation;
-        m_shared->changes.clear();
-        m_shared->overflowed.clear();
+        m_shared->pending.clear();
     }
     SetEvent(m_shared->command);
 }
 
 std::vector<core::Change> DirectoryWatcher::take() {
     const std::lock_guard lock(m_shared->mutex);
-    std::vector<core::Change> changes = std::move(m_shared->changes);
-    m_shared->changes.clear();
-    for (const std::size_t root : m_shared->overflowed) {
-        const std::filesystem::path folder =
-            root < m_shared->roots.size() ? m_shared->roots[root].folder : std::filesystem::path();
-        changes.push_back(core::Change{root, core::ChangeKind::Overflow, folder});
-    }
-    m_shared->overflowed.clear();
-    return changes;
+    return m_shared->pending.take(m_shared->roots);
 }
 
 std::vector<core::RootStatus> DirectoryWatcher::status() const {
@@ -729,5 +735,87 @@ void* DirectoryWatcher::rootHandle(std::size_t root) const {
     const std::lock_guard lock(m_shared->mutex);
     return root < m_shared->handles.size() ? m_shared->handles[root] : nullptr;
 }
+
+namespace detail {
+
+ReadOutcome readNotifications(std::span<const std::byte> buffer, std::uint32_t error, std::uint32_t bytes,
+                              const std::filesystem::path& folder) {
+    ReadOutcome outcome;
+    if (error == ERROR_NOTIFY_ENUM_DIR || (error == ERROR_SUCCESS && bytes == 0)) {
+        outcome.overflow = true;
+        return outcome;
+    }
+    if (error != ERROR_SUCCESS) {
+        outcome.failed = true;
+        return outcome;
+    }
+    const std::size_t size = std::min<std::size_t>(bytes, buffer.size());
+    constexpr std::size_t kHeader = offsetof(FILE_NOTIFY_INFORMATION, FileName);
+    std::size_t offset = 0;
+    while (true) {
+        if (offset + kHeader > size || offset % alignof(DWORD) != 0) {
+            outcome.overflow = true; // the buffer does not hold what its offsets say: anything may differ
+            return outcome;
+        }
+        const auto* info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data() + offset);
+        const std::size_t nameBytes = info->FileNameLength;
+        if (offset + kHeader + nameBytes > size || nameBytes % sizeof(wchar_t) != 0) {
+            outcome.overflow = true;
+            return outcome;
+        }
+        const std::wstring name(info->FileName, nameBytes / sizeof(wchar_t));
+        core::ChangeKind kind = core::ChangeKind::Modified;
+        switch (info->Action) {
+        case FILE_ACTION_ADDED:
+            kind = core::ChangeKind::Added;
+            break;
+        case FILE_ACTION_REMOVED:
+            kind = core::ChangeKind::Removed;
+            break;
+        case FILE_ACTION_RENAMED_OLD_NAME:
+            kind = core::ChangeKind::RenamedFrom;
+            break;
+        case FILE_ACTION_RENAMED_NEW_NAME:
+            kind = core::ChangeKind::RenamedTo;
+            break;
+        default:
+            kind = core::ChangeKind::Modified;
+            break;
+        }
+        outcome.changes.emplace_back(kind, folder / std::filesystem::path(name));
+        if (info->NextEntryOffset == 0) {
+            return outcome;
+        }
+        offset += info->NextEntryOffset;
+    }
+}
+
+void PendingChanges::push(core::Change change) {
+    if (m_changes.size() >= core::kMaxPendingChanges) {
+        if (std::find(m_overflowed.begin(), m_overflowed.end(), change.root) == m_overflowed.end()) {
+            m_overflowed.push_back(change.root);
+        }
+        return;
+    }
+    m_changes.push_back(std::move(change));
+}
+
+std::vector<core::Change> PendingChanges::take(const std::vector<core::WatchRoot>& roots) {
+    std::vector<core::Change> changes = std::move(m_changes);
+    m_changes.clear();
+    for (const std::size_t root : m_overflowed) {
+        changes.push_back(core::Change{root, core::ChangeKind::Overflow,
+                                       root < roots.size() ? roots[root].folder : std::filesystem::path()});
+    }
+    m_overflowed.clear();
+    return changes;
+}
+
+void PendingChanges::clear() noexcept {
+    m_changes.clear();
+    m_overflowed.clear();
+}
+
+} // namespace detail
 
 } // namespace rv::platform_win

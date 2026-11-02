@@ -21,8 +21,11 @@
 #include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <cstdint>
 #include <memory>
+#include <span>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <rv/core/change_watcher.hpp>
@@ -44,8 +47,10 @@ public:
     };
 
     explicit DirectoryWatcher(Options options = {});
-    /// Closes every handle and ends the thread.
+    /// Closes every handle and ends the thread. A thread held in a synchronous call (a share that stopped answering) has
+    /// that call cancelled (CancelSynchronousIo); one still not ended after kStopBound is left to end by itself.
     ~DirectoryWatcher() override;
+    static constexpr std::chrono::milliseconds kStopBound{5000};
     DirectoryWatcher(const DirectoryWatcher&) = delete;
     DirectoryWatcher& operator=(const DirectoryWatcher&) = delete;
 
@@ -67,5 +72,39 @@ private:
     std::shared_ptr<Shared> m_shared;
     std::thread m_thread;
 };
+
+namespace detail {
+
+/// What one completed ReadDirectoryChangesW brought (DirectoryWatcher's thread, apart for its tests).
+struct ReadOutcome {
+    /// The changes of the buffer, in its order: their kind and absolute path (`folder` / the name read).
+    std::vector<std::pair<core::ChangeKind, std::filesystem::path>> changes;
+    /// Changes were lost: ERROR_NOTIFY_ENUM_DIR, a success of 0 bytes (the file system's buffer overflowed), a buffer
+    /// that does not hold what its offsets say (the changes read before the bad entry are kept).
+    bool overflow = false;
+    /// Any other error: the root is lost.
+    bool failed = false;
+};
+
+/// Reads `bytes` of `buffer` (FILE_NOTIFY_INFORMATION entries, DWORD aligned) after a read that ended with `error`.
+[[nodiscard]] ReadOutcome readNotifications(std::span<const std::byte> buffer, std::uint32_t error, std::uint32_t bytes,
+                                           const std::filesystem::path& folder);
+
+/// The changes waiting for take(): at most core::kMaxPendingChanges; past that a root's further changes are one
+/// Overflow of that root, which take() adds after the changes kept.
+class PendingChanges {
+public:
+    void push(core::Change change);
+    /// The changes, then an Overflow per root that lost some (its folder from `roots`, by index); empties the queue.
+    [[nodiscard]] std::vector<core::Change> take(const std::vector<core::WatchRoot>& roots);
+    void clear() noexcept;
+    [[nodiscard]] std::size_t size() const noexcept { return m_changes.size(); }
+
+private:
+    std::vector<core::Change> m_changes;
+    std::vector<std::size_t> m_overflowed;
+};
+
+} // namespace detail
 
 } // namespace rv::platform_win

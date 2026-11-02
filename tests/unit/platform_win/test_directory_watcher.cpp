@@ -14,8 +14,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -271,30 +273,166 @@ TEST_CASE("platform_win/directory_watcher: a volume asked to go: the handle clos
     CHECK(openExclusively(scratch.root));
     CHECK(modeOf(watcher) == WatchMode::Lost);
     CHECK(watcher.status()[0].reason == "volume-removal");
-    std::vector<Change> changes;
-    CHECK(waitForChange(watcher, changes, is(ChangeKind::RootLost, scratch.root)));
-    // While the removal is pending, the folder still there is left alone (the existence poll arms nothing).
+    // While the removal is pending, nothing is told (no refresh may open the volume Windows removes), and the folder
+    // still there is left alone (the existence poll arms nothing).
     std::this_thread::sleep_for(500ms);
+    CHECK(watcher.take().empty());
+    CHECK(watcher.status()[0].lost == 0);
     CHECK(modeOf(watcher) == WatchMode::Lost);
     CHECK(openExclusively(scratch.root));
 
-    // Another program vetoed the removal: watched again.
+    // Another program vetoed the removal: watched again, and nothing changed.
     CHECK(SendMessageW(window, WM_DEVICECHANGE, DBT_DEVICEQUERYREMOVEFAILED, reinterpret_cast<LPARAM>(&broadcast)) ==
           TRUE);
-    CHECK(waitForChange(watcher, changes, is(ChangeKind::RootBack, scratch.root)));
     CHECK(waitFor([&] { return modeOf(watcher) == WatchMode::Notify; }));
     CHECK_FALSE(openExclusively(scratch.root));
+    std::this_thread::sleep_for(300ms);
+    CHECK(watcher.take().empty());
+    CHECK(watcher.status()[0].back == 0);
     // A notification about another handle changes nothing.
     DEV_BROADCAST_HANDLE other = broadcast;
     other.dbch_handle = reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(0x7FFF0));
     CHECK(SendMessageW(window, WM_DEVICECHANGE, DBT_DEVICEQUERYREMOVE, reinterpret_cast<LPARAM>(&other)) == TRUE);
     CHECK(modeOf(watcher) == WatchMode::Notify);
 
-    // The volume went for good (a surprise removal): closed, then armed again once the folder is seen there.
+    // Asked again, and the volume goes this time (its folder no longer there): the loss is told then, once.
+    broadcast.dbch_handle = static_cast<HANDLE>(watcher.rootHandle(0));
+    CHECK(SendMessageW(window, WM_DEVICECHANGE, DBT_DEVICEQUERYREMOVE, reinterpret_cast<LPARAM>(&broadcast)) == TRUE);
+    CHECK(openExclusively(scratch.root));
+    const fs::path away = scratch.fixture.root() / "watched-ejected";
+    fs::rename(scratch.root, away);
+    std::vector<Change> changes;
+    CHECK(waitForChange(watcher, changes, is(ChangeKind::RootLost, scratch.root)));
+    CHECK(watcher.status()[0].lost == 1);
+    fs::rename(away, scratch.root); // plugged in again
+    CHECK(waitForChange(watcher, changes, is(ChangeKind::RootBack, scratch.root)));
+    CHECK(waitFor([&] { return modeOf(watcher) == WatchMode::Notify; }));
+
+    // A surprise removal: closed and told at once, then armed again once the folder is seen there.
     broadcast.dbch_handle = static_cast<HANDLE>(watcher.rootHandle(0));
     CHECK(SendMessageW(window, WM_DEVICECHANGE, DBT_DEVICEREMOVECOMPLETE, reinterpret_cast<LPARAM>(&broadcast)) == TRUE);
     CHECK(waitFor([&] { return watcher.status()[0].lost == 2; }));
     CHECK(waitFor([&] { return modeOf(watcher) == WatchMode::Notify; }));
+}
+
+TEST_CASE("platform_win/directory_watcher: a folder renamed in, a dotted name too, is marked a folder",
+          "[platform_win][directory_watcher]") {
+    const Scratch scratch;
+    const fs::path outside = scratch.fixture.root() / "outside";
+    fs::create_directories(outside / "Collection v2.0");
+    write(outside / "Collection v2.0" / "Inner (USA).sfc", "rom");
+    write(outside / "Game (Rev 1.1).sfc", "rom");
+    DirectoryWatcher watcher(fastOptions());
+    watcher.watch({rootOf(scratch.root)});
+    REQUIRE(waitFor([&] { return watcher.settled() && modeOf(watcher) == WatchMode::Notify; }));
+    std::vector<Change> changes;
+    const fs::path folder = scratch.root / "snes" / "Collection v2.0";
+    const fs::path file = scratch.root / "snes" / "Game (Rev 1.1).sfc";
+    fs::rename(outside / "Collection v2.0", folder); // one volume: the folder's event alone
+    fs::rename(outside / "Game (Rev 1.1).sfc", file);
+    CHECK(waitForChange(watcher, changes, [&](const Change& change) {
+        return change.directory && fs::path(change.path).lexically_normal() == folder.lexically_normal();
+    }));
+    CHECK(waitForChange(watcher, changes, [&](const Change& change) {
+        return fs::path(change.path).lexically_normal() == file.lexically_normal();
+    }));
+    for (const Change& change : changes) {
+        if (fs::path(change.path).lexically_normal() == file.lexically_normal()) {
+            CHECK_FALSE(change.directory);
+        }
+        CHECK(fs::path(change.path).lexically_normal() != (folder / "Inner (USA).sfc").lexically_normal());
+    }
+}
+
+namespace {
+
+/// A FILE_NOTIFY_INFORMATION buffer: each entry DWORD aligned, the last with NextEntryOffset 0.
+std::vector<std::byte> notifyBuffer(const std::vector<std::pair<DWORD, std::wstring>>& entries) {
+    std::vector<std::byte> buffer;
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const std::size_t start = buffer.size();
+        const std::size_t nameBytes = entries[index].second.size() * sizeof(wchar_t);
+        std::size_t size = offsetof(FILE_NOTIFY_INFORMATION, FileName) + nameBytes;
+        size = (size + 3) / 4 * 4;
+        buffer.resize(start + size);
+        auto* info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(buffer.data() + start);
+        info->NextEntryOffset = index + 1 == entries.size() ? 0 : static_cast<DWORD>(size);
+        info->Action = entries[index].first;
+        info->FileNameLength = static_cast<DWORD>(nameBytes);
+        std::memcpy(info->FileName, entries[index].second.data(), nameBytes);
+    }
+    return buffer;
+}
+
+} // namespace
+
+TEST_CASE("platform_win/directory_watcher: a read's buffer: changes, overflows, a malformed buffer, an error",
+          "[platform_win][directory_watcher]") {
+    using rv::platform_win::detail::readNotifications;
+    const fs::path folder = "X:\\Watched";
+    const std::vector<std::byte> buffer = notifyBuffer({{FILE_ACTION_ADDED, L"snes\\A.sfc"},
+                                                        {FILE_ACTION_RENAMED_OLD_NAME, L"B.sfc"},
+                                                        {FILE_ACTION_RENAMED_NEW_NAME, L"C.sfc"},
+                                                        {FILE_ACTION_MODIFIED, L"D.sfc"},
+                                                        {FILE_ACTION_REMOVED, L"E.sfc"}});
+    const auto read = readNotifications(buffer, ERROR_SUCCESS, static_cast<std::uint32_t>(buffer.size()), folder);
+    CHECK_FALSE(read.overflow);
+    CHECK_FALSE(read.failed);
+    REQUIRE(read.changes.size() == 5);
+    CHECK(read.changes[0].first == ChangeKind::Added);
+    CHECK(read.changes[0].second == folder / L"snes\\A.sfc");
+    CHECK(read.changes[1].first == ChangeKind::RenamedFrom);
+    CHECK(read.changes[2].first == ChangeKind::RenamedTo);
+    CHECK(read.changes[3].first == ChangeKind::Modified);
+    CHECK(read.changes[4].first == ChangeKind::Removed);
+    CHECK(read.changes[4].second == folder / L"E.sfc");
+
+    // The file system's buffer overflowed: ERROR_NOTIFY_ENUM_DIR, or a success of 0 bytes.
+    const auto enumDir = readNotifications(buffer, ERROR_NOTIFY_ENUM_DIR, 0, folder);
+    CHECK(enumDir.overflow);
+    CHECK(enumDir.changes.empty());
+    const auto empty = readNotifications(buffer, ERROR_SUCCESS, 0, folder);
+    CHECK(empty.overflow);
+    CHECK_FALSE(empty.failed);
+    // A buffer cut short (its last name runs past the bytes): the changes before it kept, an overflow.
+    const auto cut = readNotifications(buffer, ERROR_SUCCESS, static_cast<std::uint32_t>(buffer.size() - 6), folder);
+    CHECK(cut.overflow);
+    CHECK(cut.changes.size() == 4);
+    // An offset that points past the buffer; an odd name length.
+    std::vector<std::byte> bad = notifyBuffer({{FILE_ACTION_ADDED, L"A.sfc"}, {FILE_ACTION_ADDED, L"B.sfc"}});
+    reinterpret_cast<FILE_NOTIFY_INFORMATION*>(bad.data())->NextEntryOffset = 4096;
+    const auto pastEnd = readNotifications(bad, ERROR_SUCCESS, static_cast<std::uint32_t>(bad.size()), folder);
+    CHECK(pastEnd.overflow);
+    CHECK(pastEnd.changes.size() == 1);
+    std::vector<std::byte> odd = notifyBuffer({{FILE_ACTION_ADDED, L"A.sfc"}});
+    reinterpret_cast<FILE_NOTIFY_INFORMATION*>(odd.data())->FileNameLength = 3;
+    CHECK(readNotifications(odd, ERROR_SUCCESS, static_cast<std::uint32_t>(odd.size()), folder).overflow);
+    // Any other error: the root failed.
+    const auto denied = readNotifications(buffer, ERROR_ACCESS_DENIED, 0, folder);
+    CHECK(denied.failed);
+    CHECK_FALSE(denied.overflow);
+}
+
+TEST_CASE("platform_win/directory_watcher: past kMaxPendingChanges a root's changes are one Overflow at take()",
+          "[platform_win][directory_watcher]") {
+    rv::platform_win::detail::PendingChanges pending;
+    const std::vector<rv::core::WatchRoot> roots{rootOf("X:\\Roms"), rv::core::WatchRoot{"media", "X:\\Media", true, {}}};
+    for (std::size_t index = 0; index < rv::core::kMaxPendingChanges; ++index) {
+        pending.push(Change{0, ChangeKind::Added, fs::path("X:\\Roms") / std::to_string(index)});
+    }
+    CHECK(pending.size() == rv::core::kMaxPendingChanges);
+    pending.push(Change{0, ChangeKind::Added, "X:\\Roms\\late-1"});
+    pending.push(Change{0, ChangeKind::Added, "X:\\Roms\\late-2"});
+    pending.push(Change{1, ChangeKind::Added, "X:\\Media\\late"});
+    CHECK(pending.size() == rv::core::kMaxPendingChanges);
+    const std::vector<Change> taken = pending.take(roots);
+    REQUIRE(taken.size() == rv::core::kMaxPendingChanges + 2);
+    CHECK(taken[rv::core::kMaxPendingChanges] == Change{0, ChangeKind::Overflow, "X:\\Roms"});
+    CHECK(taken[rv::core::kMaxPendingChanges + 1] == Change{1, ChangeKind::Overflow, "X:\\Media"});
+    // Emptied: the next take() has nothing, and room again.
+    CHECK(pending.take(roots).empty());
+    pending.push(Change{0, ChangeKind::Removed, "X:\\Roms\\again"});
+    CHECK(pending.take(roots).size() == 1);
 }
 
 TEST_CASE("platform_win/directory_watcher: the watcher's names", "[platform_win][directory_watcher]") {
