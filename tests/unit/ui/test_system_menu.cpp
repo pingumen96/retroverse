@@ -80,6 +80,7 @@ TEST_CASE("ui/system_menu: Esci asks once, Annulla focused", "[ui][system_menu]"
     static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
+    static_cast<void>(menu.apply(UiCommand::Down));
     CHECK_FALSE(menu.apply(UiCommand::Activate).has_value());
     CHECK(menu.view() == SystemMenuView::Confirm);
     CHECK(menu.focused() == SystemMenuButton::Stay);

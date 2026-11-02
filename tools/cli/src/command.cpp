@@ -30,7 +30,7 @@ constexpr std::string_view kLogFileName = "retroverse-cli.log";
 /// The command table: the order of --help, the step of docs/roadmap.md that implements each command (worldplan: its
 /// first subcommand's; each subcommand names its own). The rows never change when a command is implemented: its
 /// cmd_<name>.cpp does.
-constexpr std::array<Command, 16> kCommands{{
+constexpr std::array<Command, 17> kCommands{{
     {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", "I2 step 2", runDiscover,
      true},
     {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)",
