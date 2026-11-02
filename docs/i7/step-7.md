@@ -38,13 +38,21 @@ Roadmap row: I7 step 7. Decision: [ADR-0018](../decisions/ADR-0018-daily-use.md)
   root, a nested layout's folder), the media root, the configuration. A change in no system's folder (a stray file at
   the ROM root) and a file without a system's extension are nothing, or every emulator's save would refresh everything.
 - **Extensions are compared ignoring case** (ES-DE compares them with case): a `.Sfc` costs one refresh more, never one
-  less. A name without an extension counts (a folder moved in, a game directory).
+  less. A name without an extension counts (a folder moved in, a game directory), and so does any folder the watcher
+  saw added or renamed in, a dotted one too ("Collection v2.0", "Game (Rev 1.1)"): a move on one volume reports the
+  folder alone, never the files it brings (`core::Change::directory`, one look at the path on the watcher's thread).
 - **A root missing at the start is watched for:** its arrival is a change (`RootBack`), so a drive plugged in after the
   start refreshes. A root lost and back refreshes every system.
 - **A notified root's renaming** is found by asking its handle's final path every 5 s (no disk read), since Windows
   reports a folder's own rename to its parent's watchers only.
-- **A removal asked and never answered** (no `QUERYREMOVEFAILED`, no `REMOVECOMPLETE`) arms the root again only after
-  60 s with its folder still there, so a slow eject is never blocked by a handle opened again.
+- **A removal asked is no change until the volume went** (departing from §10's "asks one refresh" at once): on
+  `DBT_DEVICEQUERYREMOVE` the handle is closed but no `RootLost` is told, so no refresh opens the volume while Windows
+  removes it, however slow the eject. The loss is told once the volume really went (`DBT_DEVICEREMOVECOMPLETE`, or its
+  folder no longer there at the existence poll), and a refused removal (`DBT_DEVICEQUERYREMOVEFAILED`) arms the root
+  again with no change at all. A removal never answered arms it again only after 60 s with its folder still there.
+- **The end of the run is bounded:** a watcher thread held in a synchronous call (an existence check or a poll on a
+  share that stopped answering) has it cancelled (`CancelSynchronousIo`) while the destructor waits, and one still not
+  ended after 5 s is left to end by itself, so quitting never freezes on a dead share.
 - **The fallback poll's media targets** are each system's media folder and its kind folders: two levels, still no walk,
   since a file added inside `covers` changes no system folder's time.
 - **Another process's import is followed only with the watcher on**, so that automated runs stay as they were.
