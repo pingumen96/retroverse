@@ -19,6 +19,7 @@
 #include <rv/app/binding_rules.hpp>
 #include <rv/app/frame_timing.hpp>
 #include <rv/app/library_refresh.hpp>
+#include <rv/app/library_watch.hpp>
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/core/cpu_timers.hpp>
@@ -1776,7 +1777,7 @@ struct ProductUi::Impl {
     /// update). Polled here rather than only by the screen, which does not exist before the catalog first opens.
     void syncCatalog() {
         const CatalogChanges changes = catalog->poll();
-        if (changes.opened || changes.rowsChanged || changes.refreshed) {
+        if (changes.opened || changes.rowsChanged || changes.refreshed || changes.otherImport) {
             ++catalogRevision;
         }
         if (changes.opened) {
@@ -1785,7 +1786,12 @@ struct ProductUi::Impl {
         if (changes.refreshEnded) {
             refreshEnded(changes.refreshed);
         }
-        if (changes.rowsChanged && !changes.refreshed) {
+        if (changes.otherImport) {
+            // Another process imported the library (I7 step 7): the platforms and the list read again.
+            spdlog::info("Frame {}: another process imported the library: the catalog's list is read again",
+                         context.frameIndex());
+            model->refresh();
+        } else if (changes.rowsChanged && !changes.refreshed) {
             model->reread();
         }
         model->poll();
@@ -1797,6 +1803,7 @@ struct ProductUi::Impl {
         if (refreshAfter && !model->pending()) {
             RefreshRecord& record = refreshes.at(*std::exchange(refreshAfter, std::nullopt));
             record.after = currentView();
+            record.listedAt = unixMilliseconds(std::chrono::system_clock::now());
             spdlog::info("Frame {}: the catalog's list after the refresh: {} game(s), the selection {}",
                          context.frameIndex(), model->count(),
                          record.before && record.after->selectedId == record.before->selectedId ? "kept" : "moved");
@@ -1804,9 +1811,37 @@ struct ProductUi::Impl {
     }
 
     /// Starts a refresh of the catalog (the import on its worker), its phase opened for the frame times.
-    void requestRefresh(RefreshTrigger trigger) {
+    void requestRefresh(RefreshTrigger trigger) { static_cast<void>(requestRefresh(RefreshRequest{trigger, {}, false})); }
+
+    /// The file watcher's refresh (I7 step 7): false when the catalog cannot take it now.
+    bool requestWatcherRefresh(const WatchRefresh& watched, RefreshRequest request) {
+        if (!requestRefresh(std::move(request))) {
+            return false;
+        }
+        RefreshRecord& record = refreshes.back();
+        record.changes = watched.changes;
+        record.held = watched.held;
+        record.burst = watched.burst;
+        const auto now = std::chrono::steady_clock::now();
+        const auto since = now > watched.firstChange ? now - watched.firstChange : std::chrono::steady_clock::duration{};
+        record.firstChangeAt = unixMilliseconds(
+            std::chrono::system_clock::now() - std::chrono::duration_cast<std::chrono::system_clock::duration>(since));
+        return true;
+    }
+
+    [[nodiscard]] static std::uint64_t unixMilliseconds(std::chrono::system_clock::time_point at) {
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(at.time_since_epoch()).count();
+        return ms > 0 ? static_cast<std::uint64_t>(ms) : 0;
+    }
+
+    bool requestRefresh(RefreshRequest request) {
+        const RefreshTrigger trigger = request.trigger;
+        std::vector<std::string> systems;
+        for (const catalog::SystemName& system : request.systems) {
+            systems.push_back(system.str());
+        }
         const std::uint64_t frame = context.frameIndex();
-        if (!catalog->requestRefresh()) {
+        if (!catalog->requestRefresh(std::move(request))) {
             if (trigger == RefreshTrigger::CommandLine) {
                 RefreshRecord record;
                 record.trigger = std::string(toString(trigger));
@@ -1816,21 +1851,26 @@ struct ProductUi::Impl {
                 record.requestFrame = frame;
                 spdlog::warn("--refresh-library: no refresh: {}", record.error);
                 refreshes.push_back(std::move(record));
-            } else {
+            } else if (trigger != RefreshTrigger::Watcher) {
                 spdlog::info("Frame {}: Aggiorna libreria: no refresh now (one runs, or the catalog is not open)",
                              frame);
             }
-            return;
+            return false;
         }
         RefreshRecord record;
         record.trigger = std::string(toString(trigger));
+        record.systems = std::move(systems);
         record.outcome = std::string(ui::quick_catalog::kRefreshRunning);
         record.requestFrame = frame;
+        record.requestedAt = unixMilliseconds(std::chrono::system_clock::now());
         record.before = currentView();
         refreshes.push_back(std::move(record));
         context.frameTiming().openPhase(kPhaseRefresh);
-        spdlog::info("Frame {}: catalog refresh asked ({}): phase '{}' opened", frame, toString(trigger),
+        spdlog::info("Frame {}: catalog refresh asked ({}{}): phase '{}' opened", frame, toString(trigger),
+                     refreshes.back().systems.empty() ? std::string()
+                                                      : fmt::format(", {} system(s)", refreshes.back().systems.size()),
                      kPhaseRefresh);
+        return true;
     }
 
     /// The refresh ended: its record, the phase closed; after a commit the list runs again (the selection kept).
@@ -2597,6 +2637,10 @@ void ProductUi::setViewerVideo(const ViewerVideo& video) {
 
 std::uint64_t ProductUi::catalogRevision() const noexcept {
     return m_impl->catalogRevision;
+}
+
+bool ProductUi::requestWatcherRefresh(const WatchRefresh& watched, RefreshRequest request) {
+    return m_impl->requestWatcherRefresh(watched, std::move(request));
 }
 
 AppCatalog& ProductUi::catalog() noexcept {

@@ -220,6 +220,10 @@ bool pathIsWithin(const std::filesystem::path& child, const std::filesystem::pat
     return std::equal(parentElements->begin(), parentElements->end(), childElements->begin());
 }
 
+std::optional<std::vector<std::wstring>> foldedPathElements(const std::filesystem::path& path) {
+    return detail::foldedPathElements(path);
+}
+
 namespace {
 
 #if defined(_WIN32)

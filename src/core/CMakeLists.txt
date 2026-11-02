@@ -11,6 +11,7 @@ add_library(rv_core STATIC
     src/backups.cpp
     src/canonical_json.cpp
     src/case_fold.cpp
+    src/change_watcher.cpp
     src/cpu_timers.cpp
     src/expected.cpp
     src/file_io.cpp

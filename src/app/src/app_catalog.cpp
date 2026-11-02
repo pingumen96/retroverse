@@ -213,6 +213,7 @@ CatalogWorker::Options workerOptions(const EsdeAppCatalog::Options& options) {
     worker.wake = options.wake;
     worker.owner = options.owner;
     worker.createDatabase = options.createDatabase;
+    worker.otherImportsInterval = options.otherImportsInterval;
     if (options.adjust) {
         options.adjust(worker);
     }
@@ -395,6 +396,21 @@ CatalogChanges EsdeAppCatalog::poll() {
     if (results.opened && results.opened->world) {
         m_worldReader = std::move(results.opened->world); // the building job's reader (I4 step 5a)
     }
+    if (results.watchMap) {
+        m_watchMap = std::move(results.watchMap); // I7 step 7: the file watcher's roots
+        results.watchMap.reset();
+    }
+    // Another process's import (I7 step 7): its systems resolved again come as a refresh's, unless one of ours runs,
+    // whose end resolves them again anyway.
+    bool otherImport = false;
+    if (results.otherImport) {
+        if (!results.refreshed && !m_refreshRunning) {
+            results.refreshed = std::move(results.otherImport);
+            otherImport = true;
+            ++m_otherImports;
+        }
+        results.otherImport.reset();
+    }
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
     const bool refreshEnded = collectRefresh(results, m_source.ended());
     for (ResolvedLaunch& resolved : results.launches) {
@@ -454,7 +470,8 @@ CatalogChanges EsdeAppCatalog::poll() {
     }
     collectSessions(results);
     collectEmulators(results);
-    return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed};
+    return CatalogChanges{collected.opened, collected.rowsChanged, refreshEnded, collected.refreshed && !otherImport,
+                          otherImport};
 }
 
 void EsdeAppCatalog::collectEmulators(CatalogResults& results) {
@@ -534,11 +551,11 @@ bool EsdeAppCatalog::collectRefresh(CatalogResults& results, bool ended) {
     return true;
 }
 
-bool EsdeAppCatalog::requestRefresh() {
+bool EsdeAppCatalog::requestRefresh(RefreshRequest request) {
     if (m_stopped || m_refreshRunning || m_source.ended() || m_source.state() != CatalogState::Ready) {
         return false;
     }
-    if (!m_worker.refresh()) {
+    if (!m_worker.refresh(std::move(request))) {
         return false;
     }
     m_refreshRunning = true;
@@ -554,6 +571,7 @@ RefreshState EsdeAppCatalog::refreshState() const {
     state.progress = m_refreshProgress;
     state.last = m_lastRefresh;
     state.lastLists = m_lastRefreshLists;
+    state.otherImports = m_otherImports;
     return state;
 }
 

@@ -194,6 +194,9 @@ struct CommandLineOptions {
     // implements each.
     /// --refresh-library: refresh the catalog from ES-DE once it is open, as "Aggiorna libreria" does (I3 step 13r).
     bool refreshLibrary = false;
+    /// --watch-library (true), --no-watch-library (false): the file watcher (I7 step 7, ADR-0018 §10), which is on in
+    /// interactive runs and off in frame-limited ones unless asked (watchesLibrary()).
+    std::optional<bool> watchLibrary;
     /// --video-freeze-pts <seconds>, frame-limited runs only: the hero CRT's video seeks to this time and holds the
     /// frame, for goldens (ADR-0012 §7; I3 step 11). In [0, kMaxVideoFreezePtsSeconds].
     std::optional<double> videoFreezePtsSeconds;
@@ -244,6 +247,11 @@ struct CommandLineOptions {
 /// (Unsupported, "not implemented yet (I3 step <n>)", the option as context) so that a run never silently ignores it;
 /// ok when it sets none. parseCommandLine() returns this error, so such a run exits 2 like any invalid command line.
 [[nodiscard]] Status pendingOptionError(const CommandLineOptions& options);
+
+/// Whether the run watches the library's folders (ADR-0018 §10): --watch-library or --no-watch-library when given, else
+/// on in an interactive run and off in a frame-limited one (--smoke, --exit-after-frames), so that automated runs stay
+/// deterministic.
+[[nodiscard]] bool watchesLibrary(const CommandLineOptions& options) noexcept;
 
 /// Declares on `parser` the options of the host that every application built on AppHost understands (retroverse.exe,
 /// retroverse-asset-preview): --version, the window (--width, --height, --fullscreen, --hidden, --no-vsync), the run

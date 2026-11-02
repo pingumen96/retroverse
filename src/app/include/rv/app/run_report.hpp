@@ -115,8 +115,20 @@ using TimeSummary = core::DurationPercentiles;
 /// One refresh of the catalog from ES-DE during the run (I3 step 13r: "Aggiorna libreria", --refresh-library): the
 /// import on the catalog worker, in slices.
 struct RefreshRecord {
-    /// What started it: "command-line" (--refresh-library), "user" ("Aggiorna libreria").
+    /// What started it: "command-line" (--refresh-library), "user" ("Aggiorna libreria"), "wizard", "watcher" (the file
+    /// watcher's changes, I7 step 7).
     std::string trigger;
+    /// I7 step 7: the systems a partial refresh imported (RefreshRequest::systems); empty: every system.
+    std::vector<std::string> systems;
+    /// "watcher": the changes it answers, whether some waited for a game, the editor or a ride, whether its window
+    /// ended at its longest (a burst); the times, in milliseconds since the Unix epoch on this machine's clock: its first
+    /// change, its request, and the frame whose quick catalog list ran again after its commit (absent when it did not).
+    std::size_t changes = 0;
+    bool held = false;
+    bool burst = false;
+    std::optional<std::uint64_t> firstChangeAt;
+    std::optional<std::uint64_t> requestedAt;
+    std::optional<std::uint64_t> listedAt;
     /// How it ended (app::toString(RefreshOutcome): "done", "cancelled", "busy", "failed"), "running" when the run
     /// ended before the worker answered, "unavailable" for a --refresh-library the catalog could not take (not open,
     /// the mock catalog: nothing ran); its error.
@@ -151,6 +163,53 @@ struct RefreshRecord {
     std::optional<CatalogView> after;
 
     bool operator==(const RefreshRecord&) const = default;
+};
+
+/// A root of the file watcher (I7 step 7, ADR-0018 §10): its name ("rom", "system:<name>", "media", "gamelists",
+/// "custom-systems", "settings"; never a path), its mode when the run ended (core::toString(WatchMode): "arming",
+/// "notify", "poll", "lost"), times it was lost and came back, why it is not notified.
+struct WatchRootRecord {
+    std::string name;
+    std::string mode;
+    std::uint64_t lost = 0;
+    std::uint64_t back = 0;
+    std::string reason;
+
+    bool operator==(const WatchRootRecord&) const = default;
+};
+
+/// What a change seen was taken for, counted by reason (esde::ChangeScope::reason).
+struct WatchReasonCount {
+    std::string reason;
+    std::uint64_t count = 0;
+
+    bool operator==(const WatchReasonCount&) const = default;
+};
+
+/// The file watcher of a run (I7 step 7, ADR-0018 §10): present when it was on (--watch-library in a frame-limited
+/// run; interactive runs unless --no-watch-library).
+struct WatcherRecord {
+    /// It watched (a map came from the catalog).
+    bool enabled = false;
+    std::vector<WatchRootRecord> roots;
+    /// The changes the watcher brought, those that mattered (a system, or every system: overflows, roots lost and back
+    /// among them) and those that did not, by reason ("extension": an emulator's save beside a ROM, ...).
+    std::uint64_t changes = 0;
+    std::uint64_t mapped = 0;
+    std::uint64_t ignored = 0;
+    std::vector<WatchReasonCount> ignoredBy;
+    std::uint64_t overflows = 0;
+    std::uint64_t rootsLost = 0;
+    std::uint64_t rootsBack = 0;
+    /// Changes that waited for a game, the editor or a ride to end.
+    std::uint64_t held = 0;
+    /// Refreshes started for it, and asked while the catalog could not take one (asked again later).
+    std::uint64_t refreshes = 0;
+    std::uint64_t refused = 0;
+    /// Another process's imports followed (the lists and the building asked again).
+    std::uint64_t otherImports = 0;
+
+    bool operator==(const WatcherRecord&) const = default;
 };
 
 /// The quick catalog of a run of retroverse.exe: absent only in runs without the product UI (the model viewer).
@@ -2377,6 +2436,8 @@ struct RunReport {
     std::optional<ControlsRecord> controls;
     /// The on-screen keyboard (I7 step 5; runs that opened it).
     std::optional<KeyboardRecord> keyboard;
+    /// The file watcher (I7 step 7; runs where it was on).
+    std::optional<WatcherRecord> watcher;
     /// Frame times over the run and per phase, the main thread's CPU sections, the GPU memory (I3 step 0d; the host:
     /// AppHost).
     FrameTimesRecord frameTimes;

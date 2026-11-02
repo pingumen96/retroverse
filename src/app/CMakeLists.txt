@@ -36,6 +36,7 @@ add_library(rv_app_cli STATIC
     src/input_context.cpp
     src/launch_flow.cpp
     src/launch_outcome.cpp
+    src/library_watch.cpp
     src/mock_catalog.cpp
     src/model_viewer.cpp
     src/overlay_policy.cpp
@@ -91,6 +92,7 @@ add_library(rv_app_catalog STATIC
     src/game_screens.cpp
     src/hub_showcase.cpp
     src/library_refresh.cpp
+    src/library_watcher.cpp
     src/room_screen.cpp
     src/room_snapshot.cpp
     src/screen_verdicts.cpp

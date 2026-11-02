@@ -1262,6 +1262,59 @@ std::optional<glm::vec4> readBox(FieldReader& fields, std::string_view key) {
     return fields.has(key) ? std::optional<glm::vec4>(fields.vec4(key)) : std::nullopt;
 }
 
+Json watcherToJson(const WatcherRecord& watcher) {
+    Json roots = Json::array();
+    for (const WatchRootRecord& root : watcher.roots) {
+        roots.push_back(Json{{"name", root.name},
+                             {"mode", root.mode},
+                             {"lost", root.lost},
+                             {"back", root.back},
+                             {"reason", root.reason}});
+    }
+    Json ignoredBy = Json::array();
+    for (const WatchReasonCount& reason : watcher.ignoredBy) {
+        ignoredBy.push_back(Json{{"reason", reason.reason}, {"count", reason.count}});
+    }
+    return Json{{"enabled", watcher.enabled},     {"roots", std::move(roots)},
+                {"changes", watcher.changes},     {"mapped", watcher.mapped},
+                {"ignored", watcher.ignored},     {"ignoredBy", std::move(ignoredBy)},
+                {"overflows", watcher.overflows}, {"rootsLost", watcher.rootsLost},
+                {"rootsBack", watcher.rootsBack}, {"held", watcher.held},
+                {"refreshes", watcher.refreshes}, {"refused", watcher.refused},
+                {"otherImports", watcher.otherImports}};
+}
+
+WatcherRecord readWatcher(FieldReader& fields) {
+    WatcherRecord watcher;
+    watcher.enabled = fields.boolean("enabled");
+    for (FieldReader& root : fields.objectArray("roots")) {
+        WatchRootRecord record;
+        record.name = root.string("name");
+        record.mode = root.string("mode");
+        record.lost = root.count("lost");
+        record.back = root.count("back");
+        record.reason = root.string("reason");
+        watcher.roots.push_back(std::move(record));
+    }
+    watcher.changes = fields.count("changes");
+    watcher.mapped = fields.count("mapped");
+    watcher.ignored = fields.count("ignored");
+    for (FieldReader& reason : fields.objectArray("ignoredBy")) {
+        WatchReasonCount count;
+        count.reason = reason.string("reason");
+        count.count = reason.count("count");
+        watcher.ignoredBy.push_back(std::move(count));
+    }
+    watcher.overflows = fields.count("overflows");
+    watcher.rootsLost = fields.count("rootsLost");
+    watcher.rootsBack = fields.count("rootsBack");
+    watcher.held = fields.count("held");
+    watcher.refreshes = fields.count("refreshes");
+    watcher.refused = fields.count("refused");
+    watcher.otherImports = fields.count("otherImports");
+    return watcher;
+}
+
 Json keyboardToJson(const KeyboardRecord& keyboard) {
     Json json{{"opened", keyboard.opened},   {"via", keyboard.via},           {"open", keyboard.open},
               {"typed", keyboard.typed},     {"deleted", keyboard.deleted},   {"confirmed", keyboard.confirmed},
@@ -2888,6 +2941,22 @@ CatalogView readView(FieldReader& fields) {
 Json refreshToJson(const RefreshRecord& refresh) {
     Json json;
     json["trigger"] = refresh.trigger;
+    // I7 step 7 (optional when read).
+    json["systems"] = refresh.systems;
+    json["changes"] = refresh.changes;
+    json["held"] = refresh.held;
+    json["burst"] = refresh.burst;
+    Json at = Json::object();
+    if (refresh.firstChangeAt) {
+        at["firstChange"] = *refresh.firstChangeAt;
+    }
+    if (refresh.requestedAt) {
+        at["requested"] = *refresh.requestedAt;
+    }
+    if (refresh.listedAt) {
+        at["listed"] = *refresh.listedAt;
+    }
+    json["at"] = std::move(at);
     json["outcome"] = refresh.outcome;
     json["error"] = refresh.error;
     Json frames;
@@ -2925,6 +2994,15 @@ Json refreshToJson(const RefreshRecord& refresh) {
 RefreshRecord readRefresh(FieldReader& fields) {
     RefreshRecord refresh;
     refresh.trigger = fields.string("trigger");
+    refresh.systems = fields.optionalStringArray("systems");
+    refresh.changes = static_cast<std::size_t>(fields.optionalCount("changes", kMaxSize).value_or(0));
+    refresh.held = fields.has("held") && fields.boolean("held");
+    refresh.burst = fields.has("burst") && fields.boolean("burst");
+    if (auto at = fields.optionalObject("at")) {
+        refresh.firstChangeAt = at->optionalCount("firstChange");
+        refresh.requestedAt = at->optionalCount("requested");
+        refresh.listedAt = at->optionalCount("listed");
+    }
     refresh.outcome = fields.string("outcome");
     refresh.error = fields.string("error");
     if (auto frames = fields.object("frames")) {
@@ -3492,6 +3570,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.keyboard) {
         json["keyboard"] = keyboardToJson(*report.keyboard);
     }
+    if (report.watcher) {
+        json["watcher"] = watcherToJson(*report.watcher);
+    }
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -3676,6 +3757,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto keyboard = fields.optionalObject("keyboard")) {
         report.keyboard = readKeyboard(*keyboard);
+    }
+    if (auto watcher = fields.optionalObject("watcher")) {
+        report.watcher = readWatcher(*watcher);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

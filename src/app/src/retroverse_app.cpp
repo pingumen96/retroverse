@@ -32,6 +32,7 @@
 #include <rv/app/bindings.hpp>
 #include <rv/app/controller_watch.hpp>
 #include <rv/app/input_context.hpp>
+#include <rv/app/library_watcher.hpp>
 #include <rv/app/mock_catalog.hpp>
 #include <rv/app/model_viewer.hpp>
 #include <rv/app/overlay_policy.hpp>
@@ -63,6 +64,7 @@
 #include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
+#include <rv/platform_win/directory_watcher.hpp>
 #include <rv/platform_win/foreground.hpp>
 #include <rv/platform_win/process_priority.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
@@ -304,6 +306,10 @@ std::unique_ptr<AppCatalog> makeEsdeCatalog(AppContext& context, bool createData
     esde.owner = catalog::SessionOwner{process.processId, process.creationTime};
     esde.processCreated = process.creationTime;
     esde.createDatabase = createDatabase;
+    // I7 step 7 (ADR-0018 §10): with the file watcher, another process's import is followed too.
+    if (watchesLibrary(context.options())) {
+        esde.otherImportsInterval = kOtherImportsInterval;
+    }
     return std::make_unique<EsdeAppCatalog>(std::move(esde));
 }
 
@@ -651,6 +657,10 @@ struct RetroverseApp::State {
     bool productLayerOpen = false;
     /// QuickCatalog pressed in a run without a catalog (the model viewer): logged once.
     bool catalogNoticeLogged = false;
+    /// I7 step 7 (ADR-0018 §10): the file watcher's thread and what follows its changes; none when the run does not
+    /// watch (watchesLibrary()) or has no ES-DE catalog. The watcher first: the follower refers to it.
+    std::unique_ptr<platform_win::DirectoryWatcher> directoryWatcher;
+    std::unique_ptr<LibraryWatcher> libraryWatcher;
     /// The product UI (the quick catalog, the game-session panel) and its launches: over the ES-DE catalog of the user
     /// data directory, or --mock-catalog's; none in the model viewer.
     std::unique_ptr<ProductUi> product;
@@ -1615,6 +1625,45 @@ struct RetroverseApp::State {
         }
     }
 
+    /// I7 step 7 (ADR-0018 §10): the catalog's map armed, the watcher's changes followed, and the refresh they make due
+    /// asked of the catalog; nothing starts while a game runs, in the editor, during a ride or under the wizard.
+    void followWatcher() {
+        if (!libraryWatcher || !product) {
+            return;
+        }
+        if (std::optional<esde::ChangeScopeMap> map = product->catalog().takeWatchMap()) {
+            libraryWatcher->arm(std::move(*map));
+        }
+        const bool held = product->launchActive() || product->wizardOpen() ||
+                          (world && (world->riding() || world->editing()));
+        const auto now = std::chrono::steady_clock::now();
+        if (const std::optional<WatchRefresh> due = libraryWatcher->poll(now, held)) {
+            if (product->requestWatcherRefresh(*due, LibraryWatcher::requestOf(*due))) {
+                libraryWatcher->started(now);
+                spdlog::info("Library watcher: {} change(s) since {:.1f} s ago: a refresh of {}{}", due->changes,
+                             std::chrono::duration<double>(now - due->firstChange).count(),
+                             due->everything ? std::string("every system")
+                                             : fmt::format("{} system(s)", due->systems.size()),
+                             due->held ? " (some waited for a game, the editor or a ride)" : "");
+            } else {
+                libraryWatcher->refused();
+            }
+        }
+    }
+
+    /// The run report's `watcher`.
+    void recordWatcher(RunReport& report) const {
+        if (!libraryWatcher) {
+            return;
+        }
+        WatcherRecord record;
+        libraryWatcher->record(record);
+        if (product) {
+            record.otherImports = product->catalog().refreshState().otherImports;
+        }
+        report.watcher = std::move(record);
+    }
+
     /// A lighting or CRT change, written, reaches the floor; a lockstep run waits for the write here, so that the
     /// commit falls on the same frame every time.
     void followLookCommit(const AppContext& context) {
@@ -2437,6 +2486,14 @@ Status RetroverseApp::onInit(AppContext& context) {
             }
         };
         state->product->setLaunchHooks(std::move(hooks));
+        // I7 step 7 (ADR-0018 §10): the file watcher over the ES-DE catalog (the wizard's once its import made one).
+        if (!*mock && watchesLibrary(options)) {
+            platform_win::DirectoryWatcher::Options watching;
+            watching.wake = context.wakeCallback();
+            state->directoryWatcher = std::make_unique<platform_win::DirectoryWatcher>(std::move(watching));
+            state->libraryWatcher = std::make_unique<LibraryWatcher>(*state->directoryWatcher);
+            spdlog::info("Library watcher on: the library's folders are watched once the catalog opens");
+        }
         if (room) {
             state->startWorld(context, std::move(decided));
         }
@@ -2757,6 +2814,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         }
     }
     state.followLookCommit(context);
+    state.followWatcher();
     if (state.world) {
         // The room (I3 step 10b): its result committed at this frame boundary, its covers' round.
         state.world->update(*state.product, false, state.simulatedSeconds);
@@ -2808,6 +2866,7 @@ void RetroverseApp::onIdle(AppContext& context) {
     }
     State& state = *m_state;
     state.product->onIdle();
+    state.followWatcher();
     // A lockstep run's wait for the room (never while a game has the screen: nothing is committed or uploaded then).
     if (state.world && !state.product->launchActive()) {
         state.world->update(*state.product, true, state.simulatedSeconds);
@@ -2831,6 +2890,7 @@ void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
                       processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
     state.updateScreens(context, true);
     state.updateAudio(nullptr);
+    state.followWatcher();
 }
 
 void RetroverseApp::onShutdown(AppContext& context) {
@@ -2859,6 +2919,7 @@ void RetroverseApp::onShutdown(AppContext& context) {
             m_state->settings->flush();
         }
         m_state->recordSettings(context, context.report());
+        m_state->recordWatcher(context.report());
         // Normal for the rest of the exit (the joins and the report need no boost), the report's last change. The class
         // ends with the process: the console that started it never had it.
         m_state->setPriority(context.frameIndex(), PriorityChoice{false, "exit"});

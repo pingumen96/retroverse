@@ -491,6 +491,16 @@ void WorldSession::followRefresh(ProductUi& product) {
         return;
     }
     const RefreshState state = catalog.refreshState();
+    if (state.otherImports != m_otherImports) {
+        // I7 step 7: another process imported the library: the building follows as after a refresh of ours.
+        m_otherImports = state.otherImports;
+        if (!product.wizardOpen()) {
+            if (m_loader && m_mediaRootPath) {
+                m_loader->retry(*m_mediaRootPath);
+            }
+            requestLiveUpdate();
+        }
+    }
     if (!state.last || refreshSignature(state.last) == m_lastRefresh) {
         return;
     }
