@@ -93,6 +93,10 @@ TEST_CASE("launch table on the real library: every system's readiness as profile
     request.executable = rv::test::testProgramsDir() / "retroverse-cli.exe";
     request.arguments = {"--data-dir", rv::core::pathToUtf8(folder), "profiles", "--json", "--output",
                          rv::core::pathToUtf8(report)};
+    request.workingDirectory = folder;
+    request.stdoutFile = folder / "profiles.log";
+    request.stderrFile = request.stdoutFile;
+    request.environment = {{"RV_LAUNCH_ALLOWLIST", std::string()}}; // nothing may start
     const auto ran = rv::test::runChild(request);
     REQUIRE(ran.has_value());
     REQUIRE(ran->exitCode == 0);
