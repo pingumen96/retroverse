@@ -189,19 +189,26 @@ struct Rows {
     int option = 0;
 };
 Rows rowsOf(const Library& library, std::string_view option) {
-    const AppRun probe = library.run("probe", Script{}.openScreen());
-    skipWithoutOpenGl(probe);
+    const AppRun list = library.run("probe_list", Script{}.openScreen());
+    skipWithoutOpenGl(list);
+    requireCleanRun(list);
+    INFO(list.describe());
+    REQUIRE(list.report->emulators);
+    const auto& listed = list.report->emulators->systems;
+    const auto row = std::find_if(listed.begin(), listed.end(), [](const auto& system) { return system.name == "gb"; });
+    REQUIRE(row != listed.end());
+    const int system = static_cast<int>(row - listed.begin());
+    // A system's options come when it opens.
+    const AppRun probe = library.run("probe", Script{}.openScreen().press("ui_down", system).press("ui_activate").wait(3));
     requireCleanRun(probe);
     INFO(probe.describe());
-    REQUIRE(probe.report->emulators);
     const auto& systems = probe.report->emulators->systems;
-    const auto gb = std::find_if(systems.begin(), systems.end(), [](const auto& row) { return row.name == "gb"; });
-    REQUIRE(gb != systems.end());
+    const auto gb = systems.begin() + system;
     const auto found = std::find_if(gb->options.begin(), gb->options.end(), [&](const std::string& row) {
         return row.starts_with(std::string(option) + "=");
     });
     REQUIRE(found != gb->options.end());
-    return Rows{static_cast<int>(gb - systems.begin()), static_cast<int>(found - gb->options.begin())};
+    return Rows{system, static_cast<int>(found - gb->options.begin())};
 }
 
 /// From the world to the option at `rows`, its Choice view showing.
@@ -231,7 +238,8 @@ TEST_CASE("emulators: a system requiring configuration repaired from the pad and
     const Library library("repaired");
     const Rows rows = rowsOf(library, "fake-return");
 
-    const AppRun before = library.run("before", Script{}.openScreen());
+    const AppRun before =
+        library.run("before", Script{}.openScreen().press("ui_down", rows.system).press("ui_activate").wait(3));
     skipWithoutOpenGl(before);
     {
         const rv::app::EmulatorsSystemRecord& gb = systemOf(*before.report->emulators, "gb");

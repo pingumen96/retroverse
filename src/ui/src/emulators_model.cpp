@@ -226,6 +226,14 @@ void EmulatorsModel::setTable(std::vector<EmulatorSystem> systems) {
     if (const EmulatorSystem* shown = system()) {
         focused = shown->name;
     }
+    // A list holds no options: those of the system shown stay until its own answer, asked again.
+    for (EmulatorSystem& row : systems) {
+        const auto known = std::find_if(m_systems.begin(), m_systems.end(),
+                                        [&](const EmulatorSystem& old) { return old.name == row.name; });
+        if (row.options.empty() && known != m_systems.end()) {
+            row.options = std::move(known->options);
+        }
+    }
     m_systems = std::move(systems);
     m_state = EmulatorsState::Listed;
     const auto again = std::find_if(m_systems.begin(), m_systems.end(),
@@ -233,7 +241,17 @@ void EmulatorsModel::setTable(std::vector<EmulatorSystem> systems) {
     m_system = again == m_systems.end() ? 0 : static_cast<std::size_t>(again - m_systems.begin());
     const std::size_t rows = optionRows();
     m_option = rows == 0 ? 0 : std::min(m_option, rows - 1);
-    // What the choice stands on as it is now: a program chosen makes an option ready.
+    syncChosen();
+    if (m_view != EmulatorsView::Systems && system() == nullptr) {
+        m_view = EmulatorsView::Systems; // the system went away
+        m_chosen.reset();
+    } else if (m_view == EmulatorsView::Choice || m_view == EmulatorsView::System) {
+        m_request = commandOf(EmulatorsCommandKind::Samples);
+    }
+    ++m_revision;
+}
+
+void EmulatorsModel::syncChosen() {
     if (m_chosen && system() != nullptr) {
         const auto& options = system()->options;
         const auto same = std::find_if(options.begin(), options.end(), [&](const EmulatorOption& option) {
@@ -245,9 +263,19 @@ void EmulatorsModel::setTable(std::vector<EmulatorSystem> systems) {
     }
     if (m_view == EmulatorsView::Choice) {
         settleButton();
-    } else if ((m_view == EmulatorsView::System || m_view == EmulatorsView::Testing) && system() == nullptr) {
-        m_view = EmulatorsView::Systems; // the system went away
     }
+}
+
+void EmulatorsModel::setOptions(const std::string& name, std::vector<EmulatorOption> options) {
+    const auto found = std::find_if(m_systems.begin(), m_systems.end(),
+                                    [&](const EmulatorSystem& shown) { return shown.name == name; });
+    if (found == m_systems.end()) {
+        return;
+    }
+    found->options = std::move(options);
+    const std::size_t rows = optionRows();
+    m_option = rows == 0 ? 0 : std::min(m_option, rows - 1);
+    syncChosen();
     ++m_revision;
 }
 
@@ -264,8 +292,10 @@ void EmulatorsModel::setSamples(const std::string& system, std::vector<EmulatorS
     if (shown == nullptr || shown->name != system) {
         return; // the user went elsewhere
     }
+    if (samples != m_samples) {
+        m_sample = 0; // asked again after a change, the same list keeps the game shown
+    }
     m_samples = std::move(samples);
-    m_sample = 0;
     m_samplesKnown = true;
     if (m_view == EmulatorsView::Choice) {
         settleButton();

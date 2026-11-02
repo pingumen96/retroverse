@@ -260,6 +260,39 @@ TEST_CASE("ui/emulators: a table that comes back keeps the system and the choice
     CHECK(gone.view() == EmulatorsView::Systems);
 }
 
+TEST_CASE("ui/emulators: a list holds no options: they come with the system, and stay over a list that comes back",
+          "[ui][emulators]") {
+    EmulatorsModel model;
+    model.open();
+    static_cast<void>(model.takeRequest());
+    std::vector<EmulatorSystem> rows = table();
+    const std::vector<EmulatorOption> options = rows[0].options;
+    rows[0].options.clear();
+    rows[1].options.clear();
+    const std::vector<EmulatorSystem> bare = rows;
+    model.setTable(rows);
+    CHECK_FALSE(model.takeRequest().has_value()); // the list asks for nothing
+    static_cast<void>(model.apply(UiCommand::Activate));
+    CHECK(model.optionRows() == 0);
+    model.setOptions("gb", options);
+    model.setOptions("nothing", options);
+    CHECK(model.optionRows() == 3);
+    CHECK_FALSE(model.apply(UiCommand::Down).has_value());
+    CHECK_FALSE(model.apply(UiCommand::Activate).has_value());
+    CHECK(model.option()->value == "Home");
+
+    model.setTable(bare); // after a change
+    CHECK(model.optionRows() == 3);
+    const auto asked = model.takeRequest();
+    REQUIRE(asked.has_value());
+    CHECK(asked->kind == EmulatorsCommandKind::Samples);
+    CHECK(asked->system == "gb");
+    std::vector<EmulatorOption> changed = options;
+    changed[1].verified = true;
+    model.setOptions("gb", changed);
+    CHECK(model.option()->verified);
+}
+
 TEST_CASE("ui/emulators: clicks press what the keys press", "[ui][emulators]") {
     EmulatorsModel model = listed();
     EmulatorsClick system;

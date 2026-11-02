@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -49,7 +50,7 @@ std::optional<fs::path> pathVariable(const wchar_t* name) {
 
 } // namespace
 
-TEST_CASE("launch table on the real library: every system's readiness as profiles says, within the screen's second",
+TEST_CASE("launch table on the real library: every system's readiness as profiles says, a system's options within a second",
           "[.real-library][real-library][emulators_real]") {
     const auto home = pathVariable(L"RV_REAL_ESDE_HOME");
     const auto install = pathVariable(L"RV_REAL_ESDE_INSTALL");
@@ -77,15 +78,19 @@ TEST_CASE("launch table on the real library: every system's readiness as profile
     auto library = rv::library::loadLaunchLibrary(profile, paths);
     REQUIRE(library.has_value());
 
-    // As the worker makes it: the configuration read once, each row without its gamelist.
-    const auto start = std::chrono::steady_clock::now();
+    // As the worker makes a row when a system opens: the configuration read once, without its gamelist. The list itself
+    // translates nothing (ADR-0018 §16): it shows what the catalog's opening resolved.
     std::size_t rows = 0;
+    double tableMs = 0.0;
+    double slowestMs = 0.0;
     for (const rv::catalog::SystemInfo& system : (*library)->systemInfos) {
+        const auto start = std::chrono::steady_clock::now();
         static_cast<void>(rv::library::systemLaunchRow(**library, system, {}));
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        tableMs += ms;
+        slowestMs = std::max(slowestMs, ms);
         ++rows;
     }
-    const double tableMs =
-        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 
     const std::vector<rv::library::SystemLaunchRow> table = rv::library::launchTable(**library);
     const fs::path report = folder / "profiles.json";
@@ -115,6 +120,7 @@ TEST_CASE("launch table on the real library: every system's readiness as profile
     for (const auto& [readiness, count] : counts) {
         summary += fmt::format(" {}={}", readiness, count);
     }
-    std::cout << fmt::format("Real emulators: {} system(s) in {:.0f} ms,{}\n", rows, tableMs, summary);
-    CHECK(tableMs < 1000.0);
+    std::cout << fmt::format("Real emulators: {} system(s) in {:.0f} ms, the slowest {:.0f} ms,{}\n", rows, tableMs,
+                             slowestMs, summary);
+    CHECK(slowestMs < 1000.0);
 }

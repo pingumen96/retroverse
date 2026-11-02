@@ -107,7 +107,13 @@ struct Worker {
         const auto row = std::find_if(rows.begin(), rows.end(),
                                       [&](const rv::ui::EmulatorSystem& shown) { return shown.name == system; });
         REQUIRE(row != rows.end());
-        return *row;
+        rv::ui::EmulatorSystem opened = *row;
+        CHECK(opened.options.empty()); // a system's options come when it opens
+        all.emulatorSamples.reset();
+        worker.sampleGames(2, rv::catalog::SystemName::parse(system).value(), 5);
+        wait([&] { return all.emulatorSamples.has_value(); });
+        opened.options = all.emulatorSamples->options;
+        return opened;
     }
 
     /// A launch test asked and its resolution awaited.

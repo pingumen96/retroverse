@@ -96,10 +96,11 @@ struct EmulatorTable {
     double milliseconds = 0.0;
 };
 
-/// The games a launch test of `system` offers.
+/// A system opened: its options and the games a launch test of it offers.
 struct EmulatorSamples {
     std::uint64_t serial = 0;
     std::string system;
+    std::vector<ui::EmulatorOption> options;
     std::vector<ui::EmulatorSample> games;
 };
 

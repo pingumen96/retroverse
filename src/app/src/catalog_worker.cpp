@@ -435,12 +435,14 @@ private:
         readChoices();
         std::vector<CatalogSystem> systems;
         m_systems.clear();
+        m_summaries.clear();
         for (const catalog_db::SystemSummary& summary : summaries) {
             if (summary.library != m_profile.id || summary.games == 0) {
                 continue;
             }
             systems.push_back(systemState(summary));
             m_systems.emplace(summary.system.name.str(), systems.back());
+            m_summaries.push_back(summary);
         }
         return systems;
     }
@@ -491,6 +493,11 @@ private:
             library::resolveSystemLaunch(*m_library, summary.system, assignedFor(summary.system.name));
         system.choice = resolution.chosen.choice;
         system.perGame = library::resolvedPerGame(resolution);
+        system.source = std::string(catalog::toString(resolution.chosen.source));
+        const launcher::EmulatorProfile* profile =
+            system.choice.kind == launcher::LaunchChoiceKind::Profile ? m_library->profiles.find(system.choice.value)
+                                                                      : nullptr;
+        system.choiceName = profile != nullptr ? profile->displayName : system.choice.value;
         system.launch = launchStateOf(resolution,
                                       verifiedWith(m_verified, system.name, system.choice, resolution.translation));
         spdlog::debug("Catalog system {}: {} ({}){}", system.name.str(), catalog::toString(system.launch.readiness),
@@ -655,19 +662,29 @@ private:
         const Clock::time_point start = Clock::now();
         EmulatorTable table;
         table.serial = job.serial;
-        auto summaries = m_query->systems();
         if (!m_library) {
             table.error = *m_libraryError;
-        } else if (!summaries) {
-            table.error = summaries.error();
         } else {
-            for (const catalog_db::SystemSummary& summary : *summaries) {
-                if (summary.library == m_profile.id && summary.games > 0) {
-                    const library::SystemLaunchRow row =
-                        library::systemLaunchRow(*m_library, summary.system, summary.system.alternativeEmulator);
-                    table.systems.push_back(emulatorSystemOf(row, summary.games, m_verified,
-                                                             m_assigned.contains(summary.system.name.str())));
+            // As resolved already: translating every command of every system takes seconds on a real library (each
+            // looks for its program in the registry, System32 and PATH), ADR-0018 §16 asks a second. Opening a system
+            // translates its options.
+            for (const catalog_db::SystemSummary& summary : m_summaries) {
+                const auto found = m_systems.find(summary.system.name.str());
+                if (found == m_systems.end()) {
+                    continue;
                 }
+                const CatalogSystem& system = found->second;
+                ui::EmulatorSystem row;
+                row.name = system.name.str();
+                row.fullName = system.fullName;
+                row.games = system.games;
+                row.readiness = std::string(catalog::toString(system.launch.readiness));
+                row.blocker = system.launch.blocker;
+                row.source = system.source;
+                row.choice = system.choiceName;
+                row.verified = system.launch.verified;
+                row.stored = m_assigned.contains(row.name);
+                table.systems.push_back(std::move(row));
             }
         }
         table.milliseconds = millisecondsSince(start);
@@ -680,6 +697,16 @@ private:
         answer.serial = job.serial;
         answer.system = job.system.str();
         prepareLocalTime();
+        if (m_library) {
+            const auto found = std::find_if(m_summaries.begin(), m_summaries.end(), [&](const auto& summary) {
+                return summary.system.name == job.system;
+            });
+            if (found != m_summaries.end()) {
+                const library::SystemLaunchRow row =
+                    library::systemLaunchRow(*m_library, found->system, found->system.alternativeEmulator);
+                answer.options = emulatorSystemOf(row, found->games, m_verified, false).options;
+            }
+        }
         if (auto games = library::sampleGames(*m_query, job.system, m_localToUtc, job.limit)) {
             answer.games.reserve(games->size());
             for (const library::SampleGame& game : *games) {
@@ -712,10 +739,12 @@ private:
         }
         CatalogResolved resolved;
         m_systems.clear();
+        m_summaries.clear();
         for (const catalog_db::SystemSummary& summary : *summaries) {
             if (summary.library == m_profile.id && summary.games > 0) {
                 resolved.systems.push_back(systemState(summary));
                 m_systems.emplace(summary.system.name.str(), resolved.systems.back());
+                m_summaries.push_back(summary);
             }
         }
         resolved.generation = ++m_generation;
@@ -1185,8 +1214,9 @@ private:
     std::optional<Error> m_libraryError;
     /// ES-DE's <lastplayed> to UTC for the favourites and recent games, made on first use (I4 step 7b).
     catalog::LocalTimeToUtc m_localToUtc;
-    /// The systems with games, by name.
+    /// The systems with games, by name, and as the catalog holds them, in the chips' order.
     std::map<std::string, CatalogSystem, std::less<>> m_systems;
+    std::vector<catalog_db::SystemSummary> m_summaries;
     std::map<std::string, launcher::LaunchChoice, std::less<>> m_assigned;
     VerifiedPrograms m_verified;
     std::map<std::uint64_t, Recording> m_recordings;

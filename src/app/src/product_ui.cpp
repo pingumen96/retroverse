@@ -466,12 +466,9 @@ struct ProductUi::Impl {
                 record.tableMs = std::max(record.tableMs, table->milliseconds);
                 record.systems.clear();
                 for (const ui::EmulatorSystem& system : table->systems) {
-                    EmulatorsSystemRecord row{system.name,   system.games,    system.readiness, system.blocker,
-                                              system.source, system.choice,   system.verified,  system.stored, {}};
-                    for (const ui::EmulatorOption& option : system.options) {
-                        row.options.push_back(fmt::format("{}={}", option.name, option.readiness));
-                    }
-                    record.systems.push_back(std::move(row));
+                    record.systems.push_back(EmulatorsSystemRecord{system.name, system.games, system.readiness,
+                                                                   system.blocker, system.source, system.choice,
+                                                                   system.verified, system.stored, {}});
                 }
                 emulators.setTable(std::move(table->systems));
             }
@@ -482,9 +479,19 @@ struct ProductUi::Impl {
             }
         }
         if (std::optional<EmulatorSamples> samples = catalog->takeSampleGames()) {
+            EmulatorsRecord& record = emulatorsReport();
             if (!samples->games.empty()) {
-                emulatorsReport().sample = samples->games.front().title;
+                record.sample = samples->games.front().title;
             }
+            for (EmulatorsSystemRecord& row : record.systems) {
+                if (row.name == samples->system) {
+                    row.options.clear();
+                    for (const ui::EmulatorOption& option : samples->options) {
+                        row.options.push_back(fmt::format("{}={}", option.name, option.readiness));
+                    }
+                }
+            }
+            emulators.setOptions(samples->system, std::move(samples->options));
             emulators.setSamples(samples->system, std::move(samples->games));
         }
         if (std::optional<ChoiceChanged> changed = catalog->takeChoiceChanged()) {

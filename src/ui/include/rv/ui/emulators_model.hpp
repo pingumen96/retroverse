@@ -87,7 +87,7 @@ struct EmulatorSystem {
     bool verified = false;
     /// A choice of Retroverse's is stored for it (the catalog database's): "ES-DE" takes it away.
     bool stored = false;
-    /// The ready options first (library::suggestedOptions()).
+    /// The ready options first (library::suggestedOptions()); empty until the system is opened.
     std::vector<EmulatorOption> options;
 
     bool operator==(const EmulatorSystem&) const = default;
@@ -165,6 +165,8 @@ public:
     void setTable(std::vector<EmulatorSystem> systems);
     /// No table can be had: no catalog of ES-DE's, or it cannot be read.
     void setUnavailable();
+    /// What a system opened asked for: its options (the list holds none: translating them all takes seconds), its games.
+    void setOptions(const std::string& system, std::vector<EmulatorOption> options);
     void setSamples(const std::string& system, std::vector<EmulatorSample> samples);
     /// A launch test began: Testing shows, until testEnded().
     void testStarted();
@@ -218,6 +220,8 @@ private:
     [[nodiscard]] std::optional<EmulatorsCommand> enter();
     [[nodiscard]] EmulatorsCommand commandOf(EmulatorsCommandKind kind) const;
     void settleButton();
+    /// What the choice stands on as it is now: a program chosen makes an option ready.
+    void syncChosen();
 
     bool m_open = false;
     EmulatorsState m_state = EmulatorsState::Loading;

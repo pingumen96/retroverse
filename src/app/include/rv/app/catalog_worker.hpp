@@ -112,6 +112,10 @@ struct CatalogSystem {
     /// the choice it rests on.
     GameLaunchState launch;
     launcher::LaunchChoice choice;
+    /// I7 step 4: where the choice comes from (catalog::toString(ChoiceSource)) and its name as people read it (a command's
+    /// label, a profile's display name): the emulators screen's list, which resolves nothing again.
+    std::string source;
+    std::string choiceName;
     /// Its resolution leaves something to each game (an %INJECT% file, a %STARTDIR%=%GAMEDIR% folder): each game is
     /// resolved for its own readiness.
     bool perGame = false;
@@ -323,9 +327,11 @@ public:
     /// Resolves the launch of `game` right before it starts (its file on disk now, the database's choices); `test`: a
     /// launch test, with that choice (CatalogResults::tests says how it ended, once its session ended).
     void resolve(std::uint64_t token, catalog::GameId game, std::optional<LaunchTestChoice> test = std::nullopt);
-    /// The table of the systems with games (CatalogResults::emulatorTable), answered with `serial`.
+    /// The table of the systems with games (CatalogResults::emulatorTable), answered with `serial`: what they stand on as
+    /// resolved already (ADR-0018 §16: at once), without their options.
     void emulatorTable(std::uint64_t serial);
-    /// The games a launch test of `system` offers, at most `limit` (CatalogResults::emulatorSamples).
+    /// The options of `system`, each translated now, and the games a launch test of it offers, at most `limit`
+    /// (CatalogResults::emulatorSamples).
     void sampleGames(std::uint64_t serial, catalog::SystemName system, std::size_t limit);
     /// Changes what is stored (CatalogResults::changes), then resolves the systems again (::resolved).
     void changeChoice(std::uint64_t serial, ChoiceChange change);
