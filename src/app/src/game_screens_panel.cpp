@@ -252,6 +252,8 @@ struct GameScreensPanel::Impl {
     std::unique_ptr<ui::GameInfoScreen> info;
     ui::MediaViewerModel model;
     std::optional<ui::GameInfoContent> infoContent;
+    /// I7 step 6: the focused row of Informazioni (nothing: the text has the input).
+    std::optional<ui::InfoRow> infoRow;
     /// The viewer's opening (its loader jobs carry it) and the pictures waiting for their upload.
     std::uint64_t serial = 0;
     std::vector<std::optional<gl::Texture2D>> textures;
@@ -369,6 +371,8 @@ void GameScreensPanel::openInfo(ui::GameInfoContent content, std::string from, s
     }
     m_gameId = content.gameId;
     m_from = std::move(from);
+    impl.infoRow.reset();
+    impl.info->setFocusedRow(std::nullopt);
     std::string versions;
     for (const ui::OtherVersion& version : content.versions) {
         versions += (versions.empty() ? "" : "; ") + version.title + " (" + version.region + ")";
@@ -434,11 +438,88 @@ GameScreensPanel::Switch GameScreensPanel::apply(ui::UiCommand command, std::uin
         if (step == ui::InfoStep::Media) {
             return Switch::Media;
         }
-        if (step != ui::InfoStep::Close && step != ui::InfoStep::None && impl.info->scroll(step)) {
-            addEvent(frame, "scroll", {}, std::string(ui::toString(step)));
+        const std::vector<ui::InfoRow> rows = ui::infoRowsOf(*impl.infoContent);
+        const auto at = impl.infoRow ? std::find(rows.begin(), rows.end(), *impl.infoRow) : rows.end();
+        if (at != rows.end()) {
+            switch (command) {
+            case ui::UiCommand::Up:
+                setInfoRow(at == rows.begin() ? std::nullopt : std::optional<ui::InfoRow>(*(at - 1)), frame);
+                return Switch::None;
+            case ui::UiCommand::Down:
+                if (at + 1 != rows.end()) {
+                    setInfoRow(*(at + 1), frame);
+                }
+                return Switch::None;
+            case ui::UiCommand::Activate:
+                return pressInfoRow(*at, frame);
+            case ui::UiCommand::Left:
+            case ui::UiCommand::Right:
+                if (at->kind == ui::InfoRow::Kind::Status) {
+                    return command == ui::UiCommand::Left ? Switch::StatusPrevious : Switch::StatusNext;
+                }
+                return Switch::None;
+            default:
+                break;
+            }
+        }
+        if (step != ui::InfoStep::Close && step != ui::InfoStep::None) {
+            if (impl.info->scroll(step)) {
+                addEvent(frame, "scroll", {}, std::string(ui::toString(step)));
+            } else if (command == ui::UiCommand::Down && !rows.empty() && at == rows.end()) {
+                setInfoRow(rows.front(), frame); // at the text's end, on to the rows
+            }
         }
     }
     return Switch::None;
+}
+
+void GameScreensPanel::setInfoRow(std::optional<ui::InfoRow> row, std::uint64_t frame) {
+    Impl& impl = *m_impl;
+    if (impl.infoRow == row) {
+        return;
+    }
+    impl.infoRow = row;
+    impl.info->setFocusedRow(row);
+    addEvent(frame, "row", {}, !row                                     ? std::string("text")
+                               : row->kind == ui::InfoRow::Kind::Status  ? std::string("status")
+                               : row->kind == ui::InfoRow::Kind::Emulator ? std::string("emulator")
+                                                                          : fmt::format("version {}", row->version));
+}
+
+GameScreensPanel::Switch GameScreensPanel::pressInfoRow(const ui::InfoRow& row, std::uint64_t frame) {
+    setInfoRow(row, frame);
+    switch (row.kind) {
+    case ui::InfoRow::Kind::Status:
+        return Switch::StatusNext;
+    case ui::InfoRow::Kind::Emulator:
+        return Switch::EmulatorList;
+    case ui::InfoRow::Kind::Version:
+        return Switch::VersionLaunch;
+    }
+    return Switch::None;
+}
+
+const ui::GameInfoContent* GameScreensPanel::infoContent() const noexcept {
+    const Impl& impl = *m_impl;
+    return impl.infoContent ? &*impl.infoContent : nullptr;
+}
+
+std::optional<ui::InfoRow> GameScreensPanel::infoRow() const noexcept {
+    return m_impl->infoRow;
+}
+
+void GameScreensPanel::setInfoControls(ui::GameInfoControls controls, std::uint64_t frame) {
+    Impl& impl = *m_impl;
+    if (!impl.infoContent) {
+        return;
+    }
+    addEvent(frame, "controls", {}, fmt::format("{} {}", controls.status, controls.own ? "own" : controls.source));
+    impl.infoContent->controls = std::move(controls);
+    impl.info->show(*impl.infoContent);
+}
+
+void GameScreensPanel::noteInfo(std::uint64_t frame, std::string event, std::string detail) {
+    addEvent(frame, std::move(event), {}, std::move(detail));
 }
 
 GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
@@ -474,6 +555,9 @@ GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
         } else if (*click == ui::InfoStep::Media) {
             asked = Switch::Media;
         }
+    }
+    if (const std::optional<ui::InfoRow> click = impl.info->takeClickedRow(); click && infoOpen()) {
+        asked = pressInfoRow(*click, frame);
     }
     if (viewerOpen()) {
         for (PictureLoader::Result& result : impl.loader.take()) {
@@ -560,6 +644,10 @@ GameScreensPanel::Switch GameScreensPanel::update(std::uint64_t frame) {
 
 void GameScreensPanel::afterUpdate() {
     Impl& impl = *m_impl;
+    if (infoOpen()) {
+        impl.info->afterUpdate();
+        m_record.infoTextCut = std::max(m_record.infoTextCut, impl.info->textCut());
+    }
     if (!viewerOpen()) {
         return;
     }

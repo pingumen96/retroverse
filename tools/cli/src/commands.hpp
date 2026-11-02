@@ -37,6 +37,7 @@ ExitCode runLaunch(CommandContext& context);
 ExitCode runIdentities(CommandContext& context);
 ExitCode runAssign(CommandContext& context);
 ExitCode runSessions(CommandContext& context);
+ExitCode runStats(CommandContext& context);
 ExitCode runWorldPlan(CommandContext& context);
 ExitCode runWhereIs(CommandContext& context);
 

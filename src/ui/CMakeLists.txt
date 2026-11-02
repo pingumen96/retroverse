@@ -8,7 +8,7 @@
 #                impact preview of a regeneration or an undo (RegeneratePreviewModel); since I7 step 1 the menu and the
 #                settings screen (SystemMenuModel, SettingsModel); since I7 step 2 the wizard and the folder browser
 #                (WizardModel, FolderBrowserModel); since I7 step 4 the emulators screen (EmulatorsModel); since I7 step 5
-#                the on-screen keyboard (KeyboardModel).
+#                the on-screen keyboard (KeyboardModel); since I7 step 6 the statistics screen (StatisticsModel).
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
 #                catalog screen (QuickCatalogScreen, a fixed pool of rows), since I3 (skeletons) the world's card,
@@ -38,6 +38,7 @@ add_library(rv_ui_model STATIC
     src/quick_catalog_model.cpp
     src/regenerate_preview_model.cpp
     src/settings_model.cpp
+    src/statistics_model.cpp
     src/system_menu_model.cpp
     src/timing_samples.cpp
     src/ui_command.cpp
@@ -64,6 +65,7 @@ add_library(rv_ui STATIC
     src/quick_catalog_screen.cpp
     src/regenerate_preview_screen.cpp
     src/settings_screen.cpp
+    src/statistics_screen.cpp
     src/system_menu_screen.cpp
     src/ui_system.cpp
     src/ui_view.cpp

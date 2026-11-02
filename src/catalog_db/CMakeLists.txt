@@ -16,6 +16,7 @@ add_library(rv_catalog_db STATIC
     src/schema_identity.cpp
     src/schema_index.cpp
     src/schema_launch.cpp
+    src/stats_query.cpp
     src/schema_search.cpp
     src/session_store.cpp
 )

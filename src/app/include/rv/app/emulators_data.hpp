@@ -75,9 +75,12 @@ struct ChoiceChange {
         Clear,        ///< the choice stored for `system` removed
         SetProgram,   ///< `program` for `emulator`, checked first (esde::checkProgramChoice())
         ClearProgram, ///< the program of `emulator` removed
+        SaveGame,     ///< `choice` for `game` alone (I7 step 6: Informazioni's Emulatore)
+        ClearGame,    ///< the choice stored for `game` removed
     };
     Kind kind = Kind::Save;
     catalog::SystemName system;
+    catalog::GameId game;
     launcher::LaunchChoice choice;
     std::string emulator;
     std::filesystem::path program;

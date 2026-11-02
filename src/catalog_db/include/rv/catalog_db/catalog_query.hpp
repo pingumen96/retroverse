@@ -60,6 +60,7 @@
 #include <rv/catalog/catalog_store.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/query.hpp>
+#include <rv/catalog/statistics.hpp>
 #include <rv/catalog/system.hpp>
 #include <rv/core/expected.hpp>
 
@@ -196,6 +197,14 @@ public:
     /// ParseError for a row the catalog cannot read back; those of every read.
     [[nodiscard]] Expected<std::vector<catalog::RecentGame>>
     favoritesAndRecent(const catalog::RecentGamesQuery& query) override;
+
+    /// What was played (catalog::PlayStatisticsQuery, statistics.hpp's rules; src/stats_query.cpp), in one read of every
+    /// library the catalog holds: every game once, for the statuses, so its cost grows with the library, not with the
+    /// sessions. Errors: InvalidArgument for a query without its converter; those of every read.
+    [[nodiscard]] Expected<catalog::PlayStatistics> playStatistics(const catalog::PlayStatisticsQuery& query);
+    /// The status of `game` (an alias stands for its game), set or derived; nothing for a game the catalog does not know.
+    /// Errors: those of every read.
+    [[nodiscard]] Expected<std::optional<catalog::GameStatusState>> gameStatus(catalog::GameId game);
 
     /// The connection it reads.
     [[nodiscard]] Connection& connection() noexcept;

@@ -49,6 +49,7 @@ constexpr std::array<Command, 16> kCommands{{
      runIdentities},
     {"assign", "Choose the emulator command or profile of a system or a game", "I2 step 12", runAssign},
     {"sessions", "List the play sessions", "I2 step 12", runSessions},
+    {"stats", "Show what was played: sessions, estimated hours, per system and status", "I7 step 6", runStats},
     {"worldplan", "The plan of the building: generate, update, show, check, snapshots, undo", "I3 step 3",
      runWorldPlan},
     {"where-is", "Where a game stands in the building's plan, or why it is not placed", "I3 step 9", runWhereIs},

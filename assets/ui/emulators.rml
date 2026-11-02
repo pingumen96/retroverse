@@ -60,16 +60,19 @@
 
 		<div data-if="viewName == 'system'" class="view">
 			<h1>{{ current.fullName }}</h1>
+			<p class="note" id="em-for-title" data-if="gameTitle != ''">Per questo titolo: {{ gameTitle }}</p>
 			<p class="note" data-if="verdict == 'verified'">Provato: la scelta è memorizzata e verificata.</p>
 			<p class="note" data-if="verdict != 'verified' && saved">Salvato senza provarlo: resta non verificato.</p>
-			<p class="note" data-if="verdict != 'verified' && !saved">Scegli come avviare i suoi giochi: i pronti sono in cima.</p>
+			<p class="note" data-if="verdict != 'verified' && !saved && gameTitle == ''">Scegli come avviare i suoi giochi: i pronti sono in cima.</p>
+			<p class="note" data-if="verdict != 'verified' && !saved && gameTitle != ''">Scegli come avviarlo: i pronti sono in cima.</p>
 			<div id="em-options">
 				<div class="row" data-for="option : options" data-attr-id="option.elementId" data-event-click="option(option.index)">
 					<div class="row-main" data-if="!option.clear">
 						<p class="title"><span data-if="option.name != ''">{{ option.name }}</span><span data-if="option.name == ''">Comando di ES-DE</span><span class="kind" data-if="option.profile"> (profilo di Retroverse)</span><span class="kind" data-if="option.chosen"> (in uso)</span></p>
 					</div>
 					<div class="row-main" data-if="option.clear">
-						<p class="title">Torna alla scelta di ES-DE</p>
+						<p class="title" data-if="gameTitle == ''">Torna alla scelta di ES-DE</p>
+						<p class="title" data-if="gameTitle != ''">Torna alla scelta del sistema</p>
 					</div>
 					<p class="badge ok" data-if="!option.clear && option.readiness == 'ready' && option.verified">Verificato</p>
 					<p class="badge ok" data-if="!option.clear && option.readiness == 'ready' && !option.verified">Pronto</p>

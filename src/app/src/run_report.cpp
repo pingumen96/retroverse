@@ -851,6 +851,7 @@ Json screensToJson(const GameScreensRecord& screens) {
     json["bound"] = true;
     json["viewerFrames"] = screens.viewerFrames;
     json["infoFrames"] = screens.infoFrames;
+    json["infoTextCut"] = screens.infoTextCut;
     json["pictures"] = screens.pictures;
     json["failures"] = screens.failures;
     json["pictureBox"] = screens.pictureBox;
@@ -883,6 +884,7 @@ GameScreensRecord readScreens(FieldReader& fields) {
     screens.bound = fields.boolean("bound");
     screens.viewerFrames = fields.count("viewerFrames");
     screens.infoFrames = fields.count("infoFrames");
+    screens.infoTextCut = static_cast<std::uint32_t>(fields.count("infoTextCut"));
     screens.pictures = fields.count("pictures");
     screens.failures = fields.count("failures");
     screens.pictureBox = fields.numberArray("pictureBox");
@@ -1123,6 +1125,52 @@ EmulatorsRecord readEmulators(FieldReader& fields) {
         emulators.events.push_back(EmulatorsEventRecord{entry.count("frame"), entry.string("event"), entry.string("detail")});
     }
     return emulators;
+}
+
+Json statisticsToJson(const StatisticsRecord& statistics) {
+    return Json{{"opened", statistics.opened},
+                {"open", statistics.open},
+                {"state", statistics.state},
+                {"tab", statistics.tab},
+                {"tabs", statistics.tabs},
+                {"sessions", statistics.sessions},
+                {"crashed", statistics.crashed},
+                {"leftRunning", statistics.leftRunning},
+                {"playedMs", statistics.playedMs},
+                {"gamesPlayed", statistics.gamesPlayed},
+                {"games", statistics.games},
+                {"mostPlayed", statistics.mostPlayed},
+                {"mostRecent", statistics.mostRecent},
+                {"systems", statistics.systems},
+                {"statuses", statistics.statuses},
+                {"readMs", statistics.readMs},
+                {"hoursLabel", statistics.hoursLabel},
+                {"textCut", statistics.textCut},
+                {"clicks", statistics.clicks}};
+}
+
+StatisticsRecord readStatistics(FieldReader& fields) {
+    StatisticsRecord statistics;
+    statistics.opened = fields.count("opened");
+    statistics.open = fields.boolean("open");
+    statistics.state = fields.string("state");
+    statistics.tab = fields.string("tab");
+    statistics.tabs = fields.stringArray("tabs");
+    statistics.sessions = fields.count("sessions");
+    statistics.crashed = fields.count("crashed");
+    statistics.leftRunning = fields.count("leftRunning");
+    statistics.playedMs = static_cast<std::int64_t>(fields.count("playedMs"));
+    statistics.gamesPlayed = fields.count("gamesPlayed");
+    statistics.games = fields.count("games");
+    statistics.mostPlayed = fields.stringArray("mostPlayed");
+    statistics.mostRecent = fields.stringArray("mostRecent");
+    statistics.systems = fields.stringArray("systems");
+    statistics.statuses = fields.stringArray("statuses");
+    statistics.readMs = fields.number("readMs");
+    statistics.hoursLabel = fields.string("hoursLabel");
+    statistics.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    statistics.clicks = fields.count("clicks");
+    return statistics;
 }
 
 Json wizardToJson(const WizardRecord& wizard) {
@@ -3424,6 +3472,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.wizard) {
         json["wizard"] = wizardToJson(*report.wizard);
     }
+    if (report.statistics) {
+        json["statistics"] = statisticsToJson(*report.statistics);
+    }
     if (report.emulators) {
         json["emulators"] = emulatorsToJson(*report.emulators);
     }
@@ -3605,6 +3656,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto wizard = fields.optionalObject("wizard")) {
         report.wizard = readWizard(*wizard);
+    }
+    if (auto statistics = fields.optionalObject("statistics")) {
+        report.statistics = readStatistics(*statistics);
     }
     if (auto emulators = fields.optionalObject("emulators")) {
         report.emulators = readEmulators(*emulators);

@@ -28,6 +28,8 @@ TEST_CASE("ui/system_menu: opens on Riprendi; the focus stops at the ends", "[ui
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Emulators);
     static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.focused() == SystemMenuButton::Statistics);
+    static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Quit);
 }
@@ -58,6 +60,18 @@ TEST_CASE("ui/system_menu: Emulatori asks for its screen and stays open under it
     CHECK(menu.apply(UiCommand::Activate) == SystemMenuCommand::OpenEmulators);
     CHECK(menu.isOpen());
     CHECK(menu.click(SystemMenuButton::Emulators) == SystemMenuCommand::OpenEmulators);
+}
+
+TEST_CASE("ui/system_menu: Statistiche asks for its screen and stays open under it", "[ui][system_menu]") {
+    SystemMenuModel menu;
+    menu.open();
+    for (int press = 0; press < 3; ++press) {
+        static_cast<void>(menu.apply(UiCommand::Down));
+    }
+    CHECK(menu.focusedElement() == "sm-statistics");
+    CHECK(menu.apply(UiCommand::Activate) == SystemMenuCommand::OpenStatistics);
+    CHECK(menu.isOpen());
+    CHECK(menu.click(SystemMenuButton::Statistics) == SystemMenuCommand::OpenStatistics);
 }
 
 TEST_CASE("ui/system_menu: Esci asks once, Annulla focused", "[ui][system_menu]") {

@@ -7,11 +7,17 @@
 // the world's card or the quick catalog. Up and Down scroll the description, the triggers and Page Up / Page Down by a
 // page, Home and End to its ends; Back closes it, Vedi media (the pad's Y) opens the media viewer of the same game.
 // Every sentence is the document's (assets/ui/game_info.rml): the code passes catalog data as it comes.
+//
+// I7 step 6 (ADR-0018 §11): focusable rows below the scrolled text: Stato, stepping the four statuses; Emulatore, opening
+// the emulators list for this title; each other version, whose Activate launches it. Down at the text's end goes on to the
+// rows, Up from the first back to the text; a row takes a click as its key (the ray's too).
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <rv/ui/ui_command.hpp>
@@ -30,9 +36,11 @@ inline constexpr std::string_view kTitleId = "game-info-title";
 inline constexpr std::string_view kBodyId = "game-info-body";
 inline constexpr std::string_view kDescriptionId = "game-info-description";
 inline constexpr std::string_view kVersionsId = "game-info-versions";
+/// The region that holds the rows, scrolled to the focused one.
+inline constexpr std::string_view kRowsId = "game-info-rows";
 inline constexpr std::string_view kCloseId = "info-close";
 inline constexpr std::string_view kMediaId = "info-media";
-/// The data event the buttons send: "act('<close|media>')".
+/// The data event the buttons send: "act('<close|media|status|emulator>')"; a version's row sends "version(<index>)".
 inline constexpr std::string_view kActEvent = "act";
 /// The most other versions it lists (the document says how many more there are).
 inline constexpr std::size_t kMaxVersions = 12;
@@ -48,6 +56,25 @@ struct OtherVersion {
     std::string region;
 
     bool operator==(const OtherVersion&) const = default;
+};
+
+/// Informazioni's rows of a game, as the catalog worker answered: none until then, and in a catalog without them.
+struct GameInfoControls {
+    /// catalog::toString(GameStatus), and whether it was set (else it derives).
+    std::string status;
+    bool statusStored = false;
+    /// A status could not be stored.
+    bool statusFailed = false;
+    /// What launches it, as people read it ("" an unlabelled command), where the choice comes from
+    /// (catalog::toString(ChoiceSource)).
+    std::string choice;
+    std::string source;
+    /// Its system, by name: the emulators list's.
+    std::string system;
+    /// What is stored for this title: (profile, value).
+    std::optional<std::pair<bool, std::string>> own;
+
+    bool operator==(const GameInfoControls&) const = default;
 };
 
 /// What Informazioni shows: catalog data as it comes.
@@ -69,6 +96,8 @@ struct GameInfoContent {
     /// The other versions, at most game_info::kMaxVersions, and how many there are in all.
     std::vector<OtherVersion> versions;
     std::uint32_t versionCount = 0;
+    /// The rows, once the catalog worker answered.
+    std::optional<GameInfoControls> controls;
 
     bool operator==(const GameInfoContent&) const = default;
 };
@@ -85,6 +114,18 @@ enum class InfoStep : std::uint8_t {
     Close,      ///< Back
     Media,      ///< Vedi media: the viewer of the same game
 };
+
+/// A row: Stato, Emulatore, a version (`version`, its place in the list).
+struct InfoRow {
+    enum class Kind : std::uint8_t { Status, Emulator, Version };
+    Kind kind = Kind::Status;
+    std::size_t version = 0;
+
+    bool operator==(const InfoRow&) const = default;
+};
+
+/// The rows of `content`, in focus order: Stato and Emulatore once it has them, then the versions listed.
+[[nodiscard]] std::vector<InfoRow> infoRowsOf(const GameInfoContent& content);
 
 /// "none", "scroll-up", "scroll-down", "page-up", "page-down", "top", "bottom", "close", "media".
 [[nodiscard]] std::string_view toString(InfoStep step) noexcept;

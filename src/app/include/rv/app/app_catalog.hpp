@@ -159,6 +159,13 @@ public:
     [[nodiscard]] virtual std::optional<LaunchTestResult> takeLaunchTest() { return std::nullopt; }
     /// The launch `token` was decided and never reached the flow: no session will say how a test of it ended.
     virtual void launchDropped(std::uint64_t /*token*/) {}
+    /// The statistics screen and Informazioni's rows (I7 step 6, ADR-0018 §9, §11), likewise. A catalog without them answers
+    /// false: the screen says no catalog is open, the rows do not show.
+    virtual bool requestStatistics(std::size_t /*limit*/) { return false; }
+    [[nodiscard]] virtual std::optional<StatisticsList> takeStatistics() { return std::nullopt; }
+    virtual bool requestGameControls(const catalog::GameId& /*game*/) { return false; }
+    virtual bool requestGameStatus(const catalog::GameId& /*game*/, catalog::GameStatus /*status*/) { return false; }
+    [[nodiscard]] virtual std::optional<GameControls> takeGameControls() { return std::nullopt; }
     /// Where the folder browser starts looking for a program: ES-DE's install folder, when known; nothing: the drives.
     [[nodiscard]] virtual std::optional<std::filesystem::path> programStartFolder() const { return std::nullopt; }
 
@@ -253,7 +260,7 @@ public:
     CatalogChanges poll() override;
     [[nodiscard]] bool busy() const noexcept override {
         return m_source.waiting() || m_resolving.has_value() || m_recentAsked.has_value() || m_tableAsked ||
-               m_samplesAsked || m_changesAsked > 0 || m_testAwaited;
+               m_samplesAsked || m_changesAsked > 0 || m_testAwaited || m_statisticsAsked || m_controlsAsked > 0;
     }
     [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
     bool requestRefresh() override;
@@ -291,6 +298,11 @@ public:
     bool requestLaunchTest(std::uint64_t token, const ui::CatalogEntry& entry, const LaunchTestChoice& test) override;
     [[nodiscard]] std::optional<LaunchTestResult> takeLaunchTest() override { return std::exchange(m_testResult, {}); }
     void launchDropped(std::uint64_t token) override;
+    bool requestStatistics(std::size_t limit) override;
+    [[nodiscard]] std::optional<StatisticsList> takeStatistics() override { return std::exchange(m_statistics, {}); }
+    bool requestGameControls(const catalog::GameId& game) override;
+    bool requestGameStatus(const catalog::GameId& game, catalog::GameStatus status) override;
+    [[nodiscard]] std::optional<GameControls> takeGameControls() override { return std::exchange(m_gameControls, {}); }
     [[nodiscard]] std::optional<std::filesystem::path> programStartFolder() const override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
@@ -353,6 +365,13 @@ private:
     std::size_t m_changesAsked = 0;
     /// A launch test's session ended, and how it did is not known yet.
     bool m_testAwaited = false;
+    /// I7 step 6: the statistics and Informazioni's rows asked (the lockstep runs wait for them), their answers until taken.
+    bool m_statisticsAsked = false;
+    std::uint64_t m_statisticsSerial = 0;
+    std::size_t m_controlsAsked = 0;
+    std::uint64_t m_controlsSerial = 0;
+    std::optional<StatisticsList> m_statistics;
+    std::optional<GameControls> m_gameControls;
     std::optional<EmulatorTable> m_table;
     std::optional<EmulatorSamples> m_samples;
     std::vector<ChoiceChanged> m_changes;

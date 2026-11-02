@@ -12,6 +12,8 @@
 
 #include <rv/ui/ui_view.hpp>
 
+#include "text_cut.hpp"
+
 namespace rv::ui {
 namespace {
 
@@ -30,13 +32,39 @@ struct InfoData {
     int versionCount = 0;
     /// The versions beyond those listed.
     int more = 0;
+    /// The rows (I7 step 6).
+    bool controls = false;
+    Rml::String status;
+    bool statusStored = false;
+    bool statusFailed = false;
+    Rml::String choice;
+    Rml::String source;
+    bool own = false;
+    /// Which row is focused: "status", "emulator", "version", "" none; the version's place.
+    Rml::String focus;
+    int focusVersion = -1;
 };
 
 /// One of the data model's "versions".
 struct VersionData {
     Rml::String title;
     Rml::String region;
+    int index = 0;
+    Rml::String elementId;
 };
+
+/// A row's element id.
+[[nodiscard]] Rml::String rowElement(const InfoRow& row) {
+    switch (row.kind) {
+    case InfoRow::Kind::Status:
+        return "info-status";
+    case InfoRow::Kind::Emulator:
+        return "info-emulator";
+    case InfoRow::Kind::Version:
+        return "info-version-" + std::to_string(row.version);
+    }
+    return {};
+}
 
 /// A line of the body's scrolling, in dp.
 constexpr float kLineDp = 40.0f;
@@ -77,10 +105,21 @@ struct GameInfoScreen::Impl {
             info.RegisterMember("details", &InfoData::details);
             info.RegisterMember("versionCount", &InfoData::versionCount);
             info.RegisterMember("more", &InfoData::more);
+            info.RegisterMember("controls", &InfoData::controls);
+            info.RegisterMember("status", &InfoData::status);
+            info.RegisterMember("statusStored", &InfoData::statusStored);
+            info.RegisterMember("statusFailed", &InfoData::statusFailed);
+            info.RegisterMember("choice", &InfoData::choice);
+            info.RegisterMember("source", &InfoData::source);
+            info.RegisterMember("own", &InfoData::own);
+            info.RegisterMember("focus", &InfoData::focus);
+            info.RegisterMember("focusVersion", &InfoData::focusVersion);
         }
         if (auto version = constructor.RegisterStruct<VersionData>()) {
             version.RegisterMember("title", &VersionData::title);
             version.RegisterMember("region", &VersionData::region);
+            version.RegisterMember("index", &VersionData::index);
+            version.RegisterMember("elementId", &VersionData::elementId);
         }
         constructor.RegisterArray<std::vector<VersionData>>();
         constructor.Bind("info", &data);
@@ -95,8 +134,18 @@ struct GameInfoScreen::Impl {
                                               clicked = InfoStep::Close;
                                           } else if (name == "media") {
                                               clicked = InfoStep::Media;
+                                          } else if (name == "status") {
+                                              clickedRow = InfoRow{InfoRow::Kind::Status, 0};
+                                          } else if (name == "emulator") {
+                                              clickedRow = InfoRow{InfoRow::Kind::Emulator, 0};
                                           }
                                       });
+        constructor.BindEventCallback("version", [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+            const int index = args.empty() ? -1 : args.front().Get<int>(-1);
+            if (index >= 0) {
+                clickedRow = InfoRow{InfoRow::Kind::Version, static_cast<std::size_t>(index)};
+            }
+        });
         handle = constructor.GetModelHandle();
         return ok();
     }
@@ -128,13 +177,43 @@ struct GameInfoScreen::Impl {
         versions.clear();
         for (std::size_t index = 0; index < listed; ++index) {
             versions.push_back(VersionData{Rml::String(next.versions[index].title),
-                                           Rml::String(next.versions[index].region)});
+                                           Rml::String(next.versions[index].region), static_cast<int>(index),
+                                           rowElement(InfoRow{InfoRow::Kind::Version, index})});
+        }
+        data.controls = next.controls.has_value();
+        if (next.controls) {
+            data.status = Rml::String(next.controls->status);
+            data.statusStored = next.controls->statusStored;
+            data.statusFailed = next.controls->statusFailed;
+            data.choice = Rml::String(next.controls->choice);
+            data.source = Rml::String(next.controls->source);
+            data.own = next.controls->own.has_value();
         }
         handle.DirtyAllVariables();
     }
 
     [[nodiscard]] Rml::Element* body() const {
         return document != nullptr ? document->GetElementById(Rml::String(game_info::kBodyId)) : nullptr;
+    }
+
+    void focusRow(const std::optional<InfoRow>& row) {
+        data.focus = !row                                  ? Rml::String()
+                     : row->kind == InfoRow::Kind::Status  ? Rml::String("status")
+                     : row->kind == InfoRow::Kind::Emulator ? Rml::String("emulator")
+                                                            : Rml::String("version");
+        data.focusVersion = row && row->kind == InfoRow::Kind::Version ? static_cast<int>(row->version) : -1;
+        handle.DirtyVariable("info");
+        focusWanted = row;
+    }
+
+    /// The focused row in its region, once the view laid it out.
+    void scrollToFocus() {
+        if (!focusWanted || document == nullptr) {
+            return;
+        }
+        if (Rml::Element* row = document->GetElementById(rowElement(*focusWanted))) {
+            row->ScrollIntoView(false);
+        }
     }
 
     UiView& view;
@@ -146,6 +225,8 @@ struct GameInfoScreen::Impl {
     InfoData data;
     std::vector<VersionData> versions;
     std::optional<InfoStep> clicked;
+    std::optional<InfoRow> clickedRow;
+    std::optional<InfoRow> focusWanted;
 };
 
 GameInfoScreen::GameInfoScreen(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -188,6 +269,7 @@ void GameInfoScreen::show(const GameInfoContent& content) {
 void GameInfoScreen::hide() {
     Impl& impl = *m_impl;
     impl.clicked.reset();
+    impl.clickedRow.reset();
     if (!impl.shown || impl.document == nullptr) {
         impl.shown = false;
         return;
@@ -228,6 +310,27 @@ float GameInfoScreen::scrollRange() const {
 
 std::optional<InfoStep> GameInfoScreen::takeClicked() noexcept {
     return std::exchange(m_impl->clicked, std::nullopt);
+}
+
+std::optional<InfoRow> GameInfoScreen::takeClickedRow() noexcept {
+    return std::exchange(m_impl->clickedRow, std::nullopt);
+}
+
+void GameInfoScreen::setFocusedRow(std::optional<InfoRow> row) {
+    if (m_impl->document != nullptr) {
+        m_impl->focusRow(row);
+    }
+}
+
+void GameInfoScreen::afterUpdate() {
+    if (m_impl->shown) {
+        m_impl->scrollToFocus();
+    }
+}
+
+std::uint32_t GameInfoScreen::textCut() const {
+    Rml::ElementDocument* document = m_impl->document;
+    return document != nullptr && m_impl->shown ? detail::elementsWithCutText(*document) : 0;
 }
 
 } // namespace rv::ui

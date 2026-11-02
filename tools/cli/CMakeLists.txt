@@ -23,6 +23,7 @@ add_library(rv_cli_core STATIC
     src/cmd_search.cpp
     src/cmd_sessions.cpp
     src/cmd_show.cpp
+    src/cmd_stats.cpp
     src/cmd_systems.cpp
     src/cmd_where_is.cpp
     src/cmd_worldplan.cpp

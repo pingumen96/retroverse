@@ -54,7 +54,8 @@ public:
     };
 
     /// What a command or a click asks of the product UI, which has the catalog: the other screen of the same game.
-    enum class Switch : std::uint8_t { None, Media, Info };
+    /// I7 step 6: or what a row of Informazioni asks: EmulatorList, VersionLaunch (asked()'s version), the status stepped.
+    enum class Switch : std::uint8_t { None, Media, Info, EmulatorList, VersionLaunch, StatusNext, StatusPrevious };
 
     /// Creates the two screens (hidden) in `view` and the loader thread. `libraryFile` is library.json (none: the mock
     /// catalog, whose games have no media); `wake` (thread-safe) is called by the loader when a picture is ready.
@@ -100,6 +101,14 @@ public:
     /// rv-texture:media-viewer-video while the videos page shows (emptied otherwise, and before the viewer closes).
     void setViewerVideo(const ViewerVideo& video, std::uint64_t frame);
 
+    /// I7 step 6 (ADR-0018 §11): Informazioni's content while it shows, and its focused row (nothing: the text).
+    [[nodiscard]] const ui::GameInfoContent* infoContent() const noexcept;
+    [[nodiscard]] std::optional<ui::InfoRow> infoRow() const noexcept;
+    /// Its rows as the catalog worker answered.
+    void setInfoControls(ui::GameInfoControls controls, std::uint64_t frame);
+    /// A step the product UI took for a row, for the run report.
+    void noteInfo(std::uint64_t frame, std::string event, std::string detail);
+
     [[nodiscard]] const GameScreensRecord& record() const noexcept { return m_record; }
 
 private:
@@ -113,6 +122,9 @@ private:
     void openManual(std::uint64_t frame);
     /// I5 step 8: the clip's pause toggled on the videos page (the model flipped it).
     void videoPauseToggled(std::uint64_t frame);
+    /// I7 step 6: the focused row of Informazioni, and what a row pressed asks.
+    void setInfoRow(std::optional<ui::InfoRow> row, std::uint64_t frame);
+    [[nodiscard]] Switch pressInfoRow(const ui::InfoRow& row, std::uint64_t frame);
 
     std::unique_ptr<Impl> m_impl;
     std::string m_gameId;

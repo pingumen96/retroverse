@@ -75,6 +75,17 @@ struct ChoiceJob {
 struct ForgetTestJob {
     std::uint64_t token = 0;
 };
+/// The statistics screen and Informazioni's rows (I7 step 6).
+struct StatisticsJob {
+    std::uint64_t serial = 0;
+    std::size_t limit = 0;
+};
+struct GameControlsJob {
+    std::uint64_t serial = 0;
+    catalog::GameId game;
+    /// Set first.
+    std::optional<catalog::GameStatus> status;
+};
 enum class SessionStep : std::uint8_t { Begin, Finish };
 struct SessionJob {
     std::uint64_t token = 0;
@@ -91,7 +102,7 @@ struct RecentJob {
     std::size_t limit = 0;
 };
 using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob, TableJob, SamplesJob,
-                         ChoiceJob, ForgetTestJob>;
+                         ChoiceJob, ForgetTestJob, StatisticsJob, GameControlsJob>;
 
 /// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
 /// open, only reads (lists, the favourites and recent games on the worker's reader, readiness), as launches and session
@@ -100,8 +111,12 @@ using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, Refresh
     if (std::holds_alternative<RefreshJob>(job)) {
         return false;
     }
+    if (const auto* controls = std::get_if<GameControlsJob>(&job); controls != nullptr && controls->status) {
+        return !writing; // it writes
+    }
     return !writing || std::holds_alternative<QueryJob>(job) || std::holds_alternative<ReadinessJob>(job) ||
-           std::holds_alternative<RecentJob>(job) || std::holds_alternative<SamplesJob>(job);
+           std::holds_alternative<RecentJob>(job) || std::holds_alternative<SamplesJob>(job) ||
+           std::holds_alternative<StatisticsJob>(job) || std::holds_alternative<GameControlsJob>(job);
 }
 
 [[nodiscard]] Status statusOf(const Expected<bool>& removed) {
@@ -483,6 +498,13 @@ private:
         return found == m_assigned.end() ? std::nullopt : std::optional<launcher::LaunchChoice>(found->second);
     }
 
+    /// `choice` as people read it: a command's label, a profile's display name.
+    [[nodiscard]] std::string choiceNameOf(const launcher::LaunchChoice& choice) const {
+        const launcher::EmulatorProfile* profile =
+            choice.kind == launcher::LaunchChoiceKind::Profile ? m_library->profiles.find(choice.value) : nullptr;
+        return profile != nullptr ? profile->displayName : choice.value;
+    }
+
     [[nodiscard]] CatalogSystem systemState(const catalog_db::SystemSummary& summary) const {
         CatalogSystem system;
         system.name = summary.system.name;
@@ -501,10 +523,7 @@ private:
         if (resolution.translation.program) {
             system.program = resolution.translation.program->path;
         }
-        const launcher::EmulatorProfile* profile =
-            system.choice.kind == launcher::LaunchChoiceKind::Profile ? m_library->profiles.find(system.choice.value)
-                                                                      : nullptr;
-        system.choiceName = profile != nullptr ? profile->displayName : system.choice.value;
+        system.choiceName = choiceNameOf(system.choice);
         system.launch = launchStateOf(resolution,
                                       verifiedWith(m_verified, system.name, system.choice, resolution.translation));
         spdlog::debug("Catalog system {}: {} ({}){}", system.name.str(), catalog::toString(system.launch.readiness),
@@ -734,6 +753,14 @@ private:
                                         catalog_db::kPatientRetry);
     }
 
+    /// `choice` stored for `game` alone; an unlabelled command is what stands without a choice.
+    [[nodiscard]] Status storeGameChoice(catalog::GameId game, const launcher::LaunchChoice& choice) {
+        if (choice.value.empty()) {
+            return statusOf(m_store->clearGameChoice(game, catalog_db::kPatientRetry));
+        }
+        return m_store->setGameChoice(game, choice, std::chrono::system_clock::now(), catalog_db::kPatientRetry);
+    }
+
     /// What is stored changed: the choices read again, the systems' readiness resolved again, ES-DE's configuration as it
     /// was read; answers resolved before are of an older generation.
     void resolveAgain() {
@@ -760,6 +787,67 @@ private:
 
     void handle(ForgetTestJob& job) { m_tests.erase(job.token); }
 
+    // --- The statistics screen, Informazioni's rows (I7 step 6) ---------------------------------------------------------
+
+    void handle(StatisticsJob& job) {
+        const Clock::time_point start = Clock::now();
+        prepareLocalTime();
+        catalog::PlayStatisticsQuery query;
+        query.limit = job.limit;
+        query.localToUtc = m_localToUtc;
+        StatisticsList list;
+        list.serial = job.serial;
+        if (auto statistics = m_query->playStatistics(query)) {
+            list.statistics = std::move(*statistics);
+        } else {
+            list.error = statistics.error();
+            spdlog::warn("Catalog: the statistics cannot be read: {}", statistics.error().toString());
+        }
+        list.milliseconds = millisecondsSince(start);
+        spdlog::debug("Catalog: the statistics in {:.1f} ms", list.milliseconds);
+        m_shared->post([&](CatalogResults& results) {
+            if (!results.statistics || results.statistics->serial <= list.serial) {
+                results.statistics = std::move(list);
+            }
+        });
+    }
+
+    void handle(GameControlsJob& job) {
+        GameControls controls;
+        controls.serial = job.serial;
+        controls.game = job.game;
+        if (job.status) {
+            if (const Status written = m_store->setGameStatus(job.game, *job.status, std::chrono::system_clock::now(),
+                                                              catalog_db::kPatientRetry);
+                !written) {
+                controls.writeFailed = true;
+                spdlog::warn("The status of {} could not be stored: {}", job.game.toString(), written.error().toString());
+            }
+        }
+        if (auto status = m_query->gameStatus(job.game); status && *status) {
+            controls.known = true;
+            controls.status = **status;
+        } else if (!status) {
+            spdlog::warn("The status of {} cannot be read: {}", job.game.toString(), status.error().toString());
+        }
+        auto details = m_query->details(job.game);
+        if (details && *details) {
+            const catalog::CatalogEntry& entry = (*details)->indexed.entry;
+            controls.system = entry.system;
+            auto choice = m_store->gameChoice(job.game);
+            if (choice && *choice) {
+                controls.own = (**choice).choice;
+            }
+            if (m_library) {
+                const catalog::LaunchResolution resolution = library::resolveCatalogLaunch(
+                    *m_library, **details, controls.own, assignedFor(entry.system), library::GameFileCheck::Catalog);
+                controls.choice = choiceNameOf(resolution.chosen.choice);
+                controls.source = std::string(catalog::toString(resolution.chosen.source));
+            }
+        }
+        m_shared->post([&](CatalogResults& results) { results.gameControls = std::move(controls); });
+    }
+
     void handle(ChoiceJob& job) {
         ChoiceChanged changed;
         changed.serial = job.serial;
@@ -772,6 +860,12 @@ private:
             break;
         case ChoiceChange::Kind::Clear:
             status = statusOf(m_store->clearSystemChoice(m_profile.id, change.system, catalog_db::kPatientRetry));
+            break;
+        case ChoiceChange::Kind::SaveGame:
+            status = storeGameChoice(change.game, change.choice);
+            break;
+        case ChoiceChange::Kind::ClearGame:
+            status = statusOf(m_store->clearGameChoice(change.game, catalog_db::kPatientRetry));
             break;
         case ChoiceChange::Kind::SetProgram:
             if (const Status allowed = esde::checkProgramChoice(change.program); !allowed) {
@@ -1164,9 +1258,7 @@ private:
         result.session = stored.session.id;
         if (!stored.error && catalog::returnedNormally(stored.session)) {
             const Status written =
-                test.forGame ? m_store->setGameChoice(*test.forGame, test.choice, std::chrono::system_clock::now(),
-                                                      catalog_db::kPatientRetry)
-                             : storeSystemChoice(recording.system, test.choice);
+                test.forGame ? storeGameChoice(*test.forGame, test.choice) : storeSystemChoice(recording.system, test.choice);
             result.stored = written.has_value();
             if (!written) {
                 spdlog::warn("The choice a launch test verified could not be stored: {}", written.error().toString());
@@ -1354,6 +1446,35 @@ void CatalogWorker::changeChoice(std::uint64_t serial, ChoiceChange change) {
     {
         const std::lock_guard lock(m_shared->mutex);
         m_shared->jobs.emplace_back(ChoiceJob{serial, std::move(change)});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::statistics(std::uint64_t serial, std::size_t limit) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<StatisticsJob>(job); });
+        m_shared->jobs.emplace_back(StatisticsJob{serial, limit});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::gameControls(std::uint64_t serial, catalog::GameId game) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) {
+            const auto* queued = std::get_if<GameControlsJob>(&job);
+            return queued != nullptr && !queued->status; // a status to store is never dropped
+        });
+        m_shared->jobs.emplace_back(GameControlsJob{serial, game, std::nullopt});
+    }
+    m_shared->work.notify_one();
+}
+
+void CatalogWorker::setGameStatus(std::uint64_t serial, catalog::GameId game, catalog::GameStatus status) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        m_shared->jobs.emplace_back(GameControlsJob{serial, game, status});
     }
     m_shared->work.notify_one();
 }

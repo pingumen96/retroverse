@@ -326,6 +326,77 @@ TEST_CASE("ui/emulators: clicks press what the keys press", "[ui][emulators]") {
     CHECK(choosing.click(button)->kind == EmulatorsCommandKind::Save);
 }
 
+TEST_CASE("ui/emulators: for one title it opens on its system, tests that title, stores for it and closes on Back",
+          "[ui][emulators]") {
+    EmulatorsModel model;
+    model.openForGame("gb", "g7", "Seventh", std::nullopt);
+    CHECK(model.forGame());
+    CHECK(model.takeRequest()->kind == EmulatorsCommandKind::Load);
+    model.setTable(table());
+    CHECK(model.view() == EmulatorsView::System);
+    CHECK(model.system()->name == "gb");
+    const auto asked = model.takeRequest();
+    REQUIRE(asked);
+    CHECK(asked->kind == EmulatorsCommandKind::Samples);
+    CHECK(asked->forGame);
+    model.setOptions("gb", table().front().options);
+    model.setSamples("gb", samples());
+    REQUIRE(model.samples().size() == 1); // the title, whatever the system offers
+    CHECK(model.samples()[0].gameId == "g7");
+    CHECK_FALSE(model.offersClear()); // nothing stored for it
+
+    static_cast<void>(model.apply(UiCommand::Down));
+    static_cast<void>(model.apply(UiCommand::Activate));
+    CHECK(model.view() == EmulatorsView::Choice);
+    const auto test = model.apply(UiCommand::Activate); // Prova
+    REQUIRE(test);
+    CHECK(test->kind == EmulatorsCommandKind::Test);
+    CHECK(test->game == "g7");
+    CHECK(test->forGame);
+    CHECK(test->value == "Home");
+    model.testStarted();
+    model.testEnded("verified");
+    CHECK(model.view() == EmulatorsView::System);
+    CHECK(model.offersClear()); // stored: "Torna alla scelta del sistema"
+    model.setOptions("gb", table().front().options);
+    CHECK(model.system()->options[1].chosen); // in use: the title's own
+    CHECK_FALSE(model.system()->options[0].chosen);
+
+    // The row that takes it away is the last.
+    static_cast<void>(model.apply(UiCommand::End));
+    const auto clear = model.apply(UiCommand::Activate);
+    REQUIRE(clear);
+    CHECK(clear->kind == EmulatorsCommandKind::Clear);
+    CHECK(clear->forGame);
+    model.changeEnded("", true);
+    CHECK_FALSE(model.offersClear());
+
+    const auto closed = model.apply(UiCommand::Back);
+    REQUIRE(closed);
+    CHECK(closed->kind == EmulatorsCommandKind::Close);
+    CHECK_FALSE(model.isOpen());
+
+    // A plain opening forgets the title.
+    model.open();
+    CHECK_FALSE(model.forGame());
+}
+
+TEST_CASE("ui/emulators: a title's choice shows at once; a system gone says so and Back closes", "[ui][emulators]") {
+    EmulatorsModel model;
+    model.openForGame("gb", "g7", "Seventh", std::pair(false, std::string("Home")));
+    model.setTable(table());
+    model.setOptions("gb", table().front().options);
+    CHECK(model.offersClear());
+    CHECK(model.optionRows() == 4);
+    CHECK(model.system()->options[1].chosen);
+
+    EmulatorsModel gone;
+    gone.openForGame("nes", "g9", "Ninth", std::nullopt);
+    gone.setTable(table());
+    CHECK(gone.state() == EmulatorsState::Unavailable);
+    CHECK(gone.apply(UiCommand::Back)->kind == EmulatorsCommandKind::Close);
+}
+
 TEST_CASE("ui/emulators: names", "[ui][emulators]") {
     for (const EmulatorsButton button : {EmulatorsButton::Sample, EmulatorsButton::Test, EmulatorsButton::Program,
                                          EmulatorsButton::ClearProgram, EmulatorsButton::Save, EmulatorsButton::Cancel}) {
