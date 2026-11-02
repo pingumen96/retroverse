@@ -391,7 +391,7 @@ TEST_CASE("statistics: the recent games tell a game played in ES-DE from one onl
         const auto crashedGame = static_cast<std::uint64_t>(ids->columnInt(0));
         REQUIRE(ids->step().value());
         const auto esdeGame = static_cast<std::uint64_t>(ids->columnInt(0));
-        ids.reset();
+        ids->reset();
         REQUIRE(database.writer()
                     .execute(fmt::format("UPDATE idx_games SET last_played = '20261018T100000' WHERE id = {}", esdeGame))
                     .has_value());
