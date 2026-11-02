@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -315,4 +316,39 @@ TEST_CASE("watcher: a ROM copied while the game runs starts nothing until the re
     REQUIRE(report.watcher.has_value());
     CHECK(report.watcher->held >= 1);
     CHECK(report.watcher->refreshes == 1);
+}
+
+// By hand, for a look: rv_smoke_tests "[watcher_shots]" with RV_SHOTS_DIR naming a folder writes the snes room before a
+// ROM and its cover are copied in and after the watcher placed them (a fresh lockstep start each, 1920 x 1080). Not a
+// check: visual verification (docs/reference/visual-verification.md).
+TEST_CASE("watcher: the pictures", "[.watcher_shots]") {
+    const char* folder = std::getenv("RV_SHOTS_DIR");
+    if (folder == nullptr) {
+        SKIP("RV_SHOTS_DIR names no folder");
+    }
+    const fs::path out = rv::core::pathFromUtf8(folder);
+    fs::create_directories(out);
+    PlannedBuilding building("watcher/shots");
+    const Addition addition = snesAddition(building.fixture);
+    const auto shoot = [&](std::string_view name) {
+        const fs::path shot = building.dir / (std::string(name) + ".png");
+        const AppRun run = runApp(retroverseExe(), building.dir, name,
+                                  {"--start-room", "room:snes", "--exit-after-frames", "--frames", "240", "--fixed-dt",
+                                   "0.016667", "--width", "1920", "--height", "1080", "--screenshot", arg(shot)});
+        requireCleanRun(run);
+        fs::copy_file(shot, out / ("watcher_" + std::string(name) + ".png"), fs::copy_options::overwrite_existing);
+        return run;
+    };
+    static_cast<void>(shoot("before"));
+    StartedApp app(building.dir, "watched",
+                   {"--start-room", "room:snes", "--watch-library", "--exit-after-frames", "--frames", "1000000000"});
+    const fs::path log = building.dir / "watched.log";
+    REQUIRE(waitForLog(log, "root(s) armed:"));
+    copyIn(building.fixture, addition.rom);
+    copyIn(building.fixture, addition.cover);
+    REQUIRE(waitForLog(log, "the room's live update (", 1, 60s));
+    const AppRun watched = closeAndFinish(app);
+    REQUIRE(watched.exitCode == 0);
+    const AppRun after = shoot("after");
+    CHECK(after.report->world.items == 41);
 }
