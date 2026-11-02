@@ -113,6 +113,10 @@ std::string_view toString(EmulatorsCommandKind kind) noexcept {
 
 void EmulatorsModel::open() {
     m_open = true;
+    m_gameSystem.clear();
+    m_game.clear();
+    m_gameTitle.clear();
+    m_own.reset();
     m_view = EmulatorsView::Systems;
     m_state = EmulatorsState::Loading;
     m_verdict.clear();
@@ -120,6 +124,16 @@ void EmulatorsModel::open() {
     m_saved = false;
     m_request = EmulatorsCommand{EmulatorsCommandKind::Load};
     ++m_revision;
+}
+
+void EmulatorsModel::openForGame(std::string system, std::string gameId, std::string title,
+                                 std::optional<std::pair<bool, std::string>> own) {
+    open();
+    m_gameSystem = std::move(system);
+    m_game = std::move(gameId);
+    m_gameTitle = std::move(title);
+    m_own = std::move(own);
+    m_chosen.reset();
 }
 
 void EmulatorsModel::close() noexcept {
@@ -147,12 +161,12 @@ const EmulatorOption* EmulatorsModel::option() const noexcept {
 
 bool EmulatorsModel::offersClear() const noexcept {
     const EmulatorSystem* shown = system();
-    return shown != nullptr && shown->stored;
+    return shown != nullptr && (forGame() ? m_own.has_value() : shown->stored);
 }
 
 std::size_t EmulatorsModel::optionRows() const noexcept {
     const EmulatorSystem* shown = system();
-    return shown == nullptr ? 0 : shown->options.size() + (shown->stored ? 1 : 0);
+    return shown == nullptr ? 0 : shown->options.size() + (offersClear() ? 1 : 0);
 }
 
 std::vector<EmulatorsButton> EmulatorsModel::buttons() const {
@@ -239,6 +253,19 @@ void EmulatorsModel::setTable(std::vector<EmulatorSystem> systems) {
     const auto again = std::find_if(m_systems.begin(), m_systems.end(),
                                     [&](const EmulatorSystem& shown) { return shown.name == focused; });
     m_system = again == m_systems.end() ? 0 : static_cast<std::size_t>(again - m_systems.begin());
+    if (forGame() && m_view == EmulatorsView::Systems) {
+        const auto title = std::find_if(m_systems.begin(), m_systems.end(),
+                                        [&](const EmulatorSystem& shown) { return shown.name == m_gameSystem; });
+        if (title == m_systems.end()) {
+            m_state = EmulatorsState::Unavailable; // its system has no games any more
+            ++m_revision;
+            return;
+        }
+        m_system = static_cast<std::size_t>(title - m_systems.begin());
+        m_request = enter();
+        ++m_revision;
+        return;
+    }
     const std::size_t rows = optionRows();
     m_option = rows == 0 ? 0 : std::min(m_option, rows - 1);
     syncChosen();
@@ -273,10 +300,21 @@ void EmulatorsModel::setOptions(const std::string& name, std::vector<EmulatorOpt
         return;
     }
     found->options = std::move(options);
+    markOwn();
     const std::size_t rows = optionRows();
     m_option = rows == 0 ? 0 : std::min(m_option, rows - 1);
     syncChosen();
     ++m_revision;
+}
+
+void EmulatorsModel::markOwn() {
+    EmulatorSystem* shown = m_system < m_systems.size() ? &m_systems[m_system] : nullptr;
+    if (!forGame() || !m_own || shown == nullptr) {
+        return;
+    }
+    for (EmulatorOption& option : shown->options) {
+        option.chosen = option.profile == m_own->first && option.value == m_own->second;
+    }
 }
 
 void EmulatorsModel::setUnavailable() {
@@ -291,6 +329,9 @@ void EmulatorsModel::setSamples(const std::string& system, std::vector<EmulatorS
     const EmulatorSystem* shown = this->system();
     if (shown == nullptr || shown->name != system) {
         return; // the user went elsewhere
+    }
+    if (forGame()) {
+        samples = {EmulatorSample{m_game, m_gameTitle}}; // the title's test runs the title
     }
     if (samples != m_samples) {
         m_sample = 0; // asked again after a change, the same list keeps the game shown
@@ -312,6 +353,9 @@ void EmulatorsModel::testStarted() {
 void EmulatorsModel::testEnded(std::string_view verdict) {
     m_verdict = std::string(verdict);
     if (verdict == kVerified) {
+        if (forGame() && m_chosen) {
+            m_own = std::pair(m_chosen->profile, m_chosen->value);
+        }
         m_chosen.reset();
         m_saved = false;
         m_request = EmulatorsCommand{EmulatorsCommandKind::Load};
@@ -333,6 +377,11 @@ void EmulatorsModel::changeEnded(std::string_view problem, bool toSystem) {
     }
     m_request = EmulatorsCommand{EmulatorsCommandKind::Load};
     if (toSystem) {
+        if (forGame()) {
+            // Saved with a choice on show, cleared from the list.
+            m_own = m_chosen ? std::optional(std::pair(m_chosen->profile, m_chosen->value)) : std::nullopt;
+            markOwn();
+        }
         m_chosen.reset();
         show(EmulatorsView::System);
         return;
@@ -366,6 +415,7 @@ void EmulatorsModel::stepSample(int direction) {
 EmulatorsCommand EmulatorsModel::commandOf(EmulatorsCommandKind kind) const {
     EmulatorsCommand command;
     command.kind = kind;
+    command.forGame = forGame();
     if (const EmulatorSystem* shown = system()) {
         command.system = shown->name;
     }
@@ -444,10 +494,14 @@ std::optional<EmulatorsCommand> EmulatorsModel::apply(UiCommand command) {
     }
     if (command == UiCommand::Back) {
         switch (m_view) {
-        case EmulatorsView::Systems:
+        case EmulatorsView::Systems: // for one title: the table has not come
             close();
             return EmulatorsCommand{EmulatorsCommandKind::Close};
         case EmulatorsView::System:
+            if (forGame()) {
+                close();
+                return EmulatorsCommand{EmulatorsCommandKind::Close};
+            }
             m_verdict.clear();
             m_problem.clear();
             show(EmulatorsView::Systems);

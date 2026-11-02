@@ -1,0 +1,114 @@
+<rml>
+<head>
+	<!--
+		The statistics screen (ADR-0018 §9, specification §13.4): what was played in Retroverse, in sections. The hours are
+		always "stimate": from the launch to the detected return. ES-DE's counts are not added in. Bound to the data model
+		"statistics" of rv::ui::StatisticsScreen (src/ui/src/statistics_screen.cpp), its ids in
+		src/ui/include/rv/ui/statistics_model.hpp. Every word is here: the screen binds figures and catalog data as they
+		come. Left, Right and the filters change the section, Up and Down scroll, Back closes; a click does the same (VR's
+		ray too). Nothing takes the focus: the input stays with the application.
+	-->
+	<title>Statistiche</title>
+	<link type="text/rcss" href="statistics.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
+</head>
+<body data-model="statistics">
+	<div id="statistics-panel" class="panel">
+		<h1>Statistiche</h1>
+		<div id="st-tabs">
+			<button id="st-tab-summary" class="tab" data-class-active="tab == 'summary'" data-event-click="section('summary')">Riepilogo</button>
+			<button id="st-tab-most-played" class="tab" data-class-active="tab == 'most-played'" data-event-click="section('most-played')">Più giocati</button>
+			<button id="st-tab-recent" class="tab" data-class-active="tab == 'recent'" data-event-click="section('recent')">Recenti</button>
+			<button id="st-tab-systems" class="tab" data-class-active="tab == 'systems'" data-event-click="section('systems')">Per sistema</button>
+			<button id="st-tab-statuses" class="tab" data-class-active="tab == 'statuses'" data-event-click="section('statuses')">Per stato</button>
+		</div>
+		<div id="st-body">
+			<p class="note" id="st-loading" data-if="state == 'loading'">Lettura del catalogo...</p>
+			<p class="note" id="st-unavailable" data-if="state == 'unavailable'">Nessun catalogo aperto: importa la libreria per vedere le statistiche.</p>
+			<p class="note" id="st-empty" data-if="state == 'empty'">Nessuna partita registrata: i giochi avviati da Retroverse compariranno qui.</p>
+
+			<div data-if="tab == 'summary' && (state == 'listed' || state == 'empty')">
+				<div class="figures">
+					<div class="figure"><p class="value">{{ hours }}</p><p class="label" id="st-hours-label">ore stimate</p></div>
+					<div class="figure"><p class="value">{{ sessions }}</p><p class="label">sessioni</p></div>
+					<div class="figure"><p class="value">{{ gamesPlayed }}</p><p class="label">giochi avviati</p></div>
+					<div class="figure"><p class="value">{{ games }}</p><p class="label">giochi in libreria</p></div>
+				</div>
+				<p class="note">Le ore sono stimate: dall'avvio del gioco al ritorno rilevato. Contano solo le sessioni di Retroverse tornate normalmente, non le prove di lancio né i conteggi di ES-DE.</p>
+				<p class="note" id="st-attempts" data-if="crashed > 0 || leftRunning > 0">Tentativi non contati nelle ore: interrotti da un errore {{ crashed }}, lasciati in esecuzione {{ leftRunning }}.</p>
+			</div>
+
+			<div data-if="tab == 'most-played' && state == 'listed'">
+				<p class="note" data-if="mostPlayed.size == 0">Nessuna sessione tornata normalmente.</p>
+				<div class="line" data-for="game : mostPlayed">
+					<div class="line-main">
+						<p class="title"><span data-if="game.title != ''">{{ game.title }}</span><span data-if="game.title == ''">Gioco senza titolo</span></p>
+						<p class="detail">{{ game.system }}</p>
+					</div>
+					<div class="line-side">
+						<p class="side">{{ game.hours }} ore stimate</p>
+						<p class="detail"><span data-if="game.sessions == 1">1 sessione</span><span data-if="game.sessions != 1">{{ game.sessions }} sessioni</span></p>
+					</div>
+				</div>
+			</div>
+
+			<div data-if="tab == 'recent' && state == 'listed'">
+				<p class="note" data-if="recent.size == 0">Nessun gioco avviato di recente.</p>
+				<div class="line" data-for="game : recent">
+					<div class="line-main">
+						<p class="title"><span data-if="game.title != ''">{{ game.title }}</span><span data-if="game.title == ''">Gioco senza titolo</span></p>
+						<p class="detail">{{ game.system }}</p>
+					</div>
+					<div class="line-side">
+						<p class="side">{{ game.date }}</p>
+						<p class="detail" data-if="game.sessions > 0">{{ game.hours }} ore stimate</p>
+						<p class="detail recent-note" data-if="game.sessions == 0 && game.esde">giocato in ES-DE</p>
+						<p class="detail recent-note" data-if="game.sessions == 0 && !game.esde">solo tentativi</p>
+					</div>
+				</div>
+			</div>
+
+			<div data-if="tab == 'systems' && state == 'listed'">
+				<p class="note" data-if="systems.size == 0">Nessun sistema giocato.</p>
+				<div class="line" data-for="system : systems">
+					<div class="line-main">
+						<p class="title">{{ system.name }}</p>
+						<p class="detail"><span data-if="system.games == 1">1 gioco</span><span data-if="system.games != 1">{{ system.games }} giochi</span><span data-if="system.attempts > 0">, tentativi non contati: {{ system.attempts }}</span></p>
+					</div>
+					<div class="line-side">
+						<p class="side">{{ system.hours }} ore stimate</p>
+						<p class="detail"><span data-if="system.sessions == 1">1 sessione</span><span data-if="system.sessions != 1">{{ system.sessions }} sessioni</span></p>
+					</div>
+				</div>
+			</div>
+
+			<div data-if="tab == 'statuses' && state == 'listed'">
+				<div class="line" data-for="row : statuses">
+					<div class="line-main">
+						<p class="title">
+							<span data-if="row.status == 'not-started'">Da iniziare</span>
+							<span data-if="row.status == 'in-progress'">In corso</span>
+							<span data-if="row.status == 'completed'">Completato</span>
+							<span data-if="row.status == 'abandoned'">Abbandonato</span>
+						</p>
+						<p class="detail"><span data-if="row.games == 1">1 gioco</span><span data-if="row.games != 1">{{ row.games }} giochi</span></p>
+					</div>
+					<div class="line-side">
+						<p class="side">{{ row.hours }} ore stimate</p>
+						<p class="detail"><span data-if="row.sessions == 1">1 sessione</span><span data-if="row.sessions != 1">{{ row.sessions }} sessioni</span></p>
+					</div>
+				</div>
+				<p class="note">Lo stato si cambia in Informazioni. Chi non ne ha uno lo deduce: completato in ES-DE, oppure in corso dopo una sessione.</p>
+			</div>
+		</div>
+		<div id="st-footer">
+			<div id="st-hints">
+				<span class="hint"><span class="kbd" hint-action="ui_filter_previous ui_filter_next"></span>Sezione</span>
+				<span class="hint"><span class="kbd" hint-action="ui_up ui_down"></span>Scorri</span>
+				<span class="hint"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
+			</div>
+			<button id="st-close" class="action" data-event-click="close()">Chiudi</button>
+		</div>
+	</div>
+</body>
+</rml>

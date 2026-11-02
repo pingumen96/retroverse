@@ -16,6 +16,9 @@
 // | Testing |                     |                    |                                          |               |
 //
 // Clicks press what the keys press. Every change of what the screen shows increments revision().
+//
+// For one title (I7 step 6, ADR-0018 §5, §11: Informazioni's Emulatore): openForGame() shows the title's system's options
+// at once; a test runs that title, what is chosen is stored for it alone, and Back from the System view closes the screen.
 
 #include <array>
 #include <cstddef>
@@ -24,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <rv/ui/ui_command.hpp>
@@ -113,9 +117,9 @@ enum class EmulatorsCommandKind : std::uint8_t {
     Close,        ///< it closed itself
     Load,         ///< the table, again
     Samples,      ///< the games of `system`
-    Test,         ///< a launch test of the choice with `game`: stored once it returned normally
-    Save,         ///< "Salva senza provare": the choice stored as it is
-    Clear,        ///< the system's stored choice removed: ES-DE's decides again
+    Test,         ///< a launch test of the choice with `game`: stored once it returned normally (`forGame`: for it alone)
+    Save,         ///< "Salva senza provare": the choice stored as it is (`forGame`: for `game` alone)
+    Clear,        ///< the system's stored choice removed: ES-DE's decides again (`forGame`: the title's)
     Browse,       ///< a program for `emulator`, from the folder browser
     ClearProgram, ///< the program chosen for `emulator` removed
 };
@@ -130,6 +134,8 @@ struct EmulatorsCommand {
     std::string game;
     std::string gameTitle;
     std::string emulator;
+    /// The screen stands for one title: the choice is `game`'s, not `system`'s.
+    bool forGame = false;
 
     bool operator==(const EmulatorsCommand&) const = default;
 };
@@ -150,6 +156,14 @@ public:
     /// Opens on the systems, asking for the table (takeRequest()); `resumedFocus` keeps the system focused last.
     void open();
     void close() noexcept;
+    /// Opens for the title `gameId` of `system`: on that system's options once the table came. `own`: what is stored for
+    /// the title (the option "in uso"; "Torna alla scelta del sistema" takes it away).
+    void openForGame(std::string system, std::string gameId, std::string title,
+                     std::optional<std::pair<bool, std::string>> own);
+    /// It stands for one title; its GameId and title.
+    [[nodiscard]] bool forGame() const noexcept { return !m_game.empty(); }
+    [[nodiscard]] const std::string& gameId() const noexcept { return m_game; }
+    [[nodiscard]] const std::string& gameTitle() const noexcept { return m_gameTitle; }
 
     /// The table is wanted (the wizard's page 5 shows its counts before the screen ever opens).
     void prepare();
@@ -222,6 +236,8 @@ private:
     void settleButton();
     /// What the choice stands on as it is now: a program chosen makes an option ready.
     void syncChosen();
+    /// A title's "in uso" is its own choice, or what the system has when it has none.
+    void markOwn();
 
     bool m_open = false;
     EmulatorsState m_state = EmulatorsState::Loading;
@@ -238,6 +254,11 @@ private:
     std::string m_verdict;
     std::string m_problem;
     bool m_saved = false;
+    /// For one title: its system, GameId, title, and what is stored for it (profile, value).
+    std::string m_gameSystem;
+    std::string m_game;
+    std::string m_gameTitle;
+    std::optional<std::pair<bool, std::string>> m_own;
     std::optional<EmulatorsCommand> m_request;
     std::uint64_t m_revision = 0;
 };

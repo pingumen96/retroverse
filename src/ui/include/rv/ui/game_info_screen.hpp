@@ -4,6 +4,7 @@
 // GameInfoContent (the game's metadata, its description and the other versions of its title), the body scrolled by the
 // UI commands, the clicks on its buttons.
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -39,6 +40,14 @@ public:
     [[nodiscard]] float scrollRange() const;
     /// The button a click pressed since the last call: Close or Media.
     [[nodiscard]] std::optional<InfoStep> takeClicked() noexcept;
+    /// The row a click pressed since the last call.
+    [[nodiscard]] std::optional<InfoRow> takeClickedRow() noexcept;
+    /// The focused row (nothing: the text has the input), shown as such and scrolled into its region.
+    void setFocusedRow(std::optional<InfoRow> row);
+    /// After UiView::update(): the focused row scrolled into its region.
+    void afterUpdate();
+    /// Elements whose text does not fit its box as shown now.
+    [[nodiscard]] std::uint32_t textCut() const;
 
 private:
     struct Impl;

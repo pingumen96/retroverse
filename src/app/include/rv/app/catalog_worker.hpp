@@ -32,6 +32,9 @@
 // stored (changeChoice()). What is stored changes the systems' readiness: they are resolved again without reading ES-DE's
 // configuration (CatalogResults::resolved, a new readiness generation).
 //
+// Since I7 step 6 (ADR-0018 §9, §11) it answers the statistics screen (statistics(): SqliteCatalogQuery::playStatistics on
+// the worker's reader) and Informazioni's rows (gameControls(), setGameStatus()), so that neither ever blocks a frame.
+//
 // Since I4 step 5a it opens, with the catalog, a third read-only connection for the building job (CatalogOpened::world,
 // room_snapshot.hpp's WorldCatalogReader), which reads every system's snapshot on the app's worker pool: the room's
 // snapshot is no job of this worker any more (I3 step 10b's), so that the lists never queue behind it.
@@ -58,6 +61,7 @@
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog/query.hpp>
 #include <rv/catalog/recent_games.hpp>
+#include <rv/catalog/statistics.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/session_store.hpp>
 #include <rv/core/expected.hpp>
@@ -238,6 +242,33 @@ struct RecentGamesList {
     double milliseconds = 0.0;
 };
 
+/// The statistics screen's answer (CatalogWorker::statistics, I7 step 6).
+struct StatisticsList {
+    std::uint64_t serial = 0;
+    /// The read failed.
+    std::optional<Error> error;
+    catalog::PlayStatistics statistics;
+    /// How long the worker took (ADR-0018 §16: shown within 1 s of opening).
+    double milliseconds = 0.0;
+};
+
+/// What Informazioni's rows show of a game (CatalogWorker::gameControls, I7 step 6).
+struct GameControls {
+    std::uint64_t serial = 0;
+    catalog::GameId game;
+    /// The catalog knows it.
+    bool known = false;
+    catalog::GameStatusState status;
+    /// The last status written for it could not be stored, until the next write: the row keeps what it read.
+    bool writeFailed = false;
+    /// Its system, and what launches it: the choice as people read it, where it comes from
+    /// (catalog::toString(ChoiceSource)), and the choice stored for this title, if one is.
+    catalog::SystemName system;
+    std::string choice;
+    std::string source;
+    std::optional<launcher::LaunchChoice> own;
+};
+
 /// What the worker answered since the last CatalogWorker::take().
 struct CatalogResults {
     std::optional<CatalogOpened> opened;
@@ -260,6 +291,9 @@ struct CatalogResults {
     std::vector<LaunchTestResult> tests;
     std::vector<ChoiceChanged> changes;
     std::optional<CatalogResolved> resolved;
+    /// I7 step 6: the latest statistics, and Informazioni's rows.
+    std::optional<StatisticsList> statistics;
+    std::optional<GameControls> gameControls;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
@@ -267,7 +301,7 @@ struct CatalogResults {
     [[nodiscard]] bool empty() const noexcept {
         return !opened && !list && !recentGames && readiness.empty() && launches.empty() && sessions.empty() &&
                verified.empty() && !refreshProgress && !refreshed && !emulatorTable && !emulatorSamples &&
-               tests.empty() && changes.empty() && !resolved && !ended;
+               tests.empty() && changes.empty() && !resolved && !statistics && !gameControls && !ended;
     }
 };
 
@@ -339,6 +373,12 @@ public:
     void forgetTest(std::uint64_t token);
     /// Changes what is stored (CatalogResults::changes), then resolves the systems again (::resolved).
     void changeChoice(std::uint64_t serial, ChoiceChange change);
+    /// What was played (CatalogResults::statistics), `limit` games per list; one still queued is replaced.
+    void statistics(std::uint64_t serial, std::size_t limit);
+    /// The status and the launch choice of `game` (CatalogResults::gameControls); one still queued is replaced.
+    void gameControls(std::uint64_t serial, catalog::GameId game);
+    /// Sets the status of `game`, then answers as gameControls().
+    void setGameStatus(std::uint64_t serial, catalog::GameId game, catalog::GameStatus status);
     /// The play session of the launch `token`: it began (Running, the started process), it ended (its final state; a
     /// blocked attempt without beginSession()). `system` and `program` (the request's executable) record a launch
     /// verification when it returned normally.

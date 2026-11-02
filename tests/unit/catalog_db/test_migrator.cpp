@@ -125,13 +125,15 @@ std::string metaValue(Connection& connection, std::string_view key) {
 TEST_CASE("catalog_db/migrator: a fresh database migrates to the program's schema, the identity and index areas first, "
           "without a backup",
           "[catalog_db]") {
-    CHECK(programSchemaVersion() == 2);
+    CHECK(programSchemaVersion() == 3);
     const auto migrations = programMigrations();
-    REQUIRE(migrations.size() == 2);
+    REQUIRE(migrations.size() == 3);
     CHECK(migrations[0].version == 1);
     CHECK(migrations[0].name.starts_with("schema v1: identity, index")); // later areas add their names
     CHECK(migrations[1].version == 2);
     CHECK(migrations[1].name == "schema v2: launch"); // I7 step 4: the programs chosen for emulators
+    CHECK(migrations[2].version == 3);
+    CHECK(migrations[2].name == "schema v3: launch"); // I7 step 6: the games' statuses
     CHECK_FALSE(migrations[0].rebuildsTables);
 
     const rv::test::TempDir dir("rv-migrate-fresh");

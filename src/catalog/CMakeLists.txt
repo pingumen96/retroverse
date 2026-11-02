@@ -17,6 +17,7 @@ add_library(rv_catalog STATIC
     src/metadata.cpp
     src/recent_games.cpp
     src/reconciliation.cpp
+    src/statistics.cpp
 )
 add_library(rv::catalog ALIAS rv_catalog)
 rv_set_target_defaults(rv_catalog)

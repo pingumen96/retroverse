@@ -130,9 +130,21 @@ CREATE TABLE rv_launch_program_choices (
 ) WITHOUT ROWID, STRICT;
 )sql";
 
-constexpr std::array<AreaStep, 2> kSteps{{
+// I7 step 6 (ADR-0018 §9): the status Retroverse's user set for a game (catalog::GameStatus by toString()); a game with no
+// row derives its status. Its one column into the identity is what putAlias() re-points, and it is a state table: `db
+// rebuild-index` never touches it.
+constexpr std::string_view kVersion3 = R"sql(
+CREATE TABLE rv_game_status (
+    game   INTEGER PRIMARY KEY REFERENCES rv_game_identities (id),
+    status TEXT    NOT NULL CHECK (status IN ('not-started', 'in-progress', 'completed', 'abandoned')),
+    set_at TEXT    NOT NULL
+) STRICT;
+)sql";
+
+constexpr std::array<AreaStep, 3> kSteps{{
     {1, kVersion1, nullptr, false},
     {2, kVersion2, nullptr, false},
+    {3, kVersion3, nullptr, false},
 }};
 
 } // namespace

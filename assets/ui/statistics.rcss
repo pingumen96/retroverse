@@ -1,0 +1,252 @@
+/*
+	The statistics screen (statistics.rml), in the emulators screen's look (emulators.rcss: palette of style 3, UI neutral
+	#171B22 in a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A, signage green #6EAF93). The title, the
+	sections, the body that scrolls, the hints, placed by the panel's edges so that nothing runs past it. Sizes in dp. No
+	colour is animated (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+	background-color: #07090CD9;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+/* The text takes no focus. What takes a click must be focusable: RmlUi gives the click to the focusable ancestor. */
+p, h1, span {
+	focus: none;
+}
+
+button {
+	tab-index: none;
+}
+
+h1 {
+	position: absolute;
+	left: 28dp;
+	top: 18dp;
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	left: 12%;
+	width: 76%;
+	top: 6%;
+	height: 88%;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+}
+
+#st-tabs {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 72dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+}
+
+.tab {
+	display: block;
+	box-sizing: border-box;
+	flex: 1 1 auto;
+	height: 44dp;
+	line-height: 40dp;
+	margin-right: 8dp;
+	font-size: 21dp;
+	text-align: center;
+	color: #F4EFE6B3;
+	background-color: #FFFFFF0F;
+	border: 2dp #00000000;
+	border-radius: 10dp;
+}
+
+.tab:hover {
+	border-color: #F4EFE659;
+}
+
+.tab.active {
+	color: #171B22;
+	background-color: #FFC88A;
+	font-weight: bold;
+}
+
+#st-body {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 132dp;
+	bottom: 74dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 12dp;
+}
+
+#st-body scrollbarvertical {
+	width: 8dp;
+}
+
+#st-body scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#st-body scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 10dp;
+	margin-bottom: 8dp;
+	line-height: 1.3em;
+}
+
+.figures {
+	display: flex;
+	flex-direction: row;
+	margin-top: 8dp;
+	margin-bottom: 14dp;
+}
+
+.figure {
+	flex: 1 1 0dp;
+	box-sizing: border-box;
+	padding: 12dp 14dp;
+	margin-right: 10dp;
+	background-color: #FFFFFF0F;
+	border-radius: 12dp;
+}
+
+.value {
+	font-size: 40dp;
+	font-weight: bold;
+	color: #FFC88A;
+}
+
+.label {
+	font-size: 19dp;
+	color: #F4EFE6B3;
+}
+
+.line {
+	display: flex;
+	flex-direction: row;
+	padding: 8dp 2dp;
+	border-bottom: 1dp #F4EFE61F;
+}
+
+.line-main {
+	flex: 1 1 0dp;
+	padding-right: 16dp;
+}
+
+.line-side {
+	flex: 0 0 auto;
+	width: 240dp;
+	text-align: right;
+}
+
+.title {
+	font-size: 22dp;
+}
+
+.side {
+	font-size: 21dp;
+	color: #A8E6B0;
+}
+
+.detail {
+	font-size: 18dp;
+	color: #F4EFE6A6;
+}
+
+#st-footer {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	bottom: 14dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+#st-hints {
+	flex: 1 1 auto;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.hint {
+	margin-right: 18dp;
+}
+
+.kbd {
+	display: inline-block;
+	min-width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	padding: 0dp 4dp;
+	border-radius: 13dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	font-size: 16dp;
+	color: #171B22;
+	background-color: #F4EFE6CC;
+}
+
+.action {
+	display: block;
+	box-sizing: border-box;
+	width: 150dp;
+	padding: 7dp 14dp;
+	font-size: 20dp;
+	text-align: center;
+	background-color: #FFFFFF14;
+	border: 2dp #00000000;
+	border-radius: 12dp;
+}
+
+.action:hover {
+	border-color: #F4EFE659;
+}
+
+/* Small views (1280 x 720 at 125%): a wider panel and denser text. */
+@media (theme: compact) {
+	.panel { left: 4%; width: 92%; top: 3%; height: 94%; }
+	h1 { font-size: 26dp; left: 20dp; top: 10dp; }
+	#st-tabs { left: 20dp; right: 20dp; top: 50dp; height: 40dp; }
+	.tab { height: 36dp; line-height: 32dp; font-size: 17dp; margin-right: 6dp; }
+	#st-body { left: 20dp; right: 20dp; top: 96dp; bottom: 56dp; }
+	.note { font-size: 17dp; }
+	.value { font-size: 30dp; }
+	.label, .detail { font-size: 16dp; }
+	.title, .side { font-size: 18dp; }
+	.line { padding: 5dp 2dp; }
+	.line-side { width: 200dp; }
+	#st-footer { left: 20dp; right: 20dp; bottom: 8dp; height: 40dp; }
+	#st-hints { font-size: 15dp; }
+	.kbd { min-width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+	.action { width: 120dp; font-size: 17dp; padding: 5dp 10dp; }
+}

@@ -8,6 +8,8 @@
 		string is written here: the screen binds catalog data as it comes, and an empty field reads "n.d." (non
 		disponibile). Up and Down scroll the body, Back (B, Esc) closes, Y opens the media viewer of the same game; a
 		click on a button does the same. The buttons never take the focus: the input stays with the application.
+		I7 step 6 (ADR-0018 §11): rows below the text: Stato steps the four statuses, Emulatore opens the emulators list for
+		this title, a version launches that version; Down past the text reaches them, a click presses them (VR's ray too).
 	-->
 	<title>Informazioni</title>
 	<link type="text/rcss" href="game_info.rcss"/>
@@ -28,9 +30,30 @@
 			<h3>Descrizione</h3>
 			<p id="game-info-description" class="description" data-if="info.description != ''">{{ info.description }}</p>
 			<p id="info-no-description" class="note" data-if="info.description == ''">Il catalogo non ha una descrizione di questo gioco.</p>
-			<h3>Altre versioni</h3>
+		</div>
+		<div id="game-info-rows" class="control-rows">
+			<div id="info-status" class="control" data-if="info.controls" data-class-focused="info.focus == 'status'" data-event-click="act('status')">
+				<span class="control-key">Stato</span>
+				<span class="control-value">
+					<span data-if="info.status == 'not-started'">Da iniziare</span>
+					<span data-if="info.status == 'in-progress'">In corso</span>
+					<span data-if="info.status == 'completed'">Completato</span>
+					<span data-if="info.status == 'abandoned'">Abbandonato</span>
+					<span class="control-why" data-if="!info.statusStored"> (dedotto)</span>
+					<span class="problem" data-if="info.statusFailed"> non salvato</span>
+				</span>
+			</div>
+			<div id="info-emulator" class="control" data-if="info.controls" data-class-focused="info.focus == 'emulator'" data-event-click="act('emulator')">
+				<span class="control-key">Emulatore</span>
+				<span class="control-value">
+					<span data-if="info.choice != ''">{{ info.choice }}</span><span data-if="info.choice == ''">Comando di ES-DE</span>
+					<span class="control-why" data-if="info.own"> (scelto per questo titolo)</span>
+					<span class="control-why" data-if="!info.own && info.source == 'esde-game'"> (scelto in ES-DE)</span>
+					<span class="control-why" data-if="!info.own && info.source != 'esde-game'"> (scelta del sistema)</span>
+				</span>
+			</div>
 			<div id="game-info-versions" class="versions" data-if="info.versionCount > 0">
-				<div class="version" data-for="version : versions">
+				<div class="control version" data-for="version : versions" data-attr-id="version.elementId" data-class-focused="info.focus == 'version' && info.focusVersion == version.index" data-event-click="version(version.index)">
 					<span class="version-title"><span data-if="version.title != ''">{{ version.title }}</span><span data-if="version.title == ''">Versione senza titolo</span></span>
 					<span class="version-region"><span data-if="version.region != ''">{{ version.region }}</span><span data-if="version.region == ''">regione non indicata</span></span>
 				</div>
@@ -43,7 +66,8 @@
 			<button id="info-media" class="action" data-event-click="act('media')">Vedi media</button>
 			<div class="hints">
 				<span class="hint"><span class="pad" hint-action="ui_up ui_down"></span>Scorri</span>
-				<span class="hint"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
+				<span class="hint" data-if="info.focus != ''"><span class="pad" hint-action="ui_activate"></span><span data-if="info.focus == 'version'">Avvia</span><span data-if="info.focus == 'status'">Cambia</span><span data-if="info.focus == 'emulator'">Scegli</span></span>
+				<span class="hint" data-if="info.focus == ''"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
 				<span class="hint"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
 			</div>
 			<button id="info-close" class="action close" data-event-click="act('close')">Chiudi</button>

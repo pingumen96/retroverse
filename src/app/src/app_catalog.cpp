@@ -296,6 +296,36 @@ bool EsdeAppCatalog::requestChoiceChange(ChoiceChange change) {
     return true;
 }
 
+bool EsdeAppCatalog::requestStatistics(std::size_t limit) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_statisticsAsked = true;
+    m_statistics.reset();
+    m_worker.statistics(++m_statisticsSerial, limit);
+    return true;
+}
+
+bool EsdeAppCatalog::requestGameControls(const catalog::GameId& game) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_controlsAsked = 1;
+    m_gameControls.reset();
+    m_worker.gameControls(++m_controlsSerial, game);
+    return true;
+}
+
+bool EsdeAppCatalog::requestGameStatus(const catalog::GameId& game, catalog::GameStatus status) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_controlsAsked = 1;
+    m_gameControls.reset();
+    m_worker.setGameStatus(++m_controlsSerial, game, status);
+    return true;
+}
+
 std::optional<std::filesystem::path> EsdeAppCatalog::programStartFolder() const {
     const auto profile = esde::readLibraryFile(m_options.paths.configDir() / esde::kLibraryFileName);
     return profile ? profile->installFolder : std::nullopt;
@@ -435,6 +465,21 @@ void EsdeAppCatalog::collectEmulators(CatalogResults& results) {
         m_table = std::move(results.emulatorTable);
         results.emulatorTable.reset();
     }
+    if (results.statistics) {
+        if (results.statistics->serial == m_statisticsSerial) {
+            m_statisticsAsked = false;
+            m_statistics = std::move(results.statistics);
+        }
+        results.statistics.reset();
+    }
+    if (results.gameControls) {
+        // Only the latest question counts; an older status was still stored, and the latest answer reads it back.
+        if (results.gameControls->serial == m_controlsSerial) {
+            m_controlsAsked = 0;
+            m_gameControls = std::move(results.gameControls);
+        }
+        results.gameControls.reset();
+    }
     if (results.emulatorSamples) {
         m_samplesAsked = false;
         m_samples = std::move(results.emulatorSamples);
@@ -455,6 +500,8 @@ void EsdeAppCatalog::collectEmulators(CatalogResults& results) {
         m_tableAsked = false;
         m_samplesAsked = false;
         m_changesAsked = 0;
+        m_statisticsAsked = false;
+        m_controlsAsked = 0;
         m_testAwaited = false;
     }
 }

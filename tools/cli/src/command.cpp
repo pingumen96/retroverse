@@ -30,7 +30,7 @@ constexpr std::string_view kLogFileName = "retroverse-cli.log";
 /// The command table: the order of --help, the step of docs/roadmap.md that implements each command (worldplan: its
 /// first subcommand's; each subcommand names its own). The rows never change when a command is implemented: its
 /// cmd_<name>.cpp does.
-constexpr std::array<Command, 16> kCommands{{
+constexpr std::array<Command, 17> kCommands{{
     {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", "I2 step 2", runDiscover,
      true},
     {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)",
@@ -49,6 +49,7 @@ constexpr std::array<Command, 16> kCommands{{
      runIdentities},
     {"assign", "Choose the emulator command or profile of a system or a game", "I2 step 12", runAssign},
     {"sessions", "List the play sessions", "I2 step 12", runSessions},
+    {"stats", "Show what was played: sessions, estimated hours, per system and status", "I7 step 6", runStats},
     {"worldplan", "The plan of the building: generate, update, show, check, snapshots, undo", "I3 step 3",
      runWorldPlan},
     {"where-is", "Where a game stands in the building's plan, or why it is not placed", "I3 step 9", runWhereIs},

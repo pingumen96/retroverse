@@ -547,6 +547,8 @@ struct GameScreensRecord {
     /// Frames each showed; pictures uploaded and pictures that could not be read or decoded.
     std::uint64_t viewerFrames = 0;
     std::uint64_t infoFrames = 0;
+    /// I7 step 6: the most elements of Informazioni found with cut text on any frame it showed (ADR-0018 §15).
+    std::uint32_t infoTextCut = 0;
     std::uint64_t pictures = 0;
     std::uint64_t failures = 0;
     /// The viewer's picture and stage as last laid out with a picture: x, y, width, height in pixels of the window's
@@ -724,6 +726,41 @@ struct EmulatorsRecord {
     std::uint64_t eventsDropped = 0;
 
     bool operator==(const EmulatorsRecord&) const = default;
+};
+
+/// The run report's "statistics" (I7 step 6, ADR-0018 §9, §15): the screen, what it read last.
+struct StatisticsRecord {
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// At the end: where it stands (ui::toString) and the section shown.
+    std::string state;
+    std::string tab;
+    /// The sections shown, in order.
+    std::vector<std::string> tabs;
+    /// The last answer.
+    std::uint64_t sessions = 0;
+    std::uint64_t crashed = 0;
+    std::uint64_t leftRunning = 0;
+    std::int64_t playedMs = 0;
+    std::uint64_t gamesPlayed = 0;
+    std::uint64_t games = 0;
+    std::vector<std::string> mostPlayed;
+    std::vector<std::string> mostRecent;
+    /// What the recent games shown last said of those with no session.
+    std::vector<std::string> recentNotes;
+    /// "name=sessions", "status=games".
+    std::vector<std::string> systems;
+    std::vector<std::string> statuses;
+    /// The slowest answer on the worker, in milliseconds (ADR-0018 §16: shown within 1 s of opening).
+    double readMs = 0.0;
+    /// The summary's line naming the hours, as the document shows it.
+    std::string hoursLabel;
+    /// The most elements found with cut text on any frame it showed (ADR-0018 §15).
+    std::uint32_t textCut = 0;
+    /// Clicks taken (VR's ray among them).
+    std::uint64_t clicks = 0;
+
+    bool operator==(const StatisticsRecord&) const = default;
 };
 
 /// A wizard's step (I7 step 2).
@@ -2332,6 +2369,8 @@ struct RunReport {
     std::optional<MenuRecord> menu;
     /// I7 step 4: the emulators screen, once it was asked for anything.
     std::optional<EmulatorsRecord> emulators;
+    /// I7 step 6: the statistics screen, once it opened.
+    std::optional<StatisticsRecord> statistics;
     std::optional<SettingsRecord> settings;
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;

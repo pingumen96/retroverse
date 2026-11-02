@@ -142,6 +142,7 @@ struct EmulatorsScreen::Impl {
         constructor.Bind("verdict", &verdict);
         constructor.Bind("problem", &problem);
         constructor.Bind("saved", &saved);
+        constructor.Bind("gameTitle", &gameTitle);
         constructor.Bind("sampleTitle", &sampleTitle);
         constructor.Bind("sampleAt", &sampleAt);
         constructor.Bind("sampleCount", &sampleCount);
@@ -238,6 +239,7 @@ struct EmulatorsScreen::Impl {
     void bind(const EmulatorsModel& shown, const FolderBrowserModel& folders) {
         state = Rml::String(toString(shown.state()));
         viewName = Rml::String(toString(shown.view()));
+        gameTitle = Rml::String(shown.gameTitle());
         systems.clear();
         int index = 0;
         for (const EmulatorSystem& system : shown.systems()) {
@@ -345,6 +347,8 @@ struct EmulatorsScreen::Impl {
     SystemView current;
     OptionView chosen;
     Rml::String verdict;
+    /// The title it stands for ("" a whole system's).
+    Rml::String gameTitle;
     Rml::String problem;
     bool saved = false;
     Rml::String sampleTitle;

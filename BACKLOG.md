@@ -794,3 +794,10 @@ why; what I7 does take, it closes in its step notes.
   and a program for an ES-DE command.
 - **`xr_bindings.json` remapped in the app:** the runtime takes bindings at the session's start, and the shipped profiles
   cover the controllers.
+
+## Follow-ups from I7
+
+### Statistics and the status (I7 step 6)
+
+- A game's status, once stepped, never derives again: Stato has no way back to "dedotto" short of removing its row
+  in `rv_game_status`.

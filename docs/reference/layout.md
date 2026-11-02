@@ -276,6 +276,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `hint_bar_view.hpp` (fills every `hint-action` of the view's documents) and `controller_notice_screen.hpp`
   (`assets/ui/controller_notice.rml`); `assets/ui/hint_bar.rcss` is linked by every document with hints. I7 step 5 adds to
   `rv_ui_model` `keyboard_model.hpp` (the grid, one table for what a key shows and types), to `rv_ui` `keyboard_screen.hpp`
-  (`assets/ui/keyboard.rml`).
+  (`assets/ui/keyboard.rml`). I7 step 6 adds to `rv_catalog` `game_status.hpp` and `statistics.hpp`, to `rv_catalog_db`
+  `stats_query.cpp` (`playStatistics()`, `gameStatus()`) and `rv_game_status`, to `rv_ui_model` `statistics_model`, to `rv_ui`
+  `statistics_screen` (`assets/ui/statistics.rml`), to `rv_app_catalog` `statistics_data`, to `tools/cli` `cmd_stats.cpp`.
 - `third_party/glad` is generated and vendored (see its README); do not edit it by hand.
 

@@ -127,6 +127,9 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   no command interpreter or launcher, by its name and the file it opens. Gone later it is "emulator not found", never
   passed over. Without `--program` it shows what is stored. `launch --test` fails closed: with `RV_LAUNCH_BACKGROUND` set
   and no `RV_LAUNCH_ALLOWLIST` it exits 1, nothing resolved or recorded.
+- `stats [--limit <n>] [--json]` shows what was played in Retroverse (I7 step 6, ADR-0018 §9): sessions, estimated hours
+  (launch to detected return), the most played and most recent games (10 each), per system and per status. Launch tests
+  never count; crashed and left-running sessions are attempts, not hours; ES-DE's counts are not added in. It only reads.
 - `sessions [--game <id>] [--limit <n>] [--json]` lists the attempts, newest first (50; 0 for all), after closing as
   interrupted the open sessions whose owner process is gone (`launch --game` does it at its start too; a session another
   live process follows stays open). `exitKind` is null when the session has no exit code (an attempt that never

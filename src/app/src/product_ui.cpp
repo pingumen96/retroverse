@@ -39,10 +39,12 @@
 
 #include <rv/app/directory_data.hpp>
 #include <rv/app/folder_lister.hpp>
+#include <rv/app/statistics_data.hpp>
 #include <rv/app/world_card_ui.hpp>
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
 #include <rv/ui/emulators_screen.hpp>
+#include <rv/ui/statistics_screen.hpp>
 #include <rv/ui/regenerate_preview_screen.hpp>
 #include <rv/ui/controller_notice_screen.hpp>
 #include <rv/ui/hint_bar.hpp>
@@ -262,13 +264,23 @@ struct ProductUi::Impl {
     std::string programFor;
     std::optional<EmulatorsRecord> emulatorsRecord;
     bool emulatorsAsked = false;
+    /// I7 step 6: the title whose Emulatore row opened the emulators screen: Informazioni comes back when it closes.
+    struct TitleEmulators {
+        std::string game;
+        std::string from;
+    };
+    std::optional<TitleEmulators> titleEmulators;
+    /// I7 step 6: the statistics screen over the menu (its screen made when it first opens), its record.
+    std::unique_ptr<ui::StatisticsScreen> statisticsScreen;
+    ui::StatisticsModel statistics;
+    std::optional<StatisticsRecord> statisticsRecord;
     bool wizardTableWanted = false;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
-               emulatorsShown() || wizardShown() || controllerNoticeWanted || keyboardShown();
+               emulatorsShown() || statisticsShown() || wizardShown() || controllerNoticeWanted || keyboardShown();
     }
 
     /// The emulators screen shows.
@@ -285,15 +297,13 @@ struct ProductUi::Impl {
         record.events.push_back(EmulatorsEventRecord{context.frameIndex(), std::move(event), std::move(detail)});
     }
 
-    void openEmulators(std::string_view via) {
-        if (emulators.isOpen()) {
-            return;
-        }
+    /// Its screen, made the first time (one that cannot be made is logged and false comes back).
+    [[nodiscard]] bool emulatorsReady() {
         if (!emulatorsScreen) {
             auto screen = ui::EmulatorsScreen::create(*view);
             if (!screen) {
                 spdlog::error("The emulators screen unavailable: {}", screen.error().toString());
-                return;
+                return false;
             }
             emulatorsScreen = std::move(*screen);
             programLister = std::make_unique<FolderLister>(context.wakeCallback());
@@ -301,6 +311,13 @@ struct ProductUi::Impl {
             root->Focus(); // as the directory's: the focus the screen applies starts from the context's root
         }
         nav.reset();
+        return true;
+    }
+
+    void openEmulators(std::string_view via) {
+        if (emulators.isOpen() || !emulatorsReady()) {
+            return;
+        }
         emulators.open();
         ++emulatorsReport().opened;
         addEmulatorsEvent("open", std::string(via));
@@ -338,7 +355,13 @@ struct ProductUi::Impl {
         ui::CatalogEntry entry;
         entry.id = command.game;
         entry.title = command.gameTitle;
-        const std::optional<std::uint64_t> token = launch(entry, LaunchTestChoice{choiceOf(command), std::nullopt});
+        std::optional<catalog::GameId> forGame;
+        if (command.forGame) {
+            if (auto game = catalog::GameId::parse(command.game)) {
+                forGame = *game;
+            }
+        }
+        const std::optional<std::uint64_t> token = launch(entry, LaunchTestChoice{choiceOf(command), forGame});
         if (!token) {
             emulators.testEnded("busy");
             return;
@@ -360,6 +383,9 @@ struct ProductUi::Impl {
         case ui::EmulatorsCommandKind::Close:
             addEmulatorsEvent("closed");
             nav.reset();
+            if (const std::optional<TitleEmulators> title = std::exchange(titleEmulators, std::nullopt)) {
+                openInfo(title->game, {}, std::nullopt, title->from); // what it stored shows there
+            }
             break;
         case ui::EmulatorsCommandKind::Load:
             if (!catalog->requestEmulatorTable()) {
@@ -382,17 +408,27 @@ struct ProductUi::Impl {
         case ui::EmulatorsCommandKind::Save:
             if (systemName) {
                 ChoiceChange change;
-                change.kind = ChoiceChange::Kind::Save;
+                change.kind = command->forGame ? ChoiceChange::Kind::SaveGame : ChoiceChange::Kind::Save;
                 change.system = *systemName;
                 change.choice = choiceOf(*command);
+                if (command->forGame) {
+                    if (auto game = catalog::GameId::parse(emulators.gameId())) {
+                        change.game = *game;
+                    }
+                }
                 changeChoice(std::move(change), "saved");
             }
             break;
         case ui::EmulatorsCommandKind::Clear:
             if (systemName) {
                 ChoiceChange change;
-                change.kind = ChoiceChange::Kind::Clear;
+                change.kind = command->forGame ? ChoiceChange::Kind::ClearGame : ChoiceChange::Kind::Clear;
                 change.system = *systemName;
+                if (command->forGame) {
+                    if (auto game = catalog::GameId::parse(emulators.gameId())) {
+                        change.game = *game;
+                    }
+                }
                 changeChoice(std::move(change), "cleared");
             }
             break;
@@ -520,6 +556,227 @@ struct ProductUi::Impl {
         if (programLister) {
             programLister->poll(programBrowser);
         }
+    }
+
+    // --- The statistics screen (I7 step 6, ADR-0018 §9) ---------------------------------------------------------------
+
+    /// The statistics screen shows.
+    [[nodiscard]] bool statisticsShown() const noexcept { return statisticsScreen && statistics.isOpen(); }
+
+    StatisticsRecord& statisticsReport() { return statisticsRecord ? *statisticsRecord : statisticsRecord.emplace(); }
+
+    void openStatistics() {
+        if (statistics.isOpen()) {
+            return;
+        }
+        if (!statisticsScreen) {
+            auto made = ui::StatisticsScreen::create(*view);
+            if (!made) {
+                spdlog::error("The statistics screen unavailable: {}", made.error().toString());
+                return;
+            }
+            statisticsScreen = std::move(*made);
+        }
+        nav.reset();
+        statistics.open();
+        ++statisticsReport().opened;
+        noteStatisticsTab();
+        spdlog::info("Frame {}: the statistics screen opened", context.frameIndex());
+    }
+
+    void noteStatisticsTab() {
+        StatisticsRecord& record = statisticsReport();
+        std::string tab(ui::toString(statistics.tab()));
+        if ((record.tabs.empty() || record.tabs.back() != tab) && record.tabs.size() < kMaxInteractionEvents) {
+            record.tabs.push_back(std::move(tab));
+        }
+    }
+
+    void statisticsApply(ui::UiCommand command) {
+        switch (command) {
+        case ui::UiCommand::Left:
+        case ui::UiCommand::Right:
+        case ui::UiCommand::FilterPrevious:
+        case ui::UiCommand::FilterNext:
+        case ui::UiCommand::Back:
+            if (statistics.apply(command) == ui::StatisticsCommand::Close) {
+                nav.reset();
+                spdlog::info("Frame {}: the statistics screen closed", context.frameIndex());
+            }
+            noteStatisticsTab();
+            break;
+        default:
+            if (statisticsScreen) {
+                statisticsScreen->scroll(ui::infoStepOf(command));
+            }
+            break;
+        }
+    }
+
+    void statisticsClicks() {
+        if (!statisticsScreen) {
+            return;
+        }
+        const std::optional<ui::StatisticsClick> click = statisticsScreen->takeClicked();
+        if (!click || !statisticsShown() || panel->visible()) {
+            return;
+        }
+        ++statisticsReport().clicks;
+        if (click->close) {
+            statisticsApply(ui::UiCommand::Back);
+        } else if (click->tab) {
+            statistics.click(*click->tab);
+            noteStatisticsTab();
+        }
+    }
+
+    /// What it asks of the catalog, and what the catalog answered.
+    void followStatistics() {
+        if (statistics.takeRequest() == ui::StatisticsCommand::Load &&
+            !catalog->requestStatistics(catalog::kDefaultStatisticsGames)) {
+            if (catalog->roomCatalogState() == CatalogState::Opening && !catalog->workerEnded()) {
+                statistics.prepare(); // asked again on the next frame: it is opening, not absent
+            } else {
+                statistics.setUnavailable();
+            }
+        }
+        if (std::optional<StatisticsList> answer = catalog->takeStatistics()) {
+            StatisticsRecord& record = statisticsReport();
+            record.readMs = std::max(record.readMs, answer->milliseconds);
+            if (answer->error) {
+                statistics.setUnavailable();
+            } else {
+                const catalog::PlayStatistics& read = answer->statistics;
+                record.sessions = read.sessions;
+                record.crashed = read.crashed;
+                record.leftRunning = read.leftRunning;
+                record.playedMs = read.played.count();
+                record.gamesPlayed = read.gamesPlayed;
+                record.games = read.games;
+                record.mostPlayed.clear();
+                for (const catalog::PlayedGame& game : read.mostPlayed) {
+                    record.mostPlayed.push_back(game.title);
+                }
+                record.mostRecent.clear();
+                for (const catalog::PlayedGame& game : read.mostRecent) {
+                    record.mostRecent.push_back(game.title);
+                }
+                record.systems.clear();
+                for (const catalog::SystemStatistics& system : read.systems) {
+                    record.systems.push_back(fmt::format("{}={}", system.system.str(), system.sessions));
+                }
+                record.statuses.clear();
+                for (const catalog::StatusStatistics& status : read.statuses) {
+                    record.statuses.push_back(fmt::format("{}={}", catalog::toString(status.status), status.games));
+                }
+                statistics.setContent(statisticsContentOf(read, machineLocalDate));
+            }
+        }
+        // A worker that ended answers nothing more: the screen never stays on its reading.
+        if (statistics.isOpen() && statistics.state() == ui::StatisticsState::Loading && catalog->workerEnded() &&
+            catalog->roomCatalogState() != CatalogState::Unavailable) {
+            statistics.setUnavailable();
+        }
+    }
+
+    void finishStatistics(RunReport& report) {
+        if (!statisticsRecord) {
+            return;
+        }
+        statisticsRecord->open = statistics.isOpen();
+        statisticsRecord->state = std::string(ui::toString(statistics.state()));
+        statisticsRecord->tab = std::string(ui::toString(statistics.tab()));
+        report.statistics = std::move(statisticsRecord);
+    }
+
+    // --- Informazioni's rows (I7 step 6, ADR-0018 §11) ----------------------------------------------------------------
+
+    /// Its rows asked of the catalog; a catalog without them leaves them out.
+    void askInfoControls(std::string_view gameId) {
+        if (const auto game = catalog::GameId::parse(gameId)) {
+            static_cast<void>(catalog->requestGameControls(*game));
+        }
+    }
+
+    void followInfoControls() {
+        const std::optional<GameControls> answer = catalog->takeGameControls();
+        if (!answer || !answer->known || !screens || !screens->infoOpen() ||
+            screens->gameId() != answer->game.toString()) {
+            return;
+        }
+        ui::GameInfoControls controls;
+        controls.status = std::string(catalog::toString(answer->status.status));
+        controls.statusStored = answer->status.stored;
+        controls.statusFailed = answer->writeFailed;
+        controls.choice = answer->choice;
+        controls.source = answer->source;
+        controls.system = answer->system.str();
+        if (answer->own) {
+            controls.own = std::pair(answer->own->kind == launcher::LaunchChoiceKind::Profile, answer->own->value);
+        }
+        screens->setInfoControls(std::move(controls), context.frameIndex());
+    }
+
+    /// Stato stepped: shown at once, stored on the worker, whose answer has the last word.
+    void stepStatus(bool forward) {
+        const ui::GameInfoContent* content = screens->infoContent();
+        if (content == nullptr || !content->controls) {
+            return;
+        }
+        const auto game = catalog::GameId::parse(content->gameId);
+        const auto status = catalog::parseGameStatus(content->controls->status);
+        if (!game || !status) {
+            return;
+        }
+        const catalog::GameStatus next = catalog::steppedGameStatus(*status, forward);
+        if (!catalog->requestGameStatus(*game, next)) {
+            return;
+        }
+        ui::GameInfoControls controls = *content->controls;
+        controls.status = std::string(catalog::toString(next));
+        controls.statusStored = true;
+        controls.statusFailed = false;
+        screens->noteInfo(context.frameIndex(), "status", controls.status);
+        screens->setInfoControls(std::move(controls), context.frameIndex());
+    }
+
+    /// Emulatore: the emulators list for this title over the world, in Informazioni's place until it closes (so that Back
+    /// is the list's level, as over the menu).
+    void openTitleEmulators() {
+        const ui::GameInfoContent* content = screens->infoContent();
+        if (content == nullptr || !content->controls || emulators.isOpen() || !emulatorsReady()) {
+            return;
+        }
+        const std::string game = content->gameId;
+        const std::string title = content->title;
+        const std::string system = content->controls->system;
+        const std::optional<std::pair<bool, std::string>> own = content->controls->own;
+        titleEmulators = TitleEmulators{game, screens->from()};
+        screens->noteInfo(context.frameIndex(), "emulators", game);
+        screens->close(context.frameIndex());
+        emulators.openForGame(system, game, title, own);
+        ++emulatorsReport().opened;
+        addEmulatorsEvent("open", "title");
+        spdlog::info("Frame {}: the emulators screen opened for the title {}", context.frameIndex(), game);
+    }
+
+    /// A version's row: launched as Avvia launches a game, its session under its own GameId, Informazioni staying behind
+    /// the game-session panel.
+    void launchVersion() {
+        const ui::GameInfoContent* content = screens->infoContent();
+        const std::optional<ui::InfoRow> row = screens->infoRow();
+        if (content == nullptr || !row || row->kind != ui::InfoRow::Kind::Version ||
+            row->version >= content->versions.size()) {
+            return;
+        }
+        const ui::OtherVersion& version = content->versions[row->version];
+        ui::CatalogEntry entry;
+        entry.id = version.gameId;
+        entry.title = version.title;
+        const std::optional<std::uint64_t> token = launch(entry);
+        screens->noteInfo(context.frameIndex(), token ? "version-launch" : "version-busy", version.gameId);
+        spdlog::info("Frame {}: Informazioni launches the version {}{}", context.frameIndex(), version.gameId,
+                     token ? "" : ": another launch is being decided or runs");
     }
 
     void finishEmulators(RunReport& report) {
@@ -951,7 +1208,7 @@ struct ProductUi::Impl {
 
     /// The menu shows (not while a section shows over it).
     [[nodiscard]] bool menuShown() const noexcept {
-        return menuScreen && menu.isOpen() && !settingsModel.isOpen() && !emulators.isOpen();
+        return menuScreen && menu.isOpen() && !settingsModel.isOpen() && !emulators.isOpen() && !statistics.isOpen();
     }
     /// The settings screen shows.
     [[nodiscard]] bool settingsShown() const noexcept { return settingsScreen && settingsModel.isOpen(); }
@@ -978,6 +1235,9 @@ struct ProductUi::Impl {
             break;
         case ui::SystemMenuCommand::OpenEmulators:
             openEmulators("menu");
+            break;
+        case ui::SystemMenuCommand::OpenStatistics:
+            openStatistics();
             break;
         case ui::SystemMenuCommand::Quit:
             addMenuEvent("quit");
@@ -1033,6 +1293,13 @@ struct ProductUi::Impl {
     }
 
     void syncMenu() {
+        if (statisticsScreen) {
+            if (statistics.isOpen()) {
+                statisticsScreen->show(statistics);
+            } else {
+                statisticsScreen->hide();
+            }
+        }
         if (emulatorsScreen) {
             if (emulators.isOpen()) {
                 emulatorsScreen->show(emulators, programBrowser);
@@ -1092,7 +1359,7 @@ struct ProductUi::Impl {
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
         return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
-               settingsShown() || emulatorsShown() || wizardShown();
+               settingsShown() || emulatorsShown() || statisticsShown() || wizardShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -1415,6 +1682,7 @@ struct ProductUi::Impl {
         }
         screens->openInfo(gameInfoOf(gameId, title, entry, std::move(versions)), std::string(from),
                           context.frameIndex());
+        askInfoControls(gameId);
     }
 
     /// What the screens asked of the product UI (the other screen of the same game).
@@ -1424,10 +1692,31 @@ struct ProductUi::Impl {
         }
         const std::string game = screens->gameId();
         const std::string from = screens->from();
-        if (asked == GameScreensPanel::Switch::Media) {
+        switch (asked) {
+        case GameScreensPanel::Switch::None:
+            break;
+        case GameScreensPanel::Switch::Media:
             openMedia(game, {}, std::nullopt, from);
-        } else {
+            break;
+        case GameScreensPanel::Switch::Info:
             openInfo(game, {}, std::nullopt, from);
+            break;
+        case GameScreensPanel::Switch::EmulatorList:
+            if (!panel->visible()) {
+                openTitleEmulators();
+            }
+            break;
+        case GameScreensPanel::Switch::VersionLaunch:
+            if (!panel->visible()) {
+                launchVersion();
+            }
+            break;
+        case GameScreensPanel::Switch::StatusNext:
+        case GameScreensPanel::Switch::StatusPrevious:
+            if (!panel->visible()) {
+                stepStatus(asked == GameScreensPanel::Switch::StatusNext);
+            }
+            break;
         }
     }
 
@@ -2020,7 +2309,7 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
 }
 
 bool ProductUi::menuOpen() const noexcept {
-    return m_impl->menu.isOpen() || wizardOpen() || m_impl->emulators.isOpen();
+    return m_impl->menu.isOpen() || wizardOpen() || m_impl->emulators.isOpen() || m_impl->statistics.isOpen();
 }
 
 bool ProductUi::wizardOpen() const noexcept {
@@ -2073,6 +2362,8 @@ void ProductUi::menuBack() {
     Impl& s = *m_impl;
     if (s.emulators.isOpen()) {
         s.emulatorsApply(ui::UiCommand::Back); // I7 step 4: over the menu or the wizard
+    } else if (s.statistics.isOpen()) {
+        s.statisticsApply(ui::UiCommand::Back); // I7 step 6: over the menu
     } else if (s.wizardShown()) {
         s.wizardApply(ui::UiCommand::Back);
     } else if (s.settingsModel.isOpen()) {
@@ -2130,6 +2421,10 @@ bool ProductUi::handleEvent(const SDL_Event& event) {
     // I7 step 4: the emulators screen likewise, over the wizard and the menu.
     if (m_impl->emulatorsShown() && !m_impl->panel->visible()) {
         return m_impl->emulatorsScreen->handlePointer(event);
+    }
+    // I7 step 6: the statistics screen likewise, over the menu.
+    if (m_impl->statisticsShown() && !m_impl->panel->visible()) {
+        return m_impl->statisticsScreen->handlePointer(event);
     }
     // I7 step 2: the wizard likewise, over everything but the panel.
     if (m_impl->wizardShown() && !m_impl->panel->visible()) {
@@ -2343,6 +2638,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.followHandover();
     s.followWizard();
     s.followEmulators(); // I7 step 4
+    s.followStatistics(); // I7 step 6
+    s.followInfoControls(); // I7 step 6
 
     s.commands.clear();
     const auto followPreviewButtons = [&] {
@@ -2371,6 +2668,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 s.keyboardApply(command); // I7 step 5
             } else if (s.emulators.isOpen()) {
                 s.emulatorsApply(command); // I7 step 4
+            } else if (s.statistics.isOpen()) {
+                s.statisticsApply(command); // I7 step 6
             } else if (s.wizardShown()) {
                 s.wizardApply(command); // I7 step 2
             } else if (s.preview.isOpen()) {
@@ -2414,6 +2713,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         }
     }
     s.emulatorsClicks(); // I7 step 4
+    s.statisticsClicks(); // I7 step 6
     // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
     if (s.settingsScreen) {
         if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
@@ -2487,6 +2787,16 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             EmulatorsRecord& record = s.emulatorsReport();
             record.textCut = std::max(record.textCut, s.emulatorsScreen->textCut());
             record.browserTextCut = std::max(record.browserTextCut, s.emulatorsScreen->browserTextCut());
+        }
+        if (s.statisticsShown()) {
+            StatisticsRecord& record = s.statisticsReport();
+            record.textCut = std::max(record.textCut, s.statisticsScreen->textCut());
+            if (std::string label = s.statisticsScreen->hoursLabel(); !label.empty()) {
+                record.hoursLabel = std::move(label);
+            }
+            if (s.statistics.tab() == ui::StatisticsTab::Recent) {
+                record.recentNotes = s.statisticsScreen->recentNotes();
+            }
         }
         if (s.wizardShown()) {
             s.wizardScreen->afterUpdate();
@@ -2706,6 +3016,7 @@ void ProductUi::finish() {
     }
     report.menu = std::move(s.menuRecord);
     s.finishEmulators(report);
+    s.finishStatistics(report);
     s.finishWizard(report);
     if (s.keyboardRecord) {
         s.keyboardRecord->open = s.keyboard.isOpen();

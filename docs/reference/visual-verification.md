@@ -231,6 +231,9 @@ generic sentence of a reason the document does not know). The clip's burned-in c
 The on-screen keyboard (I7 step 5): `rv_smoke_tests.exe "[keyboard_shots]"` with `RV_SHOTS_DIR` naming a folder writes it
 over the quick catalog at 1920 x 1080 and 1280 x 720, at text scale 100% and 125%.
 
+The statistics screen and Informazioni's rows (I7 step 6): `rv_smoke_tests.exe "[statistics_shots]"` with `RV_SHOTS_DIR` naming
+a folder writes each section, Informazioni on a row and the emulators list of a title, at 1920 x 1080 at 100% and 125%.
+
 The emulators screen (I7 step 4): `rv_smoke_tests.exe "[emulators_shots]"` with `RV_SHOTS_DIR` naming a folder writes the
 systems, a system, a choice ready and one not found, the browser and a folder's programs, at 1920 x 1080, at text scale
 125%, and at 125% at 1280 x 720, the pad's actions alone, each checked for cut text.

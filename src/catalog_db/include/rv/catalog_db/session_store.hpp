@@ -35,6 +35,7 @@
 #include <string_view>
 #include <vector>
 
+#include <rv/catalog/game_status.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/core/expected.hpp>
@@ -198,6 +199,15 @@ public:
     /// Removes the program of `emulator` of `library`; true when it had one.
     [[nodiscard]] Expected<bool> clearProgramChoice(const catalog::LibraryId& library, std::string_view emulator,
                                                     const BusyRetry& retry = {});
+
+    // --- The games' statuses (I7 step 6, ADR-0018 §9) ------------------------------------------------------------------
+
+    /// The status set for `game` (an alias stands for its game); nothing when it derives one.
+    [[nodiscard]] Expected<std::optional<catalog::GameStatus>> gameStatus(catalog::GameId game);
+    /// Sets the status of `game`, replacing one it had. Errors: NotFound when `game` is neither an identity nor an alias;
+    /// Conflict (busy); SQLite's others.
+    [[nodiscard]] Status setGameStatus(catalog::GameId game, catalog::GameStatus status,
+                                       std::chrono::system_clock::time_point setAt, const BusyRetry& retry = {});
 
     // --- Verifications -----------------------------------------------------------------------------------------------
 

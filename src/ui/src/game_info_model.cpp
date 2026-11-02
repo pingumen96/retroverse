@@ -28,6 +28,18 @@ std::string_view toString(InfoStep step) noexcept {
     return "unknown";
 }
 
+std::vector<InfoRow> infoRowsOf(const GameInfoContent& content) {
+    std::vector<InfoRow> rows;
+    if (content.controls) {
+        rows.push_back(InfoRow{InfoRow::Kind::Status, 0});
+        rows.push_back(InfoRow{InfoRow::Kind::Emulator, 0});
+    }
+    for (std::size_t index = 0; index < std::min(content.versions.size(), game_info::kMaxVersions); ++index) {
+        rows.push_back(InfoRow{InfoRow::Kind::Version, index});
+    }
+    return rows;
+}
+
 InfoStep infoStepOf(UiCommand command) noexcept {
     switch (command) {
     case UiCommand::Up:

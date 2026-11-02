@@ -86,6 +86,7 @@ add_library(rv_app_catalog STATIC
     src/catalog_database_source.cpp
     src/catalog_worker.cpp
     src/emulators_data.cpp
+    src/statistics_data.cpp
     src/folder_lister.cpp
     src/game_screens.cpp
     src/hub_showcase.cpp

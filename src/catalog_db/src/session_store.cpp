@@ -57,6 +57,8 @@ enum class Sql : std::size_t {
     SelectGameChoice,
     UpsertGameChoice,
     DeleteGameChoice,
+    SelectGameStatus,
+    UpsertGameStatus,
     SelectSystemChoices,
     SelectSystemChoice,
     UpsertSystemChoice,
@@ -106,6 +108,11 @@ std::string_view sqlOf(Sql which) noexcept {
         return "INSERT INTO rv_launch_game_choices (game, kind, value, chosen_at) VALUES (" RV_RESOLVED_GAME("?1")
                ", ?2, ?3, ?4) ON CONFLICT (game) DO UPDATE SET kind = excluded.kind, value = excluded.value, "
                "chosen_at = excluded.chosen_at";
+    case Sql::SelectGameStatus:
+        return "SELECT status FROM rv_game_status WHERE game = " RV_RESOLVED_GAME("?1");
+    case Sql::UpsertGameStatus:
+        return "INSERT INTO rv_game_status (game, status, set_at) VALUES (" RV_RESOLVED_GAME("?1")
+               ", ?2, ?3) ON CONFLICT (game) DO UPDATE SET status = excluded.status, set_at = excluded.set_at";
     case Sql::DeleteGameChoice:
         return "DELETE FROM rv_launch_game_choices WHERE game = " RV_RESOLVED_GAME("?1");
     case Sql::SelectSystemChoices:
@@ -741,6 +748,50 @@ Status SessionStore::setGameChoice(GameId game, const launcher::LaunchChoice& ch
             .bindText(2, launcher::toString(choice.kind))
             .bindText(3, choice.value)
             .bindText(4, timeText(chosenAt));
+        if (auto written = statement.run(); !written) {
+            if (isForeignKeyFailure(written.error())) {
+                return makeError(ErrorCode::NotFound,
+                                 fmt::format("the catalog has no game {} (no identity, no alias)", game.toString()));
+            }
+            return written;
+        }
+        return ok();
+    });
+}
+
+Expected<std::optional<catalog::GameStatus>> SessionStore::gameStatus(GameId game) {
+    auto select = m_state->statement(Sql::SelectGameStatus);
+    if (!select) {
+        return propagate(select.error());
+    }
+    Statement& row = **select;
+    const ScopedReset reset(row);
+    row.bindInt(1, static_cast<std::int64_t>(game.value()));
+    auto stepped = row.step();
+    if (!stepped) {
+        return propagate(stepped.error());
+    }
+    if (!*stepped) {
+        return std::optional<catalog::GameStatus>();
+    }
+    const std::optional<catalog::GameStatus> status = catalog::parseGameStatus(row.columnText(0));
+    if (!status) {
+        return unreadable("a game status that is none", std::string(row.columnText(0)));
+    }
+    return status;
+}
+
+Status SessionStore::setGameStatus(GameId game, catalog::GameStatus status,
+                                   std::chrono::system_clock::time_point setAt, const BusyRetry& retry) {
+    return m_state->inTransaction("a game's status", retry, [&]() -> Status {
+        auto upsert = m_state->statement(Sql::UpsertGameStatus);
+        if (!upsert) {
+            return propagate(upsert.error());
+        }
+        Statement& statement = **upsert;
+        statement.bindInt(1, static_cast<std::int64_t>(game.value()))
+            .bindText(2, catalog::toString(status))
+            .bindText(3, timeText(setAt));
         if (auto written = statement.run(); !written) {
             if (isForeignKeyFailure(written.error())) {
                 return makeError(ErrorCode::NotFound,

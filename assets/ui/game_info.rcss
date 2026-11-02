@@ -26,9 +26,14 @@ div, p, h2, h3 {
 	display: block;
 }
 
-/* Nothing takes the focus: the application keeps the input (a click still acts). */
-p, h2, h3, span, div, button {
+/* The application keeps the input. What takes a click must be focusable: RmlUi gives the click to the focusable ancestor,
+   so that a button of `focus: none` would never hear it. */
+p, h2, h3, span {
 	focus: none;
+	tab-index: none;
+}
+
+div, button {
 	tab-index: none;
 }
 
@@ -63,7 +68,7 @@ h2 {
 	left: 30dp;
 	right: 30dp;
 	top: 108dp;
-	bottom: 84dp;
+	bottom: 214dp;
 	overflow-x: hidden;
 	overflow-y: auto;
 	padding-right: 12dp;
@@ -110,11 +115,53 @@ h3 {
 	white-space: pre-line;
 }
 
-.version {
+/* The rows below the text (I7 step 6): always in view, the focused one scrolled into its region. */
+.control-rows {
+	position: absolute;
+	left: 30dp;
+	right: 30dp;
+	bottom: 78dp;
+	height: 130dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 12dp;
+	border-top: 2dp #F4EFE61F;
+}
+
+.control {
 	display: flex;
 	flex-direction: row;
+	box-sizing: border-box;
 	font-size: 20dp;
-	padding: 3dp 0dp;
+	padding: 3dp 8dp;
+	border: 2dp #00000000;
+	border-radius: 8dp;
+}
+
+.control:hover {
+	border-color: #F4EFE659;
+}
+
+.control.focused {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.control-key {
+	width: 30%;
+	color: #F4EFE6A6;
+}
+
+.control-value {
+	width: 70%;
+}
+
+.control-why {
+	color: #F4EFE6A6;
+}
+
+.problem {
+	color: #C8645A;
 }
 
 .version-title {
@@ -142,8 +189,8 @@ h3 {
 .action {
 	display: block;
 	box-sizing: border-box;
-	width: 180dp;
-	padding: 8dp 18dp;
+	width: 150dp;
+	padding: 8dp 10dp;
 	font-size: 21dp;
 	text-align: center;
 	background-color: #FFFFFF14;
@@ -163,7 +210,8 @@ h3 {
 }
 
 .hint {
-	margin: 0dp 10dp;
+	margin: 0dp 6dp;
+	white-space: nowrap; /* a key stays with its word when the line wraps */
 }
 
 .pad {
@@ -187,9 +235,11 @@ h3 {
 	.panel { left: 6%; top: 3%; width: 88%; height: 94%; padding: 14dp 20dp 10dp 20dp; }
 	h2 { font-size: 24dp; }
 	.subtitle { font-size: 18dp; }
-	.body { left: 20dp; right: 20dp; top: 80dp; bottom: 64dp; }
+	.body { left: 20dp; right: 20dp; top: 80dp; bottom: 164dp; }
+	.control-rows { left: 20dp; right: 20dp; bottom: 60dp; height: 100dp; }
+	.control { font-size: 17dp; padding: 2dp 6dp; }
 	h3 { font-size: 18dp; margin-top: 10dp; }
-	.row, .version, .description { font-size: 17dp; }
+	.row, .description { font-size: 17dp; }
 	.note { font-size: 16dp; }
 	.footer { left: 20dp; right: 20dp; bottom: 10dp; height: 44dp; }
 	.action { width: 150dp; font-size: 18dp; padding: 6dp 10dp; }

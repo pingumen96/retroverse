@@ -17,6 +17,11 @@ body {
 	color: #F4EFE6;
 }
 
+/* For one title (I7 step 6) it stands over the quick catalog or the world's card, as Informazioni does. */
+body.for-title {
+	background-color: #07090CD9;
+}
+
 div, p, h1 {
 	display: block;
 }
