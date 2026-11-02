@@ -67,7 +67,7 @@
 			<div class="hints">
 				<span class="hint"><span class="pad" hint-action="ui_up ui_down"></span>Scorri</span>
 				<span class="hint" data-if="info.focus != ''"><span class="pad" hint-action="ui_activate"></span><span data-if="info.focus == 'version'">Avvia</span><span data-if="info.focus == 'status'">Cambia</span><span data-if="info.focus == 'emulator'">Scegli</span></span>
-				<span class="hint"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
+				<span class="hint" data-if="info.focus == ''"><span class="pad" hint-action="ui_media"></span>Vedi media</span>
 				<span class="hint"><span class="pad" hint-action="ui_back"></span>Chiudi</span>
 			</div>
 			<button id="info-close" class="action close" data-event-click="act('close')">Chiudi</button>
