@@ -755,6 +755,13 @@ build/rvdata`).
   `Ripristina predefiniti` asks once and removes `settings.json`'s `bindings`, showing the hand-written file through.
   `--safe-bindings` leaves that section out of the run and shows only that button, to get out of a bad map. In a headset a
   pad is remapped like any pad; Touch controllers reach the map as a pad does (`docs/i7/step-3.md`).
+- **The on-screen keyboard** (I7 step 5, ADR-0018 §8, `docs/i7/step-5.md`). A on the quick catalog's search field, with the
+  pad the device used last, opens it where the card stands; in a headset the ray's click on the field does. The D-pad or
+  the stick moves (wrapping), A types, X deletes, Start confirms and goes on to the results as Enter does, B or a click
+  beside the panel closes it with the text kept; every command is the active map's and the hints name it. Keys take clicks.
+  The field keeps the focus, so a physical keyboard goes on typing into it, and Enter confirms. The report's `keyboard`
+  (runs that opened it): `opened`, `via`, `open`, `typed`, `deleted`, `confirmed`, `closed`, `clicks`, `selected`,
+  `textCut`, `gridBox`, `fieldBox`.
 - **"Controller scollegato"** (FR-029): when the last pad goes, a small notice over whatever shows, until a pad is back or
   8 s pass; the report's `controls` has `padsLost`, `padsBack`, `noticeShown`, and `device`, `hints`, `hintsOutside`,
   `captures`, `bindings`, `safeBindings`.

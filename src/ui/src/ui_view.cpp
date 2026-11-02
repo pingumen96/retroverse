@@ -209,7 +209,15 @@ bool UiView::activate() {
 }
 
 bool UiView::caretKey(CaretKey key) {
-    return !pressKey(key == CaretKey::Home ? Rml::Input::KI_HOME : Rml::Input::KI_END);
+    switch (key) {
+    case CaretKey::Home:
+        return !pressKey(Rml::Input::KI_HOME);
+    case CaretKey::End:
+        return !pressKey(Rml::Input::KI_END);
+    case CaretKey::Backspace:
+        return !pressKey(Rml::Input::KI_BACK);
+    }
+    return false;
 }
 
 Rml::Element* UiView::element(std::string_view id) const {

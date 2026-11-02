@@ -222,9 +222,6 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   pooled vertex buffer in the vendored GL3 renderer; profile RmlUi with Tracy (`RMLUI_TRACY_PROFILING` is off in
   vcpkg's build).
 - **Card settle delay:** tune it (0.15 s) on a TV.
-- **Text entry with the pad:** an on-screen keyboard for the product UI (I7); the hint bar built from the active
-  bindings. Until then the quick catalog's search takes typed text: M1's manual session is pad-only except for its one
-  search step, typed with the keyboard (decided at Gate M1, I2 step 14).
 - **Keyboard defaults for Vedi media, Informazioni and the filters:** they have pad buttons only (I2 step 6), since
   letters, digits, the space bar, Backspace, Delete and Tab stay with RmlUi's text fields; bind keys if any can be
   spared from text entry.

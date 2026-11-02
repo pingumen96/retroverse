@@ -42,7 +42,7 @@ struct BindableAction {
 [[nodiscard]] bool isTextKey(input::Key key) noexcept;
 
 /// True when one context reads both (input_context.hpp: world and UI share buttons on purpose), the shipped sharings
-/// aside: QuickCatalog with UiMedia (catalogToggleRequested()), Confirm with Menu.
+/// aside: QuickCatalog with UiMedia (catalogToggleRequested()), Confirm with Menu and with UiActivate.
 [[nodiscard]] bool actionsCompete(input::Action left, input::Action right) noexcept;
 
 enum class BindingVerdict : std::uint8_t {

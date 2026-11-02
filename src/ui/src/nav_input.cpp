@@ -15,9 +15,9 @@ constexpr std::array<NavDirection, 4> kDirections{NavDirection::Up, NavDirection
 /// Rounding slack of the repeat timing, seconds.
 constexpr double kTimeSlack = 1.0e-6;
 /// The commands of a press, in the order a frame reports them (after the focus and page steps).
-constexpr std::array<UiCommand, 8> kButtonCommands{UiCommand::Activate,       UiCommand::Back,      UiCommand::Media,
-                                                   UiCommand::Info,           UiCommand::Home,      UiCommand::End,
-                                                   UiCommand::FilterPrevious, UiCommand::FilterNext};
+constexpr std::array<UiCommand, 9> kButtonCommands{UiCommand::Activate,       UiCommand::Back,       UiCommand::Media,
+                                                   UiCommand::Info,           UiCommand::Home,       UiCommand::End,
+                                                   UiCommand::FilterPrevious, UiCommand::FilterNext, UiCommand::Confirm};
 /// The page commands, and the direction each runs the page repeater in.
 constexpr std::array<UiCommand, 2> kPages{UiCommand::PageUp, UiCommand::PageDown};
 constexpr std::array<NavDirection, 2> kPageDirections{NavDirection::Up, NavDirection::Down};
@@ -151,6 +151,8 @@ input::Action actionFor(UiCommand command) noexcept {
         return Action::UiFilterPrevious;
     case UiCommand::FilterNext:
         return Action::UiFilterNext;
+    case UiCommand::Confirm:
+        return Action::Confirm;
     case UiCommand::Count:
         break;
     }

@@ -1133,6 +1133,45 @@ WizardRecord readWizard(FieldReader& fields) {
     return wizard;
 }
 
+Json boxToJson(const glm::vec4& box) {
+    return Json::array({box.x, box.y, box.z, box.w});
+}
+
+std::optional<glm::vec4> readBox(FieldReader& fields, std::string_view key) {
+    return fields.has(key) ? std::optional<glm::vec4>(fields.vec4(key)) : std::nullopt;
+}
+
+Json keyboardToJson(const KeyboardRecord& keyboard) {
+    Json json{{"opened", keyboard.opened},   {"via", keyboard.via},           {"open", keyboard.open},
+              {"typed", keyboard.typed},     {"deleted", keyboard.deleted},   {"confirmed", keyboard.confirmed},
+              {"closed", keyboard.closed},   {"clicks", keyboard.clicks},     {"selected", keyboard.selected},
+              {"textCut", keyboard.textCut}};
+    if (keyboard.gridBox) {
+        json["gridBox"] = boxToJson(*keyboard.gridBox);
+    }
+    if (keyboard.fieldBox) {
+        json["fieldBox"] = boxToJson(*keyboard.fieldBox);
+    }
+    return json;
+}
+
+KeyboardRecord readKeyboard(FieldReader& fields) {
+    KeyboardRecord keyboard;
+    keyboard.opened = fields.count("opened");
+    keyboard.via = fields.string("via");
+    keyboard.open = fields.boolean("open");
+    keyboard.typed = fields.count("typed");
+    keyboard.deleted = fields.count("deleted");
+    keyboard.confirmed = fields.count("confirmed");
+    keyboard.closed = fields.count("closed");
+    keyboard.clicks = fields.count("clicks");
+    keyboard.selected = fields.string("selected");
+    keyboard.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    keyboard.gridBox = readBox(fields, "gridBox");
+    keyboard.fieldBox = readBox(fields, "fieldBox");
+    return keyboard;
+}
+
 Json controlsToJson(const ControlsRecord& controls) {
     Json hints = Json::array();
     for (const HintRecord& hint : controls.hints) {
@@ -3323,6 +3362,9 @@ std::string formatRunReport(const RunReport& report) {
     if (report.controls) {
         json["controls"] = controlsToJson(*report.controls);
     }
+    if (report.keyboard) {
+        json["keyboard"] = keyboardToJson(*report.keyboard);
+    }
     json["frameTimes"] = frameTimesToJson(report.frameTimes);
     Json phases = Json::array();
     for (const PhaseRecord& phase : report.phases) {
@@ -3498,6 +3540,9 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto controls = fields.optionalObject("controls")) {
         report.controls = readControls(*controls);
+    }
+    if (auto keyboard = fields.optionalObject("keyboard")) {
+        report.keyboard = readKeyboard(*keyboard);
     }
     if (auto frameTimes = fields.object("frameTimes")) {
         report.frameTimes.warmUpFrames = frameTimes->count("warmUpFrames");

@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec4.hpp>
+
 #include <rv/core/expected.hpp>
 #include <rv/ui/focus_history.hpp>
 #include <rv/ui/quick_catalog_model.hpp>
@@ -160,6 +162,18 @@ public:
     /// The count of games the screen shows (its data model's count, bound when the model's window changed): the list
     /// shown, never one still on the catalog's worker.
     [[nodiscard]] std::size_t shownCount() const noexcept;
+
+    /// I7 step 5 (ADR-0018 §8): the search field has the focus.
+    [[nodiscard]] bool textFieldFocused() const;
+    /// The mouse (VR's ray) is over the search field.
+    [[nodiscard]] bool pointerOnTextField() const;
+    /// The focus on the search field, where the keyboard types; nothing when it is there already. True when it moved:
+    /// RmlUi then raised this document over the others.
+    bool focusTextField();
+    /// The on-screen keyboard shows over the card: the card and the hints that do not serve it hide.
+    void setTyping(bool typing);
+    /// The search field's border box in the view's pixels, as UiView::elementBox.
+    [[nodiscard]] std::optional<glm::vec4> textFieldBox() const;
 
     /// With watchFiles, reloads the document when it or its style sheet changed on disk (polled every 500 ms), keeping
     /// the focus; true when it reloaded. A document that no longer loads keeps the screen empty until fixed (logged).

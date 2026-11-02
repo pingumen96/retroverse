@@ -45,6 +45,7 @@
 #include <rv/ui/hint_bar.hpp>
 #include <rv/ui/hint_bar_view.hpp>
 #include <rv/ui/settings_screen.hpp>
+#include <rv/ui/keyboard_screen.hpp>
 #include <rv/ui/system_menu_screen.hpp>
 #include <rv/ui/wizard_screen.hpp>
 
@@ -243,12 +244,104 @@ struct ProductUi::Impl {
     std::vector<std::string> captures;
     std::unique_ptr<ui::ControllerNoticeScreen> controllerNotice;
     bool controllerNoticeWanted = false;
+    /// I7 step 5: the on-screen keyboard over the quick catalog's search field (its screen made when it first opens), its
+    /// run report record.
+    std::unique_ptr<ui::KeyboardScreen> keyboardScreen;
+    ui::KeyboardModel keyboard;
+    std::optional<KeyboardRecord> keyboardRecord;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
-               wizardShown() || controllerNoticeWanted;
+               wizardShown() || controllerNoticeWanted || keyboardShown();
+    }
+
+    /// The on-screen keyboard shows.
+    [[nodiscard]] bool keyboardShown() const noexcept { return keyboardScreen && keyboard.isOpen(); }
+
+    /// Opens it on the field that has the focus (`via`: "pad" or "ray", for the run report); its screen is made the first
+    /// time (one that cannot be made is logged: Activate then does what it did before).
+    [[nodiscard]] bool openKeyboard(std::string_view via) {
+        if (!keyboardScreen) {
+            auto made = ui::KeyboardScreen::create(*view);
+            if (!made) {
+                spdlog::error("The on-screen keyboard unavailable: {}", made.error().toString());
+                return false;
+            }
+            keyboardScreen = std::move(*made);
+        }
+        nav.reset();
+        keyboard.open();
+        KeyboardRecord& record = keyboardRecord ? *keyboardRecord : keyboardRecord.emplace();
+        ++record.opened;
+        record.via = std::string(via);
+        spdlog::info("Frame {}: the on-screen keyboard opened ({})", context.frameIndex(), via);
+        return true;
+    }
+
+    /// The focus back on the field, the keyboard's panel staying over its document.
+    void focusKeyboardField() {
+        if (screen->focusTextField() && keyboardScreen) {
+            keyboardScreen->raise();
+        }
+    }
+
+    /// What the keyboard asks: applied to the search field through the path a typed text takes.
+    void keyboardOutput(const std::optional<ui::KeyboardOutput>& output) {
+        if (!output || !screen || !keyboardRecord) {
+            return;
+        }
+        spdlog::debug("Frame {}: the on-screen keyboard asks {}", context.frameIndex(), ui::toString(output->kind));
+        focusKeyboardField(); // a click on a key took RmlUi's focus
+        switch (output->kind) {
+        case ui::KeyboardOutput::Kind::Type:
+            view->context().ProcessTextInput(Rml::String(output->text));
+            ++keyboardRecord->typed;
+            break;
+        case ui::KeyboardOutput::Kind::Delete:
+            static_cast<void>(view->caretKey(ui::CaretKey::Backspace));
+            ++keyboardRecord->deleted;
+            break;
+        case ui::KeyboardOutput::Kind::Confirm:
+            screen->apply(ui::UiCommand::Activate); // Enter in the field: on to the results
+            ++keyboardRecord->confirmed;
+            nav.reset(); // a direction still held must not walk the list or leave the field
+            break;
+        case ui::KeyboardOutput::Kind::Close:
+            ++keyboardRecord->closed;
+            nav.reset();
+            break;
+        }
+    }
+
+    /// A UI command while it shows. Enter is both Activate and Confirm (the shipped map): the device used last says which
+    /// of the two the press meant, so that a pad whose A was also given Confirm still types.
+    void keyboardApply(ui::UiCommand command) {
+        const bool pad = hintBar.device() == input::DeviceKind::Gamepad;
+        const bool both = commands.contains(ui::UiCommand::Activate) && commands.contains(ui::UiCommand::Confirm);
+        if (both && command == (pad ? ui::UiCommand::Confirm : ui::UiCommand::Activate)) {
+            return;
+        }
+        keyboardOutput(keyboard.apply(command));
+    }
+
+    /// It closes under whatever takes the screen, and with the catalog.
+    void syncKeyboard() {
+        if (keyboard.isOpen() && (!catalogOpen || !screen || panel->visible() || screensOpen())) {
+            keyboard.close();
+        }
+        if (keyboardScreen) {
+            if (keyboard.isOpen()) {
+                keyboardScreen->show(keyboard);
+                focusKeyboardField();
+            } else {
+                keyboardScreen->hide();
+            }
+        }
+        if (screen) {
+            screen->setTyping(keyboardShown());
+        }
     }
 
     /// The wizard shows.
@@ -1940,6 +2033,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         for (const ui::UiCommand command : s.commands.commands()) {
             spdlog::debug("Frame {}: UI command {}{}", s.context.frameIndex(), ui::toString(command),
                           s.panel->visible() ? " (game-session panel)" : "");
+            if (command == ui::UiCommand::Confirm && !s.keyboardShown()) {
+                continue; // I7 step 5: the keyboard's alone
+            }
             if (command == ui::UiCommand::Back) {
                 // The application's levels: the developer overlay first, then panelBack() or catalogBack().
                 if (s.back) {
@@ -1947,6 +2043,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
+            } else if (s.keyboardShown()) {
+                s.keyboardApply(command); // I7 step 5
             } else if (s.wizardShown()) {
                 s.wizardApply(command); // I7 step 2
             } else if (s.preview.isOpen()) {
@@ -1958,7 +2056,13 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             } else if (s.menu.isOpen()) {
                 s.menuCommand(s.menu.apply(command)); // I7 step 1
             } else if (s.catalogOpen && s.screen) {
-                s.screen->apply(command);
+                // ADR-0018 §8: Activate from the pad on the text field opens the keyboard; a physical keyboard types as
+                // before, and its Enter goes on to the results.
+                const bool onField = command == ui::UiCommand::Activate &&
+                                     s.hintBar.device() == input::DeviceKind::Gamepad && s.screen->textFieldFocused();
+                if (!onField || !s.openKeyboard("pad")) {
+                    s.screen->apply(command);
+                }
             } else if (s.directoryShown()) {
                 s.directoryCommand(s.directory.apply(command));
             }
@@ -1973,6 +2077,16 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         }
     }
     s.wizardClicks(); // I7 step 2
+    // I7 step 5: the keyboard's keys and the click beside it (VR's ray among them).
+    if (s.keyboardScreen) {
+        if (const std::optional<ui::KeyboardClick> click = s.keyboardScreen->takeClicked();
+            click && s.keyboardShown() && !s.panel->visible()) {
+            s.keyboardOutput(click->key ? s.keyboard.click(*click->key) : s.keyboard.clickOutside());
+            if (s.keyboardRecord) {
+                ++s.keyboardRecord->clicks;
+            }
+        }
+    }
     // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
     if (s.settingsScreen) {
         if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
@@ -2024,6 +2138,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.syncEditBar();
     s.syncPreview();
     s.syncMenu();
+    s.syncKeyboard();
     s.syncControllerNotice();
     s.hintView->sync(s.hintBar); // I7 step 3: before the view lays them out
 
@@ -2055,6 +2170,9 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
         if (s.settingsShown()) {
             s.settingsScreen->afterUpdate();
             s.menuRecord.settingsTextCut = std::max(s.menuRecord.settingsTextCut, s.settingsScreen->textCut());
+        }
+        if (s.keyboardShown() && s.keyboardRecord) {
+            s.keyboardRecord->textCut = std::max(s.keyboardRecord->textCut, s.keyboardScreen->textCut());
         }
         if (s.screen) {
             s.screen->setNotice(s.catalog->notice());
@@ -2088,6 +2206,10 @@ void ProductUi::panelBack() {
 }
 
 void ProductUi::catalogBack() {
+    if (m_impl->keyboardShown()) {
+        m_impl->keyboardOutput(m_impl->keyboard.apply(ui::UiCommand::Back));
+        return;
+    }
     if (m_impl->catalogOpen && m_impl->screen) {
         m_impl->screen->apply(ui::UiCommand::Back);
     }
@@ -2157,6 +2279,12 @@ void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, b
     context.ProcessMouseMove(static_cast<int>(pixel->x), static_cast<int>(pixel->y), 0);
     if (pressed) {
         context.ProcessMouseButtonDown(0, 0);
+        // ADR-0018 §8: no keyboard is at hand in a headset: the ray on a text field opens the on-screen one.
+        Impl& s = *m_impl;
+        if (s.catalogOpen && s.screen && !s.keyboard.isOpen() && !s.panel->visible() && !s.screensOpen() &&
+            s.screen->pointerOnTextField()) {
+            static_cast<void>(s.openKeyboard("ray"));
+        }
     }
     if (released) {
         context.ProcessMouseButtonUp(0, 0);
@@ -2244,6 +2372,17 @@ void ProductUi::finish() {
     }
     report.menu = std::move(s.menuRecord);
     s.finishWizard(report);
+    if (s.keyboardRecord) {
+        s.keyboardRecord->open = s.keyboard.isOpen();
+        s.keyboardRecord->selected = s.keyboard.selectedKey().text;
+        if (s.keyboardShown()) {
+            s.keyboardRecord->gridBox = s.keyboardScreen->gridBox();
+        }
+        if (s.screen) {
+            s.keyboardRecord->fieldBox = s.screen->textFieldBox();
+        }
+        report.keyboard = std::move(s.keyboardRecord);
+    }
     ControlsRecord& controls = report.controls ? *report.controls : report.controls.emplace();
     controls.device = s.hintBar.device() == input::DeviceKind::Gamepad ? "pad" : "keys";
     for (ui::HintShown& hint : s.hintView->shown()) {

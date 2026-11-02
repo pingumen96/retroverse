@@ -31,8 +31,9 @@ namespace rv::ui {
 
 class UiSystem;
 
-/// Keys a focused text field moves its caret with, which the screen sends for the UI's Home and End commands.
-enum class CaretKey : std::uint8_t { Home, End };
+/// Keys a focused text field moves its caret with, which the screen sends for the UI's Home and End commands, and
+/// Backspace, which the on-screen keyboard sends for delete.
+enum class CaretKey : std::uint8_t { Home, End, Backspace };
 
 /// What a focus move did.
 enum class NavOutcome : std::uint8_t {
@@ -117,8 +118,8 @@ public:
     /// Presses the focused element like Enter: a click on a focusable element, a line break in a text field. True
     /// when an element used it.
     bool activate();
-    /// Sends RmlUi's Home or End key to the focused element: the caret of a text field moves to its start or end. True
-    /// when an element used it.
+    /// Sends RmlUi's Home, End or Backspace key to the focused element: the caret of a text field moves to its start or
+    /// end, the character before it goes. True when an element used it.
     bool caretKey(CaretKey key);
 
     /// The element with id `id` in any document of the view, or null.

@@ -20,6 +20,7 @@
 #include <rv/input/raw_input.hpp>
 #include <rv/ui/directory_model.hpp>
 #include <rv/ui/game_card_model.hpp>
+#include <rv/ui/keyboard_model.hpp>
 #include <rv/ui/regenerate_preview_model.hpp>
 #include <rv/ui/settings_model.hpp>
 #include <rv/ui/system_menu_model.hpp>
@@ -313,6 +314,7 @@ public:
     /// The Back levels the application chose for a UI Back (BackAction::PanelBack, BackAction::CatalogBack). The
     /// panel's Back while a game runs is "Torna al gioco": in the focused window, the foreground goes to the game.
     void panelBack();
+    /// Closes the on-screen keyboard first (I7 step 5, ADR-0018 §8), when it shows.
     void catalogBack();
 
     /// The host must idle: a launch waits for the frame boundary, or a game has the screen (LaunchFlow::hostIdle), or a

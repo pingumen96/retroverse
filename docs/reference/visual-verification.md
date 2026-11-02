@@ -228,6 +228,9 @@ generic sentence of a reason the document does not know). The clip's burned-in c
 ("A 0052"); `tests/smoke/test_media_viewer_video.cpp`'s `counterIn()` decodes its block row from the report's
 `screens.videoBox`. No automated run may open the manual for real.
 
+The on-screen keyboard (I7 step 5): `rv_smoke_tests.exe "[keyboard_shots]"` with `RV_SHOTS_DIR` naming a folder writes it
+over the quick catalog at 1920 x 1080 and 1280 x 720, at text scale 100% and 125%.
+
 To check shader errors or hot reload, never edit the tracked shaders: copy `assets/` to a scratch directory, run a
 developer build with `--asset-root <copy>` and a long frame limit (`--hidden --exit-after-frames --frames 3000`),
 then edit or break the copy's shaders while it runs; the log shows each rebuild or `<file>:<line>: error ...`.

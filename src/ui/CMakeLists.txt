@@ -7,13 +7,14 @@
 #                (the building's floors and rooms, the favourites and recent games, their card); since I4b step 6 the
 #                impact preview of a regeneration or an undo (RegeneratePreviewModel); since I7 step 1 the menu and the
 #                settings screen (SystemMenuModel, SettingsModel); since I7 step 2 the wizard and the folder browser
-#                (WizardModel, FolderBrowserModel).
+#                (WizardModel, FolderBrowserModel); since I7 step 5 the on-screen keyboard (KeyboardModel).
 #   rv_ui        RmlUi 6.3 on SDL3 and OpenGL 3: RmlUi's lifetime and interfaces (UiSystem), one context per output
 #                (UiView: input, update, rendering into the window and screenshots, CPU and GPU times), the quick
 #                catalog screen (QuickCatalogScreen, a fixed pool of rows), since I3 (skeletons) the world's card,
 #                the hover label, the media viewer and Informazioni, since I4 step 7a the directory (DirectoryScreen),
 #                since I4b step 6 the regeneration's preview (RegeneratePreviewScreen), since I7 step 1 the menu and the
-#                settings screen (SystemMenuScreen, SettingsScreen), since I7 step 2 the wizard (WizardScreen);
+#                settings screen (SystemMenuScreen, SettingsScreen), since I7 step 2 the wizard (WizardScreen), since I7 step 5 the on-screen
+#                keyboard (KeyboardScreen);
 #                the RmlUi backends are vendored in third_party/rmlui_backends on our glad loader (target
 #                rv_rmlui_backends, used by rv_ui only).
 #                It never links rv_catalog: rv_app adapts the catalog to CatalogSource.
@@ -29,6 +30,7 @@ add_library(rv_ui_model STATIC
     src/game_info_model.cpp
     src/hint_bar.cpp
     src/in_memory_catalog_source.cpp
+    src/keyboard_model.cpp
     src/media_viewer_model.cpp
     src/nav_input.cpp
     src/quick_catalog_model.cpp
@@ -54,6 +56,7 @@ add_library(rv_ui STATIC
     src/game_info_screen.cpp
     src/hint_bar_view.cpp
     src/hover_label_screen.cpp
+    src/keyboard_screen.cpp
     src/media_viewer_screen.cpp
     src/quick_catalog_screen.cpp
     src/regenerate_preview_screen.cpp
