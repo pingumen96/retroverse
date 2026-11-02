@@ -35,7 +35,7 @@
 					<div class="figure"><p class="value">{{ games }}</p><p class="label">giochi in libreria</p></div>
 				</div>
 				<p class="note">Le ore sono stimate: dall'avvio del gioco al ritorno rilevato. Contano solo le sessioni di Retroverse tornate normalmente, non le prove di lancio né i conteggi di ES-DE.</p>
-				<p class="note" id="st-attempts" data-if="crashed > 0 || leftRunning > 0">Tentativi non contati nelle ore: {{ crashed }} interrotti da un errore, {{ leftRunning }} lasciati in esecuzione.</p>
+				<p class="note" id="st-attempts" data-if="crashed > 0 || leftRunning > 0">Tentativi non contati nelle ore: interrotti da un errore {{ crashed }}, lasciati in esecuzione {{ leftRunning }}.</p>
 			</div>
 
 			<div data-if="tab == 'most-played' && state == 'listed'">
