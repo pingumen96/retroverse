@@ -136,14 +136,18 @@ screenshots: `docs/reference/visual-verification.md`.
   unattended run refuses a launch test without that variable, and a frame-limited run never discovers ES-DE by itself:
   the wizard needs `--wizard --esde-home <fixture>` (ADR-0018 §4, §6).
   Product code starts processes only through `rv_launcher` / `Win32ProcessRunner`: argv, never a shell string, and it
-  never terminates an emulator.
+  never terminates an emulator nor writes an emulator's own configuration (a VR launch adds arguments and Retroverse's
+  own append-file under its data directory; a `.lnk` runs its checked target, a `.url` only a listed protocol;
+  ADR-0020).
 - Automated tests never take the Windows foreground: no visible or activated window, no console window, no injected
   input, no modal dialog (`RV_LAUNCH_BACKGROUND=1`, apps `--hidden`, SDL windows hidden). Only `desktop` tests may.
   Check with `python -I scripts/focus_watch.py --watch build/<preset> --out build/focus/<name>.json -- pwsh -NoProfile
   -File scripts/test.ps1`.
 - No brand logos, commercial artwork or trademarked names in `assets/`; third-party assets need provenance and license
-  entries in `assets/registry/`; `assets/staging/` is never committed. The user's covers and clips are read at runtime
-  only, never copied into assets, fixtures or goldens.
+  entries in `assets/registry/`; `assets/staging/` is never committed. The user's covers and clips, and the systems'
+  identity (real names, logos, colours from ES-DE's themes; console models from `<user data>/content`, written only by
+  `retroverse-cli content`; ADR-0019), are read at runtime only, never copied into assets, fixtures or goldens, never
+  packaged; tests use an invented fixture theme.
 - Changing the vcpkg baseline, the toolchain or a recorded decision requires a new ADR. Keep to the current milestone;
   park ideas in `BACKLOG.md`. Details: `docs/reference/safety.md`.
 

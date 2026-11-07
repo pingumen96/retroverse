@@ -47,7 +47,7 @@ Il concept approvato mostra sette aree/viste. Le indicazioni seguenti trasforman
 | Stanza delle console portatili con vetrine | Tavoli e display bassi, supporti più piccoli, esposizione museale | P1 |
 | Giardino/area relax con menu | Spazio opzionale per raccolte, preferiti, impostazioni e pause | P2 |
 
-**Regola interpretativa:** le scritte e i loghi di marchi presenti nel concept sono riferimenti visivi, non un'autorizzazione a includerli nei binari o nell'asset pack. I pannelli distribuiti con Retroverse devono usare grafica originale/neutra oppure risorse per cui esistono diritti adeguati. Le copertine personali già presenti nella libreria dell'utente sono un caso di contenuto caricato dall'utente, da gestire separatamente.
+**Regola interpretativa:** le scritte e i loghi di marchi presenti nel concept sono riferimenti visivi, non un'autorizzazione a includerli nei binari o nell'asset pack. I pannelli distribuiti con Retroverse devono usare grafica originale/neutra oppure risorse per cui esistono diritti adeguati. Le copertine personali già presenti nella libreria dell'utente sono un caso di contenuto caricato dall'utente, da gestire separatamente. Lo stesso vale per l'identità dei sistemi (nomi reali, loghi, colori e descrizioni letti a runtime dai temi di ES-DE; modelli 3D delle console nella cartella `<user data>/content`): è contenuto dell'utente, mai copiato in `assets/`, nelle fixture o nei golden e mai distribuito (ADR-0019).
 
 ## 1.1 Cosa deve comunicare una screenshot di Retroverse
 
@@ -383,7 +383,7 @@ Ogni tipo di oggetto ha sempre tre livelli di disponibilità:
 
 | Tier | Asset | Esempio: console | Quando usarlo |
 |---|---|---|---|
-| **A — Signature** | Modello dedicato, verificato e normalizzato | Chassis accurato di una specifica console, se disponibile e autorizzato | Hero display, ispezione ravvicinata |
+| **A — Signature** | Modello dedicato, verificato e normalizzato | Chassis accurato di una specifica console, se disponibile e autorizzato, oppure importato dall'utente nella propria cartella dei contenuti (ADR-0019 §7) | Hero display, ispezione ravvicinata |
 | **B — Family** | Modello originale generico per famiglia | `ConsoleCartridge90s`, `ConsoleOpticalDisc` | Nessun modello dedicato valido, sistema meno comune |
 | **C — Procedural** | Mesh generata da primitive e materiale base | Corpo estruso, slot, pulsanti e pannello dati | Asset mancante, corrotto, incompatibile, profilo Low |
 
@@ -888,12 +888,12 @@ Tre livelli:
 - **Room signage:** pannelli di sala e piccole informazioni storiche.
 - **Object labels:** targhette discrete vicino a pezzi speciali e vetrine.
 
-Le insegne devono essere create da testo e forme vettoriali/mesh originali, non da PNG prerenderizzati per ogni console.
+Le insegne devono essere create da testo e forme vettoriali/mesh originali, non da PNG prerenderizzati per ogni console. Fa eccezione il logo del sistema letto a runtime dai temi di ES-DE dell'utente (ADR-0019 §4): l'insegna lo mostra con il nome reale sotto; senza logo resta il testo generico.
 
 ## 17.2 Marchi e artwork
 
 - Le parole che descrivono un sistema e i metadati visualizzati dalla collezione possono essere gestiti come **dati catalografici**.
-- Non includere nel pacchetto base loghi ufficiali, pubblicità, poster e mascotte protetti senza una verifica dei diritti/uso.
+- Non includere nel pacchetto base loghi ufficiali, pubblicità, poster e mascotte protetti senza una verifica dei diritti/uso. I loghi e i modelli presenti sulla macchina dell'utente (temi di ES-DE, `<user data>/content`) possono essere mostrati a runtime, mai copiati nel pacchetto (ADR-0019).
 - Preferire, per gli elementi di ambientazione preinstallati, temi originali come `16-BIT CORNER`, `DISC ERA`, `ARCADE HALL`, `HANDHELDS`.
 - Consentire all'utente di assegnare immagini personali ai poster, tenendole locali.
 - Nessun sistema di scraping 3D o di artwork commerciale non autorizzato.

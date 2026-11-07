@@ -17,6 +17,7 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I8 | Performance, Blender hero assets, license audit, golden screenshots, fault injection | Gate E + style §28 DoD |
 | I9 | Installer, portable build, release | M5 Done |
 | I10 | VR through OpenXR (ADR-0017), beside I4b and I5: a headset on the PC (Meta Quest through Link or Air Link, SteamVR, any OpenXR runtime), the building walked and used with Touch controllers or the pad, the launched game on the room's CRT | Gate VR: a 30-minute session in the headset |
+| I11 | The consoles' real identity and every emulator in VR (ADR-0019, ADR-0020): the real names, logos, colours and a history plaque per room read at runtime from ES-DE's themes; real console models from the user's content folder; every emulator of the library and the Windows games played on the CRT in the headset | Gate I11: `gate.ps1 -Gate I11`, then a headset session with one game per emulator |
 
 Removed from scope: the integrated scraper (spec §10, FR-021 to FR-023). ES-DE stays the scraping tool; Retroverse
 reads its metadata and media in place and uses generated labels and screenshots where media are missing (ADR-0003).
@@ -37,7 +38,10 @@ the user's request: I10, VR through OpenXR ([ADR-0017](decisions/ADR-0017-vr-thr
 worktree beside them. The user declared M3, M4 and I10 done on November 1, 2026.
 Planned on November 1, 2026 after the user's "procedi con M5": I7,
 daily use ([ADR-0018](decisions/ADR-0018-daily-use.md), [i7/plan.md](i7/plan.md)), then I8 and I9, outlined below, each
-with its own ADR and plan when reached.
+with its own ADR and plan when reached. Planned on November 7, 2026 on the user's request, after I7's Gate Pad
+and before I8: I11, the consoles' real identity and every emulator in VR
+([ADR-0019](decisions/ADR-0019-console-identity-as-user-content.md),
+[ADR-0020](decisions/ADR-0020-every-emulator-in-vr.md), [i11/plan.md](i11/plan.md)).
 
 ## Acceptable performance
 
@@ -68,6 +72,7 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | Frame time in VR with a game captured on the CRT (the "in game" profile) | the same limits |
 | A game or medium added in ES-DE (NFR-05, the watcher) | in the quick catalog within 10 s of the file's arrival, local volume, nothing else running; in its room informative |
 | A menu section's data (emulators, statistics, coverage) on the reference library | shown within 1 s of opening |
+| The systems' identity read and their logos rasterized (ADR-0019 §9, the reference library's 45 systems) | within the start's 5 s, off the main thread; the busiest floor with logos and a console model per room within the 512 MiB rows |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -280,6 +285,69 @@ directory through the wizard; a real launch test; walking, the elevator, the dir
 keyboard, several games launched and returned from; settings changed and kept after a restart; the pad unplugged and
 back; statistics; then, by hand and outside the session, a ROM added to the real folder, a scrape in ES-DE, and the
 external drive ejected and returned.
+
+## I11: the consoles' real identity, and every emulator in VR
+
+[ADR-0019](decisions/ADR-0019-console-identity-as-user-content.md) and
+[ADR-0020](decisions/ADR-0020-every-emulator-in-vr.md), planned with the user on November 7, 2026 (the decisions:
+[i11/plan.md](i11/plan.md)):
+- **Identity as user content:** real names, logos, colours and a history plaque, read at runtime from ES-DE's themes,
+  never copied into the repository.
+- **Real console models** from `<user data>/content/consoles/`, normalized in Blender, the procedural console the
+  fallback.
+- **Every emulator in VR:** launch profiles for windowed play, the captured window followed, shortcuts and Windows
+  games, exclusive fullscreen detected, stop watching, the large screen.
+
+The world plan never changes. Every committed golden stays 0 pixels apart, and G22 is added on an invented fixture
+theme. Real names, logos and models are checked only through `real-library.ps1` and by eye, their screenshots kept
+under `build/`. Step notes are in `docs/i11/`.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0019, ADR-0020, this plan; the amendments (style §1, §7.3, §17; specification §19.4; ADR-0001, 0006, 0008, 0010, 0013, 0014, 0017; CLAUDE.md, `docs/reference/safety.md`); the BACKLOG's items moved here | | The files exist | done: the documents; `retroverse-content` created (README, `SOURCES.md` with the first candidates) |
+| 1 | The identity reader: `esde::themeSystemMetadata()`, `esde::themeLogo()` (the layouts of ADR-0019 §2, .svg, .png, .jpg), `Theme` in the settings whitelist, `app::SystemIdentity` on the worker with each field's source, `identity.json`, `retroverse-cli identity show [--system]` | 0 | Unit on `tests/fixtures/esde-theme` (invented systems, original SVG shapes): each field and its source, the order, hostile XML and SVG, the limits, names through `utf8.hpp`. Real library: `identity show` lists the 45 systems with name, logo and description, 0 differences | |
+| 2 | Logos as textures: lunasvg in `rv_assets` (`assets::rasterizeSvg`, its bounds), rasterized on the pool, BC3 through `stb_dxt`, cached in `cache/identity/`, uploaded through the derived-texture path; `rv-texture:logo:<system>` | 1 | Unit: fixture SVGs against reference PNGs, a hostile SVG refused within its bounds, the cache key. GPU: the logos in a UI probe | |
+| 3 | Real names in the UI: the identity's name wherever a system's name shows, ES-DE's fullname as the detail; logos in the directory's room rows and the elevator panel, VR's panels included | 2 | Unit: the name's choice. GPU: the directory and the card with the fixture identity; every golden unchanged without a theme | |
+| 4 | Logos in the world: the neon (the logo emissive, tinted), the portal, the blade, the fascia; the name under it in TrueType (`stb_truetype`, Atkinson Hyperlegible Bold, UTF-8); the generic bitmap sign as the fallback; shared rooms' sections on the portal; an expansion's number | 2 | Unit: the sign's layout per case. GPU: the fixture room; **G22**; G01 to G21 0 pixels apart. By hand: the real building (`--start-room room:snes`), screenshots under `build/` | |
+| 5 | The history plaque: `room_plaque.rml` through `renderTo` on a brass plaque beside the hero corner (placed at scene build), Focus and Inspect, VR | 4 | GPU: the plaque's text from the fixture, Inspect on it, on the fake XR runtime | |
+| 6 | The systems' colours: the palette's accent clamped to style §3's band, on the neon and the portal's fascia; Settings "Colori dei sistemi" (`world.systemColors`) | 4 | Unit: the clamp's table. GPU: the fixture room tinted; with the setting off, 0 pixels from the untinted image | |
+| 7 | Console models in the room: `Paths::contentDir()`, `content:` paths, `console.json` read as a user manifest, ADR-0019 §7's validation and budgets (textures BC1, BC3, BC5 through `stb_dxt`, cached), the hero corner's console drawn from the model at scene build, its collider, showcases, model sockets in `consoleSocketOf()`, the family's procedural fallback in place of the magenta cube; `retroverse-cli content add-console`, `content check`, `content list`; the asset preview on a content folder | 0 | Unit: the manifest's rules and refusals, socket derivation, an oversized model refused, a missing file falling back. GPU: an original fixture console (`make_test_models.py`) in the fixture room, the insertion into its socket, its collider | |
+| 8 | The pipeline in `retroverse-content`: `normalize_console.py` (Blender 4.3 in the background) and `author/<system>.py`, `dimensions.json` | 7 | One downloaded and one authored console pass `content check` and stand in their rooms | |
+| 9 | Batch 1, the 16 home consoles with rooms of their own on the reference library (nes, fds, snes, megadrive, mastersystem, psx, ps2, gc, dreamcast, atari2600, atari5200, atari7800, atarijaguar, colecovision, intellivision, odyssey2): candidates found and recorded in `SOURCES.md`, downloaded by the user, normalized or authored, installed | 8 | `content check` for all 16; each real room seen by eye against `example.png` and style.md | |
+| 10 | Batches 2 to 4: the 7 handhelds (gb, gbc, gba, nds, atarilynx, virtualboy, ngpc), the 6 computers (c64, amiga, amstradcpc, apple2, atari800, atarist; their place decided after measuring), the shared rooms' 15 systems in their sections' showcases | 9 | As step 9; the busiest floor at most 512 MiB (else the residency of ADR-0019 §9) | |
+| 11 | The window followed: the scorer, the choice made again every 100 ms, the capture restarted on a new or closed window, foreground retried, black frames watched | 0 | Unit: the scorer's table. GPU with the fake's modes `splash`, `two-windows`, `recreate`, `child`, `late`: the CRT shows the game window, its counter advancing | |
+| 12 | VR launch profiles: `emulators.json` schema 2 (`vr`: arguments, the append-file, window rules, `inGame`), the profiles of ADR-0020 §1 checked against each program's help, ES-DE commands matched by executable, `retroverse-cli launch --dry-run --vr` | 11 | Unit: argv with and without VR on ES-DE 3.4.1's commands, the append-file's bytes, a fixture config never opened for writing. GPU: the fake reports the VR arguments. Real library: `profiles` lists the standalone emulators found | |
+| 13 | Shortcuts and Windows games: "open the game's file" translated natively (`.lnk`, `.exe`, `.url` through a listed protocol), `FollowWindow`, `%RUNINBACKGROUND%`, exclusive fullscreen detected and its notice | 11 | Unit: `.lnk` reading on shortcuts made at test time, the scheme list, `.bat` still refused, the detached choice. GPU: a `.lnk` to the fake, the `detached` mode followed to its end, the notice on `black` | |
+| 14 | Watching from VR: stop watching (the menu button held), "Torna al gioco" and "Il gioco è terminato" on the card, the large screen, the audio endpoint's notice | 11 | Unit: the command's states. GPU on the fake runtime: stop and resume, the large screen from the lobby, the notice on a fake mismatch | |
+| 15 | Gate I11: `scripts/gate.ps1 -Gate I11` (and `-RealLibrary`), `docs/testing/gate-i11.md` with the emulator matrix | 1-14 | The gate passes; the user's headset session with one game per emulator (RetroArch in its real configuration, Dolphin, PCSX2, RPCS3, Altirra, AppleWin, sdl2trs, a Windows game from a shortcut and from Steam), the rooms' logos, plaques and models; the user declares I11 done | |
+
+Order: 0, then steps 1 to 6 beside 11 to 14 (parallel worktrees: each part owns its modules); 7 once 2 is in; 9 and 10
+while the rest goes on (they wait on downloads and Blender); then 15.
+
+### Gate I11
+
+`scripts/gate.ps1 -Gate I11` runs, under `scripts/focus_watch.py` with `RV_LAUNCH_ALLOWLIST` naming the build's fake
+emulator:
+- what Gate Pad runs;
+- G22;
+- a row per I11 area counted from those runs: the identity, the logos, the signs, the plaque, the colours, the models,
+  the window, the profiles, the shortcuts, watching from VR;
+- the VR benchmark path in Release with the fake emulator captured, in each of the `inGame` profiles.
+
+It prints the summary table (logs in `build/gate-i11`) and exits 1 when a step failed.
+
+`-RealLibrary` adds one `scripts/real-library.ps1` run, with ES-DE closed, `RV_AUDIO=null`, read-only snapshots before
+and after and 0 differences:
+- `identity show`;
+- `content check` on the user's content folder;
+- every real collection room started with its logo and model;
+- the busiest floor within 512 MiB;
+- nothing launched.
+
+`docs/testing/gate-i11.md` holds:
+- the figures;
+- the emulator matrix (each program, its VR arguments, its window rule, the user's result);
+- what to try.
 
 ## I8 and I9: the rest of M5 (outline)
 

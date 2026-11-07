@@ -1329,7 +1329,7 @@ SDL3, FFmpeg e altre DLL devono essere distribuite in versioni coerenti e contro
 
 ## 19.4 Contenuti protetti
 
-Retroverse non fornisce ROM, BIOS, cover, gameplay e manuali di terzi. Le risorse possono essere recuperate solo tramite fonti e account utilizzati nel rispetto delle relative condizioni e della legge. L'utente resta responsabile del possesso/uso dei contenuti. Nessun asset Nintendo, Sony o di altri produttori è incluso nel pacchetto senza titolo autorizzativo idoneo; per console protette si possono utilizzare modelli generici o asset concessi in licenza.
+Retroverse non fornisce ROM, BIOS, cover, gameplay e manuali di terzi. Le risorse possono essere recuperate solo tramite fonti e account utilizzati nel rispetto delle relative condizioni e della legge. L'utente resta responsabile del possesso/uso dei contenuti. Nessun asset Nintendo, Sony o di altri produttori è incluso nel pacchetto senza titolo autorizzativo idoneo; per console protette si possono utilizzare modelli generici o asset concessi in licenza. Nomi reali, loghi e modelli delle console già presenti sulla macchina dell'utente (temi di ES-DE, cartella dei contenuti) sono mostrati a runtime come contenuto dell'utente e non entrano nel pacchetto (ADR-0019).
 
 ## 19.5 Privacy
 
