@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Retroverse</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.1 2.5 H13.9 A1.6 1.6 0 0 1 15.5 4.1 V11.9 A1.6 1.6 0 0 1 13.9 13.5 H2.1 A1.6 1.6 0 0 1 0.5 11.9 V4.1 A1.6 1.6 0 0 1 2.1 2.5 Z" transform="scale(4)" fill="#171B22" stroke="#FFC88A" stroke-width="1"/>
+    <path d="M6 11 V5 H8.5 A1.5 1.5 0 0 1 8.5 8 H6 M8.5 8 L10 11" transform="scale(4)" stroke="#C766E0" stroke-width="2"/>
+  </g>
+</svg>

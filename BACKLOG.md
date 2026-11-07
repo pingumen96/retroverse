@@ -801,3 +801,19 @@ why; what I7 does take, it closes in its step notes.
 
 - A game's status, once stepped, never derives again: Stato has no way back to "dedotto" short of removing its row
   in `rv_game_status`.
+
+## Branding
+
+The logo and the executable's icon landed on 2026-11-07 (`docs/branding.md`, `scripts/branding.py`). Still open:
+
+- **The lobby's neon sign:** a `decor/neon_sign` prefab (style §8) that sweeps a tube along the wordmark's and the
+  symbol's centerlines from `scripts/branding.py`. It needs two emissive tubes (amber and magenta), the black-painted
+  jumps between the letters of each tube, standoffs on a dark backplate, and one letter that flickers now and then
+  (off when `reduceMotion` is on). Its place would be the lobby wall facing the entrance. The bloom of thin emitters
+  (above, "Image quality") decides how it reads from afar.
+- **The lockup in the product UI:** the wizard's welcome, the settings' about and credits screen, a splash while the
+  world loads. RmlUi needs a raster image: either a PNG that the script writes, or the SVG rasterized at run time with
+  lunasvg (I11 step 2's logos).
+- **The tools' icons and a version resource:** `retroverse-cli` and `retroverse-asset-preview` could share the icon
+  (`rv_set_windows_icon`), and a `VERSIONINFO` block (product name, version, copyright) belongs with the release build
+  (I9).

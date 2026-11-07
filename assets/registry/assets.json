@@ -27,6 +27,54 @@
       "provenance": "atkinson-hyperlegible",
       "sha256": "5a3b0c8cc8ca545155150b4512a1fa248298df121c50d6557e651e61fbdab92f",
       "notes": "Bold weight of the UI sans; since I3 step 5 also rasterized with stb_truetype for the titles on the collection's spines and generated front labels (rv::assets::FontFace, ADR-0011 section 5), loaded only when its SHA-256 matches this entry; the rasterized textures are derived data, never distributed as a font. Upstream fonts/ttf file, unmodified."
+    },
+    {
+      "path": "branding/retroverse-symbol.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The symbol: the picture tube with the neon R, amber and magenta for dark grounds, on its 64-unit grid. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-icon.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The icon's large design (40 px and up): the symbol over a charcoal glass, so that it reads on light and dark taskbars. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-icon-16.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The icon's design at 16 px, drawn on its pixel grid (straight sides, strokes of whole pixels); 20 to 32 px follow the same rule. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-wordmark.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The wordmark: 'retroverse' as tube centerlines 8 units thick, 'retro' amber and 'verse' magenta, for dark grounds. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-lockup.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The horizontal lockup, symbol and wordmark with tubes of one thickness, for dark grounds. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-lockup-light.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The horizontal lockup in walnut and plum, for light grounds. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse-lockup-stacked.svg",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The stacked lockup, the symbol over the wordmark, for dark grounds. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
+    },
+    {
+      "path": "branding/retroverse.ico",
+      "kind": "branding",
+      "provenance": "retroverse-original",
+      "notes": "The executable's icon, 16 to 256 px (rv_set_windows_icon, cmake/TargetDefaults.cmake): 16 to 32 px drawn on their pixel grid, 40 px and up the large design; deployed with the assets but read only by the resource compiler. Original, made by scripts/branding.py from the logo's one geometry (docs/branding.md); regenerate, never edit by hand."
     }
   ]
 }

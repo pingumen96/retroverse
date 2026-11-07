@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 2 516 62" width="516" height="62">
+  <title>Retroverse</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M0 60 V20 M0 40 A20 20 0 0 1 20 20 H22" stroke="#FFC88A" stroke-width="8"/>
+    <path d="M0 40 H40 A20 20 0 1 0 34.14 54.14" transform="translate(42 0)" stroke="#FFC88A" stroke-width="8"/>
+    <path d="M7 6 V48 A12 12 0 0 0 19 60 H22 M0 20 H22" transform="translate(104 0)" stroke="#FFC88A" stroke-width="8"/>
+    <path d="M0 60 V20 M0 40 A20 20 0 0 1 20 20 H22" transform="translate(150 0)" stroke="#FFC88A" stroke-width="8"/>
+    <path d="M20 20 A20 20 0 0 1 20 60 A20 20 0 0 1 20 20 Z" transform="translate(192 0)" stroke="#FFC88A" stroke-width="8"/>
+    <path d="M0 20 L18 60 L36 20" transform="translate(254 0)" stroke="#C766E0" stroke-width="8"/>
+    <path d="M0 40 H40 A20 20 0 1 0 34.14 54.14" transform="translate(310 0)" stroke="#C766E0" stroke-width="8"/>
+    <path d="M0 60 V20 M0 40 A20 20 0 0 1 20 20 H22" transform="translate(374 0)" stroke="#C766E0" stroke-width="8"/>
+    <path d="M26.12 25 A14 10 0 1 0 14 40 A14 10 0 1 1 1.88 55" transform="translate(416 0)" stroke="#C766E0" stroke-width="8"/>
+    <path d="M0 40 H40 A20 20 0 1 0 34.14 54.14" transform="translate(468 0)" stroke="#C766E0" stroke-width="8"/>
+  </g>
+</svg>

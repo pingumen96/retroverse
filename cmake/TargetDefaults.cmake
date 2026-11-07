@@ -50,3 +50,21 @@ function(rv_enable_long_paths target)
         target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/cmake/long_path_aware.manifest")
     endif()
 endfunction()
+
+# Gives an executable the Retroverse icon (assets/branding/retroverse.ico, written by scripts/branding.py;
+# docs/branding.md) as its first icon resource: Explorer shows it, and SDL registers the first icon resource as its
+# window class's icon, so the window's title bar and taskbar button show it too. The resource script is generated in
+# the build tree and names the icon by its absolute path, as rc.exe resolves a relative one from its working directory;
+# OBJECT_DEPENDS recompiles it when the icon changes.
+#
+#   rv_set_windows_icon(<executable-target>)
+
+function(rv_set_windows_icon target)
+    if(WIN32)
+        set(icon "${PROJECT_SOURCE_DIR}/assets/branding/retroverse.ico")
+        set(script "${CMAKE_CURRENT_BINARY_DIR}/${target}_icon.rc")
+        file(CONFIGURE OUTPUT "${script}" CONTENT "#pragma code_page(65001)\n1 ICON \"@icon@\"\n" @ONLY)
+        set_source_files_properties("${script}" PROPERTIES OBJECT_DEPENDS "${icon}")
+        target_sources(${target} PRIVATE "${script}")
+    endif()
+endfunction()
