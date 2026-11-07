@@ -311,6 +311,8 @@ std::unique_ptr<AppCatalog> makeEsdeCatalog(AppContext& context, bool createData
     if (watchesLibrary(context.options())) {
         esde.otherImportsInterval = kOtherImportsInterval;
     }
+    // I7 step 8: a lockstep run hashes one file per frame, so that a script stops the pass at the same place every time.
+    esde.hashStepped = context.options().fixedDeltaSeconds.has_value();
     return std::make_unique<EsdeAppCatalog>(std::move(esde));
 }
 
@@ -1714,6 +1716,15 @@ struct RetroverseApp::State {
         }
         if (std::optional<esde::ChangeScopeMap> map = product->catalog().takeWatchMap()) {
             libraryWatcher->arm(std::move(*map));
+        }
+        // I7 step 8: the library screen shows each root's mode.
+        if (product->libraryOpen()) {
+            WatchStatus status;
+            status.watching = libraryWatcher->armed();
+            for (const core::RootStatus& root : libraryWatcher->status()) {
+                status.modes.emplace_back(root.name, std::string(core::toString(root.mode)));
+            }
+            product->setWatchStatus(std::move(status));
         }
         const bool held = product->launchActive() || product->wizardOpen() ||
                           (world && (world->riding() || world->editing()));

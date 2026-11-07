@@ -1,0 +1,179 @@
+<rml>
+<head>
+	<!--
+		The library screen (ADR-0018 §14). Origini: each folder's state and how the file watcher follows it, the last
+		import, "Aggiorna libreria". Problemi: what the last import met, by kind. Rimozioni: the systems the
+		mass-disappearance guard holds; "Applica le rimozioni" asks before anything leaves the catalog. Da verificare: files
+		that moved where no rule could tell which file is which; each is paired with one of its own candidates (asked
+		first: it cannot be undone) or kept apart. Impronte: the quick hashes the catalog lacks, computed on request,
+		stopped and resumed. Retroverse never writes to ES-DE's folders.
+		Bound to the data model "library" of rv::ui::LibraryScreen (src/ui/src/library_screen.cpp), its ids in
+		src/ui/include/rv/ui/library_model.hpp. state: loading, listed, unavailable. viewName: main, review, confirm-pair,
+		confirm-removals. tab: sources, issues, removals, reviews, hashes. root.kind: esde-home, rom, media, system;
+		root.state: reachable, unreachable, unknown; root.mode: notify, poll, lost, arming, off. issue.code: the kind of
+		app::libraryContentOf()'s groups. phase: app::toString(RefreshPhase). lastRefresh: '', done, cancelled, busy,
+		failed. hash: idle, running, cancelling, cancelled, done, busy, failed. problem: '', refused, conflict, busy,
+		write. Every word is here. Left, Right and the shoulders change the section, Up and Down move or scroll, A
+		presses, B goes back; a click does the same (VR's ray too). The focus is the model's.
+	-->
+	<title>Libreria</title>
+	<link type="text/rcss" href="library.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
+</head>
+<body data-model="library">
+	<div id="library-panel" class="panel">
+		<h1 data-if="viewName == 'main'">Libreria</h1>
+		<h1 data-if="viewName == 'review' || viewName == 'confirm-pair'">Da verificare</h1>
+		<h1 data-if="viewName == 'confirm-removals'">Applica le rimozioni</h1>
+		<div id="lb-tabs" data-if="viewName == 'main'">
+			<button id="lb-tab-sources" class="tab" data-class-active="tab == 'sources'" data-event-click="section('sources')">Origini</button>
+			<button id="lb-tab-issues" class="tab" data-class-active="tab == 'issues'" data-event-click="section('issues')">Problemi</button>
+			<button id="lb-tab-removals" class="tab" data-class-active="tab == 'removals'" data-event-click="section('removals')">Rimozioni</button>
+			<button id="lb-tab-reviews" class="tab" data-class-active="tab == 'reviews'" data-event-click="section('reviews')">Da verificare</button>
+			<button id="lb-tab-hashes" class="tab" data-class-active="tab == 'hashes'" data-event-click="section('hashes')">Impronte</button>
+		</div>
+		<div id="lb-body" data-class-sheet="viewName != 'main'">
+			<p class="note" data-if="state == 'loading'">Lettura del catalogo...</p>
+			<p class="note" data-if="state == 'unavailable'">Nessun catalogo aperto: importa la libreria per vederne lo stato.</p>
+
+			<div data-if="state == 'listed' && viewName == 'main' && tab == 'sources'">
+				<div class="line" data-for="root : roots">
+					<div class="line-main">
+						<p class="title">
+							<span data-if="root.kind == 'esde-home'">Cartella di ES-DE</span>
+							<span data-if="root.kind == 'rom'">Cartella delle ROM</span>
+							<span data-if="root.kind == 'media'">Cartella dei media</span>
+							<span data-if="root.kind == 'system'">Cartella di {{ root.system }}</span>
+						</p>
+						<p class="detail path" data-if="root.path != ''">{{ root.path }}</p>
+						<p class="detail" data-if="root.mode == 'notify'">Sorvegliata: ciò che ES-DE aggiunge arriva da solo.</p>
+						<p class="detail" data-if="root.mode == 'poll'">Controllata ogni 30 secondi: il disco non avvisa dei cambiamenti.</p>
+						<p class="detail" data-if="root.mode == 'lost'">Non raggiungibile: ricontrollata ogni 5 secondi.</p>
+						<p class="detail" data-if="root.mode == 'arming'">Sorveglianza in preparazione.</p>
+						<p class="detail" data-if="root.mode == 'off'">Non sorvegliata: usa Aggiorna libreria.</p>
+					</div>
+					<p class="badge ok" data-if="root.state == 'reachable'">Raggiungibile</p>
+					<p class="badge bad" data-if="root.state == 'unreachable'">Non raggiungibile</p>
+					<p class="badge" data-if="root.state == 'unknown'">Sconosciuta</p>
+				</div>
+				<p class="note" data-if="unavailableSystems > 0">Cartelle di sistema non raggiungibili all'ultima importazione: {{ unavailableSystems }}. I loro giochi restano nel catalogo.</p>
+				<p class="note" data-if="importKnown">Ultima importazione: {{ importWhen }}<span data-if="importKind == 'rebuild-index'">, indice ricostruito</span><span data-if="importSystems > 0">, di {{ importSystems }} sistemi</span><span data-if="importAccepted">, rimozioni applicate</span>.</p>
+				<p class="note" data-if="!importKnown">Nessuna importazione registrata.</p>
+				<p class="note" data-if="refreshing">Aggiornamento in corso: <span data-if="phase == 'reading'">lettura delle cartelle</span><span data-if="phase == 'media'">media {{ refreshDone }} di {{ refreshTotal }}</span><span data-if="phase == 'comparing'">confronto {{ refreshDone }} di {{ refreshTotal }}</span><span data-if="phase == 'writing'">scrittura</span>...</p>
+				<p class="note" data-if="!refreshing && lastRefresh == 'done'">Aggiornata: {{ added }} aggiunti, {{ removed }} rimossi<span data-if="guarded > 0">, {{ guarded }} sistemi trattenuti</span>.</p>
+				<p class="problem" data-if="!refreshing && lastRefresh == 'busy'">Un'altra importazione è in corso: riprova dopo.</p>
+				<p class="problem" data-if="!refreshing && lastRefresh == 'failed'">L'aggiornamento non è riuscito.</p>
+				<button id="lb-refresh" class="action primary" data-if="canRefresh" data-class-disabled="refreshing" data-event-click="button('refresh')">Aggiorna libreria</button>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'main' && tab == 'issues'">
+				<p class="note" data-if="issueCount == 0">L'ultima importazione non ha segnalato nulla.</p>
+				<p class="note" data-if="issueCount > 0">L'ultima importazione ha segnalato {{ issueCount }} cose. Nulla è stato perso: i dettagli sono nel registro.</p>
+				<div class="line" data-for="issue : issues">
+					<div class="line-main">
+						<p class="title">
+							<span data-if="issue.code == 'guard'">Molti file spariti: rimozioni trattenute</span>
+							<span data-if="issue.code == 'rom-root'">Cartella delle ROM non raggiungibile</span>
+							<span data-if="issue.code == 'system-folder'">Cartella di sistema mancante o non raggiungibile</span>
+							<span data-if="issue.code == 'system-config'">Sistemi configurati in modo insolito</span>
+							<span data-if="issue.code == 'gamelist'">Gamelist non leggibili</span>
+							<span data-if="issue.code == 'gamelist-entry'">Voci di gamelist ignorate o corrette</span>
+							<span data-if="issue.code == 'rom-entry'">File o cartelle non leggibili</span>
+							<span data-if="issue.code == 'key-collision'">Nomi di file che si confondono</span>
+							<span data-if="issue.code == 'disc'">Giochi su più dischi incompleti</span>
+							<span data-if="issue.code == 'media-root'">Cartella dei media non raggiungibile</span>
+							<span data-if="issue.code == 'media'">Media non letti o ignorati</span>
+							<span data-if="issue.code == 'mame'">Elenco dei giochi MAME mancante</span>
+							<span data-if="issue.code == 'other'">Altre segnalazioni</span>
+						</p>
+						<p class="detail" data-if="issue.systems != ''">{{ issue.systems }}<span data-if="issue.moreSystems > 0"> e altri {{ issue.moreSystems }}</span></p>
+					</div>
+					<p class="badge bad" data-if="issue.severity == 'error'">{{ issue.count }}</p>
+					<p class="badge warn" data-if="issue.severity == 'warning'">{{ issue.count }}</p>
+					<p class="badge" data-if="issue.severity == 'info'">{{ issue.count }}</p>
+				</div>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'main' && tab == 'removals'">
+				<p class="note">Quando sparisce più di metà dei file di un sistema, Retroverse non toglie nulla finché non lo confermi: potrebbe essere un disco scollegato o una cartella rinominata.</p>
+				<p class="note" data-if="held.size == 0">Nessun sistema trattenuto.</p>
+				<div class="line" data-for="system : held">
+					<div class="line-main">
+						<p class="title">{{ system.fullName }}</p>
+						<p class="detail" data-if="system.present > 0">{{ system.gone }} file spariti su {{ system.present }}</p>
+					</div>
+				</div>
+				<button id="lb-apply-removals" class="action danger" data-if="held.size > 0" data-event-click="button('apply-removals')">Applica le rimozioni</button>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'main' && tab == 'reviews'">
+				<p class="note" data-if="reviews.size == 0">Nessun file da verificare.</p>
+				<p class="note" data-if="reviews.size > 0">Questi giochi sono spariti e al loro posto ci sono file che potrebbero essere loro: scegli tu, nulla viene unito da solo.</p>
+				<div class="row" data-for="review : reviews" data-attr-id="review.elementId" data-event-click="review(review.index)">
+					<div class="line-main">
+						<p class="title"><span data-if="review.title != ''">{{ review.title }}</span><span data-if="review.title == ''">{{ review.vanished }}</span></p>
+						<p class="detail">{{ review.system }}: <span data-if="review.candidates == 1">1 file possibile</span><span data-if="review.candidates != 1">{{ review.candidates }} file possibili</span></p>
+					</div>
+				</div>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'main' && tab == 'hashes'">
+				<p class="note">L'impronta di un file (il suo inizio e la sua fine) fa riconoscere un gioco spostato o rinominato. Calcolarla legge ogni file: sull'intera libreria può durare a lungo, e si può interrompere e riprendere.</p>
+				<p class="title" id="lb-hash-counts">Impronte: {{ hashed }} file su {{ files }}</p>
+				<p class="note" data-if="hash == 'running'">Calcolo in corso: {{ hashDone }} di {{ hashTotal }}, {{ hashHashed }} calcolate.</p>
+				<p class="note" data-if="hash == 'cancelling'">Interruzione...</p>
+				<p class="note" data-if="hash == 'cancelled'">Interrotto: {{ hashHashed }} calcolate, {{ hashRemaining }} restano. Riprendi quando vuoi.</p>
+				<p class="note" data-if="hash == 'done'">Fatto: {{ hashHashed }} calcolate.<span data-if="hashUnreadable > 0"> File non leggibili: {{ hashUnreadable }}.</span></p>
+				<p class="problem" data-if="hash == 'busy'">Un'importazione è in corso: riprova dopo.</p>
+				<p class="problem" data-if="hash == 'failed'">Il calcolo non è riuscito.</p>
+				<button id="lb-hash" class="action primary" data-if="files > 0 || hash == 'running' || hash == 'cancelling'" data-event-click="button('hash')"><span data-if="hash == 'running' || hash == 'cancelling'">Interrompi</span><span data-if="hash == 'cancelled'">Riprendi</span><span data-if="hash != 'running' && hash != 'cancelling' && hash != 'cancelled'">Calcola impronte</span></button>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'review'">
+				<p class="title"><span data-if="current.title != ''">{{ current.title }}</span><span data-if="current.title == ''">{{ current.vanished }}</span> ({{ current.system }})</p>
+				<p class="detail path">Era in {{ current.vanished }}. Quale di questi file è?</p>
+				<div data-for="candidate : candidates">
+					<div class="row" data-if="candidate.offered" data-attr-id="candidate.elementId" data-event-click="candidate(candidate.index)">
+						<p class="title path">{{ candidate.path }}</p>
+					</div>
+					<div class="line gone" data-if="!candidate.offered">
+						<p class="title path">{{ candidate.path }}</p>
+						<p class="badge">Non più presente</p>
+					</div>
+				</div>
+				<p class="note" data-if="resolving">Applicazione...</p>
+				<p class="problem" data-if="problem == 'refused'">Questo abbinamento non si può fare: il file non è più tra i candidati.</p>
+				<p class="problem" data-if="problem == 'conflict'">Il caso è già stato risolto, o il file originale è tornato.</p>
+				<p class="problem" data-if="problem == 'busy'">Un'importazione è in corso: riprova dopo.</p>
+				<p class="problem" data-if="problem == 'write'">La scelta non si è potuta salvare.</p>
+				<button id="lb-keep-separate" class="action" data-event-click="button('keep-separate')">Tieni separati</button>
+				<button id="lb-review-cancel" class="action" data-event-click="button('review-cancel')">Annulla</button>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'confirm-pair'">
+				<p class="title"><span data-if="current.title != ''">{{ current.title }}</span><span data-if="current.title == ''">{{ current.vanished }}</span></p>
+				<p class="note path">Abbinarlo a {{ chosen }}? Il gioco riprende in quel file la sua storia, le sue partite e la sua scelta di emulatore. Non si può annullare.</p>
+				<button id="lb-pair-cancel" class="action" data-event-click="button('pair-cancel')">Annulla</button>
+				<button id="lb-pair" class="action danger" data-event-click="button('pair')">Abbina</button>
+			</div>
+
+			<div data-if="state == 'listed' && viewName == 'confirm-removals'">
+				<p class="note">Togliere dal catalogo i giochi spariti di questi sistemi? Le loro identità restano: se i file tornano, i giochi tornano con la loro storia.</p>
+				<div class="line" data-for="system : held">
+					<p class="title">{{ system.fullName }}</p>
+				</div>
+				<button id="lb-removals-cancel" class="action" data-event-click="button('removals-cancel')">Annulla</button>
+				<button id="lb-apply" class="action danger" data-event-click="button('apply')">Applica</button>
+			</div>
+		</div>
+		<div id="lb-footer">
+			<div id="lb-hints">
+				<span class="hint" data-if="viewName == 'main'"><span class="kbd" hint-action="ui_filter_previous ui_filter_next"></span>Sezione</span>
+				<span class="hint"><span class="kbd" hint-action="ui_activate"></span>Conferma</span>
+				<span class="hint"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
+			</div>
+			<button id="lb-close" class="action close" data-if="viewName == 'main'" data-event-click="close()">Chiudi</button>
+		</div>
+	</div>
+</body>
+</rml>

@@ -75,6 +75,17 @@ struct RefreshState {
     std::optional<TimeSummary> lastLists;
     /// Imports of another process followed (CatalogChanges::otherImport), in all.
     std::uint64_t otherImports = 0;
+    /// Review rows paired (I7 step 8): an identity followed its file, the lists and the building follow as after another
+    /// process's import.
+    std::uint64_t reviewsPaired = 0;
+};
+
+/// Where "Calcola impronte" stands (I7 step 8): one runs (and is being stopped), its latest progress, the last one's end.
+struct QuickHashState {
+    bool running = false;
+    bool cancelling = false;
+    std::optional<catalog::QuickHashProgress> progress;
+    std::optional<QuickHashEnded> last;
 };
 
 /// The run report's record of a refresh that ended: `summary`'s outcome, error, counts, time and slices, `lists`.
@@ -177,6 +188,22 @@ public:
     [[nodiscard]] virtual std::optional<GameControls> takeGameControls() { return std::nullopt; }
     /// Where the folder browser starts looking for a program: ES-DE's install folder, when known; nothing: the drives.
     [[nodiscard]] virtual std::optional<std::filesystem::path> programStartFolder() const { return std::nullopt; }
+    /// The coverage and library screens (I7 step 8, ADR-0018 §14), likewise: a false says nothing was asked (the mock
+    /// catalog, the wizard's before its import). A review row resolved to one of its candidates (`pairWith`) or kept
+    /// separate (nothing). The quick-hash pass on request: false while one runs or nothing can; its state.
+    virtual bool requestCoverage() { return false; }
+    [[nodiscard]] virtual std::optional<CoverageList> takeCoverage() { return std::nullopt; }
+    virtual bool requestLibraryStatus() { return false; }
+    [[nodiscard]] virtual std::optional<LibraryStatus> takeLibraryStatus() { return std::nullopt; }
+    virtual bool requestReviewResolution(std::int64_t /*review*/, std::optional<catalog::GameId> /*pairWith*/) {
+        return false;
+    }
+    [[nodiscard]] virtual std::optional<ReviewResolved> takeReviewResolved() { return std::nullopt; }
+    virtual bool requestQuickHash() { return false; }
+    virtual void cancelQuickHash() {}
+    [[nodiscard]] virtual QuickHashState quickHashState() const { return {}; }
+    /// A frame begins (ProductUi::update): a stepped quick-hash pass (lockstep runs) may read its next file.
+    virtual void frameStarted() {}
 
     /// The full name of `system` as the catalog has it (its <fullname>); "" when it has none or the catalog does not know
     /// the system (the directory then shows its name).
@@ -257,6 +284,9 @@ public:
         bool createDatabase = false;
         /// CatalogWorker::Options::otherImportsInterval: another process's import followed (with the file watcher).
         std::optional<std::chrono::milliseconds> otherImportsInterval;
+        /// CatalogWorker::Options::hashStepped (lockstep runs): the quick-hash pass reads one file per frame, and the
+        /// frame waits for it (busy()).
+        bool hashStepped = false;
     };
 
     explicit EsdeAppCatalog(Options options);
@@ -271,7 +301,8 @@ public:
     CatalogChanges poll() override;
     [[nodiscard]] bool busy() const noexcept override {
         return m_source.waiting() || m_resolving.has_value() || m_recentAsked.has_value() || m_tableAsked ||
-               m_samplesAsked || m_changesAsked > 0 || m_testAwaited || m_statisticsAsked || m_controlsAsked > 0;
+               m_samplesAsked || m_changesAsked > 0 || m_testAwaited || m_statisticsAsked || m_controlsAsked > 0 ||
+               m_coverageAsked || m_libraryAsked || m_reviewsAsked > 0 || m_hashAwaited;
     }
     [[nodiscard]] bool supportsRefresh() const noexcept override { return true; }
     bool requestRefresh(RefreshRequest request = {}) override;
@@ -316,6 +347,16 @@ public:
     bool requestGameStatus(const catalog::GameId& game, catalog::GameStatus status) override;
     [[nodiscard]] std::optional<GameControls> takeGameControls() override { return std::exchange(m_gameControls, {}); }
     [[nodiscard]] std::optional<std::filesystem::path> programStartFolder() const override;
+    bool requestCoverage() override;
+    [[nodiscard]] std::optional<CoverageList> takeCoverage() override { return std::exchange(m_coverage, {}); }
+    bool requestLibraryStatus() override;
+    [[nodiscard]] std::optional<LibraryStatus> takeLibraryStatus() override { return std::exchange(m_library, {}); }
+    bool requestReviewResolution(std::int64_t review, std::optional<catalog::GameId> pairWith) override;
+    [[nodiscard]] std::optional<ReviewResolved> takeReviewResolved() override;
+    bool requestQuickHash() override;
+    void cancelQuickHash() override;
+    [[nodiscard]] QuickHashState quickHashState() const override;
+    void frameStarted() override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
@@ -345,6 +386,8 @@ private:
     /// The refresh's progress and end out of `results` (`ended`: the worker's thread ended, so a refresh it did not
     /// answer never will be); true when it ended.
     bool collectRefresh(CatalogResults& results, bool ended);
+    /// I7 step 8: the coverage, the library's state, review resolutions and the quick-hash pass out of `results`.
+    void collectLibrary(CatalogResults& results);
 
     Options m_options;
     CatalogWorker m_worker;
@@ -365,6 +408,7 @@ private:
     /// I7 step 7: the watcher's map until taken, and another process's imports followed.
     std::optional<esde::ChangeScopeMap> m_watchMap;
     std::uint64_t m_otherImports = 0;
+    std::uint64_t m_reviewsPaired = 0;
     /// How long shutdown() waited for the worker to stop.
     std::optional<double> m_stopMs;
     /// The building job's reader (I4 step 5a), from the catalog's opening.
@@ -387,6 +431,24 @@ private:
     std::uint64_t m_controlsSerial = 0;
     std::optional<StatisticsList> m_statistics;
     std::optional<GameControls> m_gameControls;
+    /// I7 step 8: the coverage, the library's state and review resolutions asked (the lockstep runs wait for them), their
+    /// answers until taken; the quick-hash pass: running, being stopped, its latest progress and end; in a stepped run, a
+    /// file read since the frame let it (held) and a frame waiting for the next one (awaited).
+    bool m_coverageAsked = false;
+    std::uint64_t m_coverageSerial = 0;
+    std::optional<CoverageList> m_coverage;
+    bool m_libraryAsked = false;
+    std::uint64_t m_librarySerial = 0;
+    std::optional<LibraryStatus> m_library;
+    std::size_t m_reviewsAsked = 0;
+    std::uint64_t m_reviewSerial = 0;
+    std::vector<ReviewResolved> m_reviewsResolved;
+    bool m_hashRunning = false;
+    bool m_hashCancelling = false;
+    std::optional<catalog::QuickHashProgress> m_hashProgress;
+    std::optional<QuickHashEnded> m_hashLast;
+    bool m_hashHeld = false;
+    bool m_hashAwaited = false;
     std::optional<EmulatorTable> m_table;
     std::optional<EmulatorSamples> m_samples;
     std::vector<ChoiceChanged> m_changes;

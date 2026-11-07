@@ -35,6 +35,12 @@
 // Since I7 step 6 (ADR-0018 §9, §11) it answers the statistics screen (statistics(): SqliteCatalogQuery::playStatistics on
 // the worker's reader) and Informazioni's rows (gameControls(), setGameStatus()), so that neither ever blocks a frame.
 //
+// Since I7 step 8 (ADR-0018 §14) it answers the coverage and library screens: the media coverage of the catalog's rows
+// (coverage(): SqliteCatalogQuery::mediaCoverage with the clips' failure verdicts), the library's state (libraryStatus():
+// its folders, the last import and its issues, the systems the guard holds, the open review rows, the quick hashes'
+// counts), a review row resolved (resolveReview(): catalog::resolveReview, only to its candidates) and the quick-hash
+// pass on request (quickHash(), cancelQuickHash(): catalog::runQuickHashPass, requests answered between two files).
+//
 // Since I4 step 5a it opens, with the catalog, a third read-only connection for the building job (CatalogOpened::world,
 // room_snapshot.hpp's WorldCatalogReader), which reads every system's snapshot on the app's worker pool: the room's
 // snapshot is no job of this worker any more (I3 step 10b's), so that the lists never queue behind it.
@@ -59,8 +65,11 @@
 #include <rv/catalog/launch_resolution.hpp>
 #include <rv/catalog/library_source.hpp>
 #include <rv/catalog/play_session.hpp>
+#include <rv/catalog/coverage.hpp>
+#include <rv/catalog/fingerprint.hpp>
 #include <rv/catalog/query.hpp>
 #include <rv/catalog/recent_games.hpp>
+#include <rv/catalog/reconciliation.hpp>
 #include <rv/catalog/statistics.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/session_store.hpp>
@@ -101,6 +110,8 @@ struct GameLaunchState {
 
 /// How often the worker compares the newest import with the one it knows, with the file watcher (ADR-0018 §10).
 inline constexpr std::chrono::milliseconds kOtherImportsInterval{5000};
+/// How often the quick-hash pass posts its progress at most, outside lockstep runs (I7 step 8).
+inline constexpr std::chrono::milliseconds kQuickHashProgressInterval{100};
 
 /// The blocker code of a launch that cannot be resolved because the library's configuration cannot be read (ES-DE's
 /// settings or systems: CatalogOpened::libraryError).
@@ -275,6 +286,107 @@ struct GameControls {
     std::optional<launcher::LaunchChoice> own;
 };
 
+/// A clip known to fail (<user data>/cache/media/videos.json, I5 step 7): the coverage screen's (I7 step 8).
+struct ClipFailure {
+    /// The system its media folder belongs to (the path's first element), its file below the system's videos folder.
+    std::string system;
+    std::string file;
+    /// media::verdictName().
+    std::string verdict;
+
+    bool operator==(const ClipFailure&) const = default;
+};
+
+/// The coverage screen's answer (CatalogWorker::coverage, I7 step 8, ADR-0018 §14).
+struct CoverageList {
+    std::uint64_t serial = 0;
+    /// The coverage could not be read.
+    std::optional<Error> error;
+    catalog::MediaCoverage coverage;
+    /// Every system's full name as the catalog has it (name, full name), by name.
+    std::vector<std::pair<std::string, std::string>> fullNames;
+    /// The failure verdicts, by system then file; why they are not known (the verdicts file cannot be read).
+    std::vector<ClipFailure> clips;
+    std::optional<Error> clipsError;
+    /// How long the worker took (ADR-0018 §16: shown within 1 s of opening).
+    double milliseconds = 0.0;
+};
+
+/// A folder of the library as the library screen shows it (I7 step 8).
+struct LibraryFolder {
+    /// "esde-home", "rom", "media", "system" (a system folder outside the ROM root, `system` its name).
+    std::string kind;
+    std::string system;
+    std::filesystem::path folder;
+    /// Nothing when it is not known (its path cannot be resolved).
+    std::optional<bool> reachable;
+};
+
+/// A system the mass-disappearance guard holds (its last import's issue kImportIssueMassDisappearance).
+struct HeldSystem {
+    catalog::SystemName system;
+    std::string fullName;
+    /// The guard's figures, when the last import recorded the system (0 otherwise).
+    std::size_t gone = 0;
+    std::size_t present = 0;
+};
+
+/// A candidate of an open review row: its relative path and the identity it has now, when that one's file is present
+/// (only such a one can be paired with: catalog::resolveReview()).
+struct ReviewCandidateState {
+    std::string path;
+    std::optional<catalog::GameId> game;
+};
+
+/// An open review row.
+struct ReviewState {
+    std::int64_t id = 0;
+    catalog::GameId game;
+    catalog::SystemName system;
+    std::string fullName;
+    /// Its title as the catalog's index row of it gives it ("" none), its last path.
+    std::string title;
+    std::string vanished;
+    std::vector<ReviewCandidateState> candidates;
+};
+
+/// The library screen's answer (CatalogWorker::libraryStatus, I7 step 8, ADR-0018 §14).
+struct LibraryStatus {
+    std::uint64_t serial = 0;
+    /// The catalog could not be read.
+    std::optional<Error> error;
+    std::vector<LibraryFolder> folders;
+    /// The systems whose ROM folder the last import could not list.
+    std::size_t unavailableSystems = 0;
+    std::optional<catalog::ImportRecord> lastImport;
+    std::vector<catalog::Issue> issues;
+    std::vector<HeldSystem> held;
+    std::vector<ReviewState> reviews;
+    catalog_db::QuickHashCounts hashes;
+    double milliseconds = 0.0;
+};
+
+/// How a review row's resolution ended (CatalogWorker::resolveReview).
+struct ReviewResolved {
+    std::uint64_t serial = 0;
+    std::int64_t review = 0;
+    /// "" resolved; "refused" (not one of its candidates, or one that cannot be: InvalidArgument), "conflict" (resolved
+    /// already, its file back: NotFound, Conflict), "busy" (an import or the quick-hash pass holds the import lock),
+    /// "write" (the store's).
+    std::string problem;
+    /// Paired (not kept separate).
+    bool paired = false;
+};
+
+/// Where the quick-hash pass stands (CatalogWorker::quickHash, I7 step 8): the latest progress, and its end.
+struct QuickHashEnded {
+    /// "done", "cancelled", "busy" (an import holds the import lock), "failed".
+    std::string outcome;
+    std::optional<Error> error;
+    catalog::QuickHashPassResult result;
+    double milliseconds = 0.0;
+};
+
 /// What the worker answered since the last CatalogWorker::take().
 struct CatalogResults {
     std::optional<CatalogOpened> opened;
@@ -305,6 +417,14 @@ struct CatalogResults {
     /// as a refresh's: the lists and the building asked again).
     std::optional<esde::ChangeScopeMap> watchMap;
     std::optional<CatalogRefreshed> otherImport;
+    /// I7 step 8 (ADR-0018 §14): the latest coverage and library status, how review resolutions ended (a pairing's
+    /// systems resolved again, as another process's import: `reviewed`), the quick-hash pass's latest progress and end.
+    std::optional<CoverageList> coverage;
+    std::optional<LibraryStatus> libraryStatus;
+    std::vector<ReviewResolved> reviewsResolved;
+    std::optional<CatalogRefreshed> reviewed;
+    std::optional<catalog::QuickHashProgress> hashProgress;
+    std::optional<QuickHashEnded> hashEnded;
     /// The worker's thread ended (stopped, or failed: an opening never posted is then posted as Unavailable): nothing
     /// asked of it will be answered any more. Posted last.
     bool ended = false;
@@ -313,7 +433,8 @@ struct CatalogResults {
         return !opened && !list && !recentGames && readiness.empty() && launches.empty() && sessions.empty() &&
                verified.empty() && !refreshProgress && !refreshed && !emulatorTable && !emulatorSamples &&
                tests.empty() && changes.empty() && !resolved && !statistics && !gameControls && !watchMap &&
-               !otherImport && !ended;
+               !otherImport && !coverage && !libraryStatus && reviewsResolved.empty() && !reviewed && !hashProgress &&
+               !hashEnded && !ended;
     }
 };
 
@@ -352,6 +473,12 @@ public:
         /// How often the newest import is compared with the one known, to follow another process's (ADR-0018 §10:
         /// 5 s, with the file watcher); nothing: never.
         std::optional<std::chrono::milliseconds> otherImportsInterval;
+        /// The quick-hash pass posts each file's progress and waits until the main thread took it (lockstep runs, I7
+        /// step 8: one file per frame, so that a scripted run stops it at the same place every time); otherwise its
+        /// progress is posted every kQuickHashProgressInterval and nothing waits.
+        bool hashStepped = false;
+        /// Reads the quick hashes (catalog::readQuickHashBelow() when empty; tests count or fail some).
+        catalog::QuickHashReader hashReader;
     };
 
     /// The worker's default bound for stopping (the destructor's).
@@ -405,6 +532,23 @@ public:
     /// systems `request` names or of every one. False, and nothing asked, while a refresh is queued or runs, or once the
     /// worker stops or ended. Only once the catalog opened Ready: a catalog that did not open answers nothing more.
     bool refresh(RefreshRequest request = {});
+
+    /// I7 step 8 (ADR-0018 §14): the media coverage of the catalog's rows with the clips known to fail
+    /// (CatalogResults::coverage), and what the library screen shows (::libraryStatus); one still queued is replaced.
+    void coverage(std::uint64_t serial);
+    void libraryStatus(std::uint64_t serial);
+    /// Resolves the review row `decision.review` (catalog::resolveReview(), never forced: only to one of its candidates,
+    /// or kept separate); CatalogResults::reviewsResolved, and after a pairing the systems resolved again (::reviewed).
+    void resolveReview(std::uint64_t serial, catalog::ReviewDecision decision);
+    /// "Calcola impronte": the quick-hash pass (catalog::runQuickHashPass() on the worker's writer, from what is left),
+    /// its progress and end in CatalogResults::hashProgress, ::hashEnded. Requests that come meanwhile are answered
+    /// between two files; a refresh asked meanwhile runs first, the pass going on after it. False, and nothing asked,
+    /// while one is queued or runs, or once the worker stops or ended.
+    bool quickHash();
+    /// Stops the pass after the file it reads: what it hashed stays (resumable). Nothing when none runs.
+    void cancelQuickHash();
+    /// Options::hashStepped: the pass may read its next file (once per frame).
+    void releaseHashStep();
 
     /// What it answered since the last call (main thread).
     [[nodiscard]] CatalogResults take();

@@ -1,0 +1,111 @@
+<rml>
+<head>
+	<!--
+		The media coverage screen (ADR-0018 §14, ADR-0003): per system and kind, the share of the games that have a file of
+		the kind, worst first, over the catalog's own rows as the last import stored them: every game, or the games a
+		gamelist names. The clips known to fail come from Retroverse's own verdicts (cache/media/videos.json). Retroverse
+		downloads no media: the screen says to scrape in ES-DE, then refresh the library. Bound to the data model
+		"coverage" of rv::ui::CoverageScreen (src/ui/src/coverage_screen.cpp), its ids in
+		src/ui/include/rv/ui/coverage_model.hpp. state: loading, listed, empty, unavailable. viewName: systems, system.
+		tab: games, scraped. A share is text ("90,9", "-"); kind: catalog::toString(MediaKind); verdict:
+		media::verdictName(). Every word is here: the screen binds figures and the names ES-DE gives. Up and Down move in
+		the list, Left, Right and the shoulders change the population, A opens a system, B goes back; a click does the
+		same (VR's ray too). The focus is the model's.
+	-->
+	<title>Copertura media</title>
+	<link type="text/rcss" href="coverage.rcss"/>
+	<link type="text/rcss" href="hint_bar.rcss"/>
+</head>
+<body data-model="coverage">
+	<div id="coverage-panel" class="panel">
+		<h1 data-if="viewName == 'systems'">Copertura media</h1>
+		<h1 data-if="viewName == 'system'">{{ current.fullName }}</h1>
+		<div id="cv-tabs">
+			<button id="cv-tab-games" class="tab" data-class-active="tab == 'games'" data-event-click="section('games')">Tutti i giochi</button>
+			<button id="cv-tab-scraped" class="tab" data-class-active="tab == 'scraped'" data-event-click="section('scraped')">Giochi nelle gamelist</button>
+		</div>
+		<div id="cv-body">
+			<p class="note" data-if="state == 'loading'">Lettura del catalogo...</p>
+			<p class="note" data-if="state == 'unavailable'">Nessun catalogo aperto: importa la libreria per vedere la copertura.</p>
+			<p class="note" data-if="state == 'empty'">Il catalogo non ha giochi.</p>
+
+			<div class="view" data-if="state == 'listed' && viewName == 'systems'">
+				<p class="note" id="cv-advice">Retroverse non scarica media: completali con lo scraper di ES-DE, poi usa Aggiorna libreria. In alto i sistemi più scoperti.</p>
+				<p class="note" id="cv-total">In tutto {{ total.games }} giochi: copertine {{ total.covers }}%, schermate {{ total.screenshots }}%, video {{ total.videos }}%.<span data-if="clipCount > 0"> Clip che non si riproducono: {{ clipCount }}.</span><span data-if="clipsUnknown"> I clip difettosi non si possono leggere.</span></p>
+				<div class="head">
+					<p class="col-name">Sistema</p>
+					<p class="col-num">Giochi</p>
+					<p class="col-share">Copertine</p>
+					<p class="col-share">Scatole 3D</p>
+					<p class="col-share">Schermate</p>
+					<p class="col-share">Marquee</p>
+					<p class="col-share">Video</p>
+				</div>
+				<div id="cv-list">
+					<div class="row" data-for="row : rows" data-attr-id="row.elementId" data-event-click="system(row.index)">
+						<p class="col-name">{{ row.fullName }}<span class="clips" data-if="row.clipFailures > 0"> ({{ row.clipFailures }} clip difettosi)</span></p>
+						<p class="col-num">{{ row.games }}</p>
+						<p class="col-share">{{ row.covers }}</p>
+						<p class="col-share">{{ row.boxes }}</p>
+						<p class="col-share">{{ row.screenshots }}</p>
+						<p class="col-share">{{ row.marquees }}</p>
+						<p class="col-share">{{ row.videos }}</p>
+					</div>
+				</div>
+			</div>
+
+			<div class="view" data-if="state == 'listed' && viewName == 'system'">
+				<p class="note">Giochi: {{ current.games }}<span data-if="tab == 'games'">, di cui nelle gamelist {{ currentScraped.games }}</span>. Per ciò che manca usa lo scraper di ES-DE su questo sistema, poi Aggiorna libreria.</p>
+				<div id="cv-detail">
+					<div class="head">
+						<p class="col-kind">Tipo</p>
+						<p class="col-pop">Tutti i giochi</p>
+						<p class="col-pop">Nelle gamelist</p>
+					</div>
+					<div class="line" data-for="kind : kinds">
+						<p class="col-kind">
+							<span data-if="kind.kind == 'covers'">Copertine</span>
+							<span data-if="kind.kind == 'backcovers'">Retro della confezione</span>
+							<span data-if="kind.kind == '3dboxes'">Scatole 3D</span>
+							<span data-if="kind.kind == 'physicalmedia'">Supporti fisici</span>
+							<span data-if="kind.kind == 'screenshots'">Schermate</span>
+							<span data-if="kind.kind == 'titlescreens'">Schermate del titolo</span>
+							<span data-if="kind.kind == 'marquees'">Marquee</span>
+							<span data-if="kind.kind == 'miximages'">Immagini composte</span>
+							<span data-if="kind.kind == 'fanart'">Fan art</span>
+							<span data-if="kind.kind == 'manuals'">Manuali</span>
+							<span data-if="kind.kind == 'videos'">Video</span>
+							<span data-if="kind.kind == 'custom'">Personalizzati</span>
+						</p>
+						<p class="col-pop" data-class-low="kind.gamesLow">{{ kind.gamesShare }}%<span class="detail"> (mancano {{ kind.gamesMissing }})</span></p>
+						<p class="col-pop" data-class-low="kind.scrapedLow"><span data-if="kind.scrapedShare != '-'">{{ kind.scrapedShare }}%</span><span data-if="kind.scrapedShare == '-'">-</span><span class="detail" data-if="kind.scrapedShare != '-'"> (mancano {{ kind.scrapedMissing }})</span></p>
+					</div>
+					<p class="subhead" data-if="clips.size > 0">Clip che non si riproducono</p>
+					<div class="line" data-for="clip : clips">
+						<p class="col-file">{{ clip.file }}</p>
+						<p class="col-verdict">
+							<span data-if="clip.verdict == 'invalid-file'">File non valido</span>
+							<span data-if="clip.verdict == 'no-video-stream'">Nessun video</span>
+							<span data-if="clip.verdict == 'unsupported-codec'">Formato non supportato</span>
+							<span data-if="clip.verdict == 'corrupt-data'">Dati danneggiati</span>
+							<span data-if="clip.verdict == 'truncated'">File troncato</span>
+							<span data-if="clip.verdict == 'decoder-error'">Errore di decodifica</span>
+						</p>
+					</div>
+					<p class="note" data-if="clips.size > 0">Un clip difettoso non si apre più finché il suo file non cambia: sostituiscilo con lo scraper di ES-DE.</p>
+				</div>
+			</div>
+		</div>
+		<div id="cv-footer">
+			<div id="cv-hints">
+				<span class="hint" data-if="viewName == 'systems'"><span class="kbd" hint-action="ui_up ui_down"></span>Sistema</span>
+				<span class="hint" data-if="viewName == 'systems'"><span class="kbd" hint-action="ui_activate"></span>Dettagli</span>
+				<span class="hint" data-if="viewName == 'system'"><span class="kbd" hint-action="ui_up ui_down"></span>Scorri</span>
+				<span class="hint"><span class="kbd" hint-action="ui_filter_previous ui_filter_next"></span>Giochi</span>
+				<span class="hint"><span class="kbd" hint-action="ui_back"></span>Indietro</span>
+			</div>
+			<button id="cv-close" class="action" data-if="viewName == 'systems'" data-event-click="close()">Chiudi</button>
+		</div>
+	</div>
+</body>
+</rml>

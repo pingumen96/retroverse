@@ -214,6 +214,7 @@ CatalogWorker::Options workerOptions(const EsdeAppCatalog::Options& options) {
     worker.owner = options.owner;
     worker.createDatabase = options.createDatabase;
     worker.otherImportsInterval = options.otherImportsInterval;
+    worker.hashStepped = options.hashStepped;
     if (options.adjust) {
         options.adjust(worker);
     }
@@ -411,6 +412,17 @@ CatalogChanges EsdeAppCatalog::poll() {
         }
         results.otherImport.reset();
     }
+    // A review row paired (I7 step 8): an identity followed its file, so the lists and the building follow as after
+    // another process's import.
+    if (results.reviewed) {
+        if (!results.refreshed && !m_refreshRunning) {
+            results.refreshed = std::move(results.reviewed);
+            otherImport = true;
+            ++m_reviewsPaired;
+        }
+        results.reviewed.reset();
+    }
+    collectLibrary(results);
     const CatalogDatabaseSource::Collected collected = m_source.collect(results);
     const bool refreshEnded = collectRefresh(results, m_source.ended());
     for (ResolvedLaunch& resolved : results.launches) {
@@ -572,7 +584,144 @@ RefreshState EsdeAppCatalog::refreshState() const {
     state.last = m_lastRefresh;
     state.lastLists = m_lastRefreshLists;
     state.otherImports = m_otherImports;
+    state.reviewsPaired = m_reviewsPaired;
     return state;
+}
+
+// --- The coverage and library screens (I7 step 8) --------------------------------------------------------------------
+
+bool EsdeAppCatalog::requestCoverage() {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_coverageAsked = true;
+    m_coverage.reset();
+    m_worker.coverage(++m_coverageSerial);
+    return true;
+}
+
+bool EsdeAppCatalog::requestLibraryStatus() {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    m_libraryAsked = true;
+    m_library.reset();
+    m_worker.libraryStatus(++m_librarySerial);
+    return true;
+}
+
+bool EsdeAppCatalog::requestReviewResolution(std::int64_t review, std::optional<catalog::GameId> pairWith) {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready) {
+        return false;
+    }
+    ++m_reviewsAsked;
+    catalog::ReviewDecision decision;
+    decision.review = review;
+    decision.pairWith = pairWith;
+    decision.force = false;
+    m_worker.resolveReview(++m_reviewSerial, decision);
+    return true;
+}
+
+std::optional<ReviewResolved> EsdeAppCatalog::takeReviewResolved() {
+    if (m_reviewsResolved.empty()) {
+        return std::nullopt;
+    }
+    ReviewResolved resolved = std::move(m_reviewsResolved.front());
+    m_reviewsResolved.erase(m_reviewsResolved.begin());
+    return resolved;
+}
+
+bool EsdeAppCatalog::requestQuickHash() {
+    if (m_stopped || m_source.ended() || m_source.state() != CatalogState::Ready || m_hashRunning) {
+        return false;
+    }
+    if (!m_worker.quickHash()) {
+        return false;
+    }
+    m_hashRunning = true;
+    m_hashCancelling = false;
+    m_hashProgress.reset();
+    m_hashHeld = false;
+    // A stepped pass reads its first file at once; the frame waits for it.
+    m_hashAwaited = m_options.hashStepped;
+    spdlog::info("Quick hash pass asked: computed on the catalog worker");
+    return true;
+}
+
+void EsdeAppCatalog::cancelQuickHash() {
+    if (!m_hashRunning || m_hashCancelling) {
+        return;
+    }
+    m_hashCancelling = true;
+    m_worker.cancelQuickHash();
+}
+
+QuickHashState EsdeAppCatalog::quickHashState() const {
+    return QuickHashState{m_hashRunning, m_hashCancelling, m_hashProgress, m_hashLast};
+}
+
+void EsdeAppCatalog::frameStarted() {
+    if (m_options.hashStepped && m_hashRunning && m_hashHeld) {
+        m_hashHeld = false;
+        m_hashAwaited = true;
+        m_worker.releaseHashStep();
+    }
+}
+
+void EsdeAppCatalog::collectLibrary(CatalogResults& results) {
+    if (results.coverage) {
+        if (results.coverage->serial == m_coverageSerial) {
+            m_coverageAsked = false;
+            m_coverage = std::move(results.coverage);
+        }
+        results.coverage.reset();
+    }
+    if (results.libraryStatus) {
+        if (results.libraryStatus->serial == m_librarySerial) {
+            m_libraryAsked = false;
+            m_library = std::move(results.libraryStatus);
+        }
+        results.libraryStatus.reset();
+    }
+    for (ReviewResolved& resolved : results.reviewsResolved) {
+        m_reviewsAsked -= m_reviewsAsked > 0 ? 1 : 0;
+        m_reviewsResolved.push_back(std::move(resolved));
+    }
+    results.reviewsResolved.clear();
+    if (results.hashProgress) {
+        m_hashProgress = *results.hashProgress;
+        results.hashProgress.reset();
+        if (m_hashRunning && m_options.hashStepped) {
+            m_hashHeld = true; // the worker waits for the next frame
+            m_hashAwaited = false;
+        }
+    }
+    if (results.hashEnded) {
+        m_hashLast = std::move(results.hashEnded);
+        results.hashEnded.reset();
+        m_hashRunning = false;
+        m_hashCancelling = false;
+        m_hashHeld = false;
+        m_hashAwaited = false;
+        spdlog::info("Quick hash pass {}: {} hashed, {} left", m_hashLast->outcome, m_hashLast->result.hashed,
+                     m_hashLast->result.remaining);
+    }
+    if (m_source.ended()) {
+        m_coverageAsked = false;
+        m_libraryAsked = false;
+        m_reviewsAsked = 0;
+        if (m_hashRunning) {
+            m_hashRunning = false;
+            m_hashCancelling = false;
+            m_hashAwaited = false;
+            QuickHashEnded ended;
+            ended.outcome = "cancelled";
+            ended.result.cancelled = true;
+            ended.error = Error{ErrorCode::Cancelled, "the catalog worker ended", {}};
+            m_hashLast = std::move(ended);
+        }
+    }
 }
 
 void EsdeAppCatalog::collectSessions(CatalogResults& results) {

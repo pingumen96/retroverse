@@ -13,6 +13,7 @@
 #include <rv/app/game_screens.hpp>
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
+#include <rv/app/library_data.hpp>
 #include <rv/app/library_watch.hpp>
 #include <rv/app/wizard_flow.hpp>
 #include <rv/catalog/ids.hpp>
@@ -314,6 +315,10 @@ public:
     /// I7 step 7: the file watcher's refresh `request`, for the changes `watched` describes (the run report's refresh
     /// record says so); false, and nothing asked, when the catalog cannot take one now.
     bool requestWatcherRefresh(const WatchRefresh& watched, RefreshRequest request);
+    /// I7 step 8: what the file watcher says of its roots, for the library screen (every frame while it watches).
+    void setWatchStatus(WatchStatus status);
+    /// The library screen shows (the watcher's modes are wanted).
+    [[nodiscard]] bool libraryOpen() const noexcept;
 
     /// One frame: follows a session whose panel shows and the window's return, applies the UI commands of
     /// `uiActions` (the frame's actions in the UI context; null: the product UI had no input when the frame began),

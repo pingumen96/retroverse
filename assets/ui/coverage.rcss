@@ -1,0 +1,319 @@
+/*
+	The media coverage screen (coverage.rml), in the statistics screen's look (statistics.rcss: palette of style 3, UI
+	neutral #171B22 in a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green
+	#6EAF93). The title, the populations, the table whose rows scroll under a fixed head, the hints, placed by the panel's
+	edges so that nothing runs past it. A share under half is warm red (#F2A79E). Sizes in dp. No colour is animated
+	(RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+	background-color: #07090CD9;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+/* The text takes no focus. What takes a click must be focusable: RmlUi gives the click to the focusable ancestor. */
+p, h1, span {
+	focus: none;
+}
+
+button {
+	tab-index: none;
+}
+
+h1 {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 18dp;
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	left: 8%;
+	width: 84%;
+	top: 6%;
+	height: 88%;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+}
+
+#cv-tabs {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 72dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+}
+
+.tab {
+	display: block;
+	box-sizing: border-box;
+	flex: 1 1 auto;
+	height: 44dp;
+	line-height: 40dp;
+	margin-right: 8dp;
+	font-size: 21dp;
+	text-align: center;
+	color: #F4EFE6B3;
+	background-color: #FFFFFF0F;
+	border: 2dp #00000000;
+	border-radius: 10dp;
+}
+
+.tab:hover {
+	border-color: #F4EFE659;
+}
+
+.tab.active {
+	color: #171B22;
+	background-color: #FFC88A;
+	font-weight: bold;
+}
+
+#cv-body {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 132dp;
+	bottom: 74dp;
+}
+
+.view {
+	position: absolute;
+	left: 0dp;
+	right: 0dp;
+	top: 0dp;
+	bottom: 0dp;
+	display: flex;
+	flex-direction: column;
+}
+
+.view > p, .view > .head {
+	flex: 0 0 auto;
+}
+
+#cv-list, #cv-detail {
+	flex: 1 1 auto;
+	min-height: 0dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 12dp;
+}
+
+#cv-list scrollbarvertical, #cv-detail scrollbarvertical {
+	width: 8dp;
+}
+
+#cv-list scrollbarvertical slidertrack, #cv-detail scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#cv-list scrollbarvertical sliderbar, #cv-detail scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 2dp;
+	margin-bottom: 8dp;
+	line-height: 1.3em;
+}
+
+.head {
+	display: flex;
+	flex-direction: row;
+	padding: 4dp 15dp 4dp 15dp;
+	margin-right: 20dp;
+	font-size: 18dp;
+	color: #FFC88ACC;
+	border-bottom: 1dp #F4EFE61F;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 4dp 12dp;
+	margin-bottom: 3dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 10dp;
+	tab-index: auto;
+}
+
+.row:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.line {
+	display: flex;
+	flex-direction: row;
+	padding: 6dp 2dp;
+	border-bottom: 1dp #F4EFE61F;
+}
+
+.col-name {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	font-size: 21dp;
+}
+
+.col-num {
+	flex: 0 0 auto;
+	width: 100dp;
+	text-align: right;
+	font-size: 20dp;
+}
+
+.col-share {
+	flex: 0 0 auto;
+	width: 128dp;
+	text-align: right;
+	font-size: 20dp;
+}
+
+.col-kind {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	font-size: 21dp;
+}
+
+.col-pop {
+	flex: 0 0 auto;
+	width: 300dp;
+	text-align: right;
+	font-size: 20dp;
+	color: #A8E6B0;
+}
+
+.col-pop.low {
+	color: #F2A79E;
+}
+
+.col-file {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	font-size: 19dp;
+	word-break: break-word;
+}
+
+.col-verdict {
+	flex: 0 0 auto;
+	width: 280dp;
+	text-align: right;
+	font-size: 19dp;
+	color: #F2A79E;
+}
+
+.subhead {
+	margin-top: 14dp;
+	font-size: 21dp;
+	color: #FFC88ACC;
+}
+
+.detail, .clips {
+	font-size: 17dp;
+	color: #F4EFE6A6;
+}
+
+#cv-footer {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	bottom: 14dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+#cv-hints {
+	flex: 1 1 auto;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.hint {
+	margin-right: 18dp;
+	white-space: nowrap;
+}
+
+.kbd {
+	display: inline-block;
+	min-width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	padding: 0dp 4dp;
+	border-radius: 13dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	font-size: 16dp;
+	color: #171B22;
+	background-color: #F4EFE6CC;
+}
+
+.action {
+	display: block;
+	box-sizing: border-box;
+	width: 150dp;
+	padding: 7dp 14dp;
+	font-size: 20dp;
+	text-align: center;
+	background-color: #FFFFFF14;
+	border: 2dp #00000000;
+	border-radius: 12dp;
+}
+
+.action:hover {
+	border-color: #F4EFE659;
+}
+
+/* Small views (1280 x 720, or 125%): a wider panel and denser text. */
+@media (theme: compact) {
+	.panel { left: 3%; width: 94%; top: 3%; height: 94%; }
+	h1 { font-size: 26dp; left: 20dp; right: 20dp; top: 10dp; }
+	#cv-tabs { left: 20dp; right: 20dp; top: 50dp; height: 40dp; }
+	.tab { height: 36dp; line-height: 32dp; font-size: 17dp; margin-right: 6dp; }
+	#cv-body { left: 20dp; right: 20dp; top: 96dp; bottom: 56dp; }
+	.note { font-size: 16dp; margin-bottom: 5dp; }
+	.head { font-size: 15dp; padding: 3dp 13dp; }
+	.row { padding: 2dp 10dp; margin-bottom: 2dp; }
+	.line { padding: 3dp 2dp; }
+	.col-name, .col-kind { font-size: 17dp; }
+	.col-num, .col-share, .col-pop { font-size: 16dp; }
+	.col-num { width: 70dp; }
+	.col-share { width: 100dp; }
+	.col-pop { width: 230dp; }
+	.col-file, .col-verdict { font-size: 16dp; }
+	.col-verdict { width: 210dp; }
+	.detail, .clips { font-size: 14dp; }
+	#cv-footer { left: 20dp; right: 20dp; bottom: 8dp; height: 40dp; }
+	#cv-hints { font-size: 15dp; }
+	.kbd { min-width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+	.action { width: 120dp; font-size: 17dp; padding: 5dp 10dp; }
+}

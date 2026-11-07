@@ -81,7 +81,8 @@ rv_forbid_link(rv_app_cli)
 # the editor's draft (world_edit_draft: step 3) and the regenerations' and the undo's jobs (world_regenerate_job: step
 # 6); since I5 step 8's review the screens' verdicts (screen_verdicts: I5 step 7, over rv_media's verdicts file, unit
 # tested); since I7 step 2 the wizard's flow (wizard_flow); since I7 step 4 the emulators screen's data (emulators_data,
-# folder_lister). Kept apart from rv_app_cli, which the GPU smoke tests link for the run report alone.
+# folder_lister); since I7 step 8 the coverage and library screens' data (library_data). Kept apart from rv_app_cli,
+# which the GPU smoke tests link for the run report alone.
 add_library(rv_app_catalog STATIC
     src/app_catalog.cpp
     src/catalog_database_source.cpp
@@ -91,6 +92,7 @@ add_library(rv_app_catalog STATIC
     src/folder_lister.cpp
     src/game_screens.cpp
     src/hub_showcase.cpp
+    src/library_data.cpp
     src/library_refresh.cpp
     src/library_watcher.cpp
     src/room_screen.cpp

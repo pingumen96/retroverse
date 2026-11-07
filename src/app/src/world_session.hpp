@@ -725,7 +725,8 @@ private:
     /// last refresh seen.
     std::optional<std::filesystem::path> m_mediaRootPath;
     std::optional<std::string> m_lastRefresh;
-    /// Another process's imports followed (RefreshState::otherImports, I7 step 7): each asks the live update too.
+    /// Another process's imports followed (RefreshState::otherImports, I7 step 7) and review rows paired (::reviewsPaired,
+    /// I7 step 8): each asks the live update too.
     std::uint64_t m_otherImports = 0;
     /// The next frame to render (lockstep: the run's last frame waits for the whole floor), the frames that waited for
     /// their view and how long.

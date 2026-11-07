@@ -20,6 +20,7 @@
 #include <rv/catalog_db/catalog_store.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/migrator.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/change_scope.hpp>
@@ -32,6 +33,7 @@
 #include <rv/launcher/launch_guard.hpp>
 #include <rv/library/launch_library.hpp>
 #include <rv/library/launch_table.hpp>
+#include <rv/media/video_verdicts.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/ui/ui_assets.hpp>
 
@@ -104,15 +106,33 @@ struct RecentJob {
     std::uint64_t serial = 0;
     std::size_t limit = 0;
 };
+/// The coverage and library screens (I7 step 8).
+struct CoverageJob {
+    std::uint64_t serial = 0;
+};
+struct LibraryJob {
+    std::uint64_t serial = 0;
+};
+struct ReviewJob {
+    std::uint64_t serial = 0;
+    catalog::ReviewDecision decision;
+};
+/// "Calcola impronte": one at a time (Shared::hashing).
+struct HashJob {};
 using Job = std::variant<QueryJob, ReadinessJob, ResolveJob, SessionJob, RefreshJob, RecentJob, TableJob, SamplesJob,
-                         ChoiceJob, ForgetTestJob, StatisticsJob, GameControlsJob>;
+                         ChoiceJob, ForgetTestJob, StatisticsJob, GameControlsJob, CoverageJob, LibraryJob, ReviewJob,
+                         HashJob>;
 
-/// What a slice boundary of a refresh may answer: never the refresh itself; while the import's write transaction is
-/// open, only reads (lists, the favourites and recent games on the worker's reader, readiness), as launches and session
-/// writes use the writer.
+/// What a slice boundary of a refresh (or a pause of the quick-hash pass between two files) may answer: never a refresh
+/// or the pass itself; while the import's write transaction is open, only reads (lists, the favourites and recent games
+/// on the worker's reader, readiness, the coverage), as launches, session writes and the library's state (read on the
+/// writer) use the writer.
 [[nodiscard]] bool servableDuringRefresh(const Job& job, bool writing) noexcept {
-    if (std::holds_alternative<RefreshJob>(job)) {
+    if (std::holds_alternative<RefreshJob>(job) || std::holds_alternative<HashJob>(job)) {
         return false;
+    }
+    if (std::holds_alternative<CoverageJob>(job)) {
+        return true;
     }
     if (const auto* controls = std::get_if<GameControlsJob>(&job); controls != nullptr && controls->status) {
         return !writing; // it writes
@@ -206,6 +226,11 @@ struct CatalogWorker::Shared {
     bool refreshing = false;
     /// The import's cancel flag (ImportOptions::cancel): set by stop().
     std::atomic<bool> cancel{false};
+    /// I7 step 8: the quick-hash pass is queued or runs; it is asked to stop (cancelQuickHash(), stop()); in a stepped run,
+    /// the main thread let it read its next file (releaseHashStep()).
+    bool hashing = false;
+    std::atomic<bool> hashCancel{false};
+    bool hashStepReleased = false;
     CatalogResults results;
     std::function<void()> wake;
 
@@ -871,6 +896,347 @@ private:
         m_shared->post([&](CatalogResults& results) { results.gameControls = std::move(controls); });
     }
 
+    // --- The coverage and library screens (I7 step 8) ----------------------------------------------------------------
+
+    void handle(CoverageJob& job) {
+        const Clock::time_point start = Clock::now();
+        CoverageList list;
+        list.serial = job.serial;
+        if (auto coverage = m_query->mediaCoverage(m_profile.id)) {
+            list.coverage = std::move(*coverage);
+        } else {
+            list.error = coverage.error();
+            spdlog::warn("Catalog: the media coverage cannot be read: {}", coverage.error().toString());
+        }
+        if (auto summaries = m_query->systems()) {
+            for (const catalog_db::SystemSummary& summary : *summaries) {
+                if (summary.library == m_profile.id) {
+                    list.fullNames.emplace_back(summary.system.name.str(), summary.system.fullName);
+                }
+            }
+            std::sort(list.fullNames.begin(), list.fullNames.end());
+        }
+        readClipFailures(list);
+        list.milliseconds = millisecondsSince(start);
+        spdlog::info("Catalog: the media coverage of {} system(s) in {:.1f} ms, {} clip(s) known to fail",
+                     list.coverage.systems.size(), list.milliseconds, list.clips.size());
+        m_shared->post([&](CatalogResults& results) {
+            if (!results.coverage || results.coverage->serial <= list.serial) {
+                results.coverage = std::move(list);
+            }
+        });
+    }
+
+    /// The clips' failure verdicts (I5 step 7's file, written by the screens and retroverse-cli media --check-videos):
+    /// read only, whatever their files are now (nothing on the media root is looked at).
+    void readClipFailures(CoverageList& list) const {
+        auto verdicts = media::readVideoVerdicts(media::videoVerdictsFile(m_options.paths.cacheDir()),
+                                                 std::chrono::milliseconds(500));
+        if (!verdicts) {
+            list.clipsError = verdicts.error();
+            spdlog::info("Catalog: the clips' verdicts cannot be read: {}", verdicts.error().toString());
+            return;
+        }
+        for (const media::VideoVerdict* verdict : verdicts->entries()) {
+            if (verdict->playable()) {
+                continue;
+            }
+            const std::string& path = verdict->path;
+            const std::size_t first = path.find('/');
+            const std::size_t last = path.rfind('/');
+            list.clips.push_back(ClipFailure{first == std::string::npos ? std::string() : path.substr(0, first),
+                                             last == std::string::npos ? path : path.substr(last + 1),
+                                             media::verdictName(verdict->failure)});
+        }
+        std::sort(list.clips.begin(), list.clips.end(), [](const ClipFailure& a, const ClipFailure& b) {
+            return std::tie(a.system, a.file) < std::tie(b.system, b.file);
+        });
+    }
+
+    void handle(LibraryJob& job) {
+        const Clock::time_point start = Clock::now();
+        LibraryStatus status;
+        status.serial = job.serial;
+        if (const Status read = readLibraryStatus(status); !read) {
+            status.error = read.error();
+            spdlog::warn("Catalog: the library's state cannot be read: {}", read.error().toString());
+        }
+        status.milliseconds = millisecondsSince(start);
+        spdlog::info("Catalog: the library's state in {:.1f} ms: {} issue(s), {} system(s) held, {} review(s), {} of {} "
+                     "file(s) with a quick hash",
+                     status.milliseconds, status.issues.size(), status.held.size(), status.reviews.size(),
+                     status.hashes.current, status.hashes.files);
+        m_shared->post([&](CatalogResults& results) {
+            if (!results.libraryStatus || results.libraryStatus->serial <= status.serial) {
+                results.libraryStatus = std::move(status);
+            }
+        });
+    }
+
+    /// The library's folders: the ES-DE home, the ROM root, each system folder outside it, the media root (the file
+    /// watcher's roots, ADR-0018 §10), each looked at once (a folder that cannot be reached answers at once).
+    [[nodiscard]] std::vector<LibraryFolder> libraryFolders() const {
+        std::vector<LibraryFolder> folders;
+        folders.push_back(LibraryFolder{"esde-home", {}, m_profile.esdeHome, std::nullopt});
+        if (const std::optional<esde::ChangeScopeMap> map = watchMap()) {
+            bool media = false;
+            for (const core::WatchRoot& root : esde::watchRoots(*map)) {
+                if (root.name == "rom") {
+                    folders.push_back(LibraryFolder{"rom", {}, root.folder, std::nullopt});
+                } else if (root.name.starts_with("system:")) {
+                    folders.push_back(LibraryFolder{"system", root.name.substr(7), root.folder, std::nullopt});
+                } else if (root.name == "media") {
+                    folders.push_back(LibraryFolder{"media", {}, root.folder, std::nullopt});
+                    media = true;
+                }
+            }
+            if (!map->romRoot) {
+                folders.push_back(LibraryFolder{"rom", {}, {}, std::nullopt});
+            }
+            if (!media) {
+                folders.push_back(LibraryFolder{"media", {}, map->mediaRoot.value_or(std::filesystem::path()),
+                                                std::nullopt});
+            }
+        }
+        for (LibraryFolder& folder : folders) {
+            if (!folder.folder.empty()) {
+                std::error_code error;
+                const bool there = std::filesystem::is_directory(core::extendedLengthPath(folder.folder), error);
+                folder.reachable = there && !error;
+            }
+        }
+        return folders;
+    }
+
+    Status readLibraryStatus(LibraryStatus& status) {
+        status.folders = libraryFolders();
+        catalog_db::SqliteCatalogStore* store = importStore();
+        if (store == nullptr) {
+            return makeError(ErrorCode::Unavailable, "the catalog's store cannot be opened");
+        }
+        auto last = store->lastImport(m_profile.id);
+        if (!last) {
+            return propagate(last.error());
+        }
+        status.lastImport = std::move(*last);
+        auto issues = m_query->importIssues(m_profile.id);
+        if (!issues) {
+            return propagate(issues.error());
+        }
+        status.issues = std::move(*issues);
+        std::map<std::string, std::string, std::less<>> fullNames;
+        if (auto summaries = m_query->systems()) {
+            for (const catalog_db::SystemSummary& summary : *summaries) {
+                if (summary.library != m_profile.id) {
+                    continue;
+                }
+                fullNames.emplace(summary.system.name.str(), summary.system.fullName);
+                if (summary.system.availability != catalog::Availability::Available && summary.entries > 0) {
+                    ++status.unavailableSystems;
+                }
+            }
+        }
+        const auto fullNameOf = [&](const std::string& name) {
+            const auto found = fullNames.find(name);
+            return found != fullNames.end() && !found->second.empty() ? found->second : name;
+        };
+        // The systems the guard holds: their issue, which a partial import of other systems keeps.
+        for (const catalog::Issue& issue : status.issues) {
+            if (issue.code != catalog::kImportIssueMassDisappearance) {
+                continue;
+            }
+            auto system = catalog::SystemName::parse(issue.system);
+            if (!system) {
+                continue;
+            }
+            HeldSystem held{*system, fullNameOf(issue.system), 0, 0};
+            if (status.lastImport) {
+                for (const catalog::SystemChanges& changes : status.lastImport->systems) {
+                    if (changes.system == *system && changes.outcome == catalog::SystemOutcome::KeptByGuard) {
+                        held.gone = changes.gone;
+                        held.present = changes.presentBefore;
+                    }
+                }
+            }
+            status.held.push_back(std::move(held));
+        }
+        auto reviews = store->reviews(m_profile.id, true);
+        if (!reviews) {
+            return propagate(reviews.error());
+        }
+        // A candidate can be paired with only through the identity its path has now, its file present.
+        std::map<catalog::SystemName, std::map<std::string, catalog::GameId, std::less<>>> present;
+        for (const catalog::StoredReview& stored : *reviews) {
+            const catalog::ReviewRow& row = stored.review;
+            auto known = present.find(row.system);
+            if (known == present.end()) {
+                auto identities = store->identities(m_profile.id, row.system);
+                if (!identities) {
+                    return propagate(identities.error());
+                }
+                std::map<std::string, catalog::GameId, std::less<>> byPath;
+                for (const catalog::StoredIdentity& identity : *identities) {
+                    if (identity.present) {
+                        byPath.emplace(identity.key.relativePath(), identity.id);
+                    }
+                }
+                known = present.emplace(row.system, std::move(byPath)).first;
+            }
+            ReviewState review;
+            review.id = row.id;
+            review.game = row.game;
+            review.system = row.system;
+            review.fullName = fullNameOf(row.system.str());
+            review.vanished = row.vanished.relativePath();
+            if (auto details = m_query->details(row.game); details && *details) {
+                review.title = (*details)->indexed.entry.title;
+            }
+            for (const catalog::LookupKey& candidate : row.candidates) {
+                const auto found = known->second.find(candidate.relativePath());
+                review.candidates.push_back(ReviewCandidateState{
+                    candidate.relativePath(),
+                    found != known->second.end() ? std::optional<catalog::GameId>(found->second) : std::nullopt});
+            }
+            status.reviews.push_back(std::move(review));
+        }
+        auto hashes = m_query->quickHashCounts(m_profile.id);
+        if (!hashes) {
+            return propagate(hashes.error());
+        }
+        status.hashes = *hashes;
+        return ok();
+    }
+
+    void handle(ReviewJob& job) {
+        ReviewResolved answer;
+        answer.serial = job.serial;
+        answer.review = job.decision.review;
+        // ADR-0018 §14: only to one of its own candidates; a pairing beyond them is the CLI's --force alone.
+        job.decision.force = false;
+        catalog_db::SqliteCatalogStore* store = importStore();
+        std::optional<CatalogRefreshed> reviewed;
+        if (store == nullptr) {
+            answer.problem = "write";
+        } else if (auto result = catalog::resolveReview(*store, m_profile.id, job.decision); !result) {
+            const Error& error = result.error();
+            answer.problem = error.code == ErrorCode::InvalidArgument                                         ? "refused"
+                             : error.code == ErrorCode::Conflict && error.message.find("lock") != std::string::npos ? "busy"
+                             : error.code == ErrorCode::NotFound || error.code == ErrorCode::Conflict             ? "conflict"
+                                                                                                                  : "write";
+            spdlog::info("Review {} not resolved ({}): {}", job.decision.review, answer.problem, error.message);
+        } else {
+            answer.paired = result->moved.has_value();
+            spdlog::info("Review {} resolved: {}", job.decision.review,
+                         answer.paired ? "paired with one of its candidates" : "kept separate");
+            if (answer.paired) {
+                // The pairing moved an identity: the lists and the building follow, as after another process's import.
+                if (auto summaries = m_query->systems()) {
+                    CatalogRefreshed refreshed;
+                    refreshed.systems = resolveSystems(*summaries);
+                    refreshed.libraryError = m_libraryError;
+                    refreshed.generation = ++m_generation;
+                    reviewed = std::move(refreshed);
+                }
+            }
+        }
+        m_shared->post([&](CatalogResults& results) {
+            results.reviewsResolved.push_back(std::move(answer));
+            if (reviewed) {
+                results.reviewed = std::move(reviewed);
+            }
+        });
+    }
+
+    [[nodiscard]] bool refreshQueued() const {
+        const std::lock_guard lock(m_shared->mutex);
+        return std::any_of(m_shared->jobs.begin(), m_shared->jobs.end(),
+                           [](const Job& queued) { return std::holds_alternative<RefreshJob>(queued); });
+    }
+
+    /// Options::hashStepped: waits until the main thread lets the pass read its next file, answering what it asks
+    /// meanwhile; a stop, a cancel or a refresh asked end the wait.
+    void waitForHashStep() {
+        while (true) {
+            {
+                std::unique_lock lock(m_shared->mutex);
+                const auto refresh = [&] {
+                    return std::any_of(m_shared->jobs.begin(), m_shared->jobs.end(),
+                                       [](const Job& queued) { return std::holds_alternative<RefreshJob>(queued); });
+                };
+                m_shared->work.wait(lock, [&] {
+                    return m_shared->hashStepReleased || m_shared->stopping || m_shared->hashCancel.load() || refresh() ||
+                           std::any_of(m_shared->jobs.begin(), m_shared->jobs.end(),
+                                       [](const Job& queued) { return servableDuringRefresh(queued, false); });
+                });
+                if (m_shared->hashStepReleased || m_shared->stopping || m_shared->hashCancel.load() || refresh()) {
+                    m_shared->hashStepReleased = false;
+                    return;
+                }
+            }
+            static_cast<void>(serve(false));
+        }
+    }
+
+    void handle(HashJob&) {
+        const Clock::time_point start = Clock::now();
+        QuickHashEnded ended;
+        bool yielded = false;
+        catalog_db::SqliteCatalogStore* store = importStore();
+        if (m_shared->hashCancel.load()) {
+            ended.outcome = "cancelled"; // stopped before it began
+            ended.result.cancelled = true;
+        } else if (store == nullptr) {
+            ended.outcome = "failed";
+            ended.error = Error{ErrorCode::Unavailable, "the catalog's store cannot be opened", {}};
+        } else {
+            std::atomic<bool> stopPass{false};
+            catalog::QuickHashPassOptions options;
+            options.cancel = &stopPass;
+            options.reader = m_options.hashReader;
+            Clock::time_point lastPost{};
+            options.progress = [&](const catalog::QuickHashProgress& progress) {
+                const bool stepped = m_options.hashStepped;
+                if (stepped || Clock::now() - lastPost >= kQuickHashProgressInterval) {
+                    lastPost = Clock::now();
+                    m_shared->post([&](CatalogResults& results) { results.hashProgress = progress; });
+                }
+                // Between two files no batch is open: what the main thread asked is answered here.
+                static_cast<void>(serve(false));
+                if (stepped) {
+                    waitForHashStep();
+                }
+                const bool asked = m_shared->hashCancel.load() || stopRequested();
+                if (asked || refreshQueued()) {
+                    yielded = !asked;
+                    stopPass.store(true);
+                }
+            };
+            auto result = catalog::runQuickHashPass(*store, m_profile.id, options);
+            if (!result) {
+                ended.outcome = result.error().code == ErrorCode::Conflict ? "busy" : "failed";
+                ended.error = result.error();
+                yielded = false;
+                spdlog::info("Quick hash pass {}: {}", ended.outcome, result.error().message);
+            } else {
+                ended.result = std::move(*result);
+                ended.outcome = ended.result.cancelled ? "cancelled" : "done";
+            }
+        }
+        ended.milliseconds = millisecondsSince(start);
+        if (yielded) {
+            // A refresh asked meanwhile runs first (NFR-05 does not wait for the pass); the pass goes on after it, from
+            // what is left.
+            spdlog::info("Quick hash pass: a refresh was asked; it goes on after it");
+            const std::lock_guard lock(m_shared->mutex);
+            m_shared->jobs.emplace_back(HashJob{});
+            return;
+        }
+        m_shared->post([&](CatalogResults& results) {
+            results.hashEnded = std::move(ended);
+            m_shared->hashing = false;
+        });
+    }
+
     void handle(ChoiceJob& job) {
         ChoiceChanged changed;
         changed.serial = job.serial;
@@ -1091,18 +1457,28 @@ private:
 
     /// The newest import of the library the database holds now (its id; 0 for none), read on the writer.
     [[nodiscard]] std::optional<std::int64_t> newestImport() {
-        if (!m_importStore) {
-            auto store = catalog_db::SqliteCatalogStore::open(*m_database);
-            if (!store) {
-                return std::nullopt;
-            }
-            m_importStore = std::move(*store);
+        if (importStore() == nullptr) {
+            return std::nullopt;
         }
         auto last = m_importStore->lastImport(m_profile.id);
         if (!last) {
             return std::nullopt;
         }
         return *last ? (*last)->id : std::int64_t{0};
+    }
+
+    /// The catalog store on the writer, made on first use (another process's imports, the library's state, a review
+    /// resolved, the quick-hash pass); null when it cannot be opened.
+    [[nodiscard]] catalog_db::SqliteCatalogStore* importStore() {
+        if (!m_importStore) {
+            auto store = catalog_db::SqliteCatalogStore::open(*m_database);
+            if (!store) {
+                spdlog::warn("Catalog: the store cannot be opened: {}", store.error().toString());
+                return nullptr;
+            }
+            m_importStore = std::move(*store);
+        }
+        return m_importStore.get();
     }
 
     void noteLastImport() {
@@ -1644,6 +2020,68 @@ bool CatalogWorker::refresh(RefreshRequest request) {
     return true;
 }
 
+void CatalogWorker::coverage(std::uint64_t serial) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<CoverageJob>(job); });
+        m_shared->jobs.emplace_back(CoverageJob{serial});
+    }
+    m_shared->work.notify_all();
+}
+
+void CatalogWorker::libraryStatus(std::uint64_t serial) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        std::erase_if(m_shared->jobs, [](const Job& job) { return std::holds_alternative<LibraryJob>(job); });
+        m_shared->jobs.emplace_back(LibraryJob{serial});
+    }
+    m_shared->work.notify_all();
+}
+
+void CatalogWorker::resolveReview(std::uint64_t serial, catalog::ReviewDecision decision) {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        m_shared->jobs.emplace_back(ReviewJob{serial, decision});
+    }
+    m_shared->work.notify_all();
+}
+
+bool CatalogWorker::quickHash() {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        if (m_shared->stopping || m_shared->finished || m_shared->hashing) {
+            return false;
+        }
+        m_shared->hashing = true;
+        m_shared->hashCancel.store(false);
+        m_shared->hashStepReleased = false;
+        m_shared->jobs.emplace_back(HashJob{});
+    }
+    m_shared->work.notify_all();
+    return true;
+}
+
+void CatalogWorker::cancelQuickHash() {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        if (m_shared->hashing) {
+            m_shared->hashCancel.store(true);
+        }
+    }
+    m_shared->work.notify_all();
+}
+
+void CatalogWorker::releaseHashStep() {
+    {
+        const std::lock_guard lock(m_shared->mutex);
+        if (!m_shared->hashing) {
+            return;
+        }
+        m_shared->hashStepReleased = true;
+    }
+    m_shared->work.notify_all();
+}
+
 CatalogResults CatalogWorker::take() {
     const std::lock_guard lock(m_shared->mutex);
     return std::exchange(m_shared->results, CatalogResults{});
@@ -1665,9 +2103,11 @@ bool CatalogWorker::stop(std::chrono::milliseconds bound) {
         // Lists, readiness and a refresh nobody will show: dropped; the session writes stay for the worker's last pass.
         std::erase_if(m_shared->jobs, [](const Job& job) { return !std::holds_alternative<SessionJob>(job); });
     }
-    // A refresh running ends at its next look at the flag, its transaction rolled back.
+    // A refresh running ends at its next look at the flag, its transaction rolled back; the quick-hash pass after the
+    // file it reads, what it hashed committed.
     m_shared->cancel.store(true);
-    m_shared->work.notify_one();
+    m_shared->hashCancel.store(true);
+    m_shared->work.notify_all();
     {
         // A statement running on the worker's query connection stops with Cancelled (sqlite3_interrupt, ADR-0008 §5),
         // and so does the import's on the writer while it writes (its commit included: rolled back whole).

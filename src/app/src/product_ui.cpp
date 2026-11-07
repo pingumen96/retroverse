@@ -40,12 +40,15 @@
 
 #include <rv/app/directory_data.hpp>
 #include <rv/app/folder_lister.hpp>
+#include <rv/app/library_data.hpp>
 #include <rv/app/statistics_data.hpp>
 #include <rv/app/world_card_ui.hpp>
 #include <rv/catalog/recent_games.hpp>
 #include <rv/ui/directory_screen.hpp>
 #include <rv/ui/emulators_screen.hpp>
 #include <rv/ui/statistics_screen.hpp>
+#include <rv/ui/coverage_screen.hpp>
+#include <rv/ui/library_screen.hpp>
 #include <rv/ui/regenerate_preview_screen.hpp>
 #include <rv/ui/controller_notice_screen.hpp>
 #include <rv/ui/hint_bar.hpp>
@@ -276,12 +279,25 @@ struct ProductUi::Impl {
     ui::StatisticsModel statistics;
     std::optional<StatisticsRecord> statisticsRecord;
     bool wizardTableWanted = false;
+    /// I7 step 8: the coverage and library screens over the menu (their screens made when they first open), their
+    /// records; the library's section and view last noted; a quick-hash pass seen running; the file watcher's modes.
+    std::unique_ptr<ui::CoverageScreen> coverageScreen;
+    ui::CoverageModel coverage;
+    std::optional<CoverageRecord> coverageRecord;
+    std::unique_ptr<ui::LibraryScreen> libraryScreen;
+    ui::LibraryModel library;
+    std::optional<LibraryRecord> libraryRecord;
+    ui::LibraryTab libraryTabSeen = ui::LibraryTab::Sources;
+    ui::LibraryView libraryViewSeen = ui::LibraryView::Main;
+    bool hashWasRunning = false;
+    WatchStatus watchStatus;
 
     [[nodiscard]] bool visible() const noexcept {
         return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
-               emulatorsShown() || statisticsShown() || wizardShown() || controllerNoticeWanted || keyboardShown();
+               emulatorsShown() || statisticsShown() || coverageShown() || libraryShown() || wizardShown() ||
+               controllerNoticeWanted || keyboardShown();
     }
 
     /// The emulators screen shows.
@@ -688,6 +704,340 @@ struct ProductUi::Impl {
         statisticsRecord->state = std::string(ui::toString(statistics.state()));
         statisticsRecord->tab = std::string(ui::toString(statistics.tab()));
         report.statistics = std::move(statisticsRecord);
+    }
+
+    // --- The coverage and library screens (I7 step 8, ADR-0018 §14) ---------------------------------------------------
+
+    /// The coverage screen shows.
+    [[nodiscard]] bool coverageShown() const noexcept { return coverageScreen && coverage.isOpen(); }
+    /// The library screen shows.
+    [[nodiscard]] bool libraryShown() const noexcept { return libraryScreen && library.isOpen(); }
+
+    CoverageRecord& coverageReport() { return coverageRecord ? *coverageRecord : coverageRecord.emplace(); }
+    LibraryRecord& libraryReport() { return libraryRecord ? *libraryRecord : libraryRecord.emplace(); }
+
+    void addLibraryEvent(std::string event, std::string detail = {}) {
+        LibraryRecord& record = libraryReport();
+        if (record.events.size() >= kMaxInteractionEvents) {
+            ++record.eventsDropped;
+            return;
+        }
+        record.events.push_back(LibraryEventRecord{context.frameIndex(), std::move(event), std::move(detail)});
+    }
+
+    /// A screen's view of its record: each change appended once.
+    static void noteOnce(std::vector<std::string>& seen, std::string value) {
+        if ((seen.empty() || seen.back() != value) && seen.size() < kMaxInteractionEvents) {
+            seen.push_back(std::move(value));
+        }
+    }
+
+    void noteCoverage() {
+        CoverageRecord& record = coverageReport();
+        noteOnce(record.tabs, std::string(ui::toString(coverage.tab())));
+        const ui::CoverageRow* row = coverage.view() == ui::CoverageView::System ? coverage.system() : nullptr;
+        noteOnce(record.views, row != nullptr ? "system:" + row->name : std::string(ui::toString(coverage.view())));
+    }
+
+    void openCoverage() {
+        if (coverage.isOpen()) {
+            return;
+        }
+        if (!coverageScreen) {
+            auto made = ui::CoverageScreen::create(*view);
+            if (!made) {
+                spdlog::error("The coverage screen unavailable: {}", made.error().toString());
+                return;
+            }
+            coverageScreen = std::move(*made);
+        } else if (Rml::Element* root = view->context().GetRootElement()) {
+            root->Focus(); // as the directory's: the focus the screen applies starts from the context's root
+        }
+        nav.reset();
+        coverage.open();
+        ++coverageReport().opened;
+        noteCoverage();
+        spdlog::info("Frame {}: the coverage screen opened", context.frameIndex());
+    }
+
+    void coverageCommand(const std::optional<ui::CoverageCommand>& command) {
+        if (command == ui::CoverageCommand::Close) {
+            nav.reset();
+            spdlog::info("Frame {}: the coverage screen closed", context.frameIndex());
+        }
+        noteCoverage();
+    }
+
+    void coverageApply(ui::UiCommand command) {
+        const bool scrolls = coverage.view() == ui::CoverageView::System &&
+                             (command == ui::UiCommand::Up || command == ui::UiCommand::Down ||
+                              command == ui::UiCommand::PageUp || command == ui::UiCommand::PageDown ||
+                              command == ui::UiCommand::Home || command == ui::UiCommand::End);
+        if (scrolls) {
+            if (coverageScreen) {
+                coverageScreen->scroll(ui::infoStepOf(command));
+            }
+            return;
+        }
+        coverageCommand(coverage.apply(command));
+    }
+
+    void coverageClicks() {
+        if (!coverageScreen) {
+            return;
+        }
+        const std::optional<ui::CoverageClick> click = coverageScreen->takeClicked();
+        if (!click || !coverageShown() || panel->visible()) {
+            return;
+        }
+        ++coverageReport().clicks;
+        coverageCommand(coverage.click(*click));
+    }
+
+    void followCoverage() {
+        if (coverage.takeRequest() == ui::CoverageCommand::Load && !catalog->requestCoverage()) {
+            if (catalog->roomCatalogState() == CatalogState::Opening && !catalog->workerEnded()) {
+                coverage.prepare(); // asked again on the next frame: it is opening, not absent
+            } else {
+                coverage.setUnavailable();
+            }
+        }
+        if (std::optional<CoverageList> answer = catalog->takeCoverage()) {
+            CoverageRecord& record = coverageReport();
+            record.readMs = std::max(record.readMs, answer->milliseconds);
+            if (answer->error) {
+                coverage.setUnavailable();
+            } else {
+                ui::CoverageContent content = coverageContentOf(*answer);
+                record.games = content.games.total.games;
+                record.scraped = content.scraped.total.games;
+                record.covers = content.games.total.covers;
+                record.systems.clear();
+                for (const ui::CoverageRow& row : content.games.systems) {
+                    record.systems.push_back(fmt::format("{}={}", row.name, row.games));
+                }
+                record.clips = content.clips.size();
+                record.clipsUnknown = content.clipsUnknown;
+                coverage.setContent(std::move(content));
+            }
+        }
+        if (coverage.isOpen() && coverage.state() == ui::CoverageState::Loading && catalog->workerEnded() &&
+            catalog->roomCatalogState() != CatalogState::Unavailable) {
+            coverage.setUnavailable();
+        }
+    }
+
+    void finishCoverage(RunReport& report) {
+        if (!coverageRecord) {
+            return;
+        }
+        coverageRecord->open = coverage.isOpen();
+        coverageRecord->state = std::string(ui::toString(coverage.state()));
+        coverageRecord->view = std::string(ui::toString(coverage.view()));
+        coverageRecord->tab = std::string(ui::toString(coverage.tab()));
+        report.coverage = std::move(coverageRecord);
+    }
+
+    void openLibrary() {
+        if (library.isOpen()) {
+            return;
+        }
+        if (!libraryScreen) {
+            auto made = ui::LibraryScreen::create(*view);
+            if (!made) {
+                spdlog::error("The library screen unavailable: {}", made.error().toString());
+                return;
+            }
+            libraryScreen = std::move(*made);
+        } else if (Rml::Element* root = view->context().GetRootElement()) {
+            root->Focus();
+        }
+        nav.reset();
+        library.setLive(libraryLiveOf(catalog->refreshState(), catalog->quickHashState(), watchStatus));
+        library.open();
+        ++libraryReport().opened;
+        addLibraryEvent("open");
+        libraryTabSeen = library.tab();
+        spdlog::info("Frame {}: the library screen opened", context.frameIndex());
+    }
+
+    void libraryCommand(const std::optional<ui::LibraryCommand>& command) {
+        if (library.tab() != libraryTabSeen) {
+            libraryTabSeen = library.tab();
+            addLibraryEvent("tab", std::string(ui::toString(libraryTabSeen)));
+        }
+        if (library.view() != libraryViewSeen) {
+            libraryViewSeen = library.view();
+            if (libraryViewSeen == ui::LibraryView::Review) {
+                addLibraryEvent("review", library.review() != nullptr ? std::to_string(library.review()->id) : "");
+            } else if (libraryViewSeen == ui::LibraryView::ConfirmPair) {
+                addLibraryEvent("confirm-pair");
+            } else if (libraryViewSeen == ui::LibraryView::ConfirmRemovals) {
+                addLibraryEvent("confirm-removals");
+            }
+        }
+        if (!command) {
+            return;
+        }
+        spdlog::info("Frame {}: the library screen asks {}", context.frameIndex(), ui::toString(command->kind));
+        switch (command->kind) {
+        case ui::LibraryCommandKind::Close:
+            addLibraryEvent("closed");
+            nav.reset();
+            break;
+        case ui::LibraryCommandKind::Load:
+            if (!catalog->requestLibraryStatus()) {
+                if (catalog->roomCatalogState() == CatalogState::Opening && !catalog->workerEnded()) {
+                    library.prepare();
+                } else {
+                    library.setUnavailable();
+                }
+            }
+            break;
+        case ui::LibraryCommandKind::Refresh:
+            addLibraryEvent("refresh");
+            static_cast<void>(requestRefresh(RefreshRequest{RefreshTrigger::User, {}, false}));
+            break;
+        case ui::LibraryCommandKind::ApplyRemovals: {
+            // ADR-0018 §14, FR-033: the guard's removals only after the confirmation, of the systems it holds.
+            RefreshRequest request{RefreshTrigger::User, {}, true};
+            std::string systems;
+            for (const std::string& name : command->systems) {
+                if (auto system = catalog::SystemName::parse(name)) {
+                    request.systems.push_back(std::move(*system));
+                    systems += (systems.empty() ? "" : ",") + name;
+                }
+            }
+            addLibraryEvent("apply-removals", systems);
+            if (!request.systems.empty()) {
+                static_cast<void>(requestRefresh(std::move(request)));
+            }
+            break;
+        }
+        case ui::LibraryCommandKind::Resolve: {
+            std::optional<catalog::GameId> pairWith;
+            if (!command->gameId.empty()) {
+                if (auto game = catalog::GameId::parse(command->gameId)) {
+                    pairWith = *game;
+                }
+            }
+            addLibraryEvent("resolve", fmt::format("{}:{}", command->review,
+                                                   command->gameId.empty() ? "separate" : command->gameId));
+            if ((!command->gameId.empty() && !pairWith) ||
+                !catalog->requestReviewResolution(command->review, pairWith)) {
+                library.resolved("write");
+                addLibraryEvent("resolved", "write");
+            }
+            break;
+        }
+        case ui::LibraryCommandKind::StartHash:
+            addLibraryEvent("hash-start");
+            if (!catalog->requestQuickHash()) {
+                spdlog::info("Frame {}: Calcola impronte: no pass now (one runs, or the catalog is not open)",
+                             context.frameIndex());
+            }
+            break;
+        case ui::LibraryCommandKind::CancelHash:
+            addLibraryEvent("hash-cancel");
+            catalog->cancelQuickHash();
+            break;
+        }
+    }
+
+    void libraryApply(ui::UiCommand command) {
+        const bool scrolling = command == ui::UiCommand::Up || command == ui::UiCommand::Down ||
+                               command == ui::UiCommand::PageUp || command == ui::UiCommand::PageDown ||
+                               command == ui::UiCommand::Home || command == ui::UiCommand::End;
+        if (scrolling && library.scrollsBody()) {
+            if (libraryScreen) {
+                libraryScreen->scroll(ui::infoStepOf(command));
+            }
+            return;
+        }
+        libraryCommand(library.apply(command));
+    }
+
+    void libraryClicks() {
+        if (!libraryScreen) {
+            return;
+        }
+        const std::optional<ui::LibraryClick> click = libraryScreen->takeClicked();
+        if (!click || !libraryShown() || panel->visible()) {
+            return;
+        }
+        ++libraryReport().clicks;
+        libraryCommand(library.click(*click));
+    }
+
+    void followLibrary() {
+        if (library.isOpen()) {
+            library.setLive(libraryLiveOf(catalog->refreshState(), catalog->quickHashState(), watchStatus));
+        }
+        libraryCommand(library.takeRequest());
+        if (std::optional<LibraryStatus> answer = catalog->takeLibraryStatus()) {
+            LibraryRecord& record = libraryReport();
+            record.readMs = std::max(record.readMs, answer->milliseconds);
+            if (answer->error) {
+                library.setUnavailable();
+            } else {
+                ui::LibraryContent content = libraryContentOf(*answer, machineLocalDate);
+                record.roots.clear();
+                for (const ui::LibraryRoot& root : ui::withModes(content.roots, library.live())) {
+                    record.roots.push_back(fmt::format("{}{}={}/{}", root.kind,
+                                                       root.system.empty() ? std::string() : ":" + root.system,
+                                                       root.state, root.mode));
+                }
+                record.issues.clear();
+                for (const ui::LibraryIssueGroup& group : content.issues) {
+                    record.issues.push_back(fmt::format("{}={}", group.code, group.count));
+                }
+                record.held.clear();
+                for (const ui::LibraryHeld& held : content.held) {
+                    record.held.push_back(held.name);
+                }
+                record.reviews.clear();
+                for (const ui::LibraryReview& review : content.reviews) {
+                    record.reviews.push_back(std::to_string(review.id));
+                }
+                record.files = content.files;
+                record.hashed = content.hashed;
+                library.setContent(std::move(content));
+            }
+        }
+        while (std::optional<ReviewResolved> resolved = catalog->takeReviewResolved()) {
+            addLibraryEvent("resolved", resolved->problem);
+            library.resolved(resolved->problem);
+            if (resolved->problem.empty()) {
+                ++catalogRevision;
+            }
+        }
+        if (library.isOpen() && library.state() == ui::LibraryState::Loading && catalog->workerEnded() &&
+            catalog->roomCatalogState() != CatalogState::Unavailable) {
+            library.setUnavailable();
+        }
+        // Each pass that ended, once.
+        const QuickHashState hash = catalog->quickHashState();
+        if (hash.running) {
+            hashWasRunning = true;
+        } else if (hashWasRunning && hash.last) {
+            hashWasRunning = false;
+            const QuickHashEnded& ended = *hash.last;
+            libraryReport().passes.push_back(HashPassRecord{ended.outcome, ended.result.candidates, ended.result.hashed,
+                                                            ended.result.remaining, ended.result.unreadable,
+                                                            ended.result.cancelled});
+            addLibraryEvent("hash-ended", ended.outcome);
+        }
+    }
+
+    void finishLibrary(RunReport& report) {
+        if (!libraryRecord) {
+            return;
+        }
+        libraryRecord->open = library.isOpen();
+        libraryRecord->state = std::string(ui::toString(library.state()));
+        libraryRecord->view = std::string(ui::toString(library.view()));
+        libraryRecord->tab = std::string(ui::toString(library.tab()));
+        report.library = std::move(libraryRecord);
     }
 
     // --- Informazioni's rows (I7 step 6, ADR-0018 §11) ----------------------------------------------------------------
@@ -1209,7 +1559,8 @@ struct ProductUi::Impl {
 
     /// The menu shows (not while a section shows over it).
     [[nodiscard]] bool menuShown() const noexcept {
-        return menuScreen && menu.isOpen() && !settingsModel.isOpen() && !emulators.isOpen() && !statistics.isOpen();
+        return menuScreen && menu.isOpen() && !settingsModel.isOpen() && !emulators.isOpen() && !statistics.isOpen() &&
+               !coverage.isOpen() && !library.isOpen();
     }
     /// The settings screen shows.
     [[nodiscard]] bool settingsShown() const noexcept { return settingsScreen && settingsModel.isOpen(); }
@@ -1239,6 +1590,12 @@ struct ProductUi::Impl {
             break;
         case ui::SystemMenuCommand::OpenStatistics:
             openStatistics();
+            break;
+        case ui::SystemMenuCommand::OpenCoverage:
+            openCoverage();
+            break;
+        case ui::SystemMenuCommand::OpenLibrary:
+            openLibrary();
             break;
         case ui::SystemMenuCommand::Quit:
             addMenuEvent("quit");
@@ -1301,6 +1658,20 @@ struct ProductUi::Impl {
                 statisticsScreen->hide();
             }
         }
+        if (coverageScreen) {
+            if (coverage.isOpen()) {
+                coverageScreen->show(coverage);
+            } else {
+                coverageScreen->hide();
+            }
+        }
+        if (libraryScreen) {
+            if (library.isOpen()) {
+                libraryScreen->show(library);
+            } else {
+                libraryScreen->hide();
+            }
+        }
         if (emulatorsScreen) {
             if (emulators.isOpen()) {
                 emulatorsScreen->show(emulators, programBrowser);
@@ -1360,7 +1731,8 @@ struct ProductUi::Impl {
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
         return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
-               settingsShown() || emulatorsShown() || statisticsShown() || wizardShown();
+               settingsShown() || emulatorsShown() || statisticsShown() || coverageShown() || libraryShown() ||
+               wizardShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -2350,7 +2722,8 @@ void ProductUi::setElevatorPrompt(std::optional<std::string> key, bool totem) {
 }
 
 bool ProductUi::menuOpen() const noexcept {
-    return m_impl->menu.isOpen() || wizardOpen() || m_impl->emulators.isOpen() || m_impl->statistics.isOpen();
+    return m_impl->menu.isOpen() || wizardOpen() || m_impl->emulators.isOpen() || m_impl->statistics.isOpen() ||
+           m_impl->coverage.isOpen() || m_impl->library.isOpen();
 }
 
 bool ProductUi::wizardOpen() const noexcept {
@@ -2405,6 +2778,10 @@ void ProductUi::menuBack() {
         s.emulatorsApply(ui::UiCommand::Back); // I7 step 4: over the menu or the wizard
     } else if (s.statistics.isOpen()) {
         s.statisticsApply(ui::UiCommand::Back); // I7 step 6: over the menu
+    } else if (s.coverage.isOpen()) {
+        s.coverageApply(ui::UiCommand::Back); // I7 step 8: over the menu
+    } else if (s.library.isOpen()) {
+        s.libraryApply(ui::UiCommand::Back); // I7 step 8: over the menu
     } else if (s.wizardShown()) {
         s.wizardApply(ui::UiCommand::Back);
     } else if (s.settingsModel.isOpen()) {
@@ -2466,6 +2843,13 @@ bool ProductUi::handleEvent(const SDL_Event& event) {
     // I7 step 6: the statistics screen likewise, over the menu.
     if (m_impl->statisticsShown() && !m_impl->panel->visible()) {
         return m_impl->statisticsScreen->handlePointer(event);
+    }
+    // I7 step 8: the coverage and library screens likewise, over the menu.
+    if (m_impl->coverageShown() && !m_impl->panel->visible()) {
+        return m_impl->coverageScreen->handlePointer(event);
+    }
+    if (m_impl->libraryShown() && !m_impl->panel->visible()) {
+        return m_impl->libraryScreen->handlePointer(event);
     }
     // I7 step 2: the wizard likewise, over everything but the panel.
     if (m_impl->wizardShown() && !m_impl->panel->visible()) {
@@ -2644,6 +3028,14 @@ bool ProductUi::requestWatcherRefresh(const WatchRefresh& watched, RefreshReques
     return m_impl->requestWatcherRefresh(watched, std::move(request));
 }
 
+void ProductUi::setWatchStatus(WatchStatus status) {
+    m_impl->watchStatus = std::move(status);
+}
+
+bool ProductUi::libraryOpen() const noexcept {
+    return m_impl->library.isOpen();
+}
+
 AppCatalog& ProductUi::catalog() noexcept {
     return *m_impl->catalog;
 }
@@ -2676,6 +3068,7 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     if (std::exchange(s.afterPending, false)) {
         s.flow.noteAfter(s.currentView());
     }
+    s.catalog->frameStarted(); // I7 step 8: a stepped quick-hash pass reads its next file
     s.syncCatalog();
     // A session whose panel shows renders frames: it is followed every frame (it may end, or ask something else).
     s.flow.poll(LaunchClock::now(), s.context.frameIndex());
@@ -2685,6 +3078,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     s.followEmulators(); // I7 step 4
     s.followStatistics(); // I7 step 6
     s.followInfoControls(); // I7 step 6
+    s.followCoverage(); // I7 step 8
+    s.followLibrary(); // I7 step 8
 
     s.commands.clear();
     const auto followPreviewButtons = [&] {
@@ -2715,6 +3110,10 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 s.emulatorsApply(command); // I7 step 4
             } else if (s.statistics.isOpen()) {
                 s.statisticsApply(command); // I7 step 6
+            } else if (s.coverage.isOpen()) {
+                s.coverageApply(command); // I7 step 8
+            } else if (s.library.isOpen()) {
+                s.libraryApply(command); // I7 step 8
             } else if (s.wizardShown()) {
                 s.wizardApply(command); // I7 step 2
             } else if (s.preview.isOpen()) {
@@ -2759,6 +3158,8 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
     }
     s.emulatorsClicks(); // I7 step 4
     s.statisticsClicks(); // I7 step 6
+    s.coverageClicks(); // I7 step 8
+    s.libraryClicks(); // I7 step 8
     // I7 step 1: the menu's and the settings screen's clicks (VR's ray among them).
     if (s.settingsScreen) {
         if (const std::optional<ui::SettingsClick> click = s.settingsScreen->takeClicked();
@@ -2842,6 +3243,16 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
             if (s.statistics.tab() == ui::StatisticsTab::Recent) {
                 record.recentNotes = s.statisticsScreen->recentNotes();
             }
+        }
+        if (s.coverageShown()) {
+            s.coverageScreen->afterUpdate();
+            CoverageRecord& record = s.coverageReport();
+            record.textCut = std::max(record.textCut, s.coverageScreen->textCut());
+        }
+        if (s.libraryShown()) {
+            s.libraryScreen->afterUpdate();
+            LibraryRecord& record = s.libraryReport();
+            record.textCut = std::max(record.textCut, s.libraryScreen->textCut());
         }
         if (s.wizardShown()) {
             s.wizardScreen->afterUpdate();
@@ -3070,6 +3481,8 @@ void ProductUi::finish() {
     report.menu = std::move(s.menuRecord);
     s.finishEmulators(report);
     s.finishStatistics(report);
+    s.finishCoverage(report);
+    s.finishLibrary(report);
     s.finishWizard(report);
     if (s.keyboardRecord) {
         s.keyboardRecord->open = s.keyboard.isOpen();

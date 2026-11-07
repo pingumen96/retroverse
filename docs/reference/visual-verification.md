@@ -234,6 +234,12 @@ over the quick catalog at 1920 x 1080 and 1280 x 720, at text scale 100% and 125
 The statistics screen and Informazioni's rows (I7 step 6): `rv_smoke_tests.exe "[statistics_shots]"` with `RV_SHOTS_DIR` naming
 a folder writes each section, Informazioni on a row and the emulators list of a title, at 1920 x 1080 at 100% and 125%.
 
+The coverage and library screens (I7 step 8): `rv_smoke_tests.exe "[library_shots]"` with `RV_SHOTS_DIR` naming a folder
+writes, on the building fixture with a gb cartridge moved into two folders (a review row) and five pokemini games gone
+(held by the guard), the menu, the coverage list, a system's details and the scraped population, each section of the
+library, a review, its confirmation, the removals' confirmation and a quick-hash pass running, at 1920 x 1080 and
+1280 x 720 (`720_` prefix).
+
 The file watcher (I7 step 7; no panel of its own): `rv_smoke_tests.exe "[watcher_shots]"` with `RV_SHOTS_DIR` writes the
 building's snes room before a ROM and its cover are copied in and after the watcher placed them (`watcher_before.png`,
 `watcher_after.png`, fresh lockstep starts at 1920 x 1080): one cartridge more on a shelf, nothing else moved
