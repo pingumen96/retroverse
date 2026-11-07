@@ -99,6 +99,11 @@ struct FitResult {
 /// InvalidArgument (not RGBA, a size below 1), OutOfRange (the resampler failed).
 [[nodiscard]] Expected<ImageData> resampleSrgb(const ImageData& rgba, int width, int height);
 
+/// An RGBA8 sRGB picture with straight alpha (a logo, I11 step 2) resampled to width x height in linear light, its
+/// colours weighted by their alpha, so that transparent pixels never bleed their colour into the edges. Errors as
+/// resampleSrgb().
+[[nodiscard]] Expected<ImageData> resampleSrgbAlpha(const ImageData& rgba, int width, int height);
+
 /// The most common colour of the region (x, y, w, h) of an RGBA8 or RGB image: the pixels counted in bins of 4 bits per
 /// channel, the fullest bin chosen (the lowest on a tie) and the mean of its pixels taken in linear light. Colourful
 /// bins come first (I3 step 16: a cover's black or white frame made monotone spines): when the bins whose centre has a

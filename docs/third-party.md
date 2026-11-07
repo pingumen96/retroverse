@@ -24,6 +24,7 @@ copies the DLL (Debug builds: the debug variant) next to each executable that lo
 | fastgltf | 0.9.1 | default | MIT | DLL `fastgltf.dll` | `rv_assets` (glTF) | yes |
 | glm | 1.0.3 | default | MIT (or the Happy Bunny License) | static `glm.lib` and headers | `rv_core` and up | yes |
 | imgui | 1.92.9 | `docking-experimental`, `opengl3-binding`, `sdl3-binding` | MIT | static `imgui.lib` | `rv_devui`: developer builds only, not in Release | yes, if a developer build is distributed |
+| lunasvg | 3.5.0 | default | MIT | DLL `lunasvg.dll` (and `plutovg.dll`, below) | `rv_assets`, private to `svg_raster.cpp` (I11 step 2, ADR-0019 §3: the systems' SVG logos read from ES-DE's themes, bounded and refused when they reach past the document) | yes |
 | miniaudio | 0.11.25 | default (header only) | Unlicense or MIT-0 | header-only, compiled into `rv_audio` (`miniaudio_impl.cpp`: device I/O only, on WASAPI and miniaudio's null backend) | `rv_audio` (I5 step 5, ADR-0016 §9: the clips' sound) | no (neither license asks for one) |
 | nlohmann-json | 3.12.0#2 | default | MIT | header-only | `rv_core` (JSON) | yes |
 | pugixml | 1.16 | none | MIT | DLL `pugixml.dll` | `rv_esde`, private (ES-DE's XML, ADR-0008) | yes |
@@ -40,6 +41,7 @@ copies the DLL (Debug builds: the debug variant) next to each executable that lo
 
 | Port | Version | License | Linked as | Needed by | Notice |
 |---|---|---|---|---|---|
+| plutovg | 1.3.3 | MIT | DLL `plutovg.dll` | lunasvg (its 2D vector rasterizer) | yes |
 | fmt | 12.2.0#1 | MIT | DLL `fmt.dll` | spdlog (and `fmt::format` through it) | yes |
 | simdjson | 5.0.2 | Apache-2.0 or MIT; parts BSL-1.0 and BSD-3-Clause | DLL `simdjson.dll` | fastgltf | yes |
 | freetype | 2.14.3 | FreeType License (FTL) or GPL-2.0-or-later: FTL chosen | DLL `freetype.dll` | rmlui | yes: the FTL's credit in the documentation |

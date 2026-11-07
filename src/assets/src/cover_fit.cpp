@@ -164,6 +164,30 @@ Expected<ImageData> resampleSrgb(const ImageData& rgba, int width, int height) {
     }
 }
 
+Expected<ImageData> resampleSrgbAlpha(const ImageData& rgba, int width, int height) {
+    if (!rgba.isValid() || rgba.channels != 4 || width < 1 || height < 1) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "cannot resample a " + std::to_string(rgba.width) + "x" + std::to_string(rgba.height) +
+                             " picture to " + std::to_string(width) + "x" + std::to_string(height),
+                         "picture");
+    }
+    try {
+        ImageData output = blankRgba(width, height);
+        STBIR_RESIZE resize;
+        // STBIR_RGBA: straight alpha, weighted by the resampler (premultiplied while filtering, divided again after).
+        stbir_resize_init(&resize, rgba.pixels.data(), rgba.width, rgba.height, rgba.width * 4, output.pixels.data(),
+                          output.width, output.height, output.width * 4, STBIR_RGBA, STBIR_TYPE_UINT8_SRGB);
+        stbir_set_edgemodes(&resize, STBIR_EDGE_CLAMP, STBIR_EDGE_CLAMP);
+        stbir_set_filters(&resize, STBIR_FILTER_DEFAULT, STBIR_FILTER_DEFAULT);
+        if (stbir_resize_extended(&resize) == 0) {
+            return makeError(ErrorCode::OutOfRange, "the picture could not be resampled", "picture");
+        }
+        return output;
+    } catch (const std::bad_alloc&) {
+        return makeError(ErrorCode::OutOfRange, "out of memory while resampling a picture", "picture");
+    }
+}
+
 Expected<FitResult> fitCover(const ImageData& source, int width, int height, const FitOptions& options) {
     if (!source.isValid() || width < 1 || height < 1) {
         return makeError(ErrorCode::InvalidArgument,
