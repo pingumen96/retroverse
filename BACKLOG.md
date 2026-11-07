@@ -249,10 +249,15 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   presentation-mode change (independent flip against composed): check with PresentMon (`docs/spikes/i1-launch.md`,
   finding 7).
 - **Batch launchers:** `.bat` files need a verified profile kind with cmd-specific escaping (the BatBadBut class of
-  injection); until then only PE programs start.
-- **More emulators:** DuckStation and real exclusive-fullscreen emulators from an isolated copy; an emulator on another
-  monitor than Retroverse's; re-grant `AllowSetForegroundWindow` once a console emulator's window exists (it fails with
-  error 87 while suspended).
+  injection); until then only PE programs start. I11 step 13 refuses them in ES-DE's "open the game's file" too, a
+  shortcut to one included.
+- **Elevated games** (I11 step 13): a shortcut's "Run as administrator", and a program whose manifest requires
+  elevation, start without it (or fail with "requires administrator rights"); ShellExecuteExW's "runas" would show
+  Windows' consent prompt, a modal dialog the product would have to explain.
+- **More emulators** (I11 takes the VR side: profiles per emulator, the window followed, the foreground retried,
+  exclusive fullscreen detected; ADR-0020): DuckStation and real exclusive-fullscreen emulators from an isolated
+  copy; an emulator on another monitor than Retroverse's; re-grant `AllowSetForegroundWindow` once a console
+  emulator's window exists (it fails with error 87 while suspended).
 - **Crash and loader-error returns under the default error mode:** not measured (the spike's crash return ran with the
   fake emulator's own error dialogs off), because on this machine a crash opens the Visual Studio JIT debugger prompt
   and a missing DLL the loader's modal box; decide Retroverse's error-mode policy (in the product, hard-error dialogs
@@ -738,7 +743,8 @@ Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
   systems' defaults), so a disc system's case is pushed into the cartridge slot, shrunk to fit (ADR-0016 §11's
   amendment). A disc console prefab with a tray socket of its own (a lid or a drawer the case or the disc goes into),
   chosen by the system's media kind, would match the item to its console; a look change for a later pack, no plan
-  change (a socket is none).
+  change (a socket is none). I11 step 7 takes it for the user's console models (ADR-0019 §7: a model's `DiscTray`
+  anchor); the procedural disc console for rooms without a model stays here.
 - **The sound over the insertion:** the mix fades in 50 ms at Avvia and each stopped slot's sound in the pause fade
   (30 ms), because the slots stop as the insertion begins (their threads end while it runs). A fade over the 450 ms
   would keep the audible slot's decoder running until the hand-over and stop it there, with the wait the animation
@@ -783,7 +789,8 @@ why; what I7 does take, it closes in its step notes.
 - **High contrast and a catalog-only mode** (specification §12.4): `reduceMotion`, the CRT effect, clips off and the text
   scale cover what the settings screen can do cheaply; these need a second stylesheet and a run without a world.
 - **Effects and ambience volumes:** I8, with the sounds they would adjust.
-- **The frame stalls after an emulator's return, exclusive-fullscreen emulators, the error-mode policy for crashes** (above,
+- **The frame stalls after an emulator's return, exclusive-fullscreen emulators (detected and explained by I11 step 13,
+  ADR-0020 §5), the error-mode policy for crashes** (above,
   "Emulator launch"): I8's performance and fault-injection work; none blocks daily use.
 - **The GUI-subsystem `retroverse.exe`** (above, "Release subsystem"): I9.
 - **Derived profiles, a startup grace per profile, the per-game choice in `launch --dry-run --path`, best-fit argument
@@ -801,3 +808,21 @@ why; what I7 does take, it closes in its step notes.
 
 - A game's status, once stepped, never derives again: Stato has no way back to "dedotto" short of removing its row
   in `rv_game_status`.
+
+## Parked at I11's planning
+
+Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met in planning, left out of I11.
+
+- **The insertion in VR with a real console** (above, "Follow-ups from I10", "The insertion in VR"): offered with the
+  real models, not chosen; the item flying from the hand into the model's socket.
+- **The real controllers beside the console:** the console's own pad from the content folder, on the cabinet and in
+  the hand in VR; offered, not chosen. VR's controller models stay generic (ADR-0017 §5).
+- **WebP logos:** some of the user's themes hold their logos as WebP (cathode, canvas, part of aura's), and linear's
+  `system/systemart/*.webp` holds each system's art; a WebP decoder (libwebp is in vcpkg at the baseline) inside
+  `rv_assets` would read them.
+- **Logos on the generated labels:** a game without a cover gets a generated front label with the system's name
+  (`collection_labels.cpp`); the logo could stand there too.
+- **Floor names from the identity:** the directory's floors keep their Italian generic names ("Console a 16 bit");
+  the makers' names per floor would need a rule for floors that mix makers.
+- **The identity of systems without a linear-es-de entry:** a theme with another metadata layout would need a reader
+  of its own; until then such a system shows ES-DE's fullname and, where a theme has one, its logo.

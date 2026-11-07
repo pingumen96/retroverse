@@ -22,6 +22,9 @@
 			<h1>Gioco in corso</h1>
 			<p class="game">{{ title }}</p>
 			<p>Retroverse resta in attesa e torna da solo quando chiudi il gioco.</p>
+			<!-- I11 step 13 (ADR-0020 §5): a game in exclusive fullscreen cannot be captured onto the CRT. -->
+			<p id="session-exclusive" data-if="exclusive">Il gioco è in schermo intero esclusivo: impostalo su finestra
+				senza bordi per vederlo qui.</p>
 		</div>
 		<div data-if="phase == 'playing'">
 			<h1>Gioco in corso</h1>

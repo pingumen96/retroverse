@@ -59,4 +59,25 @@ private:
     return (static_cast<std::uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
 }
 
+/// "0x80070002" for an HRESULT.
+[[nodiscard]] std::string hresultText(long result);
+
+/// COM on the calling thread for a scope (I11 step 13): CoInitializeEx with `apartment` (COINIT_MULTITHREADED or
+/// COINIT_APARTMENTTHREADED) and COINIT_DISABLE_OLE1DDE, undone on destruction when this call did it. A thread already
+/// in the other kind of apartment keeps it, which IShellLinkW and ShellExecuteExW work in too.
+class ComScope {
+public:
+    explicit ComScope(unsigned long apartment) noexcept;
+    ComScope(const ComScope&) = delete;
+    ComScope& operator=(const ComScope&) = delete;
+    ~ComScope();
+
+    /// COM can be used on this thread now.
+    [[nodiscard]] bool usable() const noexcept;
+    [[nodiscard]] long result() const noexcept { return m_result; }
+
+private:
+    long m_result = 0;
+};
+
 } // namespace rv::platform_win

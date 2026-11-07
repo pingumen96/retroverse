@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./Lantern Store.url</path>
+		<name>Lantern Store</name>
+		<desc>An Internet Shortcut of a store's protocol: the shortcuts fixture's invented game.</desc>
+	</game>
+</gameList>

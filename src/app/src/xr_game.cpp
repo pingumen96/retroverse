@@ -14,6 +14,11 @@ namespace {
 
 /// The window's picture is read back this often for its black bars (I10 step 11).
 constexpr std::chrono::milliseconds kProbeInterval{250};
+/// A window whose capture failed is tried again this much later, at most kMaxAttempts times (I11 step 11).
+constexpr std::chrono::milliseconds kRetryDelay{2000};
+constexpr int kMaxAttempts = 3;
+/// A window whose samples stay black this long is reported (ADR-0020 §5): longer than a game's usual black loading.
+constexpr std::chrono::milliseconds kBlackReport{5000};
 
 } // namespace
 
@@ -57,6 +62,25 @@ void XrGame::probeBars(gl::RenderStateCache& state, XrRecord* record) {
             ++record->captureCropSamples;
         }
         changed = m_bounds.update(findPictureBounds(*pixels, gl::PictureProbe::kSize));
+        const auto sampledAt = std::chrono::steady_clock::now();
+        if (isBlackPicture(*pixels)) {
+            if (!m_blackSince) {
+                m_blackSince = sampledAt;
+            } else if (!m_blackReported && sampledAt - *m_blackSince >= kBlackReport) {
+                m_blackReported = true;
+                spdlog::warn("VR: the game's window has shown only black for {} s: if the emulator runs in exclusive "
+                             "fullscreen, it cannot be captured (set it to borderless)",
+                             std::chrono::duration_cast<std::chrono::seconds>(kBlackReport).count());
+                if (record != nullptr) {
+                    record->captureBlack = true;
+                }
+            }
+        } else {
+            m_blackSince.reset();
+        }
+        if (record != nullptr) {
+            record->captureColor = meanPictureColor(*pixels);
+        }
     }
     const auto now = std::chrono::steady_clock::now();
     if (!m_probe->pending() && now - m_probedAt >= kProbeInterval) {
@@ -94,19 +118,37 @@ void XrGame::fail(std::string_view what, const Error& error, ScreenService* scre
         record->captureError = std::string(what) + ": " + error.toString();
     }
     m_failed = m_window;
+    m_failedAt = std::chrono::steady_clock::now();
+    ++m_attempts;
     stop(screen);
 }
 
 void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record) {
     if (window != m_window) {
         stop(screen);
+        const bool another = m_window != 0 && window != 0;
         m_window = window;
+        m_failed = 0;
+        m_attempts = 0;
+        m_blackSince.reset();
+        m_blackReported = false;
         if (window != 0) {
-            spdlog::info("VR: the launched game shows its window, captured onto the CRT");
+            spdlog::info(another ? "VR: the launched game now shows in another window, captured onto the CRT"
+                                 : "VR: the launched game shows its window, captured onto the CRT");
+            if (record != nullptr) {
+                ++record->captureWindows;
+            }
         }
     }
-    if (window == 0 || window == m_failed) {
+    if (window == 0) {
         return;
+    }
+    if (window == m_failed) {
+        // Tried again a little later, a few times: a window not yet ready, or closed and made again.
+        if (m_attempts >= kMaxAttempts || std::chrono::steady_clock::now() - m_failedAt < kRetryDelay) {
+            return;
+        }
+        m_failed = 0;
     }
     if (!m_capture) {
         auto started = platform_win::WindowCapture::start(window);
@@ -118,6 +160,17 @@ void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenSe
         if (record != nullptr) {
             ++record->captureStarts;
         }
+    }
+    if (m_capture->closed()) {
+        spdlog::info("VR: the game's window closed its capture; the launcher's next window takes the CRT");
+        if (record != nullptr) {
+            ++record->captureClosed;
+        }
+        m_failed = m_window;
+        m_failedAt = std::chrono::steady_clock::now();
+        ++m_attempts;
+        stop(screen);
+        return;
     }
     auto polled = m_capture->poll();
     if (!polled) {

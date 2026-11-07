@@ -286,8 +286,13 @@ struct LaunchRecord {
     std::optional<std::uint32_t> exitCode;
     /// The wait strategy in effect (launcher::toString(WaitStrategy)); empty when nothing started.
     std::string strategy;
-    /// The started process's id (0 when nothing started).
+    /// The started process's id (0 when nothing started, or for a protocol activation).
     std::uint32_t processId = 0;
+    /// I11 step 13: the scheme of a protocol activation ("steam"; empty for a program), and whether the game was seen in
+    /// exclusive fullscreen (the shell's state while it held the foreground, or a capture that stayed black in VR:
+    /// ADR-0020 §5).
+    std::string activation;
+    bool exclusiveFullscreen = false;
     /// launcher::LaunchOutcome's flags; confirmedByUser only for the user's own confirmation (false when quitting or the
     /// wait limit ended the session, which LaunchSession::confirmReturn records as confirmed).
     bool quickExit = false;
@@ -335,6 +340,22 @@ struct LaunchRecord {
     std::optional<std::int64_t> sessionId;
     std::string sessionError;
     bool verified = false;
+    /// I11 step 12 (ADR-0020 §1): the program the launch's executable was matched to (emulators.json's "programs"),
+    /// absent when none was. In VR: the arguments added (the append-file's option and path among them) and dropped, the
+    /// append-file written, the load ("light", "heavy"), and why the program's VR settings were not applied when they
+    /// were not (the launch then started as asked).
+    struct Program {
+        std::string id;
+        bool vr = false;
+        std::vector<std::string> added;
+        std::vector<std::string> dropped;
+        std::string appendFile;
+        std::string inGame;
+        std::string refused;
+
+        bool operator==(const Program&) const = default;
+    };
+    std::optional<Program> program;
 
     bool operator==(const LaunchRecord&) const = default;
 };
@@ -2121,6 +2142,16 @@ struct XrRecord {
     glm::vec4 captureCrop{0.0f, 0.0f, 1.0f, 1.0f};
     std::uint64_t captureCropSamples = 0;
     std::uint64_t captureCropChanges = 0;
+    /// I11 step 11 (ADR-0020 §2): the windows the capture followed (a splash then the game, a window made again), the
+    /// captures that ended with their window closed, whether a window showed only black for 5 s (exclusive fullscreen,
+    /// ADR-0020 §5), and the mean colour (sRGB, 0 to 255) of the last sample of the window's picture.
+    std::uint64_t captureWindows = 0;
+    std::uint64_t captureClosed = 0;
+    bool captureBlack = false;
+    /// I11 step 13 (ADR-0020 §5): frames the session panel's notice of a game in exclusive fullscreen stood in front of
+    /// the CRT showing it.
+    std::uint64_t exclusiveNoticeFrames = 0;
+    glm::vec3 captureColor{0.0f};
     /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
     std::uint64_t playingWalkFrames = 0;
     /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the

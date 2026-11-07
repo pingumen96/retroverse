@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- One system of games opened by their own file, as ES-DE's windows system (I11 step 13); its full name invented (see
+     README.md). Both commands are ES-DE 3.4.1's "open the game's file", the second keeping ES-DE running. -->
+<systemList>
+    <system>
+        <name>windows</name>
+        <fullname>Desk Arcade Shelf</fullname>
+        <path>%ROMPATH%\windows</path>
+        <extension>.exe .EXE .lnk .LNK .url .URL</extension>
+        <command label="Shortcut or script">%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /C %ROM%</command>
+        <command label="Shortcut or script (Keep ES-DE running)">%HIDEWINDOW% %ESCAPESPECIALS% %RUNINBACKGROUND% %EMULATOR_OS-SHELL% /C %ROM%</command>
+        <platform>pc</platform>
+        <theme>windows</theme>
+    </system>
+</systemList>

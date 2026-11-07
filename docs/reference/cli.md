@@ -86,6 +86,18 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   with `-` after `--`) and `show <gameId>` read the catalog database through a reader (`SqliteCatalogQuery`) and never
   create, migrate or write it: exit 3 without a database or with another schema version, 2 for an unknown `--system`,
   1 for `show` of an unknown game. `show` prints the media paths (as `media --game`), no readiness yet.
+- `identity show [--system <name>]` (I11 step 1, `docs/i11/step-1.md`, ADR-0019 §2): each system of the catalog
+  with the identity Retroverse reads at runtime: its name, maker, year, release date, kind of hardware, description
+  (Italian where the theme has it), colours and logo. Each field has its source:
+  - `identity.json` in `<user data>/config`;
+  - a theme: identity.json's `theme`, then `linear-es-de`;
+  - ES-DE's active theme, for the logo;
+  - ES-DE's full name, for the name.
+
+  The themes are found under library.json's ES-DE home and install folder, and identity.json's `themeRoots`. Without
+  `--system` it prints one line per system and a summary; with it, every field, its files and what was left out.
+  `--json` gives every field with `source` and `origin`. It reads only: exit 2 without library.json or for an unknown
+  system, 3 when the catalog or identity.json cannot be read.
 - `identities` (`docs/i2/step-11b.md`): `list --system <name>` (GameId, state `present`, `missing` or `unseen`, quick
   hash `current`, `stale`, `none` or `folder`, last path), `show <gameId>` (file facts, quick hash, aliases, history,
   review rows; an alias prints what it stands for; needs no library.json), `reviews [--system <name>] [--all]` (open
@@ -100,10 +112,17 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
 - `profiles [--system <name>]` lists the emulator profiles, `assign`'s and emulators.json's system choices and, for
   every configured system, the command or profile its games launch with, where that choice comes from and why, its
   readiness, the program and core with the find rule that found them, the attempts behind "not found", and each command
-  and profile with its own readiness (exit 1 with `--system` when that system is not ready). `launch --dry-run --system
-  <name> --path <relative path>` and `launch --dry-run --game <id>` show the request a game would start (argv, working
-  folder, environment, command line, the automation guard's verdict, the database's choices read only) and start nothing
-  (exit 0 ready, 1 not). Both look at this machine (`Win32SystemProbe`).
+  and profile with its own readiness (exit 1 with `--system` when that system is not ready). Since I11 step 12 it also
+  lists emulators.json's programs (ADR-0020 §1: their files and what each does in VR), the program each system's launch
+  starts (`programProfile` in JSON), and which programs the library's launches use ("Programs in use").
+  `launch --dry-run --system <name> --path <relative path>` and `launch --dry-run --game <id>` show the request a game
+  would start (argv, working folder, environment, command line, the automation guard's verdict, the database's choices
+  read only) and start nothing (exit 0 ready, 1 not); `--vr` shows it as a launch in VR starts it: adapted to its
+  program, with the arguments added and dropped, the load, and the append-file's path and lines (`vr` in JSON), which
+  a dry run never writes. Both look at this machine (`Win32SystemProbe`). ES-DE's "open the game's file" command (I11
+  step 13) shows the shortcut's program and arguments, or for an Internet Shortcut the URL it activates ("Activates",
+  `activationUrl`), its wait (`FollowWindow`) and the launcher's processes; an automated run's guard refuses every
+  activation.
 - `launch --game <id> [--wait [--wait-limit <seconds>]] [--test] [--json]` (`docs/i2/step-12.md`) resolves a game of the
   catalog right before the launch (its file looked for on disk now, the database's choices) and starts it through
   `LaunchSession` on `Win32ProcessRunner`, so the automation guard applies: automated runs set `RV_LAUNCH_ALLOWLIST`.

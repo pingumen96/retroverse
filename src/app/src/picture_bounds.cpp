@@ -33,6 +33,40 @@ bool holds(const glm::vec4& outer, const glm::vec4& inner) noexcept {
 
 } // namespace
 
+bool isBlackPicture(std::span<const std::uint8_t> rgba) noexcept {
+    const std::size_t pixels = rgba.size() / 4;
+    if (pixels == 0) {
+        return false;
+    }
+    const auto allowed = static_cast<std::size_t>(static_cast<double>(pixels) * kBlackPictureLitShare);
+    std::size_t lit = 0;
+    for (std::size_t i = 0; i < pixels; ++i) {
+        const std::size_t at = i * 4;
+        if (rgba[at] > kBorderBlackLevel || rgba[at + 1] > kBorderBlackLevel || rgba[at + 2] > kBorderBlackLevel) {
+            if (++lit > allowed) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+glm::vec3 meanPictureColor(std::span<const std::uint8_t> rgba) noexcept {
+    const std::size_t pixels = rgba.size() / 4;
+    if (pixels == 0) {
+        return glm::vec3(0.0f);
+    }
+    double sum[3] = {0.0, 0.0, 0.0};
+    for (std::size_t i = 0; i < pixels; ++i) {
+        sum[0] += rgba[i * 4];
+        sum[1] += rgba[i * 4 + 1];
+        sum[2] += rgba[i * 4 + 2];
+    }
+    const auto count = static_cast<double>(pixels);
+    return glm::vec3(static_cast<float>(sum[0] / count), static_cast<float>(sum[1] / count),
+                     static_cast<float>(sum[2] / count));
+}
+
 std::optional<glm::vec4> findPictureBounds(std::span<const std::uint8_t> rgba, glm::ivec2 size) noexcept {
     if (size.x <= 0 || size.y <= 0 ||
         rgba.size() < static_cast<std::size_t>(size.x) * static_cast<std::size_t>(size.y) * 4) {

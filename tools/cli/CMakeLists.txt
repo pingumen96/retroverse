@@ -14,6 +14,7 @@ add_library(rv_cli_core STATIC
     src/cmd_discover.cpp
     src/cmd_games.cpp
     src/cmd_identities.cpp
+    src/cmd_identity.cpp
     src/cmd_import.cpp
     src/cmd_launch.cpp
     src/cmd_library.cpp

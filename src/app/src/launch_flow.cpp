@@ -135,12 +135,17 @@ bool LaunchFlow::refuse(LaunchMessage message, LaunchInfo info, std::uint64_t fr
     return true;
 }
 
-void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame) {
+void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame,
+                       const RequestAdapter& adapt) {
     if (!m_pending) {
         return;
     }
+    if (adapt) {
+        adapt(*m_pending, current());
+    }
     m_session.emplace(std::move(*m_pending), m_runner);
     m_pending.reset();
+    m_exclusiveNoted = false;
     // The Launching frame was presented: the window keeps it behind the emulator while it runs.
     LaunchRecord& record = current();
     record.startFrame = frame;
@@ -149,6 +154,9 @@ void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks cal
     record.state = std::string(launcher::toString(m_seenState));
     record.strategy = std::string(launcher::toString(m_session->strategy()));
     record.processId = m_session->processId();
+    if (m_session->request().isActivation()) {
+        record.activation = launcher::activationScheme(m_session->request().activationUrl).value_or(std::string());
+    }
     if (m_events.started) {
         m_events.started(*m_session);
     }
@@ -158,6 +166,18 @@ void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks cal
     }
     spdlog::info("Launch of '{}' running (process {}, {}): Retroverse renders nothing until it returns", m_info.title,
                  record.processId, record.strategy);
+}
+
+bool LaunchFlow::exclusiveFullscreen() const noexcept {
+    return m_session && (m_exclusiveNoted || m_session->exclusiveFullscreen());
+}
+
+void LaunchFlow::noteExclusiveFullscreen() {
+    if (!sessionActive() || m_exclusiveNoted) {
+        return;
+    }
+    m_exclusiveNoted = true;
+    current().exclusiveFullscreen = true;
 }
 
 void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
@@ -378,6 +398,7 @@ void LaunchFlow::finish(LaunchClock::time_point now, std::uint64_t frame) {
     record.strategy = std::string(launcher::toString(m_session->strategy()));
     record.processId = m_session->processId();
     record.quickExit = outcome.quickExit;
+    record.exclusiveFullscreen = exclusiveFullscreen();
     record.processesRemained = outcome.processesRemained;
     record.confirmedByUser = endedByUser;
     record.wasStillRunning = outcome.wasStillRunning;

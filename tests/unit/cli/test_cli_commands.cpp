@@ -28,12 +28,13 @@ using rv::cli::Output;
 namespace {
 
 /// The commands in the order of --help, with the step of docs/roadmap.md that implements each.
-constexpr std::array<std::pair<std::string_view, std::string_view>, 17> kPlannedCommands{{
+constexpr std::array<std::pair<std::string_view, std::string_view>, 18> kPlannedCommands{{
     {"discover", "I2 step 2"},
     {"library", "I2 step 2"},
     {"db", "I2 step 4"},
     {"import", "I2 step 7"},
     {"systems", "I2 step 9"},
+    {"identity", "I11 step 1"},
     {"games", "I2 step 9"},
     {"search", "I2 step 9"},
     {"show", "I2 step 9"},
@@ -109,7 +110,7 @@ constexpr std::string_view kUnknownOption = "--no-such-option";
 
 } // namespace
 
-TEST_CASE("cli/command: the table lists the 17 commands in order, each with the step that implements it",
+TEST_CASE("cli/command: the table lists the 18 commands in order, each with the step that implements it",
           "[cli]") {
     const std::span<const Command> table = rv::cli::commands();
     REQUIRE(table.size() == kPlannedCommands.size());

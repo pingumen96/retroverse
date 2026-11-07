@@ -61,6 +61,7 @@ struct GameSessionPanel::Impl {
         constructor.Bind("reason", &reason);
         constructor.Bind("detail", &detail);
         constructor.Bind("timeout", &timeout);
+        constructor.Bind("exclusive", &exclusive);
         // The buttons act on the panel shown when they were pressed: the application decides what follows.
         constructor.BindEventCallback("return_home", [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
             if (shown != SessionPanel::None && events.returnHome) {
@@ -103,6 +104,7 @@ struct GameSessionPanel::Impl {
     Rml::String reason;
     Rml::String detail;
     int timeout = 0;
+    bool exclusive = false;
 };
 
 GameSessionPanel::GameSessionPanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -183,6 +185,16 @@ void GameSessionPanel::apply(ui::UiCommand command) {
     }
     if (command == ui::UiCommand::Activate) {
         static_cast<void>(impl.view.activate());
+    }
+}
+
+void GameSessionPanel::setExclusiveFullscreen(bool exclusive) {
+    if (m_impl->exclusive == exclusive) {
+        return;
+    }
+    m_impl->exclusive = exclusive;
+    if (m_impl->handle) {
+        m_impl->handle.DirtyVariable("exclusive");
     }
 }
 

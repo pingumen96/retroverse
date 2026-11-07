@@ -44,9 +44,10 @@ LaunchClock::time_point at(int milliseconds) {
 /// The process a FakeRunner "starts": hands over whatever the test queued in the runner.
 class FakeProcess final : public IRunningProcess {
 public:
-    FakeProcess(std::vector<ProcessEvent>& queue, bool followsTree, LaunchClock::time_point startedAt, int& stops)
-        : m_queue(queue), m_followsTree(followsTree), m_startedAt(startedAt), m_stops(stops) {}
-    [[nodiscard]] std::uint32_t processId() const noexcept override { return kMainId; }
+    FakeProcess(std::vector<ProcessEvent>& queue, bool followsTree, LaunchClock::time_point startedAt, int& stops,
+                std::uint32_t processId = kMainId)
+        : m_queue(queue), m_followsTree(followsTree), m_startedAt(startedAt), m_stops(stops), m_processId(processId) {}
+    [[nodiscard]] std::uint32_t processId() const noexcept override { return m_processId; }
     [[nodiscard]] LaunchClock::time_point startedAt() const noexcept override { return m_startedAt; }
     [[nodiscard]] bool followsTree() const noexcept override { return m_followsTree; }
     void takeEvents(std::vector<ProcessEvent>& out) override {
@@ -60,6 +61,7 @@ private:
     bool m_followsTree;
     LaunchClock::time_point m_startedAt;
     int& m_stops;
+    std::uint32_t m_processId;
 };
 
 /// A runner whose processes report the events the test scripts.
@@ -78,10 +80,13 @@ public:
         if (callbacks.beforeResume) {
             callbacks.beforeResume(kMainId);
         }
-        return std::unique_ptr<IRunningProcess>(std::make_unique<FakeProcess>(queue, followTree, startedAt, stops));
+        return std::unique_ptr<IRunningProcess>(
+            std::make_unique<FakeProcess>(queue, followTree, startedAt, stops, processId));
     }
 
     std::vector<ProcessEvent> queue;
+    /// The started process's id: 0 for a protocol activation (I11 step 13).
+    std::uint32_t processId = kMainId;
     bool followTree = true;
     /// When the "process" started running (after the window's hand-over).
     LaunchClock::time_point startedAt = kT0;
@@ -535,4 +540,70 @@ TEST_CASE("launcher/launch_session: the event history is bounded", "[launcher][l
     session.poll(at(401));
     CHECK(session.history().size() == LaunchSession::kMaxHistory);
     CHECK(session.state() == SessionState::Running);
+}
+
+// I11 step 13 (ADR-0020 §4): FollowWindow, the game's window followed wherever it opens.
+TEST_CASE("launcher/launch session: FollowWindow waits for the game's window and every process followed",
+          "[launcher][session][activation]") {
+    constexpr std::uint32_t kAdoptedId = 900;
+    Fixture f;
+    const auto window = [](int milliseconds) {
+        ProcessEvent e = event(ProcessEventKind::WindowShown, milliseconds);
+        e.window = 0x1234;
+        return e;
+    };
+
+    SECTION("a launcher that exits at once hands over to a process adopted by its window") {
+        LaunchSession session = f.run(f.request(WaitStrategy::FollowWindow),
+                                      {mainExited(300, 0),
+                                       event(ProcessEventKind::ChildStarted, 2500, kAdoptedId),
+                                       window(2600),
+                                       event(ProcessEventKind::ChildExited, 60000, kAdoptedId, 0u),
+                                       event(ProcessEventKind::TreeEmpty, 60000)},
+                                      60100);
+        CHECK(session.state() == SessionState::Returned);
+        CHECK(session.outcome().exitProcessId == kAdoptedId);
+        CHECK_FALSE(session.outcome().quickExit); // a launcher that handed over is no quick exit
+        CHECK(session.outcome().processesSeen == 2);
+    }
+    SECTION("before the game's window, the started process's failure ends the launch") {
+        LaunchSession session = f.run(f.request(WaitStrategy::FollowWindow), {mainExited(300, 1)}, 400);
+        CHECK(session.state() == SessionState::FailedToStart);
+        CHECK(session.outcome().failure == FailureReason::EarlyExit);
+    }
+    SECTION("a clean exit without a window waits for the window, then for the user") {
+        LaunchSession session = f.run(f.request(WaitStrategy::FollowWindow), {mainExited(300, 0)}, 400);
+        CHECK(session.state() == SessionState::Running);
+        session.poll(at(31000));
+        CHECK(session.state() == SessionState::StillRunning);
+        f.runner.queue = {event(ProcessEventKind::ChildStarted, 40000, kAdoptedId), window(40100)};
+        session.poll(at(40200));
+        CHECK(session.state() == SessionState::Running);
+        session.confirmReturn(at(50000));
+        CHECK(session.state() == SessionState::Returned);
+        CHECK(session.outcome().confirmedByUser);
+    }
+    SECTION("an activation starts no process of its own") {
+        f.runner.processId = 0;
+        LaunchRequest request;
+        request.activationUrl = "steam://rungameid/400";
+        request.waitStrategy = WaitStrategy::FollowWindow;
+        LaunchSession session = f.run(request,
+                                      {event(ProcessEventKind::ChildStarted, 5000, kAdoptedId), window(5100)}, 5200);
+        CHECK(session.state() == SessionState::Running);
+        CHECK(session.processId() == 0);
+        CHECK(session.liveProcessCount() == 1);
+        CHECK(session.commandLine() == "steam://rungameid/400");
+        f.runner.queue = {event(ProcessEventKind::ChildExited, 90000, kAdoptedId, 0xC0000005u),
+                          event(ProcessEventKind::TreeEmpty, 90000)};
+        session.poll(at(90100));
+        CHECK(session.state() == SessionState::Crashed);
+        CHECK(session.outcome().exitProcessId == kAdoptedId);
+    }
+    SECTION("exclusive fullscreen is recorded") {
+        LaunchSession session = f.run(f.request(WaitStrategy::FollowWindow),
+                                      {window(500), event(ProcessEventKind::ExclusiveFullscreen, 900)}, 1000);
+        CHECK(session.exclusiveFullscreen());
+        CHECK(session.state() == SessionState::Running);
+    }
 }

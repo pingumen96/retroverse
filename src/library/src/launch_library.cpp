@@ -97,7 +97,7 @@ Expected<std::unique_ptr<LaunchLibrary>> loadLaunchLibrary(catalog::LibraryProfi
     }
     library->translator = std::make_unique<esde::EsdeCommandTranslator>(
         esde::TranslationContext{library->profile, library->romRoot, &library->findRules, &library->probe,
-                                 &library->programChoices},
+                                 &library->programChoices, &library->profiles.protocols},
         library->systems);
     return library;
 }

@@ -3095,12 +3095,23 @@ Json launchToJson(const LaunchRecord& launch) {
     }
     json["strategy"] = launch.strategy;
     json["processId"] = launch.processId;
+    json["activation"] = launch.activation;
+    json["exclusiveFullscreen"] = launch.exclusiveFullscreen;
     json["quickExit"] = launch.quickExit;
     json["processesRemained"] = launch.processesRemained;
     json["confirmedByUser"] = launch.confirmedByUser;
     json["wasStillRunning"] = launch.wasStillRunning;
     json["quitDuringGame"] = launch.quitDuringGame;
     json["waitLimitReached"] = launch.waitLimitReached;
+    if (launch.program) {
+        json["program"] = Json{{"id", launch.program->id},
+                               {"vr", launch.program->vr},
+                               {"added", launch.program->added},
+                               {"dropped", launch.program->dropped},
+                               {"appendFile", launch.program->appendFile},
+                               {"inGame", launch.program->inGame},
+                               {"refused", launch.program->refused}};
+    }
     Json frames;
     frames["request"] = launch.requestFrame;
     if (launch.startFrame) {
@@ -3200,12 +3211,25 @@ LaunchRecord readLaunch(FieldReader& fields) {
     }
     launch.strategy = fields.string("strategy");
     launch.processId = static_cast<std::uint32_t>(fields.count("processId", kMaxUint32));
+    launch.activation = fields.string("activation");
+    launch.exclusiveFullscreen = fields.boolean("exclusiveFullscreen");
     launch.quickExit = fields.boolean("quickExit");
     launch.processesRemained = fields.boolean("processesRemained");
     launch.confirmedByUser = fields.boolean("confirmedByUser");
     launch.wasStillRunning = fields.boolean("wasStillRunning");
     launch.quitDuringGame = fields.boolean("quitDuringGame");
     launch.waitLimitReached = fields.boolean("waitLimitReached");
+    if (auto program = fields.optionalObject("program")) {
+        LaunchRecord::Program read;
+        read.id = program->string("id");
+        read.vr = program->boolean("vr");
+        read.added = program->stringArray("added");
+        read.dropped = program->stringArray("dropped");
+        read.appendFile = program->string("appendFile");
+        read.inGame = program->string("inGame");
+        read.refused = program->string("refused");
+        launch.program = std::move(read);
+    }
     if (auto frames = fields.optionalObject("frames")) {
         launch.requestFrame = frames->count("request");
         launch.startFrame = frames->optionalCount("start");
@@ -3325,6 +3349,12 @@ Json xrToJson(const XrRecord& xr) {
                                        static_cast<double>(xr.captureCrop.z), static_cast<double>(xr.captureCrop.w)});
     json["captureCropSamples"] = xr.captureCropSamples;
     json["captureCropChanges"] = xr.captureCropChanges;
+    json["captureWindows"] = xr.captureWindows;
+    json["captureClosed"] = xr.captureClosed;
+    json["captureBlack"] = xr.captureBlack;
+    json["exclusiveNoticeFrames"] = xr.exclusiveNoticeFrames;
+    json["captureColor"] = Json::array({static_cast<double>(xr.captureColor.x), static_cast<double>(xr.captureColor.y),
+                                        static_cast<double>(xr.captureColor.z)});
     json["playingWalkFrames"] = xr.playingWalkFrames;
     json["dynamicScale"] = xr.dynamicScale;
     json["quality"] = xr.quality;
@@ -3397,6 +3427,11 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureCrop = fields.vec4("captureCrop");
     xr.captureCropSamples = fields.count("captureCropSamples");
     xr.captureCropChanges = fields.count("captureCropChanges");
+    xr.captureWindows = fields.count("captureWindows");
+    xr.captureClosed = fields.count("captureClosed");
+    xr.captureBlack = fields.boolean("captureBlack");
+    xr.exclusiveNoticeFrames = fields.count("exclusiveNoticeFrames");
+    xr.captureColor = fields.vec3("captureColor");
     xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");
     xr.quality = fields.string("quality");

@@ -1,0 +1,8 @@
+// What git does not hold (see README.md): the active theme's PNG logo and an SVG past the logo size limit.
+{
+    "files": [
+        {"path": "ES-DE/themes/active-fixture-es-de/_inc/systems/logos/megadrive.png",
+         "cover": {"title": "OD", "seed": 5, "width": 256, "height": 64}},
+        {"path": "Programs/ES-DE/themes/linear-es-de/system/logos/gb.svg", "size": 1200000, "seed": 9}
+    ]
+}

@@ -71,6 +71,9 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 # pugixml: ES-DE's XML files, private to rv_esde; parsed with parse_fragment and never through XPath, which throws
 # (ADR-0008).
 find_package(pugixml CONFIG REQUIRED)
+# lunasvg (with plutovg): the systems' SVG logos read from ES-DE's themes, private to rv_assets' svg_raster.cpp
+# (ADR-0019 §3).
+find_package(lunasvg CONFIG REQUIRED)
 # The OpenXR loader (vcpkg feature "xr", enabled by every preset): OpenXR::openxr_loader, with openxr/openxr.h and
 # openxr/openxr_platform.h; it finds the active runtime (Meta Horizon Link, SteamVR, ...) at run time (ADR-0017).
 if(RV_ENABLE_XR)

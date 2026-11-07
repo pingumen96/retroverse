@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <regex>
 #include <set>
 #include <string>
@@ -15,6 +16,7 @@
 
 #include <rv/core/file_io.hpp>
 #include <rv/core/system_error.hpp>
+#include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/esde/command_template.hpp>
 #include <rv/launcher/launch_plan.hpp>
@@ -94,6 +96,19 @@ std::optional<std::string> refusedProgram(const std::filesystem::path& program) 
     return openedName == name ? name : fmt::format("{} (it opens {})", name, openedName);
 }
 
+/// Whether `program` is Windows' command shell, cmd.exe, by the name found or the file it opens: the program of ES-DE's
+/// "open the game's file" command (I11 step 13).
+bool isCommandShell(const std::filesystem::path& program) {
+    const auto shell = [](const std::filesystem::path& path) {
+        return core::equalsIgnoreCaseAscii(core::pathToUtf8Lossy(path.filename()), "cmd.exe");
+    };
+    if (shell(program)) {
+        return true;
+    }
+    const auto opened = finalPathOf(program);
+    return opened && shell(*opened);
+}
+
 /// At most `maxBytes` from the start of `file`, opened as core::readFileShared() opens it (reading only, sharing
 /// everything), and whether more follows. Errors as readFileShared()'s, without OutOfRange: NotFound, Unavailable,
 /// InvalidArgument (a folder or a device), Conflict, IoError.
@@ -150,6 +165,67 @@ Expected<FilePrefix> readPrefixShared(const std::filesystem::path& file, std::si
         prefix.truncated = true;
     }
     return prefix;
+}
+
+/// The largest Internet Shortcut read (I11 step 13).
+constexpr std::size_t kMaxInternetShortcutBytes = 64 * 1024;
+
+/// The URL of an Internet Shortcut (a .url file: the URL= line of its [InternetShortcut] section, both compared
+/// ignoring ASCII case, the first one found), its text UTF-8 (a byte order mark skipped), UTF-16 with its byte order
+/// mark, or else the system's code page.
+Expected<std::string> internetShortcutUrl(const std::filesystem::path& file) {
+    auto prefix = readPrefixShared(file, kMaxInternetShortcutBytes);
+    if (!prefix) {
+        return propagate(prefix.error());
+    }
+    if (prefix->truncated) {
+        return makeError(ErrorCode::ValidationFailed,
+                         fmt::format("larger than {} KiB: no Internet Shortcut", kMaxInternetShortcutBytes / 1024));
+    }
+    std::string text = std::move(prefix->bytes);
+    if (text.starts_with("\xFF\xFE")) {
+        std::wstring wide((text.size() - 2) / 2, L'\0');
+        std::memcpy(wide.data(), text.data() + 2, wide.size() * sizeof(wchar_t));
+        auto converted = core::wideToUtf8(wide);
+        if (!converted) {
+            return makeError(ErrorCode::ValidationFailed, "not valid UTF-16 text");
+        }
+        text = std::move(*converted);
+    } else if (text.starts_with("\xEF\xBB\xBF")) {
+        text.erase(0, 3);
+    } else if (!core::isValidUtf8(text)) {
+        const int length = MultiByteToWideChar(CP_ACP, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+        std::wstring wide(static_cast<std::size_t>(std::max(length, 0)), L'\0');
+        if (length <= 0 || MultiByteToWideChar(CP_ACP, 0, text.data(), static_cast<int>(text.size()), wide.data(),
+                                               length) != length) {
+            return makeError(ErrorCode::ValidationFailed, "not text");
+        }
+        text = core::wideToUtf8Lossy(wide);
+    }
+    bool inSection = false;
+    for (std::string_view line : core::split(text, '\n')) {
+        line = core::trim(line);
+        if (line.starts_with('[')) {
+            inSection = core::equalsIgnoreCaseAscii(line, "[InternetShortcut]");
+            continue;
+        }
+        const std::size_t equals = line.find('=');
+        if (inSection && equals != std::string_view::npos &&
+            core::equalsIgnoreCaseAscii(core::trim(line.substr(0, equals)), "URL")) {
+            return std::string(core::trim(line.substr(equals + 1)));
+        }
+    }
+    return makeError(ErrorCode::ValidationFailed, "no URL= line in an [InternetShortcut] section");
+}
+
+/// A shortcut's argument string split as CommandLineToArgvW splits the arguments after a program.
+std::vector<std::string> splitArguments(std::string_view arguments) {
+    if (core::trim(arguments).empty()) {
+        return {};
+    }
+    std::vector<std::string> elements = splitCommandLine("x " + std::string(arguments));
+    elements.erase(elements.begin()); // the program's place
+    return elements;
 }
 
 /// ES-DE's preferred form of a path's text (Utils::FileSystem::getPreferredPath on Windows): '\' between the elements.
@@ -573,6 +649,7 @@ public:
             return std::move(m_translation);
         }
         const CommandTemplate parsed = parseCommandTemplate(m_command.text);
+        m_opensFile = opensGameFile(parsed);
         if (m_game != nullptr) {
             prepareGame();
         }
@@ -586,6 +663,14 @@ public:
         }
         const CommandElement& program = parsed.elements[parsed.programIndex];
         locateProgram(program);
+        if (m_opensFile && m_translation.program) {
+            openGameFile(m_startDir ? startFolder(*m_startDir) : std::filesystem::path());
+            return std::move(m_translation);
+        }
+        m_opensFile = false; // the shell not found: what ES-DE would refuse, reported
+        if (m_escapeSpecials) {
+            unsupported(*m_escapeSpecials, " (it escapes what cmd.exe reads in the values)");
+        }
 
         std::vector<std::string> arguments;
         for (std::size_t i = parsed.programIndex + 1; i < parsed.elements.size(); ++i) {
@@ -674,10 +759,182 @@ private:
         if (token.name == "HIDEWINDOW") {
             m_hideWindow = true;
         } else if (token.name == "RUNINBACKGROUND") {
-            unsupported(token, " (ES-DE keeps running beside the emulator)");
+            // ES-DE keeps running beside the program: Retroverse follows the game's window (I11 step 13).
+            m_runInBackground = true;
         } else if (token.name == "ESCAPESPECIALS") {
-            unsupported(token, " (it escapes what cmd.exe reads in the values)");
+            // Meaningless when Retroverse opens the game's file itself; reported for any other command (once
+            // locateProgram() has told, for a command shaped like that one).
+            if (!m_opensFile) {
+                unsupported(token, " (it escapes what cmd.exe reads in the values)");
+            } else if (!m_escapeSpecials) {
+                m_escapeSpecials = token;
+            }
         }
+    }
+
+    /// ES-DE's "open the game's file" (I11 step 13, ADR-0020 §3): the program one %EMULATOR_X% element, then exactly
+    /// "/C" (any case) and "%ROM%", flags aside. Whether X finds cmd.exe is locateProgram()'s to tell.
+    static bool opensGameFile(const CommandTemplate& parsed) {
+        if (parsed.programIndex >= parsed.elements.size()) {
+            return false;
+        }
+        const CommandElement& program = parsed.elements[parsed.programIndex];
+        const bool emulator = program.tokens.size() == 1 && program.tokens.front().kind == CommandTokenKind::Emulator &&
+                              program.tokens.front().offset == 0 &&
+                              program.tokens.front().text.size() == program.text.size();
+        if (!emulator) {
+            return false;
+        }
+        std::vector<std::string_view> rest;
+        for (std::size_t i = parsed.programIndex + 1; i < parsed.elements.size(); ++i) {
+            const CommandElement& element = parsed.elements[i];
+            const bool flagOnly = element.tokens.size() == 1 && element.tokens.front().kind == CommandTokenKind::Flag &&
+                                  element.tokens.front().text.size() == element.text.size();
+            if (!flagOnly) {
+                rest.push_back(element.text);
+            }
+        }
+        return rest.size() == 2 && core::equalsIgnoreCaseAscii(rest[0], "/C") && rest[1] == "%ROM%";
+    }
+
+    /// The request "open the game's file" makes: Retroverse opens the file itself, by its extension, and cmd.exe never
+    /// runs. A shortcut (.lnk, read through the probe, never resolved) starts its program with its arguments in its
+    /// working folder; a program (.exe, .com) starts as itself; an Internet Shortcut (.url) activates its URL when its
+    /// scheme is one of emulators.json's protocols. Anything else requires launcher configuration: a batch file, a
+    /// document, a disc image. `startFolder` is %STARTDIR%'s (empty: none).
+    void openGameFile(const std::filesystem::path& startFolder) {
+        m_translation.program.reset(); // the shell is never started
+        if (m_game == nullptr) {
+            m_translation.notes.push_back(
+                "Retroverse opens each game's file itself, never through cmd.exe: a shortcut (.lnk) to a program, a "
+                "program (.exe), an Internet Shortcut (.url) of a protocol emulators.json lists");
+            return;
+        }
+        if (!m_values) {
+            return; // the ROM folder is not known: reported
+        }
+        const std::string& shown = m_values->rom;
+        const auto file = folderFromEsdeText(shown);
+        if (!file) {
+            block(LaunchReadiness::RequiresConfiguration, "file-not-opened",
+                  fmt::format("the game's path {} is not absolute", inQuotes(shown)));
+            return;
+        }
+        if (m_game->directory && m_values->rom == m_values->romRaw) {
+            block(LaunchReadiness::RequiresConfiguration, "file-not-opened",
+                  fmt::format("{} is a folder, which Retroverse does not open: choose another command for {}", shown,
+                              m_system.name.str()));
+            return;
+        }
+        const std::string extension = core::toLowerAscii(core::pathToUtf8Lossy(file->extension()));
+        launcher::LaunchRequest request;
+        if (extension == ".lnk") {
+            auto shortcut = m_context.probe->readShortcut(*file);
+            if (!shortcut) {
+                block(LaunchReadiness::RequiresConfiguration, "shortcut-unreadable",
+                      fmt::format("the shortcut {} cannot be read: {}", shown, shortcut.error().message));
+                return;
+            }
+            const std::filesystem::path& target = shortcut->target;
+            const std::string targetShown = core::pathToUtf8Lossy(target);
+            m_translation.notes.push_back(fmt::format("the shortcut {} opens {}", shown, targetShown));
+            const std::string targetExtension = core::toLowerAscii(core::pathToUtf8Lossy(target.extension()));
+            if (targetExtension == ".bat" || targetExtension == ".cmd") {
+                block(LaunchReadiness::RequiresConfiguration, "batch-file",
+                      fmt::format("the shortcut {} opens the batch file {}, which runs through cmd.exe: Retroverse "
+                                  "never starts it",
+                                  shown, targetShown));
+                return;
+            }
+            if (targetExtension != ".exe" && targetExtension != ".com") {
+                block(LaunchReadiness::RequiresConfiguration, "shortcut-target",
+                      fmt::format("the shortcut {} opens {}, which is no program: Retroverse opens shortcuts to "
+                                  "programs only",
+                                  shown, targetShown));
+                return;
+            }
+            if (!m_context.probe->fileExists(target)) {
+                block(LaunchReadiness::EmulatorNotFound, "emulator-not-found",
+                      fmt::format("the program the shortcut {} opens, {}, does not exist", shown, targetShown));
+                return;
+            }
+            if (const auto refused = refusedProgram(target)) {
+                block(LaunchReadiness::RequiresConfiguration, "program-refused",
+                      fmt::format("the shortcut {} opens {}, a command interpreter or a launcher, which Retroverse "
+                                  "never starts",
+                                  shown, *refused));
+                return;
+            }
+            if (shortcut->runAsAdministrator) {
+                m_translation.notes.push_back("the shortcut asks for administrator rights, which Retroverse does not "
+                                              "request: the program starts without them");
+            }
+            request.executable = target;
+            request.arguments = splitArguments(shortcut->arguments);
+            if (!shortcut->workingDirectory.empty() && shortcut->workingDirectory.is_absolute()) {
+                request.workingDirectory = shortcut->workingDirectory;
+            } else {
+                request.workingDirectory = !startFolder.empty() ? startFolder : target.parent_path();
+            }
+            m_translation.program = FoundLocation{target, "shortcut", shown, {}};
+        } else if (extension == ".exe" || extension == ".com") {
+            if (const auto refused = refusedProgram(*file)) {
+                block(LaunchReadiness::RequiresConfiguration, "program-refused",
+                      fmt::format("{} is a command interpreter or a launcher, which Retroverse never starts", *refused));
+                return;
+            }
+            request.executable = *file;
+            request.workingDirectory = !startFolder.empty() ? startFolder : file->parent_path();
+            // A console program runs in cmd.exe's console, which %HIDEWINDOW% hides.
+            request.hideConsoleWindow = m_hideWindow;
+            m_translation.program = FoundLocation{*file, "game-file", shown, {}};
+        } else if (extension == ".url") {
+            auto url = internetShortcutUrl(*file);
+            if (!url) {
+                block(LaunchReadiness::RequiresConfiguration, "shortcut-unreadable",
+                      fmt::format("the Internet Shortcut {} cannot be read: {}", shown, url.error().message));
+                return;
+            }
+            const std::optional<std::string> scheme = launcher::activationScheme(*url);
+            const launcher::ProtocolRule* rule = nullptr;
+            if (scheme && m_context.protocols != nullptr) {
+                const auto found = std::find_if(m_context.protocols->begin(), m_context.protocols->end(),
+                                                [&](const launcher::ProtocolRule& entry) {
+                                                    return core::equalsIgnoreCaseAscii(entry.scheme, *scheme);
+                                                });
+                rule = found == m_context.protocols->end() ? nullptr : &*found;
+            }
+            if (rule == nullptr) {
+                block(LaunchReadiness::RequiresConfiguration, "protocol-not-listed",
+                      fmt::format("the Internet Shortcut {} opens {}, a scheme emulators.json's \"protocols\" do "
+                                  "not list: Retroverse never activates it",
+                                  shown, scheme ? inQuotes(*scheme + ":") : std::string("an address without one")));
+                return;
+            }
+            request.activationUrl = std::move(*url);
+            request.waitStrategy = launcher::WaitStrategy::FollowWindow;
+            request.launcherProcesses = rule->launcherProcesses;
+            m_translation.program = FoundLocation{*file, "internet-shortcut", shown, {}};
+        } else if (extension == ".bat" || extension == ".cmd") {
+            block(LaunchReadiness::RequiresConfiguration, "batch-file",
+                  fmt::format("{} is a batch file, which runs through cmd.exe: Retroverse never starts it", shown));
+            return;
+        } else {
+            block(LaunchReadiness::RequiresConfiguration, "file-not-opened",
+                  fmt::format("Retroverse opens a game's file itself only when it is a shortcut (.lnk), a program "
+                              "(.exe) or an Internet Shortcut (.url), and {} is none: choose another command for {}",
+                              shown, m_system.name.str()));
+            return;
+        }
+        if (m_runInBackground) {
+            request.waitStrategy = launcher::WaitStrategy::FollowWindow;
+        }
+        request.label = fmt::format("{} with {}", m_values->title,
+                                    m_command.label.empty() ? std::string("its own program") : m_command.label);
+        if (const Status valid = launcher::validateLaunchRequest(request); !valid) {
+            block(LaunchReadiness::RequiresConfiguration, "invalid-request", valid.error().toString());
+        }
+        m_translation.request = std::move(request);
     }
 
     /// The program: exactly one %EMULATOR_X% element, or a literal absolute path whose tokens are '~' and %ESPATH%.
@@ -742,6 +999,11 @@ private:
         }
         if (m_translation.program) {
             m_programFolder = m_translation.program->path.parent_path();
+            // "Open the game's file" needs the shell to be cmd.exe, which then never starts (openGameFile()).
+            if (m_opensFile && isCommandShell(m_translation.program->path)) {
+                return;
+            }
+            m_opensFile = false;
             // The request keeps the path as found, which Windows opens alike.
             if (const auto refused = refusedProgram(m_translation.program->path)) {
                 block(LaunchReadiness::RequiresConfiguration, "program-refused",
@@ -1089,6 +1351,9 @@ private:
             return;
         }
         request.arguments = std::move(arguments);
+        if (m_runInBackground) {
+            request.waitStrategy = launcher::WaitStrategy::FollowWindow; // %RUNINBACKGROUND% (I11 step 13)
+        }
         const std::string emulator = m_command.label.empty() ? (m_emulatorName.empty() ? program.text : m_emulatorName)
                                                              : m_command.label;
         request.label = fmt::format("{} with {}", m_values->title, emulator);
@@ -1116,6 +1381,10 @@ private:
     bool m_hideWindow = false;
     bool m_coreSeen = false;
     bool m_startFolderMissing = false;
+    /// I11 step 13: "open the game's file", %RUNINBACKGROUND%, and the %ESCAPESPECIALS% left to report.
+    bool m_opensFile = false;
+    bool m_runInBackground = false;
+    std::optional<CommandToken> m_escapeSpecials;
 };
 
 } // namespace

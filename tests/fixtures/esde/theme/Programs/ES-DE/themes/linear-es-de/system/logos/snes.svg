@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An original fixture logo: a rounded bar, a disc and a stripe. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 64" width="256" height="64">
+  <rect x="4" y="8" width="248" height="48" rx="24" fill="#3A6EA5"/>
+  <circle cx="40" cy="32" r="16" fill="#F2C14E"/>
+  <rect x="72" y="26" width="160" height="12" rx="6" fill="#FFFFFF"/>
+</svg>

@@ -20,6 +20,7 @@
 #include <span>
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 namespace rv::app {
@@ -39,6 +40,17 @@ inline constexpr float kMinBarShare = 0.01f;
 /// whole picture (0, 0, 1, 1) when it has no bar; nothing when it is all black, or the part is narrower or lower than
 /// kMinCropShare (nothing to decide on). Each bar loses one sampled line (the content's edge kept).
 [[nodiscard]] std::optional<glm::vec4> findPictureBounds(std::span<const std::uint8_t> rgba, glm::ivec2 size) noexcept;
+
+/// A picture is black while at most this share of its pixels is lit (a window's border line, a stray cursor).
+inline constexpr float kBlackPictureLitShare = 0.002f;
+
+/// Whether `rgba` (four bytes each) is black: at most kBlackPictureLitShare of its pixels have a red, green or blue
+/// above kBorderBlackLevel. What a capture of an exclusive fullscreen game gives (I11 step 11, ADR-0020 §5). False for
+/// an empty picture.
+[[nodiscard]] bool isBlackPicture(std::span<const std::uint8_t> rgba) noexcept;
+
+/// The mean colour of `rgba`'s pixels (four bytes each), each channel 0 to 255; black for an empty picture.
+[[nodiscard]] glm::vec3 meanPictureColor(std::span<const std::uint8_t> rgba) noexcept;
 
 /// The crop of a captured window, kept steady over its samples.
 class PictureBounds {

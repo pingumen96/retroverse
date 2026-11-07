@@ -50,6 +50,8 @@ public:
     void apply(ui::UiCommand command);
     /// The high-contrast theme (specification §12.4).
     void setHighContrast(bool enabled);
+    /// I11 step 13 (ADR-0020 §5): the running game is in exclusive fullscreen; the panel says so (model "exclusive").
+    void setExclusiveFullscreen(bool exclusive);
 
 private:
     struct Impl;

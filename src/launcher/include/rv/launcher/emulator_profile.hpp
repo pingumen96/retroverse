@@ -7,10 +7,10 @@
 // core::ISystemProbe (App Paths, then paths with '~' and {env:NAME}), so that no machine path appears in code or
 // shipped files (specification §11.1). docs/i2/step-5.md describes the format with an example.
 //
-// Format, schemaVersion 1:
+// Format, schemaVersion 2 (a document of schemaVersion 1 is read too: the same without "programs"):
 //
 //     {
-//       "schemaVersion": 1,
+//       "schemaVersion": 2,
 //       "profiles": [
 //         {
 //           "id": "retroarch",                    // required: [a-z0-9][a-z0-9._-]*, at most 64 characters
@@ -34,7 +34,33 @@
 //       "systemChoices": {                        // optional (I2 step 10): how a system launches, by Retroverse's
 //         "snes": {"command": "bsnes"},           //   choice: an ES-DE command of the system, by its label,
 //         "gb": {"profile": "retroarch"}          //   or one of these profiles, by its id
-//       }
+//       },
+//       "programs": [                             // optional (I11 step 12, ADR-0020 §1): what Retroverse knows of a
+//         {                                       //   program, whichever command or profile starts it
+//           "id": "dolphin",                      // required: as a profile's id
+//           "displayName": "Dolphin",             // default: the id
+//           "files": ["Dolphin.exe"],             // required: the program's file names ('*' and '?' allowed),
+//                                                 //   compared with the file-system casing
+//           "window": {                           // how its windows rank (window_choice.hpp), on every launch
+//             "prefer": [{"titleContains": " | "}],
+//             "skip": [{"classContains": "Splash"}],
+//             "minWidth": 200, "minHeight": 150
+//           },
+//           "vr": {                               // a launch made in VR only
+//             "addArguments": ["-C", "Dolphin.Display.Fullscreen=False"], // right after the program, as written
+//             "dropArguments": ["--fullscreen"],  // the launch's elements equal to one of these, removed
+//             "appendConfig": {                   // a file Retroverse writes, passed with the program's option
+//               "option": "--appendconfig",
+//               "file": "retroarch.cfg",          //   <user data>/launcher/vr/<file>
+//               "joinWith": "|",                  //   the option already given: its value, this, then the file
+//               "lines": ["video_windowed_fullscreen = \"true\""]
+//             },
+//             "inGame": "heavy",                  // light (default) or heavy: the scene renders at less meanwhile
+//             "heavyWith": ["dolphin_libretro.dll"] // heavy when an argument's file name matches one of these
+//           },
+//           "verified": false                     // informational: tried in the headset
+//         }
+//       ]
 //     }
 //
 // Paths of "executable": absolute once expanded; a leading '~' is the user's home folder (ISystemProbe::homeFolder),
@@ -46,6 +72,16 @@
 // id, never as a copied command: the catalog's launch resolution translates it again from the current es_systems.xml
 // at every refresh and launch, and a label or id that no longer exists makes the system "requires launcher
 // configuration", naming it. Choices made through retroverse-cli (assign) and per-game choices live in the database.
+//
+// "programs" (ADR-0020 §1) describe programs, not launches: a launch is matched to one by its executable's file name,
+// whether an ES-DE command or a profile made it (EmulatorProfiles::programFor()), and vr_launch.hpp applies it. The
+// user's programs replace the shipped ones with the same id, and are matched first. Retroverse never writes a program's
+// own configuration: a launch in VR changes the arguments and passes Retroverse's own file.
+//
+// "protocols" (ADR-0020 §3, I11 step 13) list the schemes an Internet Shortcut (.url) of the "open the game's file"
+// command may activate, each with its launcher's own processes, whose windows are never the game's:
+//     "protocols": [{"scheme": "steam", "launcherProcesses": ["steam.exe", "steamwebhelper.exe"]}]
+// The user's rule for a scheme replaces the shipped one; a scheme listed nowhere is never activated.
 
 #include <chrono>
 #include <cstdint>
@@ -64,6 +100,7 @@
 #include <rv/launcher/arg_template.hpp>
 #include <rv/launcher/environment.hpp>
 #include <rv/launcher/launch_request.hpp>
+#include <rv/launcher/window_choice.hpp>
 
 namespace rv::core {
 class Paths;
@@ -71,7 +108,9 @@ class Paths;
 
 namespace rv::launcher {
 
-inline constexpr int kEmulatorProfilesSchemaVersion = 1;
+/// The version written; kOldestEmulatorProfilesSchemaVersion and later are read.
+inline constexpr int kEmulatorProfilesSchemaVersion = 2;
+inline constexpr int kOldestEmulatorProfilesSchemaVersion = 1;
 /// The shipped profiles, relative to the asset root.
 inline constexpr std::string_view kShippedProfilesAsset = "launcher/emulators.json";
 /// The user's profiles, in the configuration folder (core::Paths::configDir()).
@@ -184,22 +223,108 @@ struct LaunchChoice {
 /// The per-system choices of a document: ES-DE system name (compared exactly) -> choice.
 using SystemChoices = std::map<std::string, LaunchChoice, std::less<>>;
 
-/// The profiles of one document, in their order, its per-system choices, and an issue for each problem: a profile or a
-/// choice with an error is left out (the others are kept); a document that cannot be read, is not an object, has
-/// another schemaVersion or no "profiles" array gives no profile and no choice.
+/// How much of the GPU a program takes while its game shows in VR (ADR-0020 §1): a heavy one leaves the scene less
+/// (its render scale's cap is lower while the game shows).
+enum class InGameLoad : std::uint8_t {
+    Light,
+    Heavy,
+};
+
+/// "light", "heavy".
+[[nodiscard]] std::string_view toString(InGameLoad load) noexcept;
+
+/// The longest name of a VR append-file, and the longest of its lines.
+inline constexpr std::size_t kMaxAppendFileNameLength = 64;
+inline constexpr std::size_t kMaxAppendLineLength = 1024;
+
+/// A file Retroverse writes for a launch in VR and passes with the program's own option (RetroArch's --appendconfig):
+/// the program reads it over its own configuration, which Retroverse never writes.
+struct AppendConfig {
+    /// The program's option, an argument of its own ("--appendconfig"); the file's path follows it.
+    std::string option;
+    /// The file's name under <user data>/launcher/vr: letters, digits, '.', '_', '-', not starting with '.'.
+    std::string fileName;
+    /// When the launch already passes `option`: its value, this text, then the file's path (RetroArch reads "a|b");
+    /// empty: the option and the file are added in front anyway.
+    std::string joinWith;
+    /// The file's lines, each ended by a line feed (no line break inside one).
+    std::vector<std::string> lines;
+
+    friend bool operator==(const AppendConfig&, const AppendConfig&) = default;
+};
+
+/// What a program does differently when its game is played in VR.
+struct VrSettings {
+    /// Added right after the program, before the launch's own arguments, as written (no template).
+    std::vector<std::string> addArguments;
+    /// The launch's arguments equal to one of these are removed ("-f", "--fullscreen").
+    std::vector<std::string> dropArguments;
+    std::optional<AppendConfig> appendConfig;
+    InGameLoad inGame = InGameLoad::Light;
+    /// File names ('*' and '?' allowed): an argument naming one of them makes the launch heavy (a RetroArch core).
+    std::vector<std::string> heavyWith;
+
+    friend bool operator==(const VrSettings&, const VrSettings&) = default;
+};
+
+/// A program Retroverse knows (ADR-0020 §1), whichever command or profile starts it.
+struct ProgramProfile {
+    /// As EmulatorProfile::id.
+    std::string id;
+    std::string displayName;
+    /// Its file names, '*' and '?' allowed ("duckstation-qt-*.exe").
+    std::vector<std::string> files;
+    /// How its windows rank, on every launch (the window followed, the foreground).
+    WindowRules window;
+    VrSettings vr;
+    /// Informational: its launch in VR was tried in the headset.
+    bool verified = false;
+    ProfileOrigin origin = ProfileOrigin::Shipped;
+    std::string source;
+
+    /// True when `executable`'s file name matches one of files (the file-system casing, as NTFS compares names).
+    [[nodiscard]] bool matches(const std::filesystem::path& executable) const;
+
+    friend bool operator==(const ProgramProfile&, const ProgramProfile&) = default;
+};
+
+/// A protocol a game may be activated through (I11 step 13, ADR-0020 §3): an Internet Shortcut (.url) of a store's
+/// launcher opens only when its scheme is one of these.
+struct ProtocolRule {
+    /// The scheme in lower case ("steam"), as launcher::activationScheme() reads it; never one checkActivationUrl()
+    /// refuses.
+    std::string scheme;
+    /// The launcher's own processes (LaunchRequest::launcherProcesses): file names, no folder.
+    std::vector<std::string> launcherProcesses;
+    ProfileOrigin origin = ProfileOrigin::Shipped;
+    std::string source;
+
+    friend bool operator==(const ProtocolRule&, const ProtocolRule&) = default;
+};
+
+/// The profiles of one document, in their order, its per-system choices, its programs, and an issue for each problem: a
+/// profile, a choice or a program with an error is left out (the others are kept); a document that cannot be read, is
+/// not an object, has an unknown schemaVersion or no "profiles" array gives no profile, no choice and no program.
 struct ProfileDocument {
     std::vector<EmulatorProfile> profiles;
     /// "systemChoices": {"<system>": {"command": "<label>"} or {"profile": "<id>"}}. Whether the label or the profile
     /// exists is the launch resolution's to tell (the profile may come from the other document).
     SystemChoices systemChoices;
+    /// "programs" (schemaVersion 2).
+    std::vector<ProgramProfile> programs;
+    /// "protocols" (schemaVersion 2): [{"scheme": "steam", "launcherProcesses": ["steam.exe"]}].
+    std::vector<ProtocolRule> protocols;
     std::vector<ProfileIssue> issues;
 };
 
 /// Parses a profile document (`file` names it in issues and EmulatorProfile::source). Issues: ParseError (wrong JSON
 /// types, missing or unknown fields), ValidationFailed (an invalid id or name, a template that does not parse, an
 /// environment variable outside the allow-list, a relative executable path, a negative timeout, a second profile with
-/// the same id; a choice for a system name that is no folder name, an empty label, a malformed profile id),
-/// Unsupported (another schemaVersion, checked first).
+/// the same id; a choice for a system name that is no folder name, an empty label, a malformed profile id; a program
+/// without files, a file name with a folder, an append-file name that is no plain file name, a line with a line break,
+/// a second program with the same id; a scheme activationScheme() does not read, one checkActivationUrl() refuses, a
+/// second rule for a scheme), Unsupported (a schemaVersion other than 1 and 2, checked first). "programs" and
+/// "protocols" in a document of schemaVersion 1 are unknown fields.
 [[nodiscard]] ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string_view file,
                                                    ProfileOrigin origin);
 
@@ -214,6 +339,12 @@ struct EmulatorProfiles {
     std::vector<EmulatorProfile> profiles;
     /// The shipped document's choices, each system's replaced by the user's choice for it.
     SystemChoices systemChoices;
+    /// The shipped programs in their order, each replaced in place by the user's program with the same id, then the
+    /// user's other programs in their order.
+    std::vector<ProgramProfile> programs;
+    /// The shipped protocols in their order, each replaced in place by the user's rule for its scheme, then the user's
+    /// other rules.
+    std::vector<ProtocolRule> protocols;
     /// The shipped document's issues, then the user's. A user profile left out for an error does not replace the
     /// shipped one with its id, nor does a user choice left out replace the shipped choice of its system.
     std::vector<ProfileIssue> issues;
@@ -223,6 +354,11 @@ struct EmulatorProfiles {
     [[nodiscard]] std::vector<const EmulatorProfile*> serving(std::string_view system) const;
     /// Retroverse's choice for `system` (emulators.json's "systemChoices"), or null.
     [[nodiscard]] const LaunchChoice* systemChoice(std::string_view system) const noexcept;
+    /// The program `executable` is: the first of the user's programs whose files match its file name, else the first
+    /// shipped one; null when none does.
+    [[nodiscard]] const ProgramProfile* programFor(const std::filesystem::path& executable) const;
+    /// The rule of `scheme` (compared ignoring ASCII case), or null: a scheme not listed is never activated.
+    [[nodiscard]] const ProtocolRule* protocolFor(std::string_view scheme) const noexcept;
 };
 
 /// Merges two documents as EmulatorProfiles describes.

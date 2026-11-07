@@ -74,10 +74,12 @@ public:
     }
 
     [[nodiscard]] esde::TranslationContext context() const {
-        return esde::TranslationContext{profile, romRoot, &findRules, &probe};
+        return esde::TranslationContext{profile, romRoot, &findRules, &probe, nullptr, &protocols};
     }
 
     catalog::LibraryProfile profile;
+    /// The protocols an Internet Shortcut may activate (I11 step 13): none unless a test adds them.
+    std::vector<launcher::ProtocolRule> protocols;
     esde::ResolvedRoot romRoot;
     esde::FindRules findRules;
     FakeSystemProbe probe;

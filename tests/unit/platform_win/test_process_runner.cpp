@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <vector>
@@ -30,10 +31,13 @@
 #include <crtdbg.h>
 #include <stdlib.h>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 
 #include <rv/core/paths.hpp>
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/launcher/exit_status.hpp>
 #include <rv/launcher/launch_request.hpp>
 #include <rv/launcher/launch_session.hpp>
@@ -614,6 +618,38 @@ TEST_CASE("platform_win/process_runner: a child that breaks away from the job is
     waitForExit(child);
 }
 
+TEST_CASE("platform_win/process_runner: FollowWindow adopts the window of a child outside the job and waits for it",
+          "[platform_win][process_runner][activation]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    const std::filesystem::path logFile = scratch.path() / "wrapper.log";
+    rv::platform_win::Win32ProcessRunner runner;
+    WakeSignal wake;
+    // I11 step 13 (ADR-0020 §4): a launcher that starts the game outside its tree and exits at once.
+    LaunchRequest request = fakeRequest({"--spawn-child-and-exit", "--child-breakaway", "--frames", "30",
+                                         "--min-window-ms", "2500", "--exit-code", "5"},
+                                        WaitStrategy::FollowWindow);
+    request.outputLog = logFile;
+    LaunchSession session(request, runner);
+    const auto begun = LaunchClock::now();
+    session.start(begun, {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    if (session.outcome().exitCode == 3u) {
+        SKIP("a job this test runs in forbids breaking away (the wrapper could not start its child)");
+    }
+    const std::string log = readText(logFile);
+    const std::size_t at = log.find("started process ");
+    REQUIRE(at != std::string::npos);
+    const auto child = static_cast<std::uint32_t>(std::stoul(log.substr(at + 16)));
+    CHECK(session.state() == SessionState::Returned);
+    CHECK(session.outcome().exitProcessId == child);
+    CHECK(session.outcome().exitCode == 5u);
+    CHECK(session.outcome().processesSeen == 2);
+    CHECK(session.times().firstWindow.has_value());
+    CHECK(LaunchClock::now() - begun >= std::chrono::milliseconds(2500));
+    CHECK_FALSE(isRunning(child));
+}
+
 TEST_CASE("platform_win/process_runner: an exception before the program runs ends it and is reported as an error",
           "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();
@@ -893,4 +929,80 @@ TEST_CASE("platform_win/process_runner: in the background the fake's window is s
     CHECK(log.at("inputAtEnd").contains("skipped"));
     CHECK(log.at("stealFocus").contains("skipped"));
     CHECK_FALSE(log.at("foregroundHelper").at("started").get<bool>());
+}
+
+// I11 step 11 (ADR-0020 §2): the game's window followed through what a real emulator shows besides it, in the
+// background (the fake's windows are inactive tool windows off every monitor, the game's the largest). The session's
+// window is sampled while the game runs; its title says which window it is.
+namespace {
+
+std::string titleOf(std::uintptr_t window) {
+    std::array<wchar_t, 256> text{};
+    const int length = GetWindowTextW(reinterpret_cast<HWND>(window), text.data(), static_cast<int>(text.size()));
+    return rv::core::wideToUtf8Lossy(std::wstring_view(text.data(), static_cast<std::size_t>(std::max(length, 0))));
+}
+
+/// The titles of the windows the session followed, in order (each change once), while the fake ran `mode`.
+std::vector<std::string> followedTitles(std::vector<std::string> arguments) {
+    rv::platform_win::Win32ProcessRunner runner;
+    WakeSignal wake;
+    for (const char* argument : {"--frames", "240", "--min-window-ms", "4000", "--exit-timeout-ms", "30000"}) {
+        arguments.emplace_back(argument);
+    }
+    LaunchRequest request = fakeRequest(std::move(arguments));
+    request.timeouts.windowTimeout = 20s;
+    LaunchSession session(request, runner);
+    session.start(LaunchClock::now(), {wake.callback()});
+    std::vector<std::string> titles;
+    std::uintptr_t last = 0;
+    const bool ended = driveUntil(session, wake, [&] {
+        const std::uintptr_t window = session.window();
+        if (window != 0 && window != last) {
+            last = window;
+            titles.push_back(titleOf(window));
+        }
+        return session.finished();
+    });
+    REQUIRE(ended);
+    CHECK(session.state() == SessionState::Returned);
+    return titles;
+}
+
+} // namespace
+
+TEST_CASE("platform_win/process_runner: the game's window is followed past a splash, a main window and a remake",
+          "[platform_win][process_runner][background][window]") {
+    REQUIRE_FAKE_EMULATOR();
+    REQUIRE(rv::platform_win::backgroundLaunchesRequested());
+    const std::string game = "Retroverse fake emulator";
+
+    SECTION("a splash first, then the game beside it") {
+        const auto titles = followedTitles({"--window-mode", "splash"});
+        INFO(fmt::format("{}", fmt::join(titles, " | ")));
+        REQUIRE(titles.size() >= 2);
+        CHECK(titles.front() == "Retroverse fake emulator: splash");
+        CHECK(titles.back() == game);
+    }
+    SECTION("a main window beside the game's all along") {
+        const auto titles = followedTitles({"--window-mode", "two-windows"});
+        INFO(fmt::format("{}", fmt::join(titles, " | ")));
+        REQUIRE_FALSE(titles.empty());
+        CHECK(titles.back() == game);
+    }
+    SECTION("the game's window made again while a status window stays") {
+        ScratchDir scratch;
+        const std::filesystem::path logFile = scratch.path() / "recreate.json";
+        const auto titles = followedTitles({"--window-mode", "recreate", "--log", rv::core::pathToUtf8(logFile)});
+        INFO(fmt::format("{}", fmt::join(titles, " | ")));
+        // Never left on the status window. Windows may give the new window the old one's handle, which the session
+        // then keeps (VR's capture starts again on it once the old capture reports its window closed).
+        REQUIRE_FALSE(titles.empty());
+        CHECK(titles.back() == game);
+        CHECK(readJson(logFile).contains("recreatedMs"));
+    }
+    SECTION("a window shown late") {
+        const auto titles = followedTitles({"--window-delay-ms", "1500"});
+        REQUIRE(titles.size() == 1);
+        CHECK(titles.front() == game);
+    }
 }

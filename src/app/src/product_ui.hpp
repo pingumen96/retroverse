@@ -11,6 +11,7 @@
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/game_screens.hpp>
+#include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/app/library_watch.hpp>
 #include <rv/app/wizard_flow.hpp>
@@ -53,6 +54,9 @@ struct LaunchHooks {
     std::function<void(const std::string& gameId)> preparing;
     /// A launch is about to start: called before the window's hand-over and the process, on the host's wake.
     std::function<void()> starting;
+    /// I11 step 12 (ADR-0020 §1): the request about to start, adapted to its program (in VR, its arguments and
+    /// append-file), after `starting`; its record says how.
+    LaunchFlow::RequestAdapter adapting;
     /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned;
     /// also for a prepared launch that never started (refused during the insertion).
     std::function<void()> ended;
@@ -328,6 +332,10 @@ public:
     [[nodiscard]] bool launchActive() const noexcept;
     /// The running launch's emulator window while it shows one (launcher::LaunchSession::window, I10 step 6), else 0.
     [[nodiscard]] std::uintptr_t launchWindow() const noexcept;
+    /// I11 step 13 (ADR-0020 §5): the running game is in exclusive fullscreen (the runner's sign, or one noted here:
+    /// the VR capture stayed black), which the session panel says.
+    [[nodiscard]] bool launchExclusiveFullscreen() const noexcept;
+    void noteExclusiveFullscreen();
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();

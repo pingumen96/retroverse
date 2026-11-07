@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
@@ -184,8 +185,10 @@ TEST_CASE("cli/profiles: the systems of the standard fixture, their commands and
     const nlohmann::json& snes = systemNamed(report, "snes");
     CHECK(snes.at("chosen").at("source") == "esde-system");
     CHECK(snes.at("alternativeEmulator") == "Fake Emulator (Hidden Console)");
-    CHECK(snes.at("commands")[2].at("readiness") == "requires-configuration");
-    CHECK(snes.at("commands")[2].at("blockers").size() == 2);
+    // "Shortcut or script" opens each game's file (I11 step 13).
+    CHECK(snes.at("commands")[2].at("readiness") == "ready");
+    CHECK(snes.at("commands")[2].at("blockers").empty());
+    CHECK(snes.at("commands")[2].at("notes").size() == 1);
     const nlohmann::json& psx = systemNamed(report, "psx");
     CHECK(psx.at("commands")[1].at("notes").size() == 1); // the %INJECT% file is each game's
     CHECK(psx.at("commands")[2].at("readiness") == "core-not-found");
@@ -294,6 +297,103 @@ TEST_CASE("cli/launch: --dry-run on the standard fixture", "[cli][launch]") {
         CHECK(run.err.find("--path") != std::string::npos);
         CHECK(setup.run({"launch", "--dry-run", "--system", "gb", "--path", "a/../b.gb"}).code == ExitCode::UsageError);
         CHECK(setup.run({"launch", "--dry-run", "--system", "gb", "--path", "Tiny*.gb"}).code == ExitCode::UsageError);
+    }
+    CHECK(treeOf(setup.fixture.root()) == before);
+}
+
+TEST_CASE("cli/launch: --dry-run --vr adapts the launch to its program (I11 step 12)", "[cli][launch]") {
+    const LoggingReset loggingReset;
+    const Setup setup = standardSetup();
+    const auto before = treeOf(setup.fixture.root());
+    const fs::path emulator = setup.fixture.path("Programs/ES-DE/Emulators/FakeEmulator/fake-emulator.exe");
+    const fs::path rom = setup.fixture.path("roms/gb/Tiny Tennis (Europe).gb");
+    // The fixture's emulator as a program of the user's emulators.json (ADR-0020 §1).
+    REQUIRE(rv::core::writeTextFileAtomic(setup.data / "config" / "emulators.json", R"({
+  "schemaVersion": 2,
+  "profiles": [],
+  "programs": [{
+    "id": "fake-emulator", "displayName": "Fake Emulator", "files": ["fake-emulator.exe"],
+    "window": {"prefer": [{"classContains": "FakeRender"}]},
+    "vr": {"addArguments": ["--windowed"], "dropArguments": ["--fullscreen"],
+           "appendConfig": {"option": "--config", "file": "fake.cfg", "lines": ["a = 1", "b = \"two\""]}}
+  }]
+})").has_value());
+    const fs::path vrFolder = setup.data / "launcher" / "vr";
+
+    SECTION("JSON: the argv in VR, the program, the append-file shown and not written") {
+        const RunResult run = setup.run(
+            {"launch", "--dry-run", "--system", "gb", "--path", "Tiny Tennis (Europe).gb", "--vr", "--json"});
+        INFO(run.err);
+        REQUIRE(run.code == ExitCode::Ok);
+        const nlohmann::json json = nlohmann::json::parse(run.out);
+        // The desktop's argv with the program's arguments right after the program.
+        const RunResult desktop =
+            setup.run({"launch", "--dry-run", "--system", "gb", "--path", "Tiny Tennis (Europe).gb", "--json"});
+        REQUIRE(desktop.code == ExitCode::Ok);
+        nlohmann::json expected = nlohmann::json::parse(desktop.out).at("request").at("argv");
+        REQUIRE(expected.size() >= 3);
+        CHECK(expected.at(0) == utf8(emulator));
+        CHECK(expected.back() == utf8(rom));
+        expected.insert(expected.begin() + 1, {"--windowed", "--config", utf8(vrFolder / "fake.cfg")});
+        CHECK(json.at("request").at("argv") == expected);
+        const nlohmann::json& vr = json.at("vr");
+        CHECK(vr.at("program") == "fake-emulator");
+        CHECK(vr.at("programOrigin") == "user");
+        CHECK(vr.at("added") == nlohmann::json::array({"--windowed", "--config", utf8(vrFolder / "fake.cfg")}));
+        CHECK(vr.at("dropped").empty());
+        CHECK(vr.at("appendFile").at("path") == utf8(vrFolder / "fake.cfg"));
+        CHECK(vr.at("appendFile").at("bytes") == "a = 1\nb = \"two\"\n");
+        CHECK(vr.at("inGame") == "light");
+        CHECK(vr.at("refused").is_null());
+        CHECK_FALSE(json.at("commandLine").is_null());
+        CHECK(json.at("commandLine").get<std::string>().find("--windowed") != std::string::npos);
+        CHECK_FALSE(fs::exists(vrFolder));
+    }
+    SECTION("without --vr the launch is as asked") {
+        const RunResult run =
+            setup.run({"launch", "--dry-run", "--system", "gb", "--path", "Tiny Tennis (Europe).gb", "--json"});
+        REQUIRE(run.code == ExitCode::Ok);
+        const nlohmann::json json = nlohmann::json::parse(run.out);
+        const nlohmann::json& argv = json.at("request").at("argv");
+        CHECK(std::find(argv.begin(), argv.end(), "--windowed") == argv.end());
+        CHECK(std::find(argv.begin(), argv.end(), "--config") == argv.end());
+        CHECK_FALSE(json.contains("vr"));
+    }
+    SECTION("the text form") {
+        const RunResult run =
+            setup.run({"launch", "--dry-run", "--system", "gb", "--path", "Tiny Tennis (Europe).gb", "--vr"});
+        INFO(run.err);
+        CHECK(run.code == ExitCode::Ok);
+        CHECK(run.out.find("Fake Emulator (program 'fake-emulator', user): 3 argument(s) added, 0 dropped, load light") !=
+              std::string::npos);
+        CHECK(run.out.find("VR append-file") != std::string::npos);
+        CHECK(run.out.find("  b = \"two\"") != std::string::npos);
+        CHECK(run.out.find("Argv (in VR):") != std::string::npos);
+        CHECK(run.out.find("  [1] --windowed") != std::string::npos);
+        CHECK_FALSE(fs::exists(vrFolder));
+    }
+    SECTION("--vr is a dry run's") {
+        const RunResult run = setup.run({"launch", "--game", "g0000000000000001", "--vr"});
+        CHECK(run.code == ExitCode::UsageError);
+        CHECK(run.err.find("--vr") != std::string::npos);
+    }
+    SECTION("profiles: the programs, and the one each system's launch starts") {
+        const RunResult run = setup.run({"profiles", "--json"});
+        INFO(run.err);
+        REQUIRE(run.code == ExitCode::Ok);
+        const nlohmann::json report = nlohmann::json::parse(run.out);
+        bool shippedRetroArch = false;
+        bool userFake = false;
+        for (const nlohmann::json& program : report.at("programs")) {
+            shippedRetroArch |= program.at("id") == "retroarch" && program.at("origin") == "shipped";
+            userFake |= program.at("id") == "fake-emulator" && program.at("origin") == "user";
+        }
+        CHECK(shippedRetroArch);
+        CHECK(userFake);
+        CHECK(systemNamed(report, "gb").at("programProfile") == "fake-emulator");
+        const RunResult text = setup.run({"profiles"});
+        CHECK(text.out.find("Programs in use") != std::string::npos);
+        CHECK(text.out.find("program           Fake Emulator ('fake-emulator')") != std::string::npos);
     }
     CHECK(treeOf(setup.fixture.root()) == before);
 }

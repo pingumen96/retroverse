@@ -28,6 +28,7 @@ ExitCode runLibrary(CommandContext& context);
 ExitCode runDb(CommandContext& context);
 ExitCode runImport(CommandContext& context);
 ExitCode runSystems(CommandContext& context);
+ExitCode runIdentity(CommandContext& context);
 ExitCode runGames(CommandContext& context);
 ExitCode runSearch(CommandContext& context);
 ExitCode runShow(CommandContext& context);

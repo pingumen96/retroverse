@@ -85,7 +85,7 @@ inline constexpr std::array<std::string_view, 6> kReadinessKeys{"source-unavaila
 /// library-unreadable: ES-DE's configuration cannot be read). tests/unit/app/test_catalog_worker.cpp collects the codes
 /// those sources report and checks that this list names each. A code the document does not name shows its readiness's
 /// label alone (the blocker's own words in Informazioni and in the game-session panel).
-inline constexpr std::array<std::string_view, 33> kBlockerCodes{
+inline constexpr std::array<std::string_view, 38> kBlockerCodes{
     "library-unreadable",
     "source-unavailable",    "rom-missing",          "rom-folder-unresolved", "rom-root-unknown",
     "system-unknown",        "system-not-configured", "no-command",           "choice-stale",
@@ -94,7 +94,10 @@ inline constexpr std::array<std::string_view, 33> kBlockerCodes{
     "install-unknown",       "invalid-request",      "token-unsupported",    "token-malformed",
     "command-placeholder",   "inject-file",          "start-folder-missing", "start-folder-repeated",
     "start-folder-glued",    "start-folder-relative", "find-rules-missing",  "find-rule-undecided",
-    "emulator-not-found",    "core-not-found",       "core-malformed",           "core-repeated"};
+    "emulator-not-found",    "core-not-found",       "core-malformed",           "core-repeated",
+    // I11 step 13: ES-DE's "open the game's file".
+    "file-not-opened",       "shortcut-unreadable",  "shortcut-target",          "batch-file",
+    "protocol-not-listed"};
 /// What the list says while it shows no game of the catalog database because there is none to show yet (the
 /// data model's "notice"): the catalog is being opened, there is no library.json (retroverse-cli library create), no
 /// catalog database (retroverse-cli import), the user data directory lies inside the library's folders (the

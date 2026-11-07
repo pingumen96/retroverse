@@ -16,7 +16,7 @@ namespace rv::esde {
 namespace {
 
 /// The whitelist, by name.
-constexpr std::array<SettingKey, 9> kSettingKeys{{
+constexpr std::array<SettingKey, 10> kSettingKeys{{
     {"AlternativeEmulatorPerGame", "bool"},
     {"LegacyGamelistFileLocation", "bool"},
     {"MAMENameStripExtraInfo", "bool"},
@@ -25,6 +25,7 @@ constexpr std::array<SettingKey, 9> kSettingKeys{{
     {"ROMDirectory", "string"},
     {"ShowHiddenFiles", "bool"},
     {"ShowHiddenGames", "bool"},
+    {"Theme", "string"},
     {"UIMode", "string"},
 }};
 
@@ -52,6 +53,13 @@ void apply(EsdeSettings& settings, std::string_view key, const pugi::xml_node no
         settings.issues.push_back(
             issueOf(catalog::IssueSeverity::Warning, "setting-malformed", file, fmt::format("{} {}", key, reason)));
     };
+    if (key == "Theme") {
+        if (!attribute) {
+            malformed("has no value attribute: ES-DE runs its default theme");
+        }
+        settings.theme = std::string(value);
+        return;
+    }
     if (key == "ROMDirectory" || key == "MediaDirectory") {
         if (!attribute) {
             malformed("has no value attribute: ES-DE reads it as empty, its default");

@@ -280,7 +280,7 @@ TEST_CASE("launcher/emulator_profile: documents", "[launcher][emulator_profile]"
         const ProfileDocument missing = parseProfileDocument(parsed(R"({"profiles": []})"), "f.json",
                                                              ProfileOrigin::User);
         CHECK(onlyIssue(missing).error.code == ErrorCode::ParseError);
-        const ProfileDocument newer = parseProfileDocument(parsed(R"({"schemaVersion": 2, "profiles": 7})"), "f.json",
+        const ProfileDocument newer = parseProfileDocument(parsed(R"({"schemaVersion": 3, "profiles": 7})"), "f.json",
                                                            ProfileOrigin::User);
         CHECK(onlyIssue(newer).error.code == ErrorCode::Unsupported);
         CHECK(onlyIssue(newer).error.context == "f.json:/schemaVersion");

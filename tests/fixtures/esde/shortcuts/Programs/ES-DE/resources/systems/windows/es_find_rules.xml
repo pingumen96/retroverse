@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- ES-DE's operating system shell, found as ES-DE finds it: cmd.exe on the executable search path. Retroverse never
+     starts it: it opens the game's file itself (I11 step 13). -->
+<ruleList>
+    <emulator name="OS-SHELL">
+        <rule type="systempath">
+            <entry>cmd.exe</entry>
+        </rule>
+    </emulator>
+</ruleList>

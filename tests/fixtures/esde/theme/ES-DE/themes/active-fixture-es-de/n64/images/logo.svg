@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An original fixture logo: three squares. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 64" width="192" height="64">
+  <rect x="8" y="8" width="48" height="48" fill="#C8553D"/>
+  <rect x="72" y="8" width="48" height="48" fill="#2E86AB"/>
+  <rect x="136" y="8" width="48" height="48" fill="#3BB273"/>
+</svg>

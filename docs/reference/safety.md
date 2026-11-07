@@ -46,11 +46,28 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   show or focus a window is a desktop test. Check a change with `python -I scripts/focus_watch.py --watch build/<preset>
   --out build/focus/<name>.json -- pwsh -NoProfile -File scripts/test.ps1 [-Preset <preset>]` (exit 1 on a foreground
   change to, or a visible window of, a process of the build; read-only).
-- No brand logos, commercial artwork or trademarked names in `assets/` (style §1, §17.2). Every third-party asset
+- No brand logos, commercial artwork or trademarked names in `assets/` (style §1, §17.2; still absolute after
+  ADR-0019). Every third-party asset
   needs provenance and license entries in `assets/registry/` before it is committed; `assets/staging/` is never
   committed or packaged. The user's covers and clips are read at runtime only, never copied into assets, fixtures or
   goldens: tests generate theirs with invented titles (`fixture_payloads.hpp`), and the real room is checked through
   `scripts/real-library.ps1` with its outputs under `build/`.
+- The systems' identity is user content too (ADR-0019):
+  - **Sources:** real names, logos, descriptions and colours are read at runtime from ES-DE's themes, read-only;
+    `Theme` is the only theme key of `es_settings.xml` that is read. Console models are read from
+    `<user data>/content/consoles/`, which only `retroverse-cli content` writes.
+  - **Never copied:** none of it goes into `assets/`, fixtures or goldens, or is packaged. Derived images stay under
+    `<user data>/cache/`.
+  - **Tests:** they use the invented theme of `tests/fixtures/esde/theme` and original fixture models made at test
+    time. Screenshots of real rooms stay under `build/`.
+  - **No downloader:** the user fetches a model by hand, and its provenance and licence go into its `console.json`.
+    The models' sources live in the private `retroverse-content` repository, never in this one.
+- Retroverse never writes an emulator's own configuration (ADR-0020 §1). A VR launch changes arguments and adds
+  Retroverse's own append-file under `<user data>/launcher/vr/`. `cmd.exe` never runs:
+  - a `.lnk` launches its target under ADR-0006's checks;
+  - a `.url` launches only through a listed protocol (`ShellExecuteExW`, the URL one value).
+
+  In automated runs both are refused unless the target is allow-listed, and a protocol never is.
 - Changing the vcpkg baseline, the toolchain or a decision recorded in `docs/decisions/` requires a new ADR.
 - Keep scope to the current milestone; park ideas in `BACKLOG.md`.
 

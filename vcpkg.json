@@ -9,6 +9,7 @@
     "catch2",
     "fastgltf",
     "glm",
+    "lunasvg",
     {
       "name": "imgui",
       "features": [

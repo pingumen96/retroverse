@@ -52,7 +52,8 @@ struct SettingKey {
 };
 
 /// The keys Retroverse reads: ROMDirectory, MediaDirectory, ShowHiddenFiles, ShowHiddenGames, ParseGamelistOnly,
-/// LegacyGamelistFileLocation, AlternativeEmulatorPerGame, MAMENameStripExtraInfo and UIMode. Nothing else is read.
+/// LegacyGamelistFileLocation, AlternativeEmulatorPerGame, MAMENameStripExtraInfo, Theme (I11 step 1, ADR-0019 §2) and
+/// UIMode. Nothing else is read.
 [[nodiscard]] std::span<const SettingKey> settingKeys() noexcept;
 
 /// The settings Retroverse uses, with ES-DE 3.4.1's defaults where the file does not set them.
@@ -73,6 +74,9 @@ struct EsdeSettings {
     /// and bracketed parts (mameName()).
     bool mameNameStripExtraInfo = true;
     UiMode uiMode = UiMode::Full;            ///< UIMode ("full" for any value ES-DE does not know)
+    /// Theme as written: the folder name of ES-DE's active theme; empty (the default) is linear-es-de
+    /// (esde::activeThemeName()).
+    std::string theme;
     /// What was read differently than written ("setting-malformed": a boolean that is neither true nor false, an
     /// unknown UIMode, a value attribute missing), a key under another element type ("setting-wrong-type", which
     /// ES-DE ignores), a key set twice ("setting-repeated", the last counts), the legacy file ("settings-legacy-file")

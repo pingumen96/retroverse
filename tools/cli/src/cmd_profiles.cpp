@@ -5,8 +5,9 @@
 // <alternativeEmulator>, the first command), its readiness without a game, the find rule and entry that found the
 // program and the core, the blockers; then every command of the system
 // and every profile serving it with their own readiness, so that a system that cannot launch shows what could. What
-// depends on each game (its file, its <altemulator>, an %INJECT% file) is the launch's: `launch --dry-run`. Nothing is
-// started or written. Exit codes: 0; 1 with --system when that system is not ready; 2 for invalid options, an unknown
+// depends on each game (its file, its <altemulator>, an %INJECT% file) is the launch's: `launch --dry-run`. I11 step
+// 12: the programs of emulators.json (ADR-0020 §1) with what each does in VR, the program each system's launch starts,
+// and which programs the library's launches use. Nothing is started or written. Exit codes: 0; 1 with --system when that system is not ready; 2 for invalid options, an unknown
 // system or no library.json; 3 when ES-DE's configuration or the results cannot be read or written.
 
 #include <array>
@@ -17,6 +18,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -52,6 +54,28 @@ std::string labelText(const std::string& label) {
     return label.empty() ? std::string("(unlabelled)") : label;
 }
 
+/// The program a translation starts (I11 step 12), when it found one that emulators.json describes.
+const launcher::ProgramProfile* programOf(const LaunchLibrary& library, const catalog::LaunchTranslation& translation) {
+    return translation.program ? library.profiles.programFor(translation.program->path) : nullptr;
+}
+
+/// What a program does in VR, in a few words.
+std::string vrSummary(const launcher::ProgramProfile& program) {
+    const launcher::VrSettings& vr = program.vr;
+    std::vector<std::string> parts;
+    if (!vr.addArguments.empty()) {
+        parts.push_back(fmt::format("adds {}", fmt::join(vr.addArguments, " ")));
+    }
+    if (!vr.dropArguments.empty()) {
+        parts.push_back(fmt::format("drops {}", fmt::join(vr.dropArguments, " ")));
+    }
+    if (vr.appendConfig) {
+        parts.push_back(fmt::format("passes {} {}", vr.appendConfig->option, vr.appendConfig->fileName));
+    }
+    parts.push_back(fmt::format("load {}", launcher::toString(vr.inGame)));
+    return fmt::format("{}", fmt::join(parts, "; "));
+}
+
 void writeText(const LaunchLibrary& library, const Report& report, Output& out) {
     const auto line = [&](std::string_view label, const std::string& text) {
         out.writeLine(fmt::format("{:<18}{}", label, text));
@@ -70,6 +94,12 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
                                                                  launcher::toString(entry.executable->rule),
                                                                  entry.executable->entry)
                                                    : fmt::format("not found: {}", entry.executable.error().message)));
+    }
+    line("Programs", fmt::format("{}{}", library.profiles.programs.size(), library.profiles.programs.empty() ? "" : ":"));
+    for (const launcher::ProgramProfile& program : library.profiles.programs) {
+        out.writeLine(fmt::format("  {:<16}{} ({}, {}): VR {}{}", program.id, program.displayName,
+                                  launcher::toString(program.origin), fmt::join(program.files, ", "), vrSummary(program),
+                                  program.verified ? "; verified" : ""));
     }
     if (!library.assignedChoices.empty()) {
         line("Assigned", fmt::format("{} (the catalog database, retroverse-cli assign; before emulators.json's):",
@@ -94,6 +124,19 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
     for (const auto& [readiness, count] : counts) {
         summary += fmt::format("{}{} {}", summary.empty() ? "" : ", ", count, catalog::describe(readiness));
     }
+    // The programs the systems' launches start (I11 step 12).
+    std::map<std::string, std::vector<std::string>> inUse;
+    for (const SystemReport& system : report.systems) {
+        const launcher::ProgramProfile* program = programOf(library, system.resolution.translation);
+        inUse[program != nullptr ? program->id : std::string()].push_back(system.system.name.str());
+    }
+    if (!report.systems.empty()) {
+        line("Programs in use", "");
+        for (const auto& [id, systems] : inUse) {
+            out.writeLine(fmt::format("  {:<16}{} system(s): {}", id.empty() ? "(none known)" : id, systems.size(),
+                                      fmt::join(systems, ", ")));
+        }
+    }
     line("Systems", fmt::format("{}{}{}", report.systems.size(), summary.empty() ? "" : " (" + summary + ")",
                                 report.systems.empty() ? "" : ":"));
     for (const SystemReport& system : report.systems) {
@@ -104,6 +147,9 @@ void writeText(const LaunchLibrary& library, const Report& report, Output& out) 
                                   whyText(resolution.chosen, systemChoiceOrigin(library, system.system.name.str()))));
         for (const std::string& warning : resolution.chosen.warnings) {
             out.writeLine(fmt::format("    {:<18}{}", "warning", warning));
+        }
+        if (const launcher::ProgramProfile* program = programOf(library, resolution.translation)) {
+            out.writeLine(fmt::format("    {:<18}{} ('{}')", "program", program->displayName, program->id));
         }
         writeTranslationDetails(out, resolution.translation, "    ", 18, false);
         if (!system.commands.empty()) {
@@ -167,6 +213,27 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
                  {"verified", profile.verified}});
     }
     json["profiles"] = std::move(profiles);
+    Json programs = Json::array();
+    for (const launcher::ProgramProfile& program : library.profiles.programs) {
+        const launcher::VrSettings& vr = program.vr;
+        programs.push_back(Json{
+            {"id", program.id},
+            {"displayName", program.displayName},
+            {"origin", std::string(launcher::toString(program.origin))},
+            {"source", program.source},
+            {"files", program.files},
+            {"vr",
+             Json{{"addArguments", vr.addArguments},
+                  {"dropArguments", vr.dropArguments},
+                  {"appendConfig", vr.appendConfig ? Json{{"option", vr.appendConfig->option},
+                                                          {"file", vr.appendConfig->fileName},
+                                                          {"lines", vr.appendConfig->lines}}
+                                                   : Json(nullptr)},
+                  {"inGame", std::string(launcher::toString(vr.inGame))},
+                  {"heavyWith", vr.heavyWith}}},
+            {"verified", program.verified}});
+    }
+    json["programs"] = std::move(programs);
     Json choices = Json::object();
     for (const auto& [system, choice] : library.profiles.systemChoices) {
         choices[system] = choiceJson(choice);
@@ -188,6 +255,8 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
             system.alternativeEmulator.empty() ? Json(nullptr) : Json(system.alternativeEmulator);
         entry["systemChoice"] = system.systemChoice ? choiceJson(*system.systemChoice) : Json(nullptr);
         entry["chosen"] = chosenJson(system.resolution.chosen, systemChoiceOrigin(library, system.system.name.str()));
+        const launcher::ProgramProfile* program = programOf(library, system.resolution.translation);
+        entry["programProfile"] = program != nullptr ? Json(program->id) : Json(nullptr);
         Json commands = Json::array();
         for (const library::LaunchOption& command : system.commands) {
             Json item = translationJson(command.translation);
@@ -218,8 +287,9 @@ Json reportJson(const LaunchLibrary& library, const Report& report) {
 
 ExitCode runProfiles(CommandContext& context) {
     core::ArgParser parser(std::string(kName),
-                           "Lists the emulator profiles and, for each system of the library, the command or profile "
-                           "its games launch with, why, and its readiness. Starts nothing, writes nothing.");
+                           "Lists the emulator profiles and programs and, for each system of the library, the command "
+                           "or profile its games launch with, why, its readiness and the program it starts. Starts "
+                           "nothing, writes nothing.");
     parser.option("system", "name", "Only this system (an ES-DE system name).")
         .flag("json", "Print the results as JSON.");
     addOutputOption(parser);

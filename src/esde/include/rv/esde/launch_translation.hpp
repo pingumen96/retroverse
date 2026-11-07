@@ -54,9 +54,25 @@
 // launches it: %ROM% is that file, %BASENAME% the folder's name up to its first '.', %FILENAME% that and the extension,
 // %GAMEDIR% and a relative %INJECT% file's folder the game's folder itself; %ROMRAW% and %INJECT%=%ROM% stay the
 // folder.
-// Anything else requires launcher configuration with the token named: %RUNINBACKGROUND%, %ESCAPESPECIALS%,
-// %PRECOMMAND_X%, %GAMEENTRYDIR% and %EMUPATH% in a command, %STARTDIR% or %INJECT% without '=', a second program or core,
-// unknown %X% text (%RPCS3_GAMEID%, the tokens of ES-DE's other platforms), placeholder commands.
+//   %RUNINBACKGROUND%        ES-DE keeps running beside the program: the request waits with FollowWindow, the game's
+//                            window followed wherever it opens (I11 step 13)
+// Anything else requires launcher configuration with the token named: %ESCAPESPECIALS% (but in "open the game's
+// file"), %PRECOMMAND_X%, %GAMEENTRYDIR% and %EMUPATH% in a command, %STARTDIR% or %INJECT% without '=', a second
+// program or core, unknown %X% text (%RPCS3_GAMEID%, the tokens of ES-DE's other platforms), placeholder commands.
+//
+// "Open the game's file" (I11 step 13, ADR-0020 §3): a command whose program is one %EMULATOR_X% element that finds
+// cmd.exe, followed by exactly "/C" and "%ROM%" (flags aside: ES-DE's "%HIDEWINDOW% %ESCAPESPECIALS%
+// %EMULATOR_OS-SHELL% /C %ROM%"), never runs cmd.exe: Retroverse opens the game's file itself, by its extension.
+//  - .lnk: the shortcut read through core::ISystemProbe::readShortcut() (never resolved); its target must be a program
+//    Retroverse starts (a .exe or .com that exists, no command interpreter or launcher; a batch file or a document
+//    requires configuration), its argument string split as CommandLineToArgvW splits it, its working folder the
+//    shortcut's, else %STARTDIR%'s, else the target's folder;
+//  - .exe, .com: the game's file started as itself, in %STARTDIR% or its own folder;
+//  - .url: the URL of its [InternetShortcut] section activated (LaunchRequest::activationUrl, FollowWindow) when its
+//    scheme is one of TranslationContext::protocols (emulators.json's), with that rule's launcher processes; any other
+//    scheme requires configuration;
+//  - anything else (a batch file, a disc image, a folder) requires launcher configuration.
+// A system's translation leaves the file to each game (a note says so) and names no program.
 
 #include <cstddef>
 #include <filesystem>
@@ -74,6 +90,7 @@
 #include <rv/esde/find_rules.hpp>
 #include <rv/esde/settings.hpp>
 #include <rv/esde/systems.hpp>
+#include <rv/launcher/emulator_profile.hpp>
 
 namespace rv::esde {
 
@@ -81,14 +98,16 @@ namespace rv::esde {
 using ProgramChoices = std::map<std::string, std::filesystem::path, std::less<>>;
 
 /// What a translation reads: the library (its ES-DE home gives '~', its install folder %ESPATH%), the ROM root
-/// (%ROMPATH%, the systems' ROM folders), the find rules, the machine and the programs chosen (null: none). The pointers
-/// must outlive the calls.
+/// (%ROMPATH%, the systems' ROM folders), the find rules, the machine, the programs chosen (null: none) and the
+/// protocols an Internet Shortcut may activate (emulators.json's, I11 step 13; null: none). The pointers must outlive
+/// the calls.
 struct TranslationContext {
     catalog::LibraryProfile profile;
     ResolvedRoot romRoot;
     const FindRules* findRules = nullptr;
     const core::ISystemProbe* probe = nullptr;
     const ProgramChoices* programChoices = nullptr;
+    const std::vector<launcher::ProtocolRule>* protocols = nullptr;
 };
 
 /// The largest %INJECT% content ES-DE injects (bytes of UTF-8 text, line ends removed); a longer one injects

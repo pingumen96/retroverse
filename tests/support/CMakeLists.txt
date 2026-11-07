@@ -14,6 +14,8 @@ target_include_directories(rv_test_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/.
 # rv_assets and rv_media: the fixtures' generated covers (images) and clips (media::test_video) of I3 step 1c.
 target_link_libraries(rv_test_support PUBLIC
     rv_core rv_launcher rv_platform_win rv_catalog rv_catalog_db rv_assets rv_media)
+# ole32, uuid: the shortcuts written at test time (shortcut_file.hpp, I11 step 13).
+target_link_libraries(rv_test_support PRIVATE ole32 uuid)
 # The fixtures' sources and the build tree they are materialized in.
 target_compile_definitions(rv_test_support PRIVATE
     RV_TEST_SUPPORT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

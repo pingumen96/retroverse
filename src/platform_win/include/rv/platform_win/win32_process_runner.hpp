@@ -100,6 +100,14 @@ struct Win32StartInfo {
 ///    background), the caller's
 ///    StartCallbacks::beforeResume, then ResumeThread (IRunningProcess::startedAt). Until then any failure, an
 ///    exception from beforeResume included, ends the suspended process, which never ran; start() never throws.
+/// A request whose wait is FollowWindow (I11 step 13, ADR-0020 §4) is also followed through the windows of processes
+/// outside its tree: a visible window that could be the game's, of a process created since the launch and started
+/// (directly or through processes created since) by the tree, by Retroverse or by one of the request's launcher
+/// processes, and that is none of them nor Explorer or a console; such a process is reported as ChildStarted and
+/// ChildExited, and TreeEmpty comes once a window has shown and every process followed has exited. A protocol
+/// activation (LaunchRequest::activationUrl) runs through ShellExecuteExW ("open", no user interface, synchronous),
+/// starts no process of its own (processId() 0) and is followed so. While a window followed holds the foreground and the
+/// shell reports exclusive fullscreen (SHQueryUserNotificationState), ExclusiveFullscreen is reported once.
 /// A watcher thread per process blocks on the process handle and the completion port (no busy loop) and queues
 /// launcher::ProcessEvent values for the main thread (IRunningProcess::takeEvents), calling the wake callback once per
 /// event, until IRunningProcess::stopWatching() or the destruction of the running process object. Exit times are the
@@ -118,6 +126,9 @@ private:
     /// start() without its exception barrier.
     [[nodiscard]] Expected<std::unique_ptr<launcher::IRunningProcess>>
     startProcess(const launcher::LaunchRequest& request, launcher::StartCallbacks callbacks);
+    /// A protocol activation (I11 step 13): beforeResume(0), ShellExecuteExW, then the game's window followed.
+    [[nodiscard]] Expected<std::unique_ptr<launcher::IRunningProcess>>
+    startActivation(const launcher::LaunchRequest& request, launcher::StartCallbacks callbacks);
 
     Win32ProcessRunnerOptions m_options;
     Win32StartInfo m_lastStart;

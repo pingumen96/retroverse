@@ -1983,6 +1983,7 @@ struct ProductUi::Impl {
 
     /// Shows the panel the launch wants, when it is not the one shown.
     void syncPanel() {
+        panel->setExclusiveFullscreen(flow.exclusiveFullscreen() && flow.sessionActive());
         const SessionPanel wanted = flow.panel();
         if (wanted != panel->shown()) {
             panel->show(wanted, flow.info().title, flow.message(), timeoutSeconds());
@@ -2942,7 +2943,7 @@ void ProductUi::onIdle() {
                 state->handover->handOver(); // Keep: the window stays behind the emulator, rendering nothing
             }
         };
-        s.flow.start(now, std::move(callbacks), frame);
+        s.flow.start(now, std::move(callbacks), frame, s.hooks.adapting);
     } else {
         s.flow.idleWake();
     }
@@ -2980,6 +2981,14 @@ void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, b
     if (wheel != 0.0f) {
         context.ProcessMouseWheel(wheel, 0);
     }
+}
+
+bool ProductUi::launchExclusiveFullscreen() const noexcept {
+    return m_impl->flow.sessionActive() && m_impl->flow.exclusiveFullscreen();
+}
+
+void ProductUi::noteExclusiveFullscreen() {
+    m_impl->flow.noteExclusiveFullscreen();
 }
 
 std::uintptr_t ProductUi::launchWindow() const noexcept {

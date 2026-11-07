@@ -31,6 +31,9 @@ public:
     FakeSystemProbe& setWindowsFolder(std::filesystem::path folder);
     /// The PATH entries as pathEntries() returns them (already absolute).
     FakeSystemProbe& setPathEntries(std::vector<std::filesystem::path> entries);
+    /// Describes the shortcut file `path` (I11 step 13): readShortcut() returns `shortcut` for it (the path compared
+    /// ignoring case), NotFound for any other.
+    FakeSystemProbe& addShortcut(const std::filesystem::path& path, core::ShellShortcut shortcut);
 
     [[nodiscard]] std::optional<std::string> registryString(core::RegistryRoot root, std::string_view keyPath,
                                                             std::string_view valueName) const override;
@@ -44,6 +47,7 @@ public:
     [[nodiscard]] std::filesystem::path system32Folder() const override;
     [[nodiscard]] std::filesystem::path windowsFolder() const override;
     [[nodiscard]] std::vector<std::filesystem::path> pathEntries() const override;
+    [[nodiscard]] Expected<core::ShellShortcut> readShortcut(const std::filesystem::path& path) const override;
 
 private:
     struct Key {
@@ -63,6 +67,8 @@ private:
     std::filesystem::path m_system32{L"C:\\Windows\\System32"};
     std::filesystem::path m_windows{L"C:\\Windows"};
     std::vector<std::filesystem::path> m_pathEntries;
+    /// Folded path -> the shortcut.
+    std::map<std::wstring, core::ShellShortcut> m_shortcuts;
 };
 
 } // namespace rv::test
