@@ -31,6 +31,19 @@ build/rvdata`).
   `games`, `mostPlayed`, `mostRecent`, `systems` (`<name>=<sessions>`), `statuses` (`<status>=<games>`), `readMs`,
   `hoursLabel`, `textCut`, `clicks`; `screens` gains `infoTextCut` and the events `row`, `controls`, `status`, `emulators`,
   `version-launch`, `version-busy`.
+- **Coverage and the library** (I7 step 8, ADR-0018 §14, `docs/i7/step-8.md`). The menu's Copertura media: per system and
+  media kind, the share of the games with a file of the kind, worst first, over the catalog's rows as the last import
+  stored them (left, right or the filters: every game, or the games a gamelist names; Activate: a system's twelve kinds
+  and its clips known to fail, from `cache/media/videos.json`). Libreria: Origini (each folder reachable or not and how
+  the watcher follows it, the last import, Aggiorna libreria), Problemi (the last import's issues by kind), Rimozioni
+  (the systems the guard holds; "Applica le rimozioni" asks, then refreshes them accepting the removals), Da verificare
+  (review rows: a candidate whose identity is present, asked before it is paired, or Tieni separati) and Impronte
+  ("Calcola impronte": the quick-hash pass on the worker; Interrompi, Riprendi from what is left; a lockstep run hashes one
+  file per frame). The report's `coverage`: `opened`, `open`, `state`, `view`, `tab`, `views` (`systems`,
+  `system:<name>`), `tabs`, `games`, `scraped`, `covers`, `systems` (`<name>=<games>`, worst first), `clips`,
+  `clipsUnknown`, `readMs`, `textCut`, `clicks`; `library`: `opened`, `open`, `state`, `view`, `tab`, `roots`
+  (`<kind>=<state>/<mode>`), `issues` (`<group>=<count>`), `held`, `reviews`, `files`, `hashed`, `passes` (each pass's
+  `outcome`, `candidates`, `hashed`, `remaining`, `unreadable`, `cancelled`), `readMs`, `textCut`, `clicks`, `events`.
 - **The first-run wizard** (I7 step 2, ADR-0018 §4, `docs/i7/step-2.md`). An interactive run in the building's mode whose
   data directory has no `library.json` starts on it; one with `library.json` and no catalog (no database, or one no
   import finished in) resumes at its preview. A data directory `retroverse-cli library create` and `import` prepared

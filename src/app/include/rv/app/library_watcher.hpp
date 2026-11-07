@@ -49,6 +49,9 @@ public:
 
     /// The run report's `watcher`: the roots and their modes, the changes seen and what they meant.
     void record(WatcherRecord& record) const;
+    /// I7 step 8: whether it watches (a map was armed), and each root's mode by its name (the library screen's).
+    [[nodiscard]] bool armed() const noexcept { return m_arms > 0; }
+    [[nodiscard]] std::vector<core::RootStatus> status() const { return m_watcher.status(); }
 
 private:
     void take(Clock::time_point now);

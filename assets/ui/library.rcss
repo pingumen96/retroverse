@@ -1,0 +1,295 @@
+/*
+	The library screen (library.rml), in the statistics screen's look (statistics.rcss: palette of style 3, UI neutral
+	#171B22 in a translucent carbon panel, ivory text #F4EFE6, tungsten #FFC88A for the focus, signage green #6EAF93, the
+	warm red #C8645A of what cannot be undone). The title, the sections, the body that scrolls, the hints, placed by the
+	panel's edges so that nothing runs past it; rows and buttons as the emulators screen's. Sizes in dp. No colour is
+	animated (RmlUi rebuilds the geometry of every animated frame).
+*/
+
+body {
+	width: 100%;
+	height: 100%;
+	margin: 0dp;
+	padding: 0dp;
+	font-family: "Atkinson Hyperlegible";
+	font-weight: normal;
+	font-style: normal;
+	font-size: 23dp;
+	color: #F4EFE6;
+	background-color: #07090CD9;
+}
+
+div, p, h1 {
+	display: block;
+}
+
+/* The text takes no focus. What takes a click must be focusable: RmlUi gives the click to the focusable ancestor. */
+p, h1, span {
+	focus: none;
+}
+
+h1 {
+	position: absolute;
+	left: 28dp;
+	top: 18dp;
+	font-size: 34dp;
+	font-weight: bold;
+}
+
+.panel {
+	position: absolute;
+	box-sizing: border-box;
+	left: 10%;
+	width: 80%;
+	top: 6%;
+	height: 88%;
+	background-color: #171B22F0;
+	border: 2dp #F4EFE61F;
+	border-top: 3dp #FFC88A80;
+	border-radius: 18dp;
+}
+
+#lb-tabs {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 72dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+}
+
+.tab {
+	display: block;
+	box-sizing: border-box;
+	flex: 1 1 auto;
+	height: 44dp;
+	line-height: 40dp;
+	margin-right: 8dp;
+	font-size: 21dp;
+	text-align: center;
+	color: #F4EFE6B3;
+	background-color: #FFFFFF0F;
+	border: 2dp #00000000;
+	border-radius: 10dp;
+	tab-index: none;
+}
+
+.tab:hover {
+	border-color: #F4EFE659;
+}
+
+.tab.active {
+	color: #171B22;
+	background-color: #FFC88A;
+	font-weight: bold;
+}
+
+#lb-body {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	top: 132dp;
+	bottom: 74dp;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding-right: 12dp;
+}
+
+#lb-body.sheet {
+	top: 72dp;
+}
+
+#lb-body scrollbarvertical {
+	width: 8dp;
+}
+
+#lb-body scrollbarvertical slidertrack {
+	background-color: #F4EFE614;
+	border-radius: 4dp;
+}
+
+#lb-body scrollbarvertical sliderbar {
+	background-color: #F4EFE659;
+	border-radius: 4dp;
+}
+
+.note {
+	font-size: 20dp;
+	color: #F4EFE6B3;
+	margin-top: 8dp;
+	margin-bottom: 8dp;
+	line-height: 1.3em;
+}
+
+.problem {
+	font-size: 20dp;
+	color: #F2A79E;
+	margin-top: 8dp;
+	margin-bottom: 8dp;
+}
+
+.line {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 7dp 2dp;
+	border-bottom: 1dp #F4EFE61F;
+}
+
+.line.gone {
+	color: #F4EFE680;
+}
+
+.row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	padding: 5dp 12dp;
+	margin-bottom: 5dp;
+	background-color: #FFFFFF0D;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.row:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A1F;
+}
+
+.line-main {
+	flex: 1 1 0dp;
+	min-width: 0dp;
+	padding-right: 12dp;
+}
+
+.title {
+	font-size: 22dp;
+}
+
+.detail {
+	font-size: 18dp;
+	color: #F4EFE6A6;
+}
+
+.path {
+	word-break: break-word;
+}
+
+.badge {
+	flex: 0 0 auto;
+	width: 190dp;
+	font-size: 18dp;
+	text-align: right;
+	color: #F4EFE6A6;
+}
+
+.badge.ok { color: #8FD0B3; }
+.badge.warn { color: #FFC88A; }
+.badge.bad { color: #F2A79E; }
+
+.action {
+	display: block;
+	padding: 6dp 22dp;
+	margin-top: 10dp;
+	margin-bottom: 4dp;
+	font-size: 22dp;
+	background-color: #FFFFFF14;
+	border: 3dp #00000000;
+	border-radius: 12dp;
+	tab-index: auto;
+}
+
+.action.primary { background-color: #6EAF9340; }
+.action.danger { background-color: #C8645A33; }
+.action.disabled { color: #F4EFE680; }
+
+.action:focus {
+	border-color: #FFC88A;
+	background-color: #FFC88A33;
+}
+
+.action.primary:focus {
+	background-color: #FFC88A;
+	color: #171B22;
+}
+
+.action.danger:focus {
+	background-color: #C8645A;
+	color: #FFFFFF;
+}
+
+#lb-footer {
+	position: absolute;
+	left: 28dp;
+	right: 28dp;
+	bottom: 14dp;
+	height: 48dp;
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+#lb-hints {
+	flex: 1 1 auto;
+	font-size: 18dp;
+	color: #F4EFE6B3;
+}
+
+.hint {
+	margin-right: 18dp;
+	white-space: nowrap;
+}
+
+.kbd {
+	display: inline-block;
+	min-width: 26dp;
+	height: 26dp;
+	line-height: 26dp;
+	padding: 0dp 4dp;
+	border-radius: 13dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-weight: bold;
+	font-size: 16dp;
+	color: #171B22;
+	background-color: #F4EFE6CC;
+}
+
+.action.close {
+	box-sizing: border-box;
+	width: 150dp;
+	margin: 0dp;
+	padding: 7dp 14dp;
+	font-size: 20dp;
+	text-align: center;
+	border-width: 2dp;
+	tab-index: none;
+}
+
+.action.close:hover {
+	border-color: #F4EFE659;
+}
+
+/* Small views (1280 x 720, or 125%): a wider panel and denser text. */
+@media (theme: compact) {
+	.panel { left: 4%; width: 92%; top: 3%; height: 94%; }
+	h1 { font-size: 26dp; left: 20dp; top: 10dp; }
+	#lb-tabs { left: 20dp; right: 20dp; top: 50dp; height: 40dp; }
+	.tab { height: 36dp; line-height: 32dp; font-size: 16dp; margin-right: 6dp; }
+	#lb-body { left: 20dp; right: 20dp; top: 96dp; bottom: 56dp; }
+	#lb-body.sheet { top: 50dp; }
+	.note, .problem { font-size: 16dp; margin-top: 5dp; margin-bottom: 5dp; }
+	.title { font-size: 18dp; }
+	.detail, .badge { font-size: 15dp; }
+	.badge { width: 150dp; }
+	.line { padding: 4dp 2dp; }
+	.row { padding: 3dp 10dp; margin-bottom: 3dp; }
+	.action { font-size: 18dp; padding: 4dp 18dp; margin-top: 6dp; }
+	#lb-footer { left: 20dp; right: 20dp; bottom: 8dp; height: 40dp; }
+	#lb-hints { font-size: 15dp; }
+	.kbd { min-width: 22dp; height: 22dp; line-height: 22dp; font-size: 14dp; }
+	.action.close { width: 120dp; font-size: 17dp; padding: 5dp 10dp; }
+}

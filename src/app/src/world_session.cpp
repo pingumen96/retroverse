@@ -491,9 +491,10 @@ void WorldSession::followRefresh(ProductUi& product) {
         return;
     }
     const RefreshState state = catalog.refreshState();
-    if (state.otherImports != m_otherImports) {
-        // I7 step 7: another process imported the library: the building follows as after a refresh of ours.
-        m_otherImports = state.otherImports;
+    if (state.otherImports + state.reviewsPaired != m_otherImports) {
+        // I7 step 7: another process imported the library (I7 step 8: or a review row was paired): the building follows
+        // as after a refresh of ours.
+        m_otherImports = state.otherImports + state.reviewsPaired;
         if (!product.wizardOpen()) {
             if (m_loader && m_mediaRootPath) {
                 m_loader->retry(*m_mediaRootPath);

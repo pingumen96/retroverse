@@ -58,6 +58,7 @@
 
 #include <rv/catalog/catalog_query.hpp>
 #include <rv/catalog/catalog_store.hpp>
+#include <rv/catalog/coverage.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/catalog/query.hpp>
 #include <rv/catalog/statistics.hpp>
@@ -126,6 +127,18 @@ struct GameDetails {
     catalog::IndexedEntry indexed;
 
     bool operator==(const GameDetails&) const = default;
+};
+
+/// The quick hashes of a library's present files (SqliteCatalogQuery::quickHashCounts()).
+struct QuickHashCounts {
+    /// Present files (not folders) the last import saw.
+    std::size_t files = 0;
+    /// Those of them whose quick hash is current.
+    std::size_t current = 0;
+
+    [[nodiscard]] std::size_t missing() const noexcept { return files - current; }
+
+    bool operator==(const QuickHashCounts&) const = default;
 };
 
 class SqliteCatalogQuery final : public catalog::ICatalogQuery {
@@ -205,6 +218,21 @@ public:
     /// The status of `game` (an alias stands for its game), set or derived; nothing for a game the catalog does not know.
     /// Errors: those of every read.
     [[nodiscard]] Expected<std::optional<catalog::GameStatusState>> gameStatus(catalog::GameId game);
+
+    /// The media coverage of `library` over the catalog's own rows (I7 step 8, ADR-0018 §14; src/coverage_query.cpp), in
+    /// one statement: idx_media grouped over idx_games into catalog::MediaCoverage's Games (every Game entry) and
+    /// ScrapedGames (those a gamelist names) populations, per system and in all; the other two populations stay empty,
+    /// since the index holds no gamelist entry outside a system folder. No folder is read: the media are those the last
+    /// import stored, so no member's are unknown (an import keeps a row's media when it cannot know them). Its systems
+    /// are those with at least one game, by name. Errors: ParseError for a system name or media kind the catalog cannot
+    /// read back; those of every read.
+    [[nodiscard]] Expected<catalog::MediaCoverage> mediaCoverage(const catalog::LibraryId& library);
+    /// The issues of `library`'s last import (idx_import_issues: a partial import replaces those of its systems), in the
+    /// order they were met. Errors: ParseError for a severity it cannot read back; those of every read.
+    [[nodiscard]] Expected<std::vector<catalog::Issue>> importIssues(const catalog::LibraryId& library);
+    /// How many of `library`'s present files (folders aside) have a quick hash that is current for their last file facts
+    /// (catalog::isCurrent()): what "Calcola impronte" has left (I7 step 8). Errors: those of every read.
+    [[nodiscard]] Expected<QuickHashCounts> quickHashCounts(const catalog::LibraryId& library);
 
     /// The connection it reads.
     [[nodiscard]] Connection& connection() noexcept;

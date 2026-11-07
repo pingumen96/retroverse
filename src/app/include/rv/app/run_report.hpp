@@ -843,6 +843,89 @@ struct StatisticsRecord {
     bool operator==(const StatisticsRecord&) const = default;
 };
 
+/// The run report's "coverage" (I7 step 8, ADR-0018 §14, §15): the media coverage screen, what it read last.
+struct CoverageRecord {
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// At the end: where it stands, its view, the population shown (ui::toString).
+    std::string state;
+    std::string view;
+    std::string tab;
+    /// The views shown in order: "systems", "system:<name>"; the populations shown in order.
+    std::vector<std::string> views;
+    std::vector<std::string> tabs;
+    /// The last answer: every game and the scraped ones, their covers' share as shown; "name=games" per system in the
+    /// order shown (every game, worst first); the clips known to fail, whether they could not be read.
+    std::uint64_t games = 0;
+    std::uint64_t scraped = 0;
+    std::string covers;
+    std::vector<std::string> systems;
+    std::uint64_t clips = 0;
+    bool clipsUnknown = false;
+    /// The slowest answer on the worker, in milliseconds (ADR-0018 §16: shown within 1 s of opening).
+    double readMs = 0.0;
+    /// The most elements found with cut text on any frame it showed (ADR-0018 §15); clicks taken (VR's ray among them).
+    std::uint32_t textCut = 0;
+    std::uint64_t clicks = 0;
+
+    bool operator==(const CoverageRecord&) const = default;
+};
+
+/// What the library screen did (I7 step 8).
+struct LibraryEventRecord {
+    std::uint64_t frame = 0;
+    /// "open", "closed", "tab" (`detail` its name), "refresh", "confirm-removals", "apply-removals" (`detail` the
+    /// systems, ',' between them), "review" (`detail` its id), "confirm-pair", "resolve" (`detail` "<id>:<GameId or
+    /// separate>"), "resolved" (`detail` "" or its problem), "hash-start", "hash-cancel", "hash-ended" (`detail` its
+    /// outcome).
+    std::string event;
+    std::string detail;
+
+    bool operator==(const LibraryEventRecord&) const = default;
+};
+
+/// A quick-hash pass that ended (I7 step 8).
+struct HashPassRecord {
+    /// "done", "cancelled", "busy", "failed".
+    std::string outcome;
+    std::uint64_t candidates = 0;
+    std::uint64_t hashed = 0;
+    std::uint64_t remaining = 0;
+    std::uint64_t unreadable = 0;
+    bool cancelled = false;
+
+    bool operator==(const HashPassRecord&) const = default;
+};
+
+/// The run report's "library" (I7 step 8, ADR-0018 §14, §15): the library screen, what it read last.
+struct LibraryRecord {
+    std::uint64_t opened = 0;
+    bool open = false;
+    /// At the end: where it stands, its view, its section (ui::toString).
+    std::string state;
+    std::string view;
+    std::string tab;
+    /// The last answer: "kind=state/mode" per folder (the system's name after the kind: "system:<name>=..."), "group=
+    /// count" per issue group, the held systems, the open review rows' ids, the present files and those hashed.
+    std::vector<std::string> roots;
+    std::vector<std::string> issues;
+    std::vector<std::string> held;
+    std::vector<std::string> reviews;
+    std::uint64_t files = 0;
+    std::uint64_t hashed = 0;
+    /// The quick-hash passes that ended, in order.
+    std::vector<HashPassRecord> passes;
+    /// The slowest answer on the worker, in milliseconds (ADR-0018 §16).
+    double readMs = 0.0;
+    std::uint32_t textCut = 0;
+    std::uint64_t clicks = 0;
+    /// In order, at most kMaxInteractionEvents (`eventsDropped` past them).
+    std::vector<LibraryEventRecord> events;
+    std::uint64_t eventsDropped = 0;
+
+    bool operator==(const LibraryRecord&) const = default;
+};
+
 /// A wizard's step (I7 step 2).
 struct WizardEventRecord {
     std::uint64_t frame = 0;
@@ -2461,6 +2544,9 @@ struct RunReport {
     std::optional<EmulatorsRecord> emulators;
     /// I7 step 6: the statistics screen, once it opened.
     std::optional<StatisticsRecord> statistics;
+    /// I7 step 8: the media coverage and library screens, once each opened.
+    std::optional<CoverageRecord> coverage;
+    std::optional<LibraryRecord> library;
     std::optional<SettingsRecord> settings;
     /// The first-run wizard (I7 step 2; runs that started it).
     std::optional<WizardRecord> wizard;

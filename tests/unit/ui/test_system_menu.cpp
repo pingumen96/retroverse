@@ -1,4 +1,5 @@
-// The menu's model (ADR-0018 §1): its buttons, Esci's one confirmation, Back's levels, clicks mirroring the keys.
+// The menu's model (ADR-0018 §1): its buttons (I7 step 8: Copertura media and Libreria before Esci), Esci's one
+// confirmation, Back's levels, clicks mirroring the keys.
 
 #include <rv/ui/system_menu_model.hpp>
 
@@ -29,6 +30,10 @@ TEST_CASE("ui/system_menu: opens on Riprendi; the focus stops at the ends", "[ui
     CHECK(menu.focused() == SystemMenuButton::Emulators);
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Statistics);
+    static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.focused() == SystemMenuButton::Coverage);
+    static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.focused() == SystemMenuButton::Library);
     static_cast<void>(menu.apply(UiCommand::Down));
     static_cast<void>(menu.apply(UiCommand::Down));
     CHECK(menu.focused() == SystemMenuButton::Quit);
@@ -74,13 +79,32 @@ TEST_CASE("ui/system_menu: Statistiche asks for its screen and stays open under 
     CHECK(menu.click(SystemMenuButton::Statistics) == SystemMenuCommand::OpenStatistics);
 }
 
+TEST_CASE("ui/system_menu: Copertura media and Libreria ask for their screens and stay open under them",
+          "[ui][system_menu]") {
+    SystemMenuModel menu;
+    menu.open();
+    for (int press = 0; press < 4; ++press) {
+        static_cast<void>(menu.apply(UiCommand::Down));
+    }
+    CHECK(menu.focusedElement() == "sm-coverage");
+    CHECK(menu.apply(UiCommand::Activate) == SystemMenuCommand::OpenCoverage);
+    CHECK(menu.isOpen());
+    static_cast<void>(menu.apply(UiCommand::Down));
+    CHECK(menu.focusedElement() == "sm-library");
+    CHECK(menu.apply(UiCommand::Activate) == SystemMenuCommand::OpenLibrary);
+    CHECK(menu.isOpen());
+    CHECK(menu.click(SystemMenuButton::Coverage) == SystemMenuCommand::OpenCoverage);
+    CHECK(menu.click(SystemMenuButton::Library) == SystemMenuCommand::OpenLibrary);
+    CHECK(rv::ui::toString(SystemMenuCommand::OpenCoverage) == "open-coverage");
+    CHECK(rv::ui::toString(SystemMenuCommand::OpenLibrary) == "open-library");
+}
+
 TEST_CASE("ui/system_menu: Esci asks once, Annulla focused", "[ui][system_menu]") {
     SystemMenuModel menu;
     menu.open();
-    static_cast<void>(menu.apply(UiCommand::Down));
-    static_cast<void>(menu.apply(UiCommand::Down));
-    static_cast<void>(menu.apply(UiCommand::Down));
-    static_cast<void>(menu.apply(UiCommand::Down));
+    for (int press = 0; press < 6; ++press) {
+        static_cast<void>(menu.apply(UiCommand::Down));
+    }
     CHECK_FALSE(menu.apply(UiCommand::Activate).has_value());
     CHECK(menu.view() == SystemMenuView::Confirm);
     CHECK(menu.focused() == SystemMenuButton::Stay);
@@ -119,8 +143,10 @@ TEST_CASE("ui/system_menu: a click presses a button shown, as its key does", "[u
 }
 
 TEST_CASE("ui/system_menu: names", "[ui][system_menu]") {
-    for (const SystemMenuButton button : {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Emulators, SystemMenuButton::Quit,
-                                          SystemMenuButton::ConfirmQuit, SystemMenuButton::Stay}) {
+    for (const SystemMenuButton button :
+         {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Emulators, SystemMenuButton::Statistics,
+          SystemMenuButton::Coverage, SystemMenuButton::Library, SystemMenuButton::Quit, SystemMenuButton::ConfirmQuit,
+          SystemMenuButton::Stay}) {
         CHECK(rv::ui::systemMenuButtonFromName(rv::ui::toString(button)) == button);
         CHECK_FALSE(rv::ui::elementIdOf(button).empty());
     }

@@ -163,7 +163,7 @@ TEST_CASE("menu: Start and Back open it, Back walks out to the world, the world 
 TEST_CASE("menu: Esci asks once, then ends the run", "[gpu][menu_settings]") {
     const ImportedRoom room("quit");
     Script script;
-    script.press("menu").press("ui_down", 4);
+    script.press("menu").press("ui_down", 6);
     script.press("ui_activate"); // Esci: the confirmation, Annulla focused
     script.press("ui_activate"); // Annulla: the menu again
     script.press("ui_activate"); // Esci again
@@ -528,7 +528,7 @@ TEST_CASE("menu: the screens' pictures", "[.shots]") {
     const auto all = [&](std::string_view prefix) {
         const std::string name(prefix);
         shoot(name + "menu", Script{}.press("menu").wait(6));
-        shoot(name + "quit_confirmation", Script{}.press("menu").press("ui_down", 4).press("ui_activate").wait(4));
+        shoot(name + "quit_confirmation", Script{}.press("menu").press("ui_down", 6).press("ui_activate").wait(4));
         const std::vector<std::string_view> groups = {"display", "audio", "world", "controls", "vr"};
         for (std::size_t group = 0; group < groups.size(); ++group) {
             Script script;

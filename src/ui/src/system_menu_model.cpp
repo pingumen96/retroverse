@@ -6,9 +6,10 @@
 namespace rv::ui {
 namespace {
 
-constexpr std::array<SystemMenuButton, 7> kButtons = {SystemMenuButton::Resume,     SystemMenuButton::Settings,
-                                                      SystemMenuButton::Emulators,  SystemMenuButton::Statistics,
-                                                      SystemMenuButton::Quit,       SystemMenuButton::ConfirmQuit,
+constexpr std::array<SystemMenuButton, 9> kButtons = {SystemMenuButton::Resume,      SystemMenuButton::Settings,
+                                                      SystemMenuButton::Emulators,   SystemMenuButton::Statistics,
+                                                      SystemMenuButton::Coverage,    SystemMenuButton::Library,
+                                                      SystemMenuButton::Quit,        SystemMenuButton::ConfirmQuit,
                                                       SystemMenuButton::Stay};
 
 } // namespace
@@ -23,6 +24,10 @@ std::string_view toString(SystemMenuButton button) noexcept {
         return "emulators";
     case SystemMenuButton::Statistics:
         return "statistics";
+    case SystemMenuButton::Coverage:
+        return "coverage";
+    case SystemMenuButton::Library:
+        return "library";
     case SystemMenuButton::Quit:
         return "quit";
     case SystemMenuButton::ConfirmQuit:
@@ -52,6 +57,10 @@ std::string_view elementIdOf(SystemMenuButton button) noexcept {
         return "sm-emulators";
     case SystemMenuButton::Statistics:
         return "sm-statistics";
+    case SystemMenuButton::Coverage:
+        return "sm-coverage";
+    case SystemMenuButton::Library:
+        return "sm-library";
     case SystemMenuButton::Quit:
         return "sm-quit";
     case SystemMenuButton::ConfirmQuit:
@@ -76,6 +85,10 @@ std::string_view toString(SystemMenuCommand command) noexcept {
         return "open-emulators";
     case SystemMenuCommand::OpenStatistics:
         return "open-statistics";
+    case SystemMenuCommand::OpenCoverage:
+        return "open-coverage";
+    case SystemMenuCommand::OpenLibrary:
+        return "open-library";
     case SystemMenuCommand::Quit:
         return "quit";
     }
@@ -99,7 +112,8 @@ std::vector<SystemMenuButton> SystemMenuModel::buttons() const {
         return {SystemMenuButton::Stay, SystemMenuButton::ConfirmQuit};
     }
     return {SystemMenuButton::Resume, SystemMenuButton::Settings, SystemMenuButton::Emulators,
-            SystemMenuButton::Statistics, SystemMenuButton::Quit};
+            SystemMenuButton::Statistics, SystemMenuButton::Coverage, SystemMenuButton::Library,
+            SystemMenuButton::Quit};
 }
 
 std::string SystemMenuModel::focusedElement() const {
@@ -130,6 +144,10 @@ std::optional<SystemMenuCommand> SystemMenuModel::press(SystemMenuButton button)
         return SystemMenuCommand::OpenEmulators;
     case SystemMenuButton::Statistics:
         return SystemMenuCommand::OpenStatistics;
+    case SystemMenuButton::Coverage:
+        return SystemMenuCommand::OpenCoverage;
+    case SystemMenuButton::Library:
+        return SystemMenuCommand::OpenLibrary;
     case SystemMenuButton::Quit:
         // Annulla focused: an A pressed twice by mistake leaves nothing.
         show(SystemMenuView::Confirm, SystemMenuButton::Stay);

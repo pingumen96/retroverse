@@ -1175,6 +1175,107 @@ StatisticsRecord readStatistics(FieldReader& fields) {
     return statistics;
 }
 
+Json coverageToJson(const CoverageRecord& coverage) {
+    return Json{{"opened", coverage.opened},
+                {"open", coverage.open},
+                {"state", coverage.state},
+                {"view", coverage.view},
+                {"tab", coverage.tab},
+                {"views", coverage.views},
+                {"tabs", coverage.tabs},
+                {"games", coverage.games},
+                {"scraped", coverage.scraped},
+                {"covers", coverage.covers},
+                {"systems", coverage.systems},
+                {"clips", coverage.clips},
+                {"clipsUnknown", coverage.clipsUnknown},
+                {"readMs", coverage.readMs},
+                {"textCut", coverage.textCut},
+                {"clicks", coverage.clicks}};
+}
+
+CoverageRecord readCoverage(FieldReader& fields) {
+    CoverageRecord coverage;
+    coverage.opened = fields.count("opened");
+    coverage.open = fields.boolean("open");
+    coverage.state = fields.string("state");
+    coverage.view = fields.string("view");
+    coverage.tab = fields.string("tab");
+    coverage.views = fields.stringArray("views");
+    coverage.tabs = fields.stringArray("tabs");
+    coverage.games = fields.count("games");
+    coverage.scraped = fields.count("scraped");
+    coverage.covers = fields.string("covers");
+    coverage.systems = fields.stringArray("systems");
+    coverage.clips = fields.count("clips");
+    coverage.clipsUnknown = fields.boolean("clipsUnknown");
+    coverage.readMs = fields.number("readMs");
+    coverage.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    coverage.clicks = fields.count("clicks");
+    return coverage;
+}
+
+Json libraryToJson(const LibraryRecord& library) {
+    Json passes = Json::array();
+    for (const HashPassRecord& pass : library.passes) {
+        passes.push_back(Json{{"outcome", pass.outcome},
+                              {"candidates", pass.candidates},
+                              {"hashed", pass.hashed},
+                              {"remaining", pass.remaining},
+                              {"unreadable", pass.unreadable},
+                              {"cancelled", pass.cancelled}});
+    }
+    Json events = Json::array();
+    for (const LibraryEventRecord& event : library.events) {
+        events.push_back(Json{{"frame", event.frame}, {"event", event.event}, {"detail", event.detail}});
+    }
+    return Json{{"opened", library.opened},
+                {"open", library.open},
+                {"state", library.state},
+                {"view", library.view},
+                {"tab", library.tab},
+                {"roots", library.roots},
+                {"issues", library.issues},
+                {"held", library.held},
+                {"reviews", library.reviews},
+                {"files", library.files},
+                {"hashed", library.hashed},
+                {"passes", std::move(passes)},
+                {"readMs", library.readMs},
+                {"textCut", library.textCut},
+                {"clicks", library.clicks},
+                {"events", std::move(events)},
+                {"eventsDropped", library.eventsDropped}};
+}
+
+LibraryRecord readLibrary(FieldReader& fields) {
+    LibraryRecord library;
+    library.opened = fields.count("opened");
+    library.open = fields.boolean("open");
+    library.state = fields.string("state");
+    library.view = fields.string("view");
+    library.tab = fields.string("tab");
+    library.roots = fields.stringArray("roots");
+    library.issues = fields.stringArray("issues");
+    library.held = fields.stringArray("held");
+    library.reviews = fields.stringArray("reviews");
+    library.files = fields.count("files");
+    library.hashed = fields.count("hashed");
+    for (FieldReader& pass : fields.objectArray("passes")) {
+        library.passes.push_back(HashPassRecord{pass.string("outcome"), pass.count("candidates"), pass.count("hashed"),
+                                                pass.count("remaining"), pass.count("unreadable"),
+                                                pass.boolean("cancelled")});
+    }
+    library.readMs = fields.number("readMs");
+    library.textCut = static_cast<std::uint32_t>(fields.count("textCut"));
+    library.clicks = fields.count("clicks");
+    for (FieldReader& event : fields.objectArray("events")) {
+        library.events.push_back(LibraryEventRecord{event.count("frame"), event.string("event"), event.string("detail")});
+    }
+    library.eventsDropped = fields.count("eventsDropped");
+    return library;
+}
+
 Json wizardToJson(const WizardRecord& wizard) {
     Json json{{"resumed", wizard.resumed},
               {"open", wizard.open},
@@ -3590,6 +3691,12 @@ std::string formatRunReport(const RunReport& report) {
     if (report.statistics) {
         json["statistics"] = statisticsToJson(*report.statistics);
     }
+    if (report.coverage) {
+        json["coverage"] = coverageToJson(*report.coverage);
+    }
+    if (report.library) {
+        json["library"] = libraryToJson(*report.library);
+    }
     if (report.emulators) {
         json["emulators"] = emulatorsToJson(*report.emulators);
     }
@@ -3777,6 +3884,12 @@ Expected<RunReport> parseRunReport(std::string_view json, std::string_view conte
     }
     if (auto statistics = fields.optionalObject("statistics")) {
         report.statistics = readStatistics(*statistics);
+    }
+    if (auto coverage = fields.optionalObject("coverage")) {
+        report.coverage = readCoverage(*coverage);
+    }
+    if (auto library = fields.optionalObject("library")) {
+        report.library = readLibrary(*library);
     }
     if (auto emulators = fields.optionalObject("emulators")) {
         report.emulators = readEmulators(*emulators);
