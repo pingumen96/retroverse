@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
 using Catch::Approx;
@@ -112,4 +113,36 @@ TEST_CASE("app/screen_aspect: a cropped window fills the tube at the crop's aspe
     // The screen's left edge samples the crop's left edge, its right edge the crop's right edge.
     CHECK((0.0f - middle.x) / middle.z == Approx(0.125f));
     CHECK((1.0f - middle.x) / middle.z == Approx(0.875f));
+}
+
+TEST_CASE("app/picture_bounds: a black picture, a border line on it, its mean colour (I11 step 11)",
+          "[app][picture_bounds]") {
+    const int width = 100;
+    const int height = 50;
+    std::vector<std::uint8_t> rgba(static_cast<std::size_t>(width * height) * 4, 0);
+    for (std::size_t i = 3; i < rgba.size(); i += 4) {
+        rgba[i] = 255;
+    }
+    CHECK(rv::app::isBlackPicture(rgba));
+    CHECK(rv::app::meanPictureColor(rgba) == glm::vec3(0.0f));
+
+    // A few lit pixels (a window's border, at most 0.2%: 10 of 5,000) leave it black; one more does not.
+    for (int x = 0; x < 10; ++x) {
+        rgba[static_cast<std::size_t>(x) * 4] = 255;
+    }
+    CHECK(rv::app::isBlackPicture(rgba));
+    rgba[10 * 4 + 1] = 200;
+    CHECK_FALSE(rv::app::isBlackPicture(rgba));
+    // A video's black, a few levels above zero, is black.
+    std::vector<std::uint8_t> dim(static_cast<std::size_t>(width * height) * 4, 16);
+    CHECK(rv::app::isBlackPicture(dim));
+    CHECK(rv::app::meanPictureColor(dim).x == Approx(16.0f));
+
+    std::vector<std::uint8_t> half(static_cast<std::size_t>(width * height) * 4, 0);
+    for (std::size_t i = 0; i < half.size() / 2; i += 4) {
+        half[i] = 200; // the top half red
+    }
+    CHECK_FALSE(rv::app::isBlackPicture(half));
+    CHECK(rv::app::meanPictureColor(half).x == Approx(100.0f));
+    CHECK_FALSE(rv::app::isBlackPicture(std::vector<std::uint8_t>{}));
 }

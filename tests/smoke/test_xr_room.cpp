@@ -370,3 +370,43 @@ TEST_CASE("xr: a game launched where no CRT is bound is captured, shown nowhere"
     CHECK(xr.captureFrames > 0);
     CHECK(xr.captureShownFrames == 0);
 }
+
+TEST_CASE("xr: the CRT follows the game's window past a splash and beside a main window (I11 step 11)", "[gpu][xr]") {
+    ensureLaunchAllowList();
+    for (const std::string mode : {"splash", "two-windows"}) {
+        DYNAMIC_SECTION(mode) {
+            // The fake's other windows are gray and smaller than its purple game window, which shows at least 5 s.
+            const ImportedRoom room("follow_" + mode, true, {"--window-mode", mode, "--min-window-ms", "5000"});
+            const AppRun run = launchInHeadset(room, "", 1800);
+            INFO(run.describe());
+            REQUIRE(run.report->launches.size() == 1);
+            REQUIRE(run.report->xr);
+            const rv::app::XrRecord& xr = *run.report->xr;
+            CHECK(xr.captureError.empty());
+            CHECK(xr.captureWindows >= (mode == "splash" ? 2u : 1u));
+            CHECK(xr.captureStarts >= xr.captureWindows);
+            CHECK(xr.captureFrames > 0);
+            CHECK(xr.captureCropSamples > 0);
+            // The last picture the CRT took is the game's purple (#7A2E8C with its sweeping bar), not the gray
+            // (#808080) of the splash or the main window.
+            INFO("colour " << xr.captureColor.x << ", " << xr.captureColor.y << ", " << xr.captureColor.z);
+            CHECK(xr.captureColor.y < 100.0f);
+            CHECK(xr.captureColor.z > xr.captureColor.y + 50.0f);
+            CHECK_FALSE(xr.captureBlack);
+        }
+    }
+}
+
+TEST_CASE("xr: a game's window that shows only black is reported (I11 step 11, ADR-0020 §5)", "[gpu][xr]") {
+    ensureLaunchAllowList();
+    // What a capture of an exclusive fullscreen game gives: an all-black window, for at least 9 s (5 s to report).
+    const ImportedRoom room("black", true, {"--black", "--min-window-ms", "9000"});
+    const AppRun run = launchInHeadset(room, "", 1800);
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureFrames > 0);
+    CHECK(xr.captureBlack);
+}

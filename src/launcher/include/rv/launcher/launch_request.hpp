@@ -10,6 +10,7 @@
 
 #include <rv/core/expected.hpp>
 #include <rv/launcher/environment.hpp>
+#include <rv/launcher/window_choice.hpp>
 
 namespace rv::launcher {
 
@@ -66,6 +67,9 @@ struct LaunchRequest {
     bool quoteEveryArgument = false;
     /// Names the launch in logs and reports ("Mole Mania with RetroArch (gambatte)").
     std::string label;
+    /// How the game's window is chosen among the tree's (I11 step 11, ADR-0020 §2); an emulator profile's VR rules
+    /// add to the defaults (I11 step 12).
+    WindowRules windowRules;
 };
 
 /// Checks a request before anything starts (specification §11.4, §19.1: untrusted inputs, no shell). Errors name the

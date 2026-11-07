@@ -92,21 +92,31 @@ read at most. The append-file is Retroverse's own, in its data directory.
 
 ### 2. The window followed
 
-`findVisibleWindow()` gives way to a scorer over the tree's visible top-level windows:
-1. the profile's rules come first;
-2. then the largest window that is not a tool window, an owned dialog, a cloaked or console window, or a splash (no
-   caption and shown for less than 2 s);
-3. a window under 200 x 150 pixels never counts.
+`findVisibleWindow()` gives way to a ranking of the tree's visible top-level windows (`launcher::chooseGameWindow()`,
+GPU- and Win32-free), best first:
+1. **Preferred:** a window a profile's rule prefers;
+2. **Normal:** a window of its own, at least 200 x 150 pixels of client area;
+3. **Lesser:** a tool window or an owned dialog, as large;
+4. **Last resort:** a smaller window or a console's, so that a console emulator or a single small window is still
+   followed;
+5. **Excluded:** a window a rule skips, a cloaked or a minimized one.
 
-**The choice is made again every 100 ms.** The runner reports a change when a better window appears or the chosen one
-goes away, so `ProcessEvent::window` and the session's window follow it. The capture restarts on the new window when it
-changes, and when `closed()` reports the window gone; the CRT never freezes on a dead window.
+Within a rank the largest client area wins, then the window shown longest. A splash is not told apart by its look:
+smaller than the game's, it loses to the game's window as soon as that shows.
+
+**The choice is made again every 100 ms** (`launcher::WindowFollower`). A better window must stay better for 300 ms
+before the choice moves (no flapping while a window is resized). A followed window that closes, is minimized or is
+cloaked gives way at once. The tree's WindowShown and WindowsGone stay as they were, so the session's waiting rules do
+not change. A new event, `WindowChanged`, carries the move, so `ProcessEvent::window` and the session's window follow
+it. The capture restarts on the new window. When `closed()` reports the window gone it restarts too, a few times
+2 s apart: Windows may give a window made again its old handle. The CRT never freezes on a dead window.
 
 **Foreground** is given again until it holds: every 500 ms for 10 s after each new window, never in hidden or
 background runs (ADR-0017 step 10's rule).
 
-**The capture's frames are watched.** A window that is not minimized and yields only black frames for 3 s is reported
-(§5).
+**The capture's frames are watched.** A window that is not minimized and yields only black frames for 5 s is reported
+(§5; at most 0.2% of a sample's pixels lit, so that a border line does not hide it, and longer than a game's usual
+black loading).
 
 ### 3. Shortcuts and Windows games
 
@@ -160,7 +170,7 @@ Retroverse never terminates the followed process, as for every launch.
 Exclusive fullscreen is detected by either sign:
 - while the game's process holds the foreground, `SHQueryUserNotificationState` returns
   `QUNS_RUNNING_D3D_FULL_SCREEN`;
-- the capture yields only black frames for 3 s from a window that is not minimized.
+- the capture yields only black frames for 5 s from a window that is not minimized.
 
 **What happens then:**
 - VR shows a notice: "Il gioco è in schermo intero esclusivo: impostalo su finestra senza bordi per vederlo qui". The

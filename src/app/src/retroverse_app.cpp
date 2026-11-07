@@ -635,6 +635,9 @@ struct RetroverseApp::State {
     XrGame xrGame;
     /// I10 step 10: the game's window given the foreground, and the foreground last logged while a game ran in VR.
     std::uintptr_t xrForegroundGiven = 0;
+    /// I11 step 11: when the followed window was first given the foreground, and last asked again.
+    std::chrono::steady_clock::time_point xrForegroundSince{};
+    std::chrono::steady_clock::time_point xrForegroundAskedAt{};
     platform_win::ForegroundWindow xrForeground;
     /// The eyes' dynamic render scale (I10 step 7): interactive runs only, so that frame-limited runs render alike.
     xr::RenderScale renderScale;
@@ -960,18 +963,32 @@ struct RetroverseApp::State {
     }
 
     /// I10 step 10: the game's window takes the foreground once it shows, as on the desktop, where Retroverse's window
-    /// steps back (most emulators read the pad only in front); never in hidden or background runs. Each change of the
-    /// foreground while it runs is logged.
+    /// steps back (most emulators read the pad only in front); never in hidden or background runs. I11 step 11: the
+    /// window followed (another when the emulator moves its game to another window), and asked again every 500 ms for
+    /// 10 s while another window holds the foreground (an emulator's own splash or dialog took it back). Each change of
+    /// the foreground while it runs is logged.
     void followXrForeground(AppContext& context, std::uintptr_t window) {
         if (window == 0) {
             xrForegroundGiven = 0;
             xrForeground = {};
             return;
         }
-        if (window != xrForegroundGiven && !context.options().hidden && !platform_win::backgroundLaunchesRequested()) {
-            xrForegroundGiven = window;
-            const bool given = platform_win::giveForeground(window);
-            spdlog::info("VR: the game's window {} the foreground", given ? "takes" : "could not take");
+        if (!context.options().hidden && !platform_win::backgroundLaunchesRequested()) {
+            const auto now = std::chrono::steady_clock::now();
+            if (window != xrForegroundGiven) {
+                xrForegroundGiven = window;
+                xrForegroundSince = now;
+                xrForegroundAskedAt = now;
+                const bool given = platform_win::giveForeground(window);
+                spdlog::info("VR: the game's window {} the foreground", given ? "takes" : "could not take");
+            } else if (platform_win::foregroundWindow().window != window &&
+                       now - xrForegroundSince < std::chrono::seconds(10) &&
+                       now - xrForegroundAskedAt >= std::chrono::milliseconds(500)) {
+                xrForegroundAskedAt = now;
+                const bool given = platform_win::giveForeground(window);
+                spdlog::debug("VR: the game's window asked for the foreground again: {}",
+                              given ? "taken" : "refused");
+            }
         }
         const platform_win::ForegroundWindow foreground = platform_win::foregroundWindow();
         if (foreground != xrForeground) {

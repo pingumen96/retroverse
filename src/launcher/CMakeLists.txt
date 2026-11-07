@@ -4,7 +4,8 @@
 # argument templates, emulator profiles (shipped in assets/launcher/emulators.json, the user's in
 # <user data>/config/emulators.json) with their executables located through rv_core's ISystemProbe, launch plans (a
 # neutral target and a profile become a request or a blocker) and the automation guard (RV_LAUNCH_ALLOWLIST); since I5
-# step 8 the plan that opens a game's manual through explorer.exe (manual_open.hpp, ADR-0016 §10). The Win32
+# step 8 the plan that opens a game's manual through explorer.exe (manual_open.hpp, ADR-0016 §10); since I11 step 11 the
+# choice of the game's window among the tree's (window_choice.hpp, ADR-0020 §2). The Win32
 # process runner lives in rv_platform_win (Win32ProcessRunner, which applies the guard), the window hand-over in
 # rv_platform (WindowHandover). Depends on rv_core only: the catalog's launch resolution calls into it.
 
@@ -20,6 +21,7 @@ add_library(rv_launcher STATIC
     src/launch_session.cpp
     src/manual_open.cpp
     src/process_runner.cpp
+    src/window_choice.cpp
 )
 add_library(rv::launcher ALIAS rv_launcher)
 rv_set_target_defaults(rv_launcher)

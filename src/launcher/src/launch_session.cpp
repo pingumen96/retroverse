@@ -238,6 +238,14 @@ void LaunchSession::apply(const ProcessEvent& event) {
         m_window = 0;
         m_windowClockStart = event.observedAt;
         break;
+    case ProcessEventKind::WindowChanged:
+        // The tree stays visible: only the game's window followed moves (a splash gone, a render window opened, a
+        // window made again).
+        if (event.window != m_window) {
+            spdlog::info("Launch session: {} now shows its game in another window", describeLaunch());
+        }
+        m_window = event.window;
+        break;
     case ProcessEventKind::WatchFailed:
         spdlog::error("Launch session: the processes of {} can no longer be followed ({}); the return needs the "
                       "user's confirmation",

@@ -25,6 +25,9 @@ enum class ProcessEventKind : std::uint8_t {
     TreeEmpty,    ///< no process of the tree is left: occurredAt = the exit time of the last one (when known)
     WindowShown,  ///< a process of the tree shows a top-level window: the first one, or one again after none was shown
     WindowsGone,  ///< no process of the tree shows a window any more
+    /// The game's window followed changed while the tree stays visible (I11 step 11, ADR-0020 §2): window = the new
+    /// one, 0 when none can be followed now (every window minimized or cloaked).
+    WindowChanged,
     WatchFailed,  ///< the runner can no longer follow the processes: message; only the user can end the session now
 };
 
@@ -44,8 +47,9 @@ struct ProcessEvent {
     std::string image;
     /// WatchFailed: why.
     std::string message;
-    /// WindowShown: the window found (an HWND as an integer; 0 where the runner has none), I10 step 6: the VR mode
-    /// captures it onto the room's CRT.
+    /// WindowShown, WindowChanged: the game's window followed (an HWND as an integer; 0 where the runner has none or
+    /// none can be followed), I10 step 6: the VR mode captures it onto the room's CRT; chosen by
+    /// launcher::WindowFollower under the request's windowRules (I11 step 11).
     std::uintptr_t window = 0;
 };
 

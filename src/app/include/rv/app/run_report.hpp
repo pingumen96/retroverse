@@ -2121,6 +2121,13 @@ struct XrRecord {
     glm::vec4 captureCrop{0.0f, 0.0f, 1.0f, 1.0f};
     std::uint64_t captureCropSamples = 0;
     std::uint64_t captureCropChanges = 0;
+    /// I11 step 11 (ADR-0020 §2): the windows the capture followed (a splash then the game, a window made again), the
+    /// captures that ended with their window closed, whether a window showed only black for 5 s (exclusive fullscreen,
+    /// ADR-0020 §5), and the mean colour (sRGB, 0 to 255) of the last sample of the window's picture.
+    std::uint64_t captureWindows = 0;
+    std::uint64_t captureClosed = 0;
+    bool captureBlack = false;
+    glm::vec3 captureColor{0.0f};
     /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
     std::uint64_t playingWalkFrames = 0;
     /// The eyes' dynamic render scale (I10 step 7): whether it ran (interactive runs), its changes and its lowest, the

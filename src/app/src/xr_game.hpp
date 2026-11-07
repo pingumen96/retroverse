@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include <rv/app/picture_bounds.hpp>
 #include <rv/app/run_report.hpp>
@@ -22,8 +23,11 @@ class ScreenService;
 /// its picture is captured (platform_win::WindowCapture: Windows.Graphics.Capture into D3D11) and read by OpenGL each
 /// frame a new one came (gl::DxInteropTexture), and the hero CRT shows it in place of its clips
 /// (ScreenService::showGameWindow). The capture ends with the window (the game's end), and the CRT has its pictures
-/// back. A capture that cannot start or breaks is logged and recorded once per window, and the game plays on without
-/// it. Retroverse never touches the emulator: it only reads its window. Main thread, GL context current.
+/// back. The window is the one the launcher follows (I11 step 11: a splash then the game, a render window, a window
+/// made again); a new one restarts the capture. A capture that cannot start, breaks or ends with its window closed is
+/// logged and recorded, tried again a little later a few times, and the game plays on without it. A window that shows
+/// only black for 5 s is reported (exclusive fullscreen, ADR-0020 §5). Retroverse never touches the emulator: it only
+/// reads its window. Main thread, GL context current.
 class XrGame {
 public:
     XrGame() = default;
@@ -43,8 +47,15 @@ private:
     void fail(std::string_view what, const Error& error, ScreenService* screen, XrRecord* record);
 
     std::uintptr_t m_window = 0;
-    /// The window whose capture failed: not tried again.
+    /// The window whose capture failed or closed, when, and how many times: tried again kRetryDelay later, at most
+    /// kMaxAttempts times (I11 step 11: a window not yet ready to be captured, one closed and made again under the same
+    /// handle).
     std::uintptr_t m_failed = 0;
+    std::chrono::steady_clock::time_point m_failedAt{};
+    int m_attempts = 0;
+    /// Since when the window's samples are all black (nothing: the last was not); reported once per window.
+    std::optional<std::chrono::steady_clock::time_point> m_blackSince;
+    bool m_blackReported = false;
     std::unique_ptr<platform_win::WindowCapture> m_capture;
     std::unique_ptr<gl::DxInteropTexture> m_interop;
     std::uint64_t m_generation = 0;

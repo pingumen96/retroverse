@@ -19,6 +19,8 @@ std::string_view toString(ProcessEventKind kind) noexcept {
         return "window shown";
     case ProcessEventKind::WindowsGone:
         return "windows gone";
+    case ProcessEventKind::WindowChanged:
+        return "window changed";
     case ProcessEventKind::WatchFailed:
         return "watch failed";
     }

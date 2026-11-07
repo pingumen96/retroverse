@@ -14,7 +14,9 @@
 #include <optional>
 #include <system_error>
 #include <thread>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -23,6 +25,7 @@
 #include <rv/launcher/command_line.hpp>
 #include <rv/launcher/launch_guard.hpp>
 #include <rv/launcher/launch_request.hpp>
+#include <rv/launcher/window_choice.hpp>
 
 #include <rv/platform_win/win32_util.hpp>
 
@@ -30,6 +33,8 @@
 #include <crtdbg.h>
 // After windows.h (win32_util.hpp): NtQuerySystemInformation and SYSTEM_PROCESS_INFORMATION (ntdll).
 #include <winternl.h>
+
+#include <dwmapi.h>
 
 namespace rv::platform_win {
 namespace {
@@ -137,41 +142,73 @@ bool isConsoleHost(const std::wstring& path) {
                                 static_cast<int>(consoleHost.size()), TRUE) == CSTR_EQUAL;
 }
 
-struct WindowSearch {
+struct WindowCollection {
     const DWORD* processIds = nullptr;
     std::size_t count = 0;
-    bool found = false;
-    HWND window = nullptr;
+    std::vector<launcher::WindowCandidate>* windows = nullptr;
 };
 
-BOOL CALLBACK findVisibleWindow(HWND window, LPARAM parameter) {
-    auto* search = reinterpret_cast<WindowSearch*>(parameter);
+/// The window classes of a console's window: the classic console host, a pseudo console, Windows Terminal.
+bool isConsoleClass(std::wstring_view name) noexcept {
+    return name == L"ConsoleWindowClass" || name == L"PseudoConsoleWindow" || name == L"CASCADIA_HOSTING_WINDOW_CLASS";
+}
+
+/// Every visible top-level window of the tree with a non-empty rectangle, described for launcher::chooseGameWindow()
+/// (I11 step 11). GetWindowTextW reads another process's caption without sending it a message, so a hung emulator
+/// never blocks the watcher.
+BOOL CALLBACK collectVisibleWindow(HWND window, LPARAM parameter) {
+    auto* collection = reinterpret_cast<WindowCollection*>(parameter);
     if (!IsWindowVisible(window)) {
         return TRUE;
     }
     DWORD processId = 0;
     GetWindowThreadProcessId(window, &processId);
-    if (std::find(search->processIds, search->processIds + search->count, processId) ==
-        search->processIds + search->count) {
+    if (std::find(collection->processIds, collection->processIds + collection->count, processId) ==
+        collection->processIds + collection->count) {
         return TRUE;
     }
     RECT rect{};
     if (!GetWindowRect(window, &rect) || rect.right <= rect.left || rect.bottom <= rect.top) {
         return TRUE;
     }
-    search->found = true;
-    search->window = window;
-    return FALSE;
+    launcher::WindowCandidate candidate;
+    candidate.handle = reinterpret_cast<std::uintptr_t>(window);
+    candidate.processId = processId;
+    std::array<wchar_t, 256> className{};
+    const int classLength = GetClassNameW(window, className.data(), static_cast<int>(className.size()));
+    const std::wstring_view classView(className.data(), static_cast<std::size_t>(std::max(classLength, 0)));
+    candidate.className = core::wideToUtf8Lossy(classView);
+    std::array<wchar_t, 512> title{};
+    const int titleLength = GetWindowTextW(window, title.data(), static_cast<int>(title.size()));
+    candidate.title =
+        core::wideToUtf8Lossy(std::wstring_view(title.data(), static_cast<std::size_t>(std::max(titleLength, 0))));
+    RECT client{};
+    if (GetClientRect(window, &client)) {
+        candidate.width = static_cast<int>(client.right - client.left);
+        candidate.height = static_cast<int>(client.bottom - client.top);
+    }
+    const LONG_PTR exStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    candidate.tool = (exStyle & WS_EX_TOOLWINDOW) != 0;
+    candidate.owned = GetWindow(window, GW_OWNER) != nullptr;
+    candidate.console = isConsoleClass(classView);
+    DWORD cloaked = 0;
+    candidate.cloaked =
+        SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked != 0;
+    candidate.minimized = IsIconic(window) != FALSE;
+    collection->windows->push_back(std::move(candidate));
+    return TRUE;
 }
 
 /// A started process followed by a watcher thread. Never terminates it (once it has run).
 class Win32RunningProcess final : public launcher::IRunningProcess {
 public:
     Win32RunningProcess(UniqueHandle process, std::uint32_t processId, UniqueHandle job, UniqueHandle port,
-                        std::function<void()> wake, std::chrono::milliseconds pollInterval)
+                        std::function<void()> wake, std::chrono::milliseconds pollInterval,
+                        launcher::WindowRules windowRules)
         : m_process(std::move(process)), m_processId(processId), m_job(std::move(job)), m_port(std::move(port)),
           m_stopEvent(CreateEventW(nullptr, TRUE, FALSE, nullptr)), m_wake(std::move(wake)),
-          m_pollMilliseconds(static_cast<DWORD>(std::clamp<std::int64_t>(pollInterval.count(), 1, 10000))) {}
+          m_pollMilliseconds(static_cast<DWORD>(std::clamp<std::int64_t>(pollInterval.count(), 1, 10000))),
+          m_follower(std::move(windowRules)) {}
 
     Win32RunningProcess(const Win32RunningProcess&) = delete;
     Win32RunningProcess& operator=(const Win32RunningProcess&) = delete;
@@ -523,7 +560,8 @@ private:
         push(std::move(event));
     }
 
-    /// Reports WindowShown / WindowsGone when the tree's visibility changed since the last check.
+    /// Reports WindowShown / WindowsGone when the tree's visibility changed since the last check, and WindowChanged when
+    /// the game's window followed (launcher::WindowFollower) moved while the tree stayed visible (I11 step 11).
     void checkWindows() {
         std::array<DWORD, kMaxWindowProcesses> processIds{};
         std::size_t count = 0;
@@ -542,21 +580,52 @@ private:
         } else if (!m_mainExited) {
             processIds[count++] = m_processId;
         }
-        WindowSearch search{processIds.data(), count, false, nullptr};
+        std::vector<launcher::WindowCandidate> windows;
+        WindowCollection collection{processIds.data(), count, &windows};
         if (count > 0) {
-            EnumWindows(&findVisibleWindow, reinterpret_cast<LPARAM>(&search));
+            EnumWindows(&collectVisibleWindow, reinterpret_cast<LPARAM>(&collection));
         }
-        if (search.found == m_windowVisible) {
-            return;
-        }
-        m_windowVisible = search.found;
         const LaunchClock::time_point now = LaunchClock::now();
+        // How long each window has been shown: windows no longer there are forgotten.
+        std::erase_if(m_firstSeen, [&](const auto& seen) {
+            return std::none_of(windows.begin(), windows.end(),
+                                [&](const launcher::WindowCandidate& window) { return window.handle == seen.first; });
+        });
+        for (launcher::WindowCandidate& window : windows) {
+            auto seen = std::find_if(m_firstSeen.begin(), m_firstSeen.end(),
+                                     [&](const auto& entry) { return entry.first == window.handle; });
+            if (seen == m_firstSeen.end()) {
+                m_firstSeen.emplace_back(window.handle, now);
+                seen = std::prev(m_firstSeen.end());
+            }
+            window.shownFor = std::chrono::duration_cast<std::chrono::milliseconds>(now - seen->second);
+        }
+        const std::optional<std::uintptr_t> changed = m_follower.update(windows, now);
+        const bool visible = !windows.empty();
+        if (changed) {
+            const auto followed = std::find_if(windows.begin(), windows.end(), [&](const auto& window) {
+                return window.handle == *changed;
+            });
+            if (followed != windows.end()) {
+                spdlog::debug("Launch: the game's window followed is now a {} x {} window of class {} (of {} shown)",
+                              followed->width, followed->height, followed->className, windows.size());
+            }
+        }
         ProcessEvent event;
-        event.kind = search.found ? ProcessEventKind::WindowShown : ProcessEventKind::WindowsGone;
-        event.window = reinterpret_cast<std::uintptr_t>(search.window);
         event.observedAt = now;
         event.occurredAt = now;
-        push(std::move(event));
+        if (visible != m_windowVisible) {
+            m_windowVisible = visible;
+            event.kind = visible ? ProcessEventKind::WindowShown : ProcessEventKind::WindowsGone;
+            event.window = visible ? m_follower.current() : 0;
+            push(std::move(event));
+            return;
+        }
+        if (visible && changed) {
+            event.kind = ProcessEventKind::WindowChanged;
+            event.window = *changed;
+            push(std::move(event));
+        }
     }
 
     void reportFailure(std::string message) noexcept {
@@ -606,6 +675,9 @@ private:
     bool m_treeEmptyReported = false;
     bool m_untrackedExit = false;
     bool m_windowVisible = false;
+    launcher::WindowFollower m_follower;
+    /// When each visible window of the tree was first seen.
+    std::vector<std::pair<std::uintptr_t, LaunchClock::time_point>> m_firstSeen;
 };
 
 /// A job object whose completion port reports its processes; nothing (and `error` set) when it cannot be set up.
@@ -1038,7 +1110,7 @@ Win32ProcessRunner::startProcess(const launcher::LaunchRequest& request, launche
         }
         running = std::make_unique<Win32RunningProcess>(std::move(process), info.dwProcessId, std::move(job),
                                                         std::move(port), std::move(callbacks.wake),
-                                                        m_options.pollInterval);
+                                                        m_options.pollInterval, request.windowRules);
         if (auto watching = running->startWatching(); !watching) {
             endNeverRun();
             return makeError(ErrorCode::PlatformError, watching.error().message, executableUtf8);

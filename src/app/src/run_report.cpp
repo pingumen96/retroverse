@@ -3325,6 +3325,11 @@ Json xrToJson(const XrRecord& xr) {
                                        static_cast<double>(xr.captureCrop.z), static_cast<double>(xr.captureCrop.w)});
     json["captureCropSamples"] = xr.captureCropSamples;
     json["captureCropChanges"] = xr.captureCropChanges;
+    json["captureWindows"] = xr.captureWindows;
+    json["captureClosed"] = xr.captureClosed;
+    json["captureBlack"] = xr.captureBlack;
+    json["captureColor"] = Json::array({static_cast<double>(xr.captureColor.x), static_cast<double>(xr.captureColor.y),
+                                        static_cast<double>(xr.captureColor.z)});
     json["playingWalkFrames"] = xr.playingWalkFrames;
     json["dynamicScale"] = xr.dynamicScale;
     json["quality"] = xr.quality;
@@ -3397,6 +3402,10 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureCrop = fields.vec4("captureCrop");
     xr.captureCropSamples = fields.count("captureCropSamples");
     xr.captureCropChanges = fields.count("captureCropChanges");
+    xr.captureWindows = fields.count("captureWindows");
+    xr.captureClosed = fields.count("captureClosed");
+    xr.captureBlack = fields.boolean("captureBlack");
+    xr.captureColor = fields.vec3("captureColor");
     xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");
     xr.quality = fields.string("quality");

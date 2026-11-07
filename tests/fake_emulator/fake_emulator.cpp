@@ -60,6 +60,10 @@ struct Options {
     int frames = 0;
     int minWindowMs = 0;
     bool pillarbox = false;
+    /// I11 step 11: the windows a real emulator shows besides its game's ("splash", "two-windows", "recreate").
+    std::string windowMode;
+    int windowDelayMs = 0;
+    bool black = false;
     bool exclusive = false;
     bool stealFocus = false;
     bool inputAtEnd = false;
@@ -96,6 +100,14 @@ constexpr std::string_view kUsage =
     "  --min-window-ms MS       with --frames: the window shows at least MS ms (frames may go faster than vsync)\n"
     "  --pillarbox              with --frames: the color only in the window's middle 4:3, black at its sides (a 4:3\n"
     "                           game in a wide window)\n"
+    "  --window-mode MODE       with --frames, the other windows of a real emulator (I11 step 11), each smaller than\n"
+    "                           the game's and gray: splash (a splash alone for 1.5 s, then the game's window beside\n"
+    "                           it for 1 s, then the game's alone), two-windows (a main window beside the game's all\n"
+    "                           along), recreate (a status window all along; the game's window destroyed and made\n"
+    "                           again 1.5 s after it showed)\n"
+    "  --window-delay-ms MS     with --frames: no window for MS ms first (an emulator that loads before it shows)\n"
+    "  --black                  with --frames: the game's window all black (what an exclusive fullscreen game gives\n"
+    "                           a capture)\n"
     "  --exclusive              with --frames: exclusive fullscreen in a display mode other than the desktop's\n"
     "  --steal-focus            with --frames: force the window into the foreground on its first frame\n"
     "  --input-at-end           with --frames: a Shift key tap into its window before it closes (the\n"
@@ -215,6 +227,22 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
             options.minWindowMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
         } else if (arg == "--pillarbox") {
             options.pillarbox = true;
+        } else if (arg == "--window-mode") {
+            if (!value(options.windowMode)) {
+                return false;
+            }
+            if (options.windowMode != "splash" && options.windowMode != "two-windows" &&
+                options.windowMode != "recreate") {
+                error = "unknown window mode: " + options.windowMode;
+                return false;
+            }
+        } else if (arg == "--window-delay-ms") {
+            if (!number(n)) {
+                return false;
+            }
+            options.windowDelayMs = static_cast<int>(std::min<std::uint64_t>(n, 600000));
+        } else if (arg == "--black") {
+            options.black = true;
         } else if (arg == "--sleep-ms") {
             if (!number(n)) {
                 return false;
@@ -619,6 +647,63 @@ const SDL_DisplayMode* pickExclusiveMode(const SDL_DisplayMode* desktop, SDL_Dis
     return chosen;
 }
 
+/// A window an emulator shows besides its game's (--window-mode): a splash, a main window, a status window. Gray, smaller
+/// than the game's; in the background off every monitor and never activated, as the game's.
+struct AuxWindow {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+
+    [[nodiscard]] explicit operator bool() const noexcept { return window != nullptr; }
+};
+
+void placeInBackground(HWND hwnd) {
+    if (hwnd != nullptr) {
+        const int x = GetSystemMetrics(SM_XVIRTUALSCREEN) - 2000;
+        const int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        SetWindowPos(hwnd, HWND_BOTTOM, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    }
+}
+
+HWND hwndOf(SDL_Window* window) {
+    return static_cast<HWND>(
+        SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+}
+
+AuxWindow makeAuxWindow(const char* title, int width, int height, bool background) {
+    AuxWindow aux;
+    const SDL_WindowFlags flags =
+        SDL_WINDOW_HIDDEN | (background ? SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY : SDL_WindowFlags{0});
+    aux.window = SDL_CreateWindow(title, width, height, flags);
+    if (aux.window == nullptr) {
+        return aux;
+    }
+    if (background) {
+        placeInBackground(hwndOf(aux.window));
+    } else {
+        SDL_ShowWindow(aux.window);
+    }
+    aux.renderer = SDL_CreateRenderer(aux.window, nullptr);
+    return aux;
+}
+
+void drawAux(const AuxWindow& aux) {
+    if (aux.renderer != nullptr) {
+        SDL_SetRenderDrawColor(aux.renderer, 128, 128, 128, 255);
+        SDL_RenderClear(aux.renderer);
+        SDL_RenderPresent(aux.renderer);
+    }
+}
+
+void destroyAux(AuxWindow& aux) {
+    if (aux.renderer != nullptr) {
+        SDL_DestroyRenderer(aux.renderer);
+    }
+    if (aux.window != nullptr) {
+        SDL_DestroyWindow(aux.window);
+    }
+    aux = AuxWindow{};
+}
+
 /// The window part: a fullscreen window for `options.frames` frames. Fills `log`.
 void runWindow(const Options& options, nlohmann::json& log) {
     const Clock::time_point start = Clock::now();
@@ -636,18 +721,44 @@ void runWindow(const Options& options, nlohmann::json& log) {
     log["display"]["desktop"] = describeMode(desktop);
     log["background"] = background;
 
+    // I11 step 11: a load before any window, then the other windows of a real emulator.
+    if (options.windowDelayMs > 0) {
+        SDL_Delay(static_cast<Uint32>(options.windowDelayMs));
+    }
+    const bool splashMode = options.windowMode == "splash";
+    AuxWindow aux;
+    if (!options.windowMode.empty()) {
+        aux = splashMode ? makeAuxWindow("Retroverse fake emulator: splash", 200, 120, background)
+              : options.windowMode == "two-windows"
+                  ? makeAuxWindow("Retroverse fake emulator: main", 220, 160, background)
+                  : makeAuxWindow("Retroverse fake emulator: status", 200, 120, background);
+        log["windowMode"] = options.windowMode;
+    }
+    if (splashMode && aux) {
+        const Clock::time_point splashStart = Clock::now();
+        while (Clock::now() - splashStart < std::chrono::milliseconds(1500)) {
+            SDL_Event event;
+            while (SDL_PollEvent(&event)) {
+            }
+            drawAux(aux);
+            SDL_Delay(16);
+        }
+    }
+
     // In the background: a small tool window (no taskbar button) that never takes the focus, still a visible window
     // of the process for the launcher's window detection.
     const SDL_WindowFlags flags =
         SDL_WINDOW_HIDDEN | (background ? SDL_WINDOW_NOT_FOCUSABLE | SDL_WINDOW_UTILITY : SDL_WindowFlags{0});
     SDL_Window* window =
         SDL_CreateWindow("Retroverse fake emulator", background ? 320 : 1280, background ? 180 : 720, flags);
+    const Clock::time_point gameWindowStart = Clock::now();
+    bool recreated = false;
     if (window == nullptr) {
         log["error"] = std::string("SDL_CreateWindow failed: ") + SDL_GetError();
         SDL_Quit();
         return;
     }
-    const auto hwnd = static_cast<HWND>(
+    auto hwnd = static_cast<HWND>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     if (background) {
         // Off every monitor, left of the virtual screen, shown without activation at the bottom of the z-order. Shown by
@@ -706,6 +817,40 @@ void runWindow(const Options& options, nlohmann::json& log) {
                 quit = true;
             }
         }
+        const auto gameShownFor = Clock::now() - gameWindowStart;
+        if (splashMode && aux && gameShownFor >= std::chrono::milliseconds(1000)) {
+            destroyAux(aux);
+            log["splashClosedMs"] = sinceStart();
+        }
+        if (options.windowMode == "recreate" && !recreated && gameShownFor >= std::chrono::milliseconds(1500)) {
+            // The game's window destroyed and made again (a renderer restart), the status window staying meanwhile.
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            window = SDL_CreateWindow("Retroverse fake emulator", background ? 320 : 1280, background ? 180 : 720,
+                                      flags);
+            if (window == nullptr) {
+                log["error"] = std::string("SDL_CreateWindow failed again: ") + SDL_GetError();
+                break;
+            }
+            if (background) {
+                placeInBackground(hwndOf(window));
+            } else {
+                SDL_SetWindowFullscreen(window, true);
+                SDL_ShowWindow(window);
+            }
+            renderer = SDL_CreateRenderer(window, nullptr);
+            if (renderer == nullptr) {
+                log["error"] = std::string("SDL_CreateRenderer failed again: ") + SDL_GetError();
+                SDL_DestroyWindow(window);
+                window = nullptr;
+                break;
+            }
+            SDL_SetRenderVSync(renderer, 1);
+            hwnd = hwndOf(window);
+            recreated = true;
+            log["recreatedMs"] = sinceStart();
+        }
+        drawAux(aux);
         if (frame == 0 && options.stealFocus && !background) {
             SDL_RaiseWindow(window);
         }
@@ -727,13 +872,15 @@ void runWindow(const Options& options, nlohmann::json& log) {
         }
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-        SDL_RenderFillRect(renderer, &area);
-        // A bar sweeping across the picture: the frame pacing shows.
-        const float x = area.x + static_cast<float>((frame * 16) % std::max(static_cast<int>(area.w), 1));
-        const SDL_FRect bar{x, 0.0f, std::min(area.w / 16.0f, area.x + area.w - x), area.h};
-        SDL_SetRenderDrawColor(renderer, 240, 220, 160, 255);
-        SDL_RenderFillRect(renderer, &bar);
+        if (!options.black) {
+            SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+            SDL_RenderFillRect(renderer, &area);
+            // A bar sweeping across the picture: the frame pacing shows.
+            const float x = area.x + static_cast<float>((frame * 16) % std::max(static_cast<int>(area.w), 1));
+            const SDL_FRect bar{x, 0.0f, std::min(area.w / 16.0f, area.x + area.w - x), area.h};
+            SDL_SetRenderDrawColor(renderer, 240, 220, 160, 255);
+            SDL_RenderFillRect(renderer, &bar);
+        }
         SDL_RenderPresent(renderer);
         ++frame;
     }
@@ -769,8 +916,13 @@ void runWindow(const Options& options, nlohmann::json& log) {
     log["foreground"]["atEnd"] = hwnd != nullptr && GetForegroundWindow() == hwnd;
     log["display"]["atEnd"] = describeMode(SDL_GetCurrentDisplayMode(display));
     log["windowEndMs"] = sinceStart();
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    destroyAux(aux);
+    if (renderer != nullptr) {
+        SDL_DestroyRenderer(renderer);
+    }
+    if (window != nullptr) {
+        SDL_DestroyWindow(window);
+    }
     SDL_Quit();
 }
 
