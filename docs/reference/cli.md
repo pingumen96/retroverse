@@ -86,6 +86,18 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   with `-` after `--`) and `show <gameId>` read the catalog database through a reader (`SqliteCatalogQuery`) and never
   create, migrate or write it: exit 3 without a database or with another schema version, 2 for an unknown `--system`,
   1 for `show` of an unknown game. `show` prints the media paths (as `media --game`), no readiness yet.
+- `identity show [--system <name>]` (I11 step 1, `docs/i11/step-1.md`, ADR-0019 §2): each system of the catalog
+  with the identity Retroverse reads at runtime: its name, maker, year, release date, kind of hardware, description
+  (Italian where the theme has it), colours and logo. Each field has its source:
+  - `identity.json` in `<user data>/config`;
+  - a theme: identity.json's `theme`, then `linear-es-de`;
+  - ES-DE's active theme, for the logo;
+  - ES-DE's full name, for the name.
+
+  The themes are found under library.json's ES-DE home and install folder, and identity.json's `themeRoots`. Without
+  `--system` it prints one line per system and a summary; with it, every field, its files and what was left out.
+  `--json` gives every field with `source` and `origin`. It reads only: exit 2 without library.json or for an unknown
+  system, 3 when the catalog or identity.json cannot be read.
 - `identities` (`docs/i2/step-11b.md`): `list --system <name>` (GameId, state `present`, `missing` or `unseen`, quick
   hash `current`, `stale`, `none` or `folder`, last path), `show <gameId>` (file facts, quick hash, aliases, history,
   review rows; an alias prints what it stands for; needs no library.json), `reviews [--system <name>] [--all]` (open

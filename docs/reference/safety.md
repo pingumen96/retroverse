@@ -58,7 +58,7 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
     `<user data>/content/consoles/`, which only `retroverse-cli content` writes.
   - **Never copied:** none of it goes into `assets/`, fixtures or goldens, or is packaged. Derived images stay under
     `<user data>/cache/`.
-  - **Tests:** they use the invented theme of `tests/fixtures/esde-theme` and original fixture models made at test
+  - **Tests:** they use the invented theme of `tests/fixtures/esde/theme` and original fixture models made at test
     time. Screenshots of real rooms stay under `build/`.
   - **No downloader:** the user fetches a model by hand, and its provenance and licence go into its `console.json`.
     The models' sources live in the private `retroverse-content` repository, never in this one.

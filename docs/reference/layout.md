@@ -30,7 +30,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   runtime) -> `app` (composition root) ->
   `retroverse.exe`. `catalog` holds the domain, the identities, one header per port (I2 step 1), the media coverage (8)
   and the launch resolution (10); `esde` reads ES-DE's configuration and gamelists (steps 2 and 3), scans the ROM
-  folders (7), resolves media (8) and translates ES-DE commands (10); `catalog` also holds the import service (11a),
+  folders (7), resolves media (8), translates ES-DE commands (10) and, since I11 step 1, reads ES-DE's themes and
+  `identity.json` into each system's identity (`themes.hpp`, `identity.hpp`; the domain type `rv/catalog/system_identity.hpp`); `catalog` also holds the import service (11a),
   fingerprints and reconciliation (11b); `catalog_db` holds the database, the catalog store (step 4, with the import's
   writes of 11a and 11b), the queries and search (9) and the session store (12); the system probe's port is in `core`
   (`rv/core/system_probe.hpp`, ADR-0008 §2); `core`'s `canonical_json.hpp` holds the canonical JSON (ADR-0010 §8) and,
@@ -220,7 +221,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `esde/custom-systems` (the user's `custom_systems` with ES-DE's quirks), `esde/nested-roms`, `esde/multi-disc`,
   `esde/arcade`, `esde/noload` and `esde/long-path` (the ROM scan: namesakes, game directories and gamelist entries in
   sub-folders, disc groups, MAME sets and names, `noload.txt`, hidden folders and `ParseGamelistOnly`, paths past
-  MAX_PATH), `esde/media-roots` (an empty media root; a missing one and one on an unmapped drive as variants), each
+  MAX_PATH), `esde/media-roots` (an empty media root; a missing one and one on an unmapped drive as variants), `esde/theme` (I11:
+  ES-DE's theme folders with invented systems' metadata and original logos), each
   README stating its expectations; their settings hold fake scraper credentials that nothing may show, log or
   record; for I3 `esde/snes-room` (50 invented titles with generated covers and clips, damaged ones among them, G10's
   ten in `additions/`), `esde/snes-single` (one ROM, no media) and `esde/snes-stress` (2,000 generated titles, 300

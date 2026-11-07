@@ -221,7 +221,7 @@ stays only for a scene's own test models.
 ### 8. Tests
 
 - **Unit tests:**
-  - the reader on a fixture theme (`tests/fixtures/esde-theme/`, invented systems, original SVG shapes): every field
+  - the reader on a fixture theme (`tests/fixtures/esde/theme/`, invented systems, original SVG shapes): every field
     and its source, the order, hostile XML and SVG, the limits;
   - the rasterizer against reference PNGs within the goldens' tolerance;
   - the sign's layout per case;

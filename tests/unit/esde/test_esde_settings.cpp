@@ -14,6 +14,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/esde/identity.hpp>
 #include <rv/esde/settings.hpp>
 
 #include "support/fixture.hpp"
@@ -61,7 +62,7 @@ rv::catalog::LibraryProfile profileOf(const rv::test::Fixture& fixture, std::str
 /// Every text the settings and the roots hold, to look for what must not be there.
 std::string everything(const EsdeSettings& settings, const std::vector<ResolvedRoot>& roots = {}) {
     std::string all = rv::core::pathToUtf8(settings.file) + "|" + settings.romDirectory + "|" +
-                      settings.mediaDirectory;
+                      settings.mediaDirectory + "|" + settings.theme;
     const auto addIssues = [&](const std::vector<rv::catalog::Issue>& issues) {
         for (const auto& issue : issues) {
             all += "|" + issue.code + "|" + issue.system + "|" + issue.file + "|" + issue.reason;
@@ -138,7 +139,8 @@ TEST_CASE("esde/settings: only the keys of the whitelist are read, as ES-DE read
     }
     CHECK(names == std::vector<std::string_view>{"AlternativeEmulatorPerGame", "LegacyGamelistFileLocation",
                                                  "MAMENameStripExtraInfo", "MediaDirectory", "ParseGamelistOnly",
-                                                 "ROMDirectory", "ShowHiddenFiles", "ShowHiddenGames", "UIMode"});
+                                                 "ROMDirectory", "ShowHiddenFiles", "ShowHiddenGames", "Theme",
+                                                 "UIMode"});
 
     SECTION("values ES-DE reads otherwise than written, repeated keys, keys of another type") {
         const rv::test::LogCapture log;
@@ -178,6 +180,18 @@ TEST_CASE("esde/settings: only the keys of the whitelist are read, as ES-DE read
         CHECK(everything(settings).find("whitelist-secret") == std::string::npos);
         CHECK(log.count("whitelist-secret") == 0);
     }
+    SECTION("Theme: the active theme's folder name, read as written (I11 step 1)") {
+        const EsdeSettings settings = settingsFile(dir, R"(<?xml version="1.0"?>
+<string name="Theme" value="fixture-theme-es-de" />
+<string name="ThemeAspectRatio" value="automatic" />
+<string name="ScraperUsernameScreenScraper" value="theme-secret-user" />
+)");
+        CHECK(settings.theme == "fixture-theme-es-de");
+        CHECK(rv::esde::activeThemeName(settings) == "fixture-theme-es-de");
+        CHECK(settings.issues.empty());
+        CHECK(everything(settings).find("theme-secret") == std::string::npos);
+        CHECK(rv::esde::activeThemeName(EsdeSettings{}) == "linear-es-de");
+    }
     SECTION("the defaults of a file that sets nothing Retroverse reads") {
         const EsdeSettings settings = settingsFile(dir, "<?xml version=\"1.0\"?>\n<int name=\"MaxPlayTimeTracking\" "
                                                         "value=\"8\" />\n");
@@ -190,6 +204,7 @@ TEST_CASE("esde/settings: only the keys of the whitelist are read, as ES-DE read
         CHECK_FALSE(settings.legacyGamelistFileLocation);
         CHECK(settings.alternativeEmulatorPerGame);
         CHECK(settings.uiMode == rv::esde::UiMode::Full);
+        CHECK(settings.theme.empty());
         CHECK(settings.issues.empty());
     }
 }

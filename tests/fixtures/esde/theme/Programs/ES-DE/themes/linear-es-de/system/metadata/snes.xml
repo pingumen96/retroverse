@@ -1,0 +1,30 @@
+<!-- An invented system's metadata in linear-es-de's layout (tests/fixtures/esde/theme/README.md). -->
+<theme>
+    <variables>
+        <systemName>Lumen 16</systemName>
+        <systemDescription>The Lumen 16 is an invented home console of the fixtures. It never existed.</systemDescription>
+        <systemManufacturer>Fixture Works</systemManufacturer>
+        <systemReleaseYear>1991</systemReleaseYear>
+        <systemReleaseDate>1991-11-21</systemReleaseDate>
+        <systemReleaseDateFormated>November 21, 1991</systemReleaseDateFormated>
+        <systemHardwareType>Console</systemHardwareType>
+        <systemColor>df5142</systemColor>
+        <systemColorPalette1>#FED01B</systemColorPalette1>
+        <systemColorPalette2>zz1234</systemColorPalette2>
+        <systemColorPalette3>0a2a8d</systemColorPalette3>
+        <systemColorPalette4>007544</systemColorPalette4>
+    </variables>
+    <language name="de_DE">
+        <variables>
+            <systemDescription>Die Lumen 16 ist eine erfundene Heimkonsole.</systemDescription>
+            <systemHardwareType>Konsole</systemHardwareType>
+        </variables>
+    </language>
+    <language name="it_IT">
+        <variables>
+            <systemDescription>La Lumen 16 è una console domestica inventata per i test.
+                Non è mai esistita.</systemDescription>
+            <systemHardwareType>Console domestica</systemHardwareType>
+        </variables>
+    </language>
+</theme>
