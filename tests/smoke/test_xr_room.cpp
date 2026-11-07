@@ -28,6 +28,7 @@
 #include <rv/app/world_focus.hpp>
 #include <rv/app/world_inspect.hpp>
 #include <rv/core/file_io.hpp>
+#include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
 #include <rv/world/collection_layout.hpp>
@@ -409,4 +410,67 @@ TEST_CASE("xr: a game's window that shows only black is reported (I11 step 11, A
     CHECK(xr.captureError.empty());
     CHECK(xr.captureFrames > 0);
     CHECK(xr.captureBlack);
+}
+
+TEST_CASE("xr: a launch in VR takes its program's arguments and append-file (I11 step 12, ADR-0020 §1)", "[gpu][xr]") {
+    ensureLaunchAllowList();
+    // The fake's own arguments ask for an all-black window; its program's VR settings drop that, ask for its log, and
+    // pass Retroverse's append-file with --config, whose colour line makes its window green instead of its purple.
+    const ImportedRoom room("vr_program", true, {"--black", "--min-window-ms", "4000"});
+    const fs::path fakeLog = room.dir / "fake_vr_log.json";
+    const fs::path profiles = room.data / "config" / "emulators.json";
+    auto document = rv::core::readJsonFile(profiles);
+    REQUIRE(document.has_value());
+    (*document)["schemaVersion"] = 2;
+    (*document)["programs"] = nlohmann::json::array(
+        {{{"id", "fake"},
+          {"files", {"rv_fake_emulator.exe"}},
+          {"vr",
+           {{"addArguments", {"--log", arg(fakeLog)}},
+            {"dropArguments", {"--black"}},
+            {"appendConfig",
+             {{"option", "--config"}, {"file", "fake.cfg"}, {"lines", {"# the fake's file for VR", "color = 2E8C3A"}}}},
+            {"inGame", "heavy"}}}}});
+    REQUIRE(rv::core::writeTextFileAtomic(profiles, document->dump(2) + "\n").has_value());
+
+    const AppRun run = launchInHeadset(room, "", 1800);
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    const rv::app::LaunchRecord& launch = run.report->launches.front();
+    REQUIRE(launch.program.has_value());
+    CHECK(launch.program->id == "fake");
+    CHECK(launch.program->vr);
+    CHECK(launch.program->refused.empty());
+    CHECK(launch.program->inGame == "heavy");
+    CHECK(launch.program->dropped == std::vector<std::string>{"--black"});
+    // Retroverse's own file, in its data directory.
+    const fs::path appendFile = room.data / "launcher" / "vr" / "fake.cfg";
+    CHECK(fs::equivalent(rv::core::pathFromUtf8(launch.program->appendFile), appendFile));
+    REQUIRE(launch.program->added.size() == 4);
+    CHECK(launch.program->added[0] == "--log");
+    CHECK(launch.program->added[2] == "--config");
+    const auto written = rv::core::readTextFile(appendFile);
+    REQUIRE(written.has_value());
+    CHECK(*written == "# the fake's file for VR\ncolor = 2E8C3A\n");
+
+    // What the fake received: the program's arguments first, its own --black gone, the file read.
+    const auto log = rv::core::readJsonFile(fakeLog);
+    REQUIRE(log.has_value());
+    const std::vector<std::string> args = (*log)["args"].get<std::vector<std::string>>();
+    REQUIRE(args.size() >= 4);
+    CHECK(args[0] == "--log");
+    CHECK(args[2] == "--config");
+    CHECK(fs::equivalent(rv::core::pathFromUtf8(args[3]), appendFile));
+    CHECK(std::find(args.begin(), args.end(), "--black") == args.end());
+    CHECK((*log)["config"] == *written);
+
+    // The CRT shows the colour the file set (#2E8C3A), not black.
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureFrames > 0);
+    CHECK_FALSE(xr.captureBlack);
+    INFO("colour " << xr.captureColor.x << ", " << xr.captureColor.y << ", " << xr.captureColor.z);
+    CHECK(xr.captureColor.y > xr.captureColor.x + 40.0f);
+    CHECK(xr.captureColor.y > xr.captureColor.z + 40.0f);
 }

@@ -135,9 +135,13 @@ bool LaunchFlow::refuse(LaunchMessage message, LaunchInfo info, std::uint64_t fr
     return true;
 }
 
-void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame) {
+void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame,
+                       const RequestAdapter& adapt) {
     if (!m_pending) {
         return;
+    }
+    if (adapt) {
+        adapt(*m_pending, current());
     }
     m_session.emplace(std::move(*m_pending), m_runner);
     m_pending.reset();

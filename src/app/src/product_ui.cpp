@@ -2942,7 +2942,7 @@ void ProductUi::onIdle() {
                 state->handover->handOver(); // Keep: the window stays behind the emulator, rendering nothing
             }
         };
-        s.flow.start(now, std::move(callbacks), frame);
+        s.flow.start(now, std::move(callbacks), frame, s.hooks.adapting);
     } else {
         s.flow.idleWake();
     }

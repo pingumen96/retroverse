@@ -32,6 +32,9 @@
 // would say of it. The game's path is spelled as the folder lists it, as ES-DE's %ROM% spells it. Nothing is started,
 // nothing is written (Retroverse's choices are read from the catalog database when there is one: the system's for
 // --path, the game's and the system's for --game). Command lines are logged at debug level only (ADR-0008 §9).
+// With --vr (I11 step 12, ADR-0020 §1) the request is the one a launch in VR starts: adapted to its program
+// (emulators.json's "programs", vr_launch.hpp), with what it adds and drops, the load, and the append-file's path and
+// lines, which a dry run shows and never writes.
 //
 // A launch test fails closed (ADR-0018 §6): an unattended run (RV_LAUNCH_BACKGROUND) refuses --test while
 // RV_LAUNCH_ALLOWLIST is not set, exit 1, nothing resolved or recorded.
@@ -74,6 +77,7 @@
 #include <rv/launcher/command_line.hpp>
 #include <rv/launcher/launch_guard.hpp>
 #include <rv/launcher/launch_session.hpp>
+#include <rv/launcher/vr_launch.hpp>
 #include <rv/platform_win/win32_process_runner.hpp>
 #include <rv/platform_win/win32_util.hpp>
 
@@ -117,6 +121,18 @@ struct DryRun {
     std::optional<std::string> commandLine;
     /// The system as the catalog holds it, when the library no longer configures it (`system` points here then).
     std::optional<catalog::SystemInfo> catalogSystem;
+    /// --vr: the request adapted to a launch in VR (shown instead of the translation's).
+    std::optional<launcher::AdaptedLaunch> vr;
+    /// --vr: the program's origin, when one matched.
+    std::string vrProgramOrigin;
+
+    /// The request a launch starts: the one adapted to VR with --vr, else the translation's.
+    [[nodiscard]] const launcher::LaunchRequest* request() const noexcept {
+        if (vr) {
+            return &vr->request;
+        }
+        return resolution.translation.request ? &*resolution.translation.request : nullptr;
+    }
 };
 
 /// The game's availability on disk: its system's folder, then each element of its path as the folder spells it.
@@ -198,6 +214,37 @@ void finishResolution(LaunchLibrary& library, DryRun& run) {
     }
 }
 
+/// --vr (I11 step 12): the request as a launch in VR starts it, its command line and the guard's verdict on it. The
+/// append-file is shown, never written.
+void adaptForVr(LaunchLibrary& library, const core::Paths& paths, DryRun& run) {
+    const auto& request = run.resolution.translation.request;
+    if (!request) {
+        return;
+    }
+    const launcher::ProgramProfile* program = library.profiles.programFor(request->executable);
+    run.vr = launcher::adaptLaunch(*request, program, true, paths.vrLaunchDir());
+    run.vrProgramOrigin = program != nullptr ? std::string(launcher::toString(program->origin)) : std::string();
+    run.guard = launcher::LaunchGuard::fromEnvironment().check(run.vr->request);
+    run.commandLine.reset();
+    if (auto commandLine = launcher::commandLineOf(run.vr->request)) {
+        run.commandLine = std::move(*commandLine);
+    }
+}
+
+Json vrJson(const DryRun& run) {
+    const launcher::AdaptedLaunch& vr = *run.vr;
+    Json appendFile = vr.appendFile ? Json{{"path", pathText(vr.appendFile->path)}, {"bytes", vr.appendFile->bytes}}
+                                    : Json(nullptr);
+    return Json{{"program", vr.programId.empty() ? Json(nullptr) : Json(vr.programId)},
+                {"programName", vr.programName},
+                {"programOrigin", run.vrProgramOrigin},
+                {"added", vr.added},
+                {"dropped", vr.dropped},
+                {"appendFile", std::move(appendFile)},
+                {"inGame", std::string(launcher::toString(vr.inGame))},
+                {"refused", vr.refused ? Json(*vr.refused) : Json(nullptr)}};
+}
+
 Json requestJson(const launcher::LaunchRequest& request) {
     Json argv = Json::array();
     argv.push_back(pathText(request.executable));
@@ -234,7 +281,10 @@ Json dryRunJson(const DryRun& run) {
     json["chosen"] = chosenJson(resolution.chosen, run.origin);
     json["command"] = run.commandText.empty() ? Json(nullptr) : Json(run.commandText);
     json["ready"] = resolution.readiness() == catalog::LaunchReadiness::Ready;
-    json["request"] = resolution.translation.request ? requestJson(*resolution.translation.request) : Json(nullptr);
+    json["request"] = run.request() != nullptr ? requestJson(*run.request()) : Json(nullptr);
+    if (run.vr) {
+        json["vr"] = vrJson(run);
+    }
     json["commandLine"] = run.commandLine ? Json(*run.commandLine) : Json(nullptr);
     json["guard"] = run.guard ? Json{{"rule", std::string(launcher::toString(run.guard->rule))},
                                      {"allowed", run.guard->allowed()},
@@ -279,9 +329,36 @@ void writeDryRunText(const DryRun& run, Output& out) {
         out.writeLine(fmt::format("{:<20}{}", label, text));
     };
     writeResolution(run, out);
-    if (const auto& request = resolution.translation.request) {
-        out.writeLine(resolution.readiness() == catalog::LaunchReadiness::Ready ? "Argv:"
-                                                                                : "Argv (blocked, not runnable):");
+    if (run.vr) {
+        const launcher::AdaptedLaunch& vr = *run.vr;
+        if (vr.programId.empty()) {
+            line("VR", "the program matches none of emulators.json's programs: launched as asked");
+        } else {
+            line("VR", fmt::format("{} (program '{}', {}): {} argument(s) added, {} dropped, load {}", vr.programName,
+                                   vr.programId, run.vrProgramOrigin, vr.added.size(), vr.dropped.size(),
+                                   launcher::toString(vr.inGame)));
+        }
+        if (vr.refused) {
+            line("VR refused", fmt::format("{}: launched as asked", *vr.refused));
+        }
+        for (const std::string& dropped : vr.dropped) {
+            line("VR drops", dropped);
+        }
+        if (vr.appendFile) {
+            line("VR append-file", fmt::format("{} (written at the launch, not by a dry run):",
+                                               pathText(vr.appendFile->path)));
+            std::size_t start = 0;
+            while (start < vr.appendFile->bytes.size()) {
+                const std::size_t end = vr.appendFile->bytes.find('\n', start);
+                out.writeLine("  " + vr.appendFile->bytes.substr(start, end == std::string::npos ? end : end - start));
+                start = end == std::string::npos ? vr.appendFile->bytes.size() : end + 1;
+            }
+        }
+    }
+    if (const launcher::LaunchRequest* request = run.request()) {
+        out.writeLine(resolution.readiness() == catalog::LaunchReadiness::Ready
+                          ? (run.vr ? "Argv (in VR):" : "Argv:")
+                          : "Argv (blocked, not runnable):");
         out.writeLine(fmt::format("  [0] {}", pathText(request->executable)));
         for (std::size_t i = 0; i < request->arguments.size(); ++i) {
             out.writeLine(fmt::format("  [{}] {}", i + 1, request->arguments[i]));
@@ -780,7 +857,7 @@ ExitCode launchCatalogGame(CommandContext& context, catalog::GameId requested, c
 }
 
 /// `launch --dry-run --game <id>`: the catalog read only, nothing written.
-ExitCode dryRunCatalogGame(CommandContext& context, catalog::GameId requested, bool json,
+ExitCode dryRunCatalogGame(CommandContext& context, catalog::GameId requested, bool json, bool vr,
                            std::optional<Output>& output) {
     ExitCode failure = ExitCode::Ok;
     const auto library = loadLaunchLibrary(context, kName, failure);
@@ -803,6 +880,9 @@ ExitCode dryRunCatalogGame(CommandContext& context, catalog::GameId requested, b
     if (!run) {
         return catalogFailure(context, run.error());
     }
+    if (vr) {
+        adaptForVr(*library, context.paths, *run);
+    }
     const catalog::LaunchReadiness readiness = run->resolution.readiness();
     spdlog::info("launch --dry-run --game {}: {}", game->id.toString(), catalog::toString(readiness));
     if (run->commandLine) {
@@ -822,7 +902,7 @@ ExitCode dryRunCatalogGame(CommandContext& context, catalog::GameId requested, b
 
 /// `launch --dry-run --system <name> --path <path>` (I2 step 10).
 ExitCode dryRunPath(CommandContext& context, const std::string& systemName, const std::string& pathArgument,
-                    bool json, std::optional<Output>& output) {
+                    bool json, bool vr, std::optional<Output>& output) {
     ExitCode failure = ExitCode::Ok;
     const auto library = loadLaunchLibrary(context, kName, failure);
     if (!library) {
@@ -859,6 +939,9 @@ ExitCode dryRunPath(CommandContext& context, const std::string& systemName, cons
     run.romPath = (system.romFolder / core::pathFromUtf8(run.game.relativePath)).make_preferred();
     run.resolution = catalog::resolveLaunch(system, &run.game, choices, library->context());
     finishResolution(*library, run);
+    if (vr) {
+        adaptForVr(*library, context.paths, run);
+    }
     const catalog::LaunchReadiness readiness = run.resolution.readiness();
     spdlog::info("launch --dry-run: {}: {}", systemName, catalog::toString(readiness));
     if (run.commandLine) {
@@ -886,7 +969,8 @@ ExitCode runLaunch(CommandContext& context) {
         "attempt as a play session; nothing is ever terminated. Without --wait the game is followed through its "
         "startup grace and left running; --wait follows it to its end (Ctrl+C stops waiting); --test waits and "
         "records a launch verification when the game returns normally. --dry-run resolves the launch of --game, or "
-        "of the game at --path in the ROM folder of --system, and prints what would run, without starting anything.");
+        "of the game at --path in the ROM folder of --system, and prints what would run, without starting anything; "
+        "with --vr, as a launch in VR would start it.");
     parser.option("game", "id", "The game of the catalog: its GameId (g and 16 hexadecimal digits).")
         .flag("wait", "Wait for the game to end and record its outcome (Ctrl+C stops waiting; the game runs on).")
         .option("wait-limit", "seconds", "With --wait or --test: stop waiting after this long (the game runs on).")
@@ -895,6 +979,7 @@ ExitCode runLaunch(CommandContext& context) {
         .flag("dry-run", "Resolve the launch and print it; start nothing.")
         .option("system", "name", "With --dry-run: the game's system (an ES-DE system name).")
         .option("path", "path", "With --dry-run: the game's path relative to the system's ROM folder.")
+        .flag("vr", "With --dry-run: the launch as VR makes it (the program's VR arguments and append-file).")
         .flag("json", "Print the results as JSON.");
     addOutputOption(parser);
     const auto args = parser.parse(context.arguments);
@@ -916,6 +1001,10 @@ ExitCode runLaunch(CommandContext& context) {
     }
     const bool dryRun = args->has("dry-run");
     const bool json = args->has("json");
+    const bool vr = args->has("vr");
+    if (vr && !dryRun) {
+        return usage("--vr shows a launch in VR with --dry-run only: games launch in VR from the headset");
+    }
     const bool hasPath = args->has("system") || args->has("path");
     LaunchOptions options;
     options.test = args->has("test");
@@ -947,14 +1036,14 @@ ExitCode runLaunch(CommandContext& context) {
             return usage("--dry-run starts nothing: it takes neither --wait, --wait-limit nor --test");
         }
         if (game) {
-            return dryRunCatalogGame(context, *game, json, *output);
+            return dryRunCatalogGame(context, *game, json, vr, *output);
         }
         const std::string systemName = args->value("system").value_or("");
         const std::string pathArgument = args->value("path").value_or("");
         if (systemName.empty() || pathArgument.empty()) {
             return usage("--dry-run needs --game <id>, or --system <name> and --path <relative path>");
         }
-        return dryRunPath(context, systemName, pathArgument, json, *output);
+        return dryRunPath(context, systemName, pathArgument, json, vr, *output);
     }
     if (hasPath) {
         return usage("--system and --path name a game for --dry-run only: launch a game of the catalog with --game "

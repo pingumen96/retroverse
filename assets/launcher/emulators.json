@@ -1,11 +1,11 @@
-// Retroverse's shipped emulator profiles (ADR-0008 §6 and §8). Format: docs/i2/step-5.md and
-// src/launcher/include/rv/launcher/emulator_profile.hpp. The profiles of <user data>/config/emulators.json replace these
-// by id and add others.
+// Retroverse's shipped emulator profiles (ADR-0008 §6 and §8) and programs (ADR-0020 §1). Format: docs/i2/step-5.md,
+// docs/i11/step-12.md and src/launcher/include/rv/launcher/emulator_profile.hpp. The profiles and programs of
+// <user data>/config/emulators.json replace these by id and add others.
 // No machine path: executables are located through App Paths, then the places below, where '~' is the user's home
 // folder and {env:NAME} an environment variable naming a folder. Not verified on any machine (specification §11.2: a
 // preset is never presented as universal): the first clean launch, or `retroverse-cli launch --test`, says so.
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "profiles": [
     {
       "id": "retroarch",
@@ -82,6 +82,124 @@
         "wonderswan": { "variables": { "core": "{var:cores}\\mednafen_wswan_libretro.dll" } },
         "wonderswancolor": { "variables": { "core": "{var:cores}\\mednafen_wswan_libretro.dll" } }
       },
+      "verified": false
+    }
+  ],
+  // The programs (ADR-0020 §1): whichever ES-DE command or profile starts one, matched by its file name. "window" ranks
+  // its windows on every launch; "vr" applies to a launch made in VR only, so that the game shows in a window VR can
+  // capture (windowed or borderless, never exclusive fullscreen) and goes on without the focus. Retroverse never
+  // writes a program's own configuration: arguments, and RetroArch's append-file, which Retroverse writes into
+  // <user data>/launcher/vr. The options were read from the programs' own help text where the program was at hand
+  // (docs/i11/step-12.md says which); "verified" becomes true once a game was played with it in the headset.
+  "programs": [
+    {
+      "id": "retroarch",
+      "displayName": "RetroArch",
+      "files": ["retroarch.exe"],
+      "window": { "prefer": [{ "classContains": "RetroArch" }] },
+      "vr": {
+        // Read over the user's retroarch.cfg: borderless fullscreen (a window the capture can read), no pause without
+        // the focus, and no saving on exit, which would copy these lines into the user's retroarch.cfg.
+        "appendConfig": {
+          "option": "--appendconfig",
+          "file": "retroarch.cfg",
+          "joinWith": "|",
+          "lines": [
+            "# Written by Retroverse for games played in VR, read over retroarch.cfg; rewritten at each launch in VR.",
+            "video_fullscreen = \"true\"",
+            "video_windowed_fullscreen = \"true\"",
+            "pause_nonactive = \"false\"",
+            "config_save_on_exit = \"false\""
+          ]
+        },
+        "inGame": "light",
+        // The cores that need the GPU most.
+        "heavyWith": [
+          "dolphin_libretro.dll", "pcsx2_libretro.dll", "ppsspp_libretro.dll", "citra*_libretro.dll",
+          "flycast_libretro.dll", "mupen64plus_next_libretro.dll", "parallel_n64_libretro.dll"
+        ]
+      },
+      "verified": false
+    },
+    {
+      "id": "dolphin",
+      "displayName": "Dolphin",
+      // Dolphin, and the forks that keep its file name and options.
+      "files": ["Dolphin.exe"],
+      // The render window's title holds " | " (version, CPU, backend, game); the main window's does not.
+      "window": { "prefer": [{ "titleContains": " | " }] },
+      "vr": {
+        // -C <System>.<Section>.<Key>=<Value> sets an option for this run only (never saved): windowed, its own render
+        // window, no pause and the pad read without the focus.
+        "addArguments": [
+          "-C", "Dolphin.Display.Fullscreen=False",
+          "-C", "Dolphin.Display.RenderToMain=False",
+          "-C", "Dolphin.Interface.PauseOnFocusLost=False",
+          "-C", "Dolphin.Input.BackgroundInput=True"
+        ],
+        "inGame": "heavy"
+      },
+      "verified": false
+    },
+    {
+      "id": "pcsx2",
+      "displayName": "PCSX2",
+      "files": ["pcsx2-qt*.exe"],
+      "vr": {
+        // -nofullscreen: windowed whatever its settings; -nogui: the render window alone, no game list beside it.
+        "addArguments": ["-nofullscreen", "-nogui"],
+        "dropArguments": ["-fullscreen", "-bigpicture"],
+        "inGame": "heavy"
+      },
+      "verified": false
+    },
+    {
+      "id": "duckstation",
+      "displayName": "DuckStation",
+      "files": ["duckstation-qt-*.exe"],
+      "vr": {
+        "addArguments": ["-nofullscreen", "-nogui"],
+        "dropArguments": ["-fullscreen", "-bigpicture"],
+        "inGame": "light"
+      },
+      "verified": false
+    },
+    {
+      "id": "rpcs3",
+      "displayName": "RPCS3",
+      "files": ["rpcs3.exe"],
+      "vr": {
+        // --no-gui (ES-DE's commands) shows the game's window alone; --fullscreen would make it fullscreen.
+        "dropArguments": ["--fullscreen"],
+        "inGame": "heavy"
+      },
+      "verified": false
+    },
+    {
+      "id": "applewin",
+      "displayName": "AppleWin",
+      "files": ["AppleWin.exe"],
+      "vr": {
+        // ES-DE's command asks for full screen with -f.
+        "addArguments": ["-no-full-screen"],
+        "dropArguments": ["-f", "-full-screen"]
+      },
+      "verified": false
+    },
+    {
+      "id": "altirra",
+      "displayName": "Altirra",
+      "files": ["Altirra64.exe", "Altirra.exe", "AltirraARM64.exe"],
+      // Windowed by default; /f asks for full screen.
+      "vr": { "dropArguments": ["/f"] },
+      "verified": false
+    },
+    {
+      "id": "sdl2trs",
+      "displayName": "sdl2trs",
+      "files": ["sdl2trs*.exe"],
+      // Windowed by default.
+      "vr": { "dropArguments": ["-fullscreen"] },
       "verified": false
     }
   ]

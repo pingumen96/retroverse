@@ -122,10 +122,15 @@ public:
     /// "Blocked". False, and nothing changes, while another launch is pending or running.
     bool refuse(LaunchMessage message, LaunchInfo info, std::uint64_t frame);
 
+    /// Adapts a request before it starts (I11 step 12): the request may change, and the launch's record says how.
+    using RequestAdapter = std::function<void(launcher::LaunchRequest& request, LaunchRecord& record)>;
+
     /// Starts the pending request (after the frame that asked for it was presented: `frame` is the next frame's index)
-    /// with `callbacks` (the host's wake, the window's hand-over before the process runs). A request that cannot start
-    /// ends at once with its outcome. Nothing without a pending request.
-    void start(launcher::LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame);
+    /// with `callbacks` (the host's wake, the window's hand-over before the process runs), once `adapt` (when given)
+    /// adapted it to its program (vr_launch.hpp). A request that cannot start ends at once with its outcome. Nothing
+    /// without a pending request.
+    void start(launcher::LaunchClock::time_point now, launcher::StartCallbacks callbacks, std::uint64_t frame,
+               const RequestAdapter& adapt = {});
     /// Follows the session (LaunchSession::poll) and decides the panel (see the class comment); ends a session that
     /// outlived the wait limit as left running. Call on every wake of the host's wait and once per rendered frame while
     /// sessionActive(); harmless otherwise.

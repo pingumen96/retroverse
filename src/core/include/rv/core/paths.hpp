@@ -54,6 +54,9 @@ public:
     [[nodiscard]] std::filesystem::path screenshotsDir() const { return m_userDataRoot / "screenshots"; }
     /// The catalog database's folder (retroverse.sqlite, its WAL and backups; ADR-0008 §5).
     [[nodiscard]] std::filesystem::path databaseDir() const { return m_userDataRoot / "database"; }
+    /// The files Retroverse writes for launches in VR (I11 step 12, ADR-0020 §1: RetroArch's append-file), never an
+    /// emulator's own configuration.
+    [[nodiscard]] std::filesystem::path vrLaunchDir() const { return m_userDataRoot / "launcher" / "vr"; }
     /// What the settings screen writes (ADR-0018 §2, rv/core/settings_file.hpp): never under configDir(), which stays
     /// the user's.
     [[nodiscard]] std::filesystem::path settingsFile() const { return m_userDataRoot / "settings.json"; }

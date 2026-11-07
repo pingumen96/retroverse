@@ -61,6 +61,7 @@
 #include <rv/input/action.hpp>
 #include <rv/input/input_script.hpp>
 #include <rv/launcher/emulator_profile.hpp>
+#include <rv/launcher/vr_launch.hpp>
 #include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
@@ -641,6 +642,8 @@ struct RetroverseApp::State {
     platform_win::ForegroundWindow xrForeground;
     /// The eyes' dynamic render scale (I10 step 7): interactive runs only, so that frame-limited runs render alike.
     xr::RenderScale renderScale;
+    /// I11 step 12 (ADR-0020 §1): how much of the GPU the last launch's program takes while its game shows in VR.
+    launcher::InGameLoad launchLoad = launcher::InGameLoad::Light;
     std::unique_ptr<AppInput> input;
     /// Sum of the update steps: the shader time, so that --fixed-dt runs render the same frames on every run.
     double simulatedSeconds = 0.0;
@@ -928,13 +931,15 @@ struct RetroverseApp::State {
 
     /// The eyes' render scale (I10 step 7, ADR-0017 §9): from the GPU's time of the last frames' eyes against the
     /// display's period, lowered while it leaves too little room, raised again; at most 0.8 while a game shows on the
-    /// CRT (the "in game" profile: the GPU shared with the emulator and the capture). 1 in frame-limited runs.
+    /// CRT (the "in game" profile: the GPU shared with the emulator and the capture), 0.65 for a heavy program (I11
+    /// step 12). 1 in frame-limited runs.
     void scaleXrEyes(AppContext& context) {
         const xr::Frame* frame = context.xrFrame();
         if (!xrEyes || frame == nullptr || context.options().frameLimit) {
             return;
         }
-        renderScale.setMax(xrGame.showing() ? 0.8f : 1.0f);
+        // I11 step 12: less for a heavy program (ADR-0020 §1), which needs the GPU more than the scene.
+        renderScale.setMax(!xrGame.showing() ? 1.0f : launchLoad == launcher::InGameLoad::Heavy ? 0.65f : 0.8f);
         const gl::FrameStats& stats = graphics->renderStats();
         double eye = 0.0;
         for (const std::optional<double>& pass : {stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds,
@@ -960,6 +965,57 @@ struct RetroverseApp::State {
         const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
         xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
         followXrForeground(context, window);
+    }
+
+    /// I11 step 12 (ADR-0020 §1): the launch about to start adapted to its program (emulators.json's "programs", read
+    /// again for each launch: the user may have changed them): its window rules always; in VR, its arguments and
+    /// append-file, written into <user data>/launcher/vr first. An append-file that cannot be written is left out (the
+    /// program's other VR arguments stay), as is everything the program's VR settings would do when the request they
+    /// make is refused. Retroverse never writes the emulator's own configuration. The record says what was done.
+    void adaptLaunch(AppContext& context, launcher::LaunchRequest& request, LaunchRecord& record) {
+        const bool vr = context.vr();
+        const launcher::EmulatorProfiles profiles = launcher::loadEmulatorProfiles(context.paths());
+        const launcher::ProgramProfile* program = profiles.programFor(request.executable);
+        launchLoad = launcher::InGameLoad::Light;
+        if (program == nullptr) {
+            spdlog::info("Launch: {} matches no program of emulators.json: launched as asked",
+                         core::pathToUtf8Lossy(request.executable.filename()));
+            return;
+        }
+        launcher::AdaptedLaunch adapted =
+            launcher::adaptLaunch(request, program, vr, context.paths().vrLaunchDir());
+        if (adapted.appendFile) {
+            if (const Status written = launcher::writeAppendFile(*adapted.appendFile); !written) {
+                spdlog::warn("VR: {}; {} starts without it", written.error().toString(), program->displayName);
+                launcher::ProgramProfile withoutFile = *program;
+                withoutFile.vr.appendConfig.reset();
+                adapted = launcher::adaptLaunch(request, &withoutFile, vr, context.paths().vrLaunchDir());
+            }
+        }
+        LaunchRecord::Program& shown = record.program.emplace();
+        shown.id = adapted.programId;
+        shown.vr = vr;
+        if (vr) {
+            shown.added = adapted.added;
+            shown.dropped = adapted.dropped;
+            shown.appendFile = adapted.appendFile ? core::pathToUtf8Lossy(adapted.appendFile->path) : std::string();
+            shown.inGame = std::string(launcher::toString(adapted.inGame));
+            shown.refused = adapted.refused.value_or(std::string());
+            launchLoad = adapted.inGame;
+            if (adapted.refused) {
+                spdlog::warn("VR: {}'s settings for VR are not applied ({}): it starts as asked",
+                             adapted.programName, *adapted.refused);
+            } else {
+                spdlog::info("VR: {} adapted to VR: {} argument(s) added, {} dropped{}; load {}", adapted.programName,
+                             adapted.added.size(), adapted.dropped.size(),
+                             adapted.appendFile ? ", append-file " + shown.appendFile : std::string(),
+                             shown.inGame);
+            }
+        } else {
+            spdlog::info("Launch: {} is {}: its window rules apply", core::pathToUtf8Lossy(request.executable.filename()),
+                         adapted.programName);
+        }
+        request = std::move(adapted.request);
     }
 
     /// I10 step 10: the game's window takes the foreground once it shows, as on the desktop, where Retroverse's window
@@ -2493,6 +2549,9 @@ Status RetroverseApp::onInit(AppContext& context) {
                 ++raw->audioRecord.suspends;
             }
             raw->setPriority(context.frameIndex(), processPriorityFor(false, true));
+        };
+        hooks.adapting = [raw, &context](launcher::LaunchRequest& request, LaunchRecord& record) {
+            raw->adaptLaunch(context, request, record);
         };
         hooks.ended = [raw] {
             if (raw->screen) {

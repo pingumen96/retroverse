@@ -60,41 +60,53 @@ inactive" (I10 steps 6, 10 and 11).
 
 ### 1. VR launch profiles
 
-`emulators.json` moves to schema 2 (schema 1 files keep working). A profile gains an optional `vr` block, applied only
-to a launch made in VR:
-- `addArguments`, with a position (after the program or before the game), and `dropArguments` (exact elements, such as
-  `-f` or `--fullscreen`).
-- `appendConfig`: a file Retroverse writes under `<user data>/launcher/vr/<profile>.<ext>` from the profile's lines,
-  passed with the profile's own option. RetroArch's is `--appendconfig`, with:
-  - `video_fullscreen = "true"`;
-  - `video_windowed_fullscreen = "true"` (borderless: capturable);
-  - `pause_nonactive = "false"`.
-- `window`: rules for §2 (class and title patterns, a minimum size, a window to prefer or to skip).
-- `inGame`: `light` or `heavy`. A heavy emulator lowers the scene's render scale cap during the game from 0.8 to 0.65,
-  so that the emulator keeps the GPU.
+`emulators.json` moves to schema 2 (schema 1 files keep working). The VR settings belong to **programs**, a new list
+beside the profiles, since the same program is started by ES-DE commands and by profiles alike (I11 step 12). A launch
+is matched to a program by its executable's file name (`files`, wildcards allowed: `retroarch.exe`, `Dolphin.exe`,
+`pcsx2-qt*.exe`, `duckstation-qt-*.exe`, `rpcs3.exe`, `AppleWin.exe`, `Altirra64.exe`, `sdl2trs*.exe`), whichever
+command or profile made it. The user's programs replace the shipped ones by id and are matched first.
 
-**ES-DE commands** are matched to a profile by the program's file name: the `%EMULATOR_X%` entry's executable
-(`retroarch.exe`, `Dolphin.exe`, `pcsx2-qt.exe`, `rpcs3.exe`, `Altirra64.exe`, `AppleWin.exe`, `sdl2trs.exe`,
-`duckstation-qt-*.exe`, `PPSSPPWindows64.exe`).
+A program holds:
+- `window`: rules for §2 (class and title texts, to prefer or to skip, a minimum size), applied to every launch.
+- `vr`, applied only to a launch made in VR:
+  - `addArguments`, put right after the program, and `dropArguments` (exact elements, such as `-f` or
+    `--fullscreen`). Every program reads its options before the game, so one position is enough.
+  - `appendConfig`: a file Retroverse writes under `<user data>/launcher/vr/<file>` from the program's lines, passed
+    with the program's own option. When the launch already passes that option, the program's `joinWith` joins the two
+    values (RetroArch reads `a|b`). RetroArch's is `--appendconfig`, with:
+    - `video_fullscreen = "true"`;
+    - `video_windowed_fullscreen = "true"` (borderless: capturable);
+    - `pause_nonactive = "false"`;
+    - `config_save_on_exit = "false"`: RetroArch saves its whole configuration on exit by default, which would copy
+      the appended lines into the user's `retroarch.cfg`.
+  - `inGame`: `light` or `heavy`, and `heavyWith`, file names that make a launch heavy (RetroArch's GPU-hungry cores).
+    A heavy launch lowers the scene's render scale cap during the game from 0.8 to 0.65, so that the emulator keeps
+    the GPU.
 
-**Shipped profiles** for these programs carry their `vr` blocks. The arguments are checked against each program's help
-on the user's builds in step 12:
-- Dolphin: `-C Dolphin.Display.Fullscreen=False`, its render window preferred over the main window;
-- PCSX2 and DuckStation: `-nofullscreen`;
-- RPCS3: `--fullscreen` dropped;
-- AppleWin: `-f` dropped;
-- Altirra and sdl2trs: windowed by default.
+A request the VR settings would make invalid (a command line over Windows' limit) starts as asked, and the run report
+says why.
+
+**Shipped programs.** The arguments were read from each program's own help text on the user's builds (step 12):
+- RetroArch: the append-file above, its window class preferred;
+- Dolphin: `-C` sets an option for the run only, never saved: `Dolphin.Display.Fullscreen=False`,
+  `Dolphin.Display.RenderToMain=False`, `Dolphin.Interface.PauseOnFocusLost=False`,
+  `Dolphin.Input.BackgroundInput=True`; its render window preferred by its title (it holds " | ");
+- PCSX2 (2.7) and DuckStation: `-nofullscreen` and `-nogui` (the render window alone, no game list beside it);
+  `-fullscreen` and `-bigpicture` dropped;
+- AppleWin (1.30): `-f` and `-full-screen` dropped, `-no-full-screen` added;
+- RPCS3: `--fullscreen` dropped. Altirra: `/f` dropped. sdl2trs: `-fullscreen` dropped. None of the three is installed on
+  the user's machine: their settings come from their documentation, unverified.
 
 **Retroverse never writes an emulator's configuration.** The user's `retroarch.cfg` and every other emulator file are
 read at most. The append-file is Retroverse's own, in its data directory.
 
-**On the desktop** launches are unchanged.
+**On the desktop** launches are unchanged, but for the window rules.
 
 ### 2. The window followed
 
 `findVisibleWindow()` gives way to a ranking of the tree's visible top-level windows (`launcher::chooseGameWindow()`,
 GPU- and Win32-free), best first:
-1. **Preferred:** a window a profile's rule prefers;
+1. **Preferred:** a window a program's rule prefers;
 2. **Normal:** a window of its own, at least 200 x 150 pixels of client area;
 3. **Lesser:** a tool window or an owned dialog, as large;
 4. **Last resort:** a smaller window or a console's, so that a console emulator or a single small window is still

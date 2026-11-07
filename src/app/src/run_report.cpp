@@ -3101,6 +3101,15 @@ Json launchToJson(const LaunchRecord& launch) {
     json["wasStillRunning"] = launch.wasStillRunning;
     json["quitDuringGame"] = launch.quitDuringGame;
     json["waitLimitReached"] = launch.waitLimitReached;
+    if (launch.program) {
+        json["program"] = Json{{"id", launch.program->id},
+                               {"vr", launch.program->vr},
+                               {"added", launch.program->added},
+                               {"dropped", launch.program->dropped},
+                               {"appendFile", launch.program->appendFile},
+                               {"inGame", launch.program->inGame},
+                               {"refused", launch.program->refused}};
+    }
     Json frames;
     frames["request"] = launch.requestFrame;
     if (launch.startFrame) {
@@ -3206,6 +3215,17 @@ LaunchRecord readLaunch(FieldReader& fields) {
     launch.wasStillRunning = fields.boolean("wasStillRunning");
     launch.quitDuringGame = fields.boolean("quitDuringGame");
     launch.waitLimitReached = fields.boolean("waitLimitReached");
+    if (auto program = fields.optionalObject("program")) {
+        LaunchRecord::Program read;
+        read.id = program->string("id");
+        read.vr = program->boolean("vr");
+        read.added = program->stringArray("added");
+        read.dropped = program->stringArray("dropped");
+        read.appendFile = program->string("appendFile");
+        read.inGame = program->string("inGame");
+        read.refused = program->string("refused");
+        launch.program = std::move(read);
+    }
     if (auto frames = fields.optionalObject("frames")) {
         launch.requestFrame = frames->count("request");
         launch.startFrame = frames->optionalCount("start");

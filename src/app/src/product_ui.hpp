@@ -11,6 +11,7 @@
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/command_line.hpp>
 #include <rv/app/game_screens.hpp>
+#include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/app/library_watch.hpp>
 #include <rv/app/wizard_flow.hpp>
@@ -53,6 +54,9 @@ struct LaunchHooks {
     std::function<void(const std::string& gameId)> preparing;
     /// A launch is about to start: called before the window's hand-over and the process, on the host's wake.
     std::function<void()> starting;
+    /// I11 step 12 (ADR-0020 §1): the request about to start, adapted to its program (in VR, its arguments and
+    /// append-file), after `starting`; its record says how.
+    LaunchFlow::RequestAdapter adapting;
     /// The launch that started ended (the return), or failed to start: called once, when the flow says it returned;
     /// also for a prepared launch that never started (refused during the insertion).
     std::function<void()> ended;

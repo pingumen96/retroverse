@@ -62,6 +62,8 @@ struct Options {
     bool pillarbox = false;
     /// I11 step 11: the windows a real emulator shows besides its game's ("splash", "two-windows", "recreate").
     std::string windowMode;
+    /// I11 step 12: a file passed as an emulator's append-file (RetroArch's --appendconfig).
+    std::string config;
     int windowDelayMs = 0;
     bool black = false;
     bool exclusive = false;
@@ -106,6 +108,8 @@ constexpr std::string_view kUsage =
     "                           along), recreate (a status window all along; the game's window destroyed and made\n"
     "                           again 1.5 s after it showed)\n"
     "  --window-delay-ms MS     with --frames: no window for MS ms first (an emulator that loads before it shows)\n"
+    "  --config FILE            a file read as an emulator reads its append-file (I11 step 12): its text goes to the\n"
+    "                           log, and a line \"color = RRGGBB\" sets the window color\n"
     "  --black                  with --frames: the game's window all black (what an exclusive fullscreen game gives\n"
     "                           a capture)\n"
     "  --exclusive              with --frames: exclusive fullscreen in a display mode other than the desktop's\n"
@@ -338,6 +342,10 @@ bool parse(const std::vector<std::string>& args, Options& options, std::string& 
             }
         } else if (arg == "--log") {
             if (!value(options.log)) {
+                return false;
+            }
+        } else if (arg == "--config") {
+            if (!value(options.config)) {
                 return false;
             }
         } else if (arg == "--help" || arg == "-h") {
@@ -953,6 +961,29 @@ int main(int argc, char* argv[]) {
     nlohmann::json log;
     log["pid"] = GetCurrentProcessId();
     log["args"] = args;
+    if (!options.config.empty()) {
+        // I11 step 12: read as RetroArch reads its append-file; never written.
+        const auto path = rv::core::tryPathFromUtf8(options.config);
+        auto text = path ? rv::core::readTextFile(*path, 64 * 1024) : rv::Expected<std::string>{};
+        if (path && text) {
+            log["config"] = *text;
+            constexpr std::string_view kColorLine = "color = ";
+            std::size_t start = 0;
+            while (start < text->size()) {
+                std::size_t end = text->find('\n', start);
+                end = end == std::string::npos ? text->size() : end;
+                const std::string_view line = std::string_view(*text).substr(start, end - start);
+                if (line.starts_with(kColorLine)) {
+                    if (const auto color = parseNumber("0x" + std::string(line.substr(kColorLine.size())))) {
+                        options.color = static_cast<std::uint32_t>(*color);
+                    }
+                }
+                start = end + 1;
+            }
+        } else {
+            log["configError"] = path ? text.error().toString() : path.error().toString();
+        }
+    }
 
     if (!options.printArgs.empty()) {
         std::vector<std::string> argv0;

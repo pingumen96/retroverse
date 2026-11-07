@@ -335,6 +335,22 @@ struct LaunchRecord {
     std::optional<std::int64_t> sessionId;
     std::string sessionError;
     bool verified = false;
+    /// I11 step 12 (ADR-0020 §1): the program the launch's executable was matched to (emulators.json's "programs"),
+    /// absent when none was. In VR: the arguments added (the append-file's option and path among them) and dropped, the
+    /// append-file written, the load ("light", "heavy"), and why the program's VR settings were not applied when they
+    /// were not (the launch then started as asked).
+    struct Program {
+        std::string id;
+        bool vr = false;
+        std::vector<std::string> added;
+        std::vector<std::string> dropped;
+        std::string appendFile;
+        std::string inGame;
+        std::string refused;
+
+        bool operator==(const Program&) const = default;
+    };
+    std::optional<Program> program;
 
     bool operator==(const LaunchRecord&) const = default;
 };

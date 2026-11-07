@@ -12,6 +12,7 @@
 
 #include <rv/core/json.hpp>
 #include <rv/core/paths.hpp>
+#include <rv/core/system_probe.hpp>
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 
@@ -23,6 +24,10 @@ using Json = nlohmann::json;
 constexpr std::string_view kSchemaVersionField = "schemaVersion";
 constexpr std::string_view kProfilesField = "profiles";
 constexpr std::string_view kSystemChoicesField = "systemChoices";
+constexpr std::string_view kProgramsField = "programs";
+/// The longest text of a window rule, and the largest minimum size of a window.
+constexpr std::size_t kMaxWindowRuleText = 256;
+constexpr int kMaxWindowSide = 16384;
 
 /// Where a value sits: the document's name and a JSON pointer (RFC 6901).
 class Location {
@@ -550,6 +555,322 @@ private:
     return choice;
 }
 
+/// A literal text (an argument, a line of an append-file, a window rule's text): valid UTF-8, no NUL, no line break, at
+/// most `maxLength` bytes; empty only when `allowEmpty`.
+[[nodiscard]] Expected<std::string> readLiteral(const Json& value, const Location& at, std::size_t maxLength,
+                                                bool allowEmpty = false) {
+    auto text = readString(value, at, allowEmpty);
+    if (!text) {
+        return propagate(std::move(text.error()));
+    }
+    if (!core::isValidUtf8(*text) || text->find_first_of(std::string_view("\0\r\n", 3)) != std::string::npos) {
+        return fail(ErrorCode::ValidationFailed, "expected UTF-8 text on one line", at);
+    }
+    if (text->size() > maxLength) {
+        return fail(ErrorCode::ValidationFailed, fmt::format("longer than {} bytes", maxLength), at);
+    }
+    return text;
+}
+
+[[nodiscard]] Expected<std::vector<std::string>> readLiterals(const Json& value, const Location& at,
+                                                              std::size_t maxLength, bool allowEmpty = false) {
+    if (!value.is_array()) {
+        return fail(ErrorCode::ParseError, "expected an array of strings", at);
+    }
+    std::vector<std::string> texts;
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        auto text = readLiteral(value[i], at.child(i), maxLength, allowEmpty);
+        if (!text) {
+            return propagate(std::move(text.error()));
+        }
+        texts.push_back(std::move(*text));
+    }
+    return texts;
+}
+
+/// A program's file name: no folder, no character Windows names cannot hold besides the wildcards '*' and '?'.
+[[nodiscard]] bool isProgramFileName(std::string_view name) noexcept {
+    if (name.empty() || name.size() > 255 || name == "." || name == "..") {
+        return false;
+    }
+    for (const char c : name) {
+        if (static_cast<unsigned char>(c) < 0x20 || std::string_view("<>:\"/\\|").find(c) != std::string_view::npos) {
+            return false;
+        }
+    }
+    return core::isValidUtf8(name);
+}
+
+[[nodiscard]] Expected<std::vector<std::string>> readFileNames(const Json& value, const Location& at) {
+    auto names = readLiterals(value, at, 255);
+    if (!names) {
+        return names;
+    }
+    for (std::size_t i = 0; i < names->size(); ++i) {
+        if (!isProgramFileName((*names)[i])) {
+            return fail(ErrorCode::ValidationFailed,
+                        "a file name, without a folder (\"Dolphin.exe\"; '*' and '?' allowed)", at.child(i));
+        }
+    }
+    return names;
+}
+
+/// An append-file's name: ASCII letters, digits, '.', '_' and '-', not starting with '.', at most
+/// kMaxAppendFileNameLength bytes; never a folder.
+[[nodiscard]] bool isAppendFileName(std::string_view name) noexcept {
+    if (name.empty() || name.size() > kMaxAppendFileNameLength || name.front() == '.') {
+        return false;
+    }
+    return std::all_of(name.begin(), name.end(), [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' ||
+               c == '-';
+    });
+}
+
+[[nodiscard]] Expected<int> readWindowSide(const Json& value, const Location& at) {
+    if (!value.is_number_integer() || value.get<std::int64_t>() < 0 || value.get<std::int64_t>() > kMaxWindowSide) {
+        return fail(ErrorCode::ValidationFailed, fmt::format("expected an integer from 0 to {} pixels", kMaxWindowSide),
+                    at);
+    }
+    return static_cast<int>(value.get<std::int64_t>());
+}
+
+/// "prefer" or "skip": [{"classContains": "...", "titleContains": "..."}, ...], each naming at least one text.
+[[nodiscard]] Status readWindowRules(const Json& value, const Location& at, WindowRule::Effect effect,
+                                     std::vector<WindowRule>& rules) {
+    if (!value.is_array()) {
+        return fail(ErrorCode::ParseError, "expected an array of rules", at);
+    }
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        const Location ruleAt = at.child(i);
+        if (!value[i].is_object()) {
+            return fail(ErrorCode::ParseError, "expected {\"classContains\": \"...\", \"titleContains\": \"...\"}",
+                        ruleAt);
+        }
+        WindowRule rule;
+        rule.effect = effect;
+        for (const auto& item : value[i].items()) {
+            const Location fieldAt = ruleAt.child(item.key());
+            if (item.key() != "classContains" && item.key() != "titleContains") {
+                return fail(ErrorCode::ParseError,
+                            "unknown field " + inQuotes(item.key()) + " (classContains or titleContains)", fieldAt);
+            }
+            auto text = readLiteral(item.value(), fieldAt, kMaxWindowRuleText, /*allowEmpty*/ true);
+            if (!text) {
+                return propagate(std::move(text.error()));
+            }
+            (item.key() == "classContains" ? rule.classContains : rule.titleContains) = std::move(*text);
+        }
+        if (rule.classContains.empty() && rule.titleContains.empty()) {
+            return fail(ErrorCode::ValidationFailed, "a rule names a class or a title text", ruleAt);
+        }
+        rules.push_back(std::move(rule));
+    }
+    return ok();
+}
+
+[[nodiscard]] Expected<WindowRules> readWindow(const Json& value, const Location& at) {
+    if (!value.is_object()) {
+        return fail(ErrorCode::ParseError, "expected an object (prefer, skip, minWidth, minHeight)", at);
+    }
+    WindowRules window;
+    for (const auto& item : value.items()) {
+        const Location fieldAt = at.child(item.key());
+        if (item.key() == "prefer" || item.key() == "skip") {
+            const WindowRule::Effect effect =
+                item.key() == "prefer" ? WindowRule::Effect::Prefer : WindowRule::Effect::Skip;
+            if (auto valid = readWindowRules(item.value(), fieldAt, effect, window.rules); !valid) {
+                return propagate(std::move(valid.error()));
+            }
+        } else if (item.key() == "minWidth" || item.key() == "minHeight") {
+            auto side = readWindowSide(item.value(), fieldAt);
+            if (!side) {
+                return propagate(std::move(side.error()));
+            }
+            (item.key() == "minWidth" ? window.minWidth : window.minHeight) = *side;
+        } else {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), fieldAt);
+        }
+    }
+    return window;
+}
+
+[[nodiscard]] Expected<AppendConfig> readAppendConfig(const Json& value, const Location& at) {
+    if (!value.is_object()) {
+        return fail(ErrorCode::ParseError, "expected an object (option, file, joinWith, lines)", at);
+    }
+    AppendConfig config;
+    bool hasLines = false;
+    for (const auto& item : value.items()) {
+        const Location fieldAt = at.child(item.key());
+        if (item.key() == "option") {
+            auto option = readLiteral(item.value(), fieldAt, kMaxAppendLineLength);
+            if (!option) {
+                return propagate(std::move(option.error()));
+            }
+            config.option = std::move(*option);
+        } else if (item.key() == "file") {
+            auto name = readLiteral(item.value(), fieldAt, kMaxAppendFileNameLength);
+            if (!name) {
+                return propagate(std::move(name.error()));
+            }
+            if (!isAppendFileName(*name)) {
+                return fail(ErrorCode::ValidationFailed,
+                            fmt::format("a file name of ASCII letters, digits, '.', '_' and '-', not starting with "
+                                        "'.' (\"retroarch.cfg\"), at most {} characters",
+                                        kMaxAppendFileNameLength),
+                            fieldAt);
+            }
+            config.fileName = std::move(*name);
+        } else if (item.key() == "joinWith") {
+            auto join = readLiteral(item.value(), fieldAt, 16, /*allowEmpty*/ true);
+            if (!join) {
+                return propagate(std::move(join.error()));
+            }
+            config.joinWith = std::move(*join);
+        } else if (item.key() == "lines") {
+            auto lines = readLiterals(item.value(), fieldAt, kMaxAppendLineLength, /*allowEmpty*/ true);
+            if (!lines) {
+                return propagate(std::move(lines.error()));
+            }
+            config.lines = std::move(*lines);
+            hasLines = true;
+        } else {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), fieldAt);
+        }
+    }
+    if (config.option.empty()) {
+        return fail(ErrorCode::ParseError, "missing field \"option\"", at);
+    }
+    if (config.fileName.empty()) {
+        return fail(ErrorCode::ParseError, "missing field \"file\"", at);
+    }
+    if (!hasLines) {
+        return fail(ErrorCode::ParseError, "missing field \"lines\"", at);
+    }
+    return config;
+}
+
+[[nodiscard]] Expected<VrSettings> readVr(const Json& value, const Location& at) {
+    if (!value.is_object()) {
+        return fail(ErrorCode::ParseError,
+                    "expected an object (addArguments, dropArguments, appendConfig, inGame, heavyWith)", at);
+    }
+    VrSettings vr;
+    for (const auto& item : value.items()) {
+        const Location fieldAt = at.child(item.key());
+        if (item.key() == "addArguments" || item.key() == "dropArguments") {
+            auto arguments = readLiterals(item.value(), fieldAt, kMaxAppendLineLength);
+            if (!arguments) {
+                return propagate(std::move(arguments.error()));
+            }
+            (item.key() == "addArguments" ? vr.addArguments : vr.dropArguments) = std::move(*arguments);
+        } else if (item.key() == "appendConfig") {
+            auto config = readAppendConfig(item.value(), fieldAt);
+            if (!config) {
+                return propagate(std::move(config.error()));
+            }
+            vr.appendConfig = std::move(*config);
+        } else if (item.key() == "inGame") {
+            auto load = readString(item.value(), fieldAt);
+            if (!load) {
+                return propagate(std::move(load.error()));
+            }
+            if (*load == toString(InGameLoad::Light)) {
+                vr.inGame = InGameLoad::Light;
+            } else if (*load == toString(InGameLoad::Heavy)) {
+                vr.inGame = InGameLoad::Heavy;
+            } else {
+                return fail(ErrorCode::ValidationFailed, "expected \"light\" or \"heavy\"", fieldAt);
+            }
+        } else if (item.key() == "heavyWith") {
+            auto names = readFileNames(item.value(), fieldAt);
+            if (!names) {
+                return propagate(std::move(names.error()));
+            }
+            vr.heavyWith = std::move(*names);
+        } else {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), fieldAt);
+        }
+    }
+    return vr;
+}
+
+/// One program. `id` receives its id as soon as it is known to be valid, so that later errors name it.
+[[nodiscard]] Expected<ProgramProfile> parseProgram(const Json& value, const Location& at, std::string_view file,
+                                                    ProfileOrigin origin, std::string& id) {
+    if (!value.is_object()) {
+        return fail(ErrorCode::ParseError, "expected a program object", at);
+    }
+    ProgramProfile program;
+    program.origin = origin;
+    program.source = std::string(file);
+    const auto idField = value.find("id");
+    if (idField == value.end()) {
+        return fail(ErrorCode::ParseError, "missing field \"id\"", at);
+    }
+    auto readId = readString(*idField, at.child("id"));
+    if (!readId) {
+        return propagate(std::move(readId.error()));
+    }
+    if (!isValidProfileId(*readId)) {
+        return fail(ErrorCode::ValidationFailed,
+                    fmt::format("invalid program id {}: 1 to {} lower-case ASCII letters, digits, '.', '_' or '-', "
+                                "starting with a letter or a digit",
+                                inQuotes(*readId), kMaxProfileIdLength),
+                    at.child("id"));
+    }
+    program.id = *readId;
+    id = program.id;
+    for (const auto& item : value.items()) {
+        const std::string& key = item.key();
+        const Location fieldAt = at.child(key);
+        if (key == "id") {
+            continue;
+        }
+        if (key == "displayName") {
+            auto name = readString(item.value(), fieldAt);
+            if (!name) {
+                return propagate(std::move(name.error()));
+            }
+            program.displayName = std::move(*name);
+        } else if (key == "files") {
+            auto files = readFileNames(item.value(), fieldAt);
+            if (!files) {
+                return propagate(std::move(files.error()));
+            }
+            program.files = std::move(*files);
+        } else if (key == "window") {
+            auto window = readWindow(item.value(), fieldAt);
+            if (!window) {
+                return propagate(std::move(window.error()));
+            }
+            program.window = std::move(*window);
+        } else if (key == "vr") {
+            auto vr = readVr(item.value(), fieldAt);
+            if (!vr) {
+                return propagate(std::move(vr.error()));
+            }
+            program.vr = std::move(*vr);
+        } else if (key == "verified") {
+            auto verified = readBool(item.value(), fieldAt);
+            if (!verified) {
+                return propagate(std::move(verified.error()));
+            }
+            program.verified = *verified;
+        } else {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(key), fieldAt);
+        }
+    }
+    if (program.files.empty()) {
+        return fail(ErrorCode::ValidationFailed, "a program names at least one file (\"files\")", at);
+    }
+    if (program.displayName.empty()) {
+        program.displayName = program.id;
+    }
+    return program;
+}
+
 } // namespace
 
 std::string_view toString(LaunchChoiceKind kind) noexcept {
@@ -560,6 +881,25 @@ std::string_view toString(LaunchChoiceKind kind) noexcept {
         return "profile";
     }
     return "unknown";
+}
+
+std::string_view toString(InGameLoad load) noexcept {
+    switch (load) {
+    case InGameLoad::Light:
+        return "light";
+    case InGameLoad::Heavy:
+        return "heavy";
+    }
+    return "unknown";
+}
+
+bool ProgramProfile::matches(const std::filesystem::path& executable) const {
+    const auto name = core::tryPathToUtf8(executable.filename());
+    if (!name || name->empty()) {
+        return false;
+    }
+    return std::any_of(files.begin(), files.end(),
+                       [&](const std::string& pattern) { return core::matchesWildcard(*name, pattern); });
 }
 
 std::string_view toString(ProfileOrigin origin) noexcept {
@@ -617,16 +957,22 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
         issue({}, fail(ErrorCode::ParseError, "expected an integer", versionAt));
         return result;
     }
-    if (*version != kEmulatorProfilesSchemaVersion) {
+    if (*version < kOldestEmulatorProfilesSchemaVersion || *version > kEmulatorProfilesSchemaVersion) {
         issue({}, fail(ErrorCode::Unsupported,
-                       fmt::format("unsupported schemaVersion {} (expected {})", version->dump(),
-                                   kEmulatorProfilesSchemaVersion),
+                       fmt::format("unsupported schemaVersion {} (expected {} to {})", version->dump(),
+                                   kOldestEmulatorProfilesSchemaVersion, kEmulatorProfilesSchemaVersion),
                        versionAt));
         return result;
     }
+    // Schema 2 (I11 step 12) adds the programs.
+    const bool withPrograms = *version >= 2;
     for (const auto& item : document.items()) {
-        if (item.key() != kSchemaVersionField && item.key() != kProfilesField && item.key() != kSystemChoicesField) {
-            issue({}, fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), root.child(item.key())));
+        if (item.key() != kSchemaVersionField && item.key() != kProfilesField && item.key() != kSystemChoicesField &&
+            !(withPrograms && item.key() == kProgramsField)) {
+            issue({}, fail(ErrorCode::ParseError,
+                           "unknown field " + inQuotes(item.key()) +
+                               (item.key() == kProgramsField ? " (\"programs\" needs schemaVersion 2)" : ""),
+                           root.child(item.key())));
         }
     }
     const Location profilesAt = root.child(kProfilesField);
@@ -680,6 +1026,34 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
             }
         }
     }
+    // The programs (I11 step 12): each one that is valid is kept.
+    if (const auto programs = document.find(kProgramsField); withPrograms && programs != document.end()) {
+        const Location programsAt = root.child(kProgramsField);
+        if (!programs->is_array()) {
+            issue({}, fail(ErrorCode::ParseError, "expected an array of programs", programsAt));
+        } else {
+            for (std::size_t i = 0; i < programs->size(); ++i) {
+                const Location programAt = programsAt.child(i);
+                std::string id;
+                auto program = parseProgram((*programs)[i], programAt, file, origin, id);
+                if (!program) {
+                    result.issues.push_back(ProfileIssue{std::string(file), std::move(id), std::move(program.error())});
+                    continue;
+                }
+                const bool duplicate =
+                    std::any_of(result.programs.begin(), result.programs.end(),
+                                [&](const ProgramProfile& other) { return other.id == program->id; });
+                if (duplicate) {
+                    issue(program->id, fail(ErrorCode::ValidationFailed,
+                                            "a second program with the id " + inQuotes(program->id) +
+                                                " (the first one is kept)",
+                                            programAt.child("id")));
+                    continue;
+                }
+                result.programs.push_back(std::move(*program));
+            }
+        }
+    }
     return result;
 }
 
@@ -715,6 +1089,17 @@ const LaunchChoice* EmulatorProfiles::systemChoice(std::string_view system) cons
     return found == systemChoices.end() ? nullptr : &found->second;
 }
 
+const ProgramProfile* EmulatorProfiles::programFor(const std::filesystem::path& executable) const {
+    for (const ProfileOrigin origin : {ProfileOrigin::User, ProfileOrigin::Shipped}) {
+        for (const ProgramProfile& program : programs) {
+            if (program.origin == origin && program.matches(executable)) {
+                return &program;
+            }
+        }
+    }
+    return nullptr;
+}
+
 EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument user) {
     EmulatorProfiles merged;
     merged.profiles = std::move(shipped.profiles);
@@ -730,6 +1115,16 @@ EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument 
     merged.systemChoices = std::move(shipped.systemChoices);
     for (auto& [system, choice] : user.systemChoices) {
         merged.systemChoices.insert_or_assign(system, std::move(choice));
+    }
+    merged.programs = std::move(shipped.programs);
+    for (ProgramProfile& program : user.programs) {
+        const auto replaced = std::find_if(merged.programs.begin(), merged.programs.end(),
+                                           [&](const ProgramProfile& other) { return other.id == program.id; });
+        if (replaced != merged.programs.end()) {
+            *replaced = std::move(program);
+        } else {
+            merged.programs.push_back(std::move(program));
+        }
     }
     merged.issues = std::move(shipped.issues);
     merged.issues.insert(merged.issues.end(), std::make_move_iterator(user.issues.begin()),
@@ -753,8 +1148,8 @@ EmulatorProfiles loadEmulatorProfiles(const std::filesystem::path& shippedFile,
     for (const ProfileIssue& issue : merged.issues) {
         spdlog::warn("Emulator profiles: {}", issue.toString());
     }
-    spdlog::info("Emulator profiles: {} in effect ({} from {})", merged.profiles.size(), userCount,
-                 core::pathToUtf8Lossy(userFile));
+    spdlog::info("Emulator profiles: {} in effect ({} from {}), {} program(s)", merged.profiles.size(), userCount,
+                 core::pathToUtf8Lossy(userFile), merged.programs.size());
     return merged;
 }
 

@@ -112,10 +112,14 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
 - `profiles [--system <name>]` lists the emulator profiles, `assign`'s and emulators.json's system choices and, for
   every configured system, the command or profile its games launch with, where that choice comes from and why, its
   readiness, the program and core with the find rule that found them, the attempts behind "not found", and each command
-  and profile with its own readiness (exit 1 with `--system` when that system is not ready). `launch --dry-run --system
-  <name> --path <relative path>` and `launch --dry-run --game <id>` show the request a game would start (argv, working
-  folder, environment, command line, the automation guard's verdict, the database's choices read only) and start nothing
-  (exit 0 ready, 1 not). Both look at this machine (`Win32SystemProbe`).
+  and profile with its own readiness (exit 1 with `--system` when that system is not ready). Since I11 step 12 it also
+  lists emulators.json's programs (ADR-0020 §1: their files and what each does in VR), the program each system's launch
+  starts (`programProfile` in JSON), and which programs the library's launches use ("Programs in use").
+  `launch --dry-run --system <name> --path <relative path>` and `launch --dry-run --game <id>` show the request a game
+  would start (argv, working folder, environment, command line, the automation guard's verdict, the database's choices
+  read only) and start nothing (exit 0 ready, 1 not); `--vr` shows it as a launch in VR starts it: adapted to its
+  program, with the arguments added and dropped, the load, and the append-file's path and lines (`vr` in JSON), which
+  a dry run never writes. Both look at this machine (`Win32SystemProbe`).
 - `launch --game <id> [--wait [--wait-limit <seconds>]] [--test] [--json]` (`docs/i2/step-12.md`) resolves a game of the
   catalog right before the launch (its file looked for on disk now, the database's choices) and starts it through
   `LaunchSession` on `Win32ProcessRunner`, so the automation guard applies: automated runs set `RV_LAUNCH_ALLOWLIST`.
