@@ -39,6 +39,8 @@ public:
     void update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record);
     /// The CRT shows the game: at its last new picture a hero screen was bound and took it.
     [[nodiscard]] bool showing() const noexcept { return m_showing; }
+    /// The window followed has shown only black for 5 s (ADR-0020 §5: exclusive fullscreen, I11 step 13).
+    [[nodiscard]] bool black() const noexcept { return m_blackReported; }
 
 private:
     void stop(ScreenService* screen);

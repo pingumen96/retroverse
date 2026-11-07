@@ -249,7 +249,11 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   presentation-mode change (independent flip against composed): check with PresentMon (`docs/spikes/i1-launch.md`,
   finding 7).
 - **Batch launchers:** `.bat` files need a verified profile kind with cmd-specific escaping (the BatBadBut class of
-  injection); until then only PE programs start.
+  injection); until then only PE programs start. I11 step 13 refuses them in ES-DE's "open the game's file" too, a
+  shortcut to one included.
+- **Elevated games** (I11 step 13): a shortcut's "Run as administrator", and a program whose manifest requires
+  elevation, start without it (or fail with "requires administrator rights"); ShellExecuteExW's "runas" would show
+  Windows' consent prompt, a modal dialog the product would have to explain.
 - **More emulators** (I11 takes the VR side: profiles per emulator, the window followed, the foreground retried,
   exclusive fullscreen detected; ADR-0020): DuckStation and real exclusive-fullscreen emulators from an isolated
   copy; an emulator on another monitor than Retroverse's; re-grant `AllowSetForegroundWindow` once a console

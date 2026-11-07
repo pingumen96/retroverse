@@ -332,6 +332,10 @@ public:
     [[nodiscard]] bool launchActive() const noexcept;
     /// The running launch's emulator window while it shows one (launcher::LaunchSession::window, I10 step 6), else 0.
     [[nodiscard]] std::uintptr_t launchWindow() const noexcept;
+    /// I11 step 13 (ADR-0020 §5): the running game is in exclusive fullscreen (the runner's sign, or one noted here:
+    /// the VR capture stayed black), which the session panel says.
+    [[nodiscard]] bool launchExclusiveFullscreen() const noexcept;
+    void noteExclusiveFullscreen();
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();

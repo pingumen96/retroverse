@@ -1,5 +1,5 @@
-// Retroverse's shipped emulator profiles (ADR-0008 §6 and §8) and programs (ADR-0020 §1). Format: docs/i2/step-5.md,
-// docs/i11/step-12.md and src/launcher/include/rv/launcher/emulator_profile.hpp. The profiles and programs of
+// Retroverse's shipped emulator profiles (ADR-0008 §6 and §8), programs and protocols (ADR-0020 §1, §3). Format:
+// docs/i2/step-5.md, docs/i11/step-12.md, docs/i11/step-13.md and src/launcher/include/rv/launcher/emulator_profile.hpp. The profiles and programs of
 // <user data>/config/emulators.json replace these by id and add others.
 // No machine path: executables are located through App Paths, then the places below, where '~' is the user's home
 // folder and {env:NAME} an environment variable naming a folder. Not verified on any machine (specification §11.2: a
@@ -202,5 +202,18 @@
       "vr": { "dropArguments": ["-fullscreen"] },
       "verified": false
     }
+  ],
+  // The schemes an Internet Shortcut (.url) of ES-DE's "open the game's file" command may activate (ADR-0020 §3, I11
+  // step 13), each with its launcher's own processes: their windows are never the game's, the game is a process they
+  // start. Any other scheme is never activated, nor is one of these in an automated run.
+  "protocols": [
+    { "scheme": "steam", "launcherProcesses": ["steam.exe", "steamwebhelper.exe", "GameOverlayUI*.exe"] },
+    {
+      "scheme": "com.epicgames.launcher",
+      "launcherProcesses": ["EpicGamesLauncher.exe", "EpicWebHelper.exe", "EOSOverlayRenderer*.exe"]
+    },
+    { "scheme": "goggalaxy", "launcherProcesses": ["GalaxyClient*.exe", "GOG Galaxy*.exe", "GalaxyOverlay.exe"] },
+    { "scheme": "uplay", "launcherProcesses": ["upc.exe", "UplayWebCore.exe", "UbisoftConnect.exe"] },
+    { "scheme": "origin2", "launcherProcesses": ["EADesktop.exe", "EALauncher.exe", "Origin.exe"] }
   ]
 }

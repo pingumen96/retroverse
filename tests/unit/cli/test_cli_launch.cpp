@@ -185,8 +185,10 @@ TEST_CASE("cli/profiles: the systems of the standard fixture, their commands and
     const nlohmann::json& snes = systemNamed(report, "snes");
     CHECK(snes.at("chosen").at("source") == "esde-system");
     CHECK(snes.at("alternativeEmulator") == "Fake Emulator (Hidden Console)");
-    CHECK(snes.at("commands")[2].at("readiness") == "requires-configuration");
-    CHECK(snes.at("commands")[2].at("blockers").size() == 2);
+    // "Shortcut or script" opens each game's file (I11 step 13).
+    CHECK(snes.at("commands")[2].at("readiness") == "ready");
+    CHECK(snes.at("commands")[2].at("blockers").empty());
+    CHECK(snes.at("commands")[2].at("notes").size() == 1);
     const nlohmann::json& psx = systemNamed(report, "psx");
     CHECK(psx.at("commands")[1].at("notes").size() == 1); // the %INJECT% file is each game's
     CHECK(psx.at("commands")[2].at("readiness") == "core-not-found");

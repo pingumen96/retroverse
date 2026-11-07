@@ -28,6 +28,10 @@ public:
     [[nodiscard]] std::filesystem::path system32Folder() const override;
     [[nodiscard]] std::filesystem::path windowsFolder() const override;
     [[nodiscard]] std::vector<std::filesystem::path> pathEntries() const override;
+    /// IShellLinkW and IPersistFile in a COM apartment of the calling thread's (made for the call when it has none):
+    /// loaded for reading (STGM_READ), never resolved (no search, no tracking, no user interface) and never saved.
+    /// The target as IShellLinkW::GetPath gives it, environment variables expanded (shortcut.cpp, I11 step 13).
+    [[nodiscard]] Expected<core::ShellShortcut> readShortcut(const std::filesystem::path& path) const override;
 };
 
 } // namespace rv::platform_win

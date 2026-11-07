@@ -138,3 +138,103 @@ TEST_CASE("cli/profiles: the programs the real library's launches start (I11 ste
     CHECK(json->at("programs").size() >= 8);
     CHECK_FALSE(inUse.empty());
 }
+
+// I11 step 13 (ADR-0020 §3): the games of the systems whose launch is ES-DE's "open the game's file", each translated as
+// a dry run (nothing started, the shortcuts read only): "Real shortcuts:" lines for docs/i11/step-13.md.
+//   ./scripts/real-library.ps1 -Filter '[real-library][shortcuts]'
+TEST_CASE("cli/launch: the real library's games opened by their own file (I11 step 13)",
+          "[cli][launch][shortcuts][.real-library]") {
+    const auto home = pathVariable(L"RV_REAL_ESDE_HOME");
+    const auto install = pathVariable(L"RV_REAL_ESDE_INSTALL");
+    const auto romRoot = pathVariable(L"RV_REAL_ROM_ROOT");
+    const auto mediaRoot = pathVariable(L"RV_REAL_MEDIA_ROOT");
+    if (!home || !install || !romRoot || !mediaRoot) {
+        SKIP("set RV_REAL_ESDE_HOME, RV_REAL_ESDE_INSTALL, RV_REAL_ROM_ROOT and RV_REAL_MEDIA_ROOT "
+             "(scripts/real-library.ps1 does)");
+    }
+    const LoggingReset loggingReset;
+    const fs::path folder = rv::test::testProgramsDir().parent_path() / "real-library" / "shortcuts";
+    std::error_code removed;
+    fs::remove_all(folder, removed);
+    REQUIRE_FALSE(removed);
+    fs::create_directories(folder, removed);
+    REQUIRE_FALSE(removed);
+    rv::core::PathEnvironment environment;
+    environment.executableDir = folder;
+    environment.sourceAssetDir = rv::core::pathFromUtf8(RV_TEST_ASSET_DIR);
+    const auto run = [&](std::vector<std::string> arguments) {
+        arguments.insert(arguments.begin(), {"--data-dir", rv::core::pathToUtf8(folder / "data")});
+        Output out = Output::memory();
+        Output err = Output::memory();
+        const ExitCode code = rv::cli::run(arguments, out, err, environment);
+        return std::make_tuple(code, out.text(), err.text());
+    };
+    const auto [created, createdOut, createdErr] =
+        run({"library", "create", "--home", rv::core::pathToUtf8(home->parent_path()), "--install",
+             rv::core::pathToUtf8(*install), "--rom-root", rv::core::pathToUtf8(*romRoot), "--media-root",
+             rv::core::pathToUtf8(*mediaRoot)});
+    INFO(createdErr);
+    REQUIRE(created == ExitCode::Ok);
+    const fs::path output = folder / "profiles.json.txt";
+    const auto [listed, listedOut, listedErr] = run({"profiles", "--json", "--output", rv::core::pathToUtf8(output)});
+    INFO(listedErr);
+    REQUIRE(listed == ExitCode::Ok);
+    auto text = rv::core::readTextFile(output);
+    REQUIRE(text.has_value());
+    const auto json = rv::core::parseJson(*text, "profiles");
+    REQUIRE(json.has_value());
+
+    std::size_t systems = 0;
+    for (const nlohmann::json& system : json->at("systems")) {
+        const std::string label = system.at("chosen").value("value", std::string());
+        bool opensFile = false;
+        for (const nlohmann::json& command : system.at("commands")) {
+            if (command.at("label") == label &&
+                command.at("command").get<std::string>().find("%EMULATOR_OS-SHELL% /C %ROM%") != std::string::npos) {
+                opensFile = true;
+            }
+        }
+        if (!opensFile || !system.at("romFolder").is_string() || system.at("availability") != "available") {
+            continue;
+        }
+        const fs::path romFolder = rv::core::pathFromUtf8(system.at("romFolder").get<std::string>());
+        std::error_code error;
+        if (!fs::is_directory(romFolder, error)) {
+            continue;
+        }
+        ++systems;
+        const std::string name = system.at("name").get<std::string>();
+        std::vector<std::string> games;
+        std::size_t listedGames = 0;
+        for (fs::directory_iterator it(romFolder, error), end; !error && it != end && listedGames < 25;
+             it.increment(error)) {
+            const std::string file = rv::core::pathToUtf8(it->path().filename());
+            if (it->is_directory(error) || file.ends_with(".txt")) {
+                continue;
+            }
+            ++listedGames;
+            const auto [code, dryOut, dryErr] =
+                run({"launch", "--dry-run", "--system", name, "--path", file, "--json"});
+            const auto dry = rv::core::parseJson(dryOut, "launch");
+            if (!dry) {
+                games.push_back(fmt::format("{} (no result: {})", file, dryErr));
+                continue;
+            }
+            std::vector<std::string> codes;
+            for (const nlohmann::json& blocker : dry->value("blockers", nlohmann::json::array())) {
+                codes.push_back(blocker.value("code", std::string("?")));
+            }
+            const nlohmann::json request = dry->value("request", nlohmann::json());
+            const std::string program = request.is_object() && !request.at("argv").empty()
+                                            ? rv::core::pathToUtf8(rv::core::pathFromUtf8(
+                                                                      request.at("argv").at(0).get<std::string>())
+                                                                      .filename())
+                                            : std::string();
+            games.push_back(fmt::format("{} ({}{}{})", file, dry->value("readiness", std::string("?")),
+                                        codes.empty() ? std::string() : ": " + fmt::format("{}", fmt::join(codes, ", ")),
+                                        program.empty() ? std::string() : ", starts " + program));
+        }
+        std::cout << fmt::format("Real shortcuts: {} ({}): {}\n", name, label, fmt::join(games, "; "));
+    }
+    std::cout << fmt::format("Real shortcuts: {} system(s) open their games' files\n", systems);
+}

@@ -516,6 +516,8 @@ std::string_view toString(GuardRule rule) noexcept {
         return "RetroArch not isolated";
     case GuardRule::NotListed:
         return "not listed";
+    case GuardRule::Activation:
+        return "activation";
     }
     return "unknown";
 }
@@ -549,6 +551,12 @@ LaunchGuard LaunchGuard::fromEnvironment() {
 GuardVerdict LaunchGuard::check(const LaunchRequest& request) const {
     if (!m_active) {
         return GuardVerdict{GuardRule::Inactive, {}};
+    }
+    if (request.isActivation()) {
+        return GuardVerdict{GuardRule::Activation,
+                            fmt::format("a protocol activation never runs in an automated run ({} names programs, "
+                                        "not schemes): {}",
+                                        kLaunchAllowListVariable, request.activationUrl)};
     }
     const std::string executable = core::pathToUtf8Lossy(request.executable);
     const auto refuse = [&](GuardRule rule, std::string_view why) {

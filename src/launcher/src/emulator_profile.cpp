@@ -25,6 +25,7 @@ constexpr std::string_view kSchemaVersionField = "schemaVersion";
 constexpr std::string_view kProfilesField = "profiles";
 constexpr std::string_view kSystemChoicesField = "systemChoices";
 constexpr std::string_view kProgramsField = "programs";
+constexpr std::string_view kProtocolsField = "protocols";
 /// The longest text of a window rule, and the largest minimum size of a window.
 constexpr std::size_t kMaxWindowRuleText = 256;
 constexpr int kMaxWindowSide = 16384;
@@ -796,6 +797,47 @@ private:
     return vr;
 }
 
+/// One protocol rule (I11 step 13): {"scheme": "steam", "launcherProcesses": ["steam.exe"]}.
+[[nodiscard]] Expected<ProtocolRule> parseProtocol(const Json& value, const Location& at, std::string_view file,
+                                                   ProfileOrigin origin) {
+    if (!value.is_object()) {
+        return fail(ErrorCode::ParseError, "expected an object (scheme, launcherProcesses)", at);
+    }
+    ProtocolRule rule;
+    rule.origin = origin;
+    rule.source = std::string(file);
+    for (const auto& item : value.items()) {
+        const Location fieldAt = at.child(item.key());
+        if (item.key() == "scheme") {
+            auto scheme = readLiteral(item.value(), fieldAt, 64);
+            if (!scheme) {
+                return propagate(std::move(scheme.error()));
+            }
+            const std::optional<std::string> read = activationScheme(*scheme + ":");
+            if (!read || *read != core::toLowerAscii(*scheme)) {
+                return fail(ErrorCode::ValidationFailed,
+                            "a scheme: a letter, then letters, digits, '+', '-' or '.' (\"steam\")", fieldAt);
+            }
+            if (const Status allowed = checkActivationUrl(*read + ":x"); !allowed) {
+                return fail(ErrorCode::ValidationFailed, allowed.error().message, fieldAt);
+            }
+            rule.scheme = *read;
+        } else if (item.key() == "launcherProcesses") {
+            auto names = readFileNames(item.value(), fieldAt);
+            if (!names) {
+                return propagate(std::move(names.error()));
+            }
+            rule.launcherProcesses = std::move(*names);
+        } else {
+            return fail(ErrorCode::ParseError, "unknown field " + inQuotes(item.key()), fieldAt);
+        }
+    }
+    if (rule.scheme.empty()) {
+        return fail(ErrorCode::ParseError, "missing field \"scheme\"", at);
+    }
+    return rule;
+}
+
 /// One program. `id` receives its id as soon as it is known to be valid, so that later errors name it.
 [[nodiscard]] Expected<ProgramProfile> parseProgram(const Json& value, const Location& at, std::string_view file,
                                                     ProfileOrigin origin, std::string& id) {
@@ -964,14 +1006,15 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
                        versionAt));
         return result;
     }
-    // Schema 2 (I11 step 12) adds the programs.
+    // Schema 2 (I11 steps 12 and 13) adds the programs and the protocols.
     const bool withPrograms = *version >= 2;
     for (const auto& item : document.items()) {
+        const bool schema2 = item.key() == kProgramsField || item.key() == kProtocolsField;
         if (item.key() != kSchemaVersionField && item.key() != kProfilesField && item.key() != kSystemChoicesField &&
-            !(withPrograms && item.key() == kProgramsField)) {
+            !(withPrograms && schema2)) {
             issue({}, fail(ErrorCode::ParseError,
                            "unknown field " + inQuotes(item.key()) +
-                               (item.key() == kProgramsField ? " (\"programs\" needs schemaVersion 2)" : ""),
+                               (schema2 ? " (" + inQuotes(item.key()) + " needs schemaVersion 2)" : std::string()),
                            root.child(item.key())));
         }
     }
@@ -1054,6 +1097,32 @@ ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string
             }
         }
     }
+    // The protocols (I11 step 13): each one that is valid is kept.
+    if (const auto protocols = document.find(kProtocolsField); withPrograms && protocols != document.end()) {
+        const Location protocolsAt = root.child(kProtocolsField);
+        if (!protocols->is_array()) {
+            issue({}, fail(ErrorCode::ParseError, "expected an array of protocols", protocolsAt));
+        } else {
+            for (std::size_t i = 0; i < protocols->size(); ++i) {
+                const Location protocolAt = protocolsAt.child(i);
+                auto rule = parseProtocol((*protocols)[i], protocolAt, file, origin);
+                if (!rule) {
+                    result.issues.push_back(ProfileIssue{std::string(file), {}, std::move(rule.error())});
+                    continue;
+                }
+                const bool duplicate =
+                    std::any_of(result.protocols.begin(), result.protocols.end(),
+                                [&](const ProtocolRule& other) { return other.scheme == rule->scheme; });
+                if (duplicate) {
+                    issue({}, fail(ErrorCode::ValidationFailed,
+                                   "a second rule for the scheme " + inQuotes(rule->scheme) + " (the first one is kept)",
+                                   protocolAt.child("scheme")));
+                    continue;
+                }
+                result.protocols.push_back(std::move(*rule));
+            }
+        }
+    }
     return result;
 }
 
@@ -1100,6 +1169,13 @@ const ProgramProfile* EmulatorProfiles::programFor(const std::filesystem::path& 
     return nullptr;
 }
 
+const ProtocolRule* EmulatorProfiles::protocolFor(std::string_view scheme) const noexcept {
+    const auto found = std::find_if(protocols.begin(), protocols.end(), [&](const ProtocolRule& rule) {
+        return core::equalsIgnoreCaseAscii(rule.scheme, scheme);
+    });
+    return found == protocols.end() ? nullptr : &*found;
+}
+
 EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument user) {
     EmulatorProfiles merged;
     merged.profiles = std::move(shipped.profiles);
@@ -1126,6 +1202,16 @@ EmulatorProfiles mergeProfileDocuments(ProfileDocument shipped, ProfileDocument 
             merged.programs.push_back(std::move(program));
         }
     }
+    merged.protocols = std::move(shipped.protocols);
+    for (ProtocolRule& rule : user.protocols) {
+        const auto replaced = std::find_if(merged.protocols.begin(), merged.protocols.end(),
+                                           [&](const ProtocolRule& other) { return other.scheme == rule.scheme; });
+        if (replaced != merged.protocols.end()) {
+            *replaced = std::move(rule);
+        } else {
+            merged.protocols.push_back(std::move(rule));
+        }
+    }
     merged.issues = std::move(shipped.issues);
     merged.issues.insert(merged.issues.end(), std::make_move_iterator(user.issues.begin()),
                          std::make_move_iterator(user.issues.end()));
@@ -1148,8 +1234,8 @@ EmulatorProfiles loadEmulatorProfiles(const std::filesystem::path& shippedFile,
     for (const ProfileIssue& issue : merged.issues) {
         spdlog::warn("Emulator profiles: {}", issue.toString());
     }
-    spdlog::info("Emulator profiles: {} in effect ({} from {}), {} program(s)", merged.profiles.size(), userCount,
-                 core::pathToUtf8Lossy(userFile), merged.programs.size());
+    spdlog::info("Emulator profiles: {} in effect ({} from {}), {} program(s), {} protocol(s)", merged.profiles.size(),
+                 userCount, core::pathToUtf8Lossy(userFile), merged.programs.size(), merged.protocols.size());
     return merged;
 }
 

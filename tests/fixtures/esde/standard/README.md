@@ -52,7 +52,7 @@ R"(name="ShowHiddenGames" value="false")")`. Their expected counts are under "Va
 | System | Full name | Extensions | Commands (label: what it exercises) |
 |---|---|---|---|
 | gb | Nintendo Game Boy | `.gb .GB .gbc .GBC .zip .ZIP` | Fake Emulator: `%EMULATOR_FAKE-EMULATOR%`, `%CORE_FAKE-EMULATOR%` (core present), `%ROM%`; Fake Emulator (Game Folder): `%STARTDIR%=%GAMEDIR%`; Missing Emulator (Standalone): an emulator no rule finds; Home Emulator: an emulator found only under `~` |
-| snes | Nintendo SNES (Super Nintendo) | `.sfc .SFC .smc .SMC .zip .ZIP` | Fake Emulator; Fake Emulator (Hidden Console): `%HIDEWINDOW%`, `%STARTDIR%=%EMUDIR%`; Shortcut or script: `%EMULATOR_OS-SHELL%` (cmd.exe, refused by name), `%ESCAPESPECIALS%` |
+| snes | Nintendo SNES (Super Nintendo) | `.sfc .SFC .smc .SMC .zip .ZIP` | Fake Emulator; Fake Emulator (Hidden Console): `%HIDEWINDOW%`, `%STARTDIR%=%EMUDIR%`; Shortcut or script: `%EMULATOR_OS-SHELL% /C %ROM%` (each game's file opened by Retroverse, never through cmd.exe: I11 step 13), `%ESCAPESPECIALS%` |
 | psx | Sony PlayStation | `.bin .BIN .chd .CHD .cue CUE .m3u .M3U` | Fake Emulator: core present; Fake Emulator (Inject): `%INJECT%=%BASENAME%.commands`; Fake Emulator (Missing Core): a core that is not there |
 
 Platforms: gb `gb`; snes `snes, satellaview` (a comma list); psx `psx`. Themes equal the names. psx carries the pcfx

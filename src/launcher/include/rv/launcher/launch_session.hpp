@@ -115,6 +115,9 @@ struct TreeProcess {
 /// becomes UserConfirmReturn):
 ///  - DirectProcess: the started process's exit;
 ///  - ProcessTree: the tree's end (TreeEmpty); a crash of any of its processes makes the session Crashed;
+///  - FollowWindow (I11 step 13): as ProcessTree, the runner's TreeEmpty coming once the game's window has shown and
+///    every process followed has exited; before a window, a crash, a loader error or an unclean exit within the
+///    startup grace of the started process ends it at once;
 ///  - UserConfirmReturn: confirmReturn(); a crash, a loader error or an unclean exit within the startup grace of the
 ///    started process still end the session at once.
 /// Classification of the authoritative exit (classifyExitCode), times counted from the moment the process started
@@ -163,6 +166,8 @@ public:
     [[nodiscard]] std::uint32_t processId() const noexcept;
     /// The emulator's window while one shows (ProcessEvent::window, I10 step 6), else 0.
     [[nodiscard]] std::uintptr_t window() const noexcept { return m_window; }
+    /// The runner saw the game in exclusive fullscreen (ProcessEventKind::ExclusiveFullscreen, I11 step 13).
+    [[nodiscard]] bool exclusiveFullscreen() const noexcept { return m_exclusiveFullscreen; }
     /// Processes of the tree known to run (the started one included until it exits).
     [[nodiscard]] std::size_t liveProcessCount() const noexcept;
     /// The processes of the tree other than the started one known to run, in the order they were noticed (cleared
@@ -208,6 +213,7 @@ private:
     std::vector<TreeProcess> m_liveChildren;
     bool m_treeEmpty = false;
     bool m_windowVisible = false;
+    bool m_exclusiveFullscreen = false;
     std::uintptr_t m_window = 0;
     LaunchClock::time_point m_windowClockStart{};
 };

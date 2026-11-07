@@ -260,6 +260,12 @@
 		<p class="blocker" data-if="card.blocker == 'core-not-found'">Il core richiesto dal comando non si trova.</p>
 		<p class="blocker" data-if="card.blocker == 'core-malformed'">Il comando indica il core in modo non leggibile.</p>
 		<p class="blocker" data-if="card.blocker == 'core-repeated'">Il comando indica più di un core.</p>
+		<!-- I11 step 13: ES-DE's "open the game's file", opened by Retroverse itself. -->
+		<p class="blocker" data-if="card.blocker == 'file-not-opened'">Il comando apre il file del gioco, ma questo file non è una scorciatoia, un programma o un collegamento Internet: scegli un altro comando per questo sistema.</p>
+		<p class="blocker" data-if="card.blocker == 'shortcut-unreadable'">La scorciatoia o il collegamento del gioco non si può leggere.</p>
+		<p class="blocker" data-if="card.blocker == 'shortcut-target'">La scorciatoia del gioco non apre un programma.</p>
+		<p class="blocker" data-if="card.blocker == 'batch-file'">Il gioco si avvia con un file batch, che Retroverse non esegue mai.</p>
+		<p class="blocker" data-if="card.blocker == 'protocol-not-listed'">Il collegamento del gioco apre un indirizzo che Retroverse non attiva: il suo schema non è tra i protocolli di emulators.json.</p>
 		<!-- The last launch from the card, when it did not end normally (the world card's lines, game_card.rml). -->
 		<p class="blocker" data-if="card.outcome == 'not-ready'">Il gioco non è pronto: la scheda dice perché.</p>
 		<p class="blocker" data-if="card.outcome == 'quick-exit'">Il programma si è chiuso subito: se il gioco è ancora aperto, il profilo deve attendere i suoi processi.</p>

@@ -13,6 +13,7 @@
 // RV_LAUNCH_ALLOWLIST holds absolute executable paths separated by ';' (blanks and one pair of double quotes around an
 // entry are ignored; relative entries and device paths are ignored and allow nothing). A request is allowed when all of
 // these hold, in this order:
+//  - it is no protocol activation (LaunchRequest::activationUrl, I11 step 13): an automated run never activates one;
 //  - its executable is an absolute path without an alternate data stream, a device or \\?\GLOBALROOT form;
 //  - its file name, as Windows normalizes the path (trailing dots and spaces dropped) and as the file system resolves
 //    it (8.3 short names expanded, symbolic links and junctions followed), does not match duckstation*.exe;
@@ -64,9 +65,12 @@ enum class GuardRule : std::uint8_t {
     RetroArchNotIsolated, ///< refused: retroarch*.exe whose command line is not surely isolated by --appendconfig
                           ///< (the verdict's message says why)
     NotListed,            ///< refused: not one of the listed executables
+    Activation,           ///< refused: a protocol activation (LaunchRequest::activationUrl, I11 step 13): the list
+                          ///< names programs, not the schemes that start a store's launcher
 };
 
-/// "inactive", "allowed", "unsupported path", "DuckStation", "unresolved", "RetroArch not isolated", "not listed".
+/// "inactive", "allowed", "unsupported path", "DuckStation", "unresolved", "RetroArch not isolated", "not listed",
+/// "activation".
 [[nodiscard]] std::string_view toString(GuardRule rule) noexcept;
 
 /// The guard's decision on one request.

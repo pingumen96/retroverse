@@ -189,6 +189,12 @@ public:
     /// window does not have the focus (it renders again once the focus is back).
     [[nodiscard]] bool hostIdle() const noexcept;
     [[nodiscard]] SessionPanel panel() const noexcept { return m_panel; }
+    /// I11 step 13 (ADR-0020 §5): the game was seen in exclusive fullscreen, by the runner (the shell's state) or by
+    /// the application (noteExclusiveFullscreen(): a capture that stays black); reset at each start.
+    [[nodiscard]] bool exclusiveFullscreen() const noexcept;
+    /// The application saw the running game in exclusive fullscreen: recorded (LaunchRecord::exclusiveFullscreen) and
+    /// shown on the panel. Ignored without a running session.
+    void noteExclusiveFullscreen();
     /// The game of the current or last launch.
     [[nodiscard]] const LaunchInfo& info() const noexcept { return m_info; }
     /// The last launch's message, once it ended (or was refused).
@@ -238,6 +244,7 @@ private:
     bool m_stoppedAwaiting = false;
     LaunchFlowEvents m_events;
     bool m_quitting = false;
+    bool m_exclusiveNoted = false;
     bool m_returned = false;
     bool m_takeForeground = true;
     LaunchInfo m_info;

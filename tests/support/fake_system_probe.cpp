@@ -179,4 +179,17 @@ std::vector<std::filesystem::path> FakeSystemProbe::pathEntries() const {
     return m_pathEntries;
 }
 
+FakeSystemProbe& FakeSystemProbe::addShortcut(const std::filesystem::path& path, core::ShellShortcut shortcut) {
+    m_shortcuts[foldedFolder(path)] = std::move(shortcut);
+    return *this;
+}
+
+Expected<core::ShellShortcut> FakeSystemProbe::readShortcut(const std::filesystem::path& path) const {
+    const auto found = m_shortcuts.find(foldedFolder(path));
+    if (found == m_shortcuts.end()) {
+        return makeError(ErrorCode::NotFound, "no such shortcut", core::pathToUtf8Lossy(path));
+    }
+    return found->second;
+}
+
 } // namespace rv::test

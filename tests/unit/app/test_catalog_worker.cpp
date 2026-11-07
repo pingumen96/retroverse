@@ -739,7 +739,7 @@ TEST_CASE("app/catalog_worker: every blocker code the launch resolution reports 
             }
         }
     }
-    CHECK(codes.size() >= 32); // the scan finds them all but the app's constant (the card names 33)
+    CHECK(codes.size() >= 37); // the scan finds them all but the app's constant (the card names 38)
     const auto& known = rv::ui::quick_catalog::kBlockerCodes;
     for (const std::string& code : codes) {
         INFO(code);

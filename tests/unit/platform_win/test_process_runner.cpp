@@ -618,6 +618,38 @@ TEST_CASE("platform_win/process_runner: a child that breaks away from the job is
     waitForExit(child);
 }
 
+TEST_CASE("platform_win/process_runner: FollowWindow adopts the window of a child outside the job and waits for it",
+          "[platform_win][process_runner][activation]") {
+    REQUIRE_FAKE_EMULATOR();
+    ScratchDir scratch;
+    const std::filesystem::path logFile = scratch.path() / "wrapper.log";
+    rv::platform_win::Win32ProcessRunner runner;
+    WakeSignal wake;
+    // I11 step 13 (ADR-0020 §4): a launcher that starts the game outside its tree and exits at once.
+    LaunchRequest request = fakeRequest({"--spawn-child-and-exit", "--child-breakaway", "--frames", "30",
+                                         "--min-window-ms", "2500", "--exit-code", "5"},
+                                        WaitStrategy::FollowWindow);
+    request.outputLog = logFile;
+    LaunchSession session(request, runner);
+    const auto begun = LaunchClock::now();
+    session.start(begun, {wake.callback()});
+    REQUIRE(driveUntil(session, wake, [&] { return session.finished(); }));
+    if (session.outcome().exitCode == 3u) {
+        SKIP("a job this test runs in forbids breaking away (the wrapper could not start its child)");
+    }
+    const std::string log = readText(logFile);
+    const std::size_t at = log.find("started process ");
+    REQUIRE(at != std::string::npos);
+    const auto child = static_cast<std::uint32_t>(std::stoul(log.substr(at + 16)));
+    CHECK(session.state() == SessionState::Returned);
+    CHECK(session.outcome().exitProcessId == child);
+    CHECK(session.outcome().exitCode == 5u);
+    CHECK(session.outcome().processesSeen == 2);
+    CHECK(session.times().firstWindow.has_value());
+    CHECK(LaunchClock::now() - begun >= std::chrono::milliseconds(2500));
+    CHECK_FALSE(isRunning(child));
+}
+
 TEST_CASE("platform_win/process_runner: an exception before the program runs ends it and is reported as an error",
           "[platform_win][process_runner]") {
     REQUIRE_FAKE_EMULATOR();

@@ -10,6 +10,7 @@ add_library(rv_platform_win STATIC
     src/drives.cpp
     src/foreground.cpp
     src/process_priority.cpp
+    src/shortcut.cpp
     src/system_probe.cpp
     src/win32_process_runner.cpp
     src/win32_util.cpp
@@ -18,8 +19,9 @@ add_library(rv::platform_win ALIAS rv_platform_win)
 rv_set_target_defaults(rv_platform_win)
 target_include_directories(rv_platform_win PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # advapi32: the registry (the system probe); ntdll: the system's process list (the liveness of a process this user may
-# not open).
-target_link_libraries(rv_platform_win PUBLIC rv_core rv_launcher PRIVATE advapi32 dwmapi ntdll user32)
+# not open); ole32, uuid: a shortcut read through IShellLinkW (I11 step 13); shell32: a protocol activated
+# (ShellExecuteExW) and the shell's fullscreen state (SHQueryUserNotificationState).
+target_link_libraries(rv_platform_win PUBLIC rv_core rv_launcher PRIVATE advapi32 dwmapi ntdll ole32 shell32 user32 uuid)
 rv_forbid_link(rv_platform_win)
 
 # rv_platform_win_capture (I10 step 6, ADR-0017 §7): a window's picture through Windows.Graphics.Capture (C++/WinRT, the

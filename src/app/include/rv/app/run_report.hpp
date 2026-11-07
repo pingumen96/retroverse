@@ -286,8 +286,13 @@ struct LaunchRecord {
     std::optional<std::uint32_t> exitCode;
     /// The wait strategy in effect (launcher::toString(WaitStrategy)); empty when nothing started.
     std::string strategy;
-    /// The started process's id (0 when nothing started).
+    /// The started process's id (0 when nothing started, or for a protocol activation).
     std::uint32_t processId = 0;
+    /// I11 step 13: the scheme of a protocol activation ("steam"; empty for a program), and whether the game was seen in
+    /// exclusive fullscreen (the shell's state while it held the foreground, or a capture that stayed black in VR:
+    /// ADR-0020 §5).
+    std::string activation;
+    bool exclusiveFullscreen = false;
     /// launcher::LaunchOutcome's flags; confirmedByUser only for the user's own confirmation (false when quitting or the
     /// wait limit ended the session, which LaunchSession::confirmReturn records as confirmed).
     bool quickExit = false;
@@ -2143,6 +2148,9 @@ struct XrRecord {
     std::uint64_t captureWindows = 0;
     std::uint64_t captureClosed = 0;
     bool captureBlack = false;
+    /// I11 step 13 (ADR-0020 §5): frames the session panel's notice of a game in exclusive fullscreen stood in front of
+    /// the CRT showing it.
+    std::uint64_t exclusiveNoticeFrames = 0;
     glm::vec3 captureColor{0.0f};
     /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
     std::uint64_t playingWalkFrames = 0;

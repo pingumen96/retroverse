@@ -148,8 +148,9 @@ other use of a shell stays refused.
 **`.exe`** starts directly, as any program.
 
 **`.url`**
-- An Internet Shortcut whose `URL=` names a scheme of the profile list `protocols` (shipped: `steam`,
-  `com.epicgames.launcher`, `goggalaxy`, `uplay`, `origin2`).
+- An Internet Shortcut whose `URL=` names a scheme of `emulators.json`'s `protocols` (schema 2, I11 step 13; shipped:
+  `steam`, `com.epicgames.launcher`, `goggalaxy`, `uplay`, `origin2`), each listed with its launcher's own processes
+  (`launcherProcesses`, §4).
 - Activated by `ShellExecuteExW` with the URL as its file, the verb `open`, `SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI`.
 - Never `http`, `https`, `file`, `shell`, `search`, `ms-*` or any scheme not listed. The URL is one value, never a
   command line.
@@ -165,13 +166,15 @@ programs, not schemes. A `.lnk`'s target must be listed like any program.
 ### 4. The detached session: `FollowWindow`
 
 A fourth wait strategy (ADR-0006):
-1. **The game's window.** After the start or the activation, the session waits within the window timeout for the first
-   new top-level window that §2's scorer accepts. Its process must have been created after the launch and be none of
-   these: Retroverse, Explorer, or a process the profile names in `ignoreProcesses` (Steam's own, by default:
-   `steam.exe`, `steamwebhelper.exe`).
-2. **Then the process.** The session follows that window's process, opened with `SYNCHRONIZE |
-   PROCESS_QUERY_LIMITED_INFORMATION`, to its end. That end is the return: `Returned`, with the exit code when it can be
-   read.
+1. **The game's windows.** After the start or the activation, the runner looks every 100 ms for top-level windows
+   outside the tree that §2's scorer does not exclude. Their process is adopted, opened with `SYNCHRONIZE |
+   PROCESS_QUERY_LIMITED_INFORMATION`, when it was created after the launch and was started, directly or through
+   processes created since the launch, by the tree, by Retroverse or by one of the protocol's `launcherProcesses`
+   (Steam's own: `steam.exe`, `steamwebhelper.exe`), and is none of those launcher processes, Retroverse, Explorer, a
+   console or Windows' error reporting. The window followed is chosen among the tree's and the adopted processes'.
+2. **Then the processes.** Once a window has shown, the session ends when the tree and every adopted process have
+   exited: `Returned`, with the last exit code (a crash among them is `Crashed`). Before a window, a launcher that
+   exits cleanly hands over; one that fails within the startup grace is a failure to start (I11 step 13).
 3. **Without a window.** When no window qualifies within the timeout, the session becomes `UserConfirmReturn`, which
    VR can now confirm (§6).
 

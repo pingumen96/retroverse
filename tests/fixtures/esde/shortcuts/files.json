@@ -1,0 +1,8 @@
+// What git does not hold (see README.md): the placeholder ES-DE.exe; the media root, there and empty. The shortcuts
+// (.lnk) are written by the tests that use them, since they hold absolute paths.
+{
+    "files": [
+        {"path": "Programs/ES-DE/ES-DE.exe", "size": 4096, "seed": 1300}
+    ],
+    "directories": ["media", "ES-DE/custom_systems"]
+}

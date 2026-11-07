@@ -80,12 +80,16 @@ std::size_t LaunchSession::liveProcessCount() const noexcept {
     if (!m_process || m_treeEmpty) {
         return 0;
     }
-    return (m_mainExit ? 0u : 1u) + m_liveChildren.size();
+    // An activation started no process of its own (I11 step 13).
+    return (m_mainExit || m_process->processId() == 0 ? 0u : 1u) + m_liveChildren.size();
 }
 
 std::string LaunchSession::describeLaunch() const {
     if (!m_request.label.empty()) {
         return m_request.label;
+    }
+    if (m_request.isActivation()) {
+        return "the activation of " + activationScheme(m_request.activationUrl).value_or("a protocol");
     }
     try {
         return core::pathToUtf8(m_request.executable.filename());
@@ -165,7 +169,7 @@ void LaunchSession::start(LaunchClock::time_point now, StartCallbacks callbacks)
     m_process = std::move(*process);
     // The startup grace and the durations count from the moment the process runs, after the window's hand-over.
     m_times.started = m_process->startedAt();
-    m_outcome.processesSeen = 1;
+    m_outcome.processesSeen = m_process->processId() != 0 ? 1 : 0;
     m_windowClockStart = *m_times.started;
     m_strategy = effectiveStrategy(m_request.waitStrategy, m_process->followsTree());
     if (m_strategy != m_request.waitStrategy) {
@@ -173,7 +177,9 @@ void LaunchSession::start(LaunchClock::time_point now, StartCallbacks callbacks)
                      "then for the user's confirmation",
                      describeLaunch());
     }
-    setState(SessionState::Running, fmt::format("process {}", m_process->processId()));
+    setState(SessionState::Running, m_process->processId() != 0
+                                        ? fmt::format("process {}", m_process->processId())
+                                        : std::string("activated: following the game's window"));
 }
 
 void LaunchSession::poll(LaunchClock::time_point now) {
@@ -246,6 +252,14 @@ void LaunchSession::apply(const ProcessEvent& event) {
         }
         m_window = event.window;
         break;
+    case ProcessEventKind::ExclusiveFullscreen:
+        if (!m_exclusiveFullscreen) {
+            m_exclusiveFullscreen = true;
+            spdlog::warn("Launch session: {} runs in exclusive fullscreen, which cannot be captured: set it to "
+                         "borderless",
+                         describeLaunch());
+        }
+        break;
     case ProcessEventKind::WatchFailed:
         spdlog::error("Launch session: the processes of {} can no longer be followed ({}); the return needs the "
                       "user's confirmation",
@@ -277,6 +291,26 @@ void LaunchSession::onMainExited(const ProcessEvent& event) {
         }
         spdlog::info("Launch session: the started process exited ({}); waiting for {} more process(es) of the tree",
                      describeExitCode(m_mainExit->code), m_liveChildren.size());
+        if (m_treeEmpty) {
+            conclude(m_treeCrash ? *m_treeCrash : *m_lastExit);
+        }
+        break;
+    case WaitStrategy::FollowWindow:
+        if (!m_lastExit || m_mainExit->occurredAt >= m_lastExit->occurredAt) {
+            m_lastExit = m_mainExit;
+        }
+        if (status.kind == ExitKind::Crash && !m_treeCrash) {
+            m_treeCrash = m_mainExit;
+        }
+        // Before the game's window: a launch that failed. After it, or a clean exit: a launcher that handed over.
+        if (!m_times.firstWindow &&
+            (status.kind == ExitKind::Crash || status.kind == ExitKind::LoaderError ||
+             (status.kind != ExitKind::Success && withinStartupGrace(m_mainExit->occurredAt)))) {
+            conclude(*m_mainExit);
+            break;
+        }
+        spdlog::info("Launch session: the started process exited ({}); following the game's window",
+                     describeExitCode(m_mainExit->code));
         if (m_treeEmpty) {
             conclude(m_treeCrash ? *m_treeCrash : *m_lastExit);
         }
@@ -321,10 +355,16 @@ void LaunchSession::onChildExited(const ProcessEvent& event) {
 void LaunchSession::onTreeEmpty(const ProcessEvent& event) {
     m_treeEmpty = true;
     m_liveChildren.clear();
-    if (m_strategy != WaitStrategy::ProcessTree || !m_mainExit) {
+    const bool tree = m_strategy == WaitStrategy::ProcessTree || m_strategy == WaitStrategy::FollowWindow;
+    // An activation has no started process whose exit could come (I11 step 13).
+    const bool started = m_process && m_process->processId() != 0;
+    if (!tree || (started && !m_mainExit)) {
         return; // informational, or the started process's exit is still to be reported
     }
-    Exit exit = m_treeCrash ? *m_treeCrash : (m_lastExit ? *m_lastExit : *m_mainExit);
+    Exit exit = m_treeCrash  ? *m_treeCrash
+                : m_lastExit ? *m_lastExit
+                : m_mainExit ? *m_mainExit
+                             : Exit{0, 0, event.occurredAt, event.observedAt};
     // The session ends with the tree: its end is the last exit, observed now.
     exit.occurredAt = std::max(exit.occurredAt, event.occurredAt);
     exit.observedAt = event.observedAt;
@@ -350,8 +390,8 @@ void LaunchSession::conclude(const Exit& exit) {
     const double ranFor = m_times.started ? secondsBetween(*m_times.started, exit.occurredAt) : 0.0;
     const std::string code = describeExitCode(exit.code);
     const bool early = withinStartupGrace(exit.occurredAt);
-    // ProcessTree waited for the whole tree: a quick end of it is no hint at a launcher left running.
-    const bool quick = early && m_strategy != WaitStrategy::ProcessTree;
+    // ProcessTree and FollowWindow waited for the whole tree: a quick end of it is no hint at a launcher left running.
+    const bool quick = early && m_strategy != WaitStrategy::ProcessTree && m_strategy != WaitStrategy::FollowWindow;
 
     if (status.kind == ExitKind::Crash) {
         m_outcome.message = fmt::format("{} crashed after {:.1f} s: {}", describeLaunch(), ranFor, code);

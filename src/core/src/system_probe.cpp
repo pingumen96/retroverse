@@ -155,6 +155,10 @@ std::optional<UninstallEntry> findUninstallEntry(const ISystemProbe& probe, std:
     return std::nullopt;
 }
 
+Expected<ShellShortcut> ISystemProbe::readShortcut(const std::filesystem::path& path) const {
+    return makeError(ErrorCode::Unsupported, "this machine's description reads no shortcuts", pathToUtf8Lossy(path));
+}
+
 bool matchesWildcard(std::string_view name, std::string_view pattern) {
     const auto text = foldedCodePoints(name);
     const auto glob = foldedCodePoints(pattern);

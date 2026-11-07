@@ -296,13 +296,23 @@ TEST_CASE("esde/launch translation: the program rule and the refused shells", "[
     ra.machine.program(ra.machine.install() / "Tools" / "PowerShell.EXE");
 
     SECTION("cmd.exe found by its find rule, refused by name; %ESCAPESPECIALS% named") {
-        const auto translation = ra.translate("%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /C %ROM%", &game);
+        const auto translation = ra.translate("%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /K %ROM%", &game);
         CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
         CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"token-unsupported", "program-refused"});
         CHECK(rv::test::blockerText(translation).find("%ESCAPESPECIALS%") != std::string::npos);
         CHECK(rv::test::blockerText(translation).find("cmd.exe") != std::string::npos);
         REQUIRE(translation.program);
         CHECK(translation.program->rule == "systempath");
+    }
+    SECTION("\"open the game's file\" never runs cmd.exe: a ROM is no file Retroverse opens (I11 step 13)") {
+        const auto translation = ra.translate("%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_OS-SHELL% /C %ROM%", &game);
+        CHECK(translation.readiness() == LaunchReadiness::RequiresConfiguration);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"file-not-opened"});
+        CHECK_FALSE(translation.program);
+    }
+    SECTION("\"open the game's file\" whose shell is not cmd.exe: refused as before") {
+        const auto translation = ra.translate("%HIDEWINDOW% %ESCAPESPECIALS% %EMULATOR_PWSH% /C %ROM%", &game);
+        CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{"program-refused", "token-unsupported"});
     }
     SECTION("a launcher found under another case and extension's case") {
         const auto translation = ra.translate("%EMULATOR_PWSH% -File %ROM%", &game);
@@ -396,7 +406,11 @@ TEST_CASE("esde/launch translation: tokens that require launcher configuration, 
         CHECK(rv::test::blockerCodes(translation) == std::vector<std::string>{code});
         CHECK(rv::test::blockerText(translation).find(named) != std::string::npos);
     };
-    check("%RUNINBACKGROUND% %EMULATOR_RA% %ROM%", "token-unsupported", "%RUNINBACKGROUND%");
+    // I11 step 13: %RUNINBACKGROUND% follows the game's window.
+    const auto background = ra.translate("%RUNINBACKGROUND% %EMULATOR_RA% %ROM%", &game);
+    CHECK(background.readiness() == LaunchReadiness::Ready);
+    REQUIRE(background.request);
+    CHECK(background.request->waitStrategy == rv::launcher::WaitStrategy::FollowWindow);
     check("%EMULATOR_RA% --no-gui %RPCS3_GAMEID%:%INJECT%=%BASENAME%.ps3", "token-unsupported", "%RPCS3_GAMEID%");
     check("%EMULATOR_RA% %PRECOMMAND_X% %ROM%", "token-unsupported", "%PRECOMMAND_X%");
     check("%EMULATOR_RA% %GAMEENTRYDIR%\\x %ROM% %GAMEENTRYDIR%", "token-unsupported", "%GAMEENTRYDIR%");

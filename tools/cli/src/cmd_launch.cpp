@@ -58,6 +58,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -247,7 +248,9 @@ Json vrJson(const DryRun& run) {
 
 Json requestJson(const launcher::LaunchRequest& request) {
     Json argv = Json::array();
-    argv.push_back(pathText(request.executable));
+    if (!request.isActivation()) {
+        argv.push_back(pathText(request.executable));
+    }
     for (const std::string& argument : request.arguments) {
         argv.push_back(argument);
     }
@@ -261,6 +264,8 @@ Json requestJson(const launcher::LaunchRequest& request) {
                 {"environment", std::move(environment)},
                 {"hideConsoleWindow", request.hideConsoleWindow},
                 {"waitStrategy", std::string(launcher::toString(request.waitStrategy))},
+                {"activationUrl", request.activationUrl},
+                {"launcherProcesses", request.launcherProcesses},
                 {"label", request.label}};
 }
 
@@ -355,7 +360,15 @@ void writeDryRunText(const DryRun& run, Output& out) {
             }
         }
     }
-    if (const launcher::LaunchRequest* request = run.request()) {
+    if (const launcher::LaunchRequest* request = run.request(); request != nullptr && request->isActivation()) {
+        // I11 step 13: an Internet Shortcut's protocol, activated by the shell; the game's window followed.
+        line(resolution.readiness() == catalog::LaunchReadiness::Ready ? "Activates" : "Activates (blocked)",
+             request->activationUrl);
+        line("Waits", "FollowWindow: the game's window, wherever it opens");
+        if (!request->launcherProcesses.empty()) {
+            line("Launcher processes", fmt::format("{}", fmt::join(request->launcherProcesses, ", ")));
+        }
+    } else if (request != nullptr) {
         out.writeLine(resolution.readiness() == catalog::LaunchReadiness::Ready
                           ? (run.vr ? "Argv (in VR):" : "Argv:")
                           : "Argv (blocked, not runnable):");
@@ -373,6 +386,9 @@ void writeDryRunText(const DryRun& run, Output& out) {
             }
         }
         line("Console window", request->hideConsoleWindow ? "hidden (%HIDEWINDOW%)" : "shown");
+        if (request->waitStrategy == launcher::WaitStrategy::FollowWindow) {
+            line("Waits", "FollowWindow: the game's window, wherever it opens (%RUNINBACKGROUND%)");
+        }
         if (run.commandLine) {
             line("Command line", *run.commandLine);
         }

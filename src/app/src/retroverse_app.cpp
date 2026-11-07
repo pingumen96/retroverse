@@ -964,6 +964,10 @@ struct RetroverseApp::State {
         std::optional<XrRecord>& record = context.report().xr;
         const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
         xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
+        // I11 step 13 (ADR-0020 §5): a capture that stays black is a game in exclusive fullscreen; the panel says so.
+        if (window != 0 && xrGame.black() && !product->launchExclusiveFullscreen()) {
+            product->noteExclusiveFullscreen();
+        }
         followXrForeground(context, window);
     }
 
@@ -1071,8 +1075,9 @@ struct RetroverseApp::State {
             return;
         }
         xrEyes->panels.clear();
-        // The game on the CRT (I10 step 6) shows with no panel in front of it.
-        if (!product->visible() || xrGame.showing()) {
+        // The game on the CRT (I10 step 6) shows with no panel in front of it, but for the notice of a game in exclusive
+        // fullscreen, whose picture the CRT cannot show (I11 step 13).
+        if (!product->visible() || (xrGame.showing() && !product->launchExclusiveFullscreen())) {
             xrUiDrawn = true;
             return;
         }
@@ -1082,6 +1087,9 @@ struct RetroverseApp::State {
         }
         if (const std::optional<gl::Panel> panel = xrUi.panel(view.post.fade)) {
             xrEyes->panels.push_back(*panel);
+            if (std::optional<XrRecord>& record = context.report().xr; record && xrGame.showing()) {
+                ++record->exclusiveNoticeFrames; // only the exclusive fullscreen's notice stands before the game
+            }
         }
         xrUiDrawn = true;
     }

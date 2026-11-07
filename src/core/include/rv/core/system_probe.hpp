@@ -12,7 +12,21 @@
 #include <string_view>
 #include <vector>
 
+#include <rv/core/expected.hpp>
+
 namespace rv::core {
+
+/// What a Windows shortcut (a .lnk file) says, read without being resolved (I11 step 13, ADR-0020 §3).
+struct ShellShortcut {
+    /// The file it opens, absolute, environment variables expanded (as the shell opens it).
+    std::filesystem::path target;
+    /// Its argument string, as the shell passes it on: split as CommandLineToArgvW splits it.
+    std::string arguments;
+    /// Its working folder; empty when it names none.
+    std::filesystem::path workingDirectory;
+    /// It asks to run as an administrator (the shortcut's "Run as administrator").
+    bool runAsAdministrator = false;
+};
 
 /// The registry hives the probe reads.
 enum class RegistryRoot {
@@ -57,6 +71,11 @@ public:
     /// The entries of the PATH environment variable in their order, surrounding quotes removed; empty and relative
     /// entries (which would depend on the current directory) are left out.
     [[nodiscard]] virtual std::vector<std::filesystem::path> pathEntries() const = 0;
+
+    /// The shortcut file `path` (a .lnk), read only: nothing is resolved, searched for or written (I11 step 13).
+    /// Errors: NotFound (no such file), ValidationFailed (not a shortcut, or one whose target is no file: a shell
+    /// folder, a store app), Unsupported (a probe that reads no shortcuts: the default), PlatformError.
+    [[nodiscard]] virtual Expected<ShellShortcut> readShortcut(const std::filesystem::path& path) const;
 };
 
 /// The App Paths entry of an executable file name ("retroarch.exe"), as ES-DE's find rules read it: the default value

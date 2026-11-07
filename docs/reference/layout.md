@@ -18,7 +18,8 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   `world` (I3, ADR-0010: the world generator, GPU-free, on `core`, `geometry`, `assets`, `scene` and `catalog`; never
   RmlUi, SQLite, pugixml, `media`, `esde`, `catalog_db`, `platform_win` or `platform`:
   `src/world/forbidden_links.cmake`, proven by `unit.cmake/layer_rules`), `platform_win` (Windows without SDL, namespace
-  `rv::platform_win`: the system probe `Win32SystemProbe`, the process runner `Win32ProcessRunner`, `win32_util.hpp`,
+  `rv::platform_win`: the system probe `Win32SystemProbe` (since I11 step 13 its shortcuts, `shortcut.cpp`), the process
+  runner `Win32ProcessRunner` (protocol activations, FollowWindow), `win32_util.hpp`,
   since I5 step 2 `process_priority.hpp` (the process's priority class); on
   `core` and `launcher`), `library` (since I7 step 2, `rv::library`: the one launch library, library creation and preview,
   the folder browser's listings, what the app and `retroverse-cli` share of a library; above `esde`, `catalog_db` and

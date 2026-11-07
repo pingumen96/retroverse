@@ -196,9 +196,13 @@ TEST_CASE("esde/launch fixtures: the standard fixture's systems", "[esde][launch
     CHECK(home.readiness() == LaunchReadiness::Ready);
     REQUIRE(home.program);
     CHECK(home.program->path == standard->fixture.path("Emulators/HomeEmulator/home-emulator.exe"));
+    // I11 step 13: "open the game's file" is each game's (its file opened by Retroverse, never through cmd.exe).
     const auto shell = standard->command("snes", "Shortcut or script");
-    CHECK(shell.readiness() == LaunchReadiness::RequiresConfiguration);
-    CHECK(rv::test::blockerCodes(shell) == std::vector<std::string>{"token-unsupported", "program-refused"});
+    CHECK(shell.readiness() == LaunchReadiness::Ready);
+    CHECK(shell.blockers.empty());
+    CHECK_FALSE(shell.program);
+    REQUIRE(shell.notes.size() == 1);
+    CHECK(shell.notes.front().find("never through cmd.exe") != std::string::npos);
     CHECK(standard->command("psx", "Fake Emulator (Inject)").readiness() == LaunchReadiness::Ready);
     const auto noCore = standard->command("psx", "Fake Emulator (Missing Core)");
     CHECK(noCore.readiness() == LaunchReadiness::CoreNotFound);
@@ -346,7 +350,7 @@ TEST_CASE("esde/launch fixtures: the custom-systems fixture's custom find rules 
     CHECK(translation.readiness() == LaunchReadiness::Ready);
     REQUIRE(translation.core);
     CHECK(translation.core->path == custom->fixture.root() / "Custom Cores" / "fake_nes_libretro.dll");
-    CHECK(custom->command("nes", "Shell").readiness() == LaunchReadiness::RequiresConfiguration);
+    CHECK(custom->command("nes", "Shell").readiness() == LaunchReadiness::Ready); // each game's file (I11 step 13)
 
     // A placeholder, a game without an extension, the labels ES-DE keeps.
     const auto android = custom->resolveSystem("androidgames");

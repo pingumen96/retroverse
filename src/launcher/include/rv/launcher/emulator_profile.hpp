@@ -77,6 +77,11 @@
 // whether an ES-DE command or a profile made it (EmulatorProfiles::programFor()), and vr_launch.hpp applies it. The
 // user's programs replace the shipped ones with the same id, and are matched first. Retroverse never writes a program's
 // own configuration: a launch in VR changes the arguments and passes Retroverse's own file.
+//
+// "protocols" (ADR-0020 §3, I11 step 13) list the schemes an Internet Shortcut (.url) of the "open the game's file"
+// command may activate, each with its launcher's own processes, whose windows are never the game's:
+//     "protocols": [{"scheme": "steam", "launcherProcesses": ["steam.exe", "steamwebhelper.exe"]}]
+// The user's rule for a scheme replaces the shipped one; a scheme listed nowhere is never activated.
 
 #include <chrono>
 #include <cstdint>
@@ -283,6 +288,20 @@ struct ProgramProfile {
     friend bool operator==(const ProgramProfile&, const ProgramProfile&) = default;
 };
 
+/// A protocol a game may be activated through (I11 step 13, ADR-0020 §3): an Internet Shortcut (.url) of a store's
+/// launcher opens only when its scheme is one of these.
+struct ProtocolRule {
+    /// The scheme in lower case ("steam"), as launcher::activationScheme() reads it; never one checkActivationUrl()
+    /// refuses.
+    std::string scheme;
+    /// The launcher's own processes (LaunchRequest::launcherProcesses): file names, no folder.
+    std::vector<std::string> launcherProcesses;
+    ProfileOrigin origin = ProfileOrigin::Shipped;
+    std::string source;
+
+    friend bool operator==(const ProtocolRule&, const ProtocolRule&) = default;
+};
+
 /// The profiles of one document, in their order, its per-system choices, its programs, and an issue for each problem: a
 /// profile, a choice or a program with an error is left out (the others are kept); a document that cannot be read, is
 /// not an object, has an unknown schemaVersion or no "profiles" array gives no profile, no choice and no program.
@@ -293,6 +312,8 @@ struct ProfileDocument {
     SystemChoices systemChoices;
     /// "programs" (schemaVersion 2).
     std::vector<ProgramProfile> programs;
+    /// "protocols" (schemaVersion 2): [{"scheme": "steam", "launcherProcesses": ["steam.exe"]}].
+    std::vector<ProtocolRule> protocols;
     std::vector<ProfileIssue> issues;
 };
 
@@ -301,8 +322,9 @@ struct ProfileDocument {
 /// environment variable outside the allow-list, a relative executable path, a negative timeout, a second profile with
 /// the same id; a choice for a system name that is no folder name, an empty label, a malformed profile id; a program
 /// without files, a file name with a folder, an append-file name that is no plain file name, a line with a line break,
-/// a second program with the same id), Unsupported (a schemaVersion other than 1 and 2, checked first). "programs" in a
-/// document of schemaVersion 1 is an unknown field.
+/// a second program with the same id; a scheme activationScheme() does not read, one checkActivationUrl() refuses, a
+/// second rule for a scheme), Unsupported (a schemaVersion other than 1 and 2, checked first). "programs" and
+/// "protocols" in a document of schemaVersion 1 are unknown fields.
 [[nodiscard]] ProfileDocument parseProfileDocument(const nlohmann::json& document, std::string_view file,
                                                    ProfileOrigin origin);
 
@@ -320,6 +342,9 @@ struct EmulatorProfiles {
     /// The shipped programs in their order, each replaced in place by the user's program with the same id, then the
     /// user's other programs in their order.
     std::vector<ProgramProfile> programs;
+    /// The shipped protocols in their order, each replaced in place by the user's rule for its scheme, then the user's
+    /// other rules.
+    std::vector<ProtocolRule> protocols;
     /// The shipped document's issues, then the user's. A user profile left out for an error does not replace the
     /// shipped one with its id, nor does a user choice left out replace the shipped choice of its system.
     std::vector<ProfileIssue> issues;
@@ -332,6 +357,8 @@ struct EmulatorProfiles {
     /// The program `executable` is: the first of the user's programs whose files match its file name, else the first
     /// shipped one; null when none does.
     [[nodiscard]] const ProgramProfile* programFor(const std::filesystem::path& executable) const;
+    /// The rule of `scheme` (compared ignoring ASCII case), or null: a scheme not listed is never activated.
+    [[nodiscard]] const ProtocolRule* protocolFor(std::string_view scheme) const noexcept;
 };
 
 /// Merges two documents as EmulatorProfiles describes.

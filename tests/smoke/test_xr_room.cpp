@@ -410,6 +410,9 @@ TEST_CASE("xr: a game's window that shows only black is reported (I11 step 11, A
     CHECK(xr.captureError.empty());
     CHECK(xr.captureFrames > 0);
     CHECK(xr.captureBlack);
+    // I11 step 13 (ADR-0020 §5): the launch records it, and the session panel's notice stands before the CRT.
+    CHECK(run.report->launches.front().exclusiveFullscreen);
+    CHECK(xr.exclusiveNoticeFrames > 0);
 }
 
 TEST_CASE("xr: a launch in VR takes its program's arguments and append-file (I11 step 12, ADR-0020 §1)", "[gpu][xr]") {

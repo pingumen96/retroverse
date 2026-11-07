@@ -119,7 +119,10 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   would start (argv, working folder, environment, command line, the automation guard's verdict, the database's choices
   read only) and start nothing (exit 0 ready, 1 not); `--vr` shows it as a launch in VR starts it: adapted to its
   program, with the arguments added and dropped, the load, and the append-file's path and lines (`vr` in JSON), which
-  a dry run never writes. Both look at this machine (`Win32SystemProbe`).
+  a dry run never writes. Both look at this machine (`Win32SystemProbe`). ES-DE's "open the game's file" command (I11
+  step 13) shows the shortcut's program and arguments, or for an Internet Shortcut the URL it activates ("Activates",
+  `activationUrl`), its wait (`FollowWindow`) and the launcher's processes; an automated run's guard refuses every
+  activation.
 - `launch --game <id> [--wait [--wait-limit <seconds>]] [--test] [--json]` (`docs/i2/step-12.md`) resolves a game of the
   catalog right before the launch (its file looked for on disk now, the database's choices) and starts it through
   `LaunchSession` on `Win32ProcessRunner`, so the automation guard applies: automated runs set `RV_LAUNCH_ALLOWLIST`.

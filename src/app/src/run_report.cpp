@@ -3095,6 +3095,8 @@ Json launchToJson(const LaunchRecord& launch) {
     }
     json["strategy"] = launch.strategy;
     json["processId"] = launch.processId;
+    json["activation"] = launch.activation;
+    json["exclusiveFullscreen"] = launch.exclusiveFullscreen;
     json["quickExit"] = launch.quickExit;
     json["processesRemained"] = launch.processesRemained;
     json["confirmedByUser"] = launch.confirmedByUser;
@@ -3209,6 +3211,8 @@ LaunchRecord readLaunch(FieldReader& fields) {
     }
     launch.strategy = fields.string("strategy");
     launch.processId = static_cast<std::uint32_t>(fields.count("processId", kMaxUint32));
+    launch.activation = fields.string("activation");
+    launch.exclusiveFullscreen = fields.boolean("exclusiveFullscreen");
     launch.quickExit = fields.boolean("quickExit");
     launch.processesRemained = fields.boolean("processesRemained");
     launch.confirmedByUser = fields.boolean("confirmedByUser");
@@ -3348,6 +3352,7 @@ Json xrToJson(const XrRecord& xr) {
     json["captureWindows"] = xr.captureWindows;
     json["captureClosed"] = xr.captureClosed;
     json["captureBlack"] = xr.captureBlack;
+    json["exclusiveNoticeFrames"] = xr.exclusiveNoticeFrames;
     json["captureColor"] = Json::array({static_cast<double>(xr.captureColor.x), static_cast<double>(xr.captureColor.y),
                                         static_cast<double>(xr.captureColor.z)});
     json["playingWalkFrames"] = xr.playingWalkFrames;
@@ -3425,6 +3430,7 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureWindows = fields.count("captureWindows");
     xr.captureClosed = fields.count("captureClosed");
     xr.captureBlack = fields.boolean("captureBlack");
+    xr.exclusiveNoticeFrames = fields.count("exclusiveNoticeFrames");
     xr.captureColor = fields.vec3("captureColor");
     xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");

@@ -1,5 +1,6 @@
 #include <rv/launcher/launch_request.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <exception>
@@ -9,6 +10,7 @@
 #include <fmt/format.h>
 
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/launcher/command_line.hpp>
 
 namespace rv::launcher {
@@ -57,7 +59,86 @@ Status checkWindowsProgram(const std::filesystem::path& path, const std::string&
     return ok();
 }
 
+/// Schemes never activated, whatever list allows them (checkActivationUrl()); "ms-" and "microsoft-" prefixes too.
+constexpr std::array<std::string_view, 17> kRefusedSchemes{
+    "about", "data",   "file",   "ftp",       "hcp",   "http",  "https",  "javascript", "ldap",
+    "mailto", "mk",    "res",    "search",    "search-ms", "shell", "telnet", "vbscript"};
+
+/// An activation names nothing else.
+Status checkActivation(const LaunchRequest& request) {
+    if (auto valid = checkActivationUrl(request.activationUrl); !valid) {
+        return valid;
+    }
+    const auto field = [](std::string_view name) {
+        return makeError(ErrorCode::ValidationFailed, "a protocol activation names no program, arguments or folders",
+                         std::string(name));
+    };
+    if (!request.executable.empty()) {
+        return field("executable");
+    }
+    if (!request.arguments.empty()) {
+        return field("arguments");
+    }
+    if (!request.workingDirectory.empty()) {
+        return field("working directory");
+    }
+    if (!request.environment.empty()) {
+        return field("environment");
+    }
+    if (!request.outputLog.empty()) {
+        return field("output log");
+    }
+    return ok();
+}
+
 } // namespace
+
+std::optional<std::string> activationScheme(std::string_view url) {
+    const std::size_t colon = url.find(':');
+    if (colon == std::string_view::npos || colon == 0) {
+        return std::nullopt;
+    }
+    const std::string_view scheme = url.substr(0, colon);
+    const auto letter = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+    if (!letter(scheme.front())) {
+        return std::nullopt;
+    }
+    for (const char c : scheme) {
+        if (!letter(c) && !(c >= '0' && c <= '9') && c != '+' && c != '-' && c != '.') {
+            return std::nullopt;
+        }
+    }
+    return core::toLowerAscii(scheme);
+}
+
+Status checkActivationUrl(std::string_view url) {
+    const auto refuse = [](std::string message) {
+        return makeError(ErrorCode::ValidationFailed, std::move(message), "activation URL");
+    };
+    if (url.empty() || url.size() > kMaxActivationUrlLength) {
+        return refuse(fmt::format("an activation URL holds 1 to {} bytes", kMaxActivationUrlLength));
+    }
+    if (!core::isValidUtf8(url)) {
+        return refuse("the activation URL is not valid UTF-8 text");
+    }
+    for (const char c : url) {
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte == 0x7F || c == ' ' || c == '"') {
+            return refuse("the activation URL holds a control character, a blank or a double quote");
+        }
+    }
+    const std::optional<std::string> scheme = activationScheme(url);
+    if (!scheme || url.size() == scheme->size() + 1) {
+        return refuse("the activation URL has no scheme, or nothing after it");
+    }
+    const bool refused = std::find(kRefusedSchemes.begin(), kRefusedSchemes.end(), *scheme) != kRefusedSchemes.end() ||
+                         scheme->starts_with("ms-") || scheme->starts_with("microsoft-");
+    if (refused) {
+        return refuse(fmt::format("the scheme \"{}\" opens documents, folders, pages or searches: never activated",
+                                  *scheme));
+    }
+    return ok();
+}
 
 std::string_view toString(WaitStrategy strategy) noexcept {
     switch (strategy) {
@@ -67,6 +148,8 @@ std::string_view toString(WaitStrategy strategy) noexcept {
         return "ProcessTree";
     case WaitStrategy::UserConfirmReturn:
         return "UserConfirmReturn";
+    case WaitStrategy::FollowWindow:
+        return "FollowWindow";
     }
     return "unknown";
 }
@@ -81,10 +164,16 @@ std::optional<WaitStrategy> parseWaitStrategy(std::string_view text) noexcept {
     if (core::equalsIgnoreCaseAscii(text, "confirm") || text == "UserConfirmReturn") {
         return WaitStrategy::UserConfirmReturn;
     }
+    if (core::equalsIgnoreCaseAscii(text, "follow") || text == "FollowWindow") {
+        return WaitStrategy::FollowWindow;
+    }
     return std::nullopt;
 }
 
 Expected<std::string> commandLineOf(const LaunchRequest& request) {
+    if (request.isActivation()) {
+        return request.activationUrl;
+    }
     const auto program = utf8Path(request.executable, "executable");
     if (!program) {
         return propagate(program.error());
@@ -94,10 +183,16 @@ Expected<std::string> commandLineOf(const LaunchRequest& request) {
 }
 
 std::filesystem::path workingDirectoryOf(const LaunchRequest& request) {
+    if (request.isActivation()) {
+        return {};
+    }
     return request.workingDirectory.empty() ? request.executable.parent_path() : request.workingDirectory;
 }
 
 Status validateLaunchRequest(const LaunchRequest& request) {
+    if (request.isActivation()) {
+        return checkActivation(request);
+    }
     const auto executable = utf8Path(request.executable, "executable");
     if (!executable) {
         return propagate(executable.error());

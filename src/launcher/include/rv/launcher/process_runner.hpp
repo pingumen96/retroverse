@@ -28,6 +28,9 @@ enum class ProcessEventKind : std::uint8_t {
     /// The game's window followed changed while the tree stays visible (I11 step 11, ADR-0020 §2): window = the new
     /// one, 0 when none can be followed now (every window minimized or cloaked).
     WindowChanged,
+    /// The game holds the foreground in exclusive fullscreen (I11 step 13, ADR-0020 §5: the shell's state is
+    /// QUNS_RUNNING_D3D_FULL_SCREEN while a window followed is in front), which a capture cannot read: once a session.
+    ExclusiveFullscreen,
     WatchFailed,  ///< the runner can no longer follow the processes: message; only the user can end the session now
 };
 
@@ -43,7 +46,8 @@ struct ProcessEvent {
     LaunchClock::time_point occurredAt{};
     std::uint32_t processId = 0;
     std::optional<std::uint32_t> exitCode;
-    /// The executable's file name (ChildStarted, ChildExited), when it could be read.
+    /// The executable's file name (ChildStarted, ChildExited), when it could be read. A process FollowWindow adopted
+    /// outside the tree is reported as ChildStarted and ChildExited too (I11 step 13).
     std::string image;
     /// WatchFailed: why.
     std::string message;
@@ -59,6 +63,8 @@ class IRunningProcess {
 public:
     virtual ~IRunningProcess();
 
+    /// The started process; 0 for a protocol activation (LaunchRequest::activationUrl), which starts none Retroverse
+    /// follows.
     [[nodiscard]] virtual std::uint32_t processId() const noexcept = 0;
     /// When the process started running: its main thread was resumed, after StartCallbacks::beforeResume (the
     /// hand-over of Retroverse's window, which can take a few hundred milliseconds, comes before it).
