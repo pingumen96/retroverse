@@ -123,6 +123,7 @@ std::vector<SettingRow> settingRows(std::span<const std::string> lightingProfile
     std::vector<Json> profiles(lightingProfiles.begin(), lightingProfiles.end());
     rows.push_back(committing(choice(kWorld, "lightingProfile", SettingGroup::World, std::move(profiles))));
     rows.push_back(toggle(kWorld, "reduceMotion", SettingGroup::World));
+    rows.push_back(toggle(kWorld, "systemColors", SettingGroup::World));
     rows.push_back(toggle(kVideo, "enabled", SettingGroup::World));
     rows.push_back(committing(choice(kVideo, "crtEffect", SettingGroup::World, {"off", "light", "vintage"})));
     rows.push_back(

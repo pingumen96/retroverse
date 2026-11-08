@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <rv/app/identity_signs.hpp>
+#include <rv/core/math.hpp>
 
 using rv::app::IdentitySignContent;
 using rv::app::IdentitySignPlace;
@@ -156,5 +157,33 @@ TEST_CASE("app/identity_signs: what a room's sign shows", "[app][identity_signs]
         const std::vector<SystemName> plain{systemNamed("psx"), systemNamed("n64")};
         CHECK_FALSE(
             rv::app::identitySignContent(room("area:arcade"), IdentitySignPlace::Hall, plain, lookup).has_value());
+    }
+}
+
+TEST_CASE("app/identity_signs: a system's accent clamped into style 3's accent band (I11 step 6)", "[app][identity_signs]") {
+    const auto clamp = [](std::string_view hex) {
+        auto parsed = rv::core::parseHexColor(hex);
+        REQUIRE(parsed.has_value());
+        return rv::app::clampToAccentBand(glm::vec3(parsed->r, parsed->g, parsed->b));
+    };
+    SECTION("the theme packs' neons stand in the band as they are") {
+        for (const std::string_view neon : {"#4C8BC9", "#B34DCE", "#6EAF93", "#D8584A", "#5AB4D6", "#F0509E"}) {
+            CAPTURE(neon);
+            CHECK(clamp(neon) == neon);
+        }
+    }
+    SECTION("louder colours are brought in, their hue kept") {
+        CHECK(clamp("#FF0000") == "#F04F4F"); // saturation and value both over
+        CHECK(clamp("#00FF80") == "#4FF0A0");
+        CHECK(clamp("#FFB45A") == "#F0A955"); // value over
+        CHECK(clamp("#200000") == "#AD3939"); // too dark
+        CHECK(clamp("#C0C0FF") == "#9C9CF0"); // too pale
+    }
+    SECTION("the palette's most colourful entry, none for a grey palette") {
+        const std::vector<std::string> palette{"#202020", "C0C0C0", "#B34DCE", "#4C8BC9", "not a colour"};
+        CHECK(rv::app::systemAccent(palette) == std::optional<std::string>("#B34DCE"));
+        const std::vector<std::string> greys{"#202020", "#808080", "#F0F0F0"};
+        CHECK_FALSE(rv::app::systemAccent(greys).has_value());
+        CHECK_FALSE(rv::app::systemAccent({}).has_value());
     }
 }

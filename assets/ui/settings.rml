@@ -51,6 +51,7 @@
 						<!-- Mondo -->
 						<p data-if="row.key == 'world.lightingProfile'">Illuminazione</p>
 						<p data-if="row.key == 'world.reduceMotion'">Riduci i movimenti</p>
+						<p data-if="row.key == 'world.systemColors'">Colori dei sistemi</p>
 						<p data-if="row.key == 'video.enabled'">Video sugli schermi</p>
 						<p data-if="row.key == 'video.crtEffect'">Effetto CRT</p>
 						<p data-if="row.key == 'video.hero.playlist'">Programma dei televisori</p>

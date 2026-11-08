@@ -3157,6 +3157,9 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["identitySigns"] = catalog.identitySigns;
     json["identitySignsShown"] = catalog.identitySignsShown;
     json["identitySignsFailed"] = catalog.identitySignsFailed;
+    json["systemColors"] = catalog.systemColors;
+    json["tintedNeons"] = catalog.tintedNeons;
+    json["tintedLights"] = catalog.tintedLights;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3282,6 +3285,9 @@ CatalogRecord readCatalog(FieldReader& fields) {
         static_cast<std::size_t>(fields.optionalCount("identitySignsShown", kMaxSize).value_or(0));
     catalog.identitySignsFailed =
         static_cast<std::size_t>(fields.optionalCount("identitySignsFailed", kMaxSize).value_or(0));
+    catalog.systemColors = !fields.has("systemColors") || fields.boolean("systemColors");
+    catalog.tintedNeons = static_cast<std::size_t>(fields.optionalCount("tintedNeons", kMaxSize).value_or(0));
+    catalog.tintedLights = static_cast<std::size_t>(fields.optionalCount("tintedLights", kMaxSize).value_or(0));
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.

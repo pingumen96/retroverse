@@ -20,6 +20,8 @@
 #include <string_view>
 #include <vector>
 
+#include <glm/vec3.hpp>
+
 #include <rv/assets/identity_sign.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/scene/scene_description.hpp>
@@ -64,7 +66,28 @@ struct SignSystem {
     std::string esdeName;
     /// Its logo file, empty without one.
     std::filesystem::path logo;
+    /// I11 step 6: its accent (systemAccent() of its identity's palette), "#RRGGBB"; none without one.
+    std::optional<std::string> accent;
 };
+
+/// I11 step 6 (ADR-0019 §5): style §3's band for an accent, in HSV of the sRGB-encoded colour: its saturation and
+/// value from those of the theme packs' neons (#4C8BC9, #B34DCE, #6EAF93, #D8584A, #5AB4D6, #F0509E, #FFB45A), so that
+/// a system's colour glows as an accent of the 10% and never louder.
+inline constexpr float kAccentMinSaturation = 0.35F;
+inline constexpr float kAccentMaxSaturation = 0.67F;
+inline constexpr float kAccentMinValue = 0.68F;
+inline constexpr float kAccentMaxValue = 0.94F;
+/// A palette whose most colourful entry has less chroma (max - min of its sRGB channels) has no accent: a grey is no
+/// system's colour.
+inline constexpr float kAccentMinChroma = 0.10F;
+
+/// `srgb` (each channel in [0, 1], sRGB-encoded) with its hue kept and its saturation and value clamped into the band,
+/// as "#RRGGBB".
+[[nodiscard]] std::string clampToAccentBand(const glm::vec3& srgb);
+/// The accent of a system's palette (its theme's systemColor and systemColorPalette1 to 4, "#RRGGBB" or "RRGGBB"): the
+/// entry of the largest chroma (the first of equals), clamped into the band; none when no entry parses or the largest
+/// chroma is under kAccentMinChroma.
+[[nodiscard]] std::optional<std::string> systemAccent(std::span<const std::string> palette);
 
 /// A system has an identity to show: a logo file, or a name its identity gives (one that differs from ES-DE's).
 [[nodiscard]] bool hasIdentity(const SignSystem& system) noexcept;

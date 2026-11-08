@@ -692,6 +692,7 @@ Expected<Json> digestConfigurationJson(const WorldConfig& config) {
     }
     json->erase("reduceMotion");
     json->erase("lightingProfile");
+    json->erase("systemColors");
     return json;
 }
 

@@ -600,6 +600,7 @@ private:
         system.esdeName = summary.system.fullName;
         if (const auto identity = m_identities.find(summary.system.name.str()); identity != m_identities.end()) {
             system.logo = identity->second.logo.file;
+            system.colors = identity->second.colors;
         }
         system.platforms = summary.system.platforms;
         system.games = summary.games;
