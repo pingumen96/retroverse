@@ -37,6 +37,16 @@ PanelPose worldPanel(const Pose& head, float aspect) noexcept {
     return panel;
 }
 
+PanelPose gameScreenPanel(const Pose& head, float aspect) noexcept {
+    const float yaw = anglesOf(head.orientation).yaw;
+    const glm::vec3 forward(std::sin(yaw), 0.0f, -std::cos(yaw));
+    PanelPose panel;
+    panel.center = head.position + forward * kGameScreenDistance;
+    panel.orientation = glm::angleAxis(-yaw, kUp);
+    panel.size = glm::vec2(kGameScreenWidth, kGameScreenWidth / finiteAspect(aspect));
+    return panel;
+}
+
 scene::EyeFov hudField(float aspect) noexcept {
     const float across = std::tan(core::degreesToRadians(0.5f * kHudFieldDeg));
     const float up = across / finiteAspect(aspect);

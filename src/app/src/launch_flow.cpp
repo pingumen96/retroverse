@@ -146,6 +146,8 @@ void LaunchFlow::start(LaunchClock::time_point now, launcher::StartCallbacks cal
     m_session.emplace(std::move(*m_pending), m_runner);
     m_pending.reset();
     m_exclusiveNoted = false;
+    m_watchStopped = false;
+    m_audioElsewhere = false;
     // The Launching frame was presented: the window keeps it behind the emulator while it runs.
     LaunchRecord& record = current();
     record.startFrame = frame;
@@ -180,6 +182,29 @@ void LaunchFlow::noteExclusiveFullscreen() {
     current().exclusiveFullscreen = true;
 }
 
+bool LaunchFlow::stopWatching() {
+    if (!sessionActive() || !gameHasScreen(m_panel)) {
+        return false;
+    }
+    spdlog::info("VR: the user stopped watching '{}': the room comes back, the game runs on", m_info.title);
+    ++current().watchStops;
+    show(SessionPanel::Playing);
+    m_watchStopped = true;
+    return true;
+}
+
+void LaunchFlow::noteAudioElsewhere() {
+    if (!sessionActive() || m_audioElsewhere) {
+        return;
+    }
+    m_audioElsewhere = true;
+    current().audioElsewhere = true;
+}
+
+bool LaunchFlow::audioElsewhere() const noexcept {
+    return m_session && m_audioElsewhere;
+}
+
 void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
     if (!sessionActive()) {
         return;
@@ -206,6 +231,8 @@ void LaunchFlow::poll(LaunchClock::time_point now, std::uint64_t frame) {
     const SessionState state = m_session->state();
     if (state != m_seenState) {
         if (state == SessionState::StillRunning || state == SessionState::AwaitingConfirmation) {
+            // The session's own question replaces the stop-watching one.
+            m_watchStopped = false;
             show(askingPanel(state));
         } else if (state == SessionState::Running && m_panel == SessionPanel::StillRunning) {
             // The game shows a window again: it has the screen, the host waits again after a frame with the notice.
@@ -225,8 +252,9 @@ void LaunchFlow::focusChanged(bool focused, LaunchClock::time_point now) noexcep
     if (!focused) {
         m_focusSince.reset();
         m_askOnPress = false;
-        // The user went back to the game without answering "Gioco in corso": the game has the screen again.
-        if (sessionActive() && m_panel == SessionPanel::Playing) {
+        // The user went back to the game without answering "Gioco in corso": the game has the screen again. Not a
+        // question asked in VR after the user stopped watching: the game kept the foreground meanwhile.
+        if (sessionActive() && m_panel == SessionPanel::Playing && !m_watchStopped) {
             m_panel = SessionPanel::Launching;
         }
     } else if (sessionActive() && !m_focusSince) {
@@ -263,6 +291,15 @@ bool LaunchFlow::backToGame(LaunchClock::time_point now) noexcept {
     // One frame with the "Gioco in corso" notice, which the window then keeps behind the game.
     m_panel = SessionPanel::Launching;
     m_questionPresented = false;
+    if (std::exchange(m_watchStopped, false)) {
+        // VR (I11 step 14): watching again. The game takes the foreground back; the headset follows it, no question
+        // comes back by itself.
+        spdlog::info("VR: the user watches '{}' again", m_info.title);
+        ++current().watchResumes;
+        m_focusSince.reset();
+        m_askOnPress = false;
+        return true;
+    }
     if (!m_focused) {
         // Asked again once the user comes back (a new focus gain), or when the session's state changes.
         m_focusSince.reset();
@@ -409,6 +446,7 @@ void LaunchFlow::finish(LaunchClock::time_point now, std::uint64_t frame) {
     record.returnMs = millisecondsBetween(times.exited, times.ended ? times.ended : std::optional(now));
     m_focusSince.reset();
     m_askOnPress = false;
+    m_watchStopped = false;
     m_returned = true;
     // Processes of the game's tree still run and nobody said the game was over: the window stays where it is.
     m_takeForeground = !outcome.processesRemained || endedByUser;

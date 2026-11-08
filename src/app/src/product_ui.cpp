@@ -2357,6 +2357,8 @@ struct ProductUi::Impl {
     /// Shows the panel the launch wants, when it is not the one shown.
     void syncPanel() {
         panel->setExclusiveFullscreen(flow.exclusiveFullscreen() && flow.sessionActive());
+        panel->setWatchStopped(flow.watchStopped());
+        panel->setAudioElsewhere(flow.audioElsewhere() && flow.sessionActive());
         const SessionPanel wanted = flow.panel();
         if (wanted != panel->shown()) {
             panel->show(wanted, flow.info().title, flow.message(), timeoutSeconds());
@@ -2372,7 +2374,8 @@ struct ProductUi::Impl {
             flow.returnToRetroverse(LaunchClock::now(), context.frameIndex());
             break;
         case PanelChoice::Resume:
-            if (flow.backToGame(LaunchClock::now())) {
+            // In VR the application gives the game's window the foreground as it watches it again (I11 step 14).
+            if (flow.backToGame(LaunchClock::now()) && !context.vr()) {
                 handForegroundToGame();
             }
             break;
@@ -3413,6 +3416,26 @@ bool ProductUi::launchExclusiveFullscreen() const noexcept {
 
 void ProductUi::noteExclusiveFullscreen() {
     m_impl->flow.noteExclusiveFullscreen();
+}
+
+bool ProductUi::launchSessionActive() const noexcept {
+    return m_impl->flow.sessionActive();
+}
+
+bool ProductUi::stopWatchingGame() {
+    return m_impl->flow.stopWatching();
+}
+
+bool ProductUi::launchWatchStopped() const noexcept {
+    return m_impl->flow.sessionActive() && m_impl->flow.watchStopped();
+}
+
+void ProductUi::noteLaunchAudioElsewhere() {
+    m_impl->flow.noteAudioElsewhere();
+}
+
+bool ProductUi::launchAudioElsewhere() const noexcept {
+    return m_impl->flow.sessionActive() && m_impl->flow.audioElsewhere();
 }
 
 std::uintptr_t ProductUi::launchWindow() const noexcept {

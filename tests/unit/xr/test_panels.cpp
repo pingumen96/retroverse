@@ -54,6 +54,26 @@ TEST_CASE("xr/panels: the world panel stands upright in front of the head's head
     CHECK(topRight.y - bottomLeft.y == Approx(panel.size.y).margin(1e-5));
 }
 
+TEST_CASE("xr/panels: the large screen stands 2.8 m in front of the head, at the eyes' height, the picture's aspect "
+          "(I11 step 14)",
+          "[xr][panels]") {
+    // Looking 90 degrees left and 30 degrees up: the screen ignores the pitch.
+    const Pose head = headAt(glm::vec3(-2.0f, 1.7f, 0.5f), -90.0f, 30.0f);
+    const rv::xr::PanelPose screen = rv::xr::gameScreenPanel(head, 4.0f / 3.0f);
+    CHECK(screen.center.x == Approx(-2.0f - rv::xr::kGameScreenDistance).margin(1e-5));
+    CHECK(screen.center.y == Approx(1.7f).margin(1e-5));
+    CHECK(screen.center.z == Approx(0.5f).margin(1e-5));
+    CHECK(screen.size.x == Approx(2.4f));
+    CHECK(screen.size.y == Approx(1.8f));
+    const glm::mat3 axes = glm::mat3_cast(screen.orientation);
+    CHECK(axes[2].x == Approx(1.0f).margin(1e-5)); // its front towards the head
+    CHECK(axes[1].y == Approx(1.0f).margin(1e-5)); // upright
+    // A degenerate aspect keeps a finite screen.
+    const rv::xr::PanelPose flat = rv::xr::gameScreenPanel(head, 0.0f);
+    CHECK(std::isfinite(flat.size.y));
+    CHECK(flat.size.y > 0.0f);
+}
+
 TEST_CASE("xr/panels: the ray's pixel on a panel, from the front only", "[xr][panels]") {
     const Pose head = headAt(glm::vec3(0.0f, 1.6f, 0.0f), 0.0f);
     const rv::xr::PanelPose panel = rv::xr::worldPanel(head, kAspect);

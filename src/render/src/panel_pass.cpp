@@ -48,6 +48,8 @@ void PanelPass::draw(const ShaderProgram& program, RenderStateCache& state, cons
         glBindTextureUnit(kPanelUnit, panel.texture);
         program.setMat4("uPanelModel", panel.model);
         program.setFloat("uPanelOpacity", panel.opacity < 1.0f ? panel.opacity : 1.0f);
+        program.setVec4("uPanelUv", panel.uv);
+        program.setInt("uPanelOpaqueLinear", panel.opaqueLinear ? 1 : 0);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     }
     glBindTextureUnit(kPanelUnit, 0);

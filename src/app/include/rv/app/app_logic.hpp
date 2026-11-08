@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <string>
 #include <utility>
 
 #include <glm/vec2.hpp>
@@ -104,6 +105,9 @@ public:
     [[nodiscard]] bool vr() const noexcept { return m_vr; }
     /// xr.json as the run read it (its shipped defaults when the user's file was left out).
     [[nodiscard]] const xr::XrSettings& xrSettings() const noexcept { return m_xrSettings; }
+    /// I11 step 14 (ADR-0020 §6): the headset's audio endpoint as Windows names it, where the runtime tells it; none on
+    /// the desktop or otherwise.
+    [[nodiscard]] const std::optional<std::string>& xrAudioOutput() const noexcept { return m_xrAudioOutput; }
     /// Vibrates `hand`'s controller at `amplitude` ([0, 1]) for `seconds` (I10 step 4): the host passes it to the VR
     /// session after the frame's update; nothing on the desktop.
     void vibrate(xr::Hand hand, float amplitude, float seconds) {
@@ -138,6 +142,7 @@ private:
     bool m_xrViewsRendered = false;
     bool m_vr = false;
     xr::XrSettings m_xrSettings;
+    std::optional<std::string> m_xrAudioOutput;
     struct XrVibration {
         xr::Hand hand = xr::Hand::Right;
         float amplitude = 0.0f;

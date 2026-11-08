@@ -824,6 +824,10 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
   (`collection_labels.cpp`); the logo could stand there too.
 - **Floor names from the identity:** the directory's floors keep their Italian generic names ("Console a 16 bit");
   the makers' names per floor would need a rule for floors that mix makers.
+- **A depth-tested large screen** (I11 step 14): the large screen is drawn by the panel pass, over the scene, so a thing
+  nearer than 2.8 m in front shows behind it; drawn as a scene object (or with the eyes' depth) it would sit in the room.
+- **`gameScreen` on the settings screen** (I11 step 14): xr.json's choice of the large screen beside a CRT, kept out of
+  Impostazioni until the headset session says it is worth a row.
 - **The identity of systems without a linear-es-de entry:** a theme with another metadata layout would need a reader
   of its own; until then such a system shows ES-DE's fullname and, where a theme has one, its logo.
 ## Branding

@@ -195,6 +195,18 @@ public:
     /// The application saw the running game in exclusive fullscreen: recorded (LaunchRecord::exclusiveFullscreen) and
     /// shown on the panel. Ignored without a running session.
     void noteExclusiveFullscreen();
+
+    /// I11 step 14 (ADR-0020 §6): in VR the user stopped watching the game (the left menu button held) while it has the
+    /// screen: the Playing question shows at once, as "Torna al gioco" or "Il gioco è terminato" (returnToRetroverse()),
+    /// and stays whatever the window's focus does until answered or the session's state changes. False, and nothing
+    /// changes, unless a session runs with nothing asked.
+    bool stopWatching();
+    /// The user stopped watching and has not gone back to the game (backToGame()) nor ended the session.
+    [[nodiscard]] bool watchStopped() const noexcept { return m_watchStopped; }
+    /// I11 step 14: the running game plays on Windows' default audio output, not the headset's: recorded
+    /// (LaunchRecord::audioElsewhere) and said on the panel. Ignored without a running session.
+    void noteAudioElsewhere();
+    [[nodiscard]] bool audioElsewhere() const noexcept;
     /// The game of the current or last launch.
     [[nodiscard]] const LaunchInfo& info() const noexcept { return m_info; }
     /// The last launch's message, once it ended (or was refused).
@@ -245,6 +257,8 @@ private:
     LaunchFlowEvents m_events;
     bool m_quitting = false;
     bool m_exclusiveNoted = false;
+    bool m_watchStopped = false;
+    bool m_audioElsewhere = false;
     bool m_returned = false;
     bool m_takeForeground = true;
     LaunchInfo m_info;

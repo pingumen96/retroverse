@@ -74,6 +74,8 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
         config.refreshRates = {72.0f, 80.0f, 90.0f, 120.0f};
         config.refreshRate = refreshRate;
         config.loseAfterFrames = xrOptions.fakeLoseAfterFrames;
+        // I11 step 14: the headset's audio endpoint, which the fake has only when asked (--xr-fake-audio-device).
+        config.audioOutputDevice = xrOptions.fakeAudioDevice;
         for (std::uint64_t frame = 0; frame < xrOptions.fakeUntrackedFrames.value_or(0); ++frame) {
             config.untrackedFrames.push_back(frame);
         }
@@ -93,6 +95,8 @@ std::unique_ptr<XrSessionDriver> XrSessionDriver::start(const CommandLineOptions
             config.handSelect = [script = *loaded](std::uint64_t frame, xr::Hand hand) {
                 return script.handSelectAt(frame, hand == xr::Hand::Right);
             };
+            // I11 step 14: the left menu button.
+            config.leftMenu = [script = *loaded](std::uint64_t frame) { return script.leftMenuAt(frame); };
             // I10 step 10: their thumbsticks.
             config.handStick = [script = *loaded](std::uint64_t frame, xr::Hand hand) {
                 return script.handStickAt(frame, hand == xr::Hand::Right);

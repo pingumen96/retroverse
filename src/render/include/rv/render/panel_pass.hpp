@@ -4,6 +4,7 @@
 
 #include <glad/gl.h>
 #include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 
 #include <rv/core/expected.hpp>
 #include <rv/render/vertex_array.hpp>
@@ -22,6 +23,12 @@ struct Panel {
     glm::mat4 model{1.0f};
     /// [0, 1]: the picture faded out (the view's fade).
     float opacity = 1.0f;
+    /// I11 step 14: the texture's part shown, as the texture coordinates at the quad's bottom-left corner (x, y) and at
+    /// its top-right corner (z, w): the whole picture by default; a captured window's crop, its top row first, flips y.
+    glm::vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
+    /// I11 step 14: a picture of linear colours (an sRGB texture, such as a captured game's), opaque: encoded for the
+    /// display and drawn over the scene whatever its alpha. False: the UI's premultiplied, display-encoded picture.
+    bool opaqueLinear = false;
 };
 
 /// Draws panels over a view's display-ready output (ADR-0017 §6's in-scene panels): after the post-processing, blended

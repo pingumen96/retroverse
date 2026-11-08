@@ -26,8 +26,10 @@ class ScreenService;
 /// back. The window is the one the launcher follows (I11 step 11: a splash then the game, a render window, a window
 /// made again); a new one restarts the capture. A capture that cannot start, breaks or ends with its window closed is
 /// logged and recorded, tried again a little later a few times, and the game plays on without it. A window that shows
-/// only black for 5 s is reported (exclusive fullscreen, ADR-0020 §5). Retroverse never touches the emulator: it only
-/// reads its window. Main thread, GL context current.
+/// only black for 5 s is reported (exclusive fullscreen, ADR-0020 §5). I11 step 14 (ADR-0020 §6): where no hero CRT
+/// takes the picture (the lobby, a hall, the quick catalog's launch), or when xr.json's gameScreen asks for it, the
+/// picture goes to the large screen, which the application draws in front of the user (onLargeScreen(), texture(),
+/// crop()). Retroverse never touches the emulator: it only reads its window. Main thread, GL context current.
 class XrGame {
 public:
     XrGame() = default;
@@ -35,10 +37,19 @@ public:
     XrGame(const XrGame&) = delete;
     XrGame& operator=(const XrGame&) = delete;
 
-    /// One frame with the launch's emulator `window` (an HWND; 0: none, the capture ends).
-    void update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record);
-    /// The CRT shows the game: at its last new picture a hero screen was bound and took it.
+    /// One frame with the launch's emulator `window` (an HWND; 0: none, the capture ends). `largeScreen`: the picture
+    /// goes to the large screen even where a hero CRT could take it (xr.json's gameScreen "large").
+    void update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record,
+                bool largeScreen = false);
+    /// The game shows: at its last new picture a hero screen took it, or the large screen did.
     [[nodiscard]] bool showing() const noexcept { return m_showing; }
+    /// I11 step 14: the game shows on the large screen (no hero CRT took its picture).
+    [[nodiscard]] bool onLargeScreen() const noexcept { return m_showing && m_large; }
+    /// The picture's texture (an sRGB GL texture, its top row first; 0: none), its size, and the part to show (the
+    /// client area without its black bars, in texture coordinates from the top-left).
+    [[nodiscard]] unsigned texture() const noexcept;
+    [[nodiscard]] glm::ivec2 size() const noexcept;
+    [[nodiscard]] const glm::vec4& crop() const noexcept { return m_crop; }
     /// The window followed has shown only black for 5 s (ADR-0020 §5: exclusive fullscreen, I11 step 13).
     [[nodiscard]] bool black() const noexcept { return m_blackReported; }
 
@@ -62,6 +73,9 @@ private:
     std::unique_ptr<gl::DxInteropTexture> m_interop;
     std::uint64_t m_generation = 0;
     bool m_showing = false;
+    bool m_large = false;
+    /// A hero screen took the last picture (cleared from it when the picture moves to the large screen).
+    bool m_onCrt = false;
     std::unique_ptr<gl::PictureProbe> m_probe;
     bool m_probeFailed = false;
     std::chrono::steady_clock::time_point m_probedAt{};

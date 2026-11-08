@@ -24,6 +24,7 @@
 #include <spdlog/spdlog.h>
 
 #include <rv/core/text.hpp>
+#include <rv/core/utf8.hpp>
 #include <rv/xr/swapchain_format.hpp>
 
 namespace rv::xr {
@@ -33,6 +34,8 @@ using namespace std::chrono_literals;
 
 constexpr const char* kOpenGlExtension = "XR_KHR_opengl_enable";
 constexpr const char* kRefreshRateExtension = "XR_FB_display_refresh_rate";
+/// I11 step 14 (ADR-0020 §6): the headset's audio endpoint, which Meta's runtime offers.
+constexpr const char* kAudioDeviceExtension = "XR_OCULUS_audio_device_guid";
 constexpr const char* kLocalFloorExtension = "XR_EXT_local_floor";
 constexpr XrViewConfigurationType kStereo = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 /// LOCAL_FLOOR: core in OpenXR 1.1, XR_EXT_local_floor in 1.0 (the same value).
@@ -176,6 +179,7 @@ public:
     void vibrate(Hand hand, float amplitude, float seconds) override;
     [[nodiscard]] std::span<const std::uint32_t> images(int eye) const override;
     [[nodiscard]] std::optional<float> currentRefreshRate() const override;
+    [[nodiscard]] std::optional<std::string> audioOutputDevice() const override;
 
 private:
     /// A hand's interaction profile now ("" for none).
@@ -202,6 +206,7 @@ private:
     std::array<XrView, 2> m_views{};
     std::array<std::vector<std::uint32_t>, 2> m_images;
     bool m_refreshRateExtension = false;
+    PFN_xrGetAudioOutputDeviceGuidOculus m_getAudioOutput = nullptr;
     bool m_localFloorExtension = false;
     /// The instance extensions enabled for the controllers' profiles (xr_bindings.json's "extension").
     std::vector<std::string> m_profileExtensions;
@@ -276,6 +281,10 @@ Status OpenXrRuntime::createInstance(const OpenXrOptions& options) {
         enabled.push_back(kRefreshRateExtension);
         m_refreshRateExtension = true;
     }
+    const bool audioDevice = offers(kAudioDeviceExtension);
+    if (audioDevice) {
+        enabled.push_back(kAudioDeviceExtension);
+    }
     if (offers(kLocalFloorExtension)) {
         enabled.push_back(kLocalFloorExtension);
         m_localFloorExtension = true;
@@ -322,6 +331,9 @@ Status OpenXrRuntime::createInstance(const OpenXrOptions& options) {
         load("xrEnumerateDisplayRefreshRatesFB", m_enumerateRefreshRates);
         load("xrGetDisplayRefreshRateFB", m_getRefreshRate);
         load("xrRequestDisplayRefreshRateFB", m_requestRefreshRate);
+    }
+    if (audioDevice) {
+        load("xrGetAudioOutputDeviceGuidOculus", m_getAudioOutput);
     }
     if (m_getGraphicsRequirements == nullptr) {
         return makeError(ErrorCode::Unsupported, "xrGetOpenGLGraphicsRequirementsKHR is missing", "openxr");
@@ -910,6 +922,24 @@ Status OpenXrRuntime::endFrame(const FrameTiming& timing, bool withViews) {
 
 std::span<const std::uint32_t> OpenXrRuntime::images(int eye) const {
     return m_images[static_cast<std::size_t>(eye)];
+}
+
+std::optional<std::string> OpenXrRuntime::audioOutputDevice() const {
+    if (m_getAudioOutput == nullptr || m_instance == XR_NULL_HANDLE) {
+        return std::nullopt;
+    }
+    std::array<wchar_t, XR_MAX_AUDIO_DEVICE_STR_SIZE_OCULUS> buffer{};
+    if (const XrResult result = m_getAudioOutput(m_instance, buffer.data()); XR_FAILED(result)) {
+        spdlog::warn("OpenXR: the headset's audio output is unknown (xrGetAudioOutputDeviceGuidOculus: {})",
+                     static_cast<int>(result));
+        return std::nullopt;
+    }
+    buffer.back() = L'\0';
+    const std::wstring_view id(buffer.data());
+    if (id.empty()) {
+        return std::nullopt;
+    }
+    return core::wideToUtf8Lossy(id);
 }
 
 std::optional<float> OpenXrRuntime::currentRefreshRate() const {

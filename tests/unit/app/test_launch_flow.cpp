@@ -644,6 +644,83 @@ TEST_CASE("app/launch_flow: quitting while the game runs leaves it running", "[a
     CHECK(h.flow.records().empty());
 }
 
+TEST_CASE("app/launch_flow: in VR the user stops watching the game, then goes back to it or says it ended (I11 step 14)",
+          "[app][launch_flow]") {
+    SECTION("stopped, then back to the game") {
+        Fixture f;
+        f.flow.focusChanged(true, kT0);
+        CHECK_FALSE(f.flow.stopWatching()); // no session
+        f.launch();
+        f.flow.poll(at(500), 9);
+        REQUIRE(f.flow.panel() == SessionPanel::Launching);
+        CHECK(f.flow.stopWatching());
+        CHECK(f.flow.watchStopped());
+        CHECK(f.flow.panel() == SessionPanel::Playing);
+        CHECK_FALSE(f.flow.stopWatching()); // asked already
+        // The game keeps the foreground meanwhile: the question stays when the window loses the focus, and with time.
+        f.flow.focusChanged(false, at(600));
+        CHECK(f.flow.panel() == SessionPanel::Playing);
+        f.flow.poll(at(5000), 10);
+        CHECK(f.flow.panel() == SessionPanel::Playing);
+        CHECK(f.flow.watchStopped());
+        // "Torna al gioco": watching again, the game takes the foreground back; nothing asks again by itself.
+        CHECK(f.flow.backToGame(at(6000)));
+        CHECK_FALSE(f.flow.watchStopped());
+        CHECK(f.flow.panel() == SessionPanel::Launching);
+        f.flow.poll(at(20000), 11);
+        CHECK(f.flow.panel() == SessionPanel::Launching);
+        // Stopped once more, then the game ends by itself: the session's end clears it.
+        CHECK(f.flow.stopWatching());
+        f.runner.queue.push_back(event(ProcessEventKind::MainExited, 21000, 0));
+        f.flow.poll(at(21010), 12);
+        CHECK_FALSE(f.flow.sessionActive());
+        CHECK_FALSE(f.flow.watchStopped());
+        const rv::app::LaunchRecord& record = f.flow.records().front();
+        CHECK(record.watchStops == 2);
+        CHECK(record.watchResumes == 1);
+        CHECK(record.panels == std::vector<std::string>{"playing", "playing"});
+    }
+    SECTION("stopped, then the game is over: the session ends, the game left running") {
+        Fixture f;
+        f.launch();
+        CHECK(f.flow.stopWatching());
+        f.flow.returnToRetroverse(at(3000), 10);
+        CHECK_FALSE(f.flow.sessionActive());
+        CHECK_FALSE(f.flow.watchStopped());
+        CHECK(f.flow.records().front().watchStops == 1);
+        CHECK(f.flow.records().front().watchResumes == 0);
+        CHECK(f.flow.records().front().confirmedByUser);
+    }
+    SECTION("the session's own question replaces it") {
+        Fixture f;
+        f.launch(WaitStrategy::UserConfirmReturn);
+        CHECK(f.flow.stopWatching());
+        f.runner.queue.push_back(event(ProcessEventKind::MainExited, 2500, 0));
+        f.flow.poll(at(2510), 9);
+        CHECK(f.flow.panel() == SessionPanel::Confirm);
+        CHECK_FALSE(f.flow.watchStopped());
+        // A question shows: nothing to stop watching.
+        CHECK_FALSE(f.flow.stopWatching());
+    }
+    SECTION("the game's sound on another output: recorded once, cleared at the next launch") {
+        Fixture f;
+        f.flow.noteAudioElsewhere(); // no session: ignored
+        CHECK_FALSE(f.flow.audioElsewhere());
+        f.launch();
+        f.flow.noteAudioElsewhere();
+        f.flow.noteAudioElsewhere();
+        CHECK(f.flow.audioElsewhere());
+        f.runner.queue.push_back(event(ProcessEventKind::MainExited, 2500, 0));
+        f.flow.poll(at(2510), 9);
+        CHECK(f.flow.records().front().audioElsewhere);
+        REQUIRE(f.flow.request(f.request(), Fixture::info(), 20));
+        f.flow.start(at(3000), {}, 21);
+        REQUIRE(f.flow.sessionActive());
+        CHECK_FALSE(f.flow.audioElsewhere());
+        CHECK_FALSE(f.flow.records().back().audioElsewhere);
+    }
+}
+
 TEST_CASE("app/launch_flow: the panels by name", "[app][launch_flow]") {
     CHECK(rv::app::toString(SessionPanel::None) == "none");
     CHECK(rv::app::toString(SessionPanel::Launching) == "launching");

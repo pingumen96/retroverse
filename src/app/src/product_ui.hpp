@@ -348,6 +348,16 @@ public:
     /// the VR capture stayed black), which the session panel says.
     [[nodiscard]] bool launchExclusiveFullscreen() const noexcept;
     void noteExclusiveFullscreen();
+    /// A launched game's session runs (LaunchFlow::sessionActive).
+    [[nodiscard]] bool launchSessionActive() const noexcept;
+    /// I11 step 14 (ADR-0020 §6): in VR the user stops watching the running game (LaunchFlow::stopWatching): the session
+    /// panel asks "Torna al gioco" or "Il gioco è terminato". False when nothing changed.
+    bool stopWatchingGame();
+    /// The user stopped watching the running game and has not answered yet.
+    [[nodiscard]] bool launchWatchStopped() const noexcept;
+    /// I11 step 14: the running game plays on Windows' default audio output, not the headset's (the panel says so).
+    void noteLaunchAudioElsewhere();
+    [[nodiscard]] bool launchAudioElsewhere() const noexcept;
     /// One wake of the host's idle wait: collects the catalog worker's answers, starts a pending launch (the window
     /// handed over before the process runs), follows the session, takes the window back once it ends.
     void onIdle();

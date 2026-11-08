@@ -13,7 +13,8 @@
 //     "posture": "standing",            // "seated": the head made up to the walker's eye height at each recentering
 //     "quality": "auto",                // "full", "fast" (no SSAO, no FXAA), "auto": fast from 110 Hz (I10 step 9)
 //     "comfort": {"turn": "snap", "snapDegrees": 30, "smoothDegreesPerSecond": 90, "vignette": 0,
-//                 "moveRelativeTo": "head"}   // "hand": the stick walks along the left controller (I10 step 4)
+//                 "moveRelativeTo": "head"},  // "hand": the stick walks along the left controller (I10 step 4)
+//     "gameScreen": "crt"               // "large": a launched game on the large screen even beside a CRT (I11 step 14)
 //   }
 
 #include <cstdint>
@@ -47,6 +48,12 @@ inline constexpr float kFastFromHz = 110.0f;
 /// The profile of `quality` at `refreshHz`: true for fast.
 [[nodiscard]] bool fastProfile(XrQuality quality, float refreshHz) noexcept;
 
+/// Where a launched game shows in the headset (I11 step 14, ADR-0020 §6): on the room's hero CRT, the large screen
+/// where none is bound; or always on the large screen.
+enum class GameScreen : std::uint8_t { Crt, Large };
+/// "crt" or "large".
+[[nodiscard]] std::string_view toString(GameScreen screen) noexcept;
+
 struct XrSettings {
     static constexpr double kMinRenderScale = 0.25;
     static constexpr double kMaxRenderScale = 2.0;
@@ -61,6 +68,7 @@ struct XrSettings {
     Posture posture = Posture::Standing;
     XrQuality quality = XrQuality::Auto;
     ComfortSettings comfort;
+    GameScreen gameScreen = GameScreen::Crt;
 
     bool operator==(const XrSettings&) const = default;
 };

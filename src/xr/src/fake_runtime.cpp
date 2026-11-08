@@ -225,6 +225,10 @@ Expected<ControllerState> FakeRuntime::syncControllers(std::int64_t /*displayTim
             state.pad.axes[input::toIndex(right ? input::GamepadAxis::RightY : input::GamepadAxis::LeftY)] = stick.y;
         }
     }
+    // I11 step 14: the left menu button, the pad's Start as xr_bindings.json maps it.
+    if (m_config.leftMenu && m_config.leftMenu(frame)) {
+        state.pad.buttons.set(input::toIndex(input::GamepadButton::Start));
+    }
     if (!m_config.handPose) {
         return state;
     }

@@ -61,6 +61,7 @@ add_library(rv_app_cli STATIC
     src/world_interaction.cpp
     src/world_edit_interaction.cpp
     src/world_edit_room.cpp
+    src/xr_watch.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)

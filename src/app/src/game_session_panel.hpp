@@ -52,6 +52,10 @@ public:
     void setHighContrast(bool enabled);
     /// I11 step 13 (ADR-0020 §5): the running game is in exclusive fullscreen; the panel says so (model "exclusive").
     void setExclusiveFullscreen(bool exclusive);
+    /// I11 step 14: Playing asked in VR after the user stopped watching ("Torna al gioco" focused first), and the game
+    /// playing on Windows' default audio output. Set before show().
+    void setWatchStopped(bool stopped);
+    void setAudioElsewhere(bool elsewhere);
 
 private:
     struct Impl;

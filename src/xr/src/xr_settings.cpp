@@ -104,6 +104,7 @@ constexpr std::array<std::string_view, 2> kPostures = {"standing", "seated"};
 constexpr std::array<std::string_view, 2> kTurns = {"snap", "smooth"};
 constexpr std::array<std::string_view, 2> kMoveReferences = {"head", "hand"};
 constexpr std::array<std::string_view, 3> kQualities = {"auto", "full", "fast"};
+constexpr std::array<std::string_view, 2> kGameScreens = {"crt", "large"};
 
 Json merge(Json base, const Json& overrides) {
     if (!base.is_object() || !overrides.is_object()) {
@@ -126,6 +127,10 @@ std::string_view toString(XrQuality quality) noexcept {
     return kQualities[static_cast<std::size_t>(quality) < kQualities.size() ? static_cast<std::size_t>(quality) : 0];
 }
 
+std::string_view toString(GameScreen screen) noexcept {
+    return kGameScreens[static_cast<std::size_t>(screen) < kGameScreens.size() ? static_cast<std::size_t>(screen) : 0];
+}
+
 bool fastProfile(XrQuality quality, float refreshHz) noexcept {
     return quality == XrQuality::Fast || (quality == XrQuality::Auto && std::isfinite(refreshHz) && refreshHz >= kFastFromHz);
 }
@@ -134,7 +139,8 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
     std::optional<Error> error;
     XrSettings settings;
     Reader root(document, "", context, error,
-                {"schemaVersion", "display", "renderScale", "refreshRate", "posture", "quality", "comfort"});
+                {"schemaVersion", "display", "renderScale", "refreshRate", "posture", "quality", "comfort",
+                 "gameScreen"});
     if (const std::optional<double> version = root.number("schemaVersion", 1, 1000);
         version && *version != kXrSettingsSchemaVersion) {
         root.fail("/schemaVersion", fmt::format("expected {}", kXrSettingsSchemaVersion));
@@ -156,6 +162,9 @@ Expected<XrSettings> parseXrSettings(const nlohmann::json& document, std::string
     }
     if (const auto quality = root.name("quality", kQualities)) {
         settings.quality = static_cast<XrQuality>(*quality);
+    }
+    if (const auto screen = root.name("gameScreen", kGameScreens)) {
+        settings.gameScreen = static_cast<GameScreen>(*screen);
     }
     if (const Json* comfort = root.value("comfort")) {
         Reader reader(*comfort, "/comfort", context, error,

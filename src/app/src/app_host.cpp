@@ -427,6 +427,11 @@ ExitCode AppHost::runUnchecked(IAppLogic& logic) {
     context.m_framebufferSize = window->drawableSize();
     context.m_xrSettings = xrSettings;
     context.m_vr = xr != nullptr;
+    if (xr != nullptr) {
+        context.m_xrAudioOutput = xr->audioOutputDevice();
+        spdlog::info("VR: the headset's audio output is {}",
+                     context.m_xrAudioOutput ? *context.m_xrAudioOutput : std::string("not told by the runtime"));
+    }
     m_report.window = WindowRecord{context.m_framebufferSize.x, context.m_framebufferSize.y};
     // The wake event of the idle mode: pushed from any thread (SDL_PushEvent is thread-safe), kept by the host.
     context.m_wakeEvent = SDL_RegisterEvents(1);
@@ -539,6 +544,7 @@ void AppHost::leaveXr(AppContext& context, std::uint64_t desktopFrame) {
     m_report.xr->desktopFromFrame = desktopFrame;
     spdlog::warn("Frame {}: the VR session ended, the run goes on on the desktop", desktopFrame);
     context.m_xrFrame.reset();
+    context.m_xrAudioOutput.reset();
     context.m_vr = false;
     if (auto vsync = context.m_window.setVsync(m_options.vsync); !vsync) {
         spdlog::warn("Vsync not restored after the VR session: {}", vsync.error().toString());

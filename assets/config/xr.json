@@ -24,5 +24,8 @@
     "vignette": 0,
     // "head": the left stick walks where the head looks; "hand": where the left controller points.
     "moveRelativeTo": "head"
-  }
+  },
+  // Where a launched game shows (I11 step 14): "crt" on the room's CRT, on a large screen in front of you where the
+  // room has none (the lobby, a hall); "large" always on the large screen.
+  "gameScreen": "crt"
 }

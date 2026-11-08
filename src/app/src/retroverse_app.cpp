@@ -45,6 +45,7 @@
 #include <rv/app/settings_store.hpp>
 #include <rv/app/video_settings.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/xr_watch.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/audio/audio_engine.hpp>
 #include <rv/assets/surface_textures.hpp>
@@ -65,6 +66,7 @@
 #include <rv/media/video_verdicts.hpp>
 #include <rv/platform/graphics_window.hpp>
 #include <rv/platform/window_handover.hpp>
+#include <rv/platform_win/audio_endpoint.hpp>
 #include <rv/platform_win/directory_watcher.hpp>
 #include <rv/platform_win/foreground.hpp>
 #include <rv/platform_win/process_priority.hpp>
@@ -79,6 +81,7 @@
 #include <rv/scene/camera.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/xr/panels.hpp>
 #include <rv/xr/pose.hpp>
 #include <rv/xr/render_scale.hpp>
 #include <rv/xr/xr_settings.hpp>
@@ -119,6 +122,8 @@ constexpr bool kDeveloperBuild = false;
 
 /// Where the developer overlay keeps its window layout, under <user data>/config.
 constexpr std::string_view kOverlayLayoutFile = "imgui.ini";
+/// I11 step 14 (ADR-0020 §6): how long the audio notice stands before a game launched in VR, simulated seconds.
+constexpr double kAudioNoticeSeconds = 8.0;
 /// Reference grid of --debug-draw in scenes: 1 m cells over 20 x 20 m around the origin.
 constexpr DebugGrid kSceneDebugGrid{10.0f, 1.0f};
 
@@ -637,6 +642,14 @@ struct RetroverseApp::State {
     bool xrUiDrawn = false;
     /// The launched game on the hero CRT (I10 step 6).
     XrGame xrGame;
+    /// I11 step 14 (ADR-0020 §6): the left menu button held to stop watching the game; whether the frame before had
+    /// stopped watching (the screens' decoders then run again); the head's pose when the session began (the large
+    /// screen stands in front of it); until when (simulated seconds) the audio notice stands before the game.
+    HoldCommand watchHold;
+    bool xrWatchStopped = false;
+    bool xrSessionSeen = false;
+    std::optional<xr::Pose> launchHead;
+    std::optional<double> audioNoticeUntil;
     /// I10 step 10: the game's window given the foreground, and the foreground last logged while a game ran in VR.
     std::uintptr_t xrForegroundGiven = 0;
     /// I11 step 11: when the followed window was first given the foreground, and last asked again.
@@ -879,9 +892,59 @@ struct RetroverseApp::State {
         }
     }
 
-    /// A game runs in VR (I10 step 6): the pad plays it, Retroverse reads only the controllers' walk (step 10).
+    /// A game runs in VR (I10 step 6): the pad plays it, Retroverse reads only the controllers' walk (step 10). Not once
+    /// the user stopped watching it (I11 step 14): the session panel then takes the controllers' input (the pad and the
+    /// keyboard reach the game, which keeps the foreground).
     [[nodiscard]] bool playingInXr(const AppContext& context) const {
-        return context.vr() && product && (product->launchActive() || product->launchWindow() != 0);
+        return context.vr() && product && !product->launchWatchStopped() &&
+               (product->launchActive() || product->launchWindow() != 0);
+    }
+
+    /// I11 step 14 (ADR-0020 §6): the left controller's menu button held for a second while a launched game runs in VR
+    /// stops watching it; the session panel then asks "Torna al gioco" or "Il gioco è terminato".
+    void followWatchCommand(AppContext& context, double seconds) {
+        if (!product) {
+            return;
+        }
+        const bool armed = context.vr() && product->launchSessionActive() && !product->launchWatchStopped();
+        const bool held =
+            context.vr() && xrHands.pad().state().buttons.test(input::toIndex(input::GamepadButton::Start));
+        if (watchHold.update(armed, held, static_cast<float>(seconds)) && product->stopWatchingGame()) {
+            context.vibrate(xr::Hand::Left, 0.4f, 0.08f);
+        }
+        if (std::optional<XrRecord>& record = context.report().xr; record && product->launchWatchStopped()) {
+            ++record->stoppedWatchingFrames;
+        }
+    }
+
+    /// I11 step 14 (ADR-0020 §6): at a launch in VR, the headset's audio endpoint against Windows' default, which the
+    /// game plays on: a notice before the game for kAudioNoticeSeconds when they differ. Nothing when either is unknown.
+    void checkLaunchAudio(AppContext& context) {
+        const std::optional<std::string>& headset = context.xrAudioOutput();
+        if (std::optional<XrRecord>& record = context.report().xr) {
+            record->audioOutputKnown = headset.has_value();
+        }
+        if (!headset) {
+            return;
+        }
+        const Expected<std::string> system = platform_win::defaultAudioOutput();
+        if (!system) {
+            spdlog::info("VR: Windows' default audio output is unknown ({}): the game's sound is not checked",
+                         system.error().toString());
+            return;
+        }
+        if (sameAudioOutput(*headset, *system)) {
+            spdlog::info("VR: the game plays on the headset, Windows' default audio output");
+            return;
+        }
+        spdlog::warn("VR: Windows' default audio output is not the headset's: the game plays on the PC's output");
+        product->noteLaunchAudioElsewhere();
+        audioNoticeUntil = simulatedSeconds + kAudioNoticeSeconds;
+    }
+
+    /// The audio notice stands before the game (checkLaunchAudio()).
+    [[nodiscard]] bool audioNoticeShown() const {
+        return audioNoticeUntil && simulatedSeconds < *audioNoticeUntil && product && product->launchAudioElsewhere();
     }
 
     /// A VR frame (AppContext::xrFrame, I10 step 2) places the tracking space where the movement anchored it (ADR-0017
@@ -964,7 +1027,6 @@ struct RetroverseApp::State {
         }
     }
 
-    /// I11 step 3: the catalog's systems' logos rasterized on the pool and registered with the product UI, a few a frame.
     /// The logos unregistered and released, with their pool's jobs (before that pool goes).
     void releaseSystemLogos() {
         if (!systemLogos) {
@@ -977,6 +1039,7 @@ struct RetroverseApp::State {
         systemLogos.reset();
     }
 
+    /// I11 step 3: the catalog's systems' logos rasterized on the pool and registered with the product UI, a few a frame.
     void updateSystemLogos() {
         if (!product || !pool) {
             return;
@@ -992,8 +1055,33 @@ struct RetroverseApp::State {
     /// one; nothing on the desktop, where the game has the screen.
     void updateXrGame(AppContext& context) {
         std::optional<XrRecord>& record = context.report().xr;
-        const std::uintptr_t window = context.vr() && product ? product->launchWindow() : 0;
-        xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr);
+        // I11 step 14: a session's start in VR: where the head was (the large screen's place), the game's sound.
+        const bool session = context.vr() && product && product->launchSessionActive();
+        if (session && !xrSessionSeen) {
+            xrSessionSeen = true;
+            launchHead = xr::Pose{camera.orientation(), camera.position()};
+            checkLaunchAudio(context);
+        } else if (!session && xrSessionSeen) {
+            xrSessionSeen = false;
+            launchHead.reset();
+            audioNoticeUntil.reset();
+        }
+        // I11 step 14: the user stopped watching: the room's screens play again and the capture ends; watching again,
+        // they stop as for the launch and the game's window is captured again.
+        const bool stopped = session && product->launchWatchStopped();
+        if (stopped != xrWatchStopped) {
+            xrWatchStopped = stopped;
+            if (screen && session) {
+                if (stopped) {
+                    screen->launchEnded();
+                } else {
+                    screen->launchStarting();
+                }
+            }
+        }
+        const std::uintptr_t window = context.vr() && product && !stopped ? product->launchWindow() : 0;
+        xrGame.update(window, context.device().state(), screen.get(), record ? &*record : nullptr,
+                      context.xrSettings().gameScreen == xr::GameScreen::Large);
         // I11 step 13 (ADR-0020 §5): a capture that stays black is a game in exclusive fullscreen; the panel says so.
         if (window != 0 && xrGame.black() && !product->launchExclusiveFullscreen()) {
             product->noteExclusiveFullscreen();
@@ -1105,9 +1193,23 @@ struct RetroverseApp::State {
             return;
         }
         xrEyes->panels.clear();
-        // The game on the CRT (I10 step 6) shows with no panel in front of it, but for the notice of a game in exclusive
-        // fullscreen, whose picture the CRT cannot show (I11 step 13).
-        if (!product->visible() || (xrGame.showing() && !product->launchExclusiveFullscreen())) {
+        // I11 step 14 (ADR-0020 §6): the large screen, in front of where the head was when the launch began, at the
+        // shown part's aspect.
+        if (xrGame.onLargeScreen() && launchHead && xrGame.texture() != 0) {
+            const glm::vec4& crop = xrGame.crop();
+            const glm::vec2 shown = glm::vec2(crop.z, crop.w) * glm::vec2(xrGame.size());
+            const xr::PanelPose pose = xr::gameScreenPanel(*launchHead, shown.y > 0.0f ? shown.x / shown.y : 16.0f / 9.0f);
+            gl::Panel large{xrGame.texture(), pose.model(), 1.0f - view.post.fade};
+            // The picture's top row first: the quad's top edge takes the crop's top.
+            large.uv = glm::vec4(crop.x, crop.y + crop.w, crop.x + crop.z, crop.y);
+            large.opaqueLinear = true;
+            xrEyes->panels.push_back(large);
+        }
+        // The game (I10 step 6) shows with no panel in front of it, but for the notice of a game in exclusive fullscreen,
+        // whose picture cannot be captured (I11 step 13), and for a while the audio notice (I11 step 14).
+        const bool exclusiveNotice = product->launchExclusiveFullscreen();
+        const bool audioNotice = audioNoticeShown();
+        if (!product->visible() || (xrGame.showing() && !exclusiveNotice && !audioNotice)) {
             xrUiDrawn = true;
             return;
         }
@@ -1118,7 +1220,9 @@ struct RetroverseApp::State {
         if (const std::optional<gl::Panel> panel = xrUi.panel(view.post.fade)) {
             xrEyes->panels.push_back(*panel);
             if (std::optional<XrRecord>& record = context.report().xr; record && xrGame.showing()) {
-                ++record->exclusiveNoticeFrames; // only the exclusive fullscreen's notice stands before the game
+                // Only the notices stand before the game.
+                record->exclusiveNoticeFrames += exclusiveNotice ? 1 : 0;
+                record->audioNoticeFrames += audioNotice ? 1 : 0;
             }
         }
         xrUiDrawn = true;
@@ -2753,10 +2857,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
             actions.clear();
         }
     }
+    // I11 step 14: the left menu button held stops watching a game that runs in VR.
+    state.followWatchCommand(context, deltaSeconds);
     // I10 step 6: while a game runs in VR the pad plays it; Retroverse reads nothing until it ends, but (I10 step 10)
     // the controllers' walk, turns and teleport, which the emulator never sees: the user goes up to the CRT.
     const bool playingInXr = state.playingInXr(context);
     input::ActionState playingWalk;
+    // A screenshot (F12, an input script's) shows only Retroverse's view: taken while a game plays in VR too.
+    const bool screenshotPressed = actions.pressed(input::Action::Screenshot);
     if (playingInXr) {
         actions.clear();
         if (state.xrMovement) {
@@ -2777,7 +2885,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     if (actions.pressed(input::Action::ReloadShaders)) {
         state.graphics->reloadShaders();
     }
-    if (actions.pressed(input::Action::Screenshot)) {
+    if (screenshotPressed) {
         state.screenshotRequested = true;
     }
     // With a room (I3 step 13a) the world's interaction reads the World context: Back's levels (its own, then the

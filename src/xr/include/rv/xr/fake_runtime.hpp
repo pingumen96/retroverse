@@ -56,6 +56,11 @@ struct FakeRuntimeConfig {
     /// A hand's thumbstick at the n-th frame waited for, [-1, 1] with +y forward (I10 step 10), the pad's stick on that
     /// side; none: centered.
     std::function<glm::vec2(std::uint64_t frame, Hand hand)> handStick;
+    /// I11 step 14: the left controller's menu button held at the n-th frame waited for (xr_bindings.json's Start; the
+    /// input script's "leftMenu").
+    std::function<bool(std::uint64_t frame)> leftMenu;
+    /// I11 step 14: the headset's audio endpoint (audioOutputDevice()); none: the runtime does not tell it.
+    std::optional<std::string> audioOutputDevice;
 };
 
 /// A runtime without a headset (ADR-0017 §3, §10): two asymmetric eyes `ipdMeters` apart at the scripted head pose, a
@@ -82,6 +87,7 @@ public:
     void vibrate(Hand hand, float amplitude, float seconds) override;
     [[nodiscard]] std::span<const std::uint32_t> images(int eye) const override;
     [[nodiscard]] std::optional<float> currentRefreshRate() const override;
+    [[nodiscard]] std::optional<std::string> audioOutputDevice() const override { return m_config.audioOutputDevice; }
 
     /// What the app submitted: frames ended, and those with both eyes.
     [[nodiscard]] std::uint64_t framesEnded() const noexcept { return m_framesEnded; }
