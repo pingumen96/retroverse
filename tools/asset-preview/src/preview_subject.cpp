@@ -10,7 +10,9 @@
 #include <fmt/format.h>
 #include <glm/glm.hpp>
 
+#include <rv/assets/console_content.hpp>
 #include <rv/assets/gltf_loader.hpp>
+#include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
 #include <rv/scene/scene_geometry.hpp>
 
@@ -116,10 +118,47 @@ ManifestCheck readManifest(PreviewSubject& subject, const std::filesystem::path&
     return check;
 }
 
+/// I11 step 7: a console of the user's content (console.glb beside a console.json that reads as a console's manifest):
+/// the app's checks of it, a message each. True when it is one (its console.json is then no prefab manifest).
+bool checkConsoleContent(PreviewSubject& subject, const std::filesystem::path& file) {
+    const std::filesystem::path manifestFile = file.parent_path() / core::pathFromUtf8(assets::kConsoleManifestName);
+    if (fileName(file) != assets::kConsoleModelName || !isRegularFile(manifestFile)) {
+        return false;
+    }
+    subject.watchedFiles.push_back(manifestFile);
+    auto text = core::readTextFile(manifestFile);
+    auto manifest = text ? assets::parseConsoleManifest(*text, fileName(manifestFile))
+                         : Expected<assets::ConsoleManifest>(propagate(text.error()));
+    if (!manifest) {
+        addMessage(subject, Severity::Error,
+                   fmt::format("console.json cannot be read: {}", manifest.error().toString()),
+                   PreviewMessage::Topic::Manifest);
+        return true;
+    }
+    if (!subject.model) {
+        return true;
+    }
+    const assets::ConsoleCheck check = assets::checkConsoleModel(*subject.model, *manifest);
+    addMessage(subject, check.ok() ? Severity::Info : Severity::Error,
+               fmt::format("Console ({}): {} - {:.1f} x {:.1f} x {:.1f} cm, {} triangle(s), {:.2f} MiB of textures "
+                           "compressed",
+                           assets::toString(manifest->kind), check.ok() ? "shown in its room" : "refused",
+                           check.size.x * 100.0F, check.size.y * 100.0F, check.size.z * 100.0F, check.triangles,
+                           static_cast<double>(check.textureBytes) / (1024.0 * 1024.0)),
+               PreviewMessage::Topic::Manifest);
+    for (const std::string& problem : check.problems) {
+        addMessage(subject, Severity::Error, problem, PreviewMessage::Topic::Manifest);
+    }
+    return true;
+}
+
 void loadModelTarget(PreviewSubject& subject, const std::filesystem::path& file) {
     subject.title = fileName(file);
     subject.watchedFiles.push_back(file);
     loadModelInto(subject, file);
+    if (checkConsoleContent(subject, file)) {
+        return;
+    }
     for (const std::filesystem::path& candidate : sidecarManifestPaths(file)) {
         subject.watchedFiles.push_back(candidate);
         if (!subject.manifest && isRegularFile(candidate)) {

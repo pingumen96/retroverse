@@ -88,6 +88,10 @@ public:
     /// room's console (I5 step 9: consoleSocketOf()), none without one.
     std::size_t addRoom(world::CollectionLayout layout, CollectionInstance* collection,
                         std::optional<ConsoleSocket> console = std::nullopt);
+    /// I11 step 7: the media socket of `room`'s console after its model took the procedural one's place (none: no room
+    /// of that id), and the socket it has now.
+    bool setConsoleSocket(const world::RoomId& room, std::optional<ConsoleSocket> console);
+    [[nodiscard]] std::optional<ConsoleSocket> consoleSocket(const world::RoomId& room) const;
     /// The room that holds the eye (an index of addRoom()'s order; none: a hall, which hovers nothing). It becomes the
     /// interaction's room once the interaction is in free roam with nothing hovered, pulled or focused in the room it
     /// leaves (asked again every frame until then).

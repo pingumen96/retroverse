@@ -831,6 +831,10 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
 - **The signs' logo cache and BC3** (I11 step 4, ADR-0019 §3): the identity's signs are drawn at the generic
   pictures' size (512 pixels wide, about 0.3 MiB each with mips) from logos rasterized once per run; a cache under
   `cache/identity/` and BC3 when a floor's memory row or a slow start asks for them.
+- **The console models' cache** (I11 step 7, ADR-0019 §7): models are read, checked and compressed once per run on
+  the pool; a cache of the compressed textures under `cache/content/` when real models make the start slow.
+- **BC5 normal maps** (I11 step 7): a model's normal map is BC1 (the shaders read three channels); BC5 with the third
+  reconstructed, for every model at once and with the goldens rewritten.
 - **The plaque on a stand, Focus on it** (I11 step 5): the plaque hangs on the hero corner's wall and is read by its
   label and its card; a stand of its own, and Focus easing the view to it as to an item, would need a place on the floor
   and a non-game target in WorldInteraction.

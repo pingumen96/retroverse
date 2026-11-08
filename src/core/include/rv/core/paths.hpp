@@ -57,6 +57,9 @@ public:
     /// The files Retroverse writes for launches in VR (I11 step 12, ADR-0020 §1: RetroArch's append-file), never an
     /// emulator's own configuration.
     [[nodiscard]] std::filesystem::path vrLaunchDir() const { return m_userDataRoot / "launcher" / "vr"; }
+    /// I11 step 7 (ADR-0019 §7): the user's content (consoles/<system>/: console models), read-only to everything but
+    /// "retroverse-cli content", never packaged.
+    [[nodiscard]] std::filesystem::path contentDir() const { return m_userDataRoot / "content"; }
     /// What the settings screen writes (ADR-0018 §2, rv/core/settings_file.hpp): never under configDir(), which stays
     /// the user's.
     [[nodiscard]] std::filesystem::path settingsFile() const { return m_userDataRoot / "settings.json"; }

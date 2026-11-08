@@ -40,23 +40,26 @@ enum class GpuMemoryKind : std::uint8_t {
     UiTextures,
     /// The rooms' signs drawn from the systems' identity (I11 step 4: WorldSigns), over the scene's generic ones.
     SignTextures,
+    /// The user's console models' compressed textures (I11 step 7: WorldConsoles).
+    ContentTextures,
 };
-inline constexpr std::size_t kGpuMemoryKindCount = 9;
+inline constexpr std::size_t kGpuMemoryKindCount = 10;
 
 /// Every kind, in declaration order.
 inline constexpr std::array<GpuMemoryKind, kGpuMemoryKindCount> kGpuMemoryKinds{
     GpuMemoryKind::ProceduralSurfaces, GpuMemoryKind::CollectionArrays, GpuMemoryKind::HeroTextures,
     GpuMemoryKind::Video,              GpuMemoryKind::Targets,          GpuMemoryKind::SceneTextures,
     GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,       GpuMemoryKind::SignTextures,
+    GpuMemoryKind::ContentTextures,
 };
 
 /// The run report's key: "proceduralSurfaces", "collectionArrays", "heroTextures", "video", "targets",
-/// "sceneTextures", "buffers", "uiTextures", "signTextures".
+/// "sceneTextures", "buffers", "uiTextures", "signTextures", "contentTextures".
 [[nodiscard]] std::string_view toString(GpuMemoryKind kind) noexcept;
 /// The kind toString() names, or nothing.
 [[nodiscard]] std::optional<GpuMemoryKind> gpuMemoryKindFromString(std::string_view name) noexcept;
 /// A short label for the Stats panel's narrow column (toString() in its tooltip): "Surfaces", "Arrays", "Hero",
-/// "Video", "Targets", "Textures", "Buffers", "UI", "Signs".
+/// "Video", "Targets", "Textures", "Buffers", "UI", "Signs", "Content".
 [[nodiscard]] std::string_view displayName(GpuMemoryKind kind) noexcept;
 
 /// Storage formats of the renderer's textures and render targets, by what a texel or a block takes.
@@ -73,9 +76,13 @@ enum class GpuFormat : std::uint8_t {
     /// GL_COMPRESSED_RGB_S3TC_DXT1_EXT / GL_COMPRESSED_SRGB_S3TC_DXT1_EXT and their alpha variants: blocks of 4 x 4
     /// texels in 8 bytes, every level a whole number of blocks.
     Bc1,
+    /// I11 step 7: GL_COMPRESSED_RGBA_S3TC_DXT5_EXT / GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT: blocks of 4 x 4 texels in
+    /// 16 bytes.
+    Bc3,
 };
 
-/// Bytes of one level of `size` (each side at least 1; BC1 rounds each side up to whole blocks); 0 for an empty size.
+/// Bytes of one level of `size` (each side at least 1; BC1 and BC3 round each side up to whole blocks); 0 for an empty
+/// size.
 [[nodiscard]] std::size_t textureLevelBytes(GpuFormat format, glm::ivec2 size) noexcept;
 /// Bytes of the first `levels` levels of a texture of `size` with `layers` layers (an array texture; 1 otherwise):
 /// each level halves both sides, down to 1. 0 for an empty size, no level or no layer.

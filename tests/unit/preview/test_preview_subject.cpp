@@ -7,7 +7,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include "support/fixture_console.hpp"
 #include "support/temp_dir.hpp"
+#include <rv/assets/console_content.hpp>
+#include <rv/preview/preview_options.hpp>
 #include <rv/assets/glb_writer.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/text.hpp>
@@ -247,4 +250,28 @@ TEST_CASE("preview/subject: a nominal size more than 5% off the measured bounds 
     CHECK(deeper->message.find("z differs by 11%") != std::string::npos);
     manifest.runtime.scaleMeters.reset();
     CHECK_FALSE(rv::preview::scaleIssue(manifest, measured(glm::vec3(5.0f))).has_value());
+}
+
+TEST_CASE("preview/subject: a console's content folder: its model, console.json checked as the app checks it (I11 "
+          "step 7)",
+          "[preview][console_content]") {
+    const rv::test::TempDir dir;
+    const std::filesystem::path folder = dir.path() / "content" / "consoles" / "snes";
+    REQUIRE(rv::test::writeFixtureConsole(folder / "console.glb").has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(folder / "console.json", rv::assets::writeConsoleManifest({})).has_value());
+    auto target = rv::preview::parsePreviewTarget(rv::core::pathToUtf8(folder));
+    REQUIRE(target.has_value());
+    CHECK(target->kind == rv::preview::PreviewTarget::Kind::Model);
+    CHECK(target->file == folder / "console.glb");
+    const rv::preview::PreviewSubject subject =
+        rv::preview::loadPreviewSubject(*target, rv::core::pathFromUtf8(RV_TEST_ASSET_DIR));
+    REQUIRE(subject.model != nullptr);
+    CHECK_FALSE(subject.manifest.has_value()); // console.json is no prefab manifest
+    const auto console = std::find_if(subject.messages.begin(), subject.messages.end(),
+                                      [](const rv::preview::PreviewMessage& message) {
+                                          return message.text.starts_with("Console (home): shown in its room");
+                                      });
+    CHECK(console != subject.messages.end());
+    CHECK(std::find(subject.watchedFiles.begin(), subject.watchedFiles.end(), folder / "console.json") !=
+          subject.watchedFiles.end());
 }

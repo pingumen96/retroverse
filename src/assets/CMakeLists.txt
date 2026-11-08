@@ -8,6 +8,7 @@
 add_library(rv_assets STATIC
     src/bc1.cpp
     src/collection_labels.cpp
+    src/console_content.cpp
     src/cover_fit.cpp
     src/crt_presets.cpp
     src/derived_texture_cache.cpp

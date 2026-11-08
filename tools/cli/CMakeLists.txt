@@ -10,6 +10,7 @@
 # subcommand, cmd_worldplan_<subcommand>.cpp, so that the I3 steps filling them never edit one file).
 add_library(rv_cli_core STATIC
     src/cmd_assign.cpp
+    src/cmd_content.cpp
     src/cmd_db.cpp
     src/cmd_discover.cpp
     src/cmd_games.cpp
@@ -46,7 +47,7 @@ target_include_directories(rv_cli_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/inclu
 # I3 the world generator (worldplan, where-is; ADR-0010), since I5 step 7 the video decoder (media --check-videos).
 target_link_libraries(rv_cli_core
     PUBLIC rv_core
-    PRIVATE rv_catalog rv_esde rv_catalog_db rv_platform_win rv_launcher rv_world rv_media rv_library)
+    PRIVATE rv_assets rv_catalog rv_esde rv_catalog_db rv_platform_win rv_launcher rv_world rv_media rv_library)
 rv_forbid_link(rv_cli_core)
 
 add_executable(retroverse-cli src/main.cpp)

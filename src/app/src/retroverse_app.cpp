@@ -105,6 +105,7 @@
 #include "product_ui.hpp"
 #include "screen_service.hpp"
 #include "system_logos.hpp"
+#include "world_consoles.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
@@ -697,6 +698,8 @@ struct RetroverseApp::State {
     /// I11 step 5: the console rooms' history plaques beside their hero corners, and the one hovered last (VR's
     /// vibration).
     std::unique_ptr<WorldPlaques> worldPlaques;
+    /// I11 step 7: the user's console models in place of the procedural consoles.
+    std::unique_ptr<WorldConsoles> worldConsoles;
     std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -1055,6 +1058,10 @@ struct RetroverseApp::State {
             worldPlaques->release(graphics ? &graphics->materials() : nullptr);
             worldPlaques.reset();
         }
+        if (worldConsoles) {
+            worldConsoles->release();
+            worldConsoles.reset();
+        }
         if (!systemLogos) {
             return;
         }
@@ -1124,6 +1131,26 @@ struct RetroverseApp::State {
             return true;
         };
         worldPlaques->update(plaques);
+        // I11 step 7: the user's console models.
+        if (!worldConsoles) {
+            worldConsoles = std::make_unique<WorldConsoles>(*pool);
+        }
+        WorldConsoles::Frame consoles;
+        consoles.description = &description;
+        consoles.instance = &*scene;
+        consoles.materials = &graphics->materials();
+        consoles.contentDir = context.paths().contentDir();
+        consoles.compressed = graphics->collectionArrayFormat() == gl::CollectionArrayFormat::Bc1Srgb;
+        consoles.settle = frame.settle;
+        consoles.frozen = plaques.frozen;
+        consoles.replaceObjects = plaques.replaceObjects;
+        if (world) {
+            consoles.consoleSocket = [this](const world::RoomId& room) { return world->consoleSocket(room); };
+            consoles.setConsoleSocket = [this](const world::RoomId& room, std::optional<ConsoleSocket> socket) {
+                world->setConsoleSocket(room, socket);
+            };
+        }
+        worldConsoles->update(consoles);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -2151,6 +2178,9 @@ struct RetroverseApp::State {
             if (worldPlaques) {
                 worldPlaques->sceneChanged(); // I11 step 5
             }
+            if (worldConsoles) {
+                worldConsoles->sceneChanged(); // I11 step 7: a rebuilt room's console is procedural again
+            }
             // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved stands as a
             // new object, its screen's material another registry entry), their clips playing on; screens that are no
             // longer the bound ones are bound afresh with the room's games (never left on the old materials).
@@ -2309,6 +2339,9 @@ struct RetroverseApp::State {
         if (worldPlaques) {
             worldPlaques->sceneChanged(); // I11 step 5: its plaques
         }
+        if (worldConsoles) {
+            worldConsoles->sceneChanged(); // I11 step 7: its consoles
+        }
         graphics->clearContent();
         // I5 step 6: the new scene's screens take their rooms' packs' CRT presets.
         graphics->screenLooks().setScene(std::move(screenPresets));
@@ -2316,7 +2349,17 @@ struct RetroverseApp::State {
         // instance takes the old one's place in the same storage, which they keep referring to.
         scene.reset();
         description = std::move(next);
-        loadModel = std::move(loader);
+        // I11 step 7: the user's console models ("content:" paths) come from WorldConsoles, every other from `loader`.
+        loadModel = [this, base = std::move(loader)](std::string_view modelPath)
+            -> Expected<std::shared_ptr<const assets::ModelData>> {
+            if (modelPath.starts_with(kContentModelPrefix)) {
+                if (!worldConsoles) {
+                    return makeError(ErrorCode::NotFound, "no console models", std::string(modelPath));
+                }
+                return worldConsoles->model(modelPath);
+            }
+            return base(modelPath);
+        };
         auto instance =
             SceneInstance::create(description, graphics->materialLibrary(), loadModel, graphics->resources());
         if (!instance) {
@@ -3267,6 +3310,11 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->plaques = m_state->worldPlaques->placed();
             catalog->plaquesDrawn = m_state->worldPlaques->drawn();
             catalog->plaqueCards = m_state->product ? m_state->product->plaqueCardsOpened() : 0;
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->worldConsoles) {
+            catalog->consoleModels = m_state->worldConsoles->shown();
+            catalog->consoleModelsRefused = m_state->worldConsoles->refused();
+            catalog->consoleTextureBytes = m_state->worldConsoles->textureBytes();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

@@ -7,6 +7,7 @@
 
 #include <fmt/format.h>
 
+#include <rv/assets/console_content.hpp>
 #include <rv/core/arg_parser.hpp>
 #include <rv/core/json.hpp>
 #include <rv/core/text.hpp>
@@ -128,13 +129,23 @@ Expected<PreviewTarget> parsePreviewTarget(std::string_view text) {
         return target;
     }
     target.file = core::pathFromUtf8(text);
+    // I11 step 7: a console's folder of the user's content (content/consoles/<system>): its console.glb, its
+    // console.json checked as the app checks it.
+    std::error_code error;
+    if (std::filesystem::is_directory(target.file, error)) {
+        target.file /= core::pathFromUtf8(assets::kConsoleModelName);
+        target.kind = PreviewTarget::Kind::Model;
+        return target;
+    }
     if (hasExtension(target.file, ".glb") || hasExtension(target.file, ".gltf")) {
         target.kind = PreviewTarget::Kind::Model;
     } else if (hasExtension(target.file, ".json")) {
         target.kind = PreviewTarget::Kind::Manifest;
     } else {
         return makeError(ErrorCode::InvalidArgument,
-                         "expected a .glb or .gltf model, a manifest .json file or prefab:<kind>", std::string(text));
+                         "expected a .glb or .gltf model, a manifest .json file, a console's content folder or "
+                         "prefab:<kind>",
+                         std::string(text));
     }
     return target;
 }

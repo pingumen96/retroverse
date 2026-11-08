@@ -253,6 +253,11 @@ struct CatalogRecord {
     std::size_t plaques = 0;
     std::size_t plaquesDrawn = 0;
     std::size_t plaqueCards = 0;
+    /// I11 step 7: the hero consoles of the scene shown drawn from the user's models when the run ended, the models
+    /// refused during the run (the procedural console kept), and the compressed textures' bytes of those loaded.
+    std::size_t consoleModels = 0;
+    std::size_t consoleModelsRefused = 0;
+    std::uint64_t consoleTextureBytes = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

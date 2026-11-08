@@ -8,6 +8,7 @@
 #include <glad/gl.h>
 #include <glm/vec2.hpp>
 
+#include <rv/assets/console_content.hpp>
 #include <rv/assets/image_data.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/render/gl_object.hpp>
@@ -93,6 +94,13 @@ public:
     /// desc.mipmaps says. I5 step 4: the frame a screen keeps when its decoder slot is taken (a VideoTexture's picture).
     /// Errors: InvalidArgument for no source or an empty size, OutOfRange beyond GL_MAX_TEXTURE_SIZE, GraphicsError when
     /// the storage cannot be allocated.
+    /// I11 step 7: a texture of S3TC blocks with their mip chain as `blocks` holds them (BC1 or BC3, in the colour space
+    /// its format names; desc.colorSpace and desc.mipmaps are not read: every level given is uploaded, each a whole
+    /// number of blocks). Errors: InvalidArgument for no level or a level whose bytes are not its blocks', OutOfRange
+    /// beyond GL_MAX_TEXTURE_SIZE, Unsupported without S3TC (with sRGB for an sRGB format: the caller checks
+    /// GlDevice::s3tcSrgb()), GraphicsError when the storage cannot be allocated.
+    [[nodiscard]] static Expected<Texture2D> createCompressed(const assets::CompressedTexture& blocks,
+                                                              const TextureDesc& desc, std::string_view debugName);
     [[nodiscard]] static Expected<Texture2D> copyOf(GLuint source, glm::ivec2 size, const TextureDesc& desc,
                                                     std::string_view debugName);
 

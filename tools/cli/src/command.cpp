@@ -30,7 +30,7 @@ constexpr std::string_view kLogFileName = "retroverse-cli.log";
 /// The command table: the order of --help, the step of docs/roadmap.md that implements each command (worldplan: its
 /// first subcommand's; each subcommand names its own). The rows never change when a command is implemented: its
 /// cmd_<name>.cpp does.
-constexpr std::array<Command, 18> kCommands{{
+constexpr std::array<Command, 19> kCommands{{
     {"discover", "Find the ES-DE installation: its home, install, ROM and media folders", "I2 step 2", runDiscover,
      true},
     {"library", "Show the library: its id, the ES-DE folders it reads and their overrides (library.json)",
@@ -55,6 +55,7 @@ constexpr std::array<Command, 18> kCommands{{
     {"worldplan", "The plan of the building: generate, update, show, check, snapshots, undo", "I3 step 3",
      runWorldPlan},
     {"where-is", "Where a game stands in the building's plan, or why it is not placed", "I3 step 9", runWhereIs},
+    {"content", "The user's console models: add one, check them, list them", "I11 step 7", runContent},
 }};
 
 /// Global options that take a value (the next argument, unless given as --name=value).
