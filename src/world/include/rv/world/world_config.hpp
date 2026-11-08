@@ -15,7 +15,8 @@
 // "placement": {"include"}, "sharedRoomMinTitles" (ADR-0013 §3, I4 step 4: the distinct titles a system entering the
 // building needs for a room of its own; 0 gives every system its own room), "reduceMotion" (ADR-0012 §3; until I7's
 // settings screen), "lightingProfile" (a lighting profile's id under assets/world/lighting, I3 step 16: how the room is
-// lit when drawn, never what it holds).
+// lit when drawn, never what it holds), "systemColors" (I11 step 6, ADR-0019 §5: the rooms' neon in their systems'
+// colours; on by default, how the room is drawn, never what it holds).
 // The canonical form (worldConfigToJson()) holds every key, "seed" null when it is not set.
 
 #include <cstdint>
@@ -89,6 +90,9 @@ struct WorldConfig {
     /// The lighting profile the room is drawn with (a data id; room_look.hpp). How the room is shown, like
     /// reduceMotion: the generator reads it never, so that switching profiles moves nothing.
     std::string lightingProfile = std::string(kDefaultLightingProfile);
+    /// I11 step 6 (ADR-0019 §5): a room's neon in its system's colour, when its identity has one. How the room is
+    /// drawn, like reduceMotion: the generator reads it never.
+    bool systemColors = true;
 
     bool operator==(const WorldConfig&) const = default;
 };
@@ -123,6 +127,7 @@ struct WorldConfigOverrides {
     std::optional<std::int64_t> sharedRoomMinTitles;
     std::optional<bool> reduceMotion;
     std::optional<std::string> lightingProfile;
+    std::optional<bool> systemColors;
 
     bool operator==(const WorldConfigOverrides&) const = default;
 };

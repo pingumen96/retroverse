@@ -1,7 +1,12 @@
 #include <rv/app/identity_signs.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <string>
 #include <utility>
+
+#include <rv/core/math.hpp>
 
 namespace rv::app {
 
@@ -88,6 +93,80 @@ std::vector<IdentitySignTarget> identitySignTargets(const scene::SceneDescriptio
                                                                : assets::IdentitySignStyle::Lit});
     }
     return targets;
+}
+
+std::string clampToAccentBand(const glm::vec3& srgb) {
+    const glm::vec3 c = glm::clamp(srgb, glm::vec3(0.0F), glm::vec3(1.0F));
+    const float high = std::max({c.r, c.g, c.b});
+    const float low = std::min({c.r, c.g, c.b});
+    const float chroma = high - low;
+    // The hue, in sixths of a turn.
+    float hue = 0.0F;
+    if (chroma > 0.0F) {
+        if (high == c.r) {
+            hue = std::fmod((c.g - c.b) / chroma + 6.0F, 6.0F);
+        } else if (high == c.g) {
+            hue = (c.b - c.r) / chroma + 2.0F;
+        } else {
+            hue = (c.r - c.g) / chroma + 4.0F;
+        }
+    }
+    const float saturation =
+        std::clamp(high > 0.0F ? chroma / high : 0.0F, kAccentMinSaturation, kAccentMaxSaturation);
+    const float value = std::clamp(high, kAccentMinValue, kAccentMaxValue);
+    // Back from HSV.
+    const float span = value * saturation;
+    const float x = span * (1.0F - std::abs(std::fmod(hue, 2.0F) - 1.0F));
+    glm::vec3 rgb(0.0F);
+    switch (static_cast<int>(hue) % 6) {
+    case 0:
+        rgb = {span, x, 0.0F};
+        break;
+    case 1:
+        rgb = {x, span, 0.0F};
+        break;
+    case 2:
+        rgb = {0.0F, span, x};
+        break;
+    case 3:
+        rgb = {0.0F, x, span};
+        break;
+    case 4:
+        rgb = {x, 0.0F, span};
+        break;
+    default:
+        rgb = {span, 0.0F, x};
+        break;
+    }
+    rgb += glm::vec3(value - span);
+    const auto byte = [](float channel) {
+        return static_cast<unsigned>(std::lround(std::clamp(channel, 0.0F, 1.0F) * 255.0F));
+    };
+    char text[8];
+    std::snprintf(text, sizeof(text), "#%02X%02X%02X", byte(rgb.r), byte(rgb.g), byte(rgb.b));
+    return std::string(text);
+}
+
+std::optional<std::string> systemAccent(std::span<const std::string> palette) {
+    std::optional<glm::vec3> best;
+    float bestChroma = -1.0F;
+    for (const std::string& entry : palette) {
+        const std::string hex = !entry.empty() && entry.front() != '#' ? "#" + entry : entry;
+        const auto parsed = core::parseHexColor(hex);
+        if (!parsed) {
+            continue;
+        }
+        const glm::vec3 colour(parsed->r, parsed->g, parsed->b);
+        const float chroma = std::max({colour.r, colour.g, colour.b}) - std::min({colour.r, colour.g, colour.b});
+        if (chroma > bestChroma) {
+            bestChroma = chroma;
+            best = colour;
+        }
+    }
+    if (!best || bestChroma < kAccentMinChroma) {
+        return std::nullopt;
+    }
+    return clampToAccentBand(*best);
 }
 
 bool hasIdentity(const SignSystem& system) noexcept {

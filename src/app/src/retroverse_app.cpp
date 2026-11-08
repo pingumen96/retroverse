@@ -1033,7 +1033,7 @@ struct RetroverseApp::State {
     /// The logos unregistered and released, with their pool's jobs (before that pool goes); the signs' too (I11 step 4).
     void releaseSystemLogos() {
         if (worldSigns) {
-            worldSigns->release(graphics ? &graphics->materials() : nullptr);
+            worldSigns->release(graphics ? &graphics->materials() : nullptr, scene ? &*scene : nullptr);
             worldSigns.reset();
         }
         if (!systemLogos) {
@@ -1065,6 +1065,10 @@ struct RetroverseApp::State {
         }
         if (!worldSigns) {
             worldSigns = std::make_unique<WorldSigns>(*pool, context.paths().assetRoot());
+            // I11 step 6: "Colori dei sistemi" as world.json and settings.json have it.
+            if (auto config = world::loadWorldConfig(context.paths().assetRoot(), context.paths().configDir())) {
+                worldSigns->setSystemColors(config->config.systemColors);
+            }
         }
         const AppCatalog& catalog = product->catalog();
         WorldSigns::Frame frame;
@@ -1815,6 +1819,8 @@ struct RetroverseApp::State {
             }
         } else if (row.section == world::kWorldSettingsSection && row.key == "reduceMotion" && world) {
             world->setReduceMotion(settings->value(row).get<bool>());
+        } else if (row.section == world::kWorldSettingsSection && row.key == "systemColors" && worldSigns) {
+            worldSigns->setSystemColors(settings->value(row).get<bool>()); // I11 step 6, at once
         }
         if (row.apply == SettingApply::CommitFloor && world) {
             settings->saveAsync();
@@ -3175,6 +3181,9 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->identitySigns = m_state->worldSigns->wanted();
             catalog->identitySignsShown = m_state->worldSigns->shown();
             catalog->identitySignsFailed = m_state->worldSigns->failed();
+            catalog->systemColors = m_state->worldSigns->systemColors();
+            catalog->tintedNeons = m_state->worldSigns->tintedMaterials();
+            catalog->tintedLights = m_state->worldSigns->tintedLights();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

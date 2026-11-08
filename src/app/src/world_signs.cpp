@@ -12,7 +12,9 @@
 #include <rv/app/scene_instance.hpp>
 #include <rv/assets/svg_raster.hpp>
 #include <rv/assets/text_raster.hpp>
+#include <rv/core/math.hpp>
 #include <rv/core/utf8.hpp>
+#include <rv/world/room_look.hpp>
 
 namespace rv::app {
 
@@ -104,7 +106,31 @@ std::size_t WorldSigns::shown() const noexcept {
         std::count_if(m_targets.begin(), m_targets.end(), [](const Target& target) { return target.applied; }));
 }
 
-void WorldSigns::takeOff(gl::MaterialRegistry& materials) {
+void WorldSigns::takeOff(gl::MaterialRegistry& materials, SceneInstance* instance) {
+    // I11 step 6: the materials and the lights as they were (only those still the same: a registry cleared since, or
+    // another scene's lights, hold others).
+    for (const Tint& tinted : m_tints) {
+        if (tinted.handle.value < materials.size() && materials.material(tinted.handle).key == tinted.materialKey) {
+            if (Status back = materials.setFactors(tinted.handle, tinted.original); !back) {
+                spdlog::warn("World: a neon keeps its system's colour: {}", back.error().toString());
+            }
+        }
+    }
+    m_tints.clear();
+    if (instance != nullptr && !m_lightTints.empty()) {
+        const std::span<scene::Light> lights = instance->sceneLights();
+        bool changed = false;
+        for (const LightTint& tinted : m_lightTints) {
+            if (tinted.index < lights.size() && lights[tinted.index].name == tinted.name) {
+                lights[tinted.index].color = tinted.original;
+                changed = true;
+            }
+        }
+        if (changed) {
+            instance->applyLighting();
+        }
+    }
+    m_lightTints.clear();
     for (Target& target : m_targets) {
         if (!target.applied) {
             continue;
@@ -119,8 +145,85 @@ void WorldSigns::takeOff(gl::MaterialRegistry& materials) {
     }
 }
 
+void WorldSigns::tint(const Frame& frame) {
+    if (!m_systemColors || !frame.systems) {
+        return;
+    }
+    // The pack's neon of each tinted room (from its sign's material, sRGB) and its accent.
+    std::map<std::string, std::pair<std::string, std::string>, std::less<>> rooms;
+    for (const IdentitySignTarget& sign : identitySignTargets(*frame.description)) {
+        if (sign.style != assets::IdentitySignStyle::Neon || sign.room.kind() != world::RoomIdKind::System) {
+            continue;
+        }
+        const std::optional<SignSystem> system = frame.systems(sign.room.system());
+        if (!system || !system->accent) {
+            continue;
+        }
+        const auto accent = core::hexToLinearRgb(*system->accent);
+        const std::optional<scene::MaterialHandle> handle =
+            pictureMaterial(sign.objectId, *frame.instance, *frame.materials);
+        if (!accent || !handle) {
+            continue;
+        }
+        const gl::GpuMaterial& material = frame.materials->material(*handle);
+        const gl::MaterialFactors original = gl::materialFactors(material.source);
+        gl::MaterialFactors tinted = original;
+        tinted.baseColor = glm::vec4(*accent, original.baseColor.a);
+        if (Status on = frame.materials->setFactors(*handle, tinted); !on) {
+            spdlog::warn("World: the neon {} keeps its pack's colour: {}", sign.objectId, on.error().toString());
+            continue;
+        }
+        m_tints.push_back(Tint{*handle, material.key, original});
+        if (sign.place == IdentitySignPlace::Hero) {
+            const glm::vec3 pack = core::linearToSrgb(glm::vec3(original.baseColor));
+            const auto byte = [](float channel) {
+                return static_cast<unsigned>(std::lround(std::clamp(channel, 0.0F, 1.0F) * 255.0F));
+            };
+            rooms.insert_or_assign(
+                sign.room.toString(),
+                std::pair{fmt::format("#{:02X}{:02X}{:02X}", byte(pack.r), byte(pack.g), byte(pack.b)),
+                          *system->accent});
+        }
+    }
+    // The rooms' neon lights: the glow in the accent, the sign's picture light with the accent's tint for the pack's.
+    const std::span<scene::Light> lights = frame.instance->sceneLights();
+    for (std::size_t index = 0; index < lights.size(); ++index) {
+        scene::Light& light = lights[index];
+        const std::size_t slash = light.name.find('/');
+        if (slash == std::string::npos) {
+            continue;
+        }
+        const auto room = rooms.find(std::string_view(light.name).substr(0, slash));
+        if (room == rooms.end()) {
+            continue;
+        }
+        const std::string_view local = std::string_view(light.name).substr(slash + 1);
+        const std::string& pack = room->second.first;
+        const std::string& accent = room->second.second;
+        std::optional<glm::vec3> colour;
+        if (local == "accent:sign_glow") {
+            if (const auto linear = core::hexToLinearRgb(accent)) {
+                colour = *linear;
+            }
+        } else if (local == "fx:hero.sign-light") {
+            const auto from = core::hexToLinearRgb(world::signLightTint(pack));
+            const auto to = core::hexToLinearRgb(world::signLightTint(accent));
+            if (from && to) {
+                colour = light.color * *to / glm::max(*from, glm::vec3(1.0e-4F));
+            }
+        }
+        if (colour) {
+            m_lightTints.push_back(LightTint{index, light.name, light.color});
+            light.color = *colour;
+        }
+    }
+    if (!m_lightTints.empty()) {
+        frame.instance->applyLighting();
+    }
+}
+
 void WorldSigns::rescan(const Frame& frame) {
-    takeOff(*frame.materials);
+    takeOff(*frame.materials, frame.instance);
     m_targets.clear();
     std::map<std::string, std::pair<assets::IdentitySignStyle, std::pair<glm::ivec2, IdentitySignContent>>,
              std::less<>>
@@ -210,6 +313,7 @@ void WorldSigns::update(const Frame& frame) {
         m_dirty = false;
         m_systemsRevision = frame.systemsRevision;
         rescan(frame);
+        tint(frame);
     }
     // A lockstep frame waits for every sign asked (the jobs are milliseconds each).
     if (frame.settle) {
@@ -289,10 +393,10 @@ void WorldSigns::update(const Frame& frame) {
     }
 }
 
-void WorldSigns::release(gl::MaterialRegistry* materials) {
+void WorldSigns::release(gl::MaterialRegistry* materials, SceneInstance* instance) {
     m_pool.cancel(m_generation);
     if (materials != nullptr) {
-        takeOff(*materials);
+        takeOff(*materials, instance);
     }
     m_targets.clear();
     m_drawn.clear();

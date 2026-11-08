@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "fb8101f0778610d6c69ecda8b636f6a81944f19b",
+    "gitCommit": "b9cd91f61a971765c64823d6fe14e6c819603cd8",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture with identity.json pointing at the invented theme fixture: the room's neon shows the theme's original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, in place of the generic \"16-BIT CORNER\"; everything else is G02's.",
+  "description": "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture with identity.json pointing at the invented theme fixture: the room's neon shows the theme's original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, in place of the generic \"16-BIT CORNER\", and (I11 step 6) the neon, its glow and its picture light in the theme palette's accent, clamped into style 3's band, in place of the pack's magenta; everything else is G02's.",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g22_snes_room_identity_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "6f25146c0414d42b67e90fe98c85ab3fda465fa4bf659c9d2a863e8f56d6ea36",
+    "sha256": "024cddd3c25843fb18d5ebedcc6d7b59a6f9a97bf61212d64a133689db4cec51",
     "width": 1920
   },
   "inputs": {
@@ -51,6 +51,7 @@
       "materialize tests/fixtures/esde/theme into <theme>; write <case>/data/config/identity.json: {\"schemaVersion\": 1, \"themeRoots\": [\"<theme>/ES-DE/themes\", \"<theme>/Programs/ES-DE/themes\"]}",
       "a first run of the same command but --frames 300 and without --video-freeze-pts, --spawn or --input-script: the plan generated and written, the covers into the cache",
       "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g22.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data",
+      "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g22_colours_off.png --screenshot-size 1920x1080 --video-freeze-pts 1 --hidden --data-dir <case>/data",
       "build/msvc-x64-debug/bin/retroverse.exe --start-room room:snes --exit-after-frames --frames 30 --fixed-dt 0.016667 --screenshot <case>/g22_hall.png --screenshot-size 1920x1080 --video-freeze-pts 1 --spawn 0.3,0,7.9,0,12 --hidden --data-dir <case>/data"
     ]
   },

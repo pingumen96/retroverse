@@ -244,6 +244,10 @@ struct CatalogRecord {
     std::size_t identitySigns = 0;
     std::size_t identitySignsShown = 0;
     std::size_t identitySignsFailed = 0;
+    /// I11 step 6: "Colori dei sistemi" when the run ended, and the neon materials and lights in their systems' colours.
+    bool systemColors = true;
+    std::size_t tintedNeons = 0;
+    std::size_t tintedLights = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

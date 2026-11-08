@@ -10,6 +10,12 @@
 //
 // The signs are found again when the scene changes (sceneChanged(): a floor shown, objects replaced) or the catalog's
 // systems do (their revision). A logo or a sign that cannot be drawn is logged and leaves that sign generic.
+//
+// I11 step 6 (ADR-0019 §5): with "Colori dei sistemi" on (setSystemColors()), a console room whose system has an accent
+// (SignSystem::accent) has its neon in that colour: the neon's picture materials (the room's sign, the hub's fascia
+// over its doorway when it takes the neon) get it as their base colour (gl::MaterialRegistry::setFactors), the neon's
+// glow light ("<room>/accent:sign_glow") takes it and the sign's picture light ("<room>/fx:hero.sign-light") its tint
+// (world::signLightTint()) in place of the pack's. Off, or taken off, every material and light is as it was.
 
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +30,7 @@
 #include <rv/app/identity_signs.hpp>
 #include <rv/core/worker_pool.hpp>
 #include <rv/render/material_registry.hpp>
+#include <rv/render/material_uniforms.hpp>
 #include <rv/render/texture.hpp>
 #include <rv/scene/scene_description.hpp>
 
@@ -41,7 +48,7 @@ public:
     /// catalog has it, with the revision of the catalog's systems.
     struct Frame {
         const scene::SceneDescription* description = nullptr;
-        const SceneInstance* instance = nullptr;
+        SceneInstance* instance = nullptr;
         gl::MaterialRegistry* materials = nullptr;
         std::function<std::vector<catalog::SystemName>(const world::RoomId&)> sections;
         SignSystemLookup systems;
@@ -59,17 +66,28 @@ public:
 
     /// The scene was replaced or some of its objects were: its signs are found again on the next update().
     void sceneChanged() noexcept { m_dirty = true; }
+    /// I11 step 6: the settings' "Colori dei sistemi" (world.systemColors); a change applies on the next update().
+    void setSystemColors(bool on) noexcept {
+        if (on != m_systemColors) {
+            m_systemColors = on;
+            m_dirty = true;
+        }
+    }
+    [[nodiscard]] bool systemColors() const noexcept { return m_systemColors; }
     /// Once a frame, with the scene shown (none: nothing to do).
     void update(const Frame& frame);
     /// Every override taken off `materials` (when they still hold them), the textures released, the jobs cancelled
     /// (before the pool or the renderer goes).
-    void release(gl::MaterialRegistry* materials);
+    void release(gl::MaterialRegistry* materials, SceneInstance* instance = nullptr);
 
     /// The signs of the scene that show an identity (an override applied), those that should, and the signs that
     /// could not be drawn since the run began.
     [[nodiscard]] std::size_t shown() const noexcept;
     [[nodiscard]] std::size_t wanted() const noexcept { return m_targets.size(); }
     [[nodiscard]] std::size_t failed() const noexcept { return m_failed; }
+    /// I11 step 6: the neon materials and the lights in their systems' colours now.
+    [[nodiscard]] std::size_t tintedMaterials() const noexcept { return m_tints.size(); }
+    [[nodiscard]] std::size_t tintedLights() const noexcept { return m_lightTints.size(); }
 
 private:
     struct Shared;
@@ -89,8 +107,22 @@ private:
         bool pending = false;
     };
 
+    /// A neon material in its system's colour, and what it was.
+    struct Tint {
+        scene::MaterialHandle handle;
+        std::string materialKey;
+        gl::MaterialFactors original;
+    };
+    /// A light in its system's colour, and its colour before.
+    struct LightTint {
+        std::size_t index = 0;
+        std::string name;
+        glm::vec3 original{1.0F};
+    };
+
     void rescan(const Frame& frame);
-    void takeOff(gl::MaterialRegistry& materials);
+    void takeOff(gl::MaterialRegistry& materials, SceneInstance* instance);
+    void tint(const Frame& frame);
 
     core::WorkerPool& m_pool;
     std::filesystem::path m_assetRoot;
@@ -101,6 +133,9 @@ private:
     std::vector<Target> m_targets;
     std::map<std::string, Drawn, std::less<>> m_drawn;
     std::size_t m_failed = 0;
+    bool m_systemColors = true;
+    std::vector<Tint> m_tints;
+    std::vector<LightTint> m_lightTints;
 };
 
 } // namespace rv::app

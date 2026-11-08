@@ -1349,7 +1349,7 @@ TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen a
                       room, run, shot, kFrames);
 }
 
-TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's neon (I11 step 4)",
+TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's neon (I11 steps 4 and 6)",
           "[gpu][golden][golden_room][identity]") {
     GoldenRoom room("g22", "esde/snes-room");
     // identity.json pointing at the invented theme fixture (tests/fixtures/esde/theme): snes is "Lumen 16" with an
@@ -1379,13 +1379,33 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
     CHECK(report.catalog->identitySignsShown == report.catalog->identitySigns);
     CHECK(report.catalog->identitySignsFailed == 0);
     CHECK(report.gpuMemory.kinds[static_cast<std::size_t>(rv::gl::GpuMemoryKind::SignTextures)].peakBytes > 0);
+    // I11 step 6: "Colori dei sistemi" on (the default): the room's neon, its glow and its picture light in the theme's
+    // accent (the fixture palette's yellow, clamped into style §3's band) in place of the pack's magenta.
+    CHECK(report.catalog->systemColors);
+    CHECK(report.catalog->tintedNeons >= 1);
+    CHECK(report.catalog->tintedLights == 2);
     requireScreenshot(run, shot, kShotSize);
-    // Against G02's golden: the neon's picture differs, within the sign (at about (765, 262) - (983, 318) in G02's view);
-    // the rest of the room is G02's (the neon's light is the pack's, not its picture's).
+    // "Colori dei sistemi" off (world.json): the pack's colours exactly. Against G02's golden only the neon's picture
+    // differs, within the sign (at about (765, 262) - (983, 318) in G02's view); the rest of the room is G02's.
     {
+        const fs::path worldJson = room.data / "config" / "world.json";
+        REQUIRE(rv::core::writeTextFileAtomic(worldJson, "{\"systemColors\": false}\n").has_value());
+        const fs::path off = room.dir / "g22_colours_off.png";
+        const AppRun offRun =
+            room.app("g22_colours_off", roomArguments(kFrames, off, {"--video-freeze-pts", std::string(kFreezePts)}));
+        std::error_code removed;
+        fs::remove(worldJson, removed);
+        requireCleanRun(offRun);
+        INFO(offRun.describe());
+        REQUIRE(offRun.report->catalog.has_value());
+        CHECK_FALSE(offRun.report->catalog->systemColors);
+        CHECK(offRun.report->catalog->tintedNeons == 0);
+        CHECK(offRun.report->catalog->tintedLights == 0);
+        CHECK(offRun.report->world.planDigest == report.world.planDigest);
+        requireScreenshot(offRun, off, kShotSize);
         const rv::screenshot_diff::Tolerance tolerance;
         const auto againstG02 =
-            rv::screenshot_diff::compareFiles(goldenDir() / "g02_snes_room_golden.png", shot, tolerance, {});
+            rv::screenshot_diff::compareFiles(goldenDir() / "g02_snes_room_golden.png", off, tolerance, {});
         REQUIRE(againstG02.has_value());
         INFO(againstG02->describe(tolerance));
         CHECK(againstG02->differingPixels > 2000);
@@ -1393,6 +1413,11 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
         CHECK(againstG02->differingMin.y >= 240);
         CHECK(againstG02->differingMax.x <= 1010);
         CHECK(againstG02->differingMax.y <= 340);
+        // And the colours on differ from it beyond the sign: the glow on the wall around it.
+        const auto onOff = rv::screenshot_diff::compareFiles(off, shot, tolerance, {});
+        REQUIRE(onOff.has_value());
+        INFO(onOff->describe(tolerance));
+        CHECK(onOff->differingPixels > 2000);
     }
     // The hall in front of the room's doorway (room:snes' frame: the doorway in its south wall at z 5 m, the hall's
     // centre line at z 6.65 m), looking north at the portal's plate and its blades, lit plates with the logo in its
@@ -1413,7 +1438,9 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
                        "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture "
                        "with identity.json pointing at the invented theme fixture: the room's neon shows the theme's "
                        "original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, "
-                       "in place of the generic \"16-BIT CORNER\"; everything else is G02's.",
+                       "in place of the generic \"16-BIT CORNER\", and (I11 step 6) the neon, its glow and its picture "
+                       "light in the theme palette's accent, clamped into style 3's band, in place of the pack's "
+                       "magenta; everything else is G02's.",
                        "the plan's scene camera at the doorway (no --spawn), as G02's", std::nullopt},
                       room, run, shot, kFrames);
 }

@@ -46,13 +46,15 @@ WorldConfig readCanonicalDocument(DocumentReader& document, const Json& value) {
     const ObjectReader reader(document, value, "",
                               {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
                                "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed",
-                               "sharedRoomMinTitles"});
+                               "sharedRoomMinTitles", "systemColors"});
     WorldConfig config;
     config.preset = reader.dataId("preset");
     config.lightingProfile = reader.dataId("lightingProfile");
     config.seed = reader.nullableUnsignedInteger("seed");
     readPresetValues(reader, config);
     config.reduceMotion = reader.boolean("reduceMotion");
+    // I11 step 6: a document written before it has none (on).
+    config.systemColors = reader.optionalBoolean("systemColors").value_or(true);
     checkInDocument(document, config);
     return config;
 }
@@ -67,7 +69,8 @@ Json documentJson(const WorldConfig& config) {
                 {"placement", Json{{"include", toString(config.include)}}},
                 {"sharedRoomMinTitles", config.sharedRoomMinTitles},
                 {"reduceMotion", config.reduceMotion},
-                {"lightingProfile", config.lightingProfile}};
+                {"lightingProfile", config.lightingProfile},
+                {"systemColors", config.systemColors}};
 }
 
 std::filesystem::path presetPath(const std::filesystem::path& assetRoot, std::string_view id) {
@@ -169,7 +172,7 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
     const ObjectReader reader(document, *value, "",
                               {"decorationDensityPermille", "growthReservePermille", "lightingProfile",
                                "mainPassageWidthMm", "minClearWidthMm", "placement", "preset", "reduceMotion", "seed",
-                               "sharedRoomMinTitles"});
+                               "sharedRoomMinTitles", "systemColors"});
     WorldConfigOverrides overrides;
     if (reader.has("preset")) {
         overrides.preset = reader.dataId("preset");
@@ -190,6 +193,7 @@ Expected<WorldConfigOverrides> parseWorldConfigOverrides(std::string_view text, 
     }
     overrides.sharedRoomMinTitles = reader.optionalInteger("sharedRoomMinTitles", 0, kMaxSharedRoomMinTitles);
     overrides.reduceMotion = reader.optionalBoolean("reduceMotion");
+    overrides.systemColors = reader.optionalBoolean("systemColors");
     if (reader.has("lightingProfile")) {
         overrides.lightingProfile = reader.dataId("lightingProfile");
     }
@@ -229,6 +233,9 @@ Expected<WorldConfig> applyOverrides(WorldConfig base, const WorldConfigOverride
     }
     if (overrides.lightingProfile) {
         base.lightingProfile = *overrides.lightingProfile;
+    }
+    if (overrides.systemColors) {
+        base.systemColors = *overrides.systemColors;
     }
     if (auto status = checkWorldConfig(base); !status) {
         return propagate(status.error());
@@ -299,6 +306,8 @@ void applyShownKeys(WorldConfig& config, const nlohmann::json& overlay, const st
             config.reduceMotion = value.get<bool>();
         } else if (key == "lightingProfile" && value.is_string() && knownProfile(value.get<std::string>())) {
             config.lightingProfile = value.get<std::string>();
+        } else if (key == "systemColors" && value.is_boolean()) {
+            config.systemColors = value.get<bool>();
         } else {
             refused.push_back(key);
         }
@@ -308,7 +317,7 @@ void applyShownKeys(WorldConfig& config, const nlohmann::json& overlay, const st
 } // namespace
 
 std::span<const std::string_view> worldSettingKeys() noexcept {
-    static constexpr std::array<std::string_view, 2> kKeys = {"reduceMotion", "lightingProfile"};
+    static constexpr std::array<std::string_view, 3> kKeys = {"reduceMotion", "lightingProfile", "systemColors"};
     return kKeys;
 }
 
@@ -319,7 +328,8 @@ Expected<LoadedWorldConfig> loadWorldConfig(const std::filesystem::path& assetRo
         return loaded;
     }
     loaded->belowSettings = nlohmann::json{{"reduceMotion", loaded->config.reduceMotion},
-                                           {"lightingProfile", loaded->config.lightingProfile}};
+                                           {"lightingProfile", loaded->config.lightingProfile},
+                                           {"systemColors", loaded->config.systemColors}};
     applyShownKeys(loaded->config,
                    core::SettingsFile::loadBeside(userConfigDir).section(kWorldSettingsSection, worldSettingKeys()),
                    assetRoot, loaded->refusedKeys);
