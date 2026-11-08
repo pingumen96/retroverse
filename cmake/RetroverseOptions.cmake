@@ -14,6 +14,10 @@ option(RV_GL_DEBUG "Request a debug OpenGL context and route GL_DEBUG_OUTPUT to 
 option(RV_ENABLE_TRACY "Enable Tracy profiler instrumentation" OFF)
 option(RV_WARNINGS_AS_ERRORS "Treat compiler warnings as errors in project targets" ON)
 option(RV_DEV_ASSET_ROOT "Resolve assets from the source tree first (shader hot-reload edits the real files)" ON)
+# RV_USE_PCH gives every first-party target a precompiled header of the standard library and of the third-party headers
+# it can reach (cmake/TargetDefaults.cmake, rv_apply_precompiled_headers). Turned off, every file compiles from its own
+# includes alone: a build without it finds an include a file forgot and the precompiled header supplied.
+option(RV_USE_PCH "Precompile the standard and third-party headers of every first-party target" ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)

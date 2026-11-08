@@ -262,6 +262,19 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   which the presets share: `scripts/build.ps1` and `scripts/gate.ps1` run `cmake --preset` again, once, for a tree whose
   cache lacks `xr` (not with `RV_ENABLE_XR` off), and a bare `cmake --build` that regenerates such a tree stops with
   "Could not find OpenXR", naming that command.
+- Build speed. Every first-party target precompiles the standard library and the third-party headers it reaches (glm,
+  spdlog and fmt, nlohmann/json, tl::expected through `rv_core`; Catch2 in the tests): `rv_apply_precompiled_headers` in
+  `cmake/TargetDefaults.cmake`, `RV_USE_PCH` (on). Those headers were most of a file's front-end time: a full Debug
+  build went from about 3.3 CPU hours to about 1.1 (median file 8.9 s to 2.1 s). A precompiled header can hide an
+  include a file forgot; `-DRV_USE_PCH=OFF` in a tree of its own finds it. No target scans for C++20 modules
+  (`CMAKE_CXX_SCAN_FOR_MODULES` off: Retroverse has none). A configure skips vcpkg's manifest install when the manifest,
+  its features, the triplets, the vcpkg executable, the MSVC toolset and the installed tree's status are those of the
+  last install into `build/vcpkg_installed` (`cmake/VcpkgManifestStamp.cmake`, the key in
+  `build/vcpkg_installed/.retroverse-manifest-stamp`): a regeneration then takes a second or two instead of tens.
+  `./scripts/build.ps1 -Fresh` removes the stamp, as does deleting it by hand. `./scripts/test.ps1 -Jobs <n>` runs
+  that many tests at once (the Debug unit tests: about 41 minutes one at a time, 12 with 8 jobs), a local check only:
+  with 8 jobs `app/world_flow: a start room kept until a regeneration ...` missed its 60 s wall-clock deadline once, so
+  the gates keep one at a time.
 - Unit tests run with `ctest`; a single Catch2 test can also run directly:
   `build/msvc-x64-debug/bin/rv_tests.exe "core/aabb*"` (`rv_tests` runs its launches in the background, see "Safety
   rules"). The catalog query benchmarks (I2 step 9: NFR-02 on 10,000 games, a UI page on 100,000, what the search area

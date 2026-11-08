@@ -23,7 +23,7 @@ tools).
 ./scripts/build.ps1                                   # msvc-x64-debug; -Preset msvc-x64-release | -relwithdebinfo
 ./scripts/build.ps1 -Target rv_tests                  # one target
 ./scripts/test.ps1                                    # unit tests (label "unit")
-./scripts/test.ps1 -Filter aabb                       # ctest -R aabb
+./scripts/test.ps1 -Filter aabb                       # ctest -R aabb; -Jobs 4 runs tests at once (local check only)
 ./scripts/test.ps1 -Preset msvc-x64-debug-gpu         # also the GPU smoke tests (label "gpu")
 ./scripts/gate.ps1 -Gate D                            # the latest gate: build matrix, tests, goldens, benchmark path
 ./scripts/gate.ps1 -Gate D -RealLibrary               # also the real library's building, migrations and SNES room
