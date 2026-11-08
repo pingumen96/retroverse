@@ -828,6 +828,11 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
   nearer than 2.8 m in front shows behind it; drawn as a scene object (or with the eyes' depth) it would sit in the room.
 - **`gameScreen` on the settings screen** (I11 step 14): xr.json's choice of the large screen beside a CRT, kept out of
   Impostazioni until the headset session says it is worth a row.
+- **The signs' logo cache and BC3** (I11 step 4, ADR-0019 §3): the identity's signs are drawn at the generic
+  pictures' size (512 pixels wide, about 0.3 MiB each with mips) from logos rasterized once per run; a cache under
+  `cache/identity/` and BC3 when a floor's memory row or a slow start asks for them.
+- **A shared room's own neon from its sections** (I11 step 4): its neon keeps the generic sign that names the room's
+  kind; its portal shows its sections' logos.
 - **The identity of systems without a linear-es-de entry:** a theme with another metadata layout would need a reader
   of its own; until then such a system shows ES-DE's fullname and, where a theme has one, its logo.
 ## Branding

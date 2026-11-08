@@ -237,6 +237,8 @@ public:
     void setHeldAside(bool aside) { m_interaction->setHeldAside(aside); }
     /// The item the frame's ray rests on (the room's), or world::kNoPick.
     [[nodiscard]] world::PickId hovered() const noexcept { return m_interaction->hovered(); }
+    /// I11 step 4: the sections (systems) of `room` in the plan shown; none without a plan or such a room.
+    [[nodiscard]] std::vector<catalog::SystemName> roomSections(const world::RoomId& room) const;
     void applyInspection(gl::RenderView& view) {
         m_interaction->applyInspection(view);
         applyEditOutline(view);

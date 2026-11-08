@@ -67,6 +67,10 @@ inline constexpr float kNeonBacking = 0.05f;
 [[nodiscard]] ImageData makeNeonLettering(int width, int height, std::string_view text);
 /// The "handheld_icon" pattern (kPatternHandheldIcon): a generic handheld's pictogram in the neon's tubes.
 [[nodiscard]] ImageData makeHandheldIcon(int width, int height);
+/// `strokes` (RGBA8, its pixels of red 128 and more the strokes, white on black) drawn as makeNeonLettering() draws its
+/// letters: bent glass tubes, their halo, the neon's backing (I11 step 4: a logo's outline and its name on a room's
+/// neon). An image that is not RGBA8 comes back as it is.
+[[nodiscard]] ImageData makeNeonTubes(ImageData strokes);
 
 /// Pattern names shared with the scene description files (textures.<role>.pattern).
 inline constexpr std::string_view kPatternColorBars = "color_bars";

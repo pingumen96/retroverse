@@ -21,6 +21,7 @@
 
 #include <rv/app/catalog_database_source.hpp>
 #include <rv/app/catalog_worker.hpp>
+#include <rv/app/identity_signs.hpp>
 #include <rv/app/launch_flow.hpp>
 #include <rv/app/launch_outcome.hpp>
 #include <rv/app/mock_catalog.hpp>
@@ -218,6 +219,12 @@ public:
     [[nodiscard]] virtual std::string systemFullName(const catalog::SystemName& /*system*/) const { return {}; }
     /// I11 step 3: the systems that have a logo file, in the chips' order.
     [[nodiscard]] virtual std::vector<SystemLogoFile> systemLogos() const { return {}; }
+    /// I11 step 4: `system` as the rooms' signs show it (its shown name, ES-DE's <fullname>, its logo file); nothing
+    /// when the catalog does not know it. And a revision that advances whenever the systems change.
+    [[nodiscard]] virtual std::optional<SignSystem> signSystem(const catalog::SystemName& /*system*/) const {
+        return std::nullopt;
+    }
+    [[nodiscard]] virtual std::uint64_t systemsRevision() const { return 0; }
 
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
@@ -369,6 +376,8 @@ public:
     void frameStarted() override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
     [[nodiscard]] std::vector<SystemLogoFile> systemLogos() const override;
+    [[nodiscard]] std::optional<SignSystem> signSystem(const catalog::SystemName& system) const override;
+    [[nodiscard]] std::uint64_t systemsRevision() const override { return m_source.systemsRevision(); }
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
     [[nodiscard]] const CatalogDatabaseSource& databaseSource() const noexcept { return m_source; }
