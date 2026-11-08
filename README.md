@@ -1,121 +1,173 @@
-# Retroverse
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/retroverse-lockup.svg">
+    <img src="assets/branding/retroverse-lockup-light.svg" alt="Retroverse" width="520">
+  </picture>
+</p>
 
-Retroverse turns an [ES-DE](https://es-de.org/) game collection into an explorable 3D world: a warm retro-gaming
-museum whose rooms, shelves, cartridges and CRT televisions are generated from the library itself. Pick up a
-cartridge, read its card, watch its preview on a CRT and launch the emulator, or skip the walk and use the quick
-launcher.
+<p align="center">
+  <b>Your retro game collection, as a building you can walk through.</b><br>
+  A native Windows frontend for <a href="https://es-de.org/">ES-DE</a> that turns your library into a warm 3D museum
+  of rooms, shelves and CRT televisions.
+</p>
 
-It is a native Windows application written in C++20 with OpenGL 4.5 and SDL3, without a game engine. Retroverse
-does not emulate anything and never copies or rewrites the collection: ROMs, `gamelist.xml` metadata and media
-stay where ES-DE keeps them.
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#controls">Controls</a> ·
+  <a href="#where-it-stands">Where it stands</a> ·
+  <a href="#for-developers">For developers</a> ·
+  <a href="docs/roadmap.md">Roadmap</a>
+</p>
 
-> **Status:** milestones M0 (native foundations), M1 (the ES-DE catalog and the launcher) and M2 (the SNES vertical
-> slice) are done. I4, the first part of milestone M3, builds the whole library into a building
-> ([ADR-0013](docs/decisions/ADR-0013-the-building.md)): every system in a room, one room per console, the small
-> systems sharing their floor's room, the arcade systems in the arcade room; one floor per console generation, a
-> handheld floor and a computer floor, joined by an elevator whose directory also lists your favourites and recent
-> games. Every item stands with its real cover, and you can walk up to it, pull it out, inspect it, read about it and
-> launch it, while the room's CRT plays a clip. I6 styled the building
-> ([ADR-0014](docs/decisions/ADR-0014-the-styling-pass.md)): light through the doorways, dressed halls, a theme per
-> floor, cases standing with their spines out, a double-height hub, arcade cabinets and handheld counters. I4 and I6
-> are done (Gates C and D: [docs/testing/gate-c.md](docs/testing/gate-c.md),
-> [docs/testing/gate-d.md](docs/testing/gate-d.md)). See [docs/roadmap.md](docs/roadmap.md).
+![The ground floor's hub: a hologram globe over a showcase of consoles, sofas, rugs and a mezzanine](assets/style_tests/screenshots/g14_hub_entrance_golden.png)
 
-![A generated room: golden G02s](assets/style_tests/screenshots/g02s_snes_stress_golden.png)
+## What it is
 
-*Golden G02s: the room generated for a 2,000-title test fixture (invented titles, generated covers) from its doorway at
-1920x1080. Everything in it is procedural and original: the room, the shelves, display cases and furniture, the CRT,
-the cartridges' labels and spines, the posters and the sign, and the wood, plaster, rug, metal and plastic surfaces.
-The checklist of style.md section 26.2 for the room goldens is in [docs/testing/gate-b.md](docs/testing/gate-b.md),
-for the M0 test room (golden G01) in [docs/testing/gate-a.md](docs/testing/gate-a.md).*
+Retroverse reads the collection you already keep in ES-DE and builds a world from it. Every system gets a room, every
+game stands on a shelf with its real cover, and the room's CRT plays its clips. Walk up to a game, pull it out, turn it
+in your hands, read about it and press **Avvia**: the emulator starts, and when you quit you are back in the room where
+you left off. If you would rather skip the walk, the quick catalog finds any title in a few keystrokes.
 
-## What M0 delivers
+- **A building made from your library.** There is a floor for each console generation, plus one for handhelds and one
+  for computers. An elevator joins them, and its directory also lists your favourites and recent games. The arcade
+  systems share an arcade room, and the small systems share a room on their floor.
+- **Deterministic and yours.** The same library always produces the same building. A game added later finds a free spot
+  without moving anything, and the editor lets you move, swap and pin games and furniture.
+- **Screens that play.** CRTs, secondary TVs and arcade cabinets play the clips ES-DE scraped, with spatial sound, CRT
+  presets and fallbacks down to a generated title card.
+- **Daily use from the couch.** Everything works from a gamepad: a first-run wizard, settings, remapping, an on-screen
+  keyboard, emulator choices with launch tests, play statistics and a library that refreshes itself when ES-DE adds
+  games.
+- **VR.** Put on an OpenXR headset (Meta Quest over Link or Air Link, SteamVR) to walk the building and play the
+  launched game on the room's CRT.
+- **Read-only and brand-free.** Retroverse never copies, moves or rewrites your ROMs, `gamelist.xml` files or media. It
+  ships no ROMs, BIOS files, cover art or trademarks. The consoles' real names and logos are read at runtime from your
+  ES-DE themes and never stored in the repository.
 
-- **A native foundation:** SDL3 window and OpenGL 4.5 core context with debug output, a frame loop that runs
-  interactively or for a fixed number of frames (automation), logging, a command line with documented exit codes.
-- **Input:** keyboard, mouse and gamepads (hot-plug) through a remappable action map; first-person walking with
-  capsule collision against walls and furniture; scripted input and fixed time steps for reproducible runs.
-- **Rendering:** a forward PBR renderer with batching and instancing; the key light's shadow map, a depth pre-pass and
-  screen-space ambient occlusion; linear HDR with localized bloom, vignette, ACES tonemapping, dithering and FXAA;
-  CRT screens with curvature, scanlines and an aperture grille; procedural PBR surfaces generated at startup.
-- **Content:** glTF models with sockets (`Anchor_*`, `ScreenSurface`, `ColliderProxy`), procedural prefabs (room shell,
-  shelf, cartridge, CRT, TV cabinet, console, poster, rug, lamps, armchair), material presets, scene description files.
-- **Tools:** a Dear ImGui developer overlay (stats, camera, lights, materials, rendering switches, log, scene),
-  `retroverse-asset-preview` to inspect a model, a manifest or a prefab (bounds, sockets, screens, statistics, view
-  modes), `retroverse-screenshot-diff` to compare screenshots with golden images.
-- **Verification:** more than 500 unit tests (GPU-free, plus the SDL platform layer), GPU smoke tests that run the
-  executables on every reference scene and check their reports and screenshots (frame statistics, OpenGL errors, the
-  sRGB, bloom and FXAA self-checks, the shadow, the ambient occlusion, the overlay, the asset preview, the golden
-  image), and `scripts/gate.ps1`, which builds the Debug, RelWithDebInfo and Release configurations and runs the unit
-  tests, the smoke tests, the I1 spike checks and the golden comparison of Debug and Release.
+<table>
+  <tr>
+    <td><img src="assets/style_tests/screenshots/g15_arcade_room_golden.png" alt="The arcade room: rows of cabinets under neon strips"></td>
+    <td><img src="assets/style_tests/screenshots/g07_inspect_card_golden.png" alt="A game pulled from the shelf, with its card: Avvia, Vedi media, Informazioni"></td>
+  </tr>
+  <tr>
+    <td><img src="assets/style_tests/screenshots/g17_optical_era_room_golden.png" alt="An optical-era room: display cases, shelves of cases and a CRT"></td>
+    <td><img src="assets/style_tests/screenshots/g02s_snes_stress_golden.png" alt="A 16-bit room with 2,000 cartridges on its shelves"></td>
+  </tr>
+</table>
 
-## Requirements
+<sub>These are the golden screenshots the tests compare against. They use invented test fixtures: every title, cover,
+poster and label is generated, and so are the rooms, the furniture and their surfaces.</sub>
 
-- Windows 10/11 x64, a GPU with OpenGL 4.5 core support.
+## Quick start
+
+You need **Windows 10 or 11 (x64)**, a GPU with **OpenGL 4.5**, and an **ES-DE** installation with a scraped
+collection. There is no installer yet, so build Retroverse from source (see [Build](#build)), then run:
+
+```powershell
+./build/msvc-x64-release/bin/retroverse.exe
+```
+
+The first start opens a wizard, which you can drive from the pad. It finds ES-DE, previews your library and imports it.
+Planning the building takes a few seconds. After that you start in the ground floor's lobby, and covers load as you
+walk. Later starts show the stored building at once.
+
+Other ways to start:
+
+```powershell
+./build/msvc-x64-release/bin/retroverse.exe --start-room room:snes   # straight into one system's room
+./build/msvc-x64-release/bin/retroverse.exe --vr                     # in the headset
+./build/msvc-x64-release/bin/retroverse.exe --data-dir D:\rv         # keep Retroverse's own data in a folder you choose
+./build/msvc-x64-release/bin/retroverse.exe --help                   # every option
+```
+
+`retroverse-cli` does the same from a terminal: `library create` and `import` set up the library without the wizard,
+and `--help` lists the rest. Retroverse writes only to its own data directory, never into ES-DE's folders.
+
+## Controls
+
+| | Keyboard and mouse | Gamepad |
+|---|---|---|
+| Walk, sprint | WASD or arrows, Left Shift | Left stick, click it |
+| Look around | Mouse | Right stick |
+| Take, inspect, choose | E or left click | A |
+| Back one level | Esc | B |
+| Elevator directory (floors, rooms, favourites, recent) | M, or E facing the elevator | Back / Select |
+| Quick catalog | Tab | Y |
+| Menu (settings, emulators, statistics, library) | F10 | Start |
+| Fullscreen, screenshot | Alt+Enter, F12 | |
+
+Every binding can be changed in the settings screen, and the hint bar at the bottom always shows the current ones.
+
+## Where it stands
+
+Retroverse is a personal project that grows in iterations, each closed by a gate of automated checks and a session
+played by hand ([roadmap](docs/roadmap.md)).
+
+- **Done:**
+  - native foundations;
+  - the ES-DE catalog and launcher;
+  - the first room;
+  - the whole building and its styling;
+  - customization;
+  - screens and media;
+  - VR through OpenXR.
+- **In progress:**
+  - daily use (M5, part 1): the menu, wizard, settings, emulators, controls, statistics, file watcher and library
+    screens are in, and the controller-only Gate Pad comes next;
+  - the consoles' real identity and every emulator in VR (I11): names and logos are in the UI, and logos on the room
+    signs come next.
+- **Ahead:** performance work, hero assets, then an installer, a portable build and the first release.
+
+## For developers
+
+Retroverse is written in C++20 with OpenGL 4.5 core and SDL3, with no game engine. It is split into small libraries:
+the catalog, the world generator and the launcher run without a GPU and are unit tested, and the renderer, UI and VR
+layers sit on top ([architecture](docs/architecture.md)).
+
+### Build
+
+Requirements:
+
 - Visual Studio 2026 with the "Desktop development with C++" workload (MSVC 14.5x, bundled CMake and Ninja).
-- [vcpkg](https://github.com/microsoft/vcpkg) cloned locally and bootstrapped, with `VCPKG_ROOT` pointing at it (set
-  for the user, not only in a shell: `scripts/dev.ps1` keeps it through the Visual Studio developer environment, which
-  would point it at Visual Studio's bundled vcpkg; ADR-0007). The manifest pins the baseline in `vcpkg.json`; update
-  the clone if that commit is missing.
-
-## Build and test
+- [vcpkg](https://github.com/microsoft/vcpkg), cloned and bootstrapped, with `VCPKG_ROOT` set for the user, not only in
+  a shell. The baseline is pinned in `vcpkg.json` ([ADR-0007](docs/decisions/ADR-0007-vcpkg-clone.md)).
 
 ```powershell
-./scripts/build.ps1                                # Debug (msvc-x64-debug); the first run installs vcpkg packages
-./scripts/test.ps1                                 # unit tests
-./scripts/test.ps1 -Preset msvc-x64-debug-gpu      # unit tests and GPU smoke tests
-./scripts/gate.ps1 -Gate A                         # Debug, RelWithDebInfo, Release builds; tests of Debug and Release
-./scripts/gate.ps1 -Gate B                         # Gate A, every golden, the I3 checks and the benchmarks
-./scripts/gate.ps1 -Gate C                         # Gate A, every golden, the I4 checks and the benchmark path
-./scripts/gate.ps1 -Gate D                         # Gate C and the I6 checks (-RealLibrary: the real library too)
+./scripts/build.ps1                                  # Debug; the first run restores the vcpkg packages
+./scripts/build.ps1 -Preset msvc-x64-release         # Release, the one to play with
+./scripts/test.ps1                                   # unit tests
+./scripts/test.ps1 -Preset msvc-x64-debug-gpu        # plus the GPU smoke tests
+./scripts/gate.ps1 -Gate D                           # build matrix, tests, golden screenshots, benchmark path
 ```
 
-Other presets: `msvc-x64-relwithdebinfo`, `msvc-x64-release` (no developer overlay, assets deployed next to the
-executable), `msvc-x64-profile` (Tracy). The scripts enter the Visual Studio developer environment on each call; see
-[CLAUDE.md](CLAUDE.md) for every command and option.
+The scripts enter the Visual Studio developer environment for you. Don't call `cmake`, `ctest` or `ninja` directly.
 
-## Run
+### Where to read next
 
-```powershell
-./build/msvc-x64-release/bin/retroverse-cli.exe library create  # once: find ES-DE and record the library
-./build/msvc-x64-release/bin/retroverse-cli.exe import          # import its catalog (again to refresh)
-./build/msvc-x64-release/bin/retroverse.exe                     # your collection's building: the ground floor's lobby
-./build/msvc-x64-release/bin/retroverse.exe --start-room room:snes  # straight into your SNES games' room
-./build/msvc-x64-debug/bin/retroverse.exe --scene m0_testroom   # the M0 test room; Esc releases the mouse, again quits
-./build/msvc-x64-debug/bin/retroverse.exe --scene material_test
-./build/msvc-x64-debug/bin/retroverse.exe --model path/to/model.glb
-./build/msvc-x64-debug/bin/retroverse-asset-preview.exe prefab:crt
-./build/msvc-x64-debug/bin/retroverse.exe --help
-```
+| Document | What it covers |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | The working guide: commands, layering, conventions and safety rules |
+| [docs/reference/](docs/reference/) | Build and test, running the app, visual verification, the CLI, the module layout |
+| [docs/architecture.md](docs/architecture.md) | Modules, the frame pipeline and testing |
+| [docs/roadmap.md](docs/roadmap.md) | Iterations, gates and the working method |
+| [docs/decisions/](docs/decisions/) | Architecture decision records (binding) |
+| [docs/branding.md](docs/branding.md) | The logo and how to use it |
+| [specification.md](specification.md), [style.md](style.md), [example.png](example.png) | Product specification, art bible and the approved concept (Italian) |
 
-The first start plans the building (a few seconds; the library's covers are derived while you walk, a floor's the
-first time you visit it); later starts show the stored lobby at once. `--data-dir <folder>` keeps everything Retroverse
-writes (the catalog, the plan, the derived covers) in a folder of your choice; it never writes into ES-DE's folders.
-How to try the building: [docs/testing/gate-c.md](docs/testing/gate-c.md), "Try the building".
-
-Controls: WASD or the left stick walk (Left Shift sprints), the mouse or the right stick look around; E, a click or
-the pad's A takes the item you point at (Focus, then Inspect with its card: Avvia, Vedi media, Informazioni); facing
-the elevator, E (pad A) opens the directory of floors and rooms, M (pad Back/Select) opens it anywhere: choose a floor
-or a room to ride there, or a favourite or recent game; Tab (gamepad Y) opens the quick catalog ("Mostra nella stanza"
-takes you to a game's item, riding the elevator if needed); Esc (gamepad B) leaves one level, F1 toggles the developer
-overlay, F5 reloads the shaders, F12 saves a screenshot, Alt+Enter toggles fullscreen.
-
-## Repository layout
+### Repository layout
 
 | Path | Content |
 |---|---|
-| `src/` | Engine-free application code, one library per module (see [docs/architecture.md](docs/architecture.md)) |
-| `assets/` | Shaders, material presets, prefab manifests, asset registry, reference scenes and their golden screenshots |
-| `tests/` | Catch2 unit tests (GPU-free and SDL platform layer), test helpers, scripted input runs, GPU smoke tests |
-| `tools/` | Developer tools (asset preview, screenshot diff) and `retroverse-cli`, the ES-DE catalog from the command line (I2) |
-| `spikes/` | I1 measurement executables (video, product UI, emulator return) and their tests; reports in `docs/spikes/` |
-| `scripts/` | Build, test and gate scripts (PowerShell), test model generator (Python) |
-| `third_party/` | Vendored code not available through vcpkg (generated glad loader, RmlUi's SDL3 and OpenGL 3 backends) |
-| `docs/` | Roadmap, architecture, decision records, spike reports, testing notes |
-| `specification.md`, `style.md`, `example.png` | Product specification, art bible and concept (Italian) |
+| `src/` | The application, one library per module, `app` as the composition root |
+| `assets/` | Shaders, materials, prefabs, UI documents, the logo, the asset registry, the reference scenes and their goldens |
+| `tests/` | Catch2 unit tests, GPU smoke tests, scripted input runs, original fixtures |
+| `tools/` | `retroverse-cli`, the asset preview and the screenshot diff |
+| `scripts/` | Build, test and gate scripts, Python oracles, the logo's generator |
+| `third_party/` | Vendored code not available through vcpkg |
+| `docs/` | Roadmap, architecture, decisions, step notes, testing and reference |
 
 ## License
 
-Retroverse source code is released under the [MIT License](LICENSE). Third-party libraries keep their own licenses,
-listed with their versions and notices in [docs/third-party.md](docs/third-party.md).
-Retroverse ships no ROMs, BIOS files, cover art or other copyrighted game content.
+The Retroverse source code is released under the [MIT License](LICENSE). Third-party libraries keep their own
+licenses, which are listed with their versions in [docs/third-party.md](docs/third-party.md). Retroverse ships no
+ROMs, BIOS files, cover art or other copyrighted game content.
