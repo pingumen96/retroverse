@@ -805,6 +805,14 @@ std::string EsdeAppCatalog::systemFullName(const catalog::SystemName& system) co
     return known != nullptr ? known->fullName : std::string();
 }
 
+std::optional<SignSystem> EsdeAppCatalog::signSystem(const catalog::SystemName& system) const {
+    const CatalogSystem* known = m_source.findSystem(system.str());
+    if (known == nullptr) {
+        return std::nullopt;
+    }
+    return SignSystem{known->fullName, known->esdeName, known->logo};
+}
+
 std::vector<SystemLogoFile> EsdeAppCatalog::systemLogos() const {
     std::vector<SystemLogoFile> logos;
     for (const CatalogSystem& system : m_source.systems()) {

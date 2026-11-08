@@ -58,6 +58,7 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         m_openError = opened.state == CatalogState::Ready ? opened.libraryError : opened.error;
         m_library = opened.library;
         m_systems = std::move(opened.systems);
+        ++m_systemsRevision;
         m_pages = std::move(opened.pages);
         m_firstList = std::move(opened.firstList);
         m_interrupted = opened.interrupted.size();
@@ -73,6 +74,7 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
         // games' own readiness is asked again as their rows are read (QuickCatalogModel::refresh reads them).
         CatalogRefreshed& refreshed = *results.refreshed;
         m_systems = std::move(*refreshed.systems);
+        ++m_systemsRevision;
         refreshed.systems.reset();
         if (m_state == CatalogState::Ready) {
             m_openError = refreshed.libraryError;
@@ -86,6 +88,7 @@ CatalogDatabaseSource::Collected CatalogDatabaseSource::collect(CatalogResults& 
     if (results.resolved) {
         // I7 step 4: what is stored changed: the same chips, another readiness, a new generation.
         m_systems = std::move(results.resolved->systems);
+        ++m_systemsRevision;
         m_generation = results.resolved->generation;
         m_readiness.clear();
         m_asked.clear();

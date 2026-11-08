@@ -746,6 +746,13 @@ ImageData makeNeonLettering(int width, int height, std::string_view text) {
     return neonTubes(std::move(image));
 }
 
+ImageData makeNeonTubes(ImageData strokes) {
+    if (!strokes.isValid() || strokes.channels != 4) {
+        return strokes;
+    }
+    return neonTubes(std::move(strokes));
+}
+
 ImageData makeHandheldIcon(int width, int height) {
     ImageData image = makeSolid(width, height, Rgba(0, 0, 0, 255));
     if (!image.isValid()) {

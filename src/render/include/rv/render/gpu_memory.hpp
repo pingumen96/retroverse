@@ -38,23 +38,25 @@ enum class GpuMemoryKind : std::uint8_t {
     Buffers,
     /// Pictures the product UI shows that the app makes (I11 step 3: the systems' logos, SystemLogos).
     UiTextures,
+    /// The rooms' signs drawn from the systems' identity (I11 step 4: WorldSigns), over the scene's generic ones.
+    SignTextures,
 };
-inline constexpr std::size_t kGpuMemoryKindCount = 8;
+inline constexpr std::size_t kGpuMemoryKindCount = 9;
 
 /// Every kind, in declaration order.
 inline constexpr std::array<GpuMemoryKind, kGpuMemoryKindCount> kGpuMemoryKinds{
     GpuMemoryKind::ProceduralSurfaces, GpuMemoryKind::CollectionArrays, GpuMemoryKind::HeroTextures,
     GpuMemoryKind::Video,              GpuMemoryKind::Targets,          GpuMemoryKind::SceneTextures,
-    GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,
+    GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,       GpuMemoryKind::SignTextures,
 };
 
 /// The run report's key: "proceduralSurfaces", "collectionArrays", "heroTextures", "video", "targets",
-/// "sceneTextures", "buffers".
+/// "sceneTextures", "buffers", "uiTextures", "signTextures".
 [[nodiscard]] std::string_view toString(GpuMemoryKind kind) noexcept;
 /// The kind toString() names, or nothing.
 [[nodiscard]] std::optional<GpuMemoryKind> gpuMemoryKindFromString(std::string_view name) noexcept;
 /// A short label for the Stats panel's narrow column (toString() in its tooltip): "Surfaces", "Arrays", "Hero",
-/// "Video", "Targets", "Textures", "Buffers".
+/// "Video", "Targets", "Textures", "Buffers", "UI", "Signs".
 [[nodiscard]] std::string_view displayName(GpuMemoryKind kind) noexcept;
 
 /// Storage formats of the renderer's textures and render targets, by what a texel or a block takes.

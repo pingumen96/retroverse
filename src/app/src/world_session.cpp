@@ -202,6 +202,18 @@ std::string WorldSession::noticeRoom() const {
     return m_options.startRoom ? m_options.startRoom->toString() : std::string();
 }
 
+std::vector<catalog::SystemName> WorldSession::roomSections(const world::RoomId& room) const {
+    if (!m_planState || !m_planState->plan) {
+        return {};
+    }
+    for (const world::Room& candidate : m_planState->plan->rooms) {
+        if (candidate.id == room) {
+            return candidate.sections;
+        }
+    }
+    return {};
+}
+
 void WorldSession::setNotice(WorldNoticeContent notice, bool timed) {
     m_notice = std::move(notice);
     m_noticeTimed = timed;

@@ -239,6 +239,11 @@ struct CatalogRecord {
     std::size_t identityNames = 0;
     std::size_t logoFiles = 0;
     std::size_t logosShown = 0;
+    /// I11 step 4: the signs of the scene shown when the run ended that show their room's identity (WorldSigns), those
+    /// that showed it, and the signs that could not be drawn during the run.
+    std::size_t identitySigns = 0;
+    std::size_t identitySignsShown = 0;
+    std::size_t identitySignsFailed = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

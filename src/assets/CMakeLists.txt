@@ -14,6 +14,7 @@ add_library(rv_assets STATIC
     src/glb_writer.cpp
     src/gltf_geometry.cpp
     src/gltf_loader.cpp
+    src/identity_sign.cpp
     src/image_decode.cpp
     src/image_encode.cpp
     src/image_io.cpp

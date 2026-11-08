@@ -62,6 +62,7 @@ add_library(rv_app_cli STATIC
     src/world_edit_interaction.cpp
     src/world_edit_room.cpp
     src/xr_watch.cpp
+    src/identity_signs.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
@@ -128,6 +129,7 @@ add_library(rv_app STATIC
     src/game_session_panel.cpp
     src/hero_textures.cpp
     src/system_logos.cpp
+    src/world_signs.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp
     src/scene_graphics.cpp

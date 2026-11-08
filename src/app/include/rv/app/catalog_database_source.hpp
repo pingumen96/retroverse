@@ -65,6 +65,8 @@ public:
     [[nodiscard]] const std::optional<Error>& openError() const noexcept { return m_openError; }
     [[nodiscard]] const catalog::LibraryId& library() const noexcept { return m_library; }
     [[nodiscard]] const std::vector<CatalogSystem>& systems() const noexcept { return m_systems; }
+    /// Advances each time systems() is replaced (the opening, a refresh, a resolution): I11 step 4's signs follow it.
+    [[nodiscard]] std::uint64_t systemsRevision() const noexcept { return m_systemsRevision; }
     [[nodiscard]] std::size_t interruptedSessions() const noexcept { return m_interrupted; }
     /// Something the screen waits for is with the worker: the opening, a list, readiness. Never once the worker ended.
     [[nodiscard]] bool waiting() const noexcept;
@@ -108,6 +110,7 @@ private:
     std::optional<Error> m_openError;
     catalog::LibraryId m_library;
     std::vector<CatalogSystem> m_systems;
+    std::uint64_t m_systemsRevision = 0;
     std::unique_ptr<catalog_db::SqliteCatalogQuery> m_pages;
     std::size_t m_interrupted = 0;
 

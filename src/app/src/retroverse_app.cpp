@@ -104,6 +104,7 @@
 #include "product_ui.hpp"
 #include "screen_service.hpp"
 #include "system_logos.hpp"
+#include "world_signs.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
 #include "xr_game.hpp"
@@ -689,6 +690,8 @@ struct RetroverseApp::State {
     /// I11 step 3: the systems' logos for the product UI (room mode: they need the pool); destroyed before the product
     /// UI, which never renders again by then.
     std::unique_ptr<SystemLogos> systemLogos;
+    /// I11 step 4: the rooms' signs drawn from the systems' identity, on the scene's sign materials.
+    std::unique_ptr<WorldSigns> worldSigns;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
     /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
@@ -1027,8 +1030,12 @@ struct RetroverseApp::State {
         }
     }
 
-    /// The logos unregistered and released, with their pool's jobs (before that pool goes).
+    /// The logos unregistered and released, with their pool's jobs (before that pool goes); the signs' too (I11 step 4).
     void releaseSystemLogos() {
+        if (worldSigns) {
+            worldSigns->release(graphics ? &graphics->materials() : nullptr);
+            worldSigns.reset();
+        }
         if (!systemLogos) {
             return;
         }
@@ -1049,6 +1056,28 @@ struct RetroverseApp::State {
             product->setSystemLogos(systemLogos.get());
         }
         systemLogos->update(product->catalog().systemLogos(), *product);
+    }
+
+    /// I11 step 4 (ADR-0019 §3): the rooms' signs of the scene shown drawn from their systems' identity, a few a frame.
+    void updateWorldSigns(const AppContext& context) {
+        if (!product || !pool || !scene || !graphics) {
+            return;
+        }
+        if (!worldSigns) {
+            worldSigns = std::make_unique<WorldSigns>(*pool, context.paths().assetRoot());
+        }
+        const AppCatalog& catalog = product->catalog();
+        WorldSigns::Frame frame;
+        frame.description = &description;
+        frame.instance = &*scene;
+        frame.materials = &graphics->materials();
+        if (world) {
+            frame.sections = [this](const world::RoomId& room) { return world->roomSections(room); };
+        }
+        frame.systems = [&catalog](const catalog::SystemName& system) { return catalog.signSystem(system); };
+        frame.systemsRevision = catalog.systemsRevision();
+        frame.settle = context.options().fixedDeltaSeconds.has_value();
+        worldSigns->update(frame);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -2061,6 +2090,9 @@ struct RetroverseApp::State {
                 }
             }
             freeRoam->setCollision(scene->collisionWorld());
+            if (worldSigns) {
+                worldSigns->sceneChanged(); // I11 step 4: the new objects' signs
+            }
             // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved stands as a
             // new object, its screen's material another registry entry), their clips playing on; screens that are no
             // longer the bound ones are bound afresh with the room's games (never left on the old materials).
@@ -2212,6 +2244,9 @@ struct RetroverseApp::State {
         }
         if (screen) {
             screen->unbind(false); // the registry is cleared below: its material goes with it
+        }
+        if (worldSigns) {
+            worldSigns->sceneChanged(); // I11 step 4: the new scene's signs
         }
         graphics->clearContent();
         // I5 step 6: the new scene's screens take their rooms' packs' CRT presets.
@@ -3059,6 +3094,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.updateScreens(context, !context.vr() && context.window().isMinimized());
     state.updateXrGame(context);
     state.updateSystemLogos();
+    state.updateWorldSigns(context);
     state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
@@ -3133,6 +3169,12 @@ void RetroverseApp::onShutdown(AppContext& context) {
         // The quit hook: a game still running is left running and recorded, before anything else ends.
         if (m_state->product) {
             m_state->product->finish();
+        }
+        // I11 step 4: the identity's signs, beside the catalog's logos.
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->worldSigns) {
+            catalog->identitySigns = m_state->worldSigns->wanted();
+            catalog->identitySignsShown = m_state->worldSigns->shown();
+            catalog->identitySignsFailed = m_state->worldSigns->failed();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

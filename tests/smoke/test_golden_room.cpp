@@ -1348,3 +1348,72 @@ TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen a
                        std::nullopt},
                       room, run, shot, kFrames);
 }
+
+TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's neon (I11 step 4)",
+          "[gpu][golden][golden_room][identity]") {
+    GoldenRoom room("g22", "esde/snes-room");
+    // identity.json pointing at the invented theme fixture (tests/fixtures/esde/theme): snes is "Lumen 16" with an
+    // original SVG logo. The plan never changes (ADR-0019): the signs take the identity at runtime.
+    const auto themes = rv::test::Fixture::materialize("esde/theme");
+    REQUIRE(themes.has_value());
+    const Json identity{
+        {"schemaVersion", 1},
+        {"themeRoots", Json::array({arg(themes->path("ES-DE/themes")), arg(themes->path("Programs/ES-DE/themes"))})}};
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "identity.json", identity.dump(2) + "\n").has_value());
+    room.steps.push_back("materialize tests/fixtures/esde/theme into <theme>; write <case>/data/config/identity.json: "
+                         "{\"schemaVersion\": 1, \"themeRoots\": [\"<theme>/ES-DE/themes\", "
+                         "\"<theme>/Programs/ES-DE/themes\"]}");
+    const rv::app::RunReport first = firstRun(room);
+    const fs::path shot = room.dir / "g22.png";
+    constexpr std::uint32_t kFrames = 30;
+    const AppRun run = room.app("g22", roomArguments(kFrames, shot, {"--video-freeze-pts", std::string(kFreezePts)}));
+    requireGoldenRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    CHECK(report.world.outcome == "unchanged");
+    CHECK(report.world.planDigest == first.world.planDigest);
+    // The room's neon and its portal's signs show the identity, every one drawn before the frame was taken.
+    REQUIRE(report.catalog.has_value());
+    CHECK(report.catalog->identityNames >= 1);
+    CHECK(report.catalog->identitySigns >= 2);
+    CHECK(report.catalog->identitySignsShown == report.catalog->identitySigns);
+    CHECK(report.catalog->identitySignsFailed == 0);
+    CHECK(report.gpuMemory.kinds[static_cast<std::size_t>(rv::gl::GpuMemoryKind::SignTextures)].peakBytes > 0);
+    requireScreenshot(run, shot, kShotSize);
+    // Against G02's golden: the neon's picture differs, within the sign (at about (765, 262) - (983, 318) in G02's view);
+    // the rest of the room is G02's (the neon's light is the pack's, not its picture's).
+    {
+        const rv::screenshot_diff::Tolerance tolerance;
+        const auto againstG02 =
+            rv::screenshot_diff::compareFiles(goldenDir() / "g02_snes_room_golden.png", shot, tolerance, {});
+        REQUIRE(againstG02.has_value());
+        INFO(againstG02->describe(tolerance));
+        CHECK(againstG02->differingPixels > 2000);
+        CHECK(againstG02->differingMin.x >= 740);
+        CHECK(againstG02->differingMin.y >= 240);
+        CHECK(againstG02->differingMax.x <= 1010);
+        CHECK(againstG02->differingMax.y <= 340);
+    }
+    // The hall in front of the room's doorway (room:snes' frame: the doorway in its south wall at z 5 m, the hall's
+    // centre line at z 6.65 m), looking north at the portal's plate and its blades, lit plates with the logo in its
+    // colours: all drawn before the frame, checked by eye (build/.../golden_room/g22/g22_hall.png).
+    {
+        const fs::path hall = room.dir / "g22_hall.png";
+        const AppRun hallRun = room.app("g22_hall", roomArguments(kFrames, hall,
+                                                                  {"--video-freeze-pts", std::string(kFreezePts),
+                                                                   "--spawn", "0.3,0,7.9,0,12"}));
+        requireCleanRun(hallRun);
+        INFO(hallRun.describe());
+        REQUIRE(hallRun.report->catalog.has_value());
+        CHECK(hallRun.report->catalog->identitySigns == report.catalog->identitySigns);
+        CHECK(hallRun.report->catalog->identitySignsShown == hallRun.report->catalog->identitySigns);
+        requireScreenshot(hallRun, hall, kShotSize);
+    }
+    compareWithGolden({"G22", "g22_snes_room_identity_golden",
+                       "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture "
+                       "with identity.json pointing at the invented theme fixture: the room's neon shows the theme's "
+                       "original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, "
+                       "in place of the generic \"16-BIT CORNER\"; everything else is G02's.",
+                       "the plan's scene camera at the doorway (no --spawn), as G02's", std::nullopt},
+                      room, run, shot, kFrames);
+}
