@@ -82,19 +82,23 @@ ProceduralPrefab assemble(const ArmchairParams& p) {
     // Back over the full width, armrests from the back to the front, and the base between them under the seat (the
     // pieces meet face to face: no coplanar surfaces facing the same way).
     fabric.chamferedBox(glm::vec3(p.width, p.height - bottom, kBackThickness), kChamfer,
-                        translation(glm::vec3(0.0f, 0.5f * (bottom + p.height), -halfDepth + 0.5f * kBackThickness)));
+                        translation(glm::vec3(0.0f, 0.5f * (bottom + p.height), -halfDepth + 0.5f * kBackThickness)),
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     for (const float side : {-1.0f, 1.0f}) {
         fabric.chamferedBox(glm::vec3(armWidth, p.armHeight - bottom, halfDepth - backFront), kChamfer,
                             translation(glm::vec3(side * (halfWidth - 0.5f * armWidth), 0.5f * (bottom + p.armHeight),
-                                                  0.5f * (backFront + halfDepth))));
+                                                  0.5f * (backFront + halfDepth))),
+                            BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     }
     fabric.chamferedBox(glm::vec3(innerWidth, seatBase - bottom, halfDepth - backFront), kChamfer,
-                        translation(glm::vec3(0.0f, 0.5f * (bottom + seatBase), 0.5f * (backFront + halfDepth))));
+                        translation(glm::vec3(0.0f, 0.5f * (bottom + seatBase), 0.5f * (backFront + halfDepth))),
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
 
     // Seat cushion between the arms, a little proud of the base at the front.
     const float seatFront = halfDepth - 0.005f;
     fabric.chamferedBox(glm::vec3(innerWidth - 0.01f, kSeatCushion, seatFront - backFront), kChamfer,
-                        translation(glm::vec3(0.0f, seatBase + 0.5f * kSeatCushion, 0.5f * (backFront + seatFront))));
+                        translation(glm::vec3(0.0f, seatBase + 0.5f * kSeatCushion, 0.5f * (backFront + seatFront))),
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
 
     // Back cushion leaning back: its lower front edge on the seat, its upper back edge against the back. Its frame: up
     // tilted back by kBackTiltDeg, front following.
@@ -107,7 +111,8 @@ ProceduralPrefab assemble(const ArmchairParams& p) {
     const glm::vec3 center = lowerFrontEdge + up * (0.5f * cushionHeight) - front * (0.5f * kBackCushion);
     glm::mat4 cushionFrame = glm::rotate(glm::mat4(1.0f), -tilt, glm::vec3(1.0f, 0.0f, 0.0f));
     cushionFrame[3] = glm::vec4(center, 1.0f);
-    fabric.chamferedBox(glm::vec3(innerWidth - 0.01f, cushionHeight, kBackCushion), kChamfer, cushionFrame);
+    fabric.chamferedBox(glm::vec3(innerWidth - 0.01f, cushionHeight, kBackCushion), kChamfer, cushionFrame,
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
 
     // Tapered round legs under the corners.
     if (bottom > 0.0f) {

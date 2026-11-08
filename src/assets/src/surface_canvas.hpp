@@ -50,8 +50,8 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 /// The palette color `hex` (sRGB 0xRRGGBB, style §3) in linear RGB.
 [[nodiscard]] glm::vec3 linearFromHex(std::uint32_t hex) noexcept;
 
-/// Generators of the catalog's surfaces (surface_wood.cpp, surface_rug.cpp, surface_finishes.cpp), each at the size
-/// of its catalog entry.
+/// Generators of the catalog's surfaces (surface_wood.cpp, surface_rug.cpp, surface_finishes.cpp, surface_fabric.cpp,
+/// surface_wallpaper.cpp), each at the size of its catalog entry.
 [[nodiscard]] ProceduralSurface makeOakPlanks(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeWalnut(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeVarnishedWood(const ProceduralSurfaceInfo& info);
@@ -68,5 +68,11 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 [[nodiscard]] ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeShelfGlow(const ProceduralSurfaceInfo& info);
+/// I12 step 1's surfaces: a herringbone parquet (surface_wood.cpp), a plain weave and a pebbled leather
+/// (surface_fabric.cpp), a damask wallpaper (surface_wallpaper.cpp).
+[[nodiscard]] ProceduralSurface makeHerringboneParquet(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeFabricWeave(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeLeather(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makeWallpaperDamask(const ProceduralSurfaceInfo& info);
 
 } // namespace rv::assets::detail

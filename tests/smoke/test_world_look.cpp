@@ -6,6 +6,10 @@
 //     items and the posters' prints aside (pictures; the 90th percentile of their chroma above every other tile's);
 //   - close to a display case (0.9 m in front of its first face-out item): the covers behind the glass keep their darks
 //     (no haze: the glass adds at most a few steps to the darkest pixels of the items behind it) and their contrast.
+// I12 step 1 (ADR-0021 §1): the room's architecture and pendants from the doorway: the scene holds the papered walls,
+// the picture rail, the cornice, the beams, a drum near the doorway and a spot can over each display case with the
+// look pendant's light among the lights the view packs; the papered walls and the frieze above the rail never fall to
+// black, the cans' lenses glow far above them.
 // The probes read luminance as linear light (sRGB decoded) and chroma as max - min of the encoded bytes.
 
 #include <catch2/catch_test_macros.hpp>
@@ -536,5 +540,87 @@ TEST_CASE("world look: the snes-room's light levels, saturation and clear displa
                                        roomArguments("12", close, {"--spawn", spawnArgument(view.spawn)}));
         requireCleanRun(closeRun);
         checkDisplayGlass(shown, requireScreenshot(closeRun, close, kShotSize), view, profile);
+    }
+}
+
+TEST_CASE("world look: the shell and the lamps (I12 step 1): papered walls, a rail, a cornice, beams, lit spot cans",
+          "[gpu][world][world_look]") {
+    ImportedRoom room("shell");
+    const fs::path doorway = room.dir / "doorway.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "doorway", roomArguments("40", doorway));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->world.bound);
+    const ShownRoom shown = shownRoom(room, *run.report, "evening");
+    const rv::assets::ImageData image = requireScreenshot(run, doorway, kShotSize);
+    const rv::scene::CameraSetup& camera = shown.scene.camera;
+    const rv::world::Room& planned = shown.stored.plan.rooms.front();
+
+    // The classic pack's architecture on every wall (the doorway's wall papered beside and over its casing), a beam
+    // every 3 m from the north wall short of the south one, a drum of five parts near the doorway, a can of three over
+    // each display case.
+    const auto count = [&](std::string_view prefix) {
+        return std::count_if(shown.scene.objects.begin(), shown.scene.objects.end(),
+                             [&](const rv::scene::SceneObject& object) { return object.id.starts_with(prefix); });
+    };
+    CHECK(count("dressing:shell/wallpaper-") == 6);
+    CHECK(count("dressing:shell/rail-") == 4);
+    CHECK(count("dressing:shell/cornice-") == 4);
+    CHECK(count("dressing:shell/beam:") == (planned.maxZMm - planned.minZMm - 1000) / 3000);
+    CHECK(count("dressing:pendant:doorway/") == 5);
+    CHECK(count("dressing:pendant:fx:dc01/") == 3);
+    CHECK(count("dressing:pendant:fx:dc02/") == 3);
+    // The look pendant's light: in the scene, and packed for the view at the doorway (the eye's area's nearest).
+    CHECK(std::any_of(shown.scene.lights.begin(), shown.scene.lights.end(),
+                      [](const rv::scene::Light& light) { return light.name == "look:pendant"; }));
+    REQUIRE(run.report->sceneAreas.has_value());
+    const std::vector<std::string>& packed = run.report->sceneAreas->lights;
+    CHECK(std::find(packed.begin(), packed.end(), "room:snes/look:pendant") != packed.end());
+    CHECK(packed.size() <= 16);
+
+    // The papered walls between the shelves and the rail (1.9 and 2.4 m) and the frieze above it (2.9 m) on the side
+    // walls and on the hero wall clear of the sign: their mean luminance never black.
+    std::vector<glm::vec3> paper;
+    std::vector<glm::vec3> frieze;
+    const float minX = static_cast<float>(planned.minXMm) / 1000.0f + 0.01f;
+    const float maxX = static_cast<float>(planned.maxXMm) / 1000.0f - 0.01f;
+    const float minZ = static_cast<float>(planned.minZMm) / 1000.0f + 0.01f;
+    for (int i = 0; i < 8; ++i) {
+        const float t = (static_cast<float>(i) + 0.5f) / 8.0f;
+        for (const float y : {1.9f, 2.4f, 2.9f}) {
+            std::vector<glm::vec3>& band = y > 2.7f ? frieze : paper;
+            band.emplace_back(minX, y, minZ + t * 7.0f);
+            band.emplace_back(maxX, y, minZ + t * 7.0f);
+            if (std::abs(minX + t * (maxX - minX)) > 1.6f) {
+                band.emplace_back(minX + t * (maxX - minX), y, minZ);
+            }
+        }
+    }
+    const std::optional<double> paperLuminance = meanLuminance(image, camera, paper);
+    const std::optional<double> friezeLuminance = meanLuminance(image, camera, frieze);
+    REQUIRE(paperLuminance.has_value());
+    REQUIRE(friezeLuminance.has_value());
+    INFO("papered walls " << *paperLuminance << ", frieze " << *friezeLuminance);
+    // Measured at the step (linear): the paper 0.022, the frieze 0.0074 (luma about 40 and 21); the floors are about
+    // half of them, the frieze's above style §4's black (luma 12).
+    CHECK(*paperLuminance > 0.012);
+    CHECK(*friezeLuminance > 0.004);
+    CHECK(*paperLuminance > *friezeLuminance);
+
+    // The spot cans over the display cases glow: their lenses, seen from below.
+    for (const std::string_view socket : {std::string_view("dc01"), std::string_view("dc02")}) {
+        const auto found =
+            std::find_if(shown.stored.plan.fixtures.begin(), shown.stored.plan.fixtures.end(),
+                         [&](const rv::world::Fixture& fixture) { return fixture.id.socket() == socket; });
+        REQUIRE(found != shown.stored.plan.fixtures.end());
+        const rv::world::Fixture* cas = &*found;
+        const glm::vec3 lens(static_cast<float>(cas->xMm) / 1000.0f, 2.351f, static_cast<float>(cas->zMm) / 1000.0f);
+        const std::optional<double> glow = meanLuminance(image, camera, {lens});
+        REQUIRE(glow.has_value());
+        INFO("lens over " << socket << ": " << *glow);
+        // Lit, far above the walls around it.
+        CHECK(*glow > 0.3);
+        CHECK(*glow > 10.0 * *paperLuminance);
     }
 }

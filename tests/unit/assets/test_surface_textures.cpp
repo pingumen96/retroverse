@@ -1,19 +1,21 @@
+#include <rv/assets/image_io.hpp>
+#include <rv/assets/surface_textures.hpp>
+#include <rv/core/math.hpp>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <glm/glm.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <glm/glm.hpp>
-
-#include <rv/assets/surface_textures.hpp>
-#include <rv/core/math.hpp>
 
 using Catch::Approx;
 using rv::ErrorCode;
@@ -116,11 +118,11 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
         CHECK(info.meters.x / static_cast<float>(info.size.x) ==
               Approx(info.meters.y / static_cast<float>(info.size.y)));
     }
-    CHECK(names == std::vector<std::string_view>{"oak_planks",      "walnut",          "varnished_wood",
-                                                 "oak",             "painted_plaster", "ornate_rug",
-                                                 "ornate_rug_blue", "ornate_rug_sage", "ornate_rug_green",
-                                                 "geometric_rug",   "runner_rug",      "brushed_metal",
-                                                 "aged_plastic",    "wallwash",        "shelfglow"});
+    CHECK(names == std::vector<std::string_view>{"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster",
+                                                 "ornate_rug", "ornate_rug_blue", "ornate_rug_sage", "ornate_rug_green",
+                                                 "geometric_rug", "runner_rug", "brushed_metal", "aged_plastic",
+                                                 "wallwash", "shelfglow", "herringbone_parquet", "fabric_weave",
+                                                 "leather", "wallpaper_damask"});
     CHECK(rv::assets::findProceduralSurface("teak") == nullptr);
     const auto unknown = rv::assets::makeProceduralSurface("teak");
     REQUIRE_FALSE(unknown.has_value());
@@ -276,8 +278,10 @@ TEST_CASE("assets/surface_textures: full surfaces average the style palette", "[
     // style.md section 3: walnut #493024, oak #76513A, varnished wood #5B3A26, wall #383735, brushed steel #B9BBBE.
     // The surfaces vary around them; their mean linear albedo stays within 12% of the color.
     const std::pair<const char*, const char*> palette[] = {
-        {"oak_planks", "#76513A"}, {"walnut", "#493024"},          {"varnished_wood", "#5B3A26"},
-        {"oak", "#76513A"},        {"painted_plaster", "#383735"}, {"brushed_metal", "#B9BBBE"},
+        {"oak_planks", "#76513A"},          {"walnut", "#493024"},
+        {"varnished_wood", "#5B3A26"},      {"oak", "#76513A"},
+        {"painted_plaster", "#383735"},     {"brushed_metal", "#B9BBBE"},
+        {"herringbone_parquet", "#76513A"},
     };
     for (const auto& [name, hex] : palette) {
         INFO(name << " " << hex);
@@ -337,6 +341,80 @@ TEST_CASE("assets/surface_textures: roughness and metal of the finishes", "[asse
     CHECK(plastic.r > 0.95f);
     CHECK(plastic.b > 0.9f);
     CHECK(roughness("aged_plastic") > 0.9);
+    // I12 step 1: the herringbone's satin varnish as the planks'; the weave, the leather and the wallpaper are grey
+    // detail surfaces a little under 1 (they darken their material by about a tenth), the weave and the paper matte,
+    // the leather a little polished.
+    CHECK(roughness("herringbone_parquet") == Approx(0.45).margin(0.08));
+    for (const char* name : {"fabric_weave", "leather", "wallpaper_damask"}) {
+        INFO(name);
+        const glm::vec3 mean = meanLinearColor(surfaceOf(name).baseColor);
+        CHECK(mean.r == Approx(mean.g).margin(0.001));
+        CHECK(mean.g == Approx(mean.b).margin(0.001));
+        CHECK(mean.r > 0.8f);
+        CHECK(mean.r < 0.97f);
+    }
+    CHECK(roughness("fabric_weave") > 0.93);
+    CHECK(roughness("wallpaper_damask") > 0.9);
+    CHECK(roughness("leather") > 0.8);
+    CHECK(roughness("leather") < roughness("fabric_weave"));
+}
+
+TEST_CASE("assets/surface_textures: the herringbone's joints and the damask's ink", "[assets][surfaces]") {
+    // The herringbone's joints run at 45 degrees: the normals lean steeply along them (as the planks'), nowhere inside
+    // a block; its blocks alternate, so its rows and columns hold as many steep texels as each other.
+    const ImageData& normals = surfaceOf("herringbone_parquet").normal;
+    int steep = 0;
+    for (int y = 0; y < normals.height; ++y) {
+        for (int x = 0; x < normals.width; ++x) {
+            steep += texel(normals, x, y)[2] < 250 ? 1 : 0;
+        }
+    }
+    CHECK(steep > 10 * normals.height);
+    CHECK(steep < normals.width * normals.height / 6);
+    // The damask: lighter ink on about a fifth of the paper (between a tenth and a third), symmetric about the
+    // motifs' vertical axes (u = 0 and u = 0.5 are axes of the first set).
+    const ImageData& paper = surfaceOf("wallpaper_damask").baseColor;
+    int inked = 0;
+    for (int y = 0; y < paper.height; ++y) {
+        for (int x = 0; x < paper.width; ++x) {
+            inked += texel(paper, x, y)[0] > 245 ? 1 : 0;
+        }
+    }
+    const double share = static_cast<double>(inked) / static_cast<double>(paper.width * paper.height);
+    CHECK(share > 0.1);
+    CHECK(share < 0.34);
+    const int axis = paper.width / 2;
+    double mirrored = 0.0;
+    for (int y = 0; y < paper.height; y += 7) {
+        for (int dx = 1; dx < 100; dx += 3) {
+            mirrored += std::abs(static_cast<int>(texel(paper, axis + dx, y)[0]) -
+                                 static_cast<int>(texel(paper, axis - dx, y)[0]));
+        }
+    }
+    // Mirror images up to the fibre's noise and the texel centres' half-texel offset.
+    CHECK(mirrored / (static_cast<double>(paper.height / 7 + 1) * 33.0) < 12.0);
+}
+
+TEST_CASE("assets/surface_textures: dump every map as PNG for a look by eye", "[.surface-dump]") {
+    // A developer aid, never run by ctest: RV_SURFACE_DUMP names a folder (under build/) that receives
+    // <surface>_<map>.png for every surface of the catalog.
+    const char* folder = std::getenv("RV_SURFACE_DUMP"); // NOLINT(concurrency-mt-unsafe): read before any thread
+    if (folder == nullptr || *folder == '\0') {
+        SKIP("set RV_SURFACE_DUMP to a folder under build/ to write every surface's maps there");
+    }
+    const std::filesystem::path out(folder);
+    std::filesystem::create_directories(out);
+    for (const ProceduralSurfaceInfo& info : rv::assets::proceduralSurfaces()) {
+        const ProceduralSurface& surface = surfaceOf(info.name);
+        for (const SurfaceMap map : {SurfaceMap::BaseColor, SurfaceMap::MetallicRoughness, SurfaceMap::Normal}) {
+            const ImageData& image = surface.map(map);
+            if (image.isValid()) {
+                const auto path =
+                    out / (std::string(info.name) + "_" + std::string(rv::assets::toString(map)) + ".png");
+                CHECK(rv::assets::writePng(path, image).has_value());
+            }
+        }
+    }
 }
 
 TEST_CASE("assets/surface_textures: the shelf glow: a white picture, strongest under the strip, faint at the sides",

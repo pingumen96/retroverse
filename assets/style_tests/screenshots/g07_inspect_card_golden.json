@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
+    "gitCommit": "7b952afb5612192ba86bc4106e654eb37abb6fce",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g07_inspect_card_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "cbd83551be94fa915b40aa18a0b19db5dd1c0f19f4c8e135bf13142296cdbd19",
+    "sha256": "305aca96c7cf711a269c6919782edbcd5992af6fc045488384a6afe8c1ff4fa5",
     "width": 1920
   },
   "inputs": {
@@ -30,7 +30,7 @@
     },
     "inputScript": {
       "file": "tests/input_scripts/golden_g07_inspect.json",
-      "sha256": "a8e46daef56d421354f543ff41062ec7933011e726cc00ed49b6abcdebb6f922"
+      "sha256": "c12f2c089d190f84b3a8bc3df6f650faee58a77790c833bca029a62392eedff6"
     },
     "plan": {
       "digest": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
@@ -40,10 +40,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
+      "sha256": "9a610c1cde472f4138b53946937ef0a48d5e6c1aa0fe463e00db666fd458a282"
     }
   },
-  "renderedOn": "2026-10-30",
+  "renderedOn": "2026-11-08",
   "run": {
     "capturedFrame": 89,
     "frames": 90,

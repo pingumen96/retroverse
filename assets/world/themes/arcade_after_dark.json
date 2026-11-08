@@ -10,7 +10,7 @@
   "id": "arcade_after_dark",
   "name": "ArcadeAfterDark",
   "kinds": {
-    "room_shell": {"floor": "MAT_Floor_Parquet_Dark", "wall": "MAT_Wall_Night", "ceiling": "MAT_Wall_Night",
+    "room_shell": {"floor": "MAT_Floor_Herringbone_Dark", "wall": "MAT_Wall_Night", "ceiling": "MAT_Wall_Night",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Metal_Graphite", "wood_secondary": "MAT_Plastic_Black",
               "board_light": "MAT_Shelf_Light", "board_glow": "MAT_Shelf_Glow"},
@@ -25,13 +25,13 @@
     "poster_frame": {"frame": "MAT_Metal_Graphite", "picture": "MAT_Paper_Print"},
     "rug": {"fabric": "MAT_Carpet_Ornate"},
     "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
-    "armchair": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite"},
-    "sofa": {"fabric": "MAT_Fabric_Leather", "wood": "MAT_Metal_Graphite", "pillow": "MAT_Fabric_Vinyl_Red"},
+    "armchair": {"fabric": "MAT_Fabric_Leather_Grain", "wood": "MAT_Metal_Graphite"},
+    "sofa": {"fabric": "MAT_Fabric_Leather_Grain", "wood": "MAT_Metal_Graphite", "pillow": "MAT_Fabric_Vinyl_Red"},
     "beanbag": {"fabric": "MAT_Fabric_Vinyl_Red"},
     "desk": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
              "metal_trim": "MAT_Metal_Graphite", "plastic_body": "MAT_Plastic_Gray",
              "plastic_dark": "MAT_Plastic_Black", "screen": "MAT_Screen_Emissive"},
-    "office_chair": {"fabric": "MAT_Fabric_Leather", "plastic_dark": "MAT_Plastic_Black",
+    "office_chair": {"fabric": "MAT_Fabric_Leather_Grain", "plastic_dark": "MAT_Plastic_Black",
                      "metal": "MAT_Metal_Brushed"},
     "bar_stool": {"fabric": "MAT_Fabric_Vinyl_Red", "metal": "MAT_Metal_Brushed"},
     "banker_lamp": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
@@ -125,6 +125,9 @@
   // spots' cans visible under the ceiling, the dark red runner leading 3.5 m from the hero cabinet out into the room;
   // the aisle's pairs of cabinets lit from above in cyan and red in turn.
   "roomDressing": {
+    // I12 step 1 (ADR-0021 §1): a dark herringbone floor (above) and a graphite cornice; no rail, paper or beams (the
+    // coves and the flyers are its walls, the cans its ceiling), no pendants.
+    "shell": {"cornice": "MAT_Metal_Graphite"},
     "cove": {"yMm": 2600, "west": "MAT_Cove_Magenta", "east": "MAT_Cove_Cyan", "westWash": "MAT_Cove_Wash_Magenta",
              "eastWash": "MAT_Cove_Wash_Cyan"},
     "pictures": {"centreYMm": 2220, "widthMm": 460, "heightMm": 600, "roles": ["hero-module", "side-module"],

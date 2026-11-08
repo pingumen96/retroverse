@@ -31,9 +31,11 @@ add_library(rv_assets STATIC
     src/rvtex.cpp
     src/shader_source.cpp
     src/surface_canvas.cpp
+    src/surface_fabric.cpp
     src/surface_finishes.cpp
     src/surface_rug.cpp
     src/surface_textures.cpp
+    src/surface_wallpaper.cpp
     src/surface_wood.cpp
     src/svg_raster.cpp
     src/test_patterns.cpp

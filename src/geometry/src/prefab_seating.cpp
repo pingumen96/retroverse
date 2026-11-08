@@ -106,14 +106,17 @@ ProceduralPrefab assembleSofa(const SofaParams& p) {
 
     // The armchair's back, armrests and base, as wide as the sofa.
     fabric.chamferedBox(glm::vec3(p.width, p.height - bottom, kBackThickness), kChamfer,
-                        translation(glm::vec3(0.0f, 0.5f * (bottom + p.height), -halfDepth + 0.5f * kBackThickness)));
+                        translation(glm::vec3(0.0f, 0.5f * (bottom + p.height), -halfDepth + 0.5f * kBackThickness)),
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     for (const float side : {-1.0f, 1.0f}) {
         fabric.chamferedBox(glm::vec3(armWidth, p.armHeight - bottom, halfDepth - backFront), kChamfer,
                             translation(glm::vec3(side * (halfWidth - 0.5f * armWidth), 0.5f * (bottom + p.armHeight),
-                                                  0.5f * (backFront + halfDepth))));
+                                                  0.5f * (backFront + halfDepth))),
+                            BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     }
     fabric.chamferedBox(glm::vec3(innerWidth, seatBase - bottom, halfDepth - backFront), kChamfer,
-                        translation(glm::vec3(0.0f, 0.5f * (bottom + seatBase), 0.5f * (backFront + halfDepth))));
+                        translation(glm::vec3(0.0f, 0.5f * (bottom + seatBase), 0.5f * (backFront + halfDepth))),
+                        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
 
     // `seats` seat cushions and back cushions side by side.
     const int seats = p.seats;
@@ -128,13 +131,15 @@ ProceduralPrefab assembleSofa(const SofaParams& p) {
         const float x = -0.5f * innerWidth + 0.005f + 0.5f * cushionWidth +
                         static_cast<float>(i) * (cushionWidth + kCushionGap);
         fabric.chamferedBox(glm::vec3(cushionWidth, kSeatCushion, seatFront - backFront), kChamfer,
-                            translation(glm::vec3(x, seatBase + 0.5f * kSeatCushion, 0.5f * (backFront + seatFront))));
+                            translation(glm::vec3(x, seatBase + 0.5f * kSeatCushion, 0.5f * (backFront + seatFront))),
+                            BoxUv::WorldMeters, detail::kFabricMetersPerTile);
         const glm::vec3 lowerFrontEdge(x, p.seatHeight,
                                        backFront + cushionHeight * std::sin(tilt) + kBackCushion * std::cos(tilt));
         const glm::vec3 center = lowerFrontEdge + up * (0.5f * cushionHeight) - front * (0.5f * kBackCushion);
         glm::mat4 cushionFrame = glm::rotate(glm::mat4(1.0f), -tilt, glm::vec3(1.0f, 0.0f, 0.0f));
         cushionFrame[3] = glm::vec4(center, 1.0f);
-        fabric.chamferedBox(glm::vec3(cushionWidth, cushionHeight, kBackCushion), kChamfer, cushionFrame);
+        fabric.chamferedBox(glm::vec3(cushionWidth, cushionHeight, kBackCushion), kChamfer, cushionFrame,
+                            BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     }
 
     // A throw pillow leaning in each corner, against the back cushions, turned a little towards the middle.
@@ -147,7 +152,8 @@ ProceduralPrefab assembleSofa(const SofaParams& p) {
             const float x = side * (0.5f * innerWidth - 0.5f * pillow - 0.02f);
             const glm::vec3 centre(x, p.seatHeight + 0.5f * pillow * std::cos(pillowTilt) + 0.005f, pillowZ);
             pillows.chamferedBox(glm::vec3(pillow, pillow, kPillowThickness), 0.03f,
-                                 turnedAndTilted(centre, -side * core::degreesToRadians(kPillowTurnDeg), pillowTilt));
+                                 turnedAndTilted(centre, -side * core::degreesToRadians(kPillowTurnDeg), pillowTilt),
+                                 BoxUv::WorldMeters, detail::kFabricMetersPerTile);
         }
     }
 
@@ -241,14 +247,16 @@ ProceduralPrefab assembleOfficeChair(const OfficeChairParams& p) {
     const float seatBottom = p.seatHeight - kChairSeatThickness;
     // The seat, from the back's front to the chair's front.
     const float seatBack = -halfDepth + kChairBackThickness + 0.03f;
-    fabric.chamferedBox(glm::vec3(seatWidth, kChairSeatThickness, halfDepth - seatBack), 0.025f,
-                        translation(glm::vec3(0.0f, seatBottom + 0.5f * kChairSeatThickness,
-                                              0.5f * (seatBack + halfDepth))));
+    fabric.chamferedBox(
+        glm::vec3(seatWidth, kChairSeatThickness, halfDepth - seatBack), 0.025f,
+        translation(glm::vec3(0.0f, seatBottom + 0.5f * kChairSeatThickness, 0.5f * (seatBack + halfDepth))),
+        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     // The back on its stem, its rear face at the chair's back.
     const float backBottom = p.seatHeight + kBackGap;
-    fabric.chamferedBox(glm::vec3(0.92f * seatWidth, p.height - backBottom, kChairBackThickness), 0.025f,
-                        translation(glm::vec3(0.0f, 0.5f * (backBottom + p.height),
-                                              -halfDepth + 0.5f * kChairBackThickness)));
+    fabric.chamferedBox(
+        glm::vec3(0.92f * seatWidth, p.height - backBottom, kChairBackThickness), 0.025f,
+        translation(glm::vec3(0.0f, 0.5f * (backBottom + p.height), -halfDepth + 0.5f * kChairBackThickness)),
+        BoxUv::WorldMeters, detail::kFabricMetersPerTile);
     const float stemZ = -halfDepth + 0.5f * kChairBackThickness;
     dark.box(glm::vec3(0.06f, backBottom - seatBottom + 0.02f, 0.025f),
              translation(glm::vec3(0.0f, 0.5f * (seatBottom + backBottom), stemZ)));

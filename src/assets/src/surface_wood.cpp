@@ -324,4 +324,112 @@ ProceduralSurface makeOak(const ProceduralSurfaceInfo& info) {
     return makePanel(info, style, 5, subSeed(kWoodSeed, 5));
 }
 
+// --- Herringbone parquet (I12 step 1) -------------------------------------------------------------------------------
+
+namespace {
+
+/// A herringbone block is this many widths long; the pattern repeats this many times across the image along u.
+constexpr int kHerringboneLength = 5;
+constexpr int kHerringboneRepeats = 4;
+
+int positiveMod(int value, int modulus) noexcept {
+    const int remainder = value % modulus;
+    return remainder < 0 ? remainder + modulus : remainder;
+}
+
+} // namespace
+
+ProceduralSurface makeHerringboneParquet(const ProceduralSurfaceInfo& info) {
+    // Oak blocks n widths long laid in a herringbone at 45 degrees to the image's axes. In a frame turned 45 degrees
+    // the blocks are axis-aligned cells of width W: the cell (x, y) belongs to a block lying along x when
+    // (x - y) mod 2n < n, else to one standing along y, and each run of n such cells is one block. A shift by one cell
+    // along both axes maps the pattern onto itself, so in the image's frame it repeats every sqrt(2) W along v and
+    // every sqrt(2) n W along u: W = meters / (sqrt(2) n k) gives k repeats across the image, and the image tiles.
+    constexpr int n = kHerringboneLength;
+    constexpr float kSqrt2 = 1.41421356f;
+    const float tile = info.meters.x;
+    const float width = tile / (kSqrt2 * static_cast<float>(n * kHerringboneRepeats));
+    const float pixel = tile / static_cast<float>(info.size.x);
+    // The image's own translations, in cells: (N, -N) and (N, N), N = n k. A block's id is its first cell's
+    // (x + y, x - y) modulo 2N, so that one block met across the image's edge keeps its tint and grain.
+    const int lattice = 2 * n * kHerringboneRepeats;
+    const std::uint32_t seed = subSeed(kWoodSeed, 6);
+
+    WoodStyle style;
+    style.base = linearFromHex(kOakHex);
+    style.earlyTint = glm::vec3(1.16f, 1.15f, 1.13f);
+    style.lateTint = glm::vec3(0.6f, 0.56f, 0.54f);
+    style.ringSpacing = 0.004f;
+    style.pithDistanceMin = 0.012f;
+    style.pithDistanceMax = 0.1f;
+    style.drift = 0.012f;
+    style.irregularity = 0.8f;
+    style.streakContrast = 0.08f;
+    style.poreThreshold = 0.74f;
+    style.poreDarkening = 0.3f;
+    style.roughness = 0.4f;
+    style.roughnessVariation = 0.04f;
+    style.poreRoughness = 0.12f;
+
+    CanvasDesc desc;
+    desc.size = info.size;
+    desc.meters = info.meters;
+    desc.tiles = true;
+    return renderSurface(desc, [&](float u, float v) {
+        const float cellX = (u + v) * tile / kSqrt2 / width;
+        const float cellY = (v - u) * tile / kSqrt2 / width;
+        const int x = floorToInt(cellX);
+        const int y = floorToInt(cellY);
+        const int s = positiveMod(x - y, 2 * n);
+        const bool alongX = s < n;
+        const int firstX = alongX ? x - s : x;
+        const int firstY = alongX ? y : y - (2 * n - 1 - s);
+        // Cells along the block from its first one, [0, n), and across it, [0, 1).
+        const float along = alongX ? cellX - static_cast<float>(firstX) : cellY - static_cast<float>(firstY);
+        const float across = alongX ? cellY - static_cast<float>(y) : cellX - static_cast<float>(x);
+        const auto idSum = static_cast<std::uint32_t>(positiveMod(firstX + firstY, lattice));
+        const auto idDifference = static_cast<std::uint32_t>(positiveMod(firstX - firstY, lattice));
+        const std::uint32_t blockId =
+            (idSum * static_cast<std::uint32_t>(lattice) + idDifference) * 2u + (alongX ? 0u : 1u);
+        const std::uint32_t blockSeed = subSeed(seed, 1000u + blockId);
+        const Board board = boardFrom(style, width, blockSeed);
+        // A block's grain need not repeat within it; each starts somewhere else along a long board.
+        const float alongMeters = along * width + 5.0f * hashUnit(0, 3, blockSeed);
+        SurfaceSample sample = woodAt(style, board, alongMeters, (across - 0.5f) * width, 1024.0f);
+
+        // Per-block tint: brightness and warmth, now and then a greyer block.
+        const float brightness = 0.86f + 0.28f * hashUnit(1, 0, blockSeed);
+        const float warmth = 2.0f * hashUnit(2, 0, blockSeed) - 1.0f;
+        const glm::vec3 tint(1.0f + 0.05f * warmth, 1.0f + 0.01f * warmth, 1.0f - 0.07f * warmth);
+        if (hashUnit(3, 0, blockSeed) < 0.12f) {
+            const float grey = (sample.albedo.r + sample.albedo.g + sample.albedo.b) / 3.0f;
+            sample.albedo = glm::mix(sample.albedo, glm::vec3(grey), 0.25f);
+        }
+        sample.albedo *= brightness * tint;
+        sample.roughness += 0.08f * (hashUnit(4, 0, blockSeed) - 0.5f);
+
+        // Wear over the floor (tiles with the image).
+        const float wear = fbm(u, v, 3, 3, 3, 0.5f, subSeed(seed, 2));
+        sample.albedo *= 1.0f + 0.035f * wear;
+        sample.roughness += 0.05f * std::max(wear, 0.0f);
+
+        // Joints: a micro-bevel along every edge and a dark gap between the blocks, as the planks'.
+        const float side = std::min(across, 1.0f - across) * width;
+        const float ends = std::min(along, static_cast<float>(n) - along) * width;
+        const float edge = std::min(side, ends);
+        if (edge < kBevelWidth) {
+            sample.height -= kBevelDepth * (1.0f - edge / kBevelWidth);
+            sample.albedo *= 0.8f + 0.2f * (edge / kBevelWidth);
+        }
+        const float gap = std::clamp((kGapHalfWidth - edge) / pixel + 0.5f, 0.0f, 1.0f);
+        if (gap > 0.0f) {
+            sample.albedo = glm::mix(sample.albedo, style.base * 0.18f, gap);
+            sample.roughness = glm::mix(sample.roughness, 0.9f, gap);
+            sample.height = glm::mix(sample.height, -kGapDepth, gap);
+        }
+        sample.roughness = std::clamp(sample.roughness, 0.0f, 1.0f);
+        return sample;
+    });
+}
+
 } // namespace rv::assets::detail

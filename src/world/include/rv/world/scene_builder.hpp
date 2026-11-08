@@ -26,7 +26,15 @@
 //     intensity and range for its role, a spot's cones from its span (outer = atan(span / 2 / distance) plus the
 //     role's margin, at least the role's minimum, inner = outer x the role's ratio, rounded to 0.01 degrees); the key
 //     alone casts shadows, with the profile's strength; then the profile's accent lights on the hero corner's parts
-//     while the scene's limit leaves room (I3 step 16);
+//     and the display fixtures (I3 step 16) and last the look pendant's light (I12 step 1: a point of the profile's
+//     pendant role at half its intensity, inside the drum near the doorway, for a pack with pendants), in that order
+//     while the scene's limit leaves room: the look pendant never takes an accent's slot;
+//   - the pack's dressing of the room (I6 step 6's review, room_look.hpp's "roomDressing"): "dressing:" objects that
+//     neither collide nor cast shadows, chosen from the pack and the room alone: the coves, the pictures over the
+//     fixtures against a wall, the spots' cans, the sign's pictogram, the runner; since I12 step 1 the room's
+//     architecture (the wallpaper from the wainscot's top to the picture rail, the rail, the frieze, the cornice, each
+//     band around the doorway's casing; a beam every pitch from the north wall) and its lamps (a drum near the
+//     doorway, a spot can over each display fixture standing free of the walls);
 //   - an empty level of a display case (too thin for a dressing prop): a riser card leaning on it, an invented cover
 //     on a card the level's size (I3 step 16), so that no display level stands bare;
 //   - the profile's environment and a camera at the doorway, at eye height, looking north;

@@ -205,13 +205,17 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
                 CHECK(covered.contains(built->bounds));
             }
         }
-        // The shell, the fixtures and every dressed span but those left bare.
+        // The shell, the fixtures and every dressed span but those left bare, beside the pack's dressing of the room
+        // (I12 step 1: its architecture and pendants, "dressing:" objects, test_room_dressing.cpp).
         std::size_t dressed = 0;
         for (const rv::world::DressedLevel& span : entry.plan.dressing) {
             dressed += span.level.fixture().room() == entry.room ? 1 : 0;
         }
+        const auto packDressing = static_cast<std::size_t>(
+            std::count_if(scene.objects.begin(), scene.objects.end(),
+                          [](const rv::scene::SceneObject& object) { return object.id.starts_with("dressing:"); }));
         const rv::world::SceneBuild build = sceneOf(entry);
-        CHECK(scene.objects.size() == 1 + fixtures + dressed - build.undressed.size());
+        CHECK(scene.objects.size() == 1 + fixtures + dressed - build.undressed.size() + packDressing);
     }
 }
 
@@ -338,7 +342,8 @@ TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and 
         const PlanCase& entry = planCase(name);
         const rv::scene::SceneDescription scene = descriptionOf(entry);
         // The plan's lights, then the profile's accents while the scene's limit leaves room for them: one on its hero
-        // corner part, or one on each display fixture of its kind (in the plan's fixture order).
+        // corner part, or one on each display fixture of its kind (in the plan's fixture order); then, since I12 step
+        // 1, the look pendant's light in a slot they leave free (the pack's pendants: test_room_dressing.cpp).
         std::vector<std::pair<std::string, std::string>> accents; // name, colour
         for (const rv::world::AccentLight& accent : profile.accents) {
             if (accent.on == rv::world::AccentAnchor::HeroCorner) {
@@ -355,9 +360,17 @@ TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and 
                           [](const auto& accent) { return accent.first == "accent:case_light:dc01"; }));
         REQUIRE(scene.lights.size() >= entry.plan.lights.size());
         CHECK(scene.lights.size() ==
-              std::min<std::size_t>(rv::world::kMaxSceneLights, entry.plan.lights.size() + accents.size()));
+              std::min<std::size_t>(rv::world::kMaxSceneLights, entry.plan.lights.size() + accents.size() + 1));
         for (std::size_t i = entry.plan.lights.size(); i < scene.lights.size(); ++i) {
-            const auto& [accentName, accentColor] = accents[i - entry.plan.lights.size()];
+            const std::size_t k = i - entry.plan.lights.size();
+            if (k == accents.size()) {
+                CHECK(scene.lights[i].name == "look:pendant");
+                CHECK(scene.lights[i].type == rv::scene::LightType::Point);
+                CHECK_FALSE(scene.lights[i].castsShadows);
+                continue;
+            }
+            REQUIRE(k < accents.size());
+            const auto& [accentName, accentColor] = accents[k];
             CHECK(scene.lights[i].name == accentName);
             CHECK(scene.lights[i].color == *rv::core::hexToLinearRgb(accentColor));
             CHECK_FALSE(scene.lights[i].castsShadows);

@@ -500,8 +500,8 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
     if (document.failed() || !reader.has("roomDressing")) {
         return;
     }
-    const ObjectReader dressing =
-        reader.object("roomDressing", {"cans", "cardPerSlot", "cove", "pictures", "runner", "signIcon"});
+    const ObjectReader dressing = reader.object(
+        "roomDressing", {"cans", "cardPerSlot", "cove", "pendants", "pictures", "runner", "shell", "signIcon"});
     if (!document.failed() && dressing.has("cardPerSlot")) {
         theme.dressing.cardPerSlot = dressing.boolean("cardPerSlot");
     }
@@ -600,6 +600,38 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
         }
         out.signIcon = sign;
     }
+    if (!document.failed() && dressing.has("shell")) {
+        // I12 step 1 (ADR-0021 §1): the room's architecture, each part where the pack names its material.
+        const ObjectReader shell =
+            dressing.object("shell", {"beamPitchMm", "beams", "cornice", "frieze", "rail", "railYMm", "wallpaper"});
+        ShellDressing parts;
+        const auto optionalMaterial = [&](std::string_view key) {
+            return shell.has(key) ? materialName(shell, key) : std::string();
+        };
+        if (shell.has("railYMm")) {
+            parts.railYMm = shell.integer("railYMm", 1500, 5000);
+        }
+        if (shell.has("beamPitchMm")) {
+            parts.beamPitchMm = shell.integer("beamPitchMm", 1000, 10000);
+        }
+        parts.rail = optionalMaterial("rail");
+        parts.wallpaper = optionalMaterial("wallpaper");
+        parts.frieze = optionalMaterial("frieze");
+        parts.cornice = optionalMaterial("cornice");
+        parts.beams = optionalMaterial("beams");
+        if (!document.failed() && !parts.frieze.empty() && parts.rail.empty()) {
+            document.fail(shell.pointer("frieze"), "a frieze stands above a picture rail: expected \"rail\" too");
+        }
+        out.shell = std::move(parts);
+    }
+    if (!document.failed() && dressing.has("pendants")) {
+        const ObjectReader pendants = dressing.object("pendants", {"diffuser", "metal", "shade"});
+        PendantDressing lamps;
+        lamps.shade = materialName(pendants, "shade");
+        lamps.diffuser = materialName(pendants, "diffuser");
+        lamps.metal = materialName(pendants, "metal");
+        out.pendants = std::move(lamps);
+    }
 }
 
 /// The lit shelves' roles (I6 step 3, geometry::ShelfParams::boardLight): a shelf's strips light its back panel, so it
@@ -660,9 +692,10 @@ ThemeMaterials builtInTheme() {
         {"poster_frame", Roles{{"frame", "MAT_Wood_Oak"}, {"picture", "MAT_Paper_Print"}}},
         {"rug", Roles{{"fabric", "MAT_Carpet_Ornate"}}},
         {"floor_lamp", Roles{{"metal", "MAT_Metal_Graphite"}, {"lamp_shade", "MAT_Lamp_Shade_Warm"}}},
-        {"armchair", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}}},
+        {"armchair", Roles{{"fabric", "MAT_Fabric_Sofa_Weave"}, {"wood", "MAT_Wood_Walnut"}}},
         // I6 step 3b's era furniture.
-        {"sofa", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"wood", "MAT_Wood_Walnut"}, {"pillow", "MAT_Fabric_Display"}}},
+        {"sofa",
+         Roles{{"fabric", "MAT_Fabric_Sofa_Weave"}, {"wood", "MAT_Wood_Walnut"}, {"pillow", "MAT_Fabric_Display"}}},
         {"beanbag", Roles{{"fabric", "MAT_Fabric_Sofa"}}},
         {"desk",
          Roles{{"wood_primary", "MAT_Wood_Walnut"},
@@ -672,7 +705,9 @@ ThemeMaterials builtInTheme() {
                {"plastic_dark", "MAT_Plastic_Black"},
                {"screen", "MAT_Screen_Emissive"}}},
         {"office_chair",
-         Roles{{"fabric", "MAT_Fabric_Sofa"}, {"plastic_dark", "MAT_Plastic_Black"}, {"metal", "MAT_Metal_Brushed"}}},
+         Roles{{"fabric", "MAT_Fabric_Sofa_Weave"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"metal", "MAT_Metal_Brushed"}}},
         {"bar_stool", Roles{{"fabric", "MAT_Fabric_Sofa"}, {"metal", "MAT_Metal_Brushed"}}},
         {"banker_lamp",
          Roles{{"wood_primary", "MAT_Wood_Walnut"},
@@ -787,6 +822,14 @@ ThemeMaterials builtInTheme() {
     FurniturePiece secondaryTv;
     secondaryTv.prefab = PrefabRef{"furniture.secondary_tv.generic", std::string(kSecondaryTvKind)};
     theme.furniture.secondaryTv = SecondaryTvPiece{"tv_cabinet", std::move(secondaryTv)};
+    // I12 step 1's architecture and pendant lamps.
+    ShellDressing shell;
+    shell.rail = "MAT_Wood_Walnut";
+    shell.wallpaper = "MAT_Wallpaper_Warm";
+    shell.cornice = "MAT_Wood_Walnut";
+    shell.beams = "MAT_Wood_Walnut";
+    theme.dressing.shell = shell;
+    theme.dressing.pendants = PendantDressing{"MAT_Pendant_Shade", "MAT_Pendant_Diffuser", "MAT_Metal_Brass"};
     return theme;
 }
 
