@@ -566,7 +566,9 @@ build/rvdata`).
   room's neon in its theme pack's colour rather than its system's accent; on by default, also Impostazioni' "Colori dei
   sistemi"; I11 step 4's identity signs, `docs/i11/step-4.md`, show the system's logo in any case, and step 5's history
   plaque, `docs/i11/step-5.md`, hangs beside the hero corner when the identity has a description: point at it, interact
-  opens its card); the room's look comes
+  opens its card, and step 7's console model, `docs/i11/step-7.md`, stands on the cabinet in place of the procedural
+  console when `<user data>/content/consoles/<system>/` holds one that passes `retroverse-cli content check`); the
+  room's look comes
   from its theme pack
   (`assets/world/themes`, I6 step 3, `docs/i6/step-3.md`): its floor's (`building.json`'s `themePack`: the 16-bit
   floors `classic_16bit_warm`, gen5 `console_90s_collector`, gen6 and gen7 `optical_era_lounge`, the handhelds

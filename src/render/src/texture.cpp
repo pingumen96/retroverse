@@ -156,6 +156,83 @@ Expected<Texture2D> Texture2D::create(const assets::ImageData& image, const Text
     return result;
 }
 
+Expected<Texture2D> Texture2D::createCompressed(const assets::CompressedTexture& blocks, const TextureDesc& desc,
+                                                std::string_view debugName) {
+    std::string name(debugName);
+    if (blocks.levels.empty()) {
+        return makeError(ErrorCode::InvalidArgument, "no level to upload", name);
+    }
+    const bool bc3 =
+        blocks.format == assets::TextureBlocks::Bc3Srgb || blocks.format == assets::TextureBlocks::Bc3Linear;
+    const bool srgb =
+        blocks.format == assets::TextureBlocks::Bc1Srgb || blocks.format == assets::TextureBlocks::Bc3Srgb;
+    const GpuFormat format = bc3 ? GpuFormat::Bc3 : GpuFormat::Bc1;
+    const glm::ivec2 size(blocks.levels.front().width, blocks.levels.front().height);
+    for (const assets::CompressedLevel& level : blocks.levels) {
+        if (level.width < 1 || level.height < 1 ||
+            level.blocks.size() != textureLevelBytes(format, glm::ivec2(level.width, level.height))) {
+            return makeError(ErrorCode::InvalidArgument,
+                             fmt::format("a {}x{} level of {} bytes is not whole blocks", level.width, level.height,
+                                         level.blocks.size()),
+                             name);
+        }
+    }
+    GLint maxSize = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+    if (size.x > maxSize || size.y > maxSize) {
+        return makeError(ErrorCode::OutOfRange,
+                         fmt::format("{}x{} exceeds the largest texture side, {}", size.x, size.y, maxSize), name);
+    }
+    if (!GLAD_GL_EXT_texture_compression_s3tc || (srgb && !GLAD_GL_EXT_texture_sRGB)) {
+        return makeError(ErrorCode::Unsupported, "the driver has no S3TC (sRGB) textures", name);
+    }
+    const GLenum storage = bc3 ? (srgb ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT)
+                               : (srgb ? GL_COMPRESSED_SRGB_S3TC_DXT1_EXT : GL_COMPRESSED_RGB_S3TC_DXT1_EXT);
+    const int levels = static_cast<int>(blocks.levels.size());
+    GLuint id = 0;
+    glCreateTextures(GL_TEXTURE_2D, 1, &id);
+    TextureObject texture(id);
+    if (id == 0) {
+        return makeError(ErrorCode::GraphicsError, "glCreateTextures returned no texture", name);
+    }
+    glTextureStorage2D(id, levels, storage, size.x, size.y);
+    GLint immutable = GL_FALSE;
+    glGetTextureParameteriv(id, GL_TEXTURE_IMMUTABLE_FORMAT, &immutable);
+    if (immutable == GL_FALSE) {
+        return makeError(ErrorCode::GraphicsError,
+                         fmt::format("could not allocate a {}x{} compressed texture with {} level(s)", size.x, size.y,
+                                     levels),
+                         name);
+    }
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    for (int level = 0; level < levels; ++level) {
+        const assets::CompressedLevel& data = blocks.levels[static_cast<std::size_t>(level)];
+        glCompressedTextureSubImage2D(id, level, 0, 0, data.width, data.height, storage,
+                                      static_cast<GLsizei>(data.blocks.size()), data.blocks.data());
+    }
+    const GLint wrap = detail::wrapMode(desc.sampling.wrap);
+    glTextureParameteri(id, GL_TEXTURE_WRAP_S, wrap);
+    glTextureParameteri(id, GL_TEXTURE_WRAP_T, wrap);
+    glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, detail::minFilter(desc.sampling.filter, levels > 1));
+    glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, detail::magFilter(desc.sampling.filter));
+    if (detail::usesAnisotropy(desc.sampling)) {
+        glTextureParameterf(id, GL_TEXTURE_MAX_ANISOTROPY, desc.sampling.anisotropy);
+    }
+    detail::setObjectLabel(GL_TEXTURE, id, name);
+
+    Texture2D result;
+    result.m_texture = std::move(texture);
+    result.m_size = size;
+    result.m_levels = levels;
+    result.m_bytes = blocks.bytes();
+    result.m_desc = desc;
+    result.m_desc.colorSpace = srgb ? ColorSpace::Srgb : ColorSpace::Linear;
+    result.m_desc.mipmaps = levels > 1;
+    result.m_memory = GpuMemoryAllocation(desc.memoryKind, result.m_bytes);
+    result.m_debugName = std::move(name);
+    return result;
+}
+
 Expected<Texture2D> Texture2D::copyOf(GLuint source, glm::ivec2 size, const TextureDesc& desc,
                                       std::string_view debugName) {
     std::string name(debugName);

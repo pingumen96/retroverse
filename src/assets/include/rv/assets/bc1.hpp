@@ -34,6 +34,17 @@ enum class Bc1Quality {
 /// for an invalid image or one without 4 channels.
 [[nodiscard]] std::vector<std::byte> encodeBc1(const ImageData& image, Bc1Quality quality = Bc1Quality::High);
 
+/// I11 step 7: BC3 (S3TC DXT5), 16 bytes per 4 x 4 block: BC1's colour block after an alpha block (two endpoints and
+/// 3-bit indices), for the user's console models' base colours with transparency.
+inline constexpr std::size_t kBc3BlockBytes = 16;
+/// Bytes of a width x height level in BC3: whole blocks, 16 bytes each (0 for a side below 1).
+[[nodiscard]] std::size_t bc3LevelBytes(int width, int height) noexcept;
+/// Encodes an RGBA8 image (4 channels) as BC3 blocks with its alpha, as encodeBc1() lays them out. Deterministic.
+/// Empty for an invalid image or one without 4 channels.
+[[nodiscard]] std::vector<std::byte> encodeBc3(const ImageData& image, Bc1Quality quality = Bc1Quality::High);
+/// The alpha of every pixel of an RGBA8 image is 255 (BC1 keeps it), false for any other image.
+[[nodiscard]] bool isOpaque(const ImageData& image) noexcept;
+
 /// Decodes BC1 blocks into a width x height RGBA8 image (alpha 255, or 0 for the transparent index of a three-colour
 /// block): the endpoints expanded from 5:6:5 by bit replication, the four-colour palette (c0 > c1) interpolated at a
 /// third and two thirds, the three-colour one (c0 <= c1) at the middle with index 3 black. Empty when `blocks` is not

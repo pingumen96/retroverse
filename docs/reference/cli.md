@@ -98,6 +98,16 @@ Results go to stdout, or atomically to `--output <file>`, as text or with `--jso
   `--system` it prints one line per system and a summary; with it, every field, its files and what was left out.
   `--json` gives every field with `source` and `origin`. It reads only: exit 2 without library.json or for an unknown
   system, 3 when the catalog or identity.json cannot be read.
+- `content` (I11 step 7, `docs/i11/step-7.md`, ADR-0019 §7): the user's console models in
+  `<user data>/content/consoles/<system>/`, the one command that writes there.
+  - `add-console --system <name> --model <file.glb> --source <url> --author <name> --license <id> [--kind
+    home|handheld|computer] [--front +z|-z|+x|-x] [--scale-cm <w,h,d>] [--date <YYYY-MM-DD>] [--modifications <text>]
+    [--replace]` copies the model into `console.glb` and writes `console.json`. It refuses a model that fails the checks
+    (exit 1, nothing written), and a folder that has one already unless `--replace`.
+  - `check [--system <name>] [--json]` reads every folder (or one) and lists each problem; exit 1 when one fails.
+  - `list [--json]` shows each console with its size, triangles, compressed texture bytes, author and licence.
+  - The checks are the app's: each side 5 to 45 cm, a footprint of at most 42.5 x 40 cm, at most 60,000 triangles, at
+    most 2 MiB of textures once compressed (BC1, BC3 for a base colour with transparency, their mips).
 - `identities` (`docs/i2/step-11b.md`): `list --system <name>` (GameId, state `present`, `missing` or `unseen`, quick
   hash `current`, `stale`, `none` or `folder`, last path), `show <gameId>` (file facts, quick hash, aliases, history,
   review rows; an alias prints what it stands for; needs no library.json), `reviews [--system <name>] [--all]` (open

@@ -41,6 +41,7 @@ ExitCode runSessions(CommandContext& context);
 ExitCode runStats(CommandContext& context);
 ExitCode runWorldPlan(CommandContext& context);
 ExitCode runWhereIs(CommandContext& context);
+ExitCode runContent(CommandContext& context);
 
 /// The subcommands of worldplan (cmd_worldplan.cpp dispatches them), one source each (cmd_worldplan_<name>.cpp), so
 /// that the I3 steps implementing them never edit one file: `arguments` are those after the subcommand's name.

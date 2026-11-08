@@ -64,6 +64,7 @@ add_library(rv_app_cli STATIC
     src/xr_watch.cpp
     src/identity_signs.cpp
     src/history_plaques.cpp
+    src/content_consoles.cpp
 )
 add_library(rv::app_cli ALIAS rv_app_cli)
 rv_set_target_defaults(rv_app_cli)
@@ -132,6 +133,7 @@ add_library(rv_app STATIC
     src/system_logos.cpp
     src/world_signs.cpp
     src/world_plaques.cpp
+    src/world_consoles.cpp
     src/plaque_card_panel.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp

@@ -3163,6 +3163,9 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["plaques"] = catalog.plaques;
     json["plaquesDrawn"] = catalog.plaquesDrawn;
     json["plaqueCards"] = catalog.plaqueCards;
+    json["consoleModels"] = catalog.consoleModels;
+    json["consoleModelsRefused"] = catalog.consoleModelsRefused;
+    json["consoleTextureBytes"] = catalog.consoleTextureBytes;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3294,6 +3297,10 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.plaques = static_cast<std::size_t>(fields.optionalCount("plaques", kMaxSize).value_or(0));
     catalog.plaquesDrawn = static_cast<std::size_t>(fields.optionalCount("plaquesDrawn", kMaxSize).value_or(0));
     catalog.plaqueCards = static_cast<std::size_t>(fields.optionalCount("plaqueCards", kMaxSize).value_or(0));
+    catalog.consoleModels = static_cast<std::size_t>(fields.optionalCount("consoleModels", kMaxSize).value_or(0));
+    catalog.consoleModelsRefused =
+        static_cast<std::size_t>(fields.optionalCount("consoleModelsRefused", kMaxSize).value_or(0));
+    catalog.consoleTextureBytes = fields.optionalCount("consoleTextureBytes", kMaxSize).value_or(0);
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.

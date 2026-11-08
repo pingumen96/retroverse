@@ -36,6 +36,7 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include <rv/app/content_consoles.hpp>
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_focus.hpp>
 #include <rv/app/world_inspect.hpp>
@@ -43,6 +44,8 @@
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog_db/database.hpp>
 #include <rv/catalog_db/session_store.hpp>
+#include <rv/assets/console_content.hpp>
+#include <rv/assets/gltf_loader.hpp>
 #include <rv/core/aabb.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/math.hpp>
@@ -55,6 +58,7 @@
 #include "launch_support.hpp"
 #include "smoke_support.hpp"
 #include "support/fixture.hpp"
+#include "support/fixture_console.hpp"
 
 using namespace rv::smoke;
 namespace fs = std::filesystem;
@@ -466,6 +470,69 @@ TEST_CASE("world launch: Avvia on the card puts the item into the console, launc
     // Avvia, so they had nothing to hold back (pausedRounds counts rounds with work held).
     CHECK(launch.startFrame == launch.endFrame);
     WARN("cover rounds paused: " << report.residency.pausedRounds);
+}
+
+TEST_CASE("world launch: the user's console model stands in the procedural console's place and the insertion goes "
+          "into its socket (I11 step 7)",
+          "[gpu][world][world_launch][insertion][content]") {
+    ensureLaunchAllowList();
+    ImportedRoom room("console_model");
+    const ShownRoom shown = firstRun(room);
+    // The fixture console made at test time, a quarter larger than the procedural one (30 x 8.75 x 25 cm), as the
+    // user's content of snes: its slot higher than the procedural console's.
+    rv::test::FixtureConsoleOptions options;
+    options.scale = 1.25f;
+    const fs::path folder = rv::assets::consoleFolder(room.data / "content", "snes");
+    REQUIRE(rv::test::writeFixtureConsole(folder / "console.glb", options).has_value());
+    REQUIRE(rv::core::writeTextFileAtomic(folder / "console.json", rv::assets::writeConsoleManifest({})).has_value());
+    auto model = rv::assets::loadGltf(folder / "console.glb");
+    REQUIRE(model.has_value());
+    const rv::assets::ConsoleCheck check = rv::assets::checkConsoleModel(*model, {});
+    REQUIRE(check.ok());
+
+    // The room from its doorway, for a look: the striped console beside the CRT.
+    const fs::path doorway = room.dir / "doorway.png";
+    const AppRun look = runApp(retroverseExe(), room.dir, "doorway", roomArguments(30, doorway));
+    const rv::app::RunReport& looked = requireRoom(look);
+    INFO(look.describe());
+    requireScreenshot(look, doorway, {1920, 1080});
+    REQUIRE(looked.catalog.has_value());
+    CHECK(looked.catalog->consoleModels == 1);
+    CHECK(looked.catalog->consoleModelsRefused == 0);
+    // Its 256 x 256 base colour in BC1 with its mips, nothing else uploaded at full size.
+    CHECK(looked.catalog->consoleTextureBytes == check.textureBytes);
+
+    // The insertion skipped by a button: the item in the model's socket at once.
+    const rv::world::CollectionItem& item = itemOf(shown, room.gameAt("Amber Lantern (USA).sfc"));
+    const AppRun run = runApp(retroverseExe(), room.dir, "skip",
+                              roomArguments(120, room.dir / "skipped.png",
+                                            {"--spawn", spawnArgument(spawnOf(focusPose(item, shown.camera))),
+                                             "--input-script", arg(inputScript("world_insertion_skip.json"))}));
+    const rv::app::RunReport& report = requireRoom(run);
+    INFO(run.describe());
+    const rv::app::InsertionRecord& insertion = report.world.interaction.insertion;
+    CHECK(insertion.skipped == 1);
+    // The procedural console stood where the model stands: its object's transform is the site.
+    rv::app::ConsoleSite site;
+    site.room = rv::world::RoomId::parse("room:snes").value();
+    REQUIRE(shown.console.has_value());
+    const auto plan = rv::world::readStoredPlan(
+        rv::world::worldFiles(room.data, rv::catalog::LibraryId::parse(report.world.library).value()).plan);
+    REQUIRE(plan.has_value());
+    auto data = rv::world::loadSceneData(report.assetRoot, plan->plan, site.room);
+    REQUIRE(data.has_value());
+    auto scene = rv::world::toSceneDescription(plan->plan, site.room, *data);
+    REQUIRE(scene.has_value());
+    const rv::scene::SceneObject* console = scene->findObject(rv::app::kHeroConsoleId);
+    REQUIRE(console != nullptr);
+    site.transform = console->transform;
+    const rv::app::ConsoleSocket expected =
+        rv::app::consoleModelSocket(*model, {}, site, check.size.x, shown.console->heroScreen);
+    WARN("the model's socket " << expected.position().x << ", " << expected.position().y << ", "
+                               << expected.position().z << "; the procedural one's " << shown.console->position().y);
+    CHECK(glm::length(insertion.socket - expected.position()) < 1e-3f);
+    CHECK(expected.position().y > shown.console->position().y + 0.015f);
+    CHECK(report.catalog->consoleModels == 1);
 }
 
 TEST_CASE("world launch: a button skips the insertion and the game launches within the frame",

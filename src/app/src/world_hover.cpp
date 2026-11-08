@@ -72,6 +72,25 @@ std::size_t WorldHover::addRoom(world::CollectionLayout layout, CollectionInstan
     return targets;
 }
 
+bool WorldHover::setConsoleSocket(const world::RoomId& room, std::optional<ConsoleSocket> console) {
+    for (RoomEntry& entry : m_rooms) {
+        if (entry.room && entry.room->layout().room == room) {
+            entry.room->setConsoleSocket(console);
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<ConsoleSocket> WorldHover::consoleSocket(const world::RoomId& room) const {
+    for (const RoomEntry& entry : m_rooms) {
+        if (entry.room && entry.room->layout().room == room) {
+            return entry.room->consoleSocket();
+        }
+    }
+    return std::nullopt;
+}
+
 void WorldHover::setActiveRoom(std::optional<std::size_t> room) {
     if (room && *room >= m_rooms.size()) {
         room.reset();

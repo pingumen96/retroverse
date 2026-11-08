@@ -31,6 +31,7 @@ constexpr std::size_t bytesPerTexel(GpuFormat format) noexcept {
     case GpuFormat::Rgba16F:
         return 8;
     case GpuFormat::Bc1:
+    case GpuFormat::Bc3:
         return 0;
     }
     return 0;
@@ -61,6 +62,8 @@ std::string_view toString(GpuMemoryKind kind) noexcept {
         return "uiTextures";
     case GpuMemoryKind::SignTextures:
         return "signTextures";
+    case GpuMemoryKind::ContentTextures:
+        return "contentTextures";
     }
     return "sceneTextures";
 }
@@ -94,6 +97,8 @@ std::string_view displayName(GpuMemoryKind kind) noexcept {
         return "UI";
     case GpuMemoryKind::SignTextures:
         return "Signs";
+    case GpuMemoryKind::ContentTextures:
+        return "Content";
     }
     return "Textures";
 }
@@ -102,10 +107,10 @@ std::size_t textureLevelBytes(GpuFormat format, glm::ivec2 size) noexcept {
     if (size.x <= 0 || size.y <= 0) {
         return 0;
     }
-    if (format == GpuFormat::Bc1) {
+    if (format == GpuFormat::Bc1 || format == GpuFormat::Bc3) {
         const auto blocksX = static_cast<std::size_t>((size.x + kBc1BlockSide - 1) / kBc1BlockSide);
         const auto blocksY = static_cast<std::size_t>((size.y + kBc1BlockSide - 1) / kBc1BlockSide);
-        return blocksX * blocksY * kBc1BlockBytes;
+        return blocksX * blocksY * (format == GpuFormat::Bc3 ? 2 * kBc1BlockBytes : kBc1BlockBytes);
     }
     return static_cast<std::size_t>(size.x) * static_cast<std::size_t>(size.y) * bytesPerTexel(format);
 }

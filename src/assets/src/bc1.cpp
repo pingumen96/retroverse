@@ -70,6 +70,54 @@ std::vector<std::byte> encodeBc1(const ImageData& image, Bc1Quality quality) {
     return blocks;
 }
 
+std::size_t bc3LevelBytes(int width, int height) noexcept {
+    return static_cast<std::size_t>(bc1BlocksAlong(width)) * static_cast<std::size_t>(bc1BlocksAlong(height)) *
+           kBc3BlockBytes;
+}
+
+std::vector<std::byte> encodeBc3(const ImageData& image, Bc1Quality quality) {
+    std::vector<std::byte> blocks;
+    if (!image.isValid() || image.channels != 4) {
+        return blocks;
+    }
+    const int blocksX = bc1BlocksAlong(image.width);
+    const int blocksY = bc1BlocksAlong(image.height);
+    blocks.resize(bc3LevelBytes(image.width, image.height));
+    const int mode = quality == Bc1Quality::High ? STB_DXT_HIGHQUAL : STB_DXT_NORMAL;
+    std::array<unsigned char, 64> source{};
+    auto* out = reinterpret_cast<unsigned char*>(blocks.data());
+    for (int by = 0; by < blocksY; ++by) {
+        for (int bx = 0; bx < blocksX; ++bx) {
+            for (int py = 0; py < 4; ++py) {
+                const int y = std::min(by * 4 + py, image.height - 1);
+                for (int px = 0; px < 4; ++px) {
+                    const int x = std::min(bx * 4 + px, image.width - 1);
+                    const std::uint8_t* pixel =
+                        image.pixels.data() + (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) +
+                                               static_cast<std::size_t>(x)) *
+                                                  4;
+                    std::copy(pixel, pixel + 4, source.data() + (py * 4 + px) * 4);
+                }
+            }
+            stb_compress_dxt_block(out, source.data(), 1, mode);
+            out += kBc3BlockBytes;
+        }
+    }
+    return blocks;
+}
+
+bool isOpaque(const ImageData& image) noexcept {
+    if (!image.isValid() || image.channels != 4) {
+        return false;
+    }
+    for (std::size_t at = 3; at < image.pixels.size(); at += 4) {
+        if (image.pixels[at] != 255) {
+            return false;
+        }
+    }
+    return true;
+}
+
 ImageData decodeBc1(std::span<const std::byte> blocks, int width, int height) {
     if (width < 1 || height < 1 || blocks.size() != bc1LevelBytes(width, height)) {
         return {};

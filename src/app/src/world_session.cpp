@@ -202,6 +202,14 @@ std::string WorldSession::noticeRoom() const {
     return m_options.startRoom ? m_options.startRoom->toString() : std::string();
 }
 
+bool WorldSession::setConsoleSocket(const world::RoomId& room, std::optional<ConsoleSocket> console) {
+    return m_interaction->setConsoleSocket(room, console);
+}
+
+std::optional<ConsoleSocket> WorldSession::consoleSocket(const world::RoomId& room) const {
+    return m_interaction->consoleSocket(room);
+}
+
 std::vector<catalog::SystemName> WorldSession::roomSections(const world::RoomId& room) const {
     if (!m_planState || !m_planState->plan) {
         return {};
