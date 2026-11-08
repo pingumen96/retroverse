@@ -30,6 +30,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
+# Retroverse uses no C++20 modules: without the dependency scan, a file compiles as soon as its target's dependencies
+# are built, instead of after a scan of every file of its target and their collation.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Executables, vcpkg DLLs (copied by the vcpkg applocal step) and deployed assets live side by side.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -117,6 +120,9 @@ if(RV_BUILD_SPIKES)
     endif()
     add_subdirectory(spikes)
 endif()
+
+# Every first-party target and its links are known here.
+rv_apply_precompiled_headers()
 
 message(STATUS "Retroverse ${PROJECT_VERSION} | build type: ${CMAKE_BUILD_TYPE} | dev UI: ${RV_DEV_UI} | "
                "GL debug: ${RV_GL_DEBUG} | XR: ${RV_ENABLE_XR} | tests: ${RV_BUILD_TESTS} | tools: ${RV_BUILD_TOOLS}")
