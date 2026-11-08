@@ -601,6 +601,10 @@ private:
         if (const auto identity = m_identities.find(summary.system.name.str()); identity != m_identities.end()) {
             system.logo = identity->second.logo.file;
             system.colors = identity->second.colors;
+            system.maker = identity->second.manufacturer.value;
+            system.year = identity->second.releaseYear.value;
+            system.type = identity->second.hardwareType.value;
+            system.description = identity->second.description.value;
         }
         system.platforms = summary.system.platforms;
         system.games = summary.games;

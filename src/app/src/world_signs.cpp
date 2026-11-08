@@ -25,11 +25,21 @@ constexpr std::int64_t kJobPriority = -10;
 /// Signs uploaded a frame (a few hundred microseconds each).
 constexpr std::size_t kUploadsPerFrame = 2;
 
-/// The material of `objectId`'s picture ("<id>/picture", "@<w>x<h>" for a pattern, then "#<hash>") with a base colour
-/// texture of its own, from the object's render items (the registry is append-only: an object replaced in place leaves
-/// its old material behind under the same prefix).
-std::optional<scene::MaterialHandle> pictureMaterial(std::string_view objectId, const SceneInstance& instance,
-                                                     const gl::MaterialRegistry& materials) {
+
+/// A sign's request: its style, its size and what it shows, as one key (equal signs share a texture).
+std::string requestKey(assets::IdentitySignStyle style, glm::ivec2 size, const IdentitySignContent& content) {
+    std::string key = fmt::format("{}|{}x{}|{}", style == assets::IdentitySignStyle::Neon ? "neon" : "lit", size.x,
+                                  size.y, content.name);
+    for (const std::filesystem::path& logo : content.logos) {
+        key += "|" + core::pathToUtf8Lossy(logo);
+    }
+    return key;
+}
+
+} // namespace
+
+std::optional<scene::MaterialHandle> objectPictureMaterial(std::string_view objectId, const SceneInstance& instance,
+                                                           const gl::MaterialRegistry& materials) {
     const std::string key = std::string(objectId) + "/" + std::string(kSignPictureRole);
     const std::span<const scene::RenderItem> items = instance.renderItems();
     for (const std::size_t item : instance.itemsOf([&](std::string_view id) { return id == objectId; })) {
@@ -48,18 +58,6 @@ std::optional<scene::MaterialHandle> pictureMaterial(std::string_view objectId, 
     }
     return std::nullopt;
 }
-
-/// A sign's request: its style, its size and what it shows, as one key (equal signs share a texture).
-std::string requestKey(assets::IdentitySignStyle style, glm::ivec2 size, const IdentitySignContent& content) {
-    std::string key = fmt::format("{}|{}x{}|{}", style == assets::IdentitySignStyle::Neon ? "neon" : "lit", size.x,
-                                  size.y, content.name);
-    for (const std::filesystem::path& logo : content.logos) {
-        key += "|" + core::pathToUtf8Lossy(logo);
-    }
-    return key;
-}
-
-} // namespace
 
 struct WorldSigns::Shared {
     struct Finished {
@@ -161,7 +159,7 @@ void WorldSigns::tint(const Frame& frame) {
         }
         const auto accent = core::hexToLinearRgb(*system->accent);
         const std::optional<scene::MaterialHandle> handle =
-            pictureMaterial(sign.objectId, *frame.instance, *frame.materials);
+            objectPictureMaterial(sign.objectId, *frame.instance, *frame.materials);
         if (!accent || !handle) {
             continue;
         }
@@ -237,7 +235,7 @@ void WorldSigns::rescan(const Frame& frame) {
             continue;
         }
         const std::optional<scene::MaterialHandle> handle =
-            pictureMaterial(sign.objectId, *frame.instance, *frame.materials);
+            objectPictureMaterial(sign.objectId, *frame.instance, *frame.materials);
         if (!handle) {
             continue;
         }

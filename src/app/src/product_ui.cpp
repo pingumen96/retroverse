@@ -63,6 +63,7 @@
 #include "elevator_prompt_panel.hpp"
 #include "game_screens_panel.hpp"
 #include "game_session_panel.hpp"
+#include "plaque_card_panel.hpp"
 #include "world_label_panel.hpp"
 #include "world_notice_panel.hpp"
 
@@ -135,6 +136,9 @@ struct ProductUi::Impl {
     /// The hover's title label (I3 step 13a) and what the application wants it to show, likewise.
     std::unique_ptr<WorldLabelPanel> label;
     std::optional<WorldLabelContent> wantedLabel;
+    /// I11 step 5: the history plaque's card (room_plaque.rml), and the cards opened during the run.
+    std::unique_ptr<PlaqueCardPanel> plaqueCard;
+    std::size_t plaqueCardsOpened = 0;
     /// The world's card beside the inspected item (I3 step 14a) and what the application wants it to show, likewise.
     std::unique_ptr<ui::GameCardScreen> card;
     std::optional<ui::GameCardContent> wantedCard;
@@ -294,7 +298,7 @@ struct ProductUi::Impl {
     WatchStatus watchStatus;
 
     [[nodiscard]] bool visible() const noexcept {
-        return catalogOpen || panel->visible() || (notice && notice->visible()) || (label && label->visible()) ||
+        return catalogOpen || panel->visible() || plaqueShown() || (notice && notice->visible()) || (label && label->visible()) ||
                (card && card->visible()) || screensOpen() || directoryShown() || (prompt && prompt->visible()) ||
                (editBar && editBar->visible()) || previewShown() || menuShown() || settingsShown() ||
                emulatorsShown() || statisticsShown() || coverageShown() || libraryShown() || wizardShown() ||
@@ -1727,13 +1731,15 @@ struct ProductUi::Impl {
 
     /// The media viewer or Informazioni shows (I3 step 14b).
     [[nodiscard]] bool screensOpen() const noexcept { return screens && screens->visible(); }
+    /// I11 step 5: the history plaque's card shows.
+    [[nodiscard]] bool plaqueShown() const noexcept { return plaqueCard && plaqueCard->visible(); }
     /// The directory shows (I4 step 7b).
     [[nodiscard]] bool directoryShown() const noexcept { return directoryScreen && directory.isOpen(); }
     /// Something over the world that hides the world's own labels: the catalog, the panel, the screens, the directory.
     [[nodiscard]] bool overWorld() const noexcept {
         return catalogOpen || panel->visible() || screensOpen() || directoryShown() || previewShown() || menuShown() ||
                settingsShown() || emulatorsShown() || statisticsShown() || coverageShown() || libraryShown() ||
-               wizardShown();
+               wizardShown() || plaqueShown();
     }
 
     /// The world's notice shows what the application wants while neither the catalog nor the panel shows.
@@ -2482,6 +2488,12 @@ Expected<std::unique_ptr<ProductUi>> ProductUi::create(AppContext& context, std:
     } else {
         spdlog::error("Media viewer and Informazioni unavailable: {}", screens.error().toString());
     }
+    // I11 step 5: the history plaque's card, over the room.
+    if (auto plaqueCard = PlaqueCardPanel::create(*s.view)) {
+        s.plaqueCard = std::move(*plaqueCard);
+    } else {
+        spdlog::error("The plaque's card unavailable: {}", plaqueCard.error().toString());
+    }
     if (s.refreshOnOpen && !s.catalog->supportsRefresh()) {
         // The mock catalog: nothing to import (recorded as such).
         s.refreshAsked = true;
@@ -2499,7 +2511,7 @@ bool ProductUi::catalogOpen() const noexcept {
 bool ProductUi::panelOpen() const noexcept {
     // I4b step 6: the regeneration's preview is a panel too (Back's PanelBack level leaves it first).
     return m_impl->panel->visible() || m_impl->flow.panel() != SessionPanel::None || m_impl->screensOpen() ||
-           m_impl->preview.isOpen();
+           m_impl->preview.isOpen() || m_impl->plaqueShown();
 }
 
 void ProductUi::openRegeneratePreview(ui::RegenerateKind kind, ui::RegenerateScopeTitle scope) {
@@ -3108,6 +3120,13 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
                 }
             } else if (s.panel->visible()) {
                 s.panel->apply(command);
+            } else if (s.plaqueShown()) {
+                // I11 step 5: activate closes it too; Up and Down scroll its text.
+                if (command == ui::UiCommand::Activate) {
+                    s.plaqueCard->hide();
+                } else if (command == ui::UiCommand::Up || command == ui::UiCommand::Down) {
+                    s.plaqueCard->scroll(command == ui::UiCommand::Up ? -1 : 1);
+                }
             } else if (s.keyboardShown()) {
                 s.keyboardApply(command); // I7 step 5
             } else if (s.emulators.isOpen()) {
@@ -3292,6 +3311,11 @@ void ProductUi::update(const input::ActionState* uiActions, double deltaSeconds,
 }
 
 void ProductUi::panelBack() {
+    // I11 step 5: the plaque's card closes first.
+    if (m_impl->plaqueShown()) {
+        m_impl->plaqueCard->hide();
+        return;
+    }
     // I4b step 6: the regeneration's preview leaves one level (the second confirmation, then the panel), unless the
     // game-session panel shows over it.
     if (m_impl->preview.isOpen() && !m_impl->panel->visible() && m_impl->flow.panel() == SessionPanel::None) {
@@ -3400,6 +3424,25 @@ void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, b
 
 void ProductUi::setSystemLogos(const SystemLogos* logos) noexcept {
     m_logos = logos;
+}
+
+bool ProductUi::openPlaqueCard(const PlaqueCardContent& content) {
+    Impl& s = *m_impl;
+    if (!s.plaqueCard || hasInput()) {
+        return false;
+    }
+    spdlog::info("World: the plaque of {} read", content.system);
+    s.plaqueCard->show(content);
+    ++s.plaqueCardsOpened;
+    return true;
+}
+
+bool ProductUi::plaqueCardOpen() const noexcept {
+    return m_impl->plaqueShown();
+}
+
+std::size_t ProductUi::plaqueCardsOpened() const noexcept {
+    return m_impl->plaqueCardsOpened;
 }
 
 std::string ProductUi::systemLogoSource(std::string_view system) const {

@@ -248,6 +248,11 @@ struct CatalogRecord {
     bool systemColors = true;
     std::size_t tintedNeons = 0;
     std::size_t tintedLights = 0;
+    /// I11 step 5: the history plaques of the scene shown when the run ended, those whose plate was drawn on them, and
+    /// the plaque's cards opened during the run.
+    std::size_t plaques = 0;
+    std::size_t plaquesDrawn = 0;
+    std::size_t plaqueCards = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

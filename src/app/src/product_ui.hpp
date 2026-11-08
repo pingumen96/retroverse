@@ -32,6 +32,7 @@
 #include <glm/vec4.hpp>
 
 #include <rv/app/edit_bar_ui.hpp>
+#include <rv/app/plaque_card_ui.hpp>
 #include <rv/app/world_label_ui.hpp>
 
 #include "world_notice_panel.hpp"
@@ -296,6 +297,11 @@ public:
     /// registered (empty before, or without one); their revision, a cache key for the UI's data.
     void setSystemLogos(const SystemLogos* logos) noexcept;
     [[nodiscard]] std::string systemLogoSource(std::string_view system) const;
+    /// I11 step 5 (ADR-0019 §6): the history plaque's card over the room (a panel: Back closes it, activate too); false
+    /// while the UI has the input already. Whether it shows, and the cards opened during the run.
+    bool openPlaqueCard(const PlaqueCardContent& content);
+    [[nodiscard]] bool plaqueCardOpen() const noexcept;
+    [[nodiscard]] std::size_t plaqueCardsOpened() const noexcept;
     [[nodiscard]] std::uint64_t systemLogosRevision() const noexcept;
     /// The media viewer and Informazioni (I3 step 14b; game_screens_panel.hpp) of `game`, from the world's card
     /// (`from`: kScreenFromCard; the quick catalog opens them itself): the catalog's row and stored media, `title` until

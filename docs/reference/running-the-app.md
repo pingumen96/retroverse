@@ -564,7 +564,9 @@ build/rvdata`).
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
   featured shelf, `shelf_light`, while the 16 lights leave room) and `"systemColors": false` (I11 step 6: a console
   room's neon in its theme pack's colour rather than its system's accent; on by default, also Impostazioni' "Colori dei
-  sistemi"; I11 step 4's identity signs, `docs/i11/step-4.md`, show the system's logo in any case); the room's look comes
+  sistemi"; I11 step 4's identity signs, `docs/i11/step-4.md`, show the system's logo in any case, and step 5's history
+  plaque, `docs/i11/step-5.md`, hangs beside the hero corner when the identity has a description: point at it, interact
+  opens its card); the room's look comes
   from its theme pack
   (`assets/world/themes`, I6 step 3, `docs/i6/step-3.md`): its floor's (`building.json`'s `themePack`: the 16-bit
   floors `classic_16bit_warm`, gen5 `console_90s_collector`, gen6 and gen7 `optical_era_lounge`, the handhelds

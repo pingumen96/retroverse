@@ -156,6 +156,64 @@ std::vector<fs::path> screenshotsOf(const ImportedRoom& room) {
 
 } // namespace
 
+TEST_CASE("xr: the right controller's ray on the history plaque, interact opens its card (I11 step 5)", "[gpu][xr][identity]") {
+    const ImportedRoom room("plaque");
+    // The invented theme fixture's identity: snes' console room has a plaque beside its hero corner.
+    const auto themes = rv::test::Fixture::materialize("esde/theme");
+    REQUIRE(themes.has_value());
+    const nlohmann::json identity{{"schemaVersion", 1},
+                                  {"themeRoots", nlohmann::json::array({arg(themes->path("ES-DE/themes")),
+                                                                        arg(themes->path("Programs/ES-DE/themes"))})}};
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "identity.json", identity.dump(2) + "\n").has_value());
+    const AppRun first = runApp(retroverseExe(), room.dir, "first",
+                                {"--start-room", "room:snes", "--exit-after-frames", "--frames", "3", "--fixed-dt",
+                                 "0.016667", "--screenshot", arg(room.dir / "first.png")});
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+
+    // The walker 0.9 m in front of the plaque (room:snes' frame: its face at x 0.33, 1.35 m up, z -4.95), facing it; the
+    // right controller pointing at its centre.
+    const glm::vec3 feet(0.33f, 0.0f, -4.05f);
+    const glm::vec3 plaque(0.33f, 1.35f, -4.95f);
+    const glm::vec3 handWorld = feet + turned(kRightHand, 0.0f);
+    const glm::vec3 toPlaque = glm::normalize(plaque - handWorld);
+    const float handYaw = rv::core::radiansToDegrees(std::atan2(toPlaque.x, -toPlaque.z));
+    const float handPitch = rv::core::radiansToDegrees(std::asin(std::clamp(toPlaque.y, -1.0f, 1.0f)));
+    const fs::path script = room.dir / "plaque.json";
+    const std::string hand = fmt::format(R"("rightHand": {{"yaw": {}, "pitch": {}, "position": [{}, {}, {}]}})",
+                                         handYaw, handPitch, kRightHand.x, kRightHand.y, kRightHand.z);
+    const std::string head = R"("headPose": {"position": [0, 1.65, 0]})";
+    REQUIRE(rv::core::writeTextFileAtomic(
+                script, fmt::format(R"([
+  {{"fromFrame": 0, "toFrame": 39, {0}, {1}}},
+  {{"fromFrame": 40, "toFrame": 40, {0}, {1}, "actions": {{"interact": 1}}}},
+  {{"fromFrame": 41, "toFrame": 89, {0}, {1}}}
+])",
+                                    head, hand))
+                .has_value());
+    rv::app::SpawnPoint spawnPoint;
+    spawnPoint.feet = feet;
+    spawnPoint.yawDeg = 0.0f;
+    spawnPoint.pitchDeg = 0.0f;
+    const fs::path shot = room.dir / "eyes.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "vr",
+                              {"--vr", "--xr-runtime", "fake", "--start-room", "room:snes", "--spawn",
+                               spawnArgument(spawnPoint), "--input-script", arg(script), "--exit-after-frames",
+                               "--frames", "90", "--fixed-dt", "0.016667", "--screenshot", arg(shot)});
+    requireCleanRun(run);
+    INFO(run.describe());
+    requireScreenshot(run, shot, glm::ivec2(2 * kEyeSize.x, kEyeSize.y));
+    REQUIRE(run.report->xr);
+    CHECK(run.report->xr->pointedFrames > 0);
+    // The ray came onto the plaque: a vibration; interact opened its card, on the headset's panel.
+    CHECK(run.report->xr->vibrations >= 1);
+    REQUIRE(run.report->catalog.has_value());
+    CHECK(run.report->catalog->plaques == 1);
+    CHECK(run.report->catalog->plaquesDrawn == 1);
+    CHECK(run.report->catalog->plaqueCards == 1);
+    CHECK(run.report->xr->uiPanelFrames > 0);
+}
+
 TEST_CASE("xr: the right controller's ray inspects a cartridge, held in that hand, the walker unmoved (I10 step 4)",
           "[gpu][xr]") {
     const ImportedRoom room("inspect");
