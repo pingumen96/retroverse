@@ -811,7 +811,7 @@ namespace {
 
 /// The checks of a building golden's run (G11 to G13): the stored plan's floor `floor` shown unchanged at the first frame
 /// (requireGoldenRun()), `room` holding the eye ("" the hall), every item of the floor resident at the end, the floor's
-/// GPU memory within the acceptable 512 MiB.
+/// GPU memory within the acceptable 4 GiB (ADR-0021 §8).
 void requireBuildingRun(const AppRun& run, std::string_view floor, std::string_view room) {
     requireGoldenRun(run);
     INFO(run.describe());
@@ -823,7 +823,7 @@ void requireBuildingRun(const AppRun& run, std::string_view floor, std::string_v
     CHECK(report.residency.items > 0);
     CHECK(report.residency.frontsResident == report.residency.items);
     CHECK(report.residency.pending == 0);
-    CHECK(report.gpuMemory.peakTotalBytes <= 512ull * 1024ull * 1024ull);
+    CHECK(report.gpuMemory.peakTotalBytes <= 4096ull * 1024ull * 1024ull);
 }
 
 /// The room of `plan` whose sections hold `system` (REQUIREd).

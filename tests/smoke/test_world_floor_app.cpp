@@ -6,7 +6,7 @@
 //     building_support.hpp), started in
 //     the first with --start-room: each room's collection samples its own texture arrays (the registry keys carry the
 //     room id; the run report's residency.rooms), every room's covers resident, a static group per room, the floor's
-//     GPU memory within the acceptable 512 MiB; the cover loader's first view the start room's items and those of the
+//     GPU memory within the acceptable 4 GiB; the cover loader's first view the start room's items and those of the
 //     rooms whose doorway it sees, none of another room's items the frustum meets beyond a wall; up close (--spawn at an
 //     item's Focus pose, in the start room's frame) each room's fronts show their pictures and the reticle's item is
 //     hovered in the room that holds the eye;
@@ -75,8 +75,8 @@ namespace {
 
 constexpr glm::ivec2 kShotSize{1920, 1080};
 constexpr float kEyeHeight = 1.65f;
-/// The acceptable GPU memory of a floor (docs/roadmap.md, "Acceptable performance": all textures at most 512 MiB).
-constexpr std::uint64_t kAcceptableGpuBytes = 512ull * 1024ull * 1024ull;
+/// The acceptable GPU memory of a floor (docs/roadmap.md, "Acceptable performance": at most 4 GiB, ADR-0021 §8).
+constexpr std::uint64_t kAcceptableGpuBytes = 4096ull * 1024ull * 1024ull;
 /// The walker's step at --fixed-dt 0.016667 (2.5 m/s) and its turn per mouse pixel.
 constexpr double kStepMeters = 2.5 * 0.016667;
 constexpr double kRadiansPerPixel = 0.0022;
