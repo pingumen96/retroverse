@@ -36,14 +36,16 @@ enum class GpuMemoryKind : std::uint8_t {
     SceneTextures,
     /// Buffer storage: vertices and indices, instances, uniform blocks, debug lines.
     Buffers,
+    /// Pictures the product UI shows that the app makes (I11 step 3: the systems' logos, SystemLogos).
+    UiTextures,
 };
-inline constexpr std::size_t kGpuMemoryKindCount = 7;
+inline constexpr std::size_t kGpuMemoryKindCount = 8;
 
 /// Every kind, in declaration order.
 inline constexpr std::array<GpuMemoryKind, kGpuMemoryKindCount> kGpuMemoryKinds{
     GpuMemoryKind::ProceduralSurfaces, GpuMemoryKind::CollectionArrays, GpuMemoryKind::HeroTextures,
     GpuMemoryKind::Video,              GpuMemoryKind::Targets,          GpuMemoryKind::SceneTextures,
-    GpuMemoryKind::Buffers,
+    GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,
 };
 
 /// The run report's key: "proceduralSurfaces", "collectionArrays", "heroTextures", "video", "targets",

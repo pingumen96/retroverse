@@ -100,6 +100,7 @@
 #include "fxaa_self_check.hpp"
 #include "product_ui.hpp"
 #include "screen_service.hpp"
+#include "system_logos.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
 #include "xr_game.hpp"
@@ -672,6 +673,9 @@ struct RetroverseApp::State {
     /// The product UI (the quick catalog, the game-session panel) and its launches: over the ES-DE catalog of the user
     /// data directory, or --mock-catalog's; none in the model viewer.
     std::unique_ptr<ProductUi> product;
+    /// I11 step 3: the systems' logos for the product UI (room mode: they need the pool); destroyed before the product
+    /// UI, which never renders again by then.
+    std::unique_ptr<SystemLogos> systemLogos;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
     /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
@@ -958,6 +962,30 @@ struct RetroverseApp::State {
             record->lowestScale = renderScale.lowest();
             record->eyesGpuMilliseconds = renderScale.smoothedMilliseconds();
         }
+    }
+
+    /// I11 step 3: the catalog's systems' logos rasterized on the pool and registered with the product UI, a few a frame.
+    /// The logos unregistered and released, with their pool's jobs (before that pool goes).
+    void releaseSystemLogos() {
+        if (!systemLogos) {
+            return;
+        }
+        if (product) {
+            systemLogos->release(*product);
+            product->setSystemLogos(nullptr);
+        }
+        systemLogos.reset();
+    }
+
+    void updateSystemLogos() {
+        if (!product || !pool) {
+            return;
+        }
+        if (!systemLogos) {
+            systemLogos = std::make_unique<SystemLogos>(*pool);
+            product->setSystemLogos(systemLogos.get());
+        }
+        systemLogos->update(product->catalog().systemLogos(), *product);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -1881,6 +1909,9 @@ struct RetroverseApp::State {
                     gl::ColorSpace::Srgb));
             }
         }
+        // The logos' jobs are the old pool's (a world started again, the wizard's): they go with it, and are asked
+        // again of the new one.
+        releaseSystemLogos();
         pool = std::make_unique<core::WorkerPool>();
         WorldSession::Options options;
         options.paths = WorldPaths{paths.assetRoot(), paths.userDataRoot(), paths.configDir(), paths.cacheDir()};
@@ -2919,6 +2950,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     // A minimized window hides nothing from a headset: the screens stay in the eyes' view.
     state.updateScreens(context, !context.vr() && context.window().isMinimized());
     state.updateXrGame(context);
+    state.updateSystemLogos();
     state.updateAudio(&actions);
     state.syncCaptureLayers();
     state.logScriptProgress(frame);

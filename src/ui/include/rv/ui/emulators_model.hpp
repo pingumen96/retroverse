@@ -81,6 +81,8 @@ struct EmulatorOption {
 struct EmulatorSystem {
     std::string name;
     std::string fullName;
+    /// I11 step 3: ES-DE's <fullname>, shown beside fullName when it differs (fullName is the identity's).
+    std::string esdeName;
     std::size_t games = 0;
     /// What launches it now: its readiness, the first blocker's code, where the choice comes from
     /// (catalog::toString(ChoiceSource)), its name as an option shows it, whether it was verified.

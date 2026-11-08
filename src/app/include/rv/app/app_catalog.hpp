@@ -92,6 +92,14 @@ struct QuickHashState {
 void recordRefresh(RefreshRecord& record, const RefreshSummary& summary, const std::optional<TimeSummary>& lists);
 
 /// The quick catalog's games and launches. Main thread only.
+/// A system and its logo file (I11 step 3: catalog::IdentityLogo), which the product UI shows (SystemLogos).
+struct SystemLogoFile {
+    std::string system;
+    std::filesystem::path file;
+
+    bool operator==(const SystemLogoFile&) const = default;
+};
+
 class AppCatalog {
 public:
     virtual ~AppCatalog() = default;
@@ -208,6 +216,8 @@ public:
     /// The full name of `system` as the catalog has it (its <fullname>); "" when it has none or the catalog does not know
     /// the system (the directory then shows its name).
     [[nodiscard]] virtual std::string systemFullName(const catalog::SystemName& /*system*/) const { return {}; }
+    /// I11 step 3: the systems that have a logo file, in the chips' order.
+    [[nodiscard]] virtual std::vector<SystemLogoFile> systemLogos() const { return {}; }
 
     /// A frame showed a page of the catalog (the quick catalog open with rows bound).
     virtual void pageShown() {}
@@ -358,6 +368,7 @@ public:
     [[nodiscard]] QuickHashState quickHashState() const override;
     void frameStarted() override;
     [[nodiscard]] std::string systemFullName(const catalog::SystemName& system) const override;
+    [[nodiscard]] std::vector<SystemLogoFile> systemLogos() const override;
     /// The first page shown is NFR-01's time (CatalogRecord::firstPageMs).
     void pageShown() override;
     [[nodiscard]] const CatalogDatabaseSource& databaseSource() const noexcept { return m_source; }

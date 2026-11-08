@@ -234,6 +234,11 @@ struct CatalogRecord {
     /// "esde": the library (library.json's id) and the systems with games the chips show.
     std::string library;
     std::size_t systems = 0;
+    /// I11 step 3: the systems with games whose name comes from their identity (it differs from ES-DE's <fullname>),
+    /// those with a logo file, and the logos the UI registered when the run ended.
+    std::size_t identityNames = 0;
+    std::size_t logoFiles = 0;
+    std::size_t logosShown = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

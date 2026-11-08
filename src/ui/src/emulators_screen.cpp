@@ -27,6 +27,7 @@ struct SystemView {
     Rml::String elementId;
     Rml::String name;
     Rml::String fullName;
+    Rml::String esdeName;
     int games = 0;
     Rml::String readiness;
     Rml::String blocker;
@@ -104,6 +105,7 @@ struct EmulatorsScreen::Impl {
             row.RegisterMember("elementId", &SystemView::elementId);
             row.RegisterMember("name", &SystemView::name);
             row.RegisterMember("fullName", &SystemView::fullName);
+            row.RegisterMember("esdeName", &SystemView::esdeName);
             row.RegisterMember("games", &SystemView::games);
             row.RegisterMember("readiness", &SystemView::readiness);
             row.RegisterMember("blocker", &SystemView::blocker);
@@ -244,7 +246,9 @@ struct EmulatorsScreen::Impl {
         int index = 0;
         for (const EmulatorSystem& system : shown.systems()) {
             systems.push_back(SystemView{index, Rml::String(EmulatorsModel::systemElement(static_cast<std::size_t>(index))),
-                                         Rml::String(system.name), Rml::String(system.fullName), asInt(system.games),
+                                         Rml::String(system.name), Rml::String(system.fullName),
+                                         Rml::String(system.esdeName != system.fullName ? system.esdeName : std::string()),
+                                         asInt(system.games),
                                          Rml::String(system.readiness), Rml::String(system.blocker),
                                          Rml::String(system.source), Rml::String(system.choice), system.verified,
                                          system.stored});

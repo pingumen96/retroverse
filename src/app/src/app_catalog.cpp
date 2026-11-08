@@ -805,6 +805,16 @@ std::string EsdeAppCatalog::systemFullName(const catalog::SystemName& system) co
     return known != nullptr ? known->fullName : std::string();
 }
 
+std::vector<SystemLogoFile> EsdeAppCatalog::systemLogos() const {
+    std::vector<SystemLogoFile> logos;
+    for (const CatalogSystem& system : m_source.systems()) {
+        if (!system.logo.empty()) {
+            logos.push_back(SystemLogoFile{system.name.str(), system.logo});
+        }
+    }
+    return logos;
+}
+
 void EsdeAppCatalog::pageShown() {
     if (!m_firstPageMs) {
         m_firstPageMs = sinceProcessStart(std::chrono::system_clock::now());
@@ -818,6 +828,10 @@ void EsdeAppCatalog::record(CatalogRecord& record) const {
     record.notice = std::string(notice());
     record.library = m_source.state() == CatalogState::Ready ? m_source.library().str() : std::string();
     record.systems = m_source.systems().size();
+    for (const CatalogSystem& system : m_source.systems()) {
+        record.identityNames += !system.esdeName.empty() && system.fullName != system.esdeName ? 1 : 0;
+        record.logoFiles += system.logo.empty() ? 0 : 1;
+    }
     record.games = 0;
     for (const CatalogSystem& system : m_source.systems()) {
         record.games += system.games;

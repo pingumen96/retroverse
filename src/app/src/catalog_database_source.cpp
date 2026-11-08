@@ -321,7 +321,11 @@ std::optional<catalog_db::GameDetails> CatalogDatabaseSource::detailsOf(const ca
 void CatalogDatabaseSource::fill(const catalog::CatalogRow& row, ui::CatalogEntry& entry) {
     entry.id = row.id.toString();
     entry.title = row.title;
-    entry.platform = row.systemFullName.empty() ? row.system.str() : row.systemFullName;
+    // I11 step 3: the system's name as its identity gives it (CatalogSystem::fullName), else ES-DE's.
+    const CatalogSystem* shown = findSystem(row.system.str());
+    entry.platform = shown != nullptr ? shown->fullName
+                     : row.systemFullName.empty() ? row.system.str()
+                                                  : row.systemFullName;
     entry.year = row.releaseDate ? row.releaseDate->year : 0;
     entry.developer = row.developer;
     entry.publisher = row.publisher;

@@ -25,6 +25,7 @@
 #include <rv/core/utf8.hpp>
 #include <rv/esde/change_scope.hpp>
 #include <rv/esde/discovery.hpp>
+#include <rv/esde/identity.hpp>
 #include <rv/esde/launch_translation.hpp>
 #include <rv/esde/library_source.hpp>
 #include <rv/esde/media_resolver.hpp>
@@ -488,6 +489,7 @@ private:
             m_libraryError = library.error();
         }
         readChoices();
+        resolveIdentities(summaries);
         std::vector<CatalogSystem> systems;
         m_systems.clear();
         m_summaries.clear();
@@ -500,6 +502,56 @@ private:
             m_summaries.push_back(summary);
         }
         return systems;
+    }
+
+    /// I11 step 3 (ADR-0019 §2): the identity of each system with games, from identity.json (<user data>/config; one that
+    /// cannot be read is logged and its defaults taken) and ES-DE's themes, read again with the systems.
+    void resolveIdentities(const std::vector<catalog_db::SystemSummary>& summaries) {
+        m_identities.clear();
+        const Clock::time_point start = Clock::now();
+        esde::IdentityConfig config;
+        const std::filesystem::path file = m_options.paths.configDir() / esde::kIdentityFileName;
+        if (auto read = esde::readIdentityFile(file)) {
+            config = std::move(*read);
+        } else if (read.error().code != ErrorCode::NotFound) {
+            spdlog::warn("Catalog: {}; the systems' identity takes its defaults", read.error().toString());
+        }
+        std::vector<catalog::SystemInfo> systems;
+        for (const catalog_db::SystemSummary& summary : summaries) {
+            if (summary.library == m_profile.id && summary.games > 0) {
+                systems.push_back(summary.system);
+            }
+        }
+        const esde::IdentitySources sources =
+            esde::identitySources(m_profile, m_library ? &m_library->settings : nullptr, config);
+        std::size_t named = 0;
+        std::size_t logos = 0;
+        for (catalog::SystemIdentity& identity : esde::resolveSystemIdentities(systems, sources, config)) {
+            named += namedByIdentity(identity) ? 1 : 0;
+            logos += identity.logo.empty() ? 0 : 1;
+            for (const catalog::Issue& issue : identity.issues) {
+                spdlog::debug("Catalog identity of {}: {}: {}", identity.system.str(), issue.code, issue.reason);
+            }
+            std::string key = identity.system.str();
+            m_identities.insert_or_assign(std::move(key), std::move(identity));
+        }
+        spdlog::info("Catalog: the identity of {} system(s) in {:.1f} ms: {} named by identity.json or a theme, {} "
+                     "logo(s), from {} theme(s)",
+                     systems.size(), millisecondsSince(start), named, logos, sources.metadataThemes.size());
+    }
+
+    [[nodiscard]] static bool namedByIdentity(const catalog::SystemIdentity& identity) noexcept {
+        return !identity.name.empty() && (identity.name.source == catalog::IdentitySource::Override ||
+                                          identity.name.source == catalog::IdentitySource::Theme);
+    }
+
+    /// The name people read for `system`: its identity's, else ES-DE's `esdeName`, else its name.
+    [[nodiscard]] std::string shownName(const catalog::SystemName& system, std::string_view esdeName) const {
+        if (const auto found = m_identities.find(system.str());
+            found != m_identities.end() && namedByIdentity(found->second)) {
+            return found->second.name.value;
+        }
+        return esdeName.empty() ? system.str() : std::string(esdeName);
     }
 
     /// assign's choices for the systems and the verifications, from the database.
@@ -544,7 +596,11 @@ private:
     [[nodiscard]] CatalogSystem systemState(const catalog_db::SystemSummary& summary) const {
         CatalogSystem system;
         system.name = summary.system.name;
-        system.fullName = summary.system.fullName.empty() ? summary.system.name.str() : summary.system.fullName;
+        system.fullName = shownName(summary.system.name, summary.system.fullName);
+        system.esdeName = summary.system.fullName;
+        if (const auto identity = m_identities.find(summary.system.name.str()); identity != m_identities.end()) {
+            system.logo = identity->second.logo.file;
+        }
         system.platforms = summary.system.platforms;
         system.games = summary.games;
         if (!m_library) {
@@ -635,6 +691,9 @@ private:
         list.serial = job.serial;
         if (auto games = m_query->favoritesAndRecent(query)) {
             list.games = std::move(*games);
+            for (catalog::RecentGame& game : list.games) {
+                game.systemFullName = shownName(game.system, game.systemFullName);
+            }
         } else {
             list.error = games.error();
             spdlog::warn("Catalog: the favourites and recent games cannot be read: {}", games.error().toString());
@@ -747,6 +806,7 @@ private:
                 ui::EmulatorSystem row;
                 row.name = system.name.str();
                 row.fullName = system.fullName;
+                row.esdeName = system.esdeName;
                 row.games = system.games;
                 row.readiness = std::string(catalog::toString(system.launch.readiness));
                 row.blocker = system.launch.blocker;
@@ -843,6 +903,14 @@ private:
         list.serial = job.serial;
         if (auto statistics = m_query->playStatistics(query)) {
             list.statistics = std::move(*statistics);
+            for (auto* games : {&list.statistics.mostPlayed, &list.statistics.mostRecent}) {
+                for (catalog::PlayedGame& game : *games) {
+                    game.systemFullName = shownName(game.system, game.systemFullName);
+                }
+            }
+            for (catalog::SystemStatistics& system : list.statistics.systems) {
+                system.fullName = shownName(system.system, system.fullName);
+            }
         } else {
             list.error = statistics.error();
             spdlog::warn("Catalog: the statistics cannot be read: {}", statistics.error().toString());
@@ -911,7 +979,8 @@ private:
         if (auto summaries = m_query->systems()) {
             for (const catalog_db::SystemSummary& summary : *summaries) {
                 if (summary.library == m_profile.id) {
-                    list.fullNames.emplace_back(summary.system.name.str(), summary.system.fullName);
+                    list.fullNames.emplace_back(summary.system.name.str(),
+                                                shownName(summary.system.name, summary.system.fullName));
                 }
             }
             std::sort(list.fullNames.begin(), list.fullNames.end());
@@ -1030,7 +1099,7 @@ private:
                 if (summary.library != m_profile.id) {
                     continue;
                 }
-                fullNames.emplace(summary.system.name.str(), summary.system.fullName);
+                fullNames.emplace(summary.system.name.str(), shownName(summary.system.name, summary.system.fullName));
                 if (summary.system.availability != catalog::Availability::Available && summary.entries > 0) {
                     ++status.unavailableSystems;
                 }
@@ -1820,6 +1889,8 @@ private:
     std::unique_ptr<catalog_db::Database> m_database;
     std::unique_ptr<catalog_db::SessionStore> m_store;
     std::unique_ptr<catalog_db::SqliteCatalogQuery> m_query;
+    /// I11 step 3: the systems' identities by name (resolveIdentities()).
+    std::map<std::string, catalog::SystemIdentity, std::less<>> m_identities;
     std::unique_ptr<library::LaunchLibrary> m_library;
     std::optional<Error> m_libraryError;
     /// ES-DE's <lastplayed> to UTC for the favourites and recent games, made on first use (I4 step 7b).

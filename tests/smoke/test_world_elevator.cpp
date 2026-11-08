@@ -1166,3 +1166,53 @@ TEST_CASE("world elevator: a game played before a ride is the start choice of it
     INFO("the start's choice " << choice << ", played " << played->toString());
     CHECK(video.gameId == played->toString());
 }
+
+TEST_CASE("world elevator: the directory names a console room after its system's identity and shows its logo (I11 "
+          "step 3)",
+          "[gpu][world][world_elevator][identity]") {
+    const PlannedBuilding building("world_elevator/identity", false);
+    // identity.json pointing at the invented theme fixture: snes is "Lumen 16", with an original SVG logo.
+    const auto themes = rv::test::Fixture::materialize("esde/theme");
+    REQUIRE(themes.has_value());
+    const std::string identity = Json{{"schemaVersion", 1},
+                                      {"themeRoots",
+                                       Json::array({arg(themes->path("ES-DE/themes")),
+                                                    arg(themes->path("Programs/ES-DE/themes"))})}}
+                                     .dump(2);
+    REQUIRE(rv::core::writeTextFileAtomic(building.data / "config" / "identity.json", identity + "\n").has_value());
+    const rv::world::StoredPlan stored = building.plan();
+    const rv::world::WorldPlan& plan = stored.plan;
+    const std::string room = building.roomOf("snes");
+    const auto held = std::find_if(plan.rooms.begin(), plan.rooms.end(),
+                                   [&](const rv::world::Room& entry) { return entry.id.toString() == room; });
+    REQUIRE(held != plan.rooms.end());
+    const std::vector<std::string> floors = floorsInOrder(plan);
+
+    // Map in the lobby, down to snes' floor, its rooms shown: the last frame's picture.
+    Json script = Json::array();
+    std::uint64_t frame = 30;
+    script.push_back(press(frame, "map"));
+    frame = moveSelection(script, frame + 3, indexOf(floors, std::string(rv::world::kGroundFloor)),
+                          indexOf(floors, held->floor));
+    script.push_back(press(frame, "ui_activate"));
+    const std::uint64_t frames = frame + 30;
+    const fs::path scriptFile = building.dir / "identity_script.json";
+    REQUIRE(rv::core::writeTextFileAtomic(scriptFile, script.dump(2) + "\n").has_value());
+    const fs::path shot = building.dir / "directory_identity.png";
+    const AppRun run =
+        runApp(retroverseExe(), building.dir, "identity",
+               elevatorArguments(static_cast<std::uint32_t>(frames), {},
+                                 {"--input-script", arg(scriptFile), "--screenshot", arg(shot)}));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    // snes, gb and megadrive have the fixture theme's metadata; the logos were loaded for the UI.
+    REQUIRE(report.catalog.has_value());
+    CHECK(report.catalog->identityNames >= 1);
+    CHECK(report.catalog->logoFiles >= 1);
+    CHECK(report.catalog->logosShown == report.catalog->logoFiles);
+    REQUIRE(report.directory.bound);
+    CHECK(report.directory.opened == 1);
+    requireScreenshot(run, shot, glm::ivec2(1920, 1080));
+}

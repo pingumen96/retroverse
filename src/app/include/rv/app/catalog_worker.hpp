@@ -120,8 +120,13 @@ inline constexpr std::string_view kLibraryUnreadableCode = "library-unreadable";
 /// A system of the catalog with games, as the quick catalog shows it: a filter chip, and what its games share.
 struct CatalogSystem {
     catalog::SystemName name;
-    /// Its <fullname>, the chip's label (its name when the catalog has none).
+    /// The name people read, the chip's label: since I11 step 3 its identity's (ADR-0019 §2: identity.json, else a
+    /// theme's systemName, "Super Nintendo"), else its <fullname>, else its name.
     std::string fullName;
+    /// I11 step 3: ES-DE's <fullname> ("Nintendo SNES (Super Nintendo)"), the detail beside fullName when it differs.
+    std::string esdeName;
+    /// I11 step 3: its logo file (catalog::IdentityLogo), when one was found; the UI rasterizes it (SystemLogos).
+    std::filesystem::path logo;
     /// Its ES-DE platform tags (catalog::SystemInfo::platforms): world::classify()'s fallback for a system systems.json
     /// does not name (a custom system's room).
     std::vector<std::string> platforms;

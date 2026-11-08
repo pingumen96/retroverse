@@ -186,14 +186,23 @@ void WorldSession::syncDirectory(ProductUi& product) {
     if (m_planState) {
         followChainRanges();
         const bool rangesKnown = m_rangesDigest.starts_with(m_planState->digest + "/");
-        const std::string key = fmt::format("{}/{}/{}", m_planState->digest, product.catalogRevision(),
-                                            rangesKnown ? m_rangesDigest : std::string("pending"));
+        const std::string key = fmt::format("{}/{}/{}/{}", m_planState->digest, product.catalogRevision(),
+                                            rangesKnown ? m_rangesDigest : std::string("pending"),
+                                            product.systemLogosRevision());
         if (key != m_directoryPlan) {
             AppCatalog& catalog = product.catalog();
             m_directoryBuilding = directoryBuildingOf(
                 *m_planState->plan,
                 [&catalog](const catalog::SystemName& system) { return catalog.systemFullName(system); },
                 rangesKnown ? &m_ranges : nullptr);
+            // I11 step 3: each system's logo, once the product UI has it.
+            for (ui::DirectoryFloor& floor : m_directoryBuilding.floors) {
+                for (ui::DirectoryRoom& room : floor.rooms) {
+                    for (ui::DirectorySystem& system : room.systems) {
+                        system.logo = product.systemLogoSource(system.name);
+                    }
+                }
+            }
             m_directoryPlan = key;
         }
     }
