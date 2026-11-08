@@ -27,7 +27,11 @@ try {
         -not (Select-String -LiteralPath $cache -Pattern '^RV_ENABLE_XR:[^=]*=(OFF|0|FALSE|NO|N)$' -Quiet)
     if ($Fresh -or $stale -or -not (Test-Path $cache)) {
         $configureArgs = @('cmake', '--preset', $Preset)
-        if ($Fresh) { $configureArgs += '--fresh' }
+        if ($Fresh) {
+            $configureArgs += '--fresh'
+            # A fresh configure runs vcpkg's manifest install again (cmake/VcpkgManifestStamp.cmake).
+            Remove-Item -LiteralPath (Join-Path $root 'build/vcpkg_installed/.retroverse-manifest-stamp') -ErrorAction Ignore
+        }
         & $dev @configureArgs
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }

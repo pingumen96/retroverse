@@ -8,11 +8,15 @@ if(POLICY CMP0174)
     cmake_policy(SET CMP0174 NEW)
 endif()
 
+# Before project(), which loads the vcpkg toolchain: skips its manifest install when nothing it depends on changed.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/VcpkgManifestStamp.cmake")
+
 project(Retroverse
     VERSION 0.1.0
     DESCRIPTION "Explorable 3D frontend for ES-DE game collections"
     HOMEPAGE_URL "https://github.com/pingumen96/retroverse"
     LANGUAGES C CXX)
+rv_vcpkg_manifest_stamp_write()
 
 if(NOT MSVC)
     message(FATAL_ERROR
