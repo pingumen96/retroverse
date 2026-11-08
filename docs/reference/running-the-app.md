@@ -562,7 +562,8 @@ build/rvdata`).
   after it). `<user data>/config/world.json` takes `"reduceMotion": true` (every transition
   instant) and `"lightingProfile": "evening" | "afternoon"` (`assets/world/lighting`, applied when the room is drawn,
   never stored in the plan; the profiles' `"on": "display"` accents light the display cases, `case_light`, and the
-  featured shelf, `shelf_light`, while the 16 lights leave room) and `"systemColors": false` (I11 step 6: a console
+  featured shelf, `shelf_light`, and then the look pendant near the doorway, I12 step 1, while the 16 lights leave
+  room) and `"systemColors": false` (I11 step 6: a console
   room's neon in its theme pack's colour rather than its system's accent; on by default, also Impostazioni' "Colori dei
   sistemi"; I11 step 4's identity signs, `docs/i11/step-4.md`, show the system's logo in any case, and step 5's history
   plaque, `docs/i11/step-5.md`, hangs beside the hero corner when the identity has a description: point at it, interact
@@ -577,7 +578,11 @@ build/rvdata`).
   resolved when the room is drawn (materials, the neon sign and the light on it, the lit shelves, the generated
   spines' and labels' palette, light tints, the bloom; since I6 step 6's review its own accents, the arcade's pairs lit
   cyan and red in turn, and its `roomDressing`: the arcade's neon coves, backlit flyers, spot cans and runner, the
-  handhelds' warm cove, posters and pictogram beside the sign), never a reason to move anything. With the mouse free
+  handhelds' warm cove, posters and pictogram beside the sign; since I12 step 1, `docs/i12/step-1.md`, every room
+  pack's architecture, a damask from the wainscot up to a picture rail at 2.7 m, a cornice and beams every 3 m, the
+  arcade's graphite cornice alone, and its lamps, a drum near the doorway and a spot can over each display case, with
+  herringbone floors in the 90s, handheld and arcade rooms and woven or grained seats), never a reason to move
+  anything. With the mouse free
   (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its
   proximity zone, 1.5 m deep and 2 m wide; the arrival point is in it), facing its doors (their middle less than 80
