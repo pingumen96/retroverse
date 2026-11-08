@@ -68,6 +68,9 @@ plan (or none) and the overrides, and returns a `GenerationResult` (the plan, a 
   `<user data>/config/world.json` overrides them per key, read and never written, like the other configuration files.
   The default seed is derived from the library id (point 7), so a library always gets the same world unless the user
   names another seed.
+  *Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §3):* the curated preset's decoration density is
+  0.65 for new and regenerated worlds; a stored world keeps the density it was planned with, and moving the default
+  never marks it as changed nor gives it a new validation finding.
 - **RoomTemplate** and **Manifests**: `assets/world/templates/console_room_9x10.json` (point 4), the platform visual
   manifest `assets/world/platforms/snes.json` (system to media family, theme pack, plastic colours, console prefab, the
   sign's text, all original and brand-free) and the media family registry `assets/world/media_families.json`

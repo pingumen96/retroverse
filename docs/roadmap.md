@@ -18,6 +18,7 @@ technical risk. Each iteration ends with a verifiable gate; each work session de
 | I9 | Installer, portable build, release | M5 Done |
 | I10 | VR through OpenXR (ADR-0017), beside I4b and I5: a headset on the PC (Meta Quest through Link or Air Link, SteamVR, any OpenXR runtime), the building walked and used with Touch controllers or the pad, the launched game on the room's CRT | Gate VR: a 30-minute session in the headset |
 | I11 | The consoles' real identity and every emulator in VR (ADR-0019, ADR-0020): the real names, logos, colours and a history plaque per room read at runtime from ES-DE's themes; real console models from the user's content folder; every emulator of the library and the Windows games played on the CRT in the headset | Gate I11: `gate.ps1 -Gate I11`, then a headset session with one game per emulator |
+| I12 | The rooms' density (ADR-0021): the shell (skirting, rail, wallpaper, cornice, beams, pendants), a gallery of the user's own art, a lived-in hero corner with the last game played, full side walls, the shelves' tabs and captions; dust in the light, the neon's flicker and the screen's glow, synthesized room tones and footsteps, a fan, a clock, LEDs; the GPU memory budget at 4 GiB | Gate I12: `gate.ps1 -Gate I12`, then the user walks a room of each pack beside its concept panel |
 
 Removed from scope: the integrated scraper (spec §10, FR-021 to FR-023). ES-DE stays the scraping tool; Retroverse
 reads its metadata and media in place and uses generated labels and screenshots where media are missing (ADR-0003).
@@ -41,14 +42,19 @@ daily use ([ADR-0018](decisions/ADR-0018-daily-use.md), [i7/plan.md](i7/plan.md)
 with its own ADR and plan when reached. Planned on November 7, 2026 on the user's request, after I7's Gate Pad
 and before I8: I11, the consoles' real identity and every emulator in VR
 ([ADR-0019](decisions/ADR-0019-console-identity-as-user-content.md),
-[ADR-0020](decisions/ADR-0020-every-emulator-in-vr.md), [i11/plan.md](i11/plan.md)).
+[ADR-0020](decisions/ADR-0020-every-emulator-in-vr.md), [i11/plan.md](i11/plan.md)). Planned on November 8, 2026 on the
+user's request, beside I11's steps 9, 10 and 15 and before I8: I12, the rooms' density
+([ADR-0021](decisions/ADR-0021-the-rooms-density.md), [i12/plan.md](i12/plan.md)); the same day the user set the GPU
+memory budget at 4 GiB.
 
 ## Acceptable performance
 
 Performance must be acceptable, not maximal (decided October 20, 2026). Gates and tests check these limits only, in
 Release at 1920 x 1080 on the reference machine; finer figures (GPU passes, CPU sections, GPU-free benchmarks) are
 reported for information and never fail a gate. The hidden `[.bench]` cases run on demand (`./scripts/gate.ps1 -Gate B
--Benchmarks`, informative rows). I3's tighter budgets are kept below as its history.
+-Benchmarks`, informative rows). I3's tighter budgets are kept below as its history. The GPU memory rows count all the
+GPU memory the app tracks (textures, render targets, buffers: a run report's `gpuMemory.peakTotalBytes`); they were
+512 MiB from I3 to I11 and are 4 GiB since November 8, 2026, the user's budget (ADR-0021 §8).
 
 | Measure | Acceptable |
 |---|---|
@@ -56,7 +62,7 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | Frames while loading covers, refreshing or animating | p99 at most 50 ms |
 | From the start to the room, and to the quick catalog's first page (NFR-01) | 5 s |
 | Covers resident after the room shows | cold 30 s, warm 3 s |
-| GPU memory | all textures at most 512 MiB |
+| GPU memory | at most 4 GiB |
 | Catalog queries (NFR-02) | p95 at most 100 ms |
 | Video | the first frame within 2 s of the selection |
 | Per-frame CPU work checked by smoke tests | loosely, at the median (cover uploads 4 ms, collection planning 1 ms) |
@@ -66,13 +72,15 @@ reported for information and never fail a gate. The hidden `[.bench]` cases run 
 | The impact preview of a regeneration | a room 2 s, a floor and the world 15 s on the reference library |
 | A save, a regeneration's commit or an undo | the room shown again within 3 s warm |
 | Frame time with two clips playing (the benchmark path past a secondary TV) | p50 at most 16.7 ms, p99 at most 33.3 ms |
-| GPU memory with the screens playing (the busiest floor, two slots; the viewer's clip) | all textures at most 512 MiB |
+| GPU memory with the screens playing (the busiest floor, two slots; the viewer's clip) | at most 4 GiB |
 | A clip's sound against its picture | within 80 ms at p95 |
 | Frame time in VR, a populated room, both eyes at the runtime's recommended size (ADR-0017 §9) | p50 at most 13.9 ms, p99 at most 20 ms, at most 1% of the refreshes missed (72 Hz); 90 Hz informative |
 | Frame time in VR with a game captured on the CRT (the "in game" profile) | the same limits |
 | A game or medium added in ES-DE (NFR-05, the watcher) | in the quick catalog within 10 s of the file's arrival, local volume, nothing else running; in its room informative |
 | A menu section's data (emulators, statistics, coverage) on the reference library | shown within 1 s of opening |
-| The systems' identity read and their logos rasterized (ADR-0019 §9, the reference library's 45 systems) | within the start's 5 s, off the main thread; the busiest floor with logos and a console model per room within the 512 MiB rows |
+| The systems' identity read and their logos rasterized (ADR-0019 §9, the reference library's 45 systems) | within the start's 5 s, off the main thread; the busiest floor with logos and a console model per room within the 4 GiB rows |
+| GPU memory with the rooms' dressing resident (ADR-0021: the busiest floor, two screens, the gallery's pictures and the shelf labels' atlases of every room of the floor) | at most 4 GiB (the rows above, now with them) |
+| Frame time with the atmosphere pass (ADR-0021 §4: dust and light cones, the benchmark path and VR's) | the benchmark path's and VR's limits |
 
 Correctness is never relaxed: determinism, NFR-08's stability, the read-only snapshots of the real library and the
 focus rules stay exact.
@@ -314,7 +322,7 @@ under `build/`. Step notes are in `docs/i11/`.
 | 7 | Console models in the room: `Paths::contentDir()`, `content:` paths, `console.json` read as a user manifest, ADR-0019 §7's validation and budgets (textures BC1, BC3, BC5 through `stb_dxt`, cached), the hero corner's console drawn from the model at scene build, its collider, showcases, model sockets in `consoleSocketOf()`, the family's procedural fallback in place of the magenta cube; `retroverse-cli content add-console`, `content check`, `content list`; the asset preview on a content folder | 0 | Unit: the manifest's rules and refusals, socket derivation, an oversized model refused, a missing file falling back. GPU: an original fixture console (`make_test_models.py`) in the fixture room, the insertion into its socket, its collider | done ([step-7.md](i11/step-7.md)): `content/consoles/<system>/` (`console.glb`, `console.json`); `assets::checkConsoleModel()` (sides, footprint, `scaleCm`, triangles, 2 MiB compressed); textures to BC1/BC3 with mips (`stb_dxt`), `Texture2D::createCompressed()`, GPU kind `contentTextures`; `WorldConsoles` swaps the model in at runtime in the procedural console's place, its collider and media socket (the insertion), a failing model never shown; `retroverse-cli content add-console/check/list`; the asset preview opens a content folder; the fixture console made in C++; no disk cache, normal maps BC1, the memory row with steps 9-10 |
 | 8 | The pipeline in `retroverse-content`: `normalize_console.py` (Blender 4.3 in the background) and `author/<system>.py`, `dimensions.json` | 7 | One downloaded and one authored console pass `content check` and stand in their rooms | done ([step-8.md](i11/step-8.md)): in `retroverse-content` (9f4ece1): `dimensions.json`; `normalize_console.py` (imports glb/gltf/fbx/obj/blend, front, scale to the measurements, origin, decimation, Cycles bake of a 1024 base colour and 512 normal and ORM maps, anchors, a JSON summary); `author/_kit.py` and `author/snes.py` (the SNES from measurements, 1054 triangles); `tests/run_tests.ps1` checks every result with `retroverse-cli content`; the SNES installed and shown on the real snes room's cabinet; the downloaded half proven on an invented messy model (Sketchfab needs the user's login) |
 | 9 | Batch 1, the 16 home consoles with rooms of their own on the reference library (nes, fds, snes, megadrive, mastersystem, psx, ps2, gc, dreamcast, atari2600, atari5200, atari7800, atarijaguar, colecovision, intellivision, odyssey2): candidates found and recorded in `SOURCES.md`, downloaded by the user, normalized or authored, installed | 8 | `content check` for all 16; each real room seen by eye against `example.png` and style.md | |
-| 10 | Batches 2 to 4: the 7 handhelds (gb, gbc, gba, nds, atarilynx, virtualboy, ngpc), the 6 computers (c64, amiga, amstradcpc, apple2, atari800, atarist; their place decided after measuring), the shared rooms' 15 systems in their sections' showcases | 9 | As step 9; the busiest floor at most 512 MiB (else the residency of ADR-0019 §9) | |
+| 10 | Batches 2 to 4: the 7 handhelds (gb, gbc, gba, nds, atarilynx, virtualboy, ngpc), the 6 computers (c64, amiga, amstradcpc, apple2, atari800, atarist; their place decided after measuring), the shared rooms' 15 systems in their sections' showcases | 9 | As step 9; the busiest floor at most 4 GiB (ADR-0021 §8; 512 MiB and the residency of ADR-0019 §9 before November 8, 2026) | |
 | 11 | The window followed: the scorer, the choice made again every 100 ms, the capture restarted on a new or closed window, foreground retried, black frames watched | 0 | Unit: the scorer's table. GPU with the fake's modes `splash`, `two-windows`, `recreate`, `child`, `late`: the CRT shows the game window, its counter advancing | done ([step-11.md](i11/step-11.md)): `launcher::chooseGameWindow()` and `WindowFollower` (ranks, 300 ms hysteresis), `WindowChanged`, the capture restarted and retried, black reported after 5 s; the runner's modes `splash`, `two-windows`, `recreate`, late; GPU: the CRT's last picture the game's colour after a splash and beside a main window, a black window reported; `child` left to step 13's detached sessions |
 | 12 | VR launch profiles: `emulators.json` schema 2 (`vr`: arguments, the append-file, window rules, `inGame`), the profiles of ADR-0020 §1 checked against each program's help, ES-DE commands matched by executable, `retroverse-cli launch --dry-run --vr` | 11 | Unit: argv with and without VR on ES-DE 3.4.1's commands, the append-file's bytes, a fixture config never opened for writing. GPU: the fake reports the VR arguments. Real library: `profiles` lists the standalone emulators found | done ([i11/step-12.md](step-12.md)): `emulators.json` schema 2 with `programs` (files, window rules, `vr`: arguments added and dropped, the append-file, the load), `launcher::adaptLaunch()` on every launch, the shipped programs (RetroArch, Dolphin, PCSX2, DuckStation, RPCS3, AppleWin, Altirra, sdl2trs; the first four and AppleWin read from the user's builds), `launch --dry-run --vr`, `profiles` with the programs in use; GPU: the fake gets its program's VR arguments and append-file, the CRT shows the colour the file set; the VR block moved from profiles to programs |
 | 13 | Shortcuts and Windows games: "open the game's file" translated natively (`.lnk`, `.exe`, `.url` through a listed protocol), `FollowWindow`, `%RUNINBACKGROUND%`, exclusive fullscreen detected and its notice | 11 | Unit: `.lnk` reading on shortcuts made at test time, the scheme list, `.bat` still refused, the detached choice. GPU: a `.lnk` to the fake, the `detached` mode followed to its end, the notice on `black` | done ([step-13.md](i11/step-13.md)): `ISystemProbe::readShortcut()` (IShellLinkW, never resolved), "open the game's file" in the translation (`.lnk`, `.exe`, `.url` of emulators.json's `protocols`; anything else refused), `%RUNINBACKGROUND%` and activations as `FollowWindow` (processes adopted by their windows and their ancestry), activations refused in automated runs, exclusive fullscreen from the shell's state or black frames, the VR notice; the real `.lnk` and the detached game launched through `retroverse-cli` (the fake), GPU: the notice before the CRT |
@@ -341,13 +349,65 @@ and after and 0 differences:
 - `identity show`;
 - `content check` on the user's content folder;
 - every real collection room started with its logo and model;
-- the busiest floor within 512 MiB;
+- the busiest floor within 4 GiB;
 - nothing launched.
 
 `docs/testing/gate-i11.md` holds:
 - the figures;
 - the emulator matrix (each program, its VR arguments, its window rule, the user's result);
 - what to try.
+
+## I12: the rooms' density
+
+[ADR-0021](decisions/ADR-0021-the-rooms-density.md), planned with the user on November 8, 2026 (the decisions:
+[i12/plan.md](i12/plan.md)): every single room denser and more immersive, closer to the concept's panels 2, 4, 5 and 6.
+- **The static look**, in the order the eye reads a room from its doorway: the shell (skirting, rail, wallpaper,
+  cornice, beams, pendants), a gallery of the user's own art, a lived-in hero corner with the last game played, full
+  side walls, the shelves' tabs and captions.
+- **Atmosphere, sound and life:** dust in the light, the neon's flicker and the screen's glow, synthesized room tones,
+  footsteps and clicks, a fan, a clock, LEDs.
+- **The GPU memory budget** is 4 GiB from November 8, 2026 (ADR-0021 §8).
+
+The world plan never changes, but for the density default of new and regenerated worlds; every piece is chosen at
+scene build from the room's seed or swapped in at runtime. Goldens are regenerated on purpose at the steps that change
+their views; none is added. The real library's rooms are checked through `real-library.ps1` and by eye, their
+screenshots kept under `build/`. Step notes are in `docs/i12/`.
+
+| # | Step | Needs | Proof | Status |
+|---|---|---|---|---|
+| 0 | ADR-0021, this plan; the amendments (ADR-0010 §2, ADR-0013's memory, ADR-0014 §1, ADR-0016 §9 and §12, ADR-0018 §2, ADR-0019 §1 and §9; style §6.3 and §25); the BACKLOG's items moved here and the proposals parked; the GPU memory rows, the tests' limits and `gate.ps1` at 4 GiB | | The files exist; the unit tests pass; `gate.ps1` parses and its memory rows read 4 GiB | done: the documents; the four tests and `gate.ps1` at 4 GiB |
+| 1 | The shell: skirting, a picture rail at 2.25 m, the pack's wallpaper above it, a cornice and beams every 3 m as the room's dressing (no `room_shell` role, no plan change); drum pendants on the axis with one look pendant light per base room (after the plan's lights, before the accents); the lounge's blue cove; procedural wallpaper, herringbone parquet, fabric weave and leather | 0 | Unit: the surfaces (sizes, tiling, determinism); on every golden plan room the beams, the rail split at the doorway, the skins under the cornice, the look pendants on the axis, at most 16 lights in the drop order. GPU: room:snes and the lounge's room:ps2: the upper walls' luminance at least 22, a pool under each pendant, no key or pendant dropped. Every golden regenerated on purpose; the benchmark and VR rows; the busiest real floor against 4 GiB | |
+| 2 | The gallery: framed pictures of the room's own games over the modules, the low decoration and the hero wall's sides (fanart posters, 3D-box portraits, marquee lightboxes, screenshot frames; never stretched), a hood and a wash on every other frame; the items file's schema 3; `WorldGallery` reads, fits and BC1-compresses them on the pool, resident for the floor (`GalleryTextures`); `world.gallery` in Impostazioni | 1 | Unit: the frames per golden plan room, the chooser (priority, seed, a game once, the print without media), the fit, schema 3 and the older schemas. GPU: `snes-room` with an invented gallery overlay: the frames, the pictures shown, none failed, their bytes; media unplugged keep the prints. Room goldens regenerated | |
+| 3 | The hero corner as a lived-in set: speakers, a media rack with LEDs, pads with cables on the rack and the rug, a coffee table with magazines and an open box, a side table and lamp, a cushion, per pack (`furniture.heroDressing`, inside the corner, the passage and the CRT's line of sight kept); the game played last in the console's slot, a runtime proxy as the hub showcase's | 1 | Unit: six prefabs; every pack's set inside the corner on the golden plans with no new finding, clear of the console's reserve and the plaque; the proxy's choice and pose. GPU: after a launch returns, its game stands in the room's slot, a content model's too | |
+| 4 | Full side walls: tall decoration variants in every pack (a bookcase of magazines and manuals, a record or tape rack, a vitrine of controllers, a tower speaker, a coat stand, a pegboard of pads, palms and ficus) in a rhythm (no two alike side by side, heights alternating); the density default 0.65 for new and regenerated worlds | 3 | Unit: four prefabs and the plant kinds inside their sockets and under the ceiling; the rhythm; the default; a stored plan at 0.4 updated without a change or a finding. GPU: `snes-stress` at 0.65, three tall pieces per side wall. Goldens regenerated with step 3's | |
+| 5 | Shelf detail: letter tabs on the spine-out levels, caption cards under the display cases' titles (title; year and developer), a section sign over each section of a shared room; atlases rasterized on the pool, following live updates and the editor | 2, 4 | Unit: the runs, cards and sites on synthetic shelves; the atlases; ids the editor never picks. GPU: `snes-stress` up close, the tabs and cards counted and legible; the shared handheld room's two signs; a moved module's tabs following. G13 regenerated, the others where their cards pass the tolerance | |
+| 6 | Light and atmosphere: dust motes in the key light's cone and the pendants' pools, faint light cones in the lounge and the arcade (an atmosphere pass after the blended batches, its motion on the GPU from the simulation time), the neon's flicker, the CRT's spill light taking the picture's average colour | 1 | Unit: the emitters, the motes' formula, no flicker dip in the first 2 s, the uniform blocks. GPU: particles drawn, frozen under `reduceMotion`, cones in the lounge, the pass in the report; G01 and G21 exact; the room goldens regenerated once; the benchmark and VR rows | |
+| 7 | The sound of the room: synthesized room tones per pack (the TV's hum and hiss, the neon's buzz, the arcade's murmur, the study's clock), footsteps by surface, the pull-out's clack, the case, the insertion's click, the menus' tick; the `ambience` and `effects` buses and their rows in Impostazioni | 0 | Unit: every sound's length, peak, loop and determinism; the mixer's loops and one-shots; the cadence and the surfaces. GPU (null audio, captured): six steps in a 2 s walk, the ambience silent at volume 0, a clack on a pull-out, the duck | |
+| 8 | Life: a ceiling fan and a lava lamp (the 90s collector), a wall clock with the real time (the study), blinking LEDs, static on the secondary TV between clips; still under `reduceMotion`, 10:10 in frame-limited runs | 6 | Unit: four prefabs, the hands' angles, the frozen flags. GPU: the fan's disc moves between two frames and stands still under `reduceMotion`; the secondary TV's static between clips, never on the hero | |
+| 9 | Gate I12: `scripts/gate.ps1 -Gate I12` (and `-RealLibrary`), `docs/testing/gate-i12.md` | 1-8 | The gate passes; the user walks a room of each pack beside its concept panel and declares I12 done | |
+
+Order: 0, 1, then 2 beside 3 (2 owns the gallery and the items file, 3 the hero corner), 4 after 3, 5 after 2 and 4,
+6 after 1, 7 beside any of them in a worktree of its own (it owns `rv_audio` and the app's sound), 8 after 6, then 9.
+
+### Gate I12
+
+`scripts/gate.ps1 -Gate I12` runs, under `scripts/focus_watch.py` with `RV_LAUNCH_ALLOWLIST` naming the build's fake
+emulator:
+- what Gate D runs: the build matrix, the unit and GPU tests in Debug and Release, every golden, the benchmark path;
+- G21 and the VR benchmark path;
+- a row per I12 area counted from those runs: the shell, the gallery, the hero corner, the walls, the shelf detail, the
+  atmosphere, the sound, the life;
+- Gate D's measures on the room goldens (median luma, top quarter, colour and accent shares) beside the concept
+  panels'.
+
+`-RealLibrary` adds one `scripts/real-library.ps1` run, with ES-DE closed, `RV_AUDIO=null`, read-only snapshots before
+and after and 0 differences:
+- the busiest floor with two screens, the gallery and the atlases within 4 GiB;
+- a room of each pack shown, its screenshots under `build/gate-i12` for the user's eyes;
+- nothing launched.
+
+It prints the summary table (logs in `build/gate-i12`) and exits 1 when a step failed. `docs/testing/gate-i12.md` holds
+the figures, the measures beside the panels and what to try.
 
 ## I8 and I9: the rest of M5 (outline)
 

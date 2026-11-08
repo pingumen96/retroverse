@@ -300,6 +300,7 @@ the one it is in, else the last one held.
 - About 39 KiB of arrays per item (BC1) plus about 180 MiB of other textures: the busiest reference floor totals about
   390 MiB, within the acceptable 512 MiB. A floor beyond that, or the RGBA8 fallback on a large floor, is logged and
   accepted.
+  *Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §8):* the acceptable GPU memory is 4 GiB.
 - The derived-texture cache's bound rises from 512 MiB to 2 GiB, about 2.5 times the reference building, and protects
   the resident floor's entries as today.
 

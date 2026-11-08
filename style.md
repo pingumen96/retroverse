@@ -329,6 +329,8 @@ Ogni stanza riceve un parametro `decoration_density` da 0 a 1:
 
 La densità non deve mai ridurre la larghezza libera sotto i vincoli di navigazione.
 
+Dall'8 novembre 2026 (ADR-0021 §3) il valore predefinito è `0.65`, nella fascia ricca, per ogni stanza dei mondi nuovi o rigenerati, qualunque sia la dimensione della collezione; i mondi già salvati mantengono la densità con cui sono stati pianificati.
+
 ---
 
 # 7. Asset sourcing: modello, acquisto, creazione o generazione
@@ -1210,6 +1212,8 @@ Un ambiente con scaffali, TV e luce eccellenti ma console generiche **apparirà 
 | `CarpetFabric` | Variazioni leggeri di fibre/normal map | P2 |
 | `NeonGlow` | Tube emissive e bloom mirato | P1 |
 | `DustMotes` | Particelle ambientali quasi impercettibili | P2 |
+
+`NeonGlow` (lo sfarfallio del neon) e `DustMotes` (il pulviscolo nei coni di luce) sono realizzati nell'iterazione I12 (ADR-0021 §4), fermi con `reduceMotion`.
 
 **Nota di rendering:** usare una scheda di ispezione 2D UI non equivale a caricare ogni informazione come decal 3D. La UI deve rimanere un layer separato, con colore, scala e leggibilità indipendenti dalla luce ambientale.
 

@@ -64,6 +64,11 @@ fills**, never in the collection's slots, so no placement, no slot and no naviga
 records the socket's decoration as before and the pack chooses how it is drawn. Collision follows the variant's own
 bounds inside that footprint.
 
+*Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §1, §2):* a pack draws the room's whole dressing
+layer as a look: the shell's details (skirting, rail, wallpaper, cornice, beams, pendants), the gallery, the hero
+corner's set beside its parts, tall decoration variants, the shelves' tabs and captions; `roomDressing` and `furniture`
+are every pack's. The rules above stand: nothing in a slot, a passage or the TV's line of sight, nothing in the plan.
+
 ### 2. Side-face spines: successor families, migrated once
 
 Cases and boxes stand spine-out on their side (`SlotFacing::SideOut`): the item is turned a quarter about +Y, so its

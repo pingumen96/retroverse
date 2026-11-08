@@ -457,6 +457,8 @@ a 4:3 tube is unchanged (the flag stays clear).
   It restarts after the return.
 - **Effects and ambience.** These buses exist with their volumes, but carry no sounds in I5: interaction sounds and
   ambience need original sounds with provenance (I8).
+  *Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §4, §5):* I12 fills them with sounds synthesized
+  at startup, so no provenance is needed; the `crt_glow` accent takes the picture's average colour.
 
 *Amended on 2026-10-28 (I5 step 5's review):* the sync is the mixer's: swresample only converts the rate on the
 decoder's thread, and each source reads its ring at 1 +- up to 1% by linear interpolation (an exact copy at ratio 1),
@@ -582,6 +584,8 @@ eye's turn would drive the user's head, so Avvia in a headset launches at once, 
   - *Amended on 2026-10-30 (`docs/i5/memory-margin.md`):* at 1920 x 1080 with both screens playing it measured
     505.8 MiB (I5 step 3's review); the memory margin trimmed the render targets to about 477.5 MiB estimated, to be
     measured at the gate.
+  - *Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §8):* the row below reads 4 GiB; the remedy
+    above is no longer needed for it.
 - **CPU.** Two 480p decoders use about 15 to 20% of one core. Uploads stay within 4 MiB per frame (§2).
 - **New rows in the roadmap's "Acceptable performance".** Video's "first frame within 2 s" stands.
 
