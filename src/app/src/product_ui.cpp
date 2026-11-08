@@ -1,4 +1,5 @@
 #include "product_ui.hpp"
+#include "system_logos.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -3394,6 +3395,18 @@ void ProductUi::xrPointer(const std::optional<glm::vec2>& pixel, bool pressed, b
     }
 }
 
+void ProductUi::setSystemLogos(const SystemLogos* logos) noexcept {
+    m_logos = logos;
+}
+
+std::string ProductUi::systemLogoSource(std::string_view system) const {
+    return m_logos != nullptr && m_logos->has(system) ? SystemLogos::source(system) : std::string();
+}
+
+std::uint64_t ProductUi::systemLogosRevision() const noexcept {
+    return m_logos != nullptr ? m_logos->revision() : 0;
+}
+
 bool ProductUi::launchExclusiveFullscreen() const noexcept {
     return m_impl->flow.sessionActive() && m_impl->flow.exclusiveFullscreen();
 }
@@ -3447,6 +3460,7 @@ void ProductUi::finish() {
     }
     CatalogRecord record;
     s.catalog->record(record);
+    record.logosShown = m_logos != nullptr ? m_logos->loaded() : 0;
     record.refreshes = std::move(s.refreshes);
     record.opened = s.opened;
     record.open = s.catalogOpen;

@@ -125,6 +125,8 @@
 				<div class="slot" data-for="room : rooms">
 					<div class="row room" data-class-expansion="room.chainIndex > 1" data-attr-id="room.elementId" data-event-click="row(room.index)">
 						<span class="badge room-badge">{{ room.index }}</span>
+						<!-- I11 step 3 (ADR-0019 §3): a console room's system logo, from ES-DE's themes, once it is loaded. -->
+						<div class="row-logo" data-if="room.logo != ''"><img data-attr-src="room.logo"/></div>
 						<div class="row-text">
 							<p class="row-title" data-if="room.kind == 'console' && room.chainIndex == 1">{{ room.title }}</p>
 							<p class="row-title" data-if="room.kind == 'console' && room.chainIndex > 1">{{ room.title }} {{ room.chainIndex }}</p>

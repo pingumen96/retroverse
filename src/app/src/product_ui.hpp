@@ -110,6 +110,8 @@ struct WizardHooks {
 /// while hasInput() and gives them to update(), turns every UI Back into its own levels (the `back` callback, then
 /// panelBack() or catalogBack()), idles the host while wantsIdle() and calls onIdle() on every wake. Drawn below the
 /// developer overlay, in screenshots too. Main thread only; destroy it while the OpenGL context is current.
+class SystemLogos;
+
 class ProductUi {
 public:
     /// Creates RmlUi over `context`'s window, the quick catalog's model over `catalog`'s source (closed: its screen is
@@ -290,6 +292,11 @@ public:
     [[nodiscard]] std::optional<glm::vec4> worldCardCoverBox() const;
     /// Registers `texture` for the documents' image source "rv-texture:<key>" (ui::UiSystem::setTexture; 0: none).
     void setUiTexture(std::string_view key, unsigned texture, glm::ivec2 size);
+    /// I11 step 3: the systems' logos the UI shows (null: none), and an RML <img> source for `system`'s logo once it is
+    /// registered (empty before, or without one); their revision, a cache key for the UI's data.
+    void setSystemLogos(const SystemLogos* logos) noexcept;
+    [[nodiscard]] std::string systemLogoSource(std::string_view system) const;
+    [[nodiscard]] std::uint64_t systemLogosRevision() const noexcept;
     /// The media viewer and Informazioni (I3 step 14b; game_screens_panel.hpp) of `game`, from the world's card
     /// (`from`: kScreenFromCard; the quick catalog opens them itself): the catalog's row and stored media, `title` until
     /// the catalog answers. They take the UI's input while they show (panelOpen()); Back closes them (panelBack()).
@@ -368,6 +375,7 @@ private:
     explicit ProductUi(std::unique_ptr<Impl> impl) noexcept;
 
     std::unique_ptr<Impl> m_impl;
+    const SystemLogos* m_logos = nullptr;
 };
 
 } // namespace rv::app

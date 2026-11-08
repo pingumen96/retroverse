@@ -126,6 +126,7 @@ add_library(rv_app STATIC
     src/game_screens_panel.cpp
     src/game_session_panel.cpp
     src/hero_textures.cpp
+    src/system_logos.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp
     src/scene_graphics.cpp

@@ -224,6 +224,21 @@ h2 {
 	overflow: hidden;
 }
 
+/* I11 step 3: a console room's logo before its name, in a box of the row's height (a logo keeps its aspect within it). */
+.row-logo {
+	width: 120dp;
+	height: 40dp;
+	margin-left: 14dp;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.row-logo img {
+	max-width: 120dp;
+	max-height: 40dp;
+}
+
 .game .row-text {
 	margin-left: 0dp;
 }

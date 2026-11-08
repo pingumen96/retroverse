@@ -29,7 +29,7 @@
 			<div id="em-list" data-if="state == 'listed'">
 				<div class="row" data-for="system : systems" data-attr-id="system.elementId" data-event-click="system(system.index)">
 					<div class="row-main">
-						<p class="title">{{ system.fullName }}</p>
+						<p class="title">{{ system.fullName }}<span class="why" data-if="system.esdeName != ''"> · in ES-DE {{ system.esdeName }}</span></p>
 						<p class="detail">
 							<span data-if="system.choice != ''">{{ system.choice }}</span><span data-if="system.choice == ''">Comando di ES-DE</span>
 							<span class="why" data-if="system.source == 'first-command'">, il primo di ES-DE</span>

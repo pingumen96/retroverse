@@ -746,3 +746,48 @@ TEST_CASE("app/catalog_worker: every blocker code the launch resolution reports 
         CHECK(std::find(known.begin(), known.end(), code) != known.end());
     }
 }
+
+TEST_CASE("app/catalog_worker: the systems take their identity's names and logos, ES-DE's full name kept as the detail "
+          "(I11 step 3)",
+          "[app][catalog_worker][identity]") {
+    const ImportedFixture f("rv-catalog-identity");
+    const rv::test::Fixture themes = rv::test::Fixture::materialize("esde/theme").value();
+    const nlohmann::json identity{{"schemaVersion", 1},
+                                  {"themeRoots",
+                                   nlohmann::json::array({rv::core::pathToUtf8(themes.path("ES-DE/themes")),
+                                                          rv::core::pathToUtf8(themes.path("Programs/ES-DE/themes"))})}};
+    REQUIRE(rv::core::writeTextFileAtomic(f.data / "config" / "identity.json", identity.dump(2)).has_value());
+    EsdeAppCatalog catalog(f.options());
+    rv::ui::QuickCatalogModel model(catalog.source(), 6);
+    settle(catalog, model);
+    REQUIRE(catalog.databaseSource().state() == CatalogState::Ready);
+
+    const auto snes = rv::catalog::SystemName::parse("snes").value();
+    const rv::app::CatalogSystem* system = catalog.databaseSource().findSystem("snes");
+    REQUIRE(system != nullptr);
+    CHECK(system->fullName == "Lumen 16");
+    CHECK(system->esdeName == "Nintendo SNES (Super Nintendo)");
+    CHECK(system->logo.filename() == "snes.svg");
+    CHECK(catalog.systemFullName(snes) == "Lumen 16");
+    const auto logos = catalog.systemLogos();
+    CHECK(std::any_of(logos.begin(), logos.end(), [](const rv::app::SystemLogoFile& logo) { return logo.system == "snes"; }));
+    // The chips and the rows say it too.
+    const auto filters = model.filters();
+    CHECK(std::any_of(filters.begin(), filters.end(), [](const rv::ui::PlatformFilter& filter) {
+        return filter.key == "snes" && filter.label == "Lumen 16";
+    }));
+    const std::vector<rv::ui::CatalogEntry> rows = allRows(catalog.source());
+    std::size_t snesRows = 0;
+    for (const rv::ui::CatalogEntry& row : rows) {
+        if (row.platform == "Lumen 16") {
+            ++snesRows;
+        }
+        CHECK(row.platform != "Nintendo SNES (Super Nintendo)");
+    }
+    CHECK(snesRows == system->games);
+    // A system without a theme file keeps ES-DE's full name.
+    const rv::app::CatalogSystem* psx = catalog.databaseSource().findSystem("psx");
+    REQUIRE(psx != nullptr);
+    CHECK(psx->fullName == "Sony PlayStation");
+    CHECK(psx->logo.empty());
+}

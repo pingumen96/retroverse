@@ -109,10 +109,12 @@ inline constexpr std::array<std::string_view, 5> kActions{"edit-room", "regenera
 inline constexpr std::size_t kPageRows = 8;
 } // namespace directory
 
-/// A system of a room's sections: its ES-DE name and the full name shown (the catalog's; empty: the name is shown).
+/// A system of a room's sections: its ES-DE name and the full name shown (the catalog's; empty: the name is shown), and
+/// since I11 step 3 its logo's <img> source ("rv-texture:logo-snes"; empty: none registered).
 struct DirectorySystem {
     std::string name;
     std::string fullName;
+    std::string logo;
 
     bool operator==(const DirectorySystem&) const = default;
 };

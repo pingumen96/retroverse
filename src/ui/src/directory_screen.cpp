@@ -54,8 +54,10 @@ struct RoomRow {
     int index = 0;
     Rml::String id;
     Rml::String kind;
-    /// A console room's system name as shown (its full name, else its name).
+    /// A console room's system name as shown (its full name, else its name), and its logo's source (I11 step 3; empty:
+    /// none).
     Rml::String title;
+    Rml::String logo;
     /// Its sections' systems as shown.
     std::vector<Rml::String> systems;
     int games = 0;
@@ -195,6 +197,7 @@ struct DirectoryScreen::Impl {
             room.RegisterMember("id", &RoomRow::id);
             room.RegisterMember("kind", &RoomRow::kind);
             room.RegisterMember("title", &RoomRow::title);
+            room.RegisterMember("logo", &RoomRow::logo);
             room.RegisterMember("systems", &RoomRow::systems);
             room.RegisterMember("games", &RoomRow::games);
             room.RegisterMember("current", &RoomRow::current);
@@ -415,6 +418,9 @@ struct DirectoryScreen::Impl {
                 row.id = Rml::String(room.id);
                 row.kind = Rml::String(room.kind);
                 row.title = room.systems.empty() ? Rml::String(room.id) : shownName(room.systems.front());
+                if (room.kind == "console" && !room.systems.empty()) {
+                    row.logo = Rml::String(room.systems.front().logo);
+                }
                 for (const DirectorySystem& system : room.systems) {
                     row.systems.push_back(shownName(system));
                 }
