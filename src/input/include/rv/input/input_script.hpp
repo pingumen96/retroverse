@@ -77,6 +77,8 @@ struct InputScriptStep {
     /// pushed forward); nothing: centered.
     std::optional<glm::vec2> leftStick;
     std::optional<glm::vec2> rightStick;
+    /// I11 step 14: the left controller's menu button held on every frame of the step ("leftMenu": true).
+    bool leftMenu = false;
     /// I7 step 3: the devices' state on every frame of the step ("raw").
     std::optional<ScriptedRawInput> raw;
     /// I7 step 3: the device used last from this step on ("device": "pad", "keys"), until another step says.
@@ -114,7 +116,7 @@ struct InputScriptStep {
 ///  - "leftHand", "rightHand" (I10 step 4): a controller's pose in that hand, in the same terms as "headPose" (it
 ///    points along its -Z; no position: the fake runtime's resting hand); "leftSelect", "rightSelect" (I10 step 5)
 ///    its trigger, a number in [0, 1]; "leftStick", "rightStick" (I10 step 10) its thumbstick, [x, y] in [-1, 1] with
-///    +y pushed forward.
+///    +y pushed forward; "leftMenu" (I11 step 14) the left controller's menu button held, a boolean.
 ///  - "raw" (I7 step 3): the devices themselves on every frame of the step, before the bindings:
 ///    {"keys": ["insert"], "padButtons": ["west"], "padAxes": {"left_trigger": 1}, "padConnected": true}, every field
 ///    optional (ScriptedRawInput). A press through it makes its device the one used last, as a real press does.
@@ -163,6 +165,8 @@ public:
     [[nodiscard]] float handSelectAt(std::uint64_t frame, bool right) const;
     /// A hand's thumbstick on `frame`: the "rightStick" or "leftStick" of the last step that covers it, else centered.
     [[nodiscard]] glm::vec2 handStickAt(std::uint64_t frame, bool right) const;
+    /// I11 step 14: the left controller's menu button held on `frame` (a step covering it with "leftMenu": true).
+    [[nodiscard]] bool leftMenuAt(std::uint64_t frame) const;
 
 private:
     std::vector<InputScriptStep> m_steps;

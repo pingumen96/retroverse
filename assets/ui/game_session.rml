@@ -25,11 +25,21 @@
 			<!-- I11 step 13 (ADR-0020 §5): a game in exclusive fullscreen cannot be captured onto the CRT. -->
 			<p id="session-exclusive" data-if="exclusive">Il gioco è in schermo intero esclusivo: impostalo su finestra
 				senza bordi per vederlo qui.</p>
+			<!-- I11 step 14 (ADR-0020 §6): in VR, the game plays on the PC's default audio output, not the headset. -->
+			<p id="session-audio" data-if="audio">Il suono del gioco esce dal dispositivo audio predefinito del PC, non dal
+				visore: per sentirlo nel visore sceglilo come uscita predefinita in Windows.</p>
 		</div>
-		<div data-if="phase == 'playing'">
+		<div data-if="phase == 'playing' && !stopped">
 			<h1>Gioco in corso</h1>
 			<p class="game">{{ title }}</p>
 			<p>Il gioco è ancora aperto. Tornando a Retroverse resta aperto: Retroverse non chiude mai l'emulatore.</p>
+		</div>
+		<!-- I11 step 14 (ADR-0020 §6): in VR, the user held the menu button to stop watching the game. -->
+		<div data-if="phase == 'playing' && stopped">
+			<h1>Hai smesso di guardare il gioco</h1>
+			<p class="game">{{ title }}</p>
+			<p>Il gioco resta aperto e la stanza è tornata. Torna al gioco per vederlo di nuovo, oppure, se hai finito di
+				giocare, conferma che è terminato: Retroverse non chiude mai l'emulatore.</p>
 		</div>
 		<div data-if="phase == 'still-running'">
 			<h1>Gioco in corso</h1>
@@ -123,7 +133,8 @@
 		<div id="session-actions" class="choices" data-if="phase == 'playing' || phase == 'still-running' || phase == 'confirm'">
 			<button id="session-return" class="choice primary" data-event-click="return_home()">
 				<span data-if="phase == 'confirm'">Sono tornato</span>
-				<span data-if="phase != 'confirm'">Torna a Retroverse</span>
+				<span data-if="phase == 'playing' && stopped">Il gioco è terminato</span>
+				<span data-if="phase != 'confirm' && !(phase == 'playing' && stopped)">Torna a Retroverse</span>
 			</button>
 			<button id="session-resume" class="choice" data-event-click="resume()">
 				<span data-if="phase == 'still-running'">Continua ad aspettare</span>

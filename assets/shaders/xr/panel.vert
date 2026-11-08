@@ -7,11 +7,13 @@
 
 uniform mat4 uPanelViewProjection;
 uniform mat4 uPanelModel;
+// The texture coordinates at the corners (0, 0) and (1, 1) (I11 step 14: a captured game's crop).
+uniform vec4 uPanelUv;
 
 layout(location = 0) out vec2 vUv;
 
 void main() {
     vec2 corner = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));
-    vUv = corner;
+    vUv = mix(uPanelUv.xy, uPanelUv.zw, corner);
     gl_Position = uPanelViewProjection * uPanelModel * vec4(corner, 0.0, 1.0);
 }

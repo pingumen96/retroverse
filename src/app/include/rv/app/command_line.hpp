@@ -92,6 +92,9 @@ struct XrOptions {
     /// --xr-fake-untracked-frames <frames>: the fake runtime's first frames locate no eyes, as a real runtime's first
     /// ones ask for no views: the render targets' test.
     std::optional<std::uint64_t> fakeUntrackedFrames;
+    /// --xr-fake-audio-device <id>: the headset's audio endpoint the fake runtime reports (I11 step 14); none: it reports
+    /// none, as a runtime without XR_OCULUS_audio_device_guid.
+    std::optional<std::string> fakeAudioDevice;
 
     bool operator==(const XrOptions&) const = default;
 };

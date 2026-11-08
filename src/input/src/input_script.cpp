@@ -37,12 +37,13 @@ constexpr std::string_view kLeftSelectField = "leftSelect";
 constexpr std::string_view kRightSelectField = "rightSelect";
 constexpr std::string_view kLeftStickField = "leftStick";
 constexpr std::string_view kRightStickField = "rightStick";
+constexpr std::string_view kLeftMenuField = "leftMenu";
 constexpr std::string_view kRawField = "raw";
 constexpr std::string_view kDeviceField = "device";
-constexpr std::array<std::string_view, 14> kStepFields{
+constexpr std::array<std::string_view, 15> kStepFields{
     kFromFrameField, kToFrameField,   kActionsField,    kTextField,        kPhaseField,     kHeadPoseField,
     kLeftHandField,  kRightHandField, kLeftSelectField, kRightSelectField, kLeftStickField, kRightStickField,
-    kRawField,       kDeviceField};
+    kLeftMenuField,  kRawField,       kDeviceField};
 constexpr std::array<std::string_view, 4> kRawFields{"keys", "padButtons", "padAxes", "padConnected"};
 constexpr std::array<std::string_view, 4> kHeadPoseFields{"yaw", "pitch", "roll", "position"};
 constexpr float kMaxHeadPitchDeg = 90.0f;
@@ -332,6 +333,14 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
         }
     }
 
+    // I11 step 14: the left controller's menu button.
+    if (const auto value = step.find(kLeftMenuField); value != step.end()) {
+        if (!value->is_boolean()) {
+            return fail(ErrorCode::ValidationFailed, "expected true or false", at.child(kLeftMenuField));
+        }
+        parsed.leftMenu = value->get<bool>();
+    }
+
     // I7 step 3: the devices themselves.
     if (const auto raw = step.find(kRawField); raw != step.end()) {
         auto read = parseRaw(*raw, at.child(kRawField));
@@ -351,8 +360,8 @@ Expected<InputScriptStep> parseStep(const Json& step, const JsonLocation& at) {
     const auto actions = step.find(kActionsField);
     if (actions == step.end()) {
         if (!parsed.text.empty() || !parsed.phase.empty() || parsed.headPose || parsed.leftHand || parsed.rightHand ||
-            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick || parsed.raw ||
-            parsed.device) {
+            parsed.leftSelect || parsed.rightSelect || parsed.leftStick || parsed.rightStick ||
+            step.contains(kLeftMenuField) || parsed.raw || parsed.device) {
             return parsed;
         }
         return fail(ErrorCode::ParseError,
@@ -501,6 +510,11 @@ glm::vec2 InputScript::handStickAt(std::uint64_t frame, bool right) const {
         }
     }
     return stick;
+}
+
+bool InputScript::leftMenuAt(std::uint64_t frame) const {
+    return std::any_of(m_steps.begin(), m_steps.end(),
+                       [frame](const InputScriptStep& step) { return step.leftMenu && step.covers(frame); });
 }
 
 std::vector<std::string> InputScript::phasesAt(std::uint64_t frame) const {

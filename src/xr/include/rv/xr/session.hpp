@@ -96,6 +96,8 @@ public:
     [[nodiscard]] FrameSummary frameSummary() const;
     [[nodiscard]] const std::vector<SessionEvent>& events() const noexcept { return m_events; }
     [[nodiscard]] std::optional<float> currentRefreshRate() const;
+    /// I11 step 14: the headset's audio endpoint, where the runtime tells it (Runtime::audioOutputDevice()).
+    [[nodiscard]] std::optional<std::string> audioOutputDevice() const { return m_runtime->audioOutputDevice(); }
 
 private:
     void record(std::string what);

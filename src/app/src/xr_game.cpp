@@ -41,6 +41,16 @@ void XrGame::stop(ScreenService* screen) {
     m_interop.reset();
     m_capture.reset();
     m_showing = false;
+    m_large = false;
+    m_onCrt = false;
+}
+
+unsigned XrGame::texture() const noexcept {
+    return m_interop ? m_interop->texture() : 0u;
+}
+
+glm::ivec2 XrGame::size() const noexcept {
+    return m_interop ? m_interop->size() : glm::ivec2(0);
 }
 
 void XrGame::probeBars(gl::RenderStateCache& state, XrRecord* record) {
@@ -123,7 +133,8 @@ void XrGame::fail(std::string_view what, const Error& error, ScreenService* scre
     stop(screen);
 }
 
-void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record) {
+void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenService* screen, XrRecord* record,
+                    bool largeScreen) {
     if (window != m_window) {
         stop(screen);
         const bool another = m_window != 0 && window != 0;
@@ -196,12 +207,23 @@ void XrGame::update(std::uintptr_t window, gl::RenderStateCache& state, ScreenSe
         return;
     }
     probeBars(state, record);
-    // No hero screen bound (the lobby, a hall, a service made unbound for the media viewer's clip): captured, shown
-    // nowhere, so the UI's panel stays and the eyes keep their scale.
-    m_showing = screen != nullptr && screen->showGameWindow(m_interop->texture(), m_interop->size(), m_crop);
+    // No hero screen bound (the lobby, a hall, a service made unbound for the media viewer's clip), or xr.json's choice:
+    // the large screen in front of the user shows it (I11 step 14).
+    const bool onCrt =
+        !largeScreen && screen != nullptr && screen->showGameWindow(m_interop->texture(), m_interop->size(), m_crop);
+    if (!onCrt && m_onCrt && screen != nullptr) {
+        screen->clearGameWindow();
+    }
+    if (onCrt != m_onCrt || !m_showing) {
+        spdlog::info(onCrt ? "VR: the game shows on the room's CRT" : "VR: the game shows on the large screen");
+    }
+    m_onCrt = onCrt;
+    m_large = !onCrt;
+    m_showing = true;
     if (record != nullptr) {
         ++record->captureFrames;
-        record->captureShownFrames += m_showing ? 1 : 0;
+        record->captureShownFrames += 1;
+        record->largeScreenFrames += m_large ? 1 : 0;
         record->captureSize = m_interop->size();
         record->captureCrop = m_crop;
     }

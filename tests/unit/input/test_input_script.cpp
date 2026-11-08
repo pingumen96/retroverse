@@ -471,6 +471,21 @@ TEST_CASE("input/input_script: steps push the fake runtime's thumbsticks (I10 st
     CHECK(parseError(R"([{"fromFrame": 0, "toFrame": 0, "rightStick": [1]}])").context == "script.json:/0/rightStick");
 }
 
+TEST_CASE("input/input_script: steps hold the left controller's menu button (I11 step 14)", "[input][input_script]") {
+    const InputScript script = parseOk(R"([
+        {"fromFrame": 10, "toFrame": 80, "leftMenu": true},
+        {"fromFrame": 50, "toFrame": 50, "leftMenu": false}
+    ])");
+    CHECK_FALSE(script.leftMenuAt(9));
+    CHECK(script.leftMenuAt(10));
+    CHECK(script.leftMenuAt(50)); // any covering step that holds it
+    CHECK(script.leftMenuAt(80));
+    CHECK_FALSE(script.leftMenuAt(81));
+    const rv::Error notBoolean = parseError(R"([{"fromFrame": 0, "toFrame": 0, "leftMenu": 1}])");
+    CHECK(notBoolean.code == ErrorCode::ValidationFailed);
+    CHECK(notBoolean.context == "script.json:/0/leftMenu");
+}
+
 TEST_CASE("input/input_script: raw steps go through the bindings, with edges and a pad (I7 step 3)",
           "[input][input_script]") {
     using namespace rv::input;

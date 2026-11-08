@@ -28,6 +28,7 @@ target_link_libraries(rv_smoke_tests PRIVATE
     rv_app_cli               # the run report
     rv_audio                 # the offline mix's WAV and its tone analysis (test_audio.cpp, I5 step 5)
     rv_ui_model              # the directory's model (test_directory_panel.cpp, through the UI probe's fixture)
+    rv_platform_win          # Windows' default audio output (test_xr_room.cpp, I11 step 14)
     rv_screenshot_diff_core  # the golden comparison
     rv_test_support          # the child runner (tests/support/child_process.hpp)
     Catch2::Catch2)

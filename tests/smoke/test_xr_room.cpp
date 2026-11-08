@@ -31,6 +31,7 @@
 #include <rv/core/json.hpp>
 #include <rv/core/math.hpp>
 #include <rv/core/text.hpp>
+#include <rv/platform_win/audio_endpoint.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/scene_builder.hpp>
@@ -140,6 +141,19 @@ glm::vec3 turned(const glm::vec3& tracked, float yaw) {
                      tracked.x * std::sin(yaw) + tracked.z * std::cos(yaw));
 }
 
+/// The screenshots a run's input script took (<data>/screenshots), in order.
+std::vector<fs::path> screenshotsOf(const ImportedRoom& room) {
+    std::vector<fs::path> taken;
+    std::error_code error;
+    for (const auto& entry : fs::directory_iterator(room.data / "screenshots", error)) {
+        if (entry.path().extension() == ".png") {
+            taken.push_back(entry.path());
+        }
+    }
+    std::sort(taken.begin(), taken.end());
+    return taken;
+}
+
 } // namespace
 
 TEST_CASE("xr: the right controller's ray inspects a cartridge, held in that hand, the walker unmoved (I10 step 4)",
@@ -222,7 +236,8 @@ namespace {
 /// The room's first run (the room shown), then the headset's: the right controller's ray on fx:hw-w/s:5.4 inspects it
 /// at frame 40, Avvia (the pad's Start) at frame 70 launches the fake emulator, `steps` (input script steps, each
 /// ending with a comma) on top; `frames` frames in all.
-AppRun launchInHeadset(const ImportedRoom& room, std::string_view steps, int frames) {
+AppRun launchInHeadset(const ImportedRoom& room, std::string_view steps, int frames,
+                       const std::vector<std::string>& extra = {}) {
     const AppRun first = runApp(retroverseExe(), room.dir, "first",
                                 {"--start-room", "room:snes", "--exit-after-frames", "--frames", "3", "--fixed-dt",
                                  "0.016667", "--screenshot", arg(room.dir / "first.png")});
@@ -253,10 +268,12 @@ AppRun launchInHeadset(const ImportedRoom& room, std::string_view steps, int fra
     spawnPoint.feet = spawn.feet;
     spawnPoint.yawDeg = rv::core::radiansToDegrees(spawn.yaw);
     spawnPoint.pitchDeg = 0.0f;
-    AppRun run = runApp(retroverseExe(), room.dir, "vr",
-                        {"--vr", "--xr-runtime", "fake", "--start-room", "room:snes", "--spawn",
-                         spawnArgument(spawnPoint), "--input-script", arg(script), "--exit-after-frames", "--frames",
-                         std::to_string(frames), "--fixed-dt", "0.016667"});
+    std::vector<std::string> arguments{"--vr",          "--xr-runtime",      "fake",       "--start-room",
+                                       "room:snes",     "--spawn",           spawnArgument(spawnPoint),
+                                       "--input-script", arg(script),        "--exit-after-frames",
+                                       "--frames",      std::to_string(frames), "--fixed-dt", "0.016667"};
+    arguments.insert(arguments.end(), extra.begin(), extra.end());
+    AppRun run = runApp(retroverseExe(), room.dir, "vr", arguments);
     requireCleanRun(run);
     return run;
 }
@@ -324,12 +341,12 @@ TEST_CASE("xr: a game pillarboxed in its wide window fills the hero CRT without 
     CHECK(xr.captureCrop.y + xr.captureCrop.w <= 1.0f);
 }
 
-TEST_CASE("xr: a game launched where no CRT is bound is captured, shown nowhere", "[gpu][xr]") {
+TEST_CASE("xr: a game launched where no CRT is bound shows on the large screen (I11 step 14)", "[gpu][xr]") {
     // The lobby binds no screen; the media viewer's clip makes the screens' service there, unbound (I5 step 8's
-    // review), which then has no hero to show the game's window on: the UI's panel must stay, and nothing may count the
-    // game as shown.
+    // review), which then has no hero to show the game's window on. Since I11 step 14 (ADR-0020 §6) the large screen in
+    // front of the user shows it. The game's window shows at least 6 s; a screenshot of both eyes at frame 330.
     ensureLaunchAllowList();
-    const ImportedRoom room("no_crt", true);
+    const ImportedRoom room("no_crt", true, {"--min-window-ms", "6000"});
     const AppRun first = runApp(retroverseExe(), room.dir, "first", {"--exit-after-frames", "--frames", "3"});
     skipWithoutOpenGl(first);
     requireCleanRun(first);
@@ -350,6 +367,7 @@ TEST_CASE("xr: a game launched where no CRT is bound is captured, shown nowhere"
     }
     press(170, "ui_back");
     press(180, "ui_activate");
+    press(330, "screenshot");
     const fs::path script = room.dir / "no_crt.json";
     REQUIRE(rv::core::writeTextFileAtomic(script, steps.dump(2) + "\n").has_value());
     const AppRun run = runApp(retroverseExe(), room.dir, "vr",
@@ -369,7 +387,74 @@ TEST_CASE("xr: a game launched where no CRT is bound is captured, shown nowhere"
     CHECK(xr.captureError.empty());
     CHECK(xr.captureStarts == 1);
     CHECK(xr.captureFrames > 0);
-    CHECK(xr.captureShownFrames == 0);
+    CHECK(xr.captureShownFrames == xr.captureFrames);
+    CHECK(xr.largeScreenFrames == xr.captureFrames);
+    // The screenshot of both eyes with the large screen, kept for a look.
+    CHECK(screenshotsOf(room).size() == 1);
+}
+
+TEST_CASE("xr: the menu button held stops watching the game, the room comes back, and the game is watched again "
+          "(I11 step 14)",
+          "[gpu][xr]") {
+    ensureLaunchAllowList();
+    // The game's window shows at least 12 s. Frames 300 to 380 the left menu button held (1.3 s); the session panel asks
+    // with "Torna al gioco" focused, which the press at 470 takes; screenshots at 430 (stopped) and 700 (watching).
+    const ImportedRoom room("stop_watching", true, {"--min-window-ms", "12000"});
+    const AppRun run = launchInHeadset(room,
+                                       R"({"fromFrame": 300, "toFrame": 380, "leftMenu": true},
+  {"fromFrame": 430, "toFrame": 430, "actions": {"screenshot": 1}},
+  {"fromFrame": 470, "toFrame": 470, "actions": {"ui_activate": 1}},
+  {"fromFrame": 700, "toFrame": 700, "actions": {"screenshot": 1}},)",
+                                       2400);
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    const rv::app::LaunchRecord& launch = run.report->launches.front();
+    CHECK(launch.watchStops == 1);
+    CHECK(launch.watchResumes == 1);
+    CHECK(std::find(launch.panels.begin(), launch.panels.end(), "playing") != launch.panels.end());
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.captureError.empty());
+    // Stopped about 90 frames (380 to 470); the capture ended meanwhile and started again on the same window.
+    CHECK(xr.stoppedWatchingFrames >= 60);
+    CHECK(xr.stoppedWatchingFrames <= 120);
+    CHECK(xr.captureStarts >= 2);
+    CHECK(xr.captureShownFrames == xr.captureFrames);
+    CHECK(xr.largeScreenFrames == 0);
+    // The CRT's decoders stopped for the launch, ran again while the user did not watch, and stopped once more.
+    CHECK(run.report->video.launches.size() >= 2);
+    // Both eyes stopped (the panel before the room) and watching again (the game on the CRT), kept for a look.
+    CHECK(screenshotsOf(room).size() == 2);
+}
+
+TEST_CASE("xr: xr.json's large screen beside a CRT, and the notice of a game playing on the PC's audio output "
+          "(I11 step 14)",
+          "[gpu][xr]") {
+    ensureLaunchAllowList();
+    const ImportedRoom room("large_audio", true, {"--min-window-ms", "6000"});
+    const std::string largeScreen = R"({"gameScreen": "large"})";
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "xr.json", largeScreen).has_value());
+    // A headset endpoint no Windows device has: Windows' default output (when there is one) is never the headset.
+    const AppRun run =
+        launchInHeadset(room, R"({"fromFrame": 200, "toFrame": 200, "actions": {"screenshot": 1}},)", 900,
+                        {"--xr-fake-audio-device", "{0.0.0.00000000}.{00000000-0000-0000-0000-00000000f4e5}"});
+    INFO(run.describe());
+    REQUIRE(run.report->launches.size() == 1);
+    REQUIRE(run.report->xr);
+    const rv::app::XrRecord& xr = *run.report->xr;
+    CHECK(xr.captureError.empty());
+    CHECK(xr.captureFrames > 0);
+    CHECK(xr.largeScreenFrames == xr.captureFrames);
+    CHECK(xr.audioOutputKnown);
+    if (rv::platform_win::defaultAudioOutput()) {
+        CHECK(run.report->launches.front().audioElsewhere);
+        CHECK(xr.audioNoticeFrames > 0);
+    } else {
+        WARN("this machine has no default audio output: the notice is not expected");
+        CHECK_FALSE(run.report->launches.front().audioElsewhere);
+    }
+    // Both eyes with the large screen and the notice, kept for a look.
+    CHECK(screenshotsOf(room).size() == 1);
 }
 
 TEST_CASE("xr: the CRT follows the game's window past a splash and beside a main window (I11 step 11)", "[gpu][xr]") {

@@ -17,10 +17,12 @@ namespace {
 
 namespace gs = game_session_ui;
 
-/// The button a phase focuses when it shows (none for Launching, which offers no choice).
-[[nodiscard]] std::string_view defaultChoice(SessionPanel panel) noexcept {
+/// The button a phase focuses when it shows (none for Launching, which offers no choice); "Torna al gioco" when the user
+/// stopped watching in VR (I11 step 14).
+[[nodiscard]] std::string_view defaultChoice(SessionPanel panel, bool watchStopped) noexcept {
     switch (panel) {
     case SessionPanel::Playing:
+        return watchStopped ? gs::kResumeId : gs::kReturnId;
     case SessionPanel::StillRunning:
     case SessionPanel::Confirm:
         return gs::kReturnId;
@@ -62,6 +64,8 @@ struct GameSessionPanel::Impl {
         constructor.Bind("detail", &detail);
         constructor.Bind("timeout", &timeout);
         constructor.Bind("exclusive", &exclusive);
+        constructor.Bind("stopped", &stopped);
+        constructor.Bind("audio", &audio);
         // The buttons act on the panel shown when they were pressed: the application decides what follows.
         constructor.BindEventCallback("return_home", [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
             if (shown != SessionPanel::None && events.returnHome) {
@@ -105,6 +109,8 @@ struct GameSessionPanel::Impl {
     Rml::String detail;
     int timeout = 0;
     bool exclusive = false;
+    bool stopped = false;
+    bool audio = false;
 };
 
 GameSessionPanel::GameSessionPanel(std::unique_ptr<Impl> impl) noexcept : m_impl(std::move(impl)) {}
@@ -146,7 +152,7 @@ void GameSessionPanel::show(SessionPanel panel, std::string_view title, const La
     impl.document->PullToFront();
     // The phase's elements exist once the data views have run: lay the document out now, then focus its first choice.
     impl.view.context().Update();
-    if (const std::string_view choice = defaultChoice(panel); !choice.empty()) {
+    if (const std::string_view choice = defaultChoice(panel, impl.stopped); !choice.empty()) {
         if (Rml::Element* button = impl.document->GetElementById(Rml::String(choice))) {
             button->Focus(true);
         }
@@ -185,6 +191,26 @@ void GameSessionPanel::apply(ui::UiCommand command) {
     }
     if (command == ui::UiCommand::Activate) {
         static_cast<void>(impl.view.activate());
+    }
+}
+
+void GameSessionPanel::setWatchStopped(bool stopped) {
+    if (m_impl->stopped == stopped) {
+        return;
+    }
+    m_impl->stopped = stopped;
+    if (m_impl->handle) {
+        m_impl->handle.DirtyVariable("stopped");
+    }
+}
+
+void GameSessionPanel::setAudioElsewhere(bool elsewhere) {
+    if (m_impl->audio == elsewhere) {
+        return;
+    }
+    m_impl->audio = elsewhere;
+    if (m_impl->handle) {
+        m_impl->handle.DirtyVariable("audio");
     }
 }
 

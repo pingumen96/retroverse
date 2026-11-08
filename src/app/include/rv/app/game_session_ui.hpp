@@ -14,8 +14,11 @@ inline constexpr std::string_view kDocumentPath = "ui/game_session.rml";
 inline constexpr std::string_view kStyleSheetPath = "ui/game_session.rcss";
 /// The data model: "phase" (toString(SessionPanel)), "title" (the game's), "code", "reason" and "detail" (the
 /// LaunchMessage), "timeout" (the window timeout in seconds, for StillRunning's text), "exclusive" (the game runs in
-/// exclusive fullscreen, I11 step 13); the events "return_home", "resume" and "dismiss".
+/// exclusive fullscreen, I11 step 13), "stopped" (Playing asked in VR after the user stopped watching, I11 step 14),
+/// "audio" (the game plays on Windows' default audio output, not the headset's, I11 step 14); the events "return_home",
+/// "resume" and "dismiss".
 inline constexpr std::string_view kExclusiveNoticeId = "session-exclusive";
+inline constexpr std::string_view kAudioNoticeId = "session-audio";
 inline constexpr std::string_view kDataModel = "session";
 inline constexpr std::string_view kPanelId = "session-panel";
 /// The buttons: return to Retroverse ("Torna a Retroverse", "Sono tornato" for a confirmation), back to the game ("Torna

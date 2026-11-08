@@ -3201,6 +3201,9 @@ Json launchToJson(const LaunchRecord& launch) {
     json["processId"] = launch.processId;
     json["activation"] = launch.activation;
     json["exclusiveFullscreen"] = launch.exclusiveFullscreen;
+    json["watchStops"] = launch.watchStops;
+    json["watchResumes"] = launch.watchResumes;
+    json["audioElsewhere"] = launch.audioElsewhere;
     json["quickExit"] = launch.quickExit;
     json["processesRemained"] = launch.processesRemained;
     json["confirmedByUser"] = launch.confirmedByUser;
@@ -3320,6 +3323,9 @@ LaunchRecord readLaunch(FieldReader& fields) {
     launch.processId = static_cast<std::uint32_t>(fields.count("processId", kMaxUint32));
     launch.activation = fields.string("activation");
     launch.exclusiveFullscreen = fields.boolean("exclusiveFullscreen");
+    launch.watchStops = static_cast<std::uint32_t>(fields.optionalCount("watchStops", kMaxUint32).value_or(0));
+    launch.watchResumes = static_cast<std::uint32_t>(fields.optionalCount("watchResumes", kMaxUint32).value_or(0));
+    launch.audioElsewhere = fields.has("audioElsewhere") && fields.boolean("audioElsewhere");
     launch.quickExit = fields.boolean("quickExit");
     launch.processesRemained = fields.boolean("processesRemained");
     launch.confirmedByUser = fields.boolean("confirmedByUser");
@@ -3460,6 +3466,10 @@ Json xrToJson(const XrRecord& xr) {
     json["captureClosed"] = xr.captureClosed;
     json["captureBlack"] = xr.captureBlack;
     json["exclusiveNoticeFrames"] = xr.exclusiveNoticeFrames;
+    json["largeScreenFrames"] = xr.largeScreenFrames;
+    json["stoppedWatchingFrames"] = xr.stoppedWatchingFrames;
+    json["audioNoticeFrames"] = xr.audioNoticeFrames;
+    json["audioOutputKnown"] = xr.audioOutputKnown;
     json["captureColor"] = Json::array({static_cast<double>(xr.captureColor.x), static_cast<double>(xr.captureColor.y),
                                         static_cast<double>(xr.captureColor.z)});
     json["playingWalkFrames"] = xr.playingWalkFrames;
@@ -3538,6 +3548,10 @@ XrRecord readXr(FieldReader& fields) {
     xr.captureClosed = fields.count("captureClosed");
     xr.captureBlack = fields.boolean("captureBlack");
     xr.exclusiveNoticeFrames = fields.count("exclusiveNoticeFrames");
+    xr.largeScreenFrames = fields.optionalCount("largeScreenFrames").value_or(0);
+    xr.stoppedWatchingFrames = fields.optionalCount("stoppedWatchingFrames").value_or(0);
+    xr.audioNoticeFrames = fields.optionalCount("audioNoticeFrames").value_or(0);
+    xr.audioOutputKnown = fields.has("audioOutputKnown") && fields.boolean("audioOutputKnown");
     xr.captureColor = fields.vec3("captureColor");
     xr.playingWalkFrames = fields.count("playingWalkFrames");
     xr.dynamicScale = fields.boolean("dynamicScale");

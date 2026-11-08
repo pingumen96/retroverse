@@ -326,7 +326,11 @@ build/rvdata`).
   WGL_NV_DX_interop2; I10 step 11: its client area without its black bars, at their aspect) and given the
   foreground, the pad plays it, the inspected item waits in its fixture; Retroverse reads only the controllers'
   walk, turns and teleport until it ends (I10 step 10: input scripts' `leftStick`, `rightStick` push the fake
-  runtime's thumbsticks). Interactive runs scale the eyes'
+  runtime's thumbsticks). I11 step 14 (`docs/i11/step-14.md`): the left menu button held 1 s stops watching the game
+  (the room and its screens come back; the session panel offers "Torna al gioco" and "Il gioco è terminato"); where no
+  CRT takes the game (the lobby, a hall), or with xr.json's `gameScreen: "large"`, a large screen 2.8 m ahead shows
+  it; when the headset's audio endpoint is not Windows' default output, the panel says the game plays on the PC's.
+  Interactive runs scale the eyes'
   rendering with the GPU's load (I10 step 7: down to 0.6 of the images' size, 0.8 at most while a game shows);
   frame-limited runs keep 1. 120 Hz (I10 step 9): `--xr-refresh-rate 120` or xr.json's `refreshRate` asks the headset
   for the highest rate it offers up to that (Link needs 120 Hz turned on in the Meta app); xr.json's `quality`
@@ -337,7 +341,10 @@ build/rvdata`).
   the run back to the desktop. `--xr-runtime fake` needs no headset: two asymmetric eyes of 1024 x 1024 at 72 Hz with
   no wait, at the `--input-script`'s `headPose` steps (`tests/input_scripts/xr_look.json`); a frame-limited run's
   screenshot then holds both eyes side by side (2048 x 1024), `--xr-fake-lose-after <frames>` loses the session, and
-  `--xr-fake-untracked-frames <frames>` gives its first frames no eyes, as a real runtime's first frames ask for no views.
+  `--xr-fake-untracked-frames <frames>` gives its first frames no eyes, as a real runtime's first frames ask for no views;
+  `--xr-fake-audio-device <id>` makes it report that headset audio endpoint (I11 step 14: compared with Windows' default
+  at a launch), and an input script's `"leftMenu": true` holds the left controller's menu button (held 1 s while a game
+  shows: stop watching it).
   The run report's `xr` section: the runtime, the headset, the space, the eyes' size and format, the frames waited for
   and submitted, the missed refreshes, the session's events, the head's poses, the posture and turn mode, the
   movement's snap turns, teleports and push-backs, and the controllers (the profiles taken and held, the frames

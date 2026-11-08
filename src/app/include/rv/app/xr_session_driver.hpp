@@ -45,6 +45,8 @@ public:
     void requestExit();
     /// A controller's vibration (I10 step 4).
     void vibrate(xr::Hand hand, float amplitude, float seconds);
+    /// I11 step 14: the headset's audio endpoint, where the runtime tells it.
+    [[nodiscard]] std::optional<std::string> audioOutputDevice() const { return m_session->audioOutputDevice(); }
     /// The session's description, frames and events into `record`.
     void finish(XrRecord& record) const;
 

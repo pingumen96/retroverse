@@ -39,12 +39,19 @@ TEST_CASE("app/game_session_document: the ids, the data model and the events its
     CHECK(contains(rml, "data-model=\"" + std::string(gs::kDataModel) + "\""));
     const std::string sheet = rv::core::pathToUtf8(rv::core::pathFromUtf8(gs::kStyleSheetPath).filename());
     CHECK(contains(rml, "href=\"" + sheet + "\""));
-    for (const std::string_view id : {gs::kPanelId, gs::kReturnId, gs::kResumeId, gs::kOkId}) {
+    for (const std::string_view id : {gs::kPanelId, gs::kReturnId, gs::kResumeId, gs::kOkId, gs::kExclusiveNoticeId,
+                                      gs::kAudioNoticeId}) {
         INFO(id);
         CHECK(contains(rml, "id=\"" + std::string(id) + "\""));
     }
     for (const std::string_view binding : {"{{ title }}", "{{ detail }}", "{{ timeout }}", "data-event-click=\"return_home()\"",
                                            "data-event-click=\"resume()\"", "data-event-click=\"dismiss()\""}) {
+        INFO(binding);
+        CHECK(contains(rml, binding));
+    }
+    // I11 step 14: the stop-watching question ("Il gioco è terminato", "Torna al gioco") and the audio notice.
+    for (const std::string_view binding : {"phase == 'playing' && stopped", "phase == 'playing' && !stopped",
+                                           "data-if=\"audio\"", "Il gioco è terminato", "Torna al gioco"}) {
         INFO(binding);
         CHECK(contains(rml, binding));
     }

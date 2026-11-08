@@ -810,6 +810,7 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK(fake->xr.renderScale == 0.5);
     CHECK(fake->xr.fakeLoseAfterFrames == std::optional<std::uint64_t>(3));
     CHECK(fake->xr.fakeUntrackedFrames == std::optional<std::uint64_t>(2));
+    CHECK_FALSE(fake->xr.fakeAudioDevice);
     CHECK(rv::app::toString(fake->xr.runtime) == "fake");
 
     const auto manifest = parse({"--vr", "--xr-runtime-json", "C:/runtimes/steamvr.json"});
@@ -827,6 +828,13 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(parse({"--xr-fake-untracked-frames", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-fake-untracked-frames", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-fake-untracked-frames", "0"}).has_value());
+    // I11 step 14: the fake runtime's headset audio endpoint.
+    const auto audio = parse({"--vr", "--xr-runtime", "fake", "--xr-fake-audio-device", "{0.0.0.00000000}.{abc}"});
+    REQUIRE(audio.has_value());
+    CHECK(audio->xr.fakeAudioDevice == std::optional<std::string>("{0.0.0.00000000}.{abc}"));
+    CHECK_FALSE(parse({"--xr-fake-audio-device", "x"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-fake-audio-device", "x"}).has_value());
+    CHECK_FALSE(parse({"--vr", "--xr-runtime", "fake", "--xr-fake-audio-device", ""}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "0.1"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-render-scale", "3"}).has_value());
     CHECK_FALSE(parse({"--vr", "--stereo-preview"}).has_value());
@@ -838,7 +846,7 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
     CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "0"}).has_value());
     CHECK_FALSE(parse({"--vr", "--xr-refresh-rate", "500"}).has_value());
     for (const char* option : {"--vr", "--xr-runtime", "--xr-runtime-json", "--xr-render-scale",
-                               "--xr-fake-lose-after", "--xr-fake-untracked-frames"}) {
+                               "--xr-fake-lose-after", "--xr-fake-untracked-frames", "--xr-fake-audio-device"}) {
         CHECK(helpListsOption(rv::app::commandLineHelp(), option));
     }
 }

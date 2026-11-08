@@ -141,6 +141,9 @@ public:
     [[nodiscard]] virtual std::span<const std::uint32_t> images(int eye) const = 0;
     /// The refresh rate now, when the runtime tells it.
     [[nodiscard]] virtual std::optional<float> currentRefreshRate() const = 0;
+    /// I11 step 14 (ADR-0020 §6): the headset's audio output, as Windows names its endpoint (the id
+    /// IMMDeviceEnumerator::GetDevice takes), where the runtime tells it (XR_OCULUS_audio_device_guid); none otherwise.
+    [[nodiscard]] virtual std::optional<std::string> audioOutputDevice() const { return std::nullopt; }
 
 protected:
     Runtime() = default;

@@ -46,6 +46,8 @@ TEST_CASE("xr/settings: the shipped defaults hold every key, at ADR-0017's value
     CHECK(parsed->comfort.turn == rv::xr::TurnMode::Snap);
     CHECK(parsed->comfort.snapDegrees == 30.0f);
     CHECK(parsed->posture == rv::xr::Posture::Standing);
+    CHECK(parsed->gameScreen == rv::xr::GameScreen::Crt);
+    CHECK(rv::xr::toString(rv::xr::GameScreen::Large) == "large");
 
     Json missing = shipped();
     missing["comfort"].erase("vignette");
@@ -80,6 +82,18 @@ TEST_CASE("xr/settings: the user's file overrides key by key; a bad one is left 
     CHECK(loaded->settings.comfort.vignette == 0.4f);
     CHECK(loaded->settings.comfort.snapDegrees == 30.0f); // kept
     CHECK(loaded->settings.renderScale == 1.0);
+
+    // I11 step 14: the large screen always.
+    writeUser(dir, R"({"gameScreen": "large"})");
+    auto large = rv::xr::loadXrSettings(assetRoot(), dir.path());
+    REQUIRE(large.has_value());
+    CHECK(large->issues.empty());
+    CHECK(large->settings.gameScreen == rv::xr::GameScreen::Large);
+    writeUser(dir, R"({"gameScreen": "wall"})");
+    auto wall = rv::xr::loadXrSettings(assetRoot(), dir.path());
+    REQUIRE(wall.has_value());
+    REQUIRE(wall->issues.size() == 1);
+    CHECK(wall->issues.front().message.starts_with("/gameScreen"));
 
     writeUser(dir, R"({"renderScale": 3, "posture": "seated"})");
     auto refused = rv::xr::loadXrSettings(assetRoot(), dir.path());

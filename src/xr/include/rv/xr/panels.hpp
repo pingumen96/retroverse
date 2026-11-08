@@ -41,6 +41,15 @@ struct PanelPose {
     [[nodiscard]] glm::mat4 model() const noexcept;
 };
 
+/// The large screen (I11 step 14, ADR-0017 §7's option, ADR-0020 §6): a launched game kGameScreenDistance in front of
+/// the head when it was placed, kGameScreenWidth wide, its centre at the eyes' height.
+inline constexpr float kGameScreenDistance = 2.8f;
+inline constexpr float kGameScreenWidth = 2.4f;
+
+/// The large screen in front of `head` along its heading (its yaw alone), upright and facing back along it, at the
+/// picture's `aspect` (width over height).
+[[nodiscard]] PanelPose gameScreenPanel(const Pose& head, float aspect) noexcept;
+
 /// The world panel in front of `head`: kWorldPanelDistance along the head's heading (its yaw alone), kWorldPanelDrop
 /// below the eyes, upright and facing back along that heading, kWorldPanelWidth wide at the canvas's `aspect`
 /// (width over height).

@@ -134,6 +134,9 @@ core::ArgParser makeParser() {
         .option("xr-fake-untracked-frames", "frames",
                 "For tests, with --xr-runtime fake: this many first frames locate no eyes, as a real runtime's first "
                 "frames ask for no views.")
+        .option("xr-fake-audio-device", "id",
+                "For tests, with --xr-runtime fake: the headset's audio endpoint the fake runtime reports, compared "
+                "with Windows' default at a launch.")
         .option("start-room", "room",
                 "Start in this room of the building (its id: room:snes, area:arcade, ...) at its doorway camera, on "
                 "its floor, instead of in the ground floor's lobby; --spawn and the run report's poses are then in "
@@ -320,13 +323,13 @@ Status applyLaunchWaitLimit(const core::ParsedArgs& args, CommandLineOptions& op
 }
 
 /// --vr and the --xr-* options: each --xr-* option needs --vr; --xr-runtime-json goes with the OpenXR runtime and
-/// --xr-fake-lose-after and --xr-fake-untracked-frames with the fake one; not with --stereo-preview (the VR mode shows
+/// --xr-fake-lose-after, --xr-fake-untracked-frames and --xr-fake-audio-device with the fake one; not with --stereo-preview (the VR mode shows
 /// its own eyes).
 Status applyXr(const core::ParsedArgs& args, CommandLineOptions& options) {
     XrOptions& xr = options.xr;
     xr.enabled = args.has("vr");
     for (const std::string_view name : {"xr-runtime", "xr-runtime-json", "xr-render-scale", "xr-refresh-rate",
-                                        "xr-fake-lose-after", "xr-fake-untracked-frames"}) {
+                                        "xr-fake-lose-after", "xr-fake-untracked-frames", "xr-fake-audio-device"}) {
         if (args.has(name) && !xr.enabled) {
             return makeError(ErrorCode::InvalidArgument, "only valid with --vr", "--" + std::string(name));
         }
@@ -406,6 +409,16 @@ Status applyXr(const core::ParsedArgs& args, CommandLineOptions& options) {
                              fmt::format("--xr-fake-untracked-frames={}", *frames));
         }
         xr.fakeUntrackedFrames = static_cast<std::uint64_t>(*frames);
+    }
+    if (args.has("xr-fake-audio-device")) {
+        if (xr.runtime != XrRuntimeChoice::Fake) {
+            return makeError(ErrorCode::InvalidArgument, "only with --xr-runtime fake", "--xr-fake-audio-device");
+        }
+        const std::string id = args.value("xr-fake-audio-device").value_or("");
+        if (id.empty()) {
+            return makeError(ErrorCode::InvalidArgument, "expected an endpoint id", "--xr-fake-audio-device");
+        }
+        xr.fakeAudioDevice = id;
     }
     return ok();
 }

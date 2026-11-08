@@ -298,6 +298,12 @@ struct LaunchRecord {
     /// ADR-0020 §5).
     std::string activation;
     bool exclusiveFullscreen = false;
+    /// I11 step 14 (ADR-0020 §6): in VR, the times the user stopped watching the game (the left menu button held) and
+    /// went back to it ("Torna al gioco"), and whether the game played on Windows' default audio output, not the
+    /// headset's (compared when it started; false when either was unknown).
+    std::uint32_t watchStops = 0;
+    std::uint32_t watchResumes = 0;
+    bool audioElsewhere = false;
     /// launcher::LaunchOutcome's flags; confirmedByUser only for the user's own confirmation (false when quitting or the
     /// wait limit ended the session, which LaunchSession::confirmReturn records as confirmed).
     bool quickExit = false;
@@ -2217,8 +2223,8 @@ struct XrRecord {
     std::uint64_t uiPanelFrames = 0;
     std::uint64_t uiPointedFrames = 0;
     std::uint64_t uiClicks = 0;
-    /// The launched game on the CRT (I10 step 6): captures started, frames captured, those a hero CRT showed (none
-    /// where no hero screen is bound), the window's size last captured, why a capture could not start or went on
+    /// The launched game on the CRT (I10 step 6): captures started, frames captured, those shown (by a hero CRT, or
+    /// since I11 step 14 by the large screen where none is bound), the window's size last captured, why a capture could not start or went on
     /// (empty: none).
     std::uint64_t captureStarts = 0;
     std::uint64_t captureFrames = 0;
@@ -2239,6 +2245,14 @@ struct XrRecord {
     /// I11 step 13 (ADR-0020 §5): frames the session panel's notice of a game in exclusive fullscreen stood in front of
     /// the CRT showing it.
     std::uint64_t exclusiveNoticeFrames = 0;
+    /// I11 step 14 (ADR-0020 §6): the frames the large screen showed the game (no hero CRT took it, or xr.json's
+    /// gameScreen "large"), those after the user stopped watching a running game (the left menu button held), those the
+    /// audio notice stood before the game (it plays on Windows' default output, not the headset's), and whether the
+    /// headset's audio endpoint was known (the runtime told it).
+    std::uint64_t largeScreenFrames = 0;
+    std::uint64_t stoppedWatchingFrames = 0;
+    std::uint64_t audioNoticeFrames = 0;
+    bool audioOutputKnown = false;
     glm::vec3 captureColor{0.0f};
     /// Frames a game ran in which the controllers walked, turned or aimed the teleport (I10 step 10).
     std::uint64_t playingWalkFrames = 0;
