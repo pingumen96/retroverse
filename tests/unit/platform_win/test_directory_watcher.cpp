@@ -145,7 +145,8 @@ TEST_CASE("platform_win/directory_watcher: files added, written, renamed and rem
     const fs::path rom = scratch.root / "snes" / "Zinnia (USA).sfc";
     write(rom, "rom");
     CHECK(waitForChange(watcher, changes, is(ChangeKind::Added, rom)));
-    CHECK(wakes.load() > 0);
+    // The watcher queues a change and wakes the host after it: take() can see the change before the wake.
+    CHECK(waitFor([&] { return wakes.load() > 0; }));
     // The watcher never stands in the way of a file being renamed, written or removed.
     const fs::path renamed = scratch.root / "snes" / "Zinnia (Europe).sfc";
     fs::rename(rom, renamed);
