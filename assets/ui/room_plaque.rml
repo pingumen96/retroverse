@@ -1,0 +1,34 @@
+<rml>
+<head>
+	<!--
+		The history plaque's card (I11 step 5; ADR-0019 §6): what a console room's plaque says, in full, over the room.
+		Interact on the plaque beside the hero corner opens it (VR's ray too); Up and Down scroll its text; Back (B, Esc)
+		or activate closes it. Bound to the data model "room_plaque" of rv::app::PlaqueCardPanel
+		(src/app/src/plaque_card_panel.cpp), which also names the ids below: keep them in step
+		(src/app/include/rv/app/plaque_card_ui.hpp, tests/unit/app/test_history_plaques.cpp). The name, the maker, the
+		year, the type and the description are the theme's text as it comes (data, not sentences of the UI); an empty
+		field reads "n.d." (non disponibile). The logo is the system's (rv-texture:logo-<system>, I11 step 3) when the UI
+		has it.
+	-->
+	<title>Targa</title>
+	<link type="text/rcss" href="room_plaque.rcss"/>
+</head>
+<body id="room-plaque" data-model="room_plaque">
+	<div class="panel">
+		<div class="head">
+			<p class="kicker">Targa della stanza</p>
+			<div id="plaque-logo" class="logo" data-if="logo != ''"><img data-attr-src="logo"/></div>
+			<h2 id="plaque-name">{{ name }}</h2>
+		</div>
+		<div id="plaque-body" class="body">
+			<div class="rows">
+				<div class="row"><span class="key">Produttore</span><span class="value"><span data-if="maker != ''">{{ maker }}</span><span data-if="maker == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Anno</span><span class="value"><span data-if="year != ''">{{ year }}</span><span data-if="year == ''">n.d.</span></span></div>
+				<div class="row"><span class="key">Tipo</span><span class="value"><span data-if="type != ''">{{ type }}</span><span data-if="type == ''">n.d.</span></span></div>
+			</div>
+			<p id="plaque-description" class="description">{{ description }}</p>
+		</div>
+		<p class="close">Indietro per chiudere</p>
+	</div>
+</body>
+</rml>

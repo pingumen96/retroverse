@@ -45,6 +45,7 @@
 #include <rv/app/settings_store.hpp>
 #include <rv/app/video_settings.hpp>
 #include <rv/app/world_build.hpp>
+#include <rv/app/world_focus.hpp>
 #include <rv/app/xr_watch.hpp>
 #include <rv/assets/gltf_loader.hpp>
 #include <rv/audio/audio_engine.hpp>
@@ -104,6 +105,7 @@
 #include "product_ui.hpp"
 #include "screen_service.hpp"
 #include "system_logos.hpp"
+#include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
 #include "world_session.hpp"
@@ -692,6 +694,10 @@ struct RetroverseApp::State {
     std::unique_ptr<SystemLogos> systemLogos;
     /// I11 step 4: the rooms' signs drawn from the systems' identity, on the scene's sign materials.
     std::unique_ptr<WorldSigns> worldSigns;
+    /// I11 step 5: the console rooms' history plaques beside their hero corners, and the one hovered last (VR's
+    /// vibration).
+    std::unique_ptr<WorldPlaques> worldPlaques;
+    std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
     /// The developer overlay. Declared last: destroyed first, before the state its panels refer to.
@@ -875,6 +881,15 @@ struct RetroverseApp::State {
                 }
             }
             xrHovered = hovered;
+            // I11 step 5: the ray onto a plaque.
+            const std::optional<world::RoomId> plaque =
+                worldPlaques ? worldPlaques->hovered() : std::optional<world::RoomId>{};
+            if (plaque && plaque != xrPlaqueHovered) {
+                if (const std::optional<xr::Hand> hand = xrHands.pointer().hand()) {
+                    context.vibrate(*hand, 0.35f, 0.02f);
+                }
+            }
+            xrPlaqueHovered = plaque;
         }
         const xr::Frame* frame = context.xrFrame();
         std::optional<scene::RigidPose> held;
@@ -1036,6 +1051,10 @@ struct RetroverseApp::State {
             worldSigns->release(graphics ? &graphics->materials() : nullptr, scene ? &*scene : nullptr);
             worldSigns.reset();
         }
+        if (worldPlaques) {
+            worldPlaques->release(graphics ? &graphics->materials() : nullptr);
+            worldPlaques.reset();
+        }
         if (!systemLogos) {
             return;
         }
@@ -1082,6 +1101,29 @@ struct RetroverseApp::State {
         frame.systemsRevision = catalog.systemsRevision();
         frame.settle = context.options().fixedDeltaSeconds.has_value();
         worldSigns->update(frame);
+        // I11 step 5: the history plaques beside the console rooms' hero corners.
+        if (!worldPlaques) {
+            worldPlaques = std::make_unique<WorldPlaques>(*pool, context.paths().assetRoot());
+        }
+        WorldPlaques::Frame plaques;
+        plaques.description = &description;
+        plaques.instance = &*scene;
+        plaques.materials = &graphics->materials();
+        plaques.systems = frame.systems;
+        plaques.systemsRevision = frame.systemsRevision;
+        plaques.settle = frame.settle;
+        plaques.frozen = world && world->editing();
+        plaques.replaceObjects = [this](const SceneObjectsChange& change) {
+            auto replaced = scene->replaceObjects(description, change, graphics->materialLibrary(), loadModel,
+                                                  graphics->resources());
+            if (!replaced) {
+                spdlog::error("World: the plaques cannot be put in the scene: {}", replaced.error().toString());
+                return false;
+            }
+            freeRoam->setCollision(scene->collisionWorld());
+            return true;
+        };
+        worldPlaques->update(plaques);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -1362,7 +1404,14 @@ struct RetroverseApp::State {
                 }
             }
         }
-        return world->interact(frame);
+        InteractionResult result = world->interact(frame);
+        // I11 step 5: the plaque the ray points at, in free roam with nothing of the room hovered.
+        if (worldPlaques) {
+            const bool free = actions != nullptr && world->context() == WorldContext::FreeRoam &&
+                              world->hovered() == world::kNoPick;
+            worldPlaques->hover(free ? frame.ray : std::nullopt);
+        }
+        return result;
     }
 
     /// Places the walker where the world's interaction drives it this frame (an ease, a skip, a restore), the camera
@@ -2099,6 +2148,9 @@ struct RetroverseApp::State {
             if (worldSigns) {
                 worldSigns->sceneChanged(); // I11 step 4: the new objects' signs
             }
+            if (worldPlaques) {
+                worldPlaques->sceneChanged(); // I11 step 5
+            }
             // I5 step 3: the bound room's screens on its new objects (a secondary TV the room editor moved stands as a
             // new object, its screen's material another registry entry), their clips playing on; screens that are no
             // longer the bound ones are bound afresh with the room's games (never left on the old materials).
@@ -2253,6 +2305,9 @@ struct RetroverseApp::State {
         }
         if (worldSigns) {
             worldSigns->sceneChanged(); // I11 step 4: the new scene's signs
+        }
+        if (worldPlaques) {
+            worldPlaques->sceneChanged(); // I11 step 5: its plaques
         }
         graphics->clearContent();
         // I5 step 6: the new scene's screens take their rooms' packs' CRT presets.
@@ -2983,6 +3038,14 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
                 } else if (actions.pressed(input::Action::Interact) && state.world->showcaseHovered()) {
                     // I6 step 5: a proxy of the hub's favourites showcase opens the directory at its card.
                     state.world->openShowcaseCard(*state.product);
+                } else if (actions.pressed(input::Action::Interact) && state.worldPlaques &&
+                           state.worldPlaques->hovered()) {
+                    // I11 step 5: the history plaque's card, its text in full.
+                    ProductUi& product = *state.product;
+                    if (const auto card = state.worldPlaques->hoveredCard(
+                            [&product](const std::string& system) { return product.systemLogoSource(system); })) {
+                        product.openPlaqueCard(*card);
+                    }
                 } else if (actions.pressed(input::Action::Confirm) && state.world->confirmationOffered()) {
                     // I4b step 6: the notice of a room that needs a confirmation opens the preview of "Rigenera
                     // stanza" (ADR-0015 §3).
@@ -3049,8 +3112,23 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
         // the heads-up display shows it (I10 step 5).
         const bool worldShown = inputContext == InputContext::World && !riding;
         const scene::Camera labelCamera = state.xrEyes ? state.xrUi.hudCamera(state.camera) : state.camera;
-        state.product->setWorldLabel(worldShown ? state.world->label(labelCamera, context.window().drawableSize())
-                                                : std::nullopt);
+        std::optional<WorldLabelContent> label =
+            worldShown ? state.world->label(labelCamera, context.window().drawableSize()) : std::nullopt;
+        // I11 step 5: a plaque pointed at shows its system's name above it.
+        if (worldShown && !label && state.worldPlaques) {
+            if (const auto plaque = state.worldPlaques->hoveredLabel()) {
+                const glm::ivec2 size = context.window().drawableSize();
+                scene::Camera view = labelCamera;
+                if (size.x > 0 && size.y > 0) {
+                    view.setAspect(static_cast<float>(size.x) / static_cast<float>(size.y));
+                    if (const auto anchor =
+                            labelAnchor(plaque->first, view.viewProjection(), size, world_label::kTopMargin)) {
+                        label = WorldLabelContent{plaque->second, true, anchor->x, anchor->y};
+                    }
+                }
+            }
+        }
+        state.product->setWorldLabel(std::move(label));
         // The card beside the inspected item (I3 step 14a).
         state.world->showCard(worldResult, *state.product);
         // The elevator's prompt in front of a floor's elevator (I4 step 7b), naming the interact key of the device
@@ -3184,6 +3262,11 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->systemColors = m_state->worldSigns->systemColors();
             catalog->tintedNeons = m_state->worldSigns->tintedMaterials();
             catalog->tintedLights = m_state->worldSigns->tintedLights();
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->worldPlaques) {
+            catalog->plaques = m_state->worldPlaques->placed();
+            catalog->plaquesDrawn = m_state->worldPlaques->drawn();
+            catalog->plaqueCards = m_state->product ? m_state->product->plaqueCardsOpened() : 0;
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

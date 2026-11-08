@@ -1349,7 +1349,7 @@ TEST_CASE("golden/G19: a console room's hero CRT and secondary TV, both frozen a
                       room, run, shot, kFrames);
 }
 
-TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's neon (I11 steps 4 and 6)",
+TEST_CASE("golden/G22: G02's snes room with its system's identity: the neon, its colour, the plaque (I11 steps 4-6)",
           "[gpu][golden][golden_room][identity]") {
     GoldenRoom room("g22", "esde/snes-room");
     // identity.json pointing at the invented theme fixture (tests/fixtures/esde/theme): snes is "Lumen 16" with an
@@ -1384,9 +1384,13 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
     CHECK(report.catalog->systemColors);
     CHECK(report.catalog->tintedNeons >= 1);
     CHECK(report.catalog->tintedLights == 2);
+    // I11 step 5: the history plaque beside the console, its plate drawn.
+    CHECK(report.catalog->plaques == 1);
+    CHECK(report.catalog->plaquesDrawn == 1);
     requireScreenshot(run, shot, kShotSize);
     // "Colori dei sistemi" off (world.json): the pack's colours exactly. Against G02's golden only the neon's picture
-    // differs, within the sign (at about (765, 262) - (983, 318) in G02's view); the rest of the room is G02's.
+    // and (I11 step 5) the history plaque beside the console differ, within the box from the sign (at about (765, 262)
+    // - (983, 318) in G02's view) down to the plaque (about (975, 428) - (1034, 470)); the rest of the room is G02's.
     {
         const fs::path worldJson = room.data / "config" / "world.json";
         REQUIRE(rv::core::writeTextFileAtomic(worldJson, "{\"systemColors\": false}\n").has_value());
@@ -1411,8 +1415,8 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
         CHECK(againstG02->differingPixels > 2000);
         CHECK(againstG02->differingMin.x >= 740);
         CHECK(againstG02->differingMin.y >= 240);
-        CHECK(againstG02->differingMax.x <= 1010);
-        CHECK(againstG02->differingMax.y <= 340);
+        CHECK(againstG02->differingMax.x <= 1050);
+        CHECK(againstG02->differingMax.y <= 490);
         // And the colours on differ from it beyond the sign: the glow on the wall around it.
         const auto onOff = rv::screenshot_diff::compareFiles(off, shot, tolerance, {});
         REQUIRE(onOff.has_value());
@@ -1440,7 +1444,48 @@ TEST_CASE("golden/G22: G02's snes room with its system's identity on the room's 
                        "original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, "
                        "in place of the generic \"16-BIT CORNER\", and (I11 step 6) the neon, its glow and its picture "
                        "light in the theme palette's accent, clamped into style 3's band, in place of the pack's "
-                       "magenta; everything else is G02's.",
+                       "magenta, and (I11 step 5) the brass history plaque beside the console; everything else is "
+                       "G02's.",
                        "the plan's scene camera at the doorway (no --spawn), as G02's", std::nullopt},
                       room, run, shot, kFrames);
+}
+
+TEST_CASE("golden room: the history plaque beside the hero corner, read up close and on its card (I11 step 5)",
+          "[gpu][golden_room][identity]") {
+    GoldenRoom room("plaque", "esde/snes-room");
+    // The invented theme fixture's identity (as G22's): snes' metadata has a maker, a year, a type and an Italian
+    // description, so its console room has a plaque.
+    const auto themes = rv::test::Fixture::materialize("esde/theme");
+    REQUIRE(themes.has_value());
+    const Json identity{
+        {"schemaVersion", 1},
+        {"themeRoots", Json::array({arg(themes->path("ES-DE/themes")), arg(themes->path("Programs/ES-DE/themes"))})}};
+    REQUIRE(rv::core::writeTextFileAtomic(room.data / "config" / "identity.json", identity.dump(2) + "\n").has_value());
+    static_cast<void>(firstRun(room));
+    // In front of the plaque (room:snes' frame: its centre at x 0.33, 1.35 m up, on the north wall at z -4.97), the
+    // reticle on it: a screenshot at frame 30 (the plate up close, its label), interact at 40 (its card), the run's
+    // screenshot at the end (the card over the room).
+    const Json script = Json::array({Json{{"fromFrame", 30}, {"toFrame", 30}, {"actions", {{"screenshot", 1}}}},
+                                     Json{{"fromFrame", 40}, {"toFrame", 40}, {"actions", {{"interact", 1}}}}});
+    const fs::path scriptFile = room.dir / "plaque_script.json";
+    REQUIRE(rv::core::writeTextFileAtomic(scriptFile, script.dump(2) + "\n").has_value());
+    const fs::path shot = room.dir / "plaque_card.png";
+    constexpr std::uint32_t kFrames = 70;
+    const AppRun run = room.app("plaque", roomArguments(kFrames, shot,
+                                                       {"--video-freeze-pts", std::string(kFreezePts), "--spawn",
+                                                        "0.33,0,-4.2,0,-18", "--input-script", arg(scriptFile)}));
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::RunReport& report = *run.report;
+    REQUIRE(report.catalog.has_value());
+    CHECK(report.catalog->plaques == 1);
+    CHECK(report.catalog->plaquesDrawn == 1);
+    CHECK(report.catalog->plaqueCards == 1);
+    requireScreenshot(run, shot, kShotSize);
+    std::vector<fs::path> shots;
+    std::error_code error;
+    for (const auto& entry : fs::directory_iterator(room.data / "screenshots", error)) {
+        shots.push_back(entry.path());
+    }
+    CHECK(shots.size() == 1);
 }

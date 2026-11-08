@@ -38,6 +38,13 @@ namespace rv::app {
 
 class SceneInstance;
 
+/// The material of `objectId`'s picture ("<id>/picture", "@<w>x<h>" for a pattern, then "#<hash>") with a base colour
+/// texture of its own, from the object's render items (the registry is append-only: an object replaced in place leaves
+/// its old material behind under the same prefix); none when the object draws no such picture.
+[[nodiscard]] std::optional<scene::MaterialHandle> objectPictureMaterial(std::string_view objectId,
+                                                                         const SceneInstance& instance,
+                                                                         const gl::MaterialRegistry& materials);
+
 /// The box each logo file is rasterized into once (the signs resample it down: the largest is 512 pixels wide).
 inline constexpr int kSignLogoBoxWidth = 1024;
 inline constexpr int kSignLogoBoxHeight = 256;

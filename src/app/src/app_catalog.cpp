@@ -810,7 +810,8 @@ std::optional<SignSystem> EsdeAppCatalog::signSystem(const catalog::SystemName& 
     if (known == nullptr) {
         return std::nullopt;
     }
-    return SignSystem{known->fullName, known->esdeName, known->logo, systemAccent(known->colors)};
+    return SignSystem{known->fullName, known->esdeName, known->logo,   systemAccent(known->colors),
+                      known->maker,    known->year,     known->type,   known->description};
 }
 
 std::vector<SystemLogoFile> EsdeAppCatalog::systemLogos() const {

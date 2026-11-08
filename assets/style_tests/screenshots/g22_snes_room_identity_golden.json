@@ -1,12 +1,12 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "b9cd91f61a971765c64823d6fe14e6c819603cd8",
+    "gitCommit": "645b6c476f1fa562b7a31060d7973ae6da2e34b5",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
   "comparison": "Compared by tests/smoke/test_golden_room.cpp with G01's tolerance (6/255 per channel, at most 0.5% of the pixels) on this GPU and driver only.",
-  "description": "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture with identity.json pointing at the invented theme fixture: the room's neon shows the theme's original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, in place of the generic \"16-BIT CORNER\", and (I11 step 6) the neon, its glow and its picture light in the theme palette's accent, clamped into style 3's band, in place of the pack's magenta; everything else is G02's.",
+  "description": "I11 step 4 golden of the identity's signs (ADR-0019 §3): G02's view of the snes-room fixture with identity.json pointing at the invented theme fixture: the room's neon shows the theme's original logo (\"Lumen 16\"'s) as the neon's tubes along its outline and its colours' edges, in place of the generic \"16-BIT CORNER\", and (I11 step 6) the neon, its glow and its picture light in the theme palette's accent, clamped into style 3's band, in place of the pack's magenta, and (I11 step 5) the brass history plaque beside the console; everything else is G02's.",
   "gpu": {
     "glVersion": "4.5.0 NVIDIA 621.01",
     "machine": "docs/testing/reference-hardware.md",
@@ -18,7 +18,7 @@
     "file": "g22_snes_room_identity_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "024cddd3c25843fb18d5ebedcc6d7b59a6f9a97bf61212d64a133689db4cec51",
+    "sha256": "bdc8200d0a6952fe552e9f3593cf264199fd941535d3a30c6f10a17af8cfc2f3",
     "width": 1920
   },
   "inputs": {

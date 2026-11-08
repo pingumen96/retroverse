@@ -68,6 +68,11 @@ struct SignSystem {
     std::filesystem::path logo;
     /// I11 step 6: its accent (systemAccent() of its identity's palette), "#RRGGBB"; none without one.
     std::optional<std::string> accent;
+    /// I11 step 5: what its plaque says (CatalogSystem's maker, year, type and description).
+    std::string maker;
+    std::string year;
+    std::string type;
+    std::string description;
 };
 
 /// I11 step 6 (ADR-0019 §5): style §3's band for an accent, in HSV of the sRGB-encoded colour: its saturation and

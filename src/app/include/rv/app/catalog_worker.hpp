@@ -129,6 +129,12 @@ struct CatalogSystem {
     std::filesystem::path logo;
     /// I11 step 6: its identity's colours (catalog::SystemIdentity::colors: systemColor, then the palette), "#RRGGBB".
     std::vector<std::string> colors;
+    /// I11 step 5: what its identity says of it (catalog::SystemIdentity: systemManufacturer, systemReleaseYear,
+    /// systemHardwareType, systemDescription in Italian when the theme has it), empty where it says nothing.
+    std::string maker;
+    std::string year;
+    std::string type;
+    std::string description;
     /// Its ES-DE platform tags (catalog::SystemInfo::platforms): world::classify()'s fallback for a system systems.json
     /// does not name (a custom system's room).
     std::vector<std::string> platforms;

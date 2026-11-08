@@ -831,6 +831,11 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
 - **The signs' logo cache and BC3** (I11 step 4, ADR-0019 §3): the identity's signs are drawn at the generic
   pictures' size (512 pixels wide, about 0.3 MiB each with mips) from logos rasterized once per run; a cache under
   `cache/identity/` and BC3 when a floor's memory row or a slow start asks for them.
+- **The plaque on a stand, Focus on it** (I11 step 5): the plaque hangs on the hero corner's wall and is read by its
+  label and its card; a stand of its own, and Focus easing the view to it as to an item, would need a place on the floor
+  and a non-game target in WorldInteraction.
+- **Italian hardware types** (I11 step 5): the plaque shows the theme's `systemHardwareType` as written ("Console",
+  "Handheld"); a table of Italian names when a theme writes them in English only.
 - **A shared room's own neon from its sections** (I11 step 4): its neon keeps the generic sign that names the room's
   kind; its portal shows its sections' logos.
 - **The identity of systems without a linear-es-de entry:** a theme with another metadata layout would need a reader
