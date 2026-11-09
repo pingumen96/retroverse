@@ -63,6 +63,15 @@ void WorldLaunch::beforeInteraction(ProductUi& product, WorldHover& hover, const
                          ended->reason.empty() ? "" : ", ", ended->reason);
             m_log.launchEnded(*ended, frame);
             hover.launchEnded(*ended);
+            // I12 step 3: a launch that started its game played it (the room's console holds it from now on).
+            const bool started = ended->code == launch_outcome::kReturned ||
+                                 ended->code == launch_outcome::kQuickExit ||
+                                 ended->code == launch_outcome::kProcessesRemained ||
+                                 ended->code == launch_outcome::kLeftRunning || ended->code == launch_outcome::kCrashed;
+            if (started && m_asked) {
+                m_played = m_asked;
+            }
+            m_asked.reset();
         }
     }
 }
@@ -104,6 +113,9 @@ void WorldLaunch::afterInteraction(const InteractionResult& result, ProductUi& p
         m_log.launchAsked(*result.launch, before, frame, accepted);
         if (accepted) {
             m_launching = true;
+            if (std::optional<world::RoomId> room = hover.activeRoomId()) {
+                m_asked = std::make_pair(std::move(*room), result.launch->game);
+            }
         } else {
             // Nothing will start: the interaction comes back to the item at once, the card saying why.
             const LaunchMessage refusal = busyLaunchRefusal();

@@ -679,6 +679,31 @@ private:
     void hoverShowcase(const WorldHover::Frame& frame);
     [[nodiscard]] bool showcaseSettled() const;
 
+    // I12 step 3: the console rooms' last-played proxies (world_last_played.cpp, room_last_played.hpp).
+    /// A console room's proxy: its room, the game its console holds (none yet), the console's socket it stands in, the
+    /// room's family, item prefab and theme (what its collection is made with), its layout and collection.
+    struct LastPlayedProxy {
+        world::RoomId room;
+        std::optional<catalog::GameId> game;
+        ConsoleSocket socket;
+        world::SceneData data;
+        world::CollectionLayout layout;
+        std::unique_ptr<CollectionInstance> collection;
+    };
+    /// A floor is shown (`build`'s, its rooms' sockets in m_rooms): a proxy for each console room, drawn when its room
+    /// played a game; the floor's hero dressing counted.
+    void startLastPlayed(const WorldBuild& build);
+    /// `proxy`'s collection made for its game in its socket (in place when it stands, the family being the room's).
+    void showLastPlayed(LastPlayedProxy& proxy);
+    /// The proxies' cover loader made again for the proxies drawn (their covers from the shown floor's rooms).
+    void startLastPlayedLoader();
+    /// Every frame: hidden while a game is inspected, carried or launched; a launch that played moves its room's proxy
+    /// to its game; a console re-sited (its model came) moves the proxy with it.
+    void followLastPlayed(ProductUi& product);
+    void lastPlayedRound(ProductUi& product, const gl::UploadBudget& budget, bool frame);
+    [[nodiscard]] bool lastPlayedSettled() const;
+    void dropLastPlayed();
+
     /// The plan shown's state for the rides' floor jobs, the floor's elevator, arrival and doorways, its floors' record.
     void keepPlan(const WorldBuild& build);
     /// The directory's floors and rooms and where the walker is, given to `product` when they changed.
@@ -815,6 +840,13 @@ private:
     world::PickId m_showcaseHovered = world::kNoPick;
     bool m_showcaseLaunchSeen = false;
     ShowcaseRecord m_showcaseRecord;
+    /// I12 step 3: the floor's console rooms' proxies, their cover loader (its groups the drawn proxies' indices among
+    /// m_lastPlayed), whether they are hidden, their record.
+    std::vector<LastPlayedProxy> m_lastPlayed;
+    std::unique_ptr<CoverLoader> m_lastPlayedLoader;
+    std::vector<std::size_t> m_lastPlayedDrawn;
+    bool m_lastPlayedHidden = false;
+    LastPlayedRecord m_lastPlayedRecord;
     scene::CameraSetup m_arrival;
     std::map<std::string, scene::CameraSetup> m_doorways;
     ui::DirectoryBuilding m_directoryBuilding;

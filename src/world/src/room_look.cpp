@@ -6,6 +6,7 @@
 #include <system_error>
 #include <utility>
 
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
 #include <rv/assets/crt_presets.hpp>
@@ -346,13 +347,95 @@ FurniturePiece readPiece(DocumentReader& document, const Json& value, const std:
     return piece;
 }
 
+/// The hero corner's lived-in set (I12 step 3, room_look.hpp's "heroDressing").
+void readHeroDressing(DocumentReader& document, const ObjectReader& furniture, ThemeFurniture& out) {
+    if (document.failed() || !furniture.has("heroDressing")) {
+        return;
+    }
+    const Json& list = furniture.value("heroDressing");
+    const std::string at = furniture.pointer("heroDressing");
+    if (!list.is_array()) {
+        document.fail(at, "expected an array of hero dressing pieces");
+        return;
+    }
+    constexpr std::size_t kMaxNameLength = kMaxSocketNameLength - kHeroDressingPartPrefix.size();
+    for (std::size_t i = 0; i < list.size() && !document.failed(); ++i) {
+        const std::string elementAt = at + "/" + std::to_string(i);
+        if (!list[i].is_object()) {
+            document.fail(elementAt, "expected an object, found " + detail::describeType(list[i]));
+            return;
+        }
+        // The set's own keys, then the rest as a hero part's piece.
+        Json rest = list[i];
+        HeroDressingPiece dressing;
+        const auto text = [&](std::string_view key) -> std::optional<std::string> {
+            const auto found = rest.find(key);
+            if (found == rest.end() || !found->is_string()) {
+                document.fail(detail::pointerChild(elementAt, key), "expected a string");
+                return std::nullopt;
+            }
+            std::string value = found->get<std::string>();
+            rest.erase(std::string(key));
+            return value;
+        };
+        const std::optional<std::string> name = text("name");
+        if (!name) {
+            return;
+        }
+        if (!isValidSocketName(*name) || name->size() > kMaxNameLength) {
+            document.fail(elementAt + "/name", fmt::format("expected a socket name of at most {} characters "
+                                                           "(lowercase letters, digits, '-')",
+                                                           kMaxNameLength));
+            return;
+        }
+        if (std::any_of(out.heroDressing.begin(), out.heroDressing.end(),
+                        [&](const HeroDressingPiece& other) { return other.name == *name; })) {
+            document.fail(elementAt + "/name", "the name \"" + *name + "\" repeats an earlier piece's");
+            return;
+        }
+        const std::optional<std::string> anchor = text("anchor");
+        if (!anchor) {
+            return;
+        }
+        if (!isValidSocketName(*anchor) || *anchor == "sign") {
+            document.fail(elementAt + "/anchor", "expected a hero corner part's role other than the sign");
+            return;
+        }
+        if (const auto prop = rest.find("prop"); prop != rest.end()) {
+            if (!prop->is_boolean()) {
+                document.fail(elementAt + "/prop", "expected true or false");
+                return;
+            }
+            dressing.prop = prop->get<bool>();
+            rest.erase("prop");
+        }
+        dressing.piece = readPiece(document, rest, elementAt, true, false, nullptr);
+        if (document.failed()) {
+            return;
+        }
+        if (!dressing.piece.xMm || !dressing.piece.zMm) {
+            document.fail(elementAt, "expected \"xMm\" and \"zMm\": where the piece stands in the hero corner");
+            return;
+        }
+        const std::string& kind = dressing.piece.prefab.kind;
+        if (kind == kHeroTvPart || kind == kSecondaryTvKind || kind == kHeroCabinetKind) {
+            document.fail(elementAt + "/prefab", "the hero corner's set holds no screen: expected another kind than "
+                                                 "crt, secondary_tv or arcade_cabinet");
+            return;
+        }
+        dressing.name = *name;
+        dressing.anchor = *anchor;
+        out.heroDressing.push_back(std::move(dressing));
+    }
+}
+
 /// The pack's furniture (I6 step 3b): pieces by hero part role, weighted variants by decoration kind.
 void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
     DocumentReader& document = reader.document();
     if (document.failed() || !reader.has("furniture")) {
         return;
     }
-    const ObjectReader furniture = reader.object("furniture", {"decoration", "heroParts"});
+    const ObjectReader furniture = reader.object("furniture", {"decoration", "heroDressing", "heroParts"});
     const auto readLists = [&](std::string_view key, bool hero) {
         if (document.failed() || !furniture.has(key)) {
             return;
@@ -467,6 +550,7 @@ void readFurniture(const ObjectReader& reader, ThemeMaterials& theme) {
         }
     }
     readLists("decoration", false);
+    readHeroDressing(document, furniture, theme.furniture);
 }
 
 std::string materialName(const ObjectReader& reader, std::string_view key) {
@@ -796,6 +880,25 @@ ThemeMaterials builtInTheme() {
                {"leaves", "MAT_Plant_Leaf"},
                {"leaves_alt", "MAT_Plant_Leaf_Light"}}},
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
+        // I12 step 3's hero corner set.
+        {"floor_speaker",
+         Roles{{"cabinet", "MAT_Wood_Walnut"},
+               {"grille", "MAT_Speaker_Grille"},
+               {"trim", "MAT_Metal_Graphite"},
+               {"led", "MAT_Led_Red"}}},
+        {"media_rack",
+         Roles{{"wood", "MAT_Wood_Walnut"},
+               {"metal", "MAT_Metal_Graphite"},
+               {"display", "MAT_Display_Amber"},
+               {"led", "MAT_Led_Green"}}},
+        {"pad",
+         Roles{{"plastic_body", "MAT_Plastic_Gray"},
+               {"plastic_dark", "MAT_Plastic_Black"},
+               {"cable", "MAT_Cable_Rubber"}}},
+        {"low_table", Roles{{"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished_Dark"}}},
+        {"cushion", Roles{{"fabric", "MAT_Fabric_Wool_Green_Weave"}}},
+        {"open_box",
+         Roles{{"body", "MAT_Cardboard_Box"}, {"paper", "MAT_Paper_Magazine"}, {"disc", "MAT_Disc_Silver"}}},
         // I6 step 6's arcade cabinets.
         {"arcade_cabinet",
          Roles{{"body", "MAT_Cabinet_Paint_Walnut"},
@@ -877,6 +980,47 @@ ThemeMaterials builtInTheme() {
     FurniturePiece secondaryTv;
     secondaryTv.prefab = PrefabRef{"furniture.secondary_tv.generic", std::string(kSecondaryTvKind)};
     theme.furniture.secondaryTv = SecondaryTvPiece{"tv_cabinet", std::move(secondaryTv)};
+    // I12 step 3's hero corner set (classic_16bit_warm.json's furniture.heroDressing).
+    const auto dressing = [&](std::string name, std::string anchor, bool prop, std::string manifest, std::string kind,
+                              std::int64_t x, std::int64_t y, std::int64_t z, std::optional<std::int32_t> yaw,
+                              Json params, Roles materials = {}) {
+        HeroDressingPiece piece;
+        piece.name = std::move(name);
+        piece.anchor = std::move(anchor);
+        piece.prop = prop;
+        piece.piece.prefab = PrefabRef{std::move(manifest), std::move(kind)};
+        piece.piece.params = params.is_null() ? Json::object() : std::move(params);
+        piece.piece.materials = std::move(materials);
+        piece.piece.xMm = x;
+        piece.piece.yMm = y == 0 ? std::nullopt : std::optional<std::int64_t>(y);
+        piece.piece.zMm = z;
+        piece.piece.yawCdeg = yaw;
+        theme.furniture.heroDressing.push_back(std::move(piece));
+    };
+    dressing("speaker-left", "tv-cabinet", false, "decor.floor_speaker.generic", "floor_speaker", -715, 0, 250,
+             std::nullopt, Json::parse(R"({"width": 0.18})"));
+    dressing("speaker-right", "tv-cabinet", false, "decor.floor_speaker.generic", "floor_speaker", 715, 0, 250,
+             std::nullopt, Json::parse(R"({"width": 0.18})"));
+    dressing("rack", "tv-cabinet", false, "furniture.media_rack.generic", "media_rack", 1000, 0, 250, std::nullopt,
+             nullptr);
+    dressing("pad-rack", "console", true, "decor.pad.generic", "pad", 1000, 420, 220, 34500,
+             Json::parse(R"({"style": "flat", "cableTo": [0.05, 0.0, -0.16], "sag": 0.0})"));
+    dressing("pad-rug", "console", true, "decor.pad.generic", "pad", 150, 12, 900, 2000,
+             Json::parse(R"({"style": "flat", "cableTo": [0.384, 0.0, -0.265], "sag": 0.0})"));
+    dressing("coffee-table", "armchair", false, "furniture.low_table.generic", "low_table", -150, 0, 2400, std::nullopt,
+             Json::parse(R"({"shape": "rect", "width": 0.8, "depth": 0.42, "height": 0.42})"));
+    dressing("magazines", "armchair", true, "decor.magazine_stack.generic", "magazine_stack", -360, 420, 2400, 800,
+             Json::parse(R"({"width": 0.22, "height": 0.05, "depth": 0.3})"));
+    dressing("open-box", "armchair", true, "decor.open_box.generic", "open_box", 60, 420, 2390, 34000,
+             Json::parse(R"({"style": "tray"})"));
+    dressing("side-table", "armchair", false, "furniture.low_table.generic", "low_table", -850, 0, 2770, std::nullopt,
+             Json::parse(R"({"shape": "round", "width": 0.45, "height": 0.55})"));
+    dressing("table-lamp", "armchair", true, "decor.lamp.floor.generic", "floor_lamp", -850, 550, 2800, std::nullopt,
+             Json::parse(
+                 R"({"height": 0.52, "baseRadius": 0.07, "shadeRadius": 0.12, "shadeHeight": 0.18, "shade": "drum"})"),
+             Roles{{"lamp_shade", "MAT_Pendant_Diffuser"}});
+    dressing("cushion", "armchair", true, "decor.cushion.generic", "cushion", 810, 440, 2430, 21000,
+             Json::parse(R"({"width": 0.36, "height": 0.1, "depth": 0.34})"));
     // I12 step 1's architecture and pendant lamps.
     ShellDressing shell;
     shell.rail = "MAT_Wood_Walnut";

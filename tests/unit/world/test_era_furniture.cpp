@@ -3,6 +3,7 @@
 // as it was (no hard finding, the same soft ones: the navigation's reach and passages, the TV's line of sight) and its
 // lamps' bulbs where the plan's lights are; the plan itself, its slots and lights are what the scene draws them from.
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -135,9 +136,29 @@ std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId&
             CHECK(std::none_of(drawn->begin(), drawn->end(), [&](const Fixture& candidate) { return candidate.id == id; }));
         }
     }
-    REQUIRE(drawn->size() + leftOut == planned.size());
+    // I12 step 3: the hero corner's set adds a fixture of its own per piece that collides, "<socket>.dress-<name>",
+    // within the hero corner and under the ceiling.
+    std::size_t dressed = 0;
+    for (const Fixture& fixture : *drawn) {
+        if (!fixture.id.part().starts_with(rv::world::kHeroDressingPartPrefix)) {
+            continue;
+        }
+        INFO(fixture.id.toString() << " drawn as " << fixture.prefab.manifest);
+        ++dressed;
+        CHECK(fixture.role == FixtureRole::HeroCorner);
+        CHECK_FALSE(planned.contains(fixture.id));
+        const rv::world::TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+        REQUIRE(socket != nullptr);
+        CHECK(inside(boxOf(fixture), boxOf(rv::world::socketFootprint(data.roomTemplate, *socket, room.growthSteps))));
+        CHECK(fixture.yMm >= 0);
+        CHECK(fixture.yMm + fixture.heightMm <= room.heightMm);
+    }
+    REQUIRE(drawn->size() + leftOut == planned.size() + dressed);
     std::size_t replaced = 0;
     for (const Fixture& fixture : *drawn) {
+        if (fixture.id.part().starts_with(rv::world::kHeroDressingPartPrefix)) {
+            continue;
+        }
         const Fixture& original = *planned.at(fixture.id);
         INFO(fixture.id.toString() << " drawn as " << fixture.prefab.manifest);
         CHECK(fixture.role == original.role);
@@ -171,9 +192,9 @@ std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId&
     }
 
     // The validation of the plan holding the drawn fixtures: no hard finding, the same soft ones (the plan's own when
-    // nothing is replaced).
+    // nothing is replaced or added).
     CHECK(findingsOf(before, rv::world::Severity::Hard).empty());
-    if (replaced > 0) {
+    if (replaced > 0 || dressed > 0) {
         rv::world::WorldPlan drawnPlan = plan;
         drawnPlan.fixtures.erase(std::remove_if(drawnPlan.fixtures.begin(), drawnPlan.fixtures.end(),
                                                 [&](const Fixture& fixture) { return fixture.id.room() == roomId; }),
@@ -204,7 +225,9 @@ std::size_t checkRoom(const rv::world::WorldPlan& plan, const rv::world::RoomId&
         for (const rv::geometry::PrefabCollider& collider : built->colliders) {
             CHECK(built->bounds.inflated(1e-5f).contains(collider.box));
         }
-        if (kind != "floor_lamp" && kind != "banker_lamp") {
+        // The hero corner's set holds a table lamp of its own (I12 step 3), lit by its shade alone.
+        const bool dressing = object.at("id").get<std::string>().starts_with(rv::world::kHeroDressingObjectPrefix);
+        if ((kind != "floor_lamp" && kind != "banker_lamp") || dressing) {
             continue;
         }
         const rv::geometry::Socket* source = rv::geometry::findSocket(built->sockets, "LightSource");
@@ -260,6 +283,10 @@ TEST_CASE("world/era furniture: every pack's pieces resolve and build, the class
         // I5 step 3: the classic pack's furniture is its secondary TV alone; the hub's and the arcade's have none.
         CHECK(theme->furniture.heroParts.empty() == classic);
         CHECK(theme->furniture.decoration.empty() == classic);
+        // I12 step 3: every console pack's hero corner is a lived-in set; the arcade's cabinets and the hub draw none.
+        const bool set = pack != "arcade_after_dark" && pack != "retro_library_hub";
+        CHECK(theme->furniture.heroDressing.empty() == !set);
+        CHECK(furniture.heroDressing.size() == theme->furniture.heroDressing.size());
         CHECK(theme->furniture.secondaryTv.has_value() == (pack != "retro_library_hub" && pack != "arcade_after_dark"));
         CHECK(furniture.secondaryTv.has_value() == theme->furniture.secondaryTv.has_value());
         if (pack == "arcade_after_dark") {
@@ -748,4 +775,214 @@ TEST_CASE("world/era furniture: the arcade's and the handhelds' room dressing in
         }
     }
     CHECK(counters > 0);
+}
+
+namespace {
+
+/// The hero corner's set of a scene (I12 step 3): each "dressing:hero:" object's box in the room's frame (millimetres).
+std::map<std::string, FloorBox> heroDressingBoxes(const nlohmann::json& sceneFile) {
+    std::map<std::string, FloorBox> boxes;
+    for (const nlohmann::json& object : sceneFile.at("objects")) {
+        const std::string id = object.at("id").get<std::string>();
+        if (!id.starts_with(rv::world::kHeroDressingObjectPrefix)) {
+            continue;
+        }
+        auto built = rv::geometry::buildPrefab(object.at("prefab").get<std::string>(), object.at("params"));
+        REQUIRE(built.has_value());
+        const double yaw = object.at("rotationDeg")[1].get<double>() * 3.14159265358979323846 / 180.0;
+        const double c = std::cos(yaw);
+        const double s = std::sin(yaw);
+        const nlohmann::json& at = object.at("position");
+        FloorBox box{1e18, -1e18, 1e18, -1e18, 1e18, -1e18};
+        for (const double x : {built->bounds.min.x, built->bounds.max.x}) {
+            for (const double z : {built->bounds.min.z, built->bounds.max.z}) {
+                const double roomX = 1000.0 * (at[0].get<double>() + c * x + s * z);
+                const double roomZ = 1000.0 * (at[2].get<double>() - s * x + c * z);
+                box.minX = std::min(box.minX, roomX);
+                box.maxX = std::max(box.maxX, roomX);
+                box.minZ = std::min(box.minZ, roomZ);
+                box.maxZ = std::max(box.maxZ, roomZ);
+            }
+        }
+        box.minY = 1000.0 * (at[1].get<double>() + built->bounds.min.y);
+        box.maxY = 1000.0 * (at[1].get<double>() + built->bounds.max.y);
+        boxes.emplace(id.substr(rv::world::kHeroDressingObjectPrefix.size()), box);
+    }
+    return boxes;
+}
+
+/// Whether two boxes overlap by more than a millimetre of rounding (a piece standing on another touches its top).
+bool overlaps(const FloorBox& a, const FloorBox& b) {
+    constexpr double kTouch = 1.0;
+    return a.minX < b.maxX - kTouch && b.minX < a.maxX - kTouch && a.minZ < b.maxZ - kTouch &&
+           b.minZ < a.maxZ - kTouch && a.minY < b.maxY - kTouch && b.minY < a.maxY - kTouch;
+}
+
+} // namespace
+
+TEST_CASE("world/era furniture: the hero corner's set stands clear of the TV, the console and the plaque (I12 step 3)",
+          "[world][era_furniture][hero_dressing]") {
+    const rv::test::world::PlanCase& entry = rv::test::world::planCase("plan-57-seed-102938");
+    const rv::world::Room& room = *std::find_if(entry.plan.rooms.begin(), entry.plan.rooms.end(),
+                                                [&](const rv::world::Room& r) { return r.id == entry.room; });
+    const rv::world::TemplateSocket* hero = entry.data.roomTemplate.socket("hero");
+    REQUIRE(hero != nullptr);
+    // The hero corner's frame in the room: its origin at the socket's pivot (yaw 0 in the console room).
+    REQUIRE(hero->yawCdeg == 0);
+    const double ox = static_cast<double>(hero->xMm);
+    const double oz = static_cast<double>(hero->zMm);
+    // The cabinet's top and what stands on it (the CRT, the console model's reserve) up to 0.6 m above it; the plaque.
+    const FloorBox cabinetTop{ox - 600.0, ox + 600.0, oz, oz + 500.0, 550.0, 1150.0};
+    const FloorBox plaque{ox + 745.0, ox + 1165.0, oz, oz + 60.0, 1200.0, 1500.0};
+    for (const std::string& pack : kPacks) {
+        INFO(pack);
+        const rv::world::SceneData data = withPack(entry.data, pack);
+        auto scene = rv::world::toSceneFile(entry.plan, entry.room, data);
+        REQUIRE(scene.has_value());
+        const std::map<std::string, FloorBox> boxes = heroDressingBoxes(scene->sceneFile);
+        CHECK(boxes.size() == data.furniture.heroDressing.size());
+        if (pack == "classic_16bit_warm") {
+            CHECK(boxes.size() >= 10);
+        }
+        for (const auto& [name, box] : boxes) {
+            INFO(name);
+            CHECK_FALSE(overlaps(box, cabinetTop));
+            CHECK_FALSE(overlaps(box, plaque));
+            CHECK(box.maxY <= static_cast<double>(room.heightMm));
+        }
+        // Pieces never stand in one another, a prop on its support aside (the support's top is its bottom).
+        for (auto a = boxes.begin(); a != boxes.end(); ++a) {
+            for (auto b = std::next(a); b != boxes.end(); ++b) {
+                INFO(a->first << " and " << b->first);
+                CHECK_FALSE(overlaps(a->second, b->second));
+            }
+        }
+    }
+}
+
+TEST_CASE("world/era furniture: the hero corner's set goes with its anchor part, a piece leaving the corner is not "
+          "drawn (I12 step 3)",
+          "[world][era_furniture][hero_dressing]") {
+    const rv::test::world::PlanCase& entry = rv::test::world::planCase("plan-57-seed-102938");
+    rv::world::SceneData data = withPack(entry.data, "classic_16bit_warm");
+    const auto names = [&](const rv::world::WorldPlan& plan) {
+        auto scene = rv::world::toSceneFile(plan, entry.room, data);
+        REQUIRE(scene.has_value());
+        std::set<std::string> out;
+        for (const auto& [name, box] : heroDressingBoxes(scene->sceneFile)) {
+            out.insert(name);
+        }
+        return out;
+    };
+    const std::set<std::string> all = names(entry.plan);
+    CHECK(all.contains("pad-rug"));
+    CHECK(all.contains("speaker-left"));
+    // A room without its console (a shared room's hero corner) draws no pads.
+    rv::world::WorldPlan withoutConsole = entry.plan;
+    std::erase_if(withoutConsole.fixtures, [&](const Fixture& fixture) {
+        return fixture.id.room() == entry.room && fixture.role == FixtureRole::HeroCorner &&
+               fixture.id.part() == "console";
+    });
+    const std::set<std::string> consoleless = names(withoutConsole);
+    CHECK_FALSE(consoleless.contains("pad-rug"));
+    CHECK_FALSE(consoleless.contains("pad-rack"));
+    CHECK(consoleless.contains("speaker-left"));
+    CHECK(consoleless.size() + 2 == all.size());
+    // A piece pushed out of the hero corner is not drawn; the others are.
+    for (rv::world::SceneHeroDressing& piece : data.furniture.heroDressing) {
+        if (piece.name == "speaker-left") {
+            piece.piece.piece.xMm = -1500;
+        }
+    }
+    const std::set<std::string> pushed = names(entry.plan);
+    CHECK_FALSE(pushed.contains("speaker-left"));
+    CHECK(pushed.size() + 1 == all.size());
+    // The props never collide; the rest does, and a moved anchor takes its pieces with it.
+    auto scene = rv::world::toSceneFile(entry.plan, entry.room, withPack(entry.data, "classic_16bit_warm"));
+    REQUIRE(scene.has_value());
+    for (const nlohmann::json& object : scene->sceneFile.at("objects")) {
+        const std::string id = object.at("id").get<std::string>();
+        if (id == "dressing:hero:cushion" || id == "dressing:hero:pad-rug") {
+            CHECK(object.at("collides") == false);
+        }
+        if (id == "dressing:hero:coffee-table") {
+            CHECK_FALSE(object.contains("collides"));
+        }
+    }
+    rv::world::WorldPlan moved = entry.plan;
+    for (Fixture& fixture : moved.fixtures) {
+        if (fixture.id.room() == entry.room && fixture.id.part() == "tv-cabinet") {
+            fixture.xMm -= 40;
+        }
+    }
+    const auto boxesOf = [&](const rv::world::WorldPlan& plan) {
+        auto built = rv::world::toSceneFile(plan, entry.room, withPack(entry.data, "classic_16bit_warm"));
+        REQUIRE(built.has_value());
+        return heroDressingBoxes(built->sceneFile);
+    };
+    const std::map<std::string, FloorBox> before = boxesOf(entry.plan);
+    const std::map<std::string, FloorBox> after = boxesOf(moved);
+    CHECK(after.at("rack").minX == Catch::Approx(before.at("rack").minX - 40.0).margin(0.01));
+    CHECK(after.at("coffee-table").minX == Catch::Approx(before.at("coffee-table").minX).margin(0.01));
+}
+
+TEST_CASE("world/era furniture: the reader takes the hero corner's set, refusing a broken one (I12 step 3)",
+          "[world][era_furniture][hero_dressing]") {
+    const auto parse = [](const std::string& list) {
+        return rv::world::parseThemeMaterials(
+            R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {},
+                "furniture": {"heroDressing": )" +
+                list + "}}",
+            "t.json");
+    };
+    const auto refusal = [&](const std::string& list) {
+        auto parsed = parse(list);
+        REQUIRE_FALSE(parsed.has_value());
+        return parsed.error().message;
+    };
+    const std::string pad = R"("prefab": {"manifest": "decor.pad.generic", "kind": "pad"})";
+    auto good = parse(R"([{"name": "pad-rug", "anchor": "console", "prop": true, )" + pad +
+                      R"(, "params": {"style": "grip"}, "xMm": 150, "yMm": 12, "zMm": 900, "yawCdeg": 2000},
+                         {"name": "rack", "anchor": "tv-cabinet",
+                          "prefab": {"manifest": "furniture.media_rack.generic", "kind": "media_rack"},
+                          "xMm": 1000, "zMm": 250}])");
+    REQUIRE(good.has_value());
+    REQUIRE(good->furniture.heroDressing.size() == 2);
+    const rv::world::HeroDressingPiece& first = good->furniture.heroDressing.front();
+    CHECK(first.name == "pad-rug");
+    CHECK(first.anchor == "console");
+    CHECK(first.prop);
+    CHECK(first.piece.params.at("style") == "grip");
+    CHECK(first.piece.yMm == 12);
+    CHECK(first.piece.yawCdeg == 2000);
+    CHECK_FALSE(good->furniture.heroDressing.back().prop);
+    CHECK_FALSE(good->furniture.heroDressing.back().piece.yMm.has_value());
+    CHECK_FALSE(good->furniture.empty());
+
+    CHECK_THAT(refusal(R"({})"), ContainsSubstring("array"));
+    CHECK_THAT(refusal(R"([{"anchor": "console", )" + pad + R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("/furniture/heroDressing/0/name"));
+    CHECK_THAT(refusal(R"([{"name": "Pad", "anchor": "console", )" + pad + R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("socket name"));
+    CHECK_THAT(refusal(R"([{"name": "a-name-far-longer-than-a-part", "anchor": "console", )" + pad +
+                       R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("26"));
+    CHECK_THAT(refusal(R"([{"name": "pad", "anchor": "console", )" + pad + R"(, "xMm": 0, "zMm": 0},
+                           {"name": "pad", "anchor": "console", )" +
+                       pad + R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("repeats"));
+    CHECK_THAT(refusal(R"([{"name": "pad", "anchor": "sign", )" + pad + R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("/furniture/heroDressing/0/anchor"));
+    CHECK_THAT(refusal(R"([{"name": "pad", "anchor": "console", "prop": 1, )" + pad + R"(, "xMm": 0, "zMm": 0}])"),
+               ContainsSubstring("/furniture/heroDressing/0/prop"));
+    CHECK_THAT(refusal(R"([{"name": "pad", "anchor": "console", )" + pad + R"(, "xMm": 0}])"),
+               ContainsSubstring("zMm"));
+    CHECK_THAT(refusal(R"([{"name": "pad", "anchor": "console", )" + pad + R"(, "xMm": 0, "zMm": 0, "weight": 1}])"),
+               ContainsSubstring("weight"));
+    for (const std::string kind : {"crt", "secondary_tv", "arcade_cabinet"}) {
+        INFO(kind);
+        CHECK_THAT(refusal(R"([{"name": "tv", "anchor": "console", "prefab": {"manifest": "x.generic", "kind": ")" +
+                           kind + R"("}, "xMm": 0, "zMm": 0}])"),
+                   ContainsSubstring("no screen"));
+    }
 }

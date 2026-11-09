@@ -420,6 +420,15 @@
     "MAT_Downlight": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 3.0 },
     "MAT_Bulb_Warm": { "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 3.5 },
     "MAT_Screen_Board": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 1.4 },
+    // I12 step 3 (ADR-0021 §1): the hero corner's set: the components' and speakers' LEDs and the rack's amber
+    // displays (small, unlit, under the bloom threshold but bright against the dark fronts), the speakers' grille
+    // cloth, the pads' cables, an open case's disc.
+    "MAT_Led_Red": { "shading": "unlit", "baseColor": "#FF3A2E", "emissiveStrength": 1.8 },
+    "MAT_Led_Green": { "shading": "unlit", "baseColor": "#52F06A", "emissiveStrength": 1.6 },
+    "MAT_Display_Amber": { "shading": "unlit", "baseColor": "#FFA640", "emissiveStrength": 1.2 },
+    "MAT_Speaker_Grille": { "baseColor": "#232124", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Cable_Rubber": { "baseColor": "#18181A", "metallic": 0.0, "roughness": 0.55 },
+    "MAT_Disc_Silver": { "baseColor": "#C9CCD2", "metallic": 1.0, "roughness": 0.18 },
     // The hub after step 5's review (concept panel 1): its rugs the ornamental design dyed darker (the classic rug's
     // picture under a tint: a deep bordeaux field, its cream medallion dimmer than the globe), its sofas an oxblood
     // leather, the landmark's glass a little more present, its shelves' books mostly warm bindings.

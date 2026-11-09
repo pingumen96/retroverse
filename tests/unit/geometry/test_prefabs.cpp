@@ -164,7 +164,7 @@ const std::vector<std::string_view> kExpectedKinds{
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
     "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet",
-    "secondary_tv"};
+    "secondary_tv", "floor_speaker", "media_rack", "pad",       "low_table",      "cushion",           "open_box"};
 
 } // namespace
 
@@ -227,6 +227,13 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         // I5 step 3's secondary TV: the sideboard's roles, then the CRT's.
         {"secondary_tv",
          {"wood_primary", "wood_secondary", "metal_trim", "plastic_body", "plastic_bezel", "screen", "plastic_dark"}},
+        // I12 step 3's hero corner set.
+        {"floor_speaker", {"cabinet", "grille", "trim", "led"}},
+        {"media_rack", {"wood", "metal", "display", "led"}},
+        {"pad", {"plastic_body", "plastic_dark", "cable"}},
+        {"low_table", {"wood_primary", "wood_secondary"}},
+        {"cushion", {"fabric"}},
+        {"open_box", {"body", "paper", "disc"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -345,7 +352,9 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
          box({-0.5f, 0.0f, -0.225f}, {0.5f, 0.95f, 0.225f})},
         // I6 step 5's hub, pivot floor: the column's plinth, the railing along X, the totem's plinth.
         {"column", nullptr, box({-0.28f, 0.0f, -0.28f}, {0.28f, 5.0f, 0.28f})},
-        {"column", {{"radius", 0.15}, {"height", 3.0}, {"plinthSize", 0.4}}, box({-0.2f, 0.0f, -0.2f}, {0.2f, 3.0f, 0.2f})},
+        {"column",
+         {{"radius", 0.15}, {"height", 3.0}, {"plinthSize", 0.4}},
+         box({-0.2f, 0.0f, -0.2f}, {0.2f, 3.0f, 0.2f})},
         {"railing", nullptr, box({-1.5f, 0.0f, -0.045f}, {1.5f, 0.95f, 0.045f})},
         {"railing", {{"length", 7.2}, {"height", 1.0}}, box({-3.6f, 0.0f, -0.045f}, {3.6f, 1.0f, 0.045f})},
         {"info_totem", nullptr, box({-0.3f, 0.0f, -0.16f}, {0.3f, 1.75f, 0.16f})},
@@ -359,6 +368,22 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"secondary_tv",
          {{"width", 1.0}, {"height", 0.6}, {"depth", 0.45}, {"tvSize", {0.5, 0.45, 0.4}}, {"tvOffset", 0.25}},
          box({-0.5f, 0.0f, -0.225f}, {0.5f, 1.05f, 0.225f})},
+        // I12 step 3's set: each the size its parameters name; a round table as wide as deep, an open box's two
+        // halves side by side.
+        {"floor_speaker", nullptr, box({-0.1f, 0.0f, -0.13f}, {0.1f, 0.72f, 0.13f})},
+        {"floor_speaker",
+         {{"width", 0.3}, {"height", 1.1}, {"depth", 0.32}},
+         box({-0.15f, 0.0f, -0.16f}, {0.15f, 1.1f, 0.16f})},
+        {"media_rack", nullptr, box({-0.18f, 0.0f, -0.19f}, {0.18f, 0.42f, 0.19f})},
+        {"low_table", nullptr, box({-0.4f, 0.0f, -0.21f}, {0.4f, 0.42f, 0.21f})},
+        {"low_table",
+         {{"shape", "round"}, {"width", 0.45}, {"height", 0.6}},
+         box({-0.225f, 0.0f, -0.225f}, {0.225f, 0.6f, 0.225f})},
+        {"cushion", nullptr, box({-0.2f, 0.0f, -0.2f}, {0.2f, 0.12f, 0.2f})},
+        {"open_box", nullptr, box({-0.14f, 0.0f, -0.095f}, {0.14f, 0.03f, 0.095f})},
+        {"open_box",
+         {{"style", "tray"}, {"width", 0.2}, {"depth", 0.28}, {"height", 0.05}},
+         box({-0.2f, 0.0f, -0.14f}, {0.2f, 0.05f, 0.14f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -407,6 +432,12 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
           {"ScreenLook", SocketKind::Anchor},
           {"PowerButton", SocketKind::Other},
           {"ConsoleShelf", SocketKind::Anchor}}},
+        {"floor_speaker", {}},
+        {"media_rack", {{"Top", SocketKind::Anchor}}},
+        {"pad", {{"Cable", SocketKind::Anchor}}},
+        {"low_table", {{"Top", SocketKind::Anchor}}},
+        {"cushion", {}},
+        {"open_box", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -1969,4 +2000,61 @@ TEST_CASE("geometry/prefabs: the secondary TV, a sideboard carrying a small CRT 
     CHECK(buildError("secondary_tv", {{"tvBezel", 0.2}}).context == "secondary_tv.tvBezel");
     CHECK(buildError("secondary_tv", {{"drawers", 9}}).context == "secondary_tv.drawers");
     CHECK(buildError("secondary_tv", {{"screen", 1}}).context == "secondary_tv.screen");
+}
+
+TEST_CASE("geometry/prefabs: the hero corner's set (I12 step 3)", "[geometry][prefabs][hero_set]") {
+    // Every piece's tops carry what stands on them: the rack's and the table's Top anchors at their height.
+    const ProceduralPrefab rack = buildOk("media_rack", {{"decks", 3}, {"height", 0.5}});
+    checkPrefab(rack);
+    CHECK(position(socket(rack, "Top")).y == Approx(0.5f));
+    CHECK(part(rack, "display").mesh.bounds.max.z <= rack.bounds.max.z);
+    CHECK(part(rack, "led").mesh.vertices.size() == 3u * 2u * 24u); // two LEDs per deck
+    CHECK(buildError("media_rack", {{"decks", 4}, {"height", 0.25}}).context == "media_rack.decks");
+    CHECK(buildError("media_rack", {{"decks", 5}}).context == "media_rack.decks");
+    const ProceduralPrefab table = buildOk("low_table", {{"shape", "round"}, {"width", 0.5}, {"height", 0.55}});
+    checkPrefab(table);
+    CHECK(position(socket(table, "Top")).y == Approx(0.55f));
+    CHECK(buildError("low_table", {{"shape", "oval"}}).context == "low_table.shape");
+    CHECK(buildError("low_table", {{"height", 0.9}}).context == "low_table.height");
+
+    // A pad's cable ends where it is asked to, sags between and never goes below the floor.
+    const glm::vec3 to(0.3f, 0.4f, -0.6f);
+    for (const char* style : {"flat", "grip", "joystick"}) {
+        INFO(style);
+        const ProceduralPrefab pad = buildOk("pad", {{"style", style}, {"cableTo", {to.x, to.y, to.z}}, {"sag", 0.3}});
+        checkPrefab(pad);
+        CHECK(closeTo(position(socket(pad, "Cable")), to));
+        const Aabb cable = part(pad, "cable").mesh.bounds;
+        CHECK(cable.min.y >= -1e-4f);
+        CHECK(cable.max.x == Approx(to.x + 0.0025f).margin(0.003f));
+        CHECK(cable.min.z == Approx(to.z - 0.0025f).margin(0.003f));
+        CHECK(part(pad, "plastic_body").mesh.bounds.size().x < 0.16f);
+    }
+    // A joystick's stick stands up; a pad lies flat.
+    CHECK(part(buildOk("pad", {{"style", "joystick"}}), "plastic_dark").mesh.bounds.max.y > 0.1f);
+    CHECK(part(buildOk("pad"), "plastic_dark").mesh.bounds.max.y < 0.04f);
+    // No cable when its end sits at the back: the part is left out, the socket kept.
+    const ProceduralPrefab cordless = buildOk("pad", {{"cableTo", {0.0, 0.0125, -0.0325}}});
+    CHECK(std::none_of(cordless.parts.begin(), cordless.parts.end(),
+                       [](const PrefabPart& p) { return p.materialRole == "cable"; }));
+    CHECK(buildError("pad", {{"cableTo", {4.0, 0.0, 0.0}}}).context == "pad.cableTo");
+    CHECK(buildError("pad", {{"cableTo", {0.0, -0.1, 0.0}}}).context == "pad.cableTo");
+    CHECK(buildError("pad", {{"style", "wheel"}}).context == "pad.style");
+
+    // The speaker's drivers and LED sit on its front, the grille inside its outline.
+    const ProceduralPrefab speaker = buildOk("floor_speaker");
+    checkPrefab(speaker);
+    CHECK(part(speaker, "trim").mesh.bounds.max.z == Approx(speaker.bounds.max.z).margin(1e-4f));
+    CHECK(part(speaker, "led").mesh.bounds.min.y > 0.6f);
+    CHECK(part(speaker, "grille").mesh.bounds.size().x < speaker.bounds.size().x);
+
+    // An open box shows its inside, never a cover: a tray's lid lies beside it, lower, and holds no disc.
+    const ProceduralPrefab tray = buildOk("open_box", {{"style", "tray"}});
+    checkPrefab(tray);
+    CHECK(std::none_of(tray.parts.begin(), tray.parts.end(),
+                       [](const PrefabPart& p) { return p.materialRole == "disc"; }));
+    const ProceduralPrefab keepCase = buildOk("open_box");
+    CHECK(part(keepCase, "disc").mesh.bounds.min.x > 0.0f);
+    CHECK(part(keepCase, "paper").mesh.bounds.max.x < 0.0f);
+    CHECK(buildError("cushion", {{"height", 0.5}}).context == "cushion.height");
 }

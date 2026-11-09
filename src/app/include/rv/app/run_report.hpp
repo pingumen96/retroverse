@@ -1405,6 +1405,31 @@ struct ShowcaseRecord {
     bool operator==(const ShowcaseRecord&) const = default;
 };
 
+/// I12 step 3 (ADR-0021 §1): a console room's last-played proxy, its room and the game its console holds.
+struct LastPlayedRoomRecord {
+    std::string room;
+    std::string game;
+
+    bool operator==(const LastPlayedRoomRecord&) const = default;
+};
+
+/// I12 step 3: the hero corners' lived-in sets of the floors shown (their scenes' "dressing:hero:" objects, the last
+/// floor's) and the console rooms' last-played proxies (room_last_played.hpp): the games their consoles hold, in the
+/// floor's room order; the proxies made (a floor shown, a launch that played, a console re-sited: its model came), the
+/// launches that played a game, the re-sitings, the frames they were hidden (a game inspected, carried or launched),
+/// the proxies' fronts resident. Written when a floor shows a set or a proxy.
+struct LastPlayedRecord {
+    std::uint64_t heroDressing = 0;
+    std::vector<LastPlayedRoomRecord> games;
+    std::uint64_t builds = 0;
+    std::uint64_t played = 0;
+    std::uint64_t resited = 0;
+    std::uint64_t hiddenFrames = 0;
+    std::uint64_t frontsResident = 0;
+
+    bool operator==(const LastPlayedRecord&) const = default;
+};
+
 /// The generated building of the run (I3 step 10b's room, the floor shown since I4 step 5a): what showed, from which
 /// plan, how it came to be and when. Empty ({}) in runs that ask for no room (--scene, --model, --mock-catalog, the
 /// asset preview).
@@ -1641,6 +1666,8 @@ struct WorldRecord {
     /// I6 step 5: the frames the hub's directory totem's prompt showed, its favourites showcase.
     std::uint64_t totemPromptFrames = 0;
     ShowcaseRecord showcase;
+    /// I12 step 3: the hero corners' sets and the console rooms' last-played proxies.
+    LastPlayedRecord lastPlayed;
     /// I4b step 3: the editor's sessions, in order.
     std::vector<WorldEditRecord> edits;
     /// I4b step 6: the regenerations and undos asked, in order.

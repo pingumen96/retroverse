@@ -654,6 +654,77 @@ struct SecondaryTvParams {
     float tvSetBack = 0.02f; ///< the CRT's front behind the top's front edge, [0, 0.1]
 };
 
+// --- I12 step 3 (ADR-0021 §1): the hero corner's lived-in set -----------------------------------------------------
+
+/// "floor_speaker" (I12 step 3), pivot floor, front +Z; bounds = width x height x depth. A floor-standing loudspeaker
+/// of original design: a cabinet with a fabric grille over its front, a woofer's and a tweeter's trim ring on the
+/// grille, a small power LED near the top. Roles: "cabinet", "grille", "trim", "led". No sockets.
+struct FloorSpeakerParams {
+    float width = 0.2f;   ///< [0.12, 0.5]
+    float height = 0.72f; ///< [0.3, 1.4]
+    float depth = 0.26f;  ///< [0.15, 0.5]
+};
+
+/// "media_rack" (I12 step 3), pivot floor, front +Z; bounds = width x height x depth. A low open rack of original
+/// design holding `decks` stacked components (a deck's front, its amber display and two LEDs), on a plinth. Roles:
+/// "wood" (the rack), "metal" (the components), "display" (their displays), "led". Sockets: "Top" (Anchor) at the
+/// middle of the top, +Y up.
+struct MediaRackParams {
+    float width = 0.36f;  ///< [0.25, 0.8]
+    float height = 0.42f; ///< [0.2, 1.2]
+    float depth = 0.38f;  ///< [0.25, 0.6]
+    int decks = 2;        ///< [1, 4], each at least 6 cm tall
+};
+
+/// The shape of a "pad": a flat 16-bit pad, a pad with grips (the disc era's), a joystick on its base.
+enum class PadStyle { Flat, Grip, Joystick };
+
+/// "pad" (I12 step 3), pivot floor (the pad lying on it), front +Z; bounds = the pad's and its cable's. A game pad of
+/// original design: its body, its direction pad and buttons, and a cable from its back to `cableTo` (in its own frame;
+/// the cable sags between, never below the floor; none when `cableTo` is within 2 cm of the back). Roles:
+/// "plastic_body", "plastic_dark" (direction pad, buttons, stick), "cable". Sockets: "Cable" (Anchor) at the cable's
+/// far end.
+struct PadParams {
+    PadStyle style = PadStyle::Flat;      ///< JSON "flat", "grip" or "joystick"
+    glm::vec3 cableTo{0.0f, 0.0f, -0.4f}; ///< each component in [-3, 3]; y at least 0
+    float sag = 0.15f;                    ///< [0, 1]: the cable's drop at its middle, a share of its length
+};
+
+/// The shape of a "low_table": a rectangle on four legs with a shelf, or a round top on a pedestal.
+enum class TableShape { Rect, Round };
+
+/// "low_table" (I12 step 3), pivot floor, front +Z; bounds = width x height x depth (a round one: width x height x
+/// width). A coffee table or a side table of original design. Roles: "wood_primary" (the top), "wood_secondary" (legs,
+/// shelf, pedestal). Sockets: "Top" (Anchor) at the middle of the top, +Y up.
+struct LowTableParams {
+    TableShape shape = TableShape::Rect; ///< JSON "rect" or "round"
+    float width = 0.8f;                  ///< [0.3, 1.6]: a round one's diameter
+    float depth = 0.42f;                 ///< [0.3, 1]: a rectangle's
+    float height = 0.42f;                ///< [0.25, 0.8]
+};
+
+/// "cushion" (I12 step 3), pivot floor (its bottom), front +Z; bounds = width x height x depth. A plump square
+/// cushion. Roles: "fabric". No sockets.
+struct CushionParams {
+    float width = 0.4f;   ///< [0.2, 0.8]
+    float height = 0.12f; ///< [0.05, 0.3]
+    float depth = 0.4f;   ///< [0.2, 0.8]
+};
+
+/// The shape of an "open_box": a keep case lying open, or a cardboard tray with its lid beside it.
+enum class OpenBoxStyle { Case, Tray };
+
+/// "open_box" (I12 step 3), pivot floor, front +Z; bounds = 2 x width (the two halves side by side) x height x depth.
+/// A game's box lying open, showing its inside and never a cover: a keep case's two halves with a disc in one and a
+/// manual in the other, or a tray with a manual in it and its lid beside it. Roles: "body", "paper" (the manual),
+/// "disc". No sockets.
+struct OpenBoxParams {
+    OpenBoxStyle style = OpenBoxStyle::Case; ///< JSON "case" or "tray"
+    float width = 0.14f;                     ///< [0.08, 0.4]: one half's
+    float depth = 0.19f;                     ///< [0.1, 0.4]
+    float height = 0.03f;                    ///< [0.01, 0.1]: a half's
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -687,6 +758,12 @@ struct SecondaryTvParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildInfoTotem(const InfoTotemParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildArcadeCabinet(const ArcadeCabinetParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildSecondaryTv(const SecondaryTvParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildFloorSpeaker(const FloorSpeakerParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildMediaRack(const MediaRackParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildPad(const PadParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildLowTable(const LowTableParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildCushion(const CushionParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildOpenBox(const OpenBoxParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -711,8 +788,8 @@ struct SecondaryTvParams {
 /// Kinds accepted by buildPrefab, in documentation order: room_shell, shelf, cartridge, crt, tv_cabinet,
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
 /// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
-/// I6 step 5's hub: column, railing, hub_landmark, info_totem, I6 step 6's arcade_cabinet and I5 step 3's
-/// secondary_tv.
+/// I6 step 5's hub: column, railing, hub_landmark, info_totem, I6 step 6's arcade_cabinet, I5 step 3's
+/// secondary_tv and I12 step 3's hero corner set: floor_speaker, media_rack, pad, low_table, cushion, open_box.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

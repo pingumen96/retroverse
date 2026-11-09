@@ -887,6 +887,16 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
 - **A disk cache for the gallery's pictures** (step 2): each run reads, fits and compresses them again (a large fanart
   takes a worker for up to a few hundred milliseconds); a `TextureClass::Gallery` entry of the derived-texture cache
   would serve them warm, if the cold floors' figures ask for it.
+- **The real library's ride rows** (steps 2 and 3): the warm ride to the computers' largest room times out (its view
+  back about 150 ms past 2.5 s, half its covers pending) and the lobby's arrays measured on the ride back are half the
+  first start's. Step 1 passed both; step 2 failed them with the gallery on and off; step 3's quieter run passed the
+  lobby rows and failed these two. To be found before step 4.
+- **The last-played proxy picked** (step 3): hovering the game in the console could name it and Interact open its card
+  (the hub showcase's pick index); today the proxy is only seen.
+- **A proxy on a console without a media socket** (step 3): a model whose content gives none shows no proxy; the game
+  could lie on its top beside it.
+- **The editor and the hero set** (step 3): a part the editor moves takes its pieces along, but the move's probe does
+  not judge them; a moved armchair could put its cushion over a module's footprint.
 
 ## Branding
 

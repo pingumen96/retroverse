@@ -27,6 +27,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/world_interaction.hpp>
@@ -65,6 +66,11 @@ public:
     [[nodiscard]] std::string placementOf(std::string_view gameId, const WorldHover& hover) const;
 
     [[nodiscard]] const RoomLaunchRecord& record() const noexcept { return m_log.record(); }
+    /// I12 step 3: the room and game of a room's launch that started a game (every end but a refusal and a failure to
+    /// start: the game was played), once, after its end; none since the last call.
+    [[nodiscard]] std::optional<std::pair<world::RoomId, catalog::GameId>> takePlayed() noexcept {
+        return std::exchange(m_played, std::nullopt);
+    }
 
 private:
     std::optional<world::PlanIndex> m_index;
@@ -74,6 +80,9 @@ private:
     std::optional<world::RoomId> m_givenRoom;
     /// A launch asked of the product UI and not ended yet.
     bool m_launching = false;
+    /// The room and game of the launch asked (its room the interaction's then), and of the last one that played.
+    std::optional<std::pair<world::RoomId, catalog::GameId>> m_asked;
+    std::optional<std::pair<world::RoomId, catalog::GameId>> m_played;
     RoomLaunchLog m_log;
 };
 

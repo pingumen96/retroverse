@@ -706,6 +706,84 @@ Expected<ProceduralPrefab> bookendsFromJson(const Json& params) {
     return dressingFromJson<&buildBookends>("bookends", params);
 }
 
+// --- I12 step 3: the hero corner's set ------------------------------------------------------------------------
+
+Expected<ProceduralPrefab> floorSpeakerFromJson(const Json& params) {
+    FloorSpeakerParams p;
+    ParamReader r("floor_speaker", params, {"width", "height", "depth"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildFloorSpeaker(p);
+}
+
+Expected<ProceduralPrefab> mediaRackFromJson(const Json& params) {
+    MediaRackParams p;
+    ParamReader r("media_rack", params, {"width", "height", "depth", "decks"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("decks", p.decks);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildMediaRack(p);
+}
+
+Expected<ProceduralPrefab> padFromJson(const Json& params) {
+    PadParams p;
+    ParamReader r("pad", params, {"style", "cableTo", "sag"});
+    r.readEnum("style", p.style,
+               {{"flat", PadStyle::Flat}, {"grip", PadStyle::Grip}, {"joystick", PadStyle::Joystick}});
+    r.read("cableTo", p.cableTo);
+    r.read("sag", p.sag);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildPad(p);
+}
+
+Expected<ProceduralPrefab> lowTableFromJson(const Json& params) {
+    LowTableParams p;
+    ParamReader r("low_table", params, {"shape", "width", "depth", "height"});
+    r.readEnum("shape", p.shape, {{"rect", TableShape::Rect}, {"round", TableShape::Round}});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildLowTable(p);
+}
+
+Expected<ProceduralPrefab> cushionFromJson(const Json& params) {
+    CushionParams p;
+    ParamReader r("cushion", params, {"width", "height", "depth"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildCushion(p);
+}
+
+Expected<ProceduralPrefab> openBoxFromJson(const Json& params) {
+    OpenBoxParams p;
+    ParamReader r("open_box", params, {"style", "width", "depth", "height"});
+    r.readEnum("style", p.style, {{"case", OpenBoxStyle::Case}, {"tray", OpenBoxStyle::Tray}});
+    r.read("width", p.width);
+    r.read("depth", p.depth);
+    r.read("height", p.height);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildOpenBox(p);
+}
+
 // --- Primitives ----------------------------------------------------------------------------------------------
 
 constexpr float kMinLength = 0.001f;
@@ -847,7 +925,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 29> kPrefabs{{
+constexpr std::array<PrefabEntry, 35> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -877,6 +955,12 @@ constexpr std::array<PrefabEntry, 29> kPrefabs{{
     {"info_totem", &infoTotemFromJson},
     {"arcade_cabinet", &arcadeCabinetFromJson},
     {"secondary_tv", &secondaryTvFromJson},
+    {"floor_speaker", &floorSpeakerFromJson},
+    {"media_rack", &mediaRackFromJson},
+    {"pad", &padFromJson},
+    {"low_table", &lowTableFromJson},
+    {"cushion", &cushionFromJson},
+    {"open_box", &openBoxFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

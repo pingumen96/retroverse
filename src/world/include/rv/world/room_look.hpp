@@ -67,7 +67,12 @@
 //       "heroParts": {"armchair": [<piece>, ...], "lamp": [<piece>], "rug": [<piece>]},  // by the part's role
 //                                                    // (never "sign" or "console": the reader refuses them; "crt"
 //                                                    // only as arcade cabinets, I6 step 6, below)
-//       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...}}          // by the decoration's kind
+//       "decoration": {"poster_frame": [{"weight": 0.5, <piece>}, ...], ...},          // by the decoration's kind
+//       "heroDressing": [{"name": "speaker-left", "anchor": "tv-cabinet", "prop": false, <hero part's piece>}, ...]}
+//   I12 step 3 (ADR-0021 §1): "heroDressing" adds the hero corner's lived-in set (HeroDressingPiece): pieces beside
+//   the parts, each drawn with its anchor part, a "prop" never colliding. The reader refuses a name that is not a
+//   socket name of at most 26 characters or that repeats, an anchor that is not a socket name or is the sign, a piece
+//   without "xMm" and "zMm", and a piece of kind "crt", "secondary_tv" or "arcade_cabinet".
 //   I5 step 3 (ADR-0016 §5, amending ADR-0014 §1's rule): a decoration kind's list may also hold the pack's one
 //   secondary TV, a piece of prefab kind "secondary_tv" without a weight ({"prefab": {"manifest":
 //   "furniture.secondary_tv.generic", "kind": "secondary_tv"}, "params": {...}}); it is no weighted variant: the scene
@@ -465,14 +470,38 @@ struct SecondaryTvPiece {
     bool operator==(const SecondaryTvPiece&) const = default;
 };
 
+/// The scene objects of the hero corner's lived-in set: "dressing:hero:<name>" (I12 step 3).
+inline constexpr std::string_view kHeroDressingObjectPrefix = "dressing:hero:";
+
+/// A piece of the hero corner's lived-in set (I12 step 3, ADR-0021 §1): speakers, a media rack, pads, tables, a
+/// cushion, a game's open box, added to the corner's parts, never in place of one. `name`: the piece's own (a socket
+/// name of at most 26 characters, unique in the pack). `anchor`: the hero part it belongs with (its role, never the
+/// sign): drawn only where that part is (a shared room has no console, the arcade's cabinet leaves out the others), at
+/// `piece`'s place in the hero corner socket's frame (xMm and zMm required, yMm its bottom's height above the floor,
+/// 0 when left out) moved with the part when the plan's part stands elsewhere. `prop`: small, on the floor or on
+/// another piece, never colliding and never judged as a fixture (a pad, a cushion, magazines, an open box). Never a
+/// CRT, a secondary TV or an arcade cabinet.
+struct HeroDressingPiece {
+    std::string name;
+    std::string anchor;
+    bool prop = false;
+    FurniturePiece piece;
+
+    bool operator==(const HeroDressingPiece&) const = default;
+};
+
 /// A pack's furniture variants: the pieces that replace a hero corner's part (by its role; none: the part is not drawn,
-/// I6 step 6), the weighted variants of a decoration (by its prefab kind) and (I5 step 3) its secondary TV.
+/// I6 step 6), the weighted variants of a decoration (by its prefab kind), (I5 step 3) its secondary TV and (I12 step
+/// 3) the hero corner's lived-in set, in file order.
 struct ThemeFurniture {
     std::map<std::string, std::vector<FurniturePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<FurnitureVariant>, std::less<>> decoration;
     std::optional<SecondaryTvPiece> secondaryTv;
+    std::vector<HeroDressingPiece> heroDressing;
 
-    [[nodiscard]] bool empty() const noexcept { return heroParts.empty() && decoration.empty() && !secondaryTv; }
+    [[nodiscard]] bool empty() const noexcept {
+        return heroParts.empty() && decoration.empty() && !secondaryTv && heroDressing.empty();
+    }
     bool operator==(const ThemeFurniture&) const = default;
 };
 

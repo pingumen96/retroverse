@@ -1346,6 +1346,10 @@ namespace {
                 played != sources.lastPlayed->end() ? std::optional<std::int64_t>(played->second) : std::nullopt;
         }
     }
+    // I12 step 3: the game its console holds, from every placed game (media or none).
+    collection.lastPlayed = lastPlayedGame(
+        collection.layout, [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
+        sources.lastPlayed ? &*sources.lastPlayed : nullptr);
     if (sources.screenMediaRoot) {
         addScreenCards(collection.screenGames, collection.covers);
         // I12 step 2: the gallery's candidates, each game's data from its own section's items.

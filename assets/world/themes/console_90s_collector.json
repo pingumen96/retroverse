@@ -9,6 +9,15 @@
   "id": "console_90s_collector",
   "name": "Console90sCollector",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Plastic_Charcoal", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Brushed", "led": "MAT_Led_Green"},
+    "media_rack": {"wood": "MAT_Plastic_Charcoal", "metal": "MAT_Metal_Graphite",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Red"},
+    "pad": {"plastic_body": "MAT_Plastic_Charcoal", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Plastic_Charcoal"},
+    "cushion": {"fabric": "MAT_Fabric_Teal_Weave"},
+    "open_box": {"body": "MAT_Plastic_Black", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Herringbone", "wall": "MAT_Wall_Mauve", "ceiling": "MAT_Wall_Mauve",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Oak"},
     "shelf": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Fabric_Display_Navy",
@@ -83,6 +92,34 @@
   // for the lamps, the decade's confetti posters, glass showcases with a console for the sideboards; the rug geometric
   // (its kind's material above).
   "furniture": {
+    // I12 step 3 (ADR-0021 §1): the hero corner as a lived-in set, beside its parts.
+    "heroDressing": [
+      {"name": "speaker-left", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": -715, "zMm": 250},
+      {"name": "speaker-right", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": 715, "zMm": 250},
+      {"name": "rack", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "furniture.media_rack.generic", "kind": "media_rack"},
+       "xMm": 1000, "zMm": 250},
+      {"name": "pad-rack", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "grip", "cableTo": [0.05, 0.0, -0.16], "sag": 0.0}, "xMm": 1000, "yMm": 420, "zMm": 220,
+       "yawCdeg": 34500},
+      {"name": "pad-rug", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "grip", "cableTo": [0.384, 0.0, -0.265], "sag": 0.0}, "xMm": 150, "yMm": 12, "zMm": 900,
+       "yawCdeg": 2000},
+      {"name": "crate", "anchor": "armchair",
+       "prefab": {"manifest": "decor.storage_box.generic", "kind": "storage_box"},
+       "params": {"width": 0.4, "height": 0.3, "depth": 0.4}, "xMm": -950, "zMm": 2560, "yawCdeg": 1200},
+      {"name": "magazines", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.magazine_stack.generic", "kind": "magazine_stack"},
+       "params": {"width": 0.22, "height": 0.05, "depth": 0.3}, "xMm": -950, "yMm": 300, "zMm": 2560, "yawCdeg": 2500},
+      {"name": "open-box", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.open_box.generic", "kind": "open_box"},
+       "params": {"style": "case"}, "xMm": 330, "yMm": 12, "zMm": 1950, "yawCdeg": 1500}],
     "heroParts": {
       "armchair": [
         {"prefab": {"manifest": "furniture.beanbag.generic", "kind": "beanbag"},

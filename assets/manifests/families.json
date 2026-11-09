@@ -26,6 +26,15 @@
     {"id": "decor.sign", "generic": "decor.sign.room.generic", "generator": "poster_frame",
      "params": {"width": 1.6, "height": 0.4, "frameWidth": 0.025, "depth": 0.04}},
     {"id": "decor.storage_box", "generic": "decor.storage_box.generic", "generator": "storage_box", "params": {}},
+    // I12 step 3 (ADR-0021 §1): the hero corner's lived-in set, drawn by a pack's furniture.heroDressing.
+    {"id": "decor.cushion", "generic": "decor.cushion.generic", "generator": "cushion", "params": {}},
+    {"id": "decor.floor_speaker", "generic": "decor.floor_speaker.generic", "generator": "floor_speaker",
+     "params": {}},
+    {"id": "decor.open_box", "generic": "decor.open_box.generic", "generator": "open_box", "params": {}},
+    {"id": "decor.pad", "generic": "decor.pad.generic", "generator": "pad", "params": {}},
+    {"id": "furniture.low_table", "generic": "furniture.low_table.generic", "generator": "low_table", "params": {}},
+    {"id": "furniture.media_rack", "generic": "furniture.media_rack.generic", "generator": "media_rack",
+     "params": {}},
     {"id": "electronics.crt", "generic": "electronics.crt.consumer.generic", "generator": "crt", "params": {}},
     // I6 step 6 (ADR-0014 §6): the arcade room's cabinets, the media family arcade_cabinet's fixtures.
     {"id": "furniture.arcade_cabinet", "generic": "furniture.arcade_cabinet.generic", "generator": "arcade_cabinet",

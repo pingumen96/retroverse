@@ -32,6 +32,7 @@ add_library(rv_app_cli STATIC
     src/frame_stats_log.cpp
     src/frame_timing.cpp
     src/gallery_pictures.cpp
+    src/room_last_played.cpp
     src/binding_rules.cpp
     src/controller_watch.cpp
     src/input_context.cpp
@@ -155,6 +156,7 @@ add_library(rv_app STATIC
     src/world_ride.cpp
     src/world_session.cpp
     src/world_showcase.cpp
+    src/world_last_played.cpp
     src/world_start.cpp
     src/edit_bar_panel.cpp
     src/world_edit.cpp

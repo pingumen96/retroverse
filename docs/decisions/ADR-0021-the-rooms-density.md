@@ -116,6 +116,26 @@ data. ADR-0014 §1's furniture variants and I6 step 6's `roomDressing` are its f
   `MAT_Fabric_Leather_Grain`); `MAT_Fabric_Sofa` and the leathers stay plain, so the test room's armchair and the
   hub's seats keep their look (§7).
 
+*Amended on 2026-11-09 (I12 step 3):* the hero corner's set and the last-played game as built
+([i12/step-3.md](../i12/step-3.md)):
+- The set is a pack's `furniture.heroDressing`: named pieces of six new prefab kinds (`floor_speaker`, `media_rack`,
+  `pad`, `low_table`, `cushion`, `open_box`) and of existing ones (a small `floor_lamp` with an emissive shade and no
+  light, `magazine_stack`, the 90s room's crate a `storage_box`), each placed in the hero corner socket's frame and
+  belonging to one hero part (its **anchor**): drawn only where that part is (a room without a console has no pads),
+  moved with the part when the plan's part stands elsewhere. Small pieces resting on others are **props**: they never
+  collide and are not judged as fixtures; the others are, each as a part of the corner of its own
+  (`<socket>.dress-<name>`, which the validator takes as the corner's).
+- **Per pack:** classic and handhelds speakers, a rack, a coffee table with magazines and an open box, a side table
+  with a lamp, a cushion on the seat (the handhelds without pads); the 90s collector a crate with magazines between
+  its bean bags and a keep case on the rug; the lounge a side table with a lamp and a keep case beside its sofa, a
+  cushion on it; the study a joystick on its desk; the arcade and the hub none.
+- **The last-played game** is the room's placed game Retroverse started last (its play sessions, which the items
+  files carry; ES-DE's `<lastplayed>` is not in the room's snapshot), standing in the console's media socket as Avvia's
+  insertion leaves an item, a collection of its own drawn under `collection/lastplayed:<room>`. It is hidden whenever
+  the walker is not roaming free (Focus, Inspect, the insertion, the editor) and while a launch runs; it follows at
+  once a launch that played a game in its room, and the console's socket when the user's model arrives. A console
+  without a media socket shows none (no "lying on the model" in this step); hovering it does nothing yet.
+
 Rules of the layer:
 - Nothing of it stands in a collection slot, in the circulation band, in the doorway's clear area or in the TV's line
   of sight; the main passage stays 1.4 m and the hard clear width 1.2 m (ADR-0010 §2). `validatePlan()` of the plan

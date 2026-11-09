@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ef7733368761d5d7745e97264e334abb9c2b415d",
+    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g08a_crt_frozen_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "49b0376e7b4e21326cee97bbe1a366fbaa42a7a1db649e5e0fee7ab7a86af678",
+    "sha256": "e793c6683264d2aa6fc1821a42f448e09af9e60f658a36326c4952d6a88e2227",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "8411ab797a7ec43a35451048a21a9164e2367291533db4cd7acb431ddf42dbde"
+      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
     }
   },
   "renderedOn": "2026-11-09",

@@ -141,12 +141,21 @@ struct SceneSecondaryTv {
     ScenePiece piece;
 };
 
-/// A pack's furniture resolved: the pieces of each hero corner part, the weighted variants of each decoration kind and
-/// (I5 step 3) the secondary TV.
+/// A piece of the hero corner's lived-in set resolved (I12 step 3, room_look.hpp's HeroDressingPiece).
+struct SceneHeroDressing {
+    std::string name;
+    std::string anchor;
+    bool prop = false;
+    ScenePiece piece;
+};
+
+/// A pack's furniture resolved: the pieces of each hero corner part, the weighted variants of each decoration kind,
+/// (I5 step 3) the secondary TV and (I12 step 3) the hero corner's set.
 struct SceneFurniture {
     std::map<std::string, std::vector<ScenePiece>, std::less<>> heroParts;
     std::map<std::string, std::vector<std::pair<std::uint32_t, ScenePiece>>, std::less<>> decoration;
     std::optional<SceneSecondaryTv> secondaryTv;
+    std::vector<SceneHeroDressing> heroDressing;
 };
 
 /// Resolves `furniture` (assets::resolvePrefab, then geometry::buildPrefab with the piece's parameters over the

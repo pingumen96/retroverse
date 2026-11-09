@@ -671,6 +671,111 @@ json pieceObject(const DrawnPiece& drawn, const Fixture& fixture, std::string_vi
     return object;
 }
 
+/// A piece of the hero corner's lived-in set where it stands (I12 step 3), with the part it goes with.
+struct DrawnHeroDressing {
+    const SceneHeroDressing* dressing = nullptr;
+    const Fixture* anchor = nullptr;
+    DrawnPiece drawn;
+};
+
+/// The hero corner's set of `room` (room_look.hpp's HeroDressingPiece, scene_builder.hpp's file comment), in the pack's
+/// order: each piece whose anchor part the room holds and draws, at its place in the hero corner socket's frame moved
+/// with the part where the plan's part stands, at its own height. A guard as the parts' keeps the data honest: a piece
+/// leaving the hero corner socket's footprint, or reaching above the room's ceiling, is not drawn (a warning logged
+/// once).
+std::vector<DrawnHeroDressing> drawnHeroDressing(const WorldPlan& plan, const Room& room, const SceneData& data,
+                                                 const std::vector<FixtureId>& secondaryTvs) {
+    std::vector<DrawnHeroDressing> out;
+    for (const SceneHeroDressing& dressing : data.furniture.heroDressing) {
+        const auto anchor = std::find_if(plan.fixtures.begin(), plan.fixtures.end(), [&](const Fixture& fixture) {
+            return fixture.role == FixtureRole::HeroCorner && fixture.id.room() == room.id &&
+                   fixture.id.part() == dressing.anchor;
+        });
+        if (anchor == plan.fixtures.end()) {
+            continue;
+        }
+        // A part the pack leaves out (the arcade's, I6 step 6) takes its set with it.
+        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, *anchor, data, secondaryTvs);
+            pieces && pieces->empty()) {
+            continue;
+        }
+        const TemplateSocket* socket = data.roomTemplate.socket(anchor->id.socket());
+        if (socket == nullptr) {
+            continue;
+        }
+        const auto part = std::find_if(socket->parts.begin(), socket->parts.end(),
+                                       [&](const HeroPart& candidate) { return candidate.role == dressing.anchor; });
+        if (part == socket->parts.end()) {
+            continue;
+        }
+        const FurniturePiece& piece = dressing.piece.piece;
+        const auto [roomX, roomZ] = turned(piece.xMm.value_or(part->xMm) - part->xMm,
+                                           piece.zMm.value_or(part->zMm) - part->zMm, socket->yawCdeg);
+        DrawnPiece drawn;
+        drawn.piece = &dressing.piece;
+        drawn.id = std::string(kHeroDressingObjectPrefix) + dressing.name;
+        drawn.xMm = anchor->xMm + roomX;
+        drawn.yMm = piece.yMm.value_or(0);
+        drawn.zMm = anchor->zMm + roomZ;
+        drawn.yawCdeg = ((socket->yawCdeg + piece.yawCdeg.value_or(0)) % 36000 + 36000) % 36000;
+        drawn.seed = core::deriveSeed(fixtureSeed(room.seed, anchor->id), "hero-dressing", dressing.name);
+        glm::vec3 low(std::numeric_limits<float>::max());
+        glm::vec3 high(std::numeric_limits<float>::lowest());
+        extendBy(low, high, dressing.piece.prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+        const Footprint allowed = socketFootprint(data.roomTemplate, *socket, room.growthSteps);
+        // A millimetre of rounding forgiven.
+        const Footprint tolerated{allowed.minXMm - 1, allowed.minZMm - 1, allowed.maxXMm + 1, allowed.maxZMm + 1};
+        const Footprint floor = floorOf(low, high);
+        if (!tolerated.contains(floor) || upMm(high.y) > room.heightMm) {
+            warnOnce(data.theme.id + " " + data.roomTemplate.id + " hero dressing " + dressing.name,
+                     fmt::format("World: the pack {}'s hero dressing {} ([{}, {}] x [{}, {}] mm, up to {}) leaves the "
+                                 "hero corner ([{}, {}] x [{}, {}], up to {}); it is not drawn",
+                                 data.theme.id, dressing.name, floor.minXMm, floor.maxXMm, floor.minZMm, floor.maxZMm,
+                                 upMm(high.y), allowed.minXMm, allowed.maxXMm, allowed.minZMm, allowed.maxZMm,
+                                 room.heightMm));
+            continue;
+        }
+        out.push_back(DrawnHeroDressing{&dressing, &*anchor, std::move(drawn)});
+    }
+    return out;
+}
+
+/// The box `pieces` cover, as `fixture` is judged by the validator (drawnFixtures()): its prefab the first piece's,
+/// no yaw, the pieces' bounds rounded outwards to even spans.
+Fixture coveredFixture(const Fixture& fixture, const std::vector<DrawnPiece>& pieces) {
+    glm::vec3 low(std::numeric_limits<float>::max());
+    glm::vec3 high(std::numeric_limits<float>::lowest());
+    for (const DrawnPiece& drawn : pieces) {
+        extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+    }
+    std::int64_t minX = downMm(low.x);
+    std::int64_t maxX = upMm(high.x);
+    std::int64_t minY = downMm(low.y);
+    std::int64_t maxY = upMm(high.y);
+    std::int64_t minZ = downMm(low.z);
+    std::int64_t maxZ = upMm(high.z);
+    // Even spans, so that the centre is a whole millimetre (outwards again).
+    maxX += (maxX - minX) % 2;
+    maxZ += (maxZ - minZ) % 2;
+    maxY += (maxY - minY) % 2;
+    Fixture covered = fixture;
+    covered.prefab = pieces.front().piece->prefab.ref;
+    covered.yawCdeg = 0;
+    covered.widthMm = maxX - minX;
+    covered.depthMm = maxZ - minZ;
+    covered.heightMm = maxY - minY;
+    covered.xMm = (minX + maxX) / 2;
+    if (covered.prefab.kind == "poster_frame") {
+        // Hung from the middle of its back: the box reaches its depth out along +Z and is centred on its height.
+        covered.zMm = minZ;
+        covered.yMm = (minY + maxY) / 2;
+    } else {
+        covered.zMm = (minZ + maxZ) / 2;
+        covered.yMm = minY;
+    }
+    return covered;
+}
+
 /// R = Ry * Rx * Rz (the scene format's order) of a rigid transform, in degrees rounded to 1e-4.
 json rotationOf(const glm::mat4& m) {
     // glm is column-major: element (row r, column c) is m[c][r].
@@ -1592,6 +1697,13 @@ SceneFurniture resolveSceneFurniture(const std::filesystem::path& assetRoot, con
             result.decoration.emplace(kind, std::move(resolved));
         }
     }
+    // The hero corner's set (I12 step 3): a piece that fails is left out, the others drawn.
+    for (const HeroDressingPiece& dressing : furniture.heroDressing) {
+        if (auto scenePiece = resolve(dressing.piece)) {
+            result.heroDressing.push_back(
+                SceneHeroDressing{dressing.name, dressing.anchor, dressing.prop, std::move(*scenePiece)});
+        }
+    }
     // The secondary TV (I5 step 3): its screen plays the room's clips, so it must hold one.
     if (furniture.secondaryTv) {
         if (auto scenePiece = resolve(furniture.secondaryTv->piece)) {
@@ -1743,6 +1855,14 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                                        vec3Json(0.0, degrees(fixture.yawCdeg), 0.0), heroPart, data,
                                        fixtureSeed(room->seed, fixture.id)));
     }
+    // The hero corner's lived-in set (I12 step 3), after the parts: the props never collide.
+    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, secondaryTvs)) {
+        json object = pieceObject(dressing.drawn, *dressing.anchor, {}, data);
+        if (dressing.dressing->prop) {
+            object["collides"] = false;
+        }
+        objects.push_back(std::move(object));
+    }
 
     for (const DressedLevel& dressed : plan.dressing) {
         if (dressed.level.fixture().room() != roomId) {
@@ -1885,37 +2005,21 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
         if (placed->empty()) {
             continue; // a part the pack leaves out (I6 step 6) covers nothing
         }
-        const std::vector<DrawnPiece>& pieces = *placed;
-        glm::vec3 low(std::numeric_limits<float>::max());
-        glm::vec3 high(std::numeric_limits<float>::lowest());
-        for (const DrawnPiece& drawn : pieces) {
-            extendBy(low, high, drawn.piece->prefab.prefab->bounds, drawn.xMm, drawn.yMm, drawn.zMm, drawn.yawCdeg);
+        fixtures.push_back(coveredFixture(fixture, *placed));
+    }
+    // The hero corner's set (I12 step 3): each piece that collides as a part of the corner of its own,
+    // "<socket>.dress-<name>", so that the validator judges the passage and the overlaps piece by piece.
+    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, secondaryTvs)) {
+        if (dressing.dressing->prop) {
+            continue;
         }
-        std::int64_t minX = downMm(low.x);
-        std::int64_t maxX = upMm(high.x);
-        std::int64_t minY = downMm(low.y);
-        std::int64_t maxY = upMm(high.y);
-        std::int64_t minZ = downMm(low.z);
-        std::int64_t maxZ = upMm(high.z);
-        // Even spans, so that the centre is a whole millimetre (outwards again).
-        maxX += (maxX - minX) % 2;
-        maxZ += (maxZ - minZ) % 2;
-        maxY += (maxY - minY) % 2;
-        Fixture covered = fixture;
-        covered.prefab = pieces.front().piece->prefab.ref;
-        covered.yawCdeg = 0;
-        covered.widthMm = maxX - minX;
-        covered.depthMm = maxZ - minZ;
-        covered.heightMm = maxY - minY;
-        covered.xMm = (minX + maxX) / 2;
-        if (covered.prefab.kind == "poster_frame") {
-            // Hung from the middle of its back: the box reaches its depth out along +Z and is centred on its height.
-            covered.zMm = minZ;
-            covered.yMm = (minY + maxY) / 2;
-        } else {
-            covered.zMm = (minZ + maxZ) / 2;
-            covered.yMm = minY;
+        auto id = FixtureId::make(room->id, dressing.anchor->id.socket(),
+                                  std::string(kHeroDressingPartPrefix) + dressing.dressing->name);
+        if (!id) {
+            return propagate(id.error());
         }
+        Fixture covered = coveredFixture(*dressing.anchor, {dressing.drawn});
+        covered.id = std::move(*id);
         fixtures.push_back(std::move(covered));
     }
     return fixtures;

@@ -758,3 +758,48 @@ TEST_CASE("world launch: Mostra nella stanza takes the walker to a placed game's
         CHECK(report.catalog->cardSqueezed.empty());
     }
 }
+
+TEST_CASE("world launch: the game played last stands in the room's console, from the launch's return and at the "
+          "next start (I12 step 3)",
+          "[gpu][world][world_launch][lastplayed]") {
+    ensureLaunchAllowList();
+    ImportedRoom room("last_played");
+    const ShownRoom shown = firstRun(room);
+    REQUIRE(shown.console.has_value());
+    const rv::world::CollectionItem& item = itemOf(shown, room.gameAt("Amber Lantern (USA).sfc"));
+    // The first start: the hero corner's set drawn, no game played yet, so no proxy.
+    {
+        const AppRun run = runApp(retroverseExe(), room.dir, "before", roomArguments(4, room.dir / "before.png"));
+        const rv::app::RunReport& report = requireRoom(run);
+        CHECK(report.world.lastPlayed.heroDressing >= 10);
+        CHECK(report.world.lastPlayed.games.empty());
+    }
+    // Avvia, the insertion skipped: the launch's return puts the game into the console, hidden while it is inspected.
+    {
+        const AppRun run = runApp(retroverseExe(), room.dir, "launch",
+                                  roomArguments(120, room.dir / "launch.png",
+                                                {"--spawn", spawnArgument(spawnOf(focusPose(item, shown.camera))),
+                                                 "--input-script", arg(inputScript("world_insertion_skip.json"))}));
+        const rv::app::RunReport& report = requireRoom(run);
+        INFO(run.describe());
+        REQUIRE(report.launches.size() == 1);
+        CHECK(report.launches.front().outcome == "returned");
+        const rv::app::LastPlayedRecord& last = report.world.lastPlayed;
+        CHECK(last.played == 1);
+        REQUIRE(last.games.size() == 1);
+        CHECK(last.games.front().room == "room:snes");
+        CHECK(last.games.front().game == item.game.toString());
+        CHECK(last.hiddenFrames > 0);
+    }
+    // The next start: the catalog's session chooses it again, its front resident.
+    {
+        const AppRun run = runApp(retroverseExe(), room.dir, "after", roomArguments(30, room.dir / "after.png"));
+        const rv::app::RunReport& report = requireRoom(run);
+        const rv::app::LastPlayedRecord& last = report.world.lastPlayed;
+        REQUIRE(last.games.size() == 1);
+        CHECK(last.games.front().game == item.game.toString());
+        CHECK(last.builds >= 1);
+        CHECK(last.played == 0);
+        CHECK(last.frontsResident == 1);
+    }
+}

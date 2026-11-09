@@ -1,0 +1,31 @@
+// A cushion on the hero corner's seat (I12 step 3, ADR-0021 §1).
+{
+  "schemaVersion": 1,
+  "id": "decor.cushion.generic",
+  "assetType": "decor",
+  "category": "cushion",
+  "role": "prop",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "cushion",
+    "params": {},
+    "scaleMeters": [0.4, 0.12, 0.4],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "fabric", "cushion", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

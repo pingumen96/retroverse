@@ -802,7 +802,8 @@ private:
                 const std::string& part = fixture->id.part();
                 if (fixture->role == FixtureRole::HeroCorner) {
                     const bool known = std::any_of(templateSocket->parts.begin(), templateSocket->parts.end(),
-                                                   [&](const HeroPart& heroPart) { return heroPart.role == part; });
+                                                   [&](const HeroPart& heroPart) { return heroPart.role == part; }) ||
+                                       part.starts_with(kHeroDressingPartPrefix);
                     if (!known) {
                         m_findings.add(rule::kFixtureSocket, subject,
                                        part.empty() ? fmt::format("a hero corner fixture names one of the parts of "

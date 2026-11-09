@@ -1,0 +1,33 @@
+// The hero corner's media rack (I12 step 3, ADR-0021 §1): stacked components with amber displays and LEDs on a plinth.
+{
+  "schemaVersion": 1,
+  "id": "furniture.media_rack.generic",
+  "assetType": "furniture",
+  "category": "rack",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "media_rack",
+    "params": {},
+    "scaleMeters": [0.36, 0.42, 0.38],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "top": "Top"
+    },
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "audio", "rack", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}
