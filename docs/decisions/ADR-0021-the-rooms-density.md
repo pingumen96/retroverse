@@ -222,6 +222,25 @@ dedicated decoration sockets are dressed where two were. The key shapes a plan (
 - the key stays out of `settings.json` and Impostazioni, as every plan-shaping key; a world whose `world.json` names a
   density keeps it.
 
+*Amended on 2026-11-09 (I12 step 4):* the density and the tall pieces as built ([i12/step-4.md](../i12/step-4.md)):
+- **The plan records each room's density** (`Room::decorationDensityPermille`, the room's key named only when it is
+  not 400, so every earlier plan reads and writes as it was): a generation or a regeneration of a room lays it out
+  with the configuration's density and records it; an update, a growth and the editor lay a stored room out with its
+  own; the `decoration-density` rule judges each room by its own. A new room entering a stored building (a system
+  imported since, an expansion) takes the configuration's. The inputDigest keeps the configuration's density as an
+  input (it is provenance): after the preset's change an update rewrites a stored plan's digest once and moves
+  nothing. `WorldConfig`'s own default stays the rules' 400.
+- **The tall pieces** are four prefab kinds (bookcase, record rack, pegboard, coat stand), the plant's palm, ficus and
+  fern forms, a vitrine of pads and a tower speaker, in every pack's decoration lists but the hub's. **The rhythm** is
+  the scene builder's, once a room, along each wall in the sockets' home order: beside a neighbour within 1.2 m a draw
+  of the same piece, or of the same class when both stand on the floor (tall from 1.5 m), is drawn again among the
+  variants that differ. A hung piece takes no part in the alternation: counted tall, a poster pushed every piece beside
+  it to a low one.
+- **The gallery** hangs a frame over each low decoration standing against a wall, over its drawn top; none over a
+  tall piece.
+- **The look pendant's light** (§1, step 1) is a spot straight down: as a point 1.5 m inside the doorway it lit the
+  hall's floor and wall beside the doorway through the portal's plane.
+
 ### 4. Atmosphere: dust, light cones, flicker, the screen's glow
 
 - **Dust motes** drift in the key light's cone and in the pendants' pools: an instanced billboard pass after the

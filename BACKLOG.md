@@ -763,12 +763,10 @@ Parked in planning (ADR-0017, 2026-10-29); none is needed for the VR mode.
 
 ### Gate M4 (I5 step 10)
 
-- **The ride's record against the hub's showcase:** in Gate M4's second run (`docs/testing/gate-m4.md`), on a loaded
-  machine, the cold ride back to the ground floor arrived 51 ms before the hub's showcase (its favourites' and recent
-  games' proxies, an array of their own) was built, so the ride's record counted 2.4 MiB of collection arrays where a
-  direct start holds 4.8 MiB and `test_building_real.cpp`'s check of it failed (the run's end held the 4.8 MiB). Take
-  the record once the showcase is in, or have the ground floor's arrival wait for it as it waits for the covers in
-  view; the showcase popping in a few frames after the view comes back is the visible side.
+- ~~**The ride's record against the hub's showcase:**~~ done in I12 step 4 (`docs/i12/step-4.md`): a ride's view
+  back in a hall waits for the hub's showcase (its content and its covers), as a room's waits for its covers in view.
+  In Gate M4's second run, on a loaded machine, the cold ride back to the ground floor arrived 51 ms before the
+  showcase was built, so the ride's record counted 2.4 MiB of collection arrays where a direct start holds 4.8 MiB.
 - **A room without clips shows its first game's title card:** area:shared:gen5, room:switch and room:trs-80 hold no
   playable clip, and their hero screens end on the title card of the start choice (`chooseStillGame()`: the first
   candidate with a still or a title card, so the first game). Preferring the first game that has a still file
@@ -887,14 +885,20 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
 - **A disk cache for the gallery's pictures** (step 2): each run reads, fits and compresses them again (a large fanart
   takes a worker for up to a few hundred milliseconds); a `TextureClass::Gallery` entry of the derived-texture cache
   would serve them warm, if the cold floors' figures ask for it.
-- **The real library's ride rows** (steps 2 and 3): the warm ride to the computers' largest room times out (its view
-  back about 150 ms past 2.5 s, half its covers pending) and the lobby's arrays measured on the ride back are half the
-  first start's. Step 1 passed both; step 2 failed them with the gallery on and off; step 3's quieter run passed the
-  lobby rows and failed these two. To be found before step 4.
+- ~~**The real library's ride rows**~~ (steps 2 and 3), found at step 4 (`docs/i12/step-4.md`): the lobby's arrays
+  on the ride back were Gate M4's race with the hub's showcase (above), now waited for; the warm ride's timeout was
+  the machine's load (its floor job 1.4 s then, 0.8 s on a quiet run, where the ride arrived at 1.7 s). The floor job
+  no longer copies and sorts the whole plan for its rooms' digests (0.3 s of it on every floor).
 - **The last-played proxy picked** (step 3): hovering the game in the console could name it and Interact open its card
   (the hub showcase's pick index); today the proxy is only seen.
 - **A proxy on a console without a media socket** (step 3): a model whose content gives none shows no proxy; the game
   could lie on its top beside it.
+- **A smoke case for the side walls** (step 4): the rhythm and the tall pieces are judged on the scenes (unit tests)
+  and seen in the goldens; a GPU case on `snes-stress` at 0.65 along a side wall could pin the frame rows there.
+- **Lamp variants** (step 4): a torchiere or a banker lamp among a pack's floor lamps would need the plan's light moved
+  with the variant's bulb (the era test asks for it within 0.15 m); none was added.
+- **The palms' fronds** (step 4): within a side-wall socket's 0.19 m from front to back their fronds stay short and few;
+  a crown turned along the wall (fronds left and right) would read fuller.
 - **The editor and the hero set** (step 3): a part the editor moves takes its pieces along, but the move's probe does
   not judge them; a moved armchair could put its cushion over a module's footprint.
 
