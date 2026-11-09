@@ -92,6 +92,8 @@ overrides working: nothing edits a commented file, so no comment-preserving writ
   removes the section's keys. A key shadowing a hand-written value is logged once at the start.
 - **No key that shapes a plan is on the screen.** Seeds, density, passages, `sharedRoomMinTitles` stay hand-written, in
   `world.json`: settings change how the world is shown, never what it holds (NFR-08, the building stamp unchanged).
+  *Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md)):* `world.gallery`, `video.audio.ambience` and
+  `video.audio.effects` join the screen's display-only keys.
 - **The player's file.** FOV, sensitivities, inversion, the display mode and the text scale have no file today:
   `assets/config/player.json` holds them (schema 1), `config/player.json` overrides it, `app::PlayerSettings` reads it.
   Its `horizontalFovDeg` is `null` by default: the scene's lens stays, so every golden is unchanged.

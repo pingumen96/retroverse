@@ -90,7 +90,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   its key light's shadow; gen4's walk from the elevator into room:snes; the ground floor's lobby), the floor in the app
   (`gpu.world floor app: ...`, I4 step 5a, `test_world_floor_app.cpp`, `[world_floor_app]`: two rooms of one family on
   a floor, each sampling its own arrays and showing its own covers, the residency per room and the floor's GPU memory
-  within 512 MiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
+  within 4 GiB, the cover loader's first view without the items of a room whose doorway it does not see; a walk from
   the hall into one room, out and into the other, a cover of the second inspected; the start in the lobby without
   `--start-room`, and a `--start-room` the plan lacks refused with exit 2; since I4 step 6b the hero CRT rebound on
   that walk (`video.binds`, the first room's clip stopped, `waitsBeforeExit` 0) and on a floor that runs freely, the
@@ -199,7 +199,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `scripts/real-library.ps1 -Filter '[real-library][building],[real-library][room-real]'` (one pair of snapshots, 0
   differences) and reads the tests' run reports (`build/msvc-x64-release/real-library/building/<run>.json` and
   `.../room/<run>.json`): the building planned twice with one plan, an unchanged restart's building job skipped by its
-  stamp within 3 s, NFR-01 to the lobby (5 s), the busiest floor's GPU memory (512 MiB), the rides cold and warm (the
+  stamp within 3 s, NFR-01 to the lobby (5 s), the busiest floor's GPU memory (4 GiB), the rides cold and warm (the
   view back within 10 s and 3 s, the room that holds the walker within 30 s and 3 s), then Gate B's rows of the SNES
   room.
 - `scripts/gate.ps1 -Gate D` (`docs/testing/gate-d.md`, logs in `build/gate-d`) runs Gate C's steps with every golden
@@ -223,12 +223,12 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   the whole gate under `scripts/focus_watch.py`. `-RealLibrary` adds one `scripts/real-library.ps1 -Filter
   '[real-library][building]~[migration],[real-library][expansion],[real-library][regenerate],[real-library][regenerate-app],[real-library][edit-cli],[real-library][secondary_tv]'`
   run (one pair of snapshots, 0 differences): Gate C's rows of the building's reports (the lobby and the quick
-  catalog's first page within 5 s, the busiest floor within 512 MiB, the rides), generator 1.5's update (no capacity
+  catalog's first page within 5 s, the busiest floor within 4 GiB, the rides), generator 1.5's update (no capacity
   entry, every room's elements byte for byte), the dry runs of a room, a floor and the world (nothing written, every
   impact count 0, the preview's time), the app's previews, commits and undos (2 s and 3 s), a CLI edit session on the
   real plan (`tests/unit/cli/test_cli_worldplan_edit_real.cpp`, `[real-library][edit-cli]`: a move, a swap, a pin and
   a fixture moved as one `--script` session, `worldplan check` with every pin honoured, an update writing nothing, an
-  undo restoring the plan's SHA-256) and the busiest floor at 1920 x 1080 with both screens playing (512 MiB), read
+  undo restoring the plan's SHA-256) and the busiest floor at 1920 x 1080 with both screens playing (4 GiB), read
   from the tests' printed lines ("Real expansion:", "Real regeneration:", "Real app regeneration:", "Real edit:",
   "Real secondary TV:"), every time against §9's limits written in the script, never the figure a test prints.
   `-TimingOnly` builds Release alone, runs the editor's and regenerations' Release GPU cases again
@@ -320,7 +320,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   screenshots stay there, never committed: the user's covers); since I4 step 6b `-Filter '[real-library][building]'`
   (the whole library imported under `build/<preset>/real-library/building`, then `retroverse.exe`: the first
   building, the unchanged start as the user starts it with NFR-01 to the lobby and the quick catalog's first page, the
-  whole building job with its stamp removed, a start in the computer floor's largest room within 512 MiB cold (its
+  whole building job with its stamp removed, a start in the computer floor's largest room within 4 GiB cold (its
   covers derived in that run) then warm, since I4 step 7b, the derived covers emptied, a ride from the lobby to that
   room through the elevator and back to the lobby's elevator with Map as the user rides (no lockstep), cold then warm,
   within the acceptable row (10 s cold, 3 s warm) and with the destination's arrays, and `worldplan update`; since I4
@@ -336,7 +336,7 @@ call `cmake`, `ctest` or `ninja` directly: the PATH contains an old CMake 3.26 a
   `build/<preset>/real-library/arcade`, attract in front of each featured cabinet of the real arcade room, the first
   that played inspected; "Real arcade:" lines), since I5 step 3 `-Filter '[real-library][secondary_tv]'` (the busiest
   floor's largest room with a secondary TV, both screens playing in view in a 1920 x 1080 window, its GPU memory
-  within 512 MiB in runs without `--screenshot`, whose render targets add about 72 MiB; the frame times with and
+  within 4 GiB in runs without `--screenshot`, whose render targets add about 72 MiB; the frame times with and
   without clips; "Real secondary TV:" lines), since I5 step 10 `-Filter '[real-library][screens]'` (the whole library
   imported under `build/<preset>/real-library/screens`, then every room of the plan that holds games started at its
   doorway with `--start-room` for 240 lockstep frames: its hero screen on a clip or its chain's still, never standby,

@@ -63,7 +63,7 @@
          whole library's building (tests/unit/app/test_building_real.cpp) and I3's SNES room, their figures read from
          the tests' run reports against the acceptable limits: the building planned twice with one plan, an unchanged
          restart's building job skipped by its stamp (3 s), NFR-01 to the lobby (5 s), the busiest floor's GPU memory
-         (512 MiB), the rides cold and warm (the view back within 10 s cold and 3 s warm, the room within 30 s and 3 s),
+         (4 GiB), the rides cold and warm (the view back within 10 s cold and 3 s warm, the room within 30 s and 3 s),
          and Gate B's rows of the SNES room.
     Gate D (I6, the styling pass of the building, ADR-0014; docs/testing/gate-d.md): everything Gate C runs, with every
     golden (Gate C's and I6's G14 to G18) and Gate B's benchmark path in Release, and
@@ -93,7 +93,7 @@
          world: nothing written, their impact, the preview's time), [regenerate-app] (the app's previews, commits and
          undos), [edit-cli] (a CLI edit session on the real plan: a move, a swap, a pin and a fixture moved, worldplan
          check, an update moving nothing, an undo restoring the plan's SHA-256) and [secondary_tv] (the busiest floor
-         at 1920 x 1080 with both screens playing, 512 MiB).
+         at 1920 x 1080 with both screens playing, 4 GiB).
     Gate M4 (milestone M4, screens and media, ADR-0016; docs/testing/gate-m4.md): everything Gate D runs (Gate A's build
     matrix, the unit tests and the GPU smoke tests of Debug and Release, every golden in both, G01 to G21, a golden
     skipped failing the gate as for Gate M3, the I4 and I6 rows per area, the benchmark path in Release), and
@@ -108,7 +108,7 @@
          and after, 0 differences, RV_LAUNCH_ALLOWLIST naming the fake emulator alone) of [real-library][screens]
          (every collection room of the real building started at its doorway: its hero screen on a clip or its chain's
          still, never standby, at most 2 decoders; NFR-06's first frame within 2 s), [secondary_tv] (the busiest floor
-         with both slots playing, 512 MiB), [arcade] (the cabinets playing), [audio] (a 96 kHz clip's sound within 80
+         with both slots playing, 4 GiB), [arcade] (the cabinets playing), [audio] (a 96 kHz clip's sound within 80
          ms of its picture at p95), [videos] (the SNES clips' verdicts, checked from nothing; every system's with
          -FullVideoScan, hours) and Gate D's real rows ([building] with the migrations, -LegacyCli or RV_LEGACY_CLI,
          and [room-real]); the limits are written in this script, never read from what a test prints;
@@ -219,6 +219,13 @@ if ($RealLibrary -and (Get-Process -Name 'ES-DE' -ErrorAction SilentlyContinue))
 }
 
 $results = [System.Collections.Generic.List[object]]::new()
+
+# The roadmap's GPU memory rows ("Acceptable performance"): all the GPU memory the app tracks (textures, render targets,
+# buffers: a run report's gpuMemory.peakTotalBytes) at most 4 GiB, the user's budget since November 8, 2026 (ADR-0021
+# section 8; 512 MiB from I3 to I11). Every memory row of every gate judges against it.
+$gpuMemoryLimitMiB = 4096
+$gpuMemoryLimitBytes = $gpuMemoryLimitMiB * 1MB
+$gpuMemoryLimitLabel = 'all <= 4 GiB'
 
 function Add-Result([string]$Step, [string]$Result, [string]$Details, [double]$Seconds, [string]$Limit = '') {
     $results.Add([pscustomobject]@{
@@ -735,9 +742,10 @@ function Add-BenchmarkRows([string]$Label, [string]$ReportFile) {
     Add-Result "$Label, GPU per pass" 'info' ('p50/p99 ms: ' + ($texts -join ', ')) 0
     $arrays = [double]$report.residency.arrayBytes
     $peak = [double]$report.gpuMemory.peakTotalBytes
-    Add-Result "$Label, GPU memory" ($(if ($peak -gt 0 -and $peak -le 512MB) { 'passed' } else { 'FAILED' })) `
+    $memoryOk = $peak -gt 0 -and $peak -le $gpuMemoryLimitBytes
+    Add-Result "$Label, GPU memory" ($(if ($memoryOk) { 'passed' } else { 'FAILED' })) `
         ('collection arrays {0} ({1}, {2} items), all textures at most {3}' -f (Format-MiB $arrays),
-            $report.residency.format, $report.residency.items, (Format-MiB $peak)) 0 'all <= 512 MiB'
+            $report.residency.format, $report.residency.items, (Format-MiB $peak)) 0 $gpuMemoryLimitLabel
 }
 
 # Runs a Catch2 executable of the Release build with a test spec (hidden cases included), its XML report and log in
@@ -1069,14 +1077,15 @@ function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
     $measured = @($runs['busiest-cold'], $runs['busiest-warm'])
     $floor = $floors | Where-Object { $_.id -eq $measured[0].world.floor } | Select-Object -First 1
     $memoryOk = $floor -and [int]$floor.placed -eq $most -and @($measured | Where-Object {
-            [double]$_.gpuMemory.peakTotalBytes -le 0 -or [double]$_.gpuMemory.peakTotalBytes -gt 512MB -or
+            [double]$_.gpuMemory.peakTotalBytes -le 0 -or
+            [double]$_.gpuMemory.peakTotalBytes -gt $gpuMemoryLimitBytes -or
             $_.world.floor -ne $floor.id }).Count -eq 0
     Add-Result 'Real building: the busiest floor''s GPU memory' ($(if ($memoryOk) { 'passed' } else { 'FAILED' })) `
         ('the {0} floor ({1} rooms, {2} items; {3} placements, the most of the {4} floors: {5}): at most {6} cold, {7} warm (collection arrays {8}, {9})' -f
             $measured[0].world.floor, @($measured[0].world.rooms).Count, $measured[0].world.items, $floor.placed,
             $floors.Count, $(if ($floor -and [int]$floor.placed -eq $most) { 'yes' } else { "NO, the most is $most" }),
             (Format-MiB $measured[0].gpuMemory.peakTotalBytes), (Format-MiB $measured[1].gpuMemory.peakTotalBytes),
-            (Format-MiB $measured[0].residency.arrayBytes), $measured[0].residency.format) 0 'all <= 512 MiB'
+            (Format-MiB $measured[0].residency.arrayBytes), $measured[0].residency.format) 0 $gpuMemoryLimitLabel
     # The rides, cold (the derived covers emptied) and warm: the view back, then the room that holds the walker whole.
     foreach ($ride in @(@('cold', 10000, 30000), @('warm', 3000, 3000))) {
         $kind, $viewLimit, $roomLimit = $ride
@@ -1087,7 +1096,8 @@ function Add-RealBuildingRows([string]$buildingDir, [string]$testLog) {
         }
         $there, $back = $records
         $viewOk = @($records | Where-Object { $null -eq $_.totalMs -or [double]$_.totalMs -gt $viewLimit -or
-                $_.outcome -notin @('arrived', 'timed-out') -or [double]$_.gpuBytes -gt 512MB }).Count -eq 0
+                $_.outcome -notin @('arrived', 'timed-out') -or
+                [double]$_.gpuBytes -gt $gpuMemoryLimitBytes }).Count -eq 0
         Add-Result "Real building: rides $kind" ($(if ($viewOk) { 'passed' } else { 'FAILED' })) `
             ('the lobby to {0} ({1}): the view back {2} ({3}; the floor built at {4}; its {5} covers in view resident at {6}, {7} pending), {8} GPU memory; back to the lobby''s elevator {9} ({10})' -f
                 $there.room, $there.to, (Format-Seconds2 $there.totalMs), $there.outcome, (Format-Seconds2 $there.builtMs),
@@ -1444,14 +1454,14 @@ function Add-RealSecondaryTvRow([string]$testLog) {
                 $p[2].Value, $p[3].Value, $p[4].Value, $p[5].Value, $p[6].Value, $p[7].Value
         }
         else { '' }
-        Add-Result 'Real busiest floor, both screens playing' ($(if ($max -le 512 -and [int]$first[5].Value -eq 2) { 'passed' } else { 'FAILED' })) `
+        Add-Result 'Real busiest floor, both screens playing' ($(if ($max -le $gpuMemoryLimitMiB -and [int]$first[5].Value -eq 2) { 'passed' } else { 'FAILED' })) `
             ('{0} on the {1} floor ({2} items), 1920 x 1080, two decoders: GPU memory at its peak {3} MiB cold, {4} MiB warm (with a screenshot {5}); frame p99 {6} and {7} ms{8}' -f
                 $first[2].Value, $first[4].Value, $first[3].Value, $measured[0].Groups[6].Value, $measured[1].Groups[6].Value,
                 $(if ($shot) { $shot.Groups[6].Value + ' MiB' } else { 'n/a' }), $measured[0].Groups[9].Value,
-                $measured[1].Groups[9].Value, $breakdown) 0 'all <= 512 MiB'
+                $measured[1].Groups[9].Value, $breakdown) 0 $gpuMemoryLimitLabel
     }
     else {
-        Add-Result 'Real busiest floor, both screens playing' 'FAILED' ("{0} cold or warm line(s) in $testLog, 2 expected" -f $measured.Count) 0 'all <= 512 MiB'
+        Add-Result 'Real busiest floor, both screens playing' 'FAILED' ("{0} cold or warm line(s) in $testLog, 2 expected" -f $measured.Count) 0 $gpuMemoryLimitLabel
     }
 }
 
@@ -1479,7 +1489,7 @@ $i5Areas = [ordered]@{
 # judges against these, never against a figure a test prints.
 $adr16FrameP50Ms = 16.7          # frame time with two clips playing (the benchmark path past a secondary TV)
 $adr16FrameP99Ms = 33.3
-$adr16GpuMiB = 512               # all textures with the screens playing (the busiest floor, two slots)
+$adr16GpuMiB = $gpuMemoryLimitMiB # all GPU memory with the screens playing (the busiest floor, two slots)
 $adr16SyncP95Ms = 80             # a clip's sound against its picture, at p95
 $nfr06FirstFrameMs = 2000        # the first frame of a clip within 2 s of its decoder's start (the selection's)
 $nfr07Decoders = 2               # at most 2 decoders in the Balanced profile

@@ -1,5 +1,5 @@
 // The real library's busiest floor with both decoder slots playing (I5 step 3, ADR-0016 §5 and §12: the hero CRT and
-// a secondary TV, GPU memory within the acceptable 512 MiB). Hidden ([.real-library]): ctest never runs it;
+// a secondary TV, GPU memory within the acceptable 4 GiB). Hidden ([.real-library]): ctest never runs it;
 // scripts/real-library.ps1 does, with ES-DE closed, read-only snapshots of the library before and after, the folders
 // in the RV_REAL_* variables (or the script's parameters) and RV_AUDIO=null:
 //   ./scripts/real-library.ps1 -Filter '[real-library][secondary_tv]'
@@ -10,7 +10,7 @@
 //   - the busiest floor (the most placements) and on it the largest room whose pack stands a secondary TV
 //     (world::secondaryTvFixtures()), started there (--start-room) with the walker where the hero CRT and the
 //     secondary both stand in view, 300 frames, cold (the floor's covers derived in that run) and warm: both screens
-//     playing their clips on the two slots, the floor's GPU memory at its peak within 512 MiB (runs without
+//     playing their clips on the two slots, the floor's GPU memory at its peak within 4 GiB (runs without
 //     --screenshot, whose render targets the window never has); then the same with a screenshot, and without clips
 //     (informative: the frame times with and without the two decoders). Every run in a 1920 x 1080 window (I5 step
 //     3's review: the render targets follow the window's size, and the default window is 1280 x 720).
@@ -63,7 +63,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::uint64_t kAcceptableGpuBytes = 512ull * 1024ull * 1024ull;
+constexpr std::uint64_t kAcceptableGpuBytes = 4096ull * 1024ull * 1024ull;
 constexpr float kEyeHeight = 1.65f;
 
 std::optional<fs::path> pathVariable(const wchar_t* name) {

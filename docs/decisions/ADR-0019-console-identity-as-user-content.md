@@ -78,6 +78,10 @@ type, the description, the colours, the logo and the console model.
 **The sources live in a private sibling repository, `retroverse-content`**, never a submodule and never packaged. It
 holds the downloads, the Blender files, the authored scripts, the licences and `SOURCES.md`.
 
+*Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §2):* the user's game media (fanart, marquees,
+screenshots, title screens, miximages, 3D boxes) join the identity as runtime content: the rooms' gallery reads them
+in place, its derived textures live under `<user data>/cache/`, and fixtures and goldens use invented media.
+
 ### 2. Where the identity is read
 
 **The fields, in order, the first found winning** (each recorded with its source, for `retroverse-cli identity show`
@@ -248,6 +252,9 @@ stays only for a scene's own test models.
 
 If the busiest floor passes 512 MiB, the full model textures stay resident only in the walker's room and its
 neighbours, and the other rooms show their smallest mip. That is step 10's remedy, not a relaxed limit.
+
+*Amended on 2026-11-08 ([ADR-0021](ADR-0021-the-rooms-density.md) §8):* the row reads 4 GiB; the remedy above is no
+longer needed for it.
 
 ## Rules that change
 

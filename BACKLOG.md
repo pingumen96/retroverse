@@ -47,7 +47,9 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
   subtle cue there; the upper walls and the ceiling far from the lights fall to black (golden G01,
   `docs/testing/gate-a.md`). Candidates: light probes / IBL, a hemisphere tinted by the lit floor (indoor bounce comes
   mostly from below), or the fake screen light of style §4.3 (the test room's `crt_glow` is a fixed one; a point light
-  near each TV with the slowly updated average screen color).
+  near each TV with the slowly updated average screen color). I12 takes the fake screen light (step 6: the rooms'
+  `crt_glow` takes the picture's average colour) and lifts the rooms' upper walls with wallpaper, coves and pendants
+  (step 1, ADR-0021); light probes stay here (and "Parked at I12's planning": reflections).
 - **More lights per view:** the lights block holds 16 point/spot lights and one directional light; the test room uses
   14 (the ceiling key light, a pendant, a picture light on the right poster, the floor lamp's bulb and two shade cones,
   the table lamp's bulb and shade cone, the magenta accent, the sign's glow, the CRT's light on its cabinet, a spot per
@@ -454,7 +456,8 @@ Candidates from the I3 steps' notes (`docs/i3/step-<n>.md`).
   (`docs/testing/gate-m3.md`): **477.5 MiB** at 1920 x 1080 with both screens playing, cold, warm and with a
   screenshot, 34.5 MiB under the limit. If a later step takes it over, the next remedy is per-floor residency of the
   procedural surfaces (about 34 MiB; ADR-0016 §12), then post-processing intermediates at reduced resolution (they
-  change the look).
+  change the look). Since November 8, 2026 the row is 4 GiB (ADR-0021 §8): neither remedy is needed for it;
+  per-floor residency stays a saving for a lower budget (I8's Low profile).
 - **The regeneration preview's time (done, `docs/i4b/preview-time.md`):** Gate M3 measured it over ADR-0015 §9's 2 s
   (`docs/testing/gate-m3.md`, on a loaded machine): the in-app previews of room:snes 2.65 and 3.27 s and of
   room:amstradcpc 3.61 and 4.10 s (the job's read of the world 0.5 to 0.65 s, the regeneration 1.2 to 2.2 s, the app's
@@ -545,13 +548,17 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   the room reads darker and calmer than concept panel 4 (median luma 28 against 35, colour 1.8% against 13%, blue
   5% against 19%), its upper walls and ceiling falling close to black (the top quarter's median 17 against 27: style
   §4 asks that they never do; a blue wash or cove on the upper walls, as the arcade's and the handhelds' got at step
-  6), the sofa seen from the doorway a plain dark back, the large posters on the front wall behind the walker.
+  6), the sofa seen from the doorway a plain dark back, the large posters on the front wall behind the walker. I12
+  takes the era's colour and G17's upper walls (ADR-0021: step 1's wallpaper, the lounge's cove and the pendants,
+  step 2's gallery of the user's art).
 - **Era furniture (I6 step 3b, `docs/i6/step-3b.md`):** done in the hero corner and the decoration sockets. Left:
   furniture that needs a place of its own (a coffee table, the study's bookcases of boxes), a lounge chair of its own for the handheld archive (since the review a one-seat sofa on tall legs: from
   behind a plain upholstered back; an armchair whose back is thinner than its arms and leans back), the bean bags'
   shape (two ellipsoids, matte since the review), shelf dressing per era (the storage boxes and magazines are every
   pack's). (The rugs' metallic-roughness maps went to a quarter of their size with every procedural surface's in
-  I6 step 5's review: their roughness alone, R8.)
+  I6 step 5's review: their roughness alone, R8.) I12 takes the coffee table (step 3, the hero corner's set) and the
+  study's bookcases (step 4, tall decoration variants, ADR-0021); the lounge chair, the bean bags' shape and shelf
+  dressing per era stay here.
 - **The hub (I6 step 5, `docs/i6/step-5.md`):** done (the balcony, the coffered ceiling, the landmark, the portals,
   the totem, a screen, the favourites' showcase). Left: stairs to the balcony and a walkable gallery; the showcase's
   proxies are all keep cases (a proxy in its own system's family would need each family's prefab and arrays in the
@@ -607,7 +614,8 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
 - **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
   "Deferred"). In a shared room of few titles the display cases' riser cards (an invented cover across the empty
   slots) outnumber the games there and read like games (G13: five cards beside four cases); plainer cards or other
-  dressing on a mostly empty case.
+  dressing on a mostly empty case. I12 step 5 takes the sign per section (ADR-0021 §1); the templates and the riser
+  cards stay here.
 
 ### Tests
 
@@ -788,7 +796,8 @@ why; what I7 does take, it closes in its step notes.
   stay as they are.
 - **High contrast and a catalog-only mode** (specification §12.4): `reduceMotion`, the CRT effect, clips off and the text
   scale cover what the settings screen can do cheaply; these need a second stylesheet and a run without a world.
-- **Effects and ambience volumes:** I8, with the sounds they would adjust.
+- **Effects and ambience volumes:** I8, with the sounds they would adjust. Moved to I12 step 7, which brings the
+  sounds, synthesized, and their two rows (ADR-0021 §5).
 - **The frame stalls after an emulator's return, exclusive-fullscreen emulators (detected and explained by I11 step 13,
   ADR-0020 §5), the error-mode policy for crashes** (above,
   "Emulator launch"): I8's performance and fault-injection work; none blocks daily use.
@@ -816,7 +825,8 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
 - **The insertion in VR with a real console** (above, "Follow-ups from I10", "The insertion in VR"): offered with the
   real models, not chosen; the item flying from the hand into the model's socket.
 - **The real controllers beside the console:** the console's own pad from the content folder, on the cabinet and in
-  the hand in VR; offered, not chosen. VR's controller models stay generic (ADR-0017 §5).
+  the hand in VR; offered, not chosen. VR's controller models stay generic (ADR-0017 §5). I12 step 3 lays generic
+  pads by family on the media rack and the rug (ADR-0021 §1); the console's own pad stays here.
 - **WebP logos:** some of the user's themes hold their logos as WebP (cathode, canvas, part of aura's), and linear's
   `system/systemart/*.webp` holds each system's art; a WebP decoder (libwebp is in vcpkg at the baseline) inside
   `rv_assets` would read them.
@@ -844,6 +854,28 @@ Decided on 2026-11-07 (ADR-0019, ADR-0020, `docs/i11/plan.md`): offered or met i
   kind; its portal shows its sections' logos.
 - **The identity of systems without a linear-es-de entry:** a theme with another metadata layout would need a reader
   of its own; until then such a system shows ES-DE's fullname and, where a theme has one, its logo.
+
+## Parked at I12's planning
+
+Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left out of I12's first round.
+
+- **Compact rooms for small collections** (proposal P9): a 7 x 8 m template with a 3.0 m ceiling for systems of about
+  30 to 120 titles, chosen at generation, so the walls fill and the hero corner comes near; a stored room changes only
+  through "Rigenera stanza". A plan change (ADR-0010 and ADR-0013 amendments, a generator version); the expansion
+  chains and the halls, derived from the rooms' sizes, follow.
+- **Reflections: a probe per room** (P10): a cubemap captured at the room's build from its centre at eye height,
+  prefiltered for roughness and read by `pbr.frag` for the specular ambient in place of the hemisphere's, so the
+  parquet, the glass and the CRT's glass reflect the lamps and the neon; every golden moves.
+- **The arcade and the handhelds** (P11): the cabinets' marquees from the user's marquees (a marquee layer per item in
+  the arcade's arrays) in place of their generic words, flyers from fanart on the walls, a change machine, a patterned
+  carpet; the handheld stations lit from above, coloured boxes where the user has 3D boxes.
+- **Cover arrays at twice the resolution** (offered with the 4 GiB budget, not chosen): fronts of 512 x 376 in place of
+  256 x 188, the busiest floor's arrays from about 211 to about 844 MiB, sharper covers within arm's reach. A
+  `kCoverPipelineVersion` bump rebuilds the derived caches once, and the cache's bound on disk would rise with the
+  entries (an ADR-0011 amendment). Found in planning: ADR-0013 ("Memory") raised that bound to 2 GiB, but
+  `assets::kDefaultTextureCacheBytes` (`derived_texture_cache.hpp`), which `cover_loader.cpp` trims to, is still
+  512 MiB.
+
 ## Branding
 
 The logo and the executable's icon landed on 2026-11-07 (`docs/branding.md`, `scripts/branding.py`). Still open:

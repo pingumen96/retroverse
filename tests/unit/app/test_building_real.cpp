@@ -15,7 +15,7 @@
 //     so that the run waits for it), then the user's start again with the stamp it wrote;
 //   - a start in the busiest floor's largest room (--start-room, lockstep; the floor with the most placements in the
 //     stored plan, the first in the elevator's order on a tie: the computer floor on the reference machine): the
-//     floor's GPU memory at its peak within the acceptable 512 MiB, cold (its covers derived and stored in that run)
+//     floor's GPU memory at its peak within the acceptable 4 GiB, cold (its covers derived and stored in that run)
 //     then warm;
 //   - I4 step 7b: the derived covers emptied, a ride from the lobby to the busiest floor (the busiest of the others
 //   when
@@ -88,7 +88,7 @@ using Clock = std::chrono::steady_clock;
 
 /// The acceptable limits (docs/roadmap.md, "Acceptable performance").
 constexpr double kStartLimitMs = 5000.0;
-constexpr std::uint64_t kAcceptableGpuBytes = 512ull * 1024ull * 1024ull;
+constexpr std::uint64_t kAcceptableGpuBytes = 4096ull * 1024ull * 1024ull;
 
 std::optional<fs::path> pathVariable(const wchar_t* name) {
     const DWORD size = GetEnvironmentVariableW(name, nullptr, 0);
