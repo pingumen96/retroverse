@@ -2034,6 +2034,19 @@ Json worldToJson(const WorldRecord& world) {
                                 {"hovered", world.showcase.hovered},
                                 {"frontsResident", world.showcase.frontsResident}};
     }
+    if (world.lastPlayed.heroDressing > 0 || !world.lastPlayed.games.empty() || world.lastPlayed.builds > 0) {
+        Json games = Json::array();
+        for (const LastPlayedRoomRecord& game : world.lastPlayed.games) {
+            games.push_back(Json{{"room", game.room}, {"game", game.game}});
+        }
+        json["lastPlayed"] = Json{{"heroDressing", world.lastPlayed.heroDressing},
+                                  {"games", std::move(games)},
+                                  {"builds", world.lastPlayed.builds},
+                                  {"played", world.lastPlayed.played},
+                                  {"resited", world.lastPlayed.resited},
+                                  {"hiddenFrames", world.lastPlayed.hiddenFrames},
+                                  {"frontsResident", world.lastPlayed.frontsResident}};
+    }
     if (!world.edits.empty()) {
         json["edits"] = editsToJson(world.edits);
     }
@@ -2280,6 +2293,18 @@ WorldRecord readWorld(FieldReader& fields) {
         world.showcase.lastCard = showcase->string("lastCard");
         world.showcase.hovered = showcase->string("hovered");
         world.showcase.frontsResident = showcase->count("frontsResident");
+    }
+    // I12 step 3 (absent from earlier reports).
+    if (std::optional<FieldReader> lastPlayed = fields.optionalObject("lastPlayed")) {
+        world.lastPlayed.heroDressing = lastPlayed->count("heroDressing");
+        for (FieldReader& game : lastPlayed->optionalObjectArray("games")) {
+            world.lastPlayed.games.push_back(LastPlayedRoomRecord{game.string("room"), game.string("game")});
+        }
+        world.lastPlayed.builds = lastPlayed->count("builds");
+        world.lastPlayed.played = lastPlayed->count("played");
+        world.lastPlayed.resited = lastPlayed->count("resited");
+        world.lastPlayed.hiddenFrames = lastPlayed->count("hiddenFrames");
+        world.lastPlayed.frontsResident = lastPlayed->count("frontsResident");
     }
     world.edits = readEdits(fields);
     world.regenerations = readRegenerations(fields); // I4b step 6 (absent from earlier reports)

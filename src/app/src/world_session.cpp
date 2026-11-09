@@ -309,6 +309,9 @@ void WorldSession::update(ProductUi& product, bool idleWake, double timeSeconds)
     // I6 step 5: the hub's favourites showcase (world_showcase.cpp).
     followShowcase(product);
     showcaseRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
+    // I12 step 3: the console rooms' last-played proxies (world_last_played.cpp).
+    followLastPlayed(product);
+    lastPlayedRound(product, idleWake ? kIdleUploadBudget : gl::UploadBudget{}, !idleWake);
     showNotice(product, timeSeconds);
     syncDirectory(product);
     followRoomsAdded(product);   // I4b step 8
@@ -477,6 +480,16 @@ void WorldSession::syncCollections() {
             m_groups.push_back(group);
         }
     }
+    // I12 step 3: the console rooms' last-played proxies, unless hidden (their own loader serves them too).
+    if (!m_lastPlayedHidden) {
+        for (const LastPlayedProxy& proxy : m_lastPlayed) {
+            if (proxy.collection && !proxy.layout.items.empty()) {
+                for (const gl::StaticInstanceGroup* group : proxy.collection->groups()) {
+                    m_groups.push_back(group);
+                }
+            }
+        }
+    }
 }
 
 void WorldSession::coverRound(ProductUi& product, const gl::UploadBudget& budget, bool frame) {
@@ -611,7 +624,7 @@ bool WorldSession::settled(bool all) const {
     if (m_loader && !(all ? m_loader->done() : m_loader->viewDone())) {
         return false;
     }
-    if (!showcaseSettled()) {
+    if (!showcaseSettled() || !lastPlayedSettled()) {
         return false;
     }
     if (m_heroItem && m_heroes && m_loader && m_heroes->loading(m_loader->items()[m_heroItem->loaderItem].game)) {
@@ -644,6 +657,7 @@ void WorldSession::settle(ProductUi& product) {
         coverRound(product, kIdleUploadBudget, false);
         followShowcase(product);
         showcaseRound(product, kIdleUploadBudget, false);
+        lastPlayedRound(product, kIdleUploadBudget, false);
         showHero();
     }
     m_lockstepWaitMs += millisecondsSince(start);
@@ -871,6 +885,12 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     dropCollection();
     const std::size_t objects = build.scene->objects.size();
     const std::size_t lights = build.scene->lights.size();
+    // I12 step 3: the hero corners' lived-in sets of the floor (their pieces, "<room>/dressing:hero:<name>").
+    m_lastPlayedRecord.heroDressing = static_cast<std::uint64_t>(
+        std::count_if(build.scene->objects.begin(), build.scene->objects.end(), [](const scene::SceneObject& object) {
+            return object.id.find(std::string("/") + std::string(world::kHeroDressingObjectPrefix)) !=
+                   std::string::npos;
+        }));
     SceneShow show;
     show.keepWalker = keepWalker;
     show.walkerMove = walkerMoved;
@@ -979,6 +999,7 @@ bool WorldSession::showFloor(WorldBuild& build, bool keepWalker, std::optional<W
     startCoverLoader(build, std::move(shownLoader));
     startShowcase(build); // I6 step 5: the hub's favourites showcase, its content asked for
     keepShown(build); // I3 step 15b: the next live update compares with it
+    startLastPlayed(build); // I12 step 3: the console rooms' last-played proxies (the rooms shown kept)
     // The hero CRT of the scene just shown plays its room's games (bound with them by the scene's show).
     m_record.screenGames = screenGames.size();
     if (m_host.setScreenGames && screenRoom) {
@@ -1293,7 +1314,8 @@ void WorldSession::dropCollection() {
     m_loader.reset();
     m_interaction->clear();
     m_rooms.clear();
-    dropShowcase(); // I6 step 5
+    dropShowcase();   // I6 step 5
+    dropLastPlayed(); // I12 step 3
     syncCollections();
     m_shown.reset();
     m_launch.setPlan(nullptr);
@@ -1350,6 +1372,7 @@ void WorldSession::record(RunReport& report) const {
     }
     world.hoverChanges = m_interaction->hoverChanges();
     world.showcase = m_showcaseRecord; // I6 step 5
+    world.lastPlayed = m_lastPlayedRecord; // I12 step 3
     m_interaction->record(world.interaction);
     world.card = m_card.record();
     world.launch = m_launch.record();
