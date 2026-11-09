@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "ef7733368761d5d7745e97264e334abb9c2b415d",
+    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g10_snes_room_added_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "2e643550932c88f62d98a8f91738ca1d46c5cbd195710f267f7ecf63c9ce0d91",
+    "sha256": "2e5e35a44e8496f60990485aad14dbbecb476bf06ce89561a2accfc50285cc52",
     "width": 1920
   },
   "inputs": {
@@ -36,7 +36,7 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "8411ab797a7ec43a35451048a21a9164e2367291533db4cd7acb431ddf42dbde"
+      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
     }
   },
   "renderedOn": "2026-11-09",

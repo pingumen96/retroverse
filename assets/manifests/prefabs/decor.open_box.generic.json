@@ -1,0 +1,31 @@
+// A game's box lying open (I12 step 3, ADR-0021 §1): its inside and manual, never a cover.
+{
+  "schemaVersion": 1,
+  "id": "decor.open_box.generic",
+  "assetType": "decor",
+  "category": "box",
+  "role": "prop",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "open_box",
+    "params": {},
+    "scaleMeters": [0.28, 0.03, 0.19],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "media", "box", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

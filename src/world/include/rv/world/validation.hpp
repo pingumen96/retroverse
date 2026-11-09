@@ -137,6 +137,9 @@ inline constexpr std::int64_t kDoorwayEyeHeightMm = 1650;
 inline constexpr std::int64_t kFloorCoveringMaxHeightMm = 20;
 /// The hero corner's part that is the hero TV (room_template.hpp: exactly one per template).
 inline constexpr std::string_view kHeroTvPart = "crt";
+/// The parts of the hero corner's lived-in set among a room's drawn fixtures (I12 step 3, scene_builder.hpp's
+/// drawnFixtures()): "<hero socket>.dress-<name>", each judged as one of the corner's parts. No plan holds one.
+inline constexpr std::string_view kHeroDressingPartPrefix = "dress-";
 
 /// A fixture's box as the validation judges it (see the file comment: its prefab's bounds turned by its yaw about its
 /// pivot), in its room's frame, rounded outwards to whole millimetres: what the editor picks and outlines (I4b step 4).

@@ -8,6 +8,15 @@
   "id": "optical_era_lounge",
   "name": "OpticalEraLounge",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Wood_Walnut", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Brushed", "led": "MAT_Led_Green"},
+    "media_rack": {"wood": "MAT_Wood_Walnut", "metal": "MAT_Metal_Brushed",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Green"},
+    "pad": {"plastic_body": "MAT_Plastic_Black", "plastic_dark": "MAT_Plastic_Charcoal", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Metal_Brushed"},
+    "cushion": {"fabric": "MAT_Fabric_Slate_Weave"},
+    "open_box": {"body": "MAT_Plastic_Black", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Parquet_Dark", "wall": "MAT_Wall_Slate", "ceiling": "MAT_Wall_Slate",
                    "trim": "MAT_Metal_Graphite", "wainscot": "MAT_Wood_Walnut"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Metal_Graphite",
@@ -83,6 +92,39 @@
   // TV (the step's review: along the side it turned its back to the TV), large framed cinematic posters, glass showcases on walnut with a console for the sideboards;
   // the rug blue (its kind's material above).
   "furniture": {
+    // I12 step 3 (ADR-0021 §1): the hero corner as a lived-in set, beside its parts.
+    "heroDressing": [
+      {"name": "speaker-left", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.2}, "xMm": -715, "zMm": 250},
+      {"name": "speaker-right", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.2}, "xMm": 715, "zMm": 250},
+      {"name": "rack", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "furniture.media_rack.generic", "kind": "media_rack"},
+       "xMm": 1000, "zMm": 250},
+      {"name": "pad-rack", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "grip", "cableTo": [0.05, 0.0, -0.16], "sag": 0.0}, "xMm": 1000, "yMm": 420, "zMm": 220,
+       "yawCdeg": 34500},
+      {"name": "pad-rug", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "grip", "cableTo": [0.384, 0.0, -0.265], "sag": 0.0}, "xMm": 150, "yMm": 12, "zMm": 900,
+       "yawCdeg": 2000},
+      {"name": "side-table", "anchor": "armchair",
+       "prefab": {"manifest": "furniture.low_table.generic", "kind": "low_table"},
+       "params": {"shape": "round", "width": 0.45, "height": 0.55}, "xMm": 940, "zMm": 2560},
+      {"name": "table-lamp", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+       "params": {"height": 0.52, "baseRadius": 0.07, "shadeRadius": 0.1, "shadeHeight": 0.18, "shade": "drum"},
+       "materials": {"lamp_shade": "MAT_Pendant_Diffuser"}, "xMm": 940, "yMm": 550, "zMm": 2670},
+      {"name": "open-box", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.open_box.generic", "kind": "open_box"},
+       "params": {"style": "case", "width": 0.13, "depth": 0.18}, "xMm": 940, "yMm": 550, "zMm": 2445, "yawCdeg": 1000},
+      {"name": "cushion", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.cushion.generic", "kind": "cushion"},
+       "params": {"width": 0.38, "height": 0.1, "depth": 0.34}, "xMm": -620, "yMm": 440, "zMm": 2520,
+       "yawCdeg": 19500}],
     "heroParts": {
       "armchair": [
         {"prefab": {"manifest": "furniture.sofa.generic", "kind": "sofa"},

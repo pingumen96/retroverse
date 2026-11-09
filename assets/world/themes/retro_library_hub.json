@@ -8,6 +8,15 @@
   "id": "retro_library_hub",
   "name": "RetroLibraryHub",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Wood_Walnut", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Graphite", "led": "MAT_Led_Red"},
+    "media_rack": {"wood": "MAT_Wood_Walnut", "metal": "MAT_Metal_Graphite",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Green"},
+    "pad": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark"},
+    "cushion": {"fabric": "MAT_Fabric_Wool_Green_Weave"},
+    "open_box": {"body": "MAT_Cardboard_Box", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Warm", "ceiling": "MAT_Wall_Warm",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",

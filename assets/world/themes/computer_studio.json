@@ -7,6 +7,15 @@
   "id": "computer_studio",
   "name": "ComputerStudio",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Plastic_AgedIvory", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Graphite", "led": "MAT_Led_Red"},
+    "media_rack": {"wood": "MAT_Wood_Oak", "metal": "MAT_Plastic_AgedIvory",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Red"},
+    "pad": {"plastic_body": "MAT_Plastic_Black", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark"},
+    "cushion": {"fabric": "MAT_Fabric_Wool_Green_Weave"},
+    "open_box": {"body": "MAT_Cardboard_Box", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Study", "ceiling": "MAT_Wall_Study",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Oak"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
@@ -83,6 +92,21 @@
   // banker's lamps on card catalogues, cork boards and prints in turn, glass showcases of big-box software for the
   // sideboards; the rug a bottle green (its kind's material above).
   "furniture": {
+    // I12 step 3 (ADR-0021 §1): the hero corner as a lived-in set, beside its parts.
+    "heroDressing": [
+      {"name": "speaker-left", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": -715, "zMm": 250},
+      {"name": "speaker-right", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": 715, "zMm": 250},
+      {"name": "rack", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "furniture.media_rack.generic", "kind": "media_rack"},
+       "xMm": 1000, "zMm": 250},
+      {"name": "joystick", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "joystick", "cableTo": [0.0, 0.0, -0.3], "sag": 0.0}, "xMm": 760, "yMm": 740, "zMm": 1850,
+       "yawCdeg": 9000}],
     "heroParts": {
       "armchair": [
         {"prefab": {"manifest": "furniture.desk.generic", "kind": "desk"},

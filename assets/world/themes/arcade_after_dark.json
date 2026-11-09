@@ -10,6 +10,15 @@
   "id": "arcade_after_dark",
   "name": "ArcadeAfterDark",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Plastic_Charcoal", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Brushed", "led": "MAT_Led_Green"},
+    "media_rack": {"wood": "MAT_Plastic_Charcoal", "metal": "MAT_Metal_Graphite",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Red"},
+    "pad": {"plastic_body": "MAT_Plastic_Charcoal", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Plastic_Charcoal"},
+    "cushion": {"fabric": "MAT_Fabric_Teal_Weave"},
+    "open_box": {"body": "MAT_Plastic_Black", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Herringbone_Dark", "wall": "MAT_Wall_Night", "ceiling": "MAT_Wall_Night",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Metal_Graphite", "wood_secondary": "MAT_Plastic_Black",

@@ -10,6 +10,15 @@
   "id": "classic_16bit_warm",
   "name": "Classic16BitWarm",
   "kinds": {
+    // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
+    "floor_speaker": {"cabinet": "MAT_Wood_Walnut", "grille": "MAT_Speaker_Grille",
+                      "trim": "MAT_Metal_Graphite", "led": "MAT_Led_Red"},
+    "media_rack": {"wood": "MAT_Wood_Walnut", "metal": "MAT_Metal_Graphite",
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Green"},
+    "pad": {"plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
+    "low_table": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark"},
+    "cushion": {"fabric": "MAT_Fabric_Wool_Green_Weave"},
+    "open_box": {"body": "MAT_Cardboard_Box", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Warm", "ceiling": "MAT_Wall_Warm",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     // Lit inside (I6 step 3): a warm strip under each board and its glow on the back panel.
@@ -100,6 +109,44 @@
   // I5 step 3 (ADR-0016 §5): the room's secondary TV, a walnut sideboard carrying a small ivory CRT (the kinds'
   // materials), in one of the sideboards' sockets (two in a room grown past 12 m); the other sideboards as planned.
   "furniture": {
+    // I12 step 3 (ADR-0021 §1): the hero corner as a lived-in set, beside its parts.
+    "heroDressing": [
+      {"name": "speaker-left", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": -715, "zMm": 250},
+      {"name": "speaker-right", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+       "params": {"width": 0.18}, "xMm": 715, "zMm": 250},
+      {"name": "rack", "anchor": "tv-cabinet",
+       "prefab": {"manifest": "furniture.media_rack.generic", "kind": "media_rack"},
+       "xMm": 1000, "zMm": 250},
+      {"name": "pad-rack", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "flat", "cableTo": [0.05, 0.0, -0.16], "sag": 0.0}, "xMm": 1000, "yMm": 420, "zMm": 220,
+       "yawCdeg": 34500},
+      {"name": "pad-rug", "anchor": "console", "prop": true,
+       "prefab": {"manifest": "decor.pad.generic", "kind": "pad"},
+       "params": {"style": "flat", "cableTo": [0.384, 0.0, -0.265], "sag": 0.0}, "xMm": 150, "yMm": 12, "zMm": 900,
+       "yawCdeg": 2000},
+      {"name": "coffee-table", "anchor": "armchair",
+       "prefab": {"manifest": "furniture.low_table.generic", "kind": "low_table"},
+       "params": {"shape": "rect", "width": 0.8, "depth": 0.42, "height": 0.42}, "xMm": -150, "zMm": 2400},
+      {"name": "magazines", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.magazine_stack.generic", "kind": "magazine_stack"},
+       "params": {"width": 0.22, "height": 0.05, "depth": 0.3}, "xMm": -360, "yMm": 420, "zMm": 2400, "yawCdeg": 800},
+      {"name": "open-box", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.open_box.generic", "kind": "open_box"},
+       "params": {"style": "tray"}, "xMm": 60, "yMm": 420, "zMm": 2390, "yawCdeg": 34000},
+      {"name": "side-table", "anchor": "armchair",
+       "prefab": {"manifest": "furniture.low_table.generic", "kind": "low_table"},
+       "params": {"shape": "round", "width": 0.45, "height": 0.55}, "xMm": -850, "zMm": 2770},
+      {"name": "table-lamp", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.lamp.floor.generic", "kind": "floor_lamp"},
+       "params": {"height": 0.52, "baseRadius": 0.07, "shadeRadius": 0.12, "shadeHeight": 0.18, "shade": "drum"},
+       "materials": {"lamp_shade": "MAT_Pendant_Diffuser"}, "xMm": -850, "yMm": 550, "zMm": 2800},
+      {"name": "cushion", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.cushion.generic", "kind": "cushion"},
+       "params": {"width": 0.36, "height": 0.1, "depth": 0.34}, "xMm": 810, "yMm": 440, "zMm": 2430, "yawCdeg": 21000}],
     "decoration": {
       "tv_cabinet": [
         {"prefab": {"manifest": "furniture.secondary_tv.generic", "kind": "secondary_tv"}}]

@@ -1,0 +1,33 @@
+// A game pad of original design with its cable (I12 step 3, ADR-0021 §1): a prop that never collides.
+{
+  "schemaVersion": 1,
+  "id": "decor.pad.generic",
+  "assetType": "decor",
+  "category": "controller",
+  "role": "prop",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "pad",
+    "params": {},
+    "scaleMeters": null,
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {
+      "cable": "Cable"
+    },
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "controller", "pad", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

@@ -1,0 +1,31 @@
+// The hero corner's floor speakers (I12 step 3, ADR-0021 §1): a cabinet with its grille, two driver rings and a power LED.
+{
+  "schemaVersion": 1,
+  "id": "decor.floor_speaker.generic",
+  "assetType": "decor",
+  "category": "speaker",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "floor_speaker",
+    "params": {},
+    "scaleMeters": [0.2, 0.72, 0.26],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "audio", "speaker", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

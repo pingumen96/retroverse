@@ -1173,6 +1173,281 @@
       ]
     },
     {
+      "id": "room:snes/dressing:hero:speaker-left",
+      "materials": {
+        "cabinet": "MAT_Wood_Walnut",
+        "grille": "MAT_Speaker_Grille",
+        "led": "MAT_Led_Red",
+        "trim": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "width": 0.18
+      },
+      "position": [
+        6.31,
+        0.0,
+        -11.37
+      ],
+      "prefab": "floor_speaker",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "room:snes/dressing:hero:speaker-right",
+      "materials": {
+        "cabinet": "MAT_Wood_Walnut",
+        "grille": "MAT_Speaker_Grille",
+        "led": "MAT_Led_Red",
+        "trim": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "width": 0.18
+      },
+      "position": [
+        7.74,
+        0.0,
+        -11.37
+      ],
+      "prefab": "floor_speaker",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "id": "room:snes/dressing:hero:rack",
+      "materials": {
+        "display": "MAT_Display_Amber",
+        "led": "MAT_Led_Green",
+        "metal": "MAT_Metal_Graphite",
+        "wood": "MAT_Wood_Walnut"
+      },
+      "params": {},
+      "position": [
+        8.025,
+        0.0,
+        -11.37
+      ],
+      "prefab": "media_rack",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:pad-rack",
+      "materials": {
+        "cable": "MAT_Cable_Rubber",
+        "plastic_body": "MAT_Plastic_Gray",
+        "plastic_dark": "MAT_Plastic_Black"
+      },
+      "params": {
+        "cableTo": [
+          0.05,
+          0.0,
+          -0.16
+        ],
+        "sag": 0.0,
+        "style": "flat"
+      },
+      "position": [
+        8.025,
+        0.42,
+        -11.4
+      ],
+      "prefab": "pad",
+      "rotationDeg": [
+        0.0,
+        345.0,
+        0.0
+      ]
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:pad-rug",
+      "materials": {
+        "cable": "MAT_Cable_Rubber",
+        "plastic_body": "MAT_Plastic_Gray",
+        "plastic_dark": "MAT_Plastic_Black"
+      },
+      "params": {
+        "cableTo": [
+          0.384,
+          0.0,
+          -0.265
+        ],
+        "sag": 0.0,
+        "style": "flat"
+      },
+      "position": [
+        7.175,
+        0.012,
+        -10.72
+      ],
+      "prefab": "pad",
+      "rotationDeg": [
+        0.0,
+        20.0,
+        0.0
+      ]
+    },
+    {
+      "id": "room:snes/dressing:hero:coffee-table",
+      "materials": {
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
+      },
+      "params": {
+        "depth": 0.42,
+        "height": 0.42,
+        "shape": "rect",
+        "width": 0.8
+      },
+      "position": [
+        6.875,
+        0.0,
+        -9.22
+      ],
+      "prefab": "low_table",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:magazines",
+      "materials": {
+        "cover": "MAT_Label_Print",
+        "paper": "MAT_Paper_Magazine"
+      },
+      "params": {
+        "depth": 0.3,
+        "height": 0.05,
+        "width": 0.22
+      },
+      "position": [
+        6.665,
+        0.42,
+        -9.22
+      ],
+      "prefab": "magazine_stack",
+      "rotationDeg": [
+        0.0,
+        8.0,
+        0.0
+      ],
+      "textures": {
+        "cover": {
+          "pattern": "cover",
+          "seed": 395889,
+          "title": "TURBO TIDES"
+        }
+      }
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:open-box",
+      "materials": {
+        "body": "MAT_Cardboard_Box",
+        "disc": "MAT_Disc_Silver",
+        "paper": "MAT_Paper_Magazine"
+      },
+      "params": {
+        "style": "tray"
+      },
+      "position": [
+        7.085,
+        0.42,
+        -9.23
+      ],
+      "prefab": "open_box",
+      "rotationDeg": [
+        0.0,
+        340.0,
+        0.0
+      ]
+    },
+    {
+      "id": "room:snes/dressing:hero:side-table",
+      "materials": {
+        "wood_primary": "MAT_Wood_Walnut",
+        "wood_secondary": "MAT_Wood_Varnished_Dark"
+      },
+      "params": {
+        "height": 0.55,
+        "shape": "round",
+        "width": 0.45
+      },
+      "position": [
+        6.175,
+        0.0,
+        -8.85
+      ],
+      "prefab": "low_table",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:table-lamp",
+      "materials": {
+        "lamp_shade": "MAT_Pendant_Diffuser",
+        "metal": "MAT_Metal_Graphite"
+      },
+      "params": {
+        "baseRadius": 0.07,
+        "height": 0.52,
+        "shade": "drum",
+        "shadeHeight": 0.18,
+        "shadeRadius": 0.12
+      },
+      "position": [
+        6.175,
+        0.55,
+        -8.82
+      ],
+      "prefab": "floor_lamp",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "collides": false,
+      "id": "room:snes/dressing:hero:cushion",
+      "materials": {
+        "fabric": "MAT_Fabric_Wool_Green_Weave"
+      },
+      "params": {
+        "depth": 0.34,
+        "height": 0.1,
+        "width": 0.36
+      },
+      "position": [
+        7.835,
+        0.44,
+        -9.19
+      ],
+      "prefab": "cushion",
+      "rotationDeg": [
+        0.0,
+        210.0,
+        0.0
+      ]
+    },
+    {
       "castsShadows": false,
       "collides": false,
       "id": "room:snes/dress:fx:dc02/l:0",

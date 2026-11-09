@@ -66,6 +66,32 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
                              {"plastic_bezel", "MAT_Plastic_Black"}, {"screen", std::string(kScreenMaterialName)},
                              {"plastic_dark", "MAT_Plastic_Black"}};
     }
+    // I12 step 3's hero corner set, in the classic pack's materials.
+    if (kind == "floor_speaker") {
+        return RoleMaterials{{"cabinet", "MAT_Wood_Walnut"},
+                             {"grille", "MAT_Speaker_Grille"},
+                             {"trim", "MAT_Metal_Graphite"},
+                             {"led", "MAT_Led_Red"}};
+    }
+    if (kind == "media_rack") {
+        return RoleMaterials{{"wood", "MAT_Wood_Walnut"},
+                             {"metal", "MAT_Metal_Graphite"},
+                             {"display", "MAT_Display_Amber"},
+                             {"led", "MAT_Led_Green"}};
+    }
+    if (kind == "pad") {
+        return RoleMaterials{
+            {"plastic_body", "MAT_Plastic_Gray"}, {"plastic_dark", "MAT_Plastic_Black"}, {"cable", "MAT_Cable_Rubber"}};
+    }
+    if (kind == "low_table") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"}, {"wood_secondary", "MAT_Wood_Varnished"}};
+    }
+    if (kind == "cushion") {
+        return RoleMaterials{{"fabric", "MAT_Fabric_Slate_Weave"}};
+    }
+    if (kind == "open_box") {
+        return RoleMaterials{{"body", "MAT_Plastic_Black"}, {"paper", "MAT_Paper_Print"}, {"disc", "MAT_Disc_Silver"}};
+    }
     if (kind == "console_cartridge") {
         return RoleMaterials{{"plastic_body", "MAT_Plastic_Gray"},
                              {"plastic_dark", "MAT_Plastic_Black"},
