@@ -6,13 +6,16 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
@@ -804,6 +807,44 @@ constexpr std::int64_t kStemRadiusMm = 8;
 /// The runner's thickness (a rug's is 12 mm).
 constexpr std::int64_t kRunnerThicknessMm = 8;
 
+/// I12 step 1 (ADR-0021 §1): the room's architecture beyond its room_shell. The picture rail's section; the
+/// wallpaper's and the frieze's skin over the plaster; the cornice's section under the ceiling; the beams' across it.
+constexpr std::int64_t kPictureRailHeightMm = 45;
+constexpr std::int64_t kPictureRailDepthMm = 28;
+constexpr std::int64_t kWallSkinDepthMm = 5;
+constexpr std::int64_t kCorniceHeightMm = 90;
+constexpr std::int64_t kCorniceDepthMm = 60;
+constexpr std::int64_t kBeamWidthMm = 180;
+constexpr std::int64_t kBeamDepthMm = 200;
+/// The beams stop this far short of the room's south wall.
+constexpr std::int64_t kBeamEndClearMm = 1000;
+/// The room_shell's casing around its doorway (geometry::RoomShellParams) and its wainscot's top (kShellWainscot).
+constexpr std::int64_t kDoorCasingMm = 70;
+constexpr std::int64_t kWainscotTopMm = 1000;
+static_assert(kShellWainscot * 1000.0 == static_cast<double>(kWainscotTopMm));
+/// Meters per uv unit: the damask's repeat, the troweled plaster's, wood's.
+constexpr double kWallpaperMetersPerTile = 1.0;
+constexpr double kPlasterMetersPerTile = 2.0;
+constexpr double kWoodMetersPerTile = 1.0;
+/// The pendants: a drum this wide and tall, closed by a diffuser below and a metal top, on a stem under a canopy.
+constexpr std::int64_t kPendantRadiusMm = 210;
+constexpr std::int64_t kPendantHeightMm = 220;
+constexpr std::int64_t kPendantDiscMm = 4;
+constexpr std::int64_t kPendantStemRadiusMm = 6;
+constexpr std::int64_t kPendantCanopyRadiusMm = 55;
+constexpr std::int64_t kPendantCanopyHeightMm = 25;
+constexpr int kPendantSegments = 32;
+/// The look pendant near the doorway: its light hangs this far under the ceiling (the plan's pendant's height), this
+/// far into the room from the doorway's middle, the drum's bottom this far under it; its share of the profile's
+/// pendant.
+constexpr std::int64_t kLookPendantBelowCeilingMm = 1100;
+constexpr std::int64_t kLookPendantFromDoorwayMm = 1500;
+constexpr std::int64_t kLookPendantDrumBelowLightMm = 20;
+constexpr double kLookPendantShare = 0.5;
+/// The spot cans over the display cases (the spots' cans above) hang their lens this high: small warm points at the top
+/// of the doorway's view, as the concept's ceiling lights, where drums there filled it (I12 step 1's review).
+constexpr std::int64_t kDisplayCanBottomMm = 2350;
+
 /// A primitive of the pack's room dressing: no collision, no shadow.
 json dressingPrimitive(std::string id, std::string_view primitive, json params, json position, double yawDeg,
                        const std::string& material) {
@@ -817,11 +858,278 @@ json dressingPrimitive(std::string id, std::string_view primitive, json params, 
                 {"collides", false}};
 }
 
+/// One wall's run along it (millimetres: x for the north and south walls, z for the west and east ones).
+struct WallRun {
+    Wall wall = Wall::North;
+    std::int64_t from = 0;
+    std::int64_t to = 0;
+};
+
+/// The room's four walls: the north and south ones corner to corner, the west and east ones between them inset by
+/// `inset` (a band's depth), so that the bands of one height meet at the corners without overlapping.
+std::array<WallRun, 4> wallRuns(const Room& room, std::int64_t inset) {
+    return {WallRun{Wall::North, room.minXMm, room.maxXMm}, WallRun{Wall::South, room.minXMm, room.maxXMm},
+            WallRun{Wall::West, room.minZMm + inset, room.maxZMm - inset},
+            WallRun{Wall::East, room.minZMm + inset, room.maxZMm - inset}};
+}
+
+/// A box on `wall`'s inner face from `from` to `to` along it, `depth` proud of it, from `bottom` to `top` above the
+/// floor, of `material`: its uvs along the grain (wood), or in meters anchored at its place (paper, plaster: the pieces
+/// of a wall, and the walls at one height, tile on without a seam).
+json wallBand(std::string id, const Room& room, Wall wall, std::int64_t from, std::int64_t to, std::int64_t depth,
+              std::int64_t bottom, std::int64_t top, const std::string& material, bool grain, double metersPerTile) {
+    const double along = static_cast<double>(from + to) / 2000.0;
+    const double y = static_cast<double>(bottom + top) / 2000.0;
+    const double length = meters(to - from);
+    const double height = meters(top - bottom);
+    json position;
+    json size;
+    switch (wall) {
+    case Wall::North:
+        position = vec3Json(along, y, static_cast<double>(2 * room.minZMm + depth) / 2000.0);
+        size = vec3Json(length, height, meters(depth));
+        break;
+    case Wall::South:
+        position = vec3Json(along, y, static_cast<double>(2 * room.maxZMm - depth) / 2000.0);
+        size = vec3Json(length, height, meters(depth));
+        break;
+    case Wall::West:
+        position = vec3Json(static_cast<double>(2 * room.minXMm + depth) / 2000.0, y, along);
+        size = vec3Json(meters(depth), height, length);
+        break;
+    case Wall::East:
+    case Wall::None:
+        position = vec3Json(static_cast<double>(2 * room.maxXMm - depth) / 2000.0, y, along);
+        size = vec3Json(meters(depth), height, length);
+        break;
+    }
+    json params{{"size", std::move(size)}, {"uv", grain ? "grain" : "meters"}, {"metersPerTile", metersPerTile}};
+    if (!grain) {
+        params["uvOrigin"] = position;
+    }
+    return dressingPrimitive(std::move(id), "box", std::move(params), std::move(position), 0.0, material);
+}
+
+/// The band from `bottom` to `top` along every wall (wallRuns(), inset by its depth), split around the doorway's
+/// opening and casing where it reaches them, the piece over the casing up to its top.
+void addWallBand(json& objects, std::string_view id, const Room& room, const Doorway& door, std::int64_t depth,
+                 std::int64_t bottom, std::int64_t top, const std::string& material, bool grain, double metersPerTile) {
+    if (top - bottom < 5) {
+        return;
+    }
+    const std::int64_t doorTop = door.heightMm + kDoorCasingMm;
+    for (const WallRun& run : wallRuns(room, depth)) {
+        const std::string wallId = std::string(id) + "-" + std::string(toString(run.wall));
+        if (door.wall != run.wall || bottom >= doorTop) {
+            objects.push_back(
+                wallBand(wallId, room, run.wall, run.from, run.to, depth, bottom, top, material, grain, metersPerTile));
+            continue;
+        }
+        const std::int64_t gapFrom = door.offsetMm - door.widthMm / 2 - kDoorCasingMm;
+        const std::int64_t gapTo = door.offsetMm + door.widthMm / 2 + kDoorCasingMm;
+        if (gapFrom - run.from >= 10) {
+            objects.push_back(wallBand(wallId + "/a", room, run.wall, run.from, gapFrom, depth, bottom, top, material,
+                                       grain, metersPerTile));
+        }
+        if (run.to - gapTo >= 10) {
+            objects.push_back(wallBand(wallId + "/b", room, run.wall, gapTo, run.to, depth, bottom, top, material,
+                                       grain, metersPerTile));
+        }
+        if (top - std::max(bottom, doorTop) >= 5) {
+            objects.push_back(wallBand(wallId + "/over", room, run.wall, gapFrom, gapTo, depth,
+                                       std::max(bottom, doorTop), top, material, grain, metersPerTile));
+        }
+    }
+}
+
+/// The z of the room's beams (ShellDressing): every beamPitchMm from its north wall while kBeamEndClearMm short of its
+/// south wall; none without beams.
+std::vector<std::int64_t> beamPlaces(const Room& room, const ShellDressing& shell) {
+    std::vector<std::int64_t> places;
+    if (shell.beams.empty() || shell.beamPitchMm <= 0) {
+        return places;
+    }
+    for (std::int64_t z = room.minZMm + shell.beamPitchMm; z <= room.maxZMm - kBeamEndClearMm; z += shell.beamPitchMm) {
+        places.push_back(z);
+    }
+    return places;
+}
+
+/// The room's architecture beyond its room_shell (I12 step 1, ADR-0021 §1): the wallpaper from the wainscot's rail up
+/// to the picture rail, the rail, the frieze above it, the cornice under the ceiling, the beams across it.
+void addShellDressing(json& objects, const Room& room, const Doorway& door, const ShellDressing& shell) {
+    const std::int64_t height = room.heightMm;
+    const std::int64_t corniceBottom = shell.cornice.empty() ? height : height - kCorniceHeightMm;
+    const bool rail = !shell.rail.empty() && shell.railYMm - kPictureRailHeightMm > kWainscotTopMm &&
+                      shell.railYMm + 50 < corniceBottom;
+    const std::int64_t railBottom = shell.railYMm - kPictureRailHeightMm;
+    if (!shell.wallpaper.empty()) {
+        addWallBand(objects, "dressing:shell/wallpaper", room, door, kWallSkinDepthMm, kWainscotTopMm,
+                    rail ? railBottom : corniceBottom, shell.wallpaper, false, kWallpaperMetersPerTile);
+    }
+    if (rail) {
+        addWallBand(objects, "dressing:shell/rail", room, door, kPictureRailDepthMm, railBottom, shell.railYMm,
+                    shell.rail, true, kWoodMetersPerTile);
+        if (!shell.frieze.empty()) {
+            addWallBand(objects, "dressing:shell/frieze", room, door, kWallSkinDepthMm, shell.railYMm, corniceBottom,
+                        shell.frieze, false, kPlasterMetersPerTile);
+        }
+    }
+    if (!shell.cornice.empty()) {
+        addWallBand(objects, "dressing:shell/cornice", room, door, kCorniceDepthMm, corniceBottom, height,
+                    shell.cornice, true, kWoodMetersPerTile);
+    }
+    for (const std::int64_t z : beamPlaces(room, shell)) {
+        objects.push_back(dressingPrimitive(
+            "dressing:shell/beam:" + std::to_string(z - room.minZMm), "box",
+            json{{"size", vec3Json(meters(room.maxXMm - room.minXMm), meters(kBeamDepthMm), meters(kBeamWidthMm))},
+                 {"uv", "grain"},
+                 {"metersPerTile", kWoodMetersPerTile}},
+            vec3Json(static_cast<double>(room.minXMm + room.maxXMm) / 2000.0,
+                     static_cast<double>(2 * height - kBeamDepthMm) / 2000.0, meters(z)),
+            0.0, shell.beams));
+    }
+}
+
+/// Where the look pendant hangs (I12 step 1): kLookPendantFromDoorwayMm into the room from the doorway's middle; none
+/// for a room without a doorway.
+std::optional<std::pair<std::int64_t, std::int64_t>> lookPendantPlace(const Room& room, const Doorway& door) {
+    switch (door.wall) {
+    case Wall::North:
+        return std::pair{door.offsetMm, room.minZMm + kLookPendantFromDoorwayMm};
+    case Wall::South:
+        return std::pair{door.offsetMm, room.maxZMm - kLookPendantFromDoorwayMm};
+    case Wall::West:
+        return std::pair{room.minXMm + kLookPendantFromDoorwayMm, door.offsetMm};
+    case Wall::East:
+        return std::pair{room.maxXMm - kLookPendantFromDoorwayMm, door.offsetMm};
+    case Wall::None:
+        break;
+    }
+    return std::nullopt;
+}
+
+/// What a lamp hanging at `z` hangs from: the ceiling or, where a beam passes over it within `reach`, the beam's
+/// underside.
+std::int64_t ceilingOver(const Room& room, const std::vector<std::int64_t>& beams, std::int64_t z, std::int64_t reach) {
+    for (const std::int64_t beam : beams) {
+        if (std::abs(z - beam) <= kBeamWidthMm / 2 + reach) {
+            return room.heightMm - kBeamDepthMm;
+        }
+    }
+    return room.heightMm;
+}
+
+/// A drum lamp hanging at (x, z), its drum's bottom `bottom` above the floor, from the ceiling or, under a beam, from
+/// the beam's underside: a canopy, a stem, the drum's shade (open, lit from inside), its metal top and the diffuser
+/// closing it below. Left out where the ceiling (or the beam) leaves it no room.
+void addPendant(json& objects, const std::string& id, const Room& room, const std::vector<std::int64_t>& beams,
+                const PendantDressing& lamps, std::int64_t x, std::int64_t z, std::int64_t bottom) {
+    const std::int64_t ceiling = ceilingOver(room, beams, z, kPendantCanopyRadiusMm);
+    const std::int64_t top = bottom + kPendantHeightMm;
+    const std::int64_t stemTop = ceiling - kPendantCanopyHeightMm;
+    if (stemTop - top < 20) {
+        return;
+    }
+    const auto disc = [&](std::string suffix, std::int64_t radius, std::int64_t centreY2, const std::string& material,
+                          std::int64_t heightMm, bool capped) {
+        objects.push_back(dressingPrimitive(id + suffix, "cylinder",
+                                            json{{"radius", meters(radius)},
+                                                 {"height", meters(heightMm)},
+                                                 {"segments", kPendantSegments},
+                                                 {"capped", capped}},
+                                            vec3Json(meters(x), static_cast<double>(centreY2) / 2000.0, meters(z)), 0.0,
+                                            material));
+    };
+    disc("/drum", kPendantRadiusMm, bottom + top, lamps.shade, kPendantHeightMm, false);
+    disc("/top", kPendantRadiusMm, 2 * top - kPendantDiscMm, lamps.metal, kPendantDiscMm, true);
+    disc("/diffuser", kPendantRadiusMm - 6, 2 * bottom + 3 * kPendantDiscMm, lamps.diffuser, kPendantDiscMm, true);
+    disc("/stem", kPendantStemRadiusMm, top + stemTop, lamps.metal, stemTop - top, true);
+    disc("/canopy", kPendantCanopyRadiusMm, stemTop + ceiling, lamps.metal, kPendantCanopyHeightMm, true);
+}
+
+/// A spot can hanging at (x, z), its lens's bottom `bottom` above the floor: the arcade's spots' can of the pack's
+/// metal, its lens the pendants' diffuser, on a stem from the ceiling or a beam's underside. Left out where they
+/// leave it no room.
+void addPendantCan(json& objects, const std::string& id, const Room& room, const std::vector<std::int64_t>& beams,
+                   const PendantDressing& lamps, std::int64_t x, std::int64_t z, std::int64_t bottom) {
+    const std::int64_t ceiling = ceilingOver(room, beams, z, kPendantStemRadiusMm);
+    const std::int64_t canBottom = bottom + kLensHeightMm;
+    const std::int64_t top = canBottom + kCanHeightMm;
+    if (ceiling - top < 20) {
+        return;
+    }
+    const auto part = [&](std::string suffix, std::int64_t radius, std::int64_t from, std::int64_t to,
+                          const std::string& material, int segments) {
+        objects.push_back(
+            dressingPrimitive(id + suffix, "cylinder",
+                              json{{"radius", meters(radius)}, {"height", meters(to - from)}, {"segments", segments}},
+                              vec3Json(meters(x), static_cast<double>(from + to) / 2000.0, meters(z)), 0.0, material));
+    };
+    part("/can", kCanRadiusMm, canBottom, top, lamps.metal, 20);
+    part("/lens", kLensRadiusMm, bottom, canBottom, lamps.diffuser, 20);
+    part("/stem", kPendantStemRadiusMm, top, ceiling, lamps.metal, 8);
+}
+
+/// The pack's pendants (I12 step 1, ADR-0021 §1): the look pendant's drum near the doorway (its light:
+/// lookPendantLight()) and a spot can over each display fixture standing free of the walls (its accent light, the
+/// profile's case light, is the can's).
+void addPendants(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data,
+                 const PendantDressing& lamps) {
+    const RoomDressing& dressing = data.theme.dressing;
+    const std::vector<std::int64_t> beams =
+        dressing.shell ? beamPlaces(room, *dressing.shell) : std::vector<std::int64_t>{};
+    if (const auto place = lookPendantPlace(room, data.roomTemplate.doorway)) {
+        addPendant(objects, "dressing:pendant:doorway", room, beams, lamps, place->first, place->second,
+                   room.heightMm - kLookPendantBelowCeilingMm - kLookPendantDrumBelowLightMm);
+    }
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room.id || fixture.role != FixtureRole::Display) {
+            continue;
+        }
+        // Standing free: its back on no wall (a wall shelf hangs on one).
+        const auto [backX, backZ] = turned(0, -fixture.depthMm / 2, fixture.yawCdeg);
+        const std::int64_t x = fixture.xMm + backX;
+        const std::int64_t z = fixture.zMm + backZ;
+        if (x - room.minXMm <= kAgainstWallMm || room.maxXMm - x <= kAgainstWallMm ||
+            z - room.minZMm <= kAgainstWallMm || room.maxZMm - z <= kAgainstWallMm) {
+            continue;
+        }
+        addPendantCan(objects, "dressing:pendant:" + fixture.id.localText(), room, beams, lamps, fixture.xMm,
+                      fixture.zMm, kDisplayCanBottomMm);
+    }
+}
+
+/// The look pendant's light (I12 step 1): a point of the profile's pendant role (the pack's tint) at kLookPendantShare
+/// of its intensity, under the ceiling near the doorway; none without the pack's pendants or a doorway.
+std::optional<json> lookPendantLight(const Room& room, const SceneData& data) {
+    if (!data.theme.dressing.pendants) {
+        return std::nullopt;
+    }
+    const auto place = lookPendantPlace(room, data.roomTemplate.doorway);
+    if (!place) {
+        return std::nullopt;
+    }
+    const LightStyle& style = data.lighting.pendant;
+    return json{{"name", "look:pendant"},
+                {"type", "point"},
+                {"position", pointJson(place->first, room.heightMm - kLookPendantBelowCeilingMm, place->second)},
+                {"color", style.color},
+                {"intensity", rounded(style.intensity * kLookPendantShare, 1000.0)},
+                {"range", style.range}};
+}
+
 /// The pack's dressing of `room`'s upper walls, ceiling and floor (I6 step 6's review, room_look.hpp's
 /// "roomDressing"), in the room's frame: the cove strips, the pictures over the fixtures against a wall, the spots'
-/// cans, the sign's pictogram, the runner to the hero corner.
+/// cans, the sign's pictogram, the runner to the hero corner; since I12 step 1 the room's architecture and pendants.
 void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data) {
     const RoomDressing& dressing = data.theme.dressing;
+    if (const std::optional<ShellDressing>& shell = dressing.shell) {
+        addShellDressing(objects, room, data.roomTemplate.doorway, *shell);
+    }
+    if (const std::optional<PendantDressing>& pendants = dressing.pendants) {
+        addPendants(objects, plan, room, data, *pendants);
+    }
     if (const std::optional<CoveStrip>& cove = dressing.cove; cove && cove->yMm + kCoveHeightMm < room.heightMm) {
         const std::int64_t length = room.maxZMm - room.minZMm - 2 * kCoveCornerMm;
         const double centreZ = meters((room.minZMm + room.maxZMm) / 2);
@@ -1382,6 +1690,12 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                 lights.push_back(std::move(light));
             }
         }
+    }
+    // The look pendant's light near the doorway (I12 step 1), last: it takes a slot the plan's lights and the accents
+    // leave, never one of theirs (a display case or the featured shelf left unlit, I12 step 1's review); a room whose
+    // lights fill the limit shows its drum by its own glow.
+    if (std::optional<json> look = lookPendantLight(*room, data); look && lights.size() < kMaxSceneLights) {
+        lights.push_back(std::move(*look));
     }
 
     build.sceneFile = json{{"schemaVersion", scene::kSceneSchemaVersion},

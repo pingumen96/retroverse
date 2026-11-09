@@ -1,6 +1,7 @@
 // The empty room's shell (I3 step 10b, world::shellSceneDescription): what the app shows while the room is made or when
 // no plan can be shown. The room of the template at its base size with its own surfaces, environment and doorway
-// camera, as a plan's room has them, the pendant every plan has, and nothing else.
+// camera, as a plan's room has them, the pendant every plan has and, since I12 step 1, the built-in pack's dressing of
+// the room (its architecture, the look pendant near the doorway and its light), and nothing else.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -22,13 +23,25 @@ TEST_CASE("world/shell_scene: the template's empty room, as a plan's room is dra
     const auto shell = rv::world::shellSceneDescription(room, *roomTemplate);
     REQUIRE(shell.has_value());
     CHECK(shell->name == "room:snes");
-    REQUIRE(shell->objects.size() == 1);
+    REQUIRE_FALSE(shell->objects.empty());
     CHECK(shell->objects.front().id == "room");
     CHECK(shell->objects.front().kind == "room_shell");
-    REQUIRE(shell->lights.size() == 1);
+    // The rest is the pack's dressing: the walls' bands and the beams, the pendant near the doorway (no display case:
+    // no other pendant).
+    for (std::size_t i = 1; i < shell->objects.size(); ++i) {
+        INFO(shell->objects[i].id);
+        CHECK((shell->objects[i].id.starts_with("dressing:shell/") ||
+               shell->objects[i].id.starts_with("dressing:pendant:doorway/")));
+        CHECK_FALSE(shell->objects[i].collides);
+        CHECK_FALSE(shell->objects[i].castsShadows);
+    }
+    REQUIRE(shell->lights.size() == 2);
     CHECK(shell->lights.front().name == "fx:room.pendant");
     CHECK(shell->lights.front().type == rv::scene::LightType::Point);
     CHECK_FALSE(shell->lights.front().castsShadows);
+    CHECK(shell->lights.back().name == "look:pendant");
+    CHECK(shell->lights.back().type == rv::scene::LightType::Point);
+    CHECK_FALSE(shell->lights.back().castsShadows);
 
     // The room of a plan of the base size (no title: no growth) has the same shell, the same pendant, the same
     // environment and the same camera.

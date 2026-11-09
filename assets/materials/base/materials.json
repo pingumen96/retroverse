@@ -65,6 +65,20 @@
       "metallicRoughnessTexture": "procedural:oak_planks/metallicRoughness",
       "normalTexture": "procedural:oak_planks/normal"
     },
+    // I12 step 1 (ADR-0021 §1): oak blocks in a herringbone, for the 90s collector's and the handhelds' rooms (the
+    // parquet's tint) and the arcade's (the dark stain's).
+    "MAT_Floor_Herringbone": {
+      "baseColor": "#D2C3BA", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:herringbone_parquet/baseColor",
+      "metallicRoughnessTexture": "procedural:herringbone_parquet/metallicRoughness",
+      "normalTexture": "procedural:herringbone_parquet/normal"
+    },
+    "MAT_Floor_Herringbone_Dark": {
+      "baseColor": "#8A7C76", "metallic": 0.0, "roughness": 1.0,
+      "baseColorTexture": "procedural:herringbone_parquet/baseColor",
+      "metallicRoughnessTexture": "procedural:herringbone_parquet/metallicRoughness",
+      "normalTexture": "procedural:herringbone_parquet/normal"
+    },
 
     "MAT_Concrete_Warm": { "baseColor": "#857B70", "metallic": 0.0, "roughness": 0.92 },
     // Smoky grey-brown paint #383735 over troweled plaster, matte.
@@ -125,6 +139,40 @@
       "baseColor": "#40324A", "metallic": 0.0, "roughness": 1.0,
       "metallicRoughnessTexture": "procedural:painted_plaster/metallicRoughness",
       "normalTexture": "procedural:painted_plaster/normal"
+    },
+    // I12 step 1: the rooms' wallpaper between the wainscot and the picture rail, per theme pack: the damask tinted
+    // with the pack's plaster divided by the surface's mean (0.884, in linear light), so that the paper is the
+    // plaster's colour, as bright and no more saturated (the sign and the CRT stay the room's most saturated things,
+    // style §3.1; the step's review). Matte paper, satin ink (the surface's roughness times 0.95).
+    "MAT_Wallpaper_Warm": {
+      "baseColor": "#413733", "metallic": 0.0, "roughness": 0.95,
+      "baseColorTexture": "procedural:wallpaper_damask/baseColor",
+      "metallicRoughnessTexture": "procedural:wallpaper_damask/metallicRoughness",
+      "normalTexture": "procedural:wallpaper_damask/normal"
+    },
+    "MAT_Wallpaper_Mauve": {
+      "baseColor": "#493D3E", "metallic": 0.0, "roughness": 0.95,
+      "baseColorTexture": "procedural:wallpaper_damask/baseColor",
+      "metallicRoughnessTexture": "procedural:wallpaper_damask/metallicRoughness",
+      "normalTexture": "procedural:wallpaper_damask/normal"
+    },
+    "MAT_Wallpaper_Slate": {
+      "baseColor": "#2C3343", "metallic": 0.0, "roughness": 0.95,
+      "baseColorTexture": "procedural:wallpaper_damask/baseColor",
+      "metallicRoughnessTexture": "procedural:wallpaper_damask/metallicRoughness",
+      "normalTexture": "procedural:wallpaper_damask/normal"
+    },
+    "MAT_Wallpaper_Cream": {
+      "baseColor": "#50463C", "metallic": 0.0, "roughness": 0.95,
+      "baseColorTexture": "procedural:wallpaper_damask/baseColor",
+      "metallicRoughnessTexture": "procedural:wallpaper_damask/metallicRoughness",
+      "normalTexture": "procedural:wallpaper_damask/normal"
+    },
+    "MAT_Wallpaper_Study": {
+      "baseColor": "#3E3E31", "metallic": 0.0, "roughness": 0.95,
+      "baseColorTexture": "procedural:wallpaper_damask/baseColor",
+      "metallicRoughnessTexture": "procedural:wallpaper_damask/metallicRoughness",
+      "normalTexture": "procedural:wallpaper_damask/normal"
     },
     // The optical era's halls: the halls' plaster towards its rooms' blue-grey, still warm enough to read as the
     // museum's gallery.
@@ -235,6 +283,40 @@
     "MAT_Fabric_Vinyl_Purple": { "baseColor": "#5A3E86", "metallic": 0.0, "roughness": 0.6 },
     "MAT_Fabric_Vinyl_Red": { "baseColor": "#7A2A33", "metallic": 0.0, "roughness": 0.4 },
     "MAT_Fabric_Wool_Green": { "baseColor": "#33493B", "metallic": 0.0, "roughness": 0.9 },
+    // I12 step 1: the upholstery of the armchairs, sofas and chairs up close, their fabric uvs in meters (0.5 m per
+    // repeat): the woven fabrics and the grained leather, their colours a little lighter than the plain ones' (the
+    // weave's mean is 0.92 of its material's, the grain's 0.92), their roughness a little higher (the surfaces' are
+    // under 1). The plain materials stay for the stools, bean bags, cushions and the hub's seats.
+    "MAT_Fabric_Sofa_Weave": {
+      "baseColor": "#6C4045", "metallic": 0.0, "roughness": 0.93,
+      "baseColorTexture": "procedural:fabric_weave/baseColor",
+      "metallicRoughnessTexture": "procedural:fabric_weave/metallicRoughness",
+      "normalTexture": "procedural:fabric_weave/normal"
+    },
+    "MAT_Fabric_Teal_Weave": {
+      "baseColor": "#315957", "metallic": 0.0, "roughness": 0.93,
+      "baseColorTexture": "procedural:fabric_weave/baseColor",
+      "metallicRoughnessTexture": "procedural:fabric_weave/metallicRoughness",
+      "normalTexture": "procedural:fabric_weave/normal"
+    },
+    "MAT_Fabric_Slate_Weave": {
+      "baseColor": "#3C4959", "metallic": 0.0, "roughness": 0.93,
+      "baseColorTexture": "procedural:fabric_weave/baseColor",
+      "metallicRoughnessTexture": "procedural:fabric_weave/metallicRoughness",
+      "normalTexture": "procedural:fabric_weave/normal"
+    },
+    "MAT_Fabric_Wool_Green_Weave": {
+      "baseColor": "#354C3D", "metallic": 0.0, "roughness": 0.93,
+      "baseColorTexture": "procedural:fabric_weave/baseColor",
+      "metallicRoughnessTexture": "procedural:fabric_weave/metallicRoughness",
+      "normalTexture": "procedural:fabric_weave/normal"
+    },
+    "MAT_Fabric_Leather_Grain": {
+      "baseColor": "#2E2724", "metallic": 0.0, "roughness": 0.6,
+      "baseColorTexture": "procedural:leather/baseColor",
+      "metallicRoughnessTexture": "procedural:leather/metallicRoughness",
+      "normalTexture": "procedural:leather/normal"
+    },
     // Ornamental medallion rug in the style palette (bordeaux #683D42 family, navy, cream, muted gold): a picture over
     // the rug's top face (uv 0..1), designed for the rug prefab's default 2.4 x 1.6 m.
     "MAT_Carpet_Ornate": {
@@ -428,6 +510,13 @@
       "shading": "unlit", "baseColor": "#FFC890", "emissiveStrength": 1.0, "alpha": 0.5, "alphaMode": "blend",
       "baseColorTexture": "procedural:shelfglow/baseColor"
     },
+    // I12 step 1: the optical-era lounge's cove on its picture rail, a cold blue (style §3's accent #4C8BC9 brought up
+    // to a lit strip), and its light on the wall above and below it.
+    "MAT_Cove_Blue": { "shading": "unlit", "baseColor": "#5AA0E6", "emissiveStrength": 2.2 },
+    "MAT_Cove_Wash_Blue": {
+      "shading": "unlit", "baseColor": "#4C8BD8", "emissiveStrength": 1.4, "alpha": 0.7, "alphaMode": "blend",
+      "baseColorTexture": "procedural:shelfglow/baseColor"
+    },
     "MAT_Lightbox": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.35 },
     "MAT_Can_Lens": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 1.2 },
     "MAT_Neon_Tube_Pink": { "shading": "unlit", "baseColor": "#F060B8", "emissiveStrength": 2.4 },
@@ -471,6 +560,18 @@
       "emissiveStrength": 2.5,
       "doubleSided": true
     },
+    // I12 step 1: the rooms' pendant lamps (ADR-0021 §1): a parchment drum glowing from the bulb inside it, closed
+    // below by a warm diffuser that blooms a little seen from under it. The one near the doorway lights the room; those
+    // over the display cases stand for the cases' accent light.
+    "MAT_Pendant_Shade": {
+      "baseColor": "#D9BE96",
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "emissive": "#FFC88A",
+      "emissiveStrength": 1.2,
+      "doubleSided": true
+    },
+    "MAT_Pendant_Diffuser": { "shading": "unlit", "baseColor": "#FFE0B8", "emissiveStrength": 2.2 },
     // The computer studio's lamps (I6 step 3, look.md: green-shaded lamps): a banker's green glass shade, the bulb's
     // warm light through it.
     "MAT_Lamp_Shade_Green": {

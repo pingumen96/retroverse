@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
+    "gitCommit": "7b952afb5612192ba86bc4106e654eb37abb6fce",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g19_secondary_tv_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "40e168a4e4d16b600c45d212cc99ae95c180fa3b28a08dec8e995d8e0fe4f63c",
+    "sha256": "36dc1f1d9a21b4ded6a1f77b7fda8b0e0ca74c2661ea6c729b7395be6a948298",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
+      "sha256": "9a610c1cde472f4138b53946937ef0a48d5e6c1aa0fe463e00db666fd458a282"
     }
   },
-  "renderedOn": "2026-10-30",
+  "renderedOn": "2026-11-08",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

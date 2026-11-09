@@ -53,7 +53,10 @@ Consolidated at the close of M0 (Gate A). Each item names where the current beha
 - **More lights per view:** the lights block holds 16 point/spot lights and one directional light; the test room uses
   14 (the ceiling key light, a pendant, a picture light on the right poster, the floor lamp's bulb and two shade cones,
   the table lamp's bulb and shade cone, the magenta accent, the sign's glow, the CRT's light on its cabinet, a spot per
-  shelf, the entrance washer). Real rooms and the hub need per-room light lists or clustered shading.
+  shelf, the entrance washer). Real rooms and the hub need per-room light lists or clustered shading. Found at I12
+  step 1: a room's scene holds at most 16 lights, and in most larger rooms (the golden plans' of 890 titles and
+  more) the plan's lights and the accents fill them, so the look pendant's drum near the doorway glows without a
+  light of its own. A room scene of more lights, packed per view as the floors' areas are, would give it one.
 - **More shadowed lights:** one key light per view casts shadows (M0 step 11). Rooms with several focal lights (the
   hub, a showcase spot, the floor lamp of the test room, whose corner its own unshadowed lights dominate, so it casts
   no visible shadow; no single key light can reach the lamp, the shelf and the TV at once) need a few shadowed lights

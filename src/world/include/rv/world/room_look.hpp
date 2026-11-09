@@ -88,10 +88,10 @@
 //   cabinet stood; the reader refuses an empty list without "crt" pieces, and the scene draws the part as planned
 //   whenever the CRT is not drawn as the pack's cabinet, I6 step 6's review). The "crt" (the room's video) is listed
 //   only as arcade cabinets ("arcade_cabinet" pieces, the first carrying a ScreenSurface: the room's video plays on
-//   it; one that does not is left out, the CRT drawn as planned): the hero cabinet of ADR-0014 §6, a part substitution by the arcade room's pack, whose kind it is. Both the "crt"'s
-//   pieces and a part left out apply in the arcade room only (its hero corner holds no console): another room drawn
-//   with the pack keeps its CRT, TV cabinet and console as planned; a decoration
-//   kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
+//   it; one that does not is left out, the CRT drawn as planned): the hero cabinet of ADR-0014 §6, a part substitution
+//   by the arcade room's pack, whose kind it is. Both the "crt"'s pieces and a part left out apply in the arcade room
+//   only (its hero corner holds no console): another room drawn with the pack keeps its CRT, TV cabinet and console as
+//   planned; a decoration kind's list is a weighted choice (weights from 0 to 1, one at least above 0: the share of
 //   that kind's sockets each piece takes, drawn from the socket's seed), each piece standing against its socket's back
 //   edge, centred across it, at the plan's mount height. These replace step 3's "decorationWeights", which nothing
 //   read: the weights are the variants' (ThemeFurniture). A piece that leaves its footprint where it is drawn is not
@@ -122,6 +122,13 @@
 //   "heightMm", "pattern", "material"} (a lit pictogram on the hero corner's sign's right, framed as the sign),
 //   "cardPerSlot": true (a display case's empty level a riser card per slot, the item's size)}: a look
 //   of the room's upper walls, ceiling and floor, never colliding nor casting shadows (scene_builder.hpp).
+//   Since I12 step 1 (ADR-0021 §1), also optional: "shell": {"railYMm", "rail", "wallpaper", "frieze", "cornice",
+//   "beams", "beamPitchMm"} (the room's architecture beyond its room_shell: a picture rail whose top stands railYMm
+//   above the floor, wallpaper on the walls between the wainscot and the rail, a frieze above the rail up to the
+//   cornice, a cornice under the ceiling, beams across the ceiling every beamPitchMm from the north wall; each drawn
+//   when the pack names its material) and "pendants": {"shade", "diffuser", "metal"} (lamps hung from the ceiling:
+//   a drum near the doorway with a light of its own, the profile's pendant role, in a slot the plan's lights and the
+//   accents leave free, and a spot can over each display fixture standing free, whose accent light is the can's).
 
 #include <array>
 #include <cstdint>
@@ -335,6 +342,37 @@ struct SignIcon {
     bool operator==(const SignIcon&) const = default;
 };
 
+/// The room's architecture beyond its room_shell (a pack's "roomDressing" "shell", I12 step 1, ADR-0021 §1), each part
+/// drawn when the pack names its material ("": none): a picture rail, wallpaper between the wainscot and the rail, a
+/// frieze above the rail, a cornice under the ceiling and beams across it.
+struct ShellDressing {
+    /// The picture rail's top above the floor; above the doorway's casing, below the cornice.
+    std::int64_t railYMm = 2700;
+    std::string rail;
+    /// On the walls from the wainscot's rail up to the picture rail (or up to the cornice without a rail).
+    std::string wallpaper;
+    /// On the walls above the picture rail up to the cornice.
+    std::string frieze;
+    std::string cornice;
+    std::string beams;
+    /// The beams cross the room from west to east every beamPitchMm from its north wall, while a metre short of the
+    /// south wall (a grown room appends beams, never moves one).
+    std::int64_t beamPitchMm = 3000;
+
+    bool operator==(const ShellDressing&) const = default;
+};
+
+/// Lamps hung from the ceiling (a pack's "roomDressing" "pendants", I12 step 1, ADR-0021 §1): a drum near the doorway
+/// with a light of its own (the profile's pendant role, in a slot the plan's lights and the accents leave free) and a
+/// spot can over each display fixture standing free, whose accent light is the can's.
+struct PendantDressing {
+    std::string shade;    ///< the drum, lit from inside (double-sided, emissive)
+    std::string diffuser; ///< the disc closing the drum's bottom, the cans' lens (unlit)
+    std::string metal;    ///< the canopy, the stem and the drum's top; the cans
+
+    bool operator==(const PendantDressing&) const = default;
+};
+
 /// What a pack adds to its rooms' upper walls, ceiling and floor beyond the plan's fixtures (I6 step 6's review): a
 /// look, never the plan's: nothing collides, nothing casts a shadow.
 struct RoomDressing {
@@ -345,9 +383,12 @@ struct RoomDressing {
     std::optional<SignIcon> signIcon;
     /// A display case's empty level shows a riser card in each slot rather than one across the span.
     bool cardPerSlot = false;
+    /// I12 step 1: the room's architecture and its pendant lamps.
+    std::optional<ShellDressing> shell;
+    std::optional<PendantDressing> pendants;
 
     [[nodiscard]] bool empty() const noexcept {
-        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot;
+        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot && !shell && !pendants;
     }
     bool operator==(const RoomDressing&) const = default;
 };

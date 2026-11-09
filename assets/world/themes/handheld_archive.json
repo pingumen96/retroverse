@@ -8,7 +8,7 @@
   "id": "handheld_archive",
   "name": "HandheldArchive",
   "kinds": {
-    "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Cream", "ceiling": "MAT_Wall_Cream",
+    "room_shell": {"floor": "MAT_Floor_Herringbone", "wall": "MAT_Wall_Cream", "ceiling": "MAT_Wall_Cream",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
               "board_light": "MAT_Shelf_Light", "board_glow": "MAT_Shelf_Glow"},
@@ -23,13 +23,13 @@
     "poster_frame": {"frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print"},
     "rug": {"fabric": "MAT_Carpet_Ornate_Sage"},
     "floor_lamp": {"metal": "MAT_Metal_Graphite", "lamp_shade": "MAT_Lamp_Shade_Warm"},
-    "armchair": {"fabric": "MAT_Fabric_Slate", "wood": "MAT_Wood_Oak"},
-    "sofa": {"fabric": "MAT_Fabric_Slate", "wood": "MAT_Wood_Oak", "pillow": "MAT_Fabric_Teal"},
+    "armchair": {"fabric": "MAT_Fabric_Slate_Weave", "wood": "MAT_Wood_Oak"},
+    "sofa": {"fabric": "MAT_Fabric_Slate_Weave", "wood": "MAT_Wood_Oak", "pillow": "MAT_Fabric_Teal"},
     "beanbag": {"fabric": "MAT_Fabric_Slate"},
     "desk": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
              "metal_trim": "MAT_Metal_Brushed", "plastic_body": "MAT_Plastic_AgedIvory",
              "plastic_dark": "MAT_Plastic_Black", "screen": "MAT_Screen_Emissive"},
-    "office_chair": {"fabric": "MAT_Fabric_Slate", "plastic_dark": "MAT_Plastic_Black", "metal": "MAT_Metal_Brushed"},
+    "office_chair": {"fabric": "MAT_Fabric_Slate_Weave", "plastic_dark": "MAT_Plastic_Black", "metal": "MAT_Metal_Brushed"},
     "bar_stool": {"fabric": "MAT_Fabric_Slate", "metal": "MAT_Metal_Brushed"},
     "banker_lamp": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark",
                     "metal": "MAT_Metal_Brass", "lamp_shade": "MAT_Lamp_Shade_Green"},
@@ -113,7 +113,12 @@
   // high on the walls over the shelves and the showcases, a pictogram of a generic handheld in the room's neon beside
   // its sign, a riser card per empty slot of the display cases (never a cover stretched across a level).
   "roomDressing": {
-    "cove": {"yMm": 2650, "west": "MAT_Cove_Warm", "east": "MAT_Cove_Warm", "westWash": "MAT_Cove_Wash_Warm",
+    // I12 step 1 (ADR-0021 §1): an oak picture rail (the warm cove now stands on it), the cream damask, an oak cornice
+    // and beams, a drum near the doorway and spot cans over the counters on brass.
+    "shell": {"railYMm": 2700, "rail": "MAT_Wood_Oak", "wallpaper": "MAT_Wallpaper_Cream", "cornice": "MAT_Wood_Oak",
+              "beams": "MAT_Wood_Oak"},
+    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"},
+    "cove": {"yMm": 2750, "west": "MAT_Cove_Warm", "east": "MAT_Cove_Warm", "westWash": "MAT_Cove_Wash_Warm",
              "eastWash": "MAT_Cove_Wash_Warm"},
     "pictures": {"centreYMm": 2200, "widthMm": 520, "heightMm": 400, "roles": ["hero-module", "side-module"],
                  "kinds": ["tv_cabinet"], "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print",

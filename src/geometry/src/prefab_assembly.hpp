@@ -28,6 +28,11 @@ inline constexpr float kDecalOffset = 0.0005f;
 /// every meter at the same scale on every piece of furniture and trim.
 inline constexpr float kWoodMetersPerTile = 1.0f;
 
+/// Meters per uv unit of the seats' upholstery (I12 step 1), laid out with BoxUv::WorldMeters on their fabric parts:
+/// the weave and the leather grain (assets' fabric_weave, leather) repeat every half metre at one scale on every
+/// cushion, back and arm.
+inline constexpr float kFabricMetersPerTile = 0.5f;
+
 /// Collects geometry per material role and the sockets of one prefab.
 class PrefabAssembler {
 public:

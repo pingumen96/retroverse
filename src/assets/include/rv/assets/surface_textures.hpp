@@ -17,9 +17,11 @@ namespace rv::assets {
 // Procedural surface textures (style §3.2 material library, §3.3 moderate ageing): the PBR maps of the shared
 // materials, generated at startup by pure, deterministic functions, so that Retroverse needs no texture download.
 // Every design is original (wood figure, plaster, an ornamental rug in the style §3 palette and I6 step 3b's rugs of
-// the packs, brushed metal, plastic micro-variation, a sconce's wash of light on its wall). A surface's maps are
+// the packs, brushed metal, plastic micro-variation, a sconce's wash of light on its wall, I12's herringbone, weave,
+// leather and damask). A surface's maps are
 // generated together and share their layout (the planks of a floor, the grain of a board), and every surface except
-// the rugs, the wall wash and the shelf glow (pictures) tiles seamlessly. Every base color is opaque but the wall wash's, whose alpha is the picture.
+// the rugs, the wall wash and the shelf glow (pictures) tiles seamlessly. Every base color is opaque but the wall
+// wash's, whose alpha is the picture.
 //
 // Maps follow glTF 2.0: the base color is sRGB; the metallic-roughness map is linear with roughness in G and
 // metallic in B (R and A are 255 and ignored); the normal map is linear, tangent space, +X along +u and +Y towards
@@ -61,7 +63,7 @@ struct ProceduralSurfaceInfo {
 
 /// The catalog, in a fixed order: oak_planks, walnut, varnished_wood, oak, painted_plaster, ornate_rug,
 /// ornate_rug_blue, ornate_rug_sage, ornate_rug_green, geometric_rug, runner_rug (I6 step 3b), brushed_metal,
-/// aged_plastic, wallwash, shelfglow.
+/// aged_plastic, wallwash, shelfglow, herringbone_parquet, fabric_weave, leather, wallpaper_damask (I12 step 1).
 [[nodiscard]] std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept;
 /// The surface called `name`, or nullptr.
 [[nodiscard]] const ProceduralSurfaceInfo* findProceduralSurface(std::string_view name) noexcept;

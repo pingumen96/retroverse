@@ -47,7 +47,7 @@ TEST_CASE("render/gpu_memory: the bytes of a texture follow its format, size, le
     CHECK(rv::gl::textureBytes(GpuFormat::Rgba8, glm::ivec2(-1, 4), 1) == 0);
 }
 
-TEST_CASE("render/gpu_memory: the procedural surfaces take 85 MiB with their full chains", "[render][gpu_memory]") {
+TEST_CASE("render/gpu_memory: the procedural surfaces take 133 MiB with their full chains", "[render][gpu_memory]") {
     // The figure ADR-0011 §9 budgets (and the test room's run report shows): every base color and normal map RGBA8
     // with its full chain, every metallic-roughness map its roughness alone, R8 (I6 step 5's review: every surface is
     // all metal or none, gl::metallicRoughnessFormat; test_surface_textures checks it).
@@ -63,9 +63,11 @@ TEST_CASE("render/gpu_memory: the procedural surfaces take 85 MiB with their ful
     // the base levels. Three 1024 x 1024 surfaces with three maps (5,592,404 bytes each), four 512 x 512 ones
     // (1,398,100), the 1536 x 1024 rug with two (8,388,604); since I6 step 2 the 128 x 192 wall wash with two (131,068
     // each), 256 KiB more; since I6 step 3 the 128 x 64 shelf glow with two (43,692 each); since I6 step 3b four 1152 x
-    // 768 rugs with two (4,718,580 each) and the 512 x 1280 runner with two (3,495,252 each).
-    CHECK(before == std::size_t{83'886'044 + 262'136 + 87'384 + 4 * 2 * 4'718'580 + 2 * 3'495'252});
-    CHECK(bytes == std::size_t{88'997'797});
+    // 768 rugs with two (4,718,580 each) and the 512 x 1280 runner with two (3,495,252 each); since I12 step 1 four
+    // 1024 x 1024 surfaces with three maps more (the herringbone, the weave, the leather, the damask: 50,331,636 bytes
+    // as the GPU holds them). Each is generated, and held, only where a material the scene shows samples it.
+    CHECK(before == std::size_t{83'886'044 + 262'136 + 87'384 + 4 * 2 * 4'718'580 + 2 * 3'495'252 + 4 * 3 * 5'592'404});
+    CHECK(bytes == std::size_t{88'997'797 + 4 * (2 * 5'592'404 + 1'398'101)});
     CHECK(rv::gl::textureBytes(GpuFormat::Rg8, glm::ivec2(4, 2), 1) == 16u);
 }
 
