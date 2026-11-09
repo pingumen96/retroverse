@@ -280,9 +280,10 @@ TEST_CASE("world/era furniture: every pack's pieces resolve and build, the class
             CHECK(furniture.decoration.at(kind).size() == variants.size());
         }
         const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
-        // I5 step 3: the classic pack's furniture is its secondary TV alone; the hub's and the arcade's have none.
+        // I5 step 3: the classic pack's hero parts are the template's; I12 step 4: every pack but the hub's has its
+        // side walls' tall variants.
         CHECK(theme->furniture.heroParts.empty() == classic);
-        CHECK(theme->furniture.decoration.empty() == classic);
+        CHECK(theme->furniture.decoration.empty() == (pack == "retro_library_hub"));
         // I12 step 3: every console pack's hero corner is a lived-in set; the arcade's cabinets and the hub draw none.
         const bool set = pack != "arcade_after_dark" && pack != "retro_library_hub";
         CHECK(theme->furniture.heroDressing.empty() == !set);
@@ -407,13 +408,9 @@ TEST_CASE("world/era furniture: every pack's variants stand within their footpri
             INFO(name << " drawn as " << pack);
             const rv::world::SceneData data = withPack(entry.data, pack);
             const std::size_t replaced = checkRoom(entry.plan, entry.room, data, context, before);
-            const bool classic = pack == "classic_16bit_warm" || pack == "retro_library_hub";
-            if (classic) {
-                // The classic pack replaces its secondary TV's sideboard alone (I5 step 3), the hub's nothing.
-                auto tvs = rv::world::secondaryTvFixtures(entry.plan, entry.room, data);
-                REQUIRE(tvs.has_value());
-                CHECK(replaced == tvs->size());
-                CHECK(tvs->size() <= 1);
+            if (pack == "retro_library_hub") {
+                // The hub's pack replaces nothing.
+                CHECK(replaced == 0);
             } else {
                 CHECK(replaced > 0);
             }
@@ -706,14 +703,15 @@ TEST_CASE("world/era furniture: the arcade's and the handhelds' room dressing in
         const bool spot = light.role == rv::world::LightRole::Key || light.role == rv::world::LightRole::WallWasher;
         spots += light.id.room().toString() == "area:arcade" && spot ? 1 : 0;
     }
-    // Since I12 step 2 the modules take the gallery's lightboxes (the games' marquees), the showcases keep the flyers.
-    CHECK(withPrefix(arcade, "dressing:picture:").size() == showcases);
+    // Since I12 step 2 the modules take the gallery's lightboxes (the games' marquees), the showcases keep the flyers;
+    // since step 4 a tall piece in a showcase's socket has none, and the low decorations take lightboxes too.
+    CHECK(withPrefix(arcade, "dressing:picture:").size() <= showcases);
     for (const nlohmann::json& flyer : withPrefix(arcade, "dressing:picture:")) {
         CHECK(flyer.at("textures").at("picture").at("pattern") == "poster_flyer");
         CHECK(flyer.at("position")[1].get<double>() - 0.3 > 1.7); // above the cabinets
     }
     const auto lightboxes = withPrefix(arcade, "dressing:gallery:");
-    CHECK(lightboxes.size() == modules);
+    CHECK(lightboxes.size() >= modules);
     for (const nlohmann::json& lightbox : lightboxes) {
         CHECK(lightbox.at("materials").at("picture") == "MAT_Lightbox");
         CHECK(lightbox.at("textures").at("picture").at("pattern") == "marquee");
@@ -985,4 +983,155 @@ TEST_CASE("world/era furniture: the reader takes the hero corner's set, refusing
                            kind + R"("}, "xMm": 0, "zMm": 0}])"),
                    ContainsSubstring("no screen"));
     }
+}
+
+// I12 step 4 (ADR-0021 §1): the side walls' rhythm. Along a wall, a decoration beside another (within 1.2 m) is never
+// the same piece nor, both standing on the floor, of the same class (tall: its top 1.5 m up or more) wherever its
+// kind's variants offer one that differs so; the same plan draws the same pieces; a tall piece never reaches the
+// ceiling; a low piece standing against a wall has a gallery frame over its top, a tall one none.
+namespace {
+
+/// A drawn decoration: its socket's wall and place along it at home, its piece (prefab and parameters), its class.
+struct DrawnDecoration {
+    rv::world::Wall wall = rv::world::Wall::None;
+    std::int64_t along = 0;
+    std::string id;
+    std::string kind;  ///< the plan's kind (its variants' list)
+    std::string piece; ///< the drawn prefab and its parameters
+    bool tall = false;
+    bool hung = false; ///< on the wall (a poster, a pegboard): no part in the heights' alternation
+    bool secondaryTv = false;
+    double top = 0.0;
+};
+
+std::string pieceKey(const std::string& generator, const nlohmann::json& params) {
+    return generator + " " + params.dump();
+}
+
+std::vector<DrawnDecoration> drawnDecorations(const rv::world::WorldPlan& plan, const rv::world::RoomId& roomId,
+                                              const rv::world::SceneData& data, const nlohmann::json& sceneFile) {
+    const rv::world::Room& room = *std::find_if(
+        plan.rooms.begin(), plan.rooms.end(), [&](const rv::world::Room& candidate) { return candidate.id == roomId; });
+    auto tvs = rv::world::secondaryTvFixtures(plan, roomId, data);
+    REQUIRE(tvs.has_value());
+    std::map<std::string, const nlohmann::json*> objects;
+    for (const nlohmann::json& object : sceneFile.at("objects")) {
+        objects.emplace(object.at("id").get<std::string>(), &object);
+    }
+    std::vector<DrawnDecoration> out;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != roomId || fixture.role != FixtureRole::Decoration) {
+            continue;
+        }
+        const rv::world::TemplateSocket* socket = data.roomTemplate.socket(fixture.id.socket());
+        REQUIRE(socket != nullptr);
+        const Footprint home = rv::world::socketFootprint(data.roomTemplate, *socket, room.growthSteps);
+        const bool alongX = socket->wall == rv::world::Wall::North || socket->wall == rv::world::Wall::South;
+        const auto found = objects.find(fixture.id.localText());
+        REQUIRE(found != objects.end());
+        const nlohmann::json& object = *found->second;
+        const std::string generator = object.at("prefab").get<std::string>();
+        auto built = rv::geometry::buildPrefab(generator, object.at("params"));
+        REQUIRE(built.has_value());
+        DrawnDecoration drawn;
+        drawn.wall = socket->wall;
+        drawn.along = alongX ? (home.minXMm + home.maxXMm) / 2 : (home.minZMm + home.maxZMm) / 2;
+        drawn.id = fixture.id.localText();
+        drawn.kind = fixture.prefab.kind;
+        drawn.piece = pieceKey(generator, object.at("params"));
+        drawn.top = object.at("position")[1].get<double>() + static_cast<double>(built->bounds.max.y);
+        drawn.tall = drawn.top >= 1.5 - 1e-6;
+        drawn.hung = fixture.yMm > 0;
+        drawn.secondaryTv = std::find(tvs->begin(), tvs->end(), fixture.id) != tvs->end();
+        out.push_back(std::move(drawn));
+    }
+    std::sort(out.begin(), out.end(), [](const DrawnDecoration& a, const DrawnDecoration& b) {
+        if (a.wall != b.wall) {
+            return a.wall < b.wall;
+        }
+        return a.along != b.along ? a.along < b.along : a.id < b.id;
+    });
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("world/era furniture: the side walls' rhythm of tall and low pieces (I12 step 4)",
+          "[world][era_furniture][decoration_rhythm]") {
+    std::size_t neighbours = 0;
+    std::size_t talls = 0;
+    for (const std::string name :
+         {"plan-0-seed-102938", "plan-15-seed-7", "plan-57-seed-102938", "plan-890-seed-18446744073709551615"}) {
+        const rv::test::world::PlanCase& entry = rv::test::world::planCase(name);
+        const rv::world::Room& room = entry.plan.rooms.front();
+        for (const std::string& pack : kPacks) {
+            if (pack == "retro_library_hub") {
+                continue;
+            }
+            INFO(name << " drawn as " << pack);
+            const rv::world::SceneData data = withPack(entry.data, pack);
+            auto scene = rv::world::toSceneFile(entry.plan, entry.room, data);
+            REQUIRE(scene.has_value());
+            auto again = rv::world::toSceneFile(entry.plan, entry.room, data);
+            REQUIRE(again.has_value());
+            CHECK(scene->sceneFile == again->sceneFile);
+            const std::vector<DrawnDecoration> drawn = drawnDecorations(entry.plan, entry.room, data, scene->sceneFile);
+            for (std::size_t i = 0; i < drawn.size(); ++i) {
+                const DrawnDecoration& here = drawn[i];
+                INFO(here.id << " drawn as " << here.piece);
+                CHECK(here.top <= static_cast<double>(room.heightMm) / 1000.0 + 1e-6);
+                talls += here.tall ? 1 : 0;
+                if (i == 0 || here.secondaryTv) {
+                    continue;
+                }
+                const DrawnDecoration& before = drawn[i - 1];
+                if (before.wall != here.wall || here.along - before.along > 1200) {
+                    continue;
+                }
+                const auto variants = data.furniture.decoration.find(here.kind);
+                if (variants == data.furniture.decoration.end()) {
+                    continue;
+                }
+                // Whether the kind offers a piece that differs from the neighbour in both (in the piece alone beside or
+                // as a hung piece).
+                const bool byClass = !before.hung && !here.hung;
+                const auto fixture = std::find_if(entry.plan.fixtures.begin(), entry.plan.fixtures.end(),
+                                                  [&](const Fixture& f) { return f.id.localText() == here.id; });
+                REQUIRE(fixture != entry.plan.fixtures.end());
+                bool offered = false;
+                for (const auto& [weight, piece] : variants->second) {
+                    const bool tall = static_cast<double>(fixture->yMm) / 1000.0 +
+                                          static_cast<double>(piece.prefab.prefab->bounds.max.y) >=
+                                      1.5 - 1e-6;
+                    offered = offered || (weight > 0 && (!byClass || tall != before.tall) &&
+                                          pieceKey(piece.prefab.generator, piece.prefab.params) != before.piece);
+                }
+                if (!offered) {
+                    continue;
+                }
+                ++neighbours;
+                INFO("beside " << before.id << " drawn as " << before.piece);
+                CHECK(here.piece != before.piece);
+                if (byClass) {
+                    CHECK(here.tall != before.tall);
+                }
+            }
+            // A low decoration on the floor against a wall carries a gallery frame over its top, a tall one none.
+            for (const DrawnDecoration& here : drawn) {
+                const bool framed =
+                    std::any_of(scene->sceneFile.at("objects").begin(), scene->sceneFile.at("objects").end(),
+                                [&](const nlohmann::json& object) {
+                                    return object.at("id").get<std::string>() ==
+                                           std::string(rv::world::kGalleryObjectPrefix) + here.id;
+                                });
+                if (here.tall) {
+                    INFO(here.id << " drawn as " << here.piece);
+                    CHECK_FALSE(framed);
+                }
+            }
+        }
+    }
+    // The rule was put to the test, and the walls hold tall pieces.
+    CHECK(neighbours > 10);
+    CHECK(talls > 20);
 }

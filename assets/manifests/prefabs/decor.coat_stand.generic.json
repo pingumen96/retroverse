@@ -1,0 +1,31 @@
+// A coat stand on three feet (I12 step 4, ADR-0021 §1), a bag, a scarf and now and then a cap on its hooks.
+{
+  "schemaVersion": 1,
+  "id": "decor.coat_stand.generic",
+  "assetType": "decor",
+  "category": "coat_stand",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "coat_stand",
+    "params": {},
+    "scaleMeters": [0.38, 1.8, 0.38],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "coat_stand", "tall", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

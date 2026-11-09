@@ -152,6 +152,7 @@ TEST_CASE("cli/worldplan update: the world's plan updated after a backup, every 
     input.library = rv::test::world::library();
     input.selection = session.more;
     input.config.seed = 102938;
+    input.config.decorationDensityPermille = 650; // the shipped preset's since I12 step 4
     input.previous = previous;
     const std::string after = readText(session.files.plan);
     CHECK(after == *rv::world::writePlan(rv::world::update(input, rv::test::world::snesData())->plan));

@@ -18,6 +18,16 @@
     "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Plastic_Charcoal"},
     "cushion": {"fabric": "MAT_Fabric_Teal_Weave"},
     "open_box": {"body": "MAT_Plastic_Black", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
+    "bookcase": {"wood_primary": "MAT_Wood_Varnished_Dark", "wood_secondary": "MAT_Plastic_Charcoal",
+                 "spine_a": "MAT_Plastic_Teal", "spine_b": "MAT_Fabric_Vinyl_Purple", "spine_c": "MAT_Book_Cloth_Navy",
+                 "paper": "MAT_Paper_Print"},
+    "record_rack": {"wood_primary": "MAT_Plastic_Charcoal", "wood_secondary": "MAT_Wood_Varnished_Dark",
+                    "sleeve_a": "MAT_Plastic_Black", "sleeve_b": "MAT_Paper_Print", "sleeve_c": "MAT_Plastic_Teal"},
+    "pegboard": {"board": "MAT_Pegboard_Hardboard", "trim": "MAT_Plastic_Charcoal", "holes": "MAT_Pegboard_Hole",
+                 "metal": "MAT_Metal_Brushed", "plastic_body": "MAT_Plastic_Teal",
+                 "plastic_dark": "MAT_Fabric_Vinyl_Purple"},
+    "coat_stand": {"wood": "MAT_Plastic_Charcoal", "metal": "MAT_Metal_Graphite", "fabric": "MAT_Fabric_Vinyl_Red",
+                   "fabric_alt": "MAT_Fabric_Teal_Weave"},
     "room_shell": {"floor": "MAT_Floor_Herringbone", "wall": "MAT_Wall_Mauve", "ceiling": "MAT_Wall_Mauve",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Oak"},
     "shelf": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Fabric_Display_Navy",
@@ -55,7 +65,8 @@
     "magazine_stack": {"paper": "MAT_Paper_Magazine", "cover": "MAT_Label_Print"},
     "bookends": {"metal": "MAT_Metal_Graphite", "book": "MAT_Book_Cloth", "book_alt": "MAT_Book_Cloth_Alt"},
     "plant": {"pot": "MAT_Ceramic_Glazed", "soil": "MAT_Soil", "leaves": "MAT_Plant_Leaf",
-              "leaves_alt": "MAT_Plant_Leaf_Light"},
+              "leaves_alt": "MAT_Plant_Leaf_Light", "trunk": "MAT_Plant_Trunk",
+              "stand": "MAT_Plastic_Charcoal"},
     "riser_card": {"frame": "MAT_Paper_Print", "picture": "MAT_Label_Print"},
     "arcade_cabinet": {"body": "MAT_Cabinet_Paint_Walnut", "body_alt": "MAT_Cabinet_Paint_Oxblood",
                        "front": "MAT_Cabinet_Laminate", "molding": "MAT_Metal_Brushed",
@@ -132,8 +143,26 @@
          "params": {"shade": "torchiere", "height": 1.65, "baseRadius": 0.15, "shadeRadius": 0.2, "shadeHeight": 0.16}}]
     },
     "decoration": {
+      // I12 step 4 (ADR-0021 §1): the side walls' tall pieces beside the low ones, their heights alternating
+      // along a wall and no piece beside its like (scene_builder.cpp's rhythm).
+      "plant": [
+        {"weight": 0.4, "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"}},
+        {"weight": 0.3, "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"},
+         "params": {"form": "palm", "height": 1.9, "potRadius": 0.17, "potHeight": 0.36, "spread": 0.42,
+                    "depthSpread": 0.19, "leaves": 12, "seed": 11}},
+        {"weight": 0.2, "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"},
+         "params": {"form": "ficus", "height": 1.8, "potRadius": 0.16, "potHeight": 0.34, "spread": 0.4,
+                    "depthSpread": 0.19, "leaves": 14, "seed": 5}},
+        {"weight": 0.1, "prefab": {"manifest": "decor.plant.snake.generic", "kind": "plant"},
+         "params": {"form": "fern", "height": 1.25, "potRadius": 0.13, "potHeight": 0.24, "spread": 0.4,
+                    "depthSpread": 0.19, "leaves": 16, "seed": 3}}],
       "poster_frame": [
-        {"weight": 1.0, "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+        {"weight": 0.25, "prefab": {"manifest": "decor.pegboard.generic", "kind": "pegboard"},
+         "params": {"pads": 6, "style": "grip", "depth": 0.07, "seed": 8}},
+        {"weight": 0.15, "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
+         "params": {"width": 0.42, "height": 1.0},
+         "textures": {"picture": "poster_memphis"}},
+        {"weight": 0.6, "prefab": {"manifest": "decor.poster_frame.generic", "kind": "poster_frame"},
          "params": {"width": 0.6, "height": 0.8},
          "textures": {"picture": "poster_memphis"}}],
       "floor_lamp": [
@@ -141,7 +170,17 @@
          "params": {"shade": "torchiere", "height": 1.55, "baseRadius": 0.13, "shadeRadius": 0.17,
                     "shadeHeight": 0.14}}],
       "tv_cabinet": [
-        {"weight": 1.0, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
+        {"weight": 0.3, "prefab": {"manifest": "furniture.bookcase.generic", "kind": "bookcase"},
+         "params": {"contents": "magazines", "seed": 5}},
+        {"weight": 0.15, "prefab": {"manifest": "furniture.record_rack.generic", "kind": "record_rack"},
+         "params": {"media": "tapes", "levels": 6, "depth": 0.25, "seed": 4}},
+        {"weight": 0.15, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
+         "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "controllers"}},
+        {"weight": 0.1, "prefab": {"manifest": "decor.floor_speaker.generic", "kind": "floor_speaker"},
+         "params": {"width": 0.3, "height": 1.1, "depth": 0.32}},
+        {"weight": 0.1, "prefab": {"manifest": "decor.coat_stand.generic", "kind": "coat_stand"},
+         "params": {"spread": 0.19, "seed": 1}},
+        {"weight": 0.2, "prefab": {"manifest": "furniture.showcase.generic", "kind": "showcase"},
          "params": {"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "console"}},
         // I5 step 3 (ADR-0016 §5): the room's secondary TV, a grey set on a low oak sideboard without drawers; its
         // own charcoal body (the review: the hero's grey reads ivory under the room's warm light).

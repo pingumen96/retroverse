@@ -79,7 +79,7 @@ struct FixtureContext {
     detail::SocketPose home;
 };
 
-detail::LayoutInput layoutInputOf(const FixtureContext& context, const EditData& data) {
+detail::LayoutInput layoutInputOf(const FixtureContext& context) {
     detail::LayoutInput input{context.data->roomTemplate,
                               context.data->platform,
                               context.data->mediaFamily,
@@ -87,7 +87,7 @@ detail::LayoutInput layoutInputOf(const FixtureContext& context, const EditData&
                               context.room->id,
                               context.room->seed,
                               {},
-                              data.config.decorationDensityPermille};
+                              context.room->decorationDensityPermille};
     input.counts.growthSteps = context.room->growthSteps;
     return input;
 }
@@ -136,7 +136,7 @@ Expected<std::optional<EditResult>> findFixtureContext(const WorldPlan& plan, co
                                          : "the fixture's prefab " + context.fixture->prefab.manifest +
                                                " is not among the room's measured prefabs"));
     }
-    context.home = detail::poseInSocket(layoutInputOf(context, data), *context.socket, *context.info);
+    context.home = detail::poseInSocket(layoutInputOf(context), *context.socket, *context.info);
     return std::optional<EditResult>();
 }
 
@@ -546,7 +546,7 @@ private:
         std::erase_if(m_plan.lights, [&](const PlanLight& light) {
             return light.id.room() == room.id && light.role == LightRole::WallWasher;
         });
-        const detail::LayoutInput input = layoutInputOf(context, m_data);
+        const detail::LayoutInput input = layoutInputOf(context);
         const std::vector<const Fixture*> modules = modulesOf(room, context.data->roomTemplate);
         // Every module is judged where it stands (moved: elsewhere than its home, pinned or not).
         std::set<FixtureId> moved;

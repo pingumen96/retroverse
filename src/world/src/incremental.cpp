@@ -256,9 +256,15 @@ private:
     void addChainRoom(const Room& room) {
         ChainRoom chainRoom;
         chainRoom.id = room.id;
-        chainRoom.layout.emplace(detail::LayoutInput{m_template, m_data.platform, m_data.mediaFamily, m_data.prefabs,
-                                                     room.id, room.seed, {},
-                                                     m_input.config.decorationDensityPermille});
+        // A stored room keeps the density it was laid out with (I12 step 4, ADR-0021 §3).
+        chainRoom.layout.emplace(detail::LayoutInput{m_template,
+                                                     m_data.platform,
+                                                     m_data.mediaFamily,
+                                                     m_data.prefabs,
+                                                     room.id,
+                                                     room.seed,
+                                                     {},
+                                                     room.decorationDensityPermille});
         chainRoom.layout->counts.growthSteps = room.growthSteps;
         m_rooms.push_back(std::move(chainRoom));
     }

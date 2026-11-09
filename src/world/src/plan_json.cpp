@@ -65,6 +65,9 @@ Json roomJson(const Room& room) {
     if (!room.expands.empty()) {
         json["expands"] = room.expands.toString();
     }
+    if (room.decorationDensityPermille != kPlanDecorationDensityPermille) {
+        json["decorationDensityPermille"] = room.decorationDensityPermille;
+    }
     return json;
 }
 
@@ -247,6 +250,9 @@ void writePrefab(core::CanonicalTextWriter& out, const PrefabRef& prefab) {
 
 void writeRoom(core::CanonicalTextWriter& out, const Room& room) {
     out.beginObject();
+    if (room.decorationDensityPermille != kPlanDecorationDensityPermille) {
+        writeMember(out, "decorationDensityPermille", room.decorationDensityPermille);
+    }
     if (!room.expands.empty()) {
         writeMember(out, "expands", room.expands.toString());
     }
@@ -405,10 +411,25 @@ thread_local int t_documentDigests = 0;
 const std::initializer_list<std::string_view> kRoomKeysV1{"growthSteps", "heightMm", "id", "maxXMm", "maxZMm",
                                                           "mediaFamily", "minXMm", "minZMm", "seed", "template",
                                                           "templateVersion", "themePack"};
-const std::initializer_list<std::string_view> kRoomKeysV2{
-    "expands", "floor",    "generatorVersion", "growthSteps", "heightMm",    "id",       "kind",
-    "maxXMm",  "maxZMm",   "mediaFamily",      "minXMm",      "minZMm",      "placement", "sections",
-    "seed",    "template", "templateVersion",  "themePack"};
+const std::initializer_list<std::string_view> kRoomKeysV2{"decorationDensityPermille",
+                                                          "expands",
+                                                          "floor",
+                                                          "generatorVersion",
+                                                          "growthSteps",
+                                                          "heightMm",
+                                                          "id",
+                                                          "kind",
+                                                          "maxXMm",
+                                                          "maxZMm",
+                                                          "mediaFamily",
+                                                          "minXMm",
+                                                          "minZMm",
+                                                          "placement",
+                                                          "sections",
+                                                          "seed",
+                                                          "template",
+                                                          "templateVersion",
+                                                          "themePack"};
 
 /// Schema 2's own fields of a room, and their agreement with its id (the kind of the id's form, a console room's one
 /// section its system, a shared room's floor, an expansion's head).
@@ -444,6 +465,14 @@ void readBuildingFields(const ObjectReader& reader, Room& room) {
         reader.enumeration<GeneratorVersion>("generatorVersion", GeneratorVersion::parse, "a version <major>.<minor>");
     if (reader.has("expands")) {
         room.expands = reader.parsed<RoomId>("expands", RoomId::parse, "a room id");
+    }
+    // I12 step 4: named only when it is not the density every earlier room was planned with.
+    if (reader.has("decorationDensityPermille")) {
+        room.decorationDensityPermille = reader.integer("decorationDensityPermille", 0, 1000);
+        if (!document.failed() && room.decorationDensityPermille == kPlanDecorationDensityPermille) {
+            document.fail(reader.pointer("decorationDensityPermille"),
+                          "is written only when it is not " + std::to_string(kPlanDecorationDensityPermille));
+        }
     }
     if (document.failed()) {
         return;

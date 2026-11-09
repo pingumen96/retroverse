@@ -878,7 +878,9 @@ ThemeMaterials builtInTheme() {
          Roles{{"pot", "MAT_Ceramic_Glazed"},
                {"soil", "MAT_Soil"},
                {"leaves", "MAT_Plant_Leaf"},
-               {"leaves_alt", "MAT_Plant_Leaf_Light"}}},
+               {"leaves_alt", "MAT_Plant_Leaf_Light"},
+               {"trunk", "MAT_Plant_Trunk"},
+               {"stand", "MAT_Wood_Walnut"}}},
         {"riser_card", Roles{{"frame", "MAT_Paper_Print"}, {"picture", "MAT_Label_Print"}}},
         // I12 step 3's hero corner set.
         {"floor_speaker",
@@ -899,6 +901,32 @@ ThemeMaterials builtInTheme() {
         {"cushion", Roles{{"fabric", "MAT_Fabric_Wool_Green_Weave"}}},
         {"open_box",
          Roles{{"body", "MAT_Cardboard_Box"}, {"paper", "MAT_Paper_Magazine"}, {"disc", "MAT_Disc_Silver"}}},
+        // I12 step 4's tall decoration.
+        {"bookcase",
+         Roles{{"wood_primary", "MAT_Wood_Oak"},
+               {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+               {"spine_a", "MAT_Book_Cloth"},
+               {"spine_b", "MAT_Book_Cloth_Bordeaux"},
+               {"spine_c", "MAT_Book_Cloth_Ochre"},
+               {"paper", "MAT_Paper_Print"}}},
+        {"record_rack",
+         Roles{{"wood_primary", "MAT_Wood_Walnut"},
+               {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+               {"sleeve_a", "MAT_Cardboard_Box"},
+               {"sleeve_b", "MAT_Book_Cloth_Alt"},
+               {"sleeve_c", "MAT_Book_Cloth_Ochre"}}},
+        {"pegboard",
+         Roles{{"board", "MAT_Pegboard_Hardboard"},
+               {"trim", "MAT_Wood_Walnut"},
+               {"holes", "MAT_Pegboard_Hole"},
+               {"metal", "MAT_Metal_Brushed"},
+               {"plastic_body", "MAT_Plastic_Gray"},
+               {"plastic_dark", "MAT_Plastic_Black"}}},
+        {"coat_stand",
+         Roles{{"wood", "MAT_Wood_Walnut"},
+               {"metal", "MAT_Metal_Brass"},
+               {"fabric", "MAT_Fabric_Leather"},
+               {"fabric_alt", "MAT_Fabric_Wool_Green_Weave"}}},
         // I6 step 6's arcade cabinets.
         {"arcade_cabinet",
          Roles{{"body", "MAT_Cabinet_Paint_Walnut"},
@@ -980,6 +1008,35 @@ ThemeMaterials builtInTheme() {
     FurniturePiece secondaryTv;
     secondaryTv.prefab = PrefabRef{"furniture.secondary_tv.generic", std::string(kSecondaryTvKind)};
     theme.furniture.secondaryTv = SecondaryTvPiece{"tv_cabinet", std::move(secondaryTv)};
+    // I12 step 4's side walls (classic_16bit_warm.json's furniture.decoration): the tall pieces beside the low ones.
+    const auto variant = [&](const std::string& kind, std::uint32_t weight, std::string manifest, std::string prefab,
+                             const char* params) {
+        FurniturePiece piece;
+        piece.prefab = PrefabRef{std::move(manifest), std::move(prefab)};
+        piece.params = params == nullptr ? Json::object() : Json::parse(params);
+        theme.furniture.decoration[kind].push_back(FurnitureVariant{weight, std::move(piece)});
+    };
+    variant("plant", 400, "decor.plant.snake.generic", "plant", nullptr);
+    variant("plant", 300, "decor.plant.snake.generic", "plant",
+            R"({"form": "palm", "height": 1.9, "potRadius": 0.17, "potHeight": 0.36, "spread": 0.42,
+                "depthSpread": 0.19, "leaves": 12, "seed": 11})");
+    variant("plant", 200, "decor.plant.snake.generic", "plant",
+            R"({"form": "ficus", "height": 1.8, "potRadius": 0.16, "potHeight": 0.34, "spread": 0.4,
+                "depthSpread": 0.19, "leaves": 14, "seed": 5})");
+    variant("plant", 100, "decor.plant.snake.generic", "plant",
+            R"({"form": "fern", "height": 1.25, "potRadius": 0.13, "potHeight": 0.24, "spread": 0.4,
+                "depthSpread": 0.19, "leaves": 16, "seed": 3})");
+    variant("poster_frame", 600, "decor.poster_frame.generic", "poster_frame", nullptr);
+    variant("poster_frame", 250, "decor.pegboard.generic", "pegboard", R"({"pads": 6, "style": "flat", "seed": 4})");
+    variant("poster_frame", 150, "decor.poster_frame.generic", "poster_frame", R"({"width": 0.42, "height": 1.0})");
+    variant("tv_cabinet", 300, "furniture.bookcase.generic", "bookcase", R"({"contents": "mixed", "seed": 7})");
+    variant("tv_cabinet", 150, "furniture.record_rack.generic", "record_rack", R"({"media": "records", "seed": 3})");
+    variant("tv_cabinet", 150, "furniture.showcase.generic", "showcase",
+            R"({"width": 0.8, "height": 1.1, "depth": 0.36, "baseHeight": 0.6, "item": "controllers"})");
+    variant("tv_cabinet", 100, "decor.floor_speaker.generic", "floor_speaker",
+            R"({"width": 0.3, "height": 1.1, "depth": 0.32})");
+    variant("tv_cabinet", 100, "decor.coat_stand.generic", "coat_stand", R"({"spread": 0.19, "seed": 2})");
+    variant("tv_cabinet", 200, "furniture.tv_cabinet.narrow.generic", "tv_cabinet", nullptr);
     // I12 step 3's hero corner set (classic_16bit_warm.json's furniture.heroDressing).
     const auto dressing = [&](std::string name, std::string anchor, bool prop, std::string manifest, std::string kind,
                               std::int64_t x, std::int64_t y, std::int64_t z, std::optional<std::int32_t> yaw,

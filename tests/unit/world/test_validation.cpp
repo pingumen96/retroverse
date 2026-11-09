@@ -657,13 +657,17 @@ TEST_CASE("world/validation: sockets left bare and the decoration density", "[wo
         REQUIRE(findings.size() == 1);
         CHECK(findings[0].message == "4 of the 4 decoration sockets hold decoration (1000 permille), outside the "
                                      "band of the decoration density 400 permille (250 to 599)");
-        // A rich density takes them all.
+        // A room laid out at a showcase density takes them all (I12 step 4: the room's recorded density, never the
+        // configuration's: a configuration of 900 judges a room of 400 as before).
         ValidationContext context = rv::test::validContextFor(rv::test::validRoomPlan());
         context.config.decorationDensityPermille = 900;
-        CHECK(findingsOf(rv::world::validatePlan(plan, context), rule::kDecorationDensity).empty());
-        CHECK(
-            findingsOf(rv::world::validatePlan(rv::test::validRoomPlan(), context), rule::kDecorationDensity).size() ==
-            1);
+        CHECK(findingsOf(rv::world::validatePlan(plan, context), rule::kDecorationDensity).size() == 1);
+        WorldPlan rich = plan;
+        rich.rooms.front().decorationDensityPermille = 900;
+        CHECK(findingsOf(rv::world::validatePlan(rich, context), rule::kDecorationDensity).empty());
+        WorldPlan bare = rv::test::validRoomPlan();
+        bare.rooms.front().decorationDensityPermille = 900;
+        CHECK(findingsOf(rv::world::validatePlan(bare, context), rule::kDecorationDensity).size() == 1);
     }
 }
 

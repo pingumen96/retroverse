@@ -383,7 +383,9 @@ Expected<ProceduralPrefab> rugFromJson(const Json& params) {
 
 Expected<ProceduralPrefab> plantFromJson(const Json& params) {
     PlantParams p;
-    ParamReader r("plant", params, {"height", "potRadius", "potHeight", "spread", "leaves", "seed", "saucerRadius"});
+    ParamReader r(
+        "plant", params,
+        {"height", "potRadius", "potHeight", "spread", "leaves", "seed", "saucerRadius", "form", "depthSpread"});
     r.read("height", p.height);
     r.read("potRadius", p.potRadius);
     r.read("potHeight", p.potHeight);
@@ -391,6 +393,12 @@ Expected<ProceduralPrefab> plantFromJson(const Json& params) {
     r.read("leaves", p.leaves);
     r.read("seed", p.seed);
     r.read("saucerRadius", p.saucerRadius);
+    r.readEnum("form", p.form,
+               {{"sword", PlantForm::Sword},
+                {"palm", PlantForm::Palm},
+                {"ficus", PlantForm::Ficus},
+                {"fern", PlantForm::Fern}});
+    r.read("depthSpread", p.depthSpread);
     if (!r.ok()) {
         return propagate(r.error());
     }
@@ -521,7 +529,8 @@ Expected<ProceduralPrefab> showcaseFromJson(const Json& params) {
                {{"none", ShowcaseItem::None},
                 {"console", ShowcaseItem::Console},
                 {"handheld", ShowcaseItem::Handheld},
-                {"boxes", ShowcaseItem::Boxes}});
+                {"boxes", ShowcaseItem::Boxes},
+                {"controllers", ShowcaseItem::Controllers}});
     r.read("boardLight", p.boardLight);
     r.read("coverPerBox", p.coverPerBox);
     r.read("litScreen", p.litScreen);
@@ -784,6 +793,70 @@ Expected<ProceduralPrefab> openBoxFromJson(const Json& params) {
     return buildOpenBox(p);
 }
 
+Expected<ProceduralPrefab> bookcaseFromJson(const Json& params) {
+    BookcaseParams p;
+    ParamReader r("bookcase", params, {"width", "height", "depth", "levels", "fill", "contents", "seed"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("levels", p.levels);
+    r.read("fill", p.fill);
+    r.readEnum("contents", p.contents,
+               {{"mixed", BookcaseFill::Mixed},
+                {"books", BookcaseFill::Books},
+                {"binders", BookcaseFill::Binders},
+                {"magazines", BookcaseFill::Magazines}});
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildBookcase(p);
+}
+
+Expected<ProceduralPrefab> recordRackFromJson(const Json& params) {
+    RecordRackParams p;
+    ParamReader r("record_rack", params, {"width", "height", "depth", "levels", "media", "fill", "seed"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("levels", p.levels);
+    r.readEnum("media", p.media, {{"records", RackMedia::Records}, {"tapes", RackMedia::Tapes}});
+    r.read("fill", p.fill);
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildRecordRack(p);
+}
+
+Expected<ProceduralPrefab> pegboardFromJson(const Json& params) {
+    PegboardParams p;
+    ParamReader r("pegboard", params, {"width", "height", "depth", "pads", "style", "seed"});
+    r.read("width", p.width);
+    r.read("height", p.height);
+    r.read("depth", p.depth);
+    r.read("pads", p.pads);
+    r.readEnum("style", p.style,
+               {{"flat", PadStyle::Flat}, {"grip", PadStyle::Grip}, {"joystick", PadStyle::Joystick}});
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildPegboard(p);
+}
+
+Expected<ProceduralPrefab> coatStandFromJson(const Json& params) {
+    CoatStandParams p;
+    ParamReader r("coat_stand", params, {"height", "spread", "seed"});
+    r.read("height", p.height);
+    r.read("spread", p.spread);
+    r.read("seed", p.seed);
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildCoatStand(p);
+}
+
 // --- Primitives ----------------------------------------------------------------------------------------------
 
 constexpr float kMinLength = 0.001f;
@@ -925,7 +998,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 35> kPrefabs{{
+constexpr std::array<PrefabEntry, 39> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -961,6 +1034,10 @@ constexpr std::array<PrefabEntry, 35> kPrefabs{{
     {"low_table", &lowTableFromJson},
     {"cushion", &cushionFromJson},
     {"open_box", &openBoxFromJson},
+    {"bookcase", &bookcaseFromJson},
+    {"record_rack", &recordRackFromJson},
+    {"pegboard", &pegboardFromJson},
+    {"coat_stand", &coatStandFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

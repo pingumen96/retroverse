@@ -81,7 +81,10 @@ const std::vector<std::string> kSharedNames = {
     // I12 step 2 (ADR-0021 §2): the gallery's picture lights' glow on the wall.
     "MAT_Picture_Wash",
     // I12 step 3 (ADR-0021 §1): the hero corner's set.
-    "MAT_Led_Red", "MAT_Led_Green", "MAT_Display_Amber", "MAT_Speaker_Grille", "MAT_Cable_Rubber", "MAT_Disc_Silver"};
+    "MAT_Led_Red", "MAT_Led_Green", "MAT_Display_Amber", "MAT_Speaker_Grille", "MAT_Cable_Rubber", "MAT_Disc_Silver",
+    // I12 step 4's tall decoration.
+    "MAT_Book_Cloth_Navy", "MAT_Book_Cloth_Ochre", "MAT_Pegboard_Hardboard", "MAT_Pegboard_Hole", "MAT_Plant_Trunk",
+    "MAT_Cork_Board"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

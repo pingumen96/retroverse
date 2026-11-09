@@ -35,6 +35,9 @@ namespace rv::world {
 inline constexpr std::int64_t kPlanSchemaVersion = 2;
 /// The oldest schema this program reads (and lifts).
 inline constexpr std::int64_t kOldestPlanSchemaVersion = 1;
+/// The decoration density of a room whose record names none (I12 step 4): every room planned before I12, at the
+/// curated preset's density then (ADR-0010 §2's 0.4).
+inline constexpr std::int64_t kPlanDecorationDensityPermille = 400;
 
 /// The generator's version (ADR-0010 §8): a minor change adds rules that keep every existing placement, a major one
 /// may place games differently and needs an explicit regeneration (ADR-0010 §10). Text form "major.minor" ("1.0").
@@ -219,6 +222,11 @@ struct Room {
     /// the system's platform manifest.
     std::string mediaFamily;
     std::string themePack;
+    /// The decoration density the room was laid out with (I12 step 4, ADR-0021 §3): its updates, its growth and the
+    /// `decoration-density` rule keep to it whatever the configuration says now; a generation or a regeneration of the
+    /// room records the configuration's. The plan's text names it only when it is not kPlanDecorationDensityPermille
+    /// (every room planned before I12, whose files stay as they were).
+    std::int64_t decorationDensityPermille = kPlanDecorationDensityPermille;
 
     bool operator==(const Room&) const = default;
 };

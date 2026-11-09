@@ -194,6 +194,7 @@ public:
         room.seed = m_input.roomSeed;
         room.mediaFamily = m_input.family.id;
         room.themePack = m_input.platform.themePack;
+        room.decorationDensityPermille = std::clamp<std::int64_t>(m_input.decorationDensityPermille, 0, kMaxPermille);
 
         if (Status status = preparePins(); !status) {
             return propagate(status.error());

@@ -454,7 +454,12 @@ TEST_CASE("world/room_dressing: the pendants near the doorway and over the free-
         ++lookLights;
         const json& look = lights.back();
         CHECK(look.at("name") == "look:pendant");
-        CHECK(look.at("type") == "point");
+        // A spot straight down since I12 step 4 (the hall's floor and wall beside the doorway out of its cone).
+        CHECK(look.at("type") == "spot");
+        CHECK(look.at("target")[0] == look.at("position")[0]);
+        CHECK(look.at("target")[1].get<double>() == 0.0);
+        CHECK(look.at("target")[2] == look.at("position")[2]);
+        CHECK(look.at("outerConeDeg").get<double>() <= 45.0);
         CHECK(look.value("castsShadows", false) == false);
         CHECK(near(look.at("position")[0].get<double>(), meters(door.offsetMm)));
         CHECK(near(look.at("position")[1].get<double>(), meters(room.heightMm - 1100)));
@@ -611,13 +616,25 @@ TEST_CASE("world/room_dressing: the gallery's frames over every golden plan room
         const double rail = meters(shell.railYMm - 45);
 
         std::size_t modules = 0;
+        std::size_t decorations = 0;
         std::size_t hung = 0;
         for (const rv::world::Fixture& fixture : entry.plan.fixtures) {
-            if (fixture.role != FixtureRole::HeroModule && fixture.role != FixtureRole::SideModule) {
-                continue;
-            }
-            ++modules;
+            const bool module = fixture.role == FixtureRole::HeroModule || fixture.role == FixtureRole::SideModule;
             const std::string id = std::string(rv::world::kGalleryObjectPrefix) + fixture.id.localText();
+            // I12 step 4: a low decoration standing on the floor may have a frame of its own, never a hung one.
+            const bool framed = std::any_of(scene.at("objects").begin(), scene.at("objects").end(),
+                                            [&](const json& object) { return object.at("id") == id; });
+            if (!module) {
+                if (framed) {
+                    CHECK(fixture.role == FixtureRole::Decoration);
+                    CHECK(fixture.yMm == 0);
+                    ++decorations;
+                } else {
+                    continue;
+                }
+            } else {
+                ++modules;
+            }
             INFO(id);
             const json& frame = objectNamed(scene, id);
             CHECK(frame.at("prefab") == "poster_frame");
@@ -631,14 +648,16 @@ TEST_CASE("world/room_dressing: the gallery's frames over every golden plan room
             const rv::world::GalleryPictureSize picture = rv::world::galleryPictureSize(kind);
             CHECK(near(width - 2 * bar, meters(picture.widthMm)));
             CHECK(near(height - 2 * bar, meters(picture.heightMm)));
-            CHECK(width < meters(fixture.widthMm));
+            CHECK(width < (module ? meters(fixture.widthMm) : 0.9));
             CHECK(frame.at("materials").at("frame") == gallery.frame);
             CHECK(frame.at("materials").at("picture") ==
                   (kind == rv::world::GalleryKind::Lightbox ? gallery.lightbox : gallery.picture));
             CHECK(frame.at("textures").at("picture").at("pattern") == gallery.pattern);
             // Over its module, under the picture rail, turned as the module.
             const double centre = frame.at("position")[1].get<double>();
-            CHECK(centre - height / 2 >= meters(fixture.yMm + fixture.heightMm) + 0.08 - 1e-6);
+            if (module) {
+                CHECK(centre - height / 2 >= meters(fixture.yMm + fixture.heightMm) + 0.08 - 1e-6);
+            }
             CHECK(centre + height / 2 <= rail - 0.05 + 1e-6);
             CHECK(frame.at("rotationDeg")[1].get<double>() == static_cast<double>(fixture.yawCdeg) / 100.0);
             // Every other frame along the room a picture light (never over a lightbox): its hood over the frame, its
@@ -657,12 +676,12 @@ TEST_CASE("world/room_dressing: the gallery's frames over every golden plan room
             }
             ++hung;
         }
-        // One frame a module: nothing else under the gallery's prefix.
+        // One frame a module and a low decoration's: nothing else under the gallery's prefix.
         std::size_t frames = 0;
         for (const json& object : withPrefix(scene, rv::world::kGalleryObjectPrefix)) {
             frames += object.contains("prefab") ? 1 : 0;
         }
-        CHECK(frames == modules);
+        CHECK(frames == modules + decorations);
     }
     // The weights give every kind somewhere among the golden plans' rooms.
     CHECK(kinds.size() == 4);

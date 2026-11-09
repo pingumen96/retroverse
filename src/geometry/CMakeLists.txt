@@ -19,6 +19,7 @@ add_library(rv_geometry STATIC
     src/prefab_factory.cpp
     src/prefab_floor_lamp.cpp
     src/prefab_hero_set.cpp
+    src/prefab_tall_decor.cpp
     src/prefab_hub.cpp
     src/prefab_plant.cpp
     src/prefab_poster_frame.cpp

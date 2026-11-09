@@ -164,7 +164,8 @@ const std::vector<std::string_view> kExpectedKinds{
     "rug",        "floor_lamp",   "armchair",   "display_case", "wall_shelf",    "storage_box",       "magazine_stack",
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
     "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet",
-    "secondary_tv", "floor_speaker", "media_rack", "pad",       "low_table",      "cushion",           "open_box"};
+    "secondary_tv", "floor_speaker", "media_rack", "pad",       "low_table",      "cushion",           "open_box",
+    "bookcase",   "record_rack",  "pegboard",   "coat_stand"};
 
 } // namespace
 
@@ -234,6 +235,11 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"low_table", {"wood_primary", "wood_secondary"}},
         {"cushion", {"fabric"}},
         {"open_box", {"body", "paper", "disc"}},
+        // I12 step 4's tall decoration.
+        {"bookcase", {"wood_primary", "wood_secondary", "spine_a", "spine_b", "spine_c", "paper"}},
+        {"record_rack", {"wood_primary", "wood_secondary", "sleeve_a", "sleeve_b", "sleeve_c"}},
+        {"pegboard", {"board", "trim", "holes", "metal", "plastic_body", "plastic_dark"}},
+        {"coat_stand", {"wood", "metal", "fabric", "fabric_alt"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -384,6 +390,16 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"open_box",
          {{"style", "tray"}, {"width", 0.2}, {"depth", 0.28}, {"height", 0.05}},
          box({-0.2f, 0.0f, -0.14f}, {0.2f, 0.05f, 0.14f})},
+        // I12 step 4's tall units: exactly their carcass, whatever fills them.
+        {"bookcase", nullptr, box({-0.44f, 0.0f, -0.17f}, {0.44f, 2.1f, 0.17f})},
+        {"bookcase",
+         {{"width", 0.6}, {"height", 1.2}, {"depth", 0.3}, {"levels", 3}, {"contents", "binders"}},
+         box({-0.3f, 0.0f, -0.15f}, {0.3f, 1.2f, 0.15f})},
+        {"record_rack", nullptr, box({-0.3f, 0.0f, -0.18f}, {0.3f, 1.6f, 0.18f})},
+        {"record_rack",
+         {{"media", "tapes"}, {"levels", 6}, {"depth", 0.25}},
+         box({-0.3f, 0.0f, -0.125f}, {0.3f, 1.6f, 0.125f})},
+        {"coat_stand", nullptr, box({-0.19f, 0.0f, -0.19f}, {0.19f, 1.8f, 0.19f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -438,6 +454,10 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"low_table", {{"Top", SocketKind::Anchor}}},
         {"cushion", {}},
         {"open_box", {}},
+        {"bookcase", {}},
+        {"record_rack", {}},
+        {"pegboard", {}},
+        {"coat_stand", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -2057,4 +2077,124 @@ TEST_CASE("geometry/prefabs: the hero corner's set (I12 step 3)", "[geometry][pr
     CHECK(part(keepCase, "disc").mesh.bounds.min.x > 0.0f);
     CHECK(part(keepCase, "paper").mesh.bounds.max.x < 0.0f);
     CHECK(buildError("cushion", {{"height", 0.5}}).context == "cushion.height");
+}
+
+TEST_CASE("geometry/prefabs: the tall decoration (I12 step 4)", "[geometry][prefabs][tall_decor]") {
+    // A bookcase's spines: within its carcass, 12 to 35 mm thick (a binder up to 70 mm, a file up to 100), never on its
+    // back panel; the same seed builds the same, another seed another.
+    for (const char* contents : {"mixed", "books", "binders", "magazines"}) {
+        INFO(contents);
+        const ProceduralPrefab bookcase = buildOk("bookcase", {{"contents", contents}, {"seed", 11}});
+        checkPrefab(bookcase);
+        for (const char* role : {"spine_a", "spine_b", "spine_c"}) {
+            const auto found = std::find_if(bookcase.parts.begin(), bookcase.parts.end(),
+                                            [&](const PrefabPart& p) { return p.materialRole == role; });
+            if (found == bookcase.parts.end()) {
+                continue;
+            }
+            CHECK(found->mesh.bounds.min.z > bookcase.bounds.min.z + 0.007f);
+            CHECK(found->mesh.bounds.max.z < bookcase.bounds.max.z);
+            CHECK(found->mesh.bounds.max.y < bookcase.bounds.max.y);
+        }
+    }
+    const ProceduralPrefab books = buildOk("bookcase", {{"contents", "books"}, {"seed", 3}});
+    CHECK(books.parts.size() >= 4u);
+    CHECK(std::none_of(books.parts.begin(), books.parts.end(),
+                       [](const PrefabPart& p) { return p.materialRole == "paper"; }));
+    const auto positions = [](const ProceduralPrefab& prefab, std::string_view role) {
+        std::vector<glm::vec3> out;
+        for (const rv::geometry::Vertex& vertex : part(prefab, role).mesh.vertices) {
+            out.push_back(vertex.position);
+        }
+        return out;
+    };
+    CHECK(positions(buildOk("bookcase", {{"seed", 3}}), "spine_a") ==
+          positions(buildOk("bookcase", {{"seed", 3}}), "spine_a"));
+    CHECK(positions(buildOk("bookcase", {{"seed", 3}}), "spine_a") !=
+          positions(buildOk("bookcase", {{"seed", 4}}), "spine_a"));
+    // An empty bookcase is its carcass alone.
+    const ProceduralPrefab empty = buildOk("bookcase", {{"fill", 0.0}});
+    CHECK(std::none_of(empty.parts.begin(), empty.parts.end(), [](const PrefabPart& p) {
+        return p.materialRole.starts_with("spine") || p.materialRole == "paper";
+    }));
+    CHECK(buildError("bookcase", {{"levels", 8}, {"height", 1.2}}).context == "bookcase.levels");
+    CHECK(buildError("bookcase", {{"contents", "vinyl"}}).context == "bookcase.contents");
+    CHECK(buildError("bookcase", {{"height", 2.8}}).context == "bookcase.height");
+
+    // A rack's records stand 31 cm square in levels deep enough for them; its tapes need less.
+    const ProceduralPrefab records = buildOk("record_rack");
+    checkPrefab(records);
+    CHECK(part(records, "sleeve_a").mesh.bounds.size().z == Approx(0.31f).margin(0.005f));
+    const ProceduralPrefab tapes = buildOk("record_rack", {{"media", "tapes"}, {"levels", 6}});
+    checkPrefab(tapes);
+    CHECK(tapes.bounds.size().y == Approx(1.6f));
+    CHECK(buildError("record_rack", {{"depth", 0.25}}).context == "record_rack.levels");
+    CHECK(buildError("record_rack", {{"levels", 6}}).context == "record_rack.levels");
+    CHECK(buildError("record_rack", {{"media", "discs"}}).context == "record_rack.media");
+
+    // A pegboard hangs as a poster does (its back on the wall at z 0, centred on its pivot), its pads in front of the
+    // board, face out; a grip pad needs 7 cm.
+    for (const char* style : {"flat", "grip"}) {
+        INFO(style);
+        const ProceduralPrefab board =
+            buildOk("pegboard", {{"style", style}, {"pads", 5}, {"seed", 2}, {"depth", 0.07}});
+        checkPrefab(board);
+        CHECK(board.bounds.min.z == Approx(0.0f).margin(1e-5f));
+        CHECK(board.bounds.max.z <= 0.07f + 1e-5f);
+        CHECK(closeTo(glm::vec3(board.bounds.min.x, board.bounds.min.y, 0.0f), glm::vec3(-0.44f, -0.6f, 0.0f)));
+        const Aabb pads = part(board, "plastic_body").mesh.bounds;
+        CHECK(pads.min.z > 0.017f);
+        CHECK(pads.max.y < 0.6f);
+        CHECK(pads.min.y > -0.6f);
+    }
+    const ProceduralPrefab bare = buildOk("pegboard", {{"pads", 0}});
+    CHECK(std::none_of(bare.parts.begin(), bare.parts.end(),
+                       [](const PrefabPart& p) { return p.materialRole == "plastic_body"; }));
+    CHECK(buildOk("pegboard", {{"style", "joystick"}, {"pads", 2}, {"depth", 0.17}}).bounds.max.z <= 0.17f);
+    CHECK(buildError("pegboard", {{"style", "joystick"}, {"pads", 2}}).context == "pegboard.depth");
+    CHECK(buildError("pegboard", {{"pads", 10}, {"height", 0.4}, {"width", 0.4}}).context == "pegboard.pads");
+
+    // A coat stand stays within its spread and its height, whatever hangs on it.
+    for (const int seed : {0, 1, 2, 3}) {
+        INFO(seed);
+        const ProceduralPrefab stand = buildOk("coat_stand", {{"seed", seed}});
+        checkPrefab(stand);
+        CHECK(stand.bounds.max.y == Approx(1.8f).margin(1e-4f));
+        CHECK(std::max({-stand.bounds.min.x, stand.bounds.max.x, -stand.bounds.min.z, stand.bounds.max.z}) <= 0.2f);
+        CHECK(stand.bounds.min.y >= -1e-5f);
+    }
+    CHECK(buildError("coat_stand", {{"spread", 0.15}}).context == "coat_stand.spread");
+
+    // The plant's forms: a palm's and a ficus's crown within the spread across and the depth's spread front to back,
+    // under the height; a fern's pot on its stand.
+    for (const char* form : {"palm", "ficus", "fern"}) {
+        INFO(form);
+        const ProceduralPrefab plant = buildOk("plant", {{"form", form},
+                                                         {"height", 1.8},
+                                                         {"potRadius", 0.16},
+                                                         {"potHeight", 0.36},
+                                                         {"spread", 0.42},
+                                                         {"depthSpread", 0.19},
+                                                         {"leaves", 12},
+                                                         {"seed", 5}});
+        checkPrefab(plant);
+        CHECK(plant.bounds.max.y <= 1.8f + 1e-4f);
+        CHECK(std::max(-plant.bounds.min.x, plant.bounds.max.x) <= 0.42f + 1e-4f);
+        CHECK(std::max(-plant.bounds.min.z, plant.bounds.max.z) <= 0.19f + 1e-4f);
+        CHECK(plant.bounds.min.y >= -1e-5f);
+        CHECK(part(plant, "leaves").mesh.bounds.max.y > 1.2f);
+    }
+    CHECK(part(buildOk("plant", {{"form", "fern"}, {"height", 1.25}}), "stand").mesh.bounds.max.y > 0.4f);
+    CHECK(part(buildOk("plant", {{"form", "palm"}, {"height", 1.9}}), "trunk").mesh.bounds.max.y > 0.6f);
+    CHECK(buildError("plant", {{"depthSpread", 0.15}}).context == "plant.depthSpread");
+    CHECK(buildError("plant", {{"form", "fern"}, {"height", 0.8}}).context == "plant.height");
+    CHECK(buildError("plant", {{"form", "cactus"}}).context == "plant.form");
+
+    // A vitrine of controllers: pads leaning back on its plinth, inside the glass.
+    const ProceduralPrefab vitrine = buildOk("showcase", {{"item", "controllers"}});
+    checkPrefab(vitrine);
+    const Aabb held = part(vitrine, "plastic_body").mesh.bounds;
+    CHECK(held.size().x > 0.3f);
+    CHECK(held.min.y >= 0.62f + 0.13f - 1e-4f);
+    CHECK(held.max.y < 1.15f - 0.03f);
 }

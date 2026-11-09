@@ -1335,11 +1335,13 @@ private:
     }
 
     void checkSockets() {
-        const std::int64_t density = std::clamp<std::int64_t>(m_context.config.decorationDensityPermille, 0, 1000);
         for (const auto& [id, view] : m_rooms) {
             if (view.roomTemplate == nullptr) {
                 continue;
             }
+            // The density the room was laid out with (I12 step 4): a stored room of 0.4 stays in its band when the
+            // default moves.
+            const std::int64_t density = std::clamp<std::int64_t>(view.room->decorationDensityPermille, 0, 1000);
             std::set<std::string> held;
             for (const Fixture* fixture : view.fixtures) {
                 held.insert(fixture->id.socket());

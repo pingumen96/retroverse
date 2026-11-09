@@ -13,6 +13,7 @@
 #include <rv/core/seed.hpp>
 #include <rv/core/text.hpp>
 #include <rv/world/world_config.hpp>
+#include <rv/world/world_plan.hpp>
 
 #include "support/temp_dir.hpp"
 
@@ -54,11 +55,14 @@ constexpr std::string_view kGalleryPreset = R"({
 TEST_CASE("world/world_config: the shipped preset", "[world][world_config]") {
     auto preset = rv::world::loadPreset(kAssets, rv::world::kDefaultPreset);
     REQUIRE(preset.has_value());
-    // ADR-0010 §2: decoration density 0.4, growth reserve 0.15, the main passage 1.4 m, the hard minimum 1.2 m.
+    // ADR-0010 §2: growth reserve 0.15, the main passage 1.4 m, the hard minimum 1.2 m; the decoration density 0.65
+    // since I12 step 4 (ADR-0021 §3), the configuration's default keeping the rules' 0.4 (the golden plans').
     WorldConfig expected;
+    expected.decorationDensityPermille = 650;
     CHECK(*preset == expected);
     CHECK(preset->preset == "retro_museum_cozy");
-    CHECK(preset->decorationDensityPermille == 400);
+    CHECK(preset->decorationDensityPermille == 650);
+    CHECK(WorldConfig{}.decorationDensityPermille == rv::world::kPlanDecorationDensityPermille);
     CHECK(preset->growthReservePermille == 150);
     CHECK(preset->mainPassageWidthMm == 1400);
     CHECK(preset->minClearWidthMm == 1200);
@@ -93,7 +97,9 @@ TEST_CASE("world/world_config: world.json overrides the preset per key", "[world
     SECTION("no world.json: the default preset, no issue") {
         auto loaded = rv::world::loadWorldConfig(assets, config);
         REQUIRE(loaded.has_value());
-        CHECK(loaded->config == WorldConfig{});
+        WorldConfig cozy;
+        cozy.decorationDensityPermille = 650; // the curated preset's since I12 step 4
+        CHECK(loaded->config == cozy);
         CHECK(loaded->issues.empty());
     }
     SECTION("a few keys") {
@@ -109,6 +115,7 @@ TEST_CASE("world/world_config: world.json overrides the preset per key", "[world
         REQUIRE(loaded.has_value());
         CHECK(loaded->issues.empty());
         WorldConfig expected;
+        expected.decorationDensityPermille = 650;
         expected.seed = 102938;
         expected.growthReservePermille = 250;
         expected.include = PlacementInclude::All;
@@ -158,12 +165,15 @@ TEST_CASE("world/world_config: a broken world.json is left out whole with an iss
         {"/* my\n   world */ {\n  // the seed\n  \"seed\": \"x\"\n}", "/seed: expected an integer", ":4"},
         {"\xEF\xBB\xBF{\n  \"reduceMotion\": 1\n}", "/reduceMotion: expected a boolean", ":2"},
     };
+    // A broken world.json leaves the preset's values (I12 step 4: its density 0.65, not the rules' default).
+    const auto preset = rv::world::loadPreset(assets, rv::world::kDefaultPreset);
+    REQUIRE(preset.has_value());
     for (const Case& test : cases) {
         INFO(test.text);
         writeFile(config / "world.json", test.text);
         auto loaded = rv::world::loadWorldConfig(assets, config);
         REQUIRE(loaded.has_value());
-        CHECK(loaded->config == WorldConfig{});
+        CHECK(loaded->config == *preset);
         REQUIRE(loaded->issues.size() == 1);
         CHECK_THAT(loaded->issues.front().message, ContainsSubstring(std::string(test.message)));
         if (!test.line.empty()) {

@@ -22,6 +22,7 @@
 
 #include <rv/assets/prefab_resolver.hpp>
 #include <rv/geometry/socket.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/scene_builder.hpp>
@@ -335,14 +336,21 @@ TEST_CASE("world/secondary TV: at most one a room, away from the doorway, in a s
                 CHECK(object.at("position")[1] == 0.0);
                 CHECK(object.at("rotationDeg")[1].get<double>() == static_cast<double>(fixture.yawCdeg) / 100.0);
             }
-            // Every other object is drawn as it was without the TV.
-            rv::world::SceneData without = data;
+            // Every other object is drawn as it was without the TV: without the pack's decoration variants, whose
+            // rhythm takes the TV for a neighbour (I12 step 4), and but the gallery's frame over the TV, hung over its
+            // top.
+            rv::world::SceneData plain = data;
+            plain.furniture.decoration.clear();
+            const auto withTvPlain = objectsOf(entry.plan, entry.room, plain);
+            rv::world::SceneData without = plain;
             without.furniture.secondaryTv.reset();
             const auto before = objectsOf(entry.plan, entry.room, without);
-            REQUIRE(before.size() == objects.size());
-            for (const auto& [id, object] : objects) {
-                const bool tv =
-                    std::any_of(tvs.begin(), tvs.end(), [&](const FixtureId& f) { return f.localText() == id; });
+            REQUIRE(before.size() == withTvPlain.size());
+            for (const auto& [id, object] : withTvPlain) {
+                const bool tv = std::any_of(tvs.begin(), tvs.end(), [&](const FixtureId& f) {
+                    return f.localText() == id ||
+                           id.starts_with(std::string(rv::world::kGalleryObjectPrefix) + f.localText());
+                });
                 if (!tv) {
                     INFO(id);
                     CHECK(before.at(id) == object);
