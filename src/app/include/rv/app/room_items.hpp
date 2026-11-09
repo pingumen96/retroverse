@@ -19,6 +19,11 @@
 // before, is still read (its covers serve the preview) but has no such data: its rooms' CRTs have no games until the
 // building job writes it again. The schema rises with every change of the file's shape (the building stamp holds it,
 // so a stamp of another shape's items is never taken: test_world_start.cpp pins the shape of each).
+//
+// Since I12 step 2 (ADR-0021 §2) schema 3: a game's screen data also names its fanart, 3D box, marquee and miximage
+// (the gallery's pictures, gallery_pictures.hpp), and its text its developer, publisher and genre (the shelves'
+// caption cards of step 5), so that the files are rewritten once for both. Schemas 1 and 2 are still read: their
+// rooms' frames keep their prints until the building job writes the files again.
 
 #include <cstdint>
 #include <filesystem>
@@ -38,7 +43,7 @@
 namespace rv::app {
 
 /// The schema the items files are written in; the oldest read (schema 1: I3's, without the CRTs' data).
-inline constexpr int kRoomItemsSchemaVersion = 2;
+inline constexpr int kRoomItemsSchemaVersion = 3;
 inline constexpr int kOldestRoomItemsSchemaVersion = 1;
 
 /// What the hero CRT needs of a placed game ES-DE shows (catalog::EntryState::Game; I4 step 6b): its media relative to
@@ -49,6 +54,12 @@ struct RoomItemScreen {
     std::string video;
     std::string screenshot;
     std::string titleScreen;
+    /// I12 step 2 (schema 3): the gallery's media, relative to the media root as the others (empty where it has
+    /// none, and in a file of an older schema).
+    std::string fanArt;
+    std::string box3d;
+    std::string marquee;
+    std::string mixImage;
     std::optional<std::int64_t> lastPlayed;
     std::string sortKey;
     bool favorite = false;
@@ -70,6 +81,11 @@ struct RoomItemText {
     bool available = true;
     /// The hero CRT's data (none for a game the snapshot did not list, or that ES-DE does not show).
     std::optional<RoomItemScreen> screen;
+    /// I12 step 2 (schema 3): the catalog's developer, publisher and genre (catalog::RoomEntry's; empty where the
+    /// gamelist gives none, and in a file of an older schema).
+    std::string developer;
+    std::string publisher;
+    std::string genre;
 
     bool operator==(const RoomItemText&) const = default;
 };
@@ -108,13 +124,15 @@ struct RoomItems {
 [[nodiscard]] std::filesystem::path roomItemsFile(const std::filesystem::path& cacheDir,
                                                   const catalog::LibraryId& library, const catalog::SystemName& system);
 
-/// {"schemaVersion": 1, "systemName": "...", "platforms": ["..."], "items": [{"game", "title", "fallbackTitle", "year",
-/// "coverPath", "available", "screen": {"video", "screenshot", "titleScreen", "lastPlayed", "sortKey", "favorite",
-/// "playCount", "rating"}}, ...]}; "platforms" only when there are any, "screen" only for an item that has it (its
-/// "lastPlayed" and "rating" only when known).
+/// {"schemaVersion": 3, "systemName": "...", "platforms": ["..."], "items": [{"game", "title", "fallbackTitle", "year",
+/// "coverPath", "available", "developer", "publisher", "genre", "screen": {"video", "screenshot", "titleScreen",
+/// "fanArt", "box3d", "marquee", "mixImage", "lastPlayed", "sortKey", "favorite", "playCount", "rating"}}, ...]};
+/// "platforms" only when there are any, "screen" only for an item that has it (its "lastPlayed" and "rating" only when
+/// known).
 [[nodiscard]] nlohmann::json roomItemsToJson(const RoomItems& items);
-/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape ("platforms" and "screen" optional), a newer
-/// schemaVersion, a GameId that does not parse, a game listed twice or out of order.
+/// Errors (ParseError, context "<context>:<JSON pointer>"): not that shape ("platforms" and "screen" optional; schema
+/// 3's keys required from schema 3 only), a newer schemaVersion, a GameId that does not parse, a game listed twice or
+/// out of order.
 [[nodiscard]] Expected<RoomItems> parseRoomItems(const nlohmann::json& document, std::string_view context);
 
 /// Reads `file`. Errors: NotFound when there is none, those of the read and of parseRoomItems().

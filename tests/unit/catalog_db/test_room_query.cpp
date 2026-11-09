@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <rv/catalog/import_service.hpp>
+#include <rv/catalog/metadata.hpp>
 #include <rv/catalog/play_session.hpp>
 #include <rv/catalog_db/catalog_query.hpp>
 #include <rv/catalog_db/catalog_store.hpp>
@@ -92,6 +93,10 @@ RoomEntry expectedEntry(const IndexedEntry& indexed, std::uint64_t sessions = 0,
     room.state = entry.state;
     room.availability = entry.availability;
     room.media = indexed.media;
+    // I12 step 2: the gamelist's developer, publisher and genre on one line.
+    room.developer = rv::catalog::displayText(entry.metadata.developer);
+    room.publisher = rv::catalog::displayText(entry.metadata.publisher);
+    room.genre = rv::catalog::displayText(entry.metadata.genre);
     return room;
 }
 

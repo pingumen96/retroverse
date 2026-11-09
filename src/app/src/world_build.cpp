@@ -307,6 +307,9 @@ RoomItems snapshotRoomItems(const RoomSnapshotResult& snapshot, const world::Wor
             if (entry->year) {
                 text.year = std::to_string(*entry->year);
             }
+            text.developer = entry->developer;
+            text.publisher = entry->publisher;
+            text.genre = entry->genre;
             // What its room's hero CRT shows of it (I4 step 6b: the floor's CRTs from the items files).
             const auto others = versions.find(placement.game);
             text.screen = roomItemScreen(snapshot, placement.game,
@@ -1345,6 +1348,10 @@ namespace {
     }
     if (sources.screenMediaRoot) {
         addScreenCards(collection.screenGames, collection.covers);
+        // I12 step 2: the gallery's candidates, each game's data from its own section's items.
+        collection.gallery = roomGallery(
+            collection.layout, [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
+            *sources.screenMediaRoot, room.seed);
     }
     collection.sceneData = std::move(sceneData);
     return collection;

@@ -106,6 +106,7 @@
 #include "screen_service.hpp"
 #include "system_logos.hpp"
 #include "world_consoles.hpp"
+#include "world_gallery.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
@@ -700,6 +701,8 @@ struct RetroverseApp::State {
     std::unique_ptr<WorldPlaques> worldPlaques;
     /// I11 step 7: the user's console models in place of the procedural consoles.
     std::unique_ptr<WorldConsoles> worldConsoles;
+    /// I12 step 2: the user's media in the gallery's frames.
+    std::unique_ptr<WorldGallery> worldGallery;
     std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -1054,6 +1057,10 @@ struct RetroverseApp::State {
             worldSigns->release(graphics ? &graphics->materials() : nullptr, scene ? &*scene : nullptr);
             worldSigns.reset();
         }
+        if (worldGallery) {
+            worldGallery->release(graphics ? &graphics->materials() : nullptr);
+            worldGallery.reset();
+        }
         if (worldPlaques) {
             worldPlaques->release(graphics ? &graphics->materials() : nullptr);
             worldPlaques.reset();
@@ -1151,6 +1158,25 @@ struct RetroverseApp::State {
             };
         }
         worldConsoles->update(consoles);
+        // I12 step 2: the user's media in the gallery's frames.
+        if (!worldGallery) {
+            worldGallery = std::make_unique<WorldGallery>(*pool);
+            if (auto config = world::loadWorldConfig(context.paths().assetRoot(), context.paths().configDir())) {
+                worldGallery->setEnabled(config->config.gallery);
+            }
+        }
+        WorldGallery::Frame gallery;
+        gallery.description = &description;
+        gallery.instance = &*scene;
+        gallery.materials = &graphics->materials();
+        gallery.compressed = consoles.compressed;
+        gallery.settle = frame.settle;
+        if (world) {
+            gallery.gallery = [this](const std::string& room) {
+                return world->galleryOf(room);
+            };
+        }
+        worldGallery->update(gallery);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -1897,6 +1923,8 @@ struct RetroverseApp::State {
             world->setReduceMotion(settings->value(row).get<bool>());
         } else if (row.section == world::kWorldSettingsSection && row.key == "systemColors" && worldSigns) {
             worldSigns->setSystemColors(settings->value(row).get<bool>()); // I11 step 6, at once
+        } else if (row.section == world::kWorldSettingsSection && row.key == "gallery" && worldGallery) {
+            worldGallery->setEnabled(settings->value(row).get<bool>()); // I12 step 2, at once
         }
         if (row.apply == SettingApply::CommitFloor && world) {
             settings->saveAsync();
@@ -2175,6 +2203,9 @@ struct RetroverseApp::State {
             if (worldSigns) {
                 worldSigns->sceneChanged(); // I11 step 4: the new objects' signs
             }
+            if (worldGallery) {
+                worldGallery->sceneChanged(); // I12 step 2: the new objects' frames
+            }
             if (worldPlaques) {
                 worldPlaques->sceneChanged(); // I11 step 5
             }
@@ -2335,6 +2366,9 @@ struct RetroverseApp::State {
         }
         if (worldSigns) {
             worldSigns->sceneChanged(); // I11 step 4: the new scene's signs
+        }
+        if (worldGallery) {
+            worldGallery->sceneChanged(); // I12 step 2: its frames
         }
         if (worldPlaques) {
             worldPlaques->sceneChanged(); // I11 step 5: its plaques
@@ -3315,6 +3349,15 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->consoleModels = m_state->worldConsoles->shown();
             catalog->consoleModelsRefused = m_state->worldConsoles->refused();
             catalog->consoleTextureBytes = m_state->worldConsoles->textureBytes();
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->worldGallery) {
+            catalog->gallery = m_state->worldGallery->enabled();
+            catalog->galleryFrames = m_state->worldGallery->frames();
+            catalog->galleryWithMedia = m_state->worldGallery->withMedia();
+            catalog->galleryShown = m_state->worldGallery->shown();
+            catalog->galleryFailed = m_state->worldGallery->failed();
+            catalog->galleryBytes = m_state->worldGallery->bytes();
+            catalog->galleryPeakBytes = m_state->worldGallery->peakBytes();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

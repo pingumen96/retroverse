@@ -37,7 +37,8 @@ Status readString(const Json& object, std::string_view key, std::string_view con
 }
 
 /// An item's "screen" object (RoomItemScreen).
-Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view context, const std::string& pointer) {
+Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view context, const std::string& pointer,
+                                     bool withGallery) {
     if (!object.is_object()) {
         return parseError(context, pointer, "expected an object");
     }
@@ -72,6 +73,16 @@ Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view contex
         }
         screen.ratingTenths = static_cast<int>(rating->get<std::int64_t>());
     }
+    if (withGallery) {
+        for (const auto& [key, out] : {std::pair<std::string_view, std::string*>{"fanArt", &screen.fanArt},
+                                       std::pair<std::string_view, std::string*>{"box3d", &screen.box3d},
+                                       std::pair<std::string_view, std::string*>{"marquee", &screen.marquee},
+                                       std::pair<std::string_view, std::string*>{"mixImage", &screen.mixImage}}) {
+            if (Status read = readString(object, key, context, pointer, *out); !read) {
+                return propagate(read.error());
+            }
+        }
+    }
     return screen;
 }
 
@@ -79,7 +90,7 @@ Expected<RoomItemScreen> parseScreen(const Json& object, std::string_view contex
 
 bool hasText(const RoomItemText& text) noexcept {
     return !text.title.empty() || !text.fallbackTitle.empty() || !text.year.empty() || !text.coverPath.empty() ||
-           text.screen.has_value();
+           text.screen.has_value() || !text.developer.empty() || !text.publisher.empty() || !text.genre.empty();
 }
 
 const RoomItemText* RoomItems::find(const catalog::GameId& game) const noexcept {
@@ -147,12 +158,19 @@ Json roomItemsToJson(const RoomItems& items) {
                    {"fallbackTitle", item.fallbackTitle},
                    {"year", item.year},
                    {"coverPath", item.coverPath},
-                   {"available", item.available}};
+                   {"available", item.available},
+                   {"developer", item.developer},
+                   {"publisher", item.publisher},
+                   {"genre", item.genre}};
         if (item.screen) {
             const RoomItemScreen& screen = *item.screen;
             Json data{{"video", screen.video},
                       {"screenshot", screen.screenshot},
                       {"titleScreen", screen.titleScreen},
+                      {"fanArt", screen.fanArt},
+                      {"box3d", screen.box3d},
+                      {"marquee", screen.marquee},
+                      {"mixImage", screen.mixImage},
                       {"sortKey", screen.sortKey},
                       {"favorite", screen.favorite},
                       {"playCount", screen.playCount}};
@@ -191,6 +209,7 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
                          fmt::format("{}:/schemaVersion", context));
     }
     const bool withScreens = version->get<std::int64_t>() >= 2;
+    const bool withGallery = version->get<std::int64_t>() >= 3;
     RoomItems items;
     if (Status read = readString(document, "systemName", context, "", items.systemName); !read) {
         return propagate(read.error());
@@ -238,8 +257,17 @@ Expected<RoomItems> parseRoomItems(const Json& document, std::string_view contex
             return parseError(context, pointer + "/available", "expected true or false");
         }
         item.available = available->get<bool>();
+        if (withGallery) {
+            for (const auto& [key, out] : {std::pair<std::string_view, std::string*>{"developer", &item.developer},
+                                           std::pair<std::string_view, std::string*>{"publisher", &item.publisher},
+                                           std::pair<std::string_view, std::string*>{"genre", &item.genre}}) {
+                if (Status read = readString(entry, key, context, pointer, *out); !read) {
+                    return propagate(read.error());
+                }
+            }
+        }
         if (const auto screen = entry.find("screen"); withScreens && screen != entry.end()) {
-            auto read = parseScreen(*screen, context, pointer + "/screen");
+            auto read = parseScreen(*screen, context, pointer + "/screen", withGallery);
             if (!read) {
                 return propagate(read.error());
             }

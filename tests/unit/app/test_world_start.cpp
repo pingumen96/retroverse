@@ -174,6 +174,35 @@ TEST_CASE("app/room_items: the room's items round trip as canonical JSON, by Gam
         item.screen.reset();
     }
     CHECK(rv::app::parseRoomItems(older, "items.json").value() == unscreened);
+
+    // Schema 3 (I12 step 2): the gallery's media and the caption cards' texts, read back; a file of schema 2 is still
+    // read without them (its frames keep their prints, its cards their titles), the keys it lacks never asked for.
+    RoomItems gallery = screened;
+    gallery.items[1].screen->fanArt = "snes/fanart/Bramble (USA).jpg";
+    gallery.items[1].screen->box3d = "snes/3dboxes/Bramble (USA).png";
+    gallery.items[1].screen->marquee = "snes/marquees/Bramble (USA).png";
+    gallery.items[1].screen->mixImage = "snes/miximages/Bramble (USA).png";
+    gallery.items[1].developer = "Thorn Works";
+    gallery.items[1].publisher = "Hedge Soft";
+    gallery.items[1].genre = "Puzzle";
+    const nlohmann::json galleryJson = rv::app::roomItemsToJson(gallery);
+    CHECK(rv::app::parseRoomItems(galleryJson, "items.json").value() == gallery);
+    nlohmann::json schema2 = galleryJson;
+    schema2["schemaVersion"] = 2;
+    for (nlohmann::json& item : schema2["items"]) {
+        for (const char* key : {"developer", "publisher", "genre"}) {
+            item.erase(key);
+        }
+        if (item.contains("screen")) {
+            for (const char* key : {"fanArt", "box3d", "marquee", "mixImage"}) {
+                item["screen"].erase(key);
+            }
+        }
+    }
+    CHECK(rv::app::parseRoomItems(schema2, "items.json").value() == screened);
+    nlohmann::json withoutFanArt = galleryJson;
+    withoutFanArt["items"][1]["screen"].erase("fanArt");
+    CHECK_FALSE(rv::app::parseRoomItems(withoutFanArt, "items.json").has_value());
 }
 
 TEST_CASE("app/room_items: the items file's shape is that of its schema version", "[app][world_start]") {
@@ -182,8 +211,12 @@ TEST_CASE("app/room_items: the items file's shape is that of its schema version"
     // (its keys, every optional field present): a change of roomItemsToJson() fails here until the version is raised
     // and the new shape recorded under it. Never edit a recorded shape.
     const std::map<int, std::string> shapes{
-        {2, "items[available,coverPath,fallbackTitle,game,screen{favorite,lastPlayed,playCount,rating,screenshot,sortKey,"
-            "titleScreen,video},title,year],platforms,schemaVersion,systemName"},
+        {2,
+         "items[available,coverPath,fallbackTitle,game,screen{favorite,lastPlayed,playCount,rating,screenshot,sortKey,"
+         "titleScreen,video},title,year],platforms,schemaVersion,systemName"},
+        {3, "items[available,coverPath,developer,fallbackTitle,game,genre,publisher,screen{box3d,fanArt,favorite,"
+            "lastPlayed,marquee,mixImage,playCount,rating,screenshot,sortKey,titleScreen,video},title,year],platforms,"
+            "schemaVersion,systemName"},
     };
     RoomItems items;
     items.systemName = "Lumen 16 Home System";
@@ -194,10 +227,17 @@ TEST_CASE("app/room_items: the items file's shape is that of its schema version"
     text.fallbackTitle = "Amber Lantern (USA)";
     text.year = "1993";
     text.coverPath = "snes/covers/Amber Lantern (USA).png";
+    text.developer = "Lantern Works";
+    text.publisher = "Amber Soft";
+    text.genre = "Platform";
     rv::app::RoomItemScreen screen;
     screen.video = "snes/videos/Amber Lantern (USA).mp4";
     screen.screenshot = "snes/screenshots/Amber Lantern (USA).png";
     screen.titleScreen = "snes/titlescreens/Amber Lantern (USA).png";
+    screen.fanArt = "snes/fanart/Amber Lantern (USA).jpg";
+    screen.box3d = "snes/3dboxes/Amber Lantern (USA).png";
+    screen.marquee = "snes/marquees/Amber Lantern (USA).png";
+    screen.mixImage = "snes/miximages/Amber Lantern (USA).png";
     screen.lastPlayed = 1790000000;
     screen.sortKey = "amber lantern";
     screen.favorite = true;

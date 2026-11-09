@@ -137,6 +137,9 @@ Expected<RoomEntry> readEntry(const Statement& row) {
         return unreadable("a negative play count", context);
     }
     entry.esdePlayCount = static_cast<std::uint64_t>(playCount);
+    entry.developer = catalog::displayText(row.columnText(12));
+    entry.publisher = catalog::displayText(row.columnText(13));
+    entry.genre = catalog::displayText(row.columnText(14));
     return entry;
 }
 
@@ -148,9 +151,11 @@ constexpr std::string_view kSystemGames =
     "rv_libraries AS l CROSS JOIN idx_games AS g ON g.library = l.id AND g.system = ?1";
 
 std::string entriesSql() {
-    return fmt::format("SELECT g.id, g.relative_path, g.is_directory, g.state, g.availability, g.title, g.sort_key, "
-                       "g.release_date, g.rating, g.favorite, g.hidden, g.play_count FROM {} ORDER BY g.id",
-                       kSystemGames);
+    return fmt::format(
+        "SELECT g.id, g.relative_path, g.is_directory, g.state, g.availability, g.title, g.sort_key, "
+        "g.release_date, g.rating, g.favorite, g.hidden, g.play_count, g.developer, g.publisher, g.genre FROM {} "
+        "ORDER BY g.id",
+        kSystemGames);
 }
 
 std::string mediaSql() {

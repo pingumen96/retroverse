@@ -327,6 +327,17 @@ std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) con
     return {};
 }
 
+RoomGallery WorldSession::galleryOf(const std::string& room) const {
+    if (m_shown) {
+        for (const ShownCollection& collection : m_shown->rooms) {
+            if (collection.room.toString() == room) {
+                return collection.gallery;
+            }
+        }
+    }
+    return {};
+}
+
 std::optional<std::string> WorldSession::floorScreenRoom(const WorldBuild& build) const {
     const std::optional<std::string>& bound = m_screenRooms.bound();
     if (!bound) {

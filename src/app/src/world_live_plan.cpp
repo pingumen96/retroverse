@@ -60,7 +60,7 @@ std::optional<ShownFloor> shownFloorOf(const WorldBuild& build) {
     shown.sceneDigest = build.sceneDigest;
     for (const RoomCollection& room : build.rooms) {
         shown.rooms.push_back(ShownCollection{room.room, room.layout, room.covers, room.scenePlacement,
-                                              room.contentDigest, room.screenGames});
+                                              room.contentDigest, room.screenGames, room.gallery});
     }
     shown.mediaKnown = build.mediaRoot.has_value();
     shown.screenGames = build.screenGames;

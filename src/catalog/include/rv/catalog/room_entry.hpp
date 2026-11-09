@@ -49,6 +49,11 @@ struct RoomEntry {
     /// The media files the catalog found for it (presence and extension per kind); meaningful only while
     /// RoomSnapshot::mediaKnown.
     EntryMedia media;
+    /// The gamelist's <developer>, <publisher> and <genre> on one line (displayText(); empty when it gives none): I12
+    /// step 2, for the shelves' caption cards.
+    std::string developer;
+    std::string publisher;
+    std::string genre;
 
     bool operator==(const RoomEntry&) const = default;
 };

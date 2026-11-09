@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "7b952afb5612192ba86bc4106e654eb37abb6fce",
+    "gitCommit": "ef7733368761d5d7745e97264e334abb9c2b415d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g16_handheld_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "231d6a928252f045c763a73e4a73e1f498173454051e52089b3cfa56dbf894c2",
+    "sha256": "9cd448d86a5da13ebc2b4040f7c147007600dcd98cd52a2bc3ca4de6af2f17b3",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "9a610c1cde472f4138b53946937ef0a48d5e6c1aa0fe463e00db666fd458a282"
+      "sha256": "8411ab797a7ec43a35451048a21a9164e2367291533db4cd7acb431ddf42dbde"
     }
   },
-  "renderedOn": "2026-11-08",
+  "renderedOn": "2026-11-09",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

@@ -1,6 +1,7 @@
 #include <rv/world/scene_builder.hpp>
 
 #include <rv/world/building.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/generation.hpp>
 
 #include <algorithm>
@@ -1119,6 +1120,152 @@ std::optional<json> lookPendantLight(const Room& room, const SceneData& data) {
                 {"range", style.range}};
 }
 
+/// The gallery (I12 step 2, ADR-0021 §2): its frames stand off the wall as the wall pictures, in front of the paper,
+/// at least this far over their fixture's top and this far under the picture rail and a cove (else the cornice or the
+/// ceiling),
+/// at most this far over the lowest place they could take.
+constexpr std::int64_t kGalleryOverFixtureMm = 80;
+constexpr std::int64_t kGalleryUnderRailMm = 50;
+constexpr std::int64_t kGalleryUnderCeilingMm = 150;
+constexpr std::int64_t kGalleryLiftMm = 350;
+/// A picture light: its hood (a bar this deep and tall, half the frame's width) this far over the frame and out from
+/// the wall on an arm; its light washed on the wall from the hood (the wash's brightest edge, hidden by it) down to the
+/// frame's bottom, this much wider than the frame, a few millimetres off the wall (behind the frame, in front of the
+/// paper).
+constexpr std::int64_t kHoodOverFrameMm = 70;
+constexpr std::int64_t kHoodOutMm = 110;
+constexpr std::int64_t kHoodDepthMm = 45;
+constexpr std::int64_t kHoodHeightMm = 28;
+constexpr std::int64_t kHoodArmMm = 10;
+constexpr std::int64_t kWashWiderMm = 400;
+constexpr std::int64_t kWashOffWallMm = 7;
+
+/// Where a frame over `fixture` hangs: the point of the wall its back stands against (`off` from the wall), none when
+/// it stands against no wall.
+std::optional<std::pair<std::int64_t, std::int64_t>> againstWall(const Room& room, const Fixture& fixture,
+                                                                 std::int64_t off) {
+    const auto [backX, backZ] = turned(0, -fixture.depthMm / 2, fixture.yawCdeg);
+    const std::int64_t x = fixture.xMm + backX;
+    const std::int64_t z = fixture.zMm + backZ;
+    if (backX < 0 && x - room.minXMm <= kAgainstWallMm) {
+        return std::pair{room.minXMm + off, z};
+    }
+    if (backX > 0 && room.maxXMm - x <= kAgainstWallMm) {
+        return std::pair{room.maxXMm - off, z};
+    }
+    if (backZ < 0 && z - room.minZMm <= kAgainstWallMm) {
+        return std::pair{x, room.minZMm + off};
+    }
+    if (backZ > 0 && room.maxZMm - z <= kAgainstWallMm) {
+        return std::pair{x, room.maxZMm - off};
+    }
+    return std::nullopt;
+}
+
+/// The gallery's frames (I12 step 2, ADR-0021 §2): one over each fixture of the gallery's roles standing against a
+/// wall, of the kind its seed draws by the pack's weights, the pack's print in it until the app puts a game's media
+/// there, hung in the band between the fixture's top and the picture rail; every other frame a picture light (its
+/// hood, its wash on the wall). A frame the band cannot hold is left out.
+void addGallery(json& objects, const WorldPlan& plan, const Room& room, const RoomDressing& dressing,
+                const GalleryDressing& gallery) {
+    std::int64_t top = room.heightMm - kGalleryUnderCeilingMm;
+    if (dressing.shell && !dressing.shell->rail.empty()) {
+        top = dressing.shell->railYMm - kPictureRailHeightMm - kGalleryUnderRailMm;
+    } else if (dressing.shell && !dressing.shell->cornice.empty()) {
+        top = room.heightMm - kCorniceHeightMm - kGalleryUnderCeilingMm;
+    }
+    if (dressing.cove) {
+        top = std::min(top, dressing.cove->yMm - kGalleryUnderRailMm);
+    }
+    int total = 0;
+    for (const int weight : gallery.weights) {
+        total += weight;
+    }
+    if (total <= 0) {
+        return;
+    }
+    std::size_t hung = 0;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room.id ||
+            std::find(gallery.roles.begin(), gallery.roles.end(), fixture.role) == gallery.roles.end()) {
+            continue;
+        }
+        const auto wall = againstWall(room, fixture, kWallPictureOffMm);
+        if (!wall) {
+            continue;
+        }
+        const std::string local = fixture.id.localText();
+        const std::uint64_t seed = core::deriveSeed(room.seed, "gallery", local);
+        int draw = static_cast<int>(seed % static_cast<std::uint64_t>(total));
+        GalleryKind kind = GalleryKind::Poster;
+        for (const GalleryKind candidate : kGalleryKinds) {
+            const int weight = gallery.weights[static_cast<std::size_t>(candidate)];
+            if (draw < weight) {
+                kind = candidate;
+                break;
+            }
+            draw -= weight;
+        }
+        const GalleryPictureSize picture = galleryPictureSize(kind);
+        const std::int64_t width = picture.widthMm + 2 * kGalleryFrameBarMm;
+        const std::int64_t height = picture.heightMm + 2 * kGalleryFrameBarMm;
+        const std::int64_t low = fixture.yMm + fixture.heightMm + kGalleryOverFixtureMm;
+        if (top - low < height) {
+            continue;
+        }
+        const std::int64_t centre = std::min((low + top) / 2, low + height / 2 + kGalleryLiftMm);
+        const std::string id = std::string(kGalleryObjectPrefix) + local;
+        const double yaw = degrees(fixture.yawCdeg);
+        objects.push_back(
+            json{{"id", id},
+                 {"prefab", "poster_frame"},
+                 {"params", json{{"width", meters(width)},
+                                 {"height", meters(height)},
+                                 {"frameWidth", meters(kGalleryFrameBarMm)},
+                                 {"depth", meters(kGalleryFrameDepthMm)}}},
+                 {"position", pointJson(wall->first, centre, wall->second)},
+                 {"rotationDeg", vec3Json(0.0, yaw, 0.0)},
+                 {"materials", json{{"frame", gallery.frame},
+                                    {"picture", kind == GalleryKind::Lightbox ? gallery.lightbox : gallery.picture}}},
+                 {"textures", json{{"picture", patternTexture(gallery.pattern, core::deriveSeed(seed, "print"))}}},
+                 {"castsShadows", false},
+                 {"collides", false}});
+        if (!gallery.hood.empty() && kind != GalleryKind::Lightbox && hung % 2 == 0) {
+            // In the frame's own axes: x along the wall, z out of it (from the frame's back, kWallPictureOffMm off).
+            const auto at = [&](std::int64_t along, std::int64_t out) {
+                const auto [dx, dz] = turned(along, out, fixture.yawCdeg);
+                return std::pair{wall->first + dx, wall->second + dz};
+            };
+            const std::int64_t hoodY = centre + height / 2 + kHoodOverFrameMm;
+            const auto hood = at(0, kHoodOutMm);
+            objects.push_back(dressingPrimitive(
+                id + "/hood", "box",
+                json{{"size", vec3Json(meters(width / 2), meters(kHoodHeightMm), meters(kHoodDepthMm))}},
+                pointJson(hood.first, hoodY, hood.second), yaw, gallery.hood));
+            const auto arm = at(0, (kHoodOutMm - kHoodDepthMm / 2 - kWallPictureOffMm) / 2);
+            objects.push_back(
+                dressingPrimitive(id + "/arm", "box",
+                                  json{{"size", vec3Json(meters(kHoodArmMm), meters(kHoodArmMm),
+                                                         meters(kHoodOutMm + kWallPictureOffMm - kHoodDepthMm / 2))}},
+                                  pointJson(arm.first, hoodY, arm.second), yaw, gallery.hood));
+            const std::int64_t washBottom = centre - height / 2;
+            const std::int64_t washTop = hoodY;
+            const auto wash = at(0, kWashOffWallMm - kWallPictureOffMm);
+            objects.push_back(json{
+                {"id", id + "/wash"},
+                {"primitive", "quad"},
+                {"params", json{{"size", json::array({meters(width + kWashWiderMm), meters(washTop - washBottom)})}}},
+                {"position",
+                 vec3Json(meters(wash.first), static_cast<double>(washBottom + washTop) / 2000.0, meters(wash.second))},
+                {"rotationDeg", vec3Json(0.0, yaw, 0.0)},
+                {"material", gallery.wash},
+                {"castsShadows", false},
+                {"collides", false}});
+        }
+        ++hung;
+    }
+}
+
 /// The pack's dressing of `room`'s upper walls, ceiling and floor (I6 step 6's review, room_look.hpp's
 /// "roomDressing"), in the room's frame: the cove strips, the pictures over the fixtures against a wall, the spots'
 /// cans, the sign's pictogram, the runner to the hero corner; since I12 step 1 the room's architecture and pendants.
@@ -1168,6 +1315,9 @@ void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, con
                                        {"collides", false}});
             }
         }
+    }
+    if (const std::optional<GalleryDressing>& gallery = dressing.gallery) {
+        addGallery(objects, plan, room, dressing, *gallery);
     }
     if (const std::optional<WallPictures>& pictures = dressing.pictures) {
         for (const Fixture& fixture : plan.fixtures) {

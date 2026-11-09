@@ -31,6 +31,7 @@ add_library(rv_app_cli STATIC
     src/exit_code.cpp
     src/frame_stats_log.cpp
     src/frame_timing.cpp
+    src/gallery_pictures.cpp
     src/binding_rules.cpp
     src/controller_watch.cpp
     src/input_context.cpp
@@ -134,6 +135,7 @@ add_library(rv_app STATIC
     src/world_signs.cpp
     src/world_plaques.cpp
     src/world_consoles.cpp
+    src/world_gallery.cpp
     src/plaque_card_panel.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp

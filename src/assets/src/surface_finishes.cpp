@@ -151,4 +151,31 @@ ProceduralSurface makeShelfGlow(const ProceduralSurfaceInfo& info) {
     });
 }
 
+ProceduralSurface makePictureWash(const ProceduralSurfaceInfo& info) {
+    // The light of a picture light on its wall (I12 step 2), as the coverage of a white picture: a cone opening down
+    // from the hood at the top edge (a bell across, wider the lower it falls), strongest just under the hood and
+    // falling off towards the frame's bottom, never quite to nothing; zero along the sides and at the very top (the
+    // hood hides that edge). u across, v down.
+    CanvasDesc desc;
+    desc.size = info.size;
+    desc.meters = info.meters;
+    desc.tiles = false;
+    desc.samplesPerAxis = 2;
+    desc.normalMap = false;
+    return renderSurface(desc, [&](float u, float v) {
+        const float top = smoothStep(0.0f, 0.05f, v);
+        const float fall = 0.18f + 0.82f * std::exp(-2.4f * v);
+        const float spread = 0.16f + 0.18f * v;
+        const float across = (u - 0.5f) / spread;
+        const float bell = std::exp(-across * across);
+        const float sides = smoothStep(0.0f, 0.1f, u) * smoothStep(0.0f, 0.1f, 1.0f - u);
+        SurfaceSample sample;
+        sample.albedo = glm::vec3(1.0f);
+        sample.roughness = 1.0f;
+        sample.metallic = 0.0f;
+        sample.coverage = std::clamp(top * fall * bell * sides, 0.0f, 1.0f);
+        return sample;
+    });
+}
+
 } // namespace rv::assets::detail

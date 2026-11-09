@@ -13,6 +13,7 @@
 #include <rv/core/text.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/scene/scene_description.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/platform_manifest.hpp>
 #include <rv/world/validation.hpp>
@@ -500,8 +501,8 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
     if (document.failed() || !reader.has("roomDressing")) {
         return;
     }
-    const ObjectReader dressing = reader.object(
-        "roomDressing", {"cans", "cardPerSlot", "cove", "pendants", "pictures", "runner", "shell", "signIcon"});
+    const ObjectReader dressing = reader.object("roomDressing", {"cans", "cardPerSlot", "cove", "gallery", "pendants",
+                                                                 "pictures", "runner", "shell", "signIcon"});
     if (!document.failed() && dressing.has("cardPerSlot")) {
         theme.dressing.cardPerSlot = dressing.boolean("cardPerSlot");
     }
@@ -623,6 +624,60 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
             document.fail(shell.pointer("frieze"), "a frieze stands above a picture rail: expected \"rail\" too");
         }
         out.shell = std::move(parts);
+    }
+    if (!document.failed() && dressing.has("gallery")) {
+        // I12 step 2 (ADR-0021 §2): the frames over the modules, their kinds by weight.
+        const ObjectReader gallery =
+            dressing.object("gallery", {"frame", "hood", "lightbox", "pattern", "picture", "roles", "wash", "weights"});
+        GalleryDressing frames;
+        const ObjectReader weights = gallery.object("weights", {"frame", "lightbox", "portrait", "poster"});
+        int total = 0;
+        for (const GalleryKind kind : kGalleryKinds) {
+            const std::string_view key = toString(kind);
+            if (weights.has(key)) {
+                const auto weight = static_cast<int>(weights.integer(key, 0, 1000));
+                frames.weights[static_cast<std::size_t>(kind)] = weight;
+                total += weight;
+            }
+        }
+        if (!document.failed() && total == 0) {
+            document.fail(gallery.pointer("weights"), "expected a kind with a weight above 0");
+        }
+        frames.frame = materialName(gallery, "frame");
+        frames.picture = materialName(gallery, "picture");
+        if (gallery.has("lightbox")) {
+            frames.lightbox = materialName(gallery, "lightbox");
+        } else if (!document.failed() && frames.weights[static_cast<std::size_t>(GalleryKind::Lightbox)] > 0) {
+            document.fail(gallery.pointer("lightbox"), "a lightbox's lit print: expected \"lightbox\"");
+        }
+        frames.pattern = gallery.string("pattern");
+        if (!document.failed() && std::find(scene::kTexturePatternNames.begin(), scene::kTexturePatternNames.end(),
+                                            frames.pattern) == scene::kTexturePatternNames.end()) {
+            document.fail(gallery.pointer("pattern"), "expected a scene texture pattern");
+        }
+        if (gallery.has("hood") != gallery.has("wash")) {
+            if (!document.failed()) {
+                document.fail(gallery.pointer(gallery.has("hood") ? "hood" : "wash"),
+                              "a picture light is a hood and its wash: expected both or neither");
+            }
+        } else if (gallery.has("hood")) {
+            frames.hood = materialName(gallery, "hood");
+            frames.wash = materialName(gallery, "wash");
+        }
+        if (gallery.has("roles")) {
+            detail::forEachElement(gallery.array("roles"), gallery.pointer("roles"),
+                                   [&](const Json& element, const std::string& at) {
+                                       const std::string text = detail::readString(document, element, at);
+                                       if (const auto role = parseFixtureRole(text)) {
+                                           frames.roles.push_back(*role);
+                                       } else if (!document.failed()) {
+                                           document.fail(at, "expected a fixture role");
+                                       }
+                                   });
+        } else {
+            frames.roles = {FixtureRole::HeroModule, FixtureRole::SideModule};
+        }
+        out.gallery = std::move(frames);
     }
     if (!document.failed() && dressing.has("pendants")) {
         const ObjectReader pendants = dressing.object("pendants", {"diffuser", "metal", "shade"});
@@ -830,6 +885,16 @@ ThemeMaterials builtInTheme() {
     shell.beams = "MAT_Wood_Walnut";
     theme.dressing.shell = shell;
     theme.dressing.pendants = PendantDressing{"MAT_Pendant_Shade", "MAT_Pendant_Diffuser", "MAT_Metal_Brass"};
+    GalleryDressing gallery;
+    gallery.weights = {4, 2, 1, 3};
+    gallery.roles = {FixtureRole::HeroModule, FixtureRole::SideModule};
+    gallery.frame = "MAT_Wood_Walnut";
+    gallery.picture = "MAT_Paper_Print";
+    gallery.lightbox = "MAT_Lightbox";
+    gallery.pattern = "print";
+    gallery.hood = "MAT_Metal_Brass";
+    gallery.wash = "MAT_Picture_Wash";
+    theme.dressing.gallery = std::move(gallery);
     return theme;
 }
 

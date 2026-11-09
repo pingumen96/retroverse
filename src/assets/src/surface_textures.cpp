@@ -16,8 +16,8 @@ struct CatalogEntry {
     Generator generate;
 };
 
-const std::array<CatalogEntry, 19>& catalog() {
-    static const std::array<CatalogEntry, 19> entries{{
+const std::array<CatalogEntry, 20>& catalog() {
+    static const std::array<CatalogEntry, 20> entries{{
         {{"oak_planks", {1024, 1024}, {2.0f, 2.0f}, true, true,
           "Oak floor planks 14.3 cm wide running along v, staggered joints with a dark gap and a micro-bevel, a tint "
           "and a slight cup per plank, satin varnish with worn traffic areas. Full surface (white base color, "
@@ -90,6 +90,12 @@ const std::array<CatalogEntry, 19>& catalog() {
           "uv 0..1 of a compartment's back panel, for an unlit, alpha-blended material (its colour and strength are the "
           "material's); no normal map."},
          &detail::makeShelfGlow},
+        {{"picturewash", {128, 128}, {1.0f, 1.0f}, false, false,
+          "The light a picture light throws on its picture's wall (I12 step 2): a white picture whose alpha is a cone "
+          "opening from the top edge (under the hood) and fading downwards, zero at the sides and at the very top. A "
+          "picture over uv 0..1 of a quad from the hood down to the frame's bottom, for an unlit, alpha-blended "
+          "material (its colour and strength are the material's); no normal map."},
+         &detail::makePictureWash},
         // I12 step 1 (ADR-0021 §1): the rooms' herringbone floors, the seats' upholstery, the rooms' wallpaper.
         {{"herringbone_parquet", {1024, 1024}, {2.0f, 2.0f}, true, true,
           "Oak blocks 7.1 x 35.4 cm laid in a herringbone at 45 degrees to the image's axes, a tint per block, a dark "
@@ -108,8 +114,8 @@ const std::array<CatalogEntry, 19>& catalog() {
           "and roughness under it multiply the leather's own; one repeat covers 50 x 50 cm (the seats' uvs)."},
          &detail::makeLeather},
         {{"wallpaper_damask", {1024, 1024}, {1.0f, 1.0f}, true, true,
-          "A tone-on-tone damask: palmettes (a flame between fans of veined leaves) in onion-shaped double frames on "
-          "a centred lattice 50 cm apart, quatrefoils where the frames meet; lighter satin ink with a light emboss on "
+          "A tone-on-tone damask: rosettes of eight rounded petals in roundels, in onion-shaped double frames on a "
+          "centred lattice 50 cm apart, quatrefoils where the frames meet; lighter satin ink with a light emboss on "
           "a matte paper ground. Detail surface: base color about 0.86 (ground) to 1 (ink) tinted by the material's "
           "color; one repeat covers 1 x 1 m (uv in meters)."},
          &detail::makeWallpaperDamask},
@@ -157,8 +163,8 @@ std::optional<SurfaceMap> surfaceMapFromString(std::string_view name) noexcept {
 }
 
 std::span<const ProceduralSurfaceInfo> proceduralSurfaces() noexcept {
-    static const std::array<ProceduralSurfaceInfo, 19> infos = [] {
-        std::array<ProceduralSurfaceInfo, 19> list{};
+    static const std::array<ProceduralSurfaceInfo, 20> infos = [] {
+        std::array<ProceduralSurfaceInfo, 20> list{};
         std::transform(catalog().begin(), catalog().end(), list.begin(),
                        [](const CatalogEntry& entry) { return entry.info; });
         return list;

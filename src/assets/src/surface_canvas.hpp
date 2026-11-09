@@ -68,6 +68,7 @@ using SurfaceFunction = std::function<SurfaceSample(float u, float v)>;
 [[nodiscard]] ProceduralSurface makeAgedPlastic(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeWallWash(const ProceduralSurfaceInfo& info);
 [[nodiscard]] ProceduralSurface makeShelfGlow(const ProceduralSurfaceInfo& info);
+[[nodiscard]] ProceduralSurface makePictureWash(const ProceduralSurfaceInfo& info);
 /// I12 step 1's surfaces: a herringbone parquet (surface_wood.cpp), a plain weave and a pebbled leather
 /// (surface_fabric.cpp), a damask wallpaper (surface_wallpaper.cpp).
 [[nodiscard]] ProceduralSurface makeHerringboneParquet(const ProceduralSurfaceInfo& info);

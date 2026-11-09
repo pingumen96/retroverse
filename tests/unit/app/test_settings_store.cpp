@@ -518,7 +518,7 @@ TEST_CASE("app/setting_rows: every row names a key its loader takes, and none sh
     }
     // ADR-0018 §2: only how the world is shown.
     CHECK(std::vector<std::string_view>(rv::world::worldSettingKeys().begin(), rv::world::worldSettingKeys().end()) ==
-          std::vector<std::string_view>{"reduceMotion", "lightingProfile", "systemColors"});
+          std::vector<std::string_view>{"reduceMotion", "lightingProfile", "systemColors", "gallery"});
 }
 
 TEST_CASE("app/setting_rows: the shipped values are among each row's", "[app][settings]") {

@@ -518,6 +518,12 @@
       "baseColorTexture": "procedural:shelfglow/baseColor"
     },
     "MAT_Lightbox": { "shading": "unlit", "baseColor": "#FFFFFF", "emissiveStrength": 0.35 },
+    // I12 step 2: a picture light's glow on the wall around its frame (the gallery's hoods): a cone from the hood,
+    // warm and faint, never a light.
+    "MAT_Picture_Wash": {
+      "shading": "unlit", "baseColor": "#FFC88A", "emissiveStrength": 1.0, "alpha": 0.35, "alphaMode": "blend",
+      "baseColorTexture": "procedural:picturewash/baseColor"
+    },
     "MAT_Can_Lens": { "shading": "unlit", "baseColor": "#FFE2B8", "emissiveStrength": 1.2 },
     "MAT_Neon_Tube_Pink": { "shading": "unlit", "baseColor": "#F060B8", "emissiveStrength": 2.4 },
     "MAT_Fabric_Display_Ivory": { "baseColor": "#CFC6B2", "metallic": 0.0, "roughness": 0.95 },

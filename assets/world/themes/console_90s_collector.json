@@ -121,6 +121,10 @@
   "roomDressing": {
     "shell": {"railYMm": 2700, "rail": "MAT_Wood_Oak", "wallpaper": "MAT_Wallpaper_Mauve", "cornice": "MAT_Wood_Oak",
               "beams": "MAT_Wood_Oak"},
-    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brushed"}
+    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brushed"},
+    // I12 step 2: oak frames, 3D boxes more often than in the classic rooms, Memphis prints until the media come.
+    "gallery": {"weights": {"poster": 4, "portrait": 3, "lightbox": 1, "frame": 2}, "frame": "MAT_Wood_Oak",
+                "picture": "MAT_Paper_Print", "lightbox": "MAT_Lightbox", "pattern": "poster_memphis",
+                "hood": "MAT_Metal_Brushed", "wash": "MAT_Picture_Wash"}
   }
 }

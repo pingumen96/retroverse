@@ -121,8 +121,8 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
     CHECK(names == std::vector<std::string_view>{"oak_planks", "walnut", "varnished_wood", "oak", "painted_plaster",
                                                  "ornate_rug", "ornate_rug_blue", "ornate_rug_sage", "ornate_rug_green",
                                                  "geometric_rug", "runner_rug", "brushed_metal", "aged_plastic",
-                                                 "wallwash", "shelfglow", "herringbone_parquet", "fabric_weave",
-                                                 "leather", "wallpaper_damask"});
+                                                 "wallwash", "shelfglow", "picturewash", "herringbone_parquet",
+                                                 "fabric_weave", "leather", "wallpaper_damask"});
     CHECK(rv::assets::findProceduralSurface("teak") == nullptr);
     const auto unknown = rv::assets::makeProceduralSurface("teak");
     REQUIRE_FALSE(unknown.has_value());
@@ -138,6 +138,8 @@ TEST_CASE("assets/surface_textures: the catalog", "[assets][surfaces]") {
     CHECK_FALSE(rv::assets::findProceduralSurface("wallwash")->hasNormalMap);
     CHECK_FALSE(rv::assets::findProceduralSurface("shelfglow")->tiles);
     CHECK_FALSE(rv::assets::findProceduralSurface("shelfglow")->hasNormalMap);
+    CHECK_FALSE(rv::assets::findProceduralSurface("picturewash")->tiles);
+    CHECK_FALSE(rv::assets::findProceduralSurface("picturewash")->hasNormalMap);
 }
 
 TEST_CASE("assets/surface_textures: names of single maps", "[assets][surfaces]") {
@@ -183,9 +185,9 @@ TEST_CASE("assets/surface_textures: every surface generates its maps", "[assets]
             CHECK(image.height == info.size.y);
             CHECK(image.channels == 4);
         }
-        // Opaque base color (but the wall wash's and the shelf glow's, whose alpha is their picture); the
-        // metallic-roughness map leaves R and A at 255 (glTF ignores them).
-        if (info.name != "wallwash" && info.name != "shelfglow") {
+        // Opaque base color (but the wall wash's, the shelf glow's and the picture wash's, whose alpha is their
+        // picture); the metallic-roughness map leaves R and A at 255 (glTF ignores them).
+        if (info.name != "wallwash" && info.name != "shelfglow" && info.name != "picturewash") {
             CHECK(meanChannel(surface.baseColor, 3) == 1.0);
         }
         CHECK(meanChannel(surface.metallicRoughness, 0) == 1.0);
@@ -438,6 +440,46 @@ TEST_CASE("assets/surface_textures: the shelf glow: a white picture, strongest u
     CHECK(alpha(0, 0) <= 10);
     CHECK(alpha(image.width - 1, 0) <= 10);
     CHECK(alpha(10, 4) == alpha(image.width - 11, 4));
+}
+
+TEST_CASE("assets/surface_textures: the picture wash: a white cone from the hood, falling downwards, none at the sides",
+          "[assets][surfaces]") {
+    // I12 step 2: the gallery's picture lights.
+    const ImageData& image = surfaceOf("picturewash").baseColor;
+    REQUIRE(image.isValid());
+    const auto alpha = [&](int x, int y) { return static_cast<int>(texel(image, x, y)[3]); };
+    const int centre = image.width / 2;
+    CHECK(texel(image, centre, image.height / 2)[0] == 255);
+    // Nothing at the very top (the hood's edge), strongest just under it, then falling, never quite to nothing.
+    CHECK(alpha(centre, 0) <= 20);
+    int strongest = 0;
+    int at = 0;
+    for (int y = 0; y < image.height; ++y) {
+        if (alpha(centre, y) > strongest) {
+            strongest = alpha(centre, y);
+            at = y;
+        }
+    }
+    CHECK(strongest >= 200);
+    CHECK(at < image.height / 8);
+    for (int y = at + 1; y < image.height; ++y) {
+        CHECK(alpha(centre, y) <= alpha(centre, y - 1));
+    }
+    CHECK(alpha(centre, image.height - 1) >= 25);
+    // A cone: none at the sides, wider below than above, symmetric.
+    for (int y = 0; y < image.height; y += 8) {
+        CHECK(alpha(0, y) <= 2);
+        CHECK(alpha(image.width - 1, y) <= 2);
+    }
+    const auto width = [&](int y) {
+        int lit = 0;
+        for (int x = 0; x < image.width; ++x) {
+            lit += alpha(x, y) > alpha(centre, y) / 2 ? 1 : 0;
+        }
+        return lit;
+    };
+    CHECK(width(image.height - 1) > width(image.height / 8));
+    CHECK(alpha(20, 60) == alpha(image.width - 21, 60));
 }
 
 TEST_CASE("assets/surface_textures: the wall wash: a white picture, its light rising from the shade, none at its edges",

@@ -130,9 +130,12 @@
     "shell": {"cornice": "MAT_Metal_Graphite"},
     "cove": {"yMm": 2600, "west": "MAT_Cove_Magenta", "east": "MAT_Cove_Cyan", "westWash": "MAT_Cove_Wash_Magenta",
              "eastWash": "MAT_Cove_Wash_Cyan"},
-    "pictures": {"centreYMm": 2220, "widthMm": 460, "heightMm": 600, "roles": ["hero-module", "side-module"],
-                 "kinds": ["tv_cabinet"], "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox",
-                 "pattern": "poster_flyer"},
+    "pictures": {"centreYMm": 2220, "widthMm": 460, "heightMm": 600, "roles": [], "kinds": ["tv_cabinet"],
+                 "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox", "pattern": "poster_flyer"},
+    // I12 step 2 (ADR-0021 §2): over the modules the games' marquees, lightboxes only (the showcases keep their
+    // flyers); no picture light: the lightboxes glow.
+    "gallery": {"weights": {"lightbox": 1}, "frame": "MAT_Metal_Graphite", "picture": "MAT_Lightbox",
+                "lightbox": "MAT_Lightbox", "pattern": "marquee"},
     "cans": {"roles": ["key", "wall-washer"], "body": "MAT_Metal_Graphite", "lens": "MAT_Can_Lens"},
     "runner": {"widthMm": 900, "lengthMm": 3500, "material": "MAT_Carpet_Runner"}
   },

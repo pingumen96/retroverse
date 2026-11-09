@@ -67,6 +67,8 @@ struct ShownCollection {
     world::RoomPlacement scenePlacement;
     std::string contentDigest;
     std::vector<ScreenGame> screenGames;
+    /// I12 step 2: its gallery's candidates (RoomCollection::gallery).
+    RoomGallery gallery;
 };
 
 /// What the session keeps of the floor it shows, to compare the next build with (a WorldBuild without its scene, scene

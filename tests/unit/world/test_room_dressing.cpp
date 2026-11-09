@@ -3,6 +3,7 @@
 // shipped packs, every golden plan's room, the look pendant's light among the scene's.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <set>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,6 +19,7 @@
 #include <nlohmann/json.hpp>
 
 #include <rv/assets/material_library.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/ids.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/room_template.hpp>
@@ -543,4 +546,124 @@ TEST_CASE("world/room_dressing: the look pendant's light only while the scene's 
     }
     CHECK(hung == 1 + (withPrefix(bare, "dressing:pendant:").size() - 5) / 3);
     CHECK(hasLight(bare, "look:pendant"));
+}
+
+TEST_CASE("world/room_dressing: the reader takes a pack's gallery, refusing a broken one (I12 step 2)",
+          "[world][room_dressing]") {
+    const auto parse = [](const std::string& dressing) {
+        return rv::world::parseThemeMaterials(
+            R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {}, "roomDressing": )" +
+                dressing + "}",
+            "t.json");
+    };
+    const auto refusal = [&](const std::string& dressing) {
+        auto parsed = parse(dressing);
+        REQUIRE_FALSE(parsed.has_value());
+        return parsed.error().message;
+    };
+    auto good = parse(R"({"gallery": {"weights": {"poster": 4, "portrait": 2, "lightbox": 1, "frame": 3},
+        "roles": ["side-module"], "frame": "MAT_Wood_Walnut", "picture": "MAT_Paper_Print", "lightbox": "MAT_Lightbox",
+        "pattern": "print", "hood": "MAT_Metal_Brass", "wash": "MAT_Picture_Wash"}})");
+    REQUIRE(good.has_value());
+    REQUIRE(good->dressing.gallery.has_value());
+    const rv::world::GalleryDressing& gallery = *good->dressing.gallery;
+    CHECK(gallery.weights == std::array<int, 4>{4, 2, 1, 3});
+    CHECK(gallery.roles == std::vector<FixtureRole>{FixtureRole::SideModule});
+    CHECK(gallery.frame == "MAT_Wood_Walnut");
+    CHECK(gallery.lightbox == "MAT_Lightbox");
+    CHECK(gallery.hood == "MAT_Metal_Brass");
+    CHECK(gallery.wash == "MAT_Picture_Wash");
+    CHECK_FALSE(good->dressing.empty());
+    // The modules by default; no picture light, no lightbox material without lightboxes.
+    auto plain = parse(R"({"gallery": {"weights": {"poster": 1}, "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print",
+        "pattern": "print"}})");
+    REQUIRE(plain.has_value());
+    CHECK(plain->dressing.gallery->roles == std::vector<FixtureRole>{FixtureRole::HeroModule, FixtureRole::SideModule});
+    CHECK(plain->dressing.gallery->hood.empty());
+    CHECK(plain->dressing.gallery->lightbox.empty());
+
+    const std::string base = R"("frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print", "pattern": "print")";
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"poster": 0}, )" + base + "}}"), ContainsSubstring("weight"));
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"lightbox": 1}, )" + base + "}}"), ContainsSubstring("lightbox"));
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"mural": 1}, )" + base + "}}"), ContainsSubstring("mural"));
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"poster": 1}, "hood": "MAT_Metal_Brass", )" + base + "}}"),
+               ContainsSubstring("both or neither"));
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"poster": 1}, "roles": ["attic"], )" + base + "}}"),
+               ContainsSubstring("fixture role"));
+    CHECK_THAT(refusal(R"({"gallery": {"weights": {"poster": 1}, "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print",
+        "pattern": "mona"}})"),
+               ContainsSubstring("texture pattern"));
+}
+
+TEST_CASE("world/room_dressing: the gallery's frames over every golden plan room's modules, under the rail, every "
+          "other one lit (I12 step 2)",
+          "[world][room_dressing]") {
+    std::set<rv::world::GalleryKind> kinds;
+    for (const std::string& name : rv::test::world::goldenPlanNames()) {
+        INFO(name);
+        const rv::test::world::PlanCase& entry = rv::test::world::planCase(name);
+        REQUIRE(entry.data.theme.dressing.gallery.has_value());
+        const rv::world::GalleryDressing& gallery = *entry.data.theme.dressing.gallery;
+        const rv::world::ShellDressing& shell = *entry.data.theme.dressing.shell;
+        const json scene = sceneOf(entry.plan, entry.room, entry.data);
+        CHECK(scene == sceneOf(entry.plan, entry.room, entry.data));
+        const double bar = meters(rv::world::kGalleryFrameBarMm);
+        const double rail = meters(shell.railYMm - 45);
+
+        std::size_t modules = 0;
+        std::size_t hung = 0;
+        for (const rv::world::Fixture& fixture : entry.plan.fixtures) {
+            if (fixture.role != FixtureRole::HeroModule && fixture.role != FixtureRole::SideModule) {
+                continue;
+            }
+            ++modules;
+            const std::string id = std::string(rv::world::kGalleryObjectPrefix) + fixture.id.localText();
+            INFO(id);
+            const json& frame = objectNamed(scene, id);
+            CHECK(frame.at("prefab") == "poster_frame");
+            CHECK(frame.at("collides") == false);
+            CHECK(frame.at("castsShadows") == false);
+            const double width = frame.at("params").at("width").get<double>();
+            const double height = frame.at("params").at("height").get<double>();
+            // Its kind from its picture's aspect: exactly that kind's picture.
+            const rv::world::GalleryKind kind = rv::world::galleryKindOfAspect((width - 2 * bar) / (height - 2 * bar));
+            kinds.insert(kind);
+            const rv::world::GalleryPictureSize picture = rv::world::galleryPictureSize(kind);
+            CHECK(near(width - 2 * bar, meters(picture.widthMm)));
+            CHECK(near(height - 2 * bar, meters(picture.heightMm)));
+            CHECK(width < meters(fixture.widthMm));
+            CHECK(frame.at("materials").at("frame") == gallery.frame);
+            CHECK(frame.at("materials").at("picture") ==
+                  (kind == rv::world::GalleryKind::Lightbox ? gallery.lightbox : gallery.picture));
+            CHECK(frame.at("textures").at("picture").at("pattern") == gallery.pattern);
+            // Over its module, under the picture rail, turned as the module.
+            const double centre = frame.at("position")[1].get<double>();
+            CHECK(centre - height / 2 >= meters(fixture.yMm + fixture.heightMm) + 0.08 - 1e-6);
+            CHECK(centre + height / 2 <= rail - 0.05 + 1e-6);
+            CHECK(frame.at("rotationDeg")[1].get<double>() == static_cast<double>(fixture.yawCdeg) / 100.0);
+            // Every other frame along the room a picture light (never over a lightbox): its hood over the frame, its
+            // wash on the wall from the hood down to the frame's bottom.
+            const bool lit = !gallery.hood.empty() && kind != rv::world::GalleryKind::Lightbox && hung % 2 == 0;
+            CHECK(withPrefix(scene, id + "/").size() == (lit ? 3u : 0u));
+            if (lit) {
+                const Extent hood = extentOf(objectNamed(scene, id + "/hood"));
+                CHECK(hood.minY > centre + height / 2);
+                CHECK(hood.maxY < rail);
+                const json& wash = objectNamed(scene, id + "/wash");
+                CHECK(wash.at("material") == gallery.wash);
+                const double washHeight = wash.at("params").at("size")[1].get<double>();
+                CHECK(near(wash.at("position")[1].get<double>() - washHeight / 2, centre - height / 2));
+                CHECK(wash.at("params").at("size")[0].get<double>() > width);
+            }
+            ++hung;
+        }
+        // One frame a module: nothing else under the gallery's prefix.
+        std::size_t frames = 0;
+        for (const json& object : withPrefix(scene, rv::world::kGalleryObjectPrefix)) {
+            frames += object.contains("prefab") ? 1 : 0;
+        }
+        CHECK(frames == modules);
+    }
+    // The weights give every kind somewhere among the golden plans' rooms.
+    CHECK(kinds.size() == 4);
 }

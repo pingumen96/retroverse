@@ -243,6 +243,8 @@ public:
     [[nodiscard]] std::optional<ConsoleSocket> consoleSocket(const world::RoomId& room) const;
     /// I11 step 4: the sections (systems) of `room` in the plan shown; none without a plan or such a room.
     [[nodiscard]] std::vector<catalog::SystemName> roomSections(const world::RoomId& room) const;
+    /// I12 step 2: the gallery's candidates of a room of the floor shown ("room:snes"); empty when it has none.
+    [[nodiscard]] RoomGallery galleryOf(const std::string& room) const;
     void applyInspection(gl::RenderView& view) {
         m_interaction->applyInspection(view);
         applyEditOutline(view);

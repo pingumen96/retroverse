@@ -18,6 +18,7 @@ add_library(rv_world STATIC
     src/building.cpp
     src/floor_layout.cpp
     src/floor_scene.cpp
+    src/gallery.cpp
     src/generation.cpp
     src/ids.cpp
     src/incremental.cpp

@@ -215,6 +215,10 @@ std::optional<RoomItemScreen> roomItemScreen(const RoomSnapshotResult& snapshot,
         screen.video = (*paths)[catalog::MediaKind::Video];
         screen.screenshot = (*paths)[catalog::MediaKind::Screenshot];
         screen.titleScreen = (*paths)[catalog::MediaKind::TitleScreen];
+        screen.fanArt = (*paths)[catalog::MediaKind::FanArt];
+        screen.box3d = (*paths)[catalog::MediaKind::Box3d];
+        screen.marquee = (*paths)[catalog::MediaKind::Marquee];
+        screen.mixImage = (*paths)[catalog::MediaKind::MixImage];
     }
     if (entry->lastSession) {
         screen.lastPlayed =
