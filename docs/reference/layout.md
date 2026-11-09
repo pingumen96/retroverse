@@ -143,7 +143,9 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   since I6 step 3b the packs' `furniture`, which `scene_builder.hpp` draws in place of the hero corner's parts and the
   decoration, `drawnFixtures()` the boxes they cover; since I6 step 6's review the packs' `accents` and
   `roomDressing`, the coves, wall pictures, spot cans, runner and sign pictogram `scene_builder.hpp` adds to a room,
-  and since I12 step 1 its architecture and lamps (`shell`, `pendants`; `docs/i12/step-1.md`);
+  and since I12 step 1 its architecture and lamps (`shell`, `pendants`; `docs/i12/step-1.md`), since step 2 its
+  gallery's frames (`gallery`, `gallery.hpp`; the app's `gallery_pictures.hpp` chooses their media, `WorldGallery`
+  shows them; `docs/i12/step-2.md`);
   since I5 step 3 a pack's `secondaryTv`, which `scene_builder.hpp`'s `secondaryTvFixtures()` stands in a room's
   sideboard sockets).
   I3's other modules: `rv_geometry` the collection's

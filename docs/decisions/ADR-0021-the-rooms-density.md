@@ -170,6 +170,24 @@ pictures do: over a module a frame's bottom clears the module's top (1.775 m) an
 bottom (2.655 m), so the band is about 1.85 to 2.60 m and the tallest frame there about 0.75 m; the tall class over
 low pieces keeps its limits under the rail too.
 
+*Amended on 2026-11-09 (I12 step 2):* the gallery as built ([i12/step-2.md](../i12/step-2.md)):
+- **Over the modules only** for now: one frame over each hero and side module against a wall. The low pieces' frames
+  wait for step 4, which knows the drawn pieces' heights (a secondary TV or a tall variant stands over its plan
+  prefab's top); the hero wall's sides keep their sign and plaque.
+- **Sizes and band:** pictures of 704 x 396, 480 x 600, 780 x 260 and 600 x 450 mm inside 25 mm bars, each narrower
+  than a module; hung between 80 mm over the module and 50 mm under the rail (and under a cove: the arcade's), in
+  the band's middle, at most 350 mm over its lowest place.
+- **Picture lights:** a hood on an arm and its wash on the wall (a new surface, a cone from the hood) over every other
+  frame but the lightboxes.
+- **Pictures:** made at 1024 x 576, 640 x 800, 1024 x 344 and 768 x 576 pixels, BC1 with their mips where the GPU
+  takes S3TC; the mat the dominant colour of the medium's opaque pixels darkened (a lightbox's nearly black). The
+  candidates are taken when the floor is built, from the items files (schema 3, which carries the caption cards'
+  developer, publisher and genre too, filled now).
+- **Residency:** the floor shown's pictures stay resident; the guard stops asking at 256 MiB of estimated pictures a
+  scene (the frames past it keep their prints) rather than evicting the farthest room.
+- **No overlay fixture:** `esde/snes-room` already has every kind of medium (its first game's fanart, marquee, 3D box,
+  screenshot and miximage, a cover for nearly every game, a truncated screenshot).
+
 ### 3. The density default: 0.65
 
 The curated preset's `decorationDensityPermille` becomes **650** (style §6.3's "ricca" band), so three of a room's four
