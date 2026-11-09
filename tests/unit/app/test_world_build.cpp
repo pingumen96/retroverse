@@ -829,11 +829,18 @@ TEST_CASE("app/world_build: the rooms' items kept for the next start, written on
     // The items the floor's covers were made from, with the system's platform tags, and their CRT's data (I4 step 6b).
     std::vector<rv::app::RoomItemText> withoutScreens = kept->items;
     std::size_t screens = 0;
+    std::size_t developers = 0;
     for (rv::app::RoomItemText& item : withoutScreens) {
         screens += item.screen ? 1 : 0;
         item.screen.reset();
+        // I12 step 2 (schema 3): the caption cards' texts, from the catalog (every placed game has a developer).
+        developers += item.developer.empty() ? 0 : 1;
+        item.developer.clear();
+        item.publisher.clear();
+        item.genre.clear();
     }
     CHECK(screens == 50);
+    CHECK(developers == 50);
     CHECK(withoutScreens == rv::app::roomItemsOf(roomOf(first).covers, roomOf(first).layout).items);
     CHECK(kept->platforms == std::vector<std::string>{"snes"});
     const std::string text = rv::core::readTextFile(items).value();

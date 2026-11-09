@@ -42,19 +42,21 @@ enum class GpuMemoryKind : std::uint8_t {
     SignTextures,
     /// The user's console models' compressed textures (I11 step 7: WorldConsoles).
     ContentTextures,
+    /// The gallery's pictures of the user's media (I12 step 2: WorldGallery), over the frames' prints.
+    GalleryTextures,
 };
-inline constexpr std::size_t kGpuMemoryKindCount = 10;
+inline constexpr std::size_t kGpuMemoryKindCount = 11;
 
 /// Every kind, in declaration order.
 inline constexpr std::array<GpuMemoryKind, kGpuMemoryKindCount> kGpuMemoryKinds{
     GpuMemoryKind::ProceduralSurfaces, GpuMemoryKind::CollectionArrays, GpuMemoryKind::HeroTextures,
     GpuMemoryKind::Video,              GpuMemoryKind::Targets,          GpuMemoryKind::SceneTextures,
     GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,       GpuMemoryKind::SignTextures,
-    GpuMemoryKind::ContentTextures,
+    GpuMemoryKind::ContentTextures,    GpuMemoryKind::GalleryTextures,
 };
 
 /// The run report's key: "proceduralSurfaces", "collectionArrays", "heroTextures", "video", "targets",
-/// "sceneTextures", "buffers", "uiTextures", "signTextures", "contentTextures".
+/// "sceneTextures", "buffers", "uiTextures", "signTextures", "contentTextures", "galleryTextures".
 [[nodiscard]] std::string_view toString(GpuMemoryKind kind) noexcept;
 /// The kind toString() names, or nothing.
 [[nodiscard]] std::optional<GpuMemoryKind> gpuMemoryKindFromString(std::string_view name) noexcept;

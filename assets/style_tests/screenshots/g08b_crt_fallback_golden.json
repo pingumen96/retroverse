@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "7b952afb5612192ba86bc4106e654eb37abb6fce",
+    "gitCommit": "ef7733368761d5d7745e97264e334abb9c2b415d",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -40,10 +40,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "9a610c1cde472f4138b53946937ef0a48d5e6c1aa0fe463e00db666fd458a282"
+      "sha256": "8411ab797a7ec43a35451048a21a9164e2367291533db4cd7acb431ddf42dbde"
     }
   },
-  "renderedOn": "2026-11-08",
+  "renderedOn": "2026-11-09",
   "run": {
     "capturedFrame": 239,
     "frames": 240,

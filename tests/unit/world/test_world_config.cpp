@@ -201,8 +201,10 @@ TEST_CASE("world/world_config: the canonical form round-trips and refuses", "[wo
     config.reduceMotion = true;
     auto text = rv::world::writeWorldConfig(config);
     REQUIRE(text.has_value());
-    CHECK(*text == "{\"decorationDensityPermille\":400,\"growthReservePermille\":150,\"lightingProfile\":\"evening\","
-                   "\"mainPassageWidthMm\":1400,\"minClearWidthMm\":1200,\"placement\":{\"include\":\"all\"},\"preset\":\"retro_museum_cozy\","
+    CHECK(*text == "{\"decorationDensityPermille\":400,\"gallery\":true,\"growthReservePermille\":150,"
+                   "\"lightingProfile\":\"evening\","
+                   "\"mainPassageWidthMm\":1400,\"minClearWidthMm\":1200,\"placement\":{\"include\":\"all\"},"
+                   "\"preset\":\"retro_museum_cozy\","
                    "\"reduceMotion\":true,\"seed\":18446744073709551615,\"sharedRoomMinTitles\":30,"
                    "\"systemColors\":true}\n");
     auto read = rv::world::readWorldConfig(*text, "config.json");

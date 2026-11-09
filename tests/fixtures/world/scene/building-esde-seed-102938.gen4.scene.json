@@ -2337,6 +2337,143 @@
     {
       "castsShadows": false,
       "collides": false,
+      "id": "room:snes/dressing:gallery:fx:hw-e",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.65,
+        "width": 0.53
+      },
+      "position": [
+        10.075,
+        2.23,
+        -11.64
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 20418,
+          "title": "LANTERN LAGOON"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "room:snes/dressing:gallery:fx:hw-e/hood",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.265,
+          0.028,
+          0.045
+        ]
+      },
+      "position": [
+        10.075,
+        2.625,
+        -11.53
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "room:snes/dressing:gallery:fx:hw-e/arm",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.01,
+          0.01,
+          0.098
+        ]
+      },
+      "position": [
+        10.075,
+        2.625,
+        -11.601
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "room:snes/dressing:gallery:fx:hw-e/wash",
+      "material": "MAT_Picture_Wash",
+      "params": {
+        "size": [
+          0.93,
+          0.72
+        ]
+      },
+      "position": [
+        10.075,
+        2.265,
+        -11.643
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "room:snes/dressing:gallery:fx:hw-w",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.65,
+        "width": 0.53
+      },
+      "position": [
+        5.225,
+        2.23,
+        -11.64
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 933020,
+          "title": "SUNSET SPEEDWAY"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
       "id": "hall:gen4/floor",
       "material": "MAT_Floor_OakPlanks",
       "params": {

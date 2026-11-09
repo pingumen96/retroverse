@@ -31,6 +31,7 @@
 #include <rv/core/math.hpp>
 #include <rv/geometry/socket.hpp>
 #include <rv/world/collection_layout.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/scene_builder.hpp>
 #include <rv/world/world_store.hpp>
@@ -623,4 +624,74 @@ TEST_CASE("world look: the shell and the lamps (I12 step 1): papered walls, a ra
         CHECK(*glow > 0.3);
         CHECK(*glow > 10.0 * *paperLuminance);
     }
+}
+
+TEST_CASE("world look: the gallery (I12 step 2): the room's own media in its frames, the prints when it is off",
+          "[gpu][world][world_look]") {
+    ImportedRoom room("gallery");
+    const fs::path withMedia = room.dir / "gallery_on.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "gallery_on", roomArguments("40", withMedia));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->world.bound);
+    REQUIRE(run.report->catalog.has_value());
+    const ShownRoom shown = shownRoom(room, *run.report, "evening");
+    const rv::scene::CameraSetup& camera = shown.scene.camera;
+
+    // The room's frames (one over each module), their pictures' centres on their front.
+    std::vector<glm::vec3> centres;
+    for (const rv::scene::SceneObject& object : shown.scene.objects) {
+        if (object.kind == "poster_frame" && object.id.starts_with(rv::world::kGalleryObjectPrefix)) {
+            const glm::vec3 front = glm::normalize(glm::vec3(object.transform[2]));
+            centres.push_back(glm::vec3(object.transform[3]) + 0.031f * front);
+        }
+    }
+    REQUIRE_FALSE(centres.empty());
+
+    // Every frame a medium of the room's games (the fixture's covers serve the portraits, its first game's fanart,
+    // marquee and screenshot the others), shown, none failing; the pictures' bytes the gallery's kind of GPU memory.
+    const rv::app::CatalogRecord& on = *run.report->catalog;
+    CHECK(on.gallery);
+    CHECK(on.galleryFrames == centres.size());
+    CHECK(on.galleryWithMedia == on.galleryFrames);
+    CHECK(on.galleryShown == on.galleryWithMedia);
+    CHECK(on.galleryFailed == 0);
+    CHECK(on.galleryBytes > 0);
+    CHECK(on.galleryBytes == run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::GalleryTextures).bytes);
+    // At most about 0.4 MiB a picture (BC1 with its mips; RGBA8 without S3TC is four times that).
+    CHECK(on.galleryBytes <= on.galleryShown * 4u * 1024u * 1024u);
+
+    // "Galleria della stanza" off (world.json): the same frames, every one its print, nothing on the GPU for them.
+    fs::create_directories(room.data / "config");
+    {
+        std::ofstream config(room.data / "config" / "world.json", std::ios::binary);
+        config << "{\"gallery\": false}\n";
+    }
+    const fs::path prints = room.dir / "gallery_off.png";
+    const AppRun offRun = runApp(retroverseExe(), room.dir, "gallery_off", roomArguments("40", prints));
+    requireCleanRun(offRun);
+    REQUIRE(offRun.report->catalog.has_value());
+    const rv::app::CatalogRecord& off = *offRun.report->catalog;
+    CHECK_FALSE(off.gallery);
+    CHECK(off.galleryFrames == on.galleryFrames);
+    CHECK(off.galleryWithMedia == 0);
+    CHECK(off.galleryShown == 0);
+    CHECK(off.galleryBytes == 0);
+    CHECK(offRun.report->gpuMemory.usage(rv::gl::GpuMemoryKind::GalleryTextures).peakBytes == 0);
+
+    // The frames' pictures are not the prints: each frame's centre differs between the two views.
+    const rv::assets::ImageData mediaImage = requireScreenshot(run, withMedia, kShotSize);
+    const rv::assets::ImageData printImage = requireScreenshot(offRun, prints, kShotSize);
+    std::size_t seen = 0;
+    for (const glm::vec3& centre : centres) {
+        const auto pixel = projectToPixel(camera, kShotSize, centre);
+        if (!pixel) {
+            continue;
+        }
+        ++seen;
+        INFO("frame at (" << pixel->x << ", " << pixel->y << ")");
+        CHECK(std::abs(windowLuminance(mediaImage, *pixel, 2) - windowLuminance(printImage, *pixel, 2)) > 0.002);
+    }
+    CHECK(seen > 0);
 }

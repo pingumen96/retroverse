@@ -77,7 +77,9 @@ const std::vector<std::string> kSharedNames = {
     "MAT_Floor_Herringbone", "MAT_Floor_Herringbone_Dark", "MAT_Wallpaper_Warm", "MAT_Wallpaper_Mauve",
     "MAT_Wallpaper_Slate", "MAT_Wallpaper_Cream", "MAT_Wallpaper_Study", "MAT_Fabric_Sofa_Weave",
     "MAT_Fabric_Teal_Weave", "MAT_Fabric_Slate_Weave", "MAT_Fabric_Wool_Green_Weave", "MAT_Fabric_Leather_Grain",
-    "MAT_Cove_Blue", "MAT_Cove_Wash_Blue", "MAT_Pendant_Shade", "MAT_Pendant_Diffuser"};
+    "MAT_Cove_Blue", "MAT_Cove_Wash_Blue", "MAT_Pendant_Shade", "MAT_Pendant_Diffuser",
+    // I12 step 2 (ADR-0021 §2): the gallery's picture lights' glow on the wall.
+    "MAT_Picture_Wash"};
 
 /// The procedural surface a "full" textured preset takes its albedo and roughness from
 /// (rv/assets/surface_textures.hpp): its factors are neutral, the surface carries the style section 3 color.

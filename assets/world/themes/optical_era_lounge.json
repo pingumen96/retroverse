@@ -117,6 +117,10 @@
              "eastWash": "MAT_Cove_Wash_Blue"},
     "shell": {"railYMm": 2700, "rail": "MAT_Wood_Varnished_Dark", "wallpaper": "MAT_Wallpaper_Slate",
               "cornice": "MAT_Wood_Varnished_Dark", "beams": "MAT_Wood_Varnished_Dark"},
-    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Graphite"}
+    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Graphite"},
+    // I12 step 2: the lounge's large posters (concept panel 4): fanart first, dark frames, no lightbox.
+    "gallery": {"weights": {"poster": 6, "portrait": 2, "frame": 2}, "frame": "MAT_Wood_Varnished_Dark",
+                "picture": "MAT_Paper_Print", "pattern": "poster_lounge", "hood": "MAT_Metal_Graphite",
+                "wash": "MAT_Picture_Wash"}
   }
 }

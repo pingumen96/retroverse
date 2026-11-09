@@ -258,6 +258,16 @@ struct CatalogRecord {
     std::size_t consoleModels = 0;
     std::size_t consoleModelsRefused = 0;
     std::uint64_t consoleTextureBytes = 0;
+    /// I12 step 2: "Galleria della stanza" when the run ended; the gallery's frames of the scene shown, those with a
+    /// medium chosen, those showing it (WorldGallery); the media that could not be shown during the run; the
+    /// pictures' GPU bytes when the run ended and at most during it.
+    bool gallery = true;
+    std::size_t galleryFrames = 0;
+    std::size_t galleryWithMedia = 0;
+    std::size_t galleryShown = 0;
+    std::size_t galleryFailed = 0;
+    std::uint64_t galleryBytes = 0;
+    std::uint64_t galleryPeakBytes = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

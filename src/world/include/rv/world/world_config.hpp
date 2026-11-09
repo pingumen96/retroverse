@@ -16,7 +16,8 @@
 // building needs for a room of its own; 0 gives every system its own room), "reduceMotion" (ADR-0012 §3; until I7's
 // settings screen), "lightingProfile" (a lighting profile's id under assets/world/lighting, I3 step 16: how the room is
 // lit when drawn, never what it holds), "systemColors" (I11 step 6, ADR-0019 §5: the rooms' neon in their systems'
-// colours; on by default, how the room is drawn, never what it holds).
+// colours; on by default, how the room is drawn, never what it holds), "gallery" (I12 step 2, ADR-0021 §2: the
+// gallery's frames show the user's media; on by default, how the room is drawn, never what it holds).
 // The canonical form (worldConfigToJson()) holds every key, "seed" null when it is not set.
 
 #include <cstdint>
@@ -93,6 +94,9 @@ struct WorldConfig {
     /// I11 step 6 (ADR-0019 §5): a room's neon in its system's colour, when its identity has one. How the room is
     /// drawn, like reduceMotion: the generator reads it never.
     bool systemColors = true;
+    /// I12 step 2 (ADR-0021 §2): the gallery's frames show the user's media of the room's games (off: the pack's
+    /// prints). How the room is drawn, like reduceMotion: the generator reads it never.
+    bool gallery = true;
 
     bool operator==(const WorldConfig&) const = default;
 };
@@ -128,6 +132,7 @@ struct WorldConfigOverrides {
     std::optional<bool> reduceMotion;
     std::optional<std::string> lightingProfile;
     std::optional<bool> systemColors;
+    std::optional<bool> gallery;
 
     bool operator==(const WorldConfigOverrides&) const = default;
 };

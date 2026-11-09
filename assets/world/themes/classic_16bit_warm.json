@@ -112,6 +112,11 @@
   "roomDressing": {
     "shell": {"railYMm": 2700, "rail": "MAT_Wood_Walnut", "wallpaper": "MAT_Wallpaper_Warm",
               "cornice": "MAT_Wood_Walnut", "beams": "MAT_Wood_Walnut"},
-    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"}
+    "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"},
+    // I12 step 2 (ADR-0021 §2): the gallery over the modules, walnut frames of the room's own art, mostly fanart
+    // posters and screenshots, brass picture lights over every other one.
+    "gallery": {"weights": {"poster": 4, "portrait": 2, "lightbox": 1, "frame": 3}, "frame": "MAT_Wood_Walnut",
+                "picture": "MAT_Paper_Print", "lightbox": "MAT_Lightbox", "pattern": "print",
+                "hood": "MAT_Metal_Brass", "wash": "MAT_Picture_Wash"}
   }
 }

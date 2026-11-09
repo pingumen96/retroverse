@@ -122,6 +122,10 @@
   "roomDressing": {
     "shell": {"railYMm": 2700, "rail": "MAT_Wood_Walnut", "wallpaper": "MAT_Wallpaper_Study",
               "cornice": "MAT_Wood_Walnut", "beams": "MAT_Wood_Walnut"},
-    "pendants": {"shade": "MAT_Lamp_Shade_Green", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"}
+    "pendants": {"shade": "MAT_Lamp_Shade_Green", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"},
+    // I12 step 2: the study's framed screenshots first, walnut frames, brass picture lights.
+    "gallery": {"weights": {"poster": 2, "portrait": 2, "frame": 6}, "frame": "MAT_Wood_Walnut",
+                "picture": "MAT_Paper_Print", "pattern": "print", "hood": "MAT_Metal_Brass",
+                "wash": "MAT_Picture_Wash"}
   }
 }

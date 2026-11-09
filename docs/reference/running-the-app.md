@@ -581,7 +581,10 @@ build/rvdata`).
   handhelds' warm cove, posters and pictogram beside the sign; since I12 step 1, `docs/i12/step-1.md`, every room
   pack's architecture, a damask from the wainscot up to a picture rail at 2.7 m, a cornice and beams every 3 m, the
   arcade's graphite cornice alone, and its lamps, a drum near the doorway and a spot can over each display case, with
-  herringbone floors in the 90s, handheld and arcade rooms and woven or grained seats), never a reason to move
+  herringbone floors in the 90s, handheld and arcade rooms and woven or grained seats; since I12 step 2,
+  `docs/i12/step-2.md`, a framed picture over each module showing the user's own media of the room's games, fanart,
+  3D boxes or covers, marquees, screenshots, the pack's print where a game has none, `"gallery": false` in
+  world.json or Impostazioni' "Galleria della stanza" leaving the prints), never a reason to move
   anything. With the mouse free
   (the developer overlay open) the cursor picks.
 - The elevator and the directory (I4 step 7b, `docs/i4/step-7b.md`; ADR-0013 §10): in front of a floor's elevator (its

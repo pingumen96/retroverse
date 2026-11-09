@@ -74,6 +74,7 @@
 
 #include <rv/app/app_catalog.hpp>
 #include <rv/app/collection_layers.hpp>
+#include <rv/app/gallery_pictures.hpp>
 #include <rv/app/hub_showcase.hpp>
 #include <rv/app/room_items.hpp>
 #include <rv/app/room_snapshot.hpp>
@@ -180,6 +181,9 @@ struct RoomCollection {
     /// Its hero CRT's games: its placed games with media, in its featured order (room_screen.hpp, from the rooms'
     /// items; none without a media root for them: FloorSources::screenMediaRoot).
     std::vector<ScreenGame> screenGames;
+    /// Its gallery's candidates (I12 step 2, gallery_pictures.hpp: from the rooms' items, under the screens' media
+    /// root; none without it).
+    RoomGallery gallery;
     /// Its doorway camera in the scene's frame (world::doorwayCamera() moved by scenePlacement: the eye inside the
     /// doorway, looking into the room), where the directory's teleport to the room stands the walker (I4 step 7b).
     scene::CameraSetup doorwayCamera;

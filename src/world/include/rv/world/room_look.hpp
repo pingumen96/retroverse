@@ -129,6 +129,13 @@
 //   when the pack names its material) and "pendants": {"shade", "diffuser", "metal"} (lamps hung from the ceiling:
 //   a drum near the doorway with a light of its own, the profile's pendant role, in a slot the plan's lights and the
 //   accents leave free, and a spot can over each display fixture standing free, whose accent light is the can's).
+//   Since I12 step 2 (ADR-0021 §2), also optional: "gallery": {"weights": {"poster", "portrait", "lightbox",
+//   "frame"}, "roles": ["hero-module", ...], "frame", "picture", "lightbox", "pattern", "hood", "wash"} (a framed
+//   picture over each fixture of those roles standing against a wall, under the picture rail: its kind (gallery.hpp)
+//   drawn by the weights from the room's seed and the fixture's id, the frame's material, the print's ("picture", a
+//   lightbox's "lightbox") and its pattern until the app puts the user's media in it; with "hood" and "wash",
+//   every other frame along the room a picture light: a hood of that metal over it and its light washed on the wall
+//   around it, never a real light).
 
 #include <array>
 #include <cstdint>
@@ -312,6 +319,23 @@ struct WallPictures {
     bool operator==(const WallPictures&) const = default;
 };
 
+/// Framed pictures over the modules, the gallery of the user's media (a pack's "roomDressing" "gallery", I12 step 2,
+/// ADR-0021 §2; gallery.hpp).
+struct GalleryDressing {
+    /// The kinds' weights, by world::GalleryKind (poster, portrait, lightbox, frame): at least 0, not all 0.
+    std::array<int, 4> weights{};
+    /// Over the fixtures of these roles standing against a wall (hero-module and side-module by default).
+    std::vector<FixtureRole> roles;
+    std::string frame;    ///< the bars' material
+    std::string picture;  ///< the print's material (posters, portraits, frames)
+    std::string lightbox; ///< a lightbox's lit print (required with a lightbox weight)
+    std::string pattern;  ///< the print: a scene texture pattern (scene::kTexturePatternNames)
+    std::string hood;     ///< the picture lights' hood (with `wash`; none: no picture light)
+    std::string wash;     ///< the picture lights' light on the wall
+
+    bool operator==(const GalleryDressing&) const = default;
+};
+
 /// Visible cans over the spot lights of some roles (a pack's "roomDressing" "cans", I6 step 6's review).
 struct SpotCans {
     std::vector<LightRole> roles;
@@ -386,9 +410,11 @@ struct RoomDressing {
     /// I12 step 1: the room's architecture and its pendant lamps.
     std::optional<ShellDressing> shell;
     std::optional<PendantDressing> pendants;
+    /// I12 step 2: the gallery.
+    std::optional<GalleryDressing> gallery;
 
     [[nodiscard]] bool empty() const noexcept {
-        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot && !shell && !pendants;
+        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot && !shell && !pendants && !gallery;
     }
     bool operator==(const RoomDressing&) const = default;
 };

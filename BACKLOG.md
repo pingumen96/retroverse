@@ -879,6 +879,15 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
   `assets::kDefaultTextureCacheBytes` (`derived_texture_cache.hpp`), which `cover_loader.cpp` trims to, is still
   512 MiB.
 
+## Follow-ups from I12
+
+- **The gallery's prints** (step 2): each frame's print is a pattern texture of its own, about 50 MiB on the real
+  library's busiest floor; the prints of a room's frames of one kind could share one, or the print be dropped once a
+  medium is shown.
+- **A disk cache for the gallery's pictures** (step 2): each run reads, fits and compresses them again (a large fanart
+  takes a worker for up to a few hundred milliseconds); a `TextureClass::Gallery` entry of the derived-texture cache
+  would serve them warm, if the cold floors' figures ask for it.
+
 ## Branding
 
 The logo and the executable's icon landed on 2026-11-07 (`docs/branding.md`, `scripts/branding.py`). Still open:

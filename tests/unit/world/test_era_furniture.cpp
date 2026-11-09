@@ -22,6 +22,7 @@
 #include <rv/geometry/socket.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/plan_json.hpp>
+#include <rv/world/gallery.hpp>
 #include <rv/world/room_look.hpp>
 #include <rv/world/room_template.hpp>
 #include <rv/world/scene_builder.hpp>
@@ -678,10 +679,22 @@ TEST_CASE("world/era furniture: the arcade's and the handhelds' room dressing in
         const bool spot = light.role == rv::world::LightRole::Key || light.role == rv::world::LightRole::WallWasher;
         spots += light.id.room().toString() == "area:arcade" && spot ? 1 : 0;
     }
-    CHECK(withPrefix(arcade, "dressing:picture:").size() == modules + showcases);
+    // Since I12 step 2 the modules take the gallery's lightboxes (the games' marquees), the showcases keep the flyers.
+    CHECK(withPrefix(arcade, "dressing:picture:").size() == showcases);
     for (const nlohmann::json& flyer : withPrefix(arcade, "dressing:picture:")) {
         CHECK(flyer.at("textures").at("picture").at("pattern") == "poster_flyer");
         CHECK(flyer.at("position")[1].get<double>() - 0.3 > 1.7); // above the cabinets
+    }
+    const auto lightboxes = withPrefix(arcade, "dressing:gallery:");
+    CHECK(lightboxes.size() == modules);
+    for (const nlohmann::json& lightbox : lightboxes) {
+        CHECK(lightbox.at("materials").at("picture") == "MAT_Lightbox");
+        CHECK(lightbox.at("textures").at("picture").at("pattern") == "marquee");
+        const double aspect = (lightbox.at("params").at("width").get<double>() - 0.05) /
+                              (lightbox.at("params").at("height").get<double>() - 0.05);
+        CHECK(rv::world::galleryKindOfAspect(aspect) == rv::world::GalleryKind::Lightbox);
+        // Under the coves (2.6 m): the cove's light washes the wall over them.
+        CHECK(lightbox.at("position")[1].get<double>() + lightbox.at("params").at("height").get<double>() / 2 < 2.6);
     }
     CHECK(withPrefix(arcade, "dressing:can:").size() == 3 * spots); // a can, its lens, its stem
     const auto runner = withPrefix(arcade, "dressing:runner");

@@ -120,9 +120,13 @@
     "pendants": {"shade": "MAT_Pendant_Shade", "diffuser": "MAT_Pendant_Diffuser", "metal": "MAT_Metal_Brass"},
     "cove": {"yMm": 2750, "west": "MAT_Cove_Warm", "east": "MAT_Cove_Warm", "westWash": "MAT_Cove_Wash_Warm",
              "eastWash": "MAT_Cove_Wash_Warm"},
-    "pictures": {"centreYMm": 2200, "widthMm": 520, "heightMm": 400, "roles": ["hero-module", "side-module"],
-                 "kinds": ["tv_cabinet"], "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print",
-                 "pattern": "poster_console"},
+    "pictures": {"centreYMm": 2200, "widthMm": 520, "heightMm": 400, "roles": [], "kinds": ["tv_cabinet"],
+                 "frame": "MAT_Wood_Oak", "picture": "MAT_Paper_Print", "pattern": "poster_console"},
+    // I12 step 2 (ADR-0021 §2): the gallery over the modules in place of their posters (the showcases keep theirs):
+    // oak frames, brass picture lights.
+    "gallery": {"weights": {"poster": 3, "portrait": 3, "lightbox": 1, "frame": 3}, "frame": "MAT_Wood_Oak",
+                "picture": "MAT_Paper_Print", "lightbox": "MAT_Lightbox", "pattern": "poster_console",
+                "hood": "MAT_Metal_Brass", "wash": "MAT_Picture_Wash"},
     "signIcon": {"widthMm": 400, "heightMm": 300, "pattern": "handheld_icon", "material": "MAT_Neon_Cyan"},
     "cardPerSlot": true
   },

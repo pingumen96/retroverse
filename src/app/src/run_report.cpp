@@ -3166,6 +3166,13 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["consoleModels"] = catalog.consoleModels;
     json["consoleModelsRefused"] = catalog.consoleModelsRefused;
     json["consoleTextureBytes"] = catalog.consoleTextureBytes;
+    json["gallery"] = catalog.gallery;
+    json["galleryFrames"] = catalog.galleryFrames;
+    json["galleryWithMedia"] = catalog.galleryWithMedia;
+    json["galleryShown"] = catalog.galleryShown;
+    json["galleryFailed"] = catalog.galleryFailed;
+    json["galleryBytes"] = catalog.galleryBytes;
+    json["galleryPeakBytes"] = catalog.galleryPeakBytes;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3301,6 +3308,13 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.consoleModelsRefused =
         static_cast<std::size_t>(fields.optionalCount("consoleModelsRefused", kMaxSize).value_or(0));
     catalog.consoleTextureBytes = fields.optionalCount("consoleTextureBytes", kMaxSize).value_or(0);
+    catalog.gallery = !fields.has("gallery") || fields.boolean("gallery");
+    catalog.galleryFrames = static_cast<std::size_t>(fields.optionalCount("galleryFrames", kMaxSize).value_or(0));
+    catalog.galleryWithMedia = static_cast<std::size_t>(fields.optionalCount("galleryWithMedia", kMaxSize).value_or(0));
+    catalog.galleryShown = static_cast<std::size_t>(fields.optionalCount("galleryShown", kMaxSize).value_or(0));
+    catalog.galleryFailed = static_cast<std::size_t>(fields.optionalCount("galleryFailed", kMaxSize).value_or(0));
+    catalog.galleryBytes = fields.optionalCount("galleryBytes", kMaxSize).value_or(0);
+    catalog.galleryPeakBytes = fields.optionalCount("galleryPeakBytes", kMaxSize).value_or(0);
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.
