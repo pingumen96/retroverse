@@ -463,10 +463,11 @@ TEST_CASE("app/world: the real library's building in retroverse.exe: NFR-01 to t
     // I4 step 7b: a ride from the lobby to the busiest floor (the busiest of the others when that is the ground floor,
     // where the directory teleports), to its largest room through the elevator (the walker turned to its doors,
     // interact, the floor, the room), then back to the lobby's elevator with Map, as the user rides (no lockstep: the
-    // view comes back once the covers in view of the room that holds the eye are resident, a hall at once, or by 3 s
-    // after the request: I4 step 8), cold (the derived covers emptied: the room's covers made from the media again) then
-    // warm; the GPU memory after each ride, and when the room was whole. The script waits long enough between the two
-    // choices for a cold ride and the room's covers at any frame rate (both rides must have ended).
+    // view comes back once the covers in view of the room that holds the eye are resident, a hall at once, the hub once
+    // its showcase is in (I12 step 4), or by 3 s after the request: I4 step 8), cold (the derived covers emptied: the
+    // room's covers made from the media again) then warm; the GPU memory after each ride, and when the room was whole.
+    // The script waits long enough between the two choices for a cold ride and the room's covers at any frame rate
+    // (both rides must have ended).
     const std::string rideFloor = busiest != rv::world::kGroundFloor
                                       ? busiest
                                       : busiestOf([](const rv::app::WorldFloorRecord& record) {

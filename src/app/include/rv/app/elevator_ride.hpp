@@ -9,17 +9,18 @@
 //                  under lockstep, by the real clock otherwise: a long frame's time is clamped); the destination's
 //                  floor-build job runs meanwhile (asked with the ride);
 //   AwaitingFloor  faded out (from the frame after the one the fade ended in, so that the frame the floor swaps in is
-//                  the same whenever the job answered: under lockstep always the next): once the job answered, Swap (the
-//                  session drops the resident floor and shows the destination at that frame boundary, the walker at its
-//                  elevator or a room's doorway: swapped()); a job that failed is Fail (the walker stays where it was,
-//                  the view fades back in, a notice);
+//                  the same whenever the job answered: under lockstep always the next): once the job answered, Swap
+//                  (the session drops the resident floor and shows the destination at that frame boundary, the walker
+//                  at its elevator or a room's doorway: swapped()); a job that failed is Fail (the walker stays where
+//                  it was, the view fades back in, a notice);
 //   AwaitingView   the destination shows behind the fade until the eye's area is resident (since I4 step 8: the covers
 //                  in view of the room that holds the eye, the rest of the room streaming in after the view is back; a
-//                  hall at once), or until the view's deadline: RideSettings::viewTimeoutSeconds (3 s) after the request
-//                  less the fade-in and a margin (viewDeadlineMs()), so that the view is back within the timeout of the
-//                  request (ADR-0013 §10, §13 as amended at I4 step 8); under lockstep the frames' waits replace the
-//                  deadline;
-//   FadingIn       the view fades back in (as the fade out: by frames under lockstep, by the real clock otherwise, a fade
+//                  hall at once, the hub's once its showcase is in: I12 step 4), or until the view's deadline:
+//                  RideSettings::viewTimeoutSeconds (3 s) after the request less the fade-in and a margin
+//                  (viewDeadlineMs()), so that the view is back within the timeout of the request (ADR-0013 §10, §13 as
+//                  amended at I4 step 8); under lockstep the frames' waits replace the deadline;
+//   FadingIn       the view fades back in (as the fade out: by frames under lockstep, by the real clock otherwise, a
+//   fade
 //                  begun late shortened to end within the timeout, one begun past it ended at once); Finish once it is
 //                  back (the ride's record complete);
 //   Done.

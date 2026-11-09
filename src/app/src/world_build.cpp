@@ -1275,13 +1275,27 @@ namespace {
 /// content digest (from `digests`), its CRT's games (I4 step 6b) and its doorway camera, its scene data kept; its
 /// doorway's box is the caller's (the hall's). None when its collection cannot be laid out (logged: the room shows
 /// without it).
-[[nodiscard]] std::optional<RoomCollection> roomCollectionOf(const world::WorldPlan& plan, const world::Room& room,
-                                                             world::SceneData sceneData,
-                                                             const world::RoomPlacement& scenePlacement,
-                                                             const std::vector<world::CollectionTitle>& titles,
-                                                             const std::map<catalog::SystemName, RoomItems>& items,
-                                                             const FloorSources& sources,
-                                                             const std::map<world::RoomId, std::string>& digests) {
+/// Where roomCollectionOf()'s time goes (milliseconds, summed over a floor's rooms).
+struct LayoutTimes {
+    double layout = 0.0;
+    double covers = 0.0;
+    double screens = 0.0;
+    double gallery = 0.0;
+};
+
+[[nodiscard]] std::optional<RoomCollection>
+roomCollectionOf(const world::WorldPlan& plan, const world::Room& room, world::SceneData sceneData,
+                 const world::RoomPlacement& scenePlacement, const std::vector<world::CollectionTitle>& titles,
+                 const std::map<catalog::SystemName, RoomItems>& items, const FloorSources& sources,
+                 const std::map<world::RoomId, std::string>& digests, LayoutTimes* times = nullptr) {
+    Clock::time_point mark = Clock::now();
+    const auto lap = [&](double LayoutTimes::* field) {
+        const Clock::time_point now = Clock::now();
+        if (times != nullptr) {
+            times->*field += std::chrono::duration<double, std::milli>(now - mark).count();
+        }
+        mark = now;
+    };
     auto layout = world::collectionLayout(plan, room.id, sceneData, titles);
     if (!layout) {
         spdlog::error("World: the collection of {} cannot be laid out: {}; its room shows without it",
@@ -1298,6 +1312,7 @@ namespace {
     collection.scenePlacement = scenePlacement;
     collection.layout = world::floorCollectionLayout(std::move(*layout), collection.scenePlacement);
     collection.doorwayCamera = doorwayCameraIn(room, sceneData.roomTemplate, collection.scenePlacement);
+    lap(&LayoutTimes::layout);
     const std::vector<catalog::SystemName> held = systemsOf(room);
     // The room's pack's label palette (I6 step 3) for its generated spines and labels.
     const RoomPalette palette = labelPaletteOf(sceneData.theme);
@@ -1329,6 +1344,7 @@ namespace {
     if (const auto digest = digests.find(room.id); digest != digests.end()) {
         collection.contentDigest = digest->second;
     }
+    lap(&LayoutTimes::covers);
     // Its hero CRT plays its placed games (I3 step 10c; ADR-0013 §9): a shared or arcade room's, its sections' in the
     // room's featured order, each game's data from its own section's items.
     if (sources.screenMediaRoot) {
@@ -1352,10 +1368,14 @@ namespace {
         sources.lastPlayed ? &*sources.lastPlayed : nullptr);
     if (sources.screenMediaRoot) {
         addScreenCards(collection.screenGames, collection.covers);
+        lap(&LayoutTimes::screens);
         // I12 step 2: the gallery's candidates, each game's data from its own section's items.
         collection.gallery = roomGallery(
             collection.layout, [&](const catalog::GameId& game) { return itemTextOf(items, held, game).first; },
             *sources.screenMediaRoot, room.seed);
+        lap(&LayoutTimes::gallery);
+    } else {
+        lap(&LayoutTimes::screens);
     }
     collection.sceneData = std::move(sceneData);
     return collection;
@@ -1415,6 +1435,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             startPlacement ? relativePlacement(world::RoomPlacement{}, *startPlacement) : world::RoomPlacement{};
         const std::vector<const world::Room*> rooms = world::roomsOnFloor(plan, *floor);
         const std::map<catalog::SystemName, RoomItems> items = floorItems(paths, build, rooms, sources);
+        const double itemsMs = millisecondsSince(start);
         world::PlatformTagsBySystem tags;
         for (const auto& [system, known] : items) {
             if (!known.platforms.empty()) {
@@ -1426,6 +1447,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         const Clock::time_point sceneStart = Clock::now();
         auto data = world::loadFloorSceneData(paths.assetRoot, plan, *floor,
                                               world::roomLightingProfile(paths.assetRoot, paths.configDir), tags);
+        const double dataMs = millisecondsSince(sceneStart);
         if (!data) {
             spdlog::error("World: the floor {} cannot be made: {}", *floor, data.error().toString());
             dropFloor(build);
@@ -1439,6 +1461,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             noPlan(build, world_notice::kFailed, "the floor's scene: " + sceneBuild.error().message);
             return;
         }
+        const double sceneFileMs = millisecondsSince(sceneStart) - dataMs;
         if (startPlacement) {
             moveSceneFileToRoom(sceneBuild->sceneFile, *startPlacement);
         }
@@ -1520,13 +1543,22 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         // its CRT's games (I4 step 6b).
         const Clock::time_point layoutStart = Clock::now();
         const std::vector<world::CollectionTitle> titles = collectionTitlesOf(mergedItems(items), plan);
+        const double titlesMs = millisecondsSince(layoutStart);
+        // The floor's rooms' digests alone (equal to the whole plan's: a room's reads its own elements), not the whole
+        // building's copied and sorted (about 0.3 s on the real library's 91,000 placed and unplaced games).
+        std::set<world::RoomId> floorRooms;
+        for (const world::Room* room : rooms) {
+            floorRooms.insert(room->id);
+        }
         std::map<world::RoomId, std::string> digests;
-        if (auto computed = world::roomContentDigests(plan)) {
+        if (auto computed = world::roomContentDigests(plan, floorRooms)) {
             digests = std::move(*computed);
         } else {
             spdlog::warn("World: the rooms' content digests: {}; every room is compared whole",
                          computed.error().toString());
         }
+        const double digestsMs = millisecondsSince(layoutStart) - titlesMs;
+        LayoutTimes times;
         for (const world::Room* room : rooms) {
             const auto roomData = data->rooms.find(room->id);
             if (roomData == data->rooms.end()) {
@@ -1535,7 +1567,7 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
             const world::RoomPlacement scenePlacement =
                 startPlacement ? relativePlacement(room->placement, *startPlacement) : room->placement;
             std::optional<RoomCollection> collection = roomCollectionOf(
-                plan, *room, std::move(roomData->second), scenePlacement, titles, items, sources, digests);
+                plan, *room, std::move(roomData->second), scenePlacement, titles, items, sources, digests, &times);
             if (!collection) {
                 continue;
             }
@@ -1548,6 +1580,12 @@ void buildFloor(const WorldPaths& paths, WorldBuild& build, const FloorSources& 
         }
         build.layoutMs = millisecondsSince(layoutStart);
         build.floorMs = millisecondsSince(start);
+        spdlog::info("World: the floor {} built in {:.0f} ms (its items files {:.0f} ms, its scene data {:.0f} ms, its "
+                     "scene {:.0f} ms, read back and digested {:.0f} ms, its {} collection(s) laid out {:.0f} ms: "
+                     "titles {:.0f}, digests {:.0f}, layouts {:.0f}, covers {:.0f}, screens {:.0f}, gallery {:.0f})",
+                     *floor, build.floorMs, itemsMs, dataMs, sceneFileMs, build.sceneMs - dataMs - sceneFileMs,
+                     build.rooms.size(), build.layoutMs, titlesMs, digestsMs, times.layout, times.covers, times.screens,
+                     times.gallery);
         build.scene = std::move(*description);
         if (sources.mediaRoot) {
             build.mediaRoot = sources.mediaRoot;

@@ -4,6 +4,7 @@
 // floor-build job from the plan shown, the floor swapped behind the fade).
 
 #include <algorithm>
+#include <chrono>
 #include <mutex>
 #include <utility>
 
@@ -407,12 +408,14 @@ void WorldSession::requestFloor(WorldBuild skeleton, bool retarget, std::shared_
     options.priority = core::WorkerPool::kHighestPriority;
     options.generation = &m_floorGeneration;
     auto shared = std::make_shared<WorldBuild>(std::move(skeleton));
+    const auto asked = std::chrono::steady_clock::now();
     const Status submitted = m_pool.submit(
         [box = m_floorBox, paths = m_options.paths, plan = m_planState->plan, sources = std::move(sources), shared,
-         generation, retarget, reader = std::move(reader)](const core::JobContext& job) {
+         generation, retarget, reader = std::move(reader), asked](const core::JobContext& job) {
             if (job.cancelled()) {
                 return;
             }
+            const auto started = std::chrono::steady_clock::now();
             WorldBuild build = std::move(*shared);
             if (!build.plan) {
                 build.plan = *plan;
@@ -423,6 +426,11 @@ void WorldSession::requestFloor(WorldBuild skeleton, bool retarget, std::shared_
             if (reader) {
                 floorSources.lastPlayed = catalogLastPlayed(*reader);
             }
+            const auto read = std::chrono::steady_clock::now();
+            spdlog::info("World: the floor's job started {:.0f} ms after it was asked; the catalog's sessions read in "
+                         "{:.0f} ms",
+                         std::chrono::duration<double, std::milli>(started - asked).count(),
+                         std::chrono::duration<double, std::milli>(read - started).count());
             buildFloor(paths, build, floorSources);
             if (job.cancelled()) {
                 return;
@@ -493,8 +501,13 @@ bool WorldSession::retargetResult(WorldResult& result, std::shared_ptr<WorldCata
 
 bool WorldSession::rideViewResident() const {
     const std::optional<std::size_t> eye = eyeRoom();
-    if (!eye || !m_loader) {
-        return true; // a hall (no item), or a floor without covers to wait for
+    if (!eye) {
+        // A hall: at once, but for the hub's showcase (I12): its proxies face the lobby's elevator, and its content (a
+        // pool job asked at the swap) and covers come before the view, never popping in after it.
+        return showcaseSettled();
+    }
+    if (!m_loader) {
+        return true; // a floor without covers to wait for
     }
     // I4 step 8: the covers in view of the room that holds the eye (the loader ranked them first since the swap); the
     // rest of the room streams in after the view is back (followRideRoom() records when it is whole).

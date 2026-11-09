@@ -335,6 +335,9 @@ the one it is in, else the last one held.
      margin earlier). The rest of the room's covers, and the other rooms', stream in afterwards. Under lockstep the
      frames wait for the covers in view instead of the timeout, as before. The ride's record gives the covers in view
      at the view back and when the destination room was whole.
+     **Amended (2026-11-09, I12 step 4):** a hall's view waits for the hub's showcase where its floor has one (its
+     content, a pool job asked at the swap, and its proxies' covers), as a room's waits for its covers in view: it
+     popped in after the view on a loaded machine (Gate M4, I12 steps 2 and 3).
 - **Restrictions.**
   - No ride starts in Focus, Inspect, a launch or while a floor applies. "Mostra nella stanza" leaves Focus first.
   - A building result or a refresh that ends mid-ride applies after it, as during a game.

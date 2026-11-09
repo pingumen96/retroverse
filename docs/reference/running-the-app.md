@@ -610,7 +610,8 @@ build/rvdata`).
   resident floor is dropped only once it is built (a failure leaves the walker where it was, the directory saying it
   cannot change floors now) and swapped behind the fade in the frame after it ended (the hero CRT unbound, bound again
   by the room the eye stays in), the walker at its elevator facing the hall or at the room's doorway, and the view
-  fades back in once the covers in view of the room that holds the eye are resident (I4 step 8; a hall at once), or so
+  fades back in once the covers in view of the room that holds the eye are resident (I4 step 8; a hall at once, the
+  hub's once its favourites' showcase is in: I12 step 4), or so
   that it is back 3 s after the request (the wait ends at 2.25 s, a fade-in begun late by a long frame shortened to end
   by 3 s: `timed-out`); the rest of the room's covers stream in afterwards (the ride's record says when the room was
   whole, `roomResidentMs`, and how many covers were in view, `viewItems`, `viewPending`); the fades follow the real
