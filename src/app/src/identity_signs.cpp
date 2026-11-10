@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include <rv/app/shelf_labels.hpp>
 #include <rv/core/math.hpp>
 
 namespace rv::app {
@@ -82,6 +83,11 @@ std::vector<IdentitySignTarget> identitySignTargets(const scene::SceneDescriptio
         }
         const std::string& pattern = picture->second.pattern;
         if (pattern != "neon" && pattern != "sign") {
+            continue;
+        }
+        if (const auto section = sectionSignOf(object.id)) {
+            targets.push_back(IdentitySignTarget{object.id, section->first, IdentitySignPlace::Section,
+                                                 assets::IdentitySignStyle::Lit, section->second});
             continue;
         }
         const auto room = identitySignRoom(object.id);
@@ -175,9 +181,25 @@ bool hasIdentity(const SignSystem& system) noexcept {
 
 std::optional<IdentitySignContent> identitySignContent(const world::RoomId& room, IdentitySignPlace place,
                                                        std::span<const catalog::SystemName> sections,
-                                                       const SignSystemLookup& lookup) {
+                                                       const SignSystemLookup& lookup, std::size_t section) {
     if (!lookup) {
         return std::nullopt;
+    }
+    if (place == IdentitySignPlace::Section) {
+        if (section >= sections.size()) {
+            return std::nullopt;
+        }
+        const std::optional<SignSystem> system = lookup(sections[section]);
+        if (!system || !hasIdentity(*system)) {
+            return std::nullopt;
+        }
+        IdentitySignContent content;
+        if (!system->logo.empty()) {
+            content.logos.push_back(system->logo);
+        } else {
+            content.name = system->name;
+        }
+        return content;
     }
     const std::string number = room.isExpansion() ? std::to_string(room.index()) : std::string();
     if (room.kind() == world::RoomIdKind::System) {
@@ -199,11 +221,11 @@ std::optional<IdentitySignContent> identitySignContent(const world::RoomId& room
         return std::nullopt;
     }
     IdentitySignContent content;
-    for (const catalog::SystemName& section : sections) {
+    for (const catalog::SystemName& held : sections) {
         if (content.logos.size() >= assets::kMaxSignLogos) {
             break;
         }
-        if (const std::optional<SignSystem> system = lookup(section); system && !system->logo.empty()) {
+        if (const std::optional<SignSystem> system = lookup(held); system && !system->logo.empty()) {
             content.logos.push_back(system->logo);
         }
     }

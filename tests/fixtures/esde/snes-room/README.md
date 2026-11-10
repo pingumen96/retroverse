@@ -22,6 +22,9 @@ Nothing commercial: no real title, company, system name, logo or cover; no media
 ├── roms/snes/                       55 ROM files (64 to 512 KiB of payload each, fixed last write times)
 ├── media/snes/<kind>/               the generated media
 └── additions/                       G10's ten games, laid over the root by Fixture::applyOverlay("additions")
+└── gallery/                         generated only: the gallery case's media (fanart for fourteen games, marquees
+                                     for four, Bramble Burrow Rally's screenshot whole), laid over the root by the
+                                     gallery case alone (I12 step 5)
     ├── ES-DE/gamelists/snes/gamelist.xml    the gamelist above with their ten entries appended
     ├── roms/snes/                           their ten ROM files
     └── media/snes/covers/                   their ten covers

@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
+    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g16_handheld_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "e791f4c84c4d8ec586ca4f684e85b8132877efab67e4585d4c6aec8e7669cdc4",
+    "sha256": "fa89136e2d4e80c9f9959730ba81a1807773330b31058c4aaa10b8dcbc5f3648",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "0f6f4cbe88e92b49b19d9509814d947d368efb408348d1784007fce380955588"
     },
     "plan": {
-      "digest": "d1b7edc4c7a13d22ddac76061b39458f4f2876aca7c5e4c8d5188b8805f6b146",
-      "fileSha256": "d1b7edc4c7a13d22ddac76061b39458f4f2876aca7c5e4c8d5188b8805f6b146",
+      "digest": "06b3e6113696a29fdd5012c0af1586e6acd6649a704798a41d493c8c7c8e0ac6",
+      "fileSha256": "06b3e6113696a29fdd5012c0af1586e6acd6649a704798a41d493c8c7c8e0ac6",
       "items": 44,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
+      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
     }
   },
-  "renderedOn": "2026-11-09",
+  "renderedOn": "2026-11-10",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

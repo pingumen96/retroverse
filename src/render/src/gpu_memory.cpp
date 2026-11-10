@@ -66,6 +66,8 @@ std::string_view toString(GpuMemoryKind kind) noexcept {
         return "contentTextures";
     case GpuMemoryKind::GalleryTextures:
         return "galleryTextures";
+    case GpuMemoryKind::LabelTextures:
+        return "labelTextures";
     }
     return "sceneTextures";
 }
@@ -103,6 +105,8 @@ std::string_view displayName(GpuMemoryKind kind) noexcept {
         return "Content";
     case GpuMemoryKind::GalleryTextures:
         return "Gallery";
+    case GpuMemoryKind::LabelTextures:
+        return "Labels";
     }
     return "Textures";
 }

@@ -107,6 +107,7 @@
 #include "system_logos.hpp"
 #include "world_consoles.hpp"
 #include "world_gallery.hpp"
+#include "world_shelf_labels.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
@@ -703,6 +704,8 @@ struct RetroverseApp::State {
     std::unique_ptr<WorldConsoles> worldConsoles;
     /// I12 step 2: the user's media in the gallery's frames.
     std::unique_ptr<WorldGallery> worldGallery;
+    /// I12 step 5: the shelves' letter tabs, caption cards and section signs.
+    std::unique_ptr<WorldShelfLabels> worldShelfLabels;
     std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -1061,6 +1064,10 @@ struct RetroverseApp::State {
             worldGallery->release(graphics ? &graphics->materials() : nullptr);
             worldGallery.reset();
         }
+        if (worldShelfLabels) {
+            worldShelfLabels->release(graphics ? &graphics->materials() : nullptr);
+            worldShelfLabels.reset();
+        }
         if (worldPlaques) {
             worldPlaques->release(graphics ? &graphics->materials() : nullptr);
             worldPlaques.reset();
@@ -1177,6 +1184,27 @@ struct RetroverseApp::State {
             };
         }
         worldGallery->update(gallery);
+        // I12 step 5: the shelves' labels.
+        if (!worldShelfLabels) {
+            worldShelfLabels = std::make_unique<WorldShelfLabels>(*pool, context.paths().assetRoot());
+        }
+        WorldShelfLabels::Frame labels;
+        labels.description = &description;
+        labels.instance = &*scene;
+        labels.materials = &graphics->materials();
+        if (world) {
+            labels.labels = world->shelfLabels();
+            labels.revision = world->shownRevision();
+            labels.hold = world->riding();
+        }
+        labels.compressed = consoles.compressed;
+        labels.settle = frame.settle;
+        labels.frozen = plaques.frozen;
+        labels.replaceObjects = plaques.replaceObjects;
+        labels.signsChanged = [this] {
+            worldSigns->sceneChanged();
+        };
+        worldShelfLabels->update(labels);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -2206,6 +2234,9 @@ struct RetroverseApp::State {
             if (worldGallery) {
                 worldGallery->sceneChanged(); // I12 step 2: the new objects' frames
             }
+            if (worldShelfLabels) {
+                worldShelfLabels->sceneChanged(); // I12 step 5
+            }
             if (worldPlaques) {
                 worldPlaques->sceneChanged(); // I11 step 5
             }
@@ -2369,6 +2400,9 @@ struct RetroverseApp::State {
         }
         if (worldGallery) {
             worldGallery->sceneChanged(); // I12 step 2: its frames
+        }
+        if (worldShelfLabels) {
+            worldShelfLabels->sceneChanged(); // I12 step 5: its shelves' labels
         }
         if (worldPlaques) {
             worldPlaques->sceneChanged(); // I11 step 5: its plaques
@@ -3358,6 +3392,15 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->galleryFailed = m_state->worldGallery->failed();
             catalog->galleryBytes = m_state->worldGallery->bytes();
             catalog->galleryPeakBytes = m_state->worldGallery->peakBytes();
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->worldShelfLabels) {
+            catalog->shelfTabs = m_state->worldShelfLabels->tabs();
+            catalog->shelfCaptions = m_state->worldShelfLabels->captions();
+            catalog->sectionSigns = m_state->worldShelfLabels->sections();
+            catalog->shelfAtlases = m_state->worldShelfLabels->atlases();
+            catalog->shelfAtlasesShown = m_state->worldShelfLabels->atlasesShown();
+            catalog->shelfLabelsFailed = m_state->worldShelfLabels->failed();
+            catalog->shelfLabelBytes = m_state->worldShelfLabels->bytes();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

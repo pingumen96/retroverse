@@ -3,14 +3,17 @@
 // The rooms' signs from the systems' identity (I11 step 4, ADR-0019 §3), GPU-free: which objects of a floor's scene are
 // a room's signs, and what each shows. The scene files and the plans keep their generic signs ("16-BIT CORNER", the
 // bitmap lettering): the app draws the identity's sign (assets::makeIdentitySign()) and puts it on the sign's material
-// at runtime (WorldSigns), as the hero CRT's pictures are put on its screen. A room whose systems have no identity keeps
-// its generic sign, so every scene without a theme draws as before.
+// at runtime (WorldSigns), as the hero CRT's pictures are put on its screen. A room whose systems have no identity
+// keeps its generic sign, so every scene without a theme draws as before.
 //
 // The signs (floor_scene.cpp, scene_builder.cpp), each with its "picture" a "neon" or "sign" pattern:
 //   - "<room>/fx:hero.sign" (and a pack's further pieces, ".2"...): the room's neon over its hero corner;
-//   - "hall:<floor>/portal:<room>/sign", ".../blade-east", ".../blade-west" (also under the hub's "hub/"): the plate over
+//   - "hall:<floor>/portal:<room>/sign", ".../blade-east", ".../blade-west" (also under the hub's "hub/"): the plate
+//   over
 //     a room's doorway and the blades beside it;
-//   - "hall:<floor>/hub/fascia-sign:<room>": the hub's fascia over a room's doorway.
+//   - "hall:<floor>/hub/fascia-sign:<room>": the hub's fascia over a room's doorway;
+//   - I12 step 5: "section:<room>/<n>", a section's sign over its first module in a shared or arcade room (the app's,
+//     shelf_labels.hpp: its generic picture names the section).
 
 #include <filesystem>
 #include <functional>
@@ -38,6 +41,9 @@ enum class IdentitySignPlace : std::uint8_t {
     Hero,
     /// A portal's plate, a blade beside it, the hub's fascia: the hall's.
     Hall,
+    /// I12 step 5: a section's sign over its first module in a shared or arcade room ("section:<room>/<n>",
+    /// shelf_labels.hpp), added at runtime.
+    Section,
 };
 
 /// A sign of the scene: its object, the room it names, where it stands, and its style (its pattern's: "neon" draws the
@@ -47,6 +53,8 @@ struct IdentitySignTarget {
     world::RoomId room;
     IdentitySignPlace place = IdentitySignPlace::Hall;
     assets::IdentitySignStyle style = assets::IdentitySignStyle::Lit;
+    /// A section sign's section (an index into its room's sections); 0 for the others.
+    std::size_t section = 0;
 
     bool operator==(const IdentitySignTarget&) const = default;
 };
@@ -111,11 +119,14 @@ using SignSystemLookup = std::function<std::optional<SignSystem>(const catalog::
 ///   - a console room, when its system has an identity: its logo alone (a theme's logo is a wordmark: it says the name
 ///     already), else its name; an expansion's number after either ("Lumen 16 2", as chainSignText() numbers the
 ///     generic one);
-///   - a shared or arcade room (`sections`, the plan's): on the hall's signs, the logos of its sections that have one, in
-///     order, with an expansion's number as the name; its own neon keeps its generic sign (it names the room's kind).
-[[nodiscard]] std::optional<IdentitySignContent> identitySignContent(const world::RoomId& room,
-                                                                     IdentitySignPlace place,
+///   - a shared or arcade room (`sections`, the plan's): on the hall's signs, the logos of its sections that have one,
+///   in
+///     order, with an expansion's number as the name; its own neon keeps its generic sign (it names the room's kind);
+///   - a section sign (I12 step 5): the system of its `section` as a console room's sign shows it (its logo alone, else
+///     its identity's name), none when that system has no identity (its generic picture names it already).
+[[nodiscard]] std::optional<IdentitySignContent> identitySignContent(const world::RoomId& room, IdentitySignPlace place,
                                                                      std::span<const catalog::SystemName> sections,
-                                                                     const SignSystemLookup& lookup);
+                                                                     const SignSystemLookup& lookup,
+                                                                     std::size_t section = 0);
 
 } // namespace rv::app

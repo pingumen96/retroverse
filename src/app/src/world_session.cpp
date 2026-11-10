@@ -330,6 +330,16 @@ std::vector<ScreenGame> WorldSession::screenGamesOf(const std::string& room) con
     return {};
 }
 
+std::vector<const ShelfLabels*> WorldSession::shelfLabels() const {
+    std::vector<const ShelfLabels*> labels;
+    if (m_shown) {
+        for (const ShownCollection& collection : m_shown->rooms) {
+            labels.push_back(&collection.shelfLabels);
+        }
+    }
+    return labels;
+}
+
 RoomGallery WorldSession::galleryOf(const std::string& room) const {
     if (m_shown) {
         for (const ShownCollection& collection : m_shown->rooms) {
@@ -1318,6 +1328,7 @@ void WorldSession::dropCollection() {
     dropLastPlayed(); // I12 step 3
     syncCollections();
     m_shown.reset();
+    ++m_shownRevision; // I12 step 5
     m_launch.setPlan(nullptr);
     // I4 step 7b: no floor shown (the plan's state stays for the next one: keepShown()).
     m_floor.clear();

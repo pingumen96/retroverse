@@ -16,6 +16,7 @@ add_library(rv_assets STATIC
     src/gltf_geometry.cpp
     src/gltf_loader.cpp
     src/history_plaque.cpp
+    src/label_atlas.cpp
     src/identity_sign.cpp
     src/image_decode.cpp
     src/image_encode.cpp

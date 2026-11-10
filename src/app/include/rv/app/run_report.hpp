@@ -268,6 +268,16 @@ struct CatalogRecord {
     std::size_t galleryFailed = 0;
     std::uint64_t galleryBytes = 0;
     std::uint64_t galleryPeakBytes = 0;
+    /// I12 step 5: the shelves' letter tabs, caption cards and section signs of the scene shown when the run ended
+    /// (WorldShelfLabels), their atlases wanted and those on their objects, the atlases that could not be drawn or
+    /// uploaded during the run, and the atlases' GPU bytes.
+    std::size_t shelfTabs = 0;
+    std::size_t shelfCaptions = 0;
+    std::size_t sectionSigns = 0;
+    std::size_t shelfAtlases = 0;
+    std::size_t shelfAtlasesShown = 0;
+    std::size_t shelfLabelsFailed = 0;
+    std::uint64_t shelfLabelBytes = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

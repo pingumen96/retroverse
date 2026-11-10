@@ -52,6 +52,7 @@
 
 #include <rv/app/collection_layers.hpp>
 #include <rv/app/layout_difference.hpp>
+#include <rv/app/shelf_labels.hpp>
 #include <rv/app/world_build.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/world/collection_layout.hpp>
@@ -69,6 +70,9 @@ struct ShownCollection {
     std::vector<ScreenGame> screenGames;
     /// I12 step 2: its gallery's candidates (RoomCollection::gallery).
     RoomGallery gallery;
+    /// I12 step 5: its shelves' letter tabs, caption cards and section signs (roomShelfLabels() of its layout and its
+    /// RoomCollection::shelfTexts, under the plan shown).
+    ShelfLabels shelfLabels;
 };
 
 /// What the session keeps of the floor it shows, to compare the next build with (a WorldBuild without its scene, scene

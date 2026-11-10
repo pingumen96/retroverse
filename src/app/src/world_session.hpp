@@ -245,6 +245,10 @@ public:
     [[nodiscard]] std::vector<catalog::SystemName> roomSections(const world::RoomId& room) const;
     /// I12 step 2: the gallery's candidates of a room of the floor shown ("room:snes"); empty when it has none.
     [[nodiscard]] RoomGallery galleryOf(const std::string& room) const;
+    /// I12 step 5: the shelves' labels of the floor shown's rooms (none without a floor shown), and a revision that
+    /// moves whenever the floor shown is replaced (a floor shown, a live update, an edit's draft or commit) or dropped.
+    [[nodiscard]] std::vector<const ShelfLabels*> shelfLabels() const;
+    [[nodiscard]] std::uint64_t shownRevision() const noexcept { return m_shownRevision; }
     void applyInspection(gl::RenderView& view) {
         m_interaction->applyInspection(view);
         applyEditOutline(view);
@@ -797,6 +801,8 @@ private:
     /// I3 step 15b: what the floor shown is (none without a floor), a live update asked for (a refresh ended) and when,
     /// and whether m_flow is a live update's.
     std::optional<ShownFloor> m_shown;
+    /// I12 step 5: moves whenever m_shown is replaced or dropped (shownRevision()).
+    std::uint64_t m_shownRevision = 0;
     /// I4 step 6b: the room whose CRT is bound (the eye's after the dwell), and the frame the rebind's phase closes.
     ScreenRoomTracker m_screenRooms;
     std::optional<std::uint64_t> m_screenPhaseUntil;

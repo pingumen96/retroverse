@@ -470,6 +470,12 @@ struct DisplayCaseParams {
     bool litScreens = false; ///< the counter's handhelds' screens in "screen" (a pack naming that role)
 };
 
+/// Where a display case's lip stands in a level's slot frame (I12 step 5: the caption cards hang from it): its front
+/// kDisplayCaseLipFront in front of the slot volume's front face (z = depth / 2), its top kDisplayCaseLipHeight above
+/// the slot's bottom (the ledge's top).
+inline constexpr float kDisplayCaseLipFront = 0.008f;
+inline constexpr float kDisplayCaseLipHeight = 0.012f;
+
 /// "wall_shelf", the featured wall shelf (ADR-0010 §3, §4), front +Z, hung on a wall: pivot on the floor below the
 /// middle of its footprint, bounds = [-width/2, mountHeight, -depth/2] .. [width/2, mountHeight + height, depth/2]
 /// (the back at -depth/2 against the wall). A back board between two side cheeks under a top cap, with `ledges`
@@ -797,6 +803,30 @@ struct CoatStandParams {
     int seed = 0;         ///< [0, 2147483647]
 };
 
+/// One plate of a "label_plates" prefab: its frame (a rigid transform from the plate's own space: centred across and
+/// up, its back at z 0, its face towards +Z), its size and the atlas cell its face shows (uLeft, vTop, uRight,
+/// vBottom).
+struct LabelPlate {
+    glm::mat4 frame{1.0f};
+    glm::vec2 size{0.066f, 0.026f};
+    glm::vec4 cell{0.0f, 0.0f, 1.0f, 1.0f};
+};
+
+/// "label_plates" (I12 step 5, ADR-0021 §1): the shelves' letter tabs and the display cases' caption cards, small
+/// plates each showing a cell of one atlas (the app draws the atlas and puts it on the "picture" material). Each plate
+/// is a box of `thickness` (role "plate") with its face 0.3 mm in front of it inset by `inset` on every side (role
+/// "picture", uv the plate's cell: a label holder's paper insert in its frame, or with no inset a printed card). The
+/// object's own frame is wherever the plates' frames put them (the app gives them in the scene's frame). No sockets;
+/// bounds = the plates' boxes; nothing collides.
+/// JSON: {"plates": [{"frame": [12 numbers: the 3 x 4 matrix's columns x, y, z and the translation], "size": [w, h],
+/// "cell": [u0, v0, u1, v1]}], "thickness": t, "inset": i}.
+struct LabelPlatesParams {
+    std::vector<LabelPlate> plates{LabelPlate{}}; ///< [1, 1024]; each frame rigid (unit, orthogonal axes within 1e-3),
+                                                  ///< size in [0.005, 1], cell inside [0, 1] with u0 < u1 and v0 < v1
+    float thickness = 0.003f;                     ///< [0.0005, 0.02]
+    float inset = 0.003f;                         ///< [0, half the smallest plate edge less 2 mm]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -840,6 +870,7 @@ struct CoatStandParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildRecordRack(const RecordRackParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildPegboard(const PegboardParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildCoatStand(const CoatStandParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildLabelPlates(const LabelPlatesParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -865,7 +896,8 @@ struct CoatStandParams {
 /// console_cartridge, poster_frame, rug, floor_lamp, armchair, display_case, wall_shelf, storage_box, magazine_stack,
 /// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
 /// I6 step 5's hub: column, railing, hub_landmark, info_totem, I6 step 6's arcade_cabinet, I5 step 3's
-/// secondary_tv and I12 step 3's hero corner set: floor_speaker, media_rack, pad, low_table, cushion, open_box.
+/// secondary_tv, I12 step 3's hero corner set: floor_speaker, media_rack, pad, low_table, cushion, open_box, I12 step
+/// 4's tall decoration: bookcase, record_rack, pegboard, coat_stand, and I12 step 5's label_plates.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

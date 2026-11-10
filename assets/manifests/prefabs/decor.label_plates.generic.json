@@ -1,0 +1,32 @@
+// The shelves' letter tabs and the display cases' caption cards (I12 step 5, ADR-0021 §1): small plates, each showing a
+// cell of an atlas the app draws at runtime; the app gives every plate's frame (WorldShelfLabels), never a plan.
+{
+  "schemaVersion": 1,
+  "id": "decor.label_plates.generic",
+  "assetType": "decor",
+  "category": "label_plates",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-10",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "label_plates",
+    "params": {},
+    "scaleMeters": [0.066, 0.026, 0.0033],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "label", "shelf", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

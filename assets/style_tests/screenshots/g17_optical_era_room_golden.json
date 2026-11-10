@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
+    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g17_optical_era_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "729e96794d152d511694e68116a0c97b5fd591a2c90a195da9fb2ba41d88df60",
+    "sha256": "c0b949213b6cd7253d2596bcaaf1fe67577280800bba594b76ef22f61581ae24",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "c3ffe959db5e4fe988d88fb6f800da8bad3e7884bbe0f2b252bea7a57b78ef31"
     },
     "plan": {
-      "digest": "64a706fcdf07af225e593b0f4706ce7355a708f58ce19ab2eb086b112327d9bd",
-      "fileSha256": "64a706fcdf07af225e593b0f4706ce7355a708f58ce19ab2eb086b112327d9bd",
+      "digest": "77076b08f8a43a656b19d7daec89755b9e3362c790f36e59662f4f2e85b7a03c",
+      "fileSha256": "77076b08f8a43a656b19d7daec89755b9e3362c790f36e59662f4f2e85b7a03c",
       "items": 100,
       "placements": 420
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
+      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
     }
   },
-  "renderedOn": "2026-11-09",
+  "renderedOn": "2026-11-10",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

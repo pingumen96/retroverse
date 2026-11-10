@@ -1341,6 +1341,31 @@ roomCollectionOf(const world::WorldPlan& plan, const world::Room& room, world::S
         cover.coverPath = text->coverPath;
         collection.covers.push_back(std::move(cover));
     }
+    // I12 step 5: what the shelves' labels say of each placed game, from its own section's items.
+    for (const world::CollectionItem& item : collection.layout.items) {
+        const auto [text, source] = itemTextOf(items, held, item.game);
+        if (text == nullptr || !hasText(*text)) {
+            continue;
+        }
+        std::optional<std::size_t> section;
+        for (std::size_t i = 0; i < held.size() && !section; ++i) {
+            const auto known = items.find(held[i]);
+            if (known != items.end() && &known->second == source) {
+                section = i;
+            }
+        }
+        collection.shelfTexts.games.push_back(shelfTextOf(*text, section));
+    }
+    std::sort(collection.shelfTexts.games.begin(), collection.shelfTexts.games.end(),
+              [](const ShelfText& a, const ShelfText& b) { return a.game < b.game; });
+    collection.shelfTexts.games.erase(
+        std::unique(collection.shelfTexts.games.begin(), collection.shelfTexts.games.end(),
+                    [](const ShelfText& a, const ShelfText& b) { return a.game == b.game; }),
+        collection.shelfTexts.games.end());
+    for (const catalog::SystemName& system : held) {
+        const auto known = items.find(system);
+        collection.shelfTexts.sectionNames.push_back(known != items.end() ? known->second.systemName : std::string());
+    }
     if (const auto digest = digests.find(room.id); digest != digests.end()) {
         collection.contentDigest = digest->second;
     }
