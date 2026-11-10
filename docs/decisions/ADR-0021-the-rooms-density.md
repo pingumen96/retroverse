@@ -158,6 +158,16 @@ Rules of the layer:
 - Stored worlds show the layer at once: it needs no update, no migration and no regeneration, because the plan is
   unchanged. The one exception is §3's density.
 
+*Amended on 2026-11-10 (I12 step 5):* the shelf detail as built ([i12/step-5.md](../i12/step-5.md)):
+- **One object a room** for its letter tabs and one for its caption cards (a prefab kind `label_plates`: each plate its
+  own frame and atlas cell), each with one atlas of its room's texts (`gl::GpuMemoryKind::LabelTextures`), rather than
+  one a fixture; a module moved makes its room's object again with the same atlas. They follow the room editor at the
+  end of its session, as every runtime object does.
+- **A section sign** stands over the first fixture of its section that holds its first item by sort key: a module, the
+  wall shelf or a display case (a small shared room holds every title face-out), at a display case's back; its generic
+  picture is the section's name, the identity's sign going over it as on the hall's signs. The arcade's cabinets hold
+  none.
+
 ### 2. The gallery: the user's art on the walls
 
 Every pack's `roomDressing` gains a **gallery** (the arcade's and the handhelds' `pictures`, extended to every pack): a
