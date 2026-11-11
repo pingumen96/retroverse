@@ -123,6 +123,7 @@ TEST_CASE("app/frame_timing: the GPU times per pass follow the run's and the pha
     timing.recordFrame(3, 5.0);
     CHECK(timing.closePhase(rv::app::kPhaseBenchmark));
     stats.sceneGpuMilliseconds = 3.0;
+    stats.atmosphereGpuMilliseconds = 0.0625; // I12 step 6
     timing.recordGpuPasses(stats);
     timing.recordFrame(4, 5.0);
 
@@ -131,7 +132,8 @@ TEST_CASE("app/frame_timing: the GPU times per pass follow the run's and the pha
                                      GpuPassRecord{"depth", TimeSummary{1, 0.5, 0.5, 0.5, 0.5}},
                                      GpuPassRecord{"scene", TimeSummary{3, 1.0, 3.0, 3.0, 3.0}},
                                      GpuPassRecord{"outline", TimeSummary{2, 0.125, 0.125, 0.125, 0.125}},
-                                     GpuPassRecord{"total", TimeSummary{3, 1.75, 3.125, 3.125, 3.125}}});
+                                     GpuPassRecord{"atmosphere", TimeSummary{1, 0.0625, 0.0625, 0.0625, 0.0625}},
+                                     GpuPassRecord{"total", TimeSummary{3, 1.75, 3.1875, 3.1875, 3.1875}}});
     const std::vector<PhaseRecord> phases = timing.phases();
     REQUIRE(phases.size() == 1);
     CHECK(phases[0].frames == 3);

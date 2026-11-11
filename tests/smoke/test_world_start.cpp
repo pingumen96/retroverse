@@ -216,6 +216,10 @@ std::size_t warningsWith(const AppRun& run, std::string_view needle) {
 TEST_CASE("world: the stored room shows at the first frame before the snapshot, then is reconciled with nothing moved",
           "[gpu][world][world_start]") {
     ImportedRoom room("unchanged");
+    // The room's air held still (I12 step 6, ADR-0021 §4): under reduceMotion the dust stands and the CRT's glow keeps
+    // its own colour, so the two pictures below may differ on the CRT alone.
+    REQUIRE(
+        rv::core::writeTextFileAtomic(room.data / "config" / "world.json", "{\"reduceMotion\": true}\n").has_value());
     // A first run makes the plan and keeps the room's items for the next start (no preview: nothing was stored).
     const AppRun first = runApp(retroverseExe(), room.dir, "first", roomArguments("2"));
     skipWithoutOpenGl(first);

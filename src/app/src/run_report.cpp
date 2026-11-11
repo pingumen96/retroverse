@@ -48,11 +48,19 @@ Json frameStatsToJson(const gl::FrameStats& stats) {
     if (stats.outlinedInstances > 0) {
         json["outlinedInstances"] = stats.outlinedInstances;
     }
+    if (stats.atmosphereMotes > 0 || stats.atmosphereCones > 0) {
+        json["atmosphere"] = Json{
+            {"motes", stats.atmosphereMotes}, {"cones", stats.atmosphereCones}, {"frozen", stats.atmosphereFrozen}};
+    }
     Json gpu = Json::object();
     const std::pair<const char*, const std::optional<double>*> times[] = {
-        {"shadow", &stats.shadowGpuMilliseconds}, {"depth", &stats.depthGpuMilliseconds},
-        {"ssao", &stats.ssaoGpuMilliseconds},     {"scene", &stats.sceneGpuMilliseconds},
-        {"post", &stats.postGpuMilliseconds},     {"outline", &stats.outlineGpuMilliseconds},
+        {"shadow", &stats.shadowGpuMilliseconds},
+        {"depth", &stats.depthGpuMilliseconds},
+        {"ssao", &stats.ssaoGpuMilliseconds},
+        {"scene", &stats.sceneGpuMilliseconds},
+        {"post", &stats.postGpuMilliseconds},
+        {"outline", &stats.outlineGpuMilliseconds},
+        {"atmosphere", &stats.atmosphereGpuMilliseconds},
     };
     for (const auto& [name, value] : times) {
         if (*value && std::isfinite(**value)) {
@@ -341,6 +349,11 @@ gl::FrameStats readFrameStats(FieldReader& fields) {
         stats.staticInstances = groups->count("instances", kMaxSize);
     }
     stats.outlinedInstances = fields.optionalCount("outlinedInstances", kMaxSize).value_or(0);
+    if (auto atmosphere = fields.optionalObject("atmosphere")) {
+        stats.atmosphereMotes = atmosphere->count("motes", kMaxSize);
+        stats.atmosphereCones = atmosphere->count("cones", kMaxSize);
+        stats.atmosphereFrozen = atmosphere->boolean("frozen");
+    }
     if (auto gpu = fields.optionalObject("gpuMilliseconds")) {
         stats.shadowGpuMilliseconds = gpu->optionalNumber("shadow");
         stats.depthGpuMilliseconds = gpu->optionalNumber("depth");
@@ -348,6 +361,7 @@ gl::FrameStats readFrameStats(FieldReader& fields) {
         stats.sceneGpuMilliseconds = gpu->optionalNumber("scene");
         stats.postGpuMilliseconds = gpu->optionalNumber("post");
         stats.outlineGpuMilliseconds = gpu->optionalNumber("outline");
+        stats.atmosphereGpuMilliseconds = gpu->optionalNumber("atmosphere");
     }
     return stats;
 }
@@ -3205,6 +3219,9 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["shelfAtlasesShown"] = catalog.shelfAtlasesShown;
     json["shelfLabelsFailed"] = catalog.shelfLabelsFailed;
     json["shelfLabelBytes"] = catalog.shelfLabelBytes;
+    json["flickeringSigns"] = catalog.flickeringSigns;
+    json["crtGlows"] = catalog.crtGlows;
+    json["crtGlowWrites"] = catalog.crtGlowWrites;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3356,6 +3373,9 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.shelfLabelsFailed =
         static_cast<std::size_t>(fields.optionalCount("shelfLabelsFailed", kMaxSize).value_or(0));
     catalog.shelfLabelBytes = fields.optionalCount("shelfLabelBytes", kMaxSize).value_or(0);
+    catalog.flickeringSigns = static_cast<std::size_t>(fields.optionalCount("flickeringSigns", kMaxSize).value_or(0));
+    catalog.crtGlows = static_cast<std::size_t>(fields.optionalCount("crtGlows", kMaxSize).value_or(0));
+    catalog.crtGlowWrites = static_cast<std::size_t>(fields.optionalCount("crtGlowWrites", kMaxSize).value_or(0));
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.

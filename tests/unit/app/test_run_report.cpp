@@ -104,6 +104,10 @@ void checkSameStats(const rv::gl::FrameStats& a, const rv::gl::FrameStats& b) {
     CHECK(a.sceneGpuMilliseconds == b.sceneGpuMilliseconds);
     CHECK(a.postGpuMilliseconds == b.postGpuMilliseconds);
     CHECK(a.outlineGpuMilliseconds == b.outlineGpuMilliseconds);
+    CHECK(a.atmosphereGpuMilliseconds == b.atmosphereGpuMilliseconds);
+    CHECK(a.atmosphereMotes == b.atmosphereMotes);
+    CHECK(a.atmosphereCones == b.atmosphereCones);
+    CHECK(a.atmosphereFrozen == b.atmosphereFrozen);
     CHECK(a.staticGroups == b.staticGroups);
     CHECK(a.staticBatches == b.staticBatches);
     CHECK(a.clusters == b.clusters);
@@ -1213,6 +1217,11 @@ TEST_CASE("app/run_report: the static groups and the outline of a view read back
     report.lastView->staticInstances = 1350;
     report.lastView->outlinedInstances = 3;
     report.lastView->outlineGpuMilliseconds = 0.0123;
+    // I12 step 6: the atmosphere's counts and time.
+    report.lastView->atmosphereMotes = 480;
+    report.lastView->atmosphereCones = 2;
+    report.lastView->atmosphereGpuMilliseconds = 0.05;
+    report.lastView->atmosphereFrozen = true;
     const std::string text = rv::app::formatRunReport(report);
     const nlohmann::json json = nlohmann::json::parse(text);
     CHECK(json["lastView"]["staticGroups"] == nlohmann::json{{"groups", 1},          {"batches", 3},
@@ -1220,6 +1229,8 @@ TEST_CASE("app/run_report: the static groups and the outline of a view read back
                                                              {"drawCalls", 12},      {"instances", 1350}});
     CHECK(json["lastView"]["outlinedInstances"] == 3);
     CHECK(json["lastView"]["gpuMilliseconds"]["outline"] == 0.0123);
+    CHECK(json["lastView"]["atmosphere"] == nlohmann::json{{"motes", 480}, {"cones", 2}, {"frozen", true}});
+    CHECK(json["lastView"]["gpuMilliseconds"]["atmosphere"] == 0.05);
     const auto parsed = rv::app::parseRunReport(text, "report.json");
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->lastView.has_value());

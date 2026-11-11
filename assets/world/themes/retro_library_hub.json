@@ -7,6 +7,8 @@
   "schemaVersion": 1,
   "id": "retro_library_hub",
   "name": "RetroLibraryHub",
+  // I12 step 6 (ADR-0021 §4): the hub's showcase room keeps a clear air (dust is the rooms').
+  "atmosphere": {"dust": 0, "neonFlicker": false, "crtBreathing": false},
   "kinds": {
     // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
     "floor_speaker": {"cabinet": "MAT_Wood_Walnut", "grille": "MAT_Speaker_Grille",

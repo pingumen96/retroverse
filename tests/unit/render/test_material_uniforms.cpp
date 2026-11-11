@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 
@@ -192,4 +193,37 @@ TEST_CASE("render/material_uniforms: a CRT screen carries its picture-tube param
         rv::gl::withFactors(block, rv::gl::materialFactors(screen), screen.emissiveFactor);
     CHECK(edited.crtCurvature == block.crtCurvature);
     CHECK(edited.flags == block.flags);
+}
+
+TEST_CASE("render/material_uniforms: a neon flickers now and then, never in a run's first seconds (I12 step 6)",
+          "[render][materials][atmosphere]") {
+    using rv::gl::EmissiveFlicker;
+    for (std::uint32_t seed = 0; seed < 64; ++seed) {
+        CAPTURE(seed);
+        const EmissiveFlicker flicker{seed * 7919u, 1.0f, 0.6f};
+        // Never before 4 s: a frame-limited run's screenshots (frame 30 at 60 Hz, 0.5 s) never catch a dip.
+        for (float time = 0.0f; time < rv::gl::kFirstFlickerSeconds; time += 0.01f) {
+            CHECK(rv::gl::emissiveFlickerFactor(flicker, time) == 1.0f);
+        }
+        // Then one dip of 80 to 120 ms in every slot of 8 s: about 1 to 1.5 % of the time dimmed, never darker than
+        // 1 - depth.
+        int dimmed = 0;
+        int samples = 0;
+        float lowest = 1.0f;
+        for (float time = rv::gl::kFirstFlickerSeconds; time < rv::gl::kFirstFlickerSeconds + 80.0f; time += 0.002f) {
+            const float factor = rv::gl::emissiveFlickerFactor(flicker, time);
+            dimmed += factor < 1.0f ? 1 : 0;
+            lowest = std::min(lowest, factor);
+            ++samples;
+        }
+        const double share = static_cast<double>(dimmed) / samples;
+        CHECK(share > 0.009);
+        CHECK(share < 0.016);
+        CHECK(lowest == Approx(0.4f));
+    }
+    // Rate or depth 0 (reduceMotion), or a time that is not finite: steady.
+    CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{3u, 0.0f, 0.6f}, 30.0f) == 1.0f);
+    CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{3u, 1.0f, 0.0f}, 30.0f) == 1.0f);
+    CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{3u, 1.0f, 0.6f}, std::numeric_limits<float>::quiet_NaN()) ==
+          1.0f);
 }

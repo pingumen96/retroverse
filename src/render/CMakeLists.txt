@@ -16,7 +16,8 @@
 #                           programs (surface_view.hpp); the renderer's frame statistics (frame_stats.hpp, header only);
 #                           since I3 the GPU memory accounting (gpu_memory.hpp) and the collection arrays' classes,
 #                           sizes, layer images, layer allocation and upload budget (texture_array_layout.hpp);
-#                           the view targets' formats, sizes, lifetimes and shared storage (view_target_plan.hpp)
+#                           the view targets' formats, sizes, lifetimes and shared storage (view_target_plan.hpp);
+#                           since I12 step 6 the atmosphere pass's block (atmosphere_settings.hpp)
 add_library(rv_render_debug_filter STATIC
     src/debug_message_filter.cpp
 )
@@ -27,6 +28,7 @@ target_link_libraries(rv_render_debug_filter PUBLIC rv_core)
 rv_forbid_link(rv_render_debug_filter)
 
 add_library(rv_render_uniforms STATIC
+    src/atmosphere_settings.cpp
     src/gpu_memory.cpp
     src/light_packing.cpp
     src/material_uniforms.cpp
@@ -47,6 +49,7 @@ rv_forbid_link(rv_render_uniforms)
 
 add_library(rv_render STATIC
     src/buffer.cpp
+    src/atmosphere_pass.cpp
     src/collection_arrays.cpp
     src/debug_draw.cpp
     src/framebuffer.cpp

@@ -34,8 +34,8 @@ inline constexpr std::string_view kPhaseElevator = "elevator";     ///< an eleva
                                                                    ///< behind the fade exempt from the limits
 
 /// The GPU passes FrameTiming summarizes (GpuPassRecord's names, in its order; the last one is the sum of the others).
-inline constexpr std::array<std::string_view, 7> kGpuPassNames{"shadow", "depth",   "ssao", "scene",
-                                                               "post",   "outline", "total"};
+inline constexpr std::array<std::string_view, 8> kGpuPassNames{"shadow", "depth",   "ssao",       "scene",
+                                                               "post",   "outline", "atmosphere", "total"};
 
 /// Collects the time of every frame of a run and the frames of its phases. A phase is opened and closed by the code
 /// that runs it (AppContext::frameTiming): a frame belongs to a phase when the phase is open when the frame ends, or

@@ -21,7 +21,8 @@ namespace rv::gl {
 ///   3   Post      PostUniforms, post-processing of a view (assets/shaders/common/post.glsl)
 ///   4   Shadow    ShadowUniforms, the key light's shadow map in a view (assets/shaders/common/shadow.glsl)
 ///   5   Ssao      SsaoUniforms, the ambient occlusion passes of a view (assets/shaders/common/ssao.glsl)
-///   6+  reserved: new blocks are added to this table first, then to the shaders.
+///   6   Atmosphere AtmosphereUniforms, the dust and light cones of a view (assets/shaders/common/atmosphere.glsl)
+///   7+  reserved: new blocks are added to this table first, then to the shaders.
 enum class UniformBinding : std::uint32_t {
     Frame = 0,
     Lights = 1,
@@ -29,10 +30,11 @@ enum class UniformBinding : std::uint32_t {
     Post = 3,
     Shadow = 4,
     Ssao = 5,
+    Atmosphere = 6,
 };
 
 /// First binding point that is not assigned yet.
-inline constexpr std::uint32_t kFirstReservedUniformBinding = 6;
+inline constexpr std::uint32_t kFirstReservedUniformBinding = 7;
 
 [[nodiscard]] constexpr std::uint32_t toIndex(UniformBinding binding) noexcept {
     return static_cast<std::uint32_t>(binding);
@@ -175,6 +177,9 @@ inline constexpr std::uint32_t kSpineLayer = 1u << 10;
 /// black, never stretched): the base color is sampled across MaterialUniforms::pictureRect, black outside it. Unset, the
 /// picture fills the screen and the shaders do exactly what they did before (a 4:3 clip on a 4:3 screen).
 inline constexpr std::uint32_t kPictureRect = 1u << 11;
+/// An unlit material whose emission dips for a moment now and then (I12 step 6: a neon sign's flicker), as
+/// MaterialUniforms' flicker* fields and the frame's time say (gl::emissiveFlickerFactor, its CPU mirror).
+inline constexpr std::uint32_t kEmissiveFlicker = 1u << 12;
 
 /// Flag of the texture in `slot`.
 [[nodiscard]] constexpr std::uint32_t textureBit(MaterialTextureSlot slot) noexcept {
@@ -204,7 +209,11 @@ struct MaterialUniforms {
     float crtCurvature = 0.0f;
     float crtVignette = 0.0f;
     float crtGlassReflection = 0.0f;
-    float padding[3] = {0.0f, 0.0f, 0.0f};
+    /// With material_flags::kEmissiveFlicker (I12 step 6): the dips' seed (an integer below 2^24), how often they come
+    /// (1: about every 8 s; 0: never) and how much of the emission each takes away ([0, 1]).
+    float flickerSeed = 0.0f;
+    float flickerRate = 0.0f;
+    float flickerDepth = 0.0f;
     /// The picture's rectangle on the screen, in its texture coordinates (uv (0, 0) top-left): its corner (x, y) and
     /// its size (z, w); (0, 0, 1, 1) fills the screen.
     glm::vec4 pictureRect{0.0f, 0.0f, 1.0f, 1.0f};
@@ -226,6 +235,9 @@ static_assert(offsetof(MaterialUniforms, crtMaskStrength) == 68);
 static_assert(offsetof(MaterialUniforms, crtCurvature) == 72);
 static_assert(offsetof(MaterialUniforms, crtVignette) == 76);
 static_assert(offsetof(MaterialUniforms, crtGlassReflection) == 80);
+static_assert(offsetof(MaterialUniforms, flickerSeed) == 84);
+static_assert(offsetof(MaterialUniforms, flickerRate) == 88);
+static_assert(offsetof(MaterialUniforms, flickerDepth) == 92);
 static_assert(offsetof(MaterialUniforms, pictureRect) == 96);
 static_assert(sizeof(MaterialUniforms) == 112, "std140 block sizes are multiples of 16 bytes");
 
@@ -428,5 +440,83 @@ static_assert(offsetof(SsaoUniforms, intensity) == 260);
 static_assert(offsetof(SsaoUniforms, bias) == 264);
 static_assert(offsetof(SsaoUniforms, depthTolerance) == 268);
 static_assert(sizeof(SsaoUniforms) == 272, "std140 block sizes are multiples of 16 bytes");
+
+/// Emitters of a view's atmosphere pass (RV_MAX_ATMOSPHERE_EMITTERS in common/atmosphere.glsl).
+inline constexpr std::uint32_t kMaxAtmosphereEmitters = 16;
+
+/// AtmosphereEmitterUniforms::kind (RV_ATMOSPHERE_* in common/atmosphere.glsl): scene::AtmosphereKind's values.
+namespace atmosphere_kind {
+inline constexpr std::uint32_t kDustCone = 0;
+inline constexpr std::uint32_t kDustPool = 1;
+inline constexpr std::uint32_t kLightCone = 2;
+} // namespace atmosphere_kind
+
+/// One emitter of the atmosphere pass (I12 step 6): struct `AtmosphereEmitter` of common/atmosphere.glsl. Its shape is
+/// scene::AtmosphereEmitter's, its light the scene light it belongs to as the view lights it (linear radiance = colour
+/// times intensity, the cone factor's terms as PunctualLightUniforms').
+struct AtmosphereEmitterUniforms {
+    glm::vec3 apex{0.0f};
+    float length = 1.0f;
+    glm::vec3 axis{0.0f, -1.0f, 0.0f};
+    float tanHalfAngle = 0.0f;
+    glm::vec3 lightPosition{0.0f};
+    float range = 1.0f;
+    glm::vec3 lightDirection{0.0f, -1.0f, 0.0f};
+    float radius = 0.0f;
+    glm::vec3 radiance{0.0f};
+    float strength = 0.0f; ///< a light cone's
+    float spotScale = 0.0f;
+    float spotOffset = 1.0f;
+    std::uint32_t kind = atmosphere_kind::kDustCone;
+    std::uint32_t firstMote = 0; ///< the first instance of the dust draw that is one of its motes
+    std::uint32_t motes = 0;
+    std::uint32_t seed = 0;
+    std::uint32_t padding[2] = {0, 0};
+};
+
+static_assert(offsetof(AtmosphereEmitterUniforms, apex) == 0);
+static_assert(offsetof(AtmosphereEmitterUniforms, length) == 12);
+static_assert(offsetof(AtmosphereEmitterUniforms, axis) == 16);
+static_assert(offsetof(AtmosphereEmitterUniforms, tanHalfAngle) == 28);
+static_assert(offsetof(AtmosphereEmitterUniforms, lightPosition) == 32);
+static_assert(offsetof(AtmosphereEmitterUniforms, range) == 44);
+static_assert(offsetof(AtmosphereEmitterUniforms, lightDirection) == 48);
+static_assert(offsetof(AtmosphereEmitterUniforms, radius) == 60);
+static_assert(offsetof(AtmosphereEmitterUniforms, radiance) == 64);
+static_assert(offsetof(AtmosphereEmitterUniforms, strength) == 76);
+static_assert(offsetof(AtmosphereEmitterUniforms, spotScale) == 80);
+static_assert(offsetof(AtmosphereEmitterUniforms, spotOffset) == 84);
+static_assert(offsetof(AtmosphereEmitterUniforms, kind) == 88);
+static_assert(offsetof(AtmosphereEmitterUniforms, firstMote) == 92);
+static_assert(offsetof(AtmosphereEmitterUniforms, motes) == 96);
+static_assert(offsetof(AtmosphereEmitterUniforms, seed) == 100);
+static_assert(sizeof(AtmosphereEmitterUniforms) == 112, "std140 struct sizes are multiples of 16 bytes");
+
+/// The atmosphere of a view at UniformBinding::Atmosphere: block `AtmosphereUniforms` of common/atmosphere.glsl, read
+/// by atmosphere/dust.vert and atmosphere/cone.vert. Built by rv::gl::makeAtmosphereUniforms (atmosphere_settings.hpp).
+struct AtmosphereUniforms {
+    /// The first emitterCount entries are used.
+    AtmosphereEmitterUniforms emitters[kMaxAtmosphereEmitters]{};
+    /// The view's size in pixels: a mote is drawn at least minMotePixels wide.
+    glm::vec2 viewportSize{1.0f};
+    /// Seconds the motes have drifted (0 while frozen: they stand still).
+    float time = 0.0f;
+    /// A mote's width, meters.
+    float moteSize = 0.0025f;
+    /// The share of its light's radiance at its place a mote sends towards the eye.
+    float moteBrightness = 0.0f;
+    float minMotePixels = 1.5f;
+    std::uint32_t emitterCount = 0;
+    float padding = 0.0f;
+};
+
+static_assert(offsetof(AtmosphereUniforms, emitters) == 0);
+static_assert(offsetof(AtmosphereUniforms, viewportSize) == 1792);
+static_assert(offsetof(AtmosphereUniforms, time) == 1800);
+static_assert(offsetof(AtmosphereUniforms, moteSize) == 1804);
+static_assert(offsetof(AtmosphereUniforms, moteBrightness) == 1808);
+static_assert(offsetof(AtmosphereUniforms, minMotePixels) == 1812);
+static_assert(offsetof(AtmosphereUniforms, emitterCount) == 1816);
+static_assert(sizeof(AtmosphereUniforms) == 1824, "std140 block sizes are multiples of 16 bytes");
 
 } // namespace rv::gl

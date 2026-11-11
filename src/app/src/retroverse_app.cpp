@@ -1,6 +1,7 @@
 #include <rv/app/retroverse_app.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -108,6 +109,7 @@
 #include "world_consoles.hpp"
 #include "world_gallery.hpp"
 #include "world_shelf_labels.hpp"
+#include "room_atmosphere.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
@@ -706,6 +708,8 @@ struct RetroverseApp::State {
     std::unique_ptr<WorldGallery> worldGallery;
     /// I12 step 5: the shelves' letter tabs, caption cards and section signs.
     std::unique_ptr<WorldShelfLabels> worldShelfLabels;
+    /// I12 step 6: the hero signs' flicker and the CRTs' glow.
+    std::unique_ptr<RoomAtmosphere> roomAtmosphere;
     std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -1038,9 +1042,9 @@ struct RetroverseApp::State {
         renderScale.setMax(!xrGame.showing() ? 1.0f : launchLoad == launcher::InGameLoad::Heavy ? 0.65f : 0.8f);
         const gl::FrameStats& stats = graphics->renderStats();
         double eye = 0.0;
-        for (const std::optional<double>& pass : {stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds,
-                                                  stats.sceneGpuMilliseconds, stats.postGpuMilliseconds,
-                                                  stats.outlineGpuMilliseconds}) {
+        for (const std::optional<double>& pass :
+             {stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds, stats.sceneGpuMilliseconds,
+              stats.postGpuMilliseconds, stats.outlineGpuMilliseconds, stats.atmosphereGpuMilliseconds}) {
             eye += pass.value_or(0.0);
         }
         const double gpu = 2.0 * eye + stats.shadowGpuMilliseconds.value_or(0.0);
@@ -1068,6 +1072,7 @@ struct RetroverseApp::State {
             worldShelfLabels->release(graphics ? &graphics->materials() : nullptr);
             worldShelfLabels.reset();
         }
+        roomAtmosphere.reset();
         if (worldPlaques) {
             worldPlaques->release(graphics ? &graphics->materials() : nullptr);
             worldPlaques.reset();
@@ -1205,6 +1210,19 @@ struct RetroverseApp::State {
             worldSigns->sceneChanged();
         };
         worldShelfLabels->update(labels);
+        // I12 step 6: the hero signs' flicker, the CRT's glow following its picture.
+        if (!roomAtmosphere) {
+            roomAtmosphere = std::make_unique<RoomAtmosphere>();
+        }
+        RoomAtmosphere::Frame air;
+        air.description = &description;
+        air.instance = &*scene;
+        air.materials = &graphics->materials();
+        air.screens = screen.get();
+        air.reduceMotion = world && world->reduceMotion();
+        air.seconds = static_cast<float>(stepSeconds);
+        air.settle = frame.settle;
+        roomAtmosphere->update(air);
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -1431,9 +1449,12 @@ struct RetroverseApp::State {
         gl::RenderView view = makeRenderView(*scene, camera);
         view.shadowSettings = shadowSettings;
         view.post.antialiasing = antialiasing;
-        view.timeSeconds = static_cast<float>(simulatedSeconds);
+        // Wrapped hourly (I12 step 6): the shaders' terms of time (the dust, the neon's flicker) keep their precision.
+        view.timeSeconds = static_cast<float>(std::fmod(simulatedSeconds, 3600.0));
         view.wireframe = wireframe;
         if (world) {
+            // I12 step 6: the dust stands still under reduceMotion (forced in VR).
+            view.atmosphereSettings.frozen = world->reduceMotion();
             view.staticGroups = world->staticGroups();
             // The room's dynamic path after the scene's items: the items pulled out of their slots (I3 step 13a), the
             // inspected one in the hand and the scene behind it dimmed (I3 step 13b), the hero texture's front (I3
@@ -2237,6 +2258,9 @@ struct RetroverseApp::State {
             if (worldShelfLabels) {
                 worldShelfLabels->sceneChanged(); // I12 step 5
             }
+            if (roomAtmosphere) {
+                roomAtmosphere->sceneChanged(); // I12 step 6
+            }
             if (worldPlaques) {
                 worldPlaques->sceneChanged(); // I11 step 5
             }
@@ -2403,6 +2427,9 @@ struct RetroverseApp::State {
         }
         if (worldShelfLabels) {
             worldShelfLabels->sceneChanged(); // I12 step 5: its shelves' labels
+        }
+        if (roomAtmosphere) {
+            roomAtmosphere->sceneChanged(); // I12 step 6: its signs and glows
         }
         if (worldPlaques) {
             worldPlaques->sceneChanged(); // I11 step 5: its plaques
@@ -3401,6 +3428,11 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->shelfAtlasesShown = m_state->worldShelfLabels->atlasesShown();
             catalog->shelfLabelsFailed = m_state->worldShelfLabels->failed();
             catalog->shelfLabelBytes = m_state->worldShelfLabels->bytes();
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->roomAtmosphere) {
+            catalog->flickeringSigns = m_state->roomAtmosphere->flickering();
+            catalog->crtGlows = m_state->roomAtmosphere->glows();
+            catalog->crtGlowWrites = m_state->roomAtmosphere->glowWrites();
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

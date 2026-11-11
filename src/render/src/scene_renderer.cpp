@@ -113,6 +113,11 @@ Expected<SceneRenderer> SceneRenderer::create(MeshRegistry& meshes, const Materi
     if (!outline) {
         return propagate(outline.error());
     }
+    auto atmosphere = AtmospherePass::create();
+    if (!atmosphere) {
+        return propagate(atmosphere.error());
+    }
+    renderer.m_atmosphere = std::move(*atmosphere);
     renderer.m_frameUniforms = std::move(*frame);
     renderer.m_shadowFrameUniforms = std::move(*shadowFrame);
     renderer.m_lightsUniforms = std::move(*lights);
@@ -597,6 +602,22 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
     state.setCullFace(true);
     m_timer.end();
 
+    // 4b. The atmosphere (I12 step 6): the dust and light cones of the view's emitters over the lit scene, in its
+    // radiance, before the post-processing exposes it; never in an inspection view or wireframe.
+    bool atmosphereDrawn = false;
+    if (baseInstance && !view.wireframe && shaders.inspection == nullptr && !view.atmosphere.empty() &&
+        view.atmosphereSettings.enabled) {
+        const scene::Frustum frustum = view.cullFrustum.value_or(camera.frustum());
+        const AtmosphereFrame frame =
+            makeAtmosphereFrame(view.atmosphere, view.atmosphereSettings, frustum, size, view.timeSeconds);
+        atmosphereDrawn = m_atmosphere.draw(device, shaders.atmosphere, frame, targets);
+        if (atmosphereDrawn) {
+            stats.atmosphereMotes = frame.motes;
+            stats.atmosphereCones = frame.cones;
+            stats.atmosphereFrozen = view.atmosphereSettings.frozen;
+        }
+    }
+
     m_post.apply(device, shaders.post, view.post, targets);
 
     // 5. The hover outline, after the anti-aliasing: the mark reads this view's instances, released only after it.
@@ -629,6 +650,7 @@ void SceneRenderer::render(GLDevice& device, const SceneShaders& shaders, const 
     stats.sceneGpuMilliseconds = m_timer.latestMilliseconds();
     stats.postGpuMilliseconds = m_post.latestGpuMilliseconds();
     stats.outlineGpuMilliseconds = outlineDrawn ? m_outline.latestGpuMilliseconds() : std::nullopt;
+    stats.atmosphereGpuMilliseconds = atmosphereDrawn ? m_atmosphere.latestGpuMilliseconds() : std::nullopt;
     m_stats = stats;
 }
 

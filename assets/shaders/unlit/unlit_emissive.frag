@@ -39,6 +39,9 @@ void main() {
     materialAlphaTest(color.a);
     materialInstanceTest(vInstance);
     vec3 emitted = color.rgb * uEmissiveStrength;
+    if (materialHas(RV_MATERIAL_EMISSIVE_FLICKER)) {
+        emitted *= materialFlicker(uTime); // I12 step 6: a neon's dip now and then
+    }
     vec3 radiance = emitted;
     if (crtScreen) {
         radiance += crtGlassReflection(vWorldPosition, vNormal);

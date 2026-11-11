@@ -33,6 +33,7 @@
 #include <rv/render/surface_view.hpp>
 #include <rv/render/tonemap.hpp>
 #include <rv/render/uniform_blocks.hpp>
+#include <rv/scene/atmosphere.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/instance_clusters.hpp>
 #include <rv/scene/instance_data.hpp>
@@ -225,14 +226,31 @@ TEST_CASE("integration/shaders: every program in assets/shaders preprocesses", "
     // preview adds the inspection views on pbr.vert (debug/inspect.frag with RV_INSPECT_*). The hover outline marks on
     // pbr.vert (outline_mark, also with RV_ALPHA_TEST) and draws its edge on post/fullscreen.vert (outline_edge), the
     // inspection's dimming too (outline_dim, I3 step 13b). The VR mode's UI panel (xr_panel, I10 step 5) has stages of
-    // its own.
-    CHECK(stages == std::vector<std::string>{"debug/debug_lines.frag", "debug/debug_lines.vert", "debug/inspect.frag",
-                                             "depth/depth.frag", "outline/outline_dim.frag", "outline/outline_edge.frag",
-                                             "outline/outline_mark.frag", "pbr/pbr.frag", "pbr/pbr.vert",
-                                             "post/bloom_downsample.frag", "post/bloom_upsample.frag",
-                                             "post/fullscreen.vert", "post/fxaa.frag", "post/post.frag",
-                                             "ssao/ssao.frag", "ssao/ssao_blur.frag", "unlit/unlit_emissive.frag",
-                                             "xr/panel.frag", "xr/panel.vert"});
+    // its own. The atmosphere (I12 step 6) draws its dust and light cones with stages of its own, without vertex
+    // buffers.
+    CHECK(stages == std::vector<std::string>{"atmosphere/cone.frag",
+                                             "atmosphere/cone.vert",
+                                             "atmosphere/dust.frag",
+                                             "atmosphere/dust.vert",
+                                             "debug/debug_lines.frag",
+                                             "debug/debug_lines.vert",
+                                             "debug/inspect.frag",
+                                             "depth/depth.frag",
+                                             "outline/outline_dim.frag",
+                                             "outline/outline_edge.frag",
+                                             "outline/outline_mark.frag",
+                                             "pbr/pbr.frag",
+                                             "pbr/pbr.vert",
+                                             "post/bloom_downsample.frag",
+                                             "post/bloom_upsample.frag",
+                                             "post/fullscreen.vert",
+                                             "post/fxaa.frag",
+                                             "post/post.frag",
+                                             "ssao/ssao.frag",
+                                             "ssao/ssao_blur.frag",
+                                             "unlit/unlit_emissive.frag",
+                                             "xr/panel.frag",
+                                             "xr/panel.vert"});
 
     // The first bloom level is built with RV_BLOOM_KARIS, the depth program of alpha-masked batches with RV_ALPHA_TEST,
     // the inspection views with one of RV_INSPECT_*; the self-checks use the programs of the views.
@@ -512,6 +530,9 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
                     {"float", "uCrtCurvature", offsetof(MaterialUniforms, crtCurvature)},
                     {"float", "uCrtVignette", offsetof(MaterialUniforms, crtVignette)},
                     {"float", "uCrtGlassReflection", offsetof(MaterialUniforms, crtGlassReflection)},
+                    {"float", "uFlickerSeed", offsetof(MaterialUniforms, flickerSeed)},
+                    {"float", "uFlickerRate", offsetof(MaterialUniforms, flickerRate)},
+                    {"float", "uFlickerDepth", offsetof(MaterialUniforms, flickerDepth)},
                     {"vec4", "uPictureRect", offsetof(MaterialUniforms, pictureRect)},
                 },
                 sizeof(MaterialUniforms));
@@ -530,6 +551,7 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
         {"RV_MATERIAL_LAYERED_BASE_COLOR", flags::kLayeredBaseColor},
         {"RV_MATERIAL_SPINE_LAYER", flags::kSpineLayer},
         {"RV_MATERIAL_PICTURE_RECT", flags::kPictureRect},
+        {"RV_MATERIAL_EMISSIVE_FLICKER", flags::kEmissiveFlicker},
     };
     std::map<std::string, std::uint32_t> glslFlags;
     const std::regex flag("const\\s+uint\\s+(RV_MATERIAL_\\w+)\\s*=\\s*(\\d+)u\\s*;");
@@ -926,7 +948,8 @@ TEST_CASE("integration/shaders: the GLSL ambient occlusion block and texture uni
                     {"float", "uSsaoDepthTolerance", offsetof(SsaoUniforms, depthTolerance)},
                 },
                 sizeof(SsaoUniforms));
-    CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Ssao) + 1);
+    CHECK(rv::gl::toIndex(rv::gl::UniformBinding::Atmosphere) == rv::gl::toIndex(rv::gl::UniformBinding::Ssao) + 1);
+    CHECK(rv::gl::kFirstReservedUniformBinding == rv::gl::toIndex(rv::gl::UniformBinding::Atmosphere) + 1);
 
     using rv::gl::SsaoTextureUnit;
     CHECK(samplerUnits(source) ==
@@ -955,6 +978,67 @@ TEST_CASE("integration/shaders: the GLSL ambient occlusion block and texture uni
     const auto blur = functionBodies(glslWithoutComments("ssao/ssao_blur.frag"));
     REQUIRE(blur.contains("inverseDistanceSlope"));
     CHECK(std::regex_search(blur.at("inverseDistanceSlope"), std::regex(R"(\binsideScene\s*\()")));
+}
+
+TEST_CASE("integration/shaders: the GLSL atmosphere block matches rv::gl::AtmosphereUniforms (I12 step 6)",
+          "[integration][shader][atmosphere]") {
+    const std::string source = glslWithoutComments("common/atmosphere.glsl");
+    const auto defines = parseDefines(source);
+    REQUIRE(defines.contains("RV_MAX_ATMOSPHERE_EMITTERS"));
+    CHECK(defines.at("RV_MAX_ATMOSPHERE_EMITTERS") == rv::gl::kMaxAtmosphereEmitters);
+    const Structs structs = parseStructs(source, defines);
+    REQUIRE(structs.contains("AtmosphereEmitter"));
+    using rv::gl::AtmosphereEmitterUniforms;
+    checkLayout(structs.at("AtmosphereEmitter"), structs,
+                {
+                    {"vec3", "apex", offsetof(AtmosphereEmitterUniforms, apex)},
+                    {"float", "length", offsetof(AtmosphereEmitterUniforms, length)},
+                    {"vec3", "axis", offsetof(AtmosphereEmitterUniforms, axis)},
+                    {"float", "tanHalfAngle", offsetof(AtmosphereEmitterUniforms, tanHalfAngle)},
+                    {"vec3", "lightPosition", offsetof(AtmosphereEmitterUniforms, lightPosition)},
+                    {"float", "range", offsetof(AtmosphereEmitterUniforms, range)},
+                    {"vec3", "lightDirection", offsetof(AtmosphereEmitterUniforms, lightDirection)},
+                    {"float", "radius", offsetof(AtmosphereEmitterUniforms, radius)},
+                    {"vec3", "radiance", offsetof(AtmosphereEmitterUniforms, radiance)},
+                    {"float", "strength", offsetof(AtmosphereEmitterUniforms, strength)},
+                    {"float", "spotScale", offsetof(AtmosphereEmitterUniforms, spotScale)},
+                    {"float", "spotOffset", offsetof(AtmosphereEmitterUniforms, spotOffset)},
+                    {"uint", "kind", offsetof(AtmosphereEmitterUniforms, kind)},
+                    {"uint", "firstMote", offsetof(AtmosphereEmitterUniforms, firstMote)},
+                    {"uint", "motes", offsetof(AtmosphereEmitterUniforms, motes)},
+                    {"uint", "seed", offsetof(AtmosphereEmitterUniforms, seed)},
+                },
+                sizeof(AtmosphereEmitterUniforms));
+    CHECK(std140("AtmosphereEmitter", structs)->size == sizeof(AtmosphereEmitterUniforms));
+    int binding = -1;
+    const std::vector<Member> members = parseBlock(source, "AtmosphereUniforms", binding, defines);
+    CHECK(binding == static_cast<int>(rv::gl::toIndex(rv::gl::UniformBinding::Atmosphere)));
+    using rv::gl::AtmosphereUniforms;
+    checkLayout(members, structs,
+                {
+                    {"AtmosphereEmitter", "uAtmosphereEmitters", offsetof(AtmosphereUniforms, emitters),
+                     rv::gl::kMaxAtmosphereEmitters},
+                    {"vec2", "uAtmosphereViewport", offsetof(AtmosphereUniforms, viewportSize)},
+                    {"float", "uAtmosphereTime", offsetof(AtmosphereUniforms, time)},
+                    {"float", "uMoteSize", offsetof(AtmosphereUniforms, moteSize)},
+                    {"float", "uMoteBrightness", offsetof(AtmosphereUniforms, moteBrightness)},
+                    {"float", "uMinMotePixels", offsetof(AtmosphereUniforms, minMotePixels)},
+                    {"uint", "uAtmosphereEmitterCount", offsetof(AtmosphereUniforms, emitterCount)},
+                },
+                sizeof(AtmosphereUniforms));
+    // The kinds and the hash's constants as their C++ mirrors.
+    CHECK(source.find("RV_ATMOSPHERE_DUST_CONE = 0u") != std::string::npos);
+    CHECK(source.find("RV_ATMOSPHERE_DUST_POOL = 1u") != std::string::npos);
+    CHECK(source.find("RV_ATMOSPHERE_LIGHT_CONE = 2u") != std::string::npos);
+    CHECK(rv::gl::atmosphere_kind::kDustPool == static_cast<std::uint32_t>(rv::scene::AtmosphereKind::DustPool));
+    CHECK(rv::gl::atmosphere_kind::kLightCone == static_cast<std::uint32_t>(rv::scene::AtmosphereKind::LightCone));
+    CHECK(source.find("0x7feb352du") != std::string::npos);
+    CHECK(source.find("0x846ca68bu") != std::string::npos);
+    // Both stages read the frame block's time through the common include, and write no emission.
+    const std::string dust = glslWithoutComments("atmosphere/dust.frag");
+    const std::string cone = glslWithoutComments("atmosphere/cone.frag");
+    CHECK(dust.find("writeSceneOutput(vRadiance * falloff, vec3(0.0), 0.0)") != std::string::npos);
+    CHECK(cone.find("writeSceneOutput(radiance, vec3(0.0), 0.0)") != std::string::npos);
 }
 
 TEST_CASE("integration/shaders: the mesh programs share an invariant vertex stage", "[integration][shader]") {

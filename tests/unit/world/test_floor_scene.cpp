@@ -531,17 +531,22 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
         CHECK(fill["outerConeDeg"].get<double>() >= profile.hall.doorwayFill.minOuterConeDeg);
         CHECK(fill["outerConeDeg"].get<double>() <= rv::world::kMaxOuterConeDeg);
     }
-    // The hall's area has the hall role's environment; the rooms' are lit as the scene.
+    // The hall's area has the hall role's environment and no air; the rooms' are lit as the scene, each with its
+    // pack's air (I12 step 6), which the scene's environment (the hall's) never holds.
     for (const nlohmann::json& area : scene["areas"]) {
         if (area["id"] == "hall:handheld") {
             CHECK(area["environment"]["exposure"] == profile.hall.environment.exposure);
             CHECK(area["environment"]["ambientGround"] == profile.hall.environment.ambientGround);
             CHECK(area["environment"]["fillIntensity"] == profile.hall.environment.fillIntensity);
+            CHECK_FALSE(area["environment"].contains("atmosphere"));
         } else {
-            CHECK_FALSE(area.contains("environment"));
+            REQUIRE(area.contains("environment"));
+            CHECK(area["environment"].size() == 1);
+            CHECK(area["environment"]["atmosphere"]["dust"] == 1.0);
         }
     }
     CHECK(scene["environment"]["fillIntensity"] == profile.fillIntensity);
+    CHECK_FALSE(scene["environment"].contains("atmosphere"));
     // The camera stands in front of the elevator facing east, its far plane beyond the floor.
     CHECK(scene["camera"]["position"] == nlohmann::json::array({1.2, 1.65, 0.0}));
     CHECK(scene["camera"]["yawDeg"] == 90.0);

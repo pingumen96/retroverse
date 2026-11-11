@@ -116,6 +116,8 @@ struct ScenePrograms {
     gl::ShaderHandle outlineMarkMasked;
     gl::ShaderHandle outlineEdge;
     gl::ShaderHandle outlineDim;
+    gl::ShaderHandle atmosphereDust;
+    gl::ShaderHandle atmosphereCones;
 };
 
 /// Loads the programs of ScenePrograms. A program that does not build is logged and stays empty until a reload
@@ -141,6 +143,8 @@ Expected<ScenePrograms> loadScenePrograms(gl::ShaderLibrary& library) {
          {"outline_mark_masked", "pbr/pbr.vert", "outline/outline_mark.frag", {"RV_ALPHA_TEST"}}},
         {&ScenePrograms::outlineEdge, {"outline_edge", "post/fullscreen.vert", "outline/outline_edge.frag", {}}},
         {&ScenePrograms::outlineDim, {"outline_dim", "post/fullscreen.vert", "outline/outline_dim.frag", {}}},
+        {&ScenePrograms::atmosphereDust, {"atmosphere_dust", "atmosphere/dust.vert", "atmosphere/dust.frag", {}}},
+        {&ScenePrograms::atmosphereCones, {"atmosphere_cones", "atmosphere/cone.vert", "atmosphere/cone.frag", {}}},
     };
     for (const auto& [handle, description] : descriptions) {
         auto loaded = library.load(description);
@@ -232,6 +236,7 @@ gl::RenderView makeRenderView(const SceneInstance& scene, const scene::Camera& c
     view.ssao = environment.ssao;
     view.clearColor = glm::vec4(environment.clearColor, 1.0f);
     view.post = gl::postSettingsFor(environment);
+    view.atmosphere = scene.atmosphereSources();
     return view;
 }
 
@@ -309,6 +314,8 @@ struct SceneGraphics::State {
         shaderSet.outline.markMasked = &shaders->get(programs.outlineMarkMasked);
         shaderSet.outline.edge = &shaders->get(programs.outlineEdge);
         shaderSet.outline.dim = &shaders->get(programs.outlineDim);
+        shaderSet.atmosphere.dust = &shaders->get(programs.atmosphereDust);
+        shaderSet.atmosphere.cones = &shaders->get(programs.atmosphereCones);
         gl::RenderView shown = view;
         shown.debugDraw = debugDraw && debugLinesShown ? &*debugDraw : nullptr;
         if (surfaceView != gl::SurfaceView::Lit) {
@@ -426,6 +433,9 @@ struct SceneGraphics::State {
         if (eyes.fast) {
             eyeView.ssao.enabled = false;
             eyeView.post.antialiasing = false;
+            // I12 step 6: half the dust, no light cones.
+            eyeView.atmosphereSettings.densityScale *= 0.5f;
+            eyeView.atmosphereSettings.cones = false;
         }
         const bool panels = !eyes.panels.empty() && preparePanels();
         for (std::size_t eye = 0; eye < eyeTargets.size(); ++eye) {

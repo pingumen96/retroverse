@@ -63,6 +63,10 @@ private:
             if (stats.outlineGpuMilliseconds) {
                 widgets::millisecondsRow("GPU outline", stats.outlineGpuMilliseconds);
             }
+            if (stats.atmosphereGpuMilliseconds) {
+                widgets::millisecondsRow("GPU atmosphere", stats.atmosphereGpuMilliseconds);
+                widgets::valueRow("Atmosphere motes", stats.atmosphereMotes);
+            }
             widgets::valueRow("Draw calls", stats.drawCalls);
             widgets::valueRow("Shadow draw calls", stats.shadowDrawCalls);
             widgets::valueRow("Shadow instances", stats.shadowInstances);

@@ -239,6 +239,43 @@ TEST_CASE("world/theme packs: a pack's screen preset (I5 step 6), the lounge's m
     CHECK(rv::world::builtInThemeMaterials().screenPreset.empty());
 }
 
+TEST_CASE("world/theme packs: a pack's air (I12 step 6), cones in the lounge and the arcade, none in the hub",
+          "[world][theme_packs][atmosphere]") {
+    const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {})";
+    const auto parse = [&](const std::string& tail) {
+        return rv::world::parseThemeMaterials(head + tail + "}", "t.json");
+    };
+    auto bare = parse("");
+    REQUIRE(bare.has_value());
+    CHECK(bare->atmosphere == rv::world::RoomAtmosphere{});
+    auto full = parse(R"(, "atmosphere": {"dust": 2, "lightCones": true, "coneStrength": 0.05, "neonFlicker": false,
+                      "crtBreathing": false})");
+    REQUIRE(full.has_value());
+    CHECK(full->atmosphere.dust == 2.0);
+    CHECK(full->atmosphere.lightCones);
+    CHECK(full->atmosphere.coneStrength == 0.05);
+    CHECK_FALSE(full->atmosphere.neonFlicker);
+    CHECK_FALSE(full->atmosphere.crtBreathing);
+    for (const std::string bad :
+         {R"({"dust": 5})", R"({"coneStrength": 0.3})", R"({"fog": 1})", R"({"lightCones": 1})", "1"}) {
+        INFO(bad);
+        auto parsed = parse(R"(, "atmosphere": )" + bad);
+        REQUIRE_FALSE(parsed.has_value());
+        CHECK_THAT(parsed.error().message, ContainsSubstring("/atmosphere"));
+    }
+    for (const std::string& id : rv::world::themePackIds(assets())) {
+        INFO(id);
+        auto theme = rv::world::loadThemeMaterials(assets(), id);
+        REQUIRE(theme.has_value());
+        CHECK(theme->atmosphere.lightCones == (id == "optical_era_lounge" || id == "arcade_after_dark"));
+        CHECK(theme->atmosphere.dust == (id == "retro_library_hub" ? 0.0 : 1.0));
+        // A room lit by the pack carries its air.
+        const rv::world::LightingProfile lit = rv::world::themedLighting(rv::world::LightingProfile{}, *theme);
+        CHECK(lit.atmosphere == theme->atmosphere);
+    }
+    CHECK(rv::world::builtInThemeMaterials().atmosphere == rv::world::RoomAtmosphere{});
+}
+
 TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by its kind", "[world][theme_packs]") {
     // building.json's floors (ADR-0014 §5).
     const std::vector<std::pair<std::string, std::string>> floors = {

@@ -151,6 +151,11 @@ public:
     /// finite or has no area, and the errors of Buffer::update.
     [[nodiscard]] Status setPictureRect(scene::MaterialHandle handle, std::optional<glm::vec4> rect);
 
+    /// Makes `handle`'s emission flicker (I12 step 6: MaterialUniforms' flicker* fields with
+    /// material_flags::kEmissiveFlicker), or not (none: its block again what it was registered with). The block is
+    /// rewritten only when it changes. Errors: InvalidArgument for an unknown handle, and the errors of Buffer::update.
+    [[nodiscard]] Status setFlicker(scene::MaterialHandle handle, std::optional<EmissiveFlicker> flicker);
+
     /// Binds the uniform block of `handle` to UniformBinding::Material and its textures (or their overrides) and
     /// samplers to the texture units 0..kMaterialTextureSlotCount-1, and a layered material's array to
     /// CollectionTextureUnit::LayeredBaseColor. Does nothing for a handle outside the uploaded materials.

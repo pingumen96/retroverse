@@ -21,6 +21,10 @@ layout(std140, binding = 2) uniform MaterialUniforms {
     float uCrtCurvature;         // [0, 0.5]
     float uCrtVignette;          // [0, 1]
     float uCrtGlassReflection;   // [0, 1]
+    // A neon's flicker (I12 step 6), with RV_MATERIAL_EMISSIVE_FLICKER (materialFlicker).
+    float uFlickerSeed;          // an integer below 2^24
+    float uFlickerRate;          // dips about every 8 s / rate; 0: none
+    float uFlickerDepth;         // [0, 1]
     // The part of a screen its picture fills (I5 step 4), with RV_MATERIAL_PICTURE_RECT: its corner (xy) and size (zw)
     // in the screen's texture coordinates; the tube's off-black around it (a letterbox or a pillarbox, never a
     // stretch).
@@ -44,6 +48,8 @@ const uint RV_MATERIAL_LAYERED_BASE_COLOR = 512u;
 const uint RV_MATERIAL_SPINE_LAYER = 1024u;
 // The picture fills uPictureRect of the screen, the bars around it (materialPictureUv, materialPictureCoverage).
 const uint RV_MATERIAL_PICTURE_RECT = 2048u;
+// The emission dips for a moment now and then (materialFlicker; I12 step 6).
+const uint RV_MATERIAL_EMISSIVE_FLICKER = 4096u;
 
 layout(binding = 0) uniform sampler2D uBaseColorTexture;         // sRGB, multiplies uBaseColorFactor
 layout(binding = 1) uniform sampler2D uMetallicRoughnessTexture; // linear: G scales roughness, B scales metallic
@@ -114,4 +120,35 @@ float materialPictureCoverage(vec2 uv) {
 
 float materialOutputAlpha(float alpha) {
     return materialHas(RV_MATERIAL_ALPHA_BLEND) ? clamp(alpha, 0.0, 1.0) : 1.0;
+}
+
+// lowbias32 (rv::scene::atmosphereHash).
+uint materialHash(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+// The share of its emission a flickering material shows at `time`: rv::gl::emissiveFlickerFactor, formula for formula
+// (1 before 4 s and with a rate or depth of 0; one 80 to 120 ms stutter in every slot of 8 / rate seconds).
+float materialFlicker(float time) {
+    if (!(uFlickerRate > 0.0) || !(uFlickerDepth > 0.0) || time < 4.0) {
+        return 1.0;
+    }
+    float period = 8.0 / uFlickerRate;
+    float local = time - 4.0;
+    float slot = floor(local / period);
+    uint seed = uint(uFlickerSeed) ^ (uint(slot) * 0x9E3779B9u);
+    float start = float(materialHash(seed ^ materialHash(1u))) * (1.0 / 4294967296.0) * max(period - 0.25, 0.0);
+    float length = 0.08 + 0.04 * (float(materialHash(seed ^ materialHash(2u))) * (1.0 / 4294967296.0));
+    float into = local - slot * period - start;
+    if (into < 0.0 || into > length) {
+        return 1.0;
+    }
+    float phase = into / length;
+    float dip = phase < 0.4 ? 1.0 : (phase < 0.6 ? 0.35 : 0.8);
+    return 1.0 - clamp(uFlickerDepth, 0.0, 1.0) * dip;
 }

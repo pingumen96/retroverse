@@ -46,4 +46,22 @@ struct MaterialFactors {
 [[nodiscard]] MaterialUniforms withFactors(const MaterialUniforms& uniforms, const MaterialFactors& factors,
                                            const glm::vec3& emissiveFactor) noexcept;
 
+/// A neon's flicker (I12 step 6): MaterialUniforms' flicker* fields.
+struct EmissiveFlicker {
+    std::uint32_t seed = 0; ///< below 2^24 (a float holds it exactly)
+    float rate = 1.0f;      ///< dips about every 8 s / rate; 0: none
+    float depth = 0.6f;     ///< the share of the emission a dip takes away
+
+    bool operator==(const EmissiveFlicker&) const = default;
+};
+
+/// No dip before this many seconds of the run (a frame-limited run's screenshots never catch one).
+inline constexpr float kFirstFlickerSeconds = 4.0f;
+
+/// The share of its emission a flickering material shows at `time` (common/material.glsl's materialFlicker, formula for
+/// formula): 1 before kFirstFlickerSeconds, with a rate or depth of 0 or a time that is not finite; otherwise the run
+/// is cut into slots of 8 / rate seconds, each holding one dip of 80 to 120 ms at a place its seed and index choose, a
+/// stutter (1 - depth, then 1 - 0.35 depth, then 1 - 0.8 depth) within it.
+[[nodiscard]] float emissiveFlickerFactor(const EmissiveFlicker& flicker, float time) noexcept;
+
 } // namespace rv::gl

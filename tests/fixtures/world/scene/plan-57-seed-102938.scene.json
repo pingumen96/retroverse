@@ -15,6 +15,13 @@
     "ambientGround": "#B49C88",
     "ambientIntensity": 0.3,
     "ambientSky": "#E6E2DC",
+    "atmosphere": {
+      "coneStrength": 0.035,
+      "crtBreathing": true,
+      "dust": 1.0,
+      "lightCones": false,
+      "neonFlicker": true
+    },
     "bloomRadius": 0.5,
     "bloomStrength": 0.18,
     "clearColor": "#221E1A",

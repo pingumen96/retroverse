@@ -149,7 +149,7 @@ TEST_CASE("world benchmark: the benchmark path through the snes-stress room (2,0
                      report.residency.residentAfterShownMs.value_or(-1.0), report.residency.cacheHits,
                      report.residency.cacheMisses));
 
-    for (const std::string_view name : {"shadow", "depth", "ssao", "scene", "post", "total"}) {
+    for (const std::string_view name : {"shadow", "depth", "ssao", "scene", "post", "atmosphere", "total"}) {
         INFO("GPU pass " << name);
         CHECK(passOf(benchmark->gpuPasses, name) != nullptr);
     }

@@ -983,19 +983,29 @@ json cameraJson(const Room& room, const RoomTemplate& roomTemplate) {
 }
 
 json environmentJson(const LightingProfile& profile) {
-    return json{{"clearColor", profile.clearColor},
-                {"ambientSky", profile.ambientSky},
-                {"ambientGround", profile.ambientGround},
-                {"ambientIntensity", profile.ambientIntensity},
-                {"fillColor", profile.fillColor},
-                {"fillIntensity", profile.fillIntensity},
-                {"exposure", profile.exposure},
-                {"bloomStrength", profile.bloomStrength},
-                {"bloomRadius", profile.bloomRadius},
-                {"vignette", profile.vignette},
-                {"ssao", json{{"enabled", profile.ssaoEnabled},
-                              {"radius", profile.ssaoRadius},
-                              {"intensity", profile.ssaoIntensity}}}};
+    json environment{
+        {"clearColor", profile.clearColor},
+        {"ambientSky", profile.ambientSky},
+        {"ambientGround", profile.ambientGround},
+        {"ambientIntensity", profile.ambientIntensity},
+        {"fillColor", profile.fillColor},
+        {"fillIntensity", profile.fillIntensity},
+        {"exposure", profile.exposure},
+        {"bloomStrength", profile.bloomStrength},
+        {"bloomRadius", profile.bloomRadius},
+        {"vignette", profile.vignette},
+        {"ssao",
+         json{{"enabled", profile.ssaoEnabled}, {"radius", profile.ssaoRadius}, {"intensity", profile.ssaoIntensity}}}};
+    // I12 step 6: the room's air, its pack's.
+    if (profile.atmosphere) {
+        const RoomAtmosphere& air = *profile.atmosphere;
+        environment["atmosphere"] = json{{"dust", air.dust},
+                                         {"lightCones", air.lightCones},
+                                         {"coneStrength", air.coneStrength},
+                                         {"neonFlicker", air.neonFlicker},
+                                         {"crtBreathing", air.crtBreathing}};
+    }
+    return environment;
 }
 
 /// An accent light of the profile at its anchor's pivot and yaw (meters rounded to micrometres).
