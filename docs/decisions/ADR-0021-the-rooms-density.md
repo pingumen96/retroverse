@@ -296,6 +296,13 @@ flicker never comes before 4 s (not 2), the frame's average colour is taken on t
   their rows in Impostazioni and `settings.json`; `RV_AUDIO=null` and `--audio off` keep every automated run silent;
   the run report counts the sources, the steps and the effects.
 
+*Amended on 2026-11-11 (I12 step 7):* the sound as built ([i12/step-7.md](../i12/step-7.md)): the packs' tone is data
+(`sound`: hum, hiss, buzz, murmur, clock gains), written into each room's environment or area beside its air; the room
+tone is heard whole within 2 m of its emitter, then as 2 m / d but never below a quarter in its room (the clips'
+steeper rule left the hum silent from the doorway), and not by the clips' proximity; the menus' tick sounds on a press
+of a navigation action while a menu is open; the interaction's sounds play at the eye; the duck applies per sound, so
+the tick plays over it; sound ignores reduceMotion.
+
 ### 6. Life: micro-animations
 
 - Pieces of the dressing layer may **animate**: a ceiling fan's blades and a lava lamp's wax (the 90s collector), a

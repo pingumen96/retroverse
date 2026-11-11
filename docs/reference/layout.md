@@ -151,7 +151,10 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   the scene builders write into each room's environment (`rv_scene`'s `atmosphere.hpp` derives its emitters from the
   lights, `rv_render`'s `AtmospherePass` draws the dust and light cones from `atmosphere_settings.hpp`'s block, the
   material flag `kEmissiveFlicker` dips a neon, the app's `crt_glow.hpp` and `RoomAtmosphere` flicker the hero signs
-  and ease the CRT's glow towards `media::averageLinearColour` of its clip; `docs/i12/step-6.md`);
+  and ease the CRT's glow towards `media::averageLinearColour` of its clip; `docs/i12/step-6.md`); since step 7 the
+  packs' `sound`, the rooms' tone beside their air (`rv_audio_model`'s `synth.hpp` synthesizes the sounds, the mixer's
+  loops, one-shots and buses play them, the app's `room_sound_policy.hpp` places the emitters, the steps and the
+  interaction's edges, `RoomSound` drives them; `docs/i12/step-7.md`);
   since I5 step 3 a pack's `secondaryTv`, which `scene_builder.hpp`'s `secondaryTvFixtures()` stands in a room's
   sideboard sockets).
   I3's other modules: `rv_geometry` the collection's
