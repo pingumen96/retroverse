@@ -224,6 +224,8 @@ public:
     [[nodiscard]] InteractionResult interact(const WorldHover::Frame& frame);
     /// The interaction's input context now (what the walker gets: walkerActionsFor()).
     [[nodiscard]] WorldContext context() const noexcept { return m_interaction->interaction().context(); }
+    /// The interaction's state (I12 step 7: its edges sound).
+    [[nodiscard]] WorldState interactionState() const noexcept { return m_interaction->interaction().state(); }
     /// The view's render items: the scene's, the pulled items' parts (WorldHover::viewItems: the inspected one in the
     /// hand in front of `camera`, I3 step 13b), the hero texture's front of an item in its slot (dynamicItems()).
     [[nodiscard]] std::span<const scene::RenderItem> viewItems(std::span<const scene::RenderItem> sceneItems,

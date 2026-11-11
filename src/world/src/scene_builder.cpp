@@ -1005,6 +1005,15 @@ json environmentJson(const LightingProfile& profile) {
                                          {"neonFlicker", air.neonFlicker},
                                          {"crtBreathing", air.crtBreathing}};
     }
+    // I12 step 7: the room's tone, its pack's.
+    if (profile.tone) {
+        const RoomTone& tone = *profile.tone;
+        environment["sound"] = json{{"hum", tone.hum},
+                                    {"hiss", tone.hiss},
+                                    {"buzz", tone.buzz},
+                                    {"murmur", tone.murmur},
+                                    {"clock", tone.clock}};
+    }
     return environment;
 }
 

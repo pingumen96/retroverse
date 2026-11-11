@@ -2215,6 +2215,18 @@ struct AudioClipRecord {
     bool operator==(const AudioClipRecord&) const = default;
 };
 
+/// A one-shot of the rooms' sound (I12 step 7): a step, the interaction's clack, case or click, the menus' tick, as
+/// triggered (audio::toString's name, the frame, the run's time, its gain and pan).
+struct AudioEffectRecord {
+    std::uint64_t frame = 0;
+    double atSeconds = 0.0;
+    std::string sound;
+    double gain = 0.0;
+    double pan = 0.0;
+
+    bool operator==(const AudioEffectRecord&) const = default;
+};
+
 /// Where the head was in the world on a frame of the VR mode (I10 step 2): the middle of the eyes, and where it looked
 /// (degrees, the camera's yaw and pitch, and the roll: positive tilts to the right).
 struct XrHeadSample {
@@ -2385,6 +2397,14 @@ struct AudioRecord {
     std::vector<AudioLevelRecord> levels;
     std::vector<AudioPresentedRecord> presented;
     std::vector<AudioClipRecord> clips;
+    /// The rooms' sound (I12 step 7, "room"): the room tone's emitters of the last scene and the most heard at once,
+    /// the one-shots triggered (the steps and the menus' ticks among them), the first kMaxAudioTimelineEntries of them.
+    std::uint64_t ambienceEmitters = 0;
+    std::uint64_t ambienceSources = 0;
+    std::uint64_t effectsTriggered = 0;
+    std::uint64_t footsteps = 0;
+    std::uint64_t uiTicks = 0;
+    std::vector<AudioEffectRecord> effects;
 
     bool operator==(const AudioRecord&) const = default;
 };

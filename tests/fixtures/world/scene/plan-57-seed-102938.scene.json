@@ -28,6 +28,13 @@
     "exposure": 1.5,
     "fillColor": "#FFE0C8",
     "fillIntensity": 0.22,
+    "sound": {
+      "buzz": 1.0,
+      "clock": 0.0,
+      "hiss": 1.0,
+      "hum": 1.0,
+      "murmur": 0.0
+    },
     "ssao": {
       "enabled": true,
       "intensity": 1.0,

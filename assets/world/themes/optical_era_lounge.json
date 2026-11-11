@@ -194,6 +194,8 @@
   "screenPreset": "monitor",
   // I12 step 6 (ADR-0021 §4): the dim lounge shows its spots' cones in the air, as concept panel 4's light shafts.
   "atmosphere": {"lightCones": true},
+  // I12 step 7 (ADR-0021 §5): the lounge's monitor hums quieter than a living room's set.
+  "sound": {"hum": 0.6, "hiss": 0.8},
   // I12 step 1 (ADR-0021 §1, Gate D's G17: the upper walls fell to black): a blue cove on the picture rail washing the
   // dark blue damask below it and the wall above it up to the ceiling (concept panel 4's blue-lit walls), a dark
   // varnished rail, cornice and beams, a warm drum near the doorway and spot cans over the cases on graphite.

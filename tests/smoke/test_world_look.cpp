@@ -29,6 +29,8 @@
 
 #include <rv/app/run_report.hpp>
 #include <rv/app/shelf_labels.hpp>
+#include <rv/audio/analysis.hpp>
+#include <rv/audio/wav_file.hpp>
 #include <rv/core/math.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
@@ -896,4 +898,89 @@ TEST_CASE("world look: the room's air (I12 step 6): dust in the key light and th
     REQUIRE(loungeRun.report->lastView.has_value());
     CHECK(loungeRun.report->lastView->atmosphereCones > 0);
     CHECK(loungeRun.report->lastView->atmosphereMotes > 0);
+}
+
+namespace {
+
+/// A room run with its mix captured (the null output's offline mix) and video.json's volumes `volumes`; the walker
+/// walks forward from frame `walkFrom` to `walkTo` (none: it stands).
+AppRun soundRun(const ImportedRoom& room, std::string_view name, std::string_view volumes, int frames, int walkFrom,
+                int walkTo) {
+    fs::create_directories(room.data / "config");
+    {
+        std::ofstream config(room.data / "config" / "video.json", std::ios::binary);
+        config << "{\"audio\": " << volumes << "}\n";
+    }
+    std::vector<std::string> extra{"--audio", "null", "--audio-capture", arg(room.dir / (std::string(name) + ".wav"))};
+    if (walkTo > walkFrom) {
+        const fs::path script = room.dir / (std::string(name) + "_script.json");
+        std::ofstream file(script, std::ios::binary);
+        file << "[{\"fromFrame\": " << walkFrom << ", \"toFrame\": " << walkTo
+             << ", \"actions\": {\"move_forward\": 1.0}}]\n";
+        file.close();
+        extra.insert(extra.end(), {"--input-script", arg(script)});
+    }
+    return runApp(retroverseExe(), room.dir, std::string(name),
+                  roomArguments(std::to_string(frames), room.dir / (std::string(name) + ".png"), extra));
+}
+
+/// The capture of `run` between `from` and `to` seconds of the run, its left channel.
+std::vector<float> mixWindow(const AppRun& run, double from, double to) {
+    REQUIRE(run.report->audio.has_value());
+    const rv::app::AudioRecord& audio = *run.report->audio;
+    REQUIRE(audio.capture.has_value());
+    auto wav = rv::audio::readWavFile(*audio.capture);
+    REQUIRE(wav.has_value());
+    const double start = audio.captureStartSeconds.value_or(0.0);
+    std::vector<float> samples;
+    for (std::size_t frame = 0; frame < wav->frames(); ++frame) {
+        const double at = start + static_cast<double>(frame) / wav->sampleRate;
+        if (at >= from && at < to) {
+            samples.push_back(wav->samples[frame * 2]);
+        }
+    }
+    return samples;
+}
+
+} // namespace
+
+TEST_CASE("world look: the room's sound (I12 step 7): its tone in the mix, the walker's steps as it walks",
+          "[gpu][world][world_look][room_sound]") {
+    // The tone alone (the clips and the effects at 0): the hum, the hiss and the sign's buzz of the snes room.
+    ImportedRoom room("sound");
+    const AppRun tone = soundRun(room, "tone", R"({"video": 0, "ambience": 1, "effects": 0})", 60, 0, 0);
+    skipWithoutOpenGl(tone);
+    requireCleanRun(tone);
+    {
+        INFO(tone.describe());
+        REQUIRE(tone.report->audio.has_value());
+        const rv::app::AudioRecord& audio = *tone.report->audio;
+        CHECK(audio.device == "null");
+        CHECK(audio.ambienceEmitters >= 3);
+        CHECK(audio.ambienceSources >= 2);
+        CHECK(audio.footsteps == 0);
+        // Past the loops' 300 ms fade-in: heard.
+        CHECK(rv::audio::rmsOf(mixWindow(tone, 0.5, 1.0)) > 1e-4);
+    }
+
+    // The steps alone (the tone at 0): silent while the walker stands, then a step each stride.
+    ImportedRoom walk("sound_steps");
+    const AppRun steps = soundRun(walk, "steps", R"({"video": 0, "ambience": 0, "effects": 1})", 150, 30, 120);
+    requireCleanRun(steps);
+    INFO(steps.describe());
+    REQUIRE(steps.report->audio.has_value());
+    const rv::app::AudioRecord& audio = *steps.report->audio;
+    CHECK(audio.footsteps >= 3);
+    CHECK(audio.effectsTriggered == audio.footsteps);
+    REQUIRE(audio.effects.size() == audio.footsteps);
+    for (const rv::app::AudioEffectRecord& effect : audio.effects) {
+        CHECK(effect.sound.starts_with("footstep-"));
+        CHECK(effect.frame >= 30);
+    }
+    CHECK(rv::audio::rmsOf(mixWindow(steps, 0.0, 0.45)) == 0.0);
+    // Each step is heard as an onset of the mix.
+    const std::vector<float> walked = mixWindow(steps, 0.45, 2.6);
+    const std::vector<double> onsets = rv::audio::onsets(walked, 48000, 0.01, 0.08);
+    CHECK(onsets.size() + 1 >= audio.footsteps);
+    CHECK(onsets.size() <= audio.footsteps + 1);
 }

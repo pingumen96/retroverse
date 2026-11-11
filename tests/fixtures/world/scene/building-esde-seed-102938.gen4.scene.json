@@ -34,6 +34,13 @@
           "dust": 1.0,
           "lightCones": false,
           "neonFlicker": true
+        },
+        "sound": {
+          "buzz": 1.0,
+          "clock": 0.0,
+          "hiss": 1.0,
+          "hum": 1.0,
+          "murmur": 0.0
         }
       },
       "id": "room:snes"

@@ -276,6 +276,37 @@ TEST_CASE("world/theme packs: a pack's air (I12 step 6), cones in the lounge and
     CHECK(rv::world::builtInThemeMaterials().atmosphere == rv::world::RoomAtmosphere{});
 }
 
+TEST_CASE("world/theme packs: a pack's tone (I12 step 7), the arcade's murmur, the study's clock, the hub's quiet",
+          "[world][theme_packs][sound]") {
+    const std::string head = R"({"schemaVersion": 1, "id": "t", "name": "T", "heroParts": {}, "kinds": {})";
+    const auto parse = [&](const std::string& tail) {
+        return rv::world::parseThemeMaterials(head + tail + "}", "t.json");
+    };
+    auto bare = parse("");
+    REQUIRE(bare.has_value());
+    CHECK(bare->tone == rv::world::RoomTone{});
+    auto full = parse(R"(, "sound": {"hum": 0.5, "hiss": 2, "buzz": 0, "murmur": 1, "clock": 1.5})");
+    REQUIRE(full.has_value());
+    CHECK(full->tone == rv::world::RoomTone{0.5, 2.0, 0.0, 1.0, 1.5});
+    for (const std::string bad : {R"({"hum": 3})", R"({"buzz": -1})", R"({"fan": 1})", R"({"hum": true})", "1"}) {
+        INFO(bad);
+        auto parsed = parse(R"(, "sound": )" + bad);
+        REQUIRE_FALSE(parsed.has_value());
+        CHECK_THAT(parsed.error().message, ContainsSubstring("/sound"));
+    }
+    for (const std::string& id : rv::world::themePackIds(assets())) {
+        INFO(id);
+        auto theme = rv::world::loadThemeMaterials(assets(), id);
+        REQUIRE(theme.has_value());
+        CHECK((theme->tone.murmur > 0.0) == (id == "arcade_after_dark" || id == "retro_library_hub"));
+        CHECK((theme->tone.clock > 0.0) == (id == "computer_studio"));
+        CHECK((theme->tone.hum > 0.0) == (id != "retro_library_hub"));
+        const rv::world::LightingProfile lit = rv::world::themedLighting(rv::world::LightingProfile{}, *theme);
+        CHECK(lit.tone == theme->tone);
+    }
+    CHECK(rv::world::builtInThemeMaterials().tone == rv::world::RoomTone{});
+}
+
 TEST_CASE("world/theme packs: a room's pack by its floor, the arcade room's by its kind", "[world][theme_packs]") {
     // building.json's floors (ADR-0014 §5).
     const std::vector<std::pair<std::string, std::string>> floors = {

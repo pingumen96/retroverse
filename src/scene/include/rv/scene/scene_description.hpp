@@ -60,7 +60,11 @@ namespace rv::scene {
 ///         "lightCones": false,                     faint cones under the spots
 ///         "coneStrength": 0.035,                   [0, 0.2]
 ///         "neonFlicker": true, "crtBreathing": true
-///       }
+///       },
+///       "sound": {                                 optional (I12 step 7): the room's tone; absent, none
+///         "hum": 1, "hiss": 1, "buzz": 1,          [0, 2] each: the hero TV's hum, its hiss while it shows a
+///         "murmur": 0, "clock": 0                  picture, the sign's buzz, a murmur and a clock's tick at the
+///       }                                          room's centre (0: none)
 ///     },
 ///     "lights": [{                                 optional
 ///       "name": "ceiling",                         optional
@@ -88,6 +92,7 @@ namespace rv::scene {
 ///         "fillColor": "#...", "fillIntensity": 0.1,
 ///         "bloomStrength": 0.28,                   [0, 1] (I6 step 3: a theme pack's bloom, the arcade's)
 ///         "atmosphere": {...}                      the room's air (above), in place of the scene's
+///         "sound": {...}                           the room's tone (above), in place of the scene's
 ///       }
 ///     }],
 ///     "objects": [{                                optional
@@ -184,6 +189,22 @@ struct AtmosphereSetup {
     bool operator==(const AtmosphereSetup&) const = default;
 };
 
+/// The largest gain of a room tone's emitter (SoundSetup).
+inline constexpr float kMaxRoomSoundGain = 2.0f;
+
+/// The tone of a room (I12 step 7, ADR-0021 §5): the loops its emitters play, each a gain in [0, kMaxRoomSoundGain]
+/// (0: none): the hero TV's mains hum and, while it shows a picture, its hiss; the hero sign's buzz; a murmur and a
+/// clock's tick at the room's centre. A scene or area without one is silent but for its clips and the walker.
+struct SoundSetup {
+    float hum = 1.0f;
+    float hiss = 1.0f;
+    float buzz = 1.0f;
+    float murmur = 0.0f;
+    float clock = 0.0f;
+
+    bool operator==(const SoundSetup&) const = default;
+};
+
 /// Linear-RGB environment terms and the post-processing of the view for the renderer.
 struct EnvironmentSetup {
     /// "#383735". Radiance of the background, seen where no surface is drawn: the renderer exposes and tonemaps it
@@ -209,6 +230,8 @@ struct EnvironmentSetup {
     SsaoSetup ssao;
     /// The air of the scene (of a scene with areas, the areas' own: "atmosphere"); none when absent.
     std::optional<AtmosphereSetup> atmosphere;
+    /// The tone of the scene (of a scene with areas, the areas' own: "sound"); none when absent.
+    std::optional<SoundSetup> sound;
 };
 
 /// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture, a surface). The
@@ -246,6 +269,8 @@ struct AreaEnvironment {
     std::optional<float> bloomStrength;
     /// The area's air (a room's), in place of the scene's.
     std::optional<AtmosphereSetup> atmosphere;
+    /// The area's tone (a room's), in place of the scene's.
+    std::optional<SoundSetup> sound;
 
     /// `scene` with these terms in place of its own.
     [[nodiscard]] EnvironmentSetup over(const EnvironmentSetup& scene) const;

@@ -37,6 +37,12 @@ Mixer::Mixer(MixerSettings settings) : m_settings(settings) {
     m_silence = Ramp{1.0, 1.0, stepFor(m_settings.silenceFadeSeconds, rate)};
     // Sized once: render() never allocates (it runs on the device's thread, under the mutex).
     m_scratch.assign(kMaxBlockFrames * kMixChannels, 0.0f);
+    m_unducked.assign(kMaxBlockFrames * kMixChannels, 0.0f);
+    m_busFrames.assign(kMaxBlockFrames * kBusCount, 1.0f);
+    for (Ramp& bus : m_bus) {
+        bus = Ramp{1.0, 1.0, stepFor(m_settings.muteFadeSeconds, rate)};
+    }
+    m_voices.resize(kMaxVoices);
     m_errorBins.assign(kErrorBins + 1, 0);
 }
 
@@ -124,6 +130,143 @@ void Mixer::setClock(SourceId id, const SourceClock& clock) {
 void Mixer::setMaster(double gain) {
     const std::scoped_lock lock(m_mutex);
     m_master.target = std::isfinite(gain) ? std::clamp(gain, 0.0, 1.0) : 1.0;
+}
+
+void Mixer::setBusGain(Bus bus, double gain) {
+    const std::scoped_lock lock(m_mutex);
+    Ramp& ramp = m_bus[static_cast<std::size_t>(bus)];
+    ramp.target = std::isfinite(gain) ? std::clamp(gain, 0.0, 1.0) : 1.0;
+    if (m_framesRendered == 0) {
+        ramp.current = ramp.target; // the volumes the run starts with: no ramp from 1 at its first block
+    }
+}
+
+SampleSourceId Mixer::addSampleSource(std::shared_ptr<const PcmBuffer> buffer, Bus bus) {
+    const std::scoped_lock lock(m_mutex);
+    SampleSource source;
+    source.buffer = buffer && !buffer->samples.empty() ? std::move(buffer) : nullptr;
+    source.bus = bus;
+    source.gain = Ramp{0.0, 0.0, stepFor(m_settings.crossFadeSeconds, m_settings.sampleRate)};
+    source.pan = Ramp{0.0, 0.0, stepFor(m_settings.panSlewSeconds, m_settings.sampleRate)};
+    m_samples.push_back(std::move(source));
+    return static_cast<SampleSourceId>(m_samples.size() - 1);
+}
+
+void Mixer::retargetSample(SampleSource& source) {
+    const bool playing = source.control.playing;
+    source.gain.step =
+        stepFor(playing ? m_settings.crossFadeSeconds : m_settings.pauseFadeSeconds, m_settings.sampleRate);
+    source.gain.target = playing ? source.control.gain : 0.0;
+}
+
+void Mixer::setSampleControl(SampleSourceId id, const SourceControl& control) {
+    const std::scoped_lock lock(m_mutex);
+    if (id >= m_samples.size()) {
+        return;
+    }
+    SampleSource& source = m_samples[id];
+    source.control.playing = control.playing;
+    source.control.gain = std::isfinite(control.gain) ? std::max(0.0, control.gain) : 0.0;
+    source.control.pan = std::isfinite(control.pan) ? std::clamp(control.pan, -1.0, 1.0) : 0.0;
+    source.pan.target = source.control.pan;
+    retargetSample(source);
+}
+
+double Mixer::sampleGain(SampleSourceId id) const {
+    const std::scoped_lock lock(m_mutex);
+    return id < m_samples.size() ? m_samples[id].gain.current : 0.0;
+}
+
+bool Mixer::trigger(std::shared_ptr<const PcmBuffer> buffer, const OneShot& shot) {
+    if (!buffer || buffer->samples.empty()) {
+        return false;
+    }
+    std::shared_ptr<const PcmBuffer> released;
+    {
+        const std::scoped_lock lock(m_mutex);
+        // A free voice, else the oldest one's.
+        Voice* voice = nullptr;
+        for (Voice& candidate : m_voices) {
+            if (!candidate.playing) {
+                voice = &candidate;
+                break;
+            }
+        }
+        if (voice == nullptr) {
+            voice = &*std::min_element(m_voices.begin(), m_voices.end(),
+                                       [](const Voice& a, const Voice& b) { return a.started < b.started; });
+            ++m_voicesStolen;
+        }
+        released = std::move(voice->buffer);
+        voice->buffer = std::move(buffer);
+        voice->shot = shot;
+        voice->shot.gain = std::isfinite(shot.gain) ? std::max(0.0, shot.gain) : 0.0;
+        const StereoGains pan = equalPowerGains(std::isfinite(shot.pan) ? std::clamp(shot.pan, -1.0, 1.0) : 0.0);
+        voice->gains = StereoGainsCache{pan.left, pan.right};
+        voice->position = 0;
+        voice->started = ++m_voiceStarts;
+        voice->playing = true;
+    }
+    // The buffer a stolen or finished voice held is let go here, on the main thread and outside the lock.
+    return true;
+}
+
+std::size_t Mixer::voicesPlaying() const {
+    const std::scoped_lock lock(m_mutex);
+    return static_cast<std::size_t>(
+        std::count_if(m_voices.begin(), m_voices.end(), [](const Voice& voice) { return voice.playing; }));
+}
+
+std::uint64_t Mixer::voicesStolen() const {
+    const std::scoped_lock lock(m_mutex);
+    return m_voicesStolen;
+}
+
+void Mixer::renderSamples(float* ducked, float* unducked, std::size_t frames) {
+    for (SampleSource& source : m_samples) {
+        if (!source.buffer || (source.gain.current == 0.0 && source.gain.target == 0.0)) {
+            continue; // silent: it holds its place
+        }
+        const float* bus = m_busFrames.data() + static_cast<std::size_t>(source.bus) * kMaxBlockFrames;
+        const std::vector<float>& samples = source.buffer->samples;
+        if (source.gain.current == 0.0) {
+            source.pan.current = source.pan.target;
+        }
+        StereoGains pan = equalPowerGains(source.pan.current);
+        for (std::size_t index = 0; index < frames; ++index) {
+            const double ramp = source.gain.advance();
+            if (ramp == 0.0 && source.gain.target == 0.0) {
+                break; // faded out: it holds its place from here
+            }
+            const double gain = ramp * static_cast<double>(bus[index]);
+            if (source.pan.current != source.pan.target) {
+                pan = equalPowerGains(source.pan.advance());
+            }
+            const double sample = static_cast<double>(samples[source.position]);
+            if (++source.position >= samples.size()) {
+                source.position = 0;
+            }
+            ducked[index * 2] += static_cast<float>(sample * gain * pan.left);
+            ducked[index * 2 + 1] += static_cast<float>(sample * gain * pan.right);
+        }
+    }
+    for (Voice& voice : m_voices) {
+        if (!voice.playing) {
+            continue;
+        }
+        const float* bus = m_busFrames.data() + static_cast<std::size_t>(voice.shot.bus) * kMaxBlockFrames;
+        float* target = voice.shot.ducks ? ducked : unducked;
+        const std::vector<float>& samples = voice.buffer->samples;
+        for (std::size_t index = 0; index < frames && voice.position < samples.size(); ++index) {
+            const double sample =
+                static_cast<double>(samples[voice.position++]) * voice.shot.gain * static_cast<double>(bus[index]);
+            target[index * 2] += static_cast<float>(sample * voice.gains.left);
+            target[index * 2 + 1] += static_cast<float>(sample * voice.gains.right);
+        }
+        if (voice.position >= samples.size()) {
+            voice.playing = false; // its buffer is let go by the trigger that takes the voice
+        }
+    }
 }
 
 void Mixer::setDucked(bool ducked) {
@@ -344,6 +487,14 @@ void Mixer::render(float* out, std::size_t frames, double blockStartSeconds) {
 
 void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds) {
     std::fill(out, out + frames * kMixChannels, 0.0f);
+    std::fill(m_unducked.begin(), m_unducked.begin() + static_cast<std::ptrdiff_t>(frames * kMixChannels), 0.0f);
+    for (std::size_t bus = 0; bus < kBusCount; ++bus) {
+        float* gains = m_busFrames.data() + bus * kMaxBlockFrames;
+        for (std::size_t index = 0; index < frames; ++index) {
+            gains[index] = static_cast<float>(m_bus[bus].advance());
+        }
+    }
+    const float* video = m_busFrames.data() + static_cast<std::size_t>(Bus::Video) * kMaxBlockFrames;
     for (Source& source : m_sources) {
         if (source.ringPending && source.gain.current == 0.0) {
             installRing(source, std::move(source.pendingRing), source.pendingClock); // the old clip has faded out
@@ -356,7 +507,8 @@ void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds
         }
         StereoGains pan = equalPowerGains(source.pan.current);
         for (std::size_t index = 0; index < frames; ++index) {
-            const double gain = hold ? source.gain.current : source.gain.advance();
+            const double gain =
+                (hold ? source.gain.current : source.gain.advance()) * static_cast<double>(video[index]);
             if (source.pan.current != source.pan.target) {
                 pan = equalPowerGains(source.pan.advance());
             }
@@ -367,12 +519,20 @@ void Mixer::renderBlock(float* out, std::size_t frames, double blockStartSeconds
             out[index * 2 + 1] += static_cast<float>(static_cast<double>(m_scratch[index * 2 + 1]) * gain * pan.right);
         }
     }
+    renderSamples(out, m_unducked.data(), frames);
     for (std::size_t index = 0; index < frames; ++index) {
-        const double gain = m_master.advance() * m_duck.advance() * m_mute.advance() * m_silence.advance();
+        const double master = m_master.advance();
+        const double duck = m_duck.advance();
+        const double mute = m_mute.advance();
+        const double silence = m_silence.advance();
+        const double gain = master * duck * mute * silence;
+        const double unduckedGain = master * mute * silence;
         for (int channel = 0; channel < kMixChannels; ++channel) {
-            float& sample = out[index * 2 + static_cast<std::size_t>(channel)];
+            const std::size_t at = index * 2 + static_cast<std::size_t>(channel);
+            float& sample = out[at];
             // std::clamp keeps a NaN: whatever is not a number is silence.
-            const double value = static_cast<double>(sample) * gain;
+            const double value =
+                static_cast<double>(sample) * gain + static_cast<double>(m_unducked[at]) * unduckedGain;
             sample = std::isfinite(value) ? static_cast<float>(std::clamp(value, -1.0, 1.0)) : 0.0f;
         }
     }

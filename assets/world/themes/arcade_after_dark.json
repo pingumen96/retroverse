@@ -198,5 +198,7 @@
   // stronger mask, more curvature: assets/materials/crt_presets.json).
   "screenPreset": "arcade",
   // I12 step 6 (ADR-0021 §4): the dark arcade shows its spots' cones in the air.
-  "atmosphere": {"lightCones": true}
+  "atmosphere": {"lightCones": true},
+  // I12 step 7 (ADR-0021 §5): the arcade's murmur fills the room, the cabinet's hum and its sign's buzz over it.
+  "sound": {"hiss": 0.5, "murmur": 1}
 }
