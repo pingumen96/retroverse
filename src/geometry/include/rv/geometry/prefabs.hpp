@@ -403,8 +403,9 @@ struct BankerLampParams {
     float shadeLength = 0.3f;  ///< [0.15, 0.6], at most standWidth
 };
 
-/// What a showcase holds (I6 step 3b; Boxes since the step's review).
-enum class ShowcaseItem { None, Console, Handheld, Boxes };
+/// What a showcase holds (I6 step 3b; Boxes since the step's review; Controllers since I12 step 4: up to three game
+/// pads of original design leaning back side by side, a grip pad between two flat ones).
+enum class ShowcaseItem { None, Console, Handheld, Boxes, Controllers };
 
 /// "showcase" (I6 step 3b), pivot floor, front +Z; bounds = width x height x depth. A glass vitrine on a closed base
 /// with two doors: a glass front and glass sides between four slim posts under a wooden cap, a back panel, a covered
@@ -512,13 +513,19 @@ struct ShelfDressingParams {
     int seed = 0;         ///< [0, 2147483647]
 };
 
-/// "plant", pivot floor (I3 step 16); bounds within [-spread, 0, -spread] .. [spread, height, spread] (the tallest leaf's
-/// tip at `height` within a millimetre). A potted plant of original design: a rosette of upright sword leaves in a
-/// tapered ceramic pot with a rolled rim on a saucer of radius `spread`, filled with soil to the brim; `seed` varies the
-/// leaves' angles, heights, widths, lean and twist deterministically (core::Random). Roles: "pot" (the saucer too),
+/// "plant", pivot floor (I3 step 16); bounds within [-spread, 0, -spread] .. [spread, height, spread] (the tallest
+/// leaf's tip at `height` within a millimetre). A potted plant of original design: a rosette of upright sword leaves in
+/// a tapered ceramic pot with a rolled rim on a saucer of radius `spread`, filled with soil to the brim; `seed` varies
+/// the leaves' angles, heights, widths, lean and twist deterministically (core::Random). Roles: "pot" (the saucer too),
 /// "soil", "leaves" and "leaves_alt" (every third leaf, a lighter shade). With `saucerRadius` (I6 step 2) the saucer is
 /// that wide, a little wider than the pot rather than the leaves, in a role of its own, "saucer" (the bounds are then
 /// the leaves' and the pot's, within the spread). No sockets; its bounds collide, as every fixture's do.
+/// I12 step 4 (ADR-0021 §1's tall decoration): other forms, each of original design, their leaves within `spread`
+/// across (x) and `depthSpread` front to back (z; the spread when 0), so that a wide crown stays in a side-wall
+/// socket's 0.4 m: "palm" (three canes in role "trunk" with arching fronds from their tops), "ficus" (a trunk in role
+/// "trunk" and a crown of small leaves over its upper half), "fern" (the pot on a turned stand in role "stand", its
+/// fronds arching over and down; `height` the fronds' top).
+enum class PlantForm { Sword, Palm, Ficus, Fern };
 struct PlantParams {
     float height = 1.0f;       ///< [0.3, 2.5]
     float potRadius = 0.15f;   ///< the pot's top radius, [0.05, 0.6]
@@ -527,6 +534,8 @@ struct PlantParams {
     int leaves = 14;           ///< [3, 64]
     int seed = 0;              ///< [0, 2147483647]
     float saucerRadius = 0.0f; ///< 0: the saucer as wide as the spread, in the pot's role; else [potRadius, spread]
+    PlantForm form = PlantForm::Sword; ///< JSON "sword", "palm", "ficus" or "fern"
+    float depthSpread = 0.0f;          ///< 0: the spread; else [potRadius + 8 mm, spread], the reach front to back
 };
 
 /// "column" (I6 step 5: the hub's colonnade, style §8 architecture), pivot floor; bounds = plinthSize x height x
@@ -725,6 +734,69 @@ struct OpenBoxParams {
     float height = 0.03f;                    ///< [0.01, 0.1]: a half's
 };
 
+/// What fills a "bookcase"'s levels: books of uneven spines (a few leaning at a row's end), a row of binders with a
+/// paper strip each, magazine files; "mixed" gives each level one of them by the seed, books most often.
+enum class BookcaseFill { Mixed, Books, Binders, Magazines };
+
+/// "bookcase" (I12 step 4, ADR-0021 §1's tall decoration), pivot floor, front +Z; bounds = width x height x depth. A
+/// tall open bookcase of original design: two sides, a top, a plinth, `levels` boards and a back panel, its levels
+/// filled from the left to about `fill` of their width (each level a little more or less, by the seed). Spines are 12
+/// to 35 mm wide, uneven in height and depth, plain: never a front, a title or the label palette (style §26.2: nothing
+/// of it reads as a game). Roles: "wood_primary" (the carcass and the boards), "wood_secondary" (the back panel),
+/// "spine_a", "spine_b", "spine_c" (the spines in runs of one to three: a pack's cloths and papers), "paper" (the
+/// binders' strips). No sockets; its bounds collide.
+struct BookcaseParams {
+    float width = 0.88f;                         ///< [0.4, 1.2]
+    float height = 2.1f;                         ///< [0.9, 2.6]
+    float depth = 0.34f;                         ///< [0.2, 0.5]
+    int levels = 5;                              ///< [2, 8], each at least 0.22 m clear
+    float fill = 0.85f;                          ///< [0, 1]
+    BookcaseFill contents = BookcaseFill::Mixed; ///< JSON "mixed", "books", "binders" or "magazines"
+    int seed = 0;                                ///< [0, 2147483647]
+};
+
+/// What a "record_rack" holds: square record sleeves, or tapes in their cases, spine-out.
+enum class RackMedia { Records, Tapes };
+
+/// "record_rack" (I12 step 4), pivot floor, front +Z; bounds = width x height x depth. An open rack of original design
+/// (a frame, `levels` boards, a back) holding record sleeves (31 cm square, 3 to 6 mm thick: a level at least 0.32 m
+/// clear and 0.315 m deep inside) or tapes (19 cm tall, 25 mm thick, 10.5 cm deep: at least 0.2 m clear), spine-out in
+/// runs of two tones, to about `fill` of each level. Plain spines, no fronts. Roles: "wood_primary" (the frame and the
+/// boards), "wood_secondary" (the back), "sleeve_a", "sleeve_b", "sleeve_c". No sockets; its bounds collide.
+struct RecordRackParams {
+    float width = 0.6f;                   ///< [0.4, 1]
+    float height = 1.6f;                  ///< [0.6, 2.2]
+    float depth = 0.36f;                  ///< [0.2, 0.45]
+    int levels = 4;                       ///< [2, 8]
+    RackMedia media = RackMedia::Records; ///< JSON "records" or "tapes"
+    float fill = 0.85f;                   ///< [0, 1]
+    int seed = 0;                         ///< [0, 2147483647]
+};
+
+/// "pegboard" (I12 step 4), pivot at its centre on its back (as a poster frame's: it hangs in a poster's socket), front
+/// +Z; bounds = [-width / 2, -height / 2, 0] .. [width / 2, height / 2, depth]. A perforated board of original design
+/// in a slim frame, its holes in a 25 mm grid, with `pads` game pads of `style` hung on pairs of hooks in two or three
+/// rows (their places by the seed, never overlapping). Roles: "board", "trim" (the frame), "holes", "metal" (the
+/// hooks), "plastic_body", "plastic_dark" (the pads). No sockets; its bounds collide, as a poster frame's.
+struct PegboardParams {
+    float width = 0.88f;             ///< [0.4, 1.2]
+    float height = 1.2f;             ///< [0.4, 1.6]
+    float depth = 0.06f;             ///< [0.03, 0.12]: the board and what hangs on it
+    int pads = 6;                    ///< [0, 10], as many as the board holds
+    PadStyle style = PadStyle::Flat; ///< JSON "flat", "grip" or "joystick"
+    int seed = 0;                    ///< [0, 2147483647]
+};
+
+/// "coat_stand" (I12 step 4), pivot floor, front +Z; bounds = [-spread, 0, -spread] .. [spread, height, spread].
+/// A turned pole of original design on four feet along the axes, four hooks under a knob at its top, and on them, by
+/// the seed, a bag on its strap, a scarf and a cap. Roles: "wood" (the pole, its feet and knob), "metal" (the hooks),
+/// "fabric" (the bag), "fabric_alt" (the scarf and the cap). No sockets; its bounds collide.
+struct CoatStandParams {
+    float height = 1.8f;  ///< [1.2, 2.2]
+    float spread = 0.19f; ///< [0.18, 0.3]: the feet's and the hooks' reach (0.38 m across: a side-wall socket's 0.4)
+    int seed = 0;         ///< [0, 2147483647]
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -764,6 +836,10 @@ struct OpenBoxParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildLowTable(const LowTableParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildCushion(const CushionParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildOpenBox(const OpenBoxParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildBookcase(const BookcaseParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildRecordRack(const RecordRackParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildPegboard(const PegboardParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildCoatStand(const CoatStandParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,

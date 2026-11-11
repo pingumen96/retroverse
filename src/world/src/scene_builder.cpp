@@ -442,10 +442,148 @@ std::vector<FixtureId> chosenSecondaryTvs(const WorldPlan& plan, const Room& roo
     return chosen;
 }
 
+/// I12 step 4 (ADR-0021 §1): a decoration whose drawn top reaches this high is of the tall class; along a wall the
+/// classes alternate and no piece stands beside its like, decorations this close along it being neighbours (the
+/// plan's own rule's distance, fixture_layout.cpp).
+constexpr std::int64_t kTallDecorationMm = 1500;
+constexpr std::int64_t kRhythmNeighbourMm = 1200;
+
+/// Whether `bounds` (a piece's or the plan's prefab's) stand in the tall class where `fixture` stands.
+bool tallClass(const core::Aabb& bounds, const Fixture& fixture) {
+    return fixture.yMm + toMm(bounds.max.y) >= kTallDecorationMm;
+}
+
+/// The variant of `variants` that `random` draws by weight from `allowed` (every one when it is empty), none when none
+/// of them weighs.
+const ScenePiece* drawVariant(const std::vector<std::pair<std::uint32_t, ScenePiece>>& variants, core::Random& random,
+                              const std::vector<bool>& allowed) {
+    std::uint64_t total = 0;
+    for (std::size_t i = 0; i < variants.size(); ++i) {
+        total += allowed.empty() || allowed[i] ? variants[i].first : 0u;
+    }
+    if (total == 0) {
+        return nullptr;
+    }
+    std::uint64_t draw = random.below(total);
+    for (std::size_t i = 0; i < variants.size(); ++i) {
+        const std::uint64_t weight = allowed.empty() || allowed[i] ? variants[i].first : 0u;
+        if (draw < weight) {
+            return &variants[i].second;
+        }
+        draw -= weight;
+    }
+    return nullptr;
+}
+
+/// The decoration variants of `room` by the rhythm of its walls (I12 step 4, ADR-0021 §1; scene_builder.hpp's file
+/// comment): the decoration fixtures wall by wall in the order their sockets stand along it at home (never where the
+/// editor moved them: a moved piece keeps its variant), each drawing by weight from the room's seed and its id as
+/// before; beside a neighbour, a draw of the neighbour's piece or of its class (tall or low) is drawn again among the
+/// variants that differ in both, else in the piece, else it stands. `secondaryTvs` stand in their sockets as low
+/// pieces.
+std::map<FixtureId, const ScenePiece*> chosenVariants(const WorldPlan& plan, const Room& room, const SceneData& data,
+                                                      const std::vector<FixtureId>& secondaryTvs) {
+    struct Spot {
+        Wall wall = Wall::None;
+        std::int64_t along = 0;
+        std::string id;
+        const Fixture* fixture = nullptr;
+    };
+    std::vector<Spot> spots;
+    const RoomTemplate& roomTemplate = data.roomTemplate;
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room.id || fixture.role != FixtureRole::Decoration) {
+            continue;
+        }
+        const TemplateSocket* socket = roomTemplate.socket(fixture.id.socket());
+        if (socket == nullptr) {
+            continue;
+        }
+        const Footprint home = socketFootprint(roomTemplate, *socket, room.growthSteps);
+        const bool alongX = socket->wall == Wall::North || socket->wall == Wall::South;
+        spots.push_back(Spot{socket->wall, alongX ? (home.minXMm + home.maxXMm) / 2 : (home.minZMm + home.maxZMm) / 2,
+                             fixture.id.localText(), &fixture});
+    }
+    std::sort(spots.begin(), spots.end(), [](const Spot& a, const Spot& b) {
+        if (a.wall != b.wall) {
+            return a.wall < b.wall;
+        }
+        return a.along != b.along ? a.along < b.along : a.id < b.id;
+    });
+    std::map<FixtureId, const ScenePiece*> chosen;
+    const Spot* previous = nullptr;
+    const ScenePiece* previousPiece = nullptr;
+    // The previous piece's class: none for a hung one (a poster, a pegboard), which leaves the floor under it free and
+    // takes no part in the heights' alternation.
+    std::optional<bool> previousTall;
+    for (const Spot& spot : spots) {
+        const Fixture& fixture = *spot.fixture;
+        const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+        const bool neighbour =
+            previous != nullptr && previous->wall == spot.wall && spot.along - previous->along <= kRhythmNeighbourMm;
+        const bool hung = fixture.yMm > 0;
+        const ScenePiece* piece = nullptr;
+        if (std::find(secondaryTvs.begin(), secondaryTvs.end(), fixture.id) != secondaryTvs.end()) {
+            piece = &data.furniture.secondaryTv->piece;
+        } else if (const auto found = data.furniture.decoration.find(fixture.prefab.kind);
+                   found != data.furniture.decoration.end() && own != nullptr && own->prefab) {
+            const auto& variants = found->second;
+            core::Random random(core::deriveSeed(room.seed, "furniture", fixture.id.localText()));
+            piece = drawVariant(variants, random, {});
+            const auto clashes = [&](const ScenePiece* candidate, bool byClass) {
+                return candidate == previousPiece ||
+                       (byClass && !hung && previousTall &&
+                        tallClass(candidate->prefab.prefab->bounds, fixture) == *previousTall);
+            };
+            if (piece != nullptr && neighbour && clashes(piece, true)) {
+                for (const bool byClass : {true, false}) {
+                    std::vector<bool> allowed(variants.size());
+                    bool any = false;
+                    for (std::size_t i = 0; i < variants.size(); ++i) {
+                        allowed[i] = variants[i].first > 0 && !clashes(&variants[i].second, byClass);
+                        any = any || allowed[i];
+                    }
+                    if (any) {
+                        piece = drawVariant(variants, random, allowed);
+                        break;
+                    }
+                }
+            }
+            if (piece != nullptr) {
+                chosen.emplace(fixture.id, piece);
+            }
+        }
+        previous = &spot;
+        previousPiece = piece;
+        if (hung) {
+            previousTall.reset();
+        } else {
+            previousTall = piece != nullptr ? tallClass(piece->prefab.prefab->bounds, fixture)
+                                            : own != nullptr && own->prefab && tallClass(own->prefab->bounds, fixture);
+        }
+    }
+    return chosen;
+}
+
+/// What the scene builder chooses once a room (scene_builder.hpp's file comment): the sockets of the secondary TVs
+/// (I5 step 3) and the decoration variants by the walls' rhythm (I12 step 4).
+struct RoomChoices {
+    std::vector<FixtureId> secondaryTvs;
+    std::map<FixtureId, const ScenePiece*> variants;
+};
+
+RoomChoices roomChoices(const WorldPlan& plan, const Room& room, const SceneData& data) {
+    RoomChoices choices;
+    choices.secondaryTvs = chosenSecondaryTvs(plan, room, data);
+    choices.variants = chosenVariants(plan, room, data, choices.secondaryTvs);
+    return choices;
+}
+
 /// The pieces that draw `fixture` (scene_builder.hpp's file comment), before the footprint guard; nothing: the plan's
 /// prefab draws it; none: it is not drawn (a hero part the pack leaves out, I6 step 6).
 std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixture& fixture, const SceneData& data,
-                                                    const std::vector<FixtureId>& secondaryTvs) {
+                                                    const RoomChoices& chosen) {
+    const std::vector<FixtureId>& secondaryTvs = chosen.secondaryTvs;
     std::vector<DrawnPiece> pieces;
     const std::uint64_t seed = fixtureSeed(room.seed, fixture.id);
     if (fixture.role == FixtureRole::HeroCorner) {
@@ -509,33 +647,17 @@ std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixt
             return pieces;
         }
     }
-    const auto found = data.furniture.decoration.find(fixture.prefab.kind);
-    if (found == data.furniture.decoration.end() || own == nullptr || !own->prefab) {
+    // The variant the room's rhythm chose (chosenVariants(): by weight from the room's seed and the fixture's id).
+    const auto variant = chosen.variants.find(fixture.id);
+    if (variant == chosen.variants.end() || own == nullptr || !own->prefab) {
         return std::nullopt;
     }
-    std::uint64_t total = 0;
-    for (const auto& [weight, piece] : found->second) {
-        total += weight;
-    }
-    if (total == 0) {
-        return std::nullopt;
-    }
-    // The variant by weight, from the room's seed and the fixture's id.
-    core::Random random(core::deriveSeed(room.seed, "furniture", fixture.id.localText()));
-    std::uint64_t draw = random.below(total);
-    const ScenePiece* chosen = nullptr;
-    for (const auto& [weight, piece] : found->second) {
-        if (draw < weight) {
-            chosen = &piece;
-            break;
-        }
-        draw -= weight;
-    }
+    const ScenePiece* piece = variant->second;
     // Its back on the socket's back edge and centred across it, where the plan's prefab stands.
-    const auto [dx, dz] = pieceOffset(*own, *chosen);
+    const auto [dx, dz] = pieceOffset(*own, *piece);
     const auto [roomX, roomZ] = turned(dx, dz, fixture.yawCdeg);
     DrawnPiece drawn;
-    drawn.piece = chosen;
+    drawn.piece = piece;
     drawn.id = fixture.id.localText();
     drawn.xMm = fixture.xMm + roomX;
     drawn.yMm = fixture.yMm;
@@ -547,18 +669,17 @@ std::optional<std::vector<DrawnPiece>> placedPieces(const Room& room, const Fixt
 }
 
 std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
-                                                   const SceneData& data, const std::vector<FixtureId>& secondaryTvs);
+                                                   const SceneData& data, const RoomChoices& chosen);
 
 /// Whether the hero corner of `fixture`'s socket draws its CRT as the pack's pieces (resolved, holding the screen,
 /// inside the guard): only then are the parts the pack leaves out left out, the cabinet standing in their place (I6
 /// step 6's review: else the CRT, drawn as planned, would float where its TV cabinet is missing).
 bool heroCrtSubstituted(const WorldPlan& plan, const Room& room, const Fixture& fixture, const SceneData& data,
-                        const std::vector<FixtureId>& secondaryTvs) {
+                        const RoomChoices& chosen) {
     for (const Fixture& candidate : plan.fixtures) {
         if (candidate.role == FixtureRole::HeroCorner && candidate.id.room() == room.id &&
             candidate.id.socket() == fixture.id.socket() && candidate.id.part() == kHeroTvPart) {
-            const std::optional<std::vector<DrawnPiece>> pieces =
-                drawnPieces(plan, room, candidate, data, secondaryTvs);
+            const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, candidate, data, chosen);
             return pieces.has_value() && !pieces->empty();
         }
     }
@@ -569,12 +690,12 @@ bool heroCrtSubstituted(const WorldPlan& plan, const Room& room, const Fixture& 
 /// not drawn (I6 step 6: a part the pack leaves out, while its CRT stands as the pack's cabinet). The guard of ADR-0014
 /// §1 (amended): a decoration's variant that leaves its socket's footprint (turned with the socket), or a hero part's
 /// piece that leaves the hero corner (and the planned part's own floor, where the part reaches out of the corner: the
-/// lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once. `secondaryTvs`: the room's
-/// (chosenSecondaryTvs(), once a room).
+/// lamp beside the TV), is not drawn; the plan's prefab is, with a warning logged once. `chosen`: the room's
+/// (roomChoices(), once a room).
 std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const Room& room, const Fixture& fixture,
-                                                   const SceneData& data, const std::vector<FixtureId>& secondaryTvs) {
-    std::optional<std::vector<DrawnPiece>> placed = placedPieces(room, fixture, data, secondaryTvs);
-    if (placed && placed->empty() && !heroCrtSubstituted(plan, room, fixture, data, secondaryTvs)) {
+                                                   const SceneData& data, const RoomChoices& chosen) {
+    std::optional<std::vector<DrawnPiece>> placed = placedPieces(room, fixture, data, chosen);
+    if (placed && placed->empty() && !heroCrtSubstituted(plan, room, fixture, data, chosen)) {
         warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " kept",
                  fmt::format("World: the pack {} leaves out {}, but its CRT is not drawn as the pack's cabinet; the "
                              "part is drawn as planned",
@@ -623,8 +744,33 @@ std::optional<std::vector<DrawnPiece>> drawnPieces(const WorldPlan& plan, const 
                                  allowed.maxXMm, allowed.minZMm, allowed.maxZMm, fixture.prefab.manifest));
             return std::nullopt;
         }
+        // I12 step 4: a tall variant never reaches through the ceiling (a low room's).
+        if (fixture.role == FixtureRole::Decoration && toMm(high.y) > room.heightMm) {
+            warnOnce(data.theme.id + " " + data.roomTemplate.id + " " + fixture.id.localText() + " " +
+                         drawn.piece->piece.prefab.manifest + " ceiling",
+                     fmt::format("World: the pack {}'s {} reaches {} mm, over the ceiling of {} ({} mm); the plan's {} "
+                                 "is drawn instead",
+                                 data.theme.id, drawn.piece->piece.prefab.manifest, toMm(high.y), room.id.toString(),
+                                 room.heightMm, fixture.prefab.manifest));
+            return std::nullopt;
+        }
     }
     return placed;
+}
+
+/// The top of what draws `fixture` in the room's frame, millimetres (I12 step 4: a picture over it hangs over that):
+/// its drawn pieces' highest point, else the plan's fixture's.
+std::int64_t drawnTopMm(const WorldPlan& plan, const Room& room, const Fixture& fixture, const SceneData& data,
+                        const RoomChoices& chosen) {
+    const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, fixture, data, chosen);
+    if (!pieces || pieces->empty()) {
+        return fixture.yMm + fixture.heightMm;
+    }
+    std::int64_t top = 0;
+    for (const DrawnPiece& drawn : *pieces) {
+        top = std::max(top, drawn.yMm + toMm(drawn.piece->prefab.prefab->bounds.max.y));
+    }
+    return top;
 }
 
 /// A piece's object: its prefab with its merged parameters, the pack's materials of its kind (the part's own when it
@@ -684,7 +830,7 @@ struct DrawnHeroDressing {
 /// leaving the hero corner socket's footprint, or reaching above the room's ceiling, is not drawn (a warning logged
 /// once).
 std::vector<DrawnHeroDressing> drawnHeroDressing(const WorldPlan& plan, const Room& room, const SceneData& data,
-                                                 const std::vector<FixtureId>& secondaryTvs) {
+                                                 const RoomChoices& chosen) {
     std::vector<DrawnHeroDressing> out;
     for (const SceneHeroDressing& dressing : data.furniture.heroDressing) {
         const auto anchor = std::find_if(plan.fixtures.begin(), plan.fixtures.end(), [&](const Fixture& fixture) {
@@ -695,7 +841,7 @@ std::vector<DrawnHeroDressing> drawnHeroDressing(const WorldPlan& plan, const Ro
             continue;
         }
         // A part the pack leaves out (the arcade's, I6 step 6) takes its set with it.
-        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, *anchor, data, secondaryTvs);
+        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, room, *anchor, data, chosen);
             pieces && pieces->empty()) {
             continue;
         }
@@ -947,6 +1093,10 @@ constexpr std::int64_t kLookPendantBelowCeilingMm = 1100;
 constexpr std::int64_t kLookPendantFromDoorwayMm = 1500;
 constexpr std::int64_t kLookPendantDrumBelowLightMm = 20;
 constexpr double kLookPendantShare = 0.5;
+/// Its light a spot straight down (I12 step 4): a pool about 1.9 m across on the floor under it, the doorway's wall
+/// beside the opening out of its cone.
+constexpr double kLookPendantOuterConeDeg = 42.0;
+constexpr double kLookPendantInnerConeDeg = 20.0;
 /// The spot cans over the display cases (the spots' cans above) hang their lens this high: small warm points at the top
 /// of the doorway's view, as the concept's ceiling lights, where drums there filled it (I12 step 1's review).
 constexpr std::int64_t kDisplayCanBottomMm = 2350;
@@ -1206,7 +1356,7 @@ void addPendants(json& objects, const WorldPlan& plan, const Room& room, const S
     }
 }
 
-/// The look pendant's light (I12 step 1): a point of the profile's pendant role (the pack's tint) at kLookPendantShare
+/// The look pendant's light (I12 step 1; a spot down since step 4): of the profile's pendant role (the pack's tint) at kLookPendantShare
 /// of its intensity, under the ceiling near the doorway; none without the pack's pendants or a doorway.
 std::optional<json> lookPendantLight(const Room& room, const SceneData& data) {
     if (!data.theme.dressing.pendants) {
@@ -1217,9 +1367,14 @@ std::optional<json> lookPendantLight(const Room& room, const SceneData& data) {
         return std::nullopt;
     }
     const LightStyle& style = data.lighting.pendant;
+    // A spot down from the drum (I12 step 4): a point this near the doorway lit the hall's floor and wall beside the
+    // doorway through the portal's plane (test_world_floor.cpp's leak probes); its pool is the floor under it.
     return json{{"name", "look:pendant"},
-                {"type", "point"},
+                {"type", "spot"},
                 {"position", pointJson(place->first, room.heightMm - kLookPendantBelowCeilingMm, place->second)},
+                {"target", pointJson(place->first, 0, place->second)},
+                {"outerConeDeg", kLookPendantOuterConeDeg},
+                {"innerConeDeg", kLookPendantInnerConeDeg},
                 {"color", style.color},
                 {"intensity", rounded(style.intensity * kLookPendantShare, 1000.0)},
                 {"range", style.range}};
@@ -1270,9 +1425,12 @@ std::optional<std::pair<std::int64_t, std::int64_t>> againstWall(const Room& roo
 /// The gallery's frames (I12 step 2, ADR-0021 §2): one over each fixture of the gallery's roles standing against a
 /// wall, of the kind its seed draws by the pack's weights, the pack's print in it until the app puts a game's media
 /// there, hung in the band between the fixture's top and the picture rail; every other frame a picture light (its
-/// hood, its wash on the wall). A frame the band cannot hold is left out.
-void addGallery(json& objects, const WorldPlan& plan, const Room& room, const RoomDressing& dressing,
-                const GalleryDressing& gallery) {
+/// hood, its wash on the wall). A frame the band cannot hold is left out. Since I12 step 4 one over each low
+/// decoration standing on the floor against a wall too (its drawn piece's top under the tall class; not the kinds the
+/// pack's own wall pictures take), each hung over what draws its fixture (a secondary TV over its sideboard).
+void addGallery(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data,
+                const GalleryDressing& gallery, const RoomChoices& chosen) {
+    const RoomDressing& dressing = data.theme.dressing;
     std::int64_t top = room.heightMm - kGalleryUnderCeilingMm;
     if (dressing.shell && !dressing.shell->rail.empty()) {
         top = dressing.shell->railYMm - kPictureRailHeightMm - kGalleryUnderRailMm;
@@ -1291,13 +1449,24 @@ void addGallery(json& objects, const WorldPlan& plan, const Room& room, const Ro
     }
     std::size_t hung = 0;
     for (const Fixture& fixture : plan.fixtures) {
-        if (fixture.id.room() != room.id ||
-            std::find(gallery.roles.begin(), gallery.roles.end(), fixture.role) == gallery.roles.end()) {
+        if (fixture.id.room() != room.id) {
+            continue;
+        }
+        const bool byRole = std::find(gallery.roles.begin(), gallery.roles.end(), fixture.role) != gallery.roles.end();
+        const bool pictured =
+            dressing.pictures && std::find(dressing.pictures->kinds.begin(), dressing.pictures->kinds.end(),
+                                           fixture.prefab.kind) != dressing.pictures->kinds.end();
+        const bool lowDecoration = fixture.role == FixtureRole::Decoration && fixture.yMm == 0 && !pictured;
+        if (!byRole && !lowDecoration) {
             continue;
         }
         const auto wall = againstWall(room, fixture, kWallPictureOffMm);
         if (!wall) {
             continue;
+        }
+        const std::int64_t drawnTop = drawnTopMm(plan, room, fixture, data, chosen);
+        if (!byRole && drawnTop >= kTallDecorationMm) {
+            continue; // a tall piece fills the wall itself
         }
         const std::string local = fixture.id.localText();
         const std::uint64_t seed = core::deriveSeed(room.seed, "gallery", local);
@@ -1314,7 +1483,7 @@ void addGallery(json& objects, const WorldPlan& plan, const Room& room, const Ro
         const GalleryPictureSize picture = galleryPictureSize(kind);
         const std::int64_t width = picture.widthMm + 2 * kGalleryFrameBarMm;
         const std::int64_t height = picture.heightMm + 2 * kGalleryFrameBarMm;
-        const std::int64_t low = fixture.yMm + fixture.heightMm + kGalleryOverFixtureMm;
+        const std::int64_t low = drawnTop + kGalleryOverFixtureMm;
         if (top - low < height) {
             continue;
         }
@@ -1421,8 +1590,9 @@ void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, con
             }
         }
     }
+    const RoomChoices chosen = roomChoices(plan, room, data);
     if (const std::optional<GalleryDressing>& gallery = dressing.gallery) {
-        addGallery(objects, plan, room, dressing, *gallery);
+        addGallery(objects, plan, room, data, *gallery, chosen);
     }
     if (const std::optional<WallPictures>& pictures = dressing.pictures) {
         for (const Fixture& fixture : plan.fixtures) {
@@ -1454,9 +1624,13 @@ void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, con
             } else {
                 continue;
             }
-            // Over the fixture, never into the ceiling.
-            const std::int64_t centre = std::max(pictures->centreYMm, fixture.yMm + fixture.heightMm + 80 +
-                                                                          pictures->heightMm / 2);
+            // Over what draws the fixture (I12 step 4: a secondary TV), never into the ceiling, never over a tall
+            // piece.
+            const std::int64_t drawnTop = drawnTopMm(plan, room, fixture, data, chosen);
+            if (byKind && drawnTop >= kTallDecorationMm) {
+                continue;
+            }
+            const std::int64_t centre = std::max(pictures->centreYMm, drawnTop + 80 + pictures->heightMm / 2);
             if (centre + pictures->heightMm / 2 > room.heightMm - 100) {
                 continue;
             }
@@ -1830,7 +2004,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                            {"position", vec3Json(shell.position.x, shell.position.y, shell.position.z)},
                            {"materials", materialsJson(data.theme.materials("room_shell"))}});
 
-    const std::vector<FixtureId> secondaryTvs = chosenSecondaryTvs(plan, *room, data);
+    const RoomChoices chosen = roomChoices(plan, *room, data);
     for (const Fixture& fixture : plan.fixtures) {
         if (fixture.id.room() != roomId) {
             continue;
@@ -1843,8 +2017,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
         const std::string heroPart = fixture.role == FixtureRole::HeroCorner ? fixture.id.part() : std::string();
         // The pack's furniture in place of the part or the decoration (I6 step 3b); a part it leaves out is not drawn
         // (I6 step 6).
-        if (const std::optional<std::vector<DrawnPiece>> pieces =
-                drawnPieces(plan, *room, fixture, data, secondaryTvs)) {
+        if (const std::optional<std::vector<DrawnPiece>> pieces = drawnPieces(plan, *room, fixture, data, chosen)) {
             for (const DrawnPiece& drawn : *pieces) {
                 objects.push_back(pieceObject(drawn, fixture, heroPart, data));
             }
@@ -1856,7 +2029,7 @@ Expected<SceneBuild> toSceneFile(const WorldPlan& plan, const RoomId& roomId, co
                                        fixtureSeed(room->seed, fixture.id)));
     }
     // The hero corner's lived-in set (I12 step 3), after the parts: the props never collide.
-    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, secondaryTvs)) {
+    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, chosen)) {
         json object = pieceObject(dressing.drawn, *dressing.anchor, {}, data);
         if (dressing.dressing->prop) {
             object["collides"] = false;
@@ -1992,12 +2165,12 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
         return makeError(ErrorCode::NotFound, "the plan has no such room", roomId.toString());
     }
     std::vector<Fixture> fixtures;
-    const std::vector<FixtureId> secondaryTvs = chosenSecondaryTvs(plan, *room, data);
+    const RoomChoices chosen = roomChoices(plan, *room, data);
     for (const Fixture& fixture : plan.fixtures) {
         if (fixture.id.room() != roomId) {
             continue;
         }
-        const std::optional<std::vector<DrawnPiece>> placed = drawnPieces(plan, *room, fixture, data, secondaryTvs);
+        const std::optional<std::vector<DrawnPiece>> placed = drawnPieces(plan, *room, fixture, data, chosen);
         if (!placed) {
             fixtures.push_back(fixture);
             continue;
@@ -2009,7 +2182,7 @@ Expected<std::vector<Fixture>> drawnFixtures(const WorldPlan& plan, const RoomId
     }
     // The hero corner's set (I12 step 3): each piece that collides as a part of the corner of its own,
     // "<socket>.dress-<name>", so that the validator judges the passage and the overlaps piece by piece.
-    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, secondaryTvs)) {
+    for (const DrawnHeroDressing& dressing : drawnHeroDressing(plan, *room, data, chosen)) {
         if (dressing.dressing->prop) {
             continue;
         }

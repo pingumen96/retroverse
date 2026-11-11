@@ -83,6 +83,7 @@ std::string expectedPlan(std::size_t titles, std::uint64_t seed) {
     input.library = rv::test::world::library();
     input.selection = rv::test::world::makeSelection(titles, 4242);
     input.config.seed = seed;
+    input.config.decorationDensityPermille = 650; // the shipped preset's since I12 step 4
     auto result = rv::world::generate(input, rv::test::world::snesData());
     REQUIRE(result.has_value());
     return *rv::world::writePlan(result->plan);

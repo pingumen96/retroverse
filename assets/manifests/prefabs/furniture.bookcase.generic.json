@@ -1,0 +1,32 @@
+// A tall open bookcase (I12 step 4, ADR-0021 §1): books of uneven plain spines, binders and magazine files, never a
+// game's front or title, between the modules of a side wall.
+{
+  "schemaVersion": 1,
+  "id": "furniture.bookcase.generic",
+  "assetType": "furniture",
+  "category": "bookcase",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "bookcase",
+    "params": {},
+    "scaleMeters": [0.88, 2.1, 0.34],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["furniture", "bookcase", "books", "tall", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

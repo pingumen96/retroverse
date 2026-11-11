@@ -32,6 +32,12 @@
      "params": {}},
     {"id": "decor.open_box", "generic": "decor.open_box.generic", "generator": "open_box", "params": {}},
     {"id": "decor.pad", "generic": "decor.pad.generic", "generator": "pad", "params": {}},
+    // I12 step 4 (ADR-0021 §1): the side walls' tall decoration.
+    {"id": "furniture.bookcase", "generic": "furniture.bookcase.generic", "generator": "bookcase", "params": {}},
+    {"id": "furniture.record_rack", "generic": "furniture.record_rack.generic", "generator": "record_rack",
+     "params": {}},
+    {"id": "decor.pegboard", "generic": "decor.pegboard.generic", "generator": "pegboard", "params": {}},
+    {"id": "decor.coat_stand", "generic": "decor.coat_stand.generic", "generator": "coat_stand", "params": {}},
     {"id": "furniture.low_table", "generic": "furniture.low_table.generic", "generator": "low_table", "params": {}},
     {"id": "furniture.media_rack", "generic": "furniture.media_rack.generic", "generator": "media_rack",
      "params": {}},

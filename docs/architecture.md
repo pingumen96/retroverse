@@ -1036,7 +1036,8 @@ request  ->  FadingOut (250 ms; instant with reduceMotion)   the destination's b
                                                              the walker at its elevator or the room's doorway, the
                                                              hero CRT unbound (bound again by the eye's room)
          ->  AwaitingView                                    until the covers in view of the room that holds the eye
-                                                             are resident (a hall at once), or the view's deadline:
+                                                             are resident (a hall at once, the hub's once its
+                                                             showcase is in), or the view's deadline:
                                                              3 s after the request less the fade-in and 0.5 s
          ->  FadingIn (250 ms, shortened to end within 3 s)  the rest of the room's covers stream in afterwards
          ->  Done: world.rides[] (the frames, builtMs, residentMs, totalMs, viewItems, viewPending, roomResidentMs,

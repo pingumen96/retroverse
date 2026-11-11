@@ -1,0 +1,32 @@
+// A pegboard of game pads hung where a poster hangs (I12 step 4, ADR-0021 §1): a perforated board in a slim frame,
+// the pads of original design on pairs of hooks.
+{
+  "schemaVersion": 1,
+  "id": "decor.pegboard.generic",
+  "assetType": "decor",
+  "category": "pegboard",
+  "role": "decor",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-09",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "pegboard",
+    "params": {},
+    "scaleMeters": [0.88, 1.2, 0.06],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "box",
+    "videoSurface": null
+  },
+  "tags": ["decor", "pegboard", "pads", "wall", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

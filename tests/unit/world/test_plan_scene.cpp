@@ -167,6 +167,12 @@ TEST_CASE("world/plan_scene: every fixture's prefab built with its parameters, a
                 CHECK(object.kind == "secondary_tv");
                 continue;
             }
+            // I12 step 4: a decoration of a kind the pack draws as its variants (the built-in pack's side walls: the
+            // rhythm and the footprints, test_era_furniture.cpp).
+            if (fixture.role == rv::world::FixtureRole::Decoration &&
+                entry.data.furniture.decoration.contains(fixture.prefab.kind)) {
+                continue;
+            }
             CHECK(object.kind == fixture.prefab.kind);
             // The prefab's parameters, a shelf's lit by the pack (I6 step 3, boardLight) without changing its size.
             nlohmann::json params = prefab->params;
@@ -365,7 +371,7 @@ TEST_CASE("world/plan_scene: the lights with the lighting profile's colours and 
             const std::size_t k = i - entry.plan.lights.size();
             if (k == accents.size()) {
                 CHECK(scene.lights[i].name == "look:pendant");
-                CHECK(scene.lights[i].type == rv::scene::LightType::Point);
+                CHECK(scene.lights[i].type == rv::scene::LightType::Spot);
                 CHECK_FALSE(scene.lights[i].castsShadows);
                 continue;
             }

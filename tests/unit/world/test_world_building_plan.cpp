@@ -538,3 +538,78 @@ TEST_CASE("world/building plan: the update per room", "[world][building]") {
               rv::ErrorCode::InvalidArgument);
     }
 }
+
+TEST_CASE("world/building plan: each room keeps the decoration density it was laid out with (I12 step 4)",
+          "[world][building][density]") {
+    // ADR-0021 §3: the curated preset's 0.65 dresses three of a base room's four decoration sockets where 0.4 dressed
+    // two; each room records its density, the plan's text naming it only when it is not 0.4 (every earlier plan); a
+    // building made at 0.4 and updated under 0.65 keeps every fixture, its rooms 0.4 and its validation.
+    const Building building = fiveSystems();
+    const GenerationResult sparse = generateBuilding(building);
+    Building rich = building;
+    rich.input.config.decorationDensityPermille = 650;
+    const GenerationResult dense = generateBuilding(rich);
+    const auto dedicated = [](const WorldPlan& plan, const RoomId& room) {
+        return std::count_if(plan.fixtures.begin(), plan.fixtures.end(), [&](const rv::world::Fixture& fixture) {
+            return fixture.id.room() == room && fixture.role == rv::world::FixtureRole::Decoration &&
+                   fixture.id.socket().starts_with("dec-");
+        });
+    };
+    for (const rv::world::Room& room : sparse.plan.rooms) {
+        INFO(room.id.toString());
+        CHECK(room.decorationDensityPermille == 400);
+        if (room.growthSteps == 0) {
+            CHECK(dedicated(sparse.plan, room.id) == 2);
+        }
+    }
+    for (const rv::world::Room& room : dense.plan.rooms) {
+        INFO(room.id.toString());
+        CHECK(room.decorationDensityPermille == 650);
+        if (room.growthSteps == 0) {
+            CHECK(dedicated(dense.plan, room.id) == 3);
+        }
+    }
+    // The text: a 0.4 plan as before; a 0.65 plan's rooms name it and read back as written.
+    const std::string sparseText = *rv::world::writePlan(sparse.plan);
+    CHECK(sparseText.find("decorationDensityPermille") == std::string::npos);
+    const std::string denseText = *rv::world::writePlan(dense.plan);
+    CHECK(denseText.find("\"decorationDensityPermille\"") != std::string::npos);
+    auto read = rv::world::readPlan(denseText, "dense.json");
+    REQUIRE(read.has_value());
+    CHECK(read->rooms == dense.plan.rooms);
+    CHECK(*rv::world::writePlan(*read) == denseText);
+    // A 0.4 written in a room is not the canonical text: refused.
+    std::string written = sparseText;
+    const std::string floorKey = "\"floor\"";
+    written.insert(written.find(floorKey, written.find("\"rooms\"")), "\"decorationDensityPermille\": 400,\n      ");
+    CHECK_FALSE(rv::world::readPlan(written, "written.json").has_value());
+
+    // Updated under 0.65: nothing that stands moves, the rooms keep 0.4, no finding comes.
+    rv::world::BuildingUpdateInput input;
+    input.library = building.input.library;
+    input.selections = building.input.selections;
+    input.config = rich.input.config;
+    input.previous = sparse.plan;
+    auto updated = rv::world::updateBuilding(input, snesData().building, testSystems(), building.rooms);
+    REQUIRE(updated.has_value());
+    CHECK(updated->plan.fixtures == sparse.plan.fixtures);
+    CHECK(updated->plan.lights == sparse.plan.lights);
+    CHECK(updated->plan.placements == sparse.plan.placements);
+    for (const rv::world::Room& room : updated->plan.rooms) {
+        CHECK(room.decorationDensityPermille == 400);
+    }
+    const auto findings = [](const rv::world::ValidationReport& report) {
+        std::vector<std::string> out;
+        for (const rv::world::ValidationFinding& finding : report.findings) {
+            out.push_back(finding.rule + " " + finding.subject);
+        }
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    CHECK(findings(updated->validation) == findings(sparse.validation));
+    // A room at 0.4 judged by its own density: a plan at 0.65 would read its two dressed sockets as off the band.
+    CHECK(std::none_of(updated->validation.findings.begin(), updated->validation.findings.end(),
+                       [](const rv::world::ValidationFinding& finding) {
+                           return finding.rule == rv::world::rule::kDecorationDensity;
+                       }));
+}

@@ -269,15 +269,22 @@
     },
     {
       "color": "#FFD7B0",
+      "innerConeDeg": 20.0,
       "intensity": 8.0,
       "name": "look:pendant",
+      "outerConeDeg": 42.0,
       "position": [
         0.0,
         2.1,
         3.5
       ],
       "range": 10.0,
-      "type": "point"
+      "target": [
+        0.0,
+        0.0,
+        3.5
+      ],
+      "type": "spot"
     }
   ],
   "name": "room:snes",
@@ -390,23 +397,23 @@
     {
       "id": "fx:dec-se",
       "materials": {
-        "metal_trim": "MAT_Metal_Brushed",
-        "wood_primary": "MAT_Wood_Walnut",
+        "paper": "MAT_Paper_Print",
+        "spine_a": "MAT_Book_Cloth",
+        "spine_b": "MAT_Book_Cloth_Bordeaux",
+        "spine_c": "MAT_Book_Cloth_Ochre",
+        "wood_primary": "MAT_Wood_Oak",
         "wood_secondary": "MAT_Wood_Varnished_Dark"
       },
       "params": {
-        "depth": 0.36,
-        "drawers": 3,
-        "height": 0.72,
-        "legHeight": 0.08,
-        "width": 0.8
+        "contents": "mixed",
+        "seed": 7
       },
       "position": [
         2.5,
         0.0,
-        4.79
+        4.8
       ],
-      "prefab": "tv_cabinet",
+      "prefab": "bookcase",
       "rotationDeg": [
         0.0,
         180.0,
@@ -469,20 +476,24 @@
         "leaves": "MAT_Plant_Leaf",
         "leaves_alt": "MAT_Plant_Leaf_Light",
         "pot": "MAT_Ceramic_Glazed",
-        "soil": "MAT_Soil"
+        "soil": "MAT_Soil",
+        "stand": "MAT_Wood_Walnut",
+        "trunk": "MAT_Plant_Trunk"
       },
       "params": {
-        "height": 1.05,
+        "depthSpread": 0.19,
+        "form": "ficus",
+        "height": 1.8,
         "leaves": 14,
-        "potHeight": 0.3,
-        "potRadius": 0.15,
-        "seed": 7,
-        "spread": 0.19
+        "potHeight": 0.34,
+        "potRadius": 0.16,
+        "seed": 5,
+        "spread": 0.4
       },
       "position": [
         4.28,
         0.0,
-        -2.0
+        -2.003
       ],
       "prefab": "plant",
       "rotationDeg": [
@@ -521,23 +532,21 @@
     {
       "id": "fx:e05",
       "materials": {
-        "metal_trim": "MAT_Metal_Brushed",
-        "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished_Dark"
+        "fabric": "MAT_Fabric_Leather",
+        "fabric_alt": "MAT_Fabric_Wool_Green_Weave",
+        "metal": "MAT_Metal_Brass",
+        "wood": "MAT_Wood_Walnut"
       },
       "params": {
-        "depth": 0.36,
-        "drawers": 3,
-        "height": 0.72,
-        "legHeight": 0.08,
-        "width": 0.8
+        "seed": 2,
+        "spread": 0.19
       },
       "position": [
-        4.29,
+        4.28,
         0.0,
         2.0
       ],
-      "prefab": "tv_cabinet",
+      "prefab": "coat_stand",
       "rotationDeg": [
         0.0,
         270.0,
@@ -574,7 +583,9 @@
         "leaves": "MAT_Plant_Leaf",
         "leaves_alt": "MAT_Plant_Leaf_Light",
         "pot": "MAT_Ceramic_Glazed",
-        "soil": "MAT_Soil"
+        "soil": "MAT_Soil",
+        "stand": "MAT_Wood_Walnut",
+        "trunk": "MAT_Plant_Trunk"
       },
       "params": {
         "height": 1.05,
@@ -1002,23 +1013,22 @@
     {
       "id": "fx:w06",
       "materials": {
-        "metal_trim": "MAT_Metal_Brushed",
-        "wood_primary": "MAT_Wood_Walnut",
-        "wood_secondary": "MAT_Wood_Varnished_Dark"
+        "cabinet": "MAT_Wood_Walnut",
+        "grille": "MAT_Speaker_Grille",
+        "led": "MAT_Led_Red",
+        "trim": "MAT_Metal_Graphite"
       },
       "params": {
-        "depth": 0.36,
-        "drawers": 3,
-        "height": 0.72,
-        "legHeight": 0.08,
-        "width": 0.8
+        "depth": 0.32,
+        "height": 1.1,
+        "width": 0.3
       },
       "position": [
-        -4.29,
+        -4.31,
         0.0,
         3.0
       ],
-      "prefab": "tv_cabinet",
+      "prefab": "floor_speaker",
       "rotationDeg": [
         0.0,
         90.0,
@@ -1031,20 +1041,24 @@
         "leaves": "MAT_Plant_Leaf",
         "leaves_alt": "MAT_Plant_Leaf_Light",
         "pot": "MAT_Ceramic_Glazed",
-        "soil": "MAT_Soil"
+        "soil": "MAT_Soil",
+        "stand": "MAT_Wood_Walnut",
+        "trunk": "MAT_Plant_Trunk"
       },
       "params": {
-        "height": 1.05,
+        "depthSpread": 0.19,
+        "form": "ficus",
+        "height": 1.8,
         "leaves": 14,
-        "potHeight": 0.3,
-        "potRadius": 0.15,
-        "seed": 7,
-        "spread": 0.19
+        "potHeight": 0.34,
+        "potRadius": 0.16,
+        "seed": 5,
+        "spread": 0.4
       },
       "position": [
         -4.28,
         0.0,
-        4.0
+        4.003
       ],
       "prefab": "plant",
       "rotationDeg": [
@@ -2352,6 +2366,143 @@
     {
       "castsShadows": false,
       "collides": false,
+      "id": "dressing:gallery:fx:e02",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.446,
+        "width": 0.754
+      },
+      "position": [
+        4.49,
+        1.373,
+        -3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 856136,
+          "title": "STARLIGHT SAFARI"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:e02/hood",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.377,
+          0.028,
+          0.045
+        ]
+      },
+      "position": [
+        4.38,
+        1.666,
+        -3.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:e02/arm",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.01,
+          0.01,
+          0.098
+        ]
+      },
+      "position": [
+        4.451,
+        1.666,
+        -3.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:e02/wash",
+      "material": "MAT_Picture_Wash",
+      "params": {
+        "size": [
+          1.154,
+          0.516
+        ]
+      },
+      "position": [
+        4.493,
+        1.408,
+        -3.0
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:e07",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.65,
+        "width": 0.53
+      },
+      "position": [
+        4.49,
+        1.805,
+        4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        270.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 626274,
+          "title": "CRYSTAL CANYON"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
       "id": "dressing:gallery:fx:hw-e",
       "materials": {
         "frame": "MAT_Wood_Walnut",
@@ -2485,6 +2636,247 @@
           "title": "SUNSET SPEEDWAY"
         }
       }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w01",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.446,
+        "width": 0.754
+      },
+      "position": [
+        -4.49,
+        1.553,
+        -4.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 181409,
+          "title": "COMET CARNIVAL"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w01/hood",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.377,
+          0.028,
+          0.045
+        ]
+      },
+      "position": [
+        -4.38,
+        1.846,
+        -4.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w01/arm",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.01,
+          0.01,
+          0.098
+        ]
+      },
+      "position": [
+        -4.451,
+        1.846,
+        -4.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w01/wash",
+      "material": "MAT_Picture_Wash",
+      "params": {
+        "size": [
+          1.154,
+          0.516
+        ]
+      },
+      "position": [
+        -4.493,
+        1.588,
+        -4.0
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w03",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.5,
+        "width": 0.65
+      },
+      "position": [
+        -4.49,
+        1.4,
+        -2.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 678183,
+          "title": "PIXEL PILOTS"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w06",
+      "materials": {
+        "frame": "MAT_Wood_Walnut",
+        "picture": "MAT_Paper_Print"
+      },
+      "params": {
+        "depth": 0.03,
+        "frameWidth": 0.025,
+        "height": 0.65,
+        "width": 0.53
+      },
+      "position": [
+        -4.49,
+        1.855,
+        3.0
+      ],
+      "prefab": "poster_frame",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ],
+      "textures": {
+        "picture": {
+          "pattern": "print",
+          "seed": 827614,
+          "title": "TURBO TIDES"
+        }
+      }
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w06/hood",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.265,
+          0.028,
+          0.045
+        ]
+      },
+      "position": [
+        -4.38,
+        2.25,
+        3.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w06/arm",
+      "material": "MAT_Metal_Brass",
+      "params": {
+        "size": [
+          0.01,
+          0.01,
+          0.098
+        ]
+      },
+      "position": [
+        -4.451,
+        2.25,
+        3.0
+      ],
+      "primitive": "box",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
+    },
+    {
+      "castsShadows": false,
+      "collides": false,
+      "id": "dressing:gallery:fx:w06/wash",
+      "material": "MAT_Picture_Wash",
+      "params": {
+        "size": [
+          0.93,
+          0.72
+        ]
+      },
+      "position": [
+        -4.493,
+        1.89,
+        3.0
+      ],
+      "primitive": "quad",
+      "rotationDeg": [
+        0.0,
+        90.0,
+        0.0
+      ]
     }
   ],
   "schemaVersion": 1

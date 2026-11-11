@@ -188,11 +188,17 @@ void appendContent(const scene::SceneGeometry& geometry, const SceneContentPlan&
 Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& description,
                                               const assets::MaterialLibrary& library,
                                               const scene::ModelLoader& loadModel, const SceneResources& resources) {
+    using Clock = std::chrono::steady_clock;
+    const auto millisecondsSince = [](Clock::time_point from) {
+        return std::chrono::duration<double, std::milli>(Clock::now() - from).count();
+    };
+    const Clock::time_point start = Clock::now();
     const scene::SceneGeometry geometry = scene::buildSceneGeometry(description, library, loadModel);
     SceneContentPlan plan = planSceneContent(geometry);
     if (resources.screenLooks != nullptr) {
         applyScreenLooks(plan, description.objects, description.name, *resources.screenLooks);
     }
+    const double geometryMs = millisecondsSince(start);
 
     SceneInstance instance;
     instance.m_name = description.name;
@@ -200,7 +206,10 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
     // One upload per distinct mesh (a mesh that cannot be uploaded leaves its parts undrawn), the materials, the items.
     const std::size_t meshesBefore = resources.meshes.size();
     const std::size_t materialsBefore = resources.materials.size();
+    const std::size_t texturesBefore = resources.textures.textureCount();
+    const Clock::time_point contentStart = Clock::now();
     appendContent(geometry, plan, resources, instance.m_items, instance.m_itemObjects, instance.m_itemModels);
+    const double contentMs = millisecondsSince(contentStart);
     if (resources.materials.size() > 0) {
         if (auto uploaded = resources.materials.upload(resources.uniformBufferOffsetAlignment, "MaterialUniforms");
             !uploaded) {
@@ -266,6 +275,11 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
                  resources.textures.textureCount(),
                  static_cast<double>(resources.textures.estimatedBytes()) / (1024.0 * 1024.0),
                  resources.textures.failedCount());
+    spdlog::info("Scene '{}' made in {:.0f} ms: its geometry {:.0f} ms, its meshes, materials and {} new texture(s) "
+                 "{:.0f} ms",
+                 description.name, millisecondsSince(start), geometryMs,
+                 resources.textures.textureCount() - std::min(texturesBefore, resources.textures.textureCount()),
+                 contentMs);
     return instance;
 }
 

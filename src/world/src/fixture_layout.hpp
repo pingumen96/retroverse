@@ -59,6 +59,8 @@ struct LayoutInput {
     RoomId room;
     std::uint64_t roomSeed = 0;
     CollectionCounts counts;
+    /// The configuration's for a room generated or regenerated, the room's own record for a stored one (I12 step 4);
+    /// the layout's room records it.
     std::int64_t decorationDensityPermille = 0;
     /// A regeneration's pins (null: none).
     const LayoutPins* pins = nullptr;

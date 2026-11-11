@@ -60,6 +60,8 @@ RoomGallery roomGallery(const world::CollectionLayout& layout, const GalleryItem
     };
     std::vector<Ranked> ranked;
     std::set<catalog::GameId> seen;
+    // The root in its \\?\ form once (extendedLengthPathBelow() takes it as it is), not normalized for every path.
+    const std::filesystem::path root(core::extendedLengthPath(mediaRoot));
     for (const world::CollectionItem& item : layout.items) {
         const RoomItemText* text = itemOf ? itemOf(item.game) : nullptr;
         if (text == nullptr || !text->screen || !seen.insert(item.game).second) {
@@ -68,13 +70,12 @@ RoomGallery roomGallery(const world::CollectionLayout& layout, const GalleryItem
         const RoomItemScreen& screen = *text->screen;
         GalleryCandidate candidate;
         candidate.game = item.game;
-        candidate.media[indexOf(world::GalleryKind::Poster)] = below(mediaRoot, screen.fanArt);
+        candidate.media[indexOf(world::GalleryKind::Poster)] = below(root, screen.fanArt);
         candidate.media[indexOf(world::GalleryKind::Portrait)] =
-            firstOf({below(mediaRoot, screen.box3d), below(mediaRoot, text->coverPath)});
-        candidate.media[indexOf(world::GalleryKind::Lightbox)] = below(mediaRoot, screen.marquee);
+            firstOf({below(root, screen.box3d), below(root, text->coverPath)});
+        candidate.media[indexOf(world::GalleryKind::Lightbox)] = below(root, screen.marquee);
         candidate.media[indexOf(world::GalleryKind::Frame)] =
-            firstOf({below(mediaRoot, screen.screenshot), below(mediaRoot, screen.titleScreen),
-                     below(mediaRoot, screen.mixImage)});
+            firstOf({below(root, screen.screenshot), below(root, screen.titleScreen), below(root, screen.mixImage)});
         if (std::all_of(candidate.media.begin(), candidate.media.end(),
                         [](const std::filesystem::path& path) { return path.empty(); })) {
             continue;

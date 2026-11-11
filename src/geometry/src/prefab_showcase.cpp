@@ -48,6 +48,12 @@ constexpr float kHandheldLeanDeg = 12.0f;
 constexpr glm::vec3 kBigBox{0.17f, 0.22f, 0.045f};
 constexpr float kBigBoxGap = 0.025f;
 constexpr int kMaxBigBoxes = 3;
+/// I12 step 4: up to three pads (buildPad()'s, a grip pad between flat ones) leaning back on the plinth, each in a cell
+/// this wide; how far they lean back from upright, and their height so.
+constexpr float kPadCell = 0.18f;
+constexpr int kMaxPads = 3;
+constexpr float kPadLeanDeg = 30.0f;
+constexpr float kPadStand = 0.12f;
 constexpr BoxUv kGrain = BoxUv::GrainMeters;
 constexpr float kWoodTile = detail::kWoodMetersPerTile;
 
@@ -94,8 +100,47 @@ Interior interiorOf(const ShowcaseParams& p) {
         in.plinthWidth = std::min(in.plinthWidth, static_cast<float>(in.boxes) * pitch + 0.02f);
         break;
     }
+    case ShowcaseItem::Controllers: {
+        in.plinthWidth = std::min(in.innerWidth - 0.06f, static_cast<float>(kMaxPads) * kPadCell + 0.02f);
+        in.scale =
+            std::min({1.0f, room / kPadStand, (in.plinthWidth - 0.02f) / kPadCell, (in.plinthDepth - 0.02f) / 0.12f});
+        in.boxes = std::clamp(static_cast<int>((in.plinthWidth - 0.02f) / (in.scale * kPadCell)), 1, kMaxPads);
+        in.plinthWidth = std::min(in.plinthWidth, static_cast<float>(in.boxes) * in.scale * kPadCell + 0.02f);
+        break;
+    }
     }
     return in;
+}
+
+/// I12 step 4: `count` pads side by side leaning back on the plinth (y = 0 its top), scaled by `scale`, a grip pad in
+/// the middle of three.
+void addControllers(detail::PrefabAssembler& out, const glm::mat4& at, float scale, int count) {
+    const glm::mat4 lean = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f - kPadLeanDeg), glm::vec3(1.0f, 0.0f, 0.0f));
+    for (int i = 0; i < count; ++i) {
+        PadParams params;
+        params.style = count == 3 && i == 1 ? PadStyle::Grip : PadStyle::Flat;
+        auto pad = buildPad(params);
+        if (!pad) {
+            continue; // the defaults always build
+        }
+        core::Aabb bounds;
+        bool first = true;
+        for (const PrefabPart& part : pad->parts) {
+            if (part.materialRole == "plastic_body" || part.materialRole == "plastic_dark") {
+                const core::Aabb turned = part.mesh.bounds.transformed(lean);
+                bounds = first ? turned : bounds.merged(turned);
+                first = false;
+            }
+        }
+        const float x = (static_cast<float>(i) - 0.5f * static_cast<float>(count - 1)) * kPadCell;
+        const glm::mat4 frame = glm::scale(at, glm::vec3(scale)) *
+                                translation(glm::vec3(x - bounds.center().x, -bounds.min.y, -bounds.center().z)) * lean;
+        for (const PrefabPart& part : pad->parts) {
+            if (part.materialRole == "plastic_body" || part.materialRole == "plastic_dark") {
+                out.part(part.materialRole).append(part.mesh, frame);
+            }
+        }
+    }
 }
 
 Status validate(const ShowcaseParams& p) {
@@ -252,6 +297,8 @@ ProceduralPrefab assemble(const ShowcaseParams& p) {
         addHandheld(out, itemFrame, in.scale, p.litScreen);
     } else if (p.item == ShowcaseItem::Boxes) {
         addBoxes(out, itemFrame, in.scale, in.boxes, p.coverPerBox);
+    } else if (p.item == ShowcaseItem::Controllers) {
+        addControllers(out, itemFrame, in.scale, in.boxes);
     }
     // The lit strip under the cap, near the front: it lights the item and the lining (emissive, no light of its own).
     if (p.boardLight) {

@@ -7,7 +7,7 @@
 // (ADR-0010 §5, §8): ratios in permille, lengths in millimetres.
 //
 // A preset file (JSON with comments; every key required):
-//   {"schemaVersion": 1, "id": "retro_museum_cozy", "name": "RetroMuseumCozy", "decorationDensityPermille": 400,
+//   {"schemaVersion": 1, "id": "retro_museum_cozy", "name": "RetroMuseumCozy", "decorationDensityPermille": 650,
 //    "growthReservePermille": 150, "mainPassageWidthMm": 1400, "minClearWidthMm": 1200,
 //    "placement": {"include": "covered"}, "sharedRoomMinTitles": 30}
 // world.json (JSON with comments; every key optional): "preset", "seed" (an integer from 0 to 2^64 - 1, or null for the
@@ -74,7 +74,9 @@ struct WorldConfig {
     std::string preset = std::string(kDefaultPreset);
     /// The world seed when the user names one; otherwise worldSeed() derives it from the library id.
     std::optional<std::uint64_t> seed;
-    /// The share of decoration sockets that get decoration (ADR-0010 §2's 0.4).
+    /// The share of decoration sockets that get decoration (ADR-0010 §2's 0.4): the rules' default, which the golden
+    /// plans are made with; the curated preset gives 0.65 since I12 step 4 (ADR-0021 §3). A room records the density it
+    /// was laid out with (Room::decorationDensityPermille), which its updates keep.
     std::int64_t decorationDensityPermille = 400;
     /// The spine-out section's growth reserve (ADR-0010 §2, §5: 0.15).
     std::int64_t growthReservePermille = 150;

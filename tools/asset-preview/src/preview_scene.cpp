@@ -92,6 +92,30 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
     if (kind == "open_box") {
         return RoleMaterials{{"body", "MAT_Plastic_Black"}, {"paper", "MAT_Paper_Print"}, {"disc", "MAT_Disc_Silver"}};
     }
+    // I12 step 4's tall decoration, in the classic pack's materials.
+    if (kind == "bookcase") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Oak"},     {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+                             {"spine_a", "MAT_Book_Cloth"},       {"spine_b", "MAT_Book_Cloth_Bordeaux"},
+                             {"spine_c", "MAT_Book_Cloth_Ochre"}, {"paper", "MAT_Paper_Print"}};
+    }
+    if (kind == "record_rack") {
+        return RoleMaterials{{"wood_primary", "MAT_Wood_Walnut"},
+                             {"wood_secondary", "MAT_Wood_Varnished_Dark"},
+                             {"sleeve_a", "MAT_Cardboard_Box"},
+                             {"sleeve_b", "MAT_Book_Cloth_Alt"},
+                             {"sleeve_c", "MAT_Book_Cloth_Ochre"}};
+    }
+    if (kind == "pegboard") {
+        return RoleMaterials{{"board", "MAT_Pegboard_Hardboard"},  {"trim", "MAT_Wood_Walnut"},
+                             {"holes", "MAT_Pegboard_Hole"},       {"metal", "MAT_Metal_Brushed"},
+                             {"plastic_body", "MAT_Plastic_Gray"}, {"plastic_dark", "MAT_Plastic_Black"}};
+    }
+    if (kind == "coat_stand") {
+        return RoleMaterials{{"wood", "MAT_Wood_Walnut"},
+                             {"metal", "MAT_Metal_Brass"},
+                             {"fabric", "MAT_Fabric_Leather"},
+                             {"fabric_alt", "MAT_Fabric_Wool_Green_Weave"}};
+    }
     if (kind == "console_cartridge") {
         return RoleMaterials{{"plastic_body", "MAT_Plastic_Gray"},
                              {"plastic_dark", "MAT_Plastic_Black"},

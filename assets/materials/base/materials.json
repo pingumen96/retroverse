@@ -429,6 +429,14 @@
     "MAT_Speaker_Grille": { "baseColor": "#232124", "metallic": 0.0, "roughness": 0.95 },
     "MAT_Cable_Rubber": { "baseColor": "#18181A", "metallic": 0.0, "roughness": 0.55 },
     "MAT_Disc_Silver": { "baseColor": "#C9CCD2", "metallic": 1.0, "roughness": 0.18 },
+    // I12 step 4's tall decoration (ADR-0021 §1): two more book cloths for the bookcases' spines, a pegboard's
+    // hardboard and its holes, the study's cork, the trunks of the palms and the ficus.
+    "MAT_Book_Cloth_Navy": { "baseColor": "#2E3A55", "metallic": 0.0, "roughness": 0.85 },
+    "MAT_Book_Cloth_Ochre": { "baseColor": "#9A7432", "metallic": 0.0, "roughness": 0.85 },
+    "MAT_Pegboard_Hardboard": { "baseColor": "#8E6A48", "metallic": 0.0, "roughness": 0.8 },
+    "MAT_Pegboard_Hole": { "baseColor": "#1A1512", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Cork_Board": { "baseColor": "#A9825A", "metallic": 0.0, "roughness": 0.95 },
+    "MAT_Plant_Trunk": { "baseColor": "#5B4636", "metallic": 0.0, "roughness": 0.9 },
     // The hub after step 5's review (concept panel 1): its rugs the ornamental design dyed darker (the classic rug's
     // picture under a tint: a deep bordeaux field, its cream medallion dimmer than the globe), its sofas an oxblood
     // leather, the landmark's glass a little more present, its shelves' books mostly warm bindings.

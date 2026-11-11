@@ -644,8 +644,9 @@ private:
     void stepRide(ProductUi& product, double deltaSeconds, double elapsedMs);
     void swapRide();
     void finishRide();
-    /// The eye's area resident on the ride's destination: every item of the room that holds the eye that is in view done
-    /// (I4 step 8; a hall has none), the loader having ranked them since the swap.
+    /// The eye's area resident on the ride's destination: every item of the room that holds the eye that is in view
+    /// done (I4 step 8), the loader having ranked them since the swap; a hall once the hub's showcase is settled (I12
+    /// step 4).
     [[nodiscard]] bool rideViewResident() const;
     /// I4 step 8: the destination room of the last ride followed until every item of it is resident (its record's
     /// roomResidentMs, `elapsedMs` after the ride's request), while the walker's floor is the ride's.

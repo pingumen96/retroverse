@@ -40,7 +40,7 @@ TEST_CASE("world/shell_scene: the template's empty room, as a plan's room is dra
     CHECK(shell->lights.front().type == rv::scene::LightType::Point);
     CHECK_FALSE(shell->lights.front().castsShadows);
     CHECK(shell->lights.back().name == "look:pendant");
-    CHECK(shell->lights.back().type == rv::scene::LightType::Point);
+    CHECK(shell->lights.back().type == rv::scene::LightType::Spot);
     CHECK_FALSE(shell->lights.back().castsShadows);
 
     // The room of a plan of the base size (no title: no growth) has the same shell, the same pendant, the same

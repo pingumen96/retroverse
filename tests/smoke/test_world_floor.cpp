@@ -653,7 +653,10 @@ void checkLightThroughDoorways(const std::string& floorId, bool compareWithI4) {
             roomSeenI4 = openingLuma(inwardI4.image, hallCamera, door, hallFace);
             hallSeenI4 = openingLuma(outwardI4.image, roomCamera, door, roomFace);
             INFO("as I4 lit it: the room from the hall " << roomSeenI4 << ", the hall from the room " << hallSeenI4);
-            CHECK(roomSeen > 2.0 * roomSeenI4);
+            // The room seen from the hall: the hall's lights add to what the room's own light it with, not a multiple
+            // of it since I12 (its lamps light its upper walls in every variant: Debug, I12 step 4, about 24 above I4
+            // at 49).
+            CHECK(roomSeen > roomSeenI4 + 12.0);
             if (hub) {
                 // The hub seen from a room holds its own light in every variant: the room's view adds the hub's
                 // lights to it, not a multiple of it (I6 step 5, Release: about 24 above I4).

@@ -201,7 +201,9 @@ std::string schemaOneText(const std::string& text) {
     json["generatorVersion"] = "1.2";
     json.erase("floors");
     for (nlohmann::json& room : json["rooms"]) {
-        for (const char* key : {"expands", "floor", "generatorVersion", "kind", "placement", "sections"}) {
+        // Schema 1 records no density either (I12 step 4: a room laid out at 0.65 names it in schema 2).
+        for (const char* key : {"decorationDensityPermille", "expands", "floor", "generatorVersion", "kind", "placement",
+                                "sections"}) {
             room.erase(key);
         }
     }
@@ -1324,6 +1326,9 @@ TEST_CASE("app/world_build: a stored schema-1 plan is lifted, saved once in sche
           "[app][world_build]") {
     // The user's I3 room on disk (ADR-0013 §5): the app's own first plan, written back as I3 wrote it.
     const ImportedFixture imported("world-build-lift", true, "esde/snes-room");
+    // I3's density (I12 step 4: a schema-1 room, which records none, was laid out at 0.4).
+    REQUIRE(rv::core::writeTextFileAtomic(imported.paths.configDir() / "world.json", "{\"decorationDensityPermille\": 400}\n")
+                .has_value());
     const rv::app::WorldBuildInput input = inputOf(imported);
     const WorldBuild first = rv::app::buildWorld(input, rv::core::JobContext{});
     REQUIRE(first.outcome == WorldOutcome::Generated);
