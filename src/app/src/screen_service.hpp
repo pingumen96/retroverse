@@ -250,6 +250,10 @@ public:
     /// The mean linear colour of the hero's clip as last shown (I12 step 6: media::averageLinearColour of its last
     /// frame uploaded); none while it plays no clip (a still, the standby, nothing).
     [[nodiscard]] std::optional<std::array<float, 3>> heroPictureColour() const;
+    /// The hero plays a clip whose picture shows (I12 step 7: its hiss is heard then).
+    [[nodiscard]] bool heroShowsPicture() const;
+    /// A screen's clip is heard (I12 step 7: the room's tone a little lower under it).
+    [[nodiscard]] bool clipHeard() const;
     /// The decoder slots (the budget: --max-decoders or video.json's maxDecoders): the pooled video materials a
     /// cabinets' room needs.
     [[nodiscard]] std::size_t slotCount() const noexcept;

@@ -373,10 +373,28 @@ Expected<AtmosphereSetup> parseAtmosphere(const json& value, const Location& at)
     return atmosphere;
 }
 
+Expected<SoundSetup> parseSound(const json& value, const Location& at) {
+    Fields fields(value, at, {"hum", "hiss", "buzz", "murmur", "clock"});
+    SoundSetup sound;
+    for (const auto& [key, gain] : {std::pair<const char*, float*>{"hum", &sound.hum},
+                                    {"hiss", &sound.hiss},
+                                    {"buzz", &sound.buzz},
+                                    {"murmur", &sound.murmur},
+                                    {"clock", &sound.clock}}) {
+        fields.optional(key, *gain, readNumber);
+        fields.check(*gain >= 0.0f && *gain <= kMaxRoomSoundGain, key,
+                     "must be within [0, " + formatNumber(kMaxRoomSoundGain) + "]");
+    }
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return sound;
+}
+
 Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
-                   "exposure", "bloomStrength", "bloomRadius", "vignette", "ssao", "atmosphere"});
+                   "exposure", "bloomStrength", "bloomRadius", "vignette", "ssao", "atmosphere", "sound"});
     EnvironmentSetup environment;
     fields.optional("clearColor", environment.clearColor, readColor);
     fields.optional("ambientSky", environment.ambientSky, readColor);
@@ -396,6 +414,7 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
     fields.check(isUnitInterval(environment.vignette), "vignette", "must be within [0, 1]");
     fields.optional("ssao", environment.ssao, parseSsao);
     fields.optional("atmosphere", environment.atmosphere, parseAtmosphere);
+    fields.optional("sound", environment.sound, parseSound);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -486,7 +505,7 @@ Expected<core::Aabb> parseAreaBox(const json& value, const Location& at) {
 Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"exposure", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
-                   "bloomStrength", "atmosphere"});
+                   "bloomStrength", "atmosphere", "sound"});
     AreaEnvironment environment;
     fields.optional("exposure", environment.exposure, readNumber);
     fields.check(environment.exposure.value_or(1.0f) > 0.0f, "exposure", "must be > 0");
@@ -501,6 +520,7 @@ Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location
     fields.check(!environment.bloomStrength || isUnitInterval(*environment.bloomStrength), "bloomStrength",
                  "must be within [0, 1]");
     fields.optional("atmosphere", environment.atmosphere, parseAtmosphere);
+    fields.optional("sound", environment.sound, parseSound);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -853,6 +873,9 @@ EnvironmentSetup AreaEnvironment::over(const EnvironmentSetup& scene) const {
     result.bloomStrength = bloomStrength.value_or(scene.bloomStrength);
     if (atmosphere) {
         result.atmosphere = atmosphere;
+    }
+    if (sound) {
+        result.sound = sound;
     }
     return result;
 }

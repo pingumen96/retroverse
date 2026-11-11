@@ -340,7 +340,7 @@ json boxObject(std::string id, const Footprint& footprint, std::int64_t bottomMm
 /// An area of the floor; `look` its own lit terms (the hall's), none for an area lit as the scene (a room); `bloom` its
 /// own bloom (a room whose theme pack's differs from the scene's, I6 step 3).
 json areaJson(const FloorArea& area, const AreaLook* look, std::optional<double> bloom = std::nullopt,
-              const json* atmosphere = nullptr) {
+              const json* roomEnvironment = nullptr) {
     json boxes = json::array();
     for (std::size_t i = 0; i < area.footprints.size(); ++i) {
         const Footprint& footprint = area.footprints[i];
@@ -360,9 +360,11 @@ json areaJson(const FloorArea& area, const AreaLook* look, std::optional<double>
     if (bloom) {
         result["environment"]["bloomStrength"] = *bloom;
     }
-    // A room's air (I12 step 6): its own, never the scene's.
-    if (atmosphere != nullptr) {
-        result["environment"]["atmosphere"] = *atmosphere;
+    // A room's air and tone (I12 steps 6 and 7): its own, never the scene's.
+    if (roomEnvironment != nullptr) {
+        for (const auto& [key, value] : roomEnvironment->items()) {
+            result["environment"][key] = value;
+        }
     }
     return result;
 }
@@ -1650,16 +1652,18 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
     json objects = json::array();
     json lights = json::array();
     json environment = json::object();
-    // Each room's air (I12 step 6), its area's: the scene (the hall) has none.
-    std::map<std::string, json, std::less<>> roomAtmospheres;
+    // Each room's air and tone (I12 steps 6 and 7), its area's: the scene (the hall) has neither.
+    std::map<std::string, json, std::less<>> roomEnvironments;
     for (const FloorRoom& entry : floorRooms) {
         auto roomScene = roomFloorScene(plan, entry.room->id, data.rooms.at(entry.room->id));
         if (!roomScene) {
             return propagate(roomScene.error());
         }
-        if (const auto air = roomScene->environment.find("atmosphere"); air != roomScene->environment.end()) {
-            roomAtmospheres.emplace(entry.room->id.toString(), *air);
-            roomScene->environment.erase(air);
+        for (const char* key : {"atmosphere", "sound"}) {
+            if (const auto own = roomScene->environment.find(key); own != roomScene->environment.end()) {
+                roomEnvironments[entry.room->id.toString()][key] = *own;
+                roomScene->environment.erase(own);
+            }
         }
         // Every room's data holds the floor's profile: the floor's environment is its rooms'.
         if (environment.empty()) {
@@ -1718,9 +1722,9 @@ Expected<FloorSceneBuild> toFloorSceneFile(const WorldPlan& plan, std::string_vi
                 bloom = roomBloom;
             }
         }
-        const auto air = roomAtmospheres.find(area.id);
+        const auto own = roomEnvironments.find(area.id);
         areas.push_back(areaJson(area, area.id == hallArea ? &hallLook : nullptr, bloom,
-                                 air != roomAtmospheres.end() ? &air->second : nullptr));
+                                 own != roomEnvironments.end() ? &own->second : nullptr));
     }
 
     // The floor's extent: the hall with its walls and every room's footprint.

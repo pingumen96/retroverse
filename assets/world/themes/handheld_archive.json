@@ -7,6 +7,8 @@
   "schemaVersion": 1,
   "id": "handheld_archive",
   "name": "HandheldArchive",
+  // I12 step 7 (ADR-0021 §5): the archive's small screens hum softly; their hiss stays.
+  "sound": {"hum": 0.5},
   "kinds": {
     // I12 step 3 (ADR-0021 §1): the hero corner's set (furniture.heroDressing).
     "floor_speaker": {"cabinet": "MAT_Wood_Oak", "grille": "MAT_Speaker_Grille",

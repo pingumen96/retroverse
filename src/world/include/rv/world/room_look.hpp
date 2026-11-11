@@ -244,6 +244,18 @@ struct RoomAtmosphere {
     bool operator==(const RoomAtmosphere&) const = default;
 };
 
+/// The tone of a pack's rooms (I12 step 7, ADR-0021 §5): scene_description.hpp's "sound", written into each room's
+/// environment beside its air. Gains in [0, 2] (0: none).
+struct RoomTone {
+    double hum = 1.0;    ///< the hero TV's mains hum
+    double hiss = 1.0;   ///< its hiss while it shows a picture
+    double buzz = 1.0;   ///< the hero sign's neon
+    double murmur = 0.0; ///< a murmur at the room's centre (the arcade's, the hub's)
+    double clock = 0.0;  ///< a clock's tick at the room's centre (the study's)
+
+    bool operator==(const RoomTone&) const = default;
+};
+
 struct LightingProfile {
     std::string name;
     LightStyle key;
@@ -272,6 +284,8 @@ struct LightingProfile {
     HallLook hall;
     /// The air of a room lit by this profile (themedLighting(): its pack's); none for a profile no pack themed.
     std::optional<RoomAtmosphere> atmosphere;
+    /// The tone of a room lit by this profile (themedLighting(): its pack's); none for a profile no pack themed.
+    std::optional<RoomTone> tone;
 
     [[nodiscard]] const LightStyle& style(LightRole role) const noexcept;
     /// The rooms' lit terms (the environment's exposure, ambient and fill).
@@ -547,6 +561,8 @@ struct ThemeMaterials {
     RoomDressing dressing;
     /// The air of its rooms (I12 step 6): "atmosphere", every key optional.
     RoomAtmosphere atmosphere;
+    /// The tone of its rooms (I12 step 7): "sound", every key optional.
+    RoomTone tone;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
     /// empty for a kind the theme does not dress. The secondary TV's (kSecondaryTvKind, I5 step 3) merge, by role and

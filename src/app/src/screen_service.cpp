@@ -2604,6 +2604,15 @@ std::optional<std::array<float, 3>> ScreenService::heroPictureColour() const {
     return slot != nullptr && slot->frames > 0 ? slot->averageColour : std::nullopt;
 }
 
+bool ScreenService::heroShowsPicture() const {
+    const Impl::Slot* slot = m_impl->heroPlayingSlot();
+    return slot != nullptr && slot->frames > 0;
+}
+
+bool ScreenService::clipHeard() const {
+    return m_impl->audibleSlot().has_value();
+}
+
 std::string ScreenService::screenId() const {
     const Impl::ScreenState* hero = m_impl->hero();
     return hero != nullptr ? hero->binding.objectId : std::string();

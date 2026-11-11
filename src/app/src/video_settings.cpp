@@ -366,8 +366,9 @@ Json mergeVideoDocuments(Json base, const Json& overrides) {
 }
 
 std::span<const std::string_view> videoSettingKeys() noexcept {
-    static constexpr std::array<std::string_view, 7> kKeys = {"enabled",      "crtEffect",   "audio.mode", "audio.master",
-                                                              "audio.video", "audio.muted", "hero.playlist"};
+    static constexpr std::array<std::string_view, 9> kKeys = {"enabled",       "crtEffect",   "audio.mode",
+                                                              "audio.master",  "audio.video", "audio.ambience",
+                                                              "audio.effects", "audio.muted", "hero.playlist"};
     return kKeys;
 }
 

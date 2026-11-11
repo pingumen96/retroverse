@@ -539,14 +539,19 @@ TEST_CASE("world/floor: each room's scene moved onto the floor, its doorway open
             CHECK(area["environment"]["ambientGround"] == profile.hall.environment.ambientGround);
             CHECK(area["environment"]["fillIntensity"] == profile.hall.environment.fillIntensity);
             CHECK_FALSE(area["environment"].contains("atmosphere"));
+            CHECK_FALSE(area["environment"].contains("sound"));
         } else {
+            // And its tone (I12 step 7), its pack's.
             REQUIRE(area.contains("environment"));
-            CHECK(area["environment"].size() == 1);
+            CHECK(area["environment"].size() == 2);
             CHECK(area["environment"]["atmosphere"]["dust"] == 1.0);
+            CHECK(area["environment"]["sound"].contains("hum"));
+            CHECK(area["environment"]["sound"]["murmur"] == 0.0);
         }
     }
     CHECK(scene["environment"]["fillIntensity"] == profile.fillIntensity);
     CHECK_FALSE(scene["environment"].contains("atmosphere"));
+    CHECK_FALSE(scene["environment"].contains("sound"));
     // The camera stands in front of the elevator facing east, its far plane beyond the floor.
     CHECK(scene["camera"]["position"] == nlohmann::json::array({1.2, 1.65, 0.0}));
     CHECK(scene["camera"]["yawDeg"] == 90.0);

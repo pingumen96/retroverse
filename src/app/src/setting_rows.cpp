@@ -117,6 +117,9 @@ std::vector<SettingRow> settingRows(std::span<const std::string> lightingProfile
     // Audio.
     rows.push_back(slider(kVideo, "audio.master", SettingGroup::Audio, 0.0, 1.0, 0.05));
     rows.push_back(slider(kVideo, "audio.video", SettingGroup::Audio, 0.0, 1.0, 0.05));
+    // I12 step 7 (ADR-0021 §5): the rooms' tone and the steps, clacks and ticks.
+    rows.push_back(slider(kVideo, "audio.ambience", SettingGroup::Audio, 0.0, 1.0, 0.05));
+    rows.push_back(slider(kVideo, "audio.effects", SettingGroup::Audio, 0.0, 1.0, 0.05));
     rows.push_back(toggle(kVideo, "audio.muted", SettingGroup::Audio));
     rows.push_back(choice(kVideo, "audio.mode", SettingGroup::Audio, {"nearest-focused", "off"}));
     // Mondo.

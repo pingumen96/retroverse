@@ -9,11 +9,34 @@
 
 #include <rv/audio/audio_ring.hpp>
 #include <rv/audio/audio_sync.hpp>
+#include <rv/audio/pcm_buffer.hpp>
 
 namespace rv::audio {
 
+/// A one-shot's pan, as equal-power gains (spatial.hpp's StereoGains, computed once when it is triggered).
+struct StereoGainsCache {
+    double left = 1.0;
+    double right = 1.0;
+};
+
 /// A source of a Mixer: one decoder slot's sound.
 using SourceId = std::uint32_t;
+/// A loop of a Mixer (I12 step 7): a room tone's emitter.
+using SampleSourceId = std::uint32_t;
+
+/// The buses (video.json's "audio" volumes): the clips' sound, the rooms' loops, the one-shots.
+enum class Bus : std::uint8_t { Video, Ambience, Effects };
+inline constexpr std::size_t kBusCount = 3;
+
+/// A one-shot's place in the mix (Mixer::trigger).
+struct OneShot {
+    double gain = 1.0;
+    /// -1 left .. +1 right.
+    double pan = 0.0;
+    Bus bus = Bus::Effects;
+    /// It ducks with the rest (false: the menus' tick, which plays over the duck it is heard under).
+    bool ducks = true;
+};
 
 /// The mixer's fades (ADR-0016 §9).
 struct MixerSettings {
@@ -69,20 +92,26 @@ struct SyncSummary {
     double maxMilliseconds = 0.0;
 };
 
-/// Mixes the screens' sources into interleaved stereo float frames at MixerSettings::sampleRate (ADR-0016 §9). Each
-/// source reads its AudioRing (a clip's decoded sound) at its picture's media time: within the sync's deadband it copies
-/// the samples exactly; within its correction band it reads them at a ratio up to 1% off by linear interpolation; past
-/// it, it drops samples or pads silence (AudioSync). Gains ramp: a source's at most from 0 to 1 in crossFadeSeconds (so
-/// that a change of audible screen cross-fades), down in pauseFadeSeconds when it pauses; then the master, the duck
-/// (kDuckDecibels), the mute and the launch's silence, each with its own fade; a source's pan moves at most by 1 in
-/// panSlewSeconds. The sum is clamped to [-1, 1].
+/// I12 step 7 (ADR-0021 §5): beside them, loops (a PcmBuffer played over and over, its gain ramped as a source's, on
+/// the ambience bus) and one-shots in a fixed pool of kMaxVoices (the oldest stolen), each bus with its own gain
+/// (ramped as the master); the duck applies to every sound but the one-shots that do not duck.
 ///
-/// Deterministic: the same calls with the same rings give the same samples, bit for bit (no clock is read). Thread-safe:
-/// the main thread sets the controls while the output's thread renders (one mutex, held for a block).
+/// Mixes the screens' sources into interleaved stereo float frames at MixerSettings::sampleRate (ADR-0016 §9). Each
+/// source reads its AudioRing (a clip's decoded sound) at its picture's media time: within the sync's deadband it
+/// copies the samples exactly; within its correction band it reads them at a ratio up to 1% off by linear
+/// interpolation; past it, it drops samples or pads silence (AudioSync). Gains ramp: a source's at most from 0 to 1 in
+/// crossFadeSeconds (so that a change of audible screen cross-fades), down in pauseFadeSeconds when it pauses; then the
+/// master, the duck (kDuckDecibels), the mute and the launch's silence, each with its own fade; a source's pan moves at
+/// most by 1 in panSlewSeconds. The sum is clamped to [-1, 1].
+///
+/// Deterministic: the same calls with the same rings give the same samples, bit for bit (no clock is read).
+/// Thread-safe: the main thread sets the controls while the output's thread renders (one mutex, held for a block).
 class Mixer {
 public:
     /// The largest block rendered in one piece: render() splits a longer one, so that it never allocates.
     static constexpr std::size_t kMaxBlockFrames = 8192;
+    /// The one-shots that may sound at once.
+    static constexpr std::size_t kMaxVoices = 16;
 
     explicit Mixer(MixerSettings settings = {});
     Mixer(const Mixer&) = delete;
@@ -99,8 +128,25 @@ public:
     void setControl(SourceId source, const SourceControl& control);
     void setClock(SourceId source, const SourceClock& clock);
 
-    /// The master gain (video.json's master times its video bus).
+    /// The master gain (video.json's master).
     void setMaster(double gain);
+    /// A bus's gain (video.json's video, ambience and effects volumes), [0, 1]; each 1 at the start, and set at once
+    /// before the first block is rendered (ramped as the master after).
+    void setBusGain(Bus bus, double gain);
+
+    /// A new loop of `buffer` (none or empty: silent) on `bus`, silent until setSampleControl() makes it heard; it
+    /// starts at its first sample and holds its place while silent.
+    [[nodiscard]] SampleSourceId addSampleSource(std::shared_ptr<const PcmBuffer> buffer, Bus bus = Bus::Ambience);
+    /// Its gain (ramped over crossFadeSeconds, down over pauseFadeSeconds when it stops playing) and pan.
+    void setSampleControl(SampleSourceId source, const SourceControl& control);
+    /// Its gain as rendered last (0: silent).
+    [[nodiscard]] double sampleGain(SampleSourceId source) const;
+    /// Plays `buffer` once from its start at `shot`'s gain and pan, in a free voice or the oldest one's; false for an
+    /// empty buffer. The buffer is kept (never freed on the output's thread) until a later trigger takes its voice.
+    bool trigger(std::shared_ptr<const PcmBuffer> buffer, const OneShot& shot);
+    /// One-shots sounding now, and those stolen so far.
+    [[nodiscard]] std::size_t voicesPlaying() const;
+    [[nodiscard]] std::uint64_t voicesStolen() const;
     void setDucked(bool ducked);
     void setMuted(bool muted);
     /// Fades everything out (silenceFadeSeconds) before a launch stops the output, or back in.
@@ -116,7 +162,8 @@ public:
     [[nodiscard]] double sourceGain(SourceId source) const;
     /// The media time of the next sample the source plays; none before its first.
     [[nodiscard]] std::optional<double> sourceMediaTime(SourceId source) const;
-    /// The product of the master, duck, mute and silence gains as rendered last.
+    /// The product of the master, duck, mute and silence gains as rendered last (a ducking sound's; one that does not
+    /// duck has the same without the duck).
     [[nodiscard]] double outputGain() const;
     [[nodiscard]] SyncSummary syncSummary() const;
     /// Frames rendered so far.
@@ -164,6 +211,25 @@ private:
     void resync(Source& source, double target, std::size_t frames, std::size_t& index);
     void renderBlock(float* out, std::size_t frames, double blockStartSeconds);
     void installRing(Source& source, std::shared_ptr<AudioRing> ring, const SourceClock& clock);
+    struct SampleSource {
+        std::shared_ptr<const PcmBuffer> buffer;
+        Bus bus = Bus::Ambience;
+        SourceControl control;
+        Ramp gain;
+        Ramp pan;
+        std::size_t position = 0;
+    };
+    struct Voice {
+        std::shared_ptr<const PcmBuffer> buffer;
+        OneShot shot;
+        StereoGainsCache gains;
+        std::size_t position = 0;
+        std::uint64_t started = 0;
+        bool playing = false;
+    };
+    void retargetSample(SampleSource& source);
+    /// Adds the loops and the one-shots of this block (their bus's gain frame by frame) into `ducked` and `unducked`.
+    void renderSamples(float* ducked, float* unducked, std::size_t frames);
     /// The gain's target and slope from the source's control (0 within the pause fade while a new ring waits).
     void retarget(Source& source);
     void recordError(double seconds);
@@ -172,7 +238,16 @@ private:
     MixerSettings m_settings;
     mutable std::mutex m_mutex;
     std::vector<Source> m_sources;
+    std::vector<SampleSource> m_samples;
+    std::vector<Voice> m_voices;
+    std::uint64_t m_voiceStarts = 0;
+    std::uint64_t m_voicesStolen = 0;
     std::vector<float> m_scratch;
+    /// The one-shots that do not duck, mixed apart (sized once).
+    std::vector<float> m_unducked;
+    /// Each bus's gain, frame by frame, for the block being rendered (sized once).
+    std::vector<float> m_busFrames;
+    Ramp m_bus[kBusCount];
     Ramp m_master;
     Ramp m_duck;
     Ramp m_mute;

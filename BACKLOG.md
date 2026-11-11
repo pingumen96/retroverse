@@ -921,6 +921,10 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
 - **The glow of a still, the sign's lights dipping** (step 6): the CRT's spill light follows a clip's frames only (a
   cover or the standby keeps the light's own colour); the hero sign's lettering and bloom dip, its picture light and
   `accent:sign_glow` do not, nor the arcade lamp's neon tube.
+- **The interaction's sounds at the item** (step 7): the clack, the case and the click play at the eye, centred; at the
+  item's place they would pan with it as it leaves a side shelf.
+- **The steps' level by surface** (step 7): a rug's step is duller than the parquet's but as loud; a level per surface
+  (and per walking speed) would read better.
 
 ## Branding
 

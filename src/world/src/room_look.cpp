@@ -264,6 +264,19 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
             theme.atmosphere.crtBreathing = air.boolean("crtBreathing");
         }
     }
+    if (!document.failed() && reader.has("sound")) {
+        // I12 step 7: the tone of the pack's rooms.
+        const ObjectReader sound = reader.object("sound", {"buzz", "clock", "hiss", "hum", "murmur"});
+        for (const auto& [key, gain] : {std::pair<const char*, double*>{"hum", &theme.tone.hum},
+                                        {"hiss", &theme.tone.hiss},
+                                        {"buzz", &theme.tone.buzz},
+                                        {"murmur", &theme.tone.murmur},
+                                        {"clock", &theme.tone.clock}}) {
+            if (sound.has(key)) {
+                *gain = sound.number(key, 0.0, 2.0);
+            }
+        }
+    }
     if (!document.failed() && reader.has("screenPreset")) {
         // I5 step 6 (ADR-0016 §7): the CRT preset of the pack's rooms' screens.
         theme.screenPreset = reader.string("screenPreset");
@@ -1319,7 +1332,7 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     const ObjectReader reader(document, *value, "",
                               {"accents", "atmosphere", "bloomStrength", "furniture", "heroParts", "id", "kinds",
                                "labelPalette", "lightTints", "name", "neon", "neonGlow", "roomDressing",
-                               "schemaVersion", "screenPreset"});
+                               "schemaVersion", "screenPreset", "sound"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
     theme.id = reader.dataId("id");
@@ -1452,6 +1465,7 @@ LightingProfile themedLighting(const LightingProfile& profile, const ThemeMateri
         themed.bloomStrength = *theme.bloomStrength;
     }
     themed.atmosphere = theme.atmosphere;
+    themed.tone = theme.tone;
     // The pack's own accents after the profile's (I6 step 6's review); a name the profile has is the pack's.
     for (const AccentLight& accent : theme.accents) {
         const auto same = std::find_if(themed.accents.begin(), themed.accents.end(),

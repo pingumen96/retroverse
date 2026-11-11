@@ -46,6 +46,8 @@
 						<!-- Audio -->
 						<p data-if="row.key == 'video.audio.master'">Volume generale</p>
 						<p data-if="row.key == 'video.audio.video'">Volume dei video</p>
+						<p data-if="row.key == 'video.audio.ambience'">Suoni d'ambiente</p>
+						<p data-if="row.key == 'video.audio.effects'">Effetti sonori</p>
 						<p data-if="row.key == 'video.audio.muted'">Muto</p>
 						<p data-if="row.key == 'video.audio.mode'">Suono</p>
 						<!-- Mondo -->
@@ -110,7 +112,7 @@
 							<p data-if="row.kind == 'slider' && row.scene">Della scena</p>
 							<p data-if="row.kind == 'slider' && row.key == 'player.horizontalFovDeg' && !row.scene">{{ row.text }}°</p>
 							<p data-if="row.kind == 'slider' && (row.key == 'player.mouseSensitivity' || row.key == 'player.stickSensitivity')">{{ row.text }}</p>
-							<p data-if="row.kind == 'slider' && (row.key == 'video.audio.master' || row.key == 'video.audio.video' || row.key == 'xr.comfort.vignette')">{{ row.text }}%</p>
+							<p data-if="row.kind == 'slider' && (row.key == 'video.audio.master' || row.key == 'video.audio.video' || row.key == 'video.audio.ambience' || row.key == 'video.audio.effects' || row.key == 'xr.comfort.vignette')">{{ row.text }}%</p>
 							<!-- A toggle. -->
 							<p data-if="row.kind == 'toggle' && row.value == 'on'">Sì</p>
 							<p data-if="row.kind == 'toggle' && row.value == 'off'">No</p>

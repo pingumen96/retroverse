@@ -2790,6 +2790,20 @@ Json audioToJson(const AudioRecord& audio) {
                              {"channels", clip.channels}});
     }
     json["clips"] = std::move(clips);
+    Json effects = Json::array();
+    for (const AudioEffectRecord& effect : audio.effects) {
+        effects.push_back(Json{{"frame", effect.frame},
+                               {"atSeconds", effect.atSeconds},
+                               {"sound", effect.sound},
+                               {"gain", effect.gain},
+                               {"pan", effect.pan}});
+    }
+    json["room"] = Json{{"ambienceEmitters", audio.ambienceEmitters},
+                        {"ambienceSources", audio.ambienceSources},
+                        {"effectsTriggered", audio.effectsTriggered},
+                        {"footsteps", audio.footsteps},
+                        {"uiTicks", audio.uiTicks},
+                        {"effects", std::move(effects)}};
     return json;
 }
 
@@ -2841,6 +2855,18 @@ AudioRecord readAudio(FieldReader& fields) {
     for (FieldReader& clip : fields.objectArray("clips")) {
         audio.clips.push_back(AudioClipRecord{clip.string("gameId"), clip.string("codec"), clip.count("sampleRate"),
                                               clip.count("channels")});
+    }
+    if (auto room = fields.optionalObject("room")) {
+        audio.ambienceEmitters = room->count("ambienceEmitters");
+        audio.ambienceSources = room->count("ambienceSources");
+        audio.effectsTriggered = room->count("effectsTriggered");
+        audio.footsteps = room->count("footsteps");
+        audio.uiTicks = room->count("uiTicks");
+        for (FieldReader& effect : room->objectArray("effects")) {
+            audio.effects.push_back(AudioEffectRecord{effect.count("frame"), effect.number("atSeconds"),
+                                                      effect.string("sound"), effect.number("gain"),
+                                                      effect.number("pan")});
+        }
     }
     return audio;
 }

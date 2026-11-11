@@ -110,6 +110,7 @@
 #include "world_gallery.hpp"
 #include "world_shelf_labels.hpp"
 #include "room_atmosphere.hpp"
+#include "room_sound.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
 #include "srgb_self_check.hpp"
@@ -710,6 +711,11 @@ struct RetroverseApp::State {
     std::unique_ptr<WorldShelfLabels> worldShelfLabels;
     /// I12 step 6: the hero signs' flicker and the CRTs' glow.
     std::unique_ptr<RoomAtmosphere> roomAtmosphere;
+    /// I12 step 7: the rooms' tone, steps and effects on the mixer (kept for the engine's life: its loops are the
+    /// mixer's).
+    std::unique_ptr<RoomSound> roomSound;
+    /// The frame's view is the headset's (updateWorldSigns() keeps it): the steps lower.
+    bool inHeadset = false;
     std::optional<world::RoomId> xrPlaqueHovered;
 #if defined(RV_DEV_UI)
     devui::FrameTimeHistory frameTimes;
@@ -1073,6 +1079,9 @@ struct RetroverseApp::State {
             worldShelfLabels.reset();
         }
         roomAtmosphere.reset();
+        if (roomSound) {
+            roomSound->sceneChanged(); // I12 step 7: its loops stay the mixer's, their emitters found again
+        }
         if (worldPlaques) {
             worldPlaques->release(graphics ? &graphics->materials() : nullptr);
             worldPlaques.reset();
@@ -1105,6 +1114,7 @@ struct RetroverseApp::State {
 
     /// I11 step 4 (ADR-0019 §3): the rooms' signs of the scene shown drawn from their systems' identity, a few a frame.
     void updateWorldSigns(const AppContext& context) {
+        inHeadset = context.vr();
         if (!product || !pool || !scene || !graphics) {
             return;
         }
@@ -1611,8 +1621,9 @@ struct RetroverseApp::State {
             }
             if (engine) {
                 audio = std::move(*engine);
-                audio->mixer().setMaster(shown.audio.master * shown.audio.video);
+                applyAudioVolumes(shown.audio);
                 audio->mixer().setMuted(muted);
+                roomSound = std::make_unique<RoomSound>();
             } else {
                 spdlog::error("Audio: {}; no sound", engine.error().toString());
                 choice = AudioOutputChoice{audio::AudioOutput::Off, "failed"};
@@ -1625,9 +1636,56 @@ struct RetroverseApp::State {
         spdlog::info("Audio: output {} ({}){}", audioRecord.device, audioRecord.reason, muted ? ", muted" : "");
     }
 
+    /// video.json's volumes on the mixer: the master, and the buses of the clips, the rooms' tone and the effects.
+    void applyAudioVolumes(const AudioSettings& volumes) {
+        audio->mixer().setMaster(volumes.master);
+        audio->mixer().setBusGain(audio::Bus::Video, volumes.video);
+        audio->mixer().setBusGain(audio::Bus::Ambience, volumes.ambience);
+        audio->mixer().setBusGain(audio::Bus::Effects, volumes.effects);
+    }
+
+    /// The rooms' sound this frame (I12 step 7): the tone for the eye, the walker's steps, the interaction's edges, the
+    /// menus' tick on a press of a navigation action while one is open.
+    void updateRoomSound(const input::ActionState* actions, std::uint64_t frameIndex) {
+        if (!audio || !roomSound || !scene) {
+            return;
+        }
+        RoomSound::Frame frame;
+        frame.description = &description;
+        frame.instance = &*scene;
+        frame.mixer = &audio->mixer();
+        frame.screens = screen.get();
+        frame.eye = camera.position();
+        frame.forward = camera.forward();
+        if (freeRoam) {
+            const glm::vec3 feet = freeRoam->controller().feetPosition();
+            frame.feet = glm::vec2(feet.x, feet.z);
+        }
+        frame.seconds = stepSeconds;
+        frame.now = simulatedSeconds;
+        frame.frame = frameIndex;
+        const bool menu = product && (product->directoryOpen() || product->menuOpen() || product->catalogOpen());
+        const WorldContext walk = world ? world->context() : WorldContext::FreeRoam;
+        frame.walking = actions != nullptr && freeRoam && !menu && (!world || !world->riding()) &&
+                        (walk == WorldContext::FreeRoam || walk == WorldContext::Edit);
+        frame.vr = inHeadset;
+        if (world) {
+            frame.interaction = world->interactionState();
+        }
+        if (actions != nullptr && menu) {
+            using input::Action;
+            for (const Action action :
+                 {Action::UiUp, Action::UiDown, Action::UiLeft, Action::UiRight, Action::UiPageUp, Action::UiPageDown,
+                  Action::UiHome, Action::UiEnd, Action::UiActivate, Action::UiBack}) {
+                frame.uiTick = frame.uiTick || actions->pressed(action);
+            }
+        }
+        roomSound->update(frame);
+    }
+
     /// The sound's frame (I5 step 5): F8's mute, the duck under the card, the directory and the quick catalog, and the
     /// null output's mix pulled up to the run's time.
-    void updateAudio(const input::ActionState* actions) {
+    void updateAudio(const input::ActionState* actions, std::uint64_t frameIndex) {
         if (actions != nullptr && actions->pressed(input::Action::ToggleMute)) {
             muted = !muted;
             ++audioRecord.muteToggles;
@@ -1651,6 +1709,7 @@ struct RetroverseApp::State {
         if (ducked) {
             ++audioRecord.duckedFrames;
         }
+        updateRoomSound(actions, frameIndex);
         pullAudio();
     }
 
@@ -1695,6 +1754,9 @@ struct RetroverseApp::State {
         }
         if (screen) {
             screen->recordAudio(audioRecord);
+        }
+        if (roomSound) {
+            roomSound->record(audioRecord);
         }
         audioRecord.muted = muted;
         report.audio = audioRecord;
@@ -1964,7 +2026,7 @@ struct RetroverseApp::State {
                 }
                 soundOff = video->audio.mode == AudioMode::Off;
                 if (audio) {
-                    audio->mixer().setMaster(video->audio.master * video->audio.video);
+                    applyAudioVolumes(video->audio);
                     audio->mixer().setMuted(muted || soundOff);
                 }
             }
@@ -2261,6 +2323,9 @@ struct RetroverseApp::State {
             if (roomAtmosphere) {
                 roomAtmosphere->sceneChanged(); // I12 step 6
             }
+            if (roomSound) {
+                roomSound->sceneChanged(); // I12 step 7
+            }
             if (worldPlaques) {
                 worldPlaques->sceneChanged(); // I11 step 5
             }
@@ -2430,6 +2495,9 @@ struct RetroverseApp::State {
         }
         if (roomAtmosphere) {
             roomAtmosphere->sceneChanged(); // I12 step 6: its signs and glows
+        }
+        if (roomSound) {
+            roomSound->sceneChanged(); // I12 step 7: its emitters and rugs
         }
         if (worldPlaques) {
             worldPlaques->sceneChanged(); // I11 step 5: its plaques
@@ -3317,7 +3385,7 @@ void RetroverseApp::onUpdate(AppContext& context, double deltaSeconds) {
     state.updateXrGame(context);
     state.updateSystemLogos();
     state.updateWorldSigns(context);
-    state.updateAudio(&actions);
+    state.updateAudio(&actions, context.frameIndex());
     state.syncCaptureLayers();
     state.logScriptProgress(frame);
     state.graphics->pollShaderReload();
@@ -3382,7 +3450,7 @@ void RetroverseApp::onMinimized(AppContext& context, double elapsedSeconds) {
     state.setPriority(context.frameIndex(),
                       processPriorityFor(true, state.product != nullptr && state.product->launchActive()));
     state.updateScreens(context, true);
-    state.updateAudio(nullptr);
+    state.updateAudio(nullptr, context.frameIndex());
     state.followWatcher();
 }
 
