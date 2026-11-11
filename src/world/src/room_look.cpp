@@ -927,6 +927,8 @@ ThemeMaterials builtInTheme() {
                {"metal", "MAT_Metal_Brass"},
                {"fabric", "MAT_Fabric_Leather"},
                {"fabric_alt", "MAT_Fabric_Wool_Green_Weave"}}},
+        // I12 step 5's letter tabs: a brass holder round a paper insert (the caption cards are paper alone).
+        {"label_plates", Roles{{"plate", "MAT_Metal_Brass"}, {"picture", "MAT_Paper_Print"}}},
         // I6 step 6's arcade cabinets.
         {"arcade_cabinet",
          Roles{{"body", "MAT_Cabinet_Paint_Walnut"},

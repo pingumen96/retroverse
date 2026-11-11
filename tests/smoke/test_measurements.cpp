@@ -36,11 +36,13 @@ struct SurfaceMaps {
 SurfaceMaps proceduralSurfaceMaps() {
     SurfaceMaps total;
     for (const rv::assets::ProceduralSurfaceInfo& surface : rv::assets::proceduralSurfaces()) {
-        // The halls' wall wash, the lit shelves' glow (I6 step 3) and the packs' rugs (I6 step 3b) are not in the
-        // test room.
+        // The halls' wall wash, the lit shelves' glow (I6 step 3), the packs' rugs (I6 step 3b) and the rooms' shell
+        // and gallery surfaces (I12 steps 1 and 2, made on first request) are not in the test room.
         if (surface.name == "wallwash" || surface.name == "shelfglow" || surface.name == "ornate_rug_blue" ||
             surface.name == "ornate_rug_sage" || surface.name == "ornate_rug_green" ||
-            surface.name == "geometric_rug" || surface.name == "runner_rug") {
+            surface.name == "geometric_rug" || surface.name == "runner_rug" || surface.name == "picturewash" ||
+            surface.name == "herringbone_parquet" || surface.name == "fabric_weave" || surface.name == "leather" ||
+            surface.name == "wallpaper_damask") {
             continue;
         }
         const std::uint64_t maps = surface.hasNormalMap ? 3 : 2;

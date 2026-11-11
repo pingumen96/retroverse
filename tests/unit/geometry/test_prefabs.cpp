@@ -165,7 +165,7 @@ const std::vector<std::string_view> kExpectedKinds{
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
     "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet",
     "secondary_tv", "floor_speaker", "media_rack", "pad",       "low_table",      "cushion",           "open_box",
-    "bookcase",   "record_rack",  "pegboard",   "coat_stand"};
+    "bookcase",   "record_rack",  "pegboard",   "coat_stand",  "label_plates"};
 
 } // namespace
 
@@ -240,6 +240,8 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"record_rack", {"wood_primary", "wood_secondary", "sleeve_a", "sleeve_b", "sleeve_c"}},
         {"pegboard", {"board", "trim", "holes", "metal", "plastic_body", "plastic_dark"}},
         {"coat_stand", {"wood", "metal", "fabric", "fabric_alt"}},
+        // I12 step 5's letter tabs and caption cards.
+        {"label_plates", {"plate", "picture"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -400,6 +402,8 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
          {{"media", "tapes"}, {"levels", 6}, {"depth", 0.25}},
          box({-0.3f, 0.0f, -0.125f}, {0.3f, 1.6f, 0.125f})},
         {"coat_stand", nullptr, box({-0.19f, 0.0f, -0.19f}, {0.19f, 1.8f, 0.19f})},
+        // The default plate: 66 x 26 mm, 3 mm thick, its face 0.3 mm in front of it.
+        {"label_plates", nullptr, box({-0.033f, -0.013f, 0.0f}, {0.033f, 0.013f, 0.0033f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -458,6 +462,7 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"record_rack", {}},
         {"pegboard", {}},
         {"coat_stand", {}},
+        {"label_plates", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -969,7 +974,7 @@ TEST_CASE("geometry/prefabs: the wainscot lines the walls and stops at the doorw
 TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their walls",
           "[geometry][prefabs][colliders]") {
     for (const std::string_view kind : rv::geometry::prefabKinds()) {
-        if (kind == "room_shell" || kind == "rug") {
+        if (kind == "room_shell" || kind == "rug" || kind == "label_plates") {
             continue;
         }
         INFO(kind);
@@ -978,7 +983,8 @@ TEST_CASE("geometry/prefabs: furniture collides as its bounds, rooms as their wa
         CHECK(prefab.colliders[0].name.empty());
         CHECK(prefab.colliders[0].box == prefab.bounds);
     }
-    CHECK(buildOk("rug").colliders.empty()); // walked over
+    CHECK(buildOk("rug").colliders.empty());          // walked over
+    CHECK(buildOk("label_plates").colliders.empty()); // the shelves' tabs and cards (I12 step 5)
 
     const auto byName = [](const ProceduralPrefab& prefab) {
         std::map<std::string, Aabb> boxes;
@@ -2197,4 +2203,66 @@ TEST_CASE("geometry/prefabs: the tall decoration (I12 step 4)", "[geometry][pref
     CHECK(held.size().x > 0.3f);
     CHECK(held.min.y >= 0.62f + 0.13f - 1e-4f);
     CHECK(held.max.y < 1.15f - 0.03f);
+}
+
+TEST_CASE("geometry/prefabs: the label plates (I12 step 5)", "[geometry][prefabs][label_plates]") {
+    // Two plates: a tab facing +Z at the origin, a card turned a quarter turn about +Y and leaning back by 30 degrees.
+    const float lean = glm::radians(30.0f);
+    const glm::mat4 card = glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 0.5f, -2.0f)),
+                                       glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                           glm::rotate(glm::mat4(1.0f), -lean, glm::vec3(1.0f, 0.0f, 0.0f));
+    json frame = json::array();
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 3; ++row) {
+            frame.push_back(card[column][row]);
+        }
+    }
+    const json params{{"plates",
+                       {{{"size", {0.066, 0.026}}, {"cell", {0.0, 0.0, 0.25, 0.5}}},
+                        {{"frame", frame}, {"size", {0.075, 0.028}}, {"cell", {0.5, 0.5, 1.0, 1.0}}}}},
+                      {"inset", 0.0}};
+    const ProceduralPrefab plates = buildOk("label_plates", params);
+    checkPrefab(plates);
+    const PrefabPart* picture = rv::geometry::findPart(plates, "picture");
+    REQUIRE(picture != nullptr);
+    REQUIRE(picture->mesh.vertices.size() == 8);
+    // Each face shows its own cell, the first plate's face 0.3 mm in front of its 3 mm plate.
+    for (std::size_t v = 0; v < 4; ++v) {
+        const auto& vertex = picture->mesh.vertices[v];
+        CHECK(vertex.uv0.x <= 0.25f);
+        CHECK(vertex.uv0.y <= 0.5f);
+        CHECK(vertex.position.z == Catch::Approx(0.0033f).margin(1.0e-6));
+        CHECK(vertex.normal.z == Catch::Approx(1.0f));
+    }
+    // The card's face looks along +X and up by the lean.
+    for (std::size_t v = 4; v < 8; ++v) {
+        const auto& vertex = picture->mesh.vertices[v];
+        CHECK(vertex.uv0.x >= 0.5f);
+        CHECK(vertex.uv0.y >= 0.5f);
+        CHECK(vertex.normal.x == Catch::Approx(std::cos(lean)).margin(1.0e-4));
+        CHECK(vertex.normal.y == Catch::Approx(std::sin(lean)).margin(1.0e-4));
+    }
+    CHECK(plates.bounds.max.x > 1.0f);
+    CHECK(plates.bounds.min.z < -2.0f);
+    CHECK(plates.sockets.empty());
+    // The same plates build the same mesh.
+    CHECK(buildOk("label_plates", params).parts[0].mesh.vertices.size() == plates.parts[0].mesh.vertices.size());
+
+    // Refusals.
+    CHECK(buildError("label_plates", {{"plates", json::array()}}).context == "label_plates.plates");
+    CHECK(buildError("label_plates", {{"plates", 1}}).context == "label_plates.plates");
+    CHECK(buildError("label_plates", {{"plates", {{{"size", {0.001, 0.02}}}}}}).context ==
+          "label_plates.plates[0].size");
+    CHECK(buildError("label_plates", {{"plates", {{{"cell", {0.5, 0.0, 0.25, 1.0}}}}}}).context ==
+          "label_plates.plates[0].cell");
+    CHECK(buildError("label_plates", {{"plates", {{{"cell", {0.0, 0.0, 1.0}}}}}}).context ==
+          "label_plates.plates[0].cell");
+    json scaled = frame;
+    scaled[0] = 2.0;
+    CHECK(buildError("label_plates", {{"plates", {{{"frame", scaled}}}}}).context == "label_plates.plates[0].frame");
+    CHECK(buildError("label_plates", {{"plates", {{{"frame", {1.0, 0.0}}}}}}).context ==
+          "label_plates.plates[0].frame");
+    CHECK(buildError("label_plates", {{"plates", {{{"colour", 1}}}}}).context == "label_plates.plates[0].colour");
+    CHECK(buildError("label_plates", {{"inset", 0.012}}).context == "label_plates.inset");
+    CHECK(buildError("label_plates", {{"thickness", 0.0}}).context == "label_plates.thickness");
 }

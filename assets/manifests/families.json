@@ -38,6 +38,7 @@
      "params": {}},
     {"id": "decor.pegboard", "generic": "decor.pegboard.generic", "generator": "pegboard", "params": {}},
     {"id": "decor.coat_stand", "generic": "decor.coat_stand.generic", "generator": "coat_stand", "params": {}},
+    {"id": "decor.label_plates", "generic": "decor.label_plates.generic", "generator": "label_plates", "params": {}},
     {"id": "furniture.low_table", "generic": "furniture.low_table.generic", "generator": "low_table", "params": {}},
     {"id": "furniture.media_rack", "generic": "furniture.media_rack.generic", "generator": "media_rack",
      "params": {}},

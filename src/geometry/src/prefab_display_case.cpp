@@ -55,6 +55,8 @@ constexpr float kLedge = 0.015f;
 constexpr float kLipGap = 0.002f;
 constexpr float kLip = 0.006f;
 constexpr float kLipHeight = 0.012f;
+// The caption cards' anchor (prefabs.hpp, I12 step 5) is this lip.
+static_assert(kLipGap + kLip == kDisplayCaseLipFront && kLipHeight == kDisplayCaseLipHeight);
 constexpr float kPanel = 0.012f;
 /// The panel rises this far above the items' tops.
 constexpr float kPanelOver = 0.025f;

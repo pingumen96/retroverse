@@ -27,6 +27,7 @@
                  "plastic_dark": "MAT_Plastic_Accent"},
     "coat_stand": {"wood": "MAT_Wood_Oak", "metal": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Leather",
                    "fabric_alt": "MAT_Fabric_Wool_Green_Weave"},
+    "label_plates": {"plate": "MAT_Metal_Brass", "picture": "MAT_Paper_Print"},
     "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Study", "ceiling": "MAT_Wall_Study",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Oak"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",

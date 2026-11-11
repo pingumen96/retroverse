@@ -80,6 +80,7 @@
 #include <rv/app/room_items.hpp>
 #include <rv/app/room_snapshot.hpp>
 #include <rv/app/screen_policy.hpp>
+#include <rv/app/shelf_labels.hpp>
 #include <rv/app/world_notice_ui.hpp>
 #include <rv/catalog/ids.hpp>
 #include <rv/core/aabb.hpp>
@@ -185,6 +186,9 @@ struct RoomCollection {
     /// Its gallery's candidates (I12 step 2, gallery_pictures.hpp: from the rooms' items, under the screens' media
     /// root; none without it).
     RoomGallery gallery;
+    /// I12 step 5: what its shelves' labels say of its placed games and its sections' names (shelf_labels.hpp: from the
+    /// rooms' items; a game no items file knows has none).
+    RoomShelfTexts shelfTexts;
     /// I12 step 3: the placed game Retroverse played last (room_last_played.hpp's lastPlayedGame(): the catalog's
     /// sessions where the floor's sources read them, else its items'); none when none was played.
     std::optional<catalog::GameId> lastPlayed;

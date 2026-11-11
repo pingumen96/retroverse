@@ -27,6 +27,7 @@
                  "metal": "MAT_Metal_Brushed", "plastic_body": "MAT_Plastic_Gray", "plastic_dark": "MAT_Plastic_Black"},
     "coat_stand": {"wood": "MAT_Wood_Oak", "metal": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Teal",
                    "fabric_alt": "MAT_Fabric_Sofa_Weave"},
+    "label_plates": {"plate": "MAT_Metal_Brass", "picture": "MAT_Paper_Print"},
     "room_shell": {"floor": "MAT_Floor_Herringbone", "wall": "MAT_Wall_Cream", "ceiling": "MAT_Wall_Cream",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",

@@ -310,6 +310,7 @@ Expected<WorldBuild> editedRoomCollections(const WorldBuild& shown, const world:
     std::vector<RoomCollection*> edited;
     std::vector<world::CollectionTitle> titles;
     std::map<catalog::GameId, CoverItem> covers;
+    std::map<catalog::GameId, ShelfText> shelfTexts; // I12 step 5: the labels' text goes with its game
     for (const world::RoomId& id : rooms) {
         const auto room = std::find_if(build.rooms.begin(), build.rooms.end(),
                                        [&](const RoomCollection& candidate) { return candidate.room == id; });
@@ -326,6 +327,9 @@ Expected<WorldBuild> editedRoomCollections(const WorldBuild& shown, const world:
         }
         for (CoverItem& cover : room->covers) {
             covers.emplace(cover.game, std::move(cover));
+        }
+        for (const ShelfText& text : room->shelfTexts.games) {
+            shelfTexts.emplace(text.game, text);
         }
     }
     for (RoomCollection* room : edited) {
@@ -347,6 +351,18 @@ Expected<WorldBuild> editedRoomCollections(const WorldBuild& shown, const world:
                 room->covers.push_back(std::move(found->second));
             }
         }
+        // A game moved across a room chain keeps its text (I4b step 8).
+        std::vector<ShelfText> texts;
+        for (const world::CollectionItem& item : room->layout.items) {
+            if (auto found = shelfTexts.find(item.game); found != shelfTexts.end()) {
+                texts.push_back(found->second);
+            }
+        }
+        std::sort(texts.begin(), texts.end(), [](const ShelfText& a, const ShelfText& b) { return a.game < b.game; });
+        texts.erase(std::unique(texts.begin(), texts.end(),
+                                [](const ShelfText& a, const ShelfText& b) { return a.game == b.game; }),
+                    texts.end());
+        room->shelfTexts.games = std::move(texts);
         room->contentDigest.clear();
     }
     return build;

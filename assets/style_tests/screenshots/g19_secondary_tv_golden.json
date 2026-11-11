@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
+    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g19_secondary_tv_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "773eff789ad625d1103f68eac29145d90d74d25cb7c94eb80ea2c9a3fd6d66aa",
+    "sha256": "89e32053ea6bdd1c6e30e3aa2575149492d7d83e91142e81fb5ea04182aefd61",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "f1ba677e1f0b85870d091100a050e819998ad1e5efd590c9a62a6a86911d017c"
     },
     "plan": {
-      "digest": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
-      "fileSha256": "e973f49dca9d524ff495590748a0f7e432af4a2d8254a10543039873f9ae7dcd",
+      "digest": "2405225b998579b40f3eeacb5d6b5758f1dbb55ac0ae6af79be3f9217e5005f1",
+      "fileSha256": "2405225b998579b40f3eeacb5d6b5758f1dbb55ac0ae6af79be3f9217e5005f1",
       "items": 50,
       "placements": 50
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
+      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
     }
   },
-  "renderedOn": "2026-11-09",
+  "renderedOn": "2026-11-10",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

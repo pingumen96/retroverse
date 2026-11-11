@@ -857,6 +857,58 @@ Expected<ProceduralPrefab> coatStandFromJson(const Json& params) {
     return buildCoatStand(p);
 }
 
+Expected<ProceduralPrefab> labelPlatesFromJson(const Json& params) {
+    LabelPlatesParams p;
+    ParamReader r("label_plates", params, {"plates", "thickness", "inset"});
+    r.read("thickness", p.thickness);
+    r.read("inset", p.inset);
+    if (const Json* plates = r.find("plates")) {
+        const std::string where = r.context("plates");
+        if (!plates->is_array()) {
+            r.fail(ErrorCode::InvalidArgument, "expected an array", where);
+        } else {
+            p.plates.clear();
+            for (std::size_t i = 0; i < plates->size() && r.ok(); ++i) {
+                const Json& entry = (*plates)[i];
+                const std::string at = where + "[" + std::to_string(i) + "]";
+                ParamReader plate(at, entry, {"frame", "size", "cell"});
+                LabelPlate label;
+                plate.read("size", label.size);
+                if (const Json* cell = plate.find("cell")) {
+                    if (!cell->is_array() || cell->size() != 4 ||
+                        !std::all_of(cell->begin(), cell->end(), [](const Json& v) { return v.is_number(); })) {
+                        plate.fail(ErrorCode::InvalidArgument, "expected 4 numbers", plate.context("cell"));
+                    } else {
+                        label.cell = glm::vec4((*cell)[0].get<float>(), (*cell)[1].get<float>(),
+                                               (*cell)[2].get<float>(), (*cell)[3].get<float>());
+                    }
+                }
+                if (const Json* frame = plate.find("frame")) {
+                    if (!frame->is_array() || frame->size() != 12 ||
+                        !std::all_of(frame->begin(), frame->end(), [](const Json& v) { return v.is_number(); })) {
+                        plate.fail(ErrorCode::InvalidArgument, "expected 12 numbers", plate.context("frame"));
+                    } else {
+                        for (int column = 0; column < 4; ++column) {
+                            for (int row = 0; row < 3; ++row) {
+                                label.frame[column][row] =
+                                    (*frame)[static_cast<std::size_t>(column * 3 + row)].get<float>();
+                            }
+                        }
+                    }
+                }
+                if (!plate.ok()) {
+                    r.fail(plate.error().code, plate.error().message, plate.error().context);
+                }
+                p.plates.push_back(label);
+            }
+        }
+    }
+    if (!r.ok()) {
+        return propagate(r.error());
+    }
+    return buildLabelPlates(p);
+}
+
 // --- Primitives ----------------------------------------------------------------------------------------------
 
 constexpr float kMinLength = 0.001f;
@@ -998,7 +1050,7 @@ struct PrimitiveEntry {
     Expected<MeshData> (*build)(const Json&);
 };
 
-constexpr std::array<PrefabEntry, 39> kPrefabs{{
+constexpr std::array<PrefabEntry, 40> kPrefabs{{
     {"room_shell", &roomShellFromJson},
     {"shelf", &shelfFromJson},
     {"cartridge", &cartridgeFromJson},
@@ -1038,6 +1090,7 @@ constexpr std::array<PrefabEntry, 39> kPrefabs{{
     {"record_rack", &recordRackFromJson},
     {"pegboard", &pegboardFromJson},
     {"coat_stand", &coatStandFromJson},
+    {"label_plates", &labelPlatesFromJson},
 }};
 
 constexpr std::array<PrimitiveEntry, 5> kPrimitives{{

@@ -44,24 +44,34 @@ enum class GpuMemoryKind : std::uint8_t {
     ContentTextures,
     /// The gallery's pictures of the user's media (I12 step 2: WorldGallery), over the frames' prints.
     GalleryTextures,
+    /// The shelves' letter tabs' and caption cards' atlases (I12 step 5: WorldShelfLabels).
+    LabelTextures,
 };
-inline constexpr std::size_t kGpuMemoryKindCount = 11;
+inline constexpr std::size_t kGpuMemoryKindCount = 12;
 
 /// Every kind, in declaration order.
 inline constexpr std::array<GpuMemoryKind, kGpuMemoryKindCount> kGpuMemoryKinds{
-    GpuMemoryKind::ProceduralSurfaces, GpuMemoryKind::CollectionArrays, GpuMemoryKind::HeroTextures,
-    GpuMemoryKind::Video,              GpuMemoryKind::Targets,          GpuMemoryKind::SceneTextures,
-    GpuMemoryKind::Buffers,            GpuMemoryKind::UiTextures,       GpuMemoryKind::SignTextures,
-    GpuMemoryKind::ContentTextures,    GpuMemoryKind::GalleryTextures,
+    GpuMemoryKind::ProceduralSurfaces,
+    GpuMemoryKind::CollectionArrays,
+    GpuMemoryKind::HeroTextures,
+    GpuMemoryKind::Video,
+    GpuMemoryKind::Targets,
+    GpuMemoryKind::SceneTextures,
+    GpuMemoryKind::Buffers,
+    GpuMemoryKind::UiTextures,
+    GpuMemoryKind::SignTextures,
+    GpuMemoryKind::ContentTextures,
+    GpuMemoryKind::GalleryTextures,
+    GpuMemoryKind::LabelTextures,
 };
 
 /// The run report's key: "proceduralSurfaces", "collectionArrays", "heroTextures", "video", "targets",
-/// "sceneTextures", "buffers", "uiTextures", "signTextures", "contentTextures", "galleryTextures".
+/// "sceneTextures", "buffers", "uiTextures", "signTextures", "contentTextures", "galleryTextures", "labelTextures".
 [[nodiscard]] std::string_view toString(GpuMemoryKind kind) noexcept;
 /// The kind toString() names, or nothing.
 [[nodiscard]] std::optional<GpuMemoryKind> gpuMemoryKindFromString(std::string_view name) noexcept;
 /// A short label for the Stats panel's narrow column (toString() in its tooltip): "Surfaces", "Arrays", "Hero",
-/// "Video", "Targets", "Textures", "Buffers", "UI", "Signs", "Content".
+/// "Video", "Targets", "Textures", "Buffers", "UI", "Signs", "Content", "Gallery", "Labels".
 [[nodiscard]] std::string_view displayName(GpuMemoryKind kind) noexcept;
 
 /// Storage formats of the renderer's textures and render targets, by what a texel or a block takes.

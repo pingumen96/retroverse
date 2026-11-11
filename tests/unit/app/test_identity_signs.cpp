@@ -158,6 +158,26 @@ TEST_CASE("app/identity_signs: what a room's sign shows", "[app][identity_signs]
         CHECK_FALSE(
             rv::app::identitySignContent(room("area:arcade"), IdentitySignPlace::Hall, plain, lookup).has_value());
     }
+    SECTION("I12 step 5: a section's sign, its own system's logo, else its identity's name") {
+        const std::vector<SystemName> sections{systemNamed("psx"), systemNamed("snes"), systemNamed("n64")};
+        const RoomId shared = room("area:shared:gen4");
+        CHECK_FALSE(rv::app::identitySignContent(shared, IdentitySignPlace::Section, sections, lookup, 0).has_value());
+        CHECK(*rv::app::identitySignContent(shared, IdentitySignPlace::Section, sections, lookup, 1) ==
+              IdentitySignContent{{"C:/themes/snes.svg"}, ""});
+        CHECK(*rv::app::identitySignContent(shared, IdentitySignPlace::Section, sections, lookup, 2) ==
+              IdentitySignContent{{}, "Polygon 64"});
+        CHECK_FALSE(rv::app::identitySignContent(shared, IdentitySignPlace::Section, sections, lookup, 3).has_value());
+        // Its object is a target of its own: a lit plate, its room and section from its id.
+        rv::scene::SceneDescription description;
+        description.objects.push_back(signObject("section:area:shared:gen4/2", "sign"));
+        description.objects.push_back(signObject("section:area:shared:gen4/x", "sign"));
+        const auto targets = rv::app::identitySignTargets(description);
+        REQUIRE(targets.size() == 1);
+        CHECK(targets[0].room == shared);
+        CHECK(targets[0].place == IdentitySignPlace::Section);
+        CHECK(targets[0].style == IdentitySignStyle::Lit);
+        CHECK(targets[0].section == 2);
+    }
 }
 
 TEST_CASE("app/identity_signs: a system's accent clamped into style 3's accent band (I11 step 6)", "[app][identity_signs]") {

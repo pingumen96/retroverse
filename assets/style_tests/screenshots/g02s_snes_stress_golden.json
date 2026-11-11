@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "0878b1b7633741c6fe92a57cfe4a7c7d58f20cbb",
+    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g02s_snes_stress_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "06acf40d6f04527f56e9ad2e62e6e1a717be926061396bb0516ab213c07b83b0",
+    "sha256": "3d17b414424fcea5cd4dba6bd0b16bbdf8c067e1baf04048e31a9447b8d022ac",
     "width": 1920
   },
   "inputs": {
@@ -29,17 +29,17 @@
       "sha256": "e613d4a0bbaf9eb26bce2c72aa2125dc9d121f82a8a049dd89a9c59650a2cc84"
     },
     "plan": {
-      "digest": "a0a4f0d40fc81bb8bf229a8760572c9e3e789106bfe976c41f9da605c49de8aa",
-      "fileSha256": "a0a4f0d40fc81bb8bf229a8760572c9e3e789106bfe976c41f9da605c49de8aa",
+      "digest": "eeec16054bde8df3e9df3f8dfb1a3ab4e86b00f26cee3ade898723f9cf3214cc",
+      "fileSha256": "eeec16054bde8df3e9df3f8dfb1a3ab4e86b00f26cee3ade898723f9cf3214cc",
       "items": 2000,
       "placements": 2000
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "afe95be97cba32a8570927c39ffbd182c621fc0683fda98ae66eacc94a52050d"
+      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
     }
   },
-  "renderedOn": "2026-11-09",
+  "renderedOn": "2026-11-10",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

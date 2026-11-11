@@ -3198,6 +3198,13 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["galleryFailed"] = catalog.galleryFailed;
     json["galleryBytes"] = catalog.galleryBytes;
     json["galleryPeakBytes"] = catalog.galleryPeakBytes;
+    json["shelfTabs"] = catalog.shelfTabs;
+    json["shelfCaptions"] = catalog.shelfCaptions;
+    json["sectionSigns"] = catalog.sectionSigns;
+    json["shelfAtlases"] = catalog.shelfAtlases;
+    json["shelfAtlasesShown"] = catalog.shelfAtlasesShown;
+    json["shelfLabelsFailed"] = catalog.shelfLabelsFailed;
+    json["shelfLabelBytes"] = catalog.shelfLabelBytes;
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3340,6 +3347,15 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.galleryFailed = static_cast<std::size_t>(fields.optionalCount("galleryFailed", kMaxSize).value_or(0));
     catalog.galleryBytes = fields.optionalCount("galleryBytes", kMaxSize).value_or(0);
     catalog.galleryPeakBytes = fields.optionalCount("galleryPeakBytes", kMaxSize).value_or(0);
+    catalog.shelfTabs = static_cast<std::size_t>(fields.optionalCount("shelfTabs", kMaxSize).value_or(0));
+    catalog.shelfCaptions = static_cast<std::size_t>(fields.optionalCount("shelfCaptions", kMaxSize).value_or(0));
+    catalog.sectionSigns = static_cast<std::size_t>(fields.optionalCount("sectionSigns", kMaxSize).value_or(0));
+    catalog.shelfAtlases = static_cast<std::size_t>(fields.optionalCount("shelfAtlases", kMaxSize).value_or(0));
+    catalog.shelfAtlasesShown =
+        static_cast<std::size_t>(fields.optionalCount("shelfAtlasesShown", kMaxSize).value_or(0));
+    catalog.shelfLabelsFailed =
+        static_cast<std::size_t>(fields.optionalCount("shelfLabelsFailed", kMaxSize).value_or(0));
+    catalog.shelfLabelBytes = fields.optionalCount("shelfLabelBytes", kMaxSize).value_or(0);
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.

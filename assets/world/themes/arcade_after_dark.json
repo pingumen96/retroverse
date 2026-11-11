@@ -29,6 +29,7 @@
                  "plastic_dark": "MAT_Fabric_Vinyl_Red"},
     "coat_stand": {"wood": "MAT_Metal_Graphite", "metal": "MAT_Metal_Brushed", "fabric": "MAT_Fabric_Vinyl_Purple",
                    "fabric_alt": "MAT_Fabric_Teal_Weave"},
+    "label_plates": {"plate": "MAT_Metal_Brushed", "picture": "MAT_Paper_Print"},
     "room_shell": {"floor": "MAT_Floor_Herringbone_Dark", "wall": "MAT_Wall_Night", "ceiling": "MAT_Wall_Night",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Varnished_Dark"},
     "shelf": {"wood_primary": "MAT_Metal_Graphite", "wood_secondary": "MAT_Plastic_Black",

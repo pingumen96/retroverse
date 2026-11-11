@@ -111,6 +111,7 @@ void WorldSession::startLiveFlow(ProductUi& product) {
 
 void WorldSession::keepShown(const WorldBuild& build) {
     m_shown = shownFloorOf(build);
+    ++m_shownRevision; // I12 step 5: the shelves' labels follow
     if (m_edit) {
         // I4b step 4: while an edit session shows its drafts (the floor, its rooms and games as they were, only places
         // changed), the plan's derived state waits for its end (endEdit(): nothing reads it meanwhile, the directory,

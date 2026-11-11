@@ -28,7 +28,9 @@
 #include <glm/glm.hpp>
 
 #include <rv/app/run_report.hpp>
+#include <rv/app/shelf_labels.hpp>
 #include <rv/core/math.hpp>
+#include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/gallery.hpp>
@@ -62,9 +64,13 @@ struct ImportedRoom {
     fs::path dir;
     fs::path data;
 
-    explicit ImportedRoom(std::string_view name)
-        : fixture(rv::test::Fixture::materialize("esde/snes-room").value()),
+    explicit ImportedRoom(std::string_view name, std::string_view fixtureName = "esde/snes-room",
+                          std::string_view overlay = {})
+        : fixture(rv::test::Fixture::materialize(fixtureName).value()),
           dir(freshCaseDir(std::string("world_look/") + std::string(name))), data(dir / "data") {
+        if (!overlay.empty()) {
+            REQUIRE(fixture.applyOverlay(overlay).has_value());
+        }
         cli("library",
             {"library", "create", "--home", arg(fixture.root()), "--install", arg(fixture.path("Programs/ES-DE"))});
         cli("import", {"import"});
@@ -284,6 +290,30 @@ Viewpoint viewpointOf(const rv::world::CollectionItem& item, float distance, con
 }
 
 /// The doorway's probes of one profile.
+/// The view's rectangles of I12 step 4's shelves of colour as the scene draws them (a bookcase, a record rack, a
+/// pegboard: their spines, sleeves and pads), which stand in front of the wall's pictures beside them too.
+std::vector<PixelRect> tallPieceRects(const ShownRoom& shown, const rv::scene::CameraSetup& camera) {
+    std::vector<PixelRect> rects;
+    for (const rv::scene::SceneObject& object : shown.scene.objects) {
+        if (object.kind != "bookcase" && object.kind != "record_rack" && object.kind != "pegboard") {
+            continue;
+        }
+        auto built = rv::geometry::buildPrefab(object.kind, object.params);
+        REQUIRE(built.has_value());
+        std::vector<glm::vec3> corners;
+        for (int i = 0; i < 8; ++i) {
+            const glm::vec3 local((i & 1) ? built->bounds.max.x : built->bounds.min.x,
+                                  (i & 2) ? built->bounds.max.y : built->bounds.min.y,
+                                  (i & 4) ? built->bounds.max.z : built->bounds.min.z);
+            corners.emplace_back(object.transform * glm::vec4(local, 1.0f));
+        }
+        if (const PixelRect rect = rectOf(camera, corners); !rect.empty()) {
+            rects.push_back(rect);
+        }
+    }
+    return rects;
+}
+
 void checkDoorway(const ShownRoom& shown, const rv::assets::ImageData& image, std::string_view profile) {
     INFO("profile " << profile);
     const rv::scene::CameraSetup& camera = shown.scene.camera;
@@ -422,6 +452,12 @@ void checkDoorway(const ShownRoom& shown, const rv::assets::ImageData& image, st
             excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});
             posters.push_back(PixelRect{glm::max(rect.min, glm::ivec2(0)), glm::min(rect.max, kShotSize)});
         }
+    }
+    // I12 step 4's shelves of colour, alike: a bookcase's spines, a rack's sleeves, a pegboard's pads (the scene's
+    // pieces as drawn, not the plan's prefabs).
+    for (const PixelRect& rect : tallPieceRects(shown, camera)) {
+        excluded.push_back(PixelRect{rect.min - 2, rect.max + 2});
+        posters.push_back(PixelRect{glm::max(rect.min, glm::ivec2(0)), glm::min(rect.max, kShotSize)});
     }
     REQUIRE_FALSE(signRect.empty());
     REQUIRE_FALSE(crtRect.empty());
@@ -628,7 +664,9 @@ TEST_CASE("world look: the shell and the lamps (I12 step 1): papered walls, a ra
 
 TEST_CASE("world look: the gallery (I12 step 2): the room's own media in its frames, the prints when it is off",
           "[gpu][world][world_look]") {
-    ImportedRoom room("gallery");
+    // The fixture's gallery overlay (I12 step 5): since step 4 frames hang over the low decoration too, more than the
+    // fixture's one game with fanart, marquee and screenshot could fill.
+    ImportedRoom room("gallery", "esde/snes-room", "gallery");
     const fs::path withMedia = room.dir / "gallery_on.png";
     const AppRun run = runApp(retroverseExe(), room.dir, "gallery_on", roomArguments("40", withMedia));
     skipWithoutOpenGl(run);
@@ -649,8 +687,8 @@ TEST_CASE("world look: the gallery (I12 step 2): the room's own media in its fra
     }
     REQUIRE_FALSE(centres.empty());
 
-    // Every frame a medium of the room's games (the fixture's covers serve the portraits, its first game's fanart,
-    // marquee and screenshot the others), shown, none failing; the pictures' bytes the gallery's kind of GPU memory.
+    // Every frame a medium of the room's games (the fixture's covers serve the portraits, its overlay's fanart,
+    // marquees and screenshots the others), shown, none failing; the pictures' bytes the gallery's kind of GPU memory.
     const rv::app::CatalogRecord& on = *run.report->catalog;
     CHECK(on.gallery);
     CHECK(on.galleryFrames == centres.size());
@@ -684,9 +722,12 @@ TEST_CASE("world look: the gallery (I12 step 2): the room's own media in its fra
     const rv::assets::ImageData mediaImage = requireScreenshot(run, withMedia, kShotSize);
     const rv::assets::ImageData printImage = requireScreenshot(offRun, prints, kShotSize);
     std::size_t seen = 0;
+    const std::vector<PixelRect> tall = tallPieceRects(shown, camera); // a frame behind a bookcase from the doorway
     for (const glm::vec3& centre : centres) {
         const auto pixel = projectToPixel(camera, kShotSize, centre);
-        if (!pixel) {
+        if (!pixel || std::any_of(tall.begin(), tall.end(), [&](const PixelRect& rect) {
+                return rect.overlaps(PixelRect{*pixel, *pixel + 1});
+            })) {
             continue;
         }
         ++seen;
@@ -694,4 +735,119 @@ TEST_CASE("world look: the gallery (I12 step 2): the room's own media in its fra
         CHECK(std::abs(windowLuminance(mediaImage, *pixel, 2) - windowLuminance(printImage, *pixel, 2)) > 0.002);
     }
     CHECK(seen > 0);
+}
+
+namespace {
+
+/// The luminance range (linear) of the (2 r + 1)^2 window around `center`: ink on paper reads as a wide one.
+double luminanceRange(const rv::assets::ImageData& image, glm::ivec2 center, int radius) {
+    double low = 1.0;
+    double high = 0.0;
+    for (int y = std::max(0, center.y - radius); y <= std::min(image.height - 1, center.y + radius); ++y) {
+        for (int x = std::max(0, center.x - radius); x <= std::min(image.width - 1, center.x + radius); ++x) {
+            const std::uint8_t* p = pixelAt(image, x, y);
+            const double value = 0.2126 * linear(p[0]) + 0.7152 * linear(p[1]) + 0.0722 * linear(p[2]);
+            low = std::min(low, value);
+            high = std::max(high, value);
+        }
+    }
+    return high - low;
+}
+
+/// --spawn's text for a walker whose eye looks at `target` from `distance` metres before it along `facing`'s
+/// horizontal part (yaw 0 looks along -Z, -90 along -X; pitch down is negative).
+std::string spawnLookingAt(const glm::vec3& target, const glm::vec3& facing, float distance) {
+    const glm::vec3 out = glm::normalize(glm::vec3(facing.x, 0.0f, facing.z));
+    const glm::vec3 feet = target + out * distance;
+    const glm::vec3 eye(feet.x, 1.65f, feet.z);
+    const glm::vec3 look = target - eye;
+    const double yaw = glm::degrees(std::atan2(static_cast<double>(look.x), static_cast<double>(-look.z)));
+    const double pitch = glm::degrees(
+        std::atan2(static_cast<double>(look.y), std::sqrt(static_cast<double>(look.x * look.x + look.z * look.z))));
+    return std::to_string(feet.x) + ",0," + std::to_string(feet.z) + "," + std::to_string(yaw) + "," +
+           std::to_string(pitch);
+}
+
+} // namespace
+
+TEST_CASE("world look: the shelves' detail (I12 step 5): letter tabs and caption cards, legible up close",
+          "[gpu][world][world_look][shelf_labels]") {
+    ImportedRoom room("labels", "esde/snes-stress");
+    const fs::path doorway = room.dir / "labels_door.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "labels_door", roomArguments("40", doorway));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->world.bound);
+    REQUIRE(run.report->catalog.has_value());
+    const ShownRoom shown = shownRoom(room, *run.report, "evening");
+
+    // The labels the room should have: every placed game's text is known (the fixture's catalog), so a tab per
+    // spine-out level of a module with an item, a card per face-out item of a display case.
+    rv::app::RoomShelfTexts texts;
+    for (const rv::world::CollectionItem& item : shown.layout.items) {
+        rv::app::ShelfText text;
+        text.game = item.game;
+        text.title = "T";
+        text.initial = "A";
+        texts.games.push_back(text);
+    }
+    std::sort(texts.games.begin(), texts.games.end(),
+              [](const rv::app::ShelfText& a, const rv::app::ShelfText& b) { return a.game < b.game; });
+    texts.games.erase(
+        std::unique(texts.games.begin(), texts.games.end(),
+                    [](const rv::app::ShelfText& a, const rv::app::ShelfText& b) { return a.game == b.game; }),
+        texts.games.end());
+    const rv::app::ShelfLabels labels =
+        rv::app::roomShelfLabels(shown.stored.plan, shown.room, shown.data, shown.layout, {}, texts);
+    REQUIRE(labels.tabs.size() > 20);
+    REQUIRE_FALSE(labels.captions.empty());
+    const rv::app::CatalogRecord& record = *run.report->catalog;
+    CHECK(record.shelfTabs == labels.tabs.size());
+    CHECK(record.shelfCaptions == labels.captions.size());
+    CHECK(record.sectionSigns == 0);
+    CHECK(record.shelfAtlases == 2);
+    CHECK(record.shelfAtlasesShown == record.shelfAtlases);
+    CHECK(record.shelfLabelsFailed == 0);
+    CHECK(record.shelfLabelBytes > 0);
+    CHECK(record.shelfLabelBytes == run.report->gpuMemory.usage(rv::gl::GpuMemoryKind::LabelTextures).bytes);
+    // The room's two atlases within 2 MiB (BC1 with their mips; RGBA8 without S3TC is eight times that).
+    CHECK(record.shelfLabelBytes <= 16u * 1024u * 1024u);
+
+    // Up close (0.7 m), the first module's first tab and the first card read: ink on their paper at the view's centre.
+    struct Close {
+        const char* name;
+        glm::mat4 frame;
+        float face;
+    };
+    for (const Close& close : {Close{"tab", labels.tabs.front().frame, rv::app::kPlateThickness},
+                               Close{"card", labels.captions.front().frame, rv::app::kPlateThickness}}) {
+        const glm::vec3 facing(close.frame[2]);
+        const glm::vec3 target = glm::vec3(close.frame[3]) + facing * close.face;
+        const std::string spawn = spawnLookingAt(target, facing, 0.7f);
+        const fs::path shot = room.dir / (std::string("labels_") + close.name + ".png");
+        const AppRun closeRun = runApp(retroverseExe(), room.dir, std::string("labels_") + close.name,
+                                       roomArguments("40", shot, {"--spawn", spawn}));
+        requireCleanRun(closeRun);
+        const rv::assets::ImageData image = requireScreenshot(closeRun, shot, kShotSize);
+        const double range = luminanceRange(image, kShotSize / 2, 14);
+        INFO(close.name << " from " << spawn << ": the luminance range " << range);
+        CHECK(range > 0.08);
+    }
+}
+
+TEST_CASE("world look: a shared room's section signs (I12 step 5)", "[gpu][world][world_look][shelf_labels]") {
+    ImportedRoom room("sections", "esde/building");
+    const fs::path doorway = room.dir / "sections_door.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "sections_door",
+                              {"--start-room", "area:shared:handheld", "--exit-after-frames", "--frames", "40",
+                               "--fixed-dt", "0.016667", "--screenshot", arg(doorway)});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->catalog.has_value());
+    // Its two sections (pocketlab's and pokemini's), a sign each; the floor's console rooms have none.
+    CHECK(run.report->catalog->sectionSigns == 2);
+    CHECK(run.report->catalog->shelfLabelsFailed == 0);
+    CHECK(run.report->catalog->shelfAtlasesShown == run.report->catalog->shelfAtlases);
 }

@@ -614,11 +614,11 @@ ADR-0013's "Deferred". Each item names where the current behavior is documented.
   (`media.case.plain.generic`, its spine on the top face; a manifest's `fallbackPrefab` must name its family's generic,
   so the side generic would need a prefab family of its own); a big box's shell tinted from its spine's colour (the
   spine array's background row sampled by the shell's material); the faithful per-console families.
-- **Shared and arcade rooms (I4 step 4):** a sign per section of a shared room, L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
+- **Shared and arcade rooms (I4 step 4):** L-shaped templates and layout candidates (`docs/i4/step-4.md`, ADR-0013
   "Deferred"). In a shared room of few titles the display cases' riser cards (an invented cover across the empty
   slots) outnumber the games there and read like games (G13: five cards beside four cases); plainer cards or other
-  dressing on a mostly empty case. I12 step 5 takes the sign per section (ADR-0021 §1); the templates and the riser
-  cards stay here.
+  dressing on a mostly empty case. ~~A sign per section of a shared room~~: done in I12 step 5
+  (`docs/i12/step-5.md`); the templates and the riser cards stay here.
 
 ### Tests
 
@@ -901,6 +901,20 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
   a crown turned along the wall (fronds left and right) would read fuller.
 - **The editor and the hero set** (step 3): a part the editor moves takes its pieces along, but the move's probe does
   not judge them; a moved armchair could put its cushion over a module's footprint.
+- **The shelves' labels during an edit session** (step 5): the tabs, cards and section signs follow the room editor at
+  the end of its session (no object is added or taken away while it holds render items by index); a module carried
+  or dropped meanwhile leaves its tabs where it stood until then. Moving the labels' plates with the held fixture's
+  render items would close it.
+- **The warm ride's margin on the real library** (step 5): the ride to the computers' amstradcpc room waits for its
+  1,646 covers in view, the view's deadline about 2.25 s after the request; on 2026-11-10 they were resident at 2.26
+  to 2.38 s on every run (the floor's job 1.04 to 1.11 s), the same with the shelves' labels turned off, so the row
+  timed out where step 4's quiet run had them at 1.90 s. The covers in view could be the ones the frustum meets rather
+  than the whole room's (a room seen from its doorway shows a fraction of them), or the deadline be measured from the
+  swap.
+- **Section signs in the arcade** (step 5): the cabinets hold none (a topper on the first cabinet of each section, the
+  arcade's specifics: "Parked at I12's planning", P11).
+- **Tabs on the face-out levels** (step 5): a module's hero band and the featured wall shelf, in priority order, have
+  no run to name; a section's name there in a shared room could be one.
 
 ## Branding
 

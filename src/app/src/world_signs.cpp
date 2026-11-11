@@ -230,7 +230,7 @@ void WorldSigns::rescan(const Frame& frame) {
         const std::vector<catalog::SystemName> sections =
             frame.sections ? frame.sections(sign.room) : std::vector<catalog::SystemName>{};
         std::optional<IdentitySignContent> content =
-            identitySignContent(sign.room, sign.place, sections, frame.systems);
+            identitySignContent(sign.room, sign.place, sections, frame.systems, sign.section);
         if (!content) {
             continue;
         }
