@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "10c9ebe8c2bfb4e76810d298987b13a56c3fc512",
+    "gitCommit": "74660647e294adee5148b2ce7ec6958531032a6f",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g20_cabinet_focus_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "e00b7ab3b0d7c7e1f9091ef245029d9693f22d0446775286cfd3de14a16c6a55",
+    "sha256": "167ef5835f5c3a5283674301d49658bb46ecfb94d2878637f6e749038dffd922",
     "width": 1920
   },
   "inputs": {
@@ -33,17 +33,17 @@
       "sha256": "fdb23078f54f9c0c8c5b9ce5fc31195eca35c6f221866e9c00f1d43311209e18"
     },
     "plan": {
-      "digest": "d1b7edc4c7a13d22ddac76061b39458f4f2876aca7c5e4c8d5188b8805f6b146",
-      "fileSha256": "d1b7edc4c7a13d22ddac76061b39458f4f2876aca7c5e4c8d5188b8805f6b146",
+      "digest": "06b3e6113696a29fdd5012c0af1586e6acd6649a704798a41d493c8c7c8e0ac6",
+      "fileSha256": "06b3e6113696a29fdd5012c0af1586e6acd6649a704798a41d493c8c7c8e0ac6",
       "items": 15,
       "placements": 159
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "4c722bb14f9718fa5653cce9b65fbe62f5ccd9f7eea5d9336c7bf4ba2f19f7c5"
+      "sha256": "947f421fca66bea653c9d768ae33d3cbfe04e9d7384c426c793d106294cae6b5"
     }
   },
-  "renderedOn": "2026-10-30",
+  "renderedOn": "2026-11-11",
   "run": {
     "capturedFrame": 99,
     "frames": 100,

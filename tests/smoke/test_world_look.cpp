@@ -32,6 +32,7 @@
 #include <rv/core/math.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
+#include <rv/scene/atmosphere.hpp>
 #include <rv/world/collection_layout.hpp>
 #include <rv/world/gallery.hpp>
 #include <rv/world/room_look.hpp>
@@ -850,4 +851,49 @@ TEST_CASE("world look: a shared room's section signs (I12 step 5)", "[gpu][world
     CHECK(run.report->catalog->sectionSigns == 2);
     CHECK(run.report->catalog->shelfLabelsFailed == 0);
     CHECK(run.report->catalog->shelfAtlasesShown == run.report->catalog->shelfAtlases);
+}
+
+TEST_CASE("world look: the room's air (I12 step 6): dust in the key light and the pendant, cones in the lounge, the "
+          "dust still under reduceMotion",
+          "[gpu][world][world_look][atmosphere]") {
+    ImportedRoom room("air");
+    const fs::path shot = room.dir / "air.png";
+    const AppRun run = runApp(retroverseExe(), room.dir, "air", roomArguments("30", shot));
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    REQUIRE(run.report->lastView.has_value());
+    // The key light's cone and the pendant's pool at the evening pack's dust, drifting.
+    CHECK(run.report->lastView->atmosphereMotes == rv::scene::kDustConeMotes + rv::scene::kDustPoolMotes);
+    CHECK(run.report->lastView->atmosphereCones == 0);
+    CHECK_FALSE(run.report->lastView->atmosphereFrozen);
+    CHECK(run.report->lastView->atmosphereGpuMilliseconds.has_value());
+    REQUIRE(run.report->catalog.has_value());
+    // The hero sign flickers (never in a frame-limited run's first seconds), the CRT's glow may follow its picture.
+    CHECK(run.report->catalog->flickeringSigns == 1);
+    CHECK(run.report->catalog->crtGlows == 1);
+
+    // Under reduceMotion the same motes stand still.
+    ImportedRoom still("air_still");
+    fs::create_directories(still.data / "config");
+    {
+        std::ofstream config(still.data / "config" / "world.json", std::ios::binary);
+        config << "{\"reduceMotion\": true}\n";
+    }
+    const AppRun stillRun =
+        runApp(retroverseExe(), still.dir, "air_still", roomArguments("30", still.dir / "still.png"));
+    requireCleanRun(stillRun);
+    REQUIRE(stillRun.report->lastView.has_value());
+    CHECK(stillRun.report->lastView->atmosphereMotes == run.report->lastView->atmosphereMotes);
+    CHECK(stillRun.report->lastView->atmosphereFrozen);
+
+    // The optical-era lounge (G17's room) shows its spots' cones in the air.
+    ImportedRoom lounge("air_lounge", "esde/case-shelves");
+    const AppRun loungeRun = runApp(retroverseExe(), lounge.dir, "lounge",
+                                    {"--start-room", "room:ps2", "--exit-after-frames", "--frames", "30", "--fixed-dt",
+                                     "0.016667", "--screenshot", arg(lounge.dir / "lounge.png")});
+    requireCleanRun(loungeRun);
+    REQUIRE(loungeRun.report->lastView.has_value());
+    CHECK(loungeRun.report->lastView->atmosphereCones > 0);
+    CHECK(loungeRun.report->lastView->atmosphereMotes > 0);
 }

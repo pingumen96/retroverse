@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
+    "gitCommit": "74660647e294adee5148b2ce7ec6958531032a6f",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g17_optical_era_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "c0b949213b6cd7253d2596bcaaf1fe67577280800bba594b76ef22f61581ae24",
+    "sha256": "16cbd529a05c8f1ff4dfe0ccf301936cc727b86e807df36305a206bb497363fe",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
+      "sha256": "947f421fca66bea653c9d768ae33d3cbfe04e9d7384c426c793d106294cae6b5"
     }
   },
-  "renderedOn": "2026-11-10",
+  "renderedOn": "2026-11-11",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

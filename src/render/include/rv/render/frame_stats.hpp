@@ -28,6 +28,11 @@ struct FrameStats {
     std::size_t shaderSwitches = 0;   ///< programs bound (the first one included)
     std::size_t materialSwitches = 0; ///< materials bound (the first one included)
     std::size_t debugLines = 0;       ///< debug lines drawn after the scene
+    /// The atmosphere's motes and light cones drawn (I12 step 6; 0 when the view drew none).
+    std::size_t atmosphereMotes = 0;
+    std::size_t atmosphereCones = 0;
+    /// The motes stood still (AtmosphereSettings::frozen: reduceMotion).
+    bool atmosphereFrozen = false;
     /// Draw calls and instances of the key light's shadow map (0 when the view has no shadow).
     std::size_t shadowDrawCalls = 0;
     std::size_t shadowInstances = 0;
@@ -51,6 +56,9 @@ struct FrameStats {
     /// GPU time of the hover outline (its mark into the stencil and its edge into the output), like
     /// shadowGpuMilliseconds; empty for a view that drew no outline.
     std::optional<double> outlineGpuMilliseconds;
+    /// GPU time of the atmosphere (I12 step 6: dust and light cones), like shadowGpuMilliseconds; empty for a view that
+    /// drew none.
+    std::optional<double> atmosphereGpuMilliseconds;
 };
 
 } // namespace rv::gl

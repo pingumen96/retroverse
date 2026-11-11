@@ -278,6 +278,11 @@ struct CatalogRecord {
     std::size_t shelfAtlasesShown = 0;
     std::size_t shelfLabelsFailed = 0;
     std::uint64_t shelfLabelBytes = 0;
+    /// I12 step 6: the hero signs flickering in the scene shown when the run ended (RoomAtmosphere), the CRT glows that
+    /// may follow their pictures, and how many times a glow was written during the run.
+    std::size_t flickeringSigns = 0;
+    std::size_t crtGlows = 0;
+    std::size_t crtGlowWrites = 0;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;

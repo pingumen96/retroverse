@@ -915,6 +915,12 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
   arcade's specifics: "Parked at I12's planning", P11).
 - **Tabs on the face-out levels** (step 5): a module's hero band and the featured wall shelf, in priority order, have
   no run to name; a section's name there in a shared room could be one.
+- **Light cones against the scene's depth** (step 6): the atmosphere's cones end 5 cm above the floor and the depth test
+  cuts them where they meet a wall or a piece of furniture; a copy of the pre-pass depth (or a depth-only target) would
+  let them fade into what they touch.
+- **The glow of a still, the sign's lights dipping** (step 6): the CRT's spill light follows a clip's frames only (a
+  cover or the standby keeps the light's own colour); the hero sign's lettering and bloom dip, its picture light and
+  `accent:sign_glow` do not, nor the arcade lamp's neon tube.
 
 ## Branding
 

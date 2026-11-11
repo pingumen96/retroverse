@@ -17,6 +17,8 @@
 #include <rv/geometry/socket.hpp>
 #include <rv/render/light_packing.hpp>
 #include <rv/render/uniform_blocks.hpp>
+#include <rv/render/atmosphere_settings.hpp>
+#include <rv/scene/atmosphere.hpp>
 #include <rv/scene/collision.hpp>
 #include <rv/scene/debug_lines.hpp>
 #include <rv/scene/render_item.hpp>
@@ -164,6 +166,10 @@ public:
     /// light that casts the shadows is shadowLight() (or shadowNote() says why none does). In a scene with areas, the
     /// lights the area that holds the eye selects (chosen again first, the lights' flags or places perhaps edited).
     void applyLighting();
+    /// Packs sceneLights() again after a change of their colours or intensities alone (I12 step 6: a CRT's glow
+    /// following its picture): the lights the eye's area selects, its environment's ease and the shadow's fade stay as
+    /// they are (applyLighting() would select again and cut the ease short).
+    void repackLights() { packLighting(); }
 
     /// The scene's areas (empty: none).
     [[nodiscard]] std::span<const scene::SceneArea> areas() const noexcept { return m_areas; }
@@ -212,6 +218,14 @@ public:
     /// Why the first light that asks for shadows casts none in the last packing (a point light, a dropped light, a
     /// directional light while no item casts shadows); empty otherwise.
     [[nodiscard]] const std::string& shadowNote() const noexcept { return m_shadowNote; }
+    /// The scene's atmosphere (I12 step 6: scene::deriveAtmosphere of the description, again when objects are
+    /// replaced).
+    [[nodiscard]] std::span<const scene::AtmosphereEmitter> atmosphere() const noexcept { return m_atmosphere; }
+    /// The emitters the views draw: those of the area that holds the eye (every one in a scene without areas), each
+    /// with its light as sceneLights() holds it at the last packing.
+    [[nodiscard]] std::span<const gl::AtmosphereSource> atmosphereSources() const noexcept {
+        return m_atmosphereSources;
+    }
     /// World bounds of the render items the shadow pass draws (those that cast shadows and are not alpha-blended,
     /// scene::shadowCasterBounds): the orthographic shadow map of a directional key light is fitted to them. Empty when
     /// nothing casts.
@@ -220,6 +234,8 @@ public:
 private:
     /// Packs the lights (all, or the area's selection) into m_lights with the key light and what was left out.
     void packLighting();
+    /// m_atmosphereSources from m_atmosphere, the eye's area and the scene lights.
+    void gatherAtmosphere();
     /// The environment of the area that holds the eye: its terms over environment().
     [[nodiscard]] scene::EnvironmentSetup areaEnvironment() const;
     /// What each object of the description drew and collided with (I4b step 4: replaceObjects() keeps an unchanged
@@ -253,6 +269,8 @@ private:
     std::string m_shadowNote;
     core::Aabb m_shadowCasterBounds;
     std::vector<scene::SceneArea> m_areas;
+    std::vector<scene::AtmosphereEmitter> m_atmosphere;
+    std::vector<gl::AtmosphereSource> m_atmosphereSources;
     scene::AreaLighting m_areaLighting;
     /// Each area's environment (its terms over the scene's), edited by the overlay through environment().
     std::vector<scene::EnvironmentSetup> m_areaEnvironments;

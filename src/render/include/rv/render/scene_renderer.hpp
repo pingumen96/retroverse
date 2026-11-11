@@ -12,6 +12,7 @@
 #include <rv/core/aabb.hpp>
 #include <rv/core/expected.hpp>
 #include <rv/core/failure_streak.hpp>
+#include <rv/render/atmosphere_pass.hpp>
 #include <rv/render/frame_stats.hpp>
 #include <rv/render/gpu_timer.hpp>
 #include <rv/render/instance_buffer.hpp>
@@ -53,6 +54,7 @@ struct SceneShaders {
     SsaoShaders ssao;                          ///< the ambient occlusion passes
     PostShaders post;                          ///< bloom, the post pass and the anti-aliasing
     OutlineShaders outline;                    ///< the hover outline's mark and edge
+    AtmosphereShaders atmosphere;              ///< the dust and light cones (I12 step 6)
     /// An inspection view (SurfaceView: pbr/pbr.vert + debug/inspect.frag): when set, the lit pass draws every batch
     /// with it instead of its material's program, still binding the material (its textures, factors and alpha mode).
     /// Such a view is meant to be shown without tonemapping (PostSettings::tonemap off). Null for the materials' own
@@ -93,6 +95,9 @@ struct RenderView {
     PostSettings post;
     /// FrameUniforms::time: simulated seconds.
     float timeSeconds = 0.0f;
+    /// The atmosphere's emitters (I12 step 6: the eye's area's) and how the view draws them; empty: none.
+    std::span<const AtmosphereSource> atmosphere;
+    AtmosphereSettings atmosphereSettings;
     /// Lines drawn over the post-processed scene with SceneShaders::debugLines; null for none.
     const DebugDraw* debugDraw = nullptr;
     /// Draws the scene's triangles as their edges (glPolygonMode GL_LINE) to inspect geometry, without depth pre-pass
@@ -133,6 +138,8 @@ struct RenderView {
 ///    static groups' ranges, then the plan's alpha-blended batches (glass over the collection); the shadow map and the
 ///    depth pre-pass draw the static ranges too. The lit shader reads the shadow map and the ambient occlusion
 ///    (SceneTextureUnit) and writes linear radiance, neither exposed nor tonemapped;
+///  - adds the atmosphere of the view (AtmospherePass, I12 step 6: dust motes and light cones of RenderView::atmosphere
+///    that the view's frustum sees) into the HDR target's radiance, unless the view is an inspection or wireframe;
 ///  - post-processes the HDR scene into the sRGB output (PostProcessor: bloom, exposure, vignette, the ACES fitted
 ///    tonemap, dithering, the anti-aliasing);
 ///  - draws the hover outline (OutlinePass) around the instances flagged scene::instance_flags::kHighlighted, of the
@@ -264,6 +271,7 @@ private:
     SsaoPass m_ssao;
     PostProcessor m_post;
     OutlinePass m_outline;
+    AtmospherePass m_atmosphere;
     scene::BatchPlanner m_planner;
     /// Plans of the current view and of its shadow map; kept so that their vectors keep their capacity.
     scene::BatchPlan m_plan;

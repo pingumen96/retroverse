@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -85,6 +86,12 @@ private:
     std::size_t m_capacity = 0;
     FrameSize m_size;
 };
+
+/// The mean linear colour of `frame` (I12 step 6: the hero screen's spill light follows its picture): its pixels on a
+/// kAverageGrid grid (cell centres) decoded from sRGB and averaged, each channel in [0, 1]; black for an empty frame.
+inline constexpr int kAverageGridColumns = 16;
+inline constexpr int kAverageGridRows = 12;
+[[nodiscard]] std::array<float, 3> averageLinearColour(const VideoFrame& frame) noexcept;
 
 class FramePool;
 

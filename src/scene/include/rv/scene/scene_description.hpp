@@ -54,6 +54,12 @@ namespace rv::scene {
 ///         "enabled": true,
 ///         "radius": 0.4,                           (0, 5] meters: how far from a surface occluders darken it
 ///         "intensity": 1.0                         [0, 4]: exponent of the unoccluded share (0: no darkening)
+///       },
+///       "atmosphere": {                            optional (I12 step 6): the room's air; absent, none
+///         "dust": 1,                               [0, 4]: scales the motes in the key light and the pendant
+///         "lightCones": false,                     faint cones under the spots
+///         "coneStrength": 0.035,                   [0, 0.2]
+///         "neonFlicker": true, "crtBreathing": true
 ///       }
 ///     },
 ///     "lights": [{                                 optional
@@ -80,7 +86,8 @@ namespace rv::scene {
 ///         "ambientGround": "#...",                 the views ease to the eye's area's over about half a second
 ///         "ambientIntensity": 0.3,                 (scene_areas.hpp's EnvironmentEase)
 ///         "fillColor": "#...", "fillIntensity": 0.1,
-///         "bloomStrength": 0.28                    [0, 1] (I6 step 3: a theme pack's bloom, the arcade's)
+///         "bloomStrength": 0.28,                   [0, 1] (I6 step 3: a theme pack's bloom, the arcade's)
+///         "atmosphere": {...}                      the room's air (above), in place of the scene's
 ///       }
 ///     }],
 ///     "objects": [{                                optional
@@ -99,8 +106,8 @@ namespace rv::scene {
 ///     }]
 ///   }
 ///
-/// Areas: the area that holds the viewer's eye (the first whose boxes contain it, else the last one that held it) is the
-/// one whose lights the views use: the renderer packs that area's lights nearest the eye, its key light (its first
+/// Areas: the area that holds the viewer's eye (the first whose boxes contain it, else the last one that held it) is
+/// the one whose lights the views use: the renderer packs that area's lights nearest the eye, its key light (its first
 /// light with castsShadows) shadowed, then a few lights of each neighbouring area (one whose boxes touch the eye's
 /// area's, as a room's doorway passage touches its hall) near the face they share, never shadowed; the other lights
 /// are left out (scene_areas.hpp). The ambient, fill and exposure are the eye's area's (its "environment"). A scene
@@ -155,6 +162,28 @@ struct SsaoSetup {
     bool operator==(const SsaoSetup&) const = default;
 };
 
+/// Largest dust scale and light cone strength a scene may ask for (AtmosphereSetup).
+inline constexpr float kMaxAtmosphereDust = 4.0f;
+inline constexpr float kMaxAtmosphereConeStrength = 0.2f;
+
+/// The air of a room (I12 step 6, ADR-0021 §4): dust motes drifting in its key light's cone and its pendant's pool,
+/// faint cones of light under its spots, its neon dipping once in a while, its picture tube's light following the
+/// picture. A scene or area without one has none of them.
+struct AtmosphereSetup {
+    /// [0, kMaxAtmosphereDust]: scales the motes of every emitter (0: none).
+    float dust = 1.0f;
+    /// Faint cones under the key light, the washers and the display cases' and wall shelf's spots.
+    bool lightCones = false;
+    /// [0, kMaxAtmosphereConeStrength]: the cones' radiance per unit of their light's, at the axis.
+    float coneStrength = 0.035f;
+    /// The sign's lettering and the neon tubes dip for a moment now and then.
+    bool neonFlicker = true;
+    /// The hero screen's spill light takes the picture's colour and brightness.
+    bool crtBreathing = true;
+
+    bool operator==(const AtmosphereSetup&) const = default;
+};
+
 /// Linear-RGB environment terms and the post-processing of the view for the renderer.
 struct EnvironmentSetup {
     /// "#383735". Radiance of the background, seen where no surface is drawn: the renderer exposes and tonemaps it
@@ -178,6 +207,8 @@ struct EnvironmentSetup {
     float vignette = 0.05f;
     /// Ambient occlusion of the views ("ssao").
     SsaoSetup ssao;
+    /// The air of the scene (of a scene with areas, the areas' own: "atmosphere"); none when absent.
+    std::optional<AtmosphereSetup> atmosphere;
 };
 
 /// Texture bound to one material role of an object (label of a cartridge, CRT screen, poster picture, a surface). The
@@ -213,6 +244,8 @@ struct AreaEnvironment {
     std::optional<glm::vec3> fillColor;
     std::optional<float> fillIntensity;
     std::optional<float> bloomStrength;
+    /// The area's air (a room's), in place of the scene's.
+    std::optional<AtmosphereSetup> atmosphere;
 
     /// `scene` with these terms in place of its own.
     [[nodiscard]] EnvironmentSetup over(const EnvironmentSetup& scene) const;

@@ -389,6 +389,8 @@ struct ScreenService::Impl {
 
         /// The frame waiting for its upload (VideoPlayback::update()'s), and the render frame it began to wait.
         const media::VideoFrame* pending = nullptr;
+        /// The mean linear colour of the last frame uploaded (I12 step 6: the hero's spill light follows it).
+        std::optional<std::array<float, 3>> averageColour;
         std::optional<std::uint64_t> pendingSince;
 
         // The sound (I5 step 5): the slot's mixer source, the clip's ring, whether its stream was recorded.
@@ -956,6 +958,9 @@ struct ScreenService::Impl {
         if (*uploaded == gl::VideoUpload::RingBusy) {
             ++counters.ringBusy; // kept pending: retried at the next frame
             return false;
+        }
+        if (!slot.viewer) {
+            slot.averageColour = media::averageLinearColour(frame);
         }
         slot.playback->releaseFrame();
         slot.pending = nullptr;
@@ -2592,6 +2597,11 @@ const std::vector<ScreenGame>& ScreenService::games() const noexcept {
 
 bool ScreenService::bound() const noexcept {
     return !m_impl->screens.empty();
+}
+
+std::optional<std::array<float, 3>> ScreenService::heroPictureColour() const {
+    const Impl::Slot* slot = m_impl->heroPlayingSlot();
+    return slot != nullptr && slot->frames > 0 ? slot->averageColour : std::nullopt;
 }
 
 std::string ScreenService::screenId() const {

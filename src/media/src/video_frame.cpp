@@ -1,6 +1,7 @@
 #include <rv/media/video_frame.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <new>
 #include <utility>
 
@@ -21,6 +22,39 @@ constexpr std::size_t kTailPaddingBytes = 64 * static_cast<std::size_t>(kFrameBy
 
 void VideoFrame::AlignedDelete::operator()(std::uint8_t* pixels) const noexcept {
     ::operator delete[](pixels, kPixelAlignment);
+}
+
+std::array<float, 3> averageLinearColour(const VideoFrame& frame) noexcept {
+    std::array<float, 3> mean{0.0f, 0.0f, 0.0f};
+    const std::uint8_t* pixels = frame.pixels();
+    if (pixels == nullptr || frame.width() <= 0 || frame.height() <= 0) {
+        return mean;
+    }
+    // sRGB-encoded bytes to linear light, once.
+    static const std::array<float, 256> kLinear = [] {
+        std::array<float, 256> table{};
+        for (std::size_t i = 0; i < table.size(); ++i) {
+            const float encoded = static_cast<float>(i) / 255.0f;
+            table[i] = encoded <= 0.04045f ? encoded / 12.92f : std::pow((encoded + 0.055f) / 1.055f, 2.4f);
+        }
+        return table;
+    }();
+    const std::size_t stride = frame.strideBytes();
+    for (int row = 0; row < kAverageGridRows; ++row) {
+        const int y = std::min(frame.height() - 1, (2 * row + 1) * frame.height() / (2 * kAverageGridRows));
+        for (int column = 0; column < kAverageGridColumns; ++column) {
+            const int x = std::min(frame.width() - 1, (2 * column + 1) * frame.width() / (2 * kAverageGridColumns));
+            const std::uint8_t* pixel =
+                pixels + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(x) * kFrameBytesPerPixel;
+            for (std::size_t channel = 0; channel < 3; ++channel) {
+                mean[channel] += kLinear[pixel[channel]];
+            }
+        }
+    }
+    for (float& channel : mean) {
+        channel /= static_cast<float>(kAverageGridColumns * kAverageGridRows);
+    }
+    return mean;
 }
 
 bool VideoFrame::resize(FrameSize size) {

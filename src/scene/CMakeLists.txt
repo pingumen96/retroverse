@@ -5,6 +5,7 @@
 # consumes its plain data.
 
 add_library(rv_scene STATIC
+    src/atmosphere.cpp
     src/batch_planner.cpp
     src/camera.cpp
     src/collision.cpp

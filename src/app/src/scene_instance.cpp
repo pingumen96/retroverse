@@ -220,6 +220,7 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
 
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
+    instance.m_atmosphere = scene::deriveAtmosphere(description);
     if (!description.areas.empty()) {
         // The area of the scene camera's eye until the application follows the walker's (followEye()).
         instance.m_areas = description.areas;
@@ -423,6 +424,29 @@ void SceneInstance::packLighting() {
     m_shadowLight = packed.shadowLight;
     m_keyLight = packed.keyLight;
     m_shadowNote = std::move(packed.shadowNote);
+    gatherAtmosphere();
+}
+
+void SceneInstance::gatherAtmosphere() {
+    m_atmosphereSources.clear();
+    const std::optional<std::size_t> eyeArea = m_areaLighting.empty() ? std::nullopt : m_areaLighting.area();
+    for (const scene::AtmosphereEmitter& emitter : m_atmosphere) {
+        if ((!m_areaLighting.empty() && emitter.area != eyeArea) || emitter.light >= m_sceneLights.size()) {
+            continue;
+        }
+        const scene::Light& light = m_sceneLights[emitter.light];
+        gl::AtmosphereSource source;
+        source.emitter = emitter;
+        source.lightPosition = light.position;
+        source.lightDirection = light.direction;
+        source.color = light.color;
+        source.intensity = light.intensity;
+        source.range = light.range;
+        source.innerConeDeg = light.innerConeDeg;
+        source.outerConeDeg = light.outerConeDeg;
+        source.spot = light.type == scene::LightType::Spot;
+        m_atmosphereSources.push_back(source);
+    }
 }
 
 std::string_view SceneInstance::areaId() const noexcept {
@@ -453,6 +477,8 @@ bool SceneInstance::followEye(const glm::vec3& eye, const glm::vec3& forward, fl
     changed = advanceShadow(seconds, instant) || changed;
     if (changed) {
         packLighting();
+    } else if (areaChanged) {
+        gatherAtmosphere();
     }
     if (areaChanged) {
         // What each area's key light casts was logged at load (logAreaKeyLights).
@@ -695,6 +721,7 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     }
     description.lights = std::move(lights);
     m_sceneLights = description.lights;
+    m_atmosphere = scene::deriveAtmosphere(description);
     if (!m_areas.empty()) {
         m_areaLighting = scene::AreaLighting(m_areas, m_sceneLights, m_eye, gl::kMaxPunctualLights);
         m_shadowSource.reset();

@@ -60,9 +60,10 @@ void FrameTiming::recordFrame(std::uint64_t frameIndex, std::optional<double> mi
 }
 
 void FrameTiming::recordGpuPasses(const gl::FrameStats& stats) {
-    GpuSample sample{stats.shadowGpuMilliseconds, stats.depthGpuMilliseconds, stats.ssaoGpuMilliseconds,
-                     stats.sceneGpuMilliseconds,  stats.postGpuMilliseconds,  stats.outlineGpuMilliseconds,
-                     std::nullopt};
+    GpuSample sample{stats.shadowGpuMilliseconds,     stats.depthGpuMilliseconds,
+                     stats.ssaoGpuMilliseconds,       stats.sceneGpuMilliseconds,
+                     stats.postGpuMilliseconds,       stats.outlineGpuMilliseconds,
+                     stats.atmosphereGpuMilliseconds, std::nullopt};
     double total = 0.0;
     bool any = false;
     for (std::size_t pass = 0; pass + 1 < kGpuPassCount; ++pass) {

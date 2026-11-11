@@ -64,6 +64,7 @@ add_library(rv_app_cli STATIC
     src/world_edit_interaction.cpp
     src/world_edit_room.cpp
     src/xr_watch.cpp
+    src/crt_glow.cpp
     src/identity_signs.cpp
     src/history_plaques.cpp
     src/content_consoles.cpp
@@ -139,6 +140,7 @@ add_library(rv_app STATIC
     src/world_consoles.cpp
     src/world_gallery.cpp
     src/world_shelf_labels.cpp
+    src/room_atmosphere.cpp
     src/plaque_card_panel.cpp
     src/product_ui.cpp
     src/retroverse_app.cpp

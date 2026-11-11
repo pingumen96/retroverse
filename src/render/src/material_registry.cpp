@@ -233,6 +233,36 @@ Status MaterialRegistry::setPictureRect(scene::MaterialHandle handle, std::optio
                            std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
 }
 
+Status MaterialRegistry::setFlicker(scene::MaterialHandle handle, std::optional<EmissiveFlicker> flicker) {
+    if (handle.value >= m_materials.size()) {
+        return makeError(ErrorCode::InvalidArgument, "unknown material", fmt::format("material #{}", handle.value));
+    }
+    GpuMaterial& material = m_materials[handle.value];
+    MaterialUniforms uniforms = material.uniforms;
+    if (flicker) {
+        uniforms.flickerSeed = static_cast<float>(flicker->seed & 0xFFFFFFu);
+        uniforms.flickerRate = std::isfinite(flicker->rate) ? std::max(flicker->rate, 0.0f) : 0.0f;
+        uniforms.flickerDepth = std::isfinite(flicker->depth) ? std::clamp(flicker->depth, 0.0f, 1.0f) : 0.0f;
+        uniforms.flags |= material_flags::kEmissiveFlicker;
+    } else {
+        uniforms.flickerSeed = 0.0f;
+        uniforms.flickerRate = 0.0f;
+        uniforms.flickerDepth = 0.0f;
+        uniforms.flags &= ~material_flags::kEmissiveFlicker;
+    }
+    if (uniforms.flickerSeed == material.uniforms.flickerSeed &&
+        uniforms.flickerRate == material.uniforms.flickerRate &&
+        uniforms.flickerDepth == material.uniforms.flickerDepth && uniforms.flags == material.uniforms.flags) {
+        return ok();
+    }
+    material.uniforms = uniforms;
+    if (handle.value >= m_uploadedCount) {
+        return ok();
+    }
+    return m_buffer.update(handle.value * m_stride,
+                           std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
+}
+
 GLuint MaterialRegistry::textureOverride(scene::MaterialHandle handle, MaterialTextureSlot slot) const noexcept {
     return handle.value < m_materials.size() ? m_materials[handle.value].textureOverrides[toIndex(slot)] : 0;
 }

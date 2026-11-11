@@ -244,6 +244,26 @@ void readThemeLook(const ObjectReader& reader, ThemeMaterials& theme) {
     if (!document.failed() && reader.has("bloomStrength")) {
         theme.bloomStrength = reader.number("bloomStrength", 0.0, 1.0);
     }
+    if (!document.failed() && reader.has("atmosphere")) {
+        // I12 step 6: the air of the pack's rooms.
+        const ObjectReader air =
+            reader.object("atmosphere", {"coneStrength", "crtBreathing", "dust", "lightCones", "neonFlicker"});
+        if (air.has("dust")) {
+            theme.atmosphere.dust = air.number("dust", 0.0, 4.0);
+        }
+        if (air.has("lightCones")) {
+            theme.atmosphere.lightCones = air.boolean("lightCones");
+        }
+        if (air.has("coneStrength")) {
+            theme.atmosphere.coneStrength = air.number("coneStrength", 0.0, 0.2);
+        }
+        if (air.has("neonFlicker")) {
+            theme.atmosphere.neonFlicker = air.boolean("neonFlicker");
+        }
+        if (air.has("crtBreathing")) {
+            theme.atmosphere.crtBreathing = air.boolean("crtBreathing");
+        }
+    }
     if (!document.failed() && reader.has("screenPreset")) {
         // I5 step 6 (ADR-0016 §7): the CRT preset of the pack's rooms' screens.
         theme.screenPreset = reader.string("screenPreset");
@@ -1297,8 +1317,9 @@ Expected<ThemeMaterials> parseThemeMaterials(std::string_view text, std::string_
     }
     DocumentReader document(text, std::string(context));
     const ObjectReader reader(document, *value, "",
-                              {"accents", "bloomStrength", "furniture", "heroParts", "id", "kinds", "labelPalette",
-                               "lightTints", "name", "neon", "neonGlow", "roomDressing", "schemaVersion", "screenPreset"});
+                              {"accents", "atmosphere", "bloomStrength", "furniture", "heroParts", "id", "kinds",
+                               "labelPalette", "lightTints", "name", "neon", "neonGlow", "roomDressing",
+                               "schemaVersion", "screenPreset"});
     ThemeMaterials theme;
     (void)reader.integer("schemaVersion", 1, 1);
     theme.id = reader.dataId("id");
@@ -1430,6 +1451,7 @@ LightingProfile themedLighting(const LightingProfile& profile, const ThemeMateri
     if (theme.bloomStrength) {
         themed.bloomStrength = *theme.bloomStrength;
     }
+    themed.atmosphere = theme.atmosphere;
     // The pack's own accents after the profile's (I6 step 6's review); a name the profile has is the pack's.
     for (const AccentLight& accent : theme.accents) {
         const auto same = std::find_if(themed.accents.begin(), themed.accents.end(),

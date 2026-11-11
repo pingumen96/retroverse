@@ -355,10 +355,28 @@ Expected<SsaoSetup> parseSsao(const json& value, const Location& at) {
     return ssao;
 }
 
+Expected<AtmosphereSetup> parseAtmosphere(const json& value, const Location& at) {
+    Fields fields(value, at, {"dust", "lightCones", "coneStrength", "neonFlicker", "crtBreathing"});
+    AtmosphereSetup atmosphere;
+    fields.optional("dust", atmosphere.dust, readNumber);
+    fields.check(atmosphere.dust >= 0.0f && atmosphere.dust <= kMaxAtmosphereDust, "dust",
+                 "must be within [0, " + formatNumber(kMaxAtmosphereDust) + "]");
+    fields.optional("lightCones", atmosphere.lightCones, readBool);
+    fields.optional("coneStrength", atmosphere.coneStrength, readNumber);
+    fields.check(atmosphere.coneStrength >= 0.0f && atmosphere.coneStrength <= kMaxAtmosphereConeStrength,
+                 "coneStrength", "must be within [0, " + formatNumber(kMaxAtmosphereConeStrength) + "]");
+    fields.optional("neonFlicker", atmosphere.neonFlicker, readBool);
+    fields.optional("crtBreathing", atmosphere.crtBreathing, readBool);
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return atmosphere;
+}
+
 Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"clearColor", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
-                   "exposure", "bloomStrength", "bloomRadius", "vignette", "ssao"});
+                   "exposure", "bloomStrength", "bloomRadius", "vignette", "ssao", "atmosphere"});
     EnvironmentSetup environment;
     fields.optional("clearColor", environment.clearColor, readColor);
     fields.optional("ambientSky", environment.ambientSky, readColor);
@@ -377,6 +395,7 @@ Expected<EnvironmentSetup> parseEnvironment(const json& value, const Location& a
     fields.optional("vignette", environment.vignette, readNumber);
     fields.check(isUnitInterval(environment.vignette), "vignette", "must be within [0, 1]");
     fields.optional("ssao", environment.ssao, parseSsao);
+    fields.optional("atmosphere", environment.atmosphere, parseAtmosphere);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -467,7 +486,7 @@ Expected<core::Aabb> parseAreaBox(const json& value, const Location& at) {
 Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location& at) {
     Fields fields(value, at,
                   {"exposure", "ambientSky", "ambientGround", "ambientIntensity", "fillColor", "fillIntensity",
-                   "bloomStrength"});
+                   "bloomStrength", "atmosphere"});
     AreaEnvironment environment;
     fields.optional("exposure", environment.exposure, readNumber);
     fields.check(environment.exposure.value_or(1.0f) > 0.0f, "exposure", "must be > 0");
@@ -481,6 +500,7 @@ Expected<AreaEnvironment> parseAreaEnvironment(const json& value, const Location
     fields.optional("bloomStrength", environment.bloomStrength, readNumber);
     fields.check(!environment.bloomStrength || isUnitInterval(*environment.bloomStrength), "bloomStrength",
                  "must be within [0, 1]");
+    fields.optional("atmosphere", environment.atmosphere, parseAtmosphere);
     if (fields.failed()) {
         return propagate(fields.error());
     }
@@ -831,6 +851,9 @@ EnvironmentSetup AreaEnvironment::over(const EnvironmentSetup& scene) const {
     result.fillColor = fillColor.value_or(scene.fillColor);
     result.fillIntensity = fillIntensity.value_or(scene.fillIntensity);
     result.bloomStrength = bloomStrength.value_or(scene.bloomStrength);
+    if (atmosphere) {
+        result.atmosphere = atmosphere;
+    }
     return result;
 }
 

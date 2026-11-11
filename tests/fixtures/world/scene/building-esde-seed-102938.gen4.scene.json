@@ -27,6 +27,15 @@
           ]
         }
       ],
+      "environment": {
+        "atmosphere": {
+          "coneStrength": 0.035,
+          "crtBreathing": true,
+          "dust": 1.0,
+          "lightCones": false,
+          "neonFlicker": true
+        }
+      },
       "id": "room:snes"
     },
     {

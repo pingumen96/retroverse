@@ -192,6 +192,8 @@
   // I5 step 6 (ADR-0016 §7, specification §9.1's "Monitor moderno"): the lounge's screens are a high-quality monitor's
   // (a fine mask, little curvature: assets/materials/crt_presets.json).
   "screenPreset": "monitor",
+  // I12 step 6 (ADR-0021 §4): the dim lounge shows its spots' cones in the air, as concept panel 4's light shafts.
+  "atmosphere": {"lightCones": true},
   // I12 step 1 (ADR-0021 §1, Gate D's G17: the upper walls fell to black): a blue cove on the picture rail washing the
   // dark blue damask below it and the wall above it up to the ceiling (concept panel 4's blue-lit walls), a dark
   // varnished rail, cornice and beams, a warm drum near the doorway and spot cans over the cases on graphite.

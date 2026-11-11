@@ -196,5 +196,7 @@
   "lightTints": {"key": "#FFE4F2", "pendant": "#E0A8FF", "wallWasher": "#50D0FF"},
   // I5 step 6 (ADR-0016 §7): the hero cabinet's and the cabinets' tubes are arcade monitors (deeper scanlines, a
   // stronger mask, more curvature: assets/materials/crt_presets.json).
-  "screenPreset": "arcade"
+  "screenPreset": "arcade",
+  // I12 step 6 (ADR-0021 §4): the dark arcade shows its spots' cones in the air.
+  "atmosphere": {"lightCones": true}
 }

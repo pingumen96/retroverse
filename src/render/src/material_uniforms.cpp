@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <rv/scene/atmosphere.hpp>
+
 namespace rv::gl {
 namespace {
 
@@ -94,6 +96,28 @@ MaterialUniforms withFactors(const MaterialUniforms& uniforms, const MaterialFac
     MaterialUniforms block = uniforms;
     applyFactors(block, factors, emissiveFactor);
     return block;
+}
+
+float emissiveFlickerFactor(const EmissiveFlicker& flicker, float time) noexcept {
+    if (!(flicker.rate > 0.0f) || !(flicker.depth > 0.0f) || !std::isfinite(time) || time < kFirstFlickerSeconds) {
+        return 1.0f;
+    }
+    const float period = 8.0f / flicker.rate;
+    const float local = time - kFirstFlickerSeconds;
+    const float slot = std::floor(local / period);
+    const std::uint32_t seed = (flicker.seed & 0xFFFFFFu) ^ (static_cast<std::uint32_t>(slot) * 0x9E3779B9u);
+    const auto unit = [seed](std::uint32_t k) {
+        return static_cast<float>(scene::atmosphereHash(seed ^ scene::atmosphereHash(k))) * (1.0f / 4294967296.0f);
+    };
+    const float start = unit(1u) * std::max(period - 0.25f, 0.0f);
+    const float length = 0.08f + 0.04f * unit(2u);
+    const float into = local - slot * period - start;
+    if (into < 0.0f || into > length) {
+        return 1.0f;
+    }
+    const float phase = into / length;
+    const float dip = phase < 0.4f ? 1.0f : phase < 0.6f ? 0.35f : 0.8f;
+    return 1.0f - std::clamp(flicker.depth, 0.0f, 1.0f) * dip;
 }
 
 } // namespace rv::gl

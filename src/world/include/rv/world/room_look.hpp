@@ -232,6 +232,18 @@ struct HallLook {
     bool operator==(const HallLook&) const = default;
 };
 
+/// The air of a pack's rooms (I12 step 6, ADR-0021 §4): scene_description.hpp's "atmosphere", written into each
+/// room's environment (a floor's room areas'). Dust in every pack's rooms; the light cones where a pack asks.
+struct RoomAtmosphere {
+    double dust = 1.0;           ///< [0, 4]: scales the motes
+    bool lightCones = false;     ///< faint cones under the spots
+    double coneStrength = 0.035; ///< [0, 0.2]
+    bool neonFlicker = true;     ///< the sign and the neon tubes dip now and then
+    bool crtBreathing = true;    ///< the hero screen's spill light follows the picture
+
+    bool operator==(const RoomAtmosphere&) const = default;
+};
+
 struct LightingProfile {
     std::string name;
     LightStyle key;
@@ -258,6 +270,8 @@ struct LightingProfile {
     std::vector<AccentLight> accents;
     /// The halls' lights and environment.
     HallLook hall;
+    /// The air of a room lit by this profile (themedLighting(): its pack's); none for a profile no pack themed.
+    std::optional<RoomAtmosphere> atmosphere;
 
     [[nodiscard]] const LightStyle& style(LightRole role) const noexcept;
     /// The rooms' lit terms (the environment's exposure, ambient and fill).
@@ -531,6 +545,8 @@ struct ThemeMaterials {
     std::vector<AccentLight> accents;
     /// The pack's dressing of its rooms' upper walls, ceiling and floor (I6 step 6's review).
     RoomDressing dressing;
+    /// The air of its rooms (I12 step 6): "atmosphere", every key optional.
+    RoomAtmosphere atmosphere;
 
     /// The materials of `kind`, those of hero corner part `heroPart` when the theme lists that part (empty: none);
     /// empty for a kind the theme does not dress. The secondary TV's (kSecondaryTvKind, I5 step 3) merge, by role and
@@ -565,8 +581,8 @@ struct ThemeMaterials {
 /// `profile` as a room of `theme` is lit (I6 step 3): its roles' colours (the rooms' and the halls') tinted by the
 /// pack's lightTints; its sign's picture light the profile's times signLightTint() of the pack's neon (then its
 /// "picture" tint, if any); its accent lights anchored on the hero corner's sign in the pack's neon colour, with its
-/// neonGlow's intensity and range; its bloom the pack's bloomStrength. Other intensities, ranges, cones and the
-/// environment unchanged.
+/// neonGlow's intensity and range; its bloom the pack's bloomStrength; its atmosphere the pack's. Other intensities,
+/// ranges, cones and the environment unchanged.
 [[nodiscard]] LightingProfile themedLighting(const LightingProfile& profile, const ThemeMaterials& theme);
 
 /// The tint of a sign's picture light from its neon (sRGB "#RRGGBB"): the neon scaled to its brightest channel, mixed
