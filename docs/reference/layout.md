@@ -147,7 +147,11 @@ Reference moved out of `CLAUDE.md` (2026-10-20); `CLAUDE.md` keeps the essential
   gallery's frames (`gallery`, `gallery.hpp`; the app's `gallery_pictures.hpp` chooses their media, `WorldGallery`
   shows them; `docs/i12/step-2.md`); since step 5 the shelves' letter tabs, caption cards and section signs (the
   app's `shelf_labels.hpp` places them, `assets/label_atlas.hpp` draws their atlases, geometry's `label_plates` their
-  plates, `WorldShelfLabels` shows them; `docs/i12/step-5.md`);
+  plates, `WorldShelfLabels` shows them; `docs/i12/step-5.md`); since step 6 the packs' `atmosphere`, the rooms' air
+  the scene builders write into each room's environment (`rv_scene`'s `atmosphere.hpp` derives its emitters from the
+  lights, `rv_render`'s `AtmospherePass` draws the dust and light cones from `atmosphere_settings.hpp`'s block, the
+  material flag `kEmissiveFlicker` dips a neon, the app's `crt_glow.hpp` and `RoomAtmosphere` flicker the hero signs
+  and ease the CRT's glow towards `media::averageLinearColour` of its clip; `docs/i12/step-6.md`);
   since I5 step 3 a pack's `secondaryTv`, which `scene_builder.hpp`'s `secondaryTvFixtures()` stands in a room's
   sideboard sockets).
   I3's other modules: `rv_geometry` the collection's

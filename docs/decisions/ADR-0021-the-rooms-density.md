@@ -271,6 +271,13 @@ dedicated decoration sockets are dressed where two were. The key shapes a plan (
 - In VR the pass runs per eye within ADR-0017 §9's rows; the fast profile halves the motes and drops the cones. The
   test room (`m0_testroom.json`) declares no atmosphere, so G01 and G21 draw none.
 
+*Amended on 2026-11-11 (I12 step 6):* the atmosphere as built ([i12/step-6.md](../i12/step-6.md)): the packs' air is
+data (`atmosphere`: dust, lightCones, coneStrength, neonFlicker, crtBreathing), written into each room's environment or
+area; every room pack has dust, the lounge and the arcade the cones, the hub none. The motes scatter forwards
+(Henyey-Greenstein), the cones end 5 cm above the floor instead of fading against the depth they are drawn over, the
+flicker never comes before 4 s (not 2), the frame's average colour is taken on the main thread when it is uploaded
+(not on the decoder thread), and only a clip's frames move the glow (a still keeps the light's own colour).
+
 ### 5. The sound of the room
 
 - **Synthesized, never sampled.** Every sound is generated at startup from a deterministic recipe (mains hum with its
