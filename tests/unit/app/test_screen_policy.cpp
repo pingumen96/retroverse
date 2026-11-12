@@ -811,3 +811,68 @@ TEST_CASE("app/screen_policy: without a slot the stills and the card stand for t
     CHECK(policy.wantsDecoder());
     CHECK(policy.hasVideo());
 }
+
+// --- I12 step 8: a secondary TV's static between two clips (ADR-0021 §6) ---------------------------------------------
+
+TEST_CASE("app/screen_policy: a secondary shows static between two clips, never the hero nor its first game",
+          "[app][screen][life]") {
+    ScreenPlaySettings settings = playlistSettings(1.0);
+    settings.startChoice = false;
+    settings.staticBetweenClips = true;
+    settings.playlist.screenId = "crt_b";
+    ScreenPolicy policy(playlistRoom(), settings);
+    double now = 0.0;
+    const auto frames = [&](int count, bool showing) {
+        for (int i = 0; i < count; ++i) {
+            if (showing) {
+                policy.videoShowing();
+            }
+            policy.hover(std::nullopt, now);
+            policy.tick(now);
+            now += kFrame;
+        }
+    };
+    // Every frame until the target changes, its clip showing.
+    const auto untilNext = [&] {
+        const std::uint64_t generation = policy.targetGeneration();
+        for (int i = 0; i < 600 && policy.targetGeneration() == generation; ++i) {
+            frames(1, true);
+        }
+        REQUIRE(policy.targetGeneration() == generation + 1);
+    };
+    // The first game: no static.
+    CHECK_FALSE(policy.showsStatic());
+    frames(1, false);
+    CHECK_FALSE(policy.showsStatic());
+    // Its clip shows to the end of its turn: the next game comes with static, at least 0.3 s even with its clip at once.
+    untilNext();
+    CHECK(policy.showsStatic());
+    frames(5, true);
+    CHECK(policy.showsStatic()); // 0.08 s: still within its least
+    frames(15, true);
+    CHECK_FALSE(policy.showsStatic()); // past 0.3 s with the clip showing
+    // A clip that is slow to come: the static stays until it does, at most 1.5 s.
+    untilNext();
+    frames(40, false);
+    CHECK(policy.showsStatic()); // 0.67 s, nothing yet
+    frames(55, false);
+    CHECK_FALSE(policy.showsStatic()); // past 1.5 s: the stills' turn
+    // A launch holds the screen: no static meanwhile.
+    ScreenPolicy launched(playlistRoom(), settings);
+    launched.videoShowing();
+    for (int i = 0; i < 70; ++i) {
+        launched.tick(i * kFrame);
+    }
+    REQUIRE(launched.showsStatic());
+    launched.launchStarting(std::nullopt);
+    CHECK_FALSE(launched.showsStatic());
+    // The hero's settings: never.
+    ScreenPlaySettings hero = playlistSettings(1.0);
+    ScreenPolicy heroPolicy(playlistRoom(), hero);
+    heroPolicy.videoShowing();
+    for (int i = 0; i < 200; ++i) {
+        heroPolicy.videoShowing();
+        heroPolicy.tick(i * kFrame);
+        CHECK_FALSE(heroPolicy.showsStatic());
+    }
+}

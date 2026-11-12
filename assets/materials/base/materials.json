@@ -426,6 +426,22 @@
     "MAT_Led_Red": { "shading": "unlit", "baseColor": "#FF3A2E", "emissiveStrength": 1.8 },
     "MAT_Led_Green": { "shading": "unlit", "baseColor": "#52F06A", "emissiveStrength": 1.6 },
     "MAT_Display_Amber": { "shading": "unlit", "baseColor": "#FFA640", "emissiveStrength": 1.2 },
+    // I12 step 8 (ADR-0021 §6): a component's activity LEDs, which the app makes blink (gl::FlickerMode::Blink).
+    "MAT_Led_Activity_Red": { "shading": "unlit", "baseColor": "#FF3A2E", "emissiveStrength": 1.8 },
+    "MAT_Led_Activity_Green": { "shading": "unlit", "baseColor": "#52F06A", "emissiveStrength": 1.6 },
+    // I12 step 8: a lava lamp's wax, glowing and breathing (gl::FlickerMode::Pulse), in its tinted bottle; a wall
+    // clock's dial, its hands and its red second hand.
+    "MAT_Lava_Wax": { "shading": "unlit", "baseColor": "#FF6A2A", "emissiveStrength": 1.5 },
+    "MAT_Lava_Glass": {
+      "baseColor": "#7A2E5A",
+      "alpha": 0.35,
+      "alphaMode": "blend",
+      "metallic": 0.0,
+      "roughness": 0.3
+    },
+    "MAT_Clock_Face": { "baseColor": "#EDE6D4", "metallic": 0.0, "roughness": 0.7 },
+    "MAT_Clock_Hand": { "baseColor": "#1A1A1C", "metallic": 0.0, "roughness": 0.45 },
+    "MAT_Clock_Second": { "baseColor": "#B8302A", "metallic": 0.0, "roughness": 0.5 },
     "MAT_Speaker_Grille": { "baseColor": "#232124", "metallic": 0.0, "roughness": 0.95 },
     "MAT_Cable_Rubber": { "baseColor": "#18181A", "metallic": 0.0, "roughness": 0.55 },
     "MAT_Disc_Silver": { "baseColor": "#C9CCD2", "metallic": 1.0, "roughness": 0.18 },

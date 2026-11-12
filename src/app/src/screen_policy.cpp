@@ -321,7 +321,9 @@ bool ScreenPolicy::advance() {
         }
         return next.has_value();
     }
+    const bool fromClip = m_videoShowing;
     retarget(std::move(*next), ScreenOrigin::Playlist);
+    m_static = m_settings.staticBetweenClips && fromClip; // I12 step 8
     return true;
 }
 
@@ -368,6 +370,13 @@ ScreenPicture ScreenPolicy::picture() const noexcept {
         return ScreenPicture::Video;
     }
     return m_readyStill.value_or(ScreenPicture::IdlePattern);
+}
+
+bool ScreenPolicy::showsStatic() const noexcept {
+    if (!m_static || m_targetId.empty() || m_phase != ScreenPhase::Running) {
+        return false;
+    }
+    return m_elapsed < kScreenStaticMinSeconds || (!m_videoShowing && m_elapsed < kScreenStaticMaxSeconds);
 }
 
 bool ScreenPolicy::hasVideo() const noexcept {
@@ -478,6 +487,7 @@ void ScreenPolicy::retarget(std::string id, ScreenOrigin origin) {
     m_stillBeforeCard.reset();
     m_videoShowing = false;
     m_videoFailed = false;
+    m_static = false;
     m_elapsed = 0.0;
     m_clipShownAt.reset();
     m_clipSeconds.reset();

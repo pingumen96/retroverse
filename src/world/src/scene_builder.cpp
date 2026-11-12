@@ -1447,9 +1447,9 @@ std::optional<std::pair<std::int64_t, std::int64_t>> againstWall(const Room& roo
 /// hood, its wash on the wall). A frame the band cannot hold is left out. Since I12 step 4 one over each low
 /// decoration standing on the floor against a wall too (its drawn piece's top under the tall class; not the kinds the
 /// pack's own wall pictures take), each hung over what draws its fixture (a secondary TV over its sideboard).
-void addGallery(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data,
-                const GalleryDressing& gallery, const RoomChoices& chosen) {
-    const RoomDressing& dressing = data.theme.dressing;
+/// The top of the band the wall pictures hang in (the gallery's frames, the clock): under the picture rail, else the
+/// cornice or the ceiling, and under a cove.
+std::int64_t pictureBandTop(const Room& room, const RoomDressing& dressing) {
     std::int64_t top = room.heightMm - kGalleryUnderCeilingMm;
     if (dressing.shell && !dressing.shell->rail.empty()) {
         top = dressing.shell->railYMm - kPictureRailHeightMm - kGalleryUnderRailMm;
@@ -1459,6 +1459,43 @@ void addGallery(json& objects, const WorldPlan& plan, const Room& room, const Sc
     if (dressing.cove) {
         top = std::min(top, dressing.cove->yMm - kGalleryUnderRailMm);
     }
+    return top;
+}
+
+/// A display fixture hung this high on its wall at least is the featured wall shelf the clock hangs over.
+constexpr std::int64_t kHungDisplayMm = 500;
+
+/// The top of what draws `fixture`'s own prefab (its pivot's height plus the prefab's top: a wall shelf's mount height
+/// is its prefab's), nothing for one the scene data does not hold.
+std::optional<std::int64_t> prefabTopMm(const Fixture& fixture, const SceneData& data) {
+    const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+    if (own == nullptr || !own->prefab) {
+        return std::nullopt;
+    }
+    return fixture.yMm + toMm(own->prefab->bounds.max.y);
+}
+
+/// Where a pack's wall clock hangs (I12 step 8): over the room's first display fixture hung on a wall (the featured
+/// wall shelf: its prefab's bottom kHungDisplayMm or more above the floor); none without one.
+const Fixture* clockSite(const WorldPlan& plan, const Room& room, const SceneData& data) {
+    for (const Fixture& fixture : plan.fixtures) {
+        if (fixture.id.room() != room.id || fixture.role != FixtureRole::Display ||
+            !againstWall(room, fixture, kWallPictureOffMm)) {
+            continue;
+        }
+        const ScenePrefab* own = data.prefabs.find(fixture.prefab);
+        if (own != nullptr && own->prefab && fixture.yMm + toMm(own->prefab->bounds.min.y) >= kHungDisplayMm) {
+            return &fixture;
+        }
+    }
+    return nullptr;
+}
+
+void addGallery(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data,
+                const GalleryDressing& gallery, const RoomChoices& chosen) {
+    const RoomDressing& dressing = data.theme.dressing;
+    const std::int64_t top = pictureBandTop(room, dressing);
+    const Fixture* clock = dressing.clock ? clockSite(plan, room, data) : nullptr;
     int total = 0;
     for (const int weight : gallery.weights) {
         total += weight;
@@ -1476,8 +1513,8 @@ void addGallery(json& objects, const WorldPlan& plan, const Room& room, const Sc
             dressing.pictures && std::find(dressing.pictures->kinds.begin(), dressing.pictures->kinds.end(),
                                            fixture.prefab.kind) != dressing.pictures->kinds.end();
         const bool lowDecoration = fixture.role == FixtureRole::Decoration && fixture.yMm == 0 && !pictured;
-        if (!byRole && !lowDecoration) {
-            continue;
+        if ((!byRole && !lowDecoration) || &fixture == clock) {
+            continue; // I12 step 8: the clock hangs over its shelf
         }
         const auto wall = againstWall(room, fixture, kWallPictureOffMm);
         if (!wall) {
@@ -1562,6 +1599,180 @@ void addGallery(json& objects, const WorldPlan& plan, const Room& room, const Sc
 /// The pack's dressing of `room`'s upper walls, ceiling and floor (I6 step 6's review, room_look.hpp's
 /// "roomDressing"), in the room's frame: the cove strips, the pictures over the fixtures against a wall, the spots'
 /// cans, the sign's pictogram, the runner to the hero corner; since I12 step 1 the room's architecture and pendants.
+/// I12 step 8's ceiling fan (ADR-0021 §6, room_look.hpp's CeilingFan): over the plan's room pendant, its blades this
+/// far under the lowest ceiling or beam they pass under, the tips this far from its axis.
+constexpr std::int64_t kFanLowestRoomMm = 2900;
+constexpr std::int64_t kFanRadiusMm = 560;
+constexpr std::int64_t kFanBladeInnerMm = 105;
+constexpr std::int64_t kFanBladeWidthMm = 130;
+constexpr std::int64_t kFanBladeThickMm = 12;
+constexpr double kFanBladePitchDeg = 12.0;
+constexpr std::int64_t kFanBladesUnderCeilingMm = 300;
+constexpr std::int64_t kFanMotorRadiusMm = 95;
+constexpr std::int64_t kFanMotorHeightMm = 110;
+constexpr std::int64_t kFanMotorUnderBladesMm = 30;
+constexpr std::int64_t kFanCanopyRadiusMm = 70;
+constexpr std::int64_t kFanCanopyHeightMm = 50;
+constexpr std::int64_t kFanRodRadiusMm = 12;
+constexpr std::int64_t kFanKitRadiusMm = 85;
+constexpr std::int64_t kFanKitHeightMm = 60;
+constexpr int kFanBlades = 4;
+constexpr double kFanFirstBladeDeg = 15.0;
+
+/// A ceiling fan (I12 step 8, ADR-0021 §6): a canopy at the ceiling over the plan's room pendant (a beam's underside
+/// where one passes over it), a rod, the motor with its light kit under it, and four pitched blades, each an object
+/// spinning about the fan's axis ("motion"). Left out in a room under kFanLowestRoomMm, without the pendant, or where
+/// the ceiling leaves the rod no room.
+void addFan(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data, const CeilingFan& fan) {
+    if (room.heightMm < kFanLowestRoomMm) {
+        return;
+    }
+    const auto pendantId = FixtureId::make(room.id, "room", "pendant");
+    if (!pendantId) {
+        return;
+    }
+    const auto pendant = std::find_if(plan.lights.begin(), plan.lights.end(),
+                                      [&](const PlanLight& light) { return light.id == *pendantId; });
+    if (pendant == plan.lights.end()) {
+        return;
+    }
+    const RoomDressing& dressing = data.theme.dressing;
+    const std::vector<std::int64_t> beams =
+        dressing.shell ? beamPlaces(room, *dressing.shell) : std::vector<std::int64_t>{};
+    const std::int64_t x = pendant->xMm;
+    const std::int64_t z = pendant->zMm;
+    const std::int64_t ceiling = ceilingOver(room, beams, z, kFanCanopyRadiusMm);
+    const std::int64_t lowest = std::min(ceiling, ceilingOver(room, beams, z, kFanRadiusMm));
+    const std::int64_t bladeY = lowest - kFanBladesUnderCeilingMm;
+    const std::int64_t motorBottom = bladeY - kFanMotorUnderBladesMm;
+    const std::int64_t motorTop = motorBottom + kFanMotorHeightMm;
+    const std::int64_t rodTop = ceiling - kFanCanopyHeightMm;
+    if (rodTop - motorTop < 20) {
+        return;
+    }
+    const auto disc = [&](std::string suffix, std::int64_t radius, std::int64_t from, std::int64_t to,
+                          const std::string& material) {
+        objects.push_back(dressingPrimitive(
+            "dressing:fan/" + std::move(suffix), "cylinder",
+            json{{"radius", meters(radius)}, {"height", meters(to - from)}, {"segments", 24}, {"capped", true}},
+            vec3Json(meters(x), static_cast<double>(from + to) / 2000.0, meters(z)), 0.0, material));
+    };
+    disc("canopy", kFanCanopyRadiusMm, rodTop, ceiling, fan.metal);
+    disc("rod", kFanRodRadiusMm, motorTop, rodTop, fan.metal);
+    disc("motor", kFanMotorRadiusMm, motorBottom, motorTop, fan.metal);
+    disc("kit", kFanKitRadiusMm, motorBottom - kFanKitHeightMm, motorBottom, fan.kit);
+    const std::int64_t length = kFanRadiusMm - kFanBladeInnerMm;
+    const double middle = meters(kFanBladeInnerMm + kFanRadiusMm) / 2.0;
+    const double pitch = kFanBladePitchDeg * 3.14159265358979323846 / 180.0;
+    const double turns = rounded(-static_cast<double>(fan.turnsPerMinute) / 60.0, 1e4);
+    for (int blade = 0; blade < kFanBlades; ++blade) {
+        const double yaw = kFanFirstBladeDeg + 360.0 * blade / kFanBlades;
+        const double radians = yaw * 3.14159265358979323846 / 180.0;
+        json object = dressingPrimitive(
+            "dressing:fan/blade:" + std::to_string(blade), "box",
+            json{{"size", vec3Json(meters(length), meters(kFanBladeThickMm), meters(kFanBladeWidthMm))}},
+            vec3Json(rounded(meters(x) + middle * std::cos(radians), 1e6), meters(bladeY),
+                     rounded(meters(z) - middle * std::sin(radians), 1e6)),
+            yaw, fan.blades);
+        object["rotationDeg"] = vec3Json(kFanBladePitchDeg, yaw, 0.0);
+        // The fan's axis in the blade's own frame: back along its length, +Y tilted by its pitch.
+        object["motion"] = json{{"kind", "spin"},
+                                {"pivot", vec3Json(rounded(-middle, 1e6), 0.0, 0.0)},
+                                {"axis", vec3Json(0.0, rounded(std::cos(pitch), 1e6), rounded(-std::sin(pitch), 1e6))},
+                                {"turnsPerSecond", turns}};
+        objects.push_back(std::move(object));
+    }
+}
+
+/// I12 step 8's wall clock (room_look.hpp's WallClock): its case's radius, how far over its shelf it hangs (clear of a
+/// shared room's section sign, which stands on the shelf 0.14 m tall), its parts' depths out of the wall (from the
+/// clock's back, kWallPictureOffMm off the wall).
+constexpr std::int64_t kClockRadiusMm = 165;
+constexpr std::int64_t kClockOverFixtureMm = 200;
+constexpr std::int64_t kClockCaseDepthMm = 35;
+constexpr std::int64_t kClockDialInsetMm = 17;
+constexpr std::int64_t kClockDialMm = 3;
+
+/// A wall clock (I12 step 8, ADR-0021 §6) over the room's featured wall shelf (clockSite()), in the picture band: its
+/// case, its dial, twelve marks, the hands (each an object turning about the dial's centre with the time: "motion") and
+/// the hub. Left out where the band cannot hold it.
+void addClock(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data, const WallClock& clock,
+              const RoomChoices& chosen) {
+    const Fixture* site = clockSite(plan, room, data);
+    if (site == nullptr) {
+        return;
+    }
+    const auto wall = againstWall(room, *site, kWallPictureOffMm);
+    const std::int64_t low =
+        std::max(drawnTopMm(plan, room, *site, data, chosen), prefabTopMm(*site, data).value_or(0)) +
+        kClockOverFixtureMm;
+    const std::int64_t top = pictureBandTop(room, data.theme.dressing);
+    if (!wall || top - low < 2 * kClockRadiusMm) {
+        return;
+    }
+    const std::int64_t centreY = low + kClockRadiusMm;
+    const double yaw = degrees(site->yawCdeg);
+    // A point `along` the wall, `up` from the dial's centre and `out` from the clock's back.
+    const auto at = [&](std::int64_t along, std::int64_t up, std::int64_t out) {
+        const auto [dx, dz] = turned(along, out, site->yawCdeg);
+        return pointJson(wall->first + dx, centreY + up, wall->second + dz);
+    };
+    // A cylinder whose axis points out of the wall, from `from` to `to` out of the clock's back.
+    const auto disc = [&](std::string suffix, std::int64_t radius, std::int64_t from, std::int64_t to,
+                          const std::string& material) {
+        json object = dressingPrimitive(
+            "dressing:clock/" + std::move(suffix), "cylinder",
+            json{{"radius", meters(radius)}, {"height", meters(to - from)}, {"segments", 40}, {"capped", true}}, json(),
+            yaw, material);
+        object["position"] = at(0, 0, (from + to) / 2);
+        object["rotationDeg"] = vec3Json(90.0, yaw, 0.0);
+        objects.push_back(std::move(object));
+    };
+    const std::int64_t dialFront = kClockCaseDepthMm + kClockDialMm;
+    disc("case", kClockRadiusMm, 0, kClockCaseDepthMm, clock.rim);
+    disc("dial", kClockRadiusMm - kClockDialInsetMm, kClockCaseDepthMm, dialFront, clock.face);
+    // The marks: the quarters longer and wider; each turned in the dial's plane (clockwise from twelve).
+    for (int hour = 0; hour < 12; ++hour) {
+        const bool quarter = hour % 3 == 0;
+        const std::int64_t length = quarter ? 30 : 18;
+        const std::int64_t radius = kClockRadiusMm - kClockDialInsetMm - 12 - length / 2;
+        const double angle = 30.0 * hour * 3.14159265358979323846 / 180.0;
+        json mark = dressingPrimitive(
+            "dressing:clock/mark:" + std::to_string(hour), "box",
+            json{{"size", vec3Json(meters(quarter ? 12 : 6), meters(length), 0.002)}},
+            at(std::llround(std::sin(angle) * static_cast<double>(radius)),
+               std::llround(std::cos(angle) * static_cast<double>(radius)), dialFront + 1),
+            yaw, clock.hands);
+        mark["rotationDeg"] = vec3Json(0.0, yaw, hour == 0 ? 0.0 : -30.0 * hour);
+        objects.push_back(std::move(mark));
+    }
+    // The hands at twelve, each turning about the dial's centre (its own frame's pivot: down its length, its tail
+    // past the centre) as the app's clock says.
+    struct Hand {
+        std::string_view name;
+        std::string_view kind;
+        std::int64_t width;
+        std::int64_t length;
+        std::int64_t tail;
+        std::int64_t out;
+        std::int64_t thick;
+        const std::string* material;
+    };
+    for (const Hand& hand : {Hand{"hour", "clock-hour", 14, 80, 14, dialFront + 4, 3, &clock.hands},
+                             Hand{"minute", "clock-minute", 9, 118, 16, dialFront + 7, 3, &clock.hands},
+                             Hand{"second", "clock-second", 3, 128, 26, dialFront + 10, 2, &clock.second}}) {
+        const std::int64_t up = hand.length / 2 - hand.tail;
+        json object = dressingPrimitive(
+            "dressing:clock/" + std::string(hand.name), "box",
+            json{{"size", vec3Json(meters(hand.width), meters(hand.length), meters(hand.thick))}},
+            at(0, up, hand.out), yaw, *hand.material);
+        object["motion"] = json{{"kind", hand.kind}, {"pivot", vec3Json(0.0, -meters(up), 0.0)},
+                                {"axis", vec3Json(0.0, 0.0, 1.0)}};
+        objects.push_back(std::move(object));
+    }
+    disc("hub", 7, dialFront, dialFront + 13, clock.hands);
+}
+
 void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, const SceneData& data) {
     const RoomDressing& dressing = data.theme.dressing;
     if (const std::optional<ShellDressing>& shell = dressing.shell) {
@@ -1612,6 +1823,12 @@ void addRoomDressing(json& objects, const WorldPlan& plan, const Room& room, con
     const RoomChoices chosen = roomChoices(plan, room, data);
     if (const std::optional<GalleryDressing>& gallery = dressing.gallery) {
         addGallery(objects, plan, room, data, *gallery, chosen);
+    }
+    if (const std::optional<CeilingFan>& fan = dressing.fan) {
+        addFan(objects, plan, room, data, *fan);
+    }
+    if (const std::optional<WallClock>& clock = dressing.clock) {
+        addClock(objects, plan, room, data, *clock, chosen);
     }
     if (const std::optional<WallPictures>& pictures = dressing.pictures) {
         for (const Fixture& fixture : plan.fixtures) {

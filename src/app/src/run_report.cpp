@@ -2620,6 +2620,8 @@ Json videoToJson(const VideoRecord& video) {
     json["cabinetEvents"] = std::move(cabinetEvents);
     json["cabinetEventsDropped"] = video.cabinetEventsDropped;
     json["heldFrameShows"] = video.heldFrameShows;
+    json["staticShows"] = video.staticShows;
+    json["staticFrames"] = video.staticFrames;
     json["firstFrameWaits"] = video.firstFrameWaits;
     json["firstFrameWaitMaxMs"] = video.firstFrameWaitMaxMs;
     json["firstFrameWaitTimeouts"] = video.firstFrameWaitTimeouts;
@@ -2989,6 +2991,8 @@ VideoRecord readVideo(FieldReader& fields) {
     }
     video.cabinetEventsDropped = fields.optionalCount("cabinetEventsDropped").value_or(0);
     video.heldFrameShows = fields.optionalCount("heldFrameShows").value_or(0);
+    video.staticShows = fields.optionalCount("staticShows").value_or(0);
+    video.staticFrames = fields.optionalCount("staticFrames").value_or(0);
     // I5 step 4's review (absent from earlier reports).
     video.firstFrameWaits = fields.optionalCount("firstFrameWaits").value_or(0);
     video.firstFrameWaitMaxMs = fields.optionalNumber("firstFrameWaitMaxMs").value_or(0.0);
@@ -3248,6 +3252,14 @@ Json catalogToJson(const CatalogRecord& catalog) {
     json["flickeringSigns"] = catalog.flickeringSigns;
     json["crtGlows"] = catalog.crtGlows;
     json["crtGlowWrites"] = catalog.crtGlowWrites;
+    json["spinningParts"] = catalog.spinningParts;
+    json["clockHands"] = catalog.clockHands;
+    json["blinkingMaterials"] = catalog.blinkingMaterials;
+    json["breathingMaterials"] = catalog.breathingMaterials;
+    json["partMoveFrames"] = catalog.partMoveFrames;
+    if (!catalog.clockTime.empty()) {
+        json["clockTime"] = catalog.clockTime;
+    }
     json["search"] = catalog.search;
     json["filter"] = catalog.filter;
     json["listed"] = catalog.listed;
@@ -3402,6 +3414,14 @@ CatalogRecord readCatalog(FieldReader& fields) {
     catalog.flickeringSigns = static_cast<std::size_t>(fields.optionalCount("flickeringSigns", kMaxSize).value_or(0));
     catalog.crtGlows = static_cast<std::size_t>(fields.optionalCount("crtGlows", kMaxSize).value_or(0));
     catalog.crtGlowWrites = static_cast<std::size_t>(fields.optionalCount("crtGlowWrites", kMaxSize).value_or(0));
+    catalog.spinningParts = static_cast<std::size_t>(fields.optionalCount("spinningParts", kMaxSize).value_or(0));
+    catalog.clockHands = static_cast<std::size_t>(fields.optionalCount("clockHands", kMaxSize).value_or(0));
+    catalog.blinkingMaterials =
+        static_cast<std::size_t>(fields.optionalCount("blinkingMaterials", kMaxSize).value_or(0));
+    catalog.breathingMaterials =
+        static_cast<std::size_t>(fields.optionalCount("breathingMaterials", kMaxSize).value_or(0));
+    catalog.partMoveFrames = fields.optionalCount("partMoveFrames", kMaxSize).value_or(0);
+    catalog.clockTime = fields.optionalString("clockTime").value_or("");
     catalog.search = fields.optionalString("search").value_or("");
     catalog.filter = fields.optionalString("filter").value_or("");
     // Written since the M1 manual session's fixes: optional as well.

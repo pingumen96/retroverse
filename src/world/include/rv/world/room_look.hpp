@@ -430,6 +430,28 @@ struct PendantDressing {
     bool operator==(const PendantDressing&) const = default;
 };
 
+/// A ceiling fan over the base room's middle (I12 step 8, ADR-0021 §6: the 90s collector's), its blades turning
+/// (scene "motion": a spin) with a light kit under its motor. Left out in a room lower than 2.9 m.
+struct CeilingFan {
+    std::string blades; ///< the four blades
+    std::string metal;  ///< the canopy, the rod and the motor
+    std::string kit;    ///< the light kit's bowl under the motor (unlit: it glows)
+    std::int32_t turnsPerMinute = 54; ///< [10, 120]
+
+    bool operator==(const CeilingFan&) const = default;
+};
+
+/// A wall clock over the featured wall shelf (I12 step 8, ADR-0021 §6: the study's), its hands telling the time
+/// (scene "motion": clock-hour, clock-minute, clock-second); the gallery leaves that shelf's frame out.
+struct WallClock {
+    std::string face;   ///< the dial and its hour marks' ground
+    std::string rim;    ///< the case
+    std::string hands;  ///< the hour and minute hands, the marks, the hub
+    std::string second; ///< the second hand
+
+    bool operator==(const WallClock&) const = default;
+};
+
 /// What a pack adds to its rooms' upper walls, ceiling and floor beyond the plan's fixtures (I6 step 6's review): a
 /// look, never the plan's: nothing collides, nothing casts a shadow.
 struct RoomDressing {
@@ -445,9 +467,13 @@ struct RoomDressing {
     std::optional<PendantDressing> pendants;
     /// I12 step 2: the gallery.
     std::optional<GalleryDressing> gallery;
+    /// I12 step 8: the room's life.
+    std::optional<CeilingFan> fan;
+    std::optional<WallClock> clock;
 
     [[nodiscard]] bool empty() const noexcept {
-        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot && !shell && !pendants && !gallery;
+        return !cove && !pictures && !cans && !runner && !signIcon && !cardPerSlot && !shell && !pendants && !gallery &&
+               !fan && !clock;
     }
     bool operator==(const RoomDressing&) const = default;
 };

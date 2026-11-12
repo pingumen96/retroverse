@@ -204,6 +204,9 @@ struct CommandLineOptions {
     /// frame, for goldens (ADR-0012 §7; I3 step 11). In [0, kMaxVideoFreezePtsSeconds].
     std::optional<double> videoFreezePtsSeconds;
     static constexpr double kMaxVideoFreezePtsSeconds = 86400.0;
+    /// --clock <HH:MM[:SS]> (I12 step 8): the time the rooms' wall clocks start at (seconds into the day), going on with
+    /// the run's simulated time. None: the local time, or 10:10 in a frame-limited run (kFrameLimitedClockSeconds).
+    std::optional<double> clockSeconds;
     /// --max-decoders <1|2>: the screens' decoder budget, over video.json's maxDecoders (I5 step 2, ADR-0016 §2: 2 in
     /// Balanced, 1 in Low). None: video.json's.
     std::optional<int> maxDecoders;
@@ -285,6 +288,7 @@ void addHostOptions(core::ArgParser& parser);
 ///  - --mock-catalog not ending in ".json";
 ///  - --launch-wait-limit outside (0, kMaxLaunchWaitLimitSeconds], or without --smoke or --exit-after-frames;
 ///  - --video-freeze-pts outside [0, kMaxVideoFreezePtsSeconds], or without --smoke or --exit-after-frames;
+///  - --clock other than HH:MM or HH:MM:SS (parseClockTime);
 ///  - empty paths or names;
 ///  - a valid option that is not implemented yet (pendingOptionError: none since I3 steps 11 and 13r).
 /// The --input-script and --mock-catalog files themselves are read by the application (a bad one fails its

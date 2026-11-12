@@ -850,3 +850,20 @@ TEST_CASE("app/command_line: --vr and its --xr-* options (I10 step 2)", "[app][c
         CHECK(helpListsOption(rv::app::commandLineHelp(), option));
     }
 }
+
+TEST_CASE("app/command_line: --clock sets the wall clocks' time (I12 step 8)", "[app][command_line][life]") {
+    const auto clock = parse({"--clock", "10:10"});
+    REQUIRE(clock.has_value());
+    CHECK(clock->clockSeconds == std::optional<double>(36600.0));
+    const auto seconds = parse({"--smoke", "--clock", "23:59:58"});
+    REQUIRE(seconds.has_value());
+    CHECK(seconds->clockSeconds == std::optional<double>(86398.0));
+    CHECK_FALSE(parse({}).value().clockSeconds.has_value());
+    for (const char* bad : {"24:00", "10:60", "1:10", "10:10:", "10-10", "noon", ""}) {
+        CAPTURE(bad);
+        const auto refused = parse({"--clock", bad});
+        REQUIRE_FALSE(refused.has_value());
+        CHECK(refused.error().context.starts_with("--clock"));
+    }
+    CHECK(helpListsOption(rv::app::commandLineHelp(), "--clock"));
+}

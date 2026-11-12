@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <rv/core/math.hpp>
 #include <rv/scene/atmosphere.hpp>
 
 namespace rv::gl {
@@ -102,8 +103,19 @@ float emissiveFlickerFactor(const EmissiveFlicker& flicker, float time) noexcept
     if (!(flicker.rate > 0.0f) || !(flicker.depth > 0.0f) || !std::isfinite(time) || time < kFirstFlickerSeconds) {
         return 1.0f;
     }
-    const float period = 8.0f / flicker.rate;
     const float local = time - kFirstFlickerSeconds;
+    const float depth = std::clamp(flicker.depth, 0.0f, 1.0f);
+    if (flicker.mode == FlickerMode::Pulse) {
+        return 1.0f - depth * 0.5f * (1.0f - std::cos(2.0f * core::kPi * local * flicker.rate * 0.1f));
+    }
+    if (flicker.mode == FlickerMode::Blink) {
+        const float slot = std::floor(local * 8.0f * flicker.rate);
+        const std::uint32_t seed = (flicker.seed & 0xFFFFFFu) ^ (static_cast<std::uint32_t>(slot) * 0x9E3779B9u);
+        const float unit =
+            static_cast<float>(scene::atmosphereHash(seed ^ scene::atmosphereHash(3u))) * (1.0f / 4294967296.0f);
+        return unit < 0.6f ? 1.0f : 1.0f - depth;
+    }
+    const float period = 8.0f / flicker.rate;
     const float slot = std::floor(local / period);
     const std::uint32_t seed = (flicker.seed & 0xFFFFFFu) ^ (static_cast<std::uint32_t>(slot) * 0x9E3779B9u);
     const auto unit = [seed](std::uint32_t k) {
@@ -117,7 +129,7 @@ float emissiveFlickerFactor(const EmissiveFlicker& flicker, float time) noexcept
     }
     const float phase = into / length;
     const float dip = phase < 0.4f ? 1.0f : phase < 0.6f ? 0.35f : 0.8f;
-    return 1.0f - std::clamp(flicker.depth, 0.0f, 1.0f) * dip;
+    return 1.0f - depth * dip;
 }
 
 } // namespace rv::gl

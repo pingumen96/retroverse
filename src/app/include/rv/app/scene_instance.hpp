@@ -131,6 +131,20 @@ public:
 
     [[nodiscard]] const std::string& name() const noexcept { return m_name; }
     [[nodiscard]] std::span<const scene::RenderItem> renderItems() const noexcept { return m_items; }
+
+    /// An object that moves (I12 step 8: SceneObject::motion, a fan's blade, a clock's hand): its motion, its
+    /// transform (local -> world) and the angle it stands at (0: as described).
+    struct MovingPart {
+        std::string id;
+        scene::ObjectMotion motion;
+        glm::mat4 transform{1.0f};
+        float angle = 0.0f;
+    };
+    [[nodiscard]] std::span<const MovingPart> movingParts() const noexcept { return m_movingParts; }
+    /// Turns every moving part to the angle `angleOf` gives it (scene::motionAngle()), its drawn items moved about its
+    /// pivot (scene::motionDelta()) from where they were described; a part whose angle is unchanged is left alone.
+    /// The number of parts moved.
+    std::size_t moveParts(const std::function<float(const MovingPart&)>& angleOf);
     [[nodiscard]] const gl::LightsUniforms& lights() const noexcept { return m_lights; }
     [[nodiscard]] const scene::CollisionWorld& collisionWorld() const noexcept { return m_collision; }
     /// The bounds of every object instance (plain lines), in world space.
@@ -252,6 +266,10 @@ private:
     /// The debug lines made again from m_objects when they were asked for since a replacement (lazily: a floor's
     /// sockets are many, the lines seldom shown).
     void rebuildObjectLines() const;
+    /// The moving parts of `objects` (the description's, in m_objects' order) and their items, as described.
+    void gatherMotion(std::span<const scene::SceneObject> objects);
+    /// Every moving part's items back where they were described (before replaceObjects() copies them).
+    void restoreMotion() noexcept;
     /// Takes an edit of environment()'s area terms (the developer overlay's) into the area it showed them for, then
     /// shows the eye's area's there; true when the eye's area's terms changed.
     bool takeEnvironmentEdit();
@@ -296,6 +314,14 @@ private:
     std::vector<ObjectRecord> m_objects;
     std::vector<std::uint32_t> m_itemObjects;
     std::vector<bool> m_itemModels;
+    /// I12 step 8: the moving parts, and each of their items with its model as described.
+    struct MovingItem {
+        std::size_t item = 0;
+        std::size_t part = 0;
+        glm::mat4 rest{1.0f};
+    };
+    std::vector<MovingPart> m_movingParts;
+    std::vector<MovingItem> m_movingItems;
     mutable scene::DebugLines m_boundsLines;
     mutable scene::DebugLines m_socketLines;
     mutable bool m_linesStale = false;

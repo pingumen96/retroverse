@@ -156,6 +156,11 @@ public:
     /// rewritten only when it changes. Errors: InvalidArgument for an unknown handle, and the errors of Buffer::update.
     [[nodiscard]] Status setFlicker(scene::MaterialHandle handle, std::optional<EmissiveFlicker> flicker);
 
+    /// Makes the screen `handle` show static (I12 step 8: material_flags::kCrtStatic, its seed and speed in the
+    /// flicker fields), or its picture again (none: the block again what it was registered with). The block is
+    /// rewritten only when it changes. Errors: InvalidArgument for an unknown handle, and the errors of Buffer::update.
+    [[nodiscard]] Status setScreenStatic(scene::MaterialHandle handle, std::optional<ScreenStatic> snow);
+
     /// Binds the uniform block of `handle` to UniformBinding::Material and its textures (or their overrides) and
     /// samplers to the texture units 0..kMaterialTextureSlotCount-1, and a layered material's array to
     /// CollectionTextureUnit::LayeredBaseColor. Does nothing for a handle outside the uploaded materials.

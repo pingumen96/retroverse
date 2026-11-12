@@ -180,6 +180,15 @@ inline constexpr std::uint32_t kPictureRect = 1u << 11;
 /// An unlit material whose emission dips for a moment now and then (I12 step 6: a neon sign's flicker), as
 /// MaterialUniforms' flicker* fields and the frame's time say (gl::emissiveFlickerFactor, its CPU mirror).
 inline constexpr std::uint32_t kEmissiveFlicker = 1u << 12;
+/// With kEmissiveFlicker (I12 step 8): the emission blinks as a component's activity LED does instead of dipping
+/// (gl::FlickerMode::Blink).
+inline constexpr std::uint32_t kEmissiveBlink = 1u << 13;
+/// With kEmissiveFlicker (I12 step 8): the emission breathes slowly, as a lava lamp's wax (gl::FlickerMode::Pulse).
+inline constexpr std::uint32_t kEmissivePulse = 1u << 14;
+/// A CRT screen showing static (I12 step 8: a secondary TV between two clips): its picture replaced by snow of the
+/// picture's cells and the frame's time in 24ths of a second, MaterialUniforms' flickerSeed and flickerRate its seed
+/// and speed (rate 0: the snow stands still). A screen never flickers, so the fields are free for it.
+inline constexpr std::uint32_t kCrtStatic = 1u << 15;
 
 /// Flag of the texture in `slot`.
 [[nodiscard]] constexpr std::uint32_t textureBit(MaterialTextureSlot slot) noexcept {
@@ -210,7 +219,9 @@ struct MaterialUniforms {
     float crtVignette = 0.0f;
     float crtGlassReflection = 0.0f;
     /// With material_flags::kEmissiveFlicker (I12 step 6): the dips' seed (an integer below 2^24), how often they come
-    /// (1: about every 8 s; 0: never) and how much of the emission each takes away ([0, 1]).
+    /// (1: about every 8 s; 0: never) and how much of the emission each takes away ([0, 1]); with kEmissiveBlink or
+    /// kEmissivePulse (I12 step 8) the same for a blink or a breath (gl::FlickerMode), with kCrtStatic the snow's seed
+    /// and speed.
     float flickerSeed = 0.0f;
     float flickerRate = 0.0f;
     float flickerDepth = 0.0f;

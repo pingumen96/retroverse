@@ -1,7 +1,7 @@
 {
   "build": {
     "buildType": "Debug",
-    "gitCommit": "1bc4782acbc94bc3156165f2841122bb83e3fa61",
+    "gitCommit": "3201d8d7761d8ad4bd38669a9a7543c4f3b561e9",
     "preset": "msvc-x64-debug",
     "sources": "gitCommit plus the changes of the commit that adds or rewrites this metadata, rendered from that working tree before committing"
   },
@@ -18,7 +18,7 @@
     "file": "g12_jewel_case_room_golden.png",
     "format": "PNG, 8-bit RGB, sRGB-encoded as the window shows it",
     "height": 1080,
-    "sha256": "abc3b958fe806e14a908ac5c380a4c739d2e7738d1bdd7478e138ddcb7cdfc6d",
+    "sha256": "5221f861d6279263dcd806a7e8662a8d48dd23f60fb2d31df47d3ebab6efb176",
     "width": 1920
   },
   "inputs": {
@@ -36,10 +36,10 @@
     },
     "worldData": {
       "path": "assets/world",
-      "sha256": "f9ad8303c76be5c0eb2f018863f605a37e2252b2d1b4eb4537e92c71af584fef"
+      "sha256": "43aa283d5945eb6d3bd9d03a4064def1e9dbc04f346858eeee3ac256cff8f83c"
     }
   },
-  "renderedOn": "2026-11-10",
+  "renderedOn": "2026-11-11",
   "run": {
     "capturedFrame": 29,
     "frames": 30,

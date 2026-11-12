@@ -13,6 +13,7 @@ add_library(rv_scene STATIC
     src/first_person_controller.cpp
     src/instance_clusters.cpp
     src/light.cpp
+    src/object_motion.cpp
     src/orbit_controller.cpp
     src/pose_animator.cpp
     src/scene_areas.cpp

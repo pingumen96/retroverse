@@ -13,10 +13,12 @@
     "floor_speaker": {"cabinet": "MAT_Plastic_Charcoal", "grille": "MAT_Speaker_Grille",
                       "trim": "MAT_Metal_Brushed", "led": "MAT_Led_Green"},
     "media_rack": {"wood": "MAT_Plastic_Charcoal", "metal": "MAT_Metal_Graphite",
-                   "display": "MAT_Display_Amber", "led": "MAT_Led_Red"},
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Activity_Red"},
     "pad": {"plastic_body": "MAT_Plastic_Charcoal", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
     "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Plastic_Charcoal"},
     "cushion": {"fabric": "MAT_Fabric_Teal_Weave"},
+    // I12 step 8: the lava lamp on the crate, its wax breathing.
+    "lava_lamp": {"metal": "MAT_Metal_Brushed", "glass": "MAT_Lava_Glass", "wax": "MAT_Lava_Wax"},
     "open_box": {"body": "MAT_Plastic_Black", "paper": "MAT_Paper_Magazine", "disc": "MAT_Disc_Silver"},
     "bookcase": {"wood_primary": "MAT_Wood_Varnished_Dark", "wood_secondary": "MAT_Plastic_Charcoal",
                  "spine_a": "MAT_Plastic_Teal", "spine_b": "MAT_Fabric_Vinyl_Purple", "spine_c": "MAT_Book_Cloth_Navy",
@@ -126,9 +128,12 @@
       {"name": "crate", "anchor": "armchair",
        "prefab": {"manifest": "decor.storage_box.generic", "kind": "storage_box"},
        "params": {"width": 0.4, "height": 0.3, "depth": 0.4}, "xMm": -950, "zMm": 2560, "yawCdeg": 1200},
+      // I12 step 8: the lava lamp on the crate, the magazines down on the floor beside it.
+      {"name": "lava-lamp", "anchor": "armchair", "prop": true,
+       "prefab": {"manifest": "decor.lava_lamp.generic", "kind": "lava_lamp"}, "xMm": -950, "yMm": 300, "zMm": 2560},
       {"name": "magazines", "anchor": "armchair", "prop": true,
        "prefab": {"manifest": "decor.magazine_stack.generic", "kind": "magazine_stack"},
-       "params": {"width": 0.22, "height": 0.05, "depth": 0.3}, "xMm": -950, "yMm": 300, "zMm": 2560, "yawCdeg": 2500},
+       "params": {"width": 0.22, "height": 0.05, "depth": 0.3}, "xMm": -1000, "yMm": 0, "zMm": 2170, "yawCdeg": 2500},
       {"name": "open-box", "anchor": "armchair", "prop": true,
        "prefab": {"manifest": "decor.open_box.generic", "kind": "open_box"},
        "params": {"style": "case"}, "xMm": 330, "yMm": 12, "zMm": 1950, "yawCdeg": 1500}],
@@ -202,6 +207,9 @@
     // I12 step 2: oak frames, 3D boxes more often than in the classic rooms, Memphis prints until the media come.
     "gallery": {"weights": {"poster": 4, "portrait": 3, "lightbox": 1, "frame": 2}, "frame": "MAT_Wood_Oak",
                 "picture": "MAT_Paper_Print", "lightbox": "MAT_Lightbox", "pattern": "poster_memphis",
-                "hood": "MAT_Metal_Brushed", "wash": "MAT_Picture_Wash"}
+                "hood": "MAT_Metal_Brushed", "wash": "MAT_Picture_Wash"},
+    // I12 step 8 (ADR-0021 §6): a ceiling fan over the room's middle, oak blades, a light kit under its motor.
+    "fan": {"blades": "MAT_Wood_Oak", "metal": "MAT_Metal_Brushed", "kit": "MAT_Pendant_Diffuser",
+            "turnsPerMinute": 54}
   }
 }

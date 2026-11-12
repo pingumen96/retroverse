@@ -46,13 +46,30 @@ struct MaterialFactors {
 [[nodiscard]] MaterialUniforms withFactors(const MaterialUniforms& uniforms, const MaterialFactors& factors,
                                            const glm::vec3& emissiveFactor) noexcept;
 
-/// A neon's flicker (I12 step 6): MaterialUniforms' flicker* fields.
+/// How a flickering emission varies (I12 step 8).
+enum class FlickerMode : std::uint8_t {
+    Dips,  ///< a neon (I12 step 6): one short stutter now and then
+    Blink, ///< an activity LED: on or off in slots of 1 / (8 rate) s, on in about 60 % of them
+    Pulse, ///< a lava lamp's wax: one slow breath every 10 / rate s
+};
+
+/// A neon's flicker (I12 step 6), an LED's blink or a lamp's breath (I12 step 8): MaterialUniforms' flicker* fields.
 struct EmissiveFlicker {
     std::uint32_t seed = 0; ///< below 2^24 (a float holds it exactly)
-    float rate = 1.0f;      ///< dips about every 8 s / rate; 0: none
-    float depth = 0.6f;     ///< the share of the emission a dip takes away
+    float rate = 1.0f;      ///< dips about every 8 s / rate; 0: none (steady)
+    float depth = 0.6f;     ///< the share of the emission a dip, an off slot or a breath's low takes away
+    FlickerMode mode = FlickerMode::Dips;
 
     bool operator==(const EmissiveFlicker&) const = default;
+};
+
+/// A screen's static (I12 step 8): its seed and speed (MaterialUniforms' flickerSeed and flickerRate with
+/// material_flags::kCrtStatic).
+struct ScreenStatic {
+    std::uint32_t seed = 0; ///< below 2^24
+    float rate = 1.0f;      ///< 24 new pictures a second times rate; 0: the snow stands still (reduceMotion)
+
+    bool operator==(const ScreenStatic&) const = default;
 };
 
 /// No dip before this many seconds of the run (a frame-limited run's screenshots never catch one).
@@ -61,7 +78,10 @@ inline constexpr float kFirstFlickerSeconds = 4.0f;
 /// The share of its emission a flickering material shows at `time` (common/material.glsl's materialFlicker, formula for
 /// formula): 1 before kFirstFlickerSeconds, with a rate or depth of 0 or a time that is not finite; otherwise the run
 /// is cut into slots of 8 / rate seconds, each holding one dip of 80 to 120 ms at a place its seed and index choose, a
-/// stutter (1 - depth, then 1 - 0.35 depth, then 1 - 0.8 depth) within it.
+/// stutter (1 - depth, then 1 - 0.35 depth, then 1 - 0.8 depth) within it. FlickerMode::Blink cuts the time after
+/// kFirstFlickerSeconds into slots of 1 / (8 rate) seconds, each on (1) or off (1 - depth) by its seed and index, on
+/// when the hash's unit value is below 0.6; FlickerMode::Pulse is 1 - depth (1 - cos(2 pi t rate / 10)) / 2 with t the
+/// seconds after kFirstFlickerSeconds.
 [[nodiscard]] float emissiveFlickerFactor(const EmissiveFlicker& flicker, float time) noexcept;
 
 } // namespace rv::gl

@@ -227,3 +227,35 @@ TEST_CASE("render/material_uniforms: a neon flickers now and then, never in a ru
     CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{3u, 1.0f, 0.6f}, std::numeric_limits<float>::quiet_NaN()) ==
           1.0f);
 }
+
+TEST_CASE("render/material_uniforms: an LED blinks and a lava lamp breathes, from 4 s on (I12 step 8)",
+          "[render][materials][life]") {
+    using rv::gl::EmissiveFlicker;
+    using rv::gl::FlickerMode;
+    const EmissiveFlicker blink{1234u, 1.0f, 0.8f, FlickerMode::Blink};
+    const EmissiveFlicker pulse{77u, 1.0f, 0.5f, FlickerMode::Pulse};
+    for (float time = 0.0f; time < rv::gl::kFirstFlickerSeconds; time += 0.01f) {
+        CHECK(rv::gl::emissiveFlickerFactor(blink, time) == 1.0f);
+        CHECK(rv::gl::emissiveFlickerFactor(pulse, time) == 1.0f);
+    }
+    // The blink: on or off (1 - depth) in slots of 1/8 s, on in about 60 % of them, never anything between.
+    int on = 0;
+    int slots = 0;
+    for (int slot = 0; slot < 4000; ++slot) {
+        const float factor =
+            rv::gl::emissiveFlickerFactor(blink, rv::gl::kFirstFlickerSeconds + (static_cast<float>(slot) + 0.5f) / 8.0f);
+        const bool lit = factor == 1.0f;
+        CHECK((lit || factor == Approx(0.2f)));
+        on += lit ? 1 : 0;
+        ++slots;
+    }
+    CHECK(static_cast<double>(on) / slots == Approx(0.6).margin(0.04));
+    // The breath: one every 10 s, from 1 down to 1 - depth half-way and back.
+    const float start = rv::gl::kFirstFlickerSeconds;
+    CHECK(rv::gl::emissiveFlickerFactor(pulse, start + 5.0f) == Approx(0.5f));
+    CHECK(rv::gl::emissiveFlickerFactor(pulse, start + 10.0f) == Approx(1.0f).margin(1e-4));
+    CHECK(rv::gl::emissiveFlickerFactor(pulse, start + 2.5f) == Approx(0.75f).margin(1e-4));
+    // reduceMotion: rate 0, steady.
+    CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{5u, 0.0f, 0.8f, FlickerMode::Blink}, 30.0f) == 1.0f);
+    CHECK(rv::gl::emissiveFlickerFactor(EmissiveFlicker{5u, 0.0f, 0.5f, FlickerMode::Pulse}, 30.0f) == 1.0f);
+}

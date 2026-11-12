@@ -13,7 +13,7 @@
     "floor_speaker": {"cabinet": "MAT_Plastic_AgedIvory", "grille": "MAT_Speaker_Grille",
                       "trim": "MAT_Metal_Graphite", "led": "MAT_Led_Red"},
     "media_rack": {"wood": "MAT_Wood_Oak", "metal": "MAT_Plastic_AgedIvory",
-                   "display": "MAT_Display_Amber", "led": "MAT_Led_Red"},
+                   "display": "MAT_Display_Amber", "led": "MAT_Led_Activity_Red"},
     "pad": {"plastic_body": "MAT_Plastic_Black", "plastic_dark": "MAT_Plastic_Black", "cable": "MAT_Cable_Rubber"},
     "low_table": {"wood_primary": "MAT_Wood_Oak", "wood_secondary": "MAT_Wood_Varnished_Dark"},
     "cushion": {"fabric": "MAT_Fabric_Wool_Green_Weave"},
@@ -30,6 +30,7 @@
     "coat_stand": {"wood": "MAT_Wood_Oak", "metal": "MAT_Metal_Brass", "fabric": "MAT_Fabric_Leather",
                    "fabric_alt": "MAT_Fabric_Wool_Green_Weave"},
     "label_plates": {"plate": "MAT_Metal_Brass", "picture": "MAT_Paper_Print"},
+    "lava_lamp": {"metal": "MAT_Metal_Brushed", "glass": "MAT_Lava_Glass", "wax": "MAT_Lava_Wax"},
     "room_shell": {"floor": "MAT_Floor_Parquet", "wall": "MAT_Wall_Study", "ceiling": "MAT_Wall_Study",
                    "trim": "MAT_Wood_Walnut", "wainscot": "MAT_Wood_Oak"},
     "shelf": {"wood_primary": "MAT_Wood_Walnut", "wood_secondary": "MAT_Wood_Varnished_Dark",
@@ -191,6 +192,9 @@
     // I12 step 2: the study's framed screenshots first, walnut frames, brass picture lights.
     "gallery": {"weights": {"poster": 2, "portrait": 2, "frame": 6}, "frame": "MAT_Wood_Walnut",
                 "picture": "MAT_Paper_Print", "pattern": "print", "hood": "MAT_Metal_Brass",
-                "wash": "MAT_Picture_Wash"}
+                "wash": "MAT_Picture_Wash"},
+    // I12 step 8 (ADR-0021 §6): a wall clock over the featured shelf, its hands telling the time.
+    "clock": {"face": "MAT_Clock_Face", "rim": "MAT_Wood_Walnut", "hands": "MAT_Clock_Hand",
+              "second": "MAT_Clock_Second"}
   }
 }
