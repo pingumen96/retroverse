@@ -105,8 +105,8 @@ TEST_CASE("assets/families: every shipped manifest has a family whose fallbacks 
     const PrefabFamilies families = shippedFamilies();
     // I3 step 16: decor.plant, decor.sign; I4 step 2: media.box, media.case; I6 step 3b: the seven era furniture kinds;
     // I6 step 5: the hub's column, railing, landmark and totem; I6 step 6: the arcade cabinets and their screens; I5
-    // step 3: the secondary TV; I12 step 3: the hero corner's six.
-    REQUIRE(families.families.size() == 45);
+    // step 3: the secondary TV; I12 step 3: the hero corner's six; I12 step 8: the lava lamp.
+    REQUIRE(families.families.size() == 46);
     for (std::size_t i = 1; i < families.families.size(); ++i) {
         CHECK(families.families[i - 1].id < families.families[i].id);
     }

@@ -217,6 +217,7 @@ Expected<SceneInstance> SceneInstance::create(const scene::SceneDescription& des
         }
     }
     instance.m_shadowCasterBounds = casterBoundsOf(instance.m_items, resources);
+    instance.gatherMotion(description.objects);
 
     instance.m_sceneLights = description.lights;
     instance.m_environment = description.environment;
@@ -523,6 +524,58 @@ void SceneInstance::rebuildObjectLines() const {
     }
 }
 
+void SceneInstance::gatherMotion(std::span<const scene::SceneObject> objects) {
+    m_movingParts.clear();
+    m_movingItems.clear();
+    std::vector<std::optional<std::size_t>> partOf(objects.size());
+    for (std::size_t index = 0; index < m_items.size() && index < m_itemObjects.size(); ++index) {
+        const std::uint32_t object = m_itemObjects[index];
+        if (object >= objects.size() || !objects[object].motion || !objects[object].instances.empty()) {
+            continue;
+        }
+        if (!partOf[object]) {
+            partOf[object] = m_movingParts.size();
+            m_movingParts.push_back(MovingPart{objects[object].id, *objects[object].motion, objects[object].transform});
+        }
+        m_movingItems.push_back(MovingItem{index, *partOf[object], m_items[index].model});
+    }
+}
+
+void SceneInstance::restoreMotion() noexcept {
+    for (const MovingItem& moving : m_movingItems) {
+        if (moving.item < m_items.size()) {
+            m_items[moving.item].model = moving.rest;
+        }
+    }
+    for (MovingPart& part : m_movingParts) {
+        part.angle = 0.0f;
+    }
+}
+
+std::size_t SceneInstance::moveParts(const std::function<float(const MovingPart&)>& angleOf) {
+    std::vector<std::optional<glm::mat4>> deltas(m_movingParts.size());
+    std::size_t moved = 0;
+    for (std::size_t index = 0; index < m_movingParts.size(); ++index) {
+        MovingPart& part = m_movingParts[index];
+        const float angle = angleOf(part);
+        if (angle == part.angle || !std::isfinite(angle)) {
+            continue;
+        }
+        part.angle = angle;
+        deltas[index] = scene::motionDelta(part.transform, part.motion, angle);
+        ++moved;
+    }
+    if (moved == 0) {
+        return 0;
+    }
+    for (const MovingItem& moving : m_movingItems) {
+        if (deltas[moving.part] && moving.item < m_items.size()) {
+            m_items[moving.item].model = *deltas[moving.part] * moving.rest;
+        }
+    }
+    return moved;
+}
+
 std::vector<std::size_t> SceneInstance::itemsOf(const std::function<bool(std::string_view id)>& match) const {
     std::vector<std::size_t> items;
     std::vector<std::optional<bool>> matched(m_objects.size());
@@ -554,6 +607,7 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
                          description.name);
     }
     const auto start = std::chrono::steady_clock::now();
+    restoreMotion(); // the kept items are copied as described
     const auto replaced = [&](std::string_view id) {
         return id.starts_with(change.prefix);
     };
@@ -697,6 +751,7 @@ Expected<SceneObjectsChanged> SceneInstance::replaceObjects(scene::SceneDescript
     }
     m_linesStale = true;
     m_shadowCasterBounds = casterBoundsOf(m_items, resources);
+    gatherMotion(description.objects);
 
     // The lights: the new ones in place of the first replaced, the area that holds the eye choosing again at once. The
     // others as the scene holds them (sceneLights(): the developer overlay's edits kept), the description's when the

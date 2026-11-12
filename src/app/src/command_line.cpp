@@ -1,4 +1,5 @@
 #include <rv/app/command_line.hpp>
+#include <rv/app/room_life.hpp>
 
 #include <algorithm>
 #include <array>
@@ -101,6 +102,9 @@ core::ArgParser makeParser() {
         .option("video-freeze-pts", "seconds",
                 "Only with --smoke or --exit-after-frames: the hero CRT's video seeks to this time and holds the "
                 "frame, for goldens.")
+        .option("clock", "HH:MM[:SS]",
+                "The time the rooms' wall clocks start at, going on with the run (the local time by default; 10:10 in "
+                "a run with --smoke or --exit-after-frames).")
         .option("max-decoders", "1|2",
                 "Video decoders the screens share at most (video.json's maxDecoders by default: 2, the Balanced "
                 "profile; 1 is the Low profile's): the screens beyond it show their stills.")
@@ -447,6 +451,20 @@ Status applyVideoFreezePts(const core::ParsedArgs& args, CommandLineOptions& opt
     return ok();
 }
 
+/// --clock <HH:MM[:SS]>, the wall clocks' time at the run's start (I12 step 8).
+Status applyClock(const core::ParsedArgs& args, CommandLineOptions& options) {
+    if (!args.has("clock")) {
+        return ok();
+    }
+    const std::string text = args.value("clock").value_or("");
+    const std::optional<double> seconds = parseClockTime(text);
+    if (!seconds) {
+        return makeError(ErrorCode::InvalidArgument, "must be a time of day as HH:MM or HH:MM:SS", "--clock=" + text);
+    }
+    options.clockSeconds = *seconds;
+    return ok();
+}
+
 /// --max-decoders <1|2>, the screens' decoder budget.
 Status applyMaxDecoders(const core::ParsedArgs& args, CommandLineOptions& options) {
     if (!args.has("max-decoders")) {
@@ -776,6 +794,9 @@ Expected<CommandLineOptions> parseCommandLine(std::span<const std::string> argum
     }
     if (auto waitLimit = applyLaunchWaitLimit(*args, options); !waitLimit) {
         return propagate(waitLimit.error());
+    }
+    if (auto clock = applyClock(*args, options); !clock) {
+        return propagate(clock.error());
     }
     if (auto freeze = applyVideoFreezePts(*args, options); !freeze) {
         return propagate(freeze.error());

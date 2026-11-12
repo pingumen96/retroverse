@@ -30,6 +30,10 @@ namespace rv::app {
 inline constexpr double kScreenDwellSeconds = 0.3;
 /// How long a launch waits for the decoder's thread to end before the hand-over (ADR-0012 §6), seconds.
 inline constexpr double kScreenStopBoundSeconds = 1.0;
+/// A secondary TV's static between two clips (I12 step 8, ADR-0021 §6): at least this long, then until the next
+/// clip's first frame, at most kScreenStaticMaxSeconds; seconds of the target's time (in view, Running).
+inline constexpr double kScreenStaticMinSeconds = 0.3;
+inline constexpr double kScreenStaticMaxSeconds = 1.5;
 
 /// What the hero CRT shows.
 enum class ScreenPicture : std::uint8_t {
@@ -99,6 +103,8 @@ struct ScreenPlaySettings {
     /// The hero's start choice (ADR-0012 §7) before the playlist; without (a secondary TV, I5 step 2: ADR-0016 §5), the
     /// playlist's first game, the start choice's stills only for a room without a clip.
     bool startChoice = true;
+    /// I12 step 8: static between two of the playlist's clips (a secondary TV's; showsStatic()).
+    bool staticBetweenClips = false;
 
     bool operator==(const ScreenPlaySettings&) const = default;
 };
@@ -166,6 +172,11 @@ public:
 
     /// The picture shown now.
     [[nodiscard]] ScreenPicture picture() const noexcept;
+    /// I12 step 8 (staticBetweenClips): the screen shows static over its picture now, the playlist having gone from a
+    /// clip that showed to the next game: for kScreenStaticMinSeconds, then until the next clip's first frame, at most
+    /// kScreenStaticMaxSeconds. Never for the first game, a selection, a game after one without a clip, nor while a
+    /// launch holds the screen.
+    [[nodiscard]] bool showsStatic() const noexcept;
     /// The target has a playable video that has not failed, and clips play: the screen opens it while the phase allows.
     [[nodiscard]] bool hasVideo() const noexcept;
     /// A decoder should run now: hasVideo() and the phase is Running.
@@ -274,6 +285,8 @@ private:
     bool m_videoShowing = false;
     bool m_videoFailed = false;
     bool m_noSlot = false;
+    /// The target came after a clip that showed (staticBetweenClips): its static is due.
+    bool m_static = false;
 
     ScreenPhase m_phase = ScreenPhase::Running;
     /// The still chain's index and the still ready before launchStarting() forced the title card (undone by

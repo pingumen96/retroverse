@@ -39,8 +39,10 @@
 #include <rv/app/overlay_policy.hpp>
 #include <rv/app/player_settings.hpp>
 #include <rv/app/process_priority.hpp>
+#include <rv/app/room_life.hpp>
 #include <rv/app/scene_graphics.hpp>
 #include <rv/app/scene_instance.hpp>
+#include <rv/app/screenshot_name.hpp>
 #include <rv/app/self_check.hpp>
 #include <rv/app/setting_rows.hpp>
 #include <rv/app/settings_store.hpp>
@@ -110,6 +112,7 @@
 #include "world_gallery.hpp"
 #include "world_shelf_labels.hpp"
 #include "room_atmosphere.hpp"
+#include "room_life.hpp"
 #include "room_sound.hpp"
 #include "world_plaques.hpp"
 #include "world_signs.hpp"
@@ -711,6 +714,11 @@ struct RetroverseApp::State {
     std::unique_ptr<WorldShelfLabels> worldShelfLabels;
     /// I12 step 6: the hero signs' flicker and the CRTs' glow.
     std::unique_ptr<RoomAtmosphere> roomAtmosphere;
+    /// I12 step 8: the fans and clocks turning, the LEDs blinking, the lava lamps breathing.
+    std::unique_ptr<RoomLife> roomLife;
+    /// The wall clocks' time at the run's start (--clock, 10:10 in a frame-limited run); none: the local time.
+    std::optional<double> clockStart;
+    double clockShown = 0.0;
     /// I12 step 7: the rooms' tone, steps and effects on the mixer (kept for the engine's life: its loops are the
     /// mixer's).
     std::unique_ptr<RoomSound> roomSound;
@@ -1079,6 +1087,7 @@ struct RetroverseApp::State {
             worldShelfLabels.reset();
         }
         roomAtmosphere.reset();
+        roomLife.reset();
         if (roomSound) {
             roomSound->sceneChanged(); // I12 step 7: its loops stay the mixer's, their emitters found again
         }
@@ -1233,6 +1242,30 @@ struct RetroverseApp::State {
         air.seconds = static_cast<float>(stepSeconds);
         air.settle = frame.settle;
         roomAtmosphere->update(air);
+        // I12 step 8: the rooms' life.
+        if (!roomLife) {
+            roomLife = std::make_unique<RoomLife>();
+            clockStart = context.options().clockSeconds;
+            if (!clockStart && context.options().frameLimit) {
+                clockStart = kFrameLimitedClockSeconds;
+            }
+        }
+        if (clockStart) {
+            clockShown = clockAfter(*clockStart, simulatedSeconds);
+        } else {
+            const LocalTimestamp now = currentLocalTimestamp();
+            clockShown = now.hour * 3600.0 + now.minute * 60.0 + now.second + now.millisecond / 1000.0;
+        }
+        RoomLife::Frame life;
+        life.instance = &*scene;
+        life.materials = &graphics->materials();
+        life.reduceMotion = air.reduceMotion;
+        life.seconds = simulatedSeconds;
+        life.clockSeconds = clockShown;
+        roomLife->update(life);
+        if (screen) {
+            screen->setReduceMotion(air.reduceMotion);
+        }
     }
 
     /// The launched game captured onto the hero CRT in VR (I10 step 6): its emulator's window while the launch shows
@@ -2323,6 +2356,9 @@ struct RetroverseApp::State {
             if (roomAtmosphere) {
                 roomAtmosphere->sceneChanged(); // I12 step 6
             }
+            if (roomLife) {
+                roomLife->sceneChanged(); // I12 step 8
+            }
             if (roomSound) {
                 roomSound->sceneChanged(); // I12 step 7
             }
@@ -2495,6 +2531,9 @@ struct RetroverseApp::State {
         }
         if (roomAtmosphere) {
             roomAtmosphere->sceneChanged(); // I12 step 6: its signs and glows
+        }
+        if (roomLife) {
+            roomLife->sceneChanged(); // I12 step 8: its fans, clocks, LEDs and lamps
         }
         if (roomSound) {
             roomSound->sceneChanged(); // I12 step 7: its emitters and rugs
@@ -3501,6 +3540,15 @@ void RetroverseApp::onShutdown(AppContext& context) {
             catalog->flickeringSigns = m_state->roomAtmosphere->flickering();
             catalog->crtGlows = m_state->roomAtmosphere->glows();
             catalog->crtGlowWrites = m_state->roomAtmosphere->glowWrites();
+        }
+        if (std::optional<CatalogRecord>& catalog = context.report().catalog; catalog && m_state->roomLife) {
+            catalog->spinningParts = m_state->roomLife->spinning();
+            catalog->clockHands = m_state->roomLife->clockHands();
+            catalog->blinkingMaterials = m_state->roomLife->blinking();
+            catalog->breathingMaterials = m_state->roomLife->breathing();
+            catalog->partMoveFrames = m_state->roomLife->movedFrames();
+            const auto whole = static_cast<long long>(m_state->clockShown);
+            catalog->clockTime = fmt::format("{:02}:{:02}:{:02}", whole / 3600, whole / 60 % 60, whole % 60);
         }
         // The room's jobs end (within the pool's bound) before what they feed goes; its records go into the report.
         if (m_state->world) {

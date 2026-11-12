@@ -1,0 +1,31 @@
+// A lava lamp on the 90s room's crate (I12 step 8, ADR-0021 §6): its wax breathes.
+{
+  "schemaVersion": 1,
+  "id": "decor.lava_lamp.generic",
+  "assetType": "decor",
+  "category": "lava_lamp",
+  "role": "prop",
+  "source": {
+    "kind": "original",
+    "url": null,
+    "author": "Retroverse contributors",
+    "acquiredAt": "2026-11-11",
+    "license": "MIT",
+    "licenseSnapshot": null,
+    "attributionRequired": false,
+    "redistributionApproved": true
+  },
+  "runtime": {
+    "generator": "lava_lamp",
+    "params": {},
+    "scaleMeters": [0.13, 0.42, 0.13],
+    "lods": [],
+    "defaultMaterialVariant": "",
+    "sockets": {},
+    "collision": "none",
+    "videoSurface": null
+  },
+  "tags": ["decor", "lamp", "lava", "procedural"],
+  "fallbackPrefab": null,
+  "hash": "sha256:TO_BE_GENERATED_BY_BUILD"
+}

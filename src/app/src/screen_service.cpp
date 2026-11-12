@@ -14,6 +14,7 @@
 #include <rv/assets/image_io.hpp>
 #include <rv/assets/text_raster.hpp>
 #include <rv/core/cpu_timers.hpp>
+#include <rv/core/seed.hpp>
 #include <rv/core/file_io.hpp>
 #include <rv/core/utf8.hpp>
 #include <rv/core/worker_pool.hpp>
@@ -216,6 +217,7 @@ ScreenPlaySettings screenPlaySettings(const ScreenServiceOptions& options, const
     settings.playlist.explicitGames = own.games;
     settings.frozen = options.freezePtsSeconds.has_value();
     settings.startChoice = screen.kind == ScreenKind::Hero;
+    settings.staticBetweenClips = screen.kind == ScreenKind::Secondary; // I12 step 8: never the hero
     return settings;
 }
 
@@ -322,6 +324,9 @@ struct ScreenService::Impl {
         std::optional<std::size_t> overrideSlot;
         std::string overrideClip;
         ScreenPicture shownPicture = ScreenPicture::IdlePattern;
+        /// I12 step 8: the screen's material shows static (ScreenPolicy::showsStatic()), at this speed.
+        bool staticShown = false;
+        float staticRate = 0.0f;
         /// The game whose picture is shown (the previous target's while it is held).
         std::string shownGame;
         std::uint64_t followedGeneration = 0;
@@ -520,6 +525,8 @@ struct ScreenService::Impl {
 
     // The run report's counters, and the phase and decoder state when the run ended (shutdown()).
     VideoRecord counters;
+    /// world.reduceMotion (I12 step 8): the secondaries' static stands still.
+    bool reduceMotion = false;
     std::optional<std::string> endPhase;
     std::optional<std::string> endDecoderState;
 
@@ -1294,6 +1301,31 @@ struct ScreenService::Impl {
         }
     }
 
+    /// I12 step 8: static over a secondary's picture between two clips (frozen under reduceMotion), or not.
+    void applyStatic(ScreenState& screen) {
+        const bool wanted = !isHero(screen) && !screen.cabinet && screen.policy.showsStatic();
+        const float rate = reduceMotion ? 0.0f : 1.0f;
+        if (wanted == screen.staticShown && (!wanted || rate == screen.staticRate)) {
+            return;
+        }
+        std::optional<gl::ScreenStatic> snow;
+        if (wanted) {
+            snow = gl::ScreenStatic{static_cast<std::uint32_t>(core::deriveSeed("static", screen.binding.objectId) &
+                                                               0xFFFFFFu),
+                                    rate};
+        }
+        if (auto set = materials.setScreenStatic(screen.binding.material, snow); !set) {
+            spdlog::error("{}: the screen's static cannot be set: {}", nameOf(screen), set.error().toString());
+            return;
+        }
+        if (wanted && !screen.staticShown) {
+            ++counters.staticShows;
+            spdlog::info("{} shows static before game {}", nameOf(screen), screen.policy.targetId());
+        }
+        screen.staticShown = wanted;
+        screen.staticRate = rate;
+    }
+
     void applyPicture(ScreenState& screen) {
         const ScreenPolicy& policy = screen.policy;
         ScreenPicture picture = policy.picture();
@@ -1301,6 +1333,10 @@ struct ScreenService::Impl {
         // I10 step 6: the captured game holds the hero screen.
         if (heroScreen && gameWindow) {
             return;
+        }
+        applyStatic(screen);
+        if (screen.staticShown) {
+            ++counters.staticFrames;
         }
         // I5 step 4 (ADR-0016 §6): the frame kept when its slot was taken shows while its clip waits for a slot again
         // (its game still the target, its clip still wanted), in place of its still.
@@ -2130,6 +2166,9 @@ struct ScreenService::Impl {
                 // Its own pattern fills the screen again (I5 step 4).
                 static_cast<void>(materials.setPictureRect(screen->binding.material, std::nullopt));
             }
+            if (screen->staticShown) {
+                static_cast<void>(materials.setScreenStatic(screen->binding.material, std::nullopt)); // I12 step 8
+            }
             spdlog::info("{}: the screen of '{}' let go{}", nameOf(*screen), screen->binding.objectId,
                          draining ? "; its clip's decoder ends on its own" : "");
         }
@@ -2532,6 +2571,9 @@ ScreenService::~ScreenService() {
         if (!isWholeScreen(screen->rect)) {
             static_cast<void>(m_impl->materials.setPictureRect(screen->binding.material, std::nullopt));
         }
+        if (screen->staticShown) {
+            static_cast<void>(m_impl->materials.setScreenStatic(screen->binding.material, std::nullopt));
+        }
     }
     // The cabinets' pooled materials too (their collection's: the registry outlives the service).
     m_impl->releasePoolMaterials({}, true);
@@ -2611,6 +2653,10 @@ bool ScreenService::heroShowsPicture() const {
 
 bool ScreenService::clipHeard() const {
     return m_impl->audibleSlot().has_value();
+}
+
+void ScreenService::setReduceMotion(bool on) noexcept {
+    m_impl->reduceMotion = on;
 }
 
 std::string ScreenService::screenId() const {

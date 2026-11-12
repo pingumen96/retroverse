@@ -900,6 +900,59 @@ TEST_CASE("world look: the room's air (I12 step 6): dust in the key light and th
     CHECK(loungeRun.report->lastView->atmosphereMotes > 0);
 }
 
+TEST_CASE("world look: the rooms' life (I12 step 8): the 90s room's fan turns, still under reduceMotion; the study's "
+          "clock at 10:10",
+          "[gpu][world][world_look][life]") {
+    // Frames 30 and 31 of the 90s room (the clip held), with and without reduceMotion.
+    const auto shoot = [](const ImportedRoom& room, const std::string& name, int frames, const std::string& start) {
+        std::vector<std::string> arguments{"--start-room", start, "--exit-after-frames", "--frames",
+                                           std::to_string(frames), "--fixed-dt", "0.016667", "--video-freeze-pts", "1",
+                                           "--screenshot", arg(room.dir / (name + ".png"))};
+        return runApp(retroverseExe(), room.dir, name, std::move(arguments));
+    };
+    ImportedRoom moving("life", "esde/building");
+    const AppRun first = shoot(moving, "fan30", 30, "room:psx");
+    skipWithoutOpenGl(first);
+    requireCleanRun(first);
+    const AppRun next = shoot(moving, "fan31", 31, "room:psx");
+    requireCleanRun(next);
+    INFO(first.describe());
+    REQUIRE(first.report->catalog.has_value());
+    CHECK(first.report->catalog->spinningParts == 4);
+    CHECK(first.report->catalog->clockHands == 0);
+    CHECK(first.report->catalog->partMoveFrames >= 28);
+    CHECK(first.report->catalog->blinkingMaterials >= 1); // the rack's LEDs
+    CHECK(first.report->catalog->breathingMaterials == 1); // the lava lamp's wax
+    const rv::assets::ImageData a = requireScreenshot(first, moving.dir / "fan30.png", kShotSize);
+    const rv::assets::ImageData b = requireScreenshot(next, moving.dir / "fan31.png", kShotSize);
+    CHECK(a.pixels != b.pixels);
+
+    // Under reduceMotion the blades stand as described: the two frames are the same picture.
+    ImportedRoom still("life_still", "esde/building");
+    fs::create_directories(still.data / "config");
+    {
+        std::ofstream config(still.data / "config" / "world.json", std::ios::binary);
+        config << "{\"reduceMotion\": true}\n";
+    }
+    const AppRun stillFirst = shoot(still, "still30", 30, "room:psx");
+    requireCleanRun(stillFirst);
+    const AppRun stillNext = shoot(still, "still31", 31, "room:psx");
+    requireCleanRun(stillNext);
+    REQUIRE(stillFirst.report->catalog.has_value());
+    CHECK(stillFirst.report->catalog->spinningParts == 4);
+    CHECK(stillFirst.report->catalog->partMoveFrames == 0);
+    CHECK(requireScreenshot(stillFirst, still.dir / "still30.png", kShotSize).pixels ==
+          requireScreenshot(stillNext, still.dir / "still31.png", kShotSize).pixels);
+
+    // The study's clock: three hands, at 10:10 in a frame-limited run.
+    const AppRun study = shoot(moving, "clock", 30, "area:shared:computer");
+    requireCleanRun(study);
+    REQUIRE(study.report->catalog.has_value());
+    CHECK(study.report->catalog->clockHands == 3);
+    CHECK(study.report->catalog->spinningParts == 0);
+    CHECK(study.report->catalog->clockTime == "10:10:00");
+}
+
 namespace {
 
 /// A room run with its mix captured (the null output's offline mix) and video.json's volumes `volumes`; the walker

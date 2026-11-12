@@ -827,6 +827,15 @@ struct LabelPlatesParams {
     float inset = 0.003f;                         ///< [0, half the smallest plate edge less 2 mm]
 };
 
+/// "lava_lamp" (I12 step 8, ADR-0021 §6), pivot floor (its base's bottom); bounds = 2 radius x height x 2 radius. A
+/// lava lamp: a base cone, a bottle tapering upwards with a pool of wax and three blobs inside, a cap. Roles: "metal",
+/// "glass" (the bottle, a blended material), "wax" (an unlit one: it glows, and breathes as the app pulses it). No
+/// sockets.
+struct LavaLampParams {
+    float height = 0.42f;  ///< [0.25, 0.7]
+    float radius = 0.065f; ///< [0.04, 0.12]: the base's at the floor
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Builders. Invalid parameters return an error and never crash.
 // ---------------------------------------------------------------------------------------------------------------
@@ -871,6 +880,7 @@ struct LabelPlatesParams {
 [[nodiscard]] Expected<ProceduralPrefab> buildPegboard(const PegboardParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildCoatStand(const CoatStandParams& params = {});
 [[nodiscard]] Expected<ProceduralPrefab> buildLabelPlates(const LabelPlatesParams& params = {});
+[[nodiscard]] Expected<ProceduralPrefab> buildLavaLamp(const LavaLampParams& params = {});
 
 /// JSON factory used by scene files and prefab manifests ("runtime": "procedural:<kind>"). `params` is null or an
 /// object whose keys are the field names of the kind's params struct (vectors as arrays, WallSide as a string,
@@ -897,7 +907,8 @@ struct LabelPlatesParams {
 /// bookends, plant, I6 step 3b's era furniture: sofa, beanbag, desk, office_chair, bar_stool, banker_lamp, showcase,
 /// I6 step 5's hub: column, railing, hub_landmark, info_totem, I6 step 6's arcade_cabinet, I5 step 3's
 /// secondary_tv, I12 step 3's hero corner set: floor_speaker, media_rack, pad, low_table, cushion, open_box, I12 step
-/// 4's tall decoration: bookcase, record_rack, pegboard, coat_stand, and I12 step 5's label_plates.
+/// 4's tall decoration: bookcase, record_rack, pegboard, coat_stand, I12 step 5's label_plates and I12 step 8's
+/// lava_lamp.
 [[nodiscard]] std::span<const std::string_view> prefabKinds() noexcept;
 
 /// Kinds accepted by buildPrimitive: box, plane, quad, sphere, cylinder.

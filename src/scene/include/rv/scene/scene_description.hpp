@@ -18,6 +18,7 @@
 #include <rv/core/expected.hpp>
 #include <rv/scene/camera.hpp>
 #include <rv/scene/light.hpp>
+#include <rv/scene/object_motion.hpp>
 
 namespace rv::scene {
 
@@ -317,6 +318,9 @@ struct SceneObject {
     bool castsShadows = true;
     /// The application derives collider boxes from the built geometry (per wall for a room shell).
     bool collides = true;
+    /// It turns (I12 step 8: a fan's blades, a clock's hands; "motion"), its drawn items moved each frame. Only an
+    /// object without a grid, a collider or a shadow moves.
+    std::optional<ObjectMotion> motion;
 
     /// The same description (I4b step 4: an object a room's rebuilt static part leaves as it was keeps what it drew).
     bool operator==(const SceneObject&) const = default;

@@ -21,7 +21,8 @@ layout(std140, binding = 2) uniform MaterialUniforms {
     float uCrtCurvature;         // [0, 0.5]
     float uCrtVignette;          // [0, 1]
     float uCrtGlassReflection;   // [0, 1]
-    // A neon's flicker (I12 step 6), with RV_MATERIAL_EMISSIVE_FLICKER (materialFlicker).
+    // A neon's flicker (I12 step 6), with RV_MATERIAL_EMISSIVE_FLICKER (materialFlicker); an LED's blink or a lamp's
+    // breath with RV_MATERIAL_EMISSIVE_BLINK or _PULSE (I12 step 8); a screen's static (RV_MATERIAL_CRT_STATIC).
     float uFlickerSeed;          // an integer below 2^24
     float uFlickerRate;          // dips about every 8 s / rate; 0: none
     float uFlickerDepth;         // [0, 1]
@@ -50,6 +51,12 @@ const uint RV_MATERIAL_SPINE_LAYER = 1024u;
 const uint RV_MATERIAL_PICTURE_RECT = 2048u;
 // The emission dips for a moment now and then (materialFlicker; I12 step 6).
 const uint RV_MATERIAL_EMISSIVE_FLICKER = 4096u;
+// With RV_MATERIAL_EMISSIVE_FLICKER: a blink (an activity LED) or a slow breath (a lava lamp) instead of the dips (I12
+// step 8).
+const uint RV_MATERIAL_EMISSIVE_BLINK = 8192u;
+const uint RV_MATERIAL_EMISSIVE_PULSE = 16384u;
+// A CRT screen showing static (crtStatic, I12 step 8: a secondary TV between two clips).
+const uint RV_MATERIAL_CRT_STATIC = 32768u;
 
 layout(binding = 0) uniform sampler2D uBaseColorTexture;         // sRGB, multiplies uBaseColorFactor
 layout(binding = 1) uniform sampler2D uMetallicRoughnessTexture; // linear: G scales roughness, B scales metallic
@@ -133,13 +140,23 @@ uint materialHash(uint x) {
 }
 
 // The share of its emission a flickering material shows at `time`: rv::gl::emissiveFlickerFactor, formula for formula
-// (1 before 4 s and with a rate or depth of 0; one 80 to 120 ms stutter in every slot of 8 / rate seconds).
+// (1 before 4 s and with a rate or depth of 0; one 80 to 120 ms stutter in every slot of 8 / rate seconds; a blink in
+// slots of 1 / (8 rate) seconds or a breath every 10 / rate seconds with RV_MATERIAL_EMISSIVE_BLINK or _PULSE).
 float materialFlicker(float time) {
     if (!(uFlickerRate > 0.0) || !(uFlickerDepth > 0.0) || time < 4.0) {
         return 1.0;
     }
-    float period = 8.0 / uFlickerRate;
     float local = time - 4.0;
+    if (materialHas(RV_MATERIAL_EMISSIVE_PULSE)) {
+        return 1.0 - clamp(uFlickerDepth, 0.0, 1.0) * 0.5 * (1.0 - cos(6.28318530718 * local * uFlickerRate * 0.1));
+    }
+    if (materialHas(RV_MATERIAL_EMISSIVE_BLINK)) {
+        float blinkSlot = floor(local * 8.0 * uFlickerRate);
+        uint blinkSeed = uint(uFlickerSeed) ^ (uint(blinkSlot) * 0x9E3779B9u);
+        float unit = float(materialHash(blinkSeed ^ materialHash(3u))) * (1.0 / 4294967296.0);
+        return unit < 0.6 ? 1.0 : 1.0 - clamp(uFlickerDepth, 0.0, 1.0);
+    }
+    float period = 8.0 / uFlickerRate;
     float slot = floor(local / period);
     uint seed = uint(uFlickerSeed) ^ (uint(slot) * 0x9E3779B9u);
     float start = float(materialHash(seed ^ materialHash(1u))) * (1.0 / 4294967296.0) * max(period - 0.25, 0.0);
@@ -151,4 +168,15 @@ float materialFlicker(float time) {
     float phase = into / length;
     float dip = phase < 0.4 ? 1.0 : (phase < 0.6 ? 0.35 : 0.8);
     return 1.0 - clamp(uFlickerDepth, 0.0, 1.0) * dip;
+}
+
+// A screen's static (RV_MATERIAL_CRT_STATIC, I12 step 8): the grey of the picture's cell at `uv` (320 x 240 cells) in
+// the frame's 24th of a second (none with a rate of 0: still snow), streaked by its row, never brighter than 0.6.
+float crtStatic(vec2 uv, float time) {
+    uvec2 cell = uvec2(clamp(uv, 0.0, 1.0) * vec2(319.999, 239.999));
+    uint frame = uint(floor(max(time, 0.0) * 24.0 * max(uFlickerRate, 0.0)));
+    uint seed = uint(uFlickerSeed) ^ (frame * 0x9E3779B9u);
+    float grain = float(materialHash(cell.x ^ materialHash(cell.y ^ materialHash(seed)))) * (1.0 / 4294967296.0);
+    float streak = float(materialHash(cell.y ^ materialHash(seed ^ 0x51ED27u))) * (1.0 / 4294967296.0);
+    return 0.6 * clamp(0.75 * grain + 0.25 * streak, 0.0, 1.0);
 }

@@ -1252,7 +1252,7 @@
       "id": "room:snes/dressing:hero:rack",
       "materials": {
         "display": "MAT_Display_Amber",
-        "led": "MAT_Led_Green",
+        "led": "MAT_Led_Activity_Green",
         "metal": "MAT_Metal_Graphite",
         "wood": "MAT_Wood_Walnut"
       },

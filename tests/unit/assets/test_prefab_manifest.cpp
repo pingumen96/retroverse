@@ -148,7 +148,8 @@ TEST_CASE("assets/manifest: every shipped prefab manifest parses and validates",
                manifest->source.acquiredAt == "2026-10-19" || manifest->source.acquiredAt == "2026-10-20" ||
                manifest->source.acquiredAt == "2026-10-24" || manifest->source.acquiredAt == "2026-10-25" ||
                manifest->source.acquiredAt == "2026-10-26" || manifest->source.acquiredAt == "2026-10-29" ||
-               manifest->source.acquiredAt == "2026-11-09" || manifest->source.acquiredAt == "2026-11-10"));
+               manifest->source.acquiredAt == "2026-11-09" || manifest->source.acquiredAt == "2026-11-10" ||
+               manifest->source.acquiredAt == "2026-11-11"));
         CHECK(manifest->source.redistributionApproved);
         CHECK_FALSE(manifest->tags.empty());
         if (!manifest->fallbackPrefab.empty()) {

@@ -11,6 +11,7 @@
 #include <utility>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/geometric.hpp>
 
 #include <rv/assets/surface_textures.hpp>
 #include <rv/core/json.hpp>
@@ -685,11 +686,48 @@ glm::mat4 composeTransform(const glm::vec3& position, const glm::vec3& rotationD
     return glm::translate(identity, position) * rotation * glm::scale(identity, scale);
 }
 
+/// Parses an object's "motion" (I12 step 8): {"kind", "pivot", "axis", "turnsPerSecond"}.
+Expected<ObjectMotion> parseMotion(const json& value, const Location& at) {
+    Fields fields(value, at, {"kind", "pivot", "axis", "turnsPerSecond"});
+    ObjectMotion motion;
+    std::string kind;
+    fields.required("kind", kind, readNonEmptyString);
+    if (kind == "spin") {
+        motion.kind = ObjectMotion::Kind::Spin;
+    } else if (kind == "clock-hour") {
+        motion.kind = ObjectMotion::Kind::ClockHour;
+    } else if (kind == "clock-minute") {
+        motion.kind = ObjectMotion::Kind::ClockMinute;
+    } else if (kind == "clock-second") {
+        motion.kind = ObjectMotion::Kind::ClockSecond;
+    } else if (!kind.empty()) {
+        fields.failAt(at.key("kind"),
+                      "unknown motion \"" + kind + "\" (expected spin, clock-hour, clock-minute or clock-second)");
+    }
+    fields.optional("pivot", motion.pivot, readVec3);
+    fields.required("axis", motion.axis, readVec3);
+    const float length = std::sqrt(glm::dot(motion.axis, motion.axis));
+    fields.check(length > 1e-6f, "axis", "must not be zero");
+    if (length > 1e-6f) {
+        motion.axis /= length;
+    }
+    fields.optional("turnsPerSecond", motion.turnsPerSecond, readNumber);
+    fields.check(std::abs(motion.turnsPerSecond) <= kMaxSpinTurnsPerSecond, "turnsPerSecond",
+                 "must be within [-" + formatNumber(kMaxSpinTurnsPerSecond) + ", " +
+                     formatNumber(kMaxSpinTurnsPerSecond) + "]");
+    fields.check(motion.kind == ObjectMotion::Kind::Spin || !fields.has("turnsPerSecond"), "turnsPerSecond",
+                 "only a spin has a speed (a clock's hands keep the time)");
+    if (fields.failed()) {
+        return propagate(fields.error());
+    }
+    return motion;
+}
+
 /// Parses one entry of "objects". `instancesLeft` is the remaining scene-wide instance budget.
 Expected<SceneObject> parseObject(const json& value, const Location& at, std::size_t& instancesLeft) {
     Fields fields(value, at,
                   {"id", "prefab", "primitive", "model", "params", "position", "rotationDeg", "scale", "material",
-                   "materials", "textures", "inlineMaterial", "grid", "castsShadows", "collides"});
+                   "materials", "textures", "inlineMaterial", "grid", "castsShadows", "collides", "motion"});
     SceneObject object;
     fields.required("id", object.id, readNonEmptyString);
 
@@ -733,6 +771,14 @@ Expected<SceneObject> parseObject(const json& value, const Location& at, std::si
     }
     fields.optional("castsShadows", object.castsShadows, readBool);
     fields.optional("collides", object.collides, readBool);
+    fields.optional("motion", object.motion, parseMotion);
+    if (object.motion) {
+        // A moving object is drawn, never collided with nor shadowing (its colliders and the shadow's bounds are
+        // the scene's once), and is one object (a grid's instances would turn about one pivot).
+        fields.check(!hasGrid, "motion", "a moving object cannot be a grid");
+        fields.check(!object.collides, "motion", "a moving object must not collide (\"collides\": false)");
+        fields.check(!object.castsShadows, "motion", "a moving object casts no shadow (\"castsShadows\": false)");
+    }
     if (fields.failed()) {
         return propagate(fields.error());
     }

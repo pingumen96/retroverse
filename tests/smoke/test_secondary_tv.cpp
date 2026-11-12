@@ -286,6 +286,35 @@ TEST_CASE("gpu.secondary_tv: walking from the doorway, the secondary takes the s
                         tv.boundsCentre) < proximity);
 }
 
+TEST_CASE("gpu.secondary_tv: between two clips the secondary shows static for a moment, the hero never (I12 step 8)",
+          "[gpu][secondary_tv][life]") {
+    PlannedBuilding building("secondary_tv/static", true, "esde/snes-room");
+    const SecondaryTv tv = secondaryOf(building);
+    // Both screens in reach, each game's turn a second: within the run the secondary goes from clip to clip.
+    writeVideoSettings(building, Json{{"proximityMeters", 30.0},
+                                      {"hero", {{"previewDuration", 1}}},
+                                      {"secondary", {{"previewDuration", 1}}}});
+    const AppRun run = runApp(retroverseExe(), building.dir, "static",
+                              {"--start-room", std::string(kRoom), "--exit-after-frames", "--frames", "200",
+                               "--fixed-dt", "0.016667", "--spawn", spawnArgument(towards(tv)), "--screenshot",
+                               arg(building.dir / "static.png")});
+    skipWithoutOpenGl(run);
+    requireCleanRun(run);
+    INFO(run.describe());
+    const rv::app::VideoRecord& video = run.report->video;
+    REQUIRE(video.bound);
+    // The secondary played a clip, then another: static between them, at least 0.3 s (18 frames) each time.
+    CHECK(eventsOf(video, "open", tv.screen).size() >= 2);
+    CHECK(video.staticShows >= 1);
+    CHECK(video.staticFrames >= 18 * video.staticShows);
+    // Only the secondary's: the hero went from clip to clip too and never shows any (ScreenPlaySettings).
+    CHECK(eventsOf(video, "open", kHeroScreen).size() >= 2);
+    const auto log = rv::core::readTextFile(run.outputFile);
+    REQUIRE(log.has_value());
+    CHECK(log->find("Hero CRT shows static") == std::string::npos);
+    CHECK(log->find("shows static before game") != std::string::npos);
+}
+
 TEST_CASE("gpu.secondary_tv: with one decoder the hero keeps the slot and the secondary shows its still",
           "[gpu][secondary_tv]") {
     // Both screens in view (an ambient screen in view ranks above a hero out of view: ADR-0016 §2).

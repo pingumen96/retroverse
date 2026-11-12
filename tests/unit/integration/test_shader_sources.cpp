@@ -552,6 +552,9 @@ TEST_CASE("integration/shaders: the GLSL material block, flags and texture units
         {"RV_MATERIAL_SPINE_LAYER", flags::kSpineLayer},
         {"RV_MATERIAL_PICTURE_RECT", flags::kPictureRect},
         {"RV_MATERIAL_EMISSIVE_FLICKER", flags::kEmissiveFlicker},
+        {"RV_MATERIAL_EMISSIVE_BLINK", flags::kEmissiveBlink},
+        {"RV_MATERIAL_EMISSIVE_PULSE", flags::kEmissivePulse},
+        {"RV_MATERIAL_CRT_STATIC", flags::kCrtStatic},
     };
     std::map<std::string, std::uint32_t> glslFlags;
     const std::regex flag("const\\s+uint\\s+(RV_MATERIAL_\\w+)\\s*=\\s*(\\d+)u\\s*;");

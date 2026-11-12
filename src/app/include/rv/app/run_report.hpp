@@ -283,6 +283,15 @@ struct CatalogRecord {
     std::size_t flickeringSigns = 0;
     std::size_t crtGlows = 0;
     std::size_t crtGlowWrites = 0;
+    /// I12 step 8: the scene's moving parts when the run ended (RoomLife: the fans' blades, the clocks' hands), the
+    /// materials blinking (the racks' LEDs) and breathing (the lava lamps' wax), the frames that moved a part, and the
+    /// time the clocks showed then ("HH:MM:SS").
+    std::size_t spinningParts = 0;
+    std::size_t clockHands = 0;
+    std::size_t blinkingMaterials = 0;
+    std::size_t breathingMaterials = 0;
+    std::uint64_t partMoveFrames = 0;
+    std::string clockTime;
     /// The search text and the active filter's key when the run ended.
     std::string search;
     std::string filter;
@@ -2113,6 +2122,9 @@ struct VideoRecord {
     std::vector<VideoCabinetEventRecord> cabinetEvents;
     std::uint64_t cabinetEventsDropped = 0;
     std::uint64_t heldFrameShows = 0;
+    /// I12 step 8: the secondary TVs' static between two clips: each time it began, and the screens' frames it showed.
+    std::uint64_t staticShows = 0;
+    std::uint64_t staticFrames = 0;
     /// Lockstep runs (I5 step 4's review): the waits for the first frame of a clip a slot opened for a screen in view
     /// (at most 2 s, NFR-06's), the longest of them (wall-clock milliseconds) and those that ran out.
     std::uint64_t firstFrameWaits = 0;

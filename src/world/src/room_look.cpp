@@ -618,8 +618,9 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
     if (document.failed() || !reader.has("roomDressing")) {
         return;
     }
-    const ObjectReader dressing = reader.object("roomDressing", {"cans", "cardPerSlot", "cove", "gallery", "pendants",
-                                                                 "pictures", "runner", "shell", "signIcon"});
+    const ObjectReader dressing =
+        reader.object("roomDressing", {"cans", "cardPerSlot", "clock", "cove", "fan", "gallery", "pendants", "pictures",
+                                       "runner", "shell", "signIcon"});
     if (!document.failed() && dressing.has("cardPerSlot")) {
         theme.dressing.cardPerSlot = dressing.boolean("cardPerSlot");
     }
@@ -804,6 +805,26 @@ void readRoomDressing(const ObjectReader& reader, ThemeMaterials& theme) {
         lamps.metal = materialName(pendants, "metal");
         out.pendants = std::move(lamps);
     }
+    if (!document.failed() && dressing.has("fan")) {
+        const ObjectReader fan = dressing.object("fan", {"blades", "kit", "metal", "turnsPerMinute"});
+        CeilingFan ceilingFan;
+        ceilingFan.blades = materialName(fan, "blades");
+        ceilingFan.metal = materialName(fan, "metal");
+        ceilingFan.kit = materialName(fan, "kit");
+        if (fan.has("turnsPerMinute")) {
+            ceilingFan.turnsPerMinute = static_cast<std::int32_t>(fan.integer("turnsPerMinute", 10, 120));
+        }
+        out.fan = std::move(ceilingFan);
+    }
+    if (!document.failed() && dressing.has("clock")) {
+        const ObjectReader clock = dressing.object("clock", {"face", "hands", "rim", "second"});
+        WallClock wallClock;
+        wallClock.face = materialName(clock, "face");
+        wallClock.rim = materialName(clock, "rim");
+        wallClock.hands = materialName(clock, "hands");
+        wallClock.second = materialName(clock, "second");
+        out.clock = std::move(wallClock);
+    }
 }
 
 /// The lit shelves' roles (I6 step 3, geometry::ShelfParams::boardLight): a shelf's strips light its back panel, so it
@@ -925,7 +946,7 @@ ThemeMaterials builtInTheme() {
          Roles{{"wood", "MAT_Wood_Walnut"},
                {"metal", "MAT_Metal_Graphite"},
                {"display", "MAT_Display_Amber"},
-               {"led", "MAT_Led_Green"}}},
+               {"led", "MAT_Led_Activity_Green"}}},
         {"pad",
          Roles{{"plastic_body", "MAT_Plastic_Gray"},
                {"plastic_dark", "MAT_Plastic_Black"},
@@ -962,6 +983,8 @@ ThemeMaterials builtInTheme() {
                {"fabric_alt", "MAT_Fabric_Wool_Green_Weave"}}},
         // I12 step 5's letter tabs: a brass holder round a paper insert (the caption cards are paper alone).
         {"label_plates", Roles{{"plate", "MAT_Metal_Brass"}, {"picture", "MAT_Paper_Print"}}},
+        // I12 step 8's lava lamp (the 90s collector's; every pack can dress one).
+        {"lava_lamp", Roles{{"metal", "MAT_Metal_Brushed"}, {"glass", "MAT_Lava_Glass"}, {"wax", "MAT_Lava_Wax"}}},
         // I6 step 6's arcade cabinets.
         {"arcade_cabinet",
          Roles{{"body", "MAT_Cabinet_Paint_Walnut"},

@@ -243,12 +243,49 @@ Status MaterialRegistry::setFlicker(scene::MaterialHandle handle, std::optional<
         uniforms.flickerSeed = static_cast<float>(flicker->seed & 0xFFFFFFu);
         uniforms.flickerRate = std::isfinite(flicker->rate) ? std::max(flicker->rate, 0.0f) : 0.0f;
         uniforms.flickerDepth = std::isfinite(flicker->depth) ? std::clamp(flicker->depth, 0.0f, 1.0f) : 0.0f;
+        uniforms.flags &= ~(material_flags::kEmissiveBlink | material_flags::kEmissivePulse);
         uniforms.flags |= material_flags::kEmissiveFlicker;
+        if (flicker->mode == FlickerMode::Blink) {
+            uniforms.flags |= material_flags::kEmissiveBlink;
+        } else if (flicker->mode == FlickerMode::Pulse) {
+            uniforms.flags |= material_flags::kEmissivePulse;
+        }
     } else {
         uniforms.flickerSeed = 0.0f;
         uniforms.flickerRate = 0.0f;
         uniforms.flickerDepth = 0.0f;
-        uniforms.flags &= ~material_flags::kEmissiveFlicker;
+        uniforms.flags &=
+            ~(material_flags::kEmissiveFlicker | material_flags::kEmissiveBlink | material_flags::kEmissivePulse);
+    }
+    if (uniforms.flickerSeed == material.uniforms.flickerSeed &&
+        uniforms.flickerRate == material.uniforms.flickerRate &&
+        uniforms.flickerDepth == material.uniforms.flickerDepth && uniforms.flags == material.uniforms.flags) {
+        return ok();
+    }
+    material.uniforms = uniforms;
+    if (handle.value >= m_uploadedCount) {
+        return ok();
+    }
+    return m_buffer.update(handle.value * m_stride,
+                           std::as_bytes(std::span<const MaterialUniforms, 1>(&material.uniforms, 1)));
+}
+
+Status MaterialRegistry::setScreenStatic(scene::MaterialHandle handle, std::optional<ScreenStatic> snow) {
+    if (handle.value >= m_materials.size()) {
+        return makeError(ErrorCode::InvalidArgument, "unknown material", fmt::format("material #{}", handle.value));
+    }
+    GpuMaterial& material = m_materials[handle.value];
+    MaterialUniforms uniforms = material.uniforms;
+    if (snow) {
+        uniforms.flickerSeed = static_cast<float>(snow->seed & 0xFFFFFFu);
+        uniforms.flickerRate = std::isfinite(snow->rate) ? std::max(snow->rate, 0.0f) : 0.0f;
+        uniforms.flickerDepth = 0.0f;
+        uniforms.flags |= material_flags::kCrtStatic;
+    } else {
+        uniforms.flickerSeed = 0.0f;
+        uniforms.flickerRate = 0.0f;
+        uniforms.flickerDepth = 0.0f;
+        uniforms.flags &= ~material_flags::kCrtStatic;
     }
     if (uniforms.flickerSeed == material.uniforms.flickerSeed &&
         uniforms.flickerRate == material.uniforms.flickerRate &&

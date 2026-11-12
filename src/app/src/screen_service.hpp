@@ -254,6 +254,8 @@ public:
     [[nodiscard]] bool heroShowsPicture() const;
     /// A screen's clip is heard (I12 step 7: the room's tone a little lower under it).
     [[nodiscard]] bool clipHeard() const;
+    /// world.reduceMotion (I12 step 8): a secondary TV's static between two clips stands still.
+    void setReduceMotion(bool on) noexcept;
     /// The decoder slots (the budget: --max-decoders or video.json's maxDecoders): the pooled video materials a
     /// cabinets' room needs.
     [[nodiscard]] std::size_t slotCount() const noexcept;

@@ -119,6 +119,9 @@ std::map<std::string, std::string> prefabRoleMaterials(std::string_view kind) {
     if (kind == "label_plates") {
         return RoleMaterials{{"plate", "MAT_Metal_Brass"}, {"picture", "MAT_Paper_Print"}};
     }
+    if (kind == "lava_lamp") {
+        return RoleMaterials{{"metal", "MAT_Metal_Brushed"}, {"glass", "MAT_Lava_Glass"}, {"wax", "MAT_Lava_Wax"}};
+    }
     if (kind == "console_cartridge") {
         return RoleMaterials{{"plastic_body", "MAT_Plastic_Gray"},
                              {"plastic_dark", "MAT_Plastic_Black"},

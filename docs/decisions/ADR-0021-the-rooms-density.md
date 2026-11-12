@@ -314,6 +314,14 @@ the tick plays over it; sound ignores reduceMotion.
 - Off under `reduceMotion` (the fan still, the LEDs lit). Frame-limited runs show the clock at 10:10 unless
   `--clock` names a time, so a golden with a clock is deterministic.
 
+*Amended on 2026-11-11 (I12 step 8):* life as built ([i12/step-8.md](../i12/step-8.md)): the fan's blades and the
+clock's hands are scene objects with a `motion` (a spin, or a clock's hand), turned on the CPU each frame about their
+pivot (a few items per room; the passes follow without a shader term), not an instance flag; the fan and the clock are
+dressing primitives (the lava lamp the one new prefab, on the 90s set's crate); the clock hangs over the featured
+wall shelf and keeps the time under `reduceMotion` (its second hand at twelve); the racks' activity LEDs blink and the
+wax breathes by §4's flicker in two more modes; no power strip and no console LEDs; a secondary's static lasts at
+least 0.3 s and at most 1.5 s, and only after a clip that showed.
+
 ### 7. Goldens and proof
 
 - Every golden whose view changes is regenerated on purpose at the end of the step that changes it: step 1 moves

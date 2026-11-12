@@ -8,7 +8,8 @@
 // the collection's front layer through a picture tube) takes its picture from the layer its instance names, as the
 // lit surfaces do (common/material.glsl). A picture of another aspect than its screen's (RV_MATERIAL_PICTURE_RECT, I5
 // step 4) is letterboxed or pillarboxed in the lit tube's off-black (RV_CRT_BLACK_LEVEL: bars that read as a dark
-// screen, not a hole). Vertex stage: pbr/pbr.vert.
+// screen, not a hole). A screen showing static (RV_MATERIAL_CRT_STATIC, I12 step 8: a secondary TV between two clips)
+// draws snow through its tube in place of its picture. Vertex stage: pbr/pbr.vert.
 #include "common/common.glsl"
 #include "common/lights.glsl"
 #include "common/brdf.glsl"
@@ -30,7 +31,9 @@ void main() {
     vec2 sampleUv = pictureRect ? clamp(materialPictureUv(pictureUv), 0.0, 1.0) : pictureUv;
     float pictureCoverage = pictureRect ? materialPictureCoverage(pictureUv) : 1.0;
     vec4 color = materialInstanceBaseColor(sampleUv, vInstance);
-    if (pictureRect) {
+    if (materialHas(RV_MATERIAL_CRT_STATIC)) {
+        color = vec4(vec3(crtStatic(pictureUv, uTime)), 1.0); // the whole tube, no bars
+    } else if (pictureRect) {
         color.rgb = mix(vec3(RV_CRT_BLACK_LEVEL), color.rgb, pictureCoverage);
     }
     if (crtScreen) {

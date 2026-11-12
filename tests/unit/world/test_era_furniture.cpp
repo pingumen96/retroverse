@@ -21,6 +21,7 @@
 #include <rv/core/file_io.hpp>
 #include <rv/geometry/prefabs.hpp>
 #include <rv/geometry/socket.hpp>
+#include <rv/scene/scene_description.hpp>
 #include <rv/world/building.hpp>
 #include <rv/world/plan_json.hpp>
 #include <rv/world/gallery.hpp>
@@ -1134,4 +1135,105 @@ TEST_CASE("world/era furniture: the side walls' rhythm of tall and low pieces (I
     // The rule was put to the test, and the walls hold tall pieces.
     CHECK(neighbours > 10);
     CHECK(talls > 20);
+}
+TEST_CASE("world/era furniture: the 90s room's fan and lava lamp, the study's clock, nowhere else (I12 step 8)",
+          "[world][era_furniture][life]") {
+    auto text = rv::core::readTextFile(rv::test::world::goldenPlanDir() / "building-esde-seed-102938.json");
+    REQUIRE(text.has_value());
+    auto plan = rv::world::readPlan(*text, "building-esde-seed-102938");
+    REQUIRE(plan.has_value());
+    const auto sceneOf = [&](const std::string& id) {
+        const rv::world::RoomId room = *rv::world::RoomId::parse(id);
+        auto data = rv::world::loadSceneData(assets(), *plan, room);
+        REQUIRE(data.has_value());
+        auto scene = rv::world::toSceneFile(*plan, room, *data);
+        REQUIRE(scene.has_value());
+        // Its motions read back.
+        REQUIRE(rv::scene::parseSceneDescription(scene->sceneFile, id).has_value());
+        return scene->sceneFile;
+    };
+    const auto withPrefix = [](const nlohmann::json& scene, const std::string& prefix) {
+        std::vector<nlohmann::json> found;
+        for (const nlohmann::json& object : scene.at("objects")) {
+            if (object.at("id").get<std::string>().rfind(prefix, 0) == 0) {
+                found.push_back(object);
+            }
+        }
+        return found;
+    };
+    const auto at = [](const nlohmann::json& object, int axis) {
+        return object.at("position").at(axis).get<double>();
+    };
+
+    // The 90s room: four blades spinning about the canopy's axis, under the ceiling and over a walker's head; the
+    // lava lamp on the crate; nothing of it collides or shadows.
+    const nlohmann::json psx = sceneOf("room:psx");
+    const std::vector<nlohmann::json> blades = withPrefix(psx, "dressing:fan/blade:");
+    const std::vector<nlohmann::json> canopy = withPrefix(psx, "dressing:fan/canopy");
+    REQUIRE(blades.size() == 4);
+    REQUIRE(canopy.size() == 1);
+    const auto meters = [](std::int64_t millimetres) { return static_cast<double>(millimetres) / 1000.0; };
+    for (const rv::world::Room& r : plan->rooms) {
+        if (r.id.toString() == "room:psx") {
+            CHECK(at(canopy.front(), 1) <= meters(r.heightMm));
+        }
+    }
+    for (const nlohmann::json& blade : blades) {
+        INFO(blade.at("id").get<std::string>());
+        CHECK(blade.at("castsShadows") == false);
+        CHECK(blade.at("collides") == false);
+        REQUIRE(blade.contains("motion"));
+        CHECK(blade.at("motion").at("kind") == "spin");
+        CHECK(blade.at("motion").at("turnsPerSecond").get<double>() == Catch::Approx(-0.9));
+        CHECK(at(blade, 1) > 2.5);
+        CHECK(at(blade, 1) < at(canopy.front(), 1) - 0.2);
+        // The pivot, back along the blade, is the canopy's axis.
+        const double dx = at(blade, 0) - at(canopy.front(), 0);
+        const double dz = at(blade, 2) - at(canopy.front(), 2);
+        CHECK(std::hypot(dx, dz) == Catch::Approx(-blade.at("motion").at("pivot").at(0).get<double>()).margin(1e-5));
+    }
+    CHECK(withPrefix(psx, "dressing:hero:lava-lamp").size() == 1);
+    CHECK(withPrefix(psx, "dressing:clock/").empty());
+
+    // The study: the clock over its featured shelf (in the gallery's place), its hands turning about the dial.
+    const nlohmann::json study = sceneOf("area:shared:computer");
+    CHECK(withPrefix(study, "dressing:fan/").empty());
+    const std::vector<nlohmann::json> hands = withPrefix(study, "dressing:clock/");
+    std::map<std::string, nlohmann::json> byId;
+    for (const nlohmann::json& part : hands) {
+        byId[part.at("id").get<std::string>()] = part;
+        CHECK(part.at("collides") == false);
+        CHECK(part.at("castsShadows") == false);
+    }
+    REQUIRE(byId.contains("dressing:clock/case"));
+    REQUIRE(byId.contains("dressing:clock/hour"));
+    CHECK(byId.at("dressing:clock/hour").at("motion").at("kind") == "clock-hour");
+    CHECK(byId.at("dressing:clock/minute").at("motion").at("kind") == "clock-minute");
+    CHECK(byId.at("dressing:clock/second").at("motion").at("kind") == "clock-second");
+    CHECK(withPrefix(study, "dressing:clock/mark:").size() == 12);
+    const nlohmann::json& dial = byId.at("dressing:clock/dial");
+    for (const char* name : {"dressing:clock/hour", "dressing:clock/minute", "dressing:clock/second"}) {
+        const nlohmann::json& hand = byId.at(name);
+        INFO(name);
+        // Its pivot (down its length) is the dial's centre, in height.
+        CHECK(at(hand, 1) + hand.at("motion").at("pivot").at(1).get<double>() == Catch::Approx(at(dial, 1)).margin(1e-6));
+    }
+    const Fixture* shelf = nullptr;
+    for (const Fixture& fixture : plan->fixtures) {
+        if (fixture.id.room().toString() == "area:shared:computer" && fixture.role == FixtureRole::Display &&
+            fixture.prefab.kind == "wall_shelf") {
+            shelf = &fixture;
+            break;
+        }
+    }
+    REQUIRE(shelf != nullptr);
+    CHECK(withPrefix(study, "dressing:gallery:" + shelf->id.localText()).empty());
+    // Over the shelf (hung at 1.1 m, its prefab's mount height) and under the picture rail's band.
+    CHECK(at(byId.at("dressing:clock/case"), 1) - 0.165 >= 1.1 + meters(shelf->heightMm));
+    CHECK(at(byId.at("dressing:clock/case"), 1) + 0.165 <= 2.7);
+
+    // A classic room: neither.
+    const nlohmann::json snes = sceneOf("room:snes");
+    CHECK(withPrefix(snes, "dressing:fan/").empty());
+    CHECK(withPrefix(snes, "dressing:clock/").empty());
 }

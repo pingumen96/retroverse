@@ -165,7 +165,7 @@ const std::vector<std::string_view> kExpectedKinds{
     "bookends",   "plant",        "sofa",       "beanbag",     "desk",           "office_chair",      "bar_stool",
     "banker_lamp", "showcase",    "column",     "railing",     "hub_landmark",   "info_totem",        "arcade_cabinet",
     "secondary_tv", "floor_speaker", "media_rack", "pad",       "low_table",      "cushion",           "open_box",
-    "bookcase",   "record_rack",  "pegboard",   "coat_stand",  "label_plates"};
+    "bookcase",   "record_rack",  "pegboard",   "coat_stand",  "label_plates",   "lava_lamp"};
 
 } // namespace
 
@@ -242,6 +242,8 @@ TEST_CASE("geometry/prefabs: every contract role exists, in contract order", "[g
         {"coat_stand", {"wood", "metal", "fabric", "fabric_alt"}},
         // I12 step 5's letter tabs and caption cards.
         {"label_plates", {"plate", "picture"}},
+        // I12 step 8's lava lamp.
+        {"lava_lamp", {"metal", "glass", "wax"}},
     };
     REQUIRE(expected.size() == kExpectedKinds.size());
     for (const auto& [kind, roles] : expected) {
@@ -404,6 +406,7 @@ TEST_CASE("geometry/prefabs: bounds follow the documented dimensions and pivots"
         {"coat_stand", nullptr, box({-0.19f, 0.0f, -0.19f}, {0.19f, 1.8f, 0.19f})},
         // The default plate: 66 x 26 mm, 3 mm thick, its face 0.3 mm in front of it.
         {"label_plates", nullptr, box({-0.033f, -0.013f, 0.0f}, {0.033f, 0.013f, 0.0033f})},
+        {"lava_lamp", nullptr, box({-0.065f, 0.0f, -0.065f}, {0.065f, 0.42f, 0.065f})},
         // A wainscot lies inside the walls' interior: the bounds stay the shell's.
         {"room_shell", {{"wainscotHeight", 1.0}}, box({-4.65f, 0.0f, -5.15f}, {4.65f, 3.0f, 5.15f})},
     };
@@ -463,6 +466,7 @@ TEST_CASE("geometry/prefabs: sockets use the contract ids and lie on the prefab"
         {"pegboard", {}},
         {"coat_stand", {}},
         {"label_plates", {}},
+        {"lava_lamp", {}},
     };
     for (const auto& [kind, sockets] : expected) {
         const ProceduralPrefab prefab = buildOk(kind);
@@ -2083,6 +2087,26 @@ TEST_CASE("geometry/prefabs: the hero corner's set (I12 step 3)", "[geometry][pr
     CHECK(part(keepCase, "disc").mesh.bounds.min.x > 0.0f);
     CHECK(part(keepCase, "paper").mesh.bounds.max.x < 0.0f);
     CHECK(buildError("cushion", {{"height", 0.5}}).context == "cushion.height");
+}
+
+TEST_CASE("geometry/prefabs: a lava lamp's wax stays in its bottle (I12 step 8)", "[geometry][prefabs][life]") {
+    const ProceduralPrefab lamp = buildOk("lava_lamp");
+    const auto& glass = part(lamp, "glass").mesh.bounds;
+    const auto& wax = part(lamp, "wax").mesh.bounds;
+    // The bottle between the base (30 %) and the cap (85 % of the height); the wax inside it, below its top.
+    CHECK(glass.min.y == Approx(0.3f * 0.42f).margin(1e-4));
+    CHECK(glass.max.y == Approx(0.85f * 0.42f).margin(1e-4));
+    CHECK(wax.min.y >= glass.min.y);
+    CHECK(wax.max.y < glass.max.y);
+    CHECK(wax.min.x > glass.min.x);
+    CHECK(wax.max.x < glass.max.x);
+    CHECK(wax.min.z > glass.min.z);
+    CHECK(wax.max.z < glass.max.z);
+    const ProceduralPrefab tall = buildOk("lava_lamp", {{"height", 0.6}, {"radius", 0.09}});
+    CHECK(tall.bounds.max.y == Approx(0.6f));
+    CHECK(tall.bounds.max.x == Approx(0.09f));
+    CHECK(buildError("lava_lamp", {{"height", 0.8}}).context == "lava_lamp.height");
+    CHECK(buildError("lava_lamp", {{"radius", 0.01}}).context == "lava_lamp.radius");
 }
 
 TEST_CASE("geometry/prefabs: the tall decoration (I12 step 4)", "[geometry][prefabs][tall_decor]") {
