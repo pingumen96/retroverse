@@ -925,6 +925,10 @@ Decided on 2026-11-08 (ADR-0021, `docs/i12/plan.md`): offered in planning, left 
   item's place they would pan with it as it leaves a side shelf.
 - **The steps' level by surface** (step 7): a rug's step is duller than the parquet's but as loud; a level per surface
   (and per walking speed) would read better.
+- **The lava lamp's blobs rising** (step 8): the wax breathes, its blobs stand; a slow travel along the bottle (a
+  motion of its own beside the turns) would read as the real thing.
+- **Lights on the consoles and cabinets** (step 8): the racks' LEDs blink; a console model's power light (a content
+  manifest's light part) and the arcade cabinets' coin-door lights were left out.
 
 ## Branding
 
